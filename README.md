@@ -1,76 +1,178 @@
 # DeepWrite
 
-DeepWrite 是面向创作工作流重构的新一代本地桌面客户端。当前已完成桌面骨架、Pi Agent 流式链路、真实模型配置和第一版 Core Catalog：短篇拥有人物、剧情三子阶段、大纲、正文六个内容槽位及五个智能体身份 / 配置；正文通过右侧横向 Tab 切换稳定小节，选择具体小节会进入独立分节写手会话。素材库、技能库、分组、短篇书籍及书籍绑定由 Core Utility 保存，素材 / 技能分组可从对应资料树的“＋”菜单创建并为每一种类型可选一个已有库。智能体对话会在本地恢复，写回先形成可审阅 diff，接受后自动保存到项目 Markdown。自动批量分节调度和资料库分组编辑 / 删除仍待接通。
+> 为创作者打造的本地写作 Harness Agent。
 
-## 当前界面
+DeepWrite 不是一个简单的 AI 聊天窗口，而是一套面向长流程写作的智能体工作台。它把模型、提示词、写作技能、素材、文稿和工具组织在同一个桌面应用中，让 AI 能够理解当前作品、调用对应能力、修改真实文稿，并把每一次变更交给你审阅。
 
-```text
-左侧：固定功能 + 创作空间树 + 技能库树 + 素材库树
-中间：独立智能体对话
-右侧：文稿 / 技能 / 素材文本内容
-```
+界面设计参考 Codex 的工作方式：左侧管理项目与上下文，中间与智能体协作，右侧阅读和编辑实际内容。你可以让智能体参与人物设定、剧情设计、大纲规划、分节创作和正文修改，同时始终保留对本地文件与最终内容的控制权。
 
-左侧固定功能按产品要求依次为：新建对话、工作目录、模型配置、学习仿写、更多功能。Catalog 会投影为三棵真实资源树：素材库按“用途 kind → 题材 → 可选子题材 → 素材库 → 阶段 → 条目”浏览，技能库按“技能分类 → 技能库 → 阶段 → 条目”浏览，素材 / 技能分组作为额外入口保留。浏览资料只切换右侧内容，不会改变主创作文稿。
+## 界面预览
 
-短篇正文父节点和导语、第一节等动态小节继续显示在左侧树中：选择正文父节点使用正文专家总控，选择具体小节使用分节写手。正文父节点行末提供“＋”，可按顺序手工追加小节；每个小节行末提供“···”菜单和带确认的删除操作。右侧横向 Tab 独立切换编辑器内容，不改变左侧树的选中项。小节正文和人物状态共用一份带稳定 section id 的 Markdown 真值，内部 marker 不暴露给编辑器，分节工具只能修改当前小节，并继续服从版本校验、可读 diff 审阅和本地原子保存。
+<!-- 截图 1：替换下方占位内容，建议放置 DeepWrite 三栏主界面全景图 -->
 
-新建短篇时可选择“世情 / 追妻 / 科幻 / 悬疑 / 其他”，并按 kind 单独选择素材库、技能库，或一次选择资料库分组。绑定关系随书籍保存；从该书籍发送消息时，符合绑定分类的真实素材 / 技能条目会形成 `attachedMaterials` / `attachedSkills`，再由当前智能体的读取范围继续过滤后交给查询和加载工具。超出附件容量或单条长度时会显式提示，不会静默假装完整。
+> 📷 截图占位：主工作台（左侧资源树 + 中间智能体对话 + 右侧编辑器）
 
-书籍、素材库、技能库及两类分组现在各自对应一个本地项目文件夹：根目录的 `deepwrite.json` 只保存元数据、内容相对路径和绑定，书籍阶段、素材条目、技能条目正文分别保存在 UTF-8 Markdown 文件中。用户可随时切换工作目录；后续新书、素材库和技能库分别默认创建到工作目录的 `books/`、`materials/`、`skills/`，已注册项目仍保留原路径，不会随切换迁移。三棵资源树的“＋”菜单可以打开已有项目，创作空间还可选择旧版书籍 ZIP 并转换为当前文件结构；书籍、素材库和技能库都可选择只解除注册并保留文件夹，或在风险确认后连同本地项目文件夹一起删除。素材库和技能库还支持新增、编辑、删除 Markdown 条目。这些目录可直接交给 Cursor、Git 或同步盘管理。两类分组已文件夹化并完成旧数据迁移与新建 UI / API，分组编辑和删除仍是后续范围。
+## DeepWrite 能做什么
 
-编辑中的未保存草稿不会写进项目 manifest，而是防抖、原子地保存在 Electron `userData/draft-recovery.json`；窗口关闭时的 `localStorage` 只作为同步应急副本。用户手工编辑仍在显式保存后写回项目 Markdown；智能体写回会按“待审阅 diff → 接受 / 拒绝”处理，接受后自动通过 Core 原子保存，拒绝不改变正文。外部版本冲突会保留最新草稿，不会静默覆盖。
+### Codex 风格的写作工作台
 
-## 本地目录与 Write Claw 迁移
+DeepWrite 使用清晰的三栏布局，把写作过程中最常用的内容放在同一个视野中：
 
-Core 首次启动会先兼容读取现有 `catalog.json`，或合并当前 Write Claw 运行时 `.data` 与可发现的 `openwrite/write-claw/.data`。归一化后的每本书、每个素材库、技能库和分组会被拆分到 `userData/catalog-projects/` 下的独立项目文件夹，路径与迁移元数据保存在轻量的 `catalog-registry.json` 中；旧 `catalog.json` 保留为兼容来源，不再是新内容的写入真源。
+- 左侧：作品、章节、素材库、技能库与常用功能
+- 中间：智能体对话、思考过程、工具执行与修改建议
+- 右侧：人物、剧情、大纲、正文、素材或技能的实际内容
 
-文件夹注册表一旦建立，后续启动只读取注册项目，不再把旧 Catalog 同步回来，因此用户移除的项目不会在重启后复活，已经拆出的 Markdown 也不会被旧快照覆盖。`catalog-registry.json.bak` 保存最近一次可用索引：主注册表损坏时会自动恢复；主备均不可用时会保留带 `.corrupt-*` 后缀的损坏主文件并重建空索引，项目文件夹本身不会被删除，可通过“打开已存在…”重新注册。
+选择不同的作品阶段或章节时，DeepWrite 会自动切换对应的智能体和上下文。浏览素材与技能不会打断当前文稿，章节也可以通过独立标签快速切换。
 
-自动迁移有意不读取 `books.json`，因此旧 Write Claw 书籍不会在启动时隐式进入 DeepWrite。需要迁移时，可在创作空间“＋”菜单选择“导入旧版书籍”，读取旧版导出的 ZIP；核心六阶段会映射到当前短篇结构，其他非空旧阶段作为“其他文稿”保留，并在当前工作目录的 `books/` 下生成新的 `deepwrite.json + stages/*.md` 项目。
+<!-- 截图 2：替换下方占位内容，建议展示智能体对话与正文编辑 -->
 
-## 启动
+> 📷 截图占位：智能体协作写作与正文编辑
 
-要求 Node.js 24+ 与 pnpm 11+。
+### 面向写作流程的专业智能体
+
+DeepWrite 为短篇创作准备了不同职责的智能体：
+
+- 人物智能体：设计人物、关系、动机与人物弧光
+- 剧情智能体：规划主线、导语钩子、冲突、转折与结局
+- 大纲智能体：把人物和剧情整理为可执行的分节大纲
+- 正文专家：统筹正文结构、审阅成稿并完成润色修改
+- 分节写手：围绕当前章节写作，保持情节、人物与文风连续
+
+每个智能体都可以配置自己的系统提示词、欢迎快捷指令、模型和资料读取范围。你还可以为主智能体组建子智能体团队，让复杂任务由不同角色协作完成。
+
+### 可审阅的文稿修改
+
+智能体不会悄悄覆盖你的文本。对文稿的写入会先生成清晰的差异对比，你可以查看新增和删除内容，再决定接受或拒绝。接受后，修改才会保存到本地项目；如果文稿已经被其他操作更新，DeepWrite 会保留较新的版本，避免静默覆盖。
+
+<!-- 截图 3：替换下方占位内容，建议展示 diff 审阅卡片 -->
+
+> 📷 截图占位：智能体修改 Diff 与接受 / 拒绝操作
+
+### 本地优先的作品与知识库
+
+作品、章节、素材和技能以 `deepwrite.json` 与 UTF-8 Markdown 文件保存在本地文件夹中。它们不是只能被 DeepWrite 读取的封闭数据，可以直接使用 Git 进行版本管理，也可以放入同步盘，或交给其他文本工具继续处理。
+
+DeepWrite 支持：
+
+- 新建或打开本地作品
+- 管理人物、剧情、大纲与多个正文小节
+- 创建素材库和技能库，并维护 Markdown 条目
+- 将指定素材库、技能库或资料分组绑定到作品
+- 导入旧版书籍 ZIP，转换为当前文件夹结构
+- 自动恢复未保存草稿和最近的智能体会话
+
+### 自选模型，自由切换
+
+你可以在模型配置中添加自己的 API 服务。当前支持：
+
+- OpenAI Completions
+- OpenAI Responses
+- Anthropic Messages
+- Google Generative AI
+
+模型密钥不会暴露给页面渲染层。不同模型可以设置默认思考等级，也可以在对话时按任务切换模型。
+
+### 学习仿写
+
+通过学习仿写功能，DeepWrite 可以分阶段分析参考文本，提取可复用的写作特征，并将结果用于后续创作。相关模型与提示词可以在设置中单独配置。
+
+<!-- 截图 4：替换下方占位内容，建议展示学习仿写或模型配置 -->
+
+> 📷 截图占位：学习仿写 / 模型配置
+
+## 安装
+
+### 使用安装包
+
+从 [GitHub Releases](https://github.com/swjybky/deepwrite/releases) 下载与你的系统和处理器匹配的安装包：
+
+| 系统 | 安装包 |
+| --- | --- |
+| Windows x64 | `DeepWrite-<version>-win-x64-test.exe` |
+| macOS Apple Silicon | `DeepWrite-<version>-mac-arm64-test.dmg` |
+| macOS Intel | `DeepWrite-<version>-mac-x64-test.dmg` |
+
+Windows 运行 `.exe` 后按安装向导完成安装。
+
+macOS 打开 `.dmg`，将 DeepWrite 拖入“应用程序”文件夹。当前测试包使用 ad-hoc 签名且未经过 Apple 公证；通过浏览器、微信等渠道下载后，macOS 可能显示安全提醒。请确认文件来源可信，然后右键应用选择“打开”，或在“系统设置 → 隐私与安全性”中允许打开。
+
+首次启动后，建议依次完成：
+
+1. 选择本地工作目录。
+2. 在“模型配置”中添加 API 服务并测试连接。
+3. 新建作品，或打开已有的 DeepWrite 项目文件夹。
+4. 按需创建并绑定素材库、技能库。
+
+### 从源码运行
+
+开发环境要求：
+
+- Node.js 24 或更高版本
+- pnpm 11 或更高版本
+- Windows x64，或 macOS Apple Silicon / Intel
 
 ```bash
+git clone https://github.com/swjybky/deepwrite.git
+cd deepwrite
 pnpm install
 pnpm dev
 ```
 
-`pnpm dev`、`pnpm preview` 和 `pnpm smoke` 会先校验当前主机的 Electron 二进制；如果依赖重装时跳过了 Electron 安装脚本，会自动按当前系统和架构恢复 `dist` 与 `path.txt`，避免出现 `Electron uninstall`。
-
-浏览器内单独预览已构建的 Renderer：
+构建生产版本：
 
 ```bash
 pnpm build
-python3 -m http.server 4178 --bind 127.0.0.1 \
-  --directory apps/desktop/out/renderer
 ```
 
-## 验证
+运行完整校验：
 
 ```bash
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm build
-pnpm smoke:renderer
-pnpm smoke
+pnpm verify
 ```
 
-`pnpm lint` 会硬性阻止 Renderer 导入 Node、Electron、SQLite 或 Pi Runtime。`pnpm smoke` 会启动真实 Electron 构建，检查 Core / Agent / Tool 三个 Utility 的健康状态，并验证 Pi/Faux 的 Thinking、多段文本 delta 与唯一完成终态。
+## 构建测试安装包
 
-测试安装包统一从仓库根目录运行 `pnpm pack:test:*`。这些入口由 `tools/run-test-package.mjs` 串行执行完整校验、electron-builder、安装包验证和冒烟，并显式传入锁定的 Electron 版本。无论打包成功还是中途失败，退出前都会恢复并复查本机开发用 Electron，打包产物不会再让后续 `pnpm dev` 失效。
+测试安装包必须在对应平台构建，并从仓库根目录运行：
 
-## 架构边界
+```bash
+# 当前支持的全部测试包
+pnpm pack:test
 
-- Renderer：三栏 UI 和交互，不接触 Node、文件、数据库、Pi SDK 或密钥。
-- Preload：只暴露 `window.deepwrite.*` 语义 API，并校验双向协议。
-- Main：窗口生命周期、Utility 监督、安全外链和 IPC 路由。
-- Core Utility：本地项目和路径注册表的唯一写入者；串行校验并以临时文件 + rename 原子替换单个 `deepwrite.json` 或 Markdown。一次操作同时更新 Markdown 与 manifest 时，普通写入失败会恢复原 Markdown；若进程恰好在两次 rename 之间崩溃，仍可能留下跨文件版本不一致，严格崩溃原子性需要后续增加事务 journal。
-- Agent Utility：运行锁定版本的 Pi Agent Adapter；支持本地 Faux 与 OpenAI Completions / Responses、Anthropic Messages、Google Generative AI 兼容 Provider，按“短篇作品 + 智能体”隔离多轮上下文，并限制同会话并发。
-- Tool Utility：为未来有副作用的工具执行预留，必须在 Policy / Approval 后使用。
+# Windows x64
+pnpm pack:test:win
 
-当前已经可以创建 / 打开素材库和技能库，并新增、编辑、删除其中的 Markdown 条目；也可新建允许空成员的素材 / 技能分组。尚未完成资料库元数据编辑、分组编辑 / 删除、结构化 `ExpertDraft` 与分节写手后台调度。
+# macOS Apple Silicon
+pnpm pack:test:mac:arm64
 
-更详细的边界和迁移映射见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，阶段状态见 [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md)。
+# macOS Intel
+pnpm pack:test:mac:x64
+
+# 两种 macOS 架构
+pnpm pack:test:mac
+```
+
+产物保存在 `apps/desktop/release/`。打包流程会先执行类型检查、边界检查、测试和生产构建，再生成并验证安装包。
+
+## 项目结构
+
+```text
+deepwrite/
+├── apps/desktop/              # Electron 桌面客户端
+├── packages/contracts/        # 进程间命令与事件契约
+├── packages/pi-runtime-adapter/
+│                              # Agent Runtime 适配层
+├── packages/shared/           # 共享类型与工具
+├── tools/                     # 校验、运行与打包脚本
+└── docs/                      # 架构和阶段文档
+```
+
+DeepWrite 采用 Electron 多进程架构。Renderer 只负责界面，Main 管理窗口与安全 IPC，Core Utility 负责本地项目读写，Agent Utility 负责模型和智能体运行，Tool Utility 为受控工具执行提供边界。
+
+更多技术信息请参阅：
+
+- [架构说明](docs/ARCHITECTURE.md)
+- [开发阶段状态](docs/PHASE_STATUS.md)
+
+## License
+
+本项目使用 [LICENSE](LICENSE) 中声明的许可协议。
