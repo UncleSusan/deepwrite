@@ -14,6 +14,7 @@ import {
   AgentToolCallStreamEventEnvelopeSchema,
   AgentToolRequestedEventEnvelopeSchema,
   LearningImitationResultUpdatedEventEnvelopeSchema,
+  SubagentAuthoringDraftUpdatedEventEnvelopeSchema,
   LibraryEditorMutationEventEnvelopeSchema,
   WorkspaceEditorMutationEventEnvelopeSchema,
   WorkspaceStageSelectionEventEnvelopeSchema,
@@ -30,6 +31,7 @@ import {
   type SubagentCompletedEventEnvelope,
   type SubagentStartedEventEnvelope,
   type LearningImitationResultUpdatedEventEnvelope,
+  type SubagentAuthoringDraftUpdatedEventEnvelope,
   type LibraryEditorMutationEventEnvelope,
   type WorkspaceEditorMutationEventEnvelope,
   type WorkspaceStageSelectionEventEnvelope
@@ -241,6 +243,7 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   SubagentActivityEventEnvelopeSchema,
   SubagentCompletedEventEnvelopeSchema,
   LearningImitationResultUpdatedEventEnvelopeSchema,
+  SubagentAuthoringDraftUpdatedEventEnvelopeSchema,
   LibraryEditorMutationEventEnvelopeSchema,
   WorkspaceEditorMutationEventEnvelopeSchema,
   WorkspaceStageSelectionEventEnvelopeSchema,
@@ -270,6 +273,7 @@ export type SystemEventEnvelope =
   | SubagentActivityEventEnvelope
   | SubagentCompletedEventEnvelope
   | LearningImitationResultUpdatedEventEnvelope
+  | SubagentAuthoringDraftUpdatedEventEnvelope
   | LibraryEditorMutationEventEnvelope
   | WorkspaceEditorMutationEventEnvelope
   | WorkspaceStageSelectionEventEnvelope

@@ -540,4 +540,30 @@ describe("library agent tools", () => {
     expect(resultText(disambiguated)).toContain("梗侧。");
     expect(resultText(disambiguated)).not.toContain("剧情侧。");
   });
+
+  it("loads configured skills by name and lists candidates on miss", async () => {
+    const skillProfile = profile("skill");
+    const configured = skillProfile.readAccess.skills[1]!;
+    const tools = buildLibraryAgentTools({
+      workspace: skillWorkspace(),
+      profile: skillProfile,
+      attachedSkills: skillProfile.readAccess.skills.map((skill) => ({
+        id: `library-agent-skill:${skill.id}`,
+        title: skill.name,
+        content: skill.content,
+        source: "attached-skill" as const
+      }))
+    });
+    const load = toolByName(tools, "load_skill");
+
+    const loaded = await load.execute("load-configured", { name: configured.name });
+    expect(resultText(loaded)).toContain(configured.content.slice(0, 20));
+
+    const fuzzy = await load.execute("load-fuzzy", { name: "创建" });
+    expect(resultText(fuzzy)).toContain("创建一个技能");
+
+    const missing = await load.execute("load-missing", { name: "不存在" });
+    expect(resultText(missing)).toContain("没有找到可读取的同名已附加技能");
+    expect(resultText(missing)).toContain("初始化库介绍");
+  });
 });

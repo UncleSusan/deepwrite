@@ -109,6 +109,7 @@ type AgentEventEnvelope = Extract<
       | "tool.call_requested"
       | "tool.execution_completed"
       | "learning_imitation.result_updated"
+      | "subagent_authoring.draft_updated"
       | "library.editor_mutation"
       | "workspace.editor_mutation"
       | "workspace.stage_selection"
@@ -128,6 +129,7 @@ function isAgentEvent(event: SystemEventEnvelope): event is AgentEventEnvelope {
     event.type === "tool.call_requested" ||
     event.type === "tool.execution_completed" ||
     event.type === "learning_imitation.result_updated" ||
+    event.type === "subagent_authoring.draft_updated" ||
     event.type === "library.editor_mutation" ||
     event.type === "workspace.editor_mutation" ||
     event.type === "workspace.stage_selection" ||

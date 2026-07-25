@@ -9,6 +9,7 @@ export * from "./models";
 export * from "./preload-api";
 export * from "./session";
 export * from "./short-manuscript-export";
+export * from "./subagent-authoring";
 export * from "./system";
 export * from "./utility";
 export * from "./workspace";

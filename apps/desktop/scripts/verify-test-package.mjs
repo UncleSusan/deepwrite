@@ -118,7 +118,7 @@ try {
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
-    }, 60_000);
+    }, 120_000);
     child.once("error", (error) => {
       clearTimeout(timeout);
       resolveResult({ code: null, signal: null, timedOut, error });

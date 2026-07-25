@@ -1770,18 +1770,20 @@ describe("agent conversation controller", () => {
 
   it.each([
     {
-      toolName: "write_section_body",
+      label: "write_draft_section（当前章节）",
+      toolName: "write_draft_section",
       first: '{"text":"第一',
       second: '段正文"}',
       args: { text: "第一段正文" }
     },
     {
-      toolName: "write_expert_draft_section",
+      label: "write_draft_section（指定章节）",
+      toolName: "write_draft_section",
       first: '{"section_id":"section-1","text":"第一',
       second: '段正文"}',
       args: { section_id: "section-1", text: "第一段正文" }
     }
-  ])("streams $toolName content and character progress before execution", async ({
+  ])("streams $label content and character progress before execution", async ({
     toolName,
     first,
     second,

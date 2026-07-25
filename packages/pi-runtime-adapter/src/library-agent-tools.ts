@@ -11,6 +11,12 @@ import {
   type LibraryAgentWorkspaceSnapshot,
   type WorkspaceRuntimeContext
 } from "@deepwrite/contracts";
+import {
+  LOAD_SKILL_NAME_PARAMETER,
+  LOAD_SKILL_TOOL_DESCRIPTION,
+  formatLoadSkillToolResult,
+  resolveAttachedSkill
+} from "./resolve-attached-skill";
 
 type LibraryDomain = LibraryAgentDomain;
 
@@ -1030,18 +1036,17 @@ function buildLoadSkillTool(input: BuildLibraryAgentToolsInput): AgentTool {
   return defineTool({
     name: "load_skill",
     label: "加载技能",
-    description:
-      "按名称加载本轮显式附加、且属于当前资料库智能体配置中的方法正文。技能是方法，不会自动成为资料库事实。",
-    parameters: Type.Object({ name: Type.String({ minLength: 1, maxLength: 240 }) }),
+    description: LOAD_SKILL_TOOL_DESCRIPTION,
+    parameters: Type.Object({
+      name: Type.String(LOAD_SKILL_NAME_PARAMETER)
+    }),
     execute: async (_toolCallId, params) => {
-      const name = String(params.name ?? "").trim();
-      const found = (input.attachedSkills ?? []).find(
-        (item) => item.title === name && configuredNames.has(name)
-      );
+      const name = String(params.name ?? "");
+      const attached = input.attachedSkills ?? [];
+      const isReadable = (item: { title: string }) => configuredNames.has(item.title);
+      const result = resolveAttachedSkill(name, attached, isReadable);
       return textResult(
-        found
-          ? `【技能：${found.title}】\n\n${found.content}`
-          : "没有找到可读取的同名已附加技能。"
+        formatLoadSkillToolResult(name, result, attached.filter(isReadable))
       );
     }
   });

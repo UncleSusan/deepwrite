@@ -79,6 +79,7 @@ import {
 } from "./composables/useAgentConversation";
 import { useAppearance } from "./composables/useAppearance";
 import { useLearningImitation } from "./composables/useLearningImitation";
+import { useSubagentAuthoring } from "./composables/useSubagentAuthoring";
 import { uiMessage } from "./ui-feedback";
 import { resourceSections } from "./data/demoWorkspace";
 import {
@@ -335,6 +336,9 @@ const learningImitation = useLearningImitation({
 const learningImitationRunning = computed(
   () => learningImitation.isBusy.value
 );
+const subagentAuthoring = useSubagentAuthoring({
+  api: () => window.deepwrite
+});
 const bookDialogMode = ref<BookResourceDialogMode | null>(null);
 const activeBook = ref<ResourceTreeNode | null>(null);
 const catalogSnapshot = ref<CatalogSnapshot | null>(null);
@@ -3799,6 +3803,9 @@ function openAgentTeams(): void {
   if (window.deepwrite && !modelSettings.value) {
     void loadModelSettings();
   }
+  if (window.deepwrite && !catalogSnapshot.value) {
+    void loadCatalogSnapshot();
+  }
 }
 
 async function loadWorkspaceDirectory(): Promise<void> {
@@ -5549,6 +5556,7 @@ function scheduleQueuedAutoAgentEdits(
 
 function handleSystemEvent(event: SystemEventEnvelope): void {
   learningImitation.handleEvent(event);
+  subagentAuthoring.handleEvent(event);
   if (event.type === "workspace.editor_mutation") {
     stageAgentEditProposal(event);
   }
@@ -6114,12 +6122,21 @@ onBeforeUnmount(() => {
         <AgentTeamSettingsPanel
           :settings="agentTeamSettings"
           :models="modelSettings?.models ?? []"
+          :skills="catalogSnapshot?.skills ?? []"
+          :preferred-model-id="modelSettings?.defaultModelId ?? null"
           :loading="agentTeamLoading"
           :saving="agentTeamSaving"
           :load-error="agentTeamLoadError"
           :runtime-available="hasDesktopRuntime"
+          :authoring-generating="subagentAuthoring.isBusy.value"
+          :authoring-draft="subagentAuthoring.draft.value"
+          :authoring-status-text="subagentAuthoring.statusText.value"
+          :authoring-error="subagentAuthoring.error.value"
           @retry="loadAgentTeamSettings"
           @save="saveAgentTeamSettings"
+          @authoring-generate="(payload) => void subagentAuthoring.generate(payload.context, payload.modelId)"
+          @authoring-stop="() => void subagentAuthoring.stop()"
+          @authoring-reset="subagentAuthoring.reset()"
         />
       </main>
 

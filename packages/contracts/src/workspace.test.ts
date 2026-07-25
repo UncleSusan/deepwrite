@@ -150,15 +150,20 @@ describe("short workspace contracts", () => {
       character_design: "d758185c",
       plot_design: "6ed0f6fe",
       outline: "2479c31a",
-      expert_draft_coordinator: "c3e2ad07",
-      expert_section_writer: "5a7065ff"
+      expert_draft_coordinator: "2a659742",
+      expert_section_writer: "dceacaca"
     });
   });
 
   it("keeps the reference project's default read ranges", () => {
     expect(DEFAULT_SHORT_AGENT_READ_ACCESS).toEqual({
       character_design: {
-        workspace: ["character_design", "plot_design"],
+        workspace: [
+          "character_design",
+          "plot_design",
+          "plot_refine",
+          "intro_design"
+        ],
         material: ["character"],
         skill: ["general", "plot", "other"]
       },
@@ -184,12 +189,12 @@ describe("short workspace contracts", () => {
         skill: ["general", "other"]
       },
       expert_draft_coordinator: {
-        workspace: ["outline", "draft"],
+        workspace: ["outline", "draft", "character_design", "intro_design"],
         material: [],
         skill: ["general", "other"]
       },
       expert_section_writer: {
-        workspace: ["outline", "plot_refine", "draft"],
+        workspace: ["outline", "draft", "character_design", "intro_design"],
         material: ["draft"],
         skill: ["style", "general"]
       }

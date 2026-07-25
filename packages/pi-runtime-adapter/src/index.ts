@@ -64,6 +64,11 @@ import {
   buildLibraryAgentTools,
   isLibraryAgentToolDetails
 } from "./library-agent-tools";
+import {
+  buildSubagentAuthoringTools,
+  isSubagentAuthoringToolDetails,
+  renderSubagentAuthoringSystemPrompt
+} from "./subagent-authoring-tools";
 
 export interface AgentRunInput {
   runId: string;
@@ -282,6 +287,16 @@ export type AgentRuntimeEvent =
         toolCallId: string;
         stageId: import("@deepwrite/contracts").LearningImitationStageId;
         update: import("@deepwrite/contracts").LearningImitationWritePayload;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "subagent_authoring.draft_updated";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        draft: import("@deepwrite/contracts").SubagentAuthoringDraft;
         runtime: AgentRuntimeRef;
       };
     }
@@ -517,6 +532,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     const shortWorkspace = input.workspaceContext?.shortWorkspace;
     const libraryWorkspace = input.workspaceContext?.libraryWorkspace;
     const learningImitation = input.workspaceContext?.learningImitation;
+    const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
     const imageAttachments = input.attachments?.filter(
       (attachment) => attachment.kind === "image"
     ) ?? [];
@@ -542,7 +558,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             ...(shortToolSharedState ? { sharedState: shortToolSharedState } : {})
           })
         : [];
-    let tools: AgentTool[] = learningImitation && input.learningImitationProfile
+    let tools: AgentTool[] = subagentAuthoring
+      ? buildSubagentAuthoringTools(subagentAuthoring)
+      : learningImitation && input.learningImitationProfile
       ? buildLearningImitationTools(learningImitation)
       : libraryWorkspace && input.libraryAgentProfile
         ? buildLibraryAgentTools({
@@ -554,7 +572,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       : shortWorkspace && input.agentProfile
         ? buildShortTools()
         : [];
-    if (shortWorkspace && input.agentProfile) {
+    if (shortWorkspace && input.agentProfile && !subagentAuthoring) {
       const spawnTool = buildSpawnSubagentTool({
         parentSessionId: input.sessionId,
         model,
@@ -592,7 +610,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       if (spawnTool) tools = [...tools, spawnTool];
     }
     const agentKey = `${input.sessionId}:${
-      input.learningImitationProfile
+      subagentAuthoring
+        ? `subagent-authoring:${subagentAuthoring.parentAgentId}`
+        : input.learningImitationProfile
         ? `learning-imitation:${input.learningImitationProfile.id}`
         : input.libraryAgentProfile && libraryWorkspace
           ? `library:${input.libraryAgentProfile.domain}:${libraryWorkspace.libraryId}`
@@ -1255,6 +1275,17 @@ export function toRuntimeEvents(
           runtime
         }
       });
+    } else if (isSubagentAuthoringToolDetails(details)) {
+      events.push({
+        type: "subagent_authoring.draft_updated",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: {
+          toolCallId: event.toolCallId,
+          draft: details.draft,
+          runtime
+        }
+      });
     }
     return events;
   }
@@ -1480,6 +1511,18 @@ function buildDeepWriteSystemPrompt(): string {
 }
 
 function buildEffectiveSystemPrompt(basePrompt: string, input: AgentRunInput): string {
+  const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
+  if (subagentAuthoring) {
+    return [
+      basePrompt,
+      "",
+      "【当前任务：技能转子智能体】",
+      renderSubagentAuthoringSystemPrompt(subagentAuthoring).trim(),
+      "",
+      "【DeepWrite 技能转子智能体工具边界】",
+      "只能使用本轮列出的技能读取与草稿写入工具。write_subagent_draft 只更新预览区，不会写入智能体团队；正式加入必须等待用户在界面中确认。"
+    ].join("\n");
+  }
   const learningProfile = input.learningImitationProfile;
   const learningContext = input.workspaceContext?.learningImitation;
   if (learningProfile && learningContext) {
@@ -1574,10 +1617,10 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       ? isLibraryAgentRun
         ? `可按需加载的技能：\n${input.libraryAgentProfile!.readAccess.skills
             .map((skill) => `- ${skill.name}：${skill.description || "无描述"}`)
-            .join("\n")}\n需要正文时调用 load_skill。`
+            .join("\n")}\n需要正文时调用 load_skill；name 可用完整名称或唯一短名。`
         : `可按需加载的技能：\n${readableSkills
             .map((item) => `- ${item.title} [${item.kind}]`)
-            .join("\n")}\n需要正文时调用 load_skill。`
+            .join("\n")}\n需要正文时调用 load_skill；name 优先完整标题，也可用条目标题短名或库名（唯一命中即可）。`
       : "可按需加载的技能: 无"
     : skills.length
       ? `显式附加技能:\n${skills.map((item) => `- ${item.title}: ${item.content}`).join("\n")}`

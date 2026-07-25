@@ -14,11 +14,15 @@ import {
   type ShortAgentSubagentDefinition,
   type ShortAgentSubagentModelMode,
   type ShortWorkspaceAgentId,
+  type SkillLibrary,
+  type SubagentAuthoringDraft,
+  type SubagentAuthoringRuntimeContext,
   type ThinkingLevel
 } from "@deepwrite/contracts";
 import { computed, ref, watch } from "vue";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
+import LoadSubagentFromSkillDialog from "./LoadSubagentFromSkillDialog.vue";
 import PopupSelect, { type PopupSelectOption } from "./PopupSelect.vue";
 
 interface ParentAgentMeta {
@@ -30,16 +34,30 @@ interface ParentAgentMeta {
 const props = defineProps<{
   settings: AgentTeamSettings | null;
   models: readonly ModelConfig[];
+  skills?: readonly SkillLibrary[];
+  preferredModelId?: string | null | undefined;
   loading: boolean;
   saving: boolean;
   loadError?: string | null;
   runtimeAvailable: boolean;
+  authoringGenerating?: boolean;
+  authoringDraft?: SubagentAuthoringDraft | null | undefined;
+  authoringStatusText?: string | null | undefined;
+  authoringError?: string | null | undefined;
 }>();
 
 const emit = defineEmits<{
   retry: [];
   save: [settings: AgentTeamSettingsInput];
+  authoringGenerate: [payload: {
+    context: SubagentAuthoringRuntimeContext;
+    modelId: string;
+  }];
+  authoringStop: [];
+  authoringReset: [];
 }>();
+
+const loadFromSkillOpen = ref(false);
 
 const PARENT_AGENTS = [
   {
@@ -209,7 +227,9 @@ function nextSubagentId(): string {
   return `subagent_${Date.now().toString(36)}_${generatedIdSequence.toString(36)}`;
 }
 
-function addSubagent(): void {
+function addSubagent(
+  draft?: Partial<Pick<ShortAgentSubagentDefinition, "name" | "description" | "systemPrompt">>
+): void {
   const team = activeTeam.value;
   if (!team || formDisabled.value) return;
   if (team.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT) {
@@ -217,15 +237,43 @@ function addSubagent(): void {
     return;
   }
   const id = nextSubagentId();
+  const index = team.subagents.length + 1;
   team.subagents.push({
     id,
-    name: `新子智能体 ${team.subagents.length + 1}`,
-    description: "",
-    systemPrompt: "",
+    name: draft?.name?.trim() || `新子智能体 ${index}`,
+    description: draft?.description?.trim() || "",
+    systemPrompt: draft?.systemPrompt?.trim() || "",
     enabled: true,
     modelMode: "inherit"
   });
   editingSubagentId.value = id;
+}
+
+function openLoadFromSkill(): void {
+  if (formDisabled.value) return;
+  if (!activeTeam.value) return;
+  if (activeTeam.value.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT) {
+    uiMessage.warning(`每个主智能体最多配置 ${SHORT_AGENT_SUBAGENT_MAX_COUNT} 个子智能体`);
+    return;
+  }
+  if (!(props.skills?.length)) {
+    uiMessage.warning("技能库为空，请先在左侧技能库中添加条目");
+    return;
+  }
+  loadFromSkillOpen.value = true;
+}
+
+function closeLoadFromSkill(): void {
+  if (props.authoringGenerating) return;
+  loadFromSkillOpen.value = false;
+  emit("authoringReset");
+}
+
+function confirmLoadFromSkill(draft: SubagentAuthoringDraft): void {
+  addSubagent(draft);
+  loadFromSkillOpen.value = false;
+  emit("authoringReset");
+  uiMessage.success("已加入当前主智能体草稿；保存智能体团队后生效");
 }
 
 function setSubagentModelMode(
@@ -429,7 +477,7 @@ function saveSettings(): void {
         <h2 id="agent-team-title">智能体团队</h2>
         <p>提前为每个主智能体配置可调用的专项子智能体。</p>
         <p class="inheritance-note">
-          子智能体默认跟随所属主智能体的模型；也可单独配置模型。它继承主智能体的工具与审批策略，但继承的工具不包含技能加载；不继承主智能体提示词、会话或技能库，且不能继续创建子智能体。每次调用以自己的系统提示词为主，并自动附带可用工具清单与“必须通过工具写回、交接摘要不能代替写入”的执行边界，再接收主智能体委派内容。
+          子智能体默认跟随所属主智能体的模型；也可单独配置模型。它继承主智能体的工具与审批策略，但继承的工具不包含技能加载；不继承主智能体提示词、会话或技能库，且不能继续创建子智能体。每次调用以自己的系统提示词为主，运行时只额外附带可用工具清单和交接回主智能体的长度约束——它是直接用工具改文档，还是只把结论交回主智能体，完全由你写的系统提示词决定。
         </p>
         <p v-if="!runtimeAvailable" class="runtime-note">
           当前环境仅支持查看；保存设置需要使用 DeepWrite 桌面端。
@@ -503,15 +551,26 @@ function saveSettings(): void {
             <h3>{{ activeParentMeta.label }}</h3>
             <p>{{ activeParentMeta.description }}</p>
           </div>
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="formDisabled || activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT"
-            @click="addSubagent"
-          >
-            <AppIcon name="plus" :size="15" />
-            新增子智能体
-          </button>
+          <div class="team-heading-actions">
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="formDisabled || activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT"
+              @click="openLoadFromSkill"
+            >
+              <AppIcon name="wand" :size="15" />
+              从技能库加载
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="formDisabled || activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT"
+              @click="addSubagent()"
+            >
+              <AppIcon name="plus" :size="15" />
+              新增子智能体
+            </button>
+          </div>
         </header>
 
         <div v-if="!activeTeam.subagents.length" class="empty-team">
@@ -697,6 +756,24 @@ function saveSettings(): void {
         </footer>
       </div>
     </div>
+
+    <LoadSubagentFromSkillDialog
+      :open="loadFromSkillOpen"
+      :parent-agent-id="activeParentAgentId"
+      :parent-agent-label="activeParentMeta.label"
+      :existing-subagent-names="(activeTeam?.subagents ?? []).map((item) => item.name)"
+      :skills="skills ?? []"
+      :models="models"
+      :preferred-model-id="preferredModelId ?? null"
+      :generating="Boolean(authoringGenerating)"
+      :draft="authoringDraft ?? null"
+      :status-text="authoringStatusText ?? null"
+      :error="authoringError ?? null"
+      @close="closeLoadFromSkill"
+      @generate="emit('authoringGenerate', $event)"
+      @stop="emit('authoringStop')"
+      @confirm="confirmLoadFromSkill"
+    />
   </section>
 </template>
 
@@ -807,6 +884,12 @@ function saveSettings(): void {
 .team-editor { min-width: 0; }
 .team-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 .team-heading h3 { margin: 3px 0 4px; font-size: 1.28571rem; font-weight: 640; }
+.team-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .secondary-button,
 .primary-button,
 .icon-button,

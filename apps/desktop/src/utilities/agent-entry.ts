@@ -224,6 +224,20 @@ function toEventEnvelope(
     );
   }
 
+  if (event.type === "subagent_authoring.draft_updated") {
+    return createEnvelope(
+      "subagent_authoring.draft_updated",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        toolCallId: event.payload.toolCallId,
+        draft: event.payload.draft,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
   return createEnvelope(
     "agent.error",
     {

@@ -195,9 +195,11 @@ function isAssistantMessage(message: AgentMessage): message is AssistantMessage 
 }
 
 /**
- * Child agents keep their own role prompt (no parent prompt inheritance), but
- * still need an explicit execution boundary so they use the inherited tools to
- * read/write instead of dumping chapter text into the handoff summary.
+ * Child agents keep their own role prompt (no parent prompt inheritance). The
+ * appended block states only runtime facts the child cannot observe on its own
+ * — fresh context, no recursion, the live tool list, and how its final reply is
+ * consumed. Whether the child should write through tools or hand information
+ * back to the parent is left entirely to `definition.systemPrompt`.
  */
 export function buildSubagentSystemPrompt(
   definition: ShortAgentSubagentDefinition,
@@ -213,16 +215,17 @@ export function buildSubagentSystemPrompt(
     definition.systemPrompt.trim(),
     "",
     `【当前子智能体：${definition.name} / ${definition.id}】`,
-    "【子智能体执行边界】",
+    "【本轮运行事实】",
     "你由当前主智能体为一个明确子任务临时创建。本次运行使用全新上下文，不继承主对话历史。",
-    "本轮已提供下列工具；读取、创建章节、写入正文、局部替换都必须通过这些工具完成，不能只在聊天或交接摘要里写正文。",
-    ...(toolLines.length > 0
-      ? ["可用工具：", ...toolLines]
-      : ["本轮没有可用工具；只能返回无法完成写入的交接说明。"]),
-    "若任务要求写文或改章：先用读取工具核对目标，再调用对应写入 / 替换工具；工具成功后，交接摘要只说明写了哪一章、调用了哪些工具、是否已生成待审阅变更。",
-    "禁止把应写入章节文件的小说正文整段粘贴进最终交接摘要来代替工具调用。",
     "你不能创建或调用其它子智能体。",
-    "最终回复只写给主智能体的交接摘要：说明完成了什么、关键结论、产生的待审阅修改及仍需主智能体处理的事项。"
+    ...(toolLines.length > 0
+      ? [
+          "本轮可用工具：",
+          ...toolLines,
+          "没有出现在上面清单里的能力本轮不可用，不得声称已经执行。"
+        ]
+      : ["本轮没有可用工具，只能返回文字结论。"]),
+    `你的最终回复会原样返回给主智能体，并计入主智能体的上下文（超过 ${SUBAGENT_SUMMARY_MAX_LENGTH} 字会被截断）。只写主智能体真正需要的信息，不要整段粘贴文件原文。`
   ].join("\n");
 }
 

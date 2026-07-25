@@ -16,6 +16,13 @@ import {
   type ShortWorkspaceStageId,
   type WorkspaceRuntimeContext
 } from "@deepwrite/contracts";
+import {
+  LOAD_SKILL_NAME_PARAMETER,
+  LOAD_SKILL_TOOL_DESCRIPTION,
+  formatLoadSkillToolResult,
+  resolveAttachedSkill,
+  type LoadSkillCandidate
+} from "./resolve-attached-skill";
 
 export type ShortWorkspaceToolDetails =
   | { kind: "none" }
@@ -88,6 +95,17 @@ export interface ShortWorkspaceToolSharedState {
   expertDraftDirectoryBaseRevision: string;
 }
 
+/**
+ * Draft tools are deliberately identical for the coordinator and the section
+ * writer. Scope differences belong in the system prompt, except for the one
+ * hard rule enforced here: a section writer may only write its active section.
+ */
+const SHORT_WORKSPACE_DRAFT_TOOLS = [
+  "read_draft_sections",
+  "write_draft_section",
+  "replace_draft_section_text"
+] as const;
+
 export const SHORT_WORKSPACE_TOOL_MANIFEST = {
   standard: [
     "read_workspace_content",
@@ -98,23 +116,30 @@ export const SHORT_WORKSPACE_TOOL_MANIFEST = {
     "replace_current_stage_text"
   ],
   plot: ["switch_storyline_stage"],
-  coordinator: [
-    "create_expert_draft_sections",
-    "read_all_expert_draft",
-    "read_expert_draft_section",
-    "write_expert_draft_section",
-    "replace_expert_draft_section_text",
-    "edit_expert_draft_section",
-  ],
-  sectionWriter: [
-    "read_expert_draft_section",
-    "read_expert_character_state",
-    "replace_section_body_text",
-    "write_section_body",
-    "replace_character_state_text",
-    "write_character_state"
-  ]
+  draft: SHORT_WORKSPACE_DRAFT_TOOLS,
+  coordinator: ["create_draft_sections", ...SHORT_WORKSPACE_DRAFT_TOOLS],
+  sectionWriter: [...SHORT_WORKSPACE_DRAFT_TOOLS]
 } as const;
+
+/**
+ * Draft bodies enter the run snapshot without truncation, so one unbounded
+ * batch read can exhaust the model context. Full reads are paged instead.
+ */
+const DRAFT_FULL_READ_CHARACTER_BUDGET = 60_000;
+const DRAFT_FULL_READ_MAX_SECTIONS = 20;
+const DRAFT_PREVIEW_EXCERPT_CHARACTERS = 200;
+
+type DraftFileKind = "body" | "characterState";
+
+const DRAFT_FILE_PARAMETER_VALUES = ["body", "character_state"] as const;
+
+function toDraftFileKind(value: unknown): DraftFileKind {
+  return String(value ?? "body") === "character_state" ? "characterState" : "body";
+}
+
+function draftFileLabel(field: DraftFileKind): string {
+  return field === "body" ? "正文" : "人物状态";
+}
 
 function textResult(
   text: string,
@@ -288,8 +313,9 @@ function buildReadWorkspaceContentTool(
             (section, sectionIndex) =>
               `${sectionIndex + 1}. ${section.title}（${section.id}）` +
               `${isProvisionalExpertDraftSectionId(section.id) ? "〔本轮待创建〕" : ""}\n` +
-              `   正文文件：${section.body.title}（${section.body.documentId}）\n` +
-              `   人物状态文件：${section.characterState.title}（${section.characterState.documentId}）`
+              `   字数要求：${section.wordCountRequirement || "未设置"}\n` +
+              `   正文文件：${section.body.title}（${section.body.documentId}）｜${fileSizeLabel(section.body.content)}\n` +
+              `   人物状态文件：${section.characterState.title}（${section.characterState.documentId}）｜${fileSizeLabel(section.characterState.content)}`
           )
           .join("\n");
         const directoryRevision =
@@ -298,8 +324,9 @@ function buildReadWorkspaceContentTool(
         return textResult(
           `书名：《${input.workspace.title}》\n【正文目录】（draft）\n` +
           `目录版本：${directoryRevision}\n` +
-          `小节数：${sections.length}\n\n${index}\n\n` +
-          "这里只返回文件映射，不返回合并正文。整篇读取请调用 read_all_expert_draft，单节读取请调用 read_expert_draft_section。"
+          `章节数：${sections.length}\n\n${index}\n\n` +
+          "这里只返回文件映射，不返回章节原文。读取原文请调用 read_draft_sections：" +
+          "整篇扫描用 mode=preview，需要精读或改写的章节再用 mode=full。"
         );
       }
       const storedBody = stageBodies.get(stageId) ?? "";
@@ -341,20 +368,11 @@ function buildSearchWorkspaceTextTool(
       const matches: string[] = [];
       for (const stageId of selected) {
         if (!allowed.includes(stageId)) continue;
-        const draftSectionSnapshots =
-          input.profile.id === "expert_section_writer"
-            ? orderedExpertSections(input, expertSections).filter((section) =>
-                readableExpertSectionIds(input, expertSections).has(section.id)
-              )
-            : orderedExpertSections(input, expertSections);
         const sources = stageId === "draft"
-          ? draftSectionSnapshots.map((snapshot) => {
-              const section = expertSections.get(snapshot.id) ?? snapshot;
-              return {
-                label: `${section.title}（${section.id}）`,
-                body: section.body.content
-              };
-            })
+          ? orderedExpertSections(input, expertSections).map((section) => ({
+              label: `${section.title}（${section.id}）`,
+              body: section.body.content
+            }))
           : [{ label: `${stageLabel(stageId)}(${stageId})`, body: stageBodies.get(stageId) ?? "" }];
         for (const source of sources) {
           let cursor = 0;
@@ -453,19 +471,19 @@ function buildLoadSkillTool(input: BuildShortWorkspaceToolsInput): AgentTool {
   return defineTool({
     name: "load_skill",
     label: "加载技能",
-    description:
-      "按名称加载本轮显式附加、且属于当前智能体读取范围的技能正文。技能是方法，不会自动成为作品事实。",
-    parameters: Type.Object({ name: Type.String({ minLength: 1, maxLength: 240 }) }),
+    description: LOAD_SKILL_TOOL_DESCRIPTION,
+    parameters: Type.Object({
+      name: Type.String(LOAD_SKILL_NAME_PARAMETER)
+    }),
     execute: async (_toolCallId, params) => {
-      const name = String(params.name ?? "").trim();
-      const found = (input.attachedSkills ?? []).find(
-        (item) =>
-          item.title === name &&
-          item.kind !== undefined &&
-          allowedKinds.includes(item.kind)
-      );
+      const name = String(params.name ?? "");
+      const attached = input.attachedSkills ?? [];
+      const isReadable = (item: LoadSkillCandidate): boolean =>
+        item.kind !== undefined &&
+        (allowedKinds as readonly string[]).includes(item.kind);
+      const result = resolveAttachedSkill(name, attached, isReadable);
       return textResult(
-        found ? `【技能：${found.title}】\n\n${found.content}` : "没有找到可读取的同名已附加技能。"
+        formatLoadSkillToolResult(name, result, attached.filter(isReadable))
       );
     }
   });
@@ -763,7 +781,7 @@ function buildCreateExpertDraftSectionsTool(
   sharedState: ShortWorkspaceToolSharedState
 ): AgentTool {
   return defineTool({
-    name: "create_expert_draft_sections",
+    name: "create_draft_sections",
     label: "创建章节文件",
     description:
       "一次创建一个或多个空白正文章节；每章会生成独立的正文文件和人物状态文件，并返回可在同一轮继续写入的 section_id。只新增结构，不写正文、不删除或覆盖已有章节。",
@@ -894,202 +912,289 @@ function buildCreateExpertDraftSectionsTool(
   });
 }
 
-function readableExpertSectionIds(
-  input: BuildShortWorkspaceToolsInput,
-  expertSections: ExpertSectionMap
-): Set<string> {
-  if (input.profile.id === "expert_draft_coordinator") {
-    return new Set(
-      input.sharedState?.expertSectionOrder ?? [...expertSections.keys()]
-    );
-  }
-  const activeSectionId = activeExpertSectionId(input);
-  const order =
-    input.sharedState?.expertSectionOrder ??
-    input.workspace.expertDraft.sections.map((section) => section.id);
-  const activeIndex = order.findIndex((sectionId) => sectionId === activeSectionId);
-  return new Set(
-    activeIndex < 0
-      ? []
-      : order.slice(Math.max(0, activeIndex - 3), activeIndex + 1)
+function fileSizeLabel(content: string): string {
+  return content.length ? `${content.length.toLocaleString("zh-CN")} 字符` : "空";
+}
+
+function previewExcerpt(content: string): string {
+  const compact = content.replace(/\s+/g, " ").trim();
+  if (compact.length <= DRAFT_PREVIEW_EXCERPT_CHARACTERS * 2) return compact;
+  return (
+    `${compact.slice(0, DRAFT_PREVIEW_EXCERPT_CHARACTERS)}` +
+    `……〔中间省略 ${(compact.length - DRAFT_PREVIEW_EXCERPT_CHARACTERS * 2).toLocaleString("zh-CN")} 字符〕……` +
+    `${compact.slice(-DRAFT_PREVIEW_EXCERPT_CHARACTERS)}`
   );
 }
 
-function expertSectionWriteBlocked(
-  input: BuildShortWorkspaceToolsInput,
-  expertSections: ExpertSectionMap
-): string | undefined {
-  const sectionId = activeExpertSectionId(input);
-  if (!sectionId) return "未修改：当前没有选中可写的小节。";
-  return expertSections.has(sectionId)
-    ? undefined
-    : "未修改：本轮缺少当前小节的完整上下文，不能安全写入。";
+function renderDraftSectionPreview(
+  section: ExpertDraftSectionSnapshot,
+  index: number,
+  fields: readonly DraftFileKind[]
+): string {
+  const lines = [
+    `${index + 1}. 【${section.title}】 section_id: ${section.id}`,
+    `   字数要求: ${section.wordCountRequirement || "未设置"}`
+  ];
+  for (const field of fields) {
+    const file = section[field];
+    lines.push(`   ${draftFileLabel(field)}（${file.documentId}）：${fileSizeLabel(file.content)}`);
+    if (file.content.trim()) {
+      lines.push(`   摘录：${previewExcerpt(file.content)}`);
+    }
+  }
+  return lines.join("\n");
 }
 
-function buildReadExpertDraftSectionTool(
+function renderDraftSectionFull(
+  section: ExpertDraftSectionSnapshot,
+  index: number,
+  fields: readonly DraftFileKind[],
+  characterLimitPerFile?: number
+): { text: string; fullyReadDocumentIds: string[] } {
+  const fullyReadDocumentIds: string[] = [];
+  const blocks = fields.map((field) => {
+    const file = section[field];
+    const truncated =
+      characterLimitPerFile !== undefined &&
+      file.content.length > characterLimitPerFile;
+    if (!truncated) fullyReadDocumentIds.push(file.documentId);
+    const content = truncated
+      ? file.content.slice(0, characterLimitPerFile)
+      : file.content;
+    return [
+      `${draftFileLabel(field)}文件: ${file.title}（${file.documentId}）`,
+      `${draftFileLabel(field)}版本: ${file.revision}`,
+      "",
+      content || `（${draftFileLabel(field)}为空）`,
+      ...(truncated
+        ? [
+            "",
+            `（该${draftFileLabel(field)}共 ${fileSizeLabel(file.content)}，本次只返回了开头部分；未完整读取的文件不能整节覆盖。）`
+          ]
+        : [])
+    ].join("\n");
+  });
+  return {
+    text: [
+      `===== ${index + 1}. ${section.title} =====`,
+      `section_id: ${section.id}`,
+      `字数要求: ${section.wordCountRequirement || "未设置"}`,
+      "",
+      blocks.join("\n\n")
+    ].join("\n"),
+    fullyReadDocumentIds
+  };
+}
+
+function buildReadDraftSectionsTool(
   input: BuildShortWorkspaceToolsInput,
   expertSections: ExpertSectionMap,
   readExpertFileIds: Set<string>
 ): AgentTool {
   return defineTool({
-    name: "read_expert_draft_section",
-    label: "读取正文小节",
+    name: "read_draft_sections",
+    label: "读取正文章节",
     description:
-      "按稳定小节 id 读取章节名、字数要求和完整正文文件。人物状态需使用独立读取工具。",
+      "按 section_id 批量读取正文章节文件，按目录顺序返回。" +
+      "mode=preview 只返回标题、字数和首尾摘录，用于整篇扫描定位；" +
+      `mode=full 返回完整原文，单次最多 ${DRAFT_FULL_READ_MAX_SECTIONS} 章且合计不超过 ${DRAFT_FULL_READ_CHARACTER_BUDGET.toLocaleString("zh-CN")} 个字符，超出的章节需要再次调用分批读取。` +
+      "只有被 mode=full 完整读取的文件才获得整章覆盖权限。",
     parameters: Type.Object({
-      section_id: Type.String({ minLength: 1, maxLength: 120 })
+      section_ids: Type.Array(Type.String({ minLength: 1, maxLength: 120 }), {
+        minItems: 1,
+        maxItems: 100
+      }),
+      include: Type.Optional(
+        Type.Array(literalUnion(DRAFT_FILE_PARAMETER_VALUES), {
+          minItems: 1,
+          maxItems: DRAFT_FILE_PARAMETER_VALUES.length
+        })
+      ),
+      mode: Type.Optional(literalUnion(["full", "preview"] as const))
     }),
     execute: async (_toolCallId, params) => {
-      const sectionId = String(params.section_id ?? "").trim();
-      const section = expertSections.get(sectionId);
-      const knownSection =
-        expertSections.has(sectionId) ||
-        input.workspace.expertDraft.sections.some(
-          (candidate) => candidate.id === sectionId
-        );
-      if (!section || !readableExpertSectionIds(input, expertSections).has(sectionId)) {
+      const requested = (params.section_ids as string[])
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean);
+      const requestedIds = new Set(requested);
+      const includeValues = Array.isArray(params.include) && params.include.length
+        ? (params.include as string[]).map((value) => String(value))
+        : ["body"];
+      const fields = DRAFT_FILE_PARAMETER_VALUES.filter((value) =>
+        includeValues.includes(value)
+      ).map(toDraftFileKind);
+      if (fields.length === 0) fields.push("body");
+
+      const targets = orderedExpertSections(input, expertSections).filter((section) =>
+        requestedIds.has(section.id)
+      );
+      const missing = requested.filter(
+        (sectionId) => !targets.some((section) => section.id === sectionId)
+      );
+      if (targets.length === 0) {
         return textResult(
-          knownSection
-            ? `小节 ${sectionId} 不在当前智能体的可读范围内。`
-            : `没有找到正文小节 ${sectionId}。当前可用：${orderedExpertSections(input, expertSections)
-                .map((item) => `${item.title}（${item.id}）`)
-                .join("、")}`
+          `没有找到这些正文章节：${missing.join("、")}。当前目录：${orderedExpertSections(
+            input,
+            expertSections
+          )
+            .map((section) => `${section.title}（${section.id}）`)
+            .join("、")}`
         );
       }
-      readExpertFileIds.add(section.body.documentId);
-      const current = sectionId === activeExpertSectionId(input) ? "（当前小节）" : "";
-      return textResult(
-        [
-          `【${section.title}】${current}`,
-          `section_id: ${section.id}`,
-          `字数要求: ${section.wordCountRequirement || "未设置"}`,
-          `正文文件: ${section.body.title}（${section.body.documentId}）`,
-          `正文版本: ${section.body.revision}`,
-          "",
-          "正文:",
-          section.body.content || "（正文为空）"
-        ].join("\n")
-      );
-    }
-  });
-}
 
-function buildReadAllExpertDraftTool(
-  input: BuildShortWorkspaceToolsInput,
-  expertSections: ExpertSectionMap,
-  readExpertFileIds: Set<string>
-): AgentTool {
-  return defineTool({
-    name: "read_all_expert_draft",
-    label: "读取全部正文",
-    description:
-      "一次读取正文目录中所有小节的完整正文文件，不读取或混入人物状态。",
-    parameters: Type.Object({}),
-    execute: async () => {
-      const sections = orderedExpertSections(input, expertSections);
-      sections.forEach((section) => {
-        readExpertFileIds.add(section.body.documentId);
-      });
-      const body = sections
-        .map((section, index) => {
-          return [
-            `===== ${index + 1}. ${section.title} =====`,
-            `section_id: ${section.id}`,
-            `字数要求: ${section.wordCountRequirement || "未设置"}`,
-            `正文文件: ${section.body.title}（${section.body.documentId}）`,
-            `正文版本: ${section.body.revision}`,
-            "",
-            section.body.content || "（正文为空）"
-          ].join("\n");
-        })
-        .join("\n\n");
       const directoryRevision =
         input.sharedState?.expertDraftDirectoryBaseRevision ??
         input.workspace.expertDraft.revision;
-      return textResult(
-        `书名：《${input.workspace.title}》\n正文目录版本：${directoryRevision}\n` +
-        `已完整读取 ${sections.length} 个小节的正文；以下不包含人物状态。\n\n${body}`
-      );
-    }
-  });
-}
+      const header = [
+        `书名：《${input.workspace.title}》`,
+        `正文目录版本：${directoryRevision}`
+      ];
+      const missingNote = missing.length
+        ? [`\n没有找到这些 section_id：${missing.join("、")}。`]
+        : [];
 
-function buildReadExpertCharacterStateTool(
-  input: BuildShortWorkspaceToolsInput,
-  expertSections: ExpertSectionMap,
-  readExpertFileIds: Set<string>
-): AgentTool {
-  return defineTool({
-    name: "read_expert_character_state",
-    label: "读取人物状态",
-    description:
-      "按稳定小节 id 读取独立的人物状态文件。分节写手只可读取当前小节和紧邻上一节。",
-    parameters: Type.Object({
-      section_id: Type.String({ minLength: 1, maxLength: 120 })
-    }),
-    execute: async (_toolCallId, params) => {
-      const sectionId = String(params.section_id ?? "").trim();
-      const section = expertSections.get(sectionId);
-      const order =
-        input.sharedState?.expertSectionOrder ??
-        input.workspace.expertDraft.sections.map((candidate) => candidate.id);
-      const activeIndex = order.findIndex(
-        (candidate) => candidate === activeExpertSectionId(input)
-      );
-      const allowedIds = new Set(
-        activeIndex < 0
-          ? []
-          : order.slice(Math.max(0, activeIndex - 1), activeIndex + 1)
-      );
-      if (!section) return textResult(`没有找到正文小节 ${sectionId}。`);
-      if (!allowedIds.has(sectionId)) {
-        return textResult(`小节 ${sectionId} 的人物状态不在当前分节写手的可读范围内。`);
+      if (String(params.mode ?? "full") === "preview") {
+        const previews = targets.map((section, index) =>
+          renderDraftSectionPreview(section, index, fields)
+        );
+        return textResult(
+          [
+            ...header,
+            `预览 ${targets.length} 章（${fields.map(draftFileLabel).join("、")}）。预览不算完整读取，改写前仍需对目标章节使用 mode=full。`,
+            "",
+            previews.join("\n\n"),
+            ...missingNote
+          ].join("\n")
+        );
       }
-      readExpertFileIds.add(section.characterState.documentId);
+
+      const rendered: string[] = [];
+      let usedCharacters = 0;
+      let cutoffIndex = targets.length;
+      for (const [index, section] of targets.entries()) {
+        const cost = fields.reduce(
+          (total, field) => total + section[field].content.length,
+          0
+        );
+        const first = index === 0;
+        if (
+          !first &&
+          (rendered.length >= DRAFT_FULL_READ_MAX_SECTIONS ||
+            usedCharacters + cost > DRAFT_FULL_READ_CHARACTER_BUDGET)
+        ) {
+          cutoffIndex = index;
+          break;
+        }
+        const oversizedAlone = first && cost > DRAFT_FULL_READ_CHARACTER_BUDGET;
+        const block = renderDraftSectionFull(
+          section,
+          index,
+          fields,
+          oversizedAlone
+            ? Math.floor(DRAFT_FULL_READ_CHARACTER_BUDGET / fields.length)
+            : undefined
+        );
+        block.fullyReadDocumentIds.forEach((documentId) => {
+          readExpertFileIds.add(documentId);
+        });
+        rendered.push(block.text);
+        usedCharacters += cost;
+      }
+
+      const skipped = targets.slice(cutoffIndex);
+      const skippedNote = skipped.length
+        ? [
+            `\n本次未读取 ${skipped.length} 章（已达单次读取上限）：${skipped
+              .map((section) => `${section.title}（${section.id}）`)
+              .join("、")}。请再次调用 read_draft_sections 继续分批读取。`
+          ]
+        : [];
       return textResult(
         [
-          `【${section.title}·人物状态】`,
-          `section_id: ${section.id}`,
-          `人物状态文件: ${section.characterState.title}（${section.characterState.documentId}）`,
-          `人物状态版本: ${section.characterState.revision}`,
+          ...header,
+          `已完整读取 ${rendered.length} 章的${fields.map(draftFileLabel).join("和")}，合计约 ${usedCharacters.toLocaleString("zh-CN")} 字符。`,
           "",
-          section.characterState.content || "（人物状态为空）"
+          rendered.join("\n\n"),
+          ...skippedNote,
+          ...missingNote
         ].join("\n")
       );
     }
   });
 }
 
-function buildWriteCoordinatorExpertSectionTool(
+/**
+ * Resolves the write target shared by both draft agents. The section writer is
+ * pinned to its active section because the Renderer diff/accept flow is bound
+ * to the section the user selected.
+ */
+function resolveDraftWriteTarget(
+  input: BuildShortWorkspaceToolsInput,
+  expertSections: ExpertSectionMap,
+  rawSectionId: unknown
+): { sectionId: string } | { error: string } {
+  const requested = String(rawSectionId ?? "").trim();
+  const active = activeExpertSectionId(input);
+  const sectionId = requested || active || "";
+  if (!sectionId) {
+    return {
+      error: "未修改：当前没有选中章节，请在参数中给出 section_id。"
+    };
+  }
+  if (input.profile.id === "expert_section_writer") {
+    if (!active) return { error: "未修改：当前没有选中可写的章节。" };
+    if (sectionId !== active) {
+      return {
+        error:
+          `未修改：分节写手只能修改当前章节（${active}），不能写入 ${sectionId}。` +
+          "跨章节修改请交给正文专家编写智能体。"
+      };
+    }
+  }
+  if (!expertSections.has(sectionId)) {
+    return { error: `未修改：没有找到正文章节 ${sectionId}。` };
+  }
+  return { sectionId };
+}
+
+function draftTargetParameters() {
+  return {
+    section_id: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+    file: Type.Optional(literalUnion(DRAFT_FILE_PARAMETER_VALUES))
+  };
+}
+
+function buildWriteDraftSectionTool(
   input: BuildShortWorkspaceToolsInput,
   expertSections: ExpertSectionMap,
   readExpertFileIds: Set<string>
 ): AgentTool {
   return defineTool({
-    name: "write_expert_draft_section",
-    label: "写入正文小节",
+    name: "write_draft_section",
+    label: "写入正文章节",
     description:
-      "把完整小说正文写入指定 section_id 的正文文件。已有正文时只有明确整节重写才可覆盖。",
+      "把完整内容写入指定章节的正文或人物状态文件。file 默认 body；section_id 省略时写入当前选中章节。" +
+      "已有内容时必须先用 read_draft_sections（mode=full）读完该文件，并明确设置 allow_overwrite_existing=true 才能整章覆盖。",
     parameters: Type.Object({
-      section_id: Type.String({ minLength: 1, maxLength: 120 }),
+      ...draftTargetParameters(),
       text: Type.String({ minLength: 1, maxLength: 200_000 }),
       allow_overwrite_existing: Type.Optional(Type.Boolean())
     }),
     execute: async (_toolCallId, params) => {
-      const sectionId = String(params.section_id ?? "").trim();
-      const section = expertSections.get(sectionId);
-      if (!section) return textResult(`未写入：没有找到正文小节 ${sectionId}。`);
-      if (
-        section.body.content.trim() &&
-        !readExpertFileIds.has(section.body.documentId)
-      ) {
+      const target = resolveDraftWriteTarget(input, expertSections, params.section_id);
+      if ("error" in target) return textResult(target.error.replace("未修改：", "未写入："));
+      const field = toDraftFileKind(params.file);
+      const section = expertSections.get(target.sectionId)!;
+      const file = section[field];
+      const label = draftFileLabel(field);
+      if (file.content.trim() && !readExpertFileIds.has(file.documentId)) {
         return textResult(
-          `未写入：请先读取「${section.title}」的完整正文文件，再执行整节覆盖。`
+          `未写入：请先读取「${section.title}」的完整${label}文件（read_draft_sections，mode=full），再执行整章覆盖。`
         );
       }
-      if (section.body.content.trim() && params.allow_overwrite_existing !== true) {
+      if (file.content.trim() && params.allow_overwrite_existing !== true) {
         return textResult(
-          `「${section.title}」已有正文；局部修改请使用 replace_expert_draft_section_text，整节重写需明确设置 allow_overwrite_existing=true。`
+          `「${section.title}」的${label}已有内容；局部修改请使用 replace_draft_section_text，整章重写需明确设置 allow_overwrite_existing=true。`
         );
       }
       const text = String(params.text ?? "").trim();
@@ -1097,80 +1202,29 @@ function buildWriteCoordinatorExpertSectionTool(
       return expertDraftFileMutationResult(
         input,
         expertSections,
-        sectionId,
-        "body",
+        target.sectionId,
+        field,
         text,
-        `已生成「${section.title}」的正文文件变更，等待用户审阅。`
+        `已生成「${section.title}」的${label}变更，等待用户审阅。`
       );
     },
     executionMode: "sequential"
   });
 }
 
-function buildReplaceCoordinatorExpertSectionTool(
+function buildReplaceDraftSectionTextTool(
   input: BuildShortWorkspaceToolsInput,
   expertSections: ExpertSectionMap,
-  readExpertFileIds: Set<string>,
-  options: { name: string; label: string }
+  readExpertFileIds: Set<string>
 ): AgentTool {
   return defineTool({
-    name: options.name,
-    label: options.label,
+    name: "replace_draft_section_text",
+    label: "替换正文章节文本",
     description:
-      "在指定 section_id 的独立正文文件中执行一处精确替换；original_text 必须在该小节内唯一。",
+      "在指定章节的正文或人物状态文件中按原文片段精确替换。file 默认 body；section_id 省略时修改当前选中章节。" +
+      "每个 original_text 必须在该文件中唯一存在。",
     parameters: Type.Object({
-      section_id: Type.String({ minLength: 1, maxLength: 120 }),
-      original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
-      new_text: Type.String({ maxLength: 20_000 })
-    }),
-    execute: async (_toolCallId, params) => {
-      const sectionId = String(params.section_id ?? "").trim();
-      const section = expertSections.get(sectionId);
-      if (!section) return textResult(`未替换：没有找到正文小节 ${sectionId}。`);
-      if (
-        section.body.content.trim() &&
-        !readExpertFileIds.has(section.body.documentId)
-      ) {
-        return textResult(
-          `未替换：请先读取「${section.title}」的完整正文文件。`
-        );
-      }
-      const result = replaceText(section.body.content, [{
-        original_text: String(params.original_text ?? ""),
-        new_text: String(params.new_text ?? "")
-      }]);
-      if (result.error || result.next === undefined) {
-        return textResult(`未替换：${result.error ?? "未知错误"}`);
-      }
-      return expertDraftFileMutationResult(
-        input,
-        expertSections,
-        sectionId,
-        "body",
-        result.next,
-        `已生成「${section.title}」正文的 1 处文本变更，等待用户审阅。`
-      );
-    },
-    executionMode: "sequential"
-  });
-}
-
-function buildReplaceExpertSectionFieldTool(
-  input: BuildShortWorkspaceToolsInput,
-  expertSections: ExpertSectionMap,
-  readExpertFileIds: Set<string>,
-  field: "body" | "characterState"
-): AgentTool {
-  const bodyField = field === "body";
-  return defineTool({
-    name: bodyField
-      ? "replace_section_body_text"
-      : "replace_character_state_text",
-    label: bodyField ? "替换小节正文" : "替换人物状态",
-    description: bodyField
-      ? "只在当前选中小节的正文中按唯一原文片段替换，不得修改其它小节。"
-      : "只在当前选中小节的人物状态中按唯一原文片段替换，不得修改其它小节。",
-    parameters: Type.Object({
+      ...draftTargetParameters(),
       replacements: Type.Array(
         Type.Object({
           original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
@@ -1180,87 +1234,32 @@ function buildReplaceExpertSectionFieldTool(
       )
     }),
     execute: async (_toolCallId, params) => {
-      const blocked = expertSectionWriteBlocked(input, expertSections);
-      if (blocked) return textResult(blocked);
-      const sectionId = activeExpertSectionId(input)!;
-      const section = expertSections.get(sectionId)!;
+      const target = resolveDraftWriteTarget(input, expertSections, params.section_id);
+      if ("error" in target) return textResult(target.error.replace("未修改：", "未替换："));
+      const field = toDraftFileKind(params.file);
+      const section = expertSections.get(target.sectionId)!;
       const file = section[field];
+      const label = draftFileLabel(field);
       if (file.content.trim() && !readExpertFileIds.has(file.documentId)) {
         return textResult(
-          `未替换：请先读取当前小节的${bodyField ? "完整正文" : "完整人物状态"}文件。`
+          `未替换：请先读取「${section.title}」的完整${label}文件（read_draft_sections，mode=full）。`
         );
       }
       const replacements = params.replacements as Array<{
         original_text: string;
         new_text: string;
       }>;
-      const result = replaceText(
-        section[field].content,
-        replacements
-      );
+      const result = replaceText(file.content, replacements);
       if (result.error || result.next === undefined) {
         return textResult(`未替换：${result.error ?? "未知错误"}`);
       }
       return expertDraftFileMutationResult(
         input,
         expertSections,
-        sectionId,
+        target.sectionId,
         field,
         result.next,
-        `已生成「${section.title}」${bodyField ? "正文" : "人物状态"}的 ${result.count} 处文本变更，等待用户审阅。`
-      );
-    },
-    executionMode: "sequential"
-  });
-}
-
-function buildWriteExpertSectionFieldTool(
-  input: BuildShortWorkspaceToolsInput,
-  expertSections: ExpertSectionMap,
-  readExpertFileIds: Set<string>,
-  field: "body" | "characterState"
-): AgentTool {
-  const bodyField = field === "body";
-  return defineTool({
-    name: bodyField ? "write_section_body" : "write_character_state",
-    label: bodyField ? "写入小节正文" : "写入人物状态",
-    description: bodyField
-      ? "把完整小说正文写入当前选中小节。已有正文时只有明确整节重写才可设置 allow_overwrite_existing=true。"
-      : "写入当前小节结束时的人物状态。已有状态时只有明确整体重写才可设置 allow_overwrite_existing=true。",
-    parameters: Type.Object({
-      text: Type.String({ minLength: 1, maxLength: 200_000 }),
-      allow_overwrite_existing: Type.Optional(Type.Boolean())
-    }),
-    execute: async (_toolCallId, params) => {
-      const blocked = expertSectionWriteBlocked(input, expertSections);
-      if (blocked) return textResult(blocked);
-      const sectionId = activeExpertSectionId(input)!;
-      const section = expertSections.get(sectionId)!;
-      const current = section[field].content;
-      if (
-        current.trim() &&
-        !readExpertFileIds.has(section[field].documentId)
-      ) {
-        return textResult(
-          `未写入：请先读取当前小节的${bodyField ? "完整正文" : "完整人物状态"}文件。`
-        );
-      }
-      if (current.trim() && params.allow_overwrite_existing !== true) {
-        return textResult(
-          `${bodyField ? "当前小节正文" : "当前小节人物状态"}已有内容；局部修改请使用 ${
-            bodyField ? "replace_section_body_text" : "replace_character_state_text"
-          }，整体重写需明确设置 allow_overwrite_existing=true。`
-        );
-      }
-      const text = String(params.text ?? "").trim();
-      if (!text) return textResult("未写入：文本为空。");
-      return expertDraftFileMutationResult(
-        input,
-        expertSections,
-        sectionId,
-        field,
-        text,
-        `已生成「${section.title}」的${bodyField ? "正文" : "人物状态"}变更，等待用户审阅。`
+        `已生成「${section.title}」${label}的 ${result.count} 处文本变更，等待用户审阅。`
       );
     },
     executionMode: "sequential"
@@ -1284,58 +1283,22 @@ export function buildShortWorkspaceTools(
     buildLoadSkillTool(toolInput)
   ];
 
-  if (toolInput.profile.id === "expert_draft_coordinator") {
-    return [
-      ...readTools,
-      buildCreateExpertDraftSectionsTool(toolInput, sharedState),
-      buildReadAllExpertDraftTool(toolInput, expertSections, readExpertFileIds),
-      buildReadExpertDraftSectionTool(toolInput, expertSections, readExpertFileIds),
-      buildWriteCoordinatorExpertSectionTool(
-        toolInput,
-        expertSections,
-        readExpertFileIds
-      ),
-      buildReplaceCoordinatorExpertSectionTool(toolInput, expertSections, readExpertFileIds, {
-        name: "replace_expert_draft_section_text",
-        label: "替换正文小节文本"
-      }),
-      buildReplaceCoordinatorExpertSectionTool(toolInput, expertSections, readExpertFileIds, {
-        name: "edit_expert_draft_section",
-        label: "编辑正文小节"
-      })
+  if (
+    toolInput.profile.id === "expert_draft_coordinator" ||
+    toolInput.profile.id === "expert_section_writer"
+  ) {
+    const draftTools = [
+      buildReadDraftSectionsTool(toolInput, expertSections, readExpertFileIds),
+      buildWriteDraftSectionTool(toolInput, expertSections, readExpertFileIds),
+      buildReplaceDraftSectionTextTool(toolInput, expertSections, readExpertFileIds)
     ];
-  }
-
-  if (toolInput.profile.id === "expert_section_writer") {
-    return [
-      ...readTools,
-      buildReadExpertDraftSectionTool(toolInput, expertSections, readExpertFileIds),
-      buildReadExpertCharacterStateTool(toolInput, expertSections, readExpertFileIds),
-      buildReplaceExpertSectionFieldTool(
-        toolInput,
-        expertSections,
-        readExpertFileIds,
-        "body"
-      ),
-      buildWriteExpertSectionFieldTool(
-        toolInput,
-        expertSections,
-        readExpertFileIds,
-        "body"
-      ),
-      buildReplaceExpertSectionFieldTool(
-        toolInput,
-        expertSections,
-        readExpertFileIds,
-        "characterState"
-      ),
-      buildWriteExpertSectionFieldTool(
-        toolInput,
-        expertSections,
-        readExpertFileIds,
-        "characterState"
-      )
-    ];
+    return toolInput.profile.id === "expert_draft_coordinator"
+      ? [
+          ...readTools,
+          buildCreateExpertDraftSectionsTool(toolInput, sharedState),
+          ...draftTools
+        ]
+      : [...readTools, ...draftTools];
   }
 
   const tools = [...readTools];

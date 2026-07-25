@@ -22,6 +22,8 @@ import {
 import {
   RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1,
   RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2,
+  RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3,
+  RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
   WorkspaceAgentConfigStore
 } from "./workspace-agent-config-store";
 
@@ -168,9 +170,57 @@ describe("WorkspaceAgentConfigStore", () => {
 
     expect(
       byAgentId(settings.agents, "expert_draft_coordinator").systemPrompt
-    ).toContain("create_expert_draft_sections");
+    ).toContain("create_draft_sections");
     expect(byAgentId(settings.agents, "outline").systemPrompt).toBe(
       "自定义大纲提示词"
+    );
+  });
+
+  it("upgrades both draft agents to the unified draft tool prompts", async () => {
+    const root = await makeTemporaryRoot();
+    const configDirectory = join(root, "config");
+    await mkdir(configDirectory);
+    const input = defaultInput();
+    byAgentId(input.agents, "expert_draft_coordinator").systemPrompt =
+      RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3;
+    byAgentId(input.agents, "expert_section_writer").systemPrompt =
+      RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1;
+    await writeFile(
+      join(configDirectory, "workspace-agents.json"),
+      JSON.stringify({ version: 1, ...input }),
+      "utf8"
+    );
+
+    const settings = await new WorkspaceAgentConfigStore(root).list();
+
+    for (const agentId of [
+      "expert_draft_coordinator",
+      "expert_section_writer"
+    ] as const) {
+      const prompt = byAgentId(settings.agents, agentId).systemPrompt;
+      expect(prompt).toContain("read_draft_sections");
+      expect(prompt).not.toContain("read_all_expert_draft");
+      expect(prompt).not.toContain("write_section_body");
+    }
+  });
+
+  it("preserves a customized section writer prompt built on the retired default", async () => {
+    const root = await makeTemporaryRoot();
+    const configDirectory = join(root, "config");
+    await mkdir(configDirectory);
+    const input = defaultInput();
+    const customized = `${RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1}\n自定义要求：保留我的文风口径。`;
+    byAgentId(input.agents, "expert_section_writer").systemPrompt = customized;
+    await writeFile(
+      join(configDirectory, "workspace-agents.json"),
+      JSON.stringify({ version: 1, ...input }),
+      "utf8"
+    );
+
+    const settings = await new WorkspaceAgentConfigStore(root).list();
+
+    expect(byAgentId(settings.agents, "expert_section_writer").systemPrompt).toBe(
+      customized
     );
   });
 

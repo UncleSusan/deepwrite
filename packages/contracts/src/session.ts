@@ -27,6 +27,10 @@ import {
   LibraryAgentProfileSchema,
   LibraryAgentWorkspaceSnapshotSchema
 } from "./library-agent";
+import {
+  SubagentAuthoringDraftSchema,
+  SubagentAuthoringRuntimeContextSchema
+} from "./subagent-authoring";
 
 export type { ThinkingLevel } from "./models";
 
@@ -102,6 +106,7 @@ export const WorkspaceRuntimeContextSchema = z.object({
   shortWorkspace: ShortWorkspaceSnapshotSchema.optional(),
   libraryWorkspace: LibraryAgentWorkspaceSnapshotSchema.optional(),
   learningImitation: LearningImitationRuntimeContextSchema.optional(),
+  subagentAuthoring: SubagentAuthoringRuntimeContextSchema.optional(),
   attachedSkills: z
     .array(AttachedSkillSnapshotSchema)
     .max(ATTACHED_CONTEXT_MAX_ITEMS)
@@ -114,7 +119,8 @@ export const WorkspaceRuntimeContextSchema = z.object({
   const exclusiveContexts = [
     value.shortWorkspace,
     value.libraryWorkspace,
-    value.learningImitation
+    value.learningImitation,
+    value.subagentAuthoring
   ].filter(Boolean).length;
   if (exclusiveContexts > 1) {
     context.addIssue({
@@ -644,6 +650,17 @@ export type LearningImitationResultUpdatedPayload = z.infer<
   typeof LearningImitationResultUpdatedPayloadSchema
 >;
 
+export const SubagentAuthoringDraftUpdatedPayloadSchema = z.object({
+  sessionId: z.string().min(1),
+  runId: z.string().min(1),
+  toolCallId: z.string().min(1),
+  draft: SubagentAuthoringDraftSchema,
+  runtime: AgentRuntimeRefSchema
+});
+export type SubagentAuthoringDraftUpdatedPayload = z.infer<
+  typeof SubagentAuthoringDraftUpdatedPayloadSchema
+>;
+
 export const WorkspaceEditorMutationTargetSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("expert-draft-file"),
@@ -819,6 +836,12 @@ export const LearningImitationResultUpdatedEventEnvelopeSchema =
     payload: LearningImitationResultUpdatedPayloadSchema
   }).superRefine(validateAgentEventContext);
 
+export const SubagentAuthoringDraftUpdatedEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("subagent_authoring.draft_updated"),
+    payload: SubagentAuthoringDraftUpdatedPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
 export const WorkspaceEditorMutationEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("workspace.editor_mutation"),
   payload: WorkspaceEditorMutationPayloadSchema
@@ -886,6 +909,10 @@ export type AgentToolCompletedEventEnvelope = Envelope<AgentToolCompletedPayload
 export type LearningImitationResultUpdatedEventEnvelope = Envelope<
   LearningImitationResultUpdatedPayload,
   "learning_imitation.result_updated"
+>;
+export type SubagentAuthoringDraftUpdatedEventEnvelope = Envelope<
+  SubagentAuthoringDraftUpdatedPayload,
+  "subagent_authoring.draft_updated"
 >;
 export type WorkspaceEditorMutationEventEnvelope = Envelope<
   WorkspaceEditorMutationPayload,

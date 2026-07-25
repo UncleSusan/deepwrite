@@ -450,6 +450,14 @@ function closeReferenceMenu(): void {
   activeReferenceIndex.value = 0;
 }
 
+function scrollActiveReferenceOptionIntoView(): void {
+  void nextTick(() => {
+    document
+      .getElementById(`composer-reference-option-${activeReferenceIndex.value}`)
+      ?.scrollIntoView({ block: "nearest" });
+  });
+}
+
 function selectReference(option: ComposerReferenceOption): void {
   const match = activeReference.value;
   if (!match) {
@@ -476,6 +484,7 @@ function handleKeydown(event: KeyboardEvent): void {
       if (count) {
         const offset = event.key === "ArrowDown" ? 1 : -1;
         activeReferenceIndex.value = (activeReferenceIndex.value + offset + count) % count;
+        scrollActiveReferenceOptionIntoView();
       }
       return;
     }
@@ -639,17 +648,10 @@ function workspaceToolLabel(name: string): string {
     switch_storyline_stage: "切换剧情方向",
     write_workspace_editor: "写入阶段编辑器",
     replace_current_stage_text: "替换阶段文本",
-    create_expert_draft_sections: "创建章节文件",
-    read_all_expert_draft: "读取全部正文",
-    write_expert_draft_section: "写入正文小节",
-    replace_expert_draft_section_text: "替换正文小节文本",
-    edit_expert_draft_section: "编辑正文",
-    read_expert_draft_section: "读取正文小节",
-    read_expert_character_state: "读取人物状态",
-    replace_section_body_text: "替换小节正文",
-    write_section_body: "写入小节正文",
-    replace_character_state_text: "替换人物状态",
-    write_character_state: "写入人物状态"
+    create_draft_sections: "创建章节文件",
+    read_draft_sections: "读取正文章节",
+    write_draft_section: "写入正文章节",
+    replace_draft_section_text: "替换正文章节文本"
   };
   return labels[name] ?? name;
 }
@@ -778,22 +780,15 @@ type ToolKind = "read" | "command" | "write" | "web" | "other";
 const WRITE_TOOL_NAMES = new Set([
   "write_workspace_editor",
   "replace_current_stage_text",
-  "create_expert_draft_sections",
-  "write_expert_draft_section",
-  "replace_expert_draft_section_text",
-  "edit_expert_draft_section",
-  "replace_section_body_text",
-  "write_section_body",
-  "replace_character_state_text",
-  "write_character_state"
+  "create_draft_sections",
+  "write_draft_section",
+  "replace_draft_section_text"
 ]);
 
 const DIRECT_WRITE_TOOL_NAMES = new Set([
   "write_workspace_editor",
-  "create_expert_draft_sections",
-  "write_expert_draft_section",
-  "write_section_body",
-  "write_character_state"
+  "create_draft_sections",
+  "write_draft_section"
 ]);
 
 function isWriteTool(tool: AgentToolTrace): boolean {

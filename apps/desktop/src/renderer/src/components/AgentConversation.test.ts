@@ -35,6 +35,20 @@ describe("AgentConversation edit proposal placement", () => {
     );
   });
 
+  it("scrolls the active slash or mention option into view when using arrow keys", () => {
+    expect(conversationSource).toContain("function scrollActiveReferenceOptionIntoView");
+    expect(conversationSource).toContain(
+      "composer-reference-option-${activeReferenceIndex.value}"
+    );
+    expect(conversationSource).toContain('scrollIntoView({ block: "nearest" })');
+
+    const keydownStart = conversationSource.indexOf("function handleKeydown");
+    const keydownEnd = conversationSource.indexOf("const welcomeContent", keydownStart);
+    const keydownBlock = conversationSource.slice(keydownStart, keydownEnd);
+    expect(keydownBlock).toContain('event.key === "ArrowDown" || event.key === "ArrowUp"');
+    expect(keydownBlock).toContain("scrollActiveReferenceOptionIntoView()");
+  });
+
   it("renders a hover copy action and timestamp below both user and assistant messages", () => {
     expect(conversationSource).toContain('<div class="message-content">');
     expect(conversationSource).toContain(
@@ -101,14 +115,10 @@ describe("AgentConversation edit proposal placement", () => {
     const labelsStart = conversationSource.indexOf("function workspaceToolLabel");
     const labelsEnd = conversationSource.indexOf("function hasProcessing", labelsStart);
     const labels = conversationSource.slice(labelsStart, labelsEnd);
-    expect(labels).toContain('create_expert_draft_sections: "创建章节文件"');
-    expect(labels).toContain('read_all_expert_draft: "读取全部正文"');
-    expect(labels).toContain('write_expert_draft_section: "写入正文小节"');
-    expect(labels).toContain(
-      'replace_expert_draft_section_text: "替换正文小节文本"'
-    );
-    expect(labels).toContain('read_expert_character_state: "读取人物状态"');
-    expect(labels).toContain('edit_expert_draft_section: "编辑正文"');
+    expect(labels).toContain('create_draft_sections: "创建章节文件"');
+    expect(labels).toContain('read_draft_sections: "读取正文章节"');
+    expect(labels).toContain('write_draft_section: "写入正文章节"');
+    expect(labels).toContain('replace_draft_section_text: "替换正文章节文本"');
 
     const writeStart = conversationSource.indexOf("const WRITE_TOOL_NAMES");
     const directStart = conversationSource.indexOf(
@@ -118,18 +128,13 @@ describe("AgentConversation edit proposal placement", () => {
     const writeNames = conversationSource.slice(writeStart, directStart);
     const directEnd = conversationSource.indexOf("function isWriteTool", directStart);
     const directWriteNames = conversationSource.slice(directStart, directEnd);
-    expect(writeNames).toContain('"write_expert_draft_section"');
-    expect(writeNames).toContain('"create_expert_draft_sections"');
-    expect(writeNames).toContain('"write_section_body"');
-    expect(writeNames).toContain('"replace_expert_draft_section_text"');
-    expect(writeNames).toContain('"edit_expert_draft_section"');
-    expect(writeNames).not.toContain('"read_all_expert_draft"');
-    expect(writeNames).not.toContain('"read_expert_character_state"');
-    expect(directWriteNames).toContain('"write_expert_draft_section"');
-    expect(directWriteNames).toContain('"create_expert_draft_sections"');
-    expect(directWriteNames).toContain('"write_section_body"');
-    expect(directWriteNames).not.toContain('"replace_expert_draft_section_text"');
-    expect(directWriteNames).not.toContain('"edit_expert_draft_section"');
+    expect(writeNames).toContain('"write_draft_section"');
+    expect(writeNames).toContain('"create_draft_sections"');
+    expect(writeNames).toContain('"replace_draft_section_text"');
+    expect(writeNames).not.toContain('"read_draft_sections"');
+    expect(directWriteNames).toContain('"write_draft_section"');
+    expect(directWriteNames).toContain('"create_draft_sections"');
+    expect(directWriteNames).not.toContain('"replace_draft_section_text"');
     expect(conversationSource).not.toContain("initialize_expert_draft");
     expect(conversationSource).toContain(
       "writeToolText(item.tool).length.toLocaleString('zh-CN')"

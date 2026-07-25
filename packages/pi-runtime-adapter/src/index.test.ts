@@ -266,8 +266,8 @@ describe("DeepWrite Pi runtime adapter", () => {
   });
 
   it.each([
-    "write_section_body",
-    "write_expert_draft_section"
+    "write_draft_section",
+    "replace_draft_section_text"
   ])("captures an early argument snapshot for %s", (toolName) => {
     const input = {
       runId: `run_${toolName}`,
@@ -279,9 +279,9 @@ describe("DeepWrite Pi runtime adapter", () => {
       AssistantMessage["content"][number],
       { type: "toolCall" }
     > & { partialJson?: string };
-    toolCall.partialJson = toolName === "write_section_body"
-      ? '{"text":"第一段'
-      : '{"section_id":"section-1","text":"第一段';
+    toolCall.partialJson = toolName === "write_draft_section"
+      ? '{"section_id":"section-1","text":"第一段'
+      : '{"section_id":"section-1","replacements":[{"original_text":"旧片段';
 
     const event = toToolStreamRuntimeEvent(
       { type: "toolcall_start", contentIndex: 0, partial: message },

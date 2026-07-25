@@ -4,9 +4,8 @@ import source from "./AgentTeamSettingsPanel.vue?raw";
 describe("AgentTeamSettingsPanel", () => {
   it("explains the isolated subagent prompt and skill boundary", () => {
     expect(source).toContain("不继承主智能体提示词、会话或技能库");
-    expect(source).toContain(
-      "必须通过工具写回、交接摘要不能代替写入"
-    );
+    expect(source).toContain("完全由你写的系统提示词决定");
+    expect(source).toContain("从技能库加载");
   });
 
   it("shows the three workspace tabs and disables unfinished modes", () => {
@@ -40,7 +39,8 @@ describe("AgentTeamSettingsPanel", () => {
   });
 
   it("supports adding, editing, enabling, deleting and saving subagents", () => {
-    expect(source).toContain('@click="addSubagent"');
+    expect(source).toContain('@click="addSubagent()"');
+    expect(source).toContain('@click="openLoadFromSkill"');
     expect(source).toContain('@click="editSubagent(subagent.id)"');
     expect(source).toContain('@change="toggleSubagent(subagent, $event)"');
     expect(source).toContain('@click="removeSubagent(index)"');

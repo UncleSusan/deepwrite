@@ -111,7 +111,7 @@ function progressFrom(
 }
 
 describe("blocking subagent runtime", () => {
-  it("keeps the child role prompt but injects tool-use handoff boundaries", () => {
+  it("keeps the child role prompt and appends runtime facts without a write policy", () => {
     const prompt = buildSubagentSystemPrompt(
       {
         ...enabledDefinition,
@@ -120,23 +120,40 @@ describe("blocking subagent runtime", () => {
       [
         {
           ...childTool(),
-          name: "write_expert_draft_section",
+          name: "write_draft_section",
           label: "写入章节正文"
         },
         {
           ...childTool(),
-          name: "replace_expert_draft_section_text",
-          label: "替换正文小节文本"
+          name: "replace_draft_section_text",
+          label: "替换正文章节文本"
         }
       ]
     );
 
     expect(prompt).toContain("你是章节写手，负责把委派任务写成章节正文。");
     expect(prompt).toContain("【当前子智能体：连续性检查员 / continuity_checker】");
-    expect(prompt).toContain("write_expert_draft_section（写入章节正文）");
-    expect(prompt).toContain("replace_expert_draft_section_text（替换正文小节文本）");
-    expect(prompt).toContain("禁止把应写入章节文件的小说正文整段粘贴进最终交接摘要");
+    expect(prompt).toContain("write_draft_section（写入章节正文）");
+    expect(prompt).toContain("replace_draft_section_text（替换正文章节文本）");
+    expect(prompt).toContain("不继承主对话历史");
+    expect(prompt).toContain("你不能创建或调用其它子智能体。");
+    expect(prompt).toContain("不要整段粘贴文件原文");
     expect(prompt).not.toContain("你是短篇正文主智能体");
+  });
+
+  it("leaves the write-versus-handoff decision to the definition prompt", () => {
+    const prompt = buildSubagentSystemPrompt(
+      {
+        ...enabledDefinition,
+        systemPrompt: "你只做一致性审阅，把问题清单交回主智能体，不要写文件。"
+      },
+      [{ ...childTool(), name: "write_draft_section", label: "写入章节正文" }]
+    );
+
+    expect(prompt).toContain("你只做一致性审阅");
+    expect(prompt).not.toContain("必须通过这些工具完成");
+    expect(prompt).not.toContain("先用读取工具核对目标");
+    expect(prompt).not.toContain("代替工具调用");
   });
 
   it("only exposes spawn for enabled definitions and never at child depth", () => {
@@ -235,11 +252,8 @@ describe("blocking subagent runtime", () => {
       content: "检查第一节时间线"
     });
     expect(contexts[0]?.systemPrompt).toContain(enabledDefinition.systemPrompt);
-    expect(contexts[0]?.systemPrompt).toContain("【子智能体执行边界】");
+    expect(contexts[0]?.systemPrompt).toContain("【本轮运行事实】");
     expect(contexts[0]?.systemPrompt).toContain("echo_child_context");
-    expect(contexts[0]?.systemPrompt).toContain(
-      "不能只在聊天或交接摘要里写正文"
-    );
     expect(JSON.stringify(contexts[0])).not.toContain("你是短篇正文主智能体");
     expect(JSON.stringify(contexts[0])).not.toContain("雾港回声");
     expect(contexts[0]?.tools?.map((candidate) => candidate.name)).toEqual([
