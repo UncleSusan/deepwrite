@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import {
-  AgentTeamSettingsInputSchema,
+  WorkspaceAgentTeamSettingsInputSchema,
   BUILT_IN_REASONING_LEVELS,
   SHORT_AGENT_SUBAGENT_DESCRIPTION_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_MAX_COUNT,
   SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_SYSTEM_PROMPT_MAX_LENGTH,
   SHORT_WORKSPACE_AGENT_IDS,
-  type AgentTeamSettings,
-  type AgentTeamSettingsInput,
+  type WorkspaceAgentTeamSettings,
+  type WorkspaceAgentTeamSettingsInput,
   type BuiltInReasoningLevel,
   type ModelConfig,
   type ShortAgentSubagentDefinition,
@@ -32,7 +32,7 @@ interface ParentAgentMeta {
 }
 
 const props = defineProps<{
-  settings: AgentTeamSettings | null;
+  settings: readonly WorkspaceAgentTeamSettings[];
   models: readonly ModelConfig[];
   skills?: readonly SkillLibrary[];
   preferredModelId?: string | null | undefined;
@@ -48,7 +48,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   retry: [];
-  save: [settings: AgentTeamSettingsInput];
+  save: [settings: WorkspaceAgentTeamSettingsInput];
   authoringGenerate: [payload: {
     context: SubagentAuthoringRuntimeContext;
     modelId: string;
@@ -88,7 +88,8 @@ const PARENT_AGENTS = [
 ] as const satisfies readonly ParentAgentMeta[];
 
 const activeParentAgentId = ref<ShortWorkspaceAgentId>(PARENT_AGENTS[0].id);
-const draftTeams = ref<AgentTeamSettingsInput["teams"]>([]);
+const activeWorkspaceType = ref<"short" | "script">("short");
+const draftTeams = ref<WorkspaceAgentTeamSettingsInput["teams"]>([]);
 const editingSubagentId = ref<string | null>(null);
 let generatedIdSequence = 0;
 
@@ -104,6 +105,24 @@ const activeParentMeta = computed(
   () =>
     PARENT_AGENTS.find((agent) => agent.id === activeParentAgentId.value) ??
     PARENT_AGENTS[0]
+);
+const activeParentDisplayLabel = computed(() =>
+  activeWorkspaceType.value === "script" &&
+  activeParentAgentId.value === "expert_section_writer"
+    ? "分集"
+    : activeParentMeta.value.label
+);
+
+const activeSettings = computed(() =>
+  props.settings.find(
+    (settings) => settings.workspaceType === activeWorkspaceType.value
+  )
+);
+
+const activeSkills = computed(() =>
+  (props.skills ?? []).filter(
+    (skill) => skill.skillType === activeWorkspaceType.value
+  )
 );
 
 const activeTeam = computed(() =>
@@ -194,8 +213,9 @@ function applyModelRunDefaults(
 }
 
 watch(
-  () => props.settings,
-  (settings) => {
+  () => [props.settings, activeWorkspaceType.value] as const,
+  () => {
+    const settings = activeSettings.value;
     draftTeams.value = settings
       ? settings.teams.map((team) => ({
           parentAgentId: team.parentAgentId,
@@ -256,7 +276,7 @@ function openLoadFromSkill(): void {
     uiMessage.warning(`每个主智能体最多配置 ${SHORT_AGENT_SUBAGENT_MAX_COUNT} 个子智能体`);
     return;
   }
-  if (!(props.skills?.length)) {
+  if (!activeSkills.value.length) {
     uiMessage.warning("技能库为空，请先在左侧技能库中添加条目");
     return;
   }
@@ -376,7 +396,7 @@ function toggleSubagent(
 }
 
 function validationMessage(
-  teams: AgentTeamSettingsInput["teams"]
+  teams: WorkspaceAgentTeamSettingsInput["teams"]
 ): string | null {
   for (const team of teams) {
     const ids = new Set<string>();
@@ -422,7 +442,7 @@ function validationMessage(
 
 function saveSettings(): void {
   if (formDisabled.value) return;
-  const teams: AgentTeamSettingsInput["teams"] = SHORT_WORKSPACE_AGENT_IDS.map(
+  const teams: WorkspaceAgentTeamSettingsInput["teams"] = SHORT_WORKSPACE_AGENT_IDS.map(
     (parentAgentId) => {
       const team = draftTeams.value.find(
         (candidate) => candidate.parentAgentId === parentAgentId
@@ -457,8 +477,8 @@ function saveSettings(): void {
     uiMessage.warning(message);
     return;
   }
-  const parsed = AgentTeamSettingsInputSchema.safeParse({
-    workspaceType: "short",
+  const parsed = WorkspaceAgentTeamSettingsInputSchema.safeParse({
+    workspaceType: activeWorkspaceType.value,
     teams
   });
   if (!parsed.success) {
@@ -486,17 +506,25 @@ function saveSettings(): void {
     </header>
 
     <div class="workspace-tabs" role="tablist" aria-label="创作类型">
-      <button class="workspace-tab is-active" type="button" role="tab" aria-selected="true">
+      <button
+        class="workspace-tab"
+        :class="{ 'is-active': activeWorkspaceType === 'short' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeWorkspaceType === 'short'"
+        @click="activeWorkspaceType = 'short'"
+      >
         短篇
       </button>
       <button
         class="workspace-tab"
+        :class="{ 'is-active': activeWorkspaceType === 'script' }"
         type="button"
         role="tab"
-        aria-selected="false"
-        disabled
+        :aria-selected="activeWorkspaceType === 'script'"
+        @click="activeWorkspaceType = 'script'"
       >
-        <span>剧本</span><small>尚未接入</small>
+        <span>剧本</span>
       </button>
       <button
         class="workspace-tab"
@@ -524,12 +552,12 @@ function saveSettings(): void {
         重新加载
       </button>
     </div>
-    <div v-else-if="!settings || !activeTeam" class="panel-state">
+    <div v-else-if="!activeSettings || !activeTeam" class="panel-state">
       暂无可用的智能体团队设置。
     </div>
 
     <div v-else class="team-layout">
-      <nav class="parent-agent-tabs" aria-label="短篇主智能体">
+      <nav class="parent-agent-tabs" :aria-label="`${activeWorkspaceType === 'script' ? '剧本' : '短篇'}主智能体`">
         <button
           v-for="agent in PARENT_AGENTS"
           :key="agent.id"
@@ -539,7 +567,7 @@ function saveSettings(): void {
           :aria-current="activeParentAgentId === agent.id ? 'page' : undefined"
           @click="selectParentAgent(agent.id)"
         >
-          {{ agent.label }}
+          {{ activeWorkspaceType === "script" && agent.id === "expert_section_writer" ? "分集" : agent.label }}
           <span>{{ draftTeams.find((team) => team.parentAgentId === agent.id)?.subagents.length ?? 0 }}</span>
         </button>
       </nav>
@@ -548,7 +576,7 @@ function saveSettings(): void {
         <header class="team-heading">
           <div>
             <span>主智能体</span>
-            <h3>{{ activeParentMeta.label }}</h3>
+            <h3>{{ activeParentDisplayLabel }}</h3>
             <p>{{ activeParentMeta.description }}</p>
           </div>
           <div class="team-heading-actions">
@@ -760,9 +788,9 @@ function saveSettings(): void {
     <LoadSubagentFromSkillDialog
       :open="loadFromSkillOpen"
       :parent-agent-id="activeParentAgentId"
-      :parent-agent-label="activeParentMeta.label"
+      :parent-agent-label="activeParentDisplayLabel"
       :existing-subagent-names="(activeTeam?.subagents ?? []).map((item) => item.name)"
-      :skills="skills ?? []"
+      :skills="activeSkills"
       :models="models"
       :preferred-model-id="preferredModelId ?? null"
       :generating="Boolean(authoringGenerating)"

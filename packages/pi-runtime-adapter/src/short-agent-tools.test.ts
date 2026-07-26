@@ -1,14 +1,21 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import {
+  DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
+  SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
+  SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
   createShortWorkspaceContentRevision,
+  type ScriptWorkspaceAgentProfile,
+  type ScriptWorkspaceAgentId,
+  type ScriptWorkspaceSnapshot,
   type ShortWorkspaceAgentId,
   type ShortWorkspaceAgentProfile,
   type ShortWorkspaceSnapshot
 } from "@deepwrite/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  buildScriptWorkspaceTools,
   buildShortWorkspaceTools,
   createShortWorkspaceToolSharedState,
   SHORT_WORKSPACE_TOOL_MANIFEST,
@@ -20,6 +27,16 @@ function profile(agentId: ShortWorkspaceAgentId): ShortWorkspaceAgentProfile {
     (candidate) => candidate.id === agentId
   );
   if (!value) throw new Error(`Missing profile: ${agentId}`);
+  return value;
+}
+
+function scriptProfile(
+  agentId: ScriptWorkspaceAgentId
+): ScriptWorkspaceAgentProfile {
+  const value = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
+    (candidate) => candidate.id === agentId
+  );
+  if (!value) throw new Error(`Missing script profile: ${agentId}`);
   return value;
 }
 
@@ -60,6 +77,42 @@ function workspace(
       ]
     },
     stages: SHORT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
+      stageId,
+      title: stageId,
+      content: stageId === "plot_design" ? "旧剧情的唯一片段。" : "",
+      revision: createShortWorkspaceContentRevision(
+        stageId === "plot_design" ? "旧剧情的唯一片段。" : ""
+      )
+    }))
+  };
+}
+
+function scriptWorkspace(
+  activeStageId: ScriptWorkspaceSnapshot["activeStageId"] = "plot_design"
+): ScriptWorkspaceSnapshot {
+  const sections = workspace("draft").expertDraft.sections
+    .filter((section) => section.id !== "intro")
+    .map((section, index) => ({
+      ...section,
+      title: `第${index + 1}集`,
+      body: { ...section.body, title: `第${index + 1}集` },
+      characterState: {
+        ...section.characterState,
+        title: `第${index + 1}集 · 人物状态`
+      }
+    }));
+  return {
+    id: "script-tool-test",
+    title: "雾港剧本",
+    categories: ["悬疑"],
+    activeStageId,
+    expertDraft: {
+      id: "draft",
+      title: "正文",
+      revision: createShortWorkspaceContentRevision("script-draft-directory"),
+      sections
+    },
+    stages: SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
       stageId,
       title: stageId,
       content: stageId === "plot_design" ? "旧剧情的唯一片段。" : "",
@@ -164,6 +217,77 @@ describe("short workspace tools", () => {
       stageId: "intro_design",
       text: "新的导语。"
     });
+  });
+
+  it("keeps the script plot tools isolated from intro design", async () => {
+    const tools = buildScriptWorkspaceTools({
+      workspace: scriptWorkspace(),
+      profile: scriptProfile("plot_design")
+    });
+    const switchTool = toolByName(tools, "switch_storyline_stage");
+
+    for (const toolName of [
+      "switch_storyline_stage",
+      "write_workspace_editor",
+      "replace_current_stage_text"
+    ]) {
+      const parameters = JSON.stringify(toolByName(tools, toolName).parameters);
+      expect(parameters).toContain("plot_design");
+      expect(parameters).toContain("plot_refine");
+      expect(parameters).not.toContain("intro_design");
+    }
+    expect(switchTool.description).toContain("剧本剧情父节点");
+
+    const blocked = await switchTool.execute("switch-intro", {
+      target_stage_id: "intro_design"
+    } as never);
+    expect(blocked.details).toEqual({ kind: "none" });
+    expect(resultText(blocked)).toContain("当前剧本没有剧情方向");
+  });
+
+  it("marks script draft tools with episode wording and immutable format rules", async () => {
+    const value: ScriptWorkspaceSnapshot = {
+      ...scriptWorkspace("draft"),
+      activeAgentId: "expert_draft_coordinator"
+    };
+    const tools = buildScriptWorkspaceTools({
+      workspace: value,
+      profile: scriptProfile("expert_draft_coordinator")
+    });
+    const create = toolByName(tools, "create_draft_sections");
+    const read = toolByName(tools, "read_draft_sections");
+    const write = toolByName(tools, "write_draft_section");
+    const replace = toolByName(tools, "replace_draft_section_text");
+
+    expect(create.label).toBe("创建剧集文件");
+    expect(read.label).toBe("读取剧集正文");
+    expect(write.label).toBe("写入剧集正文");
+    expect(replace.label).toBe("替换剧集正文文本");
+    for (const tool of [write, replace]) {
+      expect(tool.description).toContain(
+        SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS.trim()
+      );
+      expect(tool.description).toContain("不得包含 Markdown 表格、分析标题或格式讲解");
+    }
+
+    const directory = await toolByName(tools, "read_workspace_content").execute(
+      "read-directory",
+      { stage_id: "draft" }
+    );
+    expect(resultText(directory)).toContain("剧名：《雾港剧本》");
+    expect(resultText(directory)).not.toContain("书名：《雾港剧本》");
+    expect(resultText(directory)).toContain("剧集数：2");
+
+    const shortWrite = toolByName(
+      buildShortWorkspaceTools({
+        workspace: workspace("draft"),
+        profile: profile("expert_draft_coordinator")
+      }),
+      "write_draft_section"
+    );
+    expect(shortWrite.description).not.toContain(
+      SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS.trim()
+    );
   });
 
   it("protects existing text unless a whole-stage overwrite is explicit", async () => {

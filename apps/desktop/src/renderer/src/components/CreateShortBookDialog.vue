@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { SHORT_BOOK_GENRES } from "@deepwrite/contracts";
+import {
+  SCRIPT_BOOK_GENRES,
+  SHORT_BOOK_GENRES,
+  ScriptBookGenreSchema,
+  ShortBookGenreSchema
+} from "@deepwrite/contracts";
 import type {
+  CreateScriptBookInput,
   CreateShortBookInput,
   MaterialKind,
   MaterialLibrary,
   MaterialLibraryGroup,
+  ScriptBookGenre,
   ShortBookGenre,
   SkillKind,
   SkillLibrary,
@@ -35,9 +42,13 @@ const props = withDefaults(
   }
 );
 
+type CreateCreativeBookPayload =
+  | ({ workspaceType: "short" } & CreateShortBookInput)
+  | ({ workspaceType: "script" } & CreateScriptBookInput);
+
 const emit = defineEmits<{
   close: [];
-  submit: [payload: CreateShortBookInput];
+  submit: [payload: CreateCreativeBookPayload];
 }>();
 
 const MATERIAL_KINDS: ReadonlyArray<{
@@ -63,7 +74,11 @@ const SKILL_KINDS: ReadonlyArray<{
 ];
 
 const title = ref("");
-const genre = ref<ShortBookGenre>("世情");
+const workspaceType = ref<"short" | "script">("short");
+const genre = ref<ShortBookGenre | ScriptBookGenre>("世情");
+const genreOptions = computed<readonly (ShortBookGenre | ScriptBookGenre)[]>(() =>
+  workspaceType.value === "script" ? SCRIPT_BOOK_GENRES : SHORT_BOOK_GENRES
+);
 const materialBindingMode = ref<"single" | "group">("single");
 const skillBindingMode = ref<"single" | "group">("single");
 const selectedMaterialGroupId = ref("");
@@ -83,27 +98,39 @@ const selectedSkillIds = reactive<Record<SkillKind, string>>({
 });
 const titleInput = ref<HTMLInputElement | null>(null);
 
-const shortMaterials = computed(() =>
-  props.materials.filter((material) => material.materialType === "short")
+const workspaceMaterials = computed(() =>
+  props.materials.filter((material) => material.materialType === workspaceType.value)
 );
-const shortSkills = computed(() =>
-  props.skills.filter((skill) => skill.skillType === "short")
+const workspaceSkills = computed(() =>
+  props.skills.filter((skill) => skill.skillType === workspaceType.value)
 );
 const materialById = computed(
-  () => new Map(shortMaterials.value.map((material) => [material.id, material] as const))
+  () => new Map(workspaceMaterials.value.map((material) => [material.id, material] as const))
 );
 const skillById = computed(
-  () => new Map(shortSkills.value.map((skill) => [skill.id, skill] as const))
+  () => new Map(workspaceSkills.value.map((skill) => [skill.id, skill] as const))
 );
 
 function materialCandidates(kind: MaterialKind): MaterialLibrary[] {
-  return shortMaterials.value.filter(
+  return workspaceMaterials.value.filter(
     (material) => material.materialKind === kind || material.materialKind === "mixed"
   );
 }
 
 function skillCandidates(kind: SkillKind): SkillLibrary[] {
-  return shortSkills.value.filter((skill) => skill.skillKind === kind);
+  return workspaceSkills.value.filter((skill) => skill.skillKind === kind);
+}
+
+function materialKindDescription(kind: (typeof MATERIAL_KINDS)[number]): string {
+  return workspaceType.value === "script" && kind.id === "plot"
+    ? "剧情设计与细化"
+    : kind.description;
+}
+
+function skillKindDescription(kind: (typeof SKILL_KINDS)[number]): string {
+  return workspaceType.value === "script" && kind.id === "style"
+    ? "正文与分集写作方法"
+    : kind.description;
 }
 
 function emptyMaterialLinks(): Record<MaterialKind, string[]> {
@@ -241,6 +268,7 @@ function selectedSkillLinks(): Record<SkillKind, string[]> {
 
 function resetDraft(): void {
   title.value = "";
+  workspaceType.value = "short";
   genre.value = "世情";
   materialBindingMode.value = "single";
   skillBindingMode.value = "single";
@@ -261,11 +289,24 @@ function submit(): void {
     titleInput.value?.focus();
     return;
   }
+  const linkedMaterialIdsByKind = selectedMaterialLinks();
+  const linkedSkillIdsByKind = selectedSkillLinks();
+  if (workspaceType.value === "script") {
+    emit("submit", {
+      workspaceType: "script",
+      title: normalizedTitle,
+      genre: ScriptBookGenreSchema.parse(genre.value),
+      linkedMaterialIdsByKind,
+      linkedSkillIdsByKind
+    });
+    return;
+  }
   emit("submit", {
+    workspaceType: "short",
     title: normalizedTitle,
-    genre: genre.value,
-    linkedMaterialIdsByKind: selectedMaterialLinks(),
-    linkedSkillIdsByKind: selectedSkillLinks()
+    genre: ShortBookGenreSchema.parse(genre.value),
+    linkedMaterialIdsByKind,
+    linkedSkillIdsByKind
   });
 }
 
@@ -295,6 +336,14 @@ watch(availableSkillGroups, (groups) => {
   }
 });
 
+watch(workspaceType, () => {
+  genre.value = genreOptions.value[0] ?? "世情";
+  selectedMaterialGroupId.value = "";
+  selectedSkillGroupId.value = "";
+  for (const { id } of MATERIAL_KINDS) selectedMaterialIds[id] = "";
+  for (const { id } of SKILL_KINDS) selectedSkillIds[id] = "";
+});
+
 onMounted(() => document.addEventListener("keydown", handleKeydown));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
@@ -310,8 +359,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
       >
         <header>
           <div>
-            <span class="dialog-eyebrow">创作空间 · 短篇</span>
-            <h2 id="create-short-book-title">新建短篇书籍</h2>
+            <span class="dialog-eyebrow">创作空间 · {{ workspaceType === "script" ? "剧本" : "短篇" }}</span>
+            <h2 id="create-short-book-title">新建{{ workspaceType === "script" ? "剧本" : "短篇书籍" }}</h2>
           </div>
           <button
             class="dialog-close"
@@ -325,6 +374,30 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         </header>
 
         <form class="dialog-content create-short-book-form" @submit.prevent="submit">
+          <section class="create-short-book-basics" aria-labelledby="create-workspace-type-heading">
+            <h3 id="create-workspace-type-heading">创作类型</h3>
+            <div class="create-short-binding-modes create-workspace-type-options" role="radiogroup" aria-label="创作类型">
+              <label :class="{ 'is-selected': workspaceType === 'short' }">
+                <input
+                  v-model="workspaceType"
+                  type="radio"
+                  value="short"
+                  :disabled="submitting"
+                />
+                <span><strong>短篇</strong><small>人物、剧情、导语、大纲与正文</small></span>
+              </label>
+              <label :class="{ 'is-selected': workspaceType === 'script' }">
+                <input
+                  v-model="workspaceType"
+                  type="radio"
+                  value="script"
+                  :disabled="submitting"
+                />
+                <span><strong>剧本</strong><small>人物、剧情、大纲与分集正文</small></span>
+              </label>
+            </div>
+          </section>
+
           <section class="create-short-book-basics" aria-labelledby="create-short-basics-heading">
             <h3 id="create-short-basics-heading">书籍信息</h3>
             <label class="create-short-book-field">
@@ -341,10 +414,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </label>
 
             <fieldset class="create-short-genre-field">
-              <legend>短篇分类</legend>
+              <legend>{{ workspaceType === "script" ? "剧本" : "短篇" }}分类</legend>
               <div class="create-short-genre-options">
                 <label
-                  v-for="option in SHORT_BOOK_GENRES"
+                  v-for="option in genreOptions"
                   :key="option"
                   class="create-short-genre-option"
                   :class="{ 'is-selected': genre === option }"
@@ -399,7 +472,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               <label v-for="kind in SKILL_KINDS" :key="kind.id" class="create-short-kind-field">
                 <span>
                   <strong>{{ kind.label }}</strong>
-                  <small>{{ kind.description }}</small>
+                  <small>{{ skillKindDescription(kind) }}</small>
                 </span>
                 <PopupSelect
                   :model-value="selectedSkillIds[kind.id]"
@@ -474,7 +547,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               <label v-for="kind in MATERIAL_KINDS" :key="kind.id" class="create-short-kind-field">
                 <span>
                   <strong>{{ kind.label }}</strong>
-                  <small>{{ kind.description }}</small>
+                  <small>{{ materialKindDescription(kind) }}</small>
                 </span>
                 <PopupSelect
                   :model-value="selectedMaterialIds[kind.id]"
@@ -519,7 +592,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               取消
             </button>
             <button class="dialog-primary-button" type="submit" :disabled="loading || submitting">
-              {{ submitting ? "创建中…" : "创建书籍" }}
+              {{ submitting ? "创建中…" : workspaceType === "script" ? "创建剧本" : "创建书籍" }}
             </button>
           </div>
         </form>

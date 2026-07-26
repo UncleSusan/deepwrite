@@ -8,10 +8,12 @@ import {
   CatalogLibraryEntrySchema,
   CatalogOpenProjectResultSchema,
   CatalogSnapshotSchema,
+  BookSchema,
   DeleteCatalogProjectResultSchema,
   DeleteBookResultSchema,
   DeleteDraftSectionResultSchema,
   RemoveLibraryEntryResultSchema,
+  ScriptBookSchema,
   ShortBookSchema,
   UnregisterCatalogProjectResultSchema,
   type CommandEnvelope,
@@ -127,6 +129,14 @@ async function handleCatalogCommand(
         payload: ShortBookSchema.parse(created.resource)
       };
     }
+    if (command.type === "catalog.createScriptBook") {
+      const created = await catalogStore.createScriptBook(command.payload);
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: ScriptBookSchema.parse(created.resource)
+      };
+    }
     if (command.type === "catalog.createShortBookAtPath") {
       const created = await catalogStore.createShortBook(
         command.payload.input,
@@ -136,6 +146,17 @@ async function handleCatalogCommand(
         status: "accepted",
         requestId: command.id,
         payload: ShortBookSchema.parse(created.resource)
+      };
+    }
+    if (command.type === "catalog.createScriptBookAtPath") {
+      const created = await catalogStore.createScriptBook(
+        command.payload.input,
+        command.payload.parentDirectory
+      );
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: ScriptBookSchema.parse(created.resource)
       };
     }
     if (command.type === "catalog.importLegacyBookAtPath") {
@@ -211,7 +232,7 @@ async function handleCatalogCommand(
       return {
         status: "accepted",
         requestId: command.id,
-        payload: ShortBookSchema.parse(await catalogStore.updateBook(command.payload))
+        payload: BookSchema.parse(await catalogStore.updateBook(command.payload))
       };
     }
     if (command.type === "catalog.updateLibraryGroup") {

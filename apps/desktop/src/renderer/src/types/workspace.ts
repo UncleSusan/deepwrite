@@ -117,6 +117,8 @@ export interface ResourceTreeNode {
   boundSkillLibraryIdsByKind?: LinkedSkillIdsByKind;
   boundMaterialLibraryIdsByKind?: LinkedMaterialIdsByKind;
   projectRevision?: number;
+  /** Explicitly carries the owning creative workspace type for type-specific UI. */
+  workspaceType?: "short" | "script" | "long";
   catalogNodeType?: "book" | "library" | "group" | "category" | "document";
   libraryId?: string;
   groupId?: string;
@@ -145,7 +147,7 @@ export interface WorkspaceDocument {
   readOnly?: boolean;
   format?: "正文" | "设定" | "技能" | "素材" | "账本";
   workspaceId?: string;
-  workspaceType?: "short" | "long";
+  workspaceType?: "short" | "script" | "long";
   workspaceTitle?: string;
   workspaceCategories?: string[];
   stageId?: ShortWorkspaceStageId;

@@ -4,6 +4,7 @@ import {
   DraftSectionIdSchema,
   DraftSectionTitleSchema,
   createDefaultExpertDraft,
+  createDefaultScriptDraft,
   parseExpertDraftMarkdown,
   type ExpertDraft
 } from "./expert-draft";
@@ -79,6 +80,11 @@ export const SHORT_BOOK_GENRES = [
 ] as const;
 export const ShortBookGenreSchema = z.enum(SHORT_BOOK_GENRES);
 export type ShortBookGenre = z.infer<typeof ShortBookGenreSchema>;
+
+/** Kept separate so script genres can evolve without changing short books. */
+export const SCRIPT_BOOK_GENRES = [...SHORT_BOOK_GENRES] as const;
+export const ScriptBookGenreSchema = z.enum(SCRIPT_BOOK_GENRES);
+export type ScriptBookGenre = z.infer<typeof ScriptBookGenreSchema>;
 
 export const MATERIAL_KINDS = [
   "character",
@@ -296,11 +302,12 @@ export type CatalogDraftDirectory = z.infer<typeof CatalogDraftDirectorySchema>;
 function catalogDraftDirectoryFromExpertDraft(
   draft: ExpertDraft,
   createdAt: string,
-  updatedAt: string
+  updatedAt: string,
+  title = "正文"
 ): CatalogDraftDirectory {
   return CatalogDraftDirectorySchema.parse({
     id: CATALOG_DRAFT_DIRECTORY_ID,
-    title: "正文",
+    title,
     sections: draft.sections.map((section) => ({
       id: section.id,
       title: section.title,
@@ -338,6 +345,18 @@ export function createCatalogDraftDirectory(
   );
 }
 
+export function createScriptCatalogDraftDirectory(
+  createdAt: string,
+  updatedAt = createdAt
+): CatalogDraftDirectory {
+  return catalogDraftDirectoryFromExpertDraft(
+    createDefaultScriptDraft(),
+    createdAt,
+    updatedAt,
+    "剧集"
+  );
+}
+
 export function migrateCatalogDraftDocument(
   document: CatalogDocument | undefined,
   fallbackCreatedAt: string,
@@ -350,7 +369,7 @@ export function migrateCatalogDraftDocument(
   );
 }
 
-const CurrentShortBookSchema = z.object({
+export const CurrentShortBookSchema = z.object({
   id: CatalogIdSchema,
   title: CatalogTitleSchema,
   bookType: z.literal("short"),
@@ -366,7 +385,22 @@ const CurrentShortBookSchema = z.object({
 });
 const LegacyShortBookSchema = CurrentShortBookSchema.omit({ draft: true });
 
-export const ShortBookSchema = z.preprocess((value) => {
+export const CurrentScriptBookSchema = z.object({
+  id: CatalogIdSchema,
+  title: CatalogTitleSchema,
+  bookType: z.literal("script"),
+  genre: ScriptBookGenreSchema,
+  status: z.enum(["editing", "completed"]),
+  linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
+  linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
+  documents: z.array(CatalogDocumentSchema),
+  draft: CatalogDraftDirectorySchema,
+  projectRevision: z.number().int().nonnegative().optional(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema
+});
+
+function migrateLegacyShortBook(value: unknown): unknown {
   const legacy = LegacyShortBookSchema.safeParse(value);
   if (!legacy.success || (value && typeof value === "object" && "draft" in value)) {
     return value;
@@ -390,7 +424,15 @@ export const ShortBookSchema = z.preprocess((value) => {
       legacy.data.updatedAt
     )
   };
-}, CurrentShortBookSchema).superRefine((book, context) => {
+}
+
+function validateUniqueBookDocumentIds(
+  book: {
+    documents: ReadonlyArray<{ id: string }>;
+    draft: CatalogDraftDirectory;
+  },
+  context: z.core.$RefinementCtx<unknown>
+): void {
   const documentIds = [
     ...book.documents.map((document) => document.id),
     ...book.draft.sections.flatMap((section) => [
@@ -405,8 +447,28 @@ export const ShortBookSchema = z.preprocess((value) => {
       message: "Book files cannot contain duplicate document ids."
     });
   }
-});
+}
+
+export const ShortBookSchema = z
+  .preprocess(migrateLegacyShortBook, CurrentShortBookSchema)
+  .superRefine(validateUniqueBookDocumentIds);
 export type ShortBook = z.infer<typeof ShortBookSchema>;
+
+export const ScriptBookSchema = CurrentScriptBookSchema.superRefine(
+  validateUniqueBookDocumentIds
+);
+export type ScriptBook = z.infer<typeof ScriptBookSchema>;
+
+export const CurrentBookSchema = z.discriminatedUnion("bookType", [
+  CurrentShortBookSchema,
+  CurrentScriptBookSchema
+]);
+
+/** Current books are discriminated by `bookType`; legacy short books migrate first. */
+export const BookSchema = z
+  .preprocess(migrateLegacyShortBook, CurrentBookSchema)
+  .superRefine(validateUniqueBookDocumentIds);
+export type Book = z.infer<typeof BookSchema>;
 
 export const MaterialEntrySchema = z.object({
   id: CatalogIdSchema,
@@ -652,49 +714,94 @@ export type BookProjectDraftDirectoryManifest = z.infer<
   typeof BookProjectDraftDirectoryManifestSchema
 >;
 
-export const CurrentBookProjectManifestSchema = z
+const CurrentBookProjectManifestSharedShape = {
+  schemaVersion: z.literal(2),
+  revision: z.number().int().nonnegative(),
+  kind: z.literal("deepwrite.book"),
+  id: CatalogIdSchema,
+  title: CatalogTitleSchema,
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+  status: z.enum(["editing", "completed"]),
+  linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
+  linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
+  documents: z
+    .array(BookProjectDocumentManifestSchema)
+    .max(CATALOG_PROJECT_MAX_CONTENT_ITEMS),
+  draft: BookProjectDraftDirectoryManifestSchema
+} as const;
+
+const CurrentShortBookProjectManifestObjectSchema = z
   .object({
-    schemaVersion: z.literal(2),
-    revision: z.number().int().nonnegative(),
-    kind: z.literal("deepwrite.book"),
-    id: CatalogIdSchema,
-    title: CatalogTitleSchema,
-    createdAt: TimestampSchema,
-    updatedAt: TimestampSchema,
+    ...CurrentBookProjectManifestSharedShape,
     bookType: z.literal("short"),
-    genre: ShortBookGenreSchema,
-    status: z.enum(["editing", "completed"]),
-    linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
-    linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
-    documents: z
-      .array(BookProjectDocumentManifestSchema)
-      .max(CATALOG_PROJECT_MAX_CONTENT_ITEMS),
-    draft: BookProjectDraftDirectoryManifestSchema
+    genre: ShortBookGenreSchema
   })
-  .strict()
-  .superRefine((manifest, context) => {
-    const files = [
-      ...manifest.documents,
-      ...manifest.draft.sections.flatMap((section) => [
-        section.body,
-        section.characterState
-      ])
-    ];
-    if (!uniqueIds(files.map((file) => file.id))) {
-      context.addIssue({
-        code: "custom",
-        path: ["documents"],
-        message: "Book files cannot contain duplicate document ids."
-      });
-    }
-    if (!uniqueIds(files.map((file) => file.path))) {
-      context.addIssue({
-        code: "custom",
-        path: ["documents"],
-        message: "Book files cannot contain duplicate paths."
-      });
-    }
-  });
+  .strict();
+
+const ScriptBookProjectManifestObjectSchema = z
+  .object({
+    ...CurrentBookProjectManifestSharedShape,
+    bookType: z.literal("script"),
+    genre: ScriptBookGenreSchema
+  })
+  .strict();
+
+function validateUniqueBookManifestFiles(
+  manifest: {
+    documents: ReadonlyArray<{ id: string; path: string }>;
+    draft: BookProjectDraftDirectoryManifest;
+  },
+  context: z.core.$RefinementCtx<unknown>
+): void {
+  const files = [
+    ...manifest.documents,
+    ...manifest.draft.sections.flatMap((section) => [
+      section.body,
+      section.characterState
+    ])
+  ];
+  if (!uniqueIds(files.map((file) => file.id))) {
+    context.addIssue({
+      code: "custom",
+      path: ["documents"],
+      message: "Book files cannot contain duplicate document ids."
+    });
+  }
+  if (!uniqueIds(files.map((file) => file.path))) {
+    context.addIssue({
+      code: "custom",
+      path: ["documents"],
+      message: "Book files cannot contain duplicate paths."
+    });
+  }
+}
+
+export const CurrentShortBookProjectManifestSchema =
+  CurrentShortBookProjectManifestObjectSchema.superRefine(
+    validateUniqueBookManifestFiles
+  );
+export type CurrentShortBookProjectManifest = z.infer<
+  typeof CurrentShortBookProjectManifestSchema
+>;
+
+export const ScriptBookProjectManifestSchema =
+  ScriptBookProjectManifestObjectSchema.superRefine(
+    validateUniqueBookManifestFiles
+  );
+export const CurrentScriptBookProjectManifestSchema =
+  ScriptBookProjectManifestSchema;
+export type ScriptBookProjectManifest = z.infer<
+  typeof ScriptBookProjectManifestSchema
+>;
+export type CurrentScriptBookProjectManifest = ScriptBookProjectManifest;
+
+export const CurrentBookProjectManifestSchema = z
+  .discriminatedUnion("bookType", [
+    CurrentShortBookProjectManifestObjectSchema,
+    ScriptBookProjectManifestObjectSchema
+  ])
+  .superRefine(validateUniqueBookManifestFiles);
 export type CurrentBookProjectManifest = z.infer<
   typeof CurrentBookProjectManifestSchema
 >;
@@ -823,7 +930,7 @@ export const CatalogSnapshotSchema = z
   .object({
     schemaVersion: z.literal(1),
     revision: z.number().int().nonnegative(),
-    books: z.array(ShortBookSchema),
+    books: z.array(BookSchema),
     materials: z.array(MaterialLibrarySchema),
     materialGroups: z.array(MaterialLibraryGroupSchema),
     skills: z.array(SkillLibrarySchema),
@@ -871,6 +978,14 @@ export const CreateShortBookInputSchema = z.object({
 });
 export type CreateShortBookInput = z.infer<typeof CreateShortBookInputSchema>;
 
+export const CreateScriptBookInputSchema = z.object({
+  title: CatalogTitleSchema,
+  genre: ScriptBookGenreSchema,
+  linkedMaterialIdsByKind: LinkedMaterialIdsByKindInputSchema.optional(),
+  linkedSkillIdsByKind: LinkedSkillIdsByKindInputSchema.optional()
+});
+export type CreateScriptBookInput = z.infer<typeof CreateScriptBookInputSchema>;
+
 export const CatalogOpenProjectInputSchema = z.object({
   domain: CatalogProjectDomainSchema
 });
@@ -884,6 +999,14 @@ export const CreateShortBookAtPathInputSchema = z.object({
 });
 export type CreateShortBookAtPathInput = z.infer<
   typeof CreateShortBookAtPathInputSchema
+>;
+
+export const CreateScriptBookAtPathInputSchema = z.object({
+  parentDirectory: z.string().trim().min(1),
+  input: CreateScriptBookInputSchema
+});
+export type CreateScriptBookAtPathInput = z.infer<
+  typeof CreateScriptBookAtPathInputSchema
 >;
 
 export const OpenCatalogProjectAtPathInputSchema = z.object({
@@ -1031,13 +1154,15 @@ export type CatalogLibraryGroup = z.infer<typeof CatalogLibraryGroupSchema>;
 const CreateMaterialLibraryInputSchema = z.object({
   domain: z.literal("material"),
   name: CatalogTitleSchema,
-  materialKind: MaterialKindSchema
+  materialKind: MaterialKindSchema,
+  libraryType: LibraryTypeSchema.optional()
 });
 
 const CreateSkillLibraryInputSchema = z.object({
   domain: z.literal("skill"),
   name: CatalogTitleSchema,
-  skillKind: SkillKindSchema
+  skillKind: SkillKindSchema,
+  libraryType: LibraryTypeSchema.optional()
 });
 
 export const CreateLibraryInputSchema = z.discriminatedUnion("domain", [
@@ -1246,6 +1371,12 @@ export const CatalogCreateShortBookCommandEnvelopeSchema =
     payload: CreateShortBookInputSchema
   });
 
+export const CatalogCreateScriptBookCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.createScriptBook"),
+    payload: CreateScriptBookInputSchema
+  });
+
 export const CatalogCreateLibraryCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("catalog.createLibrary"),
@@ -1279,6 +1410,12 @@ export const CatalogCreateShortBookAtPathCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("catalog.createShortBookAtPath"),
     payload: CreateShortBookAtPathInputSchema
+  });
+
+export const CatalogCreateScriptBookAtPathCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.createScriptBookAtPath"),
+    payload: CreateScriptBookAtPathInputSchema
   });
 
 export const CatalogCreateLibraryAtPathCommandEnvelopeSchema =
@@ -1379,12 +1516,14 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogLoadDraftRecoveryCommandEnvelopeSchema,
   CatalogSaveDraftRecoveryCommandEnvelopeSchema,
   CatalogCreateShortBookCommandEnvelopeSchema,
+  CatalogCreateScriptBookCommandEnvelopeSchema,
   CatalogCreateLibraryCommandEnvelopeSchema,
   CatalogCreateLibraryGroupCommandEnvelopeSchema,
   CatalogOpenProjectCommandEnvelopeSchema,
   CatalogImportLegacyBookCommandEnvelopeSchema,
   CatalogImportLegacyLibraryCommandEnvelopeSchema,
   CatalogCreateShortBookAtPathCommandEnvelopeSchema,
+  CatalogCreateScriptBookAtPathCommandEnvelopeSchema,
   CatalogCreateLibraryAtPathCommandEnvelopeSchema,
   CatalogCreateLibraryGroupAtPathCommandEnvelopeSchema,
   CatalogOpenProjectAtPathCommandEnvelopeSchema,

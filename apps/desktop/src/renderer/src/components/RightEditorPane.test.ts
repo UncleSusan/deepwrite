@@ -13,7 +13,8 @@ describe("RightEditorPane expert draft navigation", () => {
     const editorStart = source.indexOf('class="editor-document"', tabsStart);
 
     expect(tabsStart).toBeGreaterThan(-1);
-    expect(source).toContain('aria-label="正文小节"');
+    expect(source).toContain(':aria-label="`正文${draftUnitLabel}`"');
+    expect(source).toContain('props.document.workspaceType === "script" ? "剧集" : "小节"');
     expect(source).toContain("emit('selectSection', section.id)");
     expect(source).not.toContain("emit('addSection')");
     expect(editorStart).toBeGreaterThan(tabsStart);

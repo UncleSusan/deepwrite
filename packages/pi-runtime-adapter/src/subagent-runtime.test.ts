@@ -61,6 +61,7 @@ function makeHarness(options: {
   buildChildTools?: () => AgentTool[];
   toolExecutionHooks?: BuildSpawnSubagentToolInput["toolExecutionHooks"];
   retryPolicy?: BuildSpawnSubagentToolInput["retryPolicy"];
+  systemPromptRequirements?: string;
   timeoutMs?: number;
 }) {
   const faux = fauxProvider({
@@ -97,6 +98,9 @@ function makeHarness(options: {
       ? { toolExecutionHooks: options.toolExecutionHooks }
       : {}),
     ...(options.retryPolicy ? { retryPolicy: options.retryPolicy } : {}),
+    ...(options.systemPromptRequirements
+      ? { systemPromptRequirements: options.systemPromptRequirements }
+      : {}),
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.depth === undefined ? {} : { depth: options.depth }),
     ...(options.createRunId ? { createRunId: options.createRunId } : {})
@@ -160,6 +164,48 @@ describe("blocking subagent runtime", () => {
     expect(prompt).toContain("你不能创建或调用其它子智能体。");
     expect(prompt).toContain("不要整段粘贴文件原文");
     expect(prompt).not.toContain("你是短篇正文主智能体");
+  });
+
+  it("appends runtime-owned screenplay requirements after the editable child prompt", () => {
+    const requirements = [
+      "场景标题使用“序号. 内景/外景 地点 - 时间”。",
+      "write_draft_section 中不得使用 Markdown 表格、分析标题或格式讲解。"
+    ].join("\n");
+    const prompt = buildSubagentSystemPrompt(
+      {
+        ...enabledDefinition,
+        systemPrompt: "用户可编辑的子智能体提示词。"
+      },
+      [{ ...childTool(), name: "write_draft_section", label: "写入剧集正文" }],
+      requirements
+    );
+
+    expect(prompt).toContain("用户可编辑的子智能体提示词。");
+    expect(prompt).toContain("【本轮不可编辑的写作约束】");
+    expect(prompt).toContain(requirements);
+    expect(prompt.indexOf(requirements)).toBeGreaterThan(
+      prompt.indexOf("用户可编辑的子智能体提示词。")
+    );
+  });
+
+  it("keeps runtime-owned screenplay requirements in the executed child context", async () => {
+    const contexts: Context[] = [];
+    const requirements =
+      "剧本正文场景标题必须使用“序号. 内景/外景 地点 - 时间”。";
+    const { tool } = makeHarness({
+      systemPromptRequirements: requirements,
+      onContext: (context) => contexts.push(context),
+      responses: [fauxAssistantMessage(fauxText("剧本格式检查完成。"))]
+    });
+    if (!tool) throw new Error("spawn_subagent was not built");
+
+    await tool.execute(
+      "parent-screenplay-call",
+      { subagent_id: "continuity_checker", task: "检查第一集格式" } as never
+    );
+
+    expect(contexts[0]?.systemPrompt).toContain("【本轮不可编辑的写作约束】");
+    expect(contexts[0]?.systemPrompt).toContain(requirements);
   });
 
   it("leaves the write-versus-handoff decision to the definition prompt", () => {

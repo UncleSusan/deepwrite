@@ -46,7 +46,7 @@ export function agentConversationKeyForDocument(
     return `library:${document.domain}:${document.libraryId}`;
   }
   if (
-    document.workspaceType !== "short" ||
+    (document.workspaceType !== "short" && document.workspaceType !== "script") ||
     !document.workspaceId ||
     !document.stageId
   ) {

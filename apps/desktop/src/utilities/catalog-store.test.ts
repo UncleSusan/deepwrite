@@ -616,4 +616,73 @@ describe("CatalogStore", () => {
     expect(after.books).toEqual([]);
   });
 
+  it("persists screenplay defaults and validates screenplay library bindings", async () => {
+    const root = await makeTemporaryRoot("deepwrite-catalog-script-");
+    const userDataPath = join(root, "target-user-data");
+    const legacyDataRoot = join(root, "legacy", ".data");
+    await writeJson(join(legacyDataRoot, "materials.json"), {
+      materials: [
+        {
+          id: "material-script-plot",
+          title: "剧本剧情素材",
+          material_type: "script",
+          material_kind: "plot",
+          stages: { pacing: "剧本剧情" }
+        },
+        {
+          id: "material-short-plot",
+          title: "短篇剧情素材",
+          material_type: "short",
+          material_kind: "plot",
+          stages: { pacing: "短篇剧情" }
+        }
+      ]
+    });
+    await writeJson(join(legacyDataRoot, "skills.json"), { skills: [] });
+    await writeJson(join(legacyDataRoot, "preferences.json"), {});
+    const store = new CatalogStore({
+      userDataPath,
+      legacyDataRoot,
+      now: tickingClock()
+    });
+
+    const script = await store.createScriptBook({
+      title: "第一部剧本",
+      genre: "悬疑",
+      linkedMaterialIdsByKind: { plot: ["material-script-plot"] }
+    });
+    expect(script.bookType).toBe("script");
+    expect(script.documents.map(({ id }) => id)).toEqual([
+      "character_design",
+      "plot_design",
+      "plot_refine",
+      "outline"
+    ]);
+    expect(script.draft.sections).toMatchObject([
+      { id: "episode-1", title: "第一集" }
+    ]);
+    expect(script.draft.sections.some(({ title }) => title === "导语")).toBe(
+      false
+    );
+
+    await expect(
+      store.createScriptBook({
+        title: "不能绑定短篇素材",
+        genre: "其他",
+        linkedMaterialIdsByKind: { plot: ["material-short-plot"] }
+      })
+    ).rejects.toThrow(/剧本书籍不能关联short素材库/u);
+    const reloaded = await new CatalogStore({
+      userDataPath,
+      legacyDataRoot,
+      now: tickingClock()
+    }).snapshot();
+    expect(reloaded.books).toHaveLength(1);
+    expect(reloaded.books[0]).toMatchObject({
+      id: script.id,
+      bookType: "script",
+      draft: { sections: [{ id: "episode-1", title: "第一集" }] }
+    });
+  });
+
 });

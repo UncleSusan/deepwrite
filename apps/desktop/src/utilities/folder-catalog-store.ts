@@ -20,6 +20,7 @@ import {
 } from "node:path";
 import {
   BookProjectManifestSchema,
+  BookSchema,
   CatalogDraftSectionSchema,
   CatalogDraftRecoverySchema,
   CatalogProjectContentPathSchema,
@@ -29,6 +30,7 @@ import {
   CreateDraftSectionInputSchema,
   CreateLibraryInputSchema,
   CreateLibraryGroupInputSchema,
+  CreateScriptBookInputSchema,
   CreateShortBookInputSchema,
   CurrentBookProjectManifestSchema,
   DeleteDraftSectionInputSchema,
@@ -40,16 +42,19 @@ import {
   SkillGroupProjectManifestSchema,
   SkillLibraryProjectManifestSchema,
   ShortBookSchema,
+  ScriptBookSchema,
   UpdateBookInputSchema,
   UpdateLibraryGroupInputSchema,
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
   createCatalogDraftDirectory,
+  createScriptCatalogDraftDirectory,
   createShortWorkspaceContentRevision,
   migrateCatalogDraftDocument,
   type BookProjectDraftSectionManifest,
   type BookProjectDocumentManifest,
   type BookProjectManifest,
+  type Book,
   type CatalogDraftSection,
   type CatalogLegacyImport,
   type CatalogProjectManifest,
@@ -59,6 +64,7 @@ import {
   type CatalogSnapshot,
   type CreateLibraryInput,
   type CreateLibraryGroupInput,
+  type CreateScriptBookInput,
   type CreateShortBookInput,
   type CreateDraftSectionInput,
   type CurrentBookProjectManifest,
@@ -72,6 +78,7 @@ import {
   type MaterialStageId,
   type SaveLibraryEntryInput,
   type SaveDocumentInput,
+  type ScriptBook,
   type ShortBook,
   type SkillLibraryProjectManifest,
   type SkillLibrary,
@@ -145,7 +152,7 @@ interface WriteMissingSnapshotProjectsResult {
 }
 
 export type FolderCatalogResource =
-  | ShortBook
+  | Book
   | MaterialLibrary
   | MaterialLibraryGroup
   | SkillLibrary
@@ -174,6 +181,11 @@ export interface FolderCatalogStoreOptions {
 export interface CreateShortBookAtDirectoryInput {
   parentDirectory?: string;
   input: CreateShortBookInput;
+}
+
+export interface CreateScriptBookAtDirectoryInput {
+  parentDirectory?: string;
+  input: CreateScriptBookInput;
 }
 
 export type FolderCatalogLibraryDomain = "material" | "skill";
@@ -434,27 +446,19 @@ export class FolderCatalogStore {
     const parent =
       (wrapped ? rawInput.parentDirectory : parentDirectory)?.trim() ||
       this.defaultProjectParents.book;
-    return await this.mutate(async () => {
-      const now = this.now();
-      const book: ShortBook = {
+    return await this.createBookProject(parent, (now) =>
+      ShortBookSchema.parse({
         id: createCatalogId("book"),
         title: input.title,
         bookType: "short",
         genre: input.genre,
         status: "editing",
-        linkedMaterialIdsByKind: {
-          character: [...(input.linkedMaterialIdsByKind?.character ?? [])],
-          gimmick: [...(input.linkedMaterialIdsByKind?.gimmick ?? [])],
-          plot: [...(input.linkedMaterialIdsByKind?.plot ?? [])],
-          draft: [...(input.linkedMaterialIdsByKind?.draft ?? [])],
-          other: [...(input.linkedMaterialIdsByKind?.other ?? [])]
-        },
-        linkedSkillIdsByKind: {
-          general: [...(input.linkedSkillIdsByKind?.general ?? [])],
-          plot: [...(input.linkedSkillIdsByKind?.plot ?? [])],
-          style: [...(input.linkedSkillIdsByKind?.style ?? [])],
-          other: [...(input.linkedSkillIdsByKind?.other ?? [])]
-        },
+        linkedMaterialIdsByKind: linkedMaterialIdsFromInput(
+          input.linkedMaterialIdsByKind
+        ),
+        linkedSkillIdsByKind: linkedSkillIdsFromInput(
+          input.linkedSkillIdsByKind
+        ),
         documents: DEFAULT_SHORT_DOCUMENTS.map(([id, title]) => ({
           id,
           title,
@@ -465,14 +469,71 @@ export class FolderCatalogStore {
         draft: createCatalogDraftDirectory(now),
         createdAt: now,
         updatedAt: now
-      };
+      })
+    );
+  }
+
+  async createScriptBook(
+    rawInput: CreateScriptBookInput,
+    parentDirectory?: string
+  ): Promise<OpenFolderCatalogProjectResult<ScriptBook>>;
+  async createScriptBook(
+    rawInput: CreateScriptBookAtDirectoryInput
+  ): Promise<OpenFolderCatalogProjectResult<ScriptBook>>;
+  async createScriptBook(
+    rawInput: CreateScriptBookInput | CreateScriptBookAtDirectoryInput,
+    parentDirectory?: string
+  ): Promise<OpenFolderCatalogProjectResult<ScriptBook>> {
+    const wrapped = isCreateScriptAtDirectoryInput(rawInput);
+    const input = CreateScriptBookInputSchema.parse(
+      wrapped ? rawInput.input : rawInput
+    );
+    const parent =
+      (wrapped ? rawInput.parentDirectory : parentDirectory)?.trim() ||
+      this.defaultProjectParents.book;
+    return await this.createBookProject(parent, (now) =>
+      ScriptBookSchema.parse({
+        id: createCatalogId("book"),
+        title: input.title,
+        bookType: "script",
+        genre: input.genre,
+        status: "editing",
+        linkedMaterialIdsByKind: linkedMaterialIdsFromInput(
+          input.linkedMaterialIdsByKind
+        ),
+        linkedSkillIdsByKind: linkedSkillIdsFromInput(
+          input.linkedSkillIdsByKind
+        ),
+        documents: DEFAULT_SCRIPT_DOCUMENTS.map(([id, title]) => ({
+          id,
+          title,
+          content: "",
+          createdAt: now,
+          updatedAt: now
+        })),
+        draft: createScriptCatalogDraftDirectory(now),
+        createdAt: now,
+        updatedAt: now
+      })
+    );
+  }
+
+  private async createBookProject<Resource extends Book>(
+    parentDirectory: string,
+    createBook: (now: string) => Resource
+  ): Promise<OpenFolderCatalogProjectResult<Resource>> {
+    return await this.mutate(async () => {
+      const now = this.now();
+      const book = createBook(now);
+      const registry = await this.ensureRegistry();
+      const snapshot = await this.aggregateSnapshot(registry);
+      assertBookLibraryReferences(book, snapshot);
       const projectDirectory = await this.writeNewResourceProject(
         "book",
-        parent,
+        parentDirectory,
         book
       );
       try {
-        const registry = await this.ensureRegistry();
         await this.registerProject(registry, {
           id: book.id,
           domain: "book",
@@ -486,7 +547,7 @@ export class FolderCatalogStore {
       return (await this.readProject(
         projectDirectory,
         "book"
-      )) as OpenFolderCatalogProjectResult<ShortBook>;
+      )) as OpenFolderCatalogProjectResult<Resource>;
     });
   }
 
@@ -517,7 +578,7 @@ export class FolderCatalogStore {
           ? {
               id: createCatalogId("material"),
               title: input.name,
-              materialType: "short",
+              materialType: input.libraryType ?? "short",
               materialKind: input.materialKind,
               parentGenre: "",
               subGenre: "",
@@ -529,7 +590,7 @@ export class FolderCatalogStore {
           : {
               id: createCatalogId("skill"),
               title: input.name,
-              skillType: "short",
+              skillType: input.libraryType ?? "short",
               skillKind: input.skillKind,
               overview: "",
               isBuiltin: false,
@@ -798,12 +859,12 @@ export class FolderCatalogStore {
   async openBookProject(
     projectDirectory: string,
     register = true
-  ): Promise<OpenFolderCatalogProjectResult<ShortBook>> {
+  ): Promise<OpenFolderCatalogProjectResult<Book>> {
     return (await this.openCatalogProject(
       projectDirectory,
       "book",
       register
-    )) as OpenFolderCatalogProjectResult<ShortBook>;
+    )) as OpenFolderCatalogProjectResult<Book>;
   }
 
   async openMaterialProject(
@@ -828,7 +889,7 @@ export class FolderCatalogStore {
     )) as OpenFolderCatalogProjectResult<SkillLibrary>;
   }
 
-  async updateBook(rawInput: UpdateFolderBookInput): Promise<ShortBook> {
+  async updateBook(rawInput: UpdateFolderBookInput): Promise<Book> {
     const input = UpdateBookInputSchema.parse(rawInput);
     if (input.baseProjectRevision !== undefined) {
       assertProjectRevision(input.baseProjectRevision);
@@ -877,13 +938,15 @@ export class FolderCatalogStore {
         updatedAt: now
       } satisfies FolderCurrentBookProjectManifest;
       const validated = FolderCurrentBookProjectManifestSchema.parse(next);
+      const snapshot = await this.aggregateSnapshot(registry);
+      assertBookLibraryReferences(validated, snapshot);
       await atomicWriteJson(
         join(opened.projectDirectory, MANIFEST_FILE),
         validated,
         this.maxManifestBytes
       );
       await this.bumpRegistry(registry, now);
-      return (await this.readProject(opened.projectDirectory, "book")).resource as ShortBook;
+      return (await this.readProject(opened.projectDirectory, "book")).resource as Book;
     });
   }
 
@@ -1158,7 +1221,9 @@ export class FolderCatalogStore {
         assertBaseRevision(input.baseProjectRevision, manifest.revision);
       }
       if (manifest.draft.sections.length >= 100) {
-        throw new Error("正文最多支持 100 个小节。");
+        throw new Error(
+          `正文最多支持 100 个${manifest.bookType === "script" ? "剧集" : "小节"}。`
+        );
       }
 
       let insertionIndex = manifest.draft.sections.length;
@@ -1167,7 +1232,11 @@ export class FolderCatalogStore {
           ({ id }) => id === input.afterSectionId
         );
         if (afterIndex < 0) {
-          throw new Error(`找不到插入位置对应的小节：${input.afterSectionId}`);
+          throw new Error(
+            `找不到插入位置对应的${
+              manifest.bookType === "script" ? "剧集" : "小节"
+            }：${input.afterSectionId}`
+          );
         }
         insertionIndex = afterIndex + 1;
       }
@@ -1176,10 +1245,17 @@ export class FolderCatalogStore {
         manifestContentItems(manifest).map(({ id }) => id)
       );
       const sectionId = nextDraftSectionId(
+        manifest.bookType,
         manifest.draft.sections.map(({ id }) => id),
         usedDocumentIds
       );
-      const title = input.title ?? defaultDraftSectionTitle(sectionId, insertionIndex);
+      const title =
+        input.title ??
+        defaultDraftSectionTitle(
+          manifest.bookType,
+          sectionId,
+          insertionIndex
+        );
       const now = this.now();
       const usedPaths = new Set(
         manifestContentItems(manifest).map(({ path }) => portableContentPathKey(path))
@@ -2137,7 +2213,7 @@ export class FolderCatalogStore {
   private async aggregateSnapshot(
     registry: FolderCatalogRegistry
   ): Promise<CatalogSnapshot> {
-    const books: ShortBook[] = [];
+    const books: Book[] = [];
     const materials: MaterialLibrary[] = [];
     const materialGroups: MaterialLibraryGroup[] = [];
     const skills: SkillLibrary[] = [];
@@ -2183,7 +2259,7 @@ export class FolderCatalogStore {
       snapshotContentBytes += projectContentBytes;
       switch (opened.domain) {
         case "book":
-          books.push(opened.resource as ShortBook);
+          books.push(opened.resource as Book);
           break;
         case "material-library":
           materials.push(opened.resource as MaterialLibrary);
@@ -2254,6 +2330,40 @@ const DEFAULT_SHORT_DOCUMENTS = [
   ["outline", "大纲"]
 ] as const;
 
+const DEFAULT_SCRIPT_DOCUMENTS = [
+  ["character_design", "人物设计"],
+  ["plot_design", "剧情设计"],
+  ["plot_refine", "剧情细化"],
+  ["outline", "大纲"]
+] as const;
+
+function linkedMaterialIdsFromInput(
+  value:
+    | CreateShortBookInput["linkedMaterialIdsByKind"]
+    | CreateScriptBookInput["linkedMaterialIdsByKind"]
+): Book["linkedMaterialIdsByKind"] {
+  return {
+    character: [...(value?.character ?? [])],
+    gimmick: [...(value?.gimmick ?? [])],
+    plot: [...(value?.plot ?? [])],
+    draft: [...(value?.draft ?? [])],
+    other: [...(value?.other ?? [])]
+  };
+}
+
+function linkedSkillIdsFromInput(
+  value:
+    | CreateShortBookInput["linkedSkillIdsByKind"]
+    | CreateScriptBookInput["linkedSkillIdsByKind"]
+): Book["linkedSkillIdsByKind"] {
+  return {
+    general: [...(value?.general ?? [])],
+    plot: [...(value?.plot ?? [])],
+    style: [...(value?.style ?? [])],
+    other: [...(value?.other ?? [])]
+  };
+}
+
 const DRAFT_CHARACTER_STATE_TITLE_SUFFIX = " · 人物状态";
 const CATALOG_TITLE_MAX_LENGTH = 256;
 
@@ -2287,17 +2397,21 @@ function isReservedDraftDocumentId(documentId: string): boolean {
 }
 
 function nextDraftSectionId(
+  bookType: Book["bookType"],
   sectionIds: readonly string[],
   documentIds: ReadonlySet<string>
 ): string {
   const usedSections = new Set(sectionIds);
+  const prefix = bookType === "script" ? "episode" : "section";
+  const numericPattern =
+    bookType === "script" ? /^episode-(\d+)$/u : /^section-(\d+)$/u;
   const highest = sectionIds.reduce((value, sectionId) => {
-    const numeric = /^section-(\d+)$/u.exec(sectionId)?.[1];
+    const numeric = numericPattern.exec(sectionId)?.[1];
     return numeric ? Math.max(value, Number(numeric)) : value;
   }, 0);
   let sectionNumber = highest + 1;
   while (true) {
-    const sectionId = `section-${sectionNumber}`;
+    const sectionId = `${prefix}-${sectionNumber}`;
     if (
       !usedSections.has(sectionId) &&
       !documentIds.has(catalogDraftBodyDocumentId(sectionId)) &&
@@ -2321,10 +2435,18 @@ function chineseSectionNumber(value: number): string {
   return String(value);
 }
 
-function defaultDraftSectionTitle(sectionId: string, index: number): string {
-  if (sectionId === "intro") return "导语";
-  const numeric = /^section-(\d+)$/u.exec(sectionId)?.[1];
-  return `第${chineseSectionNumber(numeric ? Number(numeric) : index + 1)}节`;
+function defaultDraftSectionTitle(
+  bookType: Book["bookType"],
+  sectionId: string,
+  index: number
+): string {
+  if (bookType === "short" && sectionId === "intro") return "导语";
+  const numeric = (
+    bookType === "script" ? /^episode-(\d+)$/u : /^section-(\d+)$/u
+  ).exec(sectionId)?.[1];
+  return `第${chineseSectionNumber(numeric ? Number(numeric) : index + 1)}${
+    bookType === "script" ? "集" : "节"
+  }`;
 }
 
 function positiveByteLimit(
@@ -2585,6 +2707,66 @@ function isCreateAtDirectoryInput(
   return "input" in value;
 }
 
+function isCreateScriptAtDirectoryInput(
+  value: CreateScriptBookInput | CreateScriptBookAtDirectoryInput
+): value is CreateScriptBookAtDirectoryInput {
+  return "input" in value;
+}
+
+function assertBookLibraryReferences(
+  book: Pick<
+    Book,
+    | "title"
+    | "bookType"
+    | "linkedMaterialIdsByKind"
+    | "linkedSkillIdsByKind"
+  >,
+  snapshot: Pick<CatalogSnapshot, "materials" | "skills">
+): void {
+  const materials = new Map(
+    snapshot.materials.map((material) => [material.id, material])
+  );
+  const skills = new Map(snapshot.skills.map((skill) => [skill.id, skill]));
+  for (const [kind, materialIds] of Object.entries(
+    book.linkedMaterialIdsByKind
+  )) {
+    for (const materialId of materialIds) {
+      const material = materials.get(materialId);
+      if (!material) {
+        throw new Error(`书籍「${book.title}」关联了不存在的素材库：${materialId}`);
+      }
+      if (material.materialType !== book.bookType) {
+        throw new Error(
+          `${bookTypeLabel(book.bookType)}书籍不能关联${material.materialType}素材库：${material.title}`
+        );
+      }
+      if (material.materialKind !== "mixed" && material.materialKind !== kind) {
+        throw new Error(`素材库「${material.title}」不能关联到 ${kind} 分类。`);
+      }
+    }
+  }
+  for (const [kind, skillIds] of Object.entries(book.linkedSkillIdsByKind)) {
+    for (const skillId of skillIds) {
+      const skill = skills.get(skillId);
+      if (!skill) {
+        throw new Error(`书籍「${book.title}」绑定了不存在的技能库：${skillId}`);
+      }
+      if (skill.skillType !== book.bookType) {
+        throw new Error(
+          `${bookTypeLabel(book.bookType)}书籍不能绑定${skill.skillType}技能库：${skill.title}`
+        );
+      }
+      if (skill.skillKind !== kind) {
+        throw new Error(`技能库「${skill.title}」不能绑定到 ${kind} 分类。`);
+      }
+    }
+  }
+}
+
+function bookTypeLabel(bookType: Book["bookType"]): string {
+  return bookType === "script" ? "剧本" : "短篇";
+}
+
 function assertBaseRevision(
   expected: number | undefined,
   actual: number
@@ -2833,7 +3015,7 @@ async function writeResourceContents(
   };
   switch (domain) {
     case "book": {
-      const book = resource as ShortBook;
+      const book = resource as Book;
       const used = new Set<string>();
       const documents: BookProjectDocumentManifest[] = [];
       for (const document of book.documents) {
@@ -3056,7 +3238,7 @@ async function hydrateResource(
         maxProjectContentBytes
       );
       const draftOffset = manifest.documents.length;
-      return ShortBookSchema.parse({
+      return BookSchema.parse({
         id: manifest.id,
         title: manifest.title,
         bookType: manifest.bookType,

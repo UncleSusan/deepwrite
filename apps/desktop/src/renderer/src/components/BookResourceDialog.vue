@@ -74,10 +74,13 @@ const bindingDomain = computed<"skill" | "material" | null>(() => {
   if (props.mode === "bind-material") return "material";
   return null;
 });
+const bookTypeLabel = computed(() =>
+  props.book?.workspaceType === "script" ? "剧本" : "书籍"
+);
 const title = computed(() => {
-  if (props.mode === "rename") return "修改书籍名称";
-  if (props.mode === "remove") return "移除书籍";
-  if (props.mode === "delete") return "删除书籍";
+  if (props.mode === "rename") return `修改${bookTypeLabel.value}名称`;
+  if (props.mode === "remove") return `移除${bookTypeLabel.value}`;
+  if (props.mode === "delete") return `删除${bookTypeLabel.value}`;
   if (props.mode === "bind-skill") return "技能库绑定";
   return "素材库绑定";
 });
@@ -86,6 +89,18 @@ function materialCandidates(kind: MaterialKind): ResourceTreeNode[] {
   return props.materialLibraries.filter(
     (library) => library.materialKind === kind || library.materialKind === "mixed"
   );
+}
+
+function materialKindDescription(kind: (typeof MATERIAL_KINDS)[number]): string {
+  return props.book?.workspaceType === "script" && kind.id === "plot"
+    ? "剧情设计与细化"
+    : kind.description;
+}
+
+function skillKindDescription(kind: (typeof SKILL_KINDS)[number]): string {
+  return props.book?.workspaceType === "script" && kind.id === "style"
+    ? "正文与分集写作方法"
+    : kind.description;
 }
 
 function skillCandidates(kind: SkillKind): ResourceTreeNode[] {
@@ -264,8 +279,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <form class="dialog-content" :class="{ 'create-short-book-form': bindingDomain }" @submit.prevent="submit">
           <template v-if="mode === 'rename'">
             <label class="book-resource-name-field">
-              <span>书籍名称</span>
-              <input ref="nameInput" v-model="nameDraft" type="text" maxlength="80" autocomplete="off" aria-label="书籍名称" />
+              <span>{{ bookTypeLabel }}名称</span>
+              <input ref="nameInput" v-model="nameDraft" type="text" maxlength="80" autocomplete="off" :aria-label="`${bookTypeLabel}名称`" />
             </label>
             <p class="book-resource-help">侧栏和文稿显示路径会同步更新，本地文件夹名称不会被自动修改。</p>
           </template>
@@ -276,7 +291,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               <div>
                 <strong>确认{{ mode === "delete" ? "删除" : "移除" }}“{{ book.label }}”？</strong>
                 <p v-if="mode === 'delete'">会从当前创作空间移除，并永久删除本地项目文件夹及其中所有文件。此操作无法撤销。</p>
-                <p v-else>只会从当前创作空间解除注册，不会删除本地文件夹；之后可通过“打开已存在书籍”恢复。</p>
+                <p v-else>只会从当前创作空间解除注册，不会删除本地文件夹；之后可通过“打开已存在{{ bookTypeLabel }}”恢复。</p>
               </div>
             </div>
           </template>
@@ -305,7 +320,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 
             <div v-if="bindingMode === 'single' && bindingDomain === 'material'" class="create-short-kind-grid">
               <label v-for="kind in MATERIAL_KINDS" :key="kind.id" class="create-short-kind-field">
-                <span><strong>{{ kind.label }}</strong><small>{{ kind.description }}</small></span>
+                <span><strong>{{ kind.label }}</strong><small>{{ materialKindDescription(kind) }}</small></span>
                 <PopupSelect
                   :model-value="selectedMaterialIds[kind.id]"
                   :options="materialOptions(kind.id)"
@@ -319,7 +334,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </div>
             <div v-else-if="bindingMode === 'single'" class="create-short-kind-grid">
               <label v-for="kind in SKILL_KINDS" :key="kind.id" class="create-short-kind-field">
-                <span><strong>{{ kind.label }}</strong><small>{{ kind.description }}</small></span>
+                <span><strong>{{ kind.label }}</strong><small>{{ skillKindDescription(kind) }}</small></span>
                 <PopupSelect
                   :model-value="selectedSkillIds[kind.id]"
                   :options="skillOptions(kind.id)"
@@ -364,7 +379,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 
           <div class="dialog-actions" :class="{ 'create-short-book-actions': bindingDomain }">
             <button class="dialog-secondary-button" type="button" :disabled="submitting" @click="requestClose">取消</button>
-            <button class="dialog-primary-button" :class="{ 'is-danger': mode === 'remove' || mode === 'delete' }" type="submit" :disabled="loading || submitting">
+            <button class="dialog-primary-button" :class="{ 'is-danger': mode === 'delete' }" type="submit" :disabled="loading || submitting">
               {{ submitting ? (mode === "remove" || mode === "delete" ? "处理中…" : "保存中…") : mode === "delete" ? "确认删除" : mode === "remove" ? "确认移除" : mode === "rename" ? "保存名称" : "保存绑定" }}
             </button>
           </div>

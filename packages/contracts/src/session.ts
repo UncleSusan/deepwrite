@@ -16,6 +16,11 @@ import {
   ShortWorkspaceSnapshotSchema,
   resolveShortWorkspaceAgentIdForStage
 } from "./workspace";
+import {
+  ScriptWorkspaceAgentProfileSchema,
+  ScriptWorkspaceSnapshotSchema,
+  resolveScriptWorkspaceAgentIdForStage
+} from "./script-workspace";
 import { ShortAgentSubagentDefinitionsSchema } from "./agent-team";
 import {
   LearningImitationAgentProfileSchema,
@@ -104,6 +109,7 @@ export type AttachedContextSnapshot = z.infer<typeof AttachedContextSnapshotSche
 export const WorkspaceRuntimeContextSchema = z.object({
   activeResource: ActiveResourceSnapshotSchema.optional(),
   shortWorkspace: ShortWorkspaceSnapshotSchema.optional(),
+  scriptWorkspace: ScriptWorkspaceSnapshotSchema.optional(),
   libraryWorkspace: LibraryAgentWorkspaceSnapshotSchema.optional(),
   learningImitation: LearningImitationRuntimeContextSchema.optional(),
   subagentAuthoring: SubagentAuthoringRuntimeContextSchema.optional(),
@@ -118,6 +124,7 @@ export const WorkspaceRuntimeContextSchema = z.object({
 }).superRefine((value, context) => {
   const exclusiveContexts = [
     value.shortWorkspace,
+    value.scriptWorkspace,
     value.libraryWorkspace,
     value.learningImitation,
     value.subagentAuthoring
@@ -150,38 +157,52 @@ export const WorkspaceRuntimeContextSchema = z.object({
       }
     }
   }
-  const shortWorkspace = value.shortWorkspace;
   const active = value.activeResource;
-  if (!shortWorkspace || !active) return;
+  if (!active) return;
 
-  const matchesActiveStage = shortWorkspace.activeStageId === "draft"
-    ? (
-        shortWorkspace.activeAgentId !== "expert_section_writer" &&
-        active.id === shortWorkspace.expertDraft.id &&
-        active.content === ""
-      ) || shortWorkspace.expertDraft.sections
-        .filter(
-          (section) =>
-            shortWorkspace.activeAgentId !== "expert_section_writer" ||
-            section.id === shortWorkspace.activeSectionId
-        )
-        .some((section) =>
-          [section.body, section.characterState].some(
-            (file) =>
-              file.documentId === active.id && file.content === active.content
+  const creativeWorkspaces = [
+    {
+      key: "shortWorkspace",
+      label: "short",
+      workspace: value.shortWorkspace
+    },
+    {
+      key: "scriptWorkspace",
+      label: "script",
+      workspace: value.scriptWorkspace
+    }
+  ] as const;
+  for (const { key, label, workspace } of creativeWorkspaces) {
+    if (!workspace) continue;
+    const matchesActiveStage = workspace.activeStageId === "draft"
+      ? (
+          workspace.activeAgentId !== "expert_section_writer" &&
+          active.id === workspace.expertDraft.id &&
+          active.content === ""
+        ) || workspace.expertDraft.sections
+          .filter(
+            (section) =>
+              workspace.activeAgentId !== "expert_section_writer" ||
+              section.id === workspace.activeSectionId
           )
-        )
-    : shortWorkspace.stages.some(
-        (stage) =>
-          stage.stageId === shortWorkspace.activeStageId &&
-          stage.content === active.content
-      );
-  if (!matchesActiveStage) {
-    context.addIssue({
-      code: "custom",
-      path: ["shortWorkspace", "activeStageId"],
-      message: "The active short stage must match the live active resource snapshot."
-    });
+          .some((section) =>
+            [section.body, section.characterState].some(
+              (file) =>
+                file.documentId === active.id && file.content === active.content
+            )
+          )
+      : workspace.stages.some(
+          (stage) =>
+            stage.stageId === workspace.activeStageId &&
+            stage.content === active.content
+        );
+    if (!matchesActiveStage) {
+      context.addIssue({
+        code: "custom",
+        path: [key, "activeStageId"],
+        message: `The active ${label} stage must match the live active resource snapshot.`
+      });
+    }
   }
 });
 export type WorkspaceRuntimeContext = z.infer<typeof WorkspaceRuntimeContextSchema>;
@@ -382,6 +403,7 @@ export const SessionAbortCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
 export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema.extend({
   runtimeConfig: AgentProviderRuntimeConfigSchema.optional(),
   agentProfile: ShortWorkspaceAgentProfileSchema.optional(),
+  scriptAgentProfile: ScriptWorkspaceAgentProfileSchema.optional(),
   subagentDefinitions: ShortAgentSubagentDefinitionsSchema.optional(),
   /**
    * Runtime-only map of model config id → resolved provider config for
@@ -394,14 +416,18 @@ export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema
   learningImitationProfile: LearningImitationAgentProfileSchema.optional()
 }).superRefine((value, context) => {
   const shortWorkspace = value.workspaceContext?.shortWorkspace;
+  const scriptWorkspace = value.workspaceContext?.scriptWorkspace;
   if (
     value.subagentDefinitions !== undefined &&
-    (!shortWorkspace || !value.agentProfile)
+    !(
+      (shortWorkspace && value.agentProfile) ||
+      (scriptWorkspace && value.scriptAgentProfile)
+    )
   ) {
     context.addIssue({
       code: "custom",
       path: ["subagentDefinitions"],
-      message: "Subagent definitions require a short workspace and its agent profile."
+      message: "Subagent definitions require a creative workspace and its agent profile."
     });
   }
   if (
@@ -426,6 +452,13 @@ export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema
       }
     }
   }
+  if (Boolean(shortWorkspace) !== Boolean(value.agentProfile)) {
+    context.addIssue({
+      code: "custom",
+      path: ["agentProfile"],
+      message: "Short workspace context and agent profile must be provided together."
+    });
+  }
   if (shortWorkspace && value.agentProfile) {
     const activeAgentId =
       shortWorkspace.activeAgentId ??
@@ -435,6 +468,25 @@ export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema
         code: "custom",
         path: ["agentProfile", "id"],
         message: "Short workspace agent profile must match the active parent agent."
+      });
+    }
+  }
+  if (Boolean(scriptWorkspace) !== Boolean(value.scriptAgentProfile)) {
+    context.addIssue({
+      code: "custom",
+      path: ["scriptAgentProfile"],
+      message: "Script workspace context and agent profile must be provided together."
+    });
+  }
+  if (scriptWorkspace && value.scriptAgentProfile) {
+    const activeAgentId =
+      scriptWorkspace.activeAgentId ??
+      resolveScriptWorkspaceAgentIdForStage(scriptWorkspace.activeStageId);
+    if (value.scriptAgentProfile.id !== activeAgentId) {
+      context.addIssue({
+        code: "custom",
+        path: ["scriptAgentProfile", "id"],
+        message: "Script workspace agent profile must match the active parent agent."
       });
     }
   }

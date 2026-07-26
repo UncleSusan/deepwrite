@@ -12,14 +12,15 @@ import type {
 } from "./models";
 import type { SystemEventEnvelope, SystemHealthPayload } from "./system";
 import type {
-  ShortWorkspaceAgentId,
-  ShortWorkspaceAgentSettings,
-  ShortWorkspaceAgentSettingsInput
+  WorkspaceAgentId,
+  WorkspaceAgentSettings,
+  WorkspaceAgentSettingsInput
 } from "./workspace";
 import type {
-  AgentTeamSettings,
-  AgentTeamSettingsInput
+  WorkspaceAgentTeamSettings,
+  WorkspaceAgentTeamSettingsInput
 } from "./agent-team";
+import type { WorkspaceType } from "./script-workspace";
 import type { WorkspaceDirectorySettings } from "./workspace-directory";
 import type {
   AppearanceSettings,
@@ -54,6 +55,7 @@ import type {
   CreateDraftSectionInput,
   CreateLibraryGroupInput,
   CreateLibraryInput,
+  CreateScriptBookInput,
   CreateShortBookInput,
   DeleteCatalogProjectInput,
   DeleteCatalogProjectResult,
@@ -64,7 +66,9 @@ import type {
   RemoveLibraryEntryResult,
   SaveDocumentInput,
   SaveLibraryEntryInput,
+  ScriptBook,
   ShortBook,
+  Book,
   ImportLegacyLibraryResult,
   UnregisterCatalogProjectInput,
   UnregisterCatalogProjectResult,
@@ -81,6 +85,7 @@ export interface DeepWriteApi {
     loadDraftRecovery(): Promise<CatalogDraftRecovery>;
     saveDraftRecovery(drafts: CatalogDraftRecovery): Promise<void>;
     createShortBook(input: CreateShortBookInput): Promise<ShortBook | null>;
+    createScriptBook(input: CreateScriptBookInput): Promise<ScriptBook | null>;
     createLibrary(input: CreateLibraryInput): Promise<CatalogLibrary | null>;
     createLibraryGroup(input: CreateLibraryGroupInput): Promise<CatalogLibraryGroup | null>;
     openProject(domain: CatalogProjectDomain): Promise<CatalogOpenProjectResult | null>;
@@ -88,7 +93,7 @@ export interface DeepWriteApi {
     importLegacyLibrary(
       domain: CatalogLibraryProjectDomain
     ): Promise<ImportLegacyLibraryResult | null>;
-    updateBook(input: UpdateBookInput): Promise<ShortBook>;
+    updateBook(input: UpdateBookInput): Promise<Book>;
     updateLibraryGroup(input: UpdateLibraryGroupInput): Promise<CatalogLibraryGroup>;
     deleteBook(bookId: string): Promise<DeleteBookResult>;
     saveDocument(input: SaveDocumentInput): Promise<CatalogDocument>;
@@ -116,16 +121,18 @@ export interface DeepWriteApi {
     test(model: ModelConfigInput): Promise<ModelConnectionTestResult>;
   };
   workspaceAgents: {
-    list(workspaceType: "short"): Promise<ShortWorkspaceAgentSettings>;
-    save(settings: ShortWorkspaceAgentSettingsInput): Promise<ShortWorkspaceAgentSettings>;
+    list(workspaceType: WorkspaceType): Promise<WorkspaceAgentSettings>;
+    save(settings: WorkspaceAgentSettingsInput): Promise<WorkspaceAgentSettings>;
     reset(
-      workspaceType: "short",
-      agentId?: ShortWorkspaceAgentId
-    ): Promise<ShortWorkspaceAgentSettings>;
+      workspaceType: WorkspaceType,
+      agentId?: WorkspaceAgentId
+    ): Promise<WorkspaceAgentSettings>;
   };
   agentTeams: {
-    list(workspaceType: "short"): Promise<AgentTeamSettings>;
-    save(settings: AgentTeamSettingsInput): Promise<AgentTeamSettings>;
+    list(workspaceType: WorkspaceType): Promise<WorkspaceAgentTeamSettings>;
+    save(
+      settings: WorkspaceAgentTeamSettingsInput
+    ): Promise<WorkspaceAgentTeamSettings>;
   };
   libraryAgents: {
     list(): Promise<LibraryAgentSettings>;

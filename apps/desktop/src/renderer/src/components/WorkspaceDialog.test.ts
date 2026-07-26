@@ -19,4 +19,10 @@ describe("WorkspaceDialog DeepWrite free models", () => {
       source.indexOf('v-for="model in draftModels"')
     );
   });
+
+  it("scrolls the model editor into view after opening it", () => {
+    expect(source).toContain('ref="modelConfigScrollArea"');
+    expect(source).toContain('modelConfigScrollArea.value?.scrollTo({ top: 0, behavior: "auto" })');
+    expect(source.match(/scrollModelEditorToTop\(\);/g)).toHaveLength(2);
+  });
 });

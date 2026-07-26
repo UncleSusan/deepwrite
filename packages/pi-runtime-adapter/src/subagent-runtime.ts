@@ -119,6 +119,8 @@ export interface BuildSpawnSubagentToolInput {
   thinkingLevel: PiThinkingLevel;
   streamFn: StreamFn;
   definitions: readonly ShortAgentSubagentDefinition[];
+  /** Runtime-owned requirements appended after the editable child role prompt. */
+  systemPromptRequirements?: string;
   /**
    * Resolved provider configs keyed by model config id, for subagents with
    * `modelMode: "custom"`.
@@ -212,7 +214,8 @@ function isAssistantMessage(message: AgentMessage): message is AssistantMessage 
  */
 export function buildSubagentSystemPrompt(
   definition: ShortAgentSubagentDefinition,
-  childTools: readonly AgentTool[]
+  childTools: readonly AgentTool[],
+  systemPromptRequirements?: string
 ): string {
   const toolLines = childTools.map((tool) => {
     const label = "label" in tool && typeof tool.label === "string" && tool.label.trim()
@@ -222,6 +225,13 @@ export function buildSubagentSystemPrompt(
   });
   return [
     definition.systemPrompt.trim(),
+    ...(systemPromptRequirements?.trim()
+      ? [
+          "",
+          "【本轮不可编辑的写作约束】",
+          systemPromptRequirements.trim()
+        ]
+      : []),
     "",
     `【当前子智能体：${definition.name} / ${definition.id}】`,
     "【本轮运行事实】",
@@ -347,7 +357,11 @@ export function buildSpawnSubagentTool(
         });
         child = new Agent({
           initialState: {
-            systemPrompt: buildSubagentSystemPrompt(definition, childTools),
+            systemPrompt: buildSubagentSystemPrompt(
+              definition,
+              childTools,
+              input.systemPromptRequirements
+            ),
             model: childModel,
             thinkingLevel: childThinkingLevel,
             messages: [],

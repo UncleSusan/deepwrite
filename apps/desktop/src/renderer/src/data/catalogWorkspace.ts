@@ -5,11 +5,11 @@ import {
   type CatalogDocument,
   type CatalogDraftSection,
   type CatalogSnapshot,
+  type Book,
   type MaterialKind,
   type MaterialLibrary,
   type MaterialLibraryKind,
   type MaterialStageId,
-  type ShortBook,
   type ShortWorkspaceStageId,
   type SkillKind,
   type SkillLibrary,
@@ -132,6 +132,7 @@ export interface DraftSectionProjection {
 export interface DraftDirectoryProjection {
   id: string;
   workspaceId: string;
+  workspaceType: "short" | "script";
   title: string;
   sections: DraftSectionProjection[];
 }
@@ -250,28 +251,34 @@ function uniqueIds(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
-function linkedMaterialLibraryIds(book: ShortBook): string[] {
+function linkedMaterialLibraryIds(book: Book): string[] {
   return uniqueIds(
     MATERIAL_KINDS.flatMap((kind) => book.linkedMaterialIdsByKind[kind])
   );
 }
 
-function linkedSkillLibraryIds(book: ShortBook): string[] {
+function linkedSkillLibraryIds(book: Book): string[] {
   return uniqueIds(SKILL_KINDS.flatMap((kind) => book.linkedSkillIdsByKind[kind]));
 }
 
-function inferShortStageId(document: CatalogDocument): ShortWorkspaceStageId | undefined {
+function inferWorkspaceStageId(
+  book: Book,
+  document: CatalogDocument
+): ShortWorkspaceStageId | undefined {
   const candidates = [
     document.id,
     ...document.id.split(/[/:.]/).reverse(),
     document.title
   ];
   for (const candidate of candidates) {
-    if (SHORT_WORKSPACE_STAGE_IDS.includes(candidate as ShortWorkspaceStageId)) {
+    if (
+      SHORT_WORKSPACE_STAGE_IDS.includes(candidate as ShortWorkspaceStageId) &&
+      !(book.bookType === "script" && candidate === "intro_design")
+    ) {
       return candidate as ShortWorkspaceStageId;
     }
     const alias = SHORT_STAGE_TITLE_ALIASES[candidate.trim()];
-    if (alias) {
+    if (alias && !(book.bookType === "script" && alias === "intro_design")) {
       return alias;
     }
   }
@@ -279,7 +286,7 @@ function inferShortStageId(document: CatalogDocument): ShortWorkspaceStageId | u
 }
 
 function createBookDocument(
-  book: ShortBook,
+  book: Book,
   document: CatalogDocument,
   stageId: ShortWorkspaceStageId | undefined
 ): WorkspaceDocument {
@@ -294,12 +301,14 @@ function createBookDocument(
     id: bookDocumentId(book.id, document.id),
     domain: "creation",
     title: document.title,
-    eyebrow: stageId ? `短篇 · ${stageLabel}` : "短篇 · 其他文稿",
+    eyebrow: stageId
+      ? `${LIBRARY_TYPE_LABELS[book.bookType]} · ${stageLabel}`
+      : `${LIBRARY_TYPE_LABELS[book.bookType]} · 其他文稿`,
     path,
     content: document.content,
     format: stageId === "draft" ? "正文" : "设定",
     workspaceId: book.id,
-    workspaceType: "short",
+    workspaceType: book.bookType,
     workspaceTitle: book.title,
     workspaceCategories: [book.genre],
     ...(stageId ? { stageId } : {}),
@@ -311,7 +320,7 @@ function createBookDocument(
 }
 
 function createDraftFileDocument(
-  book: ShortBook,
+  book: Book,
   section: CatalogDraftSection,
   sectionOrder: number,
   fileKind: "body" | "character-state"
@@ -322,12 +331,15 @@ function createDraftFileDocument(
     id: bookDocumentId(book.id, source.id),
     domain: "creation",
     title: fileKind === "body" ? section.title : source.title,
-    eyebrow: fileKind === "body" ? "短篇 · 小节正文" : "短篇 · 人物状态",
+    eyebrow:
+      fileKind === "body"
+        ? `${LIBRARY_TYPE_LABELS[book.bookType]} · ${book.bookType === "script" ? "剧集正文" : "小节正文"}`
+        : `${LIBRARY_TYPE_LABELS[book.bookType]} · 人物状态`,
     path: [book.title, book.draft.title, section.title, fileLabel],
     content: source.content,
     format: fileKind === "body" ? "正文" : "账本",
     workspaceId: book.id,
-    workspaceType: "short",
+    workspaceType: book.bookType,
     workspaceTitle: book.title,
     workspaceCategories: [book.genre],
     stageId: "draft",
@@ -344,14 +356,14 @@ function createDraftFileDocument(
   };
 }
 
-function createBookProjection(book: ShortBook): {
+function createBookProjection(book: Book): {
   node: ResourceTreeNode;
   documents: WorkspaceDocument[];
   draftDirectory: DraftDirectoryProjection;
 } {
   const claimedStages = new Set<ShortWorkspaceStageId>();
   const projected = book.documents.map((document) => {
-    const inferred = inferShortStageId(document);
+    const inferred = inferWorkspaceStageId(book, document);
     const stageId =
       inferred && inferred !== "draft" && !claimedStages.has(inferred)
         ? inferred
@@ -374,6 +386,7 @@ function createBookProjection(book: ShortBook): {
       icon: "file",
       catalogNodeType: "document",
       stageCategoryId: item.stageId ?? "other",
+      workspaceType: book.bookType,
       ...(item.stageId ? {} : { muted: false })
     };
     if (item.stageId) {
@@ -395,6 +408,7 @@ function createBookProjection(book: ShortBook): {
   const draftDirectory: DraftDirectoryProjection = {
     id: draftDirectoryId,
     workspaceId: book.id,
+    workspaceType: book.bookType,
     title: book.draft.title,
     sections: book.draft.sections.map((section) => ({
       id: section.id,
@@ -413,6 +427,7 @@ function createBookProjection(book: ShortBook): {
     selectableBranch: true,
     shortAgentId: "expert_draft_coordinator",
     draftDirectoryId: book.draft.id,
+    workspaceType: book.bookType,
     children: draftDirectory.sections.map((section) => ({
       id: catalogNodeId(
         "book-expert-section",
@@ -428,14 +443,19 @@ function createBookProjection(book: ShortBook): {
       characterStateDocumentId: section.characterStateDocumentId,
       shortAgentId: "expert_section_writer",
       expertSectionId: section.id,
-      draftDirectoryId: book.draft.id
+      draftDirectoryId: book.draft.id,
+      workspaceType: book.bookType
     }))
   });
 
   const children: ResourceTreeNode[] = [];
   const character = stageNodes.get("character_design");
   if (character) children.push(character);
-  const plotChildren = ["plot_design", "intro_design", "plot_refine"]
+  const plotChildren = (
+    book.bookType === "script"
+      ? ["plot_design", "plot_refine"]
+      : ["plot_design", "intro_design", "plot_refine"]
+  )
     .map((stageId) => stageNodes.get(stageId as ShortWorkspaceStageId))
     .filter((node): node is ResourceTreeNode => node !== undefined);
   if (plotChildren.length) {
@@ -445,6 +465,7 @@ function createBookProjection(book: ShortBook): {
       icon: "sparkles",
       catalogNodeType: "category",
       stageCategoryId: "plot",
+      workspaceType: book.bookType,
       children: plotChildren
     });
   }
@@ -459,6 +480,7 @@ function createBookProjection(book: ShortBook): {
       icon: "folder",
       catalogNodeType: "category",
       stageCategoryId: "other",
+      workspaceType: book.bookType,
       children: otherNodes
     });
   }
@@ -468,7 +490,8 @@ function createBookProjection(book: ShortBook): {
       id: book.id,
       label: book.title,
       icon: "book",
-      badge: "短篇",
+      badge: LIBRARY_TYPE_LABELS[book.bookType],
+      workspaceType: book.bookType,
       catalogNodeType: "book",
       ...(book.projectRevision === undefined
         ? {}
@@ -512,6 +535,7 @@ function createMaterialLibraryNode(library: MaterialLibrary): ResourceTreeNode {
       ? {}
       : { projectRevision: library.projectRevision }),
     materialKind: library.materialKind,
+    workspaceType: library.materialType,
     ...(library.parentGenre.trim() ? { parentGenre: library.parentGenre.trim() } : {}),
     ...(library.subGenre.trim() ? { subGenre: library.subGenre.trim() } : {}),
     children: [
@@ -522,6 +546,7 @@ function createMaterialLibraryNode(library: MaterialLibrary): ResourceTreeNode {
         muted: !library.overview.trim(),
         catalogNodeType: "document",
         libraryId: library.id,
+        workspaceType: library.materialType,
         ...(library.materialKind === "mixed" ? {} : { materialKind: library.materialKind })
       },
       ...library.entries.map((entry) => ({
@@ -530,6 +555,7 @@ function createMaterialLibraryNode(library: MaterialLibrary): ResourceTreeNode {
         icon: "file" as const,
         catalogNodeType: "document" as const,
         libraryId: library.id,
+        workspaceType: library.materialType,
         catalogEntryId: entry.id,
         materialKind: MATERIAL_STAGE_KINDS[entry.stageId],
         stageCategoryId: entry.stageId,
@@ -660,6 +686,7 @@ function createSkillLibraryNode(library: SkillLibrary): ResourceTreeNode {
     libraryId: library.id,
     readOnly: library.isBuiltin,
     skillKind: library.skillKind,
+    workspaceType: library.skillType,
     children: [
       {
         id: skillOverviewDocumentId(library.id),
@@ -668,6 +695,7 @@ function createSkillLibraryNode(library: SkillLibrary): ResourceTreeNode {
         muted: !library.overview.trim(),
         catalogNodeType: "document",
         libraryId: library.id,
+        workspaceType: library.skillType,
         readOnly: library.isBuiltin,
         skillKind: library.skillKind
       },
@@ -677,6 +705,7 @@ function createSkillLibraryNode(library: SkillLibrary): ResourceTreeNode {
         icon: "wand" as const,
         catalogNodeType: "document" as const,
         libraryId: library.id,
+        workspaceType: library.skillType,
         catalogEntryId: entry.id,
         readOnly: library.isBuiltin,
         skillKind: library.skillKind,

@@ -7,8 +7,8 @@ import type {
   LibraryAgentDomain,
   LibraryAgentSettings,
   LibraryAgentSettingsInput,
-  ShortWorkspaceAgentSettings,
-  ShortWorkspaceAgentSettingsInput
+  WorkspaceAgentSettings,
+  WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
 import {
   FONT_SIZE_LIMITS,
@@ -49,7 +49,7 @@ interface SettingsSection {
 
 defineProps<{
   autoSaveEnabled: boolean;
-  workspaceAgentSettings: ShortWorkspaceAgentSettings | null;
+  workspaceAgentSettings: readonly WorkspaceAgentSettings[];
   workspaceAgentLoading: boolean;
   workspaceAgentSaving: boolean;
   workspaceAgentError: string | null;
@@ -66,7 +66,7 @@ defineProps<{
 const emit = defineEmits<{
   back: [];
   updateAutoSave: [enabled: boolean];
-  saveWorkspaceAgents: [settings: ShortWorkspaceAgentSettingsInput];
+  saveWorkspaceAgents: [settings: WorkspaceAgentSettingsInput];
   saveLearningImitation: [settings: LearningImitationSettingsInput];
   resetLearningImitation: [stageId: LearningImitationStageId];
   saveLibraryAgents: [settings: LibraryAgentSettingsInput];

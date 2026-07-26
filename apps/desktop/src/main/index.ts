@@ -2,7 +2,8 @@ import { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, shell } from "e
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  AgentTeamSettingsSchema,
+  WorkspaceAgentTeamSettingsSchema,
+  BookSchema,
   CatalogDocumentSchema,
   CatalogDraftSectionSchema,
   CatalogDraftRecoverySaveResultSchema,
@@ -27,8 +28,9 @@ import {
   RemoveLibraryEntryResultSchema,
   SessionAbortAcceptedPayloadSchema,
   SessionPromptAcceptedPayloadSchema,
+  ScriptBookSchema,
   ShortBookSchema,
-  ShortWorkspaceAgentSettingsSchema,
+  WorkspaceAgentSettingsSchema,
   SystemEventEnvelopeSchema,
   SystemHealthPayloadSchema,
   SystemReadyEventEnvelopeSchema,
@@ -540,6 +542,7 @@ function registerIpc(): void {
         command.type === "agent.abort" ||
         command.type === "agent.model_test" ||
         command.type === "catalog.createShortBookAtPath" ||
+        command.type === "catalog.createScriptBookAtPath" ||
         command.type === "catalog.createLibraryAtPath" ||
         command.type === "catalog.createLibraryGroupAtPath" ||
         command.type === "catalog.openProjectAtPath" ||
@@ -677,6 +680,7 @@ function registerIpc(): void {
 
       if (
         command.type === "catalog.createShortBook" ||
+        command.type === "catalog.createScriptBook" ||
         command.type === "catalog.createLibrary" ||
         command.type === "catalog.createLibraryGroup" ||
         command.type === "catalog.openProject" ||
@@ -695,6 +699,7 @@ function registerIpc(): void {
 
           const domain =
             command.type === "catalog.createShortBook" ||
+            command.type === "catalog.createScriptBook" ||
             command.type === "catalog.importLegacyBook"
               ? "book"
               : command.payload.domain;
@@ -705,6 +710,7 @@ function registerIpc(): void {
           let selectedPaths: string[];
           if (
             command.type === "catalog.createShortBook" ||
+            command.type === "catalog.createScriptBook" ||
             command.type === "catalog.createLibrary" ||
             command.type === "catalog.createLibraryGroup"
           ) {
@@ -765,51 +771,60 @@ function registerIpc(): void {
                   },
                   { id: command.id, context: command.context }
                 )
-              : command.type === "catalog.createLibrary"
+              : command.type === "catalog.createScriptBook"
                 ? createEnvelope(
-                    "catalog.createLibraryAtPath",
+                    "catalog.createScriptBookAtPath",
                     {
-                      ...command.payload,
-                      parentDirectory: selectedPath
+                      parentDirectory: selectedPath,
+                      input: command.payload
                     },
                     { id: command.id, context: command.context }
                   )
-                : command.type === "catalog.createLibraryGroup"
+                : command.type === "catalog.createLibrary"
                   ? createEnvelope(
-                      "catalog.createLibraryGroupAtPath",
+                      "catalog.createLibraryAtPath",
                       {
-                        parentDirectory: selectedPath,
-                        input: command.payload
+                        ...command.payload,
+                        parentDirectory: selectedPath
                       },
                       { id: command.id, context: command.context }
                     )
-                : command.type === "catalog.openProject"
-                  ? createEnvelope(
-                    "catalog.openProjectAtPath",
-                    {
-                      projectDirectory: selectedPath,
-                      domain: command.payload.domain
-                    },
-                    { id: command.id, context: command.context }
-                  )
-                  : command.type === "catalog.importLegacyBook"
+                  : command.type === "catalog.createLibraryGroup"
                     ? createEnvelope(
-                        "catalog.importLegacyBookAtPath",
+                        "catalog.createLibraryGroupAtPath",
                         {
-                          archivePath: selectedPath,
-                          parentDirectory: defaultPath
+                          parentDirectory: selectedPath,
+                          input: command.payload
                         },
                         { id: command.id, context: command.context }
                       )
-                    : createEnvelope(
-                        "catalog.importLegacyLibraryAtPath",
-                        {
-                          domain: command.payload.domain,
-                          archivePath: selectedPath,
-                          parentDirectory: defaultPath
-                        },
-                        { id: command.id, context: command.context }
-                      )
+                    : command.type === "catalog.openProject"
+                      ? createEnvelope(
+                          "catalog.openProjectAtPath",
+                          {
+                            projectDirectory: selectedPath,
+                            domain: command.payload.domain
+                          },
+                          { id: command.id, context: command.context }
+                        )
+                      : command.type === "catalog.importLegacyBook"
+                        ? createEnvelope(
+                            "catalog.importLegacyBookAtPath",
+                            {
+                              archivePath: selectedPath,
+                              parentDirectory: defaultPath
+                            },
+                            { id: command.id, context: command.context }
+                          )
+                        : createEnvelope(
+                            "catalog.importLegacyLibraryAtPath",
+                            {
+                              domain: command.payload.domain,
+                              archivePath: selectedPath,
+                              parentDirectory: defaultPath
+                            },
+                            { id: command.id, context: command.context }
+                          )
           );
 
           if (command.type === "catalog.importLegacyLibrary") {
@@ -856,15 +871,17 @@ function registerIpc(): void {
           const payload =
             command.type === "catalog.createShortBook"
               ? ShortBookSchema.parse(result.payload)
-              : command.type === "catalog.createLibrary"
-                ? CatalogLibrarySchema.parse(result.payload)
-                : command.type === "catalog.createLibraryGroup"
-                  ? CatalogLibraryGroupSchema.parse(result.payload)
-                : command.type === "catalog.openProject"
-                  ? CatalogOpenProjectResultSchema.parse(result.payload)
-                  : command.type === "catalog.importLegacyBook"
-                    ? ShortBookSchema.parse(result.payload)
-                    : CatalogLibrarySchema.parse(result.payload);
+              : command.type === "catalog.createScriptBook"
+                ? ScriptBookSchema.parse(result.payload)
+                : command.type === "catalog.createLibrary"
+                  ? CatalogLibrarySchema.parse(result.payload)
+                  : command.type === "catalog.createLibraryGroup"
+                    ? CatalogLibraryGroupSchema.parse(result.payload)
+                    : command.type === "catalog.openProject"
+                      ? CatalogOpenProjectResultSchema.parse(result.payload)
+                      : command.type === "catalog.importLegacyBook"
+                        ? ShortBookSchema.parse(result.payload)
+                        : CatalogLibrarySchema.parse(result.payload);
           return { status: "accepted", requestId: command.id, payload };
         } catch (error: unknown) {
           return {
@@ -937,7 +954,7 @@ function registerIpc(): void {
               payload = DeleteCatalogProjectResultSchema.parse(result.payload);
               break;
             case "catalog.updateBook":
-              payload = ShortBookSchema.parse(result.payload);
+              payload = BookSchema.parse(result.payload);
               break;
             case "catalog.updateLibraryGroup":
               payload = CatalogLibraryGroupSchema.parse(result.payload);
@@ -1038,8 +1055,10 @@ function registerIpc(): void {
           return {
             status: "accepted",
             requestId: command.id,
-            payload: ShortWorkspaceAgentSettingsSchema.parse(
-              await requireWorkspaceAgentConfigStore().list()
+            payload: WorkspaceAgentSettingsSchema.parse(
+              await requireWorkspaceAgentConfigStore().list(
+                command.payload.workspaceType
+              )
             )
           };
         } catch (error: unknown) {
@@ -1060,8 +1079,10 @@ function registerIpc(): void {
           return {
             status: "accepted",
             requestId: command.id,
-            payload: AgentTeamSettingsSchema.parse(
-              await requireAgentTeamConfigStore().list()
+            payload: WorkspaceAgentTeamSettingsSchema.parse(
+              await requireAgentTeamConfigStore().list(
+                command.payload.workspaceType
+              )
             )
           };
         } catch (error: unknown) {
@@ -1082,7 +1103,7 @@ function registerIpc(): void {
           return {
             status: "accepted",
             requestId: command.id,
-            payload: AgentTeamSettingsSchema.parse(
+            payload: WorkspaceAgentTeamSettingsSchema.parse(
               await requireAgentTeamConfigStore().save(command.payload)
             )
           };
@@ -1104,7 +1125,7 @@ function registerIpc(): void {
           return {
             status: "accepted",
             requestId: command.id,
-            payload: ShortWorkspaceAgentSettingsSchema.parse(
+            payload: WorkspaceAgentSettingsSchema.parse(
               await requireWorkspaceAgentConfigStore().save(command.payload)
             )
           };
@@ -1126,8 +1147,11 @@ function registerIpc(): void {
           return {
             status: "accepted",
             requestId: command.id,
-            payload: ShortWorkspaceAgentSettingsSchema.parse(
-              await requireWorkspaceAgentConfigStore().reset(command.payload.agentId)
+            payload: WorkspaceAgentSettingsSchema.parse(
+              await requireWorkspaceAgentConfigStore().reset(
+                command.payload.workspaceType,
+                command.payload.agentId
+              )
             )
           };
         } catch (error: unknown) {
@@ -1329,15 +1353,22 @@ function registerIpc(): void {
         try {
           const runtimeConfig = await requireModelConfigStore().resolve(command.payload.modelId);
           const shortWorkspace = command.payload.workspaceContext?.shortWorkspace;
+          const scriptWorkspace = command.payload.workspaceContext?.scriptWorkspace;
           const libraryWorkspace = command.payload.workspaceContext?.libraryWorkspace;
           const learningImitation = command.payload.workspaceContext?.learningImitation;
-          const agentProfile = shortWorkspace
+          const creativeWorkspace = shortWorkspace ?? scriptWorkspace;
+          const creativeWorkspaceType = scriptWorkspace ? "script" : "short";
+          const agentProfile = creativeWorkspace
             ? await requireWorkspaceAgentConfigStore().resolveForWorkspace(
-                shortWorkspace
+                creativeWorkspace,
+                creativeWorkspaceType
               )
             : undefined;
           const subagentDefinitions = agentProfile
-            ? await requireAgentTeamConfigStore().resolve(agentProfile.id)
+            ? await requireAgentTeamConfigStore().resolve(
+                creativeWorkspaceType,
+                agentProfile.id
+              )
             : undefined;
           const subagentRuntimeConfigs: Record<string, AgentProviderRuntimeConfig> =
             {};
@@ -1388,7 +1419,11 @@ function registerIpc(): void {
                 ...(thinkingLevel ? { thinkingLevel } : {}),
                 ...(temperature !== undefined ? { temperature } : {}),
                 ...(runtimeConfig ? { runtimeConfig } : {}),
-                ...(agentProfile ? { agentProfile } : {}),
+                ...(agentProfile
+                  ? scriptWorkspace
+                    ? { scriptAgentProfile: agentProfile }
+                    : { agentProfile }
+                  : {}),
                 ...(subagentDefinitions ? { subagentDefinitions } : {}),
                 ...(Object.keys(subagentRuntimeConfigs).length > 0
                   ? { subagentRuntimeConfigs }

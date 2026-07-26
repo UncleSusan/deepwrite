@@ -5,6 +5,8 @@ describe("LibraryProjectDialog create-library form", () => {
   it("selects and submits the material or skill classification", () => {
     expect(source).toContain("materialKind: libraryKind.value");
     expect(source).toContain("skillKind: libraryKind.value");
+    expect(source).toContain("libraryType: libraryType.value");
+    expect(source).toContain("适用创作类型");
     expect(source).toContain("通用技能库");
     expect(source).not.toContain('{ value: "mixed", label: "综合素材库" }');
   });
@@ -26,5 +28,11 @@ describe("LibraryProjectDialog create-entry form", () => {
     expect(source).toContain('v-if="showEntryStageField"');
     expect(source).not.toContain("stageId: stageId.value as SkillStageId");
     expect(source).not.toContain('{ value: "character_design", label: "人物设计" }');
+  });
+
+  it("removes the intro stage from script material libraries", () => {
+    expect(source).toContain(
+      'effectiveLibraryType.value === "script" && value === "intro"'
+    );
   });
 });

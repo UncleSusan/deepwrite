@@ -431,6 +431,147 @@ describe("FolderCatalogStore", () => {
     expect((await store.snapshot()).books).toHaveLength(2);
   });
 
+  it("creates screenplay projects without intro content and allocates numbered episodes", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-script-create-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock()
+    });
+    const created = await store.createScriptBook(
+      { title: "雨夜剧本", genre: "悬疑" },
+      join(root, "books")
+    );
+
+    expect(created.resource).toMatchObject({
+      bookType: "script",
+      documents: [
+        { id: "character_design", title: "人物设计" },
+        { id: "plot_design", title: "剧情设计" },
+        { id: "plot_refine", title: "剧情细化" },
+        { id: "outline", title: "大纲" }
+      ],
+      draft: {
+        sections: [{ id: "episode-1", title: "第一集" }]
+      }
+    });
+    expect(
+      created.resource.documents.some(({ id }) => id === "intro_design")
+    ).toBe(false);
+    expect(
+      created.resource.draft.sections.some(({ title }) => title === "导语")
+    ).toBe(false);
+
+    const secondEpisode = await store.createDraftSection({
+      bookId: created.resource.id,
+      baseProjectRevision: 0
+    });
+    expect(secondEpisode).toMatchObject({
+      id: "episode-2",
+      title: "第二集"
+    });
+
+    const reopened = await store.openBookProject(
+      created.projectDirectory,
+      false
+    );
+    expect(reopened.resource.bookType).toBe("script");
+    expect(reopened.resource.draft.sections.map(({ title }) => title)).toEqual([
+      "第一集",
+      "第二集"
+    ]);
+    const manifest = JSON.parse(
+      await readFile(join(created.projectDirectory, "deepwrite.json"), "utf8")
+    ) as {
+      bookType: string;
+      documents: Array<{ id: string }>;
+      draft: { sections: Array<{ id: string }> };
+    };
+    expect(manifest.bookType).toBe("script");
+    expect(manifest.documents.map(({ id }) => id)).toEqual([
+      "character_design",
+      "plot_design",
+      "plot_refine",
+      "outline"
+    ]);
+    expect(manifest.draft.sections.map(({ id }) => id)).toEqual([
+      "episode-1",
+      "episode-2"
+    ]);
+  });
+
+  it("persists library types and rejects cross-type book bindings", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-library-type-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock()
+    });
+    const parentDirectory = join(root, "projects");
+    const shortMaterial = await store.createLibrary({
+      domain: "material",
+      name: "短篇剧情素材",
+      libraryType: "short",
+      materialKind: "plot",
+      parentDirectory
+    });
+    const scriptMaterial = await store.createLibrary({
+      domain: "material",
+      name: "剧本剧情素材",
+      libraryType: "script",
+      materialKind: "plot",
+      parentDirectory
+    });
+    const scriptSkill = await store.createLibrary({
+      domain: "skill",
+      name: "剧本通用技能",
+      libraryType: "script",
+      skillKind: "general",
+      parentDirectory
+    });
+
+    expect(scriptMaterial.resource.materialType).toBe("script");
+    expect(scriptSkill.resource.skillType).toBe("script");
+    const correctlyBound = await store.createScriptBook(
+      {
+        title: "正确绑定",
+        genre: "其他",
+        linkedMaterialIdsByKind: { plot: [scriptMaterial.resource.id] },
+        linkedSkillIdsByKind: { general: [scriptSkill.resource.id] }
+      },
+      parentDirectory
+    );
+    expect(correctlyBound.resource.bookType).toBe("script");
+    await expect(
+      store.updateBook({
+        bookId: correctlyBound.resource.id,
+        linkedMaterialIdsByKind: { plot: [shortMaterial.resource.id] },
+        baseProjectRevision: 0
+      })
+    ).rejects.toThrow(/剧本书籍不能关联short素材库/u);
+    expect(
+      await store.getProjectRevision(correctlyBound.resource.id, "book")
+    ).toBe(0);
+    await expect(
+      store.createScriptBook(
+        {
+          title: "错误绑定短篇素材",
+          genre: "其他",
+          linkedMaterialIdsByKind: { plot: [shortMaterial.resource.id] }
+        },
+        parentDirectory
+      )
+    ).rejects.toThrow(/剧本书籍不能关联short素材库/u);
+    await expect(
+      store.createShortBook(
+        {
+          title: "错误绑定剧本素材",
+          genre: "其他",
+          linkedMaterialIdsByKind: { plot: [scriptMaterial.resource.id] }
+        },
+        parentDirectory
+      )
+    ).rejects.toThrow(/短篇书籍不能关联script素材库/u);
+  });
+
   it("saves draft body and character-state files independently while guarding title metadata", async () => {
     const root = await makeTemporaryRoot("deepwrite-folder-draft-independent-");
     const store = new FolderCatalogStore({

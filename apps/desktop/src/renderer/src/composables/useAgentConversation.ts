@@ -12,8 +12,11 @@ import type {
 } from "@deepwrite/contracts";
 import {
   LibraryAgentWorkspaceSnapshotSchema,
+  SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
+  ScriptWorkspaceSnapshotSchema,
   SHORT_WORKSPACE_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
+  ShortWorkspaceSnapshotSchema,
   createExpertDraftDirectoryRevision,
   createShortWorkspaceContentRevision
 } from "@deepwrite/contracts";
@@ -2547,7 +2550,8 @@ export function useAgentConversation(
     const attemptId = ++attemptSequence;
     const originalLength = activeDocument.content.length;
     const snapshotContent =
-      activeDocument.workspaceType === "short" && activeDocument.stageId === "draft"
+      (activeDocument.workspaceType === "short" || activeDocument.workspaceType === "script") &&
+        activeDocument.stageId === "draft"
         ? activeDocument.content
         : activeDocument.content.slice(0, 20_000);
     const contextSnapshot: WorkspaceRuntimeContext = {
@@ -2580,18 +2584,23 @@ export function useAgentConversation(
       );
     }
     if (
-      activeDocument.workspaceType === "short" &&
+      (activeDocument.workspaceType === "short" || activeDocument.workspaceType === "script") &&
       activeDocument.workspaceId &&
       activeDocument.workspaceTitle &&
       activeDocument.stageId
     ) {
+      const workspaceType = activeDocument.workspaceType;
+      const textStageIds =
+        workspaceType === "script"
+          ? SCRIPT_WORKSPACE_TEXT_STAGE_IDS
+          : SHORT_WORKSPACE_TEXT_STAGE_IDS;
       const liveStages = workspaceDocuments.filter(
         (document) =>
-          document.workspaceType === "short" &&
+          document.workspaceType === workspaceType &&
           document.workspaceId === activeDocument.workspaceId &&
           document.stageId
       );
-      const stages = SHORT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => {
+      const stages = textStageIds.map((stageId) => {
         const document = liveStages.find(
           (candidate) =>
             candidate.stageId === stageId && candidate.draftFileKind === undefined
@@ -2676,7 +2685,7 @@ export function useAgentConversation(
         ];
         });
       if (
-        completeStages.length === SHORT_WORKSPACE_TEXT_STAGE_IDS.length &&
+        completeStages.length === textStageIds.length &&
         completeDraftSections.length > 0
       ) {
         const expertDraftRevision = createExpertDraftDirectoryRevision(
@@ -2686,7 +2695,7 @@ export function useAgentConversation(
             wordCountRequirement: section.wordCountRequirement
           }))
         );
-        contextSnapshot.shortWorkspace = {
+        const creativeWorkspace = {
           id: activeDocument.workspaceId,
           title: activeDocument.workspaceTitle,
           categories: [...(activeDocument.workspaceCategories ?? [])],
@@ -2699,12 +2708,21 @@ export function useAgentConversation(
             : {}),
           expertDraft: {
             id: "draft",
-            title: "正文",
+            title: workspaceType === "script" ? "剧集" : "正文",
             revision: expertDraftRevision,
             sections: completeDraftSections
           },
           stages: completeStages
         };
+        if (workspaceType === "script") {
+          contextSnapshot.scriptWorkspace = ScriptWorkspaceSnapshotSchema.parse(
+            creativeWorkspace
+          );
+        } else {
+          contextSnapshot.shortWorkspace = ShortWorkspaceSnapshotSchema.parse(
+            creativeWorkspace
+          );
+        }
       }
     }
 

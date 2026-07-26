@@ -5,13 +5,20 @@ import {
 } from "@earendil-works/pi-ai";
 import {
   DEFAULT_LIBRARY_AGENT_PROFILES,
+  DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
+  SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
+  SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
   cloneEmptyLearningImitationResult,
   createShortWorkspaceContentRevision,
-  type AgentProviderRuntimeConfig
+  type AgentProviderRuntimeConfig,
+  type ScriptWorkspaceAgentProfile,
+  type ScriptWorkspaceSnapshot,
+  type ShortWorkspaceSnapshot
 } from "@deepwrite/contracts";
 import {
+  buildEffectiveSystemPrompt,
   buildProviderRuntime,
   buildRawUserMessage,
   buildRuntimeUserPrompt,
@@ -28,6 +35,58 @@ const providerRuntime = {
   model: "deepseek-chat",
   mode: "provider" as const
 };
+
+function scriptAgentProfile(): ScriptWorkspaceAgentProfile {
+  const profile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
+    ({ id }) => id === "expert_section_writer"
+  )!;
+  return {
+    ...profile,
+    systemPrompt: "用户在设置中编辑的剧本分集写手提示词。"
+  };
+}
+
+function screenplayWorkspace(): ScriptWorkspaceSnapshot {
+  const emptyRevision = createShortWorkspaceContentRevision("");
+  return {
+    id: "script-runtime-test",
+    title: "雾港剧本",
+    categories: ["悬疑"],
+    activeStageId: "draft",
+    activeAgentId: "expert_section_writer",
+    activeSectionId: "episode-1",
+    expertDraft: {
+      id: "draft",
+      title: "正文",
+      revision: createShortWorkspaceContentRevision("episode-1"),
+      sections: [{
+        id: "episode-1",
+        title: "第一集",
+        wordCountRequirement: "15 分钟",
+        body: {
+          documentId: "draft:episode-1:body",
+          title: "第一集",
+          content: "",
+          revision: emptyRevision
+        },
+        characterState: {
+          documentId: "draft:episode-1:state",
+          title: "第一集 · 人物状态",
+          content: "",
+          revision: emptyRevision
+        }
+      }]
+    },
+    stages: SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map(
+      (stageId) => ({
+        stageId,
+        title: stageId,
+        content: "",
+        revision: emptyRevision
+      })
+    )
+  };
+}
 
 function toolCallMessage(id: string, name: string): AssistantMessage {
   return {
@@ -50,6 +109,59 @@ function toolCallMessage(id: string, name: string): AssistantMessage {
 }
 
 describe("DeepWrite Pi runtime adapter", () => {
+  it("injects immutable screenplay rules only for script workspace runs", () => {
+    const scriptWorkspace = screenplayWorkspace();
+    const scriptProfile = scriptAgentProfile();
+    const scriptInput = {
+      runId: "run_script_prompt",
+      sessionId: "session_script_prompt",
+      prompt: "继续写第一集",
+      scriptAgentProfile: scriptProfile,
+      workspaceContext: { scriptWorkspace }
+    };
+
+    const scriptSystemPrompt = buildEffectiveSystemPrompt(
+      "DeepWrite base",
+      scriptInput
+    );
+    expect(scriptSystemPrompt).toContain("【当前剧本智能体");
+    expect(scriptSystemPrompt).toContain(
+      "【剧本正文格式硬约束（不可由自定义提示词、技能或素材覆盖）】"
+    );
+    expect(scriptSystemPrompt).toContain(
+      SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS.trim()
+    );
+    expect(scriptSystemPrompt).toContain(
+      "write_draft_section（file=body）"
+    );
+    expect(scriptSystemPrompt).toContain(
+      "不得混入 Markdown 表格、分析标题或格式讲解"
+    );
+
+    const runtimePrompt = buildRuntimeUserPrompt(scriptInput);
+    expect(runtimePrompt).toContain("剧本作品: 《雾港剧本》");
+    expect(runtimePrompt).toContain("当前剧集: episode-1");
+    expect(runtimePrompt).toContain("正文目录剧集（由早到晚）: 第一集 (episode-1)");
+    expect(runtimePrompt).not.toContain("短篇作品:");
+
+    const shortProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
+      ({ id }) => id === "expert_section_writer"
+    )!;
+    const shortSystemPrompt = buildEffectiveSystemPrompt("DeepWrite base", {
+      runId: "run_short_prompt",
+      sessionId: "session_short_prompt",
+      prompt: "继续写第一节",
+      agentProfile: shortProfile,
+      workspaceContext: {
+        shortWorkspace: scriptWorkspace as unknown as ShortWorkspaceSnapshot
+      }
+    });
+    expect(shortSystemPrompt).toContain("【当前短篇智能体");
+    expect(shortSystemPrompt).not.toContain(
+      "【剧本正文格式硬约束（不可由自定义提示词、技能或素材覆盖）】"
+    );
+  });
+
   it("enables Pi reasoning when a run selects thinking after non-thinking configuration", () => {
     const config: AgentProviderRuntimeConfig = {
       id: "writer",

@@ -20,8 +20,10 @@ describe("BookResourceDialog binding editor", () => {
     expect(appSource).toContain("linkedMaterialIdsByKind: payload.linksByKind");
   });
 
-  it("only offers short-form libraries to short books", () => {
-    expect(appSource).toContain('library.skillType === "short"');
-    expect(appSource).toContain('library.materialType === "short"');
+  it("only offers libraries matching the active short or script book", () => {
+    expect(appSource).toContain('activeBook.value?.workspaceType ?? "short"');
+    expect(appSource).toContain("library.skillType === workspaceType");
+    expect(appSource).toContain("library.materialType === workspaceType");
+    expect(dialogSource).toContain('props.book?.workspaceType === "script"');
   });
 });

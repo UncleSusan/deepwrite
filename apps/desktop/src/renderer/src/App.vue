@@ -2,8 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { darkTheme, NConfigProvider } from "naive-ui";
 import type {
-  AgentTeamSettings,
-  AgentTeamSettingsInput,
+  WorkspaceAgentTeamSettings,
+  WorkspaceAgentTeamSettingsInput,
+  Book,
   CatalogDocument,
   CatalogDraftRecovery,
   CatalogLibraryEntry,
@@ -12,6 +13,7 @@ import type {
   CreateLibraryInput,
   CreateLibraryGroupInput,
   CreateLibraryEntryInput,
+  CreateScriptBookInput,
   CreateShortBookInput,
   LearningImitationSettings,
   LearningImitationSettingsInput,
@@ -27,11 +29,10 @@ import type {
   ModelConfigInput,
   ModelSettings,
   ModelSettingsInput,
-  ShortBook,
   ShortManuscriptExportFormat,
   ShortWorkspaceAgentId,
-  ShortWorkspaceAgentSettings,
-  ShortWorkspaceAgentSettingsInput,
+  WorkspaceAgentSettings,
+  WorkspaceAgentSettingsInput,
   SkillKind,
   SkillStageId,
   SystemEventEnvelope,
@@ -42,7 +43,8 @@ import type {
 } from "@deepwrite/contracts";
 import {
   DEFAULT_LIBRARY_AGENT_PROFILES,
-  DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
+  DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS,
+  DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
   MATERIAL_KINDS,
   MaterialStageIdSchema,
   PROMPT_ATTACHMENT_MAX_ITEMS,
@@ -356,6 +358,7 @@ interface LibraryProjectDialogState {
   entryTitle?: string;
   documentId?: string;
   materialKind?: MaterialKind | "mixed";
+  workspaceType?: "short" | "script" | "long";
 }
 type CreateLibraryEntryDraft =
   | Omit<Extract<CreateLibraryEntryInput, { domain: "material" }>, "content">
@@ -378,6 +381,7 @@ interface LibraryEntryClipboard {
   stageId: MaterialStageId | SkillStageId;
   sourceLibraryId: string;
   sourceEntryId: string;
+  workspaceType: "short" | "script" | "long";
 }
 const libraryEntryClipboard = ref<LibraryEntryClipboard | null>(null);
 const libraryEntryClipboardDomain = computed(
@@ -417,7 +421,13 @@ interface PendingExpertSectionDeletion {
   sectionId: string;
   sectionTitle: string;
   hasContent: boolean;
+  workspaceType: "short" | "script";
 }
+
+type CreateCreativeBookPayload =
+  | ({ workspaceType: "short" } & CreateShortBookInput)
+  | ({ workspaceType: "script" } & CreateScriptBookInput);
+
 const pendingExpertSectionDeletion = ref<PendingExpertSectionDeletion | null>(null);
 interface SaveConflictState {
   documentId: string;
@@ -446,23 +456,11 @@ const modelSaving = ref(false);
 const modelError = ref<string | null>(null);
 const modelTestMessage = ref<string | null>(null);
 const testingModelId = ref<string | null>(null);
-const workspaceAgentSettings = ref<ShortWorkspaceAgentSettings>({
-  workspaceType: "short",
-  agents: DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.map((agent) => ({
-    ...agent,
-    welcomeShortcuts: [
-      agent.welcomeShortcuts[0],
-      agent.welcomeShortcuts[1],
-      agent.welcomeShortcuts[2]
-    ],
-    readAccess: {
-      workspace: [...agent.readAccess.workspace],
-      material: [...agent.readAccess.material],
-      skill: [...agent.readAccess.skill]
-    }
-  }))
-});
-const agentTeamSettings = ref<AgentTeamSettings | null>(null);
+const workspaceAgentSettings = ref<WorkspaceAgentSettings[]>([
+  DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
+  DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS
+]);
+const agentTeamSettings = ref<WorkspaceAgentTeamSettings[]>([]);
 const agentTeamLoading = ref(false);
 const agentTeamSaving = ref(false);
 const agentTeamLoaded = ref(false);
@@ -604,8 +602,9 @@ watch(
 );
 const skillLibraries = computed<ResourceTreeNode[]>(() => {
   if (catalogSnapshot.value) {
+    const workspaceType = activeBook.value?.workspaceType ?? "short";
     return catalogSnapshot.value.skills
-      .filter((library) => library.skillType === "short")
+      .filter((library) => library.skillType === workspaceType)
       .map((library) => ({
       id: library.id,
       label: library.title,
@@ -613,15 +612,17 @@ const skillLibraries = computed<ResourceTreeNode[]>(() => {
       ...(library.isBuiltin ? { badge: "官方" } : {}),
       catalogNodeType: "library",
       libraryId: library.id,
-      skillKind: library.skillKind
+      skillKind: library.skillKind,
+      workspaceType: library.skillType
       }));
   }
   return resourceTreeSections.value.find((section) => section.id === "skill")?.nodes ?? [];
 });
 const materialLibraries = computed<ResourceTreeNode[]>(() => {
   if (catalogSnapshot.value) {
+    const workspaceType = activeBook.value?.workspaceType ?? "short";
     return catalogSnapshot.value.materials
-      .filter((library) => library.materialType === "short")
+      .filter((library) => library.materialType === workspaceType)
       .map((library) => ({
       id: library.id,
       label: library.title,
@@ -632,6 +633,7 @@ const materialLibraries = computed<ResourceTreeNode[]>(() => {
       catalogNodeType: "library",
       libraryId: library.id,
       materialKind: library.materialKind,
+      workspaceType: library.materialType,
       ...(library.parentGenre ? { parentGenre: library.parentGenre } : {}),
       ...(library.subGenre ? { subGenre: library.subGenre } : {})
       }));
@@ -639,7 +641,7 @@ const materialLibraries = computed<ResourceTreeNode[]>(() => {
   return resourceTreeSections.value.find((section) => section.id === "material")?.nodes ?? [];
 });
 
-function catalogBook(bookId: string): ShortBook | undefined {
+function catalogBook(bookId: string): Book | undefined {
   return catalogSnapshot.value?.books.find((book) => book.id === bookId);
 }
 
@@ -753,7 +755,7 @@ function applyCatalogSnapshot(snapshot: CatalogSnapshot): void {
       warnedUnmappedLegacyRecoveryKeys.add(key)
     );
     uiMessage.warning(
-      `旧版恢复稿与当前正文的磁盘版本或小节结构不一致，原恢复稿已保留，请核对当前正文目录${
+      `旧版恢复稿与当前正文的磁盘版本或剧集/小节结构不一致，原恢复稿已保留，请核对当前正文目录${
         newlyUnmappedLegacyKeys.length > 1
           ? `（共 ${newlyUnmappedLegacyKeys.length} 份）`
           : ""
@@ -1038,6 +1040,8 @@ function promptDocumentForResourceId(resourceId: string): WorkspaceDocument | un
       : documentForResourceId(resourceId);
   if (!document) return undefined;
   const resolved = liveDocument(document);
+  const workspaceLabel = resolved.workspaceType === "script" ? "剧本" : "短篇";
+  const unitLabel = resolved.workspaceType === "script" ? "剧集" : "小节";
   if (!node?.shortAgentId) return resolved;
   if (node.shortAgentId === "expert_draft_coordinator" && directory) {
     const {
@@ -1050,8 +1054,8 @@ function promptDocumentForResourceId(resourceId: string): WorkspaceDocument | un
       ...contextDocument,
       id: "draft",
       title: directory.title,
-      eyebrow: "短篇 · 正文",
-      path: [resolved.workspaceTitle ?? resolved.path[0] ?? "短篇", directory.title],
+      eyebrow: `${workspaceLabel} · 正文`,
+      path: [resolved.workspaceTitle ?? resolved.path[0] ?? workspaceLabel, directory.title],
       content: "",
       shortAgentId: "expert_draft_coordinator"
     };
@@ -1063,9 +1067,9 @@ function promptDocumentForResourceId(resourceId: string): WorkspaceDocument | un
       ? {
           expertSectionId: promptSection.id,
           title: promptSection.title,
-          eyebrow: "短篇 · 小节编写",
+          eyebrow: `${workspaceLabel} · ${unitLabel}编写`,
           path: [
-            resolved.workspaceTitle ?? resolved.path[0] ?? "短篇",
+            resolved.workspaceTitle ?? resolved.path[0] ?? workspaceLabel,
             "正文",
             promptSection.title
           ]
@@ -1195,7 +1199,7 @@ const editorLockedLabel = computed(() =>
 const editorSaving = computed(() => savingDocumentIds.value.has(activeDocument.value.id));
 const activeAgentId = computed<ShortWorkspaceAgentId | undefined>(() => {
   const document = activeAgentDocument.value;
-  return document.workspaceType === "short" && document.stageId
+  return (document.workspaceType === "short" || document.workspaceType === "script") && document.stageId
     ? document.shortAgentId ?? resolveShortWorkspaceAgentIdForStage(document.stageId)
     : undefined;
 });
@@ -1205,8 +1209,11 @@ const activeLibraryDomain = computed<LibraryAgentDomain | undefined>(() => {
 });
 const activeShortAgentProfile = computed(() => {
   const agentId = activeAgentId.value;
+  const workspaceType = activeAgentDocument.value.workspaceType;
   return agentId
-    ? workspaceAgentSettings.value?.agents.find((agent) => agent.id === agentId)
+    ? workspaceAgentSettings.value
+        .find((settings) => settings.workspaceType === workspaceType)
+        ?.agents.find((agent) => agent.id === agentId)
     : undefined;
 });
 const activeLibraryAgentProfile = computed(() => {
@@ -1500,7 +1507,7 @@ async function exportBookManuscript(
     if (result.status === "saved") {
       exportBookTarget.value = null;
       uiMessage.success(
-        `已将“${book.title}”的导语和全部小节导出为 ${MANUSCRIPT_EXPORT_FORMAT_LABELS[format]}`
+        `已将“${book.title}”的${book.bookType === "script" ? "全部剧集" : "导语和全部小节"}导出为 ${MANUSCRIPT_EXPORT_FORMAT_LABELS[format]}`
       );
     }
   } catch (error: unknown) {
@@ -1615,7 +1622,7 @@ async function removeCatalogBook(book: ResourceTreeNode): Promise<void> {
       projectId: book.id
     });
     if (!result.unregistered) {
-      throw new Error("未找到要移除的书籍。");
+      throw new Error(`未找到要移除的${book.workspaceType === "script" ? "剧本" : "书籍"}。`);
     }
     const removedDocumentIds = new Set(collectResourceNodeIds(book));
     editorDrafts.value = Object.fromEntries(
@@ -1628,7 +1635,11 @@ async function removeCatalogBook(book: ResourceTreeNode): Promise<void> {
     closeBookDialog();
     uiMessage.success(`已移除“${book.label}”`);
   } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "移除书籍失败。");
+    uiMessage.error(
+      error instanceof Error
+        ? error.message
+        : `移除${book.workspaceType === "script" ? "剧本" : "书籍"}失败。`
+    );
   } finally {
     catalogMutationPending.value = false;
   }
@@ -1643,7 +1654,7 @@ async function deleteCatalogBook(book: ResourceTreeNode): Promise<void> {
       projectId: book.id
     });
     if (!result.deleted) {
-      throw new Error("未找到要删除的书籍。");
+      throw new Error(`未找到要删除的${book.workspaceType === "script" ? "剧本" : "书籍"}。`);
     }
     const removedDocumentIds = new Set(collectResourceNodeIds(book));
     editorDrafts.value = Object.fromEntries(
@@ -1656,7 +1667,11 @@ async function deleteCatalogBook(book: ResourceTreeNode): Promise<void> {
     closeBookDialog();
     uiMessage.success(`已删除“${book.label}”及其本地文件夹`);
   } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "删除书籍失败。");
+    uiMessage.error(
+      error instanceof Error
+        ? error.message
+        : `删除${book.workspaceType === "script" ? "剧本" : "书籍"}失败。`
+    );
   } finally {
     catalogMutationPending.value = false;
   }
@@ -1808,13 +1823,29 @@ function updateBookBindings(payload:
   );
 }
 
-async function createShortBook(input: CreateShortBookInput): Promise<void> {
+async function createCreativeBook(
+  input: CreateCreativeBookPayload
+): Promise<void> {
   if (!window.deepwrite || catalogMutationPending.value) {
     return;
   }
   catalogMutationPending.value = true;
   try {
-    const book = await window.deepwrite.catalog.createShortBook(input);
+    const workspaceType = input.workspaceType;
+    const book =
+      input.workspaceType === "script"
+        ? await window.deepwrite.catalog.createScriptBook({
+            title: input.title,
+            genre: input.genre,
+            linkedMaterialIdsByKind: input.linkedMaterialIdsByKind,
+            linkedSkillIdsByKind: input.linkedSkillIdsByKind
+          })
+        : await window.deepwrite.catalog.createShortBook({
+            title: input.title,
+            genre: input.genre,
+            linkedMaterialIdsByKind: input.linkedMaterialIdsByKind,
+            linkedSkillIdsByKind: input.linkedSkillIdsByKind
+          });
     if (!book) {
       return;
     }
@@ -1830,9 +1861,11 @@ async function createShortBook(input: CreateShortBookInput): Promise<void> {
       activeCreationResourceId.value = targetResourceId;
       rightCollapsed.value = false;
     }
-    uiMessage.success(`已创建短篇“${book.title}”，素材库和技能库绑定已保存`);
+    uiMessage.success(
+      `已创建${workspaceType === "script" ? "剧本" : "短篇"}“${book.title}”，素材库和技能库绑定已保存`
+    );
   } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "创建短篇书籍失败。");
+    uiMessage.error(error instanceof Error ? error.message : "创建作品失败。");
   } finally {
     catalogMutationPending.value = false;
   }
@@ -1841,7 +1874,7 @@ async function createShortBook(input: CreateShortBookInput): Promise<void> {
 async function handleResourceAction(payload: ResourceSectionActionPayload): Promise<void> {
   if (payload.domain === "creation" && payload.action === "create") {
     if (!window.deepwrite) {
-      uiMessage.warning("浏览器预览不能保存书籍，请使用桌面客户端创建短篇。");
+      uiMessage.warning("浏览器预览不能保存作品，请使用桌面客户端创建。");
       return;
     }
     createShortBookDialogOpen.value = true;
@@ -2251,6 +2284,7 @@ function resolveLibraryEntryClipboardPayload(
   fallbackTitle: string
 ): LibraryEntryClipboard | null {
   const library = findCatalogLibrary(domain, libraryId);
+  if (!library) return null;
   const entry = library?.entries.find((item) => item.id === entryId);
   const document = documents.value.find(
     (item) => item.libraryId === libraryId && item.catalogEntryId === entryId
@@ -2285,7 +2319,9 @@ function resolveLibraryEntryClipboardPayload(
     content,
     stageId,
     sourceLibraryId: libraryId,
-    sourceEntryId: entryId
+    sourceEntryId: entryId,
+    workspaceType:
+      "materialType" in library ? library.materialType : library.skillType
   };
 }
 
@@ -2345,6 +2381,13 @@ async function pasteCatalogLibraryEntry(
         ? "当前复制的是素材条目，只能粘贴到素材库"
         : "当前复制的是技能条目，只能粘贴到技能库"
     );
+    return;
+  }
+  if (
+    payload.node.workspaceType &&
+    clipboard.workspaceType !== payload.node.workspaceType
+  ) {
+    uiMessage.warning("不同创作类型的资料库条目不能直接交叉粘贴");
     return;
   }
   if (payload.node.readOnly || payload.node.unavailable) {
@@ -2552,6 +2595,9 @@ function handleResourceNodeAction(payload: CatalogResourceNodeActionPayload): vo
       domain: payload.domain,
       libraryId,
       libraryTitle: payload.node.label,
+      ...(payload.node.workspaceType
+        ? { workspaceType: payload.node.workspaceType }
+        : {}),
       ...(payload.domain === "material" && payload.node.materialKind
         ? { materialKind: payload.node.materialKind }
         : {})
@@ -2570,7 +2616,10 @@ function handleResourceNodeAction(payload: CatalogResourceNodeActionPayload): vo
       findCatalogLibrary(payload.domain, libraryId)?.title ?? "资料库",
     entryId: payload.node.catalogEntryId,
     entryTitle: payload.node.label,
-    documentId: payload.node.id
+    documentId: payload.node.id,
+    ...(payload.node.workspaceType
+      ? { workspaceType: payload.node.workspaceType }
+      : {})
   };
 }
 
@@ -2675,7 +2724,9 @@ function selectExpertSection(sectionId: string): void {
   const directory = draftDirectoryForResourceId(selectedResourceId.value);
   if (!directory) return;
   if (!directory.sections.some((section) => section.id === sectionId)) {
-    uiMessage.warning("该小节已不存在，章节列表已刷新");
+    uiMessage.warning(
+      `该${directory.workspaceType === "script" ? "剧集" : "小节"}已不存在，列表已刷新`
+    );
     return;
   }
   selectedExpertSectionIds.value = {
@@ -2790,7 +2841,11 @@ async function addExpertSection(draftNode: ResourceTreeNode): Promise<void> {
   const directory = draftDirectoryForResourceId(draftNode.id);
   const source = documentForResourceId(draftNode.id);
   if (!directory) return;
-  if (source?.workspaceType !== "short" || source.stageId !== "draft") return;
+  if (
+    (source?.workspaceType !== "short" && source?.workspaceType !== "script") ||
+    source.stageId !== "draft"
+  ) return;
+  const unitLabel = source.workspaceType === "script" ? "剧集" : "小节";
   if (
     draftNode.shortAgentId !==
       "expert_draft_coordinator" ||
@@ -2799,11 +2854,11 @@ async function addExpertSection(draftNode: ResourceTreeNode): Promise<void> {
     catalogMutationPending.value ||
     !window.deepwrite
   ) {
-    uiMessage.info("当前正文暂时不能新建小节，请稍候");
+    uiMessage.info(`当前正文暂时不能新建${unitLabel}，请稍候`);
     return;
   }
   if (directory.sections.length >= 100) {
-    uiMessage.warning("正文最多支持 100 个小节");
+    uiMessage.warning(`正文最多支持 100 个${unitLabel}`);
     return;
   }
   catalogMutationPending.value = true;
@@ -2831,7 +2886,7 @@ async function addExpertSection(draftNode: ResourceTreeNode): Promise<void> {
     };
     uiMessage.success(`已新建“${added.title}”并保存到正文文件夹`);
   } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "新建正文小节失败。");
+    uiMessage.error(error instanceof Error ? error.message : `新建正文${unitLabel}失败。`);
   } finally {
     catalogMutationPending.value = false;
   }
@@ -2844,11 +2899,11 @@ function requestRemoveExpertSection(node: ResourceTreeNode): void {
     (candidate) => candidate.id === node.expertSectionId
   );
   if (!directory || !section) {
-    uiMessage.warning("该小节已经不存在");
+    uiMessage.warning(`该${directory?.workspaceType === "script" ? "剧集" : "小节"}已经不存在`);
     return;
   }
   if (directory.sections.length <= 1) {
-    uiMessage.warning("正文至少需要保留一个小节");
+    uiMessage.warning(`正文至少需要保留一个${directory.workspaceType === "script" ? "剧集" : "小节"}`);
     return;
   }
   const body = draftFileDocument(directory, section.id, "body");
@@ -2862,6 +2917,7 @@ function requestRemoveExpertSection(node: ResourceTreeNode): void {
     draftDirectoryId: directory.id,
     sectionId: section.id,
     sectionTitle: section.title,
+    workspaceType: directory.workspaceType,
     hasContent: Boolean(
       (body && liveDocument(body).content.trim()) ||
       (characterState && liveDocument(characterState).content.trim()) ||
@@ -2893,7 +2949,7 @@ async function confirmRemoveExpertSection(): Promise<void> {
     catalogMutationPending.value ||
     !window.deepwrite
   ) {
-    uiMessage.info("当前小节正在处理或保存，请稍候再删除");
+    uiMessage.info(`当前${pending.workspaceType === "script" ? "剧集" : "小节"}正在处理或保存，请稍候再删除`);
     return;
   }
   const removedIndex = directory.sections.findIndex(
@@ -2915,7 +2971,9 @@ async function confirmRemoveExpertSection(): Promise<void> {
         : { baseProjectRevision: book.projectRevision })
     });
     if (!deleted.deleted) {
-      throw new Error("该正文小节已经不存在。");
+      throw new Error(
+        `该${pending.workspaceType === "script" ? "剧集" : "正文小节"}已经不存在。`
+      );
     }
     const nextDrafts = { ...editorDrafts.value };
     delete nextDrafts[section.bodyDocumentId];
@@ -2944,7 +3002,11 @@ async function confirmRemoveExpertSection(): Promise<void> {
     pendingExpertSectionDeletion.value = null;
     uiMessage.success(`已删除“${pending.sectionTitle}”及对应人物状态文件`);
   } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "删除正文小节失败。");
+    uiMessage.error(
+      error instanceof Error
+        ? error.message
+        : `删除${pending.workspaceType === "script" ? "剧集" : "正文小节"}失败。`
+    );
   } finally {
     catalogMutationPending.value = false;
   }
@@ -5675,7 +5737,10 @@ async function loadWorkspaceAgentSettings(): Promise<void> {
   workspaceAgentLoading.value = true;
   workspaceAgentError.value = null;
   try {
-    workspaceAgentSettings.value = await window.deepwrite.workspaceAgents.list("short");
+    workspaceAgentSettings.value = await Promise.all([
+      window.deepwrite.workspaceAgents.list("short"),
+      window.deepwrite.workspaceAgents.list("script")
+    ]);
   } catch (error: unknown) {
     showWorkspaceAgentFeedback(
       "error",
@@ -5687,13 +5752,25 @@ async function loadWorkspaceAgentSettings(): Promise<void> {
 }
 
 async function saveWorkspaceAgentSettings(
-  settings: ShortWorkspaceAgentSettingsInput
+  settings: WorkspaceAgentSettingsInput
 ): Promise<void> {
   if (!window.deepwrite || workspaceAgentSaving.value) return;
   workspaceAgentSaving.value = true;
   try {
-    workspaceAgentSettings.value = await window.deepwrite.workspaceAgents.save(settings);
-    showWorkspaceAgentFeedback("status", "短篇智能体提示词、欢迎快捷与读取范围已保存，下一轮对话立即生效。");
+    const saved =
+      settings.workspaceType === "script"
+        ? await window.deepwrite.workspaceAgents.save(settings)
+        : await window.deepwrite.workspaceAgents.save(settings);
+    workspaceAgentSettings.value = [
+      ...workspaceAgentSettings.value.filter(
+        (candidate) => candidate.workspaceType !== saved.workspaceType
+      ),
+      saved
+    ];
+    showWorkspaceAgentFeedback(
+      "status",
+      `${saved.workspaceType === "script" ? "剧本" : "短篇"}智能体提示词、欢迎快捷与读取范围已保存，下一轮对话立即生效。`
+    );
   } catch (error: unknown) {
     showWorkspaceAgentFeedback(
       "error",
@@ -5709,7 +5786,10 @@ async function loadAgentTeamSettings(): Promise<void> {
   agentTeamLoading.value = true;
   agentTeamLoadError.value = null;
   try {
-    agentTeamSettings.value = await window.deepwrite.agentTeams.list("short");
+    agentTeamSettings.value = await Promise.all([
+      window.deepwrite.agentTeams.list("short"),
+      window.deepwrite.agentTeams.list("script")
+    ]);
     agentTeamLoaded.value = true;
   } catch (error: unknown) {
     const message =
@@ -5722,12 +5802,21 @@ async function loadAgentTeamSettings(): Promise<void> {
 }
 
 async function saveAgentTeamSettings(
-  settings: AgentTeamSettingsInput
+  settings: WorkspaceAgentTeamSettingsInput
 ): Promise<void> {
   if (!window.deepwrite || agentTeamSaving.value) return;
   agentTeamSaving.value = true;
   try {
-    agentTeamSettings.value = await window.deepwrite.agentTeams.save(settings);
+    const saved =
+      settings.workspaceType === "script"
+        ? await window.deepwrite.agentTeams.save(settings)
+        : await window.deepwrite.agentTeams.save(settings);
+    agentTeamSettings.value = [
+      ...agentTeamSettings.value.filter(
+        (candidate) => candidate.workspaceType !== saved.workspaceType
+      ),
+      saved
+    ];
     agentTeamLoaded.value = true;
     agentTeamLoadError.value = null;
     uiMessage.success("智能体团队已保存，下一轮对话立即生效。");
@@ -6308,6 +6397,7 @@ onBeforeUnmount(() => {
     <ExportShortManuscriptDialog
       :open="Boolean(exportBookTarget)"
       :book-title="exportBookTarget?.label ?? ''"
+      :workspace-type="exportBookTarget?.workspaceType === 'script' ? 'script' : 'short'"
       :submitting="manuscriptExportPending"
       @close="closeBookExportDialog"
       @export="exportBookManuscript"
@@ -6330,7 +6420,7 @@ onBeforeUnmount(() => {
       :loading="catalogLoading"
       :submitting="catalogMutationPending"
       @close="createShortBookDialogOpen = false"
-      @submit="createShortBook"
+      @submit="createCreativeBook"
     />
     <LibraryProjectDialog
       :open="Boolean(libraryProjectDialog)"
@@ -6341,6 +6431,7 @@ onBeforeUnmount(() => {
       :material-kind="libraryProjectDialog?.materialKind"
       :entry-id="libraryProjectDialog?.entryId"
       :entry-title="libraryProjectDialog?.entryTitle"
+      :workspace-type="libraryProjectDialog?.workspaceType"
       :submitting="catalogMutationPending"
       @close="libraryProjectDialog = null"
       @create-library="createCatalogLibrary"
@@ -6373,6 +6464,7 @@ onBeforeUnmount(() => {
       :open="Boolean(pendingExpertSectionDeletion)"
       :section-title="pendingExpertSectionDeletion?.sectionTitle ?? ''"
       :has-content="pendingExpertSectionDeletion?.hasContent ?? false"
+      :workspace-type="pendingExpertSectionDeletion?.workspaceType"
       @close="pendingExpertSectionDeletion = null"
       @confirm="confirmRemoveExpertSection"
     />

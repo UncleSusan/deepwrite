@@ -32,12 +32,14 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import {
   renderLearningImitationSystemPrompt,
+  SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
   type AgentProviderRuntimeConfig,
   type AgentRuntimeRef,
   type AgentUsage,
   type AgentWriteApprovalMode,
   type LearningImitationAgentProfile,
   type LibraryAgentProfile,
+  type ScriptWorkspaceAgentProfile,
   type ShortAgentSubagentDefinition,
   type ShortWorkspaceAgentProfile,
   type SubagentActivity,
@@ -47,7 +49,9 @@ import {
   type WorkspaceRuntimeContext
 } from "@deepwrite/contracts";
 import {
+  buildScriptWorkspaceTools,
   buildShortWorkspaceTools,
+  createScriptWorkspaceToolSharedState,
   createShortWorkspaceToolSharedState,
   isShortWorkspaceToolDetails
 } from "./short-agent-tools";
@@ -85,6 +89,7 @@ export interface AgentRunInput {
   temperature?: number;
   runtimeConfig?: AgentProviderRuntimeConfig;
   agentProfile?: ShortWorkspaceAgentProfile;
+  scriptAgentProfile?: ScriptWorkspaceAgentProfile;
   subagentDefinitions?: ShortAgentSubagentDefinition[];
   subagentRuntimeConfigs?: Readonly<Record<string, AgentProviderRuntimeConfig>>;
   libraryAgentProfile?: LibraryAgentProfile;
@@ -637,6 +642,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     }
 
     const shortWorkspace = input.workspaceContext?.shortWorkspace;
+    const scriptWorkspace = input.workspaceContext?.scriptWorkspace;
     const libraryWorkspace = input.workspaceContext?.libraryWorkspace;
     const learningImitation = input.workspaceContext?.learningImitation;
     const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
@@ -651,20 +657,37 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       );
     }
     const systemPrompt = buildEffectiveSystemPrompt(this.systemPrompt, input);
-    const shortToolSharedState = shortWorkspace && input.agentProfile
-      ? createShortWorkspaceToolSharedState(shortWorkspace)
-      : undefined;
-    const buildShortTools = (): AgentTool[] =>
-      shortWorkspace && input.agentProfile
+    const writingToolSharedState = scriptWorkspace && input.scriptAgentProfile
+      ? createScriptWorkspaceToolSharedState(scriptWorkspace)
+      : shortWorkspace && input.agentProfile
+        ? createShortWorkspaceToolSharedState(shortWorkspace)
+        : undefined;
+    const buildWritingTools = (): AgentTool[] => {
+      if (scriptWorkspace && input.scriptAgentProfile) {
+        return buildScriptWorkspaceTools({
+          workspace: scriptWorkspace,
+          profile: input.scriptAgentProfile,
+          writeApprovalMode: input.writeApprovalMode ?? "request-approval",
+          attachedSkills: input.workspaceContext?.attachedSkills,
+          attachedMaterials: input.workspaceContext?.attachedMaterials,
+          ...(writingToolSharedState
+            ? { sharedState: writingToolSharedState }
+            : {})
+        });
+      }
+      return shortWorkspace && input.agentProfile
         ? buildShortWorkspaceTools({
             workspace: shortWorkspace,
             profile: input.agentProfile,
             writeApprovalMode: input.writeApprovalMode ?? "request-approval",
             attachedSkills: input.workspaceContext?.attachedSkills,
             attachedMaterials: input.workspaceContext?.attachedMaterials,
-            ...(shortToolSharedState ? { sharedState: shortToolSharedState } : {})
+            ...(writingToolSharedState
+              ? { sharedState: writingToolSharedState }
+              : {})
           })
         : [];
+    };
     let tools: AgentTool[] = subagentAuthoring
       ? buildSubagentAuthoringTools(subagentAuthoring)
       : learningImitation && input.learningImitationProfile
@@ -676,10 +699,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             writeApprovalMode: input.writeApprovalMode ?? "request-approval",
             attachedSkills: input.workspaceContext?.attachedSkills
           })
-      : shortWorkspace && input.agentProfile
-        ? buildShortTools()
+      : (scriptWorkspace && input.scriptAgentProfile) ||
+          (shortWorkspace && input.agentProfile)
+        ? buildWritingTools()
         : [];
-    if (shortWorkspace && input.agentProfile && !subagentAuthoring) {
+    if (
+      ((scriptWorkspace && input.scriptAgentProfile) ||
+        (shortWorkspace && input.agentProfile)) &&
+      !subagentAuthoring
+    ) {
       const spawnTool = buildSpawnSubagentTool({
         parentSessionId: input.sessionId,
         model,
@@ -707,7 +735,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             thinkingLevel: toPiThinkingLevel(childThinking)
           };
         },
-        buildChildTools: buildShortTools,
+        buildChildTools: buildWritingTools,
+        ...(scriptWorkspace
+          ? {
+              systemPromptRequirements:
+                scriptRuntimeFormatRequirements()
+            }
+          : {}),
         toolExecutionHooks: this.toolExecutionHooks,
         ...(this.retryPolicy ? { retryPolicy: this.retryPolicy } : {}),
         ...(this.subagentTimeoutMs === undefined
@@ -724,7 +758,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         ? `learning-imitation:${input.learningImitationProfile.id}`
         : input.libraryAgentProfile && libraryWorkspace
           ? `library:${input.libraryAgentProfile.domain}:${libraryWorkspace.libraryId}`
-        : input.agentProfile?.id ?? "default"
+        : input.scriptAgentProfile
+          ? `script:${input.scriptAgentProfile.id}`
+          : input.agentProfile?.id ?? "default"
     }`;
     let emitToolCallEvent: (
       event: ToolCallAssistantEvent,
@@ -1718,7 +1754,18 @@ function buildDeepWriteSystemPrompt(): string {
   ].join("\n");
 }
 
-function buildEffectiveSystemPrompt(basePrompt: string, input: AgentRunInput): string {
+function scriptRuntimeFormatRequirements(): string {
+  return [
+    SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS.trim(),
+    "调用 write_draft_section（file=body）或 replace_draft_section_text（file=body）时，必须只提交符合上述格式的剧本正文；不得混入 Markdown 表格、分析标题或格式讲解。"
+  ].join("\n");
+}
+
+/** @internal Exported for workspace-type prompt regression tests. */
+export function buildEffectiveSystemPrompt(
+  basePrompt: string,
+  input: AgentRunInput
+): string {
   const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
   if (subagentAuthoring) {
     return [
@@ -1770,8 +1817,11 @@ function buildEffectiveSystemPrompt(basePrompt: string, input: AgentRunInput): s
       "库介绍当前只读；删除条目、修改分组、绑定书籍和写入其它资料库均未接通。"
     ].join("\n");
   }
-  const profile = input.agentProfile;
+  const scriptWorkspace = input.workspaceContext?.scriptWorkspace;
+  const profile = input.scriptAgentProfile ?? input.agentProfile;
   if (!profile) return basePrompt;
+  const workspaceKind = scriptWorkspace ? "剧本" : "短篇";
+  const draftUnit = scriptWorkspace ? "剧集" : "章节";
   const writeBoundary =
     input.writeApprovalMode === "auto-approve"
       ? "写入工具只提交文本变更；客户端会在本轮完成后自动批准并尝试保存到本地 Markdown。当前回复可以说明已提交自动写入，但不得提前声称已经保存成功。"
@@ -1779,16 +1829,23 @@ function buildEffectiveSystemPrompt(basePrompt: string, input: AgentRunInput): s
   return [
     basePrompt,
     "",
-    `【当前短篇智能体：${profile.label} / ${profile.id}】`,
+    `【当前${workspaceKind}智能体：${profile.label} / ${profile.id}】`,
     profile.systemPrompt.trim(),
+    ...(scriptWorkspace
+      ? [
+          "",
+          "【剧本正文格式硬约束（不可由自定义提示词、技能或素材覆盖）】",
+          scriptRuntimeFormatRequirements()
+        ]
+      : []),
     "",
     "【DeepWrite 当前工具边界】",
     "只使用本轮实际提供的工具；没有出现在工具列表中的能力尚未接通，不得声称已经执行。",
     writeBoundary,
     profile.id === "expert_draft_coordinator"
-      ? "当前已接通正文目录索引、批量创建空白章节文件、全部/单章正文读取及按章节正文文件写入与替换；删除、改名、排序和后台分节写手调度尚未接通，不得声称已经执行。"
+      ? `当前已接通正文目录索引、批量创建空白${draftUnit}文件、全部/单${scriptWorkspace ? "集" : "章"}正文读取及按${draftUnit}正文文件写入与替换；删除、改名、排序和后台${scriptWorkspace ? "分集" : "分节"}写手调度尚未接通，不得声称已经执行。`
       : profile.id === "expert_section_writer"
-        ? "当前分节写手只允许修改运行上下文锁定的小节；正文与人物状态工具分别按 documentId 提交到两个独立文件，由客户端生成独立的待审阅变更。"
+        ? `当前${scriptWorkspace ? "分集" : "分节"}写手只允许修改运行上下文锁定的${draftUnit}；正文与人物状态工具分别按 documentId 提交到两个独立文件，由客户端生成独立的待审阅变更。`
         : ""
   ].filter(Boolean).join("\n");
 }
@@ -1797,30 +1854,34 @@ function buildEffectiveSystemPrompt(basePrompt: string, input: AgentRunInput): s
 export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const active = input.workspaceContext?.activeResource;
   const libraryContext = input.workspaceContext?.libraryWorkspace;
+  const shortWorkspace = input.workspaceContext?.shortWorkspace;
+  const scriptWorkspace = input.workspaceContext?.scriptWorkspace;
+  const writingWorkspace = scriptWorkspace ?? shortWorkspace;
+  const writingProfile = input.scriptAgentProfile ?? input.agentProfile;
   const skills = input.workspaceContext?.attachedSkills ?? [];
   const materials = input.workspaceContext?.attachedMaterials ?? [];
-  const isShortAgentRun = Boolean(
-    input.workspaceContext?.shortWorkspace && input.agentProfile
+  const isWritingAgentRun = Boolean(
+    writingWorkspace && writingProfile
   );
   const isLibraryAgentRun = Boolean(
     libraryContext && input.libraryAgentProfile
   );
   const learningContext = input.workspaceContext?.learningImitation;
-  const readableSkills = input.agentProfile
+  const readableSkills = writingProfile
     ? skills.filter(
         (item) =>
-          item.kind !== undefined && input.agentProfile!.readAccess.skill.includes(item.kind)
+          item.kind !== undefined && writingProfile.readAccess.skill.includes(item.kind)
       )
     : input.libraryAgentProfile
       ? skills
       : skills;
-  const readableMaterials = input.agentProfile
+  const readableMaterials = writingProfile
     ? materials.filter(
         (item) =>
-          item.kind !== undefined && input.agentProfile!.readAccess.material.includes(item.kind)
+          item.kind !== undefined && writingProfile.readAccess.material.includes(item.kind)
       )
     : materials;
-  const skillContext = isShortAgentRun || isLibraryAgentRun
+  const skillContext = isWritingAgentRun || isLibraryAgentRun
     ? readableSkills.length
       ? isLibraryAgentRun
         ? `可按需加载的技能：\n${input.libraryAgentProfile!.readAccess.skills
@@ -1833,7 +1894,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     : skills.length
       ? `显式附加技能:\n${skills.map((item) => `- ${item.title}: ${item.content}`).join("\n")}`
       : "显式附加技能: 无";
-  const materialContext = isShortAgentRun
+  const materialContext = isWritingAgentRun
     ? readableMaterials.length
       ? `当前读取范围内的关联素材：\n${readableMaterials
           .map((item) => `- ${item.title} [${item.kind}]`)
@@ -1848,25 +1909,25 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     "【本轮运行上下文，不写入会话历史】",
     `sessionId: ${input.sessionId}`,
     `runId: ${input.runId}`,
-    input.workspaceContext?.shortWorkspace
-      ? `短篇作品: 《${input.workspaceContext.shortWorkspace.title}》`
+    writingWorkspace
+      ? `${scriptWorkspace ? "剧本" : "短篇"}作品: 《${writingWorkspace.title}》`
       : "",
-    input.workspaceContext?.shortWorkspace
-      ? `作品分类: ${input.workspaceContext.shortWorkspace.categories.join("、") || "未分类"}`
+    writingWorkspace
+      ? `作品分类: ${writingWorkspace.categories.join("、") || "未分类"}`
       : "",
-    input.workspaceContext?.shortWorkspace
-      ? `当前阶段: ${input.workspaceContext.shortWorkspace.activeStageId}`
+    writingWorkspace
+      ? `当前阶段: ${writingWorkspace.activeStageId}`
       : "",
-    input.workspaceContext?.shortWorkspace?.activeSectionId
-      ? `当前小节: ${input.workspaceContext.shortWorkspace.activeSectionId}`
+    writingWorkspace?.activeSectionId
+      ? `当前${scriptWorkspace ? "剧集" : "小节"}: ${writingWorkspace.activeSectionId}`
       : "",
-    input.workspaceContext?.shortWorkspace?.expertDraft.sections.length
-      ? `正文目录小节（由早到晚）: ${input.workspaceContext.shortWorkspace.expertDraft.sections
+    writingWorkspace?.expertDraft.sections.length
+      ? `正文目录${scriptWorkspace ? "剧集" : "小节"}（由早到晚）: ${writingWorkspace.expertDraft.sections
           .map((section) => `${section.title} (${section.id})`)
           .join("、")}`
       : "",
-    input.agentProfile
-      ? `当前智能体: ${input.agentProfile.label} (${input.agentProfile.id})`
+    writingProfile
+      ? `当前智能体: ${writingProfile.label} (${writingProfile.id})`
       : input.libraryAgentProfile
         ? `当前智能体: ${input.libraryAgentProfile.label} (${input.libraryAgentProfile.domain})`
       : input.learningImitationProfile
@@ -1906,7 +1967,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
         : "当前资源: 未提供",
     active ? `资源路径: ${active.path.join(" / ")}` : "",
     active &&
-    !input.workspaceContext?.shortWorkspace &&
+    !writingWorkspace &&
     !input.workspaceContext?.libraryWorkspace
       ? `实时内容:\n${active.content}`
       : "",
@@ -1982,7 +2043,8 @@ export function buildRawUserMessage(input: AgentRunInput, timestamp = Date.now()
 
 function buildLocalThinking(input: AgentRunInput): string {
   const title = input.workspaceContext?.activeResource?.title ?? "未命名资源";
-  const selectedProfile = input.agentProfile ?? input.libraryAgentProfile;
+  const selectedProfile =
+    input.scriptAgentProfile ?? input.agentProfile ?? input.libraryAgentProfile;
   const agent = selectedProfile ? `，由「${selectedProfile.label}」处理` : "";
   return `正在读取发送瞬间的创作上下文快照，确认当前工作对象为《${title}》${agent}，并区分用户要求、作品事实与参考信息。`;
 }
@@ -2007,9 +2069,11 @@ function buildLocalWritingResponse(input: AgentRunInput): string {
     "- Thinking 与回复内容使用独立事件，Renderer 会绑定到同一条助手消息。",
     "- 当前是无需 API Key 的本地 Faux 模型，用于验证客户端链路和上下文边界。",
     "- 本轮没有调用写入工具，也没有修改或保存右侧文稿。",
-    input.agentProfile
-      ? `- 当前已按短篇阶段选择「${input.agentProfile.label}」智能体，并装配 ${
-          input.workspaceContext?.shortWorkspace ? "阶段专属工具" : "通用上下文"
+    input.scriptAgentProfile ?? input.agentProfile
+      ? `- 当前已按${input.scriptAgentProfile ? "剧本" : "短篇"}阶段选择「${(input.scriptAgentProfile ?? input.agentProfile)!.label}」智能体，并装配 ${
+          input.workspaceContext?.scriptWorkspace || input.workspaceContext?.shortWorkspace
+            ? "阶段专属工具"
+            : "通用上下文"
         }。`
       : input.libraryAgentProfile
         ? `- 当前已选择「${input.libraryAgentProfile.label}」，并且装配当前资料库读写工具与按需 load_skill。`

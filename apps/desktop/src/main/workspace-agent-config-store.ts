@@ -1,25 +1,49 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+  DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
+  SCRIPT_WORKSPACE_AGENT_IDS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   SHORT_WORKSPACE_AGENT_IDS,
+  ScriptWorkspaceAgentSettingsInputSchema,
+  ScriptWorkspaceAgentSettingsSchema,
+  ScriptWorkspaceSnapshotSchema,
   ShortWorkspaceAgentSettingsInputSchema,
   ShortWorkspaceAgentSettingsSchema,
   ShortWorkspaceSnapshotSchema,
+  WorkspaceAgentSettingsInputSchema,
   resolveShortWorkspaceAgentIdForStage,
+  resolveScriptWorkspaceAgentIdForStage,
+  type ScriptAgentReadAccess,
+  type ScriptWorkspaceAgentId,
+  type ScriptWorkspaceAgentProfile,
+  type ScriptWorkspaceAgentSettings,
+  type ScriptWorkspaceAgentSettingsInput,
+  type ScriptWorkspaceSnapshot,
+  type ScriptWorkspaceStageId,
   type ShortAgentReadAccess,
   type ShortWorkspaceAgentId,
   type ShortWorkspaceAgentProfile,
   type ShortWorkspaceAgentSettings,
   type ShortWorkspaceAgentSettingsInput,
   type ShortWorkspaceSnapshot,
-  type ShortWorkspaceStageId
+  type ShortWorkspaceStageId,
+  type WorkspaceAgentProfile,
+  type WorkspaceAgentSettings,
+  type WorkspaceAgentSettingsInput,
+  type WorkspaceType
 } from "@deepwrite/contracts";
 
 interface DiskWorkspaceAgentSettings {
   version: 1;
   workspaceType: "short";
   agents: ShortWorkspaceAgentSettingsInput["agents"];
+}
+
+interface DiskScriptWorkspaceAgentSettings {
+  version: 1;
+  workspaceType: "script";
+  agents: ScriptWorkspaceAgentSettingsInput["agents"];
 }
 
 // Keep this byte-for-byte copy of the retired builtin prompt so an existing
@@ -147,6 +171,17 @@ const REQUIRED_WORKSPACE_STAGES: Record<
   expert_section_writer: ["draft"]
 };
 
+const REQUIRED_SCRIPT_WORKSPACE_STAGES: Record<
+  ScriptWorkspaceAgentId,
+  readonly ScriptWorkspaceStageId[]
+> = {
+  character_design: ["character_design"],
+  plot_design: ["plot_design", "plot_refine"],
+  outline: ["outline"],
+  expert_draft_coordinator: ["draft"],
+  expert_section_writer: ["draft"]
+};
+
 function cloneReadAccess(value: ShortAgentReadAccess): ShortAgentReadAccess {
   return {
     workspace: [...value.workspace],
@@ -200,6 +235,73 @@ function defaultsAsInput(): ShortWorkspaceAgentSettingsInput {
       systemPrompt: profile.systemPrompt,
       welcomeShortcuts: cloneWelcomeShortcuts(profile.welcomeShortcuts),
       readAccess: cloneReadAccess(profile.readAccess)
+    }))
+  };
+}
+
+function cloneScriptReadAccess(
+  value: ScriptAgentReadAccess
+): ScriptAgentReadAccess {
+  return {
+    workspace: [...value.workspace],
+    material: [...value.material],
+    skill: [...value.skill]
+  };
+}
+
+function cloneScriptWelcomeShortcuts(
+  value: ScriptWorkspaceAgentProfile["welcomeShortcuts"]
+): ScriptWorkspaceAgentProfile["welcomeShortcuts"] {
+  return [value[0], value[1], value[2]];
+}
+
+function cloneScriptProfile(
+  profile: ScriptWorkspaceAgentProfile
+): ScriptWorkspaceAgentProfile {
+  return {
+    ...profile,
+    welcomeShortcuts: cloneScriptWelcomeShortcuts(profile.welcomeShortcuts),
+    readAccess: cloneScriptReadAccess(profile.readAccess)
+  };
+}
+
+function defaultScriptProfile(
+  agentId: ScriptWorkspaceAgentId
+): ScriptWorkspaceAgentProfile {
+  const profile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
+    (candidate) => candidate.id === agentId
+  );
+  if (!profile) {
+    throw new Error(`Missing builtin script workspace profile: ${agentId}`);
+  }
+  return cloneScriptProfile(profile);
+}
+
+function normalizeScriptReadAccess(
+  agentId: ScriptWorkspaceAgentId,
+  access: ScriptAgentReadAccess
+): ScriptAgentReadAccess {
+  const workspace = [...access.workspace];
+  for (const required of REQUIRED_SCRIPT_WORKSPACE_STAGES[agentId]) {
+    if (!workspace.includes(required)) {
+      workspace.push(required);
+    }
+  }
+  return {
+    workspace,
+    material: [...access.material],
+    skill: [...access.skill]
+  };
+}
+
+function scriptDefaultsAsInput(): ScriptWorkspaceAgentSettingsInput {
+  return {
+    workspaceType: "script",
+    agents: DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.map((profile) => ({
+      id: profile.id,
+      systemPrompt: profile.systemPrompt,
+      welcomeShortcuts: cloneScriptWelcomeShortcuts(profile.welcomeShortcuts),
+      readAccess: cloneScriptReadAccess(profile.readAccess)
     }))
   };
 }
@@ -286,25 +388,127 @@ function normalizeDiskSettings(raw: unknown): ShortWorkspaceAgentSettingsInput {
   };
 }
 
+function normalizeScriptWelcomeShortcuts(
+  agentId: ScriptWorkspaceAgentId,
+  raw: unknown
+): ScriptWorkspaceAgentProfile["welcomeShortcuts"] {
+  if (Array.isArray(raw) && raw.length === 3) {
+    const candidate = raw.map((value) =>
+      typeof value === "string" ? value.trim() : ""
+    );
+    if (candidate.every((value) => value.length > 0)) {
+      return [candidate[0]!, candidate[1]!, candidate[2]!];
+    }
+  }
+  return cloneScriptWelcomeShortcuts(
+    defaultScriptProfile(agentId).welcomeShortcuts
+  );
+}
+
+function normalizeScriptDiskSettings(
+  raw: unknown
+): ScriptWorkspaceAgentSettingsInput {
+  if (!raw || typeof raw !== "object") {
+    return scriptDefaultsAsInput();
+  }
+  const candidate = raw as Record<string, unknown>;
+  const agents = Array.isArray(candidate.agents)
+    ? candidate.agents.map((agent) => {
+        if (!agent || typeof agent !== "object") return agent;
+        const record = agent as Record<string, unknown>;
+        const agentId =
+          typeof record.id === "string" &&
+          (SCRIPT_WORKSPACE_AGENT_IDS as readonly string[]).includes(record.id)
+            ? (record.id as ScriptWorkspaceAgentId)
+            : undefined;
+        if (!agentId) return agent;
+        return {
+          ...record,
+          welcomeShortcuts: normalizeScriptWelcomeShortcuts(
+            agentId,
+            record.welcomeShortcuts
+          )
+        };
+      })
+    : candidate.agents;
+  const parsed = ScriptWorkspaceAgentSettingsInputSchema.safeParse({
+    workspaceType: candidate.workspaceType,
+    agents
+  });
+  if (!parsed.success) {
+    return scriptDefaultsAsInput();
+  }
+  return {
+    workspaceType: "script",
+    agents: parsed.data.agents.map((agent) => ({
+      ...agent,
+      welcomeShortcuts: cloneScriptWelcomeShortcuts(agent.welcomeShortcuts),
+      readAccess: normalizeScriptReadAccess(agent.id, agent.readAccess)
+    }))
+  };
+}
+
 export class WorkspaceAgentConfigStore {
-  private readonly settingsPath: string;
+  private readonly shortSettingsPath: string;
+  private readonly scriptSettingsPath: string;
   private writeChain: Promise<void> = Promise.resolve();
 
   constructor(userDataPath: string) {
-    this.settingsPath = join(userDataPath, "config", "workspace-agents.json");
+    this.shortSettingsPath = join(
+      userDataPath,
+      "config",
+      "workspace-agents.json"
+    );
+    this.scriptSettingsPath = join(
+      userDataPath,
+      "config",
+      "workspace-agents-script.json"
+    );
   }
 
-  async list(): Promise<ShortWorkspaceAgentSettings> {
+  async list(): Promise<ShortWorkspaceAgentSettings>;
+  async list(workspaceType: "short"): Promise<ShortWorkspaceAgentSettings>;
+  async list(workspaceType: "script"): Promise<ScriptWorkspaceAgentSettings>;
+  async list(workspaceType: WorkspaceType): Promise<WorkspaceAgentSettings>;
+  async list(
+    workspaceType: WorkspaceType = "short"
+  ): Promise<WorkspaceAgentSettings> {
     await this.writeChain;
-    return this.toPublicSettings(await this.readInput());
+    return workspaceType === "script"
+      ? this.toPublicScriptSettings(await this.readScriptInput())
+      : this.toPublicSettings(await this.readInput());
   }
 
   async save(
     rawInput: ShortWorkspaceAgentSettingsInput
-  ): Promise<ShortWorkspaceAgentSettings> {
-    const input = ShortWorkspaceAgentSettingsInputSchema.parse(rawInput);
-    let saved: ShortWorkspaceAgentSettings | undefined;
+  ): Promise<ShortWorkspaceAgentSettings>;
+  async save(
+    rawInput: ScriptWorkspaceAgentSettingsInput
+  ): Promise<ScriptWorkspaceAgentSettings>;
+  async save(
+    rawInput: WorkspaceAgentSettingsInput
+  ): Promise<WorkspaceAgentSettings>;
+  async save(
+    rawInput: WorkspaceAgentSettingsInput
+  ): Promise<WorkspaceAgentSettings> {
+    const input = WorkspaceAgentSettingsInputSchema.parse(rawInput);
+    let saved: WorkspaceAgentSettings | undefined;
     const operation = this.writeChain.then(async () => {
+      if (input.workspaceType === "script") {
+        const normalized: ScriptWorkspaceAgentSettingsInput = {
+          workspaceType: "script",
+          agents: input.agents.map((agent) => ({
+            ...agent,
+            welcomeShortcuts: cloneScriptWelcomeShortcuts(
+              agent.welcomeShortcuts
+            ),
+            readAccess: normalizeScriptReadAccess(agent.id, agent.readAccess)
+          }))
+        };
+        await this.writeScriptInput(normalized);
+        saved = this.toPublicScriptSettings(normalized);
+        return;
+      }
       const normalized: ShortWorkspaceAgentSettingsInput = {
         workspaceType: "short",
         agents: input.agents.map((agent) => ({
@@ -324,13 +528,70 @@ export class WorkspaceAgentConfigStore {
     return saved!;
   }
 
-  async reset(agentId?: ShortWorkspaceAgentId): Promise<ShortWorkspaceAgentSettings> {
-    let saved: ShortWorkspaceAgentSettings | undefined;
+  async reset(): Promise<ShortWorkspaceAgentSettings>;
+  async reset(
+    agentId: ShortWorkspaceAgentId
+  ): Promise<ShortWorkspaceAgentSettings>;
+  async reset(
+    workspaceType: "short",
+    agentId?: ShortWorkspaceAgentId
+  ): Promise<ShortWorkspaceAgentSettings>;
+  async reset(
+    workspaceType: "script",
+    agentId?: ScriptWorkspaceAgentId
+  ): Promise<ScriptWorkspaceAgentSettings>;
+  async reset(
+    workspaceType: WorkspaceType,
+    agentId?: ShortWorkspaceAgentId | ScriptWorkspaceAgentId
+  ): Promise<WorkspaceAgentSettings>;
+  async reset(
+    workspaceTypeOrAgentId?: WorkspaceType | ShortWorkspaceAgentId,
+    rawAgentId?: ShortWorkspaceAgentId | ScriptWorkspaceAgentId
+  ): Promise<WorkspaceAgentSettings> {
+    const workspaceType: WorkspaceType =
+      workspaceTypeOrAgentId === "script" ? "script" : "short";
+    const agentId =
+      workspaceTypeOrAgentId === "short" || workspaceTypeOrAgentId === "script"
+        ? rawAgentId
+        : workspaceTypeOrAgentId;
+    let saved: WorkspaceAgentSettings | undefined;
     const operation = this.writeChain.then(async () => {
-      const next = agentId ? await this.readInput() : defaultsAsInput();
-      if (agentId) {
-        const builtin = defaultProfile(agentId);
-        const index = next.agents.findIndex((agent) => agent.id === agentId);
+      if (workspaceType === "script") {
+        const scriptAgentId = agentId as ScriptWorkspaceAgentId | undefined;
+        const next = scriptAgentId
+          ? await this.readScriptInput()
+          : scriptDefaultsAsInput();
+        if (scriptAgentId) {
+          const builtin = defaultScriptProfile(scriptAgentId);
+          const index = next.agents.findIndex(
+            (agent) => agent.id === scriptAgentId
+          );
+          const replacement = {
+            id: builtin.id,
+            systemPrompt: builtin.systemPrompt,
+            welcomeShortcuts: cloneScriptWelcomeShortcuts(
+              builtin.welcomeShortcuts
+            ),
+            readAccess: cloneScriptReadAccess(builtin.readAccess)
+          };
+          if (index >= 0) {
+            next.agents[index] = replacement;
+          } else {
+            next.agents.push(replacement);
+          }
+        }
+        const validated = ScriptWorkspaceAgentSettingsInputSchema.parse(next);
+        await this.writeScriptInput(validated);
+        saved = this.toPublicScriptSettings(validated);
+        return;
+      }
+      const shortAgentId = agentId as ShortWorkspaceAgentId | undefined;
+      const next = shortAgentId ? await this.readInput() : defaultsAsInput();
+      if (shortAgentId) {
+        const builtin = defaultProfile(shortAgentId);
+        const index = next.agents.findIndex(
+          (agent) => agent.id === shortAgentId
+        );
         const replacement = {
           id: builtin.id,
           systemPrompt: builtin.systemPrompt,
@@ -357,31 +618,111 @@ export class WorkspaceAgentConfigStore {
 
   async resolveForStage(
     stageId: ShortWorkspaceStageId
-  ): Promise<ShortWorkspaceAgentProfile> {
-    return await this.resolve(resolveShortWorkspaceAgentIdForStage(stageId));
+  ): Promise<ShortWorkspaceAgentProfile>;
+  async resolveForStage(
+    stageId: ScriptWorkspaceStageId,
+    workspaceType: "script"
+  ): Promise<ScriptWorkspaceAgentProfile>;
+  async resolveForStage(
+    stageId: ShortWorkspaceStageId | ScriptWorkspaceStageId,
+    workspaceType: WorkspaceType = "short"
+  ): Promise<WorkspaceAgentProfile> {
+    return workspaceType === "script"
+      ? await this.resolve(
+          "script",
+          resolveScriptWorkspaceAgentIdForStage(
+            stageId as ScriptWorkspaceStageId
+          )
+        )
+      : await this.resolve(
+          "short",
+          resolveShortWorkspaceAgentIdForStage(stageId as ShortWorkspaceStageId)
+        );
   }
 
   async resolveForWorkspace(
-    rawWorkspace: ShortWorkspaceSnapshot
-  ): Promise<ShortWorkspaceAgentProfile> {
+    rawWorkspace: ShortWorkspaceSnapshot,
+    workspaceType: "short"
+  ): Promise<ShortWorkspaceAgentProfile>;
+  async resolveForWorkspace(
+    rawWorkspace: ScriptWorkspaceSnapshot,
+    workspaceType: "script"
+  ): Promise<ScriptWorkspaceAgentProfile>;
+  async resolveForWorkspace(
+    rawWorkspace: ShortWorkspaceSnapshot | ScriptWorkspaceSnapshot,
+    workspaceType: WorkspaceType
+  ): Promise<WorkspaceAgentProfile>;
+  async resolveForWorkspace(
+    rawWorkspace: ShortWorkspaceSnapshot | ScriptWorkspaceSnapshot,
+    workspaceType: WorkspaceType
+  ): Promise<WorkspaceAgentProfile> {
+    if (workspaceType === "script") {
+      const workspace = ScriptWorkspaceSnapshotSchema.parse(rawWorkspace);
+      return await this.resolve(
+        "script",
+        workspace.activeAgentId ??
+          resolveScriptWorkspaceAgentIdForStage(workspace.activeStageId)
+      );
+    }
     const workspace = ShortWorkspaceSnapshotSchema.parse(rawWorkspace);
     return await this.resolve(
+      "short",
       workspace.activeAgentId ??
         resolveShortWorkspaceAgentIdForStage(workspace.activeStageId)
     );
   }
 
-  async resolve(agentId: ShortWorkspaceAgentId): Promise<ShortWorkspaceAgentProfile> {
-    const settings = await this.list();
-    const profile = settings.agents.find((candidate) => candidate.id === agentId);
+  async resolve(
+    agentId: ShortWorkspaceAgentId
+  ): Promise<ShortWorkspaceAgentProfile>;
+  async resolve(
+    workspaceType: "short",
+    agentId: ShortWorkspaceAgentId
+  ): Promise<ShortWorkspaceAgentProfile>;
+  async resolve(
+    workspaceType: "script",
+    agentId: ScriptWorkspaceAgentId
+  ): Promise<ScriptWorkspaceAgentProfile>;
+  async resolve(
+    workspaceTypeOrAgentId: WorkspaceType | ShortWorkspaceAgentId,
+    rawAgentId?: ShortWorkspaceAgentId | ScriptWorkspaceAgentId
+  ): Promise<WorkspaceAgentProfile> {
+    const workspaceType: WorkspaceType =
+      workspaceTypeOrAgentId === "script" ? "script" : "short";
+    const agentId =
+      workspaceTypeOrAgentId === "short" || workspaceTypeOrAgentId === "script"
+        ? rawAgentId
+        : workspaceTypeOrAgentId;
+    if (!agentId) {
+      throw new Error("Workspace agent id is required.");
+    }
+    if (workspaceType === "script") {
+      const scriptAgentId = agentId as ScriptWorkspaceAgentId;
+      const settings = await this.list("script");
+      const profile = settings.agents.find(
+        (candidate) => candidate.id === scriptAgentId
+      );
+      return profile
+        ? cloneScriptProfile(profile)
+        : defaultScriptProfile(scriptAgentId);
+    }
+    const shortAgentId = agentId as ShortWorkspaceAgentId;
+    const settings = await this.list("short");
+    const profile = settings.agents.find(
+      (candidate) => candidate.id === shortAgentId
+    );
     if (!profile) {
-      return defaultProfile(agentId);
+      return defaultProfile(shortAgentId);
     }
     return cloneProfile(profile);
   }
 
   private async readInput(): Promise<ShortWorkspaceAgentSettingsInput> {
-    return normalizeDiskSettings(await readJson(this.settingsPath));
+    return normalizeDiskSettings(await readJson(this.shortSettingsPath));
+  }
+
+  private async readScriptInput(): Promise<ScriptWorkspaceAgentSettingsInput> {
+    return normalizeScriptDiskSettings(await readJson(this.scriptSettingsPath));
   }
 
   private async writeInput(input: ShortWorkspaceAgentSettingsInput): Promise<void> {
@@ -390,7 +731,18 @@ export class WorkspaceAgentConfigStore {
       workspaceType: "short",
       agents: input.agents
     };
-    await atomicWriteJson(this.settingsPath, disk);
+    await atomicWriteJson(this.shortSettingsPath, disk);
+  }
+
+  private async writeScriptInput(
+    input: ScriptWorkspaceAgentSettingsInput
+  ): Promise<void> {
+    const disk: DiskScriptWorkspaceAgentSettings = {
+      version: 1,
+      workspaceType: "script",
+      agents: input.agents
+    };
+    await atomicWriteJson(this.scriptSettingsPath, disk);
   }
 
   private toPublicSettings(
@@ -411,6 +763,34 @@ export class WorkspaceAgentConfigStore {
               }
             : {}),
           readAccess: normalizeReadAccess(
+            agentId,
+            override?.readAccess ?? builtin.readAccess
+          )
+        };
+      })
+    });
+  }
+
+  private toPublicScriptSettings(
+    input: ScriptWorkspaceAgentSettingsInput
+  ): ScriptWorkspaceAgentSettings {
+    const byId = new Map(input.agents.map((agent) => [agent.id, agent]));
+    return ScriptWorkspaceAgentSettingsSchema.parse({
+      workspaceType: "script",
+      agents: SCRIPT_WORKSPACE_AGENT_IDS.map((agentId) => {
+        const builtin = defaultScriptProfile(agentId);
+        const override = byId.get(agentId);
+        return {
+          ...builtin,
+          ...(override
+            ? {
+                systemPrompt: override.systemPrompt,
+                welcomeShortcuts: cloneScriptWelcomeShortcuts(
+                  override.welcomeShortcuts
+                )
+              }
+            : {}),
+          readAccess: normalizeScriptReadAccess(
             agentId,
             override?.readAccess ?? builtin.readAccess
           )

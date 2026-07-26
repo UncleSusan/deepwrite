@@ -30,4 +30,33 @@ describe("IPC command requestId handling", () => {
       'throw new Error("IPC result requestId does not match command id.");'
     );
   });
+
+  it("routes screenplay creation through preload, main, and the core utility", () => {
+    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const preloadSource = readFileSync(
+      new URL("../preload/index.ts", import.meta.url),
+      "utf8"
+    );
+    const coreSource = readFileSync(
+      new URL("../utilities/core-entry.ts", import.meta.url),
+      "utf8"
+    );
+
+    expect(preloadSource).toContain("async function createScriptBook");
+    expect(preloadSource).toContain('"catalog.createScriptBook"');
+    expect(mainSource).toContain('"catalog.createScriptBookAtPath"');
+    expect(mainSource).toContain("ScriptBookSchema.parse(result.payload)");
+    expect(coreSource).toContain(
+      'command.type === "catalog.createScriptBookAtPath"'
+    );
+    expect(coreSource).toContain("catalogStore.createScriptBook(");
+    expect(mainSource).toContain(
+      "command.payload.workspaceContext?.scriptWorkspace"
+    );
+    expect(mainSource).toContain("creativeWorkspaceType");
+    expect(mainSource).toContain(
+      "creativeWorkspace,\n                creativeWorkspaceType"
+    );
+    expect(mainSource).toContain("{ scriptAgentProfile: agentProfile }");
+  });
 });

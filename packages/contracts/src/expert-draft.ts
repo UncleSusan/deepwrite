@@ -80,6 +80,21 @@ export function createDefaultExpertDraft(): ExpertDraft {
   };
 }
 
+/** Creates the isolated empty episode structure used by a new script. */
+export function createDefaultScriptDraft(): ExpertDraft {
+  return {
+    sections: [
+      {
+        id: "episode-1",
+        title: "第一集",
+        wordCountRequirement: "",
+        body: "",
+        characterState: ""
+      }
+    ]
+  };
+}
+
 export function findExpertDraftSection(
   draft: ExpertDraft,
   sectionId: string

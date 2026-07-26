@@ -9,6 +9,7 @@ describe("short manuscript export UI wiring", () => {
     expect(sidebarSource).toContain("@export-book");
     expect(appSource).toContain('@export-book="openBookExportDialog"');
     expect(appSource).toContain("<ExportShortManuscriptDialog");
+    expect(appSource).toContain(":workspace-type=\"exportBookTarget?.workspaceType === 'script' ? 'script' : 'short'\"");
     expect(appSource).toContain('@export="exportBookManuscript"');
     expect(appSource).toContain("createShortManuscriptExportInput(");
     expect(appSource).toContain("window.deepwrite.manuscript.exportShort(");

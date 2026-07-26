@@ -6,6 +6,12 @@ import {
   ShortWorkspaceAgentIdSchema,
   type ShortWorkspaceAgentId
 } from "./workspace";
+import {
+  SCRIPT_WORKSPACE_AGENT_IDS,
+  ScriptWorkspaceAgentIdSchema,
+  WorkspaceTypeSchema,
+  type ScriptWorkspaceAgentId
+} from "./script-workspace";
 
 export const SHORT_AGENT_SUBAGENT_MAX_COUNT = 20;
 export const SHORT_AGENT_SUBAGENT_ID_MAX_LENGTH = 120;
@@ -117,6 +123,16 @@ export const ShortAgentSubagentDefinitionsSchema = z
   .max(SHORT_AGENT_SUBAGENT_MAX_COUNT)
   .superRefine(validateUniqueSubagents);
 
+/** Script aliases are intentionally separate so their shape can diverge later. */
+export const ScriptAgentSubagentModelModeSchema =
+  ShortAgentSubagentModelModeSchema;
+export type ScriptAgentSubagentModelMode = ShortAgentSubagentModelMode;
+export const ScriptAgentSubagentDefinitionSchema =
+  ShortAgentSubagentDefinitionSchema;
+export type ScriptAgentSubagentDefinition = ShortAgentSubagentDefinition;
+export const ScriptAgentSubagentDefinitionsSchema =
+  ShortAgentSubagentDefinitionsSchema;
+
 export const AgentTeamSchema = z.object({
   parentAgentId: ShortWorkspaceAgentIdSchema,
   subagents: ShortAgentSubagentDefinitionsSchema
@@ -171,14 +187,89 @@ export const DEFAULT_AGENT_TEAM_SETTINGS: AgentTeamSettings = {
   }))
 };
 
+export const ScriptAgentTeamSchema = z.object({
+  parentAgentId: ScriptWorkspaceAgentIdSchema,
+  subagents: ScriptAgentSubagentDefinitionsSchema
+});
+export type ScriptAgentTeam = z.infer<typeof ScriptAgentTeamSchema>;
+
+function validateCompleteScriptAgentTeams(
+  teams: readonly { parentAgentId: ScriptWorkspaceAgentId }[],
+  context: z.core.$RefinementCtx<unknown>
+): void {
+  const ids = teams.map((team) => team.parentAgentId);
+  ids.forEach((id, index) => {
+    if (ids.indexOf(id) !== index) {
+      context.addIssue({
+        code: "custom",
+        path: ["teams", index, "parentAgentId"],
+        message: `Duplicate script parent agent team: ${id}`
+      });
+    }
+  });
+  for (const id of SCRIPT_WORKSPACE_AGENT_IDS) {
+    if (!ids.includes(id)) {
+      context.addIssue({
+        code: "custom",
+        path: ["teams"],
+        message: `Missing script parent agent team: ${id}`
+      });
+    }
+  }
+}
+
+export const ScriptAgentTeamSettingsSchema = z
+  .object({
+    workspaceType: z.literal("script"),
+    teams: z
+      .array(ScriptAgentTeamSchema)
+      .length(SCRIPT_WORKSPACE_AGENT_IDS.length)
+  })
+  .superRefine((value, context) =>
+    validateCompleteScriptAgentTeams(value.teams, context)
+  );
+export type ScriptAgentTeamSettings = z.infer<
+  typeof ScriptAgentTeamSettingsSchema
+>;
+
+export const ScriptAgentTeamSettingsInputSchema =
+  ScriptAgentTeamSettingsSchema;
+export type ScriptAgentTeamSettingsInput = z.infer<
+  typeof ScriptAgentTeamSettingsInputSchema
+>;
+
+export const WorkspaceAgentTeamSettingsSchema = z.discriminatedUnion(
+  "workspaceType",
+  [AgentTeamSettingsSchema, ScriptAgentTeamSettingsSchema]
+);
+export type WorkspaceAgentTeamSettings = z.infer<
+  typeof WorkspaceAgentTeamSettingsSchema
+>;
+
+export const WorkspaceAgentTeamSettingsInputSchema = z.discriminatedUnion(
+  "workspaceType",
+  [AgentTeamSettingsInputSchema, ScriptAgentTeamSettingsInputSchema]
+);
+export type WorkspaceAgentTeamSettingsInput = z.infer<
+  typeof WorkspaceAgentTeamSettingsInputSchema
+>;
+
+export const DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS: ScriptAgentTeamSettings = {
+  workspaceType: "script",
+  teams: SCRIPT_WORKSPACE_AGENT_IDS.map((parentAgentId) => ({
+    parentAgentId,
+    subagents: []
+  }))
+};
+
 export const AgentTeamsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agentTeams.list"),
-  payload: z.object({ workspaceType: z.literal("short") })
+  payload: z.object({ workspaceType: WorkspaceTypeSchema })
 });
 
 export const AgentTeamsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agentTeams.save"),
-  payload: AgentTeamSettingsInputSchema
+  payload: WorkspaceAgentTeamSettingsInputSchema
 });
 
 export type AgentTeamsListCommandEnvelope = z.infer<

@@ -9,7 +9,8 @@ import {
 
 function workspaceDocument(
   workspaceId: string | undefined,
-  stageId?: WorkspaceDocument["stageId"]
+  stageId?: WorkspaceDocument["stageId"],
+  workspaceType: "short" | "script" = "short"
 ): WorkspaceDocument {
   return {
     id: `${workspaceId ?? "global"}:${stageId ?? "other"}`,
@@ -19,7 +20,7 @@ function workspaceDocument(
     path: ["文稿"],
     content: "",
     ...(workspaceId
-      ? { workspaceId, workspaceType: "short" as const, workspaceTitle: "书籍" }
+      ? { workspaceId, workspaceType, workspaceTitle: "书籍" }
       : {}),
     ...(stageId ? { stageId } : {})
   };
@@ -34,6 +35,11 @@ describe("agent run preferences", () => {
     expect(agentConversationKeyForDocument(firstOther)).toBe("book-one:general");
     expect(agentConversationKeyForDocument(secondOther)).toBe("book-two:general");
     expect(agentConversationKeyForDocument(firstPlot)).toBe("book-one:plot_design");
+    expect(
+      agentConversationKeyForDocument(
+        workspaceDocument("script-one", "plot_design", "script")
+      )
+    ).toBe("script-one:plot_design");
     expect(agentRunScopeForDocument(firstOther)).toBe("book:book-one");
     expect(agentRunScopeForDocument(secondOther)).toBe("book:book-two");
     expect(agentConversationKeyForDocument(workspaceDocument(undefined))).toBe(

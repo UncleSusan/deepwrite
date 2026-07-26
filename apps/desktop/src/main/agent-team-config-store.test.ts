@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_AGENT_TEAM_SETTINGS,
-  type AgentTeamSettingsInput
+  DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
+  type AgentTeamSettingsInput,
+  type ScriptAgentTeamSettingsInput
 } from "@deepwrite/contracts";
 import { AgentTeamConfigStore } from "./agent-team-config-store";
 
@@ -46,6 +48,28 @@ function customizedInput(): AgentTeamSettingsInput {
   };
 }
 
+function customizedScriptInput(): ScriptAgentTeamSettingsInput {
+  return {
+    workspaceType: "script",
+    teams: DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS.teams.map((team) => ({
+      parentAgentId: team.parentAgentId,
+      subagents:
+        team.parentAgentId === "outline"
+          ? [
+              {
+                id: "script_outline_reviewer",
+                name: "剧本大纲审阅",
+                description: "检查分集大纲。",
+                systemPrompt: "检查分集结构并返回摘要。",
+                enabled: true,
+                modelMode: "inherit" as const
+              }
+            ]
+          : []
+    }))
+  };
+}
+
 afterEach(async () => {
   await Promise.all(
     [...temporaryRoots].map((root) => rm(root, { recursive: true, force: true }))
@@ -78,6 +102,44 @@ describe("AgentTeamConfigStore", () => {
       await readFile(join(root, "config", "agent-teams.json"), "utf8")
     ) as { version: number };
     expect(disk.version).toBe(1);
+  });
+
+  it("stores screenplay teams separately without changing the legacy short file", async () => {
+    const root = await makeTemporaryRoot();
+    const store = new AgentTeamConfigStore(root);
+    const shortSaved = await store.save(customizedInput());
+    const scriptSaved = await store.save(customizedScriptInput());
+
+    expect(await store.list("short")).toEqual(shortSaved);
+    expect(await store.list("script")).toEqual(scriptSaved);
+    expect(await store.resolve("script", "outline")).toEqual([
+      expect.objectContaining({
+        id: "script_outline_reviewer",
+        enabled: true
+      })
+    ]);
+    expect(
+      JSON.parse(
+        await readFile(join(root, "config", "agent-teams.json"), "utf8")
+      )
+    ).toMatchObject({ workspaceType: "short" });
+    expect(
+      JSON.parse(
+        await readFile(
+          join(root, "config", "agent-teams-script.json"),
+          "utf8"
+        )
+      )
+    ).toMatchObject({ workspaceType: "script" });
+  });
+
+  it("returns isolated screenplay defaults when no screenplay file exists", async () => {
+    const settings = await new AgentTeamConfigStore(
+      await makeTemporaryRoot()
+    ).list("script");
+
+    expect(settings).toEqual(DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS);
+    expect(settings).not.toBe(DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS);
   });
 
   it("rejects an invalid disk shape instead of silently overwriting it", async () => {

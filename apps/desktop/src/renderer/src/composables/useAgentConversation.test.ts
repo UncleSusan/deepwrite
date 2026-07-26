@@ -4,6 +4,7 @@ import {
   DEFAULT_AGENT_TEAM_SETTINGS,
   DEFAULT_LIBRARY_AGENT_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
+  SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
   createShortWorkspaceContentRevision,
@@ -101,6 +102,58 @@ function createShortWorkspaceDocuments(): WorkspaceDocument[] {
   return [...stages, ...draftFiles];
 }
 
+function createScriptWorkspaceDocuments(): WorkspaceDocument[] {
+  const stages: WorkspaceDocument[] = SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
+    id: `script_${stageId}`,
+    domain: "creation",
+    title: shortStageTitles[stageId],
+    eyebrow: "剧本创作",
+    path: ["雨夜剧本", shortStageTitles[stageId]],
+    format: "设定" as const,
+    content: `${stageId} 的剧本实时内容`,
+    workspaceId: "script_story_1",
+    workspaceType: "script",
+    workspaceTitle: "雨夜剧本",
+    workspaceCategories: ["悬疑"],
+    stageId
+  }));
+  const common = {
+    domain: "creation" as const,
+    eyebrow: "剧本创作",
+    workspaceId: "script_story_1",
+    workspaceType: "script" as const,
+    workspaceTitle: "雨夜剧本",
+    workspaceCategories: ["悬疑"],
+    stageId: "draft" as const,
+    shortAgentId: "expert_section_writer" as const,
+    expertSectionId: "episode-1",
+    expertSectionOrder: 0,
+    expertWordCountRequirement: "1200 字",
+    draftDirectoryId: "draft"
+  };
+  return [
+    ...stages,
+    {
+      ...common,
+      id: "script_draft_episode-1_body",
+      title: "第一集",
+      path: ["雨夜剧本", "正文", "第一集", "正文"],
+      format: "正文" as const,
+      content: "1. 内景 公寓 - 夜\n△雨水沿着窗玻璃滑落。",
+      draftFileKind: "body" as const
+    },
+    {
+      ...common,
+      id: "script_draft_episode-1_state",
+      title: "第一集 · 人物状态",
+      path: ["雨夜剧本", "正文", "第一集", "人物状态"],
+      format: "账本" as const,
+      content: "林默：发现来信。",
+      draftFileKind: "character-state" as const
+    }
+  ];
+}
+
 function createDraftCoordinatorDocument(
   workspaceDocuments: WorkspaceDocument[]
 ): WorkspaceDocument {
@@ -156,6 +209,9 @@ function createDeferredApi(): {
       importLegacyBook: vi.fn(async () => null),
       importLegacyLibrary: vi.fn(async () => null),
       createShortBook: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
+      createScriptBook: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
       createDraftSection: vi.fn(async () => {
@@ -2606,6 +2662,56 @@ describe("agent conversation controller", () => {
       }
       controller.dispose();
     }
+  });
+
+  it("builds an isolated script workspace without either intro", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    const workspaceDocuments = createScriptWorkspaceDocuments();
+    const activeDocument = workspaceDocuments.find(
+      (candidate) => candidate.draftFileKind === "body"
+    );
+    if (!activeDocument) throw new Error("Missing script episode body.");
+
+    controller.draft.value = "继续编写第一集";
+    const sending = controller.sendMessage(activeDocument, workspaceDocuments);
+    const sessionId = controller.sessionId.value;
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId: "run_script_snapshot",
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+
+    const context = deferred.prompts[0]?.workspaceContext;
+    expect(context?.shortWorkspace).toBeUndefined();
+    expect(context?.scriptWorkspace).toMatchObject({
+      id: "script_story_1",
+      title: "雨夜剧本",
+      activeStageId: "draft",
+      activeAgentId: "expert_section_writer",
+      activeSectionId: "episode-1",
+      stages: SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
+        stageId,
+        content: `${stageId} 的剧本实时内容`
+      })),
+      expertDraft: {
+        sections: [
+          expect.objectContaining({
+            id: "episode-1",
+            title: "第一集"
+          })
+        ]
+      }
+    });
+    expect(context?.scriptWorkspace?.stages.map((stage) => stage.stageId)).not.toContain(
+      "intro_design"
+    );
+    controller.dispose();
   });
 
   it("forwards the selected draft section and section-writer identity", async () => {

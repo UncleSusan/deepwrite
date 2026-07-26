@@ -296,6 +296,71 @@ describe("catalog workspace projection", () => {
     ]);
   });
 
+  it("projects scripts without either intro and uses episode terminology", () => {
+    const source = fixture();
+    const base = structuredClone(source.books[0]!);
+    source.books = [
+      {
+        ...base,
+        id: "book-script",
+        title: "雨夜剧本",
+        bookType: "script",
+        documents: base.documents.filter(
+          (document) => document.id !== "intro_design"
+        ),
+        draft: {
+          ...base.draft,
+          sections: [
+            {
+              ...base.draft.sections[1]!,
+              id: "episode-1",
+              title: "第一集",
+              body: {
+                ...base.draft.sections[1]!.body,
+                id: catalogDraftBodyDocumentId("episode-1"),
+                title: "第一集"
+              },
+              characterState: {
+                ...base.draft.sections[1]!.characterState,
+                id: catalogDraftCharacterStateDocumentId("episode-1"),
+                title: "第一集 · 人物状态"
+              }
+            }
+          ]
+        }
+      }
+    ];
+
+    const projection = projectCatalogWorkspace(
+      CatalogSnapshotSchema.parse(source)
+    );
+    const book = projection.resourceSections[0]!.nodes[0]!;
+    const draft = book.children!.find(
+      (node) => node.stageCategoryId === "draft"
+    )!;
+
+    expect(book).toMatchObject({
+      id: "book-script",
+      badge: "剧本",
+      workspaceType: "script"
+    });
+    expect(book.children?.[1]?.children?.map((node) => node.label)).toEqual([
+      "剧情设计",
+      "剧情细化"
+    ]);
+    expect(flattenNodes([book]).some((node) => node.label === "导语设计")).toBe(false);
+    expect(draft.children).toMatchObject([
+      { label: "第一集", workspaceType: "script" }
+    ]);
+    const body = projection.workspaceDocuments.find(
+      (document) => document.expertSectionId === "episode-1" && document.draftFileKind === "body"
+    );
+    expect(body).toMatchObject({
+      workspaceType: "script",
+      eyebrow: "剧本 · 剧集正文"
+    });
+  });
+
   it("projects catalog draft sections as unique physical file pairs", () => {
     const source = fixture();
     source.books[0]!.draft.sections = [

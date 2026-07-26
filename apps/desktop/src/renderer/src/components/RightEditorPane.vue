@@ -79,6 +79,9 @@ const characterCount = computed(() => content.value.replace(/\s/g, "").length);
 const paragraphs = computed(() => content.value.split(/\n{2,}/).filter(Boolean));
 const showSectionTabs = computed(() => Boolean(props.sectionTabs?.length));
 const showDraftFileTabs = computed(() => Boolean(props.document.draftFileKind));
+const draftUnitLabel = computed(() =>
+  props.document.workspaceType === "script" ? "剧集" : "小节"
+);
 const persistedDocument = computed(() =>
   Boolean(
     props.document.catalogDocumentId ||
@@ -203,7 +206,11 @@ onBeforeUnmount(() => {
 <template>
   <aside
     class="editor-pane"
-    :class="{ 'has-section-tabs': showSectionTabs }"
+    :class="{
+      'has-section-tabs': showSectionTabs,
+      'is-script-workspace': document.workspaceType === 'script'
+    }"
+    :data-workspace-type="document.workspaceType"
     aria-label="文本内容"
   >
     <header class="editor-header">
@@ -231,7 +238,7 @@ onBeforeUnmount(() => {
     <nav
       v-if="showSectionTabs"
       class="section-tabs-bar"
-      aria-label="正文小节"
+      :aria-label="`正文${draftUnitLabel}`"
     >
       <div class="section-tabs-scroll" role="tablist">
         <button
@@ -255,7 +262,7 @@ onBeforeUnmount(() => {
         v-if="showDraftFileTabs"
         class="draft-file-tabs"
         role="tablist"
-        aria-label="小节文件"
+        :aria-label="`${draftUnitLabel}文件`"
       >
         <button
           type="button"

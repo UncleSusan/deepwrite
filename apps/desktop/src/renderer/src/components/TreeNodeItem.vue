@@ -88,6 +88,9 @@ const hasActionMenu = computed(
 const hasNodeAction = computed(
   () => hasActionMenu.value || isExpertDraftParent.value
 );
+const draftUnitLabel = computed(() =>
+  props.node.workspaceType === "script" ? "剧集" : "小节"
+);
 
 function containsSelectedDescendant(node: ResourceTreeNode, selectedId: string): boolean {
   return (node.children ?? []).some(
@@ -207,6 +210,7 @@ onBeforeUnmount(() => {
       <span
         v-if="node.catalogNodeType === 'book' && node.badge"
         class="tree-badge"
+        :class="{ 'is-script': node.workspaceType === 'script' }"
       >
         {{ node.badge }}
       </span>
@@ -232,8 +236,8 @@ onBeforeUnmount(() => {
       <button
         class="tree-node-action"
         type="button"
-        :aria-label="`在${node.label}末尾新建小节`"
-        title="新建小节"
+        :aria-label="`在${node.label}末尾新建${draftUnitLabel}`"
+        :title="`新建${draftUnitLabel}`"
         @click.stop="createExpertSection"
       >
         <AppIcon name="plus" :size="16" />
@@ -277,7 +281,7 @@ onBeforeUnmount(() => {
             @click.stop="removeExpertSection"
           >
             <AppIcon name="trash" :size="16" />
-            <span>删除小节</span>
+            <span>删除{{ draftUnitLabel }}</span>
           </button>
         </template>
         <template v-else-if="hasBookAction">

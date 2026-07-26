@@ -7,8 +7,9 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain('props.node.shortAgentId === "expert_section_writer"');
     expect(source).toContain("emit(\"createExpertSection\", props.node)");
     expect(source).toContain("emit(\"removeExpertSection\", props.node)");
-    expect(source).toContain('title="新建小节"');
-    expect(source).toContain("<span>删除小节</span>");
+    expect(source).toContain('props.node.workspaceType === "script" ? "剧集" : "小节"');
+    expect(source).toContain(":title=\"`新建${draftUnitLabel}`\"");
+    expect(source).toContain("<span>删除{{ draftUnitLabel }}</span>");
   });
 
   it("raises the whole action area while its menu is open", () => {

@@ -4,8 +4,8 @@ import {
   MATERIAL_KINDS,
   SKILL_KINDS,
   type CatalogSnapshot,
+  type Book,
   type MaterialKind,
-  type ShortBook,
   type SkillKind,
   type WorkspaceRuntimeContext
 } from "@deepwrite/contracts";
@@ -24,6 +24,7 @@ export type LibraryAttachmentDiagnosticCode =
   | "book-not-found"
   | "library-not-found"
   | "library-kind-mismatch"
+  | "library-type-mismatch"
   | "duplicate-library-binding"
   | "content-truncated"
   | "capacity-exceeded";
@@ -132,7 +133,7 @@ function truncateContent(
 
 function collectMaterialCandidates(
   snapshot: CatalogSnapshot,
-  book: ShortBook,
+  book: Book,
   diagnostics: LibraryAttachmentDiagnostic[]
 ): AttachmentCandidate<MaterialKind>[] {
   const libraries = new Map(snapshot.materials.map((library) => [library.id, library]));
@@ -164,6 +165,17 @@ function collectMaterialCandidates(
           bookId: book.id,
           libraryId,
           expectedKind: selectedKind
+        });
+        continue;
+      }
+      if (library.materialType !== book.bookType) {
+        diagnostics.push({
+          code: "library-type-mismatch",
+          domain: "material",
+          message: `素材库“${library.title}”不适用于当前${book.bookType === "script" ? "剧本" : "短篇"}。`,
+          bookId: book.id,
+          libraryId,
+          actualKind: library.materialType
         });
         continue;
       }
@@ -201,7 +213,7 @@ function collectMaterialCandidates(
 
 function collectSkillCandidates(
   snapshot: CatalogSnapshot,
-  book: ShortBook,
+  book: Book,
   diagnostics: LibraryAttachmentDiagnostic[]
 ): AttachmentCandidate<SkillKind>[] {
   const libraries = new Map(snapshot.skills.map((library) => [library.id, library]));
@@ -234,6 +246,17 @@ function collectSkillCandidates(
           bookId: book.id,
           libraryId,
           expectedKind: selectedKind
+        });
+        continue;
+      }
+      if (library.skillType !== book.bookType) {
+        diagnostics.push({
+          code: "library-type-mismatch",
+          domain: "skill",
+          message: `技能库“${library.title}”不适用于当前${book.bookType === "script" ? "剧本" : "短篇"}。`,
+          bookId: book.id,
+          libraryId,
+          actualKind: library.skillType
         });
         continue;
       }
@@ -305,7 +328,7 @@ function capacityDiagnostics<TKind extends MaterialKind | SkillKind>(
  */
 export function buildLibraryAttachments(
   snapshot: CatalogSnapshot,
-  bookOrId: ShortBook | string,
+  bookOrId: Book | string,
   options: BuildLibraryAttachmentsOptions = {}
 ): LibraryAttachmentBuildResult {
   const bookId = typeof bookOrId === "string" ? bookOrId : bookOrId.id;

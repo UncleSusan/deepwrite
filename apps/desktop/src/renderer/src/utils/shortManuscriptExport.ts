@@ -1,6 +1,6 @@
 import type {
   ExportShortManuscriptInput,
-  ShortBook,
+  Book,
   ShortManuscriptExportFormat
 } from "@deepwrite/contracts";
 import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
@@ -11,7 +11,7 @@ import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
  * win over the last catalog snapshot so an export never silently goes stale.
  */
 export function createShortManuscriptExportInput(
-  book: ShortBook,
+  book: Book,
   documents: readonly WorkspaceDocument[],
   editorDrafts: Readonly<Record<string, EditorDraftState>>,
   format: ShortManuscriptExportFormat

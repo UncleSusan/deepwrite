@@ -11,13 +11,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
+  DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
   createShortWorkspaceContentRevision,
   type ShortWorkspaceAgentId,
   type ShortWorkspaceAgentSettingsInput,
-  type ShortWorkspaceStageId
+  type ShortWorkspaceStageId,
+  type ScriptWorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
 import {
   RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1,
@@ -70,6 +73,24 @@ function customizedInput(prefix: string): ShortWorkspaceAgentSettingsInput {
   };
 }
 
+function customizedScriptInput(
+  prefix: string
+): ScriptWorkspaceAgentSettingsInput {
+  return {
+    workspaceType: "script",
+    agents: DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.map((agent) => ({
+      id: agent.id,
+      systemPrompt: `${prefix}:${agent.id}`,
+      welcomeShortcuts: [...agent.welcomeShortcuts],
+      readAccess: {
+        workspace: [],
+        material: [],
+        skill: []
+      }
+    }))
+  };
+}
+
 function byAgentId<T extends { id: ShortWorkspaceAgentId }>(
   agents: readonly T[],
   agentId: ShortWorkspaceAgentId
@@ -99,6 +120,65 @@ describe("WorkspaceAgentConfigStore", () => {
     expect(settings.agents[0]).not.toBe(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]);
     expect(settings.agents[0]?.readAccess).not.toBe(
       DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]?.readAccess
+    );
+  });
+
+  it("keeps short and screenplay settings in independent compatible files", async () => {
+    const root = await makeTemporaryRoot();
+    const store = new WorkspaceAgentConfigStore(root);
+    const shortSaved = await store.save(customizedInput("short-custom"));
+    const scriptSaved = await store.save(
+      customizedScriptInput("script-custom")
+    );
+
+    expect(await store.list("short")).toEqual(shortSaved);
+    expect(await store.list("script")).toEqual(scriptSaved);
+    expect(
+      byAgentId(
+        (await store.list("short")).agents,
+        "plot_design"
+      ).readAccess.workspace
+    ).toEqual(["plot_design", "intro_design", "plot_refine"]);
+    expect(
+      byAgentId(
+        (await store.list("script")).agents,
+        "plot_design"
+      ).readAccess.workspace
+    ).toEqual(["plot_design", "plot_refine"]);
+    expect(
+      JSON.parse(
+        await readFile(join(root, "config", "workspace-agents.json"), "utf8")
+      )
+    ).toMatchObject({ workspaceType: "short" });
+    expect(
+      JSON.parse(
+        await readFile(
+          join(root, "config", "workspace-agents-script.json"),
+          "utf8"
+        )
+      )
+    ).toMatchObject({ workspaceType: "script" });
+
+    const resetScript = await store.reset("script", "plot_design");
+    expect(
+      byAgentId(resetScript.agents, "plot_design")
+    ).toEqual(
+      byAgentId(DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES, "plot_design")
+    );
+    expect(
+      byAgentId((await store.list("short")).agents, "plot_design").systemPrompt
+    ).toBe("short-custom:plot_design");
+  });
+
+  it("returns isolated screenplay defaults when no screenplay file exists", async () => {
+    const store = new WorkspaceAgentConfigStore(await makeTemporaryRoot());
+
+    const settings = await store.list("script");
+
+    expect(settings).toEqual(DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS);
+    expect(settings).not.toBe(DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS);
+    expect(settings.agents[0]).not.toBe(
+      DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES[0]
     );
   });
 
@@ -360,11 +440,14 @@ describe("WorkspaceAgentConfigStore", () => {
       }))
     };
 
-    await expect(store.resolveForWorkspace(workspace)).resolves.toMatchObject({
-      id: "expert_section_writer"
-    });
     await expect(
-      store.resolveForWorkspace({ ...workspace, activeSectionId: "missing" })
+      store.resolveForWorkspace(workspace, "short")
+    ).resolves.toMatchObject({ id: "expert_section_writer" });
+    await expect(
+      store.resolveForWorkspace(
+        { ...workspace, activeSectionId: "missing" },
+        "short"
+      )
     ).rejects.toThrow(/Unknown expert draft section/u);
   });
 

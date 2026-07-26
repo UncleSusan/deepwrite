@@ -8,12 +8,13 @@ describe("AgentTeamSettingsPanel", () => {
     expect(source).toContain("从技能库加载");
   });
 
-  it("shows the three workspace tabs and disables unfinished modes", () => {
+  it("enables script while keeping the unfinished long-form mode disabled", () => {
     expect(source).toContain("短篇");
     expect(source).toContain("剧本");
     expect(source).toContain("长篇");
-    expect(source.match(/尚未接入/g)?.length).toBe(2);
-    expect(source.match(/aria-selected=\"false\"/g)?.length).toBe(2);
+    expect(source.match(/尚未接入/g)?.length).toBe(1);
+    expect(source).toContain("@click=\"activeWorkspaceType = 'script'\"");
+    expect(source).toContain(":aria-selected=\"activeWorkspaceType === 'script'\"");
     expect(source.match(/role=\"tab\"/g)?.length).toBe(3);
   });
 
@@ -45,7 +46,7 @@ describe("AgentTeamSettingsPanel", () => {
     expect(source).toContain('@change="toggleSubagent(subagent, $event)"');
     expect(source).toContain('@click="removeSubagent(index)"');
     expect(source).toContain('@click="saveSettings"');
-    expect(source).toContain("AgentTeamSettingsInputSchema.safeParse");
+    expect(source).toContain("WorkspaceAgentTeamSettingsInputSchema.safeParse");
   });
 
   it("blocks saving and offers retry when persisted settings fail to load", () => {

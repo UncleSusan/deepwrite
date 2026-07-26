@@ -30,6 +30,7 @@ const props = defineProps<{
   materialKind?: MaterialLibraryKind | undefined;
   entryId?: string | undefined;
   entryTitle?: string | undefined;
+  workspaceType?: "short" | "script" | "long" | undefined;
   submitting?: boolean | undefined;
 }>();
 
@@ -45,10 +46,20 @@ const emit = defineEmits<{
 }>();
 
 const title = ref("");
+const libraryType = ref<"short" | "script">("short");
 const stageId = ref<MaterialStageId>("other");
 const libraryKind = ref<MaterialKind | SkillKind>("character");
 const titleInput = ref<HTMLInputElement | null>(null);
 const domainLabel = computed(() => (props.domain === "material" ? "素材" : "技能"));
+const effectiveLibraryType = computed(() =>
+  props.operation === "create-library"
+    ? libraryType.value
+    : props.workspaceType ?? "short"
+);
+const libraryTypeOptions = [
+  { value: "short", label: "短篇" },
+  { value: "script", label: "剧本" }
+];
 const heading = computed(() => {
   if (props.operation === "create-library") return `新建${domainLabel.value}库`;
   if (props.operation === "create-entry") return `在“${props.libraryTitle ?? "资料库"}”中新建条目`;
@@ -89,7 +100,9 @@ const stageOptions = computed(() => {
     mixed: allOptions.map(({ value }) => value)
   };
   const allowed = new Set(allowedByKind[props.materialKind ?? "mixed"]);
-  return allOptions.filter(({ value }) => allowed.has(value));
+  return allOptions.filter(
+    ({ value }) => allowed.has(value) && !(effectiveLibraryType.value === "script" && value === "intro")
+  );
 });
 const showEntryStageField = computed(
   () => props.operation === "create-entry" && props.domain === "material"
@@ -124,12 +137,14 @@ function submit(): void {
       emit("createLibrary", {
         domain: "material",
         name: normalizedTitle,
+        libraryType: libraryType.value,
         materialKind: libraryKind.value as MaterialKind
       });
     } else {
       emit("createLibrary", {
         domain: "skill",
         name: normalizedTitle,
+        libraryType: libraryType.value,
         skillKind: libraryKind.value as SkillKind
       });
     }
@@ -166,11 +181,13 @@ watch(
       props.operation,
       props.domain,
       props.libraryId,
-      props.materialKind
+      props.materialKind,
+      props.workspaceType
     ] as const,
   ([open]) => {
     if (!open) return;
     title.value = "";
+    libraryType.value = "short";
     libraryKind.value = props.domain === "material" ? "character" : "general";
     stageId.value =
       (stageOptions.value[0]?.value as MaterialStageId | undefined) ?? "other";
@@ -225,6 +242,18 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 autocomplete="off"
                 :placeholder="`请输入${domainLabel}库名称`"
                 :disabled="submitting"
+              />
+            </label>
+            <label class="book-resource-name-field catalog-resource-stage-field">
+              <span>适用创作类型</span>
+              <PopupSelect
+                :model-value="libraryType"
+                :options="libraryTypeOptions"
+                accessible-label="适用创作类型"
+                size="large"
+                :disabled="submitting"
+                :menu-min-width="220"
+                @update:model-value="libraryType = String($event) as 'short' | 'script'"
               />
             </label>
             <label class="book-resource-name-field catalog-resource-stage-field">

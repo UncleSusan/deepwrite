@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import type {
   ShortWorkspaceAgentId,
-  ShortWorkspaceAgentSettings,
-  ShortWorkspaceAgentSettingsInput
+  ShortWorkspaceAgentSettingsInput,
+  WorkspaceAgentSettings,
+  WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
-import { DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES } from "@deepwrite/contracts";
+import {
+  DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
+  DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES
+} from "@deepwrite/contracts";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 type EditableAgent = ShortWorkspaceAgentSettingsInput["agents"][number];
@@ -26,7 +30,7 @@ interface ReadOption<T extends string> {
 }
 
 const props = defineProps<{
-  settings: ShortWorkspaceAgentSettings | null;
+  settings: readonly WorkspaceAgentSettings[];
   loading: boolean;
   saving: boolean;
   errorMessage: string | null;
@@ -35,7 +39,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  save: [input: ShortWorkspaceAgentSettingsInput];
+  save: [input: WorkspaceAgentSettingsInput];
 }>();
 
 const AGENTS = [
@@ -91,6 +95,7 @@ const REQUIRED_WORKSPACE_STAGES = {
 } as const satisfies Record<ShortWorkspaceAgentId, readonly WorkspaceStageId[]>;
 
 const activeAgentId = ref<ShortWorkspaceAgentId>(AGENTS[0].id);
+const activeWorkspaceType = ref<"short" | "script">("short");
 const draftAgents = ref<ShortWorkspaceAgentSettingsInput["agents"]>([]);
 const visibleErrorMessage = ref<string | null>(null);
 const visibleStatusMessage = ref<string | null>(null);
@@ -101,8 +106,20 @@ const activeAgent = computed(() =>
   draftAgents.value.find((agent) => agent.id === activeAgentId.value)
 );
 
+const activeSettings = computed(() =>
+  props.settings.find(
+    (settings) => settings.workspaceType === activeWorkspaceType.value
+  )
+);
+
 const activeSettingsAgent = computed(() =>
-  props.settings?.agents.find((agent) => agent.id === activeAgentId.value)
+  activeSettings.value?.agents.find((agent) => agent.id === activeAgentId.value)
+);
+
+const visibleWorkspaceOptions = computed(() =>
+  activeWorkspaceType.value === "script"
+    ? WORKSPACE_OPTIONS.filter((option) => option.id !== "intro_design")
+    : WORKSPACE_OPTIONS
 );
 
 const activeMeta = computed(
@@ -118,8 +135,9 @@ const hasCompleteDraft = computed(() =>
 );
 
 watch(
-  () => props.settings,
-  (settings) => {
+  () => [props.settings, activeWorkspaceType.value] as const,
+  () => {
+    const settings = activeSettings.value;
     draftAgents.value = settings
       ? settings.agents.map((agent) => ({
           id: agent.id,
@@ -189,9 +207,10 @@ function selectAgent(agentId: ShortWorkspaceAgentId): void {
 }
 
 function isRequiredWorkspaceStage(stageId: WorkspaceStageId): boolean {
-  const requiredStages = REQUIRED_WORKSPACE_STAGES[
-    activeAgentId.value
-  ] as readonly WorkspaceStageId[];
+  const requiredStages: readonly WorkspaceStageId[] =
+    activeWorkspaceType.value === "script" && activeAgentId.value === "plot_design"
+      ? (["plot_design", "plot_refine"] as const)
+      : REQUIRED_WORKSPACE_STAGES[activeAgentId.value];
   return requiredStages.includes(stageId);
 }
 
@@ -233,7 +252,11 @@ function handleCheckboxChange(
 
 function resetActiveAgent(): void {
   if (formDisabled.value || !activeAgent.value) return;
-  const builtin = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
+  const defaults =
+    activeWorkspaceType.value === "script"
+      ? DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES
+      : DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES;
+  const builtin = defaults.find(
     (agent) => agent.id === activeAgentId.value
   );
   const index = draftAgents.value.findIndex(
@@ -281,8 +304,15 @@ function saveSettings(): void {
     }
 
     const workspace = new Set<WorkspaceStageId>(agent.readAccess.workspace);
-    for (const requiredStage of REQUIRED_WORKSPACE_STAGES[id]) {
+    const requiredStages =
+      activeWorkspaceType.value === "script" && id === "plot_design"
+        ? (["plot_design", "plot_refine"] as const)
+        : REQUIRED_WORKSPACE_STAGES[id];
+    for (const requiredStage of requiredStages) {
       workspace.add(requiredStage);
+    }
+    if (activeWorkspaceType.value === "script") {
+      workspace.delete("intro_design");
     }
 
     return {
@@ -298,7 +328,10 @@ function saveSettings(): void {
   }).filter((agent): agent is EditableAgent => agent !== null);
 
   if (agents.length !== AGENTS.length) return;
-  emit("save", { workspaceType: "short", agents });
+  emit("save", {
+    workspaceType: activeWorkspaceType.value,
+    agents
+  } as WorkspaceAgentSettingsInput);
 }
 </script>
 
@@ -306,14 +339,38 @@ function saveSettings(): void {
   <section class="short-agent-settings" aria-labelledby="short-agent-title">
     <header class="panel-header">
       <div>
-        <span class="panel-kicker">短篇创作空间</span>
+        <span class="panel-kicker">{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}创作空间</span>
         <h2 id="short-agent-title">智能体设置</h2>
-        <p>分别配置短篇五个智能体的系统提示词、欢迎快捷按钮，以及可读取的创作内容、素材和技能范围。</p>
+        <p>分别配置{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}五个智能体的系统提示词、欢迎快捷按钮，以及可读取的创作内容、素材和技能范围。</p>
         <p v-if="!runtimeAvailable" class="runtime-note">
           当前环境仅支持查看；保存和恢复默认设置需要使用 DeepWrite 桌面端。
         </p>
       </div>
     </header>
+
+    <div class="workspace-type-tabs" role="tablist" aria-label="创作类型">
+      <button
+        type="button"
+        role="tab"
+        :class="{ 'is-active': activeWorkspaceType === 'short' }"
+        :aria-selected="activeWorkspaceType === 'short'"
+        @click="activeWorkspaceType = 'short'"
+      >
+        短篇
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :class="{ 'is-active': activeWorkspaceType === 'script' }"
+        :aria-selected="activeWorkspaceType === 'script'"
+        @click="activeWorkspaceType = 'script'"
+      >
+        剧本
+      </button>
+      <button type="button" role="tab" disabled aria-selected="false">
+        长篇 <small>尚未接入</small>
+      </button>
+    </div>
 
     <Teleport to="body">
       <div
@@ -336,14 +393,14 @@ function saveSettings(): void {
     </Teleport>
 
     <div v-if="loading" class="panel-state" aria-live="polite">
-      正在加载短篇智能体设置…
+      正在加载{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}智能体设置…
     </div>
-    <div v-else-if="!settings || !activeAgent" class="panel-state">
-      暂无可用的短篇智能体设置。
+    <div v-else-if="!activeSettings || !activeAgent" class="panel-state">
+      暂无可用的{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}智能体设置。
     </div>
 
     <div v-else class="settings-layout">
-      <nav class="agent-nav" aria-label="短篇智能体">
+      <nav class="agent-nav" :aria-label="`${activeWorkspaceType === 'script' ? '剧本' : '短篇'}智能体`">
         <button
           v-for="agent in AGENTS"
           :key="agent.id"
@@ -422,7 +479,7 @@ function saveSettings(): void {
             <legend>创作空间</legend>
             <div class="option-grid">
               <label
-                v-for="option in WORKSPACE_OPTIONS"
+                v-for="option in visibleWorkspaceOptions"
                 :key="option.id"
                 class="read-option"
                 :class="{ 'is-locked': isRequiredWorkspaceStage(option.id) }"
@@ -528,6 +585,46 @@ function saveSettings(): void {
   justify-content: space-between;
   gap: 24px;
   margin-bottom: 20px;
+}
+
+.workspace-type-tabs {
+  display: flex;
+  gap: 6px;
+  margin: -6px 0 18px;
+  padding: 5px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 11px;
+  background: var(--surface-muted);
+}
+
+.workspace-type-tabs button {
+  min-width: 104px;
+  min-height: 36px;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.workspace-type-tabs button.is-active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--theme-foreground) 9%, transparent);
+}
+
+.workspace-type-tabs button:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.workspace-type-tabs small {
+  margin-left: 4px;
+  font-size: 0.714286rem;
+  font-weight: 500;
 }
 
 .panel-kicker,

@@ -1,7 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
-  AgentTeamSettingsInputSchema,
-  AgentTeamSettingsSchema,
+  BookSchema,
   CatalogDocumentSchema,
   CatalogDraftSectionSchema,
   CatalogDraftRecoverySaveResultSchema,
@@ -18,6 +17,7 @@ import {
   CreateDraftSectionInputSchema,
   CreateLibraryGroupInputSchema,
   CreateLibraryInputSchema,
+  CreateScriptBookInputSchema,
   CreateShortBookInputSchema,
   DeleteCatalogProjectInputSchema,
   DeleteCatalogProjectResultSchema,
@@ -48,10 +48,10 @@ import {
   SessionPromptCommandPayloadSchema,
   SaveDocumentInputSchema,
   SaveLibraryEntryInputSchema,
+  ScriptBookSchema,
+  ScriptWorkspaceAgentIdSchema,
   ShortBookSchema,
   ShortWorkspaceAgentIdSchema,
-  ShortWorkspaceAgentSettingsInputSchema,
-  ShortWorkspaceAgentSettingsSchema,
   SystemEventEnvelopeSchema,
   SystemHealthPayloadSchema,
   UnregisterCatalogProjectInputSchema,
@@ -61,10 +61,16 @@ import {
   AppearanceSettingsSnapshotSchema,
   UpdateBookInputSchema,
   UpdateLibraryGroupInputSchema,
+  WorkspaceAgentSettingsInputSchema,
+  WorkspaceAgentSettingsSchema,
+  WorkspaceAgentTeamSettingsInputSchema,
+  WorkspaceAgentTeamSettingsSchema,
+  WorkspaceTypeSchema,
   createEnvelope,
   type CommandEnvelope,
   type AgentTeamSettings,
   type AgentTeamSettingsInput,
+  type Book,
   type CatalogDocument,
   type CatalogDraftSection,
   type CatalogDraftRecovery,
@@ -79,6 +85,7 @@ import {
   type CreateDraftSectionInput,
   type CreateLibraryGroupInput,
   type CreateLibraryInput,
+  type CreateScriptBookInput,
   type CreateShortBookInput,
   type DeepWriteApi,
   type DeleteCatalogProjectInput,
@@ -107,6 +114,12 @@ import {
   type SessionPromptCommandPayload,
   type SaveDocumentInput,
   type SaveLibraryEntryInput,
+  type ScriptAgentTeamSettings,
+  type ScriptAgentTeamSettingsInput,
+  type ScriptBook,
+  type ScriptWorkspaceAgentId,
+  type ScriptWorkspaceAgentSettings,
+  type ScriptWorkspaceAgentSettingsInput,
   type ShortBook,
   type ShortWorkspaceAgentId,
   type ShortWorkspaceAgentSettings,
@@ -118,6 +131,11 @@ import {
   type UpdateBookInput,
   type UpdateLibraryGroupInput,
   type WorkspaceDirectorySettings,
+  type WorkspaceAgentSettings,
+  type WorkspaceAgentSettingsInput,
+  type WorkspaceAgentTeamSettings,
+  type WorkspaceAgentTeamSettingsInput,
+  type WorkspaceType,
   type AppearanceSettings,
   type AppearanceSettingsSnapshot
 } from "@deepwrite/contracts";
@@ -207,6 +225,21 @@ async function createShortBook(
   );
 }
 
+async function createScriptBook(
+  rawInput: CreateScriptBookInput
+): Promise<ScriptBook | null> {
+  const input = CreateScriptBookInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_create_script_book");
+  return ScriptBookSchema.nullable().parse(
+    await invokeCommand<ScriptBook | null>(
+      createEnvelope("catalog.createScriptBook", input, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
 async function createLibrary(
   rawInput: CreateLibraryInput
 ): Promise<CatalogLibrary | null> {
@@ -277,11 +310,11 @@ async function importLegacyLibrary(
   );
 }
 
-async function updateBook(rawInput: UpdateBookInput): Promise<ShortBook> {
+async function updateBook(rawInput: UpdateBookInput): Promise<Book> {
   const input = UpdateBookInputSchema.parse(rawInput);
   const id = browserId("cmd_catalog_update_book");
-  return ShortBookSchema.parse(
-    await invokeCommand<ShortBook>(
+  return BookSchema.parse(
+    await invokeCommand<Book>(
       createEnvelope("catalog.updateBook", input, {
         id,
         correlationId: id,
@@ -523,10 +556,20 @@ async function testModel(rawModel: ModelConfigInput): Promise<ModelConnectionTes
 
 async function listWorkspaceAgents(
   workspaceType: "short"
-): Promise<ShortWorkspaceAgentSettings> {
+): Promise<ShortWorkspaceAgentSettings>;
+async function listWorkspaceAgents(
+  workspaceType: "script"
+): Promise<ScriptWorkspaceAgentSettings>;
+async function listWorkspaceAgents(
+  rawWorkspaceType: WorkspaceType
+): Promise<WorkspaceAgentSettings>;
+async function listWorkspaceAgents(
+  rawWorkspaceType: WorkspaceType
+): Promise<WorkspaceAgentSettings> {
+  const workspaceType = WorkspaceTypeSchema.parse(rawWorkspaceType);
   const id = browserId("cmd_workspace_agents_list");
-  return ShortWorkspaceAgentSettingsSchema.parse(
-    await invokeCommand<ShortWorkspaceAgentSettings>(
+  return WorkspaceAgentSettingsSchema.parse(
+    await invokeCommand<WorkspaceAgentSettings>(
       createEnvelope(
         "workspaceAgents.list",
         { workspaceType },
@@ -538,10 +581,20 @@ async function listWorkspaceAgents(
 
 async function listAgentTeams(
   workspaceType: "short"
-): Promise<AgentTeamSettings> {
+): Promise<AgentTeamSettings>;
+async function listAgentTeams(
+  workspaceType: "script"
+): Promise<ScriptAgentTeamSettings>;
+async function listAgentTeams(
+  rawWorkspaceType: WorkspaceType
+): Promise<WorkspaceAgentTeamSettings>;
+async function listAgentTeams(
+  rawWorkspaceType: WorkspaceType
+): Promise<WorkspaceAgentTeamSettings> {
+  const workspaceType = WorkspaceTypeSchema.parse(rawWorkspaceType);
   const id = browserId("cmd_agent_teams_list");
-  return AgentTeamSettingsSchema.parse(
-    await invokeCommand<AgentTeamSettings>(
+  return WorkspaceAgentTeamSettingsSchema.parse(
+    await invokeCommand<WorkspaceAgentTeamSettings>(
       createEnvelope(
         "agentTeams.list",
         { workspaceType },
@@ -553,11 +606,20 @@ async function listAgentTeams(
 
 async function saveAgentTeams(
   rawSettings: AgentTeamSettingsInput
-): Promise<AgentTeamSettings> {
-  const settings = AgentTeamSettingsInputSchema.parse(rawSettings);
+): Promise<AgentTeamSettings>;
+async function saveAgentTeams(
+  rawSettings: ScriptAgentTeamSettingsInput
+): Promise<ScriptAgentTeamSettings>;
+async function saveAgentTeams(
+  rawSettings: WorkspaceAgentTeamSettingsInput
+): Promise<WorkspaceAgentTeamSettings>;
+async function saveAgentTeams(
+  rawSettings: WorkspaceAgentTeamSettingsInput
+): Promise<WorkspaceAgentTeamSettings> {
+  const settings = WorkspaceAgentTeamSettingsInputSchema.parse(rawSettings);
   const id = browserId("cmd_agent_teams_save");
-  return AgentTeamSettingsSchema.parse(
-    await invokeCommand<AgentTeamSettings>(
+  return WorkspaceAgentTeamSettingsSchema.parse(
+    await invokeCommand<WorkspaceAgentTeamSettings>(
       createEnvelope("agentTeams.save", settings, { id, correlationId: id })
     )
   );
@@ -565,11 +627,20 @@ async function saveAgentTeams(
 
 async function saveWorkspaceAgents(
   rawSettings: ShortWorkspaceAgentSettingsInput
-): Promise<ShortWorkspaceAgentSettings> {
-  const settings = ShortWorkspaceAgentSettingsInputSchema.parse(rawSettings);
+): Promise<ShortWorkspaceAgentSettings>;
+async function saveWorkspaceAgents(
+  rawSettings: ScriptWorkspaceAgentSettingsInput
+): Promise<ScriptWorkspaceAgentSettings>;
+async function saveWorkspaceAgents(
+  rawSettings: WorkspaceAgentSettingsInput
+): Promise<WorkspaceAgentSettings>;
+async function saveWorkspaceAgents(
+  rawSettings: WorkspaceAgentSettingsInput
+): Promise<WorkspaceAgentSettings> {
+  const settings = WorkspaceAgentSettingsInputSchema.parse(rawSettings);
   const id = browserId("cmd_workspace_agents_save");
-  return ShortWorkspaceAgentSettingsSchema.parse(
-    await invokeCommand<ShortWorkspaceAgentSettings>(
+  return WorkspaceAgentSettingsSchema.parse(
+    await invokeCommand<WorkspaceAgentSettings>(
       createEnvelope("workspaceAgents.save", settings, { id, correlationId: id })
     )
   );
@@ -578,13 +649,28 @@ async function saveWorkspaceAgents(
 async function resetWorkspaceAgents(
   workspaceType: "short",
   rawAgentId?: ShortWorkspaceAgentId
-): Promise<ShortWorkspaceAgentSettings> {
+): Promise<ShortWorkspaceAgentSettings>;
+async function resetWorkspaceAgents(
+  workspaceType: "script",
+  rawAgentId?: ScriptWorkspaceAgentId
+): Promise<ScriptWorkspaceAgentSettings>;
+async function resetWorkspaceAgents(
+  rawWorkspaceType: WorkspaceType,
+  rawAgentId?: ShortWorkspaceAgentId | ScriptWorkspaceAgentId
+): Promise<WorkspaceAgentSettings>;
+async function resetWorkspaceAgents(
+  rawWorkspaceType: WorkspaceType,
+  rawAgentId?: ShortWorkspaceAgentId | ScriptWorkspaceAgentId
+): Promise<WorkspaceAgentSettings> {
+  const workspaceType = WorkspaceTypeSchema.parse(rawWorkspaceType);
   const agentId = rawAgentId
-    ? ShortWorkspaceAgentIdSchema.parse(rawAgentId)
+    ? workspaceType === "script"
+      ? ScriptWorkspaceAgentIdSchema.parse(rawAgentId)
+      : ShortWorkspaceAgentIdSchema.parse(rawAgentId)
     : undefined;
   const id = browserId("cmd_workspace_agents_reset");
-  return ShortWorkspaceAgentSettingsSchema.parse(
-    await invokeCommand<ShortWorkspaceAgentSettings>(
+  return WorkspaceAgentSettingsSchema.parse(
+    await invokeCommand<WorkspaceAgentSettings>(
       createEnvelope(
         "workspaceAgents.reset",
         { workspaceType, ...(agentId ? { agentId } : {}) },
@@ -738,6 +824,7 @@ const api: DeepWriteApi = {
     loadDraftRecovery,
     saveDraftRecovery,
     createShortBook,
+    createScriptBook,
     createLibrary,
     createLibraryGroup,
     openProject,

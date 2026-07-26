@@ -7,6 +7,7 @@ import AppIcon from "./AppIcon.vue";
 const props = defineProps<{
   open: boolean;
   bookTitle: string;
+  workspaceType?: "short" | "script";
   submitting?: boolean;
 }>();
 
@@ -63,7 +64,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <header>
           <div>
             <span class="dialog-eyebrow">{{ bookTitle }}</span>
-            <h2 id="export-manuscript-title">导出正文</h2>
+            <h2 id="export-manuscript-title">导出{{ workspaceType === "script" ? "剧集正文" : "正文" }}</h2>
           </div>
           <button
             class="dialog-close"
@@ -81,7 +82,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </span>
             <div>
               <strong>导出范围提醒</strong>
-              <p>
+              <p v-if="workspaceType === 'script'">
+                仅导出“剧集”下的全部剧集正文，不包含人物状态、剧情设计和大纲等内容。当前尚未保存的编辑内容也会一并导出。
+              </p>
+              <p v-else>
                 仅导出“正文”下的导语和全部小节正文，不包含人物状态、剧情设计和大纲等内容。当前尚未保存的编辑内容也会一并导出。
               </p>
             </div>

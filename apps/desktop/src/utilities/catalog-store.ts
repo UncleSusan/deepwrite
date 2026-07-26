@@ -10,8 +10,10 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { createCatalogId, randomHex8 } from "@deepwrite/shared";
 import {
+  BookSchema,
   CatalogDocumentSchema,
   CatalogSnapshotSchema,
+  CreateScriptBookInputSchema,
   CreateShortBookInputSchema,
   DeleteBookInputSchema,
   MATERIAL_KINDS,
@@ -21,13 +23,17 @@ import {
   SaveDocumentInputSchema,
   SKILL_KINDS,
   SKILL_STAGE_IDS,
+  ScriptBookSchema,
   ShortBookSchema,
   SkillKindSchema,
   SkillStageIdSchema,
   UpdateBookInputSchema,
   createCatalogDraftDirectory,
+  createScriptCatalogDraftDirectory,
+  type Book,
   type CatalogDocument,
   type CatalogSnapshot,
+  type CreateScriptBookInput,
   type CreateShortBookInput,
   type DeleteBookResult,
   type LibraryType,
@@ -41,6 +47,7 @@ import {
   type MaterialLibraryGroup,
   type MaterialStageId,
   type SaveDocumentInput,
+  type ScriptBook,
   type ShortBook,
   type SkillEntry,
   type SkillKind,
@@ -94,6 +101,13 @@ const DEFAULT_SHORT_DOCUMENTS = [
   ["character_design", "人物设计"],
   ["plot_design", "剧情设计"],
   ["intro_design", "导语设计"],
+  ["plot_refine", "剧情细化"],
+  ["outline", "大纲"]
+] as const;
+
+const DEFAULT_SCRIPT_DOCUMENTS = [
+  ["character_design", "人物设计"],
+  ["plot_design", "剧情设计"],
   ["plot_refine", "剧情细化"],
   ["outline", "大纲"]
 ] as const;
@@ -1124,8 +1138,10 @@ function assertCatalogReferences(snapshot: CatalogSnapshot): void {
         if (!material) {
           throw new Error(`书籍「${book.title}」关联了不存在的素材库：${materialId}`);
         }
-        if (material.materialType !== "short") {
-          throw new Error(`短篇书籍不能关联${material.materialType}素材库：${material.title}`);
+        if (material.materialType !== book.bookType) {
+          throw new Error(
+            `${book.bookType === "script" ? "剧本" : "短篇"}书籍不能关联${material.materialType}素材库：${material.title}`
+          );
         }
         if (material.materialKind !== "mixed" && material.materialKind !== kind) {
           throw new Error(`素材库「${material.title}」不能关联到 ${kind} 分类。`);
@@ -1138,8 +1154,10 @@ function assertCatalogReferences(snapshot: CatalogSnapshot): void {
         if (!skill) {
           throw new Error(`书籍「${book.title}」绑定了不存在的技能库：${skillId}`);
         }
-        if (skill.skillType !== "short") {
-          throw new Error(`短篇书籍不能绑定${skill.skillType}技能库：${skill.title}`);
+        if (skill.skillType !== book.bookType) {
+          throw new Error(
+            `${book.bookType === "script" ? "剧本" : "短篇"}书籍不能绑定${skill.skillType}技能库：${skill.title}`
+          );
         }
         if (skill.skillKind !== kind) {
           throw new Error(`技能库「${skill.title}」不能绑定到 ${kind} 分类。`);
@@ -1177,8 +1195,13 @@ function assertCatalogReferences(snapshot: CatalogSnapshot): void {
   }
 }
 
-function createDefaultDocuments(now: string): CatalogDocument[] {
-  return DEFAULT_SHORT_DOCUMENTS.map(([id, title]) => ({
+function createDefaultDocuments(
+  bookType: Book["bookType"],
+  now: string
+): CatalogDocument[] {
+  const definitions =
+    bookType === "script" ? DEFAULT_SCRIPT_DOCUMENTS : DEFAULT_SHORT_DOCUMENTS;
+  return definitions.map(([id, title]) => ({
     id,
     title,
     content: "",
@@ -1188,7 +1211,11 @@ function createDefaultDocuments(now: string): CatalogDocument[] {
 }
 
 function defaultDocumentTitle(documentId: string): string {
-  return DEFAULT_SHORT_DOCUMENTS.find(([id]) => id === documentId)?.[1] ?? documentId;
+  return (
+    [...DEFAULT_SHORT_DOCUMENTS, ...DEFAULT_SCRIPT_DOCUMENTS].find(
+      ([id]) => id === documentId
+    )?.[1] ?? documentId
+  );
 }
 
 export interface CatalogStoreOptions {
@@ -1240,7 +1267,7 @@ export class CatalogStore {
         input.linkedMaterialIdsByKind
       ),
       linkedSkillIdsByKind: normalizeLinkedSkillIds(input.linkedSkillIdsByKind),
-      documents: createDefaultDocuments(now),
+      documents: createDefaultDocuments("short", now),
       draft: createCatalogDraftDirectory(now),
       createdAt: now,
       updatedAt: now
@@ -1249,10 +1276,40 @@ export class CatalogStore {
       draft.books.push(book);
       return true;
     });
-    return structuredClone(next.books.find((candidate) => candidate.id === id)!);
+    return ShortBookSchema.parse(
+      structuredClone(next.books.find((candidate) => candidate.id === id)!)
+    );
   }
 
-  async updateBook(rawInput: UpdateBookInput): Promise<ShortBook> {
+  async createScriptBook(rawInput: CreateScriptBookInput): Promise<ScriptBook> {
+    const input = CreateScriptBookInputSchema.parse(rawInput);
+    const id = createCatalogId("book");
+    const now = this.now();
+    const book = ScriptBookSchema.parse({
+      id,
+      title: input.title,
+      bookType: "script",
+      genre: input.genre,
+      status: "editing",
+      linkedMaterialIdsByKind: normalizeLinkedMaterialIds(
+        input.linkedMaterialIdsByKind
+      ),
+      linkedSkillIdsByKind: normalizeLinkedSkillIds(input.linkedSkillIdsByKind),
+      documents: createDefaultDocuments("script", now),
+      draft: createScriptCatalogDraftDirectory(now),
+      createdAt: now,
+      updatedAt: now
+    });
+    const next = await this.commit((draft) => {
+      draft.books.push(book);
+      return true;
+    });
+    return ScriptBookSchema.parse(
+      structuredClone(next.books.find((candidate) => candidate.id === id)!)
+    );
+  }
+
+  async updateBook(rawInput: UpdateBookInput): Promise<Book> {
     const input = UpdateBookInputSchema.parse(rawInput);
     const next = await this.commit((draft) => {
       const book = draft.books.find((candidate) => candidate.id === input.bookId);
@@ -1281,8 +1338,10 @@ export class CatalogStore {
       book.updatedAt = this.now();
       return true;
     });
-    return structuredClone(
-      next.books.find((candidate) => candidate.id === input.bookId)!
+    return BookSchema.parse(
+      structuredClone(
+        next.books.find((candidate) => candidate.id === input.bookId)!
+      )
     );
   }
 

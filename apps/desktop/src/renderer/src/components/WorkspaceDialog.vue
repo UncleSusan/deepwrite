@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import {
   BUILT_IN_REASONING_LEVELS,
   type BuiltInReasoningLevel,
@@ -46,6 +46,7 @@ const emit = defineEmits<{
 const draftModels = ref<DraftModel[]>([]);
 const draftDefaultModelId = ref("");
 const modelEditor = ref<DraftModel | null>(null);
+const modelConfigScrollArea = ref<HTMLElement | null>(null);
 
 const builtInThinkingLabels: Record<BuiltInReasoningLevel, string> = {
   minimal: "最低",
@@ -195,6 +196,7 @@ function createModel(): void {
     apiKey: "",
     customThinkingLevel: ""
   };
+  scrollModelEditorToTop();
 }
 
 function editModel(model: DraftModel): void {
@@ -207,6 +209,13 @@ function editModel(model: DraftModel): void {
     customThinkingLevel: findCustomThinkingLevel(model.thinkingLevelOptions),
     originalId: model.id
   };
+  scrollModelEditorToTop();
+}
+
+function scrollModelEditorToTop(): void {
+  void nextTick(() => {
+    modelConfigScrollArea.value?.scrollTo({ top: 0, behavior: "auto" });
+  });
 }
 
 function applyDeepWriteFreeModel(modelId: string): void {
@@ -523,7 +532,7 @@ function discardModelChanges(): void {
         </div>
 
         <div v-else-if="mode === 'models'" class="dialog-content model-config-content">
-          <div class="model-config-scroll-area">
+          <div ref="modelConfigScrollArea" class="model-config-scroll-area">
             <p class="dialog-description">
               配置会同时用于连接测试与实际对话。API Key 仅由 Main 进程通过系统安全存储加密保存，Renderer 不会读回明文。
             </p>

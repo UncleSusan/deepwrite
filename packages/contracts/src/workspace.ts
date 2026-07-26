@@ -5,6 +5,14 @@ import {
   DraftSectionTitleSchema,
   SHORT_WORKSPACE_FILE_MAX_CHARACTERS
 } from "./expert-draft";
+import {
+  ScriptWorkspaceAgentIdSchema,
+  ScriptWorkspaceAgentProfileSchema,
+  ScriptWorkspaceAgentSettingsInputSchema,
+  ScriptWorkspaceAgentSettingsSchema,
+  ScriptWorkspaceSnapshotSchema,
+  WorkspaceTypeSchema
+} from "./script-workspace";
 
 export const SHORT_WORKSPACE_STAGE_IDS = [
   "character_design",
@@ -738,22 +746,68 @@ export const DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS: ShortWorkspaceAgentSettings
   agents: [...DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES]
 };
 
+/** Shared unions for callers that handle both isolated creative workspaces. */
+export const WorkspaceAgentIdSchema = z.union([
+  ShortWorkspaceAgentIdSchema,
+  ScriptWorkspaceAgentIdSchema
+]);
+export type WorkspaceAgentId = z.infer<typeof WorkspaceAgentIdSchema>;
+
+export const WorkspaceAgentProfileSchema = z.union([
+  ShortWorkspaceAgentProfileSchema,
+  ScriptWorkspaceAgentProfileSchema
+]);
+export type WorkspaceAgentProfile = z.infer<typeof WorkspaceAgentProfileSchema>;
+
+export const CreativeWorkspaceSnapshotSchema = z.union([
+  ShortWorkspaceSnapshotSchema,
+  ScriptWorkspaceSnapshotSchema
+]);
+export type CreativeWorkspaceSnapshot = z.infer<
+  typeof CreativeWorkspaceSnapshotSchema
+>;
+
+export const WorkspaceAgentSettingsSchema = z.discriminatedUnion(
+  "workspaceType",
+  [ShortWorkspaceAgentSettingsSchema, ScriptWorkspaceAgentSettingsSchema]
+);
+export type WorkspaceAgentSettings = z.infer<
+  typeof WorkspaceAgentSettingsSchema
+>;
+
+export const WorkspaceAgentSettingsInputSchema = z.discriminatedUnion(
+  "workspaceType",
+  [
+    ShortWorkspaceAgentSettingsInputSchema,
+    ScriptWorkspaceAgentSettingsInputSchema
+  ]
+);
+export type WorkspaceAgentSettingsInput = z.infer<
+  typeof WorkspaceAgentSettingsInputSchema
+>;
+
 export const WorkspaceAgentsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("workspaceAgents.list"),
-  payload: z.object({ workspaceType: z.literal("short") })
+  payload: z.object({ workspaceType: WorkspaceTypeSchema })
 });
 
 export const WorkspaceAgentsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("workspaceAgents.save"),
-  payload: ShortWorkspaceAgentSettingsInputSchema
+  payload: WorkspaceAgentSettingsInputSchema
 });
 
 export const WorkspaceAgentsResetCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("workspaceAgents.reset"),
-  payload: z.object({
-    workspaceType: z.literal("short"),
-    agentId: ShortWorkspaceAgentIdSchema.optional()
-  })
+  payload: z.discriminatedUnion("workspaceType", [
+    z.object({
+      workspaceType: z.literal("short"),
+      agentId: ShortWorkspaceAgentIdSchema.optional()
+    }),
+    z.object({
+      workspaceType: z.literal("script"),
+      agentId: ScriptWorkspaceAgentIdSchema.optional()
+    })
+  ])
 });
 
 export type WorkspaceAgentsListCommandEnvelope = z.infer<

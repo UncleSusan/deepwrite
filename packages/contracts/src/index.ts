@@ -8,6 +8,7 @@ export * from "./library-agent";
 export * from "./models";
 export * from "./preload-api";
 export * from "./session";
+export * from "./script-workspace";
 export * from "./short-manuscript-export";
 export * from "./subagent-authoring";
 export * from "./system";
