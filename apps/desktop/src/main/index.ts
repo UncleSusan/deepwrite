@@ -23,6 +23,23 @@ import {
   IPC_EVENT_CHANNEL,
   LearningImitationSettingsSchema,
   LibraryAgentSettingsSchema,
+  LongApplyOperationsResultSchema,
+  LongAgentSettingsSchema,
+  LongAgentTeamSettingsSchema,
+  LongCommitChapterResultSchema,
+  LongExportPortableResultSchema,
+  LongImportPortableResultSchema,
+  LongImportWriteClawResultSchema,
+  LongListBooksResultSchema,
+  LongOpenBookResultSchema,
+  LongPreviewOperationsResultSchema,
+  LongReadDocumentResultSchema,
+  LongRemoveBookResultSchema,
+  LongRollbackLastCommitResultSchema,
+  LongSearchResultSchema,
+  LongWorkspaceIndexResultSchema,
+  LongWriteChapterResultSchema,
+  LongWriteDocumentResultSchema,
   ModelConnectionTestResultSchema,
   ModelSettingsSchema,
   RemoveLibraryEntryResultSchema,
@@ -55,6 +72,8 @@ import { AgentTeamConfigStore } from "./agent-team-config-store";
 import { ModelConfigStore } from "./model-config-store";
 import { LearningImitationConfigStore } from "./learning-imitation-config-store";
 import { LibraryAgentConfigStore } from "./library-agent-config-store";
+import { LongAgentConfigStore } from "./long-agent-config-store";
+import { LongAgentTeamConfigStore } from "./long-agent-team-config-store";
 import {
   assertModelRunSettings,
   resolveModelRunSettings
@@ -65,11 +84,15 @@ import {
 } from "./native-appearance-chrome";
 import { exportShortManuscript } from "./short-manuscript-export";
 import { UtilitySupervisor } from "./supervisor";
+import {
+  AGENT_CORE_LONG_QUERY_COMMANDS,
+  authorizeMainInternalCommand,
+  type MainInternalCommandActiveRun
+} from "./internal-command-authorizer";
 import { WorkspaceAgentConfigStore } from "./workspace-agent-config-store";
 import { WorkspaceDirectoryStore } from "./workspace-directory-store";
 
-interface ActiveRun {
-  sessionId: string;
+interface ActiveRun extends MainInternalCommandActiveRun {
   correlationId: string;
   runtime: AgentRuntimeRef;
 }
@@ -83,6 +106,8 @@ let agentTeamConfigStore: AgentTeamConfigStore | undefined;
 let appearanceConfigStore: AppearanceConfigStore | undefined;
 let learningImitationConfigStore: LearningImitationConfigStore | undefined;
 let libraryAgentConfigStore: LibraryAgentConfigStore | undefined;
+let longAgentConfigStore: LongAgentConfigStore | undefined;
+let longAgentTeamConfigStore: LongAgentTeamConfigStore | undefined;
 let cachedAppearanceSettings: AppearanceSettings = createDefaultAppearanceSettings();
 let nativeAppearanceListenerBound = false;
 let workspaceAgentConfigStore: WorkspaceAgentConfigStore | undefined;
@@ -117,6 +142,10 @@ type AgentEventEnvelope = Extract<
       | "library.editor_mutation"
       | "workspace.editor_mutation"
       | "workspace.stage_selection"
+      | "long.mutation_proposal"
+      | "long.chapter_write_proposal"
+      | "long.chapter_dispatch_proposal"
+      | "long.ledger_commit_proposal"
       | "subagent.started"
       | "subagent.activity"
       | "subagent.completed";
@@ -139,6 +168,10 @@ function isAgentEvent(event: SystemEventEnvelope): event is AgentEventEnvelope {
     event.type === "library.editor_mutation" ||
     event.type === "workspace.editor_mutation" ||
     event.type === "workspace.stage_selection" ||
+    event.type === "long.mutation_proposal" ||
+    event.type === "long.chapter_write_proposal" ||
+    event.type === "long.chapter_dispatch_proposal" ||
+    event.type === "long.ledger_commit_proposal" ||
     event.type === "subagent.started" ||
     event.type === "subagent.activity" ||
     event.type === "subagent.completed"
@@ -171,7 +204,8 @@ function handleUtilityEvent(event: SystemEventEnvelope, worker: UtilityWorkerNam
       activeRuns.set(runId, {
         sessionId: validated.payload.sessionId,
         correlationId: validated.context.correlationId,
-        runtime: validated.payload.runtime
+        runtime: validated.payload.runtime,
+        accepted: false
       });
     }
   }
@@ -236,7 +270,12 @@ function handleWorkerRestarted(worker: UtilityWorkerName, reason: string): void 
 const supervisor = new UtilitySupervisor({
   onUtilityEvent: handleUtilityEvent,
   onUnexpectedExit: handleUnexpectedExit,
-  onWorkerRestarted: handleWorkerRestarted
+  onWorkerRestarted: handleWorkerRestarted,
+  internalCommandAllowlist: {
+    core: AGENT_CORE_LONG_QUERY_COMMANDS
+  },
+  internalCommandAuthorize: (context) =>
+    authorizeMainInternalCommand(context, activeRuns)
 });
 
 function isSafeExternalUrl(rawUrl: string): boolean {
@@ -367,6 +406,20 @@ function requireLibraryAgentConfigStore(): LibraryAgentConfigStore {
   return libraryAgentConfigStore;
 }
 
+function requireLongAgentConfigStore(): LongAgentConfigStore {
+  if (!longAgentConfigStore) {
+    throw new Error("长篇智能体设置存储尚未初始化。");
+  }
+  return longAgentConfigStore;
+}
+
+function requireLongAgentTeamConfigStore(): LongAgentTeamConfigStore {
+  if (!longAgentTeamConfigStore) {
+    throw new Error("长篇智能体团队设置存储尚未初始化。");
+  }
+  return longAgentTeamConfigStore;
+}
+
 function requireLearningImitationConfigStore(): LearningImitationConfigStore {
   if (!learningImitationConfigStore) {
     throw new Error("学习仿写设置存储尚未初始化。");
@@ -456,6 +509,16 @@ function workspaceGroupParent(
   );
 }
 
+function safeLongExportFileName(title: string): string {
+  const normalized = title
+    .normalize("NFC")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "_")
+    .replace(/[.\s]+$/gu, "")
+    .trim()
+    .slice(0, 120);
+  return normalized || "长篇作品";
+}
+
 function configureCatalogEnvironment(): string {
   const userDataPath = app.getPath("userData");
   process.env.DEEPWRITE_USER_DATA_PATH = userDataPath;
@@ -543,6 +606,11 @@ function registerIpc(): void {
         command.type === "agent.model_test" ||
         command.type === "catalog.createShortBookAtPath" ||
         command.type === "catalog.createScriptBookAtPath" ||
+        command.type === "long.createBookAtPath" ||
+        command.type === "long.importWriteClawAtPath" ||
+        command.type === "long.importPortableAtPath" ||
+        command.type === "long.exportPortableAtPath" ||
+        command.type === "long.openAtPath" ||
         command.type === "catalog.createLibraryAtPath" ||
         command.type === "catalog.createLibraryGroupAtPath" ||
         command.type === "catalog.openProjectAtPath" ||
@@ -672,6 +740,294 @@ function registerIpc(): void {
             error: {
               code: "appearance.save_failed",
               message: error instanceof Error ? error.message : "保存外观设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "long.createBook" ||
+        command.type === "long.openExisting"
+      ) {
+        try {
+          const workspaceDirectory =
+            await requireSelectedWorkspaceDirectory();
+          if (!workspaceDirectory) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const defaultPath = workspaceResourceParent(
+            workspaceDirectory,
+            "book"
+          );
+          let selectedPath = defaultPath;
+          if (command.type === "long.openExisting") {
+            const selection = await dialog.showOpenDialog({
+              title: "打开已有长篇项目",
+              defaultPath,
+              properties: ["openDirectory"]
+            });
+            if (
+              selection.canceled ||
+              selection.filePaths.length === 0
+            ) {
+              return {
+                status: "accepted",
+                requestId: command.id,
+                payload: null
+              };
+            }
+            selectedPath = selection.filePaths[0]!;
+          }
+          const internalCommand = CommandEnvelopeSchema.parse(
+            command.type === "long.createBook"
+              ? createEnvelope(
+                  "long.createBookAtPath",
+                  {
+                    parentDirectory: selectedPath,
+                    input: command.payload
+                  },
+                  { id: command.id, context: command.context }
+                )
+              : createEnvelope(
+                  "long.openAtPath",
+                  { projectDirectory: selectedPath },
+                  { id: command.id, context: command.context }
+                )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongOpenBookResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.forward_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "长篇目录操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "long.importWriteClaw") {
+        try {
+          const workspaceDirectory =
+            await requireSelectedWorkspaceDirectory();
+          if (!workspaceDirectory) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const selection = await dialog.showOpenDialog(mainWindow, {
+            title: "迁移 Write Claw 长篇",
+            defaultPath: app.getPath("documents"),
+            buttonLabel: "选择并迁移",
+            filters: [
+              {
+                name: "Write Claw 长篇导出",
+                extensions: ["zip", "json"]
+              }
+            ],
+            properties: ["openFile"]
+          });
+          const sourcePath = selection.filePaths[0];
+          if (selection.canceled || !sourcePath) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "long.importWriteClawAtPath",
+              {
+                parentDirectory: workspaceResourceParent(
+                  workspaceDirectory,
+                  "book"
+                ),
+                sourcePath
+              },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongImportWriteClawResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.import_write_claw_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "迁移 Write Claw 长篇失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "long.importPortable") {
+        try {
+          const workspaceDirectory =
+            await requireSelectedWorkspaceDirectory();
+          if (!workspaceDirectory) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const selection = await dialog.showOpenDialog(mainWindow, {
+            title: "导入 DeepWrite 长篇可移植工程",
+            defaultPath: app.getPath("documents"),
+            buttonLabel: "选择并导入",
+            filters: [
+              {
+                name: "DeepWrite 长篇可移植工程",
+                extensions: ["json"]
+              }
+            ],
+            properties: ["openFile"]
+          });
+          const sourcePath = selection.filePaths[0];
+          if (selection.canceled || !sourcePath) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "long.importPortableAtPath",
+              {
+                parentDirectory: workspaceResourceParent(
+                  workspaceDirectory,
+                  "book"
+                ),
+                sourcePath
+              },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongImportPortableResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.import_portable_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "导入长篇可移植工程失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "long.exportPortable") {
+        try {
+          const selection = await dialog.showSaveDialog(mainWindow, {
+            title: "导出长篇可移植工程",
+            buttonLabel: "导出",
+            defaultPath: join(
+              app.getPath("documents"),
+              `${safeLongExportFileName(command.payload.title)}-长篇工程.deepwrite-long.json`
+            ),
+            filters: [
+              {
+                name: "DeepWrite 长篇可移植工程",
+                extensions: ["json"]
+              }
+            ],
+            properties: ["createDirectory", "showOverwriteConfirmation"]
+          });
+          if (selection.canceled || !selection.filePath) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: LongExportPortableResultSchema.parse({
+                status: "cancelled",
+                bookId: command.payload.bookId
+              })
+            };
+          }
+          const destinationPath = selection.filePath
+            .toLocaleLowerCase()
+            .endsWith(".json")
+            ? selection.filePath
+            : `${selection.filePath}.deepwrite-long.json`;
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "long.exportPortableAtPath",
+              { ...command.payload, destinationPath },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongExportPortableResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.export_portable_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "导出长篇可移植工程失败。",
               details: safeErrorDetails(error)
             }
           };
@@ -890,6 +1246,95 @@ function registerIpc(): void {
             error: {
               code: "catalog.forward_failed",
               message: error instanceof Error ? error.message : "目录操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "long.list" ||
+        command.type === "long.open" ||
+        command.type === "long.updateBindings" ||
+        command.type === "long.getWorkspaceIndex" ||
+        command.type === "long.readDocument" ||
+        command.type === "long.search" ||
+        command.type === "long.writeDocument" ||
+        command.type === "long.previewOperations" ||
+        command.type === "long.applyOperations" ||
+        command.type === "long.writeChapter" ||
+        command.type === "long.commitChapter" ||
+        command.type === "long.rollbackLastCommit" ||
+        command.type === "long.unregister" ||
+        command.type === "long.delete"
+      ) {
+        try {
+          const result = await supervisor.requestCommand(
+            "core",
+            command,
+            0
+          );
+          if (result.status === "rejected") return result;
+          let payload: unknown;
+          switch (command.type) {
+            case "long.list":
+              payload = LongListBooksResultSchema.parse(result.payload);
+              break;
+            case "long.open":
+            case "long.updateBindings":
+              payload = LongOpenBookResultSchema.parse(result.payload);
+              break;
+            case "long.getWorkspaceIndex":
+              payload = LongWorkspaceIndexResultSchema.parse(
+                result.payload
+              );
+              break;
+            case "long.readDocument":
+              payload = LongReadDocumentResultSchema.parse(result.payload);
+              break;
+            case "long.search":
+              payload = LongSearchResultSchema.parse(result.payload);
+              break;
+            case "long.writeDocument":
+              payload = LongWriteDocumentResultSchema.parse(result.payload);
+              break;
+            case "long.previewOperations":
+              payload = LongPreviewOperationsResultSchema.parse(
+                result.payload
+              );
+              break;
+            case "long.applyOperations":
+              payload = LongApplyOperationsResultSchema.parse(
+                result.payload
+              );
+              break;
+            case "long.writeChapter":
+              payload = LongWriteChapterResultSchema.parse(result.payload);
+              break;
+            case "long.commitChapter":
+              payload = LongCommitChapterResultSchema.parse(result.payload);
+              break;
+            case "long.rollbackLastCommit":
+              payload = LongRollbackLastCommitResultSchema.parse(
+                result.payload
+              );
+              break;
+            case "long.unregister":
+            case "long.delete":
+              payload = LongRemoveBookResultSchema.parse(result.payload);
+              break;
+          }
+          return { status: "accepted", requestId: command.id, payload };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.forward_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "长篇操作失败。",
               details: safeErrorDetails(error)
             }
           };
@@ -1167,6 +1612,131 @@ function registerIpc(): void {
         }
       }
 
+      if (command.type === "longAgents.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentSettingsSchema.parse(
+              await requireLongAgentConfigStore().list()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agents.list_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "加载长篇智能体设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgents.save") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentSettingsSchema.parse(
+              await requireLongAgentConfigStore().save(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agents.save_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "保存长篇智能体设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgents.reset") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentSettingsSchema.parse(
+              await requireLongAgentConfigStore().reset(command.payload.agentId)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agents.reset_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "恢复长篇智能体默认设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgentTeams.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentTeamSettingsSchema.parse(
+              await requireLongAgentTeamConfigStore().list()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agent_teams.list_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "加载长篇智能体团队设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgentTeams.save") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentTeamSettingsSchema.parse(
+              await requireLongAgentTeamConfigStore().save(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agent_teams.save_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "保存长篇智能体团队设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
       if (command.type === "libraryAgents.list") {
         try {
           return {
@@ -1354,6 +1924,7 @@ function registerIpc(): void {
           const runtimeConfig = await requireModelConfigStore().resolve(command.payload.modelId);
           const shortWorkspace = command.payload.workspaceContext?.shortWorkspace;
           const scriptWorkspace = command.payload.workspaceContext?.scriptWorkspace;
+          const longWorkspace = command.payload.workspaceContext?.longWorkspace;
           const libraryWorkspace = command.payload.workspaceContext?.libraryWorkspace;
           const learningImitation = command.payload.workspaceContext?.learningImitation;
           const creativeWorkspace = shortWorkspace ?? scriptWorkspace;
@@ -1364,12 +1935,21 @@ function registerIpc(): void {
                 creativeWorkspaceType
               )
             : undefined;
+          const longAgentProfile = longWorkspace
+            ? await requireLongAgentConfigStore().resolve(
+                longWorkspace.activeAgentId
+              )
+            : undefined;
           const subagentDefinitions = agentProfile
             ? await requireAgentTeamConfigStore().resolve(
                 creativeWorkspaceType,
                 agentProfile.id
               )
-            : undefined;
+            : longAgentProfile
+              ? await requireLongAgentTeamConfigStore().resolve(
+                  longAgentProfile.id
+                )
+              : undefined;
           const subagentRuntimeConfigs: Record<string, AgentProviderRuntimeConfig> =
             {};
           if (subagentDefinitions?.length) {
@@ -1424,6 +2004,7 @@ function registerIpc(): void {
                     ? { scriptAgentProfile: agentProfile }
                     : { agentProfile }
                   : {}),
+                ...(longAgentProfile ? { longAgentProfile } : {}),
                 ...(subagentDefinitions ? { subagentDefinitions } : {}),
                 ...(Object.keys(subagentRuntimeConfigs).length > 0
                   ? { subagentRuntimeConfigs }
@@ -1464,7 +2045,12 @@ function registerIpc(): void {
               activeRuns.set(accepted.runId, {
                 sessionId: accepted.sessionId,
                 correlationId: command.context.correlationId,
-                runtime: accepted.runtime
+                runtime: accepted.runtime,
+                accepted: true,
+                promptRequestId: internalCommand.id,
+                ...(longWorkspace
+                  ? { resourceId: longWorkspace.bookId }
+                  : {})
               });
             }
             return { status: "accepted", requestId: command.id, payload: accepted };
@@ -1628,6 +2214,8 @@ if (!hasSingleInstanceLock) {
     workspaceAgentConfigStore = new WorkspaceAgentConfigStore(userDataPath);
     agentTeamConfigStore = new AgentTeamConfigStore(userDataPath);
     libraryAgentConfigStore = new LibraryAgentConfigStore(userDataPath);
+    longAgentConfigStore = new LongAgentConfigStore(userDataPath);
+    longAgentTeamConfigStore = new LongAgentTeamConfigStore(userDataPath);
     learningImitationConfigStore = new LearningImitationConfigStore(userDataPath);
     workspaceDirectoryStore = new WorkspaceDirectoryStore(userDataPath);
     appearanceConfigStore = new AppearanceConfigStore(userDataPath);

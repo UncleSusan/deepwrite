@@ -15,6 +15,21 @@ import {
   RemoveLibraryEntryResultSchema,
   ScriptBookSchema,
   ShortBookSchema,
+  LongApplyOperationsResultSchema,
+  LongCommitChapterResultSchema,
+  LongExportPortableResultSchema,
+  LongImportPortableResultSchema,
+  LongImportWriteClawResultSchema,
+  LongListBooksResultSchema,
+  LongOpenBookResultSchema,
+  LongPreviewOperationsResultSchema,
+  LongReadDocumentResultSchema,
+  LongRemoveBookResultSchema,
+  LongRollbackLastCommitResultSchema,
+  LongSearchResultSchema,
+  LongWorkspaceIndexResultSchema,
+  LongWriteChapterResultSchema,
+  LongWriteDocumentResultSchema,
   UnregisterCatalogProjectResultSchema,
   type CommandEnvelope,
   type CommandResult
@@ -28,6 +43,8 @@ import {
 import { readLegacyBookArchive } from "./legacy-book-import";
 import { readLegacyLibraryArchive } from "./legacy-library-import";
 import { bootUtility } from "./runtime";
+import { LongProjectConflictError } from "./long-project-store";
+import { LongWorkspaceService } from "./long-workspace-service";
 
 const userDataPath = process.env.DEEPWRITE_USER_DATA_PATH?.trim();
 if (!userDataPath) {
@@ -65,6 +82,9 @@ let catalogStoreInitialization: Promise<FolderCatalogStore> | undefined;
 const draftRecoveryStore = new FolderCatalogStore({
   userDataPath: resolvedUserDataPath
 });
+const longWorkspaceService = new LongWorkspaceService({
+  userDataPath: resolvedUserDataPath
+});
 
 async function requireCatalogStore(): Promise<FolderCatalogStore> {
   if (!catalogStoreInitialization) {
@@ -96,6 +116,204 @@ async function handleCatalogCommand(
   command: CommandEnvelope
 ): Promise<CommandResult> {
   try {
+    if (command.type === "long.list") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongListBooksResultSchema.parse(
+          await longWorkspaceService.list()
+        )
+      };
+    }
+    if (command.type === "long.createBookAtPath") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongOpenBookResultSchema.parse(
+          await longWorkspaceService.create(
+            command.payload.parentDirectory,
+            command.payload.input
+          )
+        )
+      };
+    }
+    if (command.type === "long.importWriteClawAtPath") {
+      const imported = await longWorkspaceService.importWriteClawBook(
+        command.payload.parentDirectory,
+        command.payload.sourcePath
+      );
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongImportWriteClawResultSchema.parse({
+          book: imported.book,
+          summary: imported.summary,
+          sourceKind: imported.sourceKind,
+          legacySchemaVersion: imported.legacySchemaVersion,
+          committedChapterPolicy: imported.committedChapterPolicy,
+          warnings: imported.warnings
+        })
+      };
+    }
+    if (command.type === "long.importPortableAtPath") {
+      const imported = await longWorkspaceService.importPortableBundle(
+        command.payload.parentDirectory,
+        command.payload.sourcePath
+      );
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongImportPortableResultSchema.parse({
+          book: imported.book,
+          summary: imported.summary,
+          exportedAt: imported.exportedAt
+        })
+      };
+    }
+    if (command.type === "long.exportPortableAtPath") {
+      const exported = await longWorkspaceService.exportPortableBundleToPath(
+        command.payload.bookId,
+        command.payload.destinationPath
+      );
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongExportPortableResultSchema.parse({
+          status: "saved",
+          bookId: command.payload.bookId,
+          filePath: exported.filePath,
+          bytes: exported.bytes
+        })
+      };
+    }
+    if (command.type === "long.openAtPath") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongOpenBookResultSchema.parse(
+          await longWorkspaceService.openAtPath(
+            command.payload.projectDirectory
+          )
+        )
+      };
+    }
+    if (command.type === "long.open") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongOpenBookResultSchema.parse(
+          await longWorkspaceService.open(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.updateBindings") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongOpenBookResultSchema.parse(
+          await longWorkspaceService.updateBindings(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.getWorkspaceIndex") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongWorkspaceIndexResultSchema.parse(
+          await longWorkspaceService.getWorkspaceIndex(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.readDocument") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongReadDocumentResultSchema.parse(
+          await longWorkspaceService.readDocument(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.search") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongSearchResultSchema.parse(
+          await longWorkspaceService.search(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.writeDocument") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongWriteDocumentResultSchema.parse(
+          await longWorkspaceService.writeDocument(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.previewOperations") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongPreviewOperationsResultSchema.parse(
+          await longWorkspaceService.previewOperations(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.applyOperations") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongApplyOperationsResultSchema.parse(
+          await longWorkspaceService.applyOperations(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.writeChapter") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongWriteChapterResultSchema.parse(
+          await longWorkspaceService.writeChapter(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.commitChapter") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongCommitChapterResultSchema.parse(
+          await longWorkspaceService.commitChapter(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.rollbackLastCommit") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongRollbackLastCommitResultSchema.parse(
+          await longWorkspaceService.rollbackLastCommit(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.unregister") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongRemoveBookResultSchema.parse(
+          await longWorkspaceService.unregister(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.delete") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongRemoveBookResultSchema.parse(
+          await longWorkspaceService.delete(command.payload)
+        )
+      };
+    }
     if (command.type === "catalog.loadDraftRecovery") {
       return {
         status: "accepted",
@@ -334,6 +552,21 @@ async function handleCatalogCommand(
       }
     };
   } catch (error: unknown) {
+    if (error instanceof LongProjectConflictError) {
+      return {
+        status: "rejected",
+        requestId: command.id,
+        error: {
+          code: "long.conflict",
+          message: error.message,
+          details: {
+            scope: error.scope,
+            expectedRevision: error.expected,
+            actualRevision: error.actual
+          }
+        }
+      };
+    }
     if (error instanceof FolderCatalogConflictError) {
       return {
         status: "rejected",

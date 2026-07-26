@@ -1,10 +1,14 @@
 import type {
   LibraryAgentDomain,
   LibraryAgentSkill,
+  LongAgentId,
   ShortAgentWelcomeShortcuts,
   ShortWorkspaceAgentId
 } from "@deepwrite/contracts";
-import { DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS } from "@deepwrite/contracts";
+import {
+  DEFAULT_LONG_AGENT_PROFILES,
+  DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS
+} from "@deepwrite/contracts";
 
 export interface AgentWelcomeContent {
   title: string;
@@ -66,14 +70,54 @@ export const LIBRARY_AGENT_WELCOME_CONTENT = {
   }
 } as const satisfies Record<LibraryAgentDomain, AgentWelcomeContent>;
 
+export const LONG_AGENT_WELCOME_CONTENT = Object.fromEntries(
+  DEFAULT_LONG_AGENT_PROFILES.map((profile) => [
+    profile.id,
+    {
+      title: `从${profile.label.replace(/智能体$/u, "")}开始`,
+      description: profile.description,
+      questions: profile.welcomeShortcuts
+    }
+  ])
+) as unknown as Record<LongAgentId, AgentWelcomeContent>;
+
 export function resolveAgentWelcome(
-  agentId: ShortWorkspaceAgentId | undefined,
+  agentId: ShortWorkspaceAgentId | LongAgentId | undefined,
   libraryDomain?: LibraryAgentDomain,
   librarySkills?: readonly Pick<LibraryAgentSkill, "name">[],
-  welcomeShortcuts?: ShortAgentWelcomeShortcuts | readonly string[]
+  welcomeShortcuts?: ShortAgentWelcomeShortcuts | readonly string[],
+  workspaceType: "short" | "long" = "short"
 ): AgentWelcomeContent {
+  if (
+    agentId &&
+    (workspaceType === "long" ||
+      !(agentId in SHORT_AGENT_WELCOME_CONTENT))
+  ) {
+    const base = LONG_AGENT_WELCOME_CONTENT[agentId as LongAgentId];
+    if (base) {
+      if (
+        welcomeShortcuts &&
+        welcomeShortcuts.length === 3 &&
+        welcomeShortcuts.every(
+          (value) => typeof value === "string" && value.trim().length > 0
+        )
+      ) {
+        return {
+          ...base,
+          questions: [
+            welcomeShortcuts[0]!.trim(),
+            welcomeShortcuts[1]!.trim(),
+            welcomeShortcuts[2]!.trim()
+          ]
+        };
+      }
+      return base;
+    }
+  }
   if (agentId) {
-    const base = SHORT_AGENT_WELCOME_CONTENT[agentId];
+    const base =
+      SHORT_AGENT_WELCOME_CONTENT[agentId as ShortWorkspaceAgentId] ??
+      DEFAULT_AGENT_WELCOME;
     if (
       welcomeShortcuts &&
       welcomeShortcuts.length === 3 &&

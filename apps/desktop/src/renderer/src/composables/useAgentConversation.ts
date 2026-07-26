@@ -3,6 +3,7 @@ import type {
   AgentRuntimeRef,
   AgentUsage,
   DeepWriteApi,
+  LongWorkspaceRuntimeContext,
   ModelConfig,
   ModelSettings,
   SystemEventEnvelope,
@@ -12,6 +13,7 @@ import type {
 } from "@deepwrite/contracts";
 import {
   LibraryAgentWorkspaceSnapshotSchema,
+  LongWorkspaceRuntimeContextSchema,
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   ScriptWorkspaceSnapshotSchema,
   SHORT_WORKSPACE_STAGE_IDS,
@@ -38,6 +40,7 @@ import type { WorkspaceDocument } from "../types/workspace";
 interface ConversationStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 interface UseAgentConversationOptions {
@@ -139,7 +142,16 @@ export interface AgentConversationController {
     attachments?: WorkspaceContextAttachments,
     promptAttachments?: UserPromptAttachment[]
   ): Promise<void>;
+  sendLongMessage(
+    context: LongWorkspaceRuntimeContext,
+    attachments?: Pick<
+      WorkspaceRuntimeContext,
+      "attachedSkills" | "attachedMaterials"
+    >,
+    promptAttachments?: UserPromptAttachment[]
+  ): Promise<void>;
   stopGeneration(): Promise<boolean>;
+  cancelPendingGeneration(): boolean;
   newConversation(): void;
   selectConversation(sessionId: string): boolean;
   applyModelSettings(settings: ModelSettings): void;
@@ -149,7 +161,7 @@ export interface AgentConversationController {
   selectTemperature(temperature: number): void;
   selectApprovalMode(mode: AgentApprovalMode): void;
   useSuggestion(value: string): void;
-  dispose(): void;
+  dispose(options?: { clearPersistence?: boolean }): void;
 }
 
 export type WorkspaceContextAttachments = Pick<
@@ -2530,7 +2542,8 @@ export function useAgentConversation(
     activeDocument: WorkspaceDocument,
     workspaceDocuments: WorkspaceDocument[] = [],
     attachments: WorkspaceContextAttachments = {},
-    promptAttachments: UserPromptAttachment[] = []
+    promptAttachments: UserPromptAttachment[] = [],
+    contextOverride?: WorkspaceRuntimeContext
   ): Promise<void> {
     const api = options.api();
     // Vue refs wrap objects in proxies, which Electron IPC cannot structured-clone.
@@ -2554,20 +2567,21 @@ export function useAgentConversation(
         activeDocument.stageId === "draft"
         ? activeDocument.content
         : activeDocument.content.slice(0, 20_000);
-    const contextSnapshot: WorkspaceRuntimeContext = {
-      activeResource: {
-        id: activeDocument.id,
-        domain: activeDocument.domain,
-        title: activeDocument.title,
-        path: [...activeDocument.path],
-        ...(activeDocument.format ? { format: activeDocument.format } : {}),
-        source: "live-editor" as const,
-        content: snapshotContent,
-        ...(originalLength > snapshotContent.length
-          ? { truncated: true as const, originalLength }
-          : {})
-      }
-    };
+    const contextSnapshot: WorkspaceRuntimeContext =
+      contextOverride ?? {
+        activeResource: {
+          id: activeDocument.id,
+          domain: activeDocument.domain,
+          title: activeDocument.title,
+          path: [...activeDocument.path],
+          ...(activeDocument.format ? { format: activeDocument.format } : {}),
+          source: "live-editor" as const,
+          content: snapshotContent,
+          ...(originalLength > snapshotContent.length
+            ? { truncated: true as const, originalLength }
+            : {})
+        }
+      };
     if (attachments.attachedSkills?.length) {
       contextSnapshot.attachedSkills = attachments.attachedSkills.map((skill) => ({
         ...skill
@@ -2578,12 +2592,13 @@ export function useAgentConversation(
         ...material
       }));
     }
-    if (attachments.libraryWorkspace) {
+    if (!contextOverride && attachments.libraryWorkspace) {
       contextSnapshot.libraryWorkspace = LibraryAgentWorkspaceSnapshotSchema.parse(
         attachments.libraryWorkspace
       );
     }
     if (
+      !contextOverride &&
       (activeDocument.workspaceType === "short" || activeDocument.workspaceType === "script") &&
       activeDocument.workspaceId &&
       activeDocument.workspaceTitle &&
@@ -2781,6 +2796,12 @@ export function useAgentConversation(
         sessionId.value !== sendSessionId ||
         pendingAttemptId.value !== attemptId
       ) {
+        if (accepted.sessionId === sendSessionId) {
+          void api.session.abort({
+            sessionId: accepted.sessionId,
+            runId: accepted.runId
+          }).catch(() => undefined);
+        }
         return;
       }
       if (accepted.sessionId !== sendSessionId) {
@@ -2850,6 +2871,32 @@ export function useAgentConversation(
     }
   }
 
+  async function sendLongMessage(
+    context: LongWorkspaceRuntimeContext,
+    attachments: Pick<
+      WorkspaceRuntimeContext,
+      "attachedSkills" | "attachedMaterials"
+    > = {},
+    promptAttachments: UserPromptAttachment[] = []
+  ): Promise<void> {
+    const longWorkspace = LongWorkspaceRuntimeContextSchema.parse(context);
+    await sendMessage(
+      {
+        id: longWorkspace.bookId,
+        domain: "creation",
+        title: longWorkspace.title,
+        eyebrow: "长篇创作",
+        path: [longWorkspace.title],
+        content: "",
+        readOnly: true
+      },
+      [],
+      attachments,
+      promptAttachments,
+      { longWorkspace }
+    );
+  }
+
   async function stopGeneration(): Promise<boolean> {
     const api = options.api();
     const runId = activeRunId.value;
@@ -2883,6 +2930,17 @@ export function useAgentConversation(
       stopping.value = false;
       throw error;
     }
+  }
+
+  function cancelPendingGeneration(): boolean {
+    if (
+      pendingAttemptId.value === null ||
+      activeRunId.value !== null
+    ) {
+      return false;
+    }
+    newConversation();
+    return true;
   }
 
   function resetTransientConversationState(): void {
@@ -3092,7 +3150,9 @@ export function useAgentConversation(
     updateEditProposal,
     handleEvent,
     sendMessage,
+    sendLongMessage,
     stopGeneration,
+    cancelPendingGeneration,
     newConversation,
     selectConversation,
     applyModelSettings,
@@ -3104,8 +3164,26 @@ export function useAgentConversation(
     useSuggestion(value: string): void {
       draft.value = value;
     },
-    dispose(): void {
-      flushConversationPersistence();
+    dispose(disposeOptions): void {
+      if (persistenceTimer !== undefined) {
+        globalThis.clearTimeout(persistenceTimer);
+        persistenceTimer = undefined;
+      }
+      if (disposeOptions?.clearPersistence) {
+        if (persistenceStorage && options.persistenceKey) {
+          try {
+            if (persistenceStorage.removeItem) {
+              persistenceStorage.removeItem(options.persistenceKey);
+            } else {
+              persistenceStorage.setItem(options.persistenceKey, "");
+            }
+          } catch {
+            options.onPersistenceError?.();
+          }
+        }
+      } else {
+        flushConversationPersistence();
+      }
       epoch += 1;
       pendingAttemptId.value = null;
       activeRunId.value = null;

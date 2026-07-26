@@ -5,6 +5,7 @@ import type {
   CatalogResourceNodeActionPayload,
   DialogMode,
   IconName,
+  LongBookResourceNodeActionPayload,
   ResourceDomain,
   ResourceSectionActionPayload,
   ResourceTreeNode,
@@ -40,6 +41,7 @@ const emit = defineEmits<{
   selectResource: [node: ResourceTreeNode];
   bookAction: [mode: BookResourceDialogMode, node: ResourceTreeNode];
   exportBook: [node: ResourceTreeNode];
+  longBookAction: [payload: LongBookResourceNodeActionPayload];
   resourceAction: [payload: ResourceSectionActionPayload];
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
@@ -370,6 +372,7 @@ watch(
               @toggle-pin="toggleResourcePin"
               @book-action="(mode, book) => emit('bookAction', mode, book)"
               @export-book="emit('exportBook', $event)"
+              @long-book-action="emit('longBookAction', $event)"
               @resource-node-action="emit('resourceNodeAction', $event)"
               @create-expert-section="emit('createExpertSection', $event)"
               @remove-expert-section="emit('removeExpertSection', $event)"
@@ -388,6 +391,7 @@ watch(
           @toggle-pin="toggleResourcePin"
           @book-action="(mode, book) => emit('bookAction', mode, book)"
           @export-book="emit('exportBook', $event)"
+          @long-book-action="emit('longBookAction', $event)"
           @resource-action="emit('resourceAction', $event)"
           @resource-node-action="emit('resourceNodeAction', $event)"
           @create-expert-section="emit('createExpertSection', $event)"

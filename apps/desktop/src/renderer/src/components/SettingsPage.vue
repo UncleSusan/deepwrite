@@ -7,6 +7,8 @@ import type {
   LibraryAgentDomain,
   LibraryAgentSettings,
   LibraryAgentSettingsInput,
+  LongAgentSettings,
+  LongAgentSettingsInput,
   WorkspaceAgentSettings,
   WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
@@ -50,10 +52,15 @@ interface SettingsSection {
 defineProps<{
   autoSaveEnabled: boolean;
   workspaceAgentSettings: readonly WorkspaceAgentSettings[];
+  longAgentSettings: LongAgentSettings | null;
   workspaceAgentLoading: boolean;
   workspaceAgentSaving: boolean;
   workspaceAgentError: string | null;
   workspaceAgentStatus: string | null;
+  longAgentLoading: boolean;
+  longAgentSaving: boolean;
+  longAgentError: string | null;
+  longAgentStatus: string | null;
   learningImitationSettings: LearningImitationSettings | null;
   learningImitationLoading: boolean;
   learningImitationSaving: boolean;
@@ -67,6 +74,8 @@ const emit = defineEmits<{
   back: [];
   updateAutoSave: [enabled: boolean];
   saveWorkspaceAgents: [settings: WorkspaceAgentSettingsInput];
+  retryLongAgents: [];
+  saveLongAgents: [settings: LongAgentSettingsInput];
   saveLearningImitation: [settings: LearningImitationSettingsInput];
   resetLearningImitation: [stageId: LearningImitationStageId];
   saveLibraryAgents: [settings: LibraryAgentSettingsInput];
@@ -336,12 +345,19 @@ async function importThemeFile(event: Event): Promise<void> {
         <ShortAgentSettingsPanel
           v-if="activeCategory === 'short-agents'"
           :settings="workspaceAgentSettings"
+          :long-settings="longAgentSettings"
           :loading="workspaceAgentLoading"
           :saving="workspaceAgentSaving"
           :error-message="workspaceAgentError"
           :status-message="workspaceAgentStatus"
+          :long-loading="longAgentLoading"
+          :long-saving="longAgentSaving"
+          :long-error-message="longAgentError"
+          :long-status-message="longAgentStatus"
           :runtime-available="runtimeAvailable"
           @save="emit('saveWorkspaceAgents', $event)"
+          @retry-long="emit('retryLongAgents')"
+          @save-long="emit('saveLongAgents', $event)"
         />
 
         <LearningImitationSettingsPanel

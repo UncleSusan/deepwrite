@@ -63,6 +63,7 @@ const reasoningOptions = BUILT_IN_REASONING_LEVELS.map((value) => ({
 const providerOptions = [
   { value: "deepwrite-free", label: "DeepWrite 免费模型" },
   { value: "deepseek", label: "DeepSeek" },
+  { value: "kimi-coding", label: "Kimi Coding" },
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "google", label: "Google" },
@@ -278,6 +279,9 @@ function applyProviderPreset(provider: string): void {
   } else if (provider === "deepseek") {
     editor.api = "openai-completions";
     editor.baseUrl = "https://api.deepseek.com/v1";
+  } else if (provider === "kimi-coding") {
+    editor.api = "openai-completions";
+    editor.baseUrl = "https://api.kimi.com/coding/v1";
   } else if (provider === "google") {
     editor.api = "google-generative-ai";
     editor.baseUrl = "https://generativelanguage.googleapis.com/v1beta";

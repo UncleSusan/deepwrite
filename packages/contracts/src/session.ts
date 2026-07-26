@@ -21,6 +21,19 @@ import {
   ScriptWorkspaceSnapshotSchema,
   resolveScriptWorkspaceAgentIdForStage
 } from "./script-workspace";
+import {
+  LongAgentIdSchema,
+  LongAgentProfileSchema,
+  LongBookIdSchema,
+  LongChapterCardIdSchema,
+  resolveLongAgentIdForRoot
+} from "./long-workspace";
+import { LongWorkspaceRuntimeContextSchema } from "./long-workspace-api";
+import {
+  LongCommitChapterInputSchema,
+  LongWriteChapterInputSchema
+} from "./long-ledger";
+import { LongWorkspaceOperationBatchSchema } from "./long-workspace-operations";
 import { ShortAgentSubagentDefinitionsSchema } from "./agent-team";
 import {
   LearningImitationAgentProfileSchema,
@@ -110,6 +123,7 @@ export const WorkspaceRuntimeContextSchema = z.object({
   activeResource: ActiveResourceSnapshotSchema.optional(),
   shortWorkspace: ShortWorkspaceSnapshotSchema.optional(),
   scriptWorkspace: ScriptWorkspaceSnapshotSchema.optional(),
+  longWorkspace: LongWorkspaceRuntimeContextSchema.optional(),
   libraryWorkspace: LibraryAgentWorkspaceSnapshotSchema.optional(),
   learningImitation: LearningImitationRuntimeContextSchema.optional(),
   subagentAuthoring: SubagentAuthoringRuntimeContextSchema.optional(),
@@ -125,6 +139,7 @@ export const WorkspaceRuntimeContextSchema = z.object({
   const exclusiveContexts = [
     value.shortWorkspace,
     value.scriptWorkspace,
+    value.longWorkspace,
     value.libraryWorkspace,
     value.learningImitation,
     value.subagentAuthoring
@@ -159,6 +174,18 @@ export const WorkspaceRuntimeContextSchema = z.object({
   }
   const active = value.activeResource;
   if (!active) return;
+
+  if (
+    value.longWorkspace?.activeFileId &&
+    active.id !== value.longWorkspace.activeFileId
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["longWorkspace", "activeFileId"],
+      message:
+        "The active long-form file must match the live active resource snapshot."
+    });
+  }
 
   const creativeWorkspaces = [
     {
@@ -404,6 +431,7 @@ export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema
   runtimeConfig: AgentProviderRuntimeConfigSchema.optional(),
   agentProfile: ShortWorkspaceAgentProfileSchema.optional(),
   scriptAgentProfile: ScriptWorkspaceAgentProfileSchema.optional(),
+  longAgentProfile: LongAgentProfileSchema.optional(),
   subagentDefinitions: ShortAgentSubagentDefinitionsSchema.optional(),
   /**
    * Runtime-only map of model config id → resolved provider config for
@@ -417,17 +445,20 @@ export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema
 }).superRefine((value, context) => {
   const shortWorkspace = value.workspaceContext?.shortWorkspace;
   const scriptWorkspace = value.workspaceContext?.scriptWorkspace;
+  const longWorkspace = value.workspaceContext?.longWorkspace;
   if (
     value.subagentDefinitions !== undefined &&
     !(
       (shortWorkspace && value.agentProfile) ||
-      (scriptWorkspace && value.scriptAgentProfile)
+      (scriptWorkspace && value.scriptAgentProfile) ||
+      (longWorkspace && value.longAgentProfile)
     )
   ) {
     context.addIssue({
       code: "custom",
       path: ["subagentDefinitions"],
-      message: "Subagent definitions require a creative workspace and its agent profile."
+      message:
+        "Subagent definitions require a short, script or long workspace and its agent profile."
     });
   }
   if (
@@ -487,6 +518,27 @@ export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema
         code: "custom",
         path: ["scriptAgentProfile", "id"],
         message: "Script workspace agent profile must match the active parent agent."
+      });
+    }
+  }
+  if (Boolean(longWorkspace) !== Boolean(value.longAgentProfile)) {
+    context.addIssue({
+      code: "custom",
+      path: ["longAgentProfile"],
+      message:
+        "Long workspace context and agent profile must be provided together."
+    });
+  }
+  if (longWorkspace && value.longAgentProfile) {
+    const expectedAgentId =
+      longWorkspace.activeAgentId ??
+      resolveLongAgentIdForRoot(longWorkspace.activeRoot);
+    if (value.longAgentProfile.id !== expectedAgentId) {
+      context.addIssue({
+        code: "custom",
+        path: ["longAgentProfile", "id"],
+        message:
+          "Long workspace agent profile must match the active long-form agent."
       });
     }
   }
@@ -839,6 +891,153 @@ export type WorkspaceEditorMutationPayload = z.infer<
   typeof WorkspaceEditorMutationPayloadSchema
 >;
 
+const LongProposalBasePayloadSchema = z.object({
+  sessionId: z.string().min(1),
+  runId: z.string().min(1),
+  toolCallId: z.string().min(1),
+  bookId: LongBookIdSchema,
+  agentId: LongAgentIdSchema,
+  summary: z.string().trim().min(1).max(1_000),
+  runtime: AgentRuntimeRefSchema
+});
+
+export const LongMutationProposalPayloadSchema =
+  LongProposalBasePayloadSchema.extend({
+    batch: LongWorkspaceOperationBatchSchema,
+    baseProjectRevision: z.number().int().nonnegative()
+  });
+export type LongMutationProposalPayload = z.infer<
+  typeof LongMutationProposalPayloadSchema
+>;
+
+export const LongChapterWriteProposalPayloadSchema =
+  LongProposalBasePayloadSchema.extend({
+    input: LongWriteChapterInputSchema
+  }).superRefine((value, context) => {
+    if (value.input.bookId !== value.bookId) {
+      context.addIssue({
+        code: "custom",
+        path: ["input", "bookId"],
+        message: "Chapter proposal input must belong to the proposal book."
+      });
+    }
+  });
+export type LongChapterWriteProposalPayload = z.infer<
+  typeof LongChapterWriteProposalPayloadSchema
+>;
+
+export const LongLedgerCommitProposalPayloadSchema =
+  LongProposalBasePayloadSchema.extend({
+    input: LongCommitChapterInputSchema
+  }).superRefine((value, context) => {
+    if (value.input.bookId !== value.bookId) {
+      context.addIssue({
+        code: "custom",
+        path: ["input", "bookId"],
+        message: "Ledger proposal input must belong to the proposal book."
+      });
+    }
+  });
+export type LongLedgerCommitProposalPayload = z.infer<
+  typeof LongLedgerCommitProposalPayloadSchema
+>;
+
+export const LongWritingScopeSchema = z.enum([
+  "chapter",
+  "arc",
+  "volume"
+]);
+export type LongWritingScope = z.infer<typeof LongWritingScopeSchema>;
+
+export const LongChapterTripletRoleSchema = z.enum([
+  "body",
+  "character_state",
+  "handoff"
+]);
+export type LongChapterTripletRole = z.infer<
+  typeof LongChapterTripletRoleSchema
+>;
+
+export const LongChapterReadinessStatusSchema = z.enum([
+  "empty",
+  "partial",
+  "ready_to_commit"
+]);
+export type LongChapterReadinessStatus = z.infer<
+  typeof LongChapterReadinessStatusSchema
+>;
+
+export const LongChapterReadinessSchema = z
+  .object({
+    chapterCardId: LongChapterCardIdSchema,
+    title: z.string().trim().min(1).max(256),
+    status: LongChapterReadinessStatusSchema,
+    missingFiles: z
+      .array(LongChapterTripletRoleSchema)
+      .max(3)
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const uniqueMissing = new Set(value.missingFiles);
+    if (uniqueMissing.size !== value.missingFiles.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["missingFiles"],
+        message: "Chapter readiness cannot repeat a missing triplet file."
+      });
+    }
+    const expectedStatus =
+      value.missingFiles.length === 3
+        ? "empty"
+        : value.missingFiles.length === 0
+          ? "ready_to_commit"
+          : "partial";
+    if (value.status !== expectedStatus) {
+      context.addIssue({
+        code: "custom",
+        path: ["status"],
+        message:
+          "Chapter readiness status must match the missing triplet files."
+      });
+    }
+  });
+export type LongChapterReadiness = z.infer<
+  typeof LongChapterReadinessSchema
+>;
+
+export const LongChapterDispatchProposalPayloadSchema =
+  LongProposalBasePayloadSchema.extend({
+    scope: LongWritingScopeSchema,
+    chapterCardId: LongChapterCardIdSchema,
+    title: z.string().trim().min(1).max(256),
+    chapters: z.array(LongChapterReadinessSchema).min(1).max(100_000),
+    workspaceRevision: z.number().int().nonnegative(),
+    projectRevision: z.number().int().nonnegative()
+  }).superRefine((value, context) => {
+    const chapterIds = value.chapters.map(({ chapterCardId }) => chapterCardId);
+    if (new Set(chapterIds).size !== chapterIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["chapters"],
+        message: "A chapter dispatch plan cannot repeat a chapter."
+      });
+    }
+    if (
+      value.chapters[0]?.chapterCardId !== value.chapterCardId ||
+      value.chapters[0]?.title !== value.title
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["chapters", 0],
+        message:
+          "Dispatch summary chapter must match the first scheduled chapter."
+      });
+    }
+  });
+export type LongChapterDispatchProposalPayload = z.infer<
+  typeof LongChapterDispatchProposalPayloadSchema
+>;
+
 const LibraryEditorMutationBaseSchema = z.object({
   sessionId: z.string().min(1),
   runId: z.string().min(1),
@@ -976,6 +1175,30 @@ export const WorkspaceEditorMutationEventEnvelopeSchema = EnvelopeBaseSchema.ext
   payload: WorkspaceEditorMutationPayloadSchema
 }).superRefine(validateAgentEventContext);
 
+export const LongMutationProposalEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.mutation_proposal"),
+    payload: LongMutationProposalPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
+export const LongChapterWriteProposalEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.chapter_write_proposal"),
+    payload: LongChapterWriteProposalPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
+export const LongLedgerCommitProposalEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.ledger_commit_proposal"),
+    payload: LongLedgerCommitProposalPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
+export const LongChapterDispatchProposalEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.chapter_dispatch_proposal"),
+    payload: LongChapterDispatchProposalPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
 export const LibraryEditorMutationEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("library.editor_mutation"),
   payload: LibraryEditorMutationPayloadSchema
@@ -1054,6 +1277,22 @@ export type SubagentAuthoringDraftUpdatedEventEnvelope = Envelope<
 export type WorkspaceEditorMutationEventEnvelope = Envelope<
   WorkspaceEditorMutationPayload,
   "workspace.editor_mutation"
+>;
+export type LongMutationProposalEventEnvelope = Envelope<
+  LongMutationProposalPayload,
+  "long.mutation_proposal"
+>;
+export type LongChapterWriteProposalEventEnvelope = Envelope<
+  LongChapterWriteProposalPayload,
+  "long.chapter_write_proposal"
+>;
+export type LongLedgerCommitProposalEventEnvelope = Envelope<
+  LongLedgerCommitProposalPayload,
+  "long.ledger_commit_proposal"
+>;
+export type LongChapterDispatchProposalEventEnvelope = Envelope<
+  LongChapterDispatchProposalPayload,
+  "long.chapter_dispatch_proposal"
 >;
 export type LibraryEditorMutationEventEnvelope = Envelope<
   LibraryEditorMutationPayload,

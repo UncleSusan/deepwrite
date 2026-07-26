@@ -109,6 +109,100 @@ function fixture(): CatalogSnapshot {
 }
 
 describe("library attachments", () => {
+  it("resolves a long book directly without registering it as a short Catalog book", () => {
+    const source = fixture();
+    const snapshot = CatalogSnapshotSchema.parse({
+      ...source,
+      materials: [
+        ...source.materials,
+        {
+          id: "material-long-plot",
+          title: "长篇剧情素材",
+          materialType: "long",
+          materialKind: "plot",
+          parentGenre: "科幻",
+          subGenre: "",
+          overview: "",
+          entries: [
+            {
+              id: "long-plot-entry",
+              stageId: "pacing",
+              title: "潮汐主线",
+              body: "十年一次逆潮。",
+              createdAt: NOW,
+              updatedAt: NOW
+            }
+          ],
+          createdAt: NOW,
+          updatedAt: NOW
+        }
+      ],
+      skills: [
+        ...source.skills,
+        {
+          id: "skill-long-style",
+          title: "长篇文风",
+          skillType: "long",
+          skillKind: "style",
+          overview: "",
+          isBuiltin: false,
+          entries: [
+            {
+              id: "long-style-entry",
+              stageId: "draft",
+              title: "章节节奏",
+              body: "章节结尾保留推进钩子。",
+              createdAt: NOW,
+              updatedAt: NOW
+            }
+          ],
+          createdAt: NOW,
+          updatedAt: NOW
+        }
+      ]
+    });
+
+    const result = buildLibraryAttachments(snapshot, {
+      id: "longbook_direct",
+      bookType: "long",
+      linkedMaterialIdsByKind: {
+        character: [],
+        gimmick: [],
+        plot: ["material-long-plot"],
+        draft: [],
+        other: ["missing-long-material"]
+      },
+      linkedSkillIdsByKind: {
+        general: [],
+        plot: [],
+        style: ["skill-long-style"],
+        other: []
+      }
+    });
+
+    expect(snapshot.books).toHaveLength(1);
+    expect(result.attachedMaterials).toEqual([
+      expect.objectContaining({
+        title: "长篇剧情素材 · 潮汐主线",
+        kind: "plot",
+        content: "十年一次逆潮。"
+      })
+    ]);
+    expect(result.attachedSkills).toEqual([
+      expect.objectContaining({
+        title: "长篇文风 · 章节节奏",
+        kind: "style",
+        content: "章节结尾保留推进钩子。"
+      })
+    ]);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "library-not-found",
+        libraryId: "missing-long-material"
+      })
+    );
+  });
+
   it("resolves only bound non-empty entries and assigns runtime kinds", () => {
     const result = buildLibraryAttachments(fixture(), "book-1");
 

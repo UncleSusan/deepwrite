@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { LIBRARY_AGENT_DOMAINS, SHORT_WORKSPACE_AGENT_IDS } from "@deepwrite/contracts";
+import {
+  LIBRARY_AGENT_DOMAINS,
+  LONG_AGENT_IDS,
+  SHORT_WORKSPACE_AGENT_IDS
+} from "@deepwrite/contracts";
 import {
   DEFAULT_AGENT_WELCOME,
   LIBRARY_AGENT_WELCOME_CONTENT,
+  LONG_AGENT_WELCOME_CONTENT,
   SHORT_AGENT_WELCOME_CONTENT,
   resolveAgentWelcome
 } from "./agentWelcome";
@@ -25,6 +30,24 @@ describe("agent welcome content", () => {
 
   it("falls back to the general welcome outside a short workspace", () => {
     expect(resolveAgentWelcome(undefined)).toBe(DEFAULT_AGENT_WELCOME);
+  });
+
+  it("provides default-profile shortcuts for every long agent", () => {
+    expect(Object.keys(LONG_AGENT_WELCOME_CONTENT).sort()).toEqual(
+      [...LONG_AGENT_IDS].sort()
+    );
+    for (const agentId of LONG_AGENT_IDS) {
+      const welcome = resolveAgentWelcome(
+        agentId,
+        undefined,
+        undefined,
+        undefined,
+        "long"
+      );
+      expect(welcome.title).toBeTruthy();
+      expect(welcome.description).toBeTruthy();
+      expect(welcome.questions).toHaveLength(3);
+    }
   });
 
   it("provides an independent welcome and three common questions for every library agent", () => {

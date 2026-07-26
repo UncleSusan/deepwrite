@@ -10,6 +10,7 @@ import type {
   CatalogLibraryEntry,
   CatalogLibraryGroup,
   CatalogSnapshot,
+  CreateLongBookInput,
   CreateLibraryInput,
   CreateLibraryGroupInput,
   CreateLibraryEntryInput,
@@ -23,6 +24,22 @@ import type {
   LibraryAgentSettingsInput,
   LinkedMaterialIdsByKind,
   LinkedSkillIdsByKind,
+  LongAgentProfile,
+  LongAgentSettings,
+  LongAgentSettingsInput,
+  LongAgentTeamSettings,
+  LongAgentTeamSettingsInput,
+  LongBookSummary,
+  LongChapterReadiness,
+  LongImportWriteClawResult,
+  LongListBooksResult,
+  LongOpenBookResult,
+  LongFileId,
+  LongFileRevision,
+  LongWorkspaceIndexSnapshot,
+  LongWorkspaceOperationBatch,
+  LongWorkspaceRuntimeContext,
+  LongWriteDocumentResult,
   MaterialKind,
   MaterialLibraryKind,
   MaterialStageId,
@@ -43,6 +60,8 @@ import type {
 } from "@deepwrite/contracts";
 import {
   DEFAULT_LIBRARY_AGENT_PROFILES,
+  DEFAULT_LONG_AGENT_SETTINGS,
+  DEFAULT_LONG_AGENT_TEAM_SETTINGS,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
   MATERIAL_KINDS,
@@ -51,17 +70,21 @@ import {
   SKILL_KINDS,
   SkillStageIdSchema,
   createExpertDraftDirectoryRevision,
+  createLongWorkspaceNavigationSnapshot,
   createShortWorkspaceContentRevision,
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
   isProvisionalExpertDraftSectionId,
   parseCatalogDraftDocumentId,
+  getDefaultLongAgentProfile,
+  resolveLongAgentIdForRoot,
   resolveShortWorkspaceAgentIdForStage
 } from "@deepwrite/contracts";
 import AgentConversation from "./components/AgentConversation.vue";
 import AgentTeamSettingsPanel from "./components/AgentTeamSettingsPanel.vue";
 import AppIcon from "./components/AppIcon.vue";
 import BookResourceDialog from "./components/BookResourceDialog.vue";
+import CreateLongBookDialog from "./components/CreateLongBookDialog.vue";
 import CreateShortBookDialog from "./components/CreateShortBookDialog.vue";
 import DeleteExpertSectionDialog from "./components/DeleteExpertSectionDialog.vue";
 import ExportShortManuscriptDialog from "./components/ExportShortManuscriptDialog.vue";
@@ -70,6 +93,14 @@ import LibraryGroupDialog from "./components/LibraryGroupDialog.vue";
 import LibraryRemovalDialog from "./components/LibraryRemovalDialog.vue";
 import LearningImitationDialog from "./components/LearningImitationDialog.vue";
 import LeftSidebar from "./components/LeftSidebar.vue";
+import LongWorkspaceEditor from "./components/LongWorkspaceEditor.vue";
+import LongBookBindingsDialog from "./components/LongBookBindingsDialog.vue";
+import LongBookRemovalDialog from "./components/LongBookRemovalDialog.vue";
+import LongMigrationReportDialog from "./components/LongMigrationReportDialog.vue";
+import LongProposalReview from "./components/LongProposalReview.vue";
+import LongRollbackDialog from "./components/LongRollbackDialog.vue";
+import LongStructureDialog from "./components/LongStructureDialog.vue";
+import LongWorkspaceTree from "./components/LongWorkspaceTree.vue";
 import RightEditorPane from "./components/RightEditorPane.vue";
 import SaveConflictDialog from "./components/SaveConflictDialog.vue";
 import SettingsPage from "./components/SettingsPage.vue";
@@ -81,6 +112,15 @@ import {
 } from "./composables/useAgentConversation";
 import { useAppearance } from "./composables/useAppearance";
 import { useLearningImitation } from "./composables/useLearningImitation";
+import {
+  useLongWorkspaceProposals,
+  type LongWorkspaceProposalEvent
+} from "./composables/useLongWorkspaceProposals";
+import {
+  canApproveLongWritingProposal,
+  useLongWritingOrchestrator,
+  type LongWritingRunGuard
+} from "./composables/useLongWritingOrchestrator";
 import { useSubagentAuthoring } from "./composables/useSubagentAuthoring";
 import { uiMessage } from "./ui-feedback";
 import { resourceSections } from "./data/demoWorkspace";
@@ -105,11 +145,23 @@ import type {
   CatalogResourceNodeActionPayload,
   DialogMode,
   EditorDraftState,
+  LongBookResourceNodeActionPayload,
   ResourceSectionActionPayload,
   ResourceTreeNode,
   ResourceTreeSection,
   WorkspaceDocument
 } from "./types/workspace";
+import {
+  createLongChapterSelection,
+  createLongContinuitySelection,
+  longBookIdFromResourceId,
+  longBookResourceId,
+  nextWritableLongChapterId,
+  reconcileLongWorkspaceSelection,
+  replaceLongBookSummary,
+  resolveLongWorkspaceApi,
+  type LongWorkspaceSelection
+} from "./types/longWorkspace";
 import {
   applyBookResourcePreferences,
   BOOK_RESOURCE_PREFERENCES_STORAGE_KEY,
@@ -117,7 +169,10 @@ import {
   type BookResourcePreference,
   type BookResourcePreferences
 } from "./utils/bookResourcePreferences";
-import { buildLibraryAttachments } from "./utils/libraryAttachments";
+import {
+  buildLibraryAttachments,
+  type LibraryAttachmentBuildResult
+} from "./utils/libraryAttachments";
 import { buildLibraryAgentWorkspaceContext, buildLibraryEntryComposerReferences } from "./utils/libraryAgentContext";
 import { buildLibraryAgentSkillAttachments } from "./utils/libraryAgentSkillAttachments";
 import {
@@ -156,6 +211,10 @@ import {
   loadGeneralPreferences,
   saveGeneralPreferences
 } from "./utils/generalPreferences";
+import {
+  createLongWorkspaceRefreshClock,
+  isMonotonicLongWorkspaceRefresh
+} from "./utils/longWorkspaceRefresh";
 
 const EMPTY_WORKSPACE_DOCUMENT: WorkspaceDocument = {
   id: "deepwrite-empty-workspace",
@@ -179,6 +238,13 @@ const COMPOSER_STAGE_LABELS = {
   expert_draft_coordinator: "正文",
   expert_section_writer: "分节"
 } as const satisfies Record<ShortWorkspaceAgentId, string>;
+const LONG_WORKSPACE_ROOT_LABELS = {
+  worldbuilding: "世界观",
+  character_design: "人物设计",
+  plot_design: "情节设计",
+  draft: "正文",
+  continuity_ledger: "连续性账本"
+} as const;
 const EDITOR_DRAFT_RECOVERY_KEY = "deepwrite:editor-draft-recovery:v1";
 const EDITOR_AUTO_SAVE_DEBOUNCE_MS = 800;
 const EDITOR_AUTO_SAVE_RETRY_MS = 250;
@@ -349,6 +415,64 @@ const catalogMutationPending = ref(false);
 const manuscriptExportPending = ref(false);
 const exportBookTarget = ref<ResourceTreeNode | null>(null);
 const createShortBookDialogOpen = ref(false);
+const createLongBookDialogOpen = ref(false);
+const longBooks = ref<LongBookSummary[]>([]);
+const longCatalogDiagnostics = ref<
+  NonNullable<LongListBooksResult["diagnostics"]>
+>([]);
+const activeLongBookId = ref<string | null>(null);
+const activeLongWorkspaceIndex = ref<LongWorkspaceIndexSnapshot | null>(null);
+const activeLongSelection = ref<LongWorkspaceSelection | null>(null);
+const longWorkspaceEditor = ref<{
+  saveAllChanges(): Promise<boolean>;
+  synchronizeProjectRevisions(
+    workspaceRevision: number,
+    projectRevision: number
+  ): void;
+  synchronizeProjectRevisionsIfClean(
+    bookId: string,
+    workspaceRevision: number,
+    projectRevision: number
+  ): boolean;
+} | null>(null);
+const activeLongFileContext = ref<{
+  bookId: string;
+  fileId: LongFileId;
+  fileRevision: LongFileRevision;
+} | null>(null);
+interface LongWorkspaceRefreshStatus {
+  bookId: string;
+  requestId: number;
+  pending: boolean;
+  error: string | null;
+}
+const longWorkspaceRefreshClock = createLongWorkspaceRefreshClock();
+const longWorkspaceRefreshStatus =
+  ref<LongWorkspaceRefreshStatus | null>(null);
+const longCatalogLoading = ref(false);
+const longCatalogLoadError = ref<string | null>(null);
+let longCatalogRetryAttempts = 0;
+let longCatalogRetryTimer: number | undefined;
+let longCatalogRequestClock = 0;
+let longCatalogLoadPromise: Promise<void> | null = null;
+const longWorkspaceLoading = ref(false);
+const longSendPreflightPending = ref(false);
+const longMutationPending = ref(false);
+const longProposalApprovalPending = ref(false);
+const longRollbackDialogOpen = ref(false);
+const longRollbackPending = ref(false);
+const longRollbackCommitId = ref<string | null>(null);
+const longStructureDialogOpen = ref(false);
+const longBindingsDialogOpen = ref(false);
+const longBookActionPending = ref(false);
+const longBookRemovalDialog = ref<{
+  action: "unregister" | "delete";
+  bookId: string;
+  title: string;
+} | null>(null);
+const longMigrationReport = ref<LongImportWriteClawResult | null>(null);
+const seenLongCatalogDiagnosticKeys = new Set<string>();
+let longOpenClock = 0;
 interface LibraryProjectDialogState {
   operation: "create-library" | "create-entry" | "remove-entry";
   domain: "material" | "skill";
@@ -460,15 +584,32 @@ const workspaceAgentSettings = ref<WorkspaceAgentSettings[]>([
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS
 ]);
+const longAgentSettings = ref<LongAgentSettings>(
+  structuredClone(DEFAULT_LONG_AGENT_SETTINGS)
+);
 const agentTeamSettings = ref<WorkspaceAgentTeamSettings[]>([]);
+const longAgentTeamSettings = ref<LongAgentTeamSettings>(
+  structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS)
+);
 const agentTeamLoading = ref(false);
 const agentTeamSaving = ref(false);
 const agentTeamLoaded = ref(false);
 const agentTeamLoadError = ref<string | null>(null);
+const longAgentTeamLoading = ref(false);
+const longAgentTeamSaving = ref(false);
+const longAgentTeamLoaded = ref(false);
+const longAgentTeamLoadError = ref<string | null>(null);
 const workspaceAgentLoading = ref(false);
 const workspaceAgentSaving = ref(false);
 const workspaceAgentError = ref<string | null>(null);
 const workspaceAgentStatus = ref<string | null>(null);
+const longAgentLoading = ref(false);
+const longAgentSaving = ref(false);
+const longAgentLoaded = ref(false);
+const longAgentLoadError = ref<string | null>(null);
+const longAgentError = ref<string | null>(null);
+const longAgentStatus = ref<string | null>(null);
+let longAgentLoadPromise: Promise<boolean> | null = null;
 const libraryAgentSettings = ref<LibraryAgentSettings>({
   agents: DEFAULT_LIBRARY_AGENT_PROFILES.map((agent) => ({
     ...agent,
@@ -485,6 +626,7 @@ const learningImitationSaving = ref(false);
 const workspaceDirectoryPath = ref<string | null>(null);
 const workspaceDirectoryLoading = ref(false);
 let workspaceAgentFeedbackTimer: number | undefined;
+let longAgentFeedbackTimer: number | undefined;
 let draftRecoveryTimer: number | undefined;
 let draftPersistenceWarningShown = false;
 let conversationPersistenceWarningShown = false;
@@ -512,7 +654,37 @@ const acceptedDraftSectionCreationRevisions = new Map<
 >();
 /** runId\0workspaceId → provisionalSectionId → real catalog section id */
 const acceptedProvisionalExpertSectionIds = new Map<string, Map<string, string>>();
+interface LongWritingAgentRunExpectation {
+  bookId: string;
+  chapterCardId: string;
+  agentId: "expert_section_writer" | "continuity_ledger";
+  sessionId: string;
+  runId?: string;
+  proposalSeen: boolean;
+  terminalError?: string;
+}
+let longWritingAgentRunExpectation:
+  | LongWritingAgentRunExpectation
+  | null = null;
 let autoAgentEditFlush = Promise.resolve();
+const longWritingOrchestrator = useLongWritingOrchestrator({
+  resolveReadiness: resolveLiveLongChapterReadiness,
+  startWriter: startFreshLongChapterWriter,
+  startLedger: startFreshLongContinuityLedger,
+  saveBarrier: refreshLongWritingSaveBarrier,
+  notifications: uiMessage
+});
+const longWorkspaceProposals = useLongWorkspaceProposals({
+  api: resolveLongWorkspaceApi,
+  acceptsEvent: acceptsLongProposalEvent,
+  onApplied: handleLongProposalApplied,
+  onDispatchApproved: handleLongChapterDispatchApproved,
+  onRejected: (event) => {
+    if (!canApproveLongProposalDuringActivePlan(event)) return;
+    longWritingOrchestrator.handleRejected(event);
+  },
+  notifications: uiMessage
+});
 
 const catalogProjection = computed(() =>
   catalogSnapshot.value ? projectCatalogWorkspace(catalogSnapshot.value) : null
@@ -539,14 +711,293 @@ function loadBookResourcePreferences(): BookResourcePreferences {
 
 const bookResourcePreferences = ref<BookResourcePreferences>(loadBookResourcePreferences());
 
+const longBookResourceNodes = computed<ResourceTreeNode[]>(() => {
+  const availableIds = new Set(longBooks.value.map(({ id }) => id));
+  const unavailable = new Map(
+    longCatalogDiagnostics.value
+      .filter(({ bookId }) => !availableIds.has(bookId))
+      .map((diagnostic) => [diagnostic.bookId, diagnostic] as const)
+  );
+  return [
+    ...longBooks.value.map((book) => ({
+      id: longBookResourceId(book.id),
+      label: book.title,
+      icon: "book" as const,
+      badge: `长篇 · ${book.genre}`,
+      workspaceType: "long" as const,
+      longBookId: book.id,
+      catalogNodeType: "long-book" as const,
+      projectRevision: book.projectRevision
+    })),
+    ...[...unavailable.values()].map((diagnostic) => ({
+      id: longBookResourceId(diagnostic.bookId),
+      label: `不可用长篇 · ${diagnostic.bookId}`,
+      icon: "book" as const,
+      badge:
+        diagnostic.code === "invalid"
+          ? "长篇 · 注册信息无效"
+          : "长篇 · 暂不可用",
+      workspaceType: "long" as const,
+      longBookId: diagnostic.bookId,
+      catalogNodeType: "long-book" as const,
+      unavailable: true,
+      muted: true
+    }))
+  ];
+});
+
 const resourceTreeSections = computed(() =>
-  applyBookResourcePreferences(baseResourceSections.value, bookResourcePreferences.value)
+  applyBookResourcePreferences(
+    baseResourceSections.value,
+    bookResourcePreferences.value
+  ).map((section) =>
+    section.id === "creation"
+      ? {
+          ...section,
+          nodes: [...section.nodes, ...longBookResourceNodes.value]
+        }
+      : section
+  )
+);
+
+const activeLongBookSummary = computed(
+  () =>
+    longBooks.value.find((book) => book.id === activeLongBookId.value) ?? null
+);
+const activeLongWorkspaceRefreshStatus = computed(() => {
+  const status = longWorkspaceRefreshStatus.value;
+  return status?.bookId === activeLongBookId.value ? status : null;
+});
+const activeLongWorkspaceContextReady = computed(
+  () =>
+    activeLongWorkspaceRefreshStatus.value === null &&
+    activeLongWorkspaceIndex.value !== null &&
+    activeLongBookSummary.value !== null &&
+    activeLongBookSummary.value.navigation.revision ===
+      activeLongWorkspaceIndex.value.revision
+);
+const activeLongRoot = computed(
+  () => activeLongSelection.value?.root ?? "worldbuilding"
+);
+const activeLongStageLabel = computed(
+  () => LONG_WORKSPACE_ROOT_LABELS[activeLongRoot.value]
+);
+const activeLongChapterWriterEnabled = computed(() => {
+  const index = activeLongWorkspaceIndex.value;
+  const chapterCardId = activeLongSelection.value?.chapterCardId;
+  return Boolean(
+    index &&
+      activeLongRoot.value === "draft" &&
+      chapterCardId &&
+      nextWritableLongChapterId(index) === chapterCardId
+  );
+});
+const activeLongAgentProfile = computed<LongAgentProfile | null>(() => {
+  if (!activeLongBookSummary.value) return null;
+  const agentId = resolveLongAgentIdForRoot(
+    activeLongRoot.value,
+    activeLongChapterWriterEnabled.value
+  );
+  return (
+    longAgentSettings.value.agents.find((profile) => profile.id === agentId) ??
+    getDefaultLongAgentProfile(agentId)
+  );
+});
+function buildLongLibraryAttachmentsForProfile(
+  summary: LongBookSummary,
+  snapshot: CatalogSnapshot,
+  profile: LongAgentProfile
+): LibraryAttachmentBuildResult {
+  const skillKinds = new Set(profile.readAccess.skillKinds);
+  const materialKinds = new Set(profile.readAccess.materialKinds);
+  return buildLibraryAttachments(snapshot, {
+    id: summary.id,
+    bookType: "long",
+    linkedMaterialIdsByKind: {
+      character: materialKinds.has("character")
+        ? summary.linkedMaterialIdsByKind.character
+        : [],
+      gimmick: materialKinds.has("gimmick")
+        ? summary.linkedMaterialIdsByKind.gimmick
+        : [],
+      plot: materialKinds.has("plot")
+        ? summary.linkedMaterialIdsByKind.plot
+        : [],
+      draft: materialKinds.has("draft")
+        ? summary.linkedMaterialIdsByKind.draft
+        : [],
+      other: materialKinds.has("other")
+        ? summary.linkedMaterialIdsByKind.other
+        : []
+    },
+    linkedSkillIdsByKind: {
+      general: skillKinds.has("general")
+        ? summary.linkedSkillIdsByKind.general
+        : [],
+      plot: skillKinds.has("plot")
+        ? summary.linkedSkillIdsByKind.plot
+        : [],
+      style: skillKinds.has("style")
+        ? summary.linkedSkillIdsByKind.style
+        : [],
+      other: skillKinds.has("other")
+        ? summary.linkedSkillIdsByKind.other
+        : []
+    }
+  });
+}
+
+function filterLongReadableAttachmentsForProfile(
+  attachments: LibraryAttachmentBuildResult,
+  profile: LongAgentProfile
+): Pick<
+  LibraryAttachmentBuildResult,
+  "attachedSkills" | "attachedMaterials"
+> {
+  const skillKinds = new Set(profile.readAccess.skillKinds);
+  const materialKinds = new Set(profile.readAccess.materialKinds);
+  return {
+    attachedSkills: attachments.attachedSkills.filter(
+      (skill) => skill.kind !== undefined && skillKinds.has(skill.kind)
+    ),
+    attachedMaterials: attachments.attachedMaterials.filter(
+      (material) =>
+        material.kind !== undefined && materialKinds.has(material.kind)
+    )
+  };
+}
+
+function buildLongReadableAttachmentsForProfile(
+  summary: LongBookSummary,
+  snapshot: CatalogSnapshot | null,
+  profile: LongAgentProfile
+): Pick<
+  LibraryAttachmentBuildResult,
+  "attachedSkills" | "attachedMaterials"
+> {
+  if (!snapshot) {
+    return {
+      attachedSkills: [],
+      attachedMaterials: []
+    };
+  }
+  return filterLongReadableAttachmentsForProfile(
+    buildLongLibraryAttachmentsForProfile(summary, snapshot, profile),
+    profile
+  );
+}
+
+const activeLongLibraryAttachments = computed(() => {
+  const summary = activeLongBookSummary.value;
+  const snapshot = catalogSnapshot.value;
+  const profile = activeLongAgentProfile.value;
+  return summary && snapshot && profile
+    ? buildLongLibraryAttachmentsForProfile(summary, snapshot, profile)
+    : null;
+});
+const activeLongReadableAttachments = computed(() => {
+  const attachments = activeLongLibraryAttachments.value;
+  const profile = activeLongAgentProfile.value;
+  if (!attachments || !profile) {
+    return {
+      attachedSkills: [],
+      attachedMaterials: []
+    };
+  }
+  return filterLongReadableAttachmentsForProfile(attachments, profile);
+});
+const availableLongSkillReferences = computed<ComposerReferenceOption[]>(() =>
+  activeLongReadableAttachments.value.attachedSkills.map((skill) => ({
+    id: skill.id,
+    label: skill.title,
+    detail: `${skill.kind ? SKILL_KIND_LABELS[skill.kind] : "技能"} · 当前长篇已绑定`
+  }))
+);
+const availableLongMaterialReferences = computed<ComposerReferenceOption[]>(() =>
+  activeLongReadableAttachments.value.attachedMaterials.map((material) => ({
+    id: material.id,
+    label: material.title,
+    detail: `${material.kind ? MATERIAL_KIND_LABELS[material.kind] : "素材"} · 当前长篇已绑定`
+  }))
+);
+const activeLongRuntimeContext =
+  computed<LongWorkspaceRuntimeContext | null>(() => {
+    const summary = activeLongBookSummary.value;
+    const workspaceIndex = activeLongWorkspaceIndex.value;
+    const profile = activeLongAgentProfile.value;
+    if (
+      !summary ||
+      !workspaceIndex ||
+      !profile ||
+      !activeLongWorkspaceContextReady.value
+    ) {
+      return null;
+    }
+    const fileContext =
+      activeLongFileContext.value?.bookId === summary.id &&
+      activeLongSelection.value?.files.some(
+        ({ file }) => file.id === activeLongFileContext.value?.fileId
+      )
+        ? activeLongFileContext.value
+        : null;
+    return {
+      bookId: summary.id,
+      title: summary.title,
+      activeRoot: activeLongRoot.value,
+      activeAgentId: profile.id,
+      ...(fileContext
+        ? {
+            activeFileId: fileContext.fileId,
+            activeFileRevision: fileContext.fileRevision
+          }
+        : {}),
+      ...(activeLongSelection.value?.chapterCardId
+        ? {
+            activeChapterCardId:
+              activeLongSelection.value.chapterCardId
+          }
+        : {}),
+      workspaceRevision: workspaceIndex.revision,
+      projectRevision: summary.projectRevision,
+      navigation: summary.navigation
+    };
+  });
+const latestLongLedgerCommit = computed(() => {
+  const commits = activeLongWorkspaceIndex.value?.ledger.commits ?? [];
+  return [...commits].sort(
+    (left, right) => right.sequence - left.sequence
+  )[0];
+});
+const longRollbackCommit = computed(() =>
+  activeLongWorkspaceIndex.value?.ledger.commits.find(
+    ({ id }) => id === longRollbackCommitId.value
+  )
+);
+const longRollbackChapterTitle = computed(() => {
+  const chapterId = longRollbackCommit.value?.chapterCardId;
+  return (
+    activeLongBookSummary.value?.navigation.chapterCards.find(
+      ({ id }) => id === chapterId
+    )?.title ?? "对应章节"
+  );
+});
+const activeLongProposalItems = computed(() =>
+  longWorkspaceProposals.itemsForBook(activeLongBookId.value)
+);
+const isLongWorkspaceActive = computed(
+  () =>
+    workspaceMainView.value === "conversation" &&
+    activeLongBookId.value !== null
 );
 
 function resourceSelectionExists(
   sections: readonly ResourceTreeSection[],
   resourceId: string
 ): boolean {
+  const node = findResourceNodeIn(sections, resourceId);
+  if (node?.longBookId) {
+    return longBooks.value.some((book) => book.id === node.longBookId);
+  }
   const targetId = resourceTargetDocumentId(sections, resourceId);
   return documents.value.some((document) => document.id === targetId);
 }
@@ -785,7 +1236,17 @@ function applyCatalogSnapshot(snapshot: CatalogSnapshot): void {
     projection.resourceSections,
     selectedResourceId.value
   );
-  if (!documents.value.some((document) => document.id === selectedTargetId)) {
+  const selectedLongBookId = longBookIdFromResourceId(
+    selectedResourceId.value
+  );
+  const selectedLongBookExists = Boolean(
+    selectedLongBookId &&
+      longBooks.value.some((book) => book.id === selectedLongBookId)
+  );
+  if (
+    !selectedLongBookExists &&
+    !documents.value.some((document) => document.id === selectedTargetId)
+  ) {
     selectedResourceId.value =
       (selectedWorkspaceAnchor
         ? resolvePreferredBookResourceId(projection, selectedWorkspaceAnchor)
@@ -831,6 +1292,408 @@ async function loadCatalogSnapshot(): Promise<void> {
     uiMessage.error(error instanceof Error ? error.message : "加载素材库和技能库失败。");
   } finally {
     catalogLoading.value = false;
+  }
+}
+
+async function loadLongBookList(
+  options: { notify?: boolean; force?: boolean } = {}
+): Promise<void> {
+  const api = resolveLongWorkspaceApi();
+  if (!api) return;
+  const notify = options.notify ?? isLongWorkspaceActive.value;
+  const force = options.force ?? false;
+  if (notify && longCatalogRetryTimer !== undefined) {
+    window.clearTimeout(longCatalogRetryTimer);
+    longCatalogRetryTimer = undefined;
+  }
+  if (force) {
+    // A mutation may finish while an older list request is still in flight.
+    // Invalidate that response before waiting so it can never resurrect a
+    // removed book or overwrite a newly opened summary.
+    longCatalogRequestClock += 1;
+  }
+  if (longCatalogLoadPromise) {
+    await longCatalogLoadPromise;
+    if (!force) return;
+    while (longCatalogLoadPromise) {
+      await longCatalogLoadPromise;
+    }
+  }
+
+  const requestId = ++longCatalogRequestClock;
+  longCatalogLoading.value = true;
+  const request = (async (): Promise<void> => {
+    try {
+      const result = await api.list();
+      if (requestId !== longCatalogRequestClock) return;
+      longCatalogLoadError.value = null;
+      longCatalogRetryAttempts = 0;
+      if (longCatalogRetryTimer !== undefined) {
+        window.clearTimeout(longCatalogRetryTimer);
+        longCatalogRetryTimer = undefined;
+      }
+      longCatalogDiagnostics.value = result.diagnostics ?? [];
+      const unavailableBookIds = new Set(
+        longCatalogDiagnostics.value.map(({ bookId }) => bookId)
+      );
+      const activeSummary = activeLongBookSummary.value;
+      longBooks.value =
+        activeSummary &&
+        activeLongWorkspaceIndex.value &&
+        !unavailableBookIds.has(activeSummary.id)
+          ? replaceLongBookSummary(result.books, activeSummary)
+          : result.books;
+      const currentDiagnosticKeys = new Set(
+        (result.diagnostics ?? []).map(
+          (diagnostic) =>
+            `${diagnostic.bookId}\u0000${diagnostic.code}\u0000${diagnostic.message}`
+        )
+      );
+      for (const key of seenLongCatalogDiagnosticKeys) {
+        if (!currentDiagnosticKeys.has(key)) {
+          seenLongCatalogDiagnosticKeys.delete(key);
+        }
+      }
+      const unseen = (result.diagnostics ?? []).filter((diagnostic) => {
+        const key = `${diagnostic.bookId}\u0000${diagnostic.code}\u0000${diagnostic.message}`;
+        return !seenLongCatalogDiagnosticKeys.has(key);
+      });
+      if (notify && unseen.length) {
+        for (const diagnostic of unseen) {
+          seenLongCatalogDiagnosticKeys.add(
+            `${diagnostic.bookId}\u0000${diagnostic.code}\u0000${diagnostic.message}`
+          );
+        }
+        const first = unseen[0]!;
+        uiMessage.warning(
+          `长篇项目暂时无法读取：${first.message}${
+            unseen.length > 1 ? `（另有 ${unseen.length - 1} 个项目）` : ""
+          }`
+        );
+      }
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "加载长篇创作空间失败。";
+      if (requestId !== longCatalogRequestClock) return;
+      longCatalogLoadError.value = message;
+      if (notify) {
+        uiMessage.error(message);
+      } else if (
+        longCatalogRetryAttempts < 2 &&
+        longCatalogRetryTimer === undefined
+      ) {
+        longCatalogRetryAttempts += 1;
+        longCatalogRetryTimer = window.setTimeout(() => {
+          longCatalogRetryTimer = undefined;
+          void loadLongBookList({ notify: false });
+        }, longCatalogRetryAttempts * 1_500);
+      }
+    }
+  })();
+  longCatalogLoadPromise = request;
+  try {
+    await request;
+  } finally {
+    if (longCatalogLoadPromise === request) {
+      longCatalogLoadPromise = null;
+      longCatalogLoading.value = false;
+    }
+  }
+}
+
+async function saveActiveLongEditorChanges(): Promise<boolean> {
+  if (!activeLongBookId.value) return true;
+  const editor = longWorkspaceEditor.value;
+  if (!editor) return true;
+  try {
+    return await editor.saveAllChanges();
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error
+        ? error.message
+        : "保存长篇修改失败，已取消切换。"
+    );
+    return false;
+  }
+}
+
+async function saveActiveLongEditorBeforeLeaving(
+  nextBookId?: string
+): Promise<boolean> {
+  const currentBookId = activeLongBookId.value;
+  if (!currentBookId || currentBookId === nextBookId) {
+    return true;
+  }
+  return saveActiveLongEditorChanges();
+}
+
+async function openLongBook(bookId: string): Promise<void> {
+  const api = resolveLongWorkspaceApi();
+  if (!api) {
+    uiMessage.warning("浏览器预览不能打开长篇项目，请使用桌面客户端。");
+    return;
+  }
+  if (
+    blockActiveLongWritingPlan("打开其他长篇", {
+      targetBookId: bookId,
+      allowPlanBook: true
+    })
+  ) {
+    return;
+  }
+  if (!(await saveActiveLongEditorBeforeLeaving(bookId))) {
+    return;
+  }
+  longWorkspaceProposals.activateBook(bookId);
+  longWorkspaceRefreshClock.invalidate(bookId);
+  longWorkspaceRefreshStatus.value = null;
+  const ownOpen = ++longOpenClock;
+  activeLongBookId.value = bookId;
+  activeLongWorkspaceIndex.value = null;
+  activeLongSelection.value = null;
+  activeLongFileContext.value = null;
+  longRollbackDialogOpen.value = false;
+  longStructureDialogOpen.value = false;
+  longBindingsDialogOpen.value = false;
+  longWorkspaceLoading.value = true;
+  try {
+    const opened = await api.open({ bookId });
+    if (ownOpen !== longOpenClock || activeLongBookId.value !== bookId) {
+      return;
+    }
+    activeLongWorkspaceIndex.value = opened.book.workspaceIndex;
+    longBooks.value = replaceLongBookSummary(longBooks.value, opened.summary);
+    longWorkspaceRefreshStatus.value = null;
+  } catch (error: unknown) {
+    if (ownOpen === longOpenClock) {
+      uiMessage.error(
+        error instanceof Error ? error.message : "打开长篇项目失败。"
+      );
+    }
+  } finally {
+    if (ownOpen === longOpenClock) {
+      longWorkspaceLoading.value = false;
+    }
+  }
+}
+
+async function refreshActiveLongWorkspace(bookId: string): Promise<boolean> {
+  const api = resolveLongWorkspaceApi();
+  if (!api) return false;
+  const requestId = longWorkspaceRefreshClock.begin(bookId);
+  if (activeLongBookId.value === bookId) {
+    longWorkspaceRefreshStatus.value = {
+      bookId,
+      requestId,
+      pending: true,
+      error: null
+    };
+  }
+  try {
+    const result = await api.getWorkspaceIndex({ bookId });
+    if (
+      activeLongBookId.value !== bookId ||
+      !longWorkspaceRefreshClock.isCurrent(bookId, requestId)
+    ) {
+      return false;
+    }
+    if (result.bookId !== bookId) {
+      throw new Error("长篇工作区刷新返回了其他书籍。");
+    }
+    const currentSummary = activeLongBookSummary.value;
+    if (!currentSummary || currentSummary.id !== bookId) {
+      throw new Error("活动长篇摘要已经切换，无法发布刷新结果。");
+    }
+    const currentIndex = activeLongWorkspaceIndex.value;
+    if (
+      !isMonotonicLongWorkspaceRefresh(
+        currentIndex
+          ? {
+              workspaceRevision: currentIndex.revision,
+              projectRevision: currentSummary.projectRevision
+            }
+          : null,
+        {
+          workspaceRevision: result.workspaceIndex.revision,
+          projectRevision: result.projectRevision
+        }
+      )
+    ) {
+      longWorkspaceRefreshStatus.value = null;
+      return true;
+    }
+    const nextSummary: LongBookSummary = {
+      ...currentSummary,
+      projectRevision: result.projectRevision,
+      updatedAt: result.workspaceIndex.updatedAt,
+      navigation: createLongWorkspaceNavigationSnapshot(
+        result.workspaceIndex
+      )
+    };
+    const currentSelection = activeLongSelection.value;
+    const nextSelection = currentSelection
+      ? reconcileLongWorkspaceSelection(
+          nextSummary,
+          result.workspaceIndex,
+          currentSelection
+        ) ?? null
+      : null;
+    const activeFileId = activeLongFileContext.value?.fileId;
+    const nextFile = nextSelection?.files.find(
+      ({ file }) => file.id === activeFileId
+    )?.file;
+
+    // Publish the index and its derived summary in the same synchronous turn.
+    // No await may be inserted between these assignments.
+    activeLongWorkspaceIndex.value = result.workspaceIndex;
+    longBooks.value = replaceLongBookSummary(longBooks.value, nextSummary);
+    if (currentSelection) {
+      activeLongSelection.value = nextSelection;
+      activeLongFileContext.value = nextFile
+        ? {
+            bookId,
+            fileId: nextFile.id,
+            fileRevision: nextFile.revision
+          }
+        : null;
+    }
+    longWorkspaceRefreshStatus.value = null;
+    return true;
+  } catch (error: unknown) {
+    if (
+      activeLongBookId.value === bookId &&
+      longWorkspaceRefreshClock.isCurrent(bookId, requestId)
+    ) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "刷新长篇工作区索引失败。";
+      longWorkspaceRefreshStatus.value = {
+        bookId,
+        requestId,
+        pending: false,
+        error: message
+      };
+      uiMessage.error(message);
+    }
+    return false;
+  }
+}
+
+async function selectLongWorkspaceFile(
+  selection: LongWorkspaceSelection
+): Promise<boolean> {
+  if (
+    activeLongSelection.value?.key !== selection.key &&
+    !(await saveActiveLongEditorChanges())
+  ) {
+    return false;
+  }
+  activeLongFileContext.value = null;
+  activeLongSelection.value = selection;
+  return true;
+}
+
+function handleLongFileContextChange(
+  context: {
+    bookId: string;
+    fileId: LongFileId;
+    fileRevision: LongFileRevision;
+  } | null
+): void {
+  if (context && context.bookId !== activeLongBookId.value) return;
+  activeLongFileContext.value = context;
+}
+
+function handleLongDocumentSaved(result: LongWriteDocumentResult): void {
+  void refreshActiveLongWorkspace(result.bookId);
+}
+
+function openLongRollbackDialog(): void {
+  if (blockActiveLongWritingPlan("回滚连续性提交")) {
+    return;
+  }
+  const commit = latestLongLedgerCommit.value;
+  if (!commit?.reversible) {
+    uiMessage.warning("当前没有可回滚的最后提交。");
+    return;
+  }
+  longRollbackCommitId.value = commit.id;
+  longRollbackDialogOpen.value = true;
+}
+
+function closeLongRollbackDialog(): void {
+  if (longRollbackPending.value) return;
+  longRollbackDialogOpen.value = false;
+  longRollbackCommitId.value = null;
+}
+
+async function confirmLongRollback(): Promise<void> {
+  const api = resolveLongWorkspaceApi();
+  const bookId = activeLongBookId.value;
+  if (!api || !bookId || longRollbackPending.value) {
+    if (!api) uiMessage.warning("当前环境未连接长篇工作区。");
+    return;
+  }
+  if (blockActiveLongWritingPlan("回滚连续性提交")) {
+    longRollbackDialogOpen.value = false;
+    longRollbackCommitId.value = null;
+    return;
+  }
+
+  longRollbackPending.value = true;
+  try {
+    // A user may request rollback while editing the next, still-uncommitted
+    // chapter. Persist that work first, then refresh the CAS revisions that
+    // the save advanced before touching the continuity ledger.
+    if (!(await saveActiveLongEditorChanges())) {
+      return;
+    }
+    if (!(await refreshActiveLongWorkspace(bookId))) {
+      return;
+    }
+    const summary = activeLongBookSummary.value;
+    const index = activeLongWorkspaceIndex.value;
+    const commit = longRollbackCommit.value;
+    if (
+      !summary ||
+      summary.id !== bookId ||
+      !index ||
+      !commit ||
+      commit.id !== latestLongLedgerCommit.value?.id ||
+      !commit.reversible
+    ) {
+      longRollbackDialogOpen.value = false;
+      longRollbackCommitId.value = null;
+      uiMessage.warning("最后提交已经变化，请刷新后重新确认回滚。");
+      return;
+    }
+    await api.rollbackLastCommit({
+      bookId: summary.id,
+      expectedCommitId: commit.id,
+      baseWorkspaceRevision: index.revision,
+      baseProjectRevision: summary.projectRevision
+    });
+    if (activeLongSelection.value?.key === `ledger:${commit.id}`) {
+      activeLongSelection.value = null;
+      activeLongFileContext.value = null;
+    }
+    longRollbackDialogOpen.value = false;
+    longRollbackCommitId.value = null;
+    if (await refreshActiveLongWorkspace(summary.id)) {
+      longWorkspaceEditor.value?.synchronizeProjectRevisions(
+        activeLongWorkspaceIndex.value!.revision,
+        activeLongBookSummary.value!.projectRevision
+      );
+    }
+    await loadLongBookList({ force: true });
+    uiMessage.success(`已回滚提交 #${commit.sequence}。`);
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error ? error.message : "回滚最后提交失败。"
+    );
+  } finally {
+    longRollbackPending.value = false;
   }
 }
 
@@ -932,6 +1795,511 @@ function conversationForKey(
 
 function allConversations(): AgentConversationController[] {
   return [...conversations.values()];
+}
+
+function longConversationKey(
+  bookId: string,
+  agentId: string,
+  activeRoot: LongWorkspaceRuntimeContext["activeRoot"],
+  chapterCardId?: string
+): string {
+  return `long:${encodeURIComponent(bookId)}:${agentId}:${activeRoot}:${encodeURIComponent(
+    chapterCardId ?? "__book__"
+  )}`;
+}
+
+function acceptsLongProposalEvent(
+  event: LongWorkspaceProposalEvent
+): boolean {
+  const prefix = `long:${encodeURIComponent(event.payload.bookId)}:`;
+  for (const [key, conversation] of conversations) {
+    if (
+      key.startsWith(prefix) &&
+      conversation.acceptsRunEvent(
+        event.payload.sessionId,
+        event.payload.runId
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function observeLongWritingAgentEvent(
+  event: SystemEventEnvelope
+): void {
+  const expectation = longWritingAgentRunExpectation;
+  if (!expectation) return;
+  if (
+    event.type !== "long.chapter_write_proposal" &&
+    event.type !== "long.ledger_commit_proposal" &&
+    event.type !== "agent.message_completed" &&
+    event.type !== "agent.error"
+  ) {
+    return;
+  }
+  if (event.payload.sessionId !== expectation.sessionId) return;
+  if (
+    expectation.runId &&
+    expectation.runId !== event.payload.runId
+  ) {
+    return;
+  }
+  expectation.runId ??= event.payload.runId;
+  if (
+    (event.type === "long.chapter_write_proposal" &&
+      expectation.agentId === "expert_section_writer" &&
+      event.payload.input.chapterCardId ===
+        expectation.chapterCardId) ||
+    (event.type === "long.ledger_commit_proposal" &&
+      expectation.agentId === "continuity_ledger" &&
+      event.payload.input.chapterCardId ===
+        expectation.chapterCardId)
+  ) {
+    expectation.proposalSeen = true;
+    return;
+  }
+  if (
+    event.type !== "agent.message_completed" &&
+    event.type !== "agent.error"
+  ) {
+    return;
+  }
+  expectation.terminalError =
+    event.type === "agent.error"
+      ? event.payload.message
+      : "智能体运行已结束，但没有形成当前章的待审批提案";
+  if (
+    !expectation.proposalSeen &&
+    (longWritingOrchestrator.state.value.phase ===
+      "awaiting_writer_approval" ||
+      longWritingOrchestrator.state.value.phase ===
+        "awaiting_ledger_approval")
+  ) {
+    longWritingOrchestrator.handleRunFailure(
+      expectation.agentId,
+      expectation.terminalError
+    );
+  }
+}
+
+async function refreshLongWritingSaveBarrier(
+  bookId: string
+): Promise<boolean> {
+  const refreshed = await refreshActiveLongWorkspace(bookId);
+  if (
+    refreshed &&
+    activeLongBookId.value === bookId &&
+    activeLongWorkspaceIndex.value &&
+    activeLongBookSummary.value?.id === bookId
+  ) {
+    longWorkspaceEditor.value?.synchronizeProjectRevisions(
+      activeLongWorkspaceIndex.value.revision,
+      activeLongBookSummary.value.projectRevision
+    );
+  }
+  await loadLongBookList({ force: true });
+  return refreshed;
+}
+
+async function handleLongProposalApplied(
+  event: Exclude<
+    LongWorkspaceProposalEvent,
+    { type: "long.chapter_dispatch_proposal" }
+  >
+): Promise<void> {
+  if (await longWritingOrchestrator.handleApplied(event)) {
+    return;
+  }
+  await refreshLongWritingSaveBarrier(event.payload.bookId);
+}
+
+async function readLongDocumentPresence(
+  bookId: string,
+  fileId: LongFileId
+): Promise<{
+  hasContent: boolean;
+  workspaceRevision: number;
+  projectRevision: number;
+}> {
+  const api = resolveLongWorkspaceApi();
+  if (!api) {
+    throw new Error("当前环境未连接长篇工作区。");
+  }
+  let offset = 0;
+  let workspaceRevision: number | undefined;
+  let projectRevision: number | undefined;
+  while (true) {
+    const page = await api.readDocument({
+      bookId,
+      fileId,
+      offset,
+      maxCharacters: 262_144
+    });
+    if (
+      page.bookId !== bookId ||
+      page.file.id !== fileId ||
+      page.offset !== offset ||
+      (workspaceRevision !== undefined &&
+        page.workspaceRevision !== workspaceRevision) ||
+      (projectRevision !== undefined &&
+        page.projectRevision !== projectRevision)
+    ) {
+      throw new Error("章节三件套读取结果与当前章不一致。");
+    }
+    workspaceRevision ??= page.workspaceRevision;
+    projectRevision ??= page.projectRevision;
+    if (page.content.trim()) {
+      return {
+        hasContent: true,
+        workspaceRevision,
+        projectRevision
+      };
+    }
+    if (page.nextOffset === null) {
+      return {
+        hasContent: false,
+        workspaceRevision,
+        projectRevision
+      };
+    }
+    if (page.nextOffset <= offset) {
+      throw new Error("章节三件套分页游标无效。");
+    }
+    offset = page.nextOffset;
+  }
+}
+
+async function resolveLiveLongChapterReadiness(
+  bookId: string,
+  chapterCardId: string
+): Promise<LongChapterReadiness> {
+  if (!(await saveActiveLongEditorChanges())) {
+    throw new Error(
+      "当前长篇修改尚未保存，无法重新检查章节三件套。"
+    );
+  }
+  if (!(await refreshActiveLongWorkspace(bookId))) {
+    throw new Error(
+      "当前长篇工作区尚未完成刷新，无法重新检查章节三件套。"
+    );
+  }
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (!summary || !index || summary.id !== bookId) {
+    throw new Error("串行写作计划对应的长篇工作区尚未载入。");
+  }
+  const chapter = index.plot.chapterCards.find(
+    ({ id }) => id === chapterCardId
+  );
+  const files = index.chapters.find(
+    (entry) => entry.chapterCardId === chapterCardId
+  );
+  if (!chapter || !files) {
+    throw new Error("串行写作计划中的章卡或三件套已经不存在。");
+  }
+  if (files.commitId !== null) {
+    throw new Error(`“${chapter.title}”已经提交，不能重复执行写作计划。`);
+  }
+  const body = await readLongDocumentPresence(bookId, files.body.id);
+  const characterState = await readLongDocumentPresence(
+    bookId,
+    files.characterState.id
+  );
+  const handoff = await readLongDocumentPresence(
+    bookId,
+    files.handoff.id
+  );
+  if (
+    body.workspaceRevision !== characterState.workspaceRevision ||
+    body.workspaceRevision !== handoff.workspaceRevision ||
+    body.projectRevision !== characterState.projectRevision ||
+    body.projectRevision !== handoff.projectRevision
+  ) {
+    throw new Error(
+      "章节三件套在检查期间发生变化，请重试当前章；计划不会跳章。"
+    );
+  }
+  const missingFiles: LongChapterReadiness["missingFiles"] = [];
+  if (!body.hasContent) missingFiles.push("body");
+  if (!characterState.hasContent) missingFiles.push("character_state");
+  if (!handoff.hasContent) missingFiles.push("handoff");
+  return {
+    chapterCardId,
+    title: chapter.title,
+    status:
+      missingFiles.length === 3
+        ? "empty"
+        : missingFiles.length === 0
+          ? "ready_to_commit"
+          : "partial",
+    missingFiles
+  };
+}
+
+function longWorkflowRuntimeContext(
+  summary: LongBookSummary,
+  index: LongWorkspaceIndexSnapshot,
+  profile: LongAgentProfile,
+  activeRoot: LongWorkspaceRuntimeContext["activeRoot"],
+  chapterCardId: string
+): LongWorkspaceRuntimeContext {
+  return {
+    bookId: summary.id,
+    title: summary.title,
+    activeRoot,
+    activeAgentId: profile.id,
+    activeChapterCardId: chapterCardId,
+    workspaceRevision: index.revision,
+    projectRevision: summary.projectRevision,
+    navigation: summary.navigation
+  };
+}
+
+async function startFreshLongAgentRun(input: {
+  bookId: string;
+  chapterCardId: string;
+  agentId: "expert_section_writer" | "continuity_ledger";
+  activeRoot: "draft" | "continuity_ledger";
+  prompt: string;
+}, guard: LongWritingRunGuard): Promise<void> {
+  if (!guard.isCurrent()) return;
+  if (!(await ensureLongAgentSettingsLoaded())) {
+    if (!guard.isCurrent()) return;
+    throw new Error(
+      longAgentLoadError.value ??
+        "长篇智能体设置尚未加载，无法启动串行写作。"
+    );
+  }
+  if (!guard.isCurrent()) return;
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (!summary || !index || summary.id !== input.bookId) {
+    throw new Error("启动章节智能体前，长篇工作区已经切换。");
+  }
+  const profile =
+    longAgentSettings.value.agents.find(
+      ({ id }) => id === input.agentId
+    ) ?? getDefaultLongAgentProfile(input.agentId);
+  const conversation = conversationForKey(
+    longConversationKey(
+      summary.id,
+      input.agentId,
+      input.activeRoot,
+      input.chapterCardId
+    ),
+    `long:${summary.id}`
+  );
+  if (conversation.isBusy.value) {
+    throw new Error(
+      `${profile.label}的上一轮仍在收尾，请稍后重试当前章；计划不会跳章。`
+    );
+  }
+  if (!guard.isCurrent()) return;
+  conversation.newConversation();
+  const sessionId = conversation.sessionId.value;
+  const runExpectation: LongWritingAgentRunExpectation = {
+    bookId: input.bookId,
+    chapterCardId: input.chapterCardId,
+    agentId: input.agentId,
+    sessionId,
+    proposalSeen: false
+  };
+  longWritingAgentRunExpectation = runExpectation;
+  conversation.selectApprovalMode("request-approval");
+  conversation.draft.value = input.prompt;
+  if (!guard.isCurrent()) {
+    if (longWritingAgentRunExpectation === runExpectation) {
+      longWritingAgentRunExpectation = null;
+    }
+    return;
+  }
+  await conversation.sendLongMessage(
+    longWorkflowRuntimeContext(
+      summary,
+      index,
+      profile,
+      input.activeRoot,
+      input.chapterCardId
+    ),
+    buildLongReadableAttachmentsForProfile(
+      summary,
+      catalogSnapshot.value,
+      profile
+    )
+  );
+  if (!guard.isCurrent()) return;
+  if (conversation.conversationError.value) {
+    throw new Error(conversation.conversationError.value);
+  }
+  if (
+    longWritingAgentRunExpectation === runExpectation &&
+    runExpectation.terminalError &&
+    !runExpectation.proposalSeen
+  ) {
+    throw new Error(runExpectation.terminalError);
+  }
+}
+
+async function startFreshLongChapterWriter(
+  bookId: string,
+  readiness: LongChapterReadiness,
+  guard: LongWritingRunGuard
+): Promise<void> {
+  if (!guard.isCurrent()) return;
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (!summary || !index || summary.id !== bookId) {
+    throw new Error("当前长篇工作区已经切换。");
+  }
+  const selection = createLongChapterSelection(
+    summary,
+    index,
+    readiness.chapterCardId
+  );
+  if (!selection) {
+    throw new Error("当前长篇修改尚未保存，单章写作未启动。");
+  }
+  const selected = await selectLongWorkspaceFile(selection);
+  if (!guard.isCurrent()) return;
+  if (!selected) {
+    throw new Error("当前长篇修改尚未保存，单章写作未启动。");
+  }
+  const missingLabels = readiness.missingFiles.map((role) =>
+    role === "body"
+      ? "正文"
+      : role === "character_state"
+        ? "人物状态"
+        : "Handoff"
+  );
+  await startFreshLongAgentRun(
+    {
+      bookId,
+      chapterCardId: readiness.chapterCardId,
+      agentId: "expert_section_writer",
+      activeRoot: "draft",
+      prompt:
+        `执行串行写作计划中的《${readiness.title}》。` +
+        `当前三件套状态为 ${readiness.status}，缺失：${missingLabels.join("、") || "无"}。` +
+        "请先读取章卡、上一章 Handoff 及本章三份现有文件；补齐缺失内容，已有非空文件原则上保持原文，除非为三件套自洽必须同步调整。" +
+        "完成后必须调用 propose_long_chapter_write，一次提交正文、人物状态、Handoff 三份完整内容。不要直接写磁盘，也不要替用户批准提案。"
+    },
+    guard
+  );
+}
+
+async function startFreshLongContinuityLedger(
+  bookId: string,
+  readiness: LongChapterReadiness,
+  guard: LongWritingRunGuard
+): Promise<void> {
+  if (!guard.isCurrent()) return;
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (!summary || !index || summary.id !== bookId) {
+    throw new Error("当前长篇工作区已经切换。");
+  }
+  const selection = createLongContinuitySelection(
+    summary,
+    index,
+    readiness.chapterCardId
+  );
+  if (!selection) {
+    throw new Error("当前长篇修改尚未保存，连续性核对未启动。");
+  }
+  const selected = await selectLongWorkspaceFile(selection);
+  if (!guard.isCurrent()) return;
+  if (!selected) {
+    throw new Error("当前长篇修改尚未保存，连续性核对未启动。");
+  }
+  await startFreshLongAgentRun(
+    {
+      bookId,
+      chapterCardId: readiness.chapterCardId,
+      agentId: "continuity_ledger",
+      activeRoot: "continuity_ledger",
+      prompt:
+        `核对串行写作计划中的《${readiness.title}》。章节三件套已完整保存。` +
+        "请读取正文、人物状态、Handoff、相关人物与情节结构，形成仅针对本章的连续性提交提案。" +
+        "必须调用 propose_long_ledger_commit；不要直接写磁盘，不要替用户批准提案。"
+    },
+    guard
+  );
+}
+
+async function handleLongChapterDispatchApproved(
+  event: Extract<
+    LongWorkspaceProposalEvent,
+    { type: "long.chapter_dispatch_proposal" }
+  >
+): Promise<void> {
+  const summary = activeLongBookSummary.value;
+  const workspaceIndex = activeLongWorkspaceIndex.value;
+  if (
+    !summary ||
+    !workspaceIndex ||
+    summary.id !== event.payload.bookId
+  ) {
+    throw new Error("该单章调度提案不属于当前活动长篇。");
+  }
+  if (
+    workspaceIndex.revision !== event.payload.workspaceRevision ||
+    summary.projectRevision !== event.payload.projectRevision
+  ) {
+    throw new Error(
+      "长篇结构已在提案后更新，请让正文统筹智能体重新选择连续下一章。"
+    );
+  }
+  if (
+    nextWritableLongChapterId(workspaceIndex) !==
+    event.payload.chapterCardId
+  ) {
+    throw new Error("串行写作计划不再从连续下一章开始，请重新生成提案。");
+  }
+  const volumeOrder = new Map(
+    workspaceIndex.plot.volumes.map(({ id, order }) => [id, order])
+  );
+  const remaining = [...workspaceIndex.plot.chapterCards]
+    .sort(
+      (left, right) =>
+        (volumeOrder.get(left.volumeId) ?? Number.MAX_SAFE_INTEGER) -
+          (volumeOrder.get(right.volumeId) ??
+            Number.MAX_SAFE_INTEGER) ||
+        left.narrativeOrder - right.narrativeOrder ||
+        left.id.localeCompare(right.id)
+    )
+    .slice(workspaceIndex.ledger.commits.length);
+  const first = remaining[0]!;
+  const expected: typeof remaining = [];
+  if (
+    event.payload.scope === "arc" &&
+    first.primaryArcId === null
+  ) {
+    throw new Error("连续下一章没有主剧情弧，不能启动剧情弧写作。");
+  }
+  for (const chapter of remaining) {
+    if (
+      expected.length > 0 &&
+      (event.payload.scope === "chapter" ||
+        chapter.volumeId !== first.volumeId ||
+        (event.payload.scope === "arc" &&
+          chapter.primaryArcId !== first.primaryArcId))
+    ) {
+      break;
+    }
+    expected.push(chapter);
+  }
+  if (
+    expected.length !== event.payload.chapters.length ||
+    expected.some(
+      ({ id }, index) =>
+        event.payload.chapters[index]?.chapterCardId !== id
+    )
+  ) {
+    throw new Error("串行写作章序与当前卷/剧情弧不一致，请重新生成提案。");
+  }
+  await longWritingOrchestrator.startDispatch(event);
 }
 
 function applyModelSettingsToConversations(settings: ModelSettings): void {
@@ -1168,6 +2536,84 @@ const canSendAttachments = computed(
   () => activeConversation.value.canSendAttachments.value
 );
 const canStop = computed(() => activeConversation.value.canStop.value);
+const activeLongConversation = computed<AgentConversationController | null>(
+  () => {
+    const summary = activeLongBookSummary.value;
+    const profile = activeLongAgentProfile.value;
+    if (!summary || !profile) return null;
+    return conversationForKey(
+      longConversationKey(
+        summary.id,
+        profile.id,
+        activeLongRoot.value,
+        activeLongSelection.value?.chapterCardId
+      ),
+      `long:${summary.id}`
+    );
+  }
+);
+const longMessages = computed(
+  () => activeLongConversation.value?.messages.value ?? []
+);
+const longConversationHistory = computed(
+  () => activeLongConversation.value?.history.value ?? []
+);
+const longCurrentSessionId = computed(
+  () => activeLongConversation.value?.sessionId.value ?? ""
+);
+const longComposerDraft = computed({
+  get: () => activeLongConversation.value?.draft.value ?? "",
+  set: (value: string) => {
+    const conversation = activeLongConversation.value;
+    if (conversation) conversation.draft.value = value;
+  }
+});
+const longThinkingLevel = computed(
+  () => activeLongConversation.value?.thinkingLevel.value ?? "medium"
+);
+const longTemperature = computed(
+  () => activeLongConversation.value?.temperature.value ?? 0.7
+);
+const longConfiguredModels = computed(
+  () => activeLongConversation.value?.configuredModels.value ?? []
+);
+const longSelectedModelId = computed(
+  () => activeLongConversation.value?.selectedModelId.value ?? ""
+);
+const longConversationError = computed(
+  () => activeLongConversation.value?.conversationError.value ?? null
+);
+watch(
+  [
+    () => activeLongAgentProfile.value?.id,
+    () => longConversationError.value
+  ],
+  ([agentId, error]) => {
+    if (
+      error &&
+      (agentId === "expert_section_writer" ||
+        agentId === "continuity_ledger")
+    ) {
+      longWritingOrchestrator.handleRunFailure(agentId, error);
+    }
+  }
+);
+const longResponding = computed(
+  () => activeLongConversation.value?.isBusy.value ?? false
+);
+const longCanSend = computed(
+  () =>
+    !longSendPreflightPending.value &&
+    activeLongWorkspaceContextReady.value &&
+    (activeLongConversation.value?.canSend.value ?? false)
+);
+const longCanSendAttachments = computed(
+  () =>
+    activeLongConversation.value?.canSendAttachments.value ?? false
+);
+const longCanStop = computed(
+  () => activeLongConversation.value?.canStop.value ?? false
+);
 const editorLocked = computed(() => {
   const selectedDocument =
     promptDocumentForResourceId(selectedResourceId.value) ?? activeDocument.value;
@@ -1316,6 +2762,11 @@ watch(conversationError, (message) => {
     uiMessage.error(message);
   }
 });
+watch(longConversationError, (message) => {
+  if (message) {
+    uiMessage.error(message);
+  }
+});
 
 const LEFT_PANE_MIN = 220;
 const LEFT_PANE_MAX = 480;
@@ -1401,7 +2852,67 @@ function handleResizeKeydown(side: "left" | "right", event: KeyboardEvent): void
   setPaneWidth(side, currentWidth + direction * (side === "left" ? 12 : -12));
 }
 
-function selectResource(node: ResourceTreeNode): void {
+function blockActiveLongWritingPlan(
+  action: string,
+  options: {
+    targetBookId?: string | null;
+    allowPlanBook?: boolean;
+  } = {}
+): boolean {
+  if (!longWritingOrchestrator.active.value) return false;
+  const planBookId = longWritingOrchestrator.state.value.bookId;
+  if (
+    options.allowPlanBook &&
+    options.targetBookId &&
+    options.targetBookId === planBookId
+  ) {
+    return false;
+  }
+  uiMessage.warning(
+    `当前长篇串行写作计划尚未完成；请先取消计划，再${action}。`
+  );
+  return true;
+}
+
+async function selectResource(node: ResourceTreeNode): Promise<void> {
+  if (
+    blockActiveLongWritingPlan("切换创作空间", {
+      targetBookId: node.longBookId ?? null,
+      allowPlanBook: true
+    })
+  ) {
+    return;
+  }
+  if (node.longBookId) {
+    if (!(await saveActiveLongEditorBeforeLeaving(node.longBookId))) {
+      return;
+    }
+    workspaceMainView.value = "conversation";
+    selectedResourceId.value = node.id;
+    rightCollapsed.value = false;
+    if (
+      activeLongBookId.value !== node.longBookId ||
+      !activeLongWorkspaceIndex.value
+    ) {
+      await openLongBook(node.longBookId);
+    }
+    return;
+  }
+  if (!(await saveActiveLongEditorBeforeLeaving())) {
+    return;
+  }
+  if (activeLongBookId.value) {
+    longWorkspaceRefreshClock.invalidate(activeLongBookId.value);
+  }
+  longWorkspaceRefreshStatus.value = null;
+  activeLongBookId.value = null;
+  activeLongWorkspaceIndex.value = null;
+  activeLongSelection.value = null;
+  activeLongFileContext.value = null;
+  longRollbackDialogOpen.value = false;
+  longRollbackCommitId.value = null;
+  longStructureDialogOpen.value = false;
+  longBindingsDialogOpen.value = false;
   const directory = draftDirectoryForResourceId(node.id);
   if (directory && node.expertSectionId) {
     selectedExpertSectionIds.value = {
@@ -1600,6 +3111,46 @@ function disposeBookConversations(bookId: string, documentIds?: Set<string>): vo
     conversationScopes.delete(key);
   }
   removeAgentRunPreferences(`book:${bookId}`);
+}
+
+function longBookConversationEntries(
+  bookId: string
+): Array<[string, AgentConversationController]> {
+  const prefix = `long:${encodeURIComponent(bookId)}:`;
+  return [...conversations.entries()].filter(([key]) =>
+    key.startsWith(prefix)
+  );
+}
+
+async function stopLongBookAgentRuns(bookId: string): Promise<void> {
+  for (const [, conversation] of longBookConversationEntries(bookId)) {
+    if (!conversation.isBusy.value) continue;
+    const stopAccepted = await conversation.stopGeneration();
+    if (!stopAccepted) {
+      throw new Error(
+        "长篇智能体正在启动，暂时无法安全移除项目；请稍后重试。"
+      );
+    }
+  }
+  // Quarantine the proposal queue while the destructive catalog operation is
+  // in flight. Even a late event from an aborting run cannot re-enqueue work.
+  longWorkspaceProposals.discardBook(bookId);
+}
+
+function disposeLongBookRuntime(bookId: string): void {
+  for (const [key, conversation] of longBookConversationEntries(bookId)) {
+    conversation.dispose({ clearPersistence: true });
+    conversations.delete(key);
+    conversationScopes.delete(key);
+  }
+  longWorkspaceProposals.discardBook(bookId);
+  if (longWritingOrchestrator.state.value.bookId === bookId) {
+    longWritingOrchestrator.cancel();
+  }
+  if (longWritingAgentRunExpectation?.bookId === bookId) {
+    longWritingAgentRunExpectation = null;
+  }
+  removeAgentRunPreferences(`long:${bookId}`);
 }
 
 function disposeLibraryConversation(
@@ -1857,9 +3408,13 @@ async function createCreativeBook(
       book.id
     );
     if (targetResourceId) {
-      selectedResourceId.value = targetResourceId;
-      activeCreationResourceId.value = targetResourceId;
-      rightCollapsed.value = false;
+      const targetNode = findResourceNodeIn(
+        resourceTreeSections.value,
+        targetResourceId
+      );
+      if (targetNode) {
+        await selectResource(targetNode);
+      }
     }
     uiMessage.success(
       `已创建${workspaceType === "script" ? "剧本" : "短篇"}“${book.title}”，素材库和技能库绑定已保存`
@@ -1871,7 +3426,192 @@ async function createCreativeBook(
   }
 }
 
+function activateLongBookWorkspace(opened: LongOpenBookResult): void {
+  void loadLongAgentSettings();
+  longWorkspaceProposals.activateBook(opened.book.id);
+  longWorkspaceRefreshClock.invalidate(opened.book.id);
+  longWorkspaceRefreshStatus.value = null;
+  activeLongBookId.value = opened.book.id;
+  activeLongWorkspaceIndex.value = opened.book.workspaceIndex;
+  longBooks.value = replaceLongBookSummary(longBooks.value, opened.summary);
+  activeLongSelection.value = null;
+  activeLongFileContext.value = null;
+  longRollbackDialogOpen.value = false;
+  longRollbackCommitId.value = null;
+  selectedResourceId.value = longBookResourceId(opened.book.id);
+  workspaceMainView.value = "conversation";
+  rightCollapsed.value = false;
+}
+
+async function createLongBook(input: CreateLongBookInput): Promise<void> {
+  const api = resolveLongWorkspaceApi();
+  if (!api || longMutationPending.value) {
+    if (!api) {
+      uiMessage.warning("浏览器预览不能保存长篇作品，请使用桌面客户端创建。");
+    }
+    return;
+  }
+  if (blockActiveLongWritingPlan("新建长篇")) {
+    return;
+  }
+  if (!(await saveActiveLongEditorBeforeLeaving())) {
+    return;
+  }
+  longMutationPending.value = true;
+  try {
+    const opened = await api.create(input);
+    if (!opened) return;
+    createLongBookDialogOpen.value = false;
+    activateLongBookWorkspace(opened);
+    await loadLongBookList({ force: true });
+    await loadWorkspaceDirectory();
+    uiMessage.success(`已创建长篇“${opened.book.title}”`);
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error ? error.message : "创建长篇作品失败。"
+    );
+  } finally {
+    longMutationPending.value = false;
+  }
+}
+
 async function handleResourceAction(payload: ResourceSectionActionPayload): Promise<void> {
+  if (
+    payload.domain === "creation" &&
+    payload.action === "refresh-long-books"
+  ) {
+    if (!resolveLongWorkspaceApi()) {
+      uiMessage.warning("浏览器预览不能刷新本地长篇，请使用桌面客户端。");
+      return;
+    }
+    await loadLongBookList({ notify: true, force: true });
+    if (!longCatalogLoadError.value) {
+      uiMessage.success("长篇列表已刷新");
+    }
+    return;
+  }
+
+  if (
+    payload.domain === "creation" &&
+    payload.action === "create-long-book"
+  ) {
+    if (blockActiveLongWritingPlan("新建长篇")) {
+      return;
+    }
+    if (!resolveLongWorkspaceApi()) {
+      uiMessage.warning("浏览器预览不能保存长篇作品，请使用桌面客户端创建。");
+      return;
+    }
+    createLongBookDialogOpen.value = true;
+    return;
+  }
+
+  if (
+    payload.domain === "creation" &&
+    payload.action === "open-long-book"
+  ) {
+    if (blockActiveLongWritingPlan("打开其他长篇")) {
+      return;
+    }
+    const api = resolveLongWorkspaceApi();
+    if (!api) {
+      uiMessage.warning("浏览器预览不能打开本地长篇，请使用桌面客户端。");
+      return;
+    }
+    if (longMutationPending.value) return;
+    if (!(await saveActiveLongEditorBeforeLeaving())) {
+      return;
+    }
+    longMutationPending.value = true;
+    try {
+      const opened = await api.openExisting();
+      if (!opened) return;
+      activateLongBookWorkspace(opened);
+      await loadLongBookList({ force: true });
+      uiMessage.success(`已打开长篇“${opened.book.title}”`);
+    } catch (error: unknown) {
+      uiMessage.error(
+        error instanceof Error ? error.message : "打开已有长篇失败。"
+      );
+    } finally {
+      longMutationPending.value = false;
+    }
+    return;
+  }
+
+  if (
+    payload.domain === "creation" &&
+    payload.action === "import-portable-long-book"
+  ) {
+    if (blockActiveLongWritingPlan("导入长篇")) {
+      return;
+    }
+    const api = resolveLongWorkspaceApi();
+    if (!api) {
+      uiMessage.warning("浏览器预览不能导入可移植长篇，请使用桌面客户端。");
+      return;
+    }
+    if (longMutationPending.value) return;
+    if (!(await saveActiveLongEditorBeforeLeaving())) {
+      return;
+    }
+    longMutationPending.value = true;
+    try {
+      const imported = await api.importPortable();
+      if (!imported) return;
+      activateLongBookWorkspace(imported);
+      await loadLongBookList({ force: true });
+      uiMessage.success(`已导入可移植长篇“${imported.book.title}”`);
+    } catch (error: unknown) {
+      uiMessage.error(
+        error instanceof Error ? error.message : "导入可移植长篇失败。"
+      );
+    } finally {
+      longMutationPending.value = false;
+    }
+    return;
+  }
+
+  if (
+    payload.domain === "creation" &&
+    payload.action === "migrate-write-claw-long-book"
+  ) {
+    if (blockActiveLongWritingPlan("迁移长篇")) {
+      return;
+    }
+    const api = resolveLongWorkspaceApi();
+    if (!api) {
+      uiMessage.warning("浏览器预览不能迁移本地长篇，请使用桌面客户端。");
+      return;
+    }
+    if (longMutationPending.value) return;
+    if (!(await saveActiveLongEditorBeforeLeaving())) {
+      return;
+    }
+    longMutationPending.value = true;
+    try {
+      const imported = await api.importWriteClaw();
+      if (!imported) return;
+      activateLongBookWorkspace(imported);
+      longMigrationReport.value = imported;
+      await loadLongBookList({ force: true });
+      uiMessage.success(
+        imported.warnings.length
+          ? `已迁移长篇“${imported.book.title}”，有 ${imported.warnings.length} 项说明可查看`
+          : `已迁移长篇“${imported.book.title}”，源文件保持不变`
+      );
+    } catch (error: unknown) {
+      uiMessage.error(
+        error instanceof Error
+          ? error.message
+          : "迁移 Write Claw 长篇失败。"
+      );
+    } finally {
+      longMutationPending.value = false;
+    }
+    return;
+  }
+
   if (payload.domain === "creation" && payload.action === "create") {
     if (!window.deepwrite) {
       uiMessage.warning("浏览器预览不能保存作品，请使用桌面客户端创建。");
@@ -1929,9 +3669,13 @@ async function handleResourceAction(payload: ResourceSectionActionPayload): Prom
         imported.id
       );
       if (targetResourceId) {
-        selectedResourceId.value = targetResourceId;
-        activeCreationResourceId.value = targetResourceId;
-        rightCollapsed.value = false;
+        const targetNode = findResourceNodeIn(
+          resourceTreeSections.value,
+          targetResourceId
+        );
+        if (targetNode) {
+          await selectResource(targetNode);
+        }
       }
       uiMessage.success(`已导入旧版书籍“${imported.title}”并转换为新的文件结构`);
     } catch (error: unknown) {
@@ -2030,11 +3774,13 @@ async function handleResourceAction(payload: ResourceSectionActionPayload): Prom
             )
           : documents.value.find((document) => document.libraryId === opened.id)?.id;
       if (targetResourceId) {
-        selectedResourceId.value = targetResourceId;
-        if (opened.domain === "book") {
-          activeCreationResourceId.value = targetResourceId;
+        const targetNode = findResourceNodeIn(
+          resourceTreeSections.value,
+          targetResourceId
+        );
+        if (targetNode) {
+          await selectResource(targetNode);
         }
-        rightCollapsed.value = false;
       }
       uiMessage.success(`已打开${opened.domain === "book" ? "书籍" : opened.domain === "material" ? "素材库" : "技能库"}“${opened.title}”`);
     } catch (error: unknown) {
@@ -2046,6 +3792,269 @@ async function handleResourceAction(payload: ResourceSectionActionPayload): Prom
   }
 
   uiMessage.info("当前资源操作暂不可用。");
+}
+
+async function clearActiveLongBook(bookId: string): Promise<void> {
+  if (activeLongBookId.value !== bookId) return;
+  longOpenClock += 1;
+  longWorkspaceRefreshClock.invalidate(bookId);
+  longWorkspaceRefreshStatus.value = null;
+  activeLongBookId.value = null;
+  activeLongWorkspaceIndex.value = null;
+  activeLongSelection.value = null;
+  activeLongFileContext.value = null;
+  longRollbackDialogOpen.value = false;
+  longRollbackCommitId.value = null;
+  longStructureDialogOpen.value = false;
+  longBindingsDialogOpen.value = false;
+  const fallback = resourceTreeSections.value
+    .find(({ id }) => id === "creation")
+    ?.nodes.find((node) => !node.longBookId);
+  if (fallback) {
+    await selectResource(fallback);
+  } else {
+    selectedResourceId.value = "";
+  }
+}
+
+async function handleLongBookAction(
+  payload: LongBookResourceNodeActionPayload
+): Promise<void> {
+  const api = resolveLongWorkspaceApi();
+  if (!api) {
+    uiMessage.warning("浏览器预览不能管理本地长篇，请使用桌面客户端。");
+    return;
+  }
+  const { longBookId: bookId } = payload.node;
+  if (payload.action === "manage-structure") {
+    if (
+      blockActiveLongWritingPlan("管理其他长篇的结构", {
+        targetBookId: bookId,
+        allowPlanBook: true
+      })
+    ) {
+      return;
+    }
+    const saved =
+      activeLongBookId.value === bookId
+        ? await saveActiveLongEditorChanges()
+        : await saveActiveLongEditorBeforeLeaving(bookId);
+    if (!saved) {
+      return;
+    }
+    selectedResourceId.value = payload.node.id;
+    workspaceMainView.value = "conversation";
+    if (
+      activeLongBookId.value !== bookId ||
+      !activeLongWorkspaceIndex.value
+    ) {
+      await openLongBook(bookId);
+    }
+    if (
+      activeLongBookId.value === bookId &&
+      activeLongWorkspaceIndex.value
+    ) {
+      longStructureDialogOpen.value = true;
+    }
+    return;
+  }
+  if (payload.action === "manage-bindings") {
+    if (
+      blockActiveLongWritingPlan("管理其他长篇的资源绑定", {
+        targetBookId: bookId,
+        allowPlanBook: true
+      })
+    ) {
+      return;
+    }
+    const saved =
+      activeLongBookId.value === bookId
+        ? await saveActiveLongEditorChanges()
+        : await saveActiveLongEditorBeforeLeaving(bookId);
+    if (!saved) {
+      return;
+    }
+    selectedResourceId.value = payload.node.id;
+    workspaceMainView.value = "conversation";
+    if (activeLongBookId.value !== bookId) {
+      await openLongBook(bookId);
+    }
+    if (activeLongBookId.value === bookId && activeLongBookSummary.value) {
+      longBindingsDialogOpen.value = true;
+    }
+    return;
+  }
+  if (payload.action === "export-portable") {
+    if (longBookActionPending.value) return;
+    if (
+      activeLongBookId.value === bookId &&
+      !(await saveActiveLongEditorChanges())
+    ) {
+      return;
+    }
+    longBookActionPending.value = true;
+    try {
+      const result = await api.exportPortable({
+        bookId,
+        title: payload.node.label
+      });
+      if (result.status === "saved") {
+        uiMessage.success(`长篇可移植工程已导出到 ${result.filePath}`);
+      }
+    } catch (error: unknown) {
+      uiMessage.error(
+        error instanceof Error
+          ? error.message
+          : "导出长篇可移植工程失败。"
+      );
+    } finally {
+      longBookActionPending.value = false;
+    }
+    return;
+  }
+  if (
+    longWritingOrchestrator.active.value &&
+    longWritingOrchestrator.state.value.bookId === bookId &&
+    blockActiveLongWritingPlan("移除或删除当前长篇")
+  ) {
+    return;
+  }
+  longBookRemovalDialog.value = {
+    action: payload.action,
+    bookId,
+    title: payload.node.label
+  };
+}
+
+async function updateLongBookBindings(payload: {
+  linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
+  linkedSkillIdsByKind: LinkedSkillIdsByKind;
+}): Promise<void> {
+  const api = resolveLongWorkspaceApi();
+  const summary = activeLongBookSummary.value;
+  if (!api || !summary || longBookActionPending.value) return;
+  if (blockActiveLongWritingPlan("修改长篇资源绑定")) {
+    return;
+  }
+  longBookActionPending.value = true;
+  try {
+    const updated = await api.updateBindings({
+      bookId: summary.id,
+      expectedProjectRevision: summary.projectRevision,
+      linkedMaterialIdsByKind: payload.linkedMaterialIdsByKind,
+      linkedSkillIdsByKind: payload.linkedSkillIdsByKind
+    });
+    longWorkspaceRefreshClock.invalidate(summary.id);
+    longWorkspaceRefreshStatus.value = null;
+    activeLongWorkspaceIndex.value = updated.book.workspaceIndex;
+    longBooks.value = replaceLongBookSummary(
+      longBooks.value,
+      updated.summary
+    );
+    longWorkspaceEditor.value?.synchronizeProjectRevisions(
+      updated.book.workspaceIndex.revision,
+      updated.summary.projectRevision
+    );
+    longBindingsDialogOpen.value = false;
+    await loadLongBookList({ force: true });
+    uiMessage.success(`已更新长篇“${updated.book.title}”的资源绑定`);
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error ? error.message : "更新长篇资源绑定失败。"
+    );
+  } finally {
+    longBookActionPending.value = false;
+  }
+}
+
+async function confirmLongBookRemoval(): Promise<void> {
+  const api = resolveLongWorkspaceApi();
+  const pending = longBookRemovalDialog.value;
+  if (!api || !pending || longBookActionPending.value) return;
+  if (
+    longWritingOrchestrator.active.value &&
+    longWritingOrchestrator.state.value.bookId === pending.bookId &&
+    blockActiveLongWritingPlan("移除或删除当前长篇")
+  ) {
+    return;
+  }
+  if (
+    activeLongBookId.value === pending.bookId &&
+    !(await saveActiveLongEditorBeforeLeaving())
+  ) {
+    return;
+  }
+  longBookActionPending.value = true;
+  let runtimeQuarantined = false;
+  try {
+    await stopLongBookAgentRuns(pending.bookId);
+    runtimeQuarantined = true;
+    const result =
+      pending.action === "delete"
+        ? await api.delete({ bookId: pending.bookId })
+        : await api.unregister({ bookId: pending.bookId });
+    if (!result.removed) {
+      longWorkspaceProposals.activateBook(pending.bookId);
+      runtimeQuarantined = false;
+      uiMessage.warning("该长篇已经不在当前创作空间中。");
+      longBookRemovalDialog.value = null;
+      await loadLongBookList({ force: true });
+      return;
+    }
+    disposeLongBookRuntime(pending.bookId);
+    runtimeQuarantined = false;
+    longBooks.value = longBooks.value.filter(
+      ({ id }) => id !== pending.bookId
+    );
+    await clearActiveLongBook(pending.bookId);
+    longBookRemovalDialog.value = null;
+    await loadLongBookList({ force: true });
+    uiMessage.success(
+      pending.action === "delete"
+        ? `已永久删除长篇“${pending.title}”`
+        : `已从创作空间移除“${pending.title}”，磁盘文件仍保留`
+    );
+  } catch (error: unknown) {
+    if (runtimeQuarantined) {
+      longWorkspaceProposals.activateBook(pending.bookId);
+    }
+    uiMessage.error(
+      error instanceof Error ? error.message : "处理长篇项目失败。"
+    );
+  } finally {
+    longBookActionPending.value = false;
+  }
+}
+
+async function handleLongStructureProposal(
+  batch: LongWorkspaceOperationBatch
+): Promise<void> {
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (!summary || !index || longBookActionPending.value) {
+    uiMessage.warning("当前长篇结构尚未就绪。");
+    return;
+  }
+  if (blockActiveLongWritingPlan("修改长篇结构")) {
+    return;
+  }
+  longBookActionPending.value = true;
+  try {
+    await longWorkspaceProposals.enqueueManualMutation({
+      bookId: summary.id,
+      batch,
+      baseProjectRevision: summary.projectRevision ?? index.revision,
+      summary: `手工结构管理：${batch.operations.length} 项变更`
+    });
+    longStructureDialogOpen.value = false;
+    uiMessage.info("结构变更已生成影响预览，请在中间栏确认后应用。");
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error ? error.message : "生成结构变更预览失败。"
+    );
+  } finally {
+    longBookActionPending.value = false;
+  }
 }
 
 function findCatalogLibrary(
@@ -3745,6 +5754,10 @@ async function overwriteSaveConflictOnDisk(): Promise<void> {
 }
 
 function newConversation(): void {
+  if (activeLongBookId.value !== null) {
+    newLongConversation();
+    return;
+  }
   if (acceptingAgentEditDocumentIds.value.size > 0) {
     uiMessage.info("请等待智能体修改保存完成后再新建对话");
     return;
@@ -3841,14 +5854,370 @@ async function stopGeneration(): Promise<void> {
   }
 }
 
-function openWorkspaceDialog(mode: DialogMode): void {
+function synchronizeLongAgentRunPreferences(): void {
+  const conversation = activeLongConversation.value;
+  const summary = activeLongBookSummary.value;
+  if (!conversation || !summary) return;
+  synchronizeAgentRunPreferences(`long:${summary.id}`, conversation);
+}
+
+function newLongConversation(): void {
+  if (blockActiveLongWritingPlan("新建长篇对话")) {
+    return;
+  }
+  const conversation = activeLongConversation.value;
+  if (!conversation) return;
+  if (conversation.isBusy.value) {
+    uiMessage.warning("请先停止当前长篇回复，再新建对话。");
+    return;
+  }
+  conversation.newConversation();
+  workspaceMainView.value = "conversation";
+}
+
+function selectLongConversation(sessionId: string): void {
+  if (blockActiveLongWritingPlan("切换长篇对话")) {
+    return;
+  }
+  const conversation = activeLongConversation.value;
+  if (!conversation) return;
+  if (!conversation.selectConversation(sessionId)) {
+    uiMessage.warning(
+      conversation.isBusy.value
+        ? "请先停止当前回复，再切换历史对话。"
+        : "这条长篇历史对话已不可用。"
+    );
+  }
+}
+
+function useLongSuggestion(value: string): void {
+  activeLongConversation.value?.useSuggestion(value);
+}
+
+interface LongMessageSendTarget {
+  bookId: string;
+  selectionKey: string | null;
+  preferredRole: LongWorkspaceSelection["preferredRole"] | null;
+  activeRoot: LongWorkspaceRuntimeContext["activeRoot"];
+  chapterCardId: string | null;
+  fileId: LongFileId | null;
+  agentId: LongAgentProfile["id"];
+  conversation: AgentConversationController;
+  sessionId: string;
+  draft: string;
+}
+
+function captureLongMessageSendTarget(): LongMessageSendTarget | null {
+  const bookId = activeLongBookId.value;
+  const summary = activeLongBookSummary.value;
+  const profile = activeLongAgentProfile.value;
+  const conversation = activeLongConversation.value;
+  const runtimeContext = activeLongRuntimeContext.value;
+  if (
+    !bookId ||
+    summary?.id !== bookId ||
+    !profile ||
+    !conversation ||
+    !runtimeContext
+  ) {
+    return null;
+  }
+  return {
+    bookId,
+    selectionKey: activeLongSelection.value?.key ?? null,
+    preferredRole: activeLongSelection.value?.preferredRole ?? null,
+    activeRoot: runtimeContext.activeRoot,
+    chapterCardId: runtimeContext.activeChapterCardId ?? null,
+    fileId: runtimeContext.activeFileId ?? null,
+    agentId: profile.id,
+    conversation,
+    sessionId: conversation.sessionId.value,
+    draft: conversation.draft.value
+  };
+}
+
+function isCurrentLongMessageSendTarget(
+  target: LongMessageSendTarget
+): boolean {
+  const selection = activeLongSelection.value;
+  const fileId =
+    activeLongFileContext.value?.bookId === target.bookId &&
+    selection?.files.some(
+      ({ file }) => file.id === activeLongFileContext.value?.fileId
+    )
+      ? activeLongFileContext.value.fileId
+      : null;
+  return (
+    activeLongBookId.value === target.bookId &&
+    activeLongBookSummary.value?.id === target.bookId &&
+    (selection?.key ?? null) === target.selectionKey &&
+    (selection?.preferredRole ?? null) === target.preferredRole &&
+    activeLongRoot.value === target.activeRoot &&
+    (selection?.chapterCardId ?? null) === target.chapterCardId &&
+    fileId === target.fileId &&
+    activeLongAgentProfile.value?.id === target.agentId &&
+    activeLongConversation.value === target.conversation &&
+    target.conversation.sessionId.value === target.sessionId &&
+    target.conversation.draft.value === target.draft
+  );
+}
+
+function confirmLongMessageSendTarget(
+  target: LongMessageSendTarget
+): boolean {
+  if (isCurrentLongMessageSendTarget(target)) return true;
+  uiMessage.info("长篇上下文或草稿已切换，本次发送已取消。");
+  return false;
+}
+
+async function sendLongMessage(
+  promptAttachments: UserPromptAttachment[] = []
+): Promise<void> {
+  if (longSendPreflightPending.value) return;
+  const target = captureLongMessageSendTarget();
+  if (!target) {
+    uiMessage.warning("长篇工作区上下文尚未就绪，请稍后重试。");
+    return;
+  }
+  longSendPreflightPending.value = true;
+  try {
+    await nextTick();
+    if (!confirmLongMessageSendTarget(target)) return;
+    const settingsLoaded = await ensureLongAgentSettingsLoaded();
+    if (!confirmLongMessageSendTarget(target)) return;
+    if (!settingsLoaded) {
+      uiMessage.warning(
+        longAgentLoadError.value ??
+          "长篇智能体设置尚未加载，请重试。"
+      );
+      return;
+    }
+    const saved = await saveActiveLongEditorChanges();
+    if (!confirmLongMessageSendTarget(target) || !saved) return;
+    const refreshed = await refreshActiveLongWorkspace(target.bookId);
+    if (!confirmLongMessageSendTarget(target) || !refreshed) return;
+
+    const runtimeContext = activeLongRuntimeContext.value;
+    if (
+      !runtimeContext ||
+      runtimeContext.bookId !== target.bookId ||
+      runtimeContext.activeRoot !== target.activeRoot ||
+      runtimeContext.activeAgentId !== target.agentId ||
+      (runtimeContext.activeChapterCardId ?? null) !==
+        target.chapterCardId ||
+      (runtimeContext.activeFileId ?? null) !== target.fileId
+    ) {
+      uiMessage.info("长篇上下文已切换，本次发送已取消。");
+      return;
+    }
+    const libraryAttachments = activeLongLibraryAttachments.value;
+    if (
+      libraryAttachments &&
+      !libraryAttachments.complete &&
+      libraryAttachments.diagnostics.length
+    ) {
+      const first = libraryAttachments.diagnostics[0]!;
+      uiMessage.warning(
+        libraryAttachments.diagnostics.length === 1
+          ? first.message
+          : `${first.message}（另有 ${libraryAttachments.diagnostics.length - 1} 项长篇资源提示）`
+      );
+    }
+    target.conversation.selectApprovalMode("request-approval");
+    await target.conversation.sendLongMessage(
+      runtimeContext,
+      activeLongReadableAttachments.value,
+      promptAttachments
+    );
+  } finally {
+    longSendPreflightPending.value = false;
+  }
+}
+
+async function retryActiveLongWorkspaceRefresh(): Promise<void> {
+  const bookId = activeLongBookId.value;
+  if (!bookId || activeLongWorkspaceRefreshStatus.value?.pending) return;
+  await refreshActiveLongWorkspace(bookId);
+}
+
+async function stopLongGeneration(): Promise<void> {
+  const conversation = activeLongConversation.value;
+  if (!conversation) return;
+  try {
+    if (await conversation.stopGeneration()) {
+      uiMessage.info("已停止长篇生成。");
+    }
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error ? error.message : "停止长篇生成失败。"
+    );
+  }
+}
+
+async function cancelLongWritingWorkflow(): Promise<void> {
+  const expectation = longWritingAgentRunExpectation;
+  if (expectation) {
+    longWorkspaceProposals.quarantineSession(
+      expectation.bookId,
+      expectation.sessionId
+    );
+  }
+  longWritingAgentRunExpectation = null;
+  longWritingOrchestrator.cancel();
+  if (expectation) {
+    const activeRoot =
+      expectation.agentId === "expert_section_writer"
+        ? "draft"
+        : "continuity_ledger";
+    const conversation = conversations.get(
+      longConversationKey(
+        expectation.bookId,
+        expectation.agentId,
+        activeRoot,
+        expectation.chapterCardId
+      )
+    );
+    if (
+      conversation &&
+      conversation.sessionId.value === expectation.sessionId
+    ) {
+      const canceledPending =
+        conversation.cancelPendingGeneration();
+      const stopPromise =
+        !canceledPending && conversation.isBusy.value
+          ? conversation.stopGeneration()
+          : Promise.resolve(false);
+      if (!canceledPending) {
+        // Invalidate the old session synchronously after capturing any live
+        // runId. This closes both pre-acceptance and active-run event windows.
+        conversation.newConversation();
+      }
+      try {
+        await stopPromise;
+      } catch (error: unknown) {
+        uiMessage.warning(
+          error instanceof Error
+            ? `写作计划已取消；停止后台生成时出现提示：${error.message}`
+            : "写作计划已取消；后台生成可能仍在收尾。"
+        );
+        return;
+      }
+    }
+  }
+  uiMessage.info("已取消长篇串行写作计划。");
+}
+
+function selectLongModel(modelId: string): void {
+  activeLongConversation.value?.selectModel(modelId);
+  synchronizeLongAgentRunPreferences();
+}
+
+function selectLongThinking(level: ThinkingLevel): void {
+  activeLongConversation.value?.selectThinkingLevel(level);
+  synchronizeLongAgentRunPreferences();
+}
+
+function selectLongTemperature(value: number): void {
+  activeLongConversation.value?.selectTemperature(value);
+  synchronizeLongAgentRunPreferences();
+}
+
+function selectLongApprovalMode(
+  mode: AgentRunSettings["approvalMode"]
+): void {
+  if (mode === "auto-approve") {
+    uiMessage.info("长篇结构、章节和账本写入必须逐项确认。");
+    activeLongConversation.value?.selectApprovalMode("request-approval");
+    return;
+  }
+  activeLongConversation.value?.selectApprovalMode(mode);
+  synchronizeLongAgentRunPreferences();
+}
+
+function canApproveLongProposalDuringActivePlan(
+  event: LongWorkspaceProposalEvent
+): boolean {
+  return canApproveLongWritingProposal({
+    active: longWritingOrchestrator.active.value,
+    state: longWritingOrchestrator.state.value,
+    currentChapter: longWritingOrchestrator.currentChapter.value,
+    expectation: longWritingAgentRunExpectation,
+    event
+  });
+}
+
+async function approveLongProposal(eventId: string): Promise<void> {
+  const bookId = activeLongBookId.value;
+  if (!bookId || longProposalApprovalPending.value) return;
+  const item = longWorkspaceProposals
+    .itemsForBook(bookId)
+    .find(({ event }) => event.id === eventId);
+  if (!item) return;
+  const wasPlanBound = longWritingOrchestrator.active.value;
+  if (!canApproveLongProposalDuringActivePlan(item.event)) {
+    uiMessage.warning(
+      "长篇串行写作计划执行中，只能审批当前章当前阶段的提案；请先处理当前章或取消计划。"
+    );
+    return;
+  }
+  longProposalApprovalPending.value = true;
+  try {
+    await nextTick();
+    if (!(await saveActiveLongEditorChanges())) return;
+    if (activeLongBookId.value !== bookId) {
+      uiMessage.info("活动长篇已切换，本次审批已取消。");
+      return;
+    }
+    if (
+      wasPlanBound &&
+      !longWritingOrchestrator.active.value
+    ) {
+      uiMessage.info("串行写作计划已取消，本次审批未执行。");
+      return;
+    }
+    const currentItem = longWorkspaceProposals
+      .itemsForBook(bookId)
+      .find(({ event }) => event.id === eventId);
+    if (!currentItem) return;
+    if (!canApproveLongProposalDuringActivePlan(currentItem.event)) {
+      uiMessage.warning(
+        "串行写作阶段已变化，本次审批已取消；请核对当前章后重试。"
+      );
+      return;
+    }
+    await longWorkspaceProposals.approve(bookId, eventId);
+  } finally {
+    longProposalApprovalPending.value = false;
+  }
+}
+
+function rejectLongProposal(eventId: string): void {
+  const bookId = activeLongBookId.value;
+  if (!bookId) return;
+  longWorkspaceProposals.reject(bookId, eventId);
+  uiMessage.info("已拒绝该长篇提案，未写入任何文件。");
+}
+
+function retryLongProposalPreview(eventId: string): void {
+  const bookId = activeLongBookId.value;
+  if (!bookId) return;
+  void longWorkspaceProposals.retryPreview(bookId, eventId);
+}
+
+async function openWorkspaceDialog(mode: DialogMode): Promise<void> {
+  if (!(await saveActiveLongEditorBeforeLeaving())) {
+    return;
+  }
   workspaceMainView.value = mode;
   if ((mode === "models" || mode === "imitation") && !modelSettings.value && window.deepwrite) {
     void loadModelSettings();
   }
 }
 
-function openSettings(): void {
+async function openSettings(): Promise<void> {
+  if (!(await saveActiveLongEditorBeforeLeaving())) {
+    return;
+  }
   currentView.value = "settings";
   if (window.deepwrite) {
     void loadWorkspaceAgentSettings();
@@ -3857,9 +6226,15 @@ function openSettings(): void {
   }
 }
 
-function openAgentTeams(): void {
+async function openAgentTeams(): Promise<void> {
+  if (!(await saveActiveLongEditorBeforeLeaving())) {
+    return;
+  }
   workspaceMainView.value = "agent-team";
-  if (window.deepwrite && !agentTeamLoaded.value) {
+  if (
+    window.deepwrite &&
+    (!agentTeamLoaded.value || !longAgentTeamLoaded.value)
+  ) {
     void loadAgentTeamSettings();
   }
   if (window.deepwrite && !modelSettings.value) {
@@ -5619,6 +7994,8 @@ function scheduleQueuedAutoAgentEdits(
 function handleSystemEvent(event: SystemEventEnvelope): void {
   learningImitation.handleEvent(event);
   subagentAuthoring.handleEvent(event);
+  observeLongWritingAgentEvent(event);
+  void longWorkspaceProposals.handleEvent(event);
   if (event.type === "workspace.editor_mutation") {
     stageAgentEditProposal(event);
   }
@@ -5732,23 +8109,109 @@ function showWorkspaceAgentFeedback(
   }, 3_600);
 }
 
-async function loadWorkspaceAgentSettings(): Promise<void> {
+function showLongAgentFeedback(
+  kind: "error" | "status",
+  message: string
+): void {
+  if (longAgentFeedbackTimer !== undefined) {
+    window.clearTimeout(longAgentFeedbackTimer);
+  }
+  longAgentError.value = kind === "error" ? message : null;
+  longAgentStatus.value = kind === "status" ? message : null;
+  longAgentFeedbackTimer = window.setTimeout(() => {
+    longAgentError.value = null;
+    longAgentStatus.value = null;
+    longAgentFeedbackTimer = undefined;
+  }, 3_600);
+}
+
+async function loadShortAndScriptAgentSettings(): Promise<void> {
   if (!window.deepwrite || workspaceAgentLoading.value) return;
   workspaceAgentLoading.value = true;
   workspaceAgentError.value = null;
   try {
-    workspaceAgentSettings.value = await Promise.all([
+    const results = await Promise.allSettled([
       window.deepwrite.workspaceAgents.list("short"),
       window.deepwrite.workspaceAgents.list("script")
     ]);
-  } catch (error: unknown) {
-    showWorkspaceAgentFeedback(
-      "error",
-      error instanceof Error ? error.message : "加载创作空间智能体设置失败。"
+    const loaded = results.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : []
     );
+    if (loaded.length) {
+      const loadedTypes = new Set(
+        loaded.map(({ workspaceType }) => workspaceType)
+      );
+      workspaceAgentSettings.value = [
+        ...workspaceAgentSettings.value.filter(
+          ({ workspaceType }) => !loadedTypes.has(workspaceType)
+        ),
+        ...loaded
+      ];
+    }
+    const failures = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : []
+    );
+    if (failures.length) {
+      showWorkspaceAgentFeedback(
+        "error",
+        failures
+          .map((error) =>
+            error instanceof Error ? error.message : "加载创作空间智能体设置失败。"
+          )
+          .join("；")
+      );
+    }
   } finally {
     workspaceAgentLoading.value = false;
   }
+}
+
+async function loadLongAgentSettings(): Promise<boolean> {
+  const api = window.deepwrite;
+  if (!api) return false;
+  if (longAgentLoaded.value) return true;
+  if (longAgentLoadPromise) return await longAgentLoadPromise;
+  const pending = (async () => {
+    longAgentLoading.value = true;
+    longAgentLoadError.value = null;
+    try {
+      longAgentSettings.value = await api.longAgents.list();
+      longAgentLoaded.value = true;
+      longAgentError.value = null;
+      return true;
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "加载长篇智能体设置失败。";
+      longAgentLoaded.value = false;
+      longAgentLoadError.value = message;
+      showLongAgentFeedback("error", message);
+      return false;
+    } finally {
+      longAgentLoading.value = false;
+    }
+  })();
+  longAgentLoadPromise = pending;
+  try {
+    return await pending;
+  } finally {
+    if (longAgentLoadPromise === pending) {
+      longAgentLoadPromise = null;
+    }
+  }
+}
+
+async function ensureLongAgentSettingsLoaded(): Promise<boolean> {
+  return longAgentLoaded.value || (await loadLongAgentSettings());
+}
+
+async function loadWorkspaceAgentSettings(): Promise<void> {
+  if (!window.deepwrite) return;
+  await Promise.all([
+    loadShortAndScriptAgentSettings(),
+    loadLongAgentSettings()
+  ]);
 }
 
 async function saveWorkspaceAgentSettings(
@@ -5781,24 +8244,100 @@ async function saveWorkspaceAgentSettings(
   }
 }
 
-async function loadAgentTeamSettings(): Promise<void> {
+async function saveLongAgentSettings(
+  settings: LongAgentSettingsInput
+): Promise<void> {
+  if (!window.deepwrite || longAgentSaving.value) return;
+  longAgentSaving.value = true;
+  try {
+    longAgentSettings.value = await window.deepwrite.longAgents.save(settings);
+    longAgentLoaded.value = true;
+    longAgentLoadError.value = null;
+    showLongAgentFeedback(
+      "status",
+      "长篇六个智能体的提示词、欢迎快捷与读取范围已保存，下一轮对话立即生效。"
+    );
+  } catch (error: unknown) {
+    showLongAgentFeedback(
+      "error",
+      error instanceof Error ? error.message : "保存长篇智能体设置失败。"
+    );
+  } finally {
+    longAgentSaving.value = false;
+  }
+}
+
+async function loadShortAndScriptAgentTeamSettings(): Promise<void> {
   if (!window.deepwrite || agentTeamLoading.value) return;
   agentTeamLoading.value = true;
   agentTeamLoadError.value = null;
   try {
-    agentTeamSettings.value = await Promise.all([
+    const results = await Promise.allSettled([
       window.deepwrite.agentTeams.list("short"),
       window.deepwrite.agentTeams.list("script")
     ]);
-    agentTeamLoaded.value = true;
-  } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "加载智能体团队设置失败。";
-    agentTeamLoadError.value = message;
-    uiMessage.error(message);
+    const loaded = results.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : []
+    );
+    if (loaded.length) {
+      const loadedTypes = new Set(
+        loaded.map(({ workspaceType }) => workspaceType)
+      );
+      agentTeamSettings.value = [
+        ...agentTeamSettings.value.filter(
+          ({ workspaceType }) => !loadedTypes.has(workspaceType)
+        ),
+        ...loaded
+      ];
+    }
+    const failures = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : []
+    );
+    agentTeamLoaded.value = failures.length === 0;
+    if (failures.length) {
+      const message = failures
+        .map((error) =>
+          error instanceof Error ? error.message : "加载智能体团队设置失败。"
+        )
+        .join("；");
+      agentTeamLoadError.value = message;
+      uiMessage.error(message);
+    }
   } finally {
     agentTeamLoading.value = false;
   }
+}
+
+async function loadLongAgentTeamSettings(): Promise<void> {
+  if (!window.deepwrite || longAgentTeamLoading.value) return;
+  longAgentTeamLoading.value = true;
+  longAgentTeamLoadError.value = null;
+  try {
+    longAgentTeamSettings.value =
+      await window.deepwrite.longAgentTeams.list();
+    longAgentTeamLoaded.value = true;
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "加载长篇智能体团队设置失败。";
+    longAgentTeamLoaded.value = false;
+    longAgentTeamLoadError.value = message;
+  } finally {
+    longAgentTeamLoading.value = false;
+  }
+}
+
+async function loadAgentTeamSettings(): Promise<void> {
+  if (!window.deepwrite) return;
+  const pending: Promise<void>[] = [];
+  if (!agentTeamLoaded.value && !agentTeamLoading.value) {
+    pending.push(loadShortAndScriptAgentTeamSettings());
+  }
+  if (!longAgentTeamLoaded.value && !longAgentTeamLoading.value) {
+    pending.push(loadLongAgentTeamSettings());
+  }
+  await Promise.all(pending);
 }
 
 async function saveAgentTeamSettings(
@@ -5826,6 +8365,28 @@ async function saveAgentTeamSettings(
     );
   } finally {
     agentTeamSaving.value = false;
+  }
+}
+
+async function saveLongAgentTeamSettings(
+  settings: LongAgentTeamSettingsInput
+): Promise<void> {
+  if (!window.deepwrite || longAgentTeamSaving.value) return;
+  longAgentTeamSaving.value = true;
+  try {
+    longAgentTeamSettings.value =
+      await window.deepwrite.longAgentTeams.save(settings);
+    longAgentTeamLoaded.value = true;
+    longAgentTeamLoadError.value = null;
+    uiMessage.success("长篇智能体团队已保存，下一轮对话立即生效。");
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error
+        ? error.message
+        : "保存长篇智能体团队设置失败。"
+    );
+  } finally {
+    longAgentTeamSaving.value = false;
   }
 }
 
@@ -5968,6 +8529,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
   if (event.key === "Escape") {
     createShortBookDialogOpen.value = false;
+    createLongBookDialogOpen.value = false;
     libraryProjectDialog.value = null;
     libraryGroupDialog.value = null;
     saveConflict.value = null;
@@ -6068,9 +8630,40 @@ function handleBeforeUnload(): void {
   void flushEditorDraftRecovery(false);
 }
 
+async function refreshLongWorkspaceOnWindowFocus(
+  bookId: string
+): Promise<void> {
+  if (!(await refreshActiveLongWorkspace(bookId))) return;
+  const index = activeLongWorkspaceIndex.value;
+  const summary = activeLongBookSummary.value;
+  if (
+    activeLongBookId.value !== bookId ||
+    !index ||
+    !summary ||
+    summary.id !== bookId
+  ) {
+    return;
+  }
+  const synchronized =
+    longWorkspaceEditor.value?.synchronizeProjectRevisionsIfClean(
+      bookId,
+      index.revision,
+      summary.projectRevision
+    ) ?? true;
+  if (!synchronized) {
+    uiMessage.warning(
+      "长篇项目已在外部更新；当前有未保存内容，已保留编辑内容和原版本基线，请先保存并处理版本冲突。"
+    );
+  }
+}
+
 function refreshCatalogOnWindowFocus(): void {
-  if (window.deepwrite) {
-    void loadCatalogSnapshot();
+  if (!window.deepwrite) return;
+  void loadCatalogSnapshot();
+  const bookId = activeLongBookId.value;
+  if (bookId) {
+    void loadLongBookList({ notify: true });
+    void refreshLongWorkspaceOnWindowFocus(bookId);
   }
 }
 
@@ -6102,12 +8695,14 @@ onMounted(async () => {
   await Promise.all([
     loadCatalogSnapshot(),
     loadModelSettings(),
-    loadWorkspaceAgentSettings(),
-    loadAgentTeamSettings(),
+    loadShortAndScriptAgentSettings(),
+    loadShortAndScriptAgentTeamSettings(),
     loadLearningImitationSettings(),
     loadWorkspaceDirectory()
   ]);
   scheduleDirtyEditorDraftsForAutoSave();
+  void loadLongBookList({ notify: false });
+  void loadLongAgentSettings();
   if (recoveredEditorDraftCount > 0) {
     uiMessage.info(`已恢复 ${recoveredEditorDraftCount} 份未保存草稿`, {
       duration: 1500
@@ -6132,6 +8727,14 @@ onBeforeUnmount(() => {
   if (workspaceAgentFeedbackTimer !== undefined) {
     window.clearTimeout(workspaceAgentFeedbackTimer);
   }
+  if (longAgentFeedbackTimer !== undefined) {
+    window.clearTimeout(longAgentFeedbackTimer);
+  }
+  if (longCatalogRetryTimer !== undefined) {
+    window.clearTimeout(longCatalogRetryTimer);
+    longCatalogRetryTimer = undefined;
+  }
+  longCatalogRequestClock += 1;
   for (const conversation of allConversations()) {
     conversation.dispose();
   }
@@ -6145,10 +8748,15 @@ onBeforeUnmount(() => {
         v-if="currentView === 'settings'"
         :auto-save-enabled="editorAutoSaveEnabled"
         :workspace-agent-settings="workspaceAgentSettings"
+        :long-agent-settings="longAgentSettings"
         :workspace-agent-loading="workspaceAgentLoading"
         :workspace-agent-saving="workspaceAgentSaving"
         :workspace-agent-error="workspaceAgentError"
         :workspace-agent-status="workspaceAgentStatus"
+        :long-agent-loading="longAgentLoading"
+        :long-agent-saving="longAgentSaving"
+        :long-agent-error="longAgentLoadError ?? longAgentError"
+        :long-agent-status="longAgentStatus"
         :library-agent-settings="libraryAgentSettings"
         :library-agent-loading="libraryAgentLoading"
         :library-agent-saving="libraryAgentSaving"
@@ -6159,6 +8767,8 @@ onBeforeUnmount(() => {
         @back="closeSettings"
         @update-auto-save="updateEditorAutoSave"
         @save-workspace-agents="saveWorkspaceAgentSettings"
+        @retry-long-agents="loadLongAgentSettings"
+        @save-long-agents="saveLongAgentSettings"
         @save-library-agents="saveLibraryAgentSettings"
         @reset-library-agent="resetLibraryAgentSettings"
         @save-learning-imitation="saveLearningImitationSettings"
@@ -6190,6 +8800,7 @@ onBeforeUnmount(() => {
         @export-book="openBookExportDialog"
         @resource-action="handleResourceAction"
         @resource-node-action="handleResourceNodeAction"
+        @long-book-action="handleLongBookAction"
         @create-expert-section="addExpertSection"
         @remove-expert-section="requestRemoveExpertSection"
       />
@@ -6210,12 +8821,16 @@ onBeforeUnmount(() => {
         </button>
         <AgentTeamSettingsPanel
           :settings="agentTeamSettings"
+          :long-settings="longAgentTeamSettings"
           :models="modelSettings?.models ?? []"
           :skills="catalogSnapshot?.skills ?? []"
           :preferred-model-id="modelSettings?.defaultModelId ?? null"
           :loading="agentTeamLoading"
           :saving="agentTeamSaving"
           :load-error="agentTeamLoadError"
+          :long-loading="longAgentTeamLoading"
+          :long-saving="longAgentTeamSaving"
+          :long-load-error="longAgentTeamLoadError"
           :runtime-available="hasDesktopRuntime"
           :authoring-generating="subagentAuthoring.isBusy.value"
           :authoring-draft="subagentAuthoring.draft.value"
@@ -6223,6 +8838,7 @@ onBeforeUnmount(() => {
           :authoring-error="subagentAuthoring.error.value"
           @retry="loadAgentTeamSettings"
           @save="saveAgentTeamSettings"
+          @save-long="saveLongAgentTeamSettings"
           @authoring-generate="(payload) => void subagentAuthoring.generate(payload.context, payload.modelId)"
           @authoring-stop="() => void subagentAuthoring.stop()"
           @authoring-reset="subagentAuthoring.reset()"
@@ -6283,8 +8899,229 @@ onBeforeUnmount(() => {
         />
       </main>
 
+      <main
+        v-show="isLongWorkspaceActive"
+        class="long-workspace-main-view"
+        aria-label="长篇创作空间"
+      >
+        <button
+          v-if="leftCollapsed"
+          class="icon-button long-workspace-expand-sidebar"
+          type="button"
+          aria-label="展开左侧栏"
+          @click="leftCollapsed = false"
+        >
+          <AppIcon name="panel-left" :size="18" />
+        </button>
+        <template
+          v-if="activeLongBookSummary && activeLongWorkspaceIndex"
+        >
+          <LongWorkspaceTree
+            :summary="activeLongBookSummary"
+            :workspace-index="activeLongWorkspaceIndex"
+            :selected-key="activeLongSelection?.key ?? ''"
+            @select="selectLongWorkspaceFile"
+          />
+          <div class="long-agent-column">
+            <AgentConversation
+              v-if="activeLongConversation && activeLongAgentProfile"
+              class="long-agent-conversation"
+              v-model:draft="longComposerDraft"
+              :messages="longMessages"
+              :conversation-history="longConversationHistory"
+              :current-session-id="longCurrentSessionId"
+              :responding="longResponding"
+              :can-send="longCanSend"
+              :can-send-attachments="longCanSendAttachments"
+              :can-stop="longCanStop"
+              :runtime-available="hasDesktopRuntime"
+              :models="longConfiguredModels"
+              :selected-model-id="longSelectedModelId"
+              :thinking-level="longThinkingLevel"
+              :temperature="longTemperature"
+              approval-mode="request-approval"
+              :context-title="
+                activeLongSelection?.title ?? activeLongBookSummary.title
+              "
+              :book-title="activeLongBookSummary.title"
+              :stage-label="activeLongStageLabel"
+              :agent-label="activeLongAgentProfile.label"
+              :agent-id="activeLongAgentProfile.id"
+              agent-workspace-type="long"
+              :library-domain="undefined"
+              :library-skills="undefined"
+              :welcome-shortcuts="
+                activeLongAgentProfile.welcomeShortcuts
+              "
+              :available-skills="availableLongSkillReferences"
+              :available-materials="availableLongMaterialReferences"
+              :editor-references="[]"
+              :left-collapsed="false"
+              :right-collapsed="false"
+              @new-conversation="newLongConversation"
+              @select-conversation="selectLongConversation"
+              @send="sendLongMessage"
+              @stop="stopLongGeneration"
+              @suggestion="useLongSuggestion"
+              @select-model="selectLongModel"
+              @select-thinking="selectLongThinking"
+              @select-temperature="selectLongTemperature"
+              @select-approval="selectLongApprovalMode"
+            />
+            <section
+              v-if="activeLongWorkspaceRefreshStatus"
+              class="long-workspace-refresh-status"
+              :class="{
+                'is-error': Boolean(activeLongWorkspaceRefreshStatus.error)
+              }"
+              aria-live="polite"
+            >
+              <span>
+                {{
+                  activeLongWorkspaceRefreshStatus.pending
+                    ? "正在同步保存后的最新工作区索引…"
+                    : "最新工作区索引尚未同步，长篇智能体已暂停发送。"
+                }}
+              </span>
+              <button
+                v-if="!activeLongWorkspaceRefreshStatus.pending"
+                type="button"
+                @click="retryActiveLongWorkspaceRefresh"
+              >
+                重新同步
+              </button>
+            </section>
+            <section
+              v-if="
+                longWritingOrchestrator.state.value.phase !== 'idle' &&
+                longWritingOrchestrator.state.value.bookId ===
+                  activeLongBookSummary.id
+              "
+              class="long-writing-workflow-status"
+              aria-live="polite"
+            >
+              <div>
+                <strong>串行写作计划</strong>
+                <span
+                  v-if="longWritingOrchestrator.currentChapter.value"
+                >
+                  {{
+                    longWritingOrchestrator.currentChapter.value.title
+                  }}
+                  ·
+                  {{
+                    Math.min(
+                      longWritingOrchestrator.state.value.currentIndex + 1,
+                      longWritingOrchestrator.state.value.chapters.length
+                    )
+                  }}/{{ longWritingOrchestrator.state.value.chapters.length }}
+                </span>
+                <span v-else>已完成</span>
+              </div>
+              <small
+                v-if="longWritingOrchestrator.state.value.error"
+                class="is-error"
+              >
+                {{ longWritingOrchestrator.state.value.error }}
+              </small>
+              <small v-else>
+                {{
+                  longWritingOrchestrator.state.value.phase ===
+                  "awaiting_writer_approval"
+                    ? "等待你审阅本章三件套写入提案"
+                    : longWritingOrchestrator.state.value.phase ===
+                        "awaiting_ledger_approval"
+                      ? "等待你审阅本章连续性提交提案"
+                      : longWritingOrchestrator.state.value.phase ===
+                          "complete"
+                        ? "本次计划已完成"
+                        : "正在核对文件与保存屏障"
+                }}
+              </small>
+              <div
+                v-if="
+                  longWritingOrchestrator.state.value.phase !== 'complete'
+                "
+                class="long-writing-workflow-actions"
+              >
+                <button
+                  v-if="
+                    longWritingOrchestrator.state.value.phase === 'error'
+                  "
+                  type="button"
+                  @click="longWritingOrchestrator.retry"
+                >
+                  重试当前章
+                </button>
+                <button
+                  type="button"
+                  @click="cancelLongWritingWorkflow"
+                >
+                  取消计划
+                </button>
+              </div>
+              <button
+                v-if="
+                  longWritingOrchestrator.state.value.phase === 'complete'
+                "
+                type="button"
+                @click="longWritingOrchestrator.cancel"
+              >
+                完成
+              </button>
+            </section>
+            <LongProposalReview
+              :items="activeLongProposalItems"
+              :workspace-index="activeLongWorkspaceIndex"
+              @approve="approveLongProposal"
+              @reject="rejectLongProposal"
+              @retry-preview="retryLongProposalPreview"
+            />
+          </div>
+          <LongWorkspaceEditor
+            ref="longWorkspaceEditor"
+            :book-id="activeLongBookSummary.id"
+            :selection="activeLongSelection"
+            :latest-commit="latestLongLedgerCommit"
+            :locked="
+              longProposalApprovalPending || longSendPreflightPending
+            "
+            :locked-reason="
+              longSendPreflightPending
+                ? '正在保存并准备发送，编辑暂时锁定'
+                : longProposalApprovalPending
+                  ? '正在应用长篇提案，编辑暂时锁定'
+                  : undefined
+            "
+            @saved="handleLongDocumentSaved"
+            @context-change="handleLongFileContextChange"
+            @rollback="openLongRollbackDialog"
+          />
+        </template>
+        <div v-else class="long-workspace-loading-state">
+          <span class="long-workspace-loading-icon">
+            <AppIcon name="book" :size="28" />
+          </span>
+          <strong>
+            {{
+              longWorkspaceLoading
+                ? "正在打开长篇工作区…"
+                : "长篇工作区尚未载入"
+            }}
+          </strong>
+          <span>
+            {{
+              longWorkspaceLoading
+                ? "先加载轻量导航索引，正文将在选择文件后按需读取。"
+                : "请再次选择左侧长篇书籍重试。"
+            }}
+          </span>
+        </div>
+      </main>
+
       <AgentConversation
         v-show="workspaceMainView === 'conversation'"
+        :class="{ 'is-long-workspace-hidden': isLongWorkspaceActive }"
         v-model:draft="composerDraft"
         :messages="messages"
         :conversation-history="conversationHistory"
@@ -6331,6 +9168,7 @@ onBeforeUnmount(() => {
 
       <RightEditorPane
         v-if="workspaceMainView === 'conversation' && !rightCollapsed"
+        :class="{ 'is-long-workspace-hidden': isLongWorkspaceActive }"
         :document="activeDocument"
         :resource-id="selectedResourceId"
         :draft-state="activeEditorDraft"
@@ -6366,6 +9204,7 @@ onBeforeUnmount(() => {
 
       <div
         v-if="workspaceMainView === 'conversation' && !rightCollapsed"
+        v-show="!isLongWorkspaceActive"
         class="pane-resizer pane-resizer-right"
         role="separator"
         aria-label="调整右侧栏宽度"
@@ -6377,6 +9216,7 @@ onBeforeUnmount(() => {
         @pointerdown="startPaneResize('right', $event)"
         @keydown="handleResizeKeydown('right', $event)"
       />
+
     </div>
 
     <BookResourceDialog
@@ -6421,6 +9261,72 @@ onBeforeUnmount(() => {
       :submitting="catalogMutationPending"
       @close="createShortBookDialogOpen = false"
       @submit="createCreativeBook"
+    />
+    <CreateLongBookDialog
+      :open="createLongBookDialogOpen"
+      :materials="catalogSnapshot?.materials ?? []"
+      :skills="catalogSnapshot?.skills ?? []"
+      :loading="catalogLoading"
+      :submitting="longMutationPending"
+      @close="createLongBookDialogOpen = false"
+      @submit="createLongBook"
+    />
+    <LongRollbackDialog
+      :open="longRollbackDialogOpen && Boolean(longRollbackCommit)"
+      :book-title="activeLongBookSummary?.title ?? ''"
+      :chapter-title="longRollbackChapterTitle"
+      :commit-sequence="longRollbackCommit?.sequence ?? 0"
+      :pending="longRollbackPending"
+      @close="closeLongRollbackDialog"
+      @confirm="confirmLongRollback"
+    />
+    <LongStructureDialog
+      :open="longStructureDialogOpen"
+      :book-title="activeLongBookSummary?.title ?? ''"
+      :snapshot="activeLongWorkspaceIndex"
+      :pending="longBookActionPending"
+      @close="longStructureDialogOpen = false"
+      @proposal="handleLongStructureProposal"
+    />
+    <LongBookBindingsDialog
+      v-if="activeLongBookSummary"
+      :open="longBindingsDialogOpen"
+      :book-title="activeLongBookSummary.title"
+      :materials="catalogSnapshot?.materials ?? []"
+      :skills="catalogSnapshot?.skills ?? []"
+      :linked-material-ids-by-kind="
+        activeLongBookSummary.linkedMaterialIdsByKind
+      "
+      :linked-skill-ids-by-kind="
+        activeLongBookSummary.linkedSkillIdsByKind
+      "
+      :submitting="longBookActionPending"
+      @close="longBindingsDialogOpen = false"
+      @submit="updateLongBookBindings"
+    />
+    <LongBookRemovalDialog
+      :open="Boolean(longBookRemovalDialog)"
+      :action="longBookRemovalDialog?.action ?? 'unregister'"
+      :title="longBookRemovalDialog?.title ?? ''"
+      :pending="longBookActionPending"
+      @close="longBookRemovalDialog = null"
+      @confirm="confirmLongBookRemoval"
+    />
+    <LongMigrationReportDialog
+      :open="Boolean(longMigrationReport)"
+      :title="longMigrationReport?.book.title ?? ''"
+      :source-kind="
+        longMigrationReport?.sourceKind ?? 'write-claw-zip'
+      "
+      :legacy-schema-version="
+        longMigrationReport?.legacySchemaVersion ?? 0
+      "
+      :committed-chapter-policy="
+        longMigrationReport?.committedChapterPolicy ??
+        'written-uncommitted'
+      "
+      :warnings="longMigrationReport?.warnings ?? []"
+      @close="longMigrationReport = null"
     />
     <LibraryProjectDialog
       :open="Boolean(libraryProjectDialog)"

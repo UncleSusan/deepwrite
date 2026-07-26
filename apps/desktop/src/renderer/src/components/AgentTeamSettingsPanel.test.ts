@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import source from "./AgentTeamSettingsPanel.vue?raw";
+import longSource from "./LongAgentTeamSettingsPanel.vue?raw";
 
 describe("AgentTeamSettingsPanel", () => {
   it("explains the isolated subagent prompt and skill boundary", () => {
@@ -8,14 +9,32 @@ describe("AgentTeamSettingsPanel", () => {
     expect(source).toContain("从技能库加载");
   });
 
-  it("enables script while keeping the unfinished long-form mode disabled", () => {
+  it("enables short, script and independent long-form teams", () => {
     expect(source).toContain("短篇");
     expect(source).toContain("剧本");
     expect(source).toContain("长篇");
-    expect(source.match(/尚未接入/g)?.length).toBe(1);
+    expect(source).not.toContain("尚未接入");
     expect(source).toContain("@click=\"activeWorkspaceType = 'script'\"");
     expect(source).toContain(":aria-selected=\"activeWorkspaceType === 'script'\"");
+    expect(source).toContain("@click=\"activeWorkspaceType = 'long'\"");
+    expect(source).toContain(":settings=\"longSettings\"");
     expect(source.match(/role=\"tab\"/g)?.length).toBe(3);
+  });
+
+  it("maps all six long parent agents and preserves approval boundaries", () => {
+    for (const id of [
+      "worldbuilding",
+      "character_design",
+      "plot_design",
+      "draft",
+      "expert_section_writer",
+      "continuity_ledger"
+    ]) {
+      expect(longSource).toContain(`id: "${id}"`);
+    }
+    expect(longSource).toContain("不能继续创建子智能体");
+    expect(longSource).toContain("不能绕过用户审批");
+    expect(longSource).toContain("LongAgentTeamSettingsInputSchema.safeParse");
   });
 
   it("maps the five short parent agents and prevents recursive delegation", () => {
@@ -49,9 +68,12 @@ describe("AgentTeamSettingsPanel", () => {
     expect(source).toContain("WorkspaceAgentTeamSettingsInputSchema.safeParse");
   });
 
-  it("blocks saving and offers retry when persisted settings fail to load", () => {
-    expect(source).toContain("Boolean(props.loadError)");
-    expect(source).toContain('v-else-if="loadError"');
+  it("isolates long loading failures and keeps a successfully loaded sibling editable", () => {
+    expect(source).not.toContain("Boolean(props.loadError)");
+    expect(source).toContain('v-else-if="loadError && !activeSettings"');
+    expect(source).toContain(':loading="longLoading"');
+    expect(source).toContain(':saving="longSaving"');
+    expect(source).toContain(':load-error="longLoadError ?? null"');
     expect(source).toContain("emit('retry')");
   });
 });

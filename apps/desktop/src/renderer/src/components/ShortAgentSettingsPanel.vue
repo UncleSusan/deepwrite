@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type {
+  LongAgentSettings,
+  LongAgentSettingsInput,
   ShortWorkspaceAgentId,
   ShortWorkspaceAgentSettingsInput,
   WorkspaceAgentSettings,
@@ -10,6 +12,7 @@ import {
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES
 } from "@deepwrite/contracts";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import LongAgentSettingsPanel from "./LongAgentSettingsPanel.vue";
 
 type EditableAgent = ShortWorkspaceAgentSettingsInput["agents"][number];
 type ReadAccessKey = keyof EditableAgent["readAccess"];
@@ -31,15 +34,22 @@ interface ReadOption<T extends string> {
 
 const props = defineProps<{
   settings: readonly WorkspaceAgentSettings[];
+  longSettings: LongAgentSettings | null;
   loading: boolean;
   saving: boolean;
   errorMessage: string | null;
   statusMessage: string | null;
+  longLoading: boolean;
+  longSaving: boolean;
+  longErrorMessage: string | null;
+  longStatusMessage: string | null;
   runtimeAvailable: boolean;
 }>();
 
 const emit = defineEmits<{
+  retryLong: [];
   save: [input: WorkspaceAgentSettingsInput];
+  saveLong: [input: LongAgentSettingsInput];
 }>();
 
 const AGENTS = [
@@ -95,7 +105,7 @@ const REQUIRED_WORKSPACE_STAGES = {
 } as const satisfies Record<ShortWorkspaceAgentId, readonly WorkspaceStageId[]>;
 
 const activeAgentId = ref<ShortWorkspaceAgentId>(AGENTS[0].id);
-const activeWorkspaceType = ref<"short" | "script">("short");
+const activeWorkspaceType = ref<"short" | "script" | "long">("short");
 const draftAgents = ref<ShortWorkspaceAgentSettingsInput["agents"]>([]);
 const visibleErrorMessage = ref<string | null>(null);
 const visibleStatusMessage = ref<string | null>(null);
@@ -107,9 +117,11 @@ const activeAgent = computed(() =>
 );
 
 const activeSettings = computed(() =>
-  props.settings.find(
-    (settings) => settings.workspaceType === activeWorkspaceType.value
-  )
+  activeWorkspaceType.value === "long"
+    ? undefined
+    : props.settings.find(
+        (settings) => settings.workspaceType === activeWorkspaceType.value
+      )
 );
 
 const activeSettingsAgent = computed(() =>
@@ -126,8 +138,34 @@ const activeMeta = computed(
   () => AGENTS.find((agent) => agent.id === activeAgentId.value) ?? AGENTS[0]
 );
 
+const activeLoading = computed(() =>
+  activeWorkspaceType.value === "long" ? props.longLoading : props.loading
+);
+const activeSaving = computed(() =>
+  activeWorkspaceType.value === "long" ? props.longSaving : props.saving
+);
+const activeErrorMessage = computed(() =>
+  activeWorkspaceType.value === "long"
+    ? props.longErrorMessage
+    : props.errorMessage
+);
+const activeStatusMessage = computed(() =>
+  activeWorkspaceType.value === "long"
+    ? props.longStatusMessage
+    : props.statusMessage
+);
 const formDisabled = computed(
-  () => props.loading || props.saving || !props.runtimeAvailable
+  () =>
+    activeLoading.value ||
+    activeSaving.value ||
+    !props.runtimeAvailable
+);
+const activeWorkspaceLabel = computed(() =>
+  activeWorkspaceType.value === "long"
+    ? "长篇"
+    : activeWorkspaceType.value === "script"
+      ? "剧本"
+      : "短篇"
 );
 
 const hasCompleteDraft = computed(() =>
@@ -166,7 +204,7 @@ watch(
 );
 
 watch(
-  () => props.errorMessage,
+  activeErrorMessage,
   (message) => {
     visibleErrorMessage.value = message;
     if (errorToastTimer) clearTimeout(errorToastTimer);
@@ -182,7 +220,7 @@ watch(
 );
 
 watch(
-  () => props.statusMessage,
+  activeStatusMessage,
   (message) => {
     visibleStatusMessage.value = message;
     if (statusToastTimer) clearTimeout(statusToastTimer);
@@ -285,7 +323,14 @@ function resetActiveAgent(): void {
 }
 
 function saveSettings(): void {
-  if (formDisabled.value || !hasCompleteDraft.value) return;
+  if (
+    activeWorkspaceType.value === "long" ||
+    formDisabled.value ||
+    !hasCompleteDraft.value
+  ) {
+    return;
+  }
+  const workspaceType = activeWorkspaceType.value;
 
   const agents = AGENTS.map(({ id }) => {
     const agent = draftAgents.value.find((candidate) => candidate.id === id);
@@ -305,13 +350,13 @@ function saveSettings(): void {
 
     const workspace = new Set<WorkspaceStageId>(agent.readAccess.workspace);
     const requiredStages =
-      activeWorkspaceType.value === "script" && id === "plot_design"
+      workspaceType === "script" && id === "plot_design"
         ? (["plot_design", "plot_refine"] as const)
         : REQUIRED_WORKSPACE_STAGES[id];
     for (const requiredStage of requiredStages) {
       workspace.add(requiredStage);
     }
-    if (activeWorkspaceType.value === "script") {
+    if (workspaceType === "script") {
       workspace.delete("intro_design");
     }
 
@@ -329,7 +374,7 @@ function saveSettings(): void {
 
   if (agents.length !== AGENTS.length) return;
   emit("save", {
-    workspaceType: activeWorkspaceType.value,
+    workspaceType,
     agents
   } as WorkspaceAgentSettingsInput);
 }
@@ -339,9 +384,13 @@ function saveSettings(): void {
   <section class="short-agent-settings" aria-labelledby="short-agent-title">
     <header class="panel-header">
       <div>
-        <span class="panel-kicker">{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}创作空间</span>
+        <span class="panel-kicker">{{ activeWorkspaceLabel }}创作空间</span>
         <h2 id="short-agent-title">智能体设置</h2>
-        <p>分别配置{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}五个智能体的系统提示词、欢迎快捷按钮，以及可读取的创作内容、素材和技能范围。</p>
+        <p>
+          分别配置{{ activeWorkspaceLabel }}{{
+            activeWorkspaceType === "long" ? "六" : "五"
+          }}个智能体的系统提示词、欢迎快捷按钮，以及可读取的创作内容、素材和技能范围。
+        </p>
         <p v-if="!runtimeAvailable" class="runtime-note">
           当前环境仅支持查看；保存和恢复默认设置需要使用 DeepWrite 桌面端。
         </p>
@@ -367,8 +416,14 @@ function saveSettings(): void {
       >
         剧本
       </button>
-      <button type="button" role="tab" disabled aria-selected="false">
-        长篇 <small>尚未接入</small>
+      <button
+        type="button"
+        role="tab"
+        :class="{ 'is-active': activeWorkspaceType === 'long' }"
+        :aria-selected="activeWorkspaceType === 'long'"
+        @click="activeWorkspaceType = 'long'"
+      >
+        长篇
       </button>
     </div>
 
@@ -392,7 +447,17 @@ function saveSettings(): void {
       </div>
     </Teleport>
 
-    <div v-if="loading" class="panel-state" aria-live="polite">
+    <LongAgentSettingsPanel
+      v-if="activeWorkspaceType === 'long'"
+      :settings="longSettings"
+      :loading="longLoading"
+      :saving="longSaving"
+      :load-error="longErrorMessage"
+      :runtime-available="runtimeAvailable"
+      @retry="emit('retryLong')"
+      @save="emit('saveLong', $event)"
+    />
+    <div v-else-if="activeLoading" class="panel-state" aria-live="polite">
       正在加载{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}智能体设置…
     </div>
     <div v-else-if="!activeSettings || !activeAgent" class="panel-state">
@@ -564,7 +629,7 @@ function saveSettings(): void {
             :disabled="formDisabled || !hasCompleteDraft"
             @click="saveSettings"
           >
-            {{ saving ? "保存中…" : "保存创作空间设置" }}
+            {{ activeSaving ? "保存中…" : "保存创作空间设置" }}
           </button>
         </footer>
       </div>

@@ -1,0 +1,610 @@
+import { describe, expect, it } from "vitest";
+import {
+  BookSchema,
+  CatalogProjectManifestSchema,
+  DEFAULT_LONG_AGENT_PROFILES,
+  LONG_BOOK_LINE_FILE_ID,
+  LONG_WORKSPACE_INDEX_FILE_ID,
+  LONG_WORKSPACE_INDEX_PATH,
+  LongAgentProfileSchema,
+  LongBookSchema,
+  LongEventConnectionSchema,
+  LongProjectManifestSchema,
+  LongWorkspaceIndexSnapshotSchema,
+  LongWorkspaceSchemaVersionSchema,
+  WorkspaceTypeSchema,
+  createLongBookSummary,
+  createLongWorkspaceNavigationSnapshot,
+  longChapterBodyFileId,
+  longChapterCharacterStateFileId,
+  longChapterHandoffFileId,
+  longCharacterCoreProfileFileId,
+  longCharacterCurrentStateFileId,
+  longCharacterHistoryFileId,
+  longCharacterRelationshipsFileId,
+  longLedgerCommitFileId,
+  longWorldbuildingFileId,
+  resolveLongAgentIdForRoot
+} from "./index";
+
+const now = "2026-07-26T10:00:00.000Z";
+const revision = "v1:0:00000000";
+
+function file(id: string, path: string) {
+  return { id, path, revision, updatedAt: now };
+}
+
+function chapterFiles(chapterCardId: string, order: number) {
+  return {
+    chapterCardId,
+    body: file(
+      longChapterBodyFileId(chapterCardId),
+      `long/chapters/${order}/body.md`
+    ),
+    characterState: file(
+      longChapterCharacterStateFileId(chapterCardId),
+      `long/chapters/${order}/character-state.md`
+    ),
+    handoff: file(
+      longChapterHandoffFileId(chapterCardId),
+      `long/chapters/${order}/handoff.md`
+    ),
+    commitId: null as string | null
+  };
+}
+
+function workspaceIndex() {
+  return {
+    schemaVersion: 1 as const,
+    revision: 4,
+    bookId: "longbook_alpha",
+    updatedAt: now,
+    bookLine: file(LONG_BOOK_LINE_FILE_ID, "long/plot/book-line.md"),
+    worldbuilding: [
+      {
+        id: "world_rules",
+        title: "世界规则",
+        order: 1,
+        format: "list" as const,
+        contentAuthority: "markdown" as const,
+        file: file(
+          longWorldbuildingFileId("world_rules"),
+          "long/worldbuilding/rules.md"
+        )
+      }
+    ],
+    characters: [
+      {
+        id: "character_alice",
+        name: "林岚",
+        group: "protagonist" as const,
+        order: 1,
+        aliases: ["阿岚"]
+      }
+    ],
+    characterFiles: [
+      {
+        characterId: "character_alice",
+        coreProfile: file(
+          longCharacterCoreProfileFileId("character_alice"),
+          "long/characters/alice/core-profile.md"
+        ),
+        relationships: file(
+          longCharacterRelationshipsFileId("character_alice"),
+          "long/characters/alice/relationships.md"
+        ),
+        currentState: file(
+          longCharacterCurrentStateFileId("character_alice"),
+          "long/characters/alice/current-state.md"
+        ),
+        history: file(
+          longCharacterHistoryFileId("character_alice"),
+          "long/characters/alice/history.md"
+        )
+      }
+    ],
+    plot: {
+      volumes: [
+        {
+          id: "volume_one",
+          title: "第一卷",
+          order: 1,
+          summary: "林岚找到被隐藏的来信。"
+        }
+      ],
+      arcs: [
+        {
+          id: "arc_letter",
+          volumeId: "volume_one",
+          title: "来信之谜",
+          order: 1,
+          outline: "追查来信来源。"
+        }
+      ],
+      chapterCards: [
+        {
+          id: "chapter_one",
+          volumeId: "volume_one",
+          primaryArcId: "arc_letter",
+          title: "雨夜来信",
+          narrativeOrder: 1,
+          outline: "林岚收到来信。",
+          worldConstraints: "来信不能被普通火焰烧毁。",
+          characterIds: ["character_alice"]
+        },
+        {
+          id: "chapter_two",
+          volumeId: "volume_one",
+          primaryArcId: "arc_letter",
+          title: "旧钟楼",
+          narrativeOrder: 2,
+          outline: "林岚前往旧钟楼。",
+          worldConstraints: "",
+          characterIds: ["character_alice"]
+        }
+      ],
+      storyEvents: [
+        {
+          id: "event_letter_sent",
+          title: "寄出来信",
+          summary: "匿名人寄出了来信。",
+          timeMode: "sequence" as const,
+          timeLabel: "故事开始前",
+          storyOrder: 1,
+          location: "未知",
+          arcIds: ["arc_letter"],
+          characterIds: []
+        },
+        {
+          id: "event_letter_received",
+          title: "收到来信",
+          summary: "林岚在雨夜收到来信。",
+          timeMode: "sequence" as const,
+          timeLabel: "第一天",
+          storyOrder: 2,
+          location: "林岚家",
+          arcIds: ["arc_letter"],
+          characterIds: ["character_alice"]
+        }
+      ],
+      eventConnections: [
+        {
+          id: "connection_sent_before_received",
+          sourceEventId: "event_letter_sent",
+          targetEventId: "event_letter_received",
+          type: "before" as const,
+          note: ""
+        }
+      ],
+      narrativePlacements: [
+        {
+          id: "placement_receive_letter",
+          eventId: "event_letter_received",
+          chapterCardId: "chapter_one",
+          orderInChapter: 1,
+          mode: "scene" as const,
+          disclosure: "full" as const,
+          writingPrompt: "现场呈现来信出现。",
+          status: "planned" as
+            | "planned"
+            | "written"
+            | "committed"
+            | "missed",
+          commitId: null as string | null
+        }
+      ],
+      foreshadowing: [
+        {
+          id: "foreshadow_sender",
+          title: "寄信人身份",
+          coreQuestion: "是谁寄出了来信？",
+          truthEventId: "event_letter_sent",
+          expectedReaderEffect: "让读者持续怀疑寄信人的身份。",
+          status: "planned" as const,
+          beats: [
+            {
+              id: "beat_first_clue",
+              type: "plant" as const,
+              order: 1,
+              eventId: "event_letter_received",
+              placementId: "placement_receive_letter",
+              chapterCardId: "chapter_one",
+              plannedScope: "",
+              note: "信封上的蜡封是第一条线索。",
+              status: "planned" as
+                | "planned"
+                | "written"
+                | "committed"
+                | "missed",
+              commitId: null as string | null
+            }
+          ]
+        }
+      ]
+    },
+    chapters: [
+      chapterFiles("chapter_one", 1),
+      chapterFiles("chapter_two", 2)
+    ],
+    ledger: {
+      committedThroughChapterId: null as string | null,
+      commits: [] as Array<{
+        id: string;
+        sequence: number;
+        chapterCardId: string;
+        committedAt: string;
+        reversible: boolean;
+        sourceRevision: number;
+        placementIds: string[];
+        foreshadowingBeatIds: string[];
+        recordFile: ReturnType<typeof file>;
+      }>
+    }
+  };
+}
+
+function commitFirstChapter(workspace: ReturnType<typeof workspaceIndex>) {
+  const commitId = "commit_first";
+  workspace.chapters[0]!.commitId = commitId;
+  workspace.plot.narrativePlacements[0]!.status = "committed";
+  workspace.plot.narrativePlacements[0]!.commitId = commitId;
+  workspace.plot.foreshadowing[0]!.beats[0]!.status = "committed";
+  workspace.plot.foreshadowing[0]!.beats[0]!.commitId = commitId;
+  (
+    workspace.plot.foreshadowing[0]! as {
+      status: "planned" | "open" | "progressing" | "resolved" | "abandoned";
+    }
+  ).status = "open";
+  workspace.ledger.committedThroughChapterId = "chapter_one";
+  workspace.ledger.commits.push({
+    id: commitId,
+    sequence: 1,
+    chapterCardId: "chapter_one",
+    committedAt: now,
+    reversible: true,
+    sourceRevision: workspace.revision,
+    placementIds: ["placement_receive_letter"],
+    foreshadowingBeatIds: ["beat_first_clue"],
+    recordFile: file(
+      longLedgerCommitFileId(commitId),
+      "long/ledger/commit-first.json"
+    )
+  });
+  return workspace;
+}
+
+function longBook() {
+  return {
+    schemaVersion: 1 as const,
+    id: "longbook_alpha",
+    title: "雨夜来信",
+    bookType: "long" as const,
+    genre: "悬疑",
+    status: "editing" as const,
+    linkedMaterialIdsByKind: {
+      character: [],
+      gimmick: [],
+      plot: [],
+      draft: [],
+      other: []
+    },
+    linkedSkillIdsByKind: {
+      general: [],
+      plot: [],
+      style: [],
+      other: []
+    },
+    projectRevision: 4,
+    createdAt: now,
+    updatedAt: now,
+    workspaceIndex: workspaceIndex()
+  };
+}
+
+describe("independent long-form workspace contracts", () => {
+  it("parses a full index, lightweight navigation, book and manifest without joining existing unions", () => {
+    const book = LongBookSchema.parse(longBook());
+    const navigation = createLongWorkspaceNavigationSnapshot(
+      book.workspaceIndex
+    );
+    const summary = createLongBookSummary(book);
+    const manifest = {
+      schemaVersion: 1,
+      revision: 4,
+      kind: "deepwrite.long-book",
+      id: "longbook_alpha",
+      title: "雨夜来信",
+      bookType: "long",
+      genre: "悬疑",
+      status: "editing",
+      linkedMaterialIdsByKind: book.linkedMaterialIdsByKind,
+      linkedSkillIdsByKind: book.linkedSkillIdsByKind,
+      createdAt: now,
+      updatedAt: now,
+      workspaceIndexFile: file(
+        LONG_WORKSPACE_INDEX_FILE_ID,
+        LONG_WORKSPACE_INDEX_PATH
+      )
+    };
+
+    expect(navigation.counts.chapterCards).toBe(2);
+    expect(navigation.chapterCards[0]).toEqual({
+      id: "chapter_one",
+      volumeId: "volume_one",
+      primaryArcId: "arc_letter",
+      title: "雨夜来信",
+      narrativeOrder: 1
+    });
+    expect(navigation).not.toHaveProperty("chapters");
+    expect(navigation.chapterCards[0]).not.toHaveProperty("outline");
+    expect(summary.navigation.bookId).toBe(book.id);
+    expect(LongProjectManifestSchema.parse(manifest).kind).toBe(
+      "deepwrite.long-book"
+    );
+
+    expect(BookSchema.safeParse(book).success).toBe(false);
+    expect(WorkspaceTypeSchema.safeParse("long").success).toBe(false);
+    expect(CatalogProjectManifestSchema.safeParse(manifest).success).toBe(
+      false
+    );
+  });
+
+  it("enforces versioned opaque ids and canonical three-file indexes", () => {
+    expect(LongWorkspaceSchemaVersionSchema.safeParse(1).success).toBe(true);
+    expect(LongWorkspaceSchemaVersionSchema.safeParse(2).success).toBe(false);
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse({
+        ...workspaceIndex(),
+        bookId: "第一部长篇"
+      }).success
+    ).toBe(false);
+
+    const wrongFile = workspaceIndex();
+    wrongFile.chapters[0]!.handoff.id = "file_custom:handoff";
+    expect(LongWorkspaceIndexSnapshotSchema.safeParse(wrongFile).success).toBe(
+      false
+    );
+
+    const duplicatePath = workspaceIndex();
+    duplicatePath.chapters[1]!.body.path =
+      duplicatePath.chapters[0]!.body.path;
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(duplicatePath).success
+    ).toBe(false);
+  });
+
+  it("rejects duplicate and unresolved entity references", () => {
+    const duplicateIds = workspaceIndex();
+    duplicateIds.plot.chapterCards[1]!.id = "chapter_one";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(duplicateIds).success
+    ).toBe(false);
+
+    const duplicateReferences = workspaceIndex();
+    duplicateReferences.plot.chapterCards[0]!.characterIds = [
+      "character_alice",
+      "character_alice"
+    ];
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(duplicateReferences).success
+    ).toBe(false);
+
+    const missingReference = workspaceIndex();
+    missingReference.plot.arcs[0]!.volumeId = "volume_missing";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(missingReference).success
+    ).toBe(false);
+  });
+
+  it("requires contiguous volume, arc, chapter and placement order", () => {
+    const volumeOrder = workspaceIndex();
+    volumeOrder.plot.volumes[0]!.order = 2;
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(volumeOrder).success
+    ).toBe(false);
+
+    const chapterOrder = workspaceIndex();
+    chapterOrder.plot.chapterCards[1]!.narrativeOrder = 1;
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(chapterOrder).success
+    ).toBe(false);
+
+    const placementOrder = workspaceIndex();
+    placementOrder.plot.narrativePlacements[0]!.orderInChapter = 2;
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(placementOrder).success
+    ).toBe(false);
+  });
+
+  it("rejects event self-references and before cycles", () => {
+    expect(
+      LongEventConnectionSchema.safeParse({
+        id: "connection_self",
+        sourceEventId: "event_letter_sent",
+        targetEventId: "event_letter_sent",
+        type: "before",
+        note: ""
+      }).success
+    ).toBe(false);
+
+    const cycle = workspaceIndex();
+    cycle.plot.eventConnections.push({
+      id: "connection_received_before_sent",
+      sourceEventId: "event_letter_received",
+      targetEventId: "event_letter_sent",
+      type: "before",
+      note: ""
+    });
+    expect(LongWorkspaceIndexSnapshotSchema.safeParse(cycle).success).toBe(
+      false
+    );
+  });
+
+  it("accepts a coherent commit and rejects non-prefix or partial commit state", () => {
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(
+        commitFirstChapter(workspaceIndex())
+      ).success
+    ).toBe(true);
+
+    const skippedFirst = workspaceIndex();
+    skippedFirst.chapters[1]!.commitId = "commit_second";
+    skippedFirst.ledger.committedThroughChapterId = "chapter_two";
+    skippedFirst.ledger.commits.push({
+      id: "commit_second",
+      sequence: 1,
+      chapterCardId: "chapter_two",
+      committedAt: now,
+      reversible: true,
+      sourceRevision: skippedFirst.revision,
+      placementIds: [],
+      foreshadowingBeatIds: [],
+      recordFile: file(
+        longLedgerCommitFileId("commit_second"),
+        "long/ledger/commit-second.json"
+      )
+    });
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(skippedFirst).success
+    ).toBe(false);
+
+    const undecidedPlacement = commitFirstChapter(workspaceIndex());
+    undecidedPlacement.plot.narrativePlacements[0]!.status = "planned";
+    undecidedPlacement.plot.narrativePlacements[0]!.commitId = null;
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(undecidedPlacement).success
+    ).toBe(false);
+
+    const wrongCommittedThrough = commitFirstChapter(workspaceIndex());
+    wrongCommittedThrough.ledger.committedThroughChapterId = "chapter_two";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(wrongCommittedThrough).success
+    ).toBe(false);
+  });
+
+  it("requires a committed beat's bound placement and event to agree", () => {
+    const missedPlacement = commitFirstChapter(workspaceIndex());
+    missedPlacement.plot.narrativePlacements[0]!.status = "missed";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(missedPlacement).success
+    ).toBe(false);
+
+    const missingBeatEvent = commitFirstChapter(workspaceIndex());
+    (
+      missingBeatEvent.plot.foreshadowing[0]!.beats[0]! as {
+        eventId: string | null;
+      }
+    ).eventId = null;
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(missingBeatEvent).success
+    ).toBe(false);
+  });
+
+  it("derives non-abandoned foreshadowing status from committed beats", () => {
+    const inconsistent = commitFirstChapter(workspaceIndex());
+    (
+      inconsistent.plot.foreshadowing[0]! as {
+        status: "planned" | "open" | "progressing" | "resolved" | "abandoned";
+      }
+    ).status = "planned";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(inconsistent).success
+    ).toBe(false);
+
+    const explicitlyAbandoned = commitFirstChapter(workspaceIndex());
+    (
+      explicitlyAbandoned.plot.foreshadowing[0]! as {
+        status: "planned" | "open" | "progressing" | "resolved" | "abandoned";
+      }
+    ).status = "abandoned";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(explicitlyAbandoned)
+        .success
+    ).toBe(true);
+
+    const uncommittedButOpen = workspaceIndex();
+    (
+      uncommittedButOpen.plot.foreshadowing[0]! as {
+        status: "planned" | "open" | "progressing" | "resolved" | "abandoned";
+      }
+    ).status = "open";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(uncommittedButOpen)
+        .success
+    ).toBe(false);
+  });
+
+  it("validates a long before-chain iteratively without overflowing the stack", () => {
+    const large = workspaceIndex();
+    const eventCount = 2_500;
+    large.plot.storyEvents = Array.from({ length: eventCount }, (_, index) => ({
+      id: `event_e${index}`,
+      title: `事件 ${index + 1}`,
+      summary: "",
+      timeMode: "sequence" as const,
+      timeLabel: "",
+      storyOrder: index + 1,
+      location: "",
+      arcIds: [],
+      characterIds: []
+    }));
+    large.plot.eventConnections = Array.from(
+      { length: eventCount - 1 },
+      (_, index) => ({
+        id: `connection_c${index}`,
+        sourceEventId: `event_e${index}`,
+        targetEventId: `event_e${index + 1}`,
+        type: "before" as const,
+        note: ""
+      })
+    );
+    large.plot.narrativePlacements = [];
+    large.plot.foreshadowing = [];
+
+    expect(LongWorkspaceIndexSnapshotSchema.safeParse(large).success).toBe(
+      true
+    );
+  });
+
+  it("defines a long-only agent profile without widening shared agent schemas", () => {
+    const profile = LongAgentProfileSchema.parse({
+      workspaceType: "long",
+      id: "expert_section_writer",
+      label: "单章写手",
+      description: "一次只处理一张章卡及其三个正文文件。",
+      systemPrompt: "根据章卡编写正文、人物状态和交接文档。",
+      welcomeShortcuts: ["写当前章", "续写当前章", "检查本章连续性"],
+      readAccess: {
+        workspaceRoots: ["plot_design", "draft", "continuity_ledger"],
+        materialKinds: ["draft"],
+        skillKinds: ["general", "style"]
+      },
+      writeAccess: {
+        workspaceRoots: ["draft"],
+        capabilities: ["write_chapter_files"]
+      }
+    });
+
+    expect(profile.id).toBe("expert_section_writer");
+    expect(WorkspaceTypeSchema.safeParse(profile.workspaceType).success).toBe(
+      false
+    );
+  });
+
+  it("provides an exhaustive isolated default agent set", () => {
+    expect(
+      DEFAULT_LONG_AGENT_PROFILES.map(({ id }) => id)
+    ).toEqual([
+      "worldbuilding",
+      "character_design",
+      "plot_design",
+      "draft",
+      "expert_section_writer",
+      "continuity_ledger"
+    ]);
+    expect(resolveLongAgentIdForRoot("draft")).toBe("draft");
+    expect(resolveLongAgentIdForRoot("draft", true)).toBe(
+      "expert_section_writer"
+    );
+  });
+});

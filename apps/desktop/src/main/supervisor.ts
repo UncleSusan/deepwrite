@@ -1,16 +1,23 @@
 import { utilityProcess, type UtilityProcess } from "electron";
 import { join } from "node:path";
 import {
+  UtilityInternalCommandResultMessageSchema,
   UtilityOutboundMessageSchema,
   type CommandEnvelope,
   type CommandResult,
   type SystemEventEnvelope,
   type UtilityHealthPayload,
+  type UtilityInternalCommandRequestMessage,
+  type UtilityInternalCommandTarget,
   type UtilityWorkerName
 } from "@deepwrite/contracts";
 import { createId, nowIso } from "@deepwrite/shared";
 
 type WorkerStatus = UtilityHealthPayload["status"];
+
+const MAX_PENDING_INTERNAL_COMMANDS = 32;
+
+class UtilityCommandTimeoutError extends Error {}
 
 interface PendingHealthCheck {
   resolve(payload: UtilityHealthPayload): void;
@@ -29,10 +36,50 @@ interface PendingShutdown {
   timer: NodeJS.Timeout;
 }
 
-interface UtilitySupervisorOptions {
+interface PendingInternalCommandBridge {
+  source: "agent";
+  target: UtilityInternalCommandTarget;
+  requestId: string;
+  parentRequestId: string;
+  targetRequestId: string;
+  commandId: string;
+}
+
+export interface UtilityInternalCommandAuthorizationContext {
+  source: UtilityWorkerName;
+  target: UtilityInternalCommandTarget;
+  message: UtilityInternalCommandRequestMessage;
+}
+
+export type UtilityInternalCommandAuthorizationResult =
+  | boolean
+  | {
+      authorized: boolean;
+      /** Stable Main-owned reason code for diagnostics and tests. */
+      code?: string;
+      message?: string;
+    };
+
+export interface UtilitySupervisorOptions {
   onUtilityEvent(event: SystemEventEnvelope, worker: UtilityWorkerName): void;
   onUnexpectedExit(worker: UtilityWorkerName, reason: string): void;
   onWorkerRestarted(worker: UtilityWorkerName, reason: string): void;
+  internalCommandAllowlist?: Readonly<
+    Partial<
+      Record<
+        UtilityInternalCommandTarget,
+        readonly CommandEnvelope["type"][]
+      >
+    >
+  >;
+  /**
+   * Optional run-time authorization after the static allowlist and before
+   * forwarding. A false/denied decision is always surfaced to Agent as
+   * utility.internal_command_unauthorized.
+   */
+  internalCommandAuthorize?: (
+    context: UtilityInternalCommandAuthorizationContext
+  ) => UtilityInternalCommandAuthorizationResult;
 }
 
 class UtilityWorker {
@@ -54,7 +101,12 @@ class UtilityWorker {
     private readonly onUtilityEvent: (
       event: SystemEventEnvelope,
       worker: UtilityWorkerName
-    ) => void
+    ) => void,
+    private readonly onInternalCommandRequest: (
+      source: UtilityWorkerName,
+      message: UtilityInternalCommandRequestMessage
+    ) => void,
+    private readonly onExit: (worker: UtilityWorkerName, reason: string) => void
   ) {}
 
   start(): void {
@@ -82,6 +134,7 @@ class UtilityWorker {
       this.resolvePendingHealth("degraded");
       this.rejectPendingCommands(new Error(`${this.name} utility exited: ${reason}`));
       this.resolvePendingShutdown();
+      this.onExit(this.name, reason);
 
       if (unexpected) {
         this.onUnexpectedExit(this.name, reason);
@@ -112,7 +165,11 @@ class UtilityWorker {
     });
   }
 
-  requestCommand(command: CommandEnvelope, timeoutMs = 60_000): Promise<CommandResult> {
+  requestCommand(
+    command: CommandEnvelope,
+    timeoutMs = 60_000,
+    requestId = command.id
+  ): Promise<CommandResult> {
     const child = this.child;
     if (!child || this.isStopping) {
       return Promise.resolve({
@@ -125,7 +182,12 @@ class UtilityWorker {
       });
     }
 
-    if (this.pendingCommands.has(command.id)) {
+    if (
+      this.pendingCommands.has(requestId) ||
+      [...this.pendingCommands.values()].some(
+        (pending) => pending.commandId === command.id
+      )
+    ) {
       return Promise.resolve({
         status: "rejected",
         requestId: command.id,
@@ -140,11 +202,15 @@ class UtilityWorker {
       const timer =
         timeoutMs > 0
           ? setTimeout(() => {
-              this.pendingCommands.delete(command.id);
-              reject(new Error(`${this.name} utility command timed out: ${command.type}`));
+              this.pendingCommands.delete(requestId);
+              reject(
+                new UtilityCommandTimeoutError(
+                  `${this.name} utility command timed out: ${command.type}`
+                )
+              );
             }, timeoutMs)
           : undefined;
-      this.pendingCommands.set(command.id, {
+      this.pendingCommands.set(requestId, {
         commandId: command.id,
         resolve,
         reject,
@@ -154,15 +220,52 @@ class UtilityWorker {
       try {
         child.postMessage({
           kind: "utility.command.request",
-          requestId: command.id,
+          requestId,
           command
         });
       } catch (error: unknown) {
         clearTimeout(timer);
-        this.pendingCommands.delete(command.id);
+        this.pendingCommands.delete(requestId);
         reject(error instanceof Error ? error : new Error("Failed to post utility command."));
       }
     });
+  }
+
+  cancelCommandRequest(requestId: string, error: Error): void {
+    const pending = this.pendingCommands.get(requestId);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.pendingCommands.delete(requestId);
+    pending.reject(error);
+  }
+
+  sendInternalCommandResult(
+    target: UtilityInternalCommandTarget,
+    requestId: string,
+    parentRequestId: string,
+    result: CommandResult
+  ): boolean {
+    const child = this.child;
+    if (!child || this.isStopping || this.name !== "agent") {
+      return false;
+    }
+    try {
+      child.postMessage(
+        UtilityInternalCommandResultMessageSchema.parse({
+          kind: "utility.internal.command.result",
+          worker: "agent",
+          target,
+          requestId,
+          parentRequestId,
+          result
+        })
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   shutdown(timeoutMs = 1800): Promise<void> {
@@ -215,7 +318,13 @@ class UtilityWorker {
     if (!parsed.success) {
       const raw = rawMessage as Record<string, unknown> | null;
       const requestId = raw && typeof raw.requestId === "string" ? raw.requestId : undefined;
-      const pending = requestId ? this.pendingCommands.get(requestId) : undefined;
+      const isCommandResponse =
+        raw?.kind === "utility.command.result" ||
+        raw?.kind === "utility.command.event";
+      const pending =
+        requestId && isCommandResponse
+          ? this.pendingCommands.get(requestId)
+          : undefined;
       if (requestId && pending) {
         clearTimeout(pending.timer);
         this.pendingCommands.delete(requestId);
@@ -281,6 +390,11 @@ class UtilityWorker {
       return;
     }
 
+    if (message.kind === "utility.internal.command.request") {
+      this.onInternalCommandRequest(this.name, message);
+      return;
+    }
+
     this.onUtilityEvent(message.event, this.name);
   }
 
@@ -293,10 +407,8 @@ class UtilityWorker {
   }
 
   private rejectPendingCommands(error: Error): void {
-    for (const [requestId, pending] of this.pendingCommands) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-      this.pendingCommands.delete(requestId);
+    for (const requestId of this.pendingCommands.keys()) {
+      this.cancelCommandRequest(requestId, error);
     }
   }
 
@@ -315,6 +427,10 @@ export class UtilitySupervisor {
   private readonly workers: Map<UtilityWorkerName, UtilityWorker>;
   private readonly restartTimers = new Map<UtilityWorkerName, NodeJS.Timeout>();
   private readonly restartReasons = new Map<UtilityWorkerName, string>();
+  private readonly pendingInternalCommands = new Map<
+    string,
+    PendingInternalCommandBridge
+  >();
   private shuttingDown = false;
 
   constructor(private readonly options: UtilitySupervisorOptions) {
@@ -324,7 +440,10 @@ export class UtilitySupervisor {
         join(__dirname, "utilities", `${name}-entry.js`),
         (worker, reason) => this.handleUnexpectedExit(worker, reason),
         (worker) => this.handleWorkerReady(worker),
-        options.onUtilityEvent
+        options.onUtilityEvent,
+        (source, message) =>
+          this.handleInternalCommandRequest(source, message),
+        (worker, reason) => this.handleWorkerExit(worker, reason)
       );
 
     this.workers = new Map([
@@ -385,11 +504,270 @@ export class UtilitySupervisor {
     }
     this.restartTimers.clear();
     this.restartReasons.clear();
-    await Promise.all(
-      [...this.workers.entries()].map(([name, worker]) =>
-        worker.shutdown(name === "core" ? 30_000 : 1800)
-      )
+    this.cancelPendingInternalCommands(
+      "utility.internal_command_cancelled",
+      "Utility supervisor is shutting down."
     );
+    await this.workers.get("agent")?.shutdown(1800);
+    await Promise.all([
+      this.workers.get("tool")?.shutdown(1800),
+      this.workers.get("core")?.shutdown(30_000)
+    ]);
+  }
+
+  private handleInternalCommandRequest(
+    source: UtilityWorkerName,
+    message: UtilityInternalCommandRequestMessage
+  ): void {
+    if (source !== "agent" || message.worker !== source) {
+      return;
+    }
+
+    const sourceWorker = this.workers.get("agent");
+    if (!sourceWorker) {
+      return;
+    }
+    if (this.shuttingDown) {
+      sourceWorker.sendInternalCommandResult(
+        message.target,
+        message.requestId,
+        message.parentRequestId,
+        this.createInternalCommandRejection(
+          message.command.id,
+          "utility.internal_command_cancelled",
+          "Utility supervisor is shutting down."
+        )
+      );
+      return;
+    }
+    const allowedCommandTypes =
+      this.options.internalCommandAllowlist?.[message.target] ?? [];
+    if (!allowedCommandTypes.includes(message.command.type)) {
+      sourceWorker.sendInternalCommandResult(
+        message.target,
+        message.requestId,
+        message.parentRequestId,
+        this.createInternalCommandRejection(
+          message.command.id,
+          "utility.internal_command_not_allowed",
+          `${message.command.type} is not allowed for the ${message.target} utility bridge.`
+        )
+      );
+      return;
+    }
+    const authorization = this.authorizeInternalCommand({
+      source,
+      target: message.target,
+      message
+    });
+    if (!authorization.authorized) {
+      sourceWorker.sendInternalCommandResult(
+        message.target,
+        message.requestId,
+        message.parentRequestId,
+        this.createInternalCommandRejection(
+          message.command.id,
+          "utility.internal_command_unauthorized",
+          authorization.message ??
+            "The internal utility command is not authorized for the active run.",
+          authorization.code
+            ? { authorizationCode: authorization.code }
+            : undefined
+        )
+      );
+      return;
+    }
+    if (this.pendingInternalCommands.has(message.requestId)) {
+      return;
+    }
+    if (this.pendingInternalCommands.size >= MAX_PENDING_INTERNAL_COMMANDS) {
+      sourceWorker.sendInternalCommandResult(
+        message.target,
+        message.requestId,
+        message.parentRequestId,
+        this.createInternalCommandRejection(
+          message.command.id,
+          "utility.internal_command_limit",
+          "Too many internal utility commands are pending."
+        )
+      );
+      return;
+    }
+
+    const targetWorker = this.workers.get(message.target);
+    if (!targetWorker) {
+      sourceWorker.sendInternalCommandResult(
+        message.target,
+        message.requestId,
+        message.parentRequestId,
+        this.createInternalCommandRejection(
+          message.command.id,
+          "utility.internal_command_unknown_target",
+          `Unknown internal utility target: ${message.target}`
+        )
+      );
+      return;
+    }
+
+    const targetRequestId = createId(`internal_${message.target}`);
+    this.pendingInternalCommands.set(message.requestId, {
+      source: "agent",
+      target: message.target,
+      requestId: message.requestId,
+      parentRequestId: message.parentRequestId,
+      targetRequestId,
+      commandId: message.command.id
+    });
+
+    void targetWorker
+      .requestCommand(message.command, message.timeoutMs, targetRequestId)
+      .then((result) => {
+        this.completeInternalCommand(message.requestId, result);
+      })
+      .catch((error: unknown) => {
+        const timedOut = error instanceof UtilityCommandTimeoutError;
+        this.completeInternalCommand(
+          message.requestId,
+          this.createInternalCommandRejection(
+            message.command.id,
+            timedOut
+              ? "utility.internal_command_timeout"
+              : "utility.internal_command_failed",
+            timedOut
+              ? `${message.target} utility internal command timed out.`
+              : error instanceof Error
+                ? error.message
+                : "Internal utility command failed."
+          )
+        );
+      });
+  }
+
+  private completeInternalCommand(
+    requestId: string,
+    result: CommandResult
+  ): void {
+    const pending = this.pendingInternalCommands.get(requestId);
+    if (!pending) {
+      return;
+    }
+    this.pendingInternalCommands.delete(requestId);
+    const correlatedResult =
+      result.requestId === pending.commandId
+        ? result
+        : this.createInternalCommandRejection(
+            pending.commandId,
+            "utility.internal_command_invalid_result",
+            "Internal utility result did not match the requested command."
+          );
+    this.workers
+      .get(pending.source)
+      ?.sendInternalCommandResult(
+        pending.target,
+        pending.requestId,
+        pending.parentRequestId,
+        correlatedResult
+      );
+  }
+
+  private handleWorkerExit(worker: UtilityWorkerName, reason: string): void {
+    for (const pending of [...this.pendingInternalCommands.values()]) {
+      if (pending.source === worker) {
+        this.pendingInternalCommands.delete(pending.requestId);
+        this.workers
+          .get(pending.target)
+          ?.cancelCommandRequest(
+            pending.targetRequestId,
+            new Error(`Internal command source exited: ${reason}`)
+          );
+        continue;
+      }
+      if (pending.target === worker) {
+        this.pendingInternalCommands.delete(pending.requestId);
+        this.workers
+          .get(pending.source)
+          ?.sendInternalCommandResult(
+            pending.target,
+            pending.requestId,
+            pending.parentRequestId,
+            this.createInternalCommandRejection(
+              pending.commandId,
+              "utility.internal_command_target_exited",
+              `${worker} utility exited before completing the internal command.`
+            )
+          );
+      }
+    }
+  }
+
+  private cancelPendingInternalCommands(code: string, message: string): void {
+    for (const pending of [...this.pendingInternalCommands.values()]) {
+      this.pendingInternalCommands.delete(pending.requestId);
+      this.workers
+        .get(pending.target)
+        ?.cancelCommandRequest(
+          pending.targetRequestId,
+          new Error(message)
+        );
+      this.workers
+        .get(pending.source)
+        ?.sendInternalCommandResult(
+          pending.target,
+          pending.requestId,
+          pending.parentRequestId,
+          this.createInternalCommandRejection(
+            pending.commandId,
+            code,
+            message
+          )
+        );
+    }
+  }
+
+  private createInternalCommandRejection(
+    commandId: string,
+    code: string,
+    message: string,
+    details?: Record<string, unknown>
+  ): CommandResult {
+    return {
+      status: "rejected",
+      requestId: commandId,
+      error: {
+        code,
+        message,
+        ...(details ? { details } : {})
+      }
+    };
+  }
+
+  private authorizeInternalCommand(
+    context: UtilityInternalCommandAuthorizationContext
+  ): {
+    authorized: boolean;
+    code?: string;
+    message?: string;
+  } {
+    const authorize = this.options.internalCommandAuthorize;
+    if (!authorize) {
+      return { authorized: true };
+    }
+    try {
+      const decision = authorize(context);
+      if (typeof decision === "boolean") {
+        return { authorized: decision };
+      }
+      return decision;
+    } catch (error: unknown) {
+      return {
+        authorized: false,
+        code: "authorizer_exception",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The internal command authorizer failed."
+      };
+    }
   }
 
   private handleUnexpectedExit(worker: UtilityWorkerName, reason: string): void {

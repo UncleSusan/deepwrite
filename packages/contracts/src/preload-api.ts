@@ -75,6 +75,47 @@ import type {
   UpdateBookInput,
   UpdateLibraryGroupInput
 } from "./catalog";
+import type {
+  CreateLongBookInput,
+  LongExportPortableInput,
+  LongExportPortableResult,
+  LongImportPortableResult,
+  LongImportWriteClawResult,
+  LongApplyOperationsInput,
+  LongApplyOperationsResult,
+  LongListBooksResult,
+  LongOpenBookInput,
+  LongOpenBookResult,
+  LongPreviewOperationsInput,
+  LongPreviewOperationsResult,
+  LongReadDocumentInput,
+  LongReadDocumentResult,
+  LongRemoveBookInput,
+  LongRemoveBookResult,
+  LongSearchInput,
+  LongSearchResult,
+  LongUpdateBindingsInput,
+  LongWorkspaceIndexResult,
+  LongWriteDocumentInput,
+  LongWriteDocumentResult
+} from "./long-workspace-api";
+import type {
+  LongCommitChapterInput,
+  LongCommitChapterResult,
+  LongRollbackLastCommitInput,
+  LongRollbackLastCommitResult,
+  LongWriteChapterInput,
+  LongWriteChapterResult
+} from "./long-ledger";
+import type {
+  LongAgentSettings,
+  LongAgentSettingsInput
+} from "./long-agent-settings";
+import type {
+  LongAgentTeamSettings,
+  LongAgentTeamSettingsInput
+} from "./long-agent-team";
+import type { LongAgentId } from "./long-workspace";
 
 export interface DeepWriteApi {
   system: {
@@ -111,6 +152,47 @@ export interface DeepWriteApi {
       input: DeleteCatalogProjectInput
     ): Promise<DeleteCatalogProjectResult>;
   };
+  long: {
+    list(): Promise<LongListBooksResult>;
+    create(input: CreateLongBookInput): Promise<LongOpenBookResult | null>;
+    importWriteClaw(): Promise<LongImportWriteClawResult | null>;
+    importPortable(): Promise<LongImportPortableResult | null>;
+    exportPortable(
+      input: LongExportPortableInput
+    ): Promise<LongExportPortableResult>;
+    open(input: LongOpenBookInput): Promise<LongOpenBookResult>;
+    updateBindings(
+      input: LongUpdateBindingsInput
+    ): Promise<LongOpenBookResult>;
+    openExisting(): Promise<LongOpenBookResult | null>;
+    getWorkspaceIndex(
+      input: LongOpenBookInput
+    ): Promise<LongWorkspaceIndexResult>;
+    readDocument(
+      input: LongReadDocumentInput
+    ): Promise<LongReadDocumentResult>;
+    search(input: LongSearchInput): Promise<LongSearchResult>;
+    writeDocument(
+      input: LongWriteDocumentInput
+    ): Promise<LongWriteDocumentResult>;
+    previewOperations(
+      input: LongPreviewOperationsInput
+    ): Promise<LongPreviewOperationsResult>;
+    applyOperations(
+      input: LongApplyOperationsInput
+    ): Promise<LongApplyOperationsResult>;
+    writeChapter(
+      input: LongWriteChapterInput
+    ): Promise<LongWriteChapterResult>;
+    commitChapter(
+      input: LongCommitChapterInput
+    ): Promise<LongCommitChapterResult>;
+    rollbackLastCommit(
+      input: LongRollbackLastCommitInput
+    ): Promise<LongRollbackLastCommitResult>;
+    unregister(input: LongRemoveBookInput): Promise<LongRemoveBookResult>;
+    delete(input: LongRemoveBookInput): Promise<LongRemoveBookResult>;
+  };
   session: {
     prompt(payload: SessionPromptCommandPayload): Promise<SessionPromptAcceptedPayload>;
     abort(payload: SessionAbortCommandPayload): Promise<SessionAbortAcceptedPayload>;
@@ -127,6 +209,17 @@ export interface DeepWriteApi {
       workspaceType: WorkspaceType,
       agentId?: WorkspaceAgentId
     ): Promise<WorkspaceAgentSettings>;
+  };
+  longAgents: {
+    list(): Promise<LongAgentSettings>;
+    save(settings: LongAgentSettingsInput): Promise<LongAgentSettings>;
+    reset(agentId?: LongAgentId): Promise<LongAgentSettings>;
+  };
+  longAgentTeams: {
+    list(): Promise<LongAgentTeamSettings>;
+    save(
+      settings: LongAgentTeamSettingsInput
+    ): Promise<LongAgentTeamSettings>;
   };
   agentTeams: {
     list(workspaceType: WorkspaceType): Promise<WorkspaceAgentTeamSettings>;

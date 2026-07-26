@@ -1,0 +1,733 @@
+<script setup lang="ts">
+import {
+  DEFAULT_LONG_AGENT_SETTINGS,
+  LONG_AGENT_IDS,
+  LongAgentSettingsInputSchema,
+  getDefaultLongAgentProfile,
+  type LongAgentId,
+  type LongAgentSettings,
+  type LongAgentSettingsInput,
+  type LongAgentSettingsInputAgent,
+  type LongWorkspaceRoot,
+  type MaterialKind,
+  type SkillKind
+} from "@deepwrite/contracts";
+import { computed, ref, watch } from "vue";
+import { uiMessage } from "../ui-feedback";
+
+interface ReadOption<T extends string> {
+  id: T;
+  label: string;
+  description: string;
+}
+
+const props = defineProps<{
+  settings: LongAgentSettings | null;
+  loading: boolean;
+  saving: boolean;
+  loadError?: string | null;
+  runtimeAvailable: boolean;
+}>();
+
+const emit = defineEmits<{
+  retry: [];
+  save: [settings: LongAgentSettingsInput];
+}>();
+
+const AGENT_META = [
+  { id: "worldbuilding", eyebrow: "设定", label: "世界观" },
+  { id: "character_design", eyebrow: "设定", label: "人物设计" },
+  { id: "plot_design", eyebrow: "结构", label: "剧情设计" },
+  { id: "draft", eyebrow: "正文", label: "正文统筹" },
+  { id: "expert_section_writer", eyebrow: "正文", label: "单章写手" },
+  { id: "continuity_ledger", eyebrow: "连续性", label: "连续性账本" }
+] as const satisfies readonly {
+  id: LongAgentId;
+  eyebrow: string;
+  label: string;
+}[];
+
+const WORKSPACE_OPTIONS = [
+  {
+    id: "worldbuilding",
+    label: "世界观",
+    description: "规则、势力、地理、历史、术语、境界与物品"
+  },
+  {
+    id: "character_design",
+    label: "人物设计",
+    description: "人物核心、关系、当前状态与历史"
+  },
+  {
+    id: "plot_design",
+    label: "剧情结构",
+    description: "卷、剧情弧、章卡、事件、落点与伏笔"
+  },
+  {
+    id: "draft",
+    label: "正文",
+    description: "章节正文、人物状态与下一章交接"
+  },
+  {
+    id: "continuity_ledger",
+    label: "连续性账本",
+    description: "已提交事实、摘要、决策与审计记录"
+  }
+] as const satisfies readonly ReadOption<LongWorkspaceRoot>[];
+
+const MATERIAL_OPTIONS = [
+  { id: "character", label: "人物素材", description: "人物设定类素材" },
+  { id: "gimmick", label: "卖点素材", description: "题材卖点与创意钩子" },
+  { id: "plot", label: "剧情素材", description: "剧情结构与桥段参考" },
+  { id: "draft", label: "正文素材", description: "正文片段与行文参考" },
+  { id: "other", label: "其他素材", description: "未归入以上分类的素材" }
+] as const satisfies readonly ReadOption<MaterialKind>[];
+
+const SKILL_OPTIONS = [
+  { id: "general", label: "通用技能", description: "跨阶段可复用的通用能力" },
+  { id: "plot", label: "剧情技能", description: "设定、剧情与结构设计能力" },
+  { id: "style", label: "文风技能", description: "正文行文与风格执行能力" },
+  { id: "other", label: "其他技能", description: "未归入以上分类的技能" }
+] as const satisfies readonly ReadOption<SkillKind>[];
+
+const activeAgentId = ref<LongAgentId>(LONG_AGENT_IDS[0]);
+const draftAgents = ref<LongAgentSettingsInput["agents"]>([]);
+
+const activeAgent = computed(() =>
+  draftAgents.value.find((agent) => agent.id === activeAgentId.value)
+);
+const activeProfile = computed(() =>
+  props.settings?.agents.find((agent) => agent.id === activeAgentId.value)
+);
+const activeMeta = computed(
+  () =>
+    AGENT_META.find((agent) => agent.id === activeAgentId.value) ??
+    AGENT_META[0]
+);
+const immutableProfile = computed(() =>
+  getDefaultLongAgentProfile(activeAgentId.value)
+);
+const formDisabled = computed(
+  () =>
+    props.loading ||
+    props.saving ||
+    Boolean(props.loadError) ||
+    !props.runtimeAvailable
+);
+const hasCompleteDraft = computed(() =>
+  LONG_AGENT_IDS.every((id) =>
+    draftAgents.value.some((agent) => agent.id === id)
+  )
+);
+
+watch(
+  () => props.settings,
+  (settings) => {
+    draftAgents.value = settings
+      ? settings.agents.map((agent) => ({
+          id: agent.id,
+          systemPrompt: agent.systemPrompt,
+          welcomeShortcuts: [
+            agent.welcomeShortcuts[0],
+            agent.welcomeShortcuts[1],
+            agent.welcomeShortcuts[2]
+          ],
+          readAccess: {
+            workspaceRoots: [...agent.readAccess.workspaceRoots],
+            materialKinds: [...agent.readAccess.materialKinds],
+            skillKinds: [...agent.readAccess.skillKinds]
+          }
+        }))
+      : [];
+  },
+  { immediate: true, deep: true }
+);
+
+function isRequiredWorkspaceRoot(root: LongWorkspaceRoot): boolean {
+  return immutableProfile.value.writeAccess.workspaceRoots.includes(root);
+}
+
+function isReadAccessChecked(
+  scope: keyof LongAgentSettingsInputAgent["readAccess"],
+  id: string
+): boolean {
+  const values = activeAgent.value?.readAccess[scope] as
+    | readonly string[]
+    | undefined;
+  return values?.includes(id) ?? false;
+}
+
+function patchReadAccess(
+  scope: keyof LongAgentSettingsInputAgent["readAccess"],
+  id: string,
+  checked: boolean
+): void {
+  const agent = activeAgent.value;
+  if (!agent || formDisabled.value) return;
+  if (
+    scope === "workspaceRoots" &&
+    !checked &&
+    isRequiredWorkspaceRoot(id as LongWorkspaceRoot)
+  ) {
+    return;
+  }
+  const values = new Set(agent.readAccess[scope] as readonly string[]);
+  if (checked) values.add(id);
+  else values.delete(id);
+  Object.assign(agent.readAccess, { [scope]: [...values] });
+}
+
+function handleCheckboxChange(
+  scope: keyof LongAgentSettingsInputAgent["readAccess"],
+  id: string,
+  event: Event
+): void {
+  patchReadAccess(scope, id, (event.target as HTMLInputElement).checked);
+}
+
+function resetActiveAgent(): void {
+  if (formDisabled.value) return;
+  const builtin = DEFAULT_LONG_AGENT_SETTINGS.agents.find(
+    (agent) => agent.id === activeAgentId.value
+  );
+  const index = draftAgents.value.findIndex(
+    (agent) => agent.id === activeAgentId.value
+  );
+  if (!builtin || index < 0) return;
+  draftAgents.value[index] = {
+    id: builtin.id,
+    systemPrompt: builtin.systemPrompt,
+    welcomeShortcuts: [
+      builtin.welcomeShortcuts[0],
+      builtin.welcomeShortcuts[1],
+      builtin.welcomeShortcuts[2]
+    ],
+    readAccess: {
+      workspaceRoots: [...builtin.readAccess.workspaceRoots],
+      materialKinds: [...builtin.readAccess.materialKinds],
+      skillKinds: [...builtin.readAccess.skillKinds]
+    }
+  };
+  uiMessage.info("当前长篇智能体已恢复内置值；点击保存后生效。");
+}
+
+function saveSettings(): void {
+  if (formDisabled.value || !hasCompleteDraft.value) return;
+  const agents = LONG_AGENT_IDS.map((id) => {
+    const agent = draftAgents.value.find((candidate) => candidate.id === id);
+    if (!agent) return null;
+    const shortcuts = agent.welcomeShortcuts.map((value) => value.trim());
+    if (shortcuts.length !== 3 || shortcuts.some((value) => !value)) {
+      uiMessage.warning("每个长篇智能体的三个欢迎快捷按钮都不能为空");
+      return null;
+    }
+    const requiredRoots = getDefaultLongAgentProfile(
+      id
+    ).writeAccess.workspaceRoots;
+    const workspaceRoots = new Set(agent.readAccess.workspaceRoots);
+    requiredRoots.forEach((root) => workspaceRoots.add(root));
+    return {
+      id,
+      systemPrompt: agent.systemPrompt,
+      welcomeShortcuts: [shortcuts[0]!, shortcuts[1]!, shortcuts[2]!],
+      readAccess: {
+        workspaceRoots: [...workspaceRoots],
+        materialKinds: [...agent.readAccess.materialKinds],
+        skillKinds: [...agent.readAccess.skillKinds]
+      }
+    };
+  }).filter(
+    (agent): agent is LongAgentSettingsInputAgent => agent !== null
+  );
+  if (agents.length !== LONG_AGENT_IDS.length) return;
+  const parsed = LongAgentSettingsInputSchema.safeParse({
+    workspaceType: "long",
+    agents
+  });
+  if (!parsed.success) {
+    uiMessage.warning(
+      parsed.error.issues[0]?.message ?? "长篇智能体设置不完整"
+    );
+    return;
+  }
+  emit("save", parsed.data);
+}
+</script>
+
+<template>
+  <div v-if="loading" class="panel-state" aria-live="polite">
+    正在加载长篇智能体设置…
+  </div>
+  <div v-else-if="loadError" class="panel-state" role="alert">
+    <strong>长篇智能体设置未加载</strong>
+    <p>{{ loadError }}</p>
+    <button
+      type="button"
+      class="secondary-button"
+      :disabled="loading"
+      @click="emit('retry')"
+    >
+      重新加载
+    </button>
+  </div>
+  <div v-else-if="!settings || !activeAgent" class="panel-state">
+    暂无可用的长篇智能体设置。
+  </div>
+  <div v-else class="settings-layout">
+    <nav class="agent-nav" aria-label="长篇智能体">
+      <button
+        v-for="agent in AGENT_META"
+        :key="agent.id"
+        type="button"
+        class="agent-nav-item"
+        :class="{ 'is-active': agent.id === activeAgentId }"
+        :aria-current="agent.id === activeAgentId ? 'page' : undefined"
+        @click="activeAgentId = agent.id"
+      >
+        <small>{{ agent.eyebrow }}</small>
+        <strong>{{ agent.label }}</strong>
+      </button>
+    </nav>
+
+    <div class="agent-editor">
+      <header class="agent-header">
+        <span>{{ activeMeta.eyebrow }}</span>
+        <h3>{{ activeProfile?.label ?? activeMeta.label }}</h3>
+        <p>{{ activeProfile?.description }}</p>
+      </header>
+
+      <section class="settings-card prompt-card">
+        <div class="section-heading">
+          <div>
+            <h4>系统提示词</h4>
+            <p>作品、当前位置和已授权长篇工具会在运行时自动补充。</p>
+          </div>
+          <span>{{ activeAgent.systemPrompt.length }} 字符</span>
+        </div>
+        <textarea
+          v-model="activeAgent.systemPrompt"
+          :disabled="formDisabled"
+          spellcheck="false"
+          aria-label="长篇智能体系统提示词"
+          placeholder="输入当前长篇智能体的系统提示词…"
+        />
+      </section>
+
+      <section class="settings-card">
+        <div class="section-heading">
+          <div>
+            <h4>欢迎快捷按钮</h4>
+            <p>空对话欢迎区显示三个快捷提问。</p>
+          </div>
+        </div>
+        <div class="welcome-shortcut-list">
+          <label
+            v-for="(_, index) in activeAgent.welcomeShortcuts"
+            :key="index"
+            class="welcome-shortcut-field"
+          >
+            <span>按钮 {{ index + 1 }}</span>
+            <input
+              v-model="activeAgent.welcomeShortcuts[index]"
+              type="text"
+              maxlength="200"
+              :disabled="formDisabled"
+              :aria-label="`长篇欢迎快捷按钮 ${index + 1}`"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section class="settings-card">
+        <div class="section-heading">
+          <div>
+            <h4>读取范围</h4>
+            <p>读权限可以收窄或扩展；与固定写权限重合的根节点不可取消。</p>
+          </div>
+        </div>
+
+        <fieldset>
+          <legend>长篇工作区</legend>
+          <div class="option-grid">
+            <label
+              v-for="option in WORKSPACE_OPTIONS"
+              :key="option.id"
+              class="read-option"
+              :class="{ 'is-locked': isRequiredWorkspaceRoot(option.id) }"
+            >
+              <input
+                type="checkbox"
+                :checked="
+                  isRequiredWorkspaceRoot(option.id) ||
+                  isReadAccessChecked('workspaceRoots', option.id)
+                "
+                :disabled="formDisabled || isRequiredWorkspaceRoot(option.id)"
+                @change="
+                  handleCheckboxChange('workspaceRoots', option.id, $event)
+                "
+              />
+              <span>
+                <strong>
+                  {{ option.label }}
+                  <em v-if="isRequiredWorkspaceRoot(option.id)">必需</em>
+                </strong>
+                <small>{{ option.description }}</small>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>素材库</legend>
+          <div class="option-grid">
+            <label
+              v-for="option in MATERIAL_OPTIONS"
+              :key="option.id"
+              class="read-option"
+            >
+              <input
+                type="checkbox"
+                :checked="isReadAccessChecked('materialKinds', option.id)"
+                :disabled="formDisabled"
+                @change="
+                  handleCheckboxChange('materialKinds', option.id, $event)
+                "
+              />
+              <span>
+                <strong>{{ option.label }}</strong>
+                <small>{{ option.description }}</small>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>技能库</legend>
+          <div class="option-grid">
+            <label
+              v-for="option in SKILL_OPTIONS"
+              :key="option.id"
+              class="read-option"
+            >
+              <input
+                type="checkbox"
+                :checked="isReadAccessChecked('skillKinds', option.id)"
+                :disabled="formDisabled"
+                @change="
+                  handleCheckboxChange('skillKinds', option.id, $event)
+                "
+              />
+              <span>
+                <strong>{{ option.label }}</strong>
+                <small>{{ option.description }}</small>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+      </section>
+
+      <section class="settings-card immutable-card">
+        <div class="section-heading">
+          <div>
+            <h4>写入与工具边界</h4>
+            <p>以下边界由应用内置并在 Main 与工具层强制校验，不能通过设置扩大。</p>
+          </div>
+          <span>固定</span>
+        </div>
+        <div class="immutable-list">
+          <span
+            v-for="root in immutableProfile.writeAccess.workspaceRoots"
+            :key="`root:${root}`"
+          >
+            {{ WORKSPACE_OPTIONS.find((option) => option.id === root)?.label ?? root }}
+          </span>
+          <span
+            v-for="capability in immutableProfile.writeAccess.capabilities"
+            :key="`capability:${capability}`"
+          >
+            {{ capability }}
+          </span>
+        </div>
+      </section>
+
+      <footer class="panel-actions">
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="formDisabled"
+          @click="resetActiveAgent"
+        >
+          恢复当前智能体默认
+        </button>
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="formDisabled || !hasCompleteDraft"
+          @click="saveSettings"
+        >
+          {{ saving ? "保存中…" : "保存长篇智能体设置" }}
+        </button>
+      </footer>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.panel-state {
+  padding: 28px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.agent-nav {
+  display: grid;
+  gap: 7px;
+  position: sticky;
+  top: 18px;
+}
+
+.agent-nav-item {
+  display: grid;
+  gap: 3px;
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-nav-item:hover {
+  background: var(--surface-hover);
+}
+
+.agent-nav-item.is-active {
+  border-color: var(--theme-line);
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.agent-nav-item small {
+  color: var(--text-tertiary);
+}
+
+.agent-editor {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.agent-header span,
+.section-heading span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.agent-header h3 {
+  margin: 4px 0;
+  color: var(--text-primary);
+  font-size: 20px;
+}
+
+.agent-header p,
+.section-heading p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.settings-card {
+  padding: 16px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.section-heading h4 {
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+textarea,
+input[type="text"] {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--theme-line);
+  border-radius: 9px;
+  outline: none;
+  background: var(--surface-main);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+textarea {
+  min-height: 230px;
+  padding: 12px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+input[type="text"] {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+textarea:focus,
+input[type="text"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.welcome-shortcut-list {
+  display: grid;
+  gap: 10px;
+}
+
+.welcome-shortcut-field {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+fieldset {
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.read-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 9px;
+  background: var(--surface-main);
+}
+
+.read-option.is-locked {
+  background: var(--surface-muted);
+}
+
+.read-option span,
+.read-option strong,
+.read-option small {
+  display: block;
+}
+
+.read-option strong {
+  color: var(--text-primary);
+}
+
+.read-option small {
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.read-option em {
+  margin-left: 5px;
+  color: var(--accent);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.immutable-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.immutable-list span {
+  padding: 5px 9px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.secondary-button,
+.primary-button {
+  min-height: 38px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.secondary-button {
+  border: 1px solid var(--theme-line);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.primary-button {
+  border: 1px solid var(--text-primary);
+  background: var(--text-primary);
+  color: var(--surface-main);
+}
+
+button:disabled,
+textarea:disabled,
+input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+@media (max-width: 760px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-nav {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .option-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

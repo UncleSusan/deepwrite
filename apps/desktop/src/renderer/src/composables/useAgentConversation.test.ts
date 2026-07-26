@@ -3,6 +3,8 @@ import { reactive } from "vue";
 import {
   DEFAULT_AGENT_TEAM_SETTINGS,
   DEFAULT_LIBRARY_AGENT_SETTINGS,
+  DEFAULT_LONG_AGENT_SETTINGS,
+  DEFAULT_LONG_AGENT_TEAM_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_STAGE_IDS,
@@ -254,6 +256,57 @@ function createDeferredApi(): {
         throw new Error("Catalog is not used by conversation tests.");
       })
     },
+    long: {
+      list: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      create: vi.fn(async () => null),
+      updateBindings: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      importWriteClaw: vi.fn(async () => null),
+      importPortable: vi.fn(async () => null),
+      exportPortable: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      open: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      openExisting: vi.fn(async () => null),
+      getWorkspaceIndex: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      readDocument: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      search: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      writeDocument: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      previewOperations: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      applyOperations: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      writeChapter: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      commitChapter: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      rollbackLastCommit: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      unregister: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      delete: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      })
+    },
     session: {
       prompt(payload) {
         prompts.push(payload);
@@ -309,6 +362,25 @@ function createDeferredApi(): {
       },
       async reset() {
         return structuredClone(DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS);
+      }
+    },
+    longAgents: {
+      async list() {
+        return structuredClone(DEFAULT_LONG_AGENT_SETTINGS);
+      },
+      async save() {
+        return structuredClone(DEFAULT_LONG_AGENT_SETTINGS);
+      },
+      async reset() {
+        return structuredClone(DEFAULT_LONG_AGENT_SETTINGS);
+      }
+    },
+    longAgentTeams: {
+      async list() {
+        return structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
+      },
+      async save() {
+        return structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
       }
     },
     agentTeams: {
@@ -415,6 +487,7 @@ function eventOptions(sessionId: string, runId: string, id: string) {
 function createMemoryStorage(): {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 } {
   const values = new Map<string, string>();
   return {
@@ -423,6 +496,9 @@ function createMemoryStorage(): {
     },
     setItem(key, value) {
       values.set(key, value);
+    },
+    removeItem(key) {
+      values.delete(key);
     }
   };
 }
@@ -608,6 +684,28 @@ describe("agent conversation controller", () => {
     });
     expect(restored.approvalMode.value).toBe("auto-approve");
     restored.dispose();
+  });
+
+  it("clears persisted conversations when a project runtime is disposed", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-project-removal-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    controller.draft.value = "不应在删除项目后恢复";
+    controller.dispose({ clearPersistence: true });
+
+    expect(storage.getItem(persistenceKey)).toBeNull();
+    const restored = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    expect(restored.draft.value).toBe("");
+    expect(restored.messages.value).toEqual([]);
+    restored.dispose({ clearPersistence: true });
   });
 
   it("persists edit proposals and restores interrupted acceptance as pending", () => {
@@ -1334,6 +1432,41 @@ describe("agent conversation controller", () => {
 
     expect(controller.messages.value).toEqual([]);
     expect(controller.isBusy.value).toBe(false);
+    controller.dispose();
+  });
+
+  it("cancels a prompt before its run id exists and aborts it once accepted", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    controller.draft.value = "取消仍在受理中的请求";
+    const oldSessionId = controller.sessionId.value;
+    const sending = controller.sendMessage(document);
+
+    expect(controller.cancelPendingGeneration()).toBe(true);
+    expect(controller.sessionId.value).not.toBe(oldSessionId);
+    expect(controller.isBusy.value).toBe(false);
+    expect(
+      controller.acceptsRunEvent(oldSessionId, "run_pending_cancel")
+    ).toBe(false);
+
+    deferred.resolveAccepted(0, {
+      sessionId: oldSessionId,
+      runId: "run_pending_cancel",
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+
+    expect(deferred.aborts).toEqual([
+      {
+        sessionId: oldSessionId,
+        runId: "run_pending_cancel"
+      }
+    ]);
+    expect(controller.messages.value).toEqual([]);
     controller.dispose();
   });
 
@@ -3172,6 +3305,112 @@ describe("agent conversation controller", () => {
     expect(
       deferred.prompts[0]?.workspaceContext?.activeResource?.content
     ).toHaveLength(20_000);
+    controller.dispose();
+  });
+
+  it("sends long-form prompts with an exclusive long workspace context", () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    controller.draft.value = "检查当前世界规则";
+    void controller.sendLongMessage(
+      {
+        bookId: "longbook_context",
+        title: "雾港来信",
+        activeRoot: "worldbuilding",
+        activeAgentId: "worldbuilding",
+        activeFileId: "file_world_rules:content",
+        activeFileRevision: "v1:3:1234abcd",
+        workspaceRevision: 7,
+        projectRevision: 11,
+        navigation: {
+          schemaVersion: 1,
+          revision: 7,
+          bookId: "longbook_context",
+          updatedAt: "2026-07-26T12:00:00.000Z",
+          counts: {
+            worldbuildingCategories: 1,
+            characters: 0,
+            volumes: 1,
+            arcs: 0,
+            chapterCards: 0,
+            storyEvents: 0,
+            foreshadowingThreads: 0,
+            committedChapters: 0
+          },
+          worldbuilding: [
+            {
+              id: "world_rules",
+              title: "世界规则",
+              order: 1,
+              format: "text"
+            }
+          ],
+          characters: [],
+          volumes: [{ id: "volume_one", title: "第一卷", order: 1 }],
+          arcs: [],
+          chapterCards: [],
+          committedThroughChapterId: null
+        }
+      },
+      {
+        attachedSkills: [
+          {
+            id: "skill:long:world",
+            title: "长篇世界构建",
+            source: "attached-skill",
+            kind: "general",
+            content: "先建立规则边界。"
+          }
+        ],
+        attachedMaterials: [
+          {
+            id: "material:long:world",
+            title: "雾港地理",
+            source: "attached-material",
+            kind: "other",
+            content: "港口终年有雾。"
+          }
+        ]
+      }
+    );
+
+    expect(deferred.prompts[0]?.workspaceContext).toEqual({
+      longWorkspace: expect.objectContaining({
+        bookId: "longbook_context",
+        activeRoot: "worldbuilding",
+        activeAgentId: "worldbuilding",
+        activeFileId: "file_world_rules:content",
+        activeFileRevision: "v1:3:1234abcd",
+        workspaceRevision: 7,
+        projectRevision: 11
+      }),
+      attachedSkills: [
+        expect.objectContaining({
+          id: "skill:long:world",
+          source: "attached-skill",
+          kind: "general"
+        })
+      ],
+      attachedMaterials: [
+        expect.objectContaining({
+          id: "material:long:world",
+          source: "attached-material",
+          kind: "other"
+        })
+      ]
+    });
+    expect(deferred.prompts[0]?.workspaceContext).not.toHaveProperty(
+      "activeResource"
+    );
+    expect(deferred.prompts[0]?.workspaceContext).not.toHaveProperty(
+      "shortWorkspace"
+    );
+    expect(deferred.prompts[0]?.workspaceContext).not.toHaveProperty(
+      "scriptWorkspace"
+    );
     controller.dispose();
   });
 });

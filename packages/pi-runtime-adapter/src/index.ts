@@ -39,6 +39,7 @@ import {
   type AgentWriteApprovalMode,
   type LearningImitationAgentProfile,
   type LibraryAgentProfile,
+  type LongAgentProfile,
   type ScriptWorkspaceAgentProfile,
   type ShortAgentSubagentDefinition,
   type ShortWorkspaceAgentProfile,
@@ -78,6 +79,23 @@ import {
   runAgentWithTurnRetries,
   type AgentTurnRetryPolicyOptions
 } from "./agent-turn-retry";
+import {
+  buildLongWorkspaceTools,
+  isLongAgentToolDetails,
+  type LongCommandExecutor
+} from "./long-agent-tools";
+
+export {
+  buildLongWorkspaceTools,
+  isLongAgentToolDetails,
+  selectNextLongChapterForDispatch
+} from "./long-agent-tools";
+export type {
+  BuildLongWorkspaceToolsInput,
+  LongAgentToolDetails,
+  LongCommandExecutor,
+  LongQueryCommandEnvelope
+} from "./long-agent-tools";
 
 export interface AgentRunInput {
   runId: string;
@@ -90,11 +108,17 @@ export interface AgentRunInput {
   runtimeConfig?: AgentProviderRuntimeConfig;
   agentProfile?: ShortWorkspaceAgentProfile;
   scriptAgentProfile?: ScriptWorkspaceAgentProfile;
+  longAgentProfile?: LongAgentProfile;
   subagentDefinitions?: ShortAgentSubagentDefinition[];
   subagentRuntimeConfigs?: Readonly<Record<string, AgentProviderRuntimeConfig>>;
   libraryAgentProfile?: LibraryAgentProfile;
   learningImitationProfile?: LearningImitationAgentProfile;
   workspaceContext?: WorkspaceRuntimeContext;
+  /**
+   * Narrow Agent Utility -> Core query bridge for the active long-form book.
+   * Proposal tools never use this callback for mutation commands.
+   */
+  longCommandExecutor?: LongCommandExecutor;
   signal?: AbortSignal;
 }
 
@@ -280,6 +304,64 @@ export type AgentRuntimeEvent =
         toolCallId: string;
         workspaceId: string;
         stageId: import("@deepwrite/contracts").ShortWorkspaceStageId;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "long.mutation_proposal";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        bookId: string;
+        agentId: import("@deepwrite/contracts").LongAgentId;
+        batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
+        baseProjectRevision: number;
+        summary: string;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "long.chapter_write_proposal";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        bookId: string;
+        agentId: import("@deepwrite/contracts").LongAgentId;
+        input: import("@deepwrite/contracts").LongWriteChapterInput;
+        summary: string;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "long.ledger_commit_proposal";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        bookId: string;
+        agentId: import("@deepwrite/contracts").LongAgentId;
+        input: import("@deepwrite/contracts").LongCommitChapterInput;
+        summary: string;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "long.chapter_dispatch_proposal";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        bookId: string;
+        agentId: import("@deepwrite/contracts").LongAgentId;
+        scope: import("@deepwrite/contracts").LongWritingScope;
+        chapterCardId: string;
+        title: string;
+        chapters: import("@deepwrite/contracts").LongChapterReadiness[];
+        workspaceRevision: number;
+        projectRevision: number;
+        summary: string;
         runtime: AgentRuntimeRef;
       };
     }
@@ -643,6 +725,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
 
     const shortWorkspace = input.workspaceContext?.shortWorkspace;
     const scriptWorkspace = input.workspaceContext?.scriptWorkspace;
+    const longWorkspace = input.workspaceContext?.longWorkspace;
     const libraryWorkspace = input.workspaceContext?.libraryWorkspace;
     const learningImitation = input.workspaceContext?.learningImitation;
     const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
@@ -688,6 +771,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
           })
         : [];
     };
+    const buildLongTools = (): AgentTool[] =>
+      longWorkspace && input.longAgentProfile
+        ? buildLongWorkspaceTools({
+            workspace: longWorkspace,
+            profile: input.longAgentProfile,
+            sessionId: input.sessionId,
+            runId: input.runId,
+            attachedSkills: input.workspaceContext?.attachedSkills,
+            attachedMaterials: input.workspaceContext?.attachedMaterials,
+            ...(input.longCommandExecutor
+              ? { executor: input.longCommandExecutor }
+              : {})
+          })
+        : [];
     let tools: AgentTool[] = subagentAuthoring
       ? buildSubagentAuthoringTools(subagentAuthoring)
       : learningImitation && input.learningImitationProfile
@@ -699,13 +796,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             writeApprovalMode: input.writeApprovalMode ?? "request-approval",
             attachedSkills: input.workspaceContext?.attachedSkills
           })
+      : longWorkspace && input.longAgentProfile
+        ? buildLongTools()
       : (scriptWorkspace && input.scriptAgentProfile) ||
           (shortWorkspace && input.agentProfile)
         ? buildWritingTools()
         : [];
     if (
       ((scriptWorkspace && input.scriptAgentProfile) ||
-        (shortWorkspace && input.agentProfile)) &&
+        (shortWorkspace && input.agentProfile) ||
+        (longWorkspace && input.longAgentProfile)) &&
       !subagentAuthoring
     ) {
       const spawnTool = buildSpawnSubagentTool({
@@ -735,13 +835,21 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             thinkingLevel: toPiThinkingLevel(childThinking)
           };
         },
-        buildChildTools: buildWritingTools,
+        buildChildTools:
+          longWorkspace && input.longAgentProfile
+            ? buildLongTools
+            : buildWritingTools,
         ...(scriptWorkspace
           ? {
               systemPromptRequirements:
                 scriptRuntimeFormatRequirements()
             }
-          : {}),
+          : longWorkspace
+            ? {
+                systemPromptRequirements:
+                  "这是长篇主智能体委派的单层子任务。只能使用继承的长篇查询/提案工具和当前 bookId；任何写入仍须形成可审阅提案，不能宣称已落盘或已提交连续性账本。"
+              }
+            : {}),
         toolExecutionHooks: this.toolExecutionHooks,
         ...(this.retryPolicy ? { retryPolicy: this.retryPolicy } : {}),
         ...(this.subagentTimeoutMs === undefined
@@ -760,6 +868,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
           ? `library:${input.libraryAgentProfile.domain}:${libraryWorkspace.libraryId}`
         : input.scriptAgentProfile
           ? `script:${input.scriptAgentProfile.id}`
+          : input.longAgentProfile && longWorkspace
+            ? `long:${input.longAgentProfile.id}:${longWorkspace.bookId}`
           : input.agentProfile?.id ?? "default"
     }`;
     let emitToolCallEvent: (
@@ -1533,6 +1643,70 @@ export function toRuntimeEvents(
           runtime
         }
       });
+    } else if (isLongAgentToolDetails(details)) {
+      if (details.kind === "long-mutation-proposal") {
+        events.push({
+          type: "long.mutation_proposal",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: {
+            toolCallId: event.toolCallId,
+            bookId: details.bookId,
+            agentId: details.agentId,
+            batch: details.batch,
+            baseProjectRevision: details.baseProjectRevision,
+            summary: details.summary,
+            runtime
+          }
+        });
+      } else if (details.kind === "long-chapter-write-proposal") {
+        events.push({
+          type: "long.chapter_write_proposal",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: {
+            toolCallId: event.toolCallId,
+            bookId: details.bookId,
+            agentId: details.agentId,
+            input: details.input,
+            summary: details.summary,
+            runtime
+          }
+        });
+      } else if (details.kind === "long-ledger-commit-proposal") {
+        events.push({
+          type: "long.ledger_commit_proposal",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: {
+            toolCallId: event.toolCallId,
+            bookId: details.bookId,
+            agentId: details.agentId,
+            input: details.input,
+            summary: details.summary,
+            runtime
+          }
+        });
+      } else if (details.kind === "long-chapter-dispatch-proposal") {
+        events.push({
+          type: "long.chapter_dispatch_proposal",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: {
+            toolCallId: event.toolCallId,
+            bookId: details.bookId,
+            agentId: details.agentId,
+            scope: details.scope,
+            chapterCardId: details.chapterCardId,
+            title: details.title,
+            chapters: details.chapters,
+            workspaceRevision: details.workspaceRevision,
+            projectRevision: details.projectRevision,
+            summary: details.summary,
+            runtime
+          }
+        });
+      }
     }
     return events;
   }
@@ -1667,7 +1841,11 @@ export function toSubagentRuntimeEvents(
   ).filter(
     (event) =>
       event.type === "workspace.editor_mutation" ||
-      event.type === "workspace.stage_selection"
+      event.type === "workspace.stage_selection" ||
+      event.type === "long.mutation_proposal" ||
+      event.type === "long.chapter_dispatch_proposal" ||
+      event.type === "long.chapter_write_proposal" ||
+      event.type === "long.ledger_commit_proposal"
   );
 }
 
@@ -1817,6 +1995,34 @@ export function buildEffectiveSystemPrompt(
       "库介绍当前只读；删除条目、修改分组、绑定书籍和写入其它资料库均未接通。"
     ].join("\n");
   }
+  const longWorkspace = input.workspaceContext?.longWorkspace;
+  const longProfile = input.longAgentProfile;
+  if (longProfile && longWorkspace) {
+    // Long-form operations can cascade across the structure graph or create a
+    // reversible continuity commit. They therefore always stay in the
+    // explicit review queue even when another workspace mode uses automatic
+    // approval.
+    const writeBoundary =
+      "长篇写入工具只形成带基线版本和影响预览的提案；用户明确批准且冲突检查通过后才会原子落盘。不得提前声称已经保存或提交账本。";
+    return [
+      basePrompt,
+      "",
+      `【当前长篇智能体：${longProfile.label} / ${longProfile.id}】`,
+      longProfile.systemPrompt.trim(),
+      "",
+      "【DeepWrite 长篇工具边界】",
+      "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
+      writeBoundary,
+      longProfile.id === "expert_section_writer"
+        ? "单章写作必须同时形成正文、人物状态和 handoff 三个文件的同批提案；一次只处理上下文锁定的章卡。"
+        : "",
+      longProfile.id === "continuity_ledger"
+        ? "账本只能提交尚未提交的连续下一章；提交与最后一次撤销都必须由客户端事务执行。"
+        : ""
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
   const scriptWorkspace = input.workspaceContext?.scriptWorkspace;
   const profile = input.scriptAgentProfile ?? input.agentProfile;
   if (!profile) return basePrompt;
@@ -1856,8 +2062,10 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const libraryContext = input.workspaceContext?.libraryWorkspace;
   const shortWorkspace = input.workspaceContext?.shortWorkspace;
   const scriptWorkspace = input.workspaceContext?.scriptWorkspace;
+  const longWorkspace = input.workspaceContext?.longWorkspace;
   const writingWorkspace = scriptWorkspace ?? shortWorkspace;
   const writingProfile = input.scriptAgentProfile ?? input.agentProfile;
+  const longProfile = input.longAgentProfile;
   const skills = input.workspaceContext?.attachedSkills ?? [];
   const materials = input.workspaceContext?.attachedMaterials ?? [];
   const isWritingAgentRun = Boolean(
@@ -1872,6 +2080,12 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
         (item) =>
           item.kind !== undefined && writingProfile.readAccess.skill.includes(item.kind)
       )
+    : longProfile
+      ? skills.filter(
+          (item) =>
+            item.kind !== undefined &&
+            longProfile.readAccess.skillKinds.includes(item.kind)
+        )
     : input.libraryAgentProfile
       ? skills
       : skills;
@@ -1880,8 +2094,15 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
         (item) =>
           item.kind !== undefined && writingProfile.readAccess.material.includes(item.kind)
       )
-    : materials;
-  const skillContext = isWritingAgentRun || isLibraryAgentRun
+    : longProfile
+      ? materials.filter(
+          (item) =>
+            item.kind !== undefined &&
+            longProfile.readAccess.materialKinds.includes(item.kind)
+        )
+      : materials;
+  const isLongAgentRun = Boolean(longWorkspace && longProfile);
+  const skillContext = isWritingAgentRun || isLibraryAgentRun || isLongAgentRun
     ? readableSkills.length
       ? isLibraryAgentRun
         ? `可按需加载的技能：\n${input.libraryAgentProfile!.readAccess.skills
@@ -1894,7 +2115,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     : skills.length
       ? `显式附加技能:\n${skills.map((item) => `- ${item.title}: ${item.content}`).join("\n")}`
       : "显式附加技能: 无";
-  const materialContext = isWritingAgentRun
+  const materialContext = isWritingAgentRun || isLongAgentRun
     ? readableMaterials.length
       ? `当前读取范围内的关联素材：\n${readableMaterials
           .map((item) => `- ${item.title} [${item.kind}]`)
@@ -1912,6 +2133,19 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     writingWorkspace
       ? `${scriptWorkspace ? "剧本" : "短篇"}作品: 《${writingWorkspace.title}》`
       : "",
+    longWorkspace ? `长篇作品: 《${longWorkspace.title}》` : "",
+    longWorkspace
+      ? `长篇项目: ${longWorkspace.bookId}；结构版本 ${longWorkspace.workspaceRevision}；项目版本 ${longWorkspace.projectRevision}`
+      : "",
+    longWorkspace
+      ? `当前根节点: ${longWorkspace.activeRoot}；当前智能体: ${longWorkspace.activeAgentId}`
+      : "",
+    longWorkspace?.activeChapterCardId
+      ? `当前章卡: ${longWorkspace.activeChapterCardId}`
+      : "",
+    longWorkspace?.activeFileId
+      ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
+      : "",
     writingWorkspace
       ? `作品分类: ${writingWorkspace.categories.join("、") || "未分类"}`
       : "",
@@ -1928,6 +2162,8 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       : "",
     writingProfile
       ? `当前智能体: ${writingProfile.label} (${writingProfile.id})`
+      : longProfile
+        ? `当前智能体: ${longProfile.label} (${longProfile.id})`
       : input.libraryAgentProfile
         ? `当前智能体: ${input.libraryAgentProfile.label} (${input.libraryAgentProfile.domain})`
       : input.learningImitationProfile
@@ -1968,6 +2204,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     active ? `资源路径: ${active.path.join(" / ")}` : "",
     active &&
     !writingWorkspace &&
+    !longWorkspace &&
     !input.workspaceContext?.libraryWorkspace
       ? `实时内容:\n${active.content}`
       : "",
@@ -2044,7 +2281,10 @@ export function buildRawUserMessage(input: AgentRunInput, timestamp = Date.now()
 function buildLocalThinking(input: AgentRunInput): string {
   const title = input.workspaceContext?.activeResource?.title ?? "未命名资源";
   const selectedProfile =
-    input.scriptAgentProfile ?? input.agentProfile ?? input.libraryAgentProfile;
+    input.scriptAgentProfile ??
+    input.agentProfile ??
+    input.longAgentProfile ??
+    input.libraryAgentProfile;
   const agent = selectedProfile ? `，由「${selectedProfile.label}」处理` : "";
   return `正在读取发送瞬间的创作上下文快照，确认当前工作对象为《${title}》${agent}，并区分用户要求、作品事实与参考信息。`;
 }
@@ -2077,6 +2317,8 @@ function buildLocalWritingResponse(input: AgentRunInput): string {
         }。`
       : input.libraryAgentProfile
         ? `- 当前已选择「${input.libraryAgentProfile.label}」，并且装配当前资料库读写工具与按需 load_skill。`
+      : input.longAgentProfile
+        ? `- 当前已按长篇根节点选择「${input.longAgentProfile.label}」智能体；结构与正文只会通过长篇专用工具按需读取。`
       : "",
     "",
     "下一切片接入真实模型配置后，可以在保持同一协议的前提下生成正式续写、润色和一致性检查结果。"

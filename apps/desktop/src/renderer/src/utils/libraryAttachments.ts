@@ -5,6 +5,9 @@ import {
   SKILL_KINDS,
   type CatalogSnapshot,
   type Book,
+  type LibraryType,
+  type LinkedMaterialIdsByKind,
+  type LinkedSkillIdsByKind,
   type MaterialKind,
   type SkillKind,
   type WorkspaceRuntimeContext
@@ -64,6 +67,19 @@ export interface LibraryAttachmentBuildResult {
   diagnostics: LibraryAttachmentDiagnostic[];
   omittedAttachments: OmittedLibraryAttachment[];
   complete: boolean;
+}
+
+/**
+ * Long books intentionally live outside the short/script Catalog book union,
+ * but use the same library catalog and by-kind binding contract. Passing this
+ * narrow shape keeps attachment resolution reusable without registering a
+ * long book as a short/script Catalog workspace.
+ */
+export interface LibraryAttachmentBindingTarget {
+  id: string;
+  bookType: LibraryType;
+  linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
+  linkedSkillIdsByKind: LinkedSkillIdsByKind;
 }
 
 interface AttachmentCandidate<TKind extends MaterialKind | SkillKind> {
@@ -133,7 +149,7 @@ function truncateContent(
 
 function collectMaterialCandidates(
   snapshot: CatalogSnapshot,
-  book: Book,
+  book: LibraryAttachmentBindingTarget,
   diagnostics: LibraryAttachmentDiagnostic[]
 ): AttachmentCandidate<MaterialKind>[] {
   const libraries = new Map(snapshot.materials.map((library) => [library.id, library]));
@@ -172,7 +188,13 @@ function collectMaterialCandidates(
         diagnostics.push({
           code: "library-type-mismatch",
           domain: "material",
-          message: `素材库“${library.title}”不适用于当前${book.bookType === "script" ? "剧本" : "短篇"}。`,
+          message: `素材库“${library.title}”不适用于当前${
+            book.bookType === "script"
+              ? "剧本"
+              : book.bookType === "long"
+                ? "长篇"
+                : "短篇"
+          }。`,
           bookId: book.id,
           libraryId,
           actualKind: library.materialType
@@ -213,7 +235,7 @@ function collectMaterialCandidates(
 
 function collectSkillCandidates(
   snapshot: CatalogSnapshot,
-  book: Book,
+  book: LibraryAttachmentBindingTarget,
   diagnostics: LibraryAttachmentDiagnostic[]
 ): AttachmentCandidate<SkillKind>[] {
   const libraries = new Map(snapshot.skills.map((library) => [library.id, library]));
@@ -253,7 +275,13 @@ function collectSkillCandidates(
         diagnostics.push({
           code: "library-type-mismatch",
           domain: "skill",
-          message: `技能库“${library.title}”不适用于当前${book.bookType === "script" ? "剧本" : "短篇"}。`,
+          message: `技能库“${library.title}”不适用于当前${
+            book.bookType === "script"
+              ? "剧本"
+              : book.bookType === "long"
+                ? "长篇"
+                : "短篇"
+          }。`,
           bookId: book.id,
           libraryId,
           actualKind: library.skillType
@@ -328,7 +356,7 @@ function capacityDiagnostics<TKind extends MaterialKind | SkillKind>(
  */
 export function buildLibraryAttachments(
   snapshot: CatalogSnapshot,
-  bookOrId: Book | string,
+  bookOrId: Book | LibraryAttachmentBindingTarget | string,
   options: BuildLibraryAttachmentsOptions = {}
 ): LibraryAttachmentBuildResult {
   const bookId = typeof bookOrId === "string" ? bookOrId : bookOrId.id;

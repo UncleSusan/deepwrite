@@ -8,10 +8,14 @@ import {
 } from "@deepwrite/contracts";
 import {
   PiAgentRuntimeAdapter,
-  type AgentRuntimeEvent
+  type AgentRuntimeEvent,
+  type LongCommandExecutor
 } from "@deepwrite/pi-runtime-adapter";
 import { createId, nowIso } from "@deepwrite/shared";
-import { bootUtility } from "./runtime";
+import {
+  bootUtility,
+  type UtilityCommandHandlerContext
+} from "./runtime";
 
 const runtime = new PiAgentRuntimeAdapter();
 const activeStreams = new Set<Promise<void>>();
@@ -218,6 +222,80 @@ function toEventEnvelope(
     );
   }
 
+  if (event.type === "long.mutation_proposal") {
+    return createEnvelope(
+      "long.mutation_proposal",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        toolCallId: event.payload.toolCallId,
+        bookId: event.payload.bookId,
+        agentId: event.payload.agentId,
+        batch: event.payload.batch,
+        baseProjectRevision: event.payload.baseProjectRevision,
+        summary: event.payload.summary,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
+  if (event.type === "long.chapter_write_proposal") {
+    return createEnvelope(
+      "long.chapter_write_proposal",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        toolCallId: event.payload.toolCallId,
+        bookId: event.payload.bookId,
+        agentId: event.payload.agentId,
+        input: event.payload.input,
+        summary: event.payload.summary,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
+  if (event.type === "long.chapter_dispatch_proposal") {
+    return createEnvelope(
+      "long.chapter_dispatch_proposal",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        toolCallId: event.payload.toolCallId,
+        bookId: event.payload.bookId,
+        agentId: event.payload.agentId,
+        scope: event.payload.scope,
+        chapterCardId: event.payload.chapterCardId,
+        title: event.payload.title,
+        chapters: event.payload.chapters,
+        workspaceRevision: event.payload.workspaceRevision,
+        projectRevision: event.payload.projectRevision,
+        summary: event.payload.summary,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
+  if (event.type === "long.ledger_commit_proposal") {
+    return createEnvelope(
+      "long.ledger_commit_proposal",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        toolCallId: event.payload.toolCallId,
+        bookId: event.payload.bookId,
+        agentId: event.payload.agentId,
+        input: event.payload.input,
+        summary: event.payload.summary,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
   if (event.type === "library.editor_mutation") {
     return createEnvelope(
       "library.editor_mutation",
@@ -288,6 +366,44 @@ function toEventEnvelope(
   );
 }
 
+function abortedError(): Error {
+  const error = new Error("Long workspace Core request was aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
+function createLongCommandExecutor(
+  context: UtilityCommandHandlerContext
+): LongCommandExecutor {
+  return (command, signal) => {
+    if (signal?.aborted) {
+      return Promise.reject(abortedError());
+    }
+    const request = context.requestInternalCommand("core", command, {
+      timeoutMs: 60_000
+    });
+    if (!signal) return request;
+    return new Promise((resolve, reject) => {
+      const onAbort = (): void => {
+        signal.removeEventListener("abort", onAbort);
+        reject(abortedError());
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      void request.then(
+        (result) => {
+          signal.removeEventListener("abort", onAbort);
+          if (signal.aborted) reject(abortedError());
+          else resolve(result);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        }
+      );
+    });
+  };
+}
+
 function streamPrompt(
   input: Parameters<PiAgentRuntimeAdapter["start"]>[0],
   correlationId: string,
@@ -348,7 +464,7 @@ function streamPrompt(
 
 bootUtility("agent", {
   mode: "pi-agent-provider",
-  async commandHandler(command, emitEvent): Promise<CommandResult> {
+  async commandHandler(command, emitEvent, context): Promise<CommandResult> {
     if (command.type === "agent.model_test") {
       const result = ModelConnectionTestResultSchema.parse(
         await runtime.testConnection(command.payload.runtimeConfig)
@@ -454,6 +570,15 @@ bootUtility("agent", {
           : {}),
         ...(command.payload.agentProfile
           ? { agentProfile: command.payload.agentProfile }
+          : {}),
+        ...(command.payload.scriptAgentProfile
+          ? { scriptAgentProfile: command.payload.scriptAgentProfile }
+          : {}),
+        ...(command.payload.longAgentProfile
+          ? { longAgentProfile: command.payload.longAgentProfile }
+          : {}),
+        ...(command.payload.longAgentProfile && context
+          ? { longCommandExecutor: createLongCommandExecutor(context) }
           : {}),
         ...(command.payload.subagentDefinitions
           ? { subagentDefinitions: command.payload.subagentDefinitions }

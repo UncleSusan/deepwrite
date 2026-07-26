@@ -56,9 +56,14 @@ export type ResourceDomain = "creation" | "skill" | "material";
 
 export type ResourceSectionAction =
   | "create"
+  | "create-long-book"
   | "create-group"
   | "import"
+  | "open-long-book"
+  | "refresh-long-books"
   | "import-legacy-book"
+  | "import-portable-long-book"
+  | "migrate-write-claw-long-book"
   | "import-legacy-library";
 
 export interface ResourceSectionActionPayload {
@@ -80,6 +85,22 @@ export interface CatalogResourceNodeActionPayload {
   domain: "skill" | "material";
   action: CatalogResourceNodeAction;
   node: ResourceTreeNode;
+}
+
+export type LongBookResourceNodeAction =
+  | "manage-structure"
+  | "manage-bindings"
+  | "export-portable"
+  | "unregister"
+  | "delete";
+
+export interface LongBookResourceNodeActionPayload {
+  action: LongBookResourceNodeAction;
+  node: ResourceTreeNode & {
+    catalogNodeType: "long-book";
+    longBookId: string;
+    workspaceType: "long";
+  };
 }
 
 export type BookResourceDialogMode =
@@ -119,7 +140,15 @@ export interface ResourceTreeNode {
   projectRevision?: number;
   /** Explicitly carries the owning creative workspace type for type-specific UI. */
   workspaceType?: "short" | "script" | "long";
-  catalogNodeType?: "book" | "library" | "group" | "category" | "document";
+  /** Long books use a separate store and intentionally do not inherit short-book actions. */
+  longBookId?: string;
+  catalogNodeType?:
+    | "book"
+    | "long-book"
+    | "library"
+    | "group"
+    | "category"
+    | "document";
   libraryId?: string;
   groupId?: string;
   materialKind?: MaterialLibraryKind;
@@ -147,7 +176,7 @@ export interface WorkspaceDocument {
   readOnly?: boolean;
   format?: "正文" | "设定" | "技能" | "素材" | "账本";
   workspaceId?: string;
-  workspaceType?: "short" | "script" | "long";
+  workspaceType?: "short" | "script";
   workspaceTitle?: string;
   workspaceCategories?: string[];
   stageId?: ShortWorkspaceStageId;

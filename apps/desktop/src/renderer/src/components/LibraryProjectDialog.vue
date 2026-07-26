@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import type {
   CreateLibraryInput,
   CreateLibraryEntryInput,
+  LibraryType,
   MaterialKind,
   MaterialLibraryKind,
   MaterialStageId,
@@ -46,7 +47,7 @@ const emit = defineEmits<{
 }>();
 
 const title = ref("");
-const libraryType = ref<"short" | "script">("short");
+const libraryType = ref<LibraryType>("short");
 const stageId = ref<MaterialStageId>("other");
 const libraryKind = ref<MaterialKind | SkillKind>("character");
 const titleInput = ref<HTMLInputElement | null>(null);
@@ -58,7 +59,8 @@ const effectiveLibraryType = computed(() =>
 );
 const libraryTypeOptions = [
   { value: "short", label: "短篇" },
-  { value: "script", label: "剧本" }
+  { value: "script", label: "剧本" },
+  { value: "long", label: "长篇" }
 ];
 const heading = computed(() => {
   if (props.operation === "create-library") return `新建${domainLabel.value}库`;
@@ -253,7 +255,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 size="large"
                 :disabled="submitting"
                 :menu-min-width="220"
-                @update:model-value="libraryType = String($event) as 'short' | 'script'"
+                @update:model-value="libraryType = String($event) as LibraryType"
               />
             </label>
             <label class="book-resource-name-field catalog-resource-stage-field">

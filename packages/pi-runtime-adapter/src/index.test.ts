@@ -5,6 +5,7 @@ import {
 } from "@earendil-works/pi-ai";
 import {
   DEFAULT_LIBRARY_AGENT_PROFILES,
+  DEFAULT_LONG_AGENT_PROFILES,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
@@ -13,6 +14,7 @@ import {
   cloneEmptyLearningImitationResult,
   createShortWorkspaceContentRevision,
   type AgentProviderRuntimeConfig,
+  type LongWorkspaceRuntimeContext,
   type ScriptWorkspaceAgentProfile,
   type ScriptWorkspaceSnapshot,
   type ShortWorkspaceSnapshot
@@ -160,6 +162,128 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(shortSystemPrompt).not.toContain(
       "【剧本正文格式硬约束（不可由自定义提示词、技能或素材覆盖）】"
     );
+  });
+
+  it("always requires explicit approval for long-form proposals", () => {
+    const profile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "plot_design"
+    )!;
+    const longWorkspace: LongWorkspaceRuntimeContext = {
+      bookId: "longbook_prompt",
+      title: "雾港长篇",
+      activeRoot: "plot_design",
+      activeAgentId: profile.id,
+      workspaceRevision: 3,
+      projectRevision: 5,
+      navigation: {
+        schemaVersion: 1,
+        revision: 3,
+        bookId: "longbook_prompt",
+        updatedAt: "2026-07-26T10:00:00.000Z",
+        counts: {
+          worldbuildingCategories: 0,
+          characters: 0,
+          volumes: 1,
+          arcs: 0,
+          chapterCards: 0,
+          storyEvents: 0,
+          foreshadowingThreads: 0,
+          committedChapters: 0
+        },
+        worldbuilding: [],
+        characters: [],
+        volumes: [{ id: "volume_prompt", title: "第一卷", order: 1 }],
+        arcs: [],
+        chapterCards: [],
+        committedThroughChapterId: null
+      }
+    };
+    const prompt = buildEffectiveSystemPrompt("DeepWrite base", {
+      runId: "run_long_prompt",
+      sessionId: "session_long_prompt",
+      prompt: "调整结构",
+      writeApprovalMode: "auto-approve",
+      longAgentProfile: profile,
+      workspaceContext: { longWorkspace }
+    });
+
+    expect(prompt).toContain("用户明确批准");
+    expect(prompt).toContain("影响预览");
+    expect(prompt).not.toContain("自动批准");
+    expect(prompt).not.toContain("自动写入");
+  });
+
+  it("lets configured long-form teams delegate with the same bounded tools", async () => {
+    const profile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "plot_design"
+    )!;
+    const longWorkspace: LongWorkspaceRuntimeContext = {
+      bookId: "longbook_subagents",
+      title: "雾港长篇",
+      activeRoot: "plot_design",
+      activeAgentId: profile.id,
+      workspaceRevision: 3,
+      projectRevision: 5,
+      navigation: {
+        schemaVersion: 1,
+        revision: 3,
+        bookId: "longbook_subagents",
+        updatedAt: "2026-07-26T10:00:00.000Z",
+        counts: {
+          worldbuildingCategories: 0,
+          characters: 0,
+          volumes: 1,
+          arcs: 0,
+          chapterCards: 0,
+          storyEvents: 0,
+          foreshadowingThreads: 0,
+          committedChapters: 0
+        },
+        worldbuilding: [],
+        characters: [],
+        volumes: [{ id: "volume_subagents", title: "第一卷", order: 1 }],
+        arcs: [],
+        chapterCards: [],
+        committedThroughChapterId: null
+      }
+    };
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+    for await (const _event of runtime.start({
+      runId: "run_long_subagents",
+      sessionId: "session_long_subagents",
+      prompt: "委派检查时间线",
+      thinkingLevel: "off",
+      longAgentProfile: profile,
+      subagentDefinitions: [
+        {
+          id: "timeline_reviewer",
+          name: "时间线审阅",
+          description: "核对事件顺序与叙事落点。",
+          systemPrompt: "只检查时间线并把结论交还主智能体。",
+          enabled: true,
+          modelMode: "inherit"
+        }
+      ],
+      workspaceContext: { longWorkspace }
+    })) {
+      // Consume the local run before inspecting the cached parent agent.
+    }
+
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          { state: { tools: Array<{ name: string }> } }
+        >;
+      }
+    ).conversationAgents;
+    const names =
+      cache.get(
+        "session_long_subagents:long:plot_design:longbook_subagents"
+      )?.state.tools.map(({ name }) => name) ?? [];
+    expect(names).toContain("spawn_subagent");
+    expect(names).toContain("get_long_workspace_index");
+    expect(names).toContain("propose_long_mutation");
   });
 
   it("enables Pi reasoning when a run selects thinking after non-thinking configuration", () => {
@@ -818,6 +942,170 @@ describe("DeepWrite Pi runtime adapter", () => {
         runtime: providerRuntime
       }
     }]);
+  });
+
+  it("projects all child long-form proposals onto the parent approval chain", () => {
+    const proposals = [
+      {
+        toolName: "propose_long_mutation",
+        eventType: "long.mutation_proposal",
+        details: {
+          kind: "long-mutation-proposal",
+          bookId: "longbook-child",
+          agentId: "worldbuilding",
+          batch: {
+            baseRevision: 3,
+            updatedAt: "2026-07-26T12:00:00.000Z",
+            operations: [],
+            documentWrites: []
+          },
+          baseProjectRevision: 5,
+          summary: "更新世界规则"
+        }
+      },
+      {
+        toolName: "propose_long_chapter_dispatch",
+        eventType: "long.chapter_dispatch_proposal",
+        details: {
+          kind: "long-chapter-dispatch-proposal",
+          bookId: "longbook-child",
+          agentId: "draft",
+          scope: "chapter",
+          chapterCardId: "chapter_one",
+          title: "第一章",
+          chapters: [
+            {
+              chapterCardId: "chapter_one",
+              title: "第一章",
+              status: "empty",
+              missingFiles: ["body", "character_state", "handoff"]
+            }
+          ],
+          workspaceRevision: 3,
+          projectRevision: 5,
+          summary: "调度第一章"
+        }
+      },
+      {
+        toolName: "propose_long_chapter_write",
+        eventType: "long.chapter_write_proposal",
+        details: {
+          kind: "long-chapter-write-proposal",
+          bookId: "longbook-child",
+          agentId: "expert_section_writer",
+          input: {
+            bookId: "longbook-child",
+            chapterCardId: "chapter_one",
+            body: { content: "正文", baseRevision: "v1:0:00000000" },
+            characterState: {
+              content: "人物状态",
+              baseRevision: "v1:0:00000000"
+            },
+            handoff: {
+              content: "下一章交接",
+              baseRevision: "v1:0:00000000"
+            },
+            baseWorkspaceRevision: 3,
+            baseProjectRevision: 5
+          },
+          summary: "写入第一章"
+        }
+      },
+      {
+        toolName: "propose_long_ledger_commit",
+        eventType: "long.ledger_commit_proposal",
+        details: {
+          kind: "long-ledger-commit-proposal",
+          bookId: "longbook-child",
+          agentId: "continuity_ledger",
+          input: {
+            bookId: "longbook-child",
+            chapterCardId: "chapter_one",
+            chapterFileRevisions: {
+              body: "v1:0:00000000",
+              characterState: "v1:0:00000000",
+              handoff: "v1:0:00000000"
+            },
+            commitMessage: "提交第一章",
+            chapterSummary: {
+              timeline: "时间线",
+              characterStates: "人物状态",
+              factionStates: "势力状态",
+              realmStates: "境界状态",
+              foreshadowingStates: "伏笔状态",
+              continuityNotes: "连续性说明"
+            },
+            placementDecisions: {},
+            foreshadowingBeatDecisions: {},
+            fileUpdates: [],
+            baseWorkspaceRevision: 3,
+            baseProjectRevision: 5
+          },
+          summary: "提交第一章连续性"
+        }
+      }
+    ] as const;
+
+    const events = proposals.flatMap((proposal, index) =>
+      toRuntimeEvents(
+        {
+          type: "tool_execution_update",
+          toolCallId: "parent-long-spawn",
+          toolName: "spawn_subagent",
+          args: {},
+          partialResult: {
+            content: [{ type: "text", text: "子工具结果已同步" }],
+            details: {
+              kind: "subagent-progress",
+              progress: {
+                type: "child_tool_details",
+                parentToolCallId: "parent-long-spawn",
+                subagentRunId: "subrun-long",
+                subagentId: "long_reviewer",
+                name: "长篇子智能体",
+                toolCallId: `subrun-long:child-${index + 1}`,
+                toolName: proposal.toolName,
+                isError: false,
+                result: {
+                  content: [{ type: "text", text: "等待审阅" }],
+                  details: proposal.details
+                }
+              }
+            }
+          }
+        } as never,
+        {
+          runId: "parent-long-run",
+          sessionId: "parent-long-session",
+          prompt: "委派长篇修改"
+        },
+        providerRuntime,
+        "parent-long-assistant"
+      )
+    );
+
+    expect(events.map((event) => event.type)).toEqual(
+      proposals.map(({ eventType }) => eventType)
+    );
+    expect(
+      events.map((event) => ({
+        runId: event.runId,
+        sessionId: event.sessionId,
+        toolCallId:
+          "toolCallId" in event.payload
+            ? event.payload.toolCallId
+            : undefined
+      }))
+    ).toEqual(
+      proposals.map((_, index) => ({
+        runId: "parent-long-run",
+        sessionId: "parent-long-session",
+        toolCallId: `subrun-long:child-${index + 1}`
+      }))
+    );
+    expect(
+      events.every((event) => event.payload.runtime === providerRuntime)
+    ).toBe(true);
   });
 
   it("maps a batch chapter-file creation result into one reviewable workspace event", () => {

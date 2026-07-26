@@ -37,4 +37,48 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain("libraryEntryClipboardDomain");
     expect(source).toContain("<span>删除条目文件</span>");
   });
+
+  it("uses an independent action event for long-book nodes", () => {
+    expect(source).toContain(
+      'props.node.catalogNodeType === "long-book"'
+    );
+    expect(source).toContain(
+      'node: node as LongBookResourceNodeActionPayload["node"]'
+    );
+    for (const action of [
+      "manage-structure",
+      "export-portable",
+      "unregister",
+      "delete"
+    ]) {
+      expect(source).toContain(
+        `activateLongBookAction('${action}')`
+      );
+    }
+    const longActionFunction = source.slice(
+      source.indexOf("function activateLongBookAction"),
+      source.indexOf("function activateResourceNodeAction")
+    );
+    expect(longActionFunction).not.toContain('emit("bookAction"');
+  });
+
+  it("keeps reversible catalog actions neutral and marks disk deletion dangerous", () => {
+    const longMenu = source.slice(
+      source.indexOf(
+        '<template v-else-if="hasLongBookAction">'
+      ),
+      source.indexOf(
+        '<template v-else-if="hasBookAction">'
+      )
+    );
+    expect(longMenu).toContain("<span>管理长篇结构</span>");
+    expect(longMenu).toContain("<span>导出可迁移项目</span>");
+    expect(longMenu).toContain(
+      'activateLongBookAction(\'unregister\')'
+    );
+    expect(longMenu).toContain(
+      'activateLongBookAction(\'delete\')'
+    );
+    expect(longMenu.match(/is-danger/gu)).toHaveLength(1);
+  });
 });

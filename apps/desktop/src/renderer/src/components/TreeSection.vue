@@ -4,6 +4,7 @@ import type {
   BookResourceDialogMode,
   CatalogResourceNodeActionPayload,
   IconName,
+  LongBookResourceNodeActionPayload,
   ResourceSectionAction,
   ResourceSectionActionPayload,
   ResourceTreeNode,
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   togglePin: [node: ResourceTreeNode];
   bookAction: [mode: BookResourceDialogMode, node: ResourceTreeNode];
   exportBook: [node: ResourceTreeNode];
+  longBookAction: [payload: LongBookResourceNodeActionPayload];
   resourceAction: [payload: ResourceSectionActionPayload];
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
@@ -48,9 +50,42 @@ const actionItems = computed<Array<{
   return [
     { id: "create", label: `新建${resourceName}`, icon: "plus" },
     ...(props.section.id === "creation"
+      ? ([
+          {
+            id: "create-long-book",
+            label: "新建长篇",
+            icon: "book"
+          }
+        ] as const)
+      : []),
+    ...(props.section.id === "creation"
       ? []
       : ([{ id: "create-group", label: "新建分组", icon: "folder" }] as const)),
     { id: "import", label: `打开已存在${resourceName}`, icon: "folder" },
+    ...(props.section.id === "creation"
+      ? ([
+          {
+            id: "open-long-book",
+            label: "打开已存在长篇",
+            icon: "folder"
+          },
+          {
+            id: "import-portable-long-book",
+            label: "导入 DeepWrite 长篇工程",
+            icon: "archive"
+          },
+          {
+            id: "migrate-write-claw-long-book",
+            label: "迁移 Write Claw 长篇",
+            icon: "archive"
+          },
+          {
+            id: "refresh-long-books",
+            label: "刷新长篇列表",
+            icon: "history"
+          }
+        ] as const)
+      : []),
     ...(props.section.id === "creation"
       ? ([
           {
@@ -166,6 +201,7 @@ onBeforeUnmount(() => {
         @toggle-pin="emit('togglePin', $event)"
         @book-action="(mode, book) => emit('bookAction', mode, book)"
         @export-book="emit('exportBook', $event)"
+        @long-book-action="emit('longBookAction', $event)"
         @resource-node-action="emit('resourceNodeAction', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @remove-expert-section="emit('removeExpertSection', $event)"

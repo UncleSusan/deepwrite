@@ -40,6 +40,39 @@ import {
   ModelConfigInputSchema,
   ModelSettingsInputSchema,
   ModelSettingsSchema,
+  CreateLongBookInputSchema,
+  LongExportPortableInputSchema,
+  LongExportPortableResultSchema,
+  LongImportPortableResultSchema,
+  LongImportWriteClawResultSchema,
+  LongApplyOperationsInputSchema,
+  LongApplyOperationsResultSchema,
+  LongAgentIdSchema,
+  LongAgentSettingsInputSchema,
+  LongAgentSettingsSchema,
+  LongAgentTeamSettingsInputSchema,
+  LongAgentTeamSettingsSchema,
+  LongCommitChapterInputSchema,
+  LongCommitChapterResultSchema,
+  LongListBooksResultSchema,
+  LongOpenBookInputSchema,
+  LongOpenBookResultSchema,
+  LongPreviewOperationsInputSchema,
+  LongPreviewOperationsResultSchema,
+  LongReadDocumentInputSchema,
+  LongReadDocumentResultSchema,
+  LongRemoveBookInputSchema,
+  LongRemoveBookResultSchema,
+  LongRollbackLastCommitInputSchema,
+  LongRollbackLastCommitResultSchema,
+  LongSearchInputSchema,
+  LongSearchResultSchema,
+  LongUpdateBindingsInputSchema,
+  LongWorkspaceIndexResultSchema,
+  LongWriteChapterInputSchema,
+  LongWriteChapterResultSchema,
+  LongWriteDocumentInputSchema,
+  LongWriteDocumentResultSchema,
   RemoveLibraryEntryInputSchema,
   RemoveLibraryEntryResultSchema,
   SessionAbortAcceptedPayloadSchema,
@@ -100,6 +133,39 @@ import {
   type LearningImitationSettings,
   type LearningImitationSettingsInput,
   type LearningImitationStageId,
+  type CreateLongBookInput,
+  type LongExportPortableInput,
+  type LongExportPortableResult,
+  type LongImportPortableResult,
+  type LongImportWriteClawResult,
+  type LongApplyOperationsInput,
+  type LongApplyOperationsResult,
+  type LongAgentId,
+  type LongAgentSettings,
+  type LongAgentSettingsInput,
+  type LongAgentTeamSettings,
+  type LongAgentTeamSettingsInput,
+  type LongCommitChapterInput,
+  type LongCommitChapterResult,
+  type LongListBooksResult,
+  type LongOpenBookInput,
+  type LongOpenBookResult,
+  type LongPreviewOperationsInput,
+  type LongPreviewOperationsResult,
+  type LongReadDocumentInput,
+  type LongReadDocumentResult,
+  type LongRemoveBookInput,
+  type LongRemoveBookResult,
+  type LongRollbackLastCommitInput,
+  type LongRollbackLastCommitResult,
+  type LongSearchInput,
+  type LongSearchResult,
+  type LongUpdateBindingsInput,
+  type LongWorkspaceIndexResult,
+  type LongWriteChapterInput,
+  type LongWriteChapterResult,
+  type LongWriteDocumentInput,
+  type LongWriteDocumentResult,
   type LibraryAgentDomain,
   type LibraryAgentSettings,
   type LibraryAgentSettingsInput,
@@ -235,6 +301,278 @@ async function createScriptBook(
       createEnvelope("catalog.createScriptBook", input, {
         id,
         correlationId: id
+      })
+    )
+  );
+}
+
+async function listLongBooks(): Promise<LongListBooksResult> {
+  const id = browserId("cmd_long_list");
+  return LongListBooksResultSchema.parse(
+    await invokeCommand<LongListBooksResult>(
+      createEnvelope("long.list", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function createLongBook(
+  rawInput: CreateLongBookInput
+): Promise<LongOpenBookResult | null> {
+  const input = CreateLongBookInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_create");
+  return LongOpenBookResultSchema.nullable().parse(
+    await invokeCommand<LongOpenBookResult | null>(
+      createEnvelope("long.createBook", input, { id, correlationId: id })
+    )
+  );
+}
+
+async function updateLongBookBindings(
+  rawInput: LongUpdateBindingsInput
+): Promise<LongOpenBookResult> {
+  const input = LongUpdateBindingsInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_update_bindings");
+  return LongOpenBookResultSchema.parse(
+    await invokeCommand<LongOpenBookResult>(
+      createEnvelope("long.updateBindings", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function importWriteClawLongBook(): Promise<LongImportWriteClawResult | null> {
+  const id = browserId("cmd_long_import_write_claw");
+  return LongImportWriteClawResultSchema.nullable().parse(
+    await invokeCommand<LongImportWriteClawResult | null>(
+      createEnvelope("long.importWriteClaw", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function importPortableLongBook(): Promise<LongImportPortableResult | null> {
+  const id = browserId("cmd_long_import_portable");
+  return LongImportPortableResultSchema.nullable().parse(
+    await invokeCommand<LongImportPortableResult | null>(
+      createEnvelope("long.importPortable", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function exportLongPortableBundle(
+  rawInput: LongExportPortableInput
+): Promise<LongExportPortableResult> {
+  const input = LongExportPortableInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_export_portable");
+  return LongExportPortableResultSchema.parse(
+    await invokeCommand<LongExportPortableResult>(
+      createEnvelope("long.exportPortable", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function openLongBook(
+  rawInput: LongOpenBookInput
+): Promise<LongOpenBookResult> {
+  const input = LongOpenBookInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_open");
+  return LongOpenBookResultSchema.parse(
+    await invokeCommand<LongOpenBookResult>(
+      createEnvelope("long.open", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function openExistingLongBook(): Promise<LongOpenBookResult | null> {
+  const id = browserId("cmd_long_open_existing");
+  return LongOpenBookResultSchema.nullable().parse(
+    await invokeCommand<LongOpenBookResult | null>(
+      createEnvelope("long.openExisting", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function getLongWorkspaceIndex(
+  rawInput: LongOpenBookInput
+): Promise<LongWorkspaceIndexResult> {
+  const input = LongOpenBookInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_index");
+  return LongWorkspaceIndexResultSchema.parse(
+    await invokeCommand<LongWorkspaceIndexResult>(
+      createEnvelope("long.getWorkspaceIndex", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function readLongDocument(
+  rawInput: LongReadDocumentInput
+): Promise<LongReadDocumentResult> {
+  const input = LongReadDocumentInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_read");
+  return LongReadDocumentResultSchema.parse(
+    await invokeCommand<LongReadDocumentResult>(
+      createEnvelope("long.readDocument", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function searchLongWorkspace(
+  rawInput: LongSearchInput
+): Promise<LongSearchResult> {
+  const input = LongSearchInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_search");
+  return LongSearchResultSchema.parse(
+    await invokeCommand<LongSearchResult>(
+      createEnvelope("long.search", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function writeLongDocument(
+  rawInput: LongWriteDocumentInput
+): Promise<LongWriteDocumentResult> {
+  const input = LongWriteDocumentInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_write");
+  return LongWriteDocumentResultSchema.parse(
+    await invokeCommand<LongWriteDocumentResult>(
+      createEnvelope("long.writeDocument", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function previewLongOperations(
+  rawInput: LongPreviewOperationsInput
+): Promise<LongPreviewOperationsResult> {
+  const input = LongPreviewOperationsInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_preview_operations");
+  return LongPreviewOperationsResultSchema.parse(
+    await invokeCommand<LongPreviewOperationsResult>(
+      createEnvelope("long.previewOperations", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function applyLongOperations(
+  rawInput: LongApplyOperationsInput
+): Promise<LongApplyOperationsResult> {
+  const input = LongApplyOperationsInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_apply_operations");
+  return LongApplyOperationsResultSchema.parse(
+    await invokeCommand<LongApplyOperationsResult>(
+      createEnvelope("long.applyOperations", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function writeLongChapter(
+  rawInput: LongWriteChapterInput
+): Promise<LongWriteChapterResult> {
+  const input = LongWriteChapterInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_write_chapter");
+  return LongWriteChapterResultSchema.parse(
+    await invokeCommand<LongWriteChapterResult>(
+      createEnvelope("long.writeChapter", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function commitLongChapter(
+  rawInput: LongCommitChapterInput
+): Promise<LongCommitChapterResult> {
+  const input = LongCommitChapterInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_commit_chapter");
+  return LongCommitChapterResultSchema.parse(
+    await invokeCommand<LongCommitChapterResult>(
+      createEnvelope("long.commitChapter", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function rollbackLongCommit(
+  rawInput: LongRollbackLastCommitInput
+): Promise<LongRollbackLastCommitResult> {
+  const input = LongRollbackLastCommitInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_rollback");
+  return LongRollbackLastCommitResultSchema.parse(
+    await invokeCommand<LongRollbackLastCommitResult>(
+      createEnvelope("long.rollbackLastCommit", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function unregisterLongBook(
+  rawInput: LongRemoveBookInput
+): Promise<LongRemoveBookResult> {
+  const input = LongRemoveBookInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_unregister");
+  return LongRemoveBookResultSchema.parse(
+    await invokeCommand<LongRemoveBookResult>(
+      createEnvelope("long.unregister", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function deleteLongBook(
+  rawInput: LongRemoveBookInput
+): Promise<LongRemoveBookResult> {
+  const input = LongRemoveBookInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_delete");
+  return LongRemoveBookResultSchema.parse(
+    await invokeCommand<LongRemoveBookResult>(
+      createEnvelope("long.delete", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
       })
     )
   );
@@ -579,6 +917,75 @@ async function listWorkspaceAgents(
   );
 }
 
+async function listLongAgents(): Promise<LongAgentSettings> {
+  const id = browserId("cmd_long_agents_list");
+  return LongAgentSettingsSchema.parse(
+    await invokeCommand<LongAgentSettings>(
+      createEnvelope("longAgents.list", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function saveLongAgents(
+  rawSettings: LongAgentSettingsInput
+): Promise<LongAgentSettings> {
+  const settings = LongAgentSettingsInputSchema.parse(rawSettings);
+  const id = browserId("cmd_long_agents_save");
+  return LongAgentSettingsSchema.parse(
+    await invokeCommand<LongAgentSettings>(
+      createEnvelope("longAgents.save", settings, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
+async function resetLongAgents(
+  rawAgentId?: LongAgentId
+): Promise<LongAgentSettings> {
+  const agentId = rawAgentId
+    ? LongAgentIdSchema.parse(rawAgentId)
+    : undefined;
+  const id = browserId("cmd_long_agents_reset");
+  return LongAgentSettingsSchema.parse(
+    await invokeCommand<LongAgentSettings>(
+      createEnvelope(
+        "longAgents.reset",
+        { ...(agentId ? { agentId } : {}) },
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
+async function listLongAgentTeams(): Promise<LongAgentTeamSettings> {
+  const id = browserId("cmd_long_agent_teams_list");
+  return LongAgentTeamSettingsSchema.parse(
+    await invokeCommand<LongAgentTeamSettings>(
+      createEnvelope("longAgentTeams.list", {}, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
+async function saveLongAgentTeams(
+  rawSettings: LongAgentTeamSettingsInput
+): Promise<LongAgentTeamSettings> {
+  const settings = LongAgentTeamSettingsInputSchema.parse(rawSettings);
+  const id = browserId("cmd_long_agent_teams_save");
+  return LongAgentTeamSettingsSchema.parse(
+    await invokeCommand<LongAgentTeamSettings>(
+      createEnvelope("longAgentTeams.save", settings, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
 async function listAgentTeams(
   workspaceType: "short"
 ): Promise<AgentTeamSettings>;
@@ -842,6 +1249,27 @@ const api: DeepWriteApi = {
     unregisterProject,
     deleteProject
   },
+  long: {
+    list: listLongBooks,
+    create: createLongBook,
+    updateBindings: updateLongBookBindings,
+    importWriteClaw: importWriteClawLongBook,
+    importPortable: importPortableLongBook,
+    exportPortable: exportLongPortableBundle,
+    open: openLongBook,
+    openExisting: openExistingLongBook,
+    getWorkspaceIndex: getLongWorkspaceIndex,
+    readDocument: readLongDocument,
+    search: searchLongWorkspace,
+    writeDocument: writeLongDocument,
+    previewOperations: previewLongOperations,
+    applyOperations: applyLongOperations,
+    writeChapter: writeLongChapter,
+    commitChapter: commitLongChapter,
+    rollbackLastCommit: rollbackLongCommit,
+    unregister: unregisterLongBook,
+    delete: deleteLongBook
+  },
   session: {
     prompt,
     abort
@@ -855,6 +1283,15 @@ const api: DeepWriteApi = {
     list: listWorkspaceAgents,
     save: saveWorkspaceAgents,
     reset: resetWorkspaceAgents
+  },
+  longAgents: {
+    list: listLongAgents,
+    save: saveLongAgents,
+    reset: resetLongAgents
+  },
+  longAgentTeams: {
+    list: listLongAgentTeams,
+    save: saveLongAgentTeams
   },
   agentTeams: {
     list: listAgentTeams,

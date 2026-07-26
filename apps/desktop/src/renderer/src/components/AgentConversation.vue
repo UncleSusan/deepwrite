@@ -8,6 +8,7 @@ import {
   type BuiltInReasoningLevel,
   type LibraryAgentDomain,
   type LibraryAgentSkill,
+  type LongAgentId,
   type ModelConfig,
   type ShortWorkspaceAgentId,
   type ThinkingLevel,
@@ -59,7 +60,8 @@ const props = defineProps<{
   bookTitle: string;
   stageLabel: string;
   agentLabel: string;
-  agentId: ShortWorkspaceAgentId | undefined;
+  agentId: ShortWorkspaceAgentId | LongAgentId | undefined;
+  agentWorkspaceType?: "short" | "long";
   libraryDomain: LibraryAgentDomain | undefined;
   librarySkills: readonly Pick<LibraryAgentSkill, "name">[] | undefined;
   welcomeShortcuts: readonly [string, string, string] | undefined;
@@ -521,7 +523,8 @@ const welcomeContent = computed(() =>
     props.agentId,
     props.libraryDomain,
     props.librarySkills,
-    props.welcomeShortcuts
+    props.welcomeShortcuts,
+    props.agentWorkspaceType
   )
 );
 const hasStreamingAssistant = computed(() =>

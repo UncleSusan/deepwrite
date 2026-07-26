@@ -4,6 +4,8 @@ import type {
   BookResourceDialogMode,
   CatalogResourceNodeAction,
   CatalogResourceNodeActionPayload,
+  LongBookResourceNodeAction,
+  LongBookResourceNodeActionPayload,
   ResourceDomain,
   ResourceTreeNode
 } from "../types/workspace";
@@ -27,6 +29,7 @@ const emit = defineEmits<{
   togglePin: [node: ResourceTreeNode];
   bookAction: [mode: BookResourceDialogMode, node: ResourceTreeNode];
   exportBook: [node: ResourceTreeNode];
+  longBookAction: [payload: LongBookResourceNodeActionPayload];
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
@@ -65,6 +68,13 @@ const hasBookAction = computed(
     props.resourceDomain === "creation" &&
     props.node.catalogNodeType === "book"
 );
+const hasLongBookAction = computed(
+  () =>
+    props.resourceDomain === "creation" &&
+    props.node.catalogNodeType === "long-book" &&
+    props.node.workspaceType === "long" &&
+    Boolean(props.node.longBookId)
+);
 const isExpertDraftParent = computed(
   () =>
     props.resourceDomain === "creation" &&
@@ -83,6 +93,7 @@ const hasActionMenu = computed(
     hasLibraryAction.value ||
     hasGroupAction.value ||
     hasBookAction.value ||
+    hasLongBookAction.value ||
     isExpertDraftSection.value
 );
 const hasNodeAction = computed(
@@ -110,6 +121,12 @@ watch(
 );
 
 function activate(): void {
+  if (
+    props.node.unavailable &&
+    props.node.catalogNodeType === "long-book"
+  ) {
+    return;
+  }
   if (props.node.children?.length) {
     open.value = !open.value;
     if (props.node.selectableBranch) {
@@ -137,6 +154,24 @@ function openBookAction(mode: BookResourceDialogMode): void {
 function exportBook(): void {
   actionMenuOpen.value = false;
   emit("exportBook", props.node);
+}
+
+function activateLongBookAction(
+  action: LongBookResourceNodeAction
+): void {
+  const node = props.node;
+  if (
+    node.catalogNodeType !== "long-book" ||
+    node.workspaceType !== "long" ||
+    !node.longBookId
+  ) {
+    return;
+  }
+  actionMenuOpen.value = false;
+  emit("longBookAction", {
+    action,
+    node: node as LongBookResourceNodeActionPayload["node"]
+  });
 }
 
 function activateResourceNodeAction(action: CatalogResourceNodeAction): void {
@@ -282,6 +317,63 @@ onBeforeUnmount(() => {
           >
             <AppIcon name="trash" :size="16" />
             <span>删除{{ draftUnitLabel }}</span>
+          </button>
+        </template>
+        <template v-else-if="hasLongBookAction">
+          <template v-if="!node.unavailable">
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="
+                activateLongBookAction('manage-structure')
+              "
+            >
+              <AppIcon name="settings" :size="16" />
+              <span>管理长篇结构</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="
+                activateLongBookAction('manage-bindings')
+              "
+            >
+              <AppIcon name="library" :size="16" />
+              <span>资源绑定</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="
+                activateLongBookAction('export-portable')
+              "
+            >
+              <AppIcon name="download" :size="16" />
+              <span>导出可迁移项目</span>
+            </button>
+          </template>
+          <div class="tree-node-action-menu-divider" role="separator" />
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="activateLongBookAction('unregister')"
+          >
+            <AppIcon name="trash" :size="16" />
+            <span>移除（保留文件）</span>
+          </button>
+          <button
+            v-if="!node.unavailable"
+            class="tree-node-action-menu-item is-danger"
+            type="button"
+            role="menuitem"
+            @click.stop="activateLongBookAction('delete')"
+          >
+            <AppIcon name="trash" :size="16" />
+            <span>删除本地长篇</span>
           </button>
         </template>
         <template v-else-if="hasBookAction">
@@ -452,6 +544,7 @@ onBeforeUnmount(() => {
         @toggle-pin="emit('togglePin', $event)"
         @book-action="(mode, book) => emit('bookAction', mode, book)"
         @export-book="emit('exportBook', $event)"
+        @long-book-action="emit('longBookAction', $event)"
         @resource-node-action="emit('resourceNodeAction', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @remove-expert-section="emit('removeExpertSection', $event)"

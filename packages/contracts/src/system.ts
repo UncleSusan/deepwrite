@@ -16,6 +16,10 @@ import {
   AgentToolCallStreamEventEnvelopeSchema,
   AgentToolRequestedEventEnvelopeSchema,
   LearningImitationResultUpdatedEventEnvelopeSchema,
+  LongChapterDispatchProposalEventEnvelopeSchema,
+  LongChapterWriteProposalEventEnvelopeSchema,
+  LongLedgerCommitProposalEventEnvelopeSchema,
+  LongMutationProposalEventEnvelopeSchema,
   SubagentAuthoringDraftUpdatedEventEnvelopeSchema,
   LibraryEditorMutationEventEnvelopeSchema,
   WorkspaceEditorMutationEventEnvelopeSchema,
@@ -35,6 +39,10 @@ import {
   type SubagentCompletedEventEnvelope,
   type SubagentStartedEventEnvelope,
   type LearningImitationResultUpdatedEventEnvelope,
+  type LongChapterDispatchProposalEventEnvelope,
+  type LongChapterWriteProposalEventEnvelope,
+  type LongLedgerCommitProposalEventEnvelope,
+  type LongMutationProposalEventEnvelope,
   type SubagentAuthoringDraftUpdatedEventEnvelope,
   type LibraryEditorMutationEventEnvelope,
   type WorkspaceEditorMutationEventEnvelope,
@@ -65,6 +73,15 @@ import {
   LibraryAgentsResetCommandEnvelopeSchema,
   LibraryAgentsSaveCommandEnvelopeSchema
 } from "./library-agent";
+import {
+  LongAgentsListCommandEnvelopeSchema,
+  LongAgentsResetCommandEnvelopeSchema,
+  LongAgentsSaveCommandEnvelopeSchema
+} from "./long-agent-settings";
+import {
+  LongAgentTeamsListCommandEnvelopeSchema,
+  LongAgentTeamsSaveCommandEnvelopeSchema
+} from "./long-agent-team";
 import {
   CatalogCreateLibraryAtPathCommandEnvelopeSchema,
   CatalogCreateLibraryCommandEnvelopeSchema,
@@ -104,6 +121,32 @@ import {
   AppearanceSaveCommandEnvelopeSchema
 } from "./appearance";
 import { ExportShortManuscriptCommandEnvelopeSchema } from "./short-manuscript-export";
+import {
+  LongApplyOperationsCommandEnvelopeSchema,
+  LongCreateBookAtPathCommandEnvelopeSchema,
+  LongCreateBookCommandEnvelopeSchema,
+  LongCommitChapterCommandEnvelopeSchema,
+  LongDeleteBookCommandEnvelopeSchema,
+  LongExportPortableAtPathCommandEnvelopeSchema,
+  LongExportPortableCommandEnvelopeSchema,
+  LongGetWorkspaceIndexCommandEnvelopeSchema,
+  LongImportPortableAtPathCommandEnvelopeSchema,
+  LongImportPortableCommandEnvelopeSchema,
+  LongImportWriteClawAtPathCommandEnvelopeSchema,
+  LongImportWriteClawCommandEnvelopeSchema,
+  LongListBooksCommandEnvelopeSchema,
+  LongOpenBookCommandEnvelopeSchema,
+  LongOpenBookAtPathCommandEnvelopeSchema,
+  LongOpenExistingBookCommandEnvelopeSchema,
+  LongPreviewOperationsCommandEnvelopeSchema,
+  LongReadDocumentCommandEnvelopeSchema,
+  LongRollbackLastCommitCommandEnvelopeSchema,
+  LongSearchCommandEnvelopeSchema,
+  LongUnregisterBookCommandEnvelopeSchema,
+  LongUpdateBindingsCommandEnvelopeSchema,
+  LongWriteChapterCommandEnvelopeSchema,
+  LongWriteDocumentCommandEnvelopeSchema
+} from "./long-workspace-api";
 
 export const IPC_COMMAND_CHANNEL = "deepwrite:command";
 export const IPC_EVENT_CHANNEL = "deepwrite:event";
@@ -163,6 +206,30 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogRemoveLibraryEntryCommandEnvelopeSchema,
   CatalogUnregisterProjectCommandEnvelopeSchema,
   CatalogDeleteProjectCommandEnvelopeSchema,
+  LongCreateBookCommandEnvelopeSchema,
+  LongCreateBookAtPathCommandEnvelopeSchema,
+  LongImportWriteClawCommandEnvelopeSchema,
+  LongImportWriteClawAtPathCommandEnvelopeSchema,
+  LongImportPortableCommandEnvelopeSchema,
+  LongImportPortableAtPathCommandEnvelopeSchema,
+  LongExportPortableCommandEnvelopeSchema,
+  LongExportPortableAtPathCommandEnvelopeSchema,
+  LongListBooksCommandEnvelopeSchema,
+  LongOpenBookCommandEnvelopeSchema,
+  LongUpdateBindingsCommandEnvelopeSchema,
+  LongOpenExistingBookCommandEnvelopeSchema,
+  LongOpenBookAtPathCommandEnvelopeSchema,
+  LongUnregisterBookCommandEnvelopeSchema,
+  LongDeleteBookCommandEnvelopeSchema,
+  LongGetWorkspaceIndexCommandEnvelopeSchema,
+  LongReadDocumentCommandEnvelopeSchema,
+  LongSearchCommandEnvelopeSchema,
+  LongWriteDocumentCommandEnvelopeSchema,
+  LongPreviewOperationsCommandEnvelopeSchema,
+  LongApplyOperationsCommandEnvelopeSchema,
+  LongWriteChapterCommandEnvelopeSchema,
+  LongCommitChapterCommandEnvelopeSchema,
+  LongRollbackLastCommitCommandEnvelopeSchema,
   SessionPromptCommandEnvelopeSchema,
   SessionAbortCommandEnvelopeSchema,
   ModelsListCommandEnvelopeSchema,
@@ -171,6 +238,11 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   WorkspaceAgentsListCommandEnvelopeSchema,
   WorkspaceAgentsSaveCommandEnvelopeSchema,
   WorkspaceAgentsResetCommandEnvelopeSchema,
+  LongAgentsListCommandEnvelopeSchema,
+  LongAgentsSaveCommandEnvelopeSchema,
+  LongAgentsResetCommandEnvelopeSchema,
+  LongAgentTeamsListCommandEnvelopeSchema,
+  LongAgentTeamsSaveCommandEnvelopeSchema,
   LibraryAgentsListCommandEnvelopeSchema,
   LibraryAgentsSaveCommandEnvelopeSchema,
   LibraryAgentsResetCommandEnvelopeSchema,
@@ -254,6 +326,10 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   SubagentCompletedEventEnvelopeSchema,
   LearningImitationResultUpdatedEventEnvelopeSchema,
   SubagentAuthoringDraftUpdatedEventEnvelopeSchema,
+  LongMutationProposalEventEnvelopeSchema,
+  LongChapterDispatchProposalEventEnvelopeSchema,
+  LongChapterWriteProposalEventEnvelopeSchema,
+  LongLedgerCommitProposalEventEnvelopeSchema,
   LibraryEditorMutationEventEnvelopeSchema,
   WorkspaceEditorMutationEventEnvelopeSchema,
   WorkspaceStageSelectionEventEnvelopeSchema,
@@ -286,6 +362,10 @@ export type SystemEventEnvelope =
   | SubagentCompletedEventEnvelope
   | LearningImitationResultUpdatedEventEnvelope
   | SubagentAuthoringDraftUpdatedEventEnvelope
+  | LongMutationProposalEventEnvelope
+  | LongChapterDispatchProposalEventEnvelope
+  | LongChapterWriteProposalEventEnvelope
+  | LongLedgerCommitProposalEventEnvelope
   | LibraryEditorMutationEventEnvelope
   | WorkspaceEditorMutationEventEnvelope
   | WorkspaceStageSelectionEventEnvelope

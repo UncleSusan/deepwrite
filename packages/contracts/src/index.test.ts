@@ -714,6 +714,59 @@ describe("DeepWrite desktop contracts", () => {
         event
       }).kind
     ).toBe("utility.command.event");
+
+    const internalCommand = createEnvelope(
+      "system.health",
+      {},
+      { id: "cmd_internal_health" }
+    );
+    expect(
+      UtilityOutboundMessageSchema.parse({
+        kind: "utility.internal.command.request",
+        worker: "agent",
+        target: "core",
+        requestId: "internal_request_1",
+        parentRequestId: "request_1",
+        timeoutMs: 5_000,
+        command: internalCommand
+      }).kind
+    ).toBe("utility.internal.command.request");
+    expect(
+      UtilityInboundMessageSchema.parse({
+        kind: "utility.internal.command.result",
+        worker: "agent",
+        target: "core",
+        requestId: "internal_request_1",
+        parentRequestId: "request_1",
+        result: {
+          status: "accepted",
+          requestId: internalCommand.id,
+          payload: { status: "ok" }
+        }
+      }).kind
+    ).toBe("utility.internal.command.result");
+    expect(
+      UtilityOutboundMessageSchema.safeParse({
+        kind: "utility.internal.command.request",
+        worker: "core",
+        target: "tool",
+        requestId: "internal_request_wrong_source",
+        parentRequestId: "request_1",
+        timeoutMs: 5_000,
+        command: internalCommand
+      }).success
+    ).toBe(false);
+    expect(
+      UtilityOutboundMessageSchema.safeParse({
+        kind: "utility.internal.command.request",
+        worker: "agent",
+        target: "agent",
+        requestId: "internal_request_loop",
+        parentRequestId: "request_1",
+        timeoutMs: 5_000,
+        command: internalCommand
+      }).success
+    ).toBe(false);
   });
 
   it("validates streamed tool arguments before tool execution", () => {

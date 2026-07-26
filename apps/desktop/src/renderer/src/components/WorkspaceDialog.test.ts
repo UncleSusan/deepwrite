@@ -26,3 +26,12 @@ describe("WorkspaceDialog DeepWrite free models", () => {
     expect(source.match(/scrollModelEditorToTop\(\);/g)).toHaveLength(2);
   });
 });
+
+describe("WorkspaceDialog provider presets", () => {
+  it("offers Kimi Coding with its OpenAI-compatible API endpoint", () => {
+    expect(source).toContain('{ value: "kimi-coding", label: "Kimi Coding" }');
+    expect(source).toContain('provider === "kimi-coding"');
+    expect(source).toContain('editor.api = "openai-completions"');
+    expect(source).toContain('editor.baseUrl = "https://api.kimi.com/coding/v1"');
+  });
+});

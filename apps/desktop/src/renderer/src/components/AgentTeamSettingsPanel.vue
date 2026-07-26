@@ -11,6 +11,8 @@ import {
   type WorkspaceAgentTeamSettingsInput,
   type BuiltInReasoningLevel,
   type ModelConfig,
+  type LongAgentTeamSettings,
+  type LongAgentTeamSettingsInput,
   type ShortAgentSubagentDefinition,
   type ShortAgentSubagentModelMode,
   type ShortWorkspaceAgentId,
@@ -23,6 +25,7 @@ import { computed, ref, watch } from "vue";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 import LoadSubagentFromSkillDialog from "./LoadSubagentFromSkillDialog.vue";
+import LongAgentTeamSettingsPanel from "./LongAgentTeamSettingsPanel.vue";
 import PopupSelect, { type PopupSelectOption } from "./PopupSelect.vue";
 
 interface ParentAgentMeta {
@@ -33,12 +36,16 @@ interface ParentAgentMeta {
 
 const props = defineProps<{
   settings: readonly WorkspaceAgentTeamSettings[];
+  longSettings: LongAgentTeamSettings | null;
   models: readonly ModelConfig[];
   skills?: readonly SkillLibrary[];
   preferredModelId?: string | null | undefined;
   loading: boolean;
   saving: boolean;
   loadError?: string | null;
+  longLoading: boolean;
+  longSaving: boolean;
+  longLoadError?: string | null;
   runtimeAvailable: boolean;
   authoringGenerating?: boolean;
   authoringDraft?: SubagentAuthoringDraft | null | undefined;
@@ -49,6 +56,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   retry: [];
   save: [settings: WorkspaceAgentTeamSettingsInput];
+  saveLong: [settings: LongAgentTeamSettingsInput];
   authoringGenerate: [payload: {
     context: SubagentAuthoringRuntimeContext;
     modelId: string;
@@ -88,7 +96,7 @@ const PARENT_AGENTS = [
 ] as const satisfies readonly ParentAgentMeta[];
 
 const activeParentAgentId = ref<ShortWorkspaceAgentId>(PARENT_AGENTS[0].id);
-const activeWorkspaceType = ref<"short" | "script">("short");
+const activeWorkspaceType = ref<"short" | "script" | "long">("short");
 const draftTeams = ref<WorkspaceAgentTeamSettingsInput["teams"]>([]);
 const editingSubagentId = ref<string | null>(null);
 let generatedIdSequence = 0;
@@ -97,7 +105,6 @@ const formDisabled = computed(
   () =>
     props.loading ||
     props.saving ||
-    Boolean(props.loadError) ||
     !props.runtimeAvailable
 );
 
@@ -114,9 +121,11 @@ const activeParentDisplayLabel = computed(() =>
 );
 
 const activeSettings = computed(() =>
-  props.settings.find(
-    (settings) => settings.workspaceType === activeWorkspaceType.value
-  )
+  activeWorkspaceType.value === "long"
+    ? undefined
+    : props.settings.find(
+        (settings) => settings.workspaceType === activeWorkspaceType.value
+      )
 );
 
 const activeSkills = computed(() =>
@@ -441,7 +450,8 @@ function validationMessage(
 }
 
 function saveSettings(): void {
-  if (formDisabled.value) return;
+  if (formDisabled.value || activeWorkspaceType.value === "long") return;
+  const workspaceType = activeWorkspaceType.value;
   const teams: WorkspaceAgentTeamSettingsInput["teams"] = SHORT_WORKSPACE_AGENT_IDS.map(
     (parentAgentId) => {
       const team = draftTeams.value.find(
@@ -478,7 +488,7 @@ function saveSettings(): void {
     return;
   }
   const parsed = WorkspaceAgentTeamSettingsInputSchema.safeParse({
-    workspaceType: activeWorkspaceType.value,
+    workspaceType,
     teams
   });
   if (!parsed.success) {
@@ -530,17 +540,33 @@ function saveSettings(): void {
         class="workspace-tab"
         type="button"
         role="tab"
-        aria-selected="false"
-        disabled
+        :class="{ 'is-active': activeWorkspaceType === 'long' }"
+        :aria-selected="activeWorkspaceType === 'long'"
+        @click="activeWorkspaceType = 'long'"
       >
-        <span>长篇</span><small>尚未接入</small>
+        <span>长篇</span>
       </button>
     </div>
 
-    <div v-if="loading" class="panel-state" aria-live="polite">
+    <LongAgentTeamSettingsPanel
+      v-if="activeWorkspaceType === 'long'"
+      :settings="longSettings"
+      :models="models"
+      :loading="longLoading"
+      :saving="longSaving"
+      :load-error="longLoadError ?? null"
+      :runtime-available="runtimeAvailable"
+      @retry="emit('retry')"
+      @save="emit('saveLong', $event)"
+    />
+    <div v-else-if="loading" class="panel-state" aria-live="polite">
       正在加载智能体团队设置…
     </div>
-    <div v-else-if="loadError" class="panel-state panel-load-error" role="alert">
+    <div
+      v-else-if="loadError && !activeSettings"
+      class="panel-state panel-load-error"
+      role="alert"
+    >
       <strong>智能体团队设置未加载</strong>
       <p>{{ loadError }}</p>
       <button
