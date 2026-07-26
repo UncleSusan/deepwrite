@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   AgentMessageCompletedEventEnvelopeSchema,
   AgentMessageDeltaEventEnvelopeSchema,
+  AgentRetryScheduledEventEnvelopeSchema,
+  AgentTurnStartedEventEnvelopeSchema,
   AgentPromptCommandPayloadSchema,
   ActiveResourceSnapshotSchema,
   AppearanceSettingsSnapshotSchema,
@@ -21,6 +23,7 @@ import {
   SessionPromptAcceptedPayloadSchema,
   SystemEventEnvelopeSchema,
   SystemHealthPayloadSchema,
+  SubagentActivitySchema,
   UtilityInboundMessageSchema,
   UtilityOutboundMessageSchema,
   UserPromptAttachmentsSchema,
@@ -452,6 +455,104 @@ describe("DeepWrite desktop contracts", () => {
       "第一段"
     );
     expect(SystemEventEnvelopeSchema.parse(completed).type).toBe("agent.message_completed");
+  });
+
+  it("validates turn attempts and scheduled retries as non-terminal agent events", () => {
+    const context = { sessionId: "session_retry", runId: "run_retry" };
+    const turnStarted = createEnvelope(
+      "agent.turn_started",
+      {
+        ...context,
+        messageId: "message_retry",
+        turnId: "turn_retry",
+        attempt: 1,
+        maxAttempts: 6,
+        runtime
+      },
+      { id: "event_turn_started", context }
+    );
+    const retryScheduled = createEnvelope(
+      "agent.retry_scheduled",
+      {
+        ...context,
+        messageId: "message_retry",
+        turnId: "turn_retry",
+        failedAttempt: 1,
+        nextAttempt: 2,
+        maxAttempts: 6,
+        delayMs: 2_000,
+        retryAt: "2026-07-26T12:00:02.000Z",
+        reason: "Network connection reset.",
+        runtime
+      },
+      { id: "event_retry_scheduled", context }
+    );
+
+    expect(AgentTurnStartedEventEnvelopeSchema.parse(turnStarted).payload.attempt).toBe(1);
+    expect(
+      AgentRetryScheduledEventEnvelopeSchema.parse(retryScheduled).payload.nextAttempt
+    ).toBe(2);
+    expect(SystemEventEnvelopeSchema.parse(turnStarted).type).toBe("agent.turn_started");
+    expect(SystemEventEnvelopeSchema.parse(retryScheduled).type).toBe(
+      "agent.retry_scheduled"
+    );
+    expect(
+      UtilityOutboundMessageSchema.parse({
+        kind: "utility.command.event",
+        worker: "agent",
+        requestId: "request_retry",
+        event: retryScheduled
+      }).kind
+    ).toBe("utility.command.event");
+
+    expect(() =>
+      AgentTurnStartedEventEnvelopeSchema.parse({
+        ...turnStarted,
+        payload: { ...turnStarted.payload, attempt: 7 }
+      })
+    ).toThrow();
+    expect(() =>
+      AgentRetryScheduledEventEnvelopeSchema.parse({
+        ...retryScheduled,
+        payload: { ...retryScheduled.payload, nextAttempt: 3 }
+      })
+    ).toThrow();
+  });
+
+  it("validates subagent retry lifecycle activities", () => {
+    expect(
+      SubagentActivitySchema.parse({
+        type: "turn_started",
+        turnId: "subagent_turn_1",
+        attempt: 2,
+        maxAttempts: 6
+      })
+    ).toMatchObject({ type: "turn_started", attempt: 2 });
+    expect(
+      SubagentActivitySchema.parse({
+        type: "retry_scheduled",
+        turnId: "subagent_turn_1",
+        failedAttempt: 2,
+        nextAttempt: 3,
+        maxAttempts: 6,
+        delayMs: 5_000,
+        retryAt: "2026-07-26T12:00:05.000Z",
+        reason: "Provider temporarily unavailable."
+      })
+    ).toMatchObject({ type: "retry_scheduled", nextAttempt: 3 });
+
+    expect(() =>
+      SubagentActivitySchema.parse({
+        type: "retry_scheduled",
+        turnId: "subagent_turn_1",
+        failedAttempt: 6,
+        nextAttempt: 7,
+        maxAttempts: 6,
+        delayMs: 30_000,
+        retryAt: "2026-07-26T12:00:30.000Z",
+        reason: "Provider temporarily unavailable."
+      })
+    ).toThrow();
   });
 
   it("rejects an event whose run context differs from its payload", () => {

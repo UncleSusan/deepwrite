@@ -516,6 +516,67 @@ const AgentEventIdentitySchema = z.object({
   runtime: AgentRuntimeRefSchema
 });
 
+const AgentTurnStartedFieldsSchema = z.object({
+  turnId: z.string().min(1),
+  attempt: z.number().int().positive(),
+  maxAttempts: z.number().int().positive()
+});
+
+const AgentRetryScheduledFieldsSchema = z.object({
+  turnId: z.string().min(1),
+  failedAttempt: z.number().int().positive(),
+  nextAttempt: z.number().int().positive(),
+  maxAttempts: z.number().int().positive(),
+  delayMs: z.number().int().nonnegative(),
+  retryAt: z.string().datetime(),
+  reason: z.string().trim().min(1).max(4_000)
+});
+
+function validateTurnAttempt(
+  value: { attempt: number; maxAttempts: number },
+  context: z.core.$RefinementCtx<any>
+): void {
+  if (value.attempt > value.maxAttempts) {
+    context.addIssue({
+      code: "custom",
+      path: ["attempt"],
+      message: "Attempt must not exceed maxAttempts."
+    });
+  }
+}
+
+function validateRetryAttempt(
+  value: { failedAttempt: number; nextAttempt: number; maxAttempts: number },
+  context: z.core.$RefinementCtx<any>
+): void {
+  if (value.nextAttempt !== value.failedAttempt + 1) {
+    context.addIssue({
+      code: "custom",
+      path: ["nextAttempt"],
+      message: "nextAttempt must immediately follow failedAttempt."
+    });
+  }
+  if (value.nextAttempt > value.maxAttempts) {
+    context.addIssue({
+      code: "custom",
+      path: ["nextAttempt"],
+      message: "nextAttempt must not exceed maxAttempts."
+    });
+  }
+}
+
+export const AgentTurnStartedPayloadSchema = AgentEventIdentitySchema.extend(
+  AgentTurnStartedFieldsSchema.shape
+).superRefine(validateTurnAttempt);
+export type AgentTurnStartedPayload = z.infer<typeof AgentTurnStartedPayloadSchema>;
+
+export const AgentRetryScheduledPayloadSchema = AgentEventIdentitySchema.extend(
+  AgentRetryScheduledFieldsSchema.shape
+).superRefine(validateRetryAttempt);
+export type AgentRetryScheduledPayload = z.infer<
+  typeof AgentRetryScheduledPayloadSchema
+>;
+
 export const AgentMessageDeltaPayloadSchema = AgentEventIdentitySchema.extend({
   delta: z.string()
 });
@@ -547,6 +608,12 @@ export const SubagentEventBaseSchema = z.object({
 export type SubagentEventBase = z.infer<typeof SubagentEventBaseSchema>;
 
 export const SubagentActivitySchema = z.discriminatedUnion("type", [
+  AgentTurnStartedFieldsSchema.extend({
+    type: z.literal("turn_started")
+  }).superRefine(validateTurnAttempt),
+  AgentRetryScheduledFieldsSchema.extend({
+    type: z.literal("retry_scheduled")
+  }).superRefine(validateRetryAttempt),
   z.object({
     type: z.literal("thinking_delta"),
     delta: z.string()
@@ -790,6 +857,16 @@ export const AgentMessageDeltaEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: AgentMessageDeltaPayloadSchema
 }).superRefine(validateAgentEventContext);
 
+export const AgentTurnStartedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("agent.turn_started"),
+  payload: AgentTurnStartedPayloadSchema
+}).superRefine(validateAgentEventContext);
+
+export const AgentRetryScheduledEventEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("agent.retry_scheduled"),
+  payload: AgentRetryScheduledPayloadSchema
+}).superRefine(validateAgentEventContext);
+
 export const SubagentStartedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("subagent.started"),
   payload: SubagentStartedPayloadSchema
@@ -886,6 +963,14 @@ function validateAgentEventContext(
 }
 
 export type AgentMessageDeltaEventEnvelope = Envelope<AgentMessageDeltaPayload, "agent.message_delta">;
+export type AgentTurnStartedEventEnvelope = Envelope<
+  AgentTurnStartedPayload,
+  "agent.turn_started"
+>;
+export type AgentRetryScheduledEventEnvelope = Envelope<
+  AgentRetryScheduledPayload,
+  "agent.retry_scheduled"
+>;
 export type SubagentStartedEventEnvelope = Envelope<
   SubagentStartedPayload,
   "subagent.started"

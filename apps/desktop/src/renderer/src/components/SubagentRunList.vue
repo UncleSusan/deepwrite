@@ -348,7 +348,31 @@ const subagentStatusLabels: Record<AgentSubagentRun["status"], string> = {
 };
 
 function subagentStatusLabel(run: AgentSubagentRun): string {
+  if (run.retry?.state === "trying") return "正在重试";
+  if (run.retry?.state === "scheduled") {
+    const retryAt = run.retry.retryAt ? Date.parse(run.retry.retryAt) : Number.NaN;
+    const seconds = Number.isFinite(retryAt)
+      ? Math.max(0, Math.ceil((retryAt - props.now) / 1_000))
+      : Math.max(0, Math.ceil((run.retry.delayMs ?? 0) / 1_000));
+    return `${seconds}s 后重试`;
+  }
   return subagentStatusLabels[run.status];
+}
+
+function subagentRetryProgress(run: AgentSubagentRun): string | undefined {
+  if (!run.retry) return undefined;
+  return `第 ${Math.max(1, run.retry.attempt - 1)}/${Math.max(1, run.retry.maxAttempts - 1)} 次`;
+}
+
+function subagentRetryStatus(run: AgentSubagentRun): string | undefined {
+  const progress = subagentRetryProgress(run);
+  if (!run.retry || !progress) return undefined;
+  if (run.retry.state === "trying") return `正在重试（${progress}）`;
+  const retryAt = run.retry.retryAt ? Date.parse(run.retry.retryAt) : Number.NaN;
+  const seconds = Number.isFinite(retryAt)
+    ? Math.max(0, Math.ceil((retryAt - props.now) / 1_000))
+    : Math.max(0, Math.ceil((run.retry.delayMs ?? 0) / 1_000));
+  return `网络波动，${seconds}s 后重试（${progress}）`;
 }
 
 function subagentDuration(run: AgentSubagentRun): string {
@@ -426,6 +450,7 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
         </span>
         <span class="subagent-run-meta" aria-label="子任务运行摘要">
           <span v-if="subagentDuration(run)">{{ subagentDuration(run) }}</span>
+          <span v-if="subagentRetryProgress(run)">{{ subagentRetryProgress(run) }}</span>
           <span>{{ run.toolCalls.length }} 个工具</span>
           <span v-if="subagentReviewHint(message, run)" class="is-review">
             {{ subagentReviewHint(message, run) }}
@@ -435,6 +460,9 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
       </summary>
 
       <div class="subagent-run-detail">
+        <div v-if="subagentRetryStatus(run)" class="subagent-run-waiting">
+          {{ subagentRetryStatus(run) }}
+        </div>
         <div
           v-if="subagentProcessingDisplayItems(run).length"
           class="subagent-processing-list"

@@ -25,6 +25,10 @@ import {
   type AgentProviderRuntimeConfig,
   type ShortAgentSubagentDefinition
 } from "@deepwrite/contracts";
+import {
+  runAgentWithTurnRetries,
+  type AgentTurnRetryPolicyOptions
+} from "./agent-turn-retry";
 import { sanitizeToolSchemaForGemini } from "./short-agent-tools";
 
 const SUBAGENT_SUMMARY_MAX_LENGTH = 20_000;
@@ -133,6 +137,7 @@ export interface BuildSpawnSubagentToolInput {
   };
   buildChildTools: () => AgentTool[];
   toolExecutionHooks?: AgentToolExecutionHooks;
+  retryPolicy?: AgentTurnRetryPolicyOptions;
   timeoutMs?: number;
   depth?: number;
   createRunId?: () => string;
@@ -363,7 +368,7 @@ export function buildSpawnSubagentTool(
       let terminalMessage: AssistantMessage | undefined;
       let terminalError: string | undefined;
       let terminalAborted = false;
-      const unsubscribe = child.subscribe((event: AgentEvent) => {
+      const handleChildEvent = (event: AgentEvent): void => {
         if (event.type === "message_update" && isAssistantMessage(event.message)) {
           if (event.assistantMessageEvent.type === "thinking_delta") {
             emitProgress(
@@ -450,7 +455,7 @@ export function buildSpawnSubagentTool(
             terminalMessage = event.message;
           }
         }
-      });
+      };
 
       type PromptOutcome =
         | { kind: "completed" }
@@ -459,8 +464,10 @@ export function buildSpawnSubagentTool(
         | { kind: "timeout" };
       let resolveEarly: ((outcome: PromptOutcome) => void) | undefined;
       let cancellationRequested = signal?.aborted === true;
+      const lifecycleController = new AbortController();
       const abortChild = (): void => {
         cancellationRequested = true;
+        lifecycleController.abort();
         child.abort();
         resolveEarly?.({ kind: "aborted" });
       };
@@ -489,16 +496,43 @@ export function buildSpawnSubagentTool(
           });
           timeout = setTimeout(() => {
             timedOut = true;
+            lifecycleController.abort();
             child.abort();
             resolveEarly?.({ kind: "timeout" });
           }, timeoutMs);
           timeout.unref();
-          const prompt: Promise<PromptOutcome> = child
-            .prompt({
+          const prompt: Promise<PromptOutcome> = runAgentWithTurnRetries({
+            agent: child,
+            initialPrompt: {
               role: "user",
               content: task,
               timestamp: Date.now()
-            } satisfies UserMessage)
+            } satisfies UserMessage,
+            runId: subagentRunId,
+            signal: lifecycleController.signal,
+            ...(input.retryPolicy ? { retryPolicy: input.retryPolicy } : {}),
+            onEvent: handleChildEvent,
+            onTurnStarted: (attempt) => {
+              emitProgress(
+                {
+                  ...progressBase,
+                  type: "activity",
+                  activity: { type: "turn_started", ...attempt }
+                },
+                `子智能体正在进行第 ${attempt.attempt} 次模型请求。`
+              );
+            },
+            onRetryScheduled: (retry) => {
+              emitProgress(
+                {
+                  ...progressBase,
+                  type: "activity",
+                  activity: { type: "retry_scheduled", ...retry }
+                },
+                `子智能体网络连接波动，将进行第 ${retry.nextAttempt - 1}/${retry.maxAttempts - 1} 次重试。`
+              );
+            }
+          })
             .then((): PromptOutcome => ({ kind: "completed" }))
             .catch(
               (error: unknown): PromptOutcome => ({ kind: "failed", error })
@@ -527,7 +561,7 @@ export function buildSpawnSubagentTool(
           errorMessage = "子智能体运行结束，但没有返回最终交接摘要。";
         }
       } catch (error: unknown) {
-        status = signal?.aborted ? "aborted" : "error";
+        status = cancellationRequested || signal?.aborted ? "aborted" : "error";
         errorMessage = timedOut
           ? `子智能体超过 ${Math.ceil(timeoutMs / 1_000)} 秒硬截止时间，运行已终止。`
           : error instanceof Error
@@ -537,7 +571,6 @@ export function buildSpawnSubagentTool(
         if (timeout) clearTimeout(timeout);
         resolveEarly = undefined;
         signal?.removeEventListener("abort", abortChild);
-        unsubscribe();
       }
 
       if (status === "completed") {

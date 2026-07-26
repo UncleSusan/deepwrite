@@ -21,6 +21,7 @@ import { createId } from "@deepwrite/shared";
 import type {
   AgentApprovalMode,
   AgentEditProposal,
+  AgentRetryMetadata,
   AgentSubagentProcessingStep,
   AgentSubagentRun,
   AgentTextDiffHunk,
@@ -70,11 +71,32 @@ interface StoredConversationEnvelope {
   conversations: StoredConversation[];
 }
 
+interface AgentTurnCheckpoint {
+  turnId: string;
+  messageId: string;
+  attempt: number;
+  maxAttempts: number;
+  attemptStartedAt: string;
+  message: ChatMessage | null;
+}
+
+interface SubagentTurnCheckpoint {
+  turnId: string;
+  attempt: number;
+  maxAttempts: number;
+  attemptStartedAt: string;
+  run: AgentSubagentRun;
+}
+
 type SubagentEventEnvelope = Extract<
   SystemEventEnvelope,
   { type: "subagent.started" | "subagent.activity" | "subagent.completed" }
 >;
 type SubagentEventPayload = SubagentEventEnvelope["payload"];
+type SubagentActivityEventEnvelope = Extract<
+  SubagentEventEnvelope,
+  { type: "subagent.activity" }
+>;
 
 const MAX_STORED_CONVERSATIONS = 20;
 const PERSISTENCE_DEBOUNCE_MS = 180;
@@ -173,6 +195,17 @@ function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
   };
 }
 
+function cloneSubagentRun(run: AgentSubagentRun): AgentSubagentRun {
+  return {
+    ...run,
+    runtime: { ...run.runtime },
+    ...(run.retry ? { retry: { ...run.retry } } : {}),
+    ...(run.usage ? { usage: { ...run.usage } } : {}),
+    toolCalls: run.toolCalls.map((toolCall) => ({ ...toolCall })),
+    processingSteps: run.processingSteps.map((step) => ({ ...step }))
+  };
+}
+
 function parseStoredLibraryTarget(
   value: unknown
 ): AgentEditProposal["libraryTarget"] | undefined {
@@ -204,6 +237,7 @@ function parseStoredLibraryTarget(
 function cloneMessage(message: ChatMessage): ChatMessage {
   return {
     ...message,
+    ...(message.retry ? { retry: { ...message.retry } } : {}),
     ...(message.attachments
       ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
       : {}),
@@ -218,13 +252,7 @@ function cloneMessage(message: ChatMessage): ChatMessage {
       : {}),
     ...(message.subagentRuns
       ? {
-          subagentRuns: message.subagentRuns.map((run) => ({
-            ...run,
-            runtime: { ...run.runtime },
-            ...(run.usage ? { usage: { ...run.usage } } : {}),
-            toolCalls: run.toolCalls.map((toolCall) => ({ ...toolCall })),
-            processingSteps: run.processingSteps.map((step) => ({ ...step }))
-          }))
+          subagentRuns: message.subagentRuns.map(cloneSubagentRun)
         }
       : {}),
     ...(message.editProposals
@@ -916,6 +944,10 @@ export function useAgentConversation(
   const handledEventIds = new Set<string>();
   const finishedRunIds = new Set<string>();
   const runMessageIds = new Map<string, string>();
+  const turnCheckpointByRun = new Map<string, AgentTurnCheckpoint>();
+  const subagentTurnCheckpointByRun = new Map<string, SubagentTurnCheckpoint>();
+  const seenTurnIds = new Set<string>();
+  const seenSubagentTurnIds = new Set<string>();
   const observedRunByAttempt = new Map<number, string>();
   const approvalModeByAttempt = new Map<number, AgentApprovalMode>();
   const approvalModeByRun = new Map<string, AgentApprovalMode>();
@@ -1050,6 +1082,39 @@ export function useAgentConversation(
     }
   }
 
+  function assistantMessageForRun(runId: string): ChatMessage | undefined {
+    const mappedMessageId = runMessageIds.get(runId);
+    return (
+      (mappedMessageId
+        ? messages.value.find(
+            (message) =>
+              message.id === mappedMessageId &&
+              message.role === "assistant" &&
+              message.runId === runId
+          )
+        : undefined) ??
+      messages.value.find(
+        (message) => message.role === "assistant" && message.runId === runId
+      )
+    );
+  }
+
+  function subagentTurnKey(runId: string, subagentRunId: string): string {
+    return `${runId}\u0000${subagentRunId}`;
+  }
+
+  function clearRetryStateForRun(runId: string): void {
+    turnCheckpointByRun.delete(runId);
+    const message = assistantMessageForRun(runId);
+    if (message?.retry) delete message.retry;
+    for (const run of message?.subagentRuns ?? []) {
+      if (run.retry) delete run.retry;
+      subagentTurnCheckpointByRun.delete(
+        subagentTurnKey(runId, run.subagentRunId)
+      );
+    }
+  }
+
   function finalizeRunningSubagents(
     message: ChatMessage,
     status: "error" | "stopped",
@@ -1105,6 +1170,7 @@ export function useAgentConversation(
     if (message.processingStartedAt) {
       message.processingCompletedAt = completedAt;
     }
+    clearRetryStateForRun(runId);
     rememberBounded(finishedRunIds, runId);
   }
 
@@ -1139,6 +1205,7 @@ export function useAgentConversation(
     if (message.processingStartedAt) {
       message.processingCompletedAt = completedAt;
     }
+    clearRetryStateForRun(runId);
     rememberBounded(finishedRunIds, runId);
   }
 
@@ -1259,6 +1326,180 @@ export function useAgentConversation(
     runMessageIds.set(runId, messageId);
     messages.value.push(message);
     return message;
+  }
+
+  function retryMetadata(input: {
+    state: AgentRetryMetadata["state"];
+    turnId: string;
+    attempt: number;
+    maxAttempts: number;
+    retryAt?: string;
+    delayMs?: number;
+    reason?: string;
+  }): AgentRetryMetadata {
+    return {
+      state: input.state,
+      turnId: input.turnId,
+      attempt: input.attempt,
+      maxAttempts: input.maxAttempts,
+      ...(input.retryAt ? { retryAt: input.retryAt } : {}),
+      ...(input.delayMs !== undefined ? { delayMs: input.delayMs } : {}),
+      ...(input.reason ? { reason: input.reason } : {})
+    };
+  }
+
+  function restoreMessageCheckpoint(
+    runId: string,
+    messageId: string,
+    checkpoint: AgentTurnCheckpoint,
+    retry: AgentRetryMetadata,
+    eventRuntime: AgentRuntimeRef,
+    eventTimestamp: string
+  ): ChatMessage | undefined {
+    const current = ensureAssistantMessage(
+      runId,
+      messageId,
+      eventRuntime,
+      eventTimestamp
+    );
+    if (!current) return undefined;
+    const index = messages.value.indexOf(current);
+    if (index < 0) return undefined;
+
+    const restored = checkpoint.message
+      ? cloneMessage(checkpoint.message)
+      : {
+          id: current.id,
+          role: "assistant" as const,
+          content: "",
+          createdAt: current.createdAt,
+          runId,
+          status: "streaming" as const,
+          runtime: { ...eventRuntime }
+        };
+    restored.status = "streaming";
+    restored.runtime = { ...eventRuntime };
+    restored.retry = retry;
+    delete restored.errorMessage;
+    delete restored.processingCompletedAt;
+    messages.value.splice(index, 1, restored);
+    runMessageIds.set(runId, restored.id);
+    return restored;
+  }
+
+  function handleTurnStarted(
+    event: Extract<SystemEventEnvelope, { type: "agent.turn_started" }>
+  ): void {
+    const { runId, messageId, turnId, attempt, maxAttempts, runtime: eventRuntime } =
+      event.payload;
+    const turnKey = `${runId}\u0000${turnId}`;
+    let checkpoint = turnCheckpointByRun.get(runId);
+
+    if (!checkpoint || checkpoint.turnId !== turnId) {
+      if (seenTurnIds.has(turnKey)) return;
+      const existing = assistantMessageForRun(runId);
+      const snapshot = existing ? cloneMessage(existing) : null;
+      if (snapshot?.retry) delete snapshot.retry;
+      checkpoint = {
+        turnId,
+        messageId,
+        attempt,
+        maxAttempts,
+        attemptStartedAt: event.timestamp,
+        message: snapshot
+      };
+      turnCheckpointByRun.set(runId, checkpoint);
+      rememberBounded(seenTurnIds, turnKey);
+    } else {
+      if (attempt <= checkpoint.attempt) return;
+      checkpoint.attempt = attempt;
+      checkpoint.maxAttempts = maxAttempts;
+      checkpoint.attemptStartedAt = event.timestamp;
+    }
+
+    let message = ensureAssistantMessage(
+      runId,
+      messageId,
+      eventRuntime,
+      event.timestamp
+    );
+    if (!message) return;
+    if (attempt > 1) {
+      message = restoreMessageCheckpoint(
+        runId,
+        messageId,
+        checkpoint,
+        retryMetadata({
+          state: "trying",
+          turnId,
+          attempt,
+          maxAttempts
+        }),
+        eventRuntime,
+        event.timestamp
+      );
+    }
+    if (message) {
+      message.status = "streaming";
+      message.runtime = { ...eventRuntime };
+    }
+  }
+
+  function handleRetryScheduled(
+    event: Extract<SystemEventEnvelope, { type: "agent.retry_scheduled" }>
+  ): void {
+    const {
+      runId,
+      messageId,
+      turnId,
+      failedAttempt,
+      nextAttempt,
+      maxAttempts,
+      delayMs,
+      retryAt,
+      reason,
+      runtime: eventRuntime
+    } = event.payload;
+    const checkpoint = turnCheckpointByRun.get(runId);
+    if (
+      !checkpoint ||
+      checkpoint.turnId !== turnId ||
+      checkpoint.attempt !== failedAttempt
+    ) {
+      return;
+    }
+    restoreMessageCheckpoint(
+      runId,
+      messageId,
+      checkpoint,
+      retryMetadata({
+        state: "scheduled",
+        turnId,
+        attempt: nextAttempt,
+        maxAttempts,
+        retryAt,
+        delayMs,
+        reason
+      }),
+      eventRuntime,
+      event.timestamp
+    );
+    conversationError.value = null;
+  }
+
+  function acceptsRetryActivity(runId: string, eventTimestamp: string): boolean {
+    const message = assistantMessageForRun(runId);
+    if (!message?.retry) return true;
+    if (message.retry.state === "scheduled") return false;
+    const checkpoint = turnCheckpointByRun.get(runId);
+    if (
+      checkpoint &&
+      Date.parse(eventTimestamp) < Date.parse(checkpoint.attemptStartedAt)
+    ) {
+      return false;
+    }
+    delete message.retry;
+    return true;
   }
 
   function ensureActivityMessage(
@@ -1418,6 +1659,127 @@ export function useAgentConversation(
     return run;
   }
 
+  function restoreSubagentCheckpoint(
+    run: AgentSubagentRun,
+    checkpoint: SubagentTurnCheckpoint,
+    retry: AgentRetryMetadata,
+    eventRuntime: AgentRuntimeRef
+  ): void {
+    const restored = cloneSubagentRun(checkpoint.run);
+    for (const key of [
+      "thinking",
+      "output",
+      "completedAt",
+      "summary",
+      "errorMessage",
+      "usage",
+      "retry"
+    ] as const) {
+      delete run[key];
+    }
+    Object.assign(run, restored);
+    run.status = "running";
+    run.runtime = { ...eventRuntime };
+    run.retry = retry;
+  }
+
+  function handleSubagentTurnStarted(
+    event: SubagentActivityEventEnvelope,
+    run: AgentSubagentRun,
+    activity: Extract<
+      SubagentActivityEventEnvelope["payload"]["activity"],
+      { type: "turn_started" }
+    >
+  ): void {
+    const key = subagentTurnKey(event.payload.runId, event.payload.subagentRunId);
+    const seenKey = `${key}\u0000${activity.turnId}`;
+    let checkpoint = subagentTurnCheckpointByRun.get(key);
+    if (!checkpoint || checkpoint.turnId !== activity.turnId) {
+      if (seenSubagentTurnIds.has(seenKey)) return;
+      const snapshot = cloneSubagentRun(run);
+      if (snapshot.retry) delete snapshot.retry;
+      checkpoint = {
+        turnId: activity.turnId,
+        attempt: activity.attempt,
+        maxAttempts: activity.maxAttempts,
+        attemptStartedAt: event.timestamp,
+        run: snapshot
+      };
+      subagentTurnCheckpointByRun.set(key, checkpoint);
+      rememberBounded(seenSubagentTurnIds, seenKey);
+    } else {
+      if (activity.attempt <= checkpoint.attempt) return;
+      checkpoint.attempt = activity.attempt;
+      checkpoint.maxAttempts = activity.maxAttempts;
+      checkpoint.attemptStartedAt = event.timestamp;
+    }
+    if (activity.attempt > 1) {
+      restoreSubagentCheckpoint(
+        run,
+        checkpoint,
+        retryMetadata({
+          state: "trying",
+          turnId: activity.turnId,
+          attempt: activity.attempt,
+          maxAttempts: activity.maxAttempts
+        }),
+        event.payload.runtime
+      );
+    }
+  }
+
+  function handleSubagentRetryScheduled(
+    event: SubagentActivityEventEnvelope,
+    run: AgentSubagentRun,
+    activity: Extract<
+      SubagentActivityEventEnvelope["payload"]["activity"],
+      { type: "retry_scheduled" }
+    >
+  ): void {
+    const key = subagentTurnKey(event.payload.runId, event.payload.subagentRunId);
+    const checkpoint = subagentTurnCheckpointByRun.get(key);
+    if (
+      !checkpoint ||
+      checkpoint.turnId !== activity.turnId ||
+      checkpoint.attempt !== activity.failedAttempt
+    ) {
+      return;
+    }
+    restoreSubagentCheckpoint(
+      run,
+      checkpoint,
+      retryMetadata({
+        state: "scheduled",
+        turnId: activity.turnId,
+        attempt: activity.nextAttempt,
+        maxAttempts: activity.maxAttempts,
+        retryAt: activity.retryAt,
+        delayMs: activity.delayMs,
+        reason: activity.reason
+      }),
+      event.payload.runtime
+    );
+  }
+
+  function acceptsSubagentRetryActivity(
+    event: SubagentActivityEventEnvelope,
+    run: AgentSubagentRun
+  ): boolean {
+    if (!run.retry) return true;
+    if (run.retry.state === "scheduled") return false;
+    const checkpoint = subagentTurnCheckpointByRun.get(
+      subagentTurnKey(event.payload.runId, event.payload.subagentRunId)
+    );
+    if (
+      checkpoint &&
+      Date.parse(event.timestamp) < Date.parse(checkpoint.attemptStartedAt)
+    ) {
+      return false;
+    }
+    delete run.retry;
+    return true;
+  }
+
   function handleSubagentEvent(event: SubagentEventEnvelope): void {
     const message = ensureSubagentMessage(event.payload.runId, event.timestamp);
     message.processingStartedAt ??= event.timestamp;
@@ -1447,6 +1809,21 @@ export function useAgentConversation(
 
     if (event.type === "subagent.activity") {
       const activity = event.payload.activity;
+      if (activity.type === "turn_started") {
+        if (run.status === "running") {
+          handleSubagentTurnStarted(event, run, activity);
+        }
+        return;
+      }
+
+      if (activity.type === "retry_scheduled") {
+        if (run.status === "running") {
+          handleSubagentRetryScheduled(event, run, activity);
+        }
+        return;
+      }
+
+      if (!acceptsSubagentRetryActivity(event, run)) return;
       if (activity.type === "thinking_delta") {
         run.thinking = `${run.thinking ?? ""}${activity.delta}`;
         const lastStep = run.processingSteps.at(-1);
@@ -1560,6 +1937,10 @@ export function useAgentConversation(
 
     run.status =
       event.payload.status === "aborted" ? "stopped" : event.payload.status;
+    delete run.retry;
+    subagentTurnCheckpointByRun.delete(
+      subagentTurnKey(event.payload.runId, event.payload.subagentRunId)
+    );
     run.completedAt = event.timestamp;
     run.summary = event.payload.summary;
     if (event.payload.errorMessage !== undefined) {
@@ -1586,6 +1967,7 @@ export function useAgentConversation(
   }
 
   function finishRun(runId: string): void {
+    clearRetryStateForRun(runId);
     rememberBounded(finishedRunIds, runId);
     if (activeRunId.value === runId) {
       activeRunId.value = null;
@@ -1814,7 +2196,18 @@ export function useAgentConversation(
       return;
     }
 
+    if (event.type === "agent.turn_started") {
+      handleTurnStarted(event);
+      return;
+    }
+
+    if (event.type === "agent.retry_scheduled") {
+      handleRetryScheduled(event);
+      return;
+    }
+
     if (event.type === "agent.message_delta") {
+      if (!acceptsRetryActivity(runId, event.timestamp)) return;
       const message = ensureAssistantMessage(
         runId,
         event.payload.messageId,
@@ -1840,6 +2233,7 @@ export function useAgentConversation(
     }
 
     if (event.type === "agent.thinking_delta") {
+      if (!acceptsRetryActivity(runId, event.timestamp)) return;
       const message = ensureAssistantMessage(
         runId,
         event.payload.messageId,
@@ -1868,6 +2262,7 @@ export function useAgentConversation(
     }
 
     if (event.type === "tool.call_stream") {
+      if (!acceptsRetryActivity(runId, event.timestamp)) return;
       const message = ensureActivityMessage(runId, event.payload.runtime, event.timestamp);
       message.processingStartedAt ??= event.timestamp;
       let toolCall = event.payload.toolCallId
@@ -1935,6 +2330,7 @@ export function useAgentConversation(
     }
 
     if (event.type === "tool.call_requested") {
+      if (!acceptsRetryActivity(runId, event.timestamp)) return;
       const message = ensureActivityMessage(runId, event.payload.runtime, event.timestamp);
       if (event.payload.toolName === "spawn_subagent") {
         ensurePendingSubagentRunForTool(
@@ -1997,6 +2393,7 @@ export function useAgentConversation(
     }
 
     if (event.type === "tool.execution_completed") {
+      if (!acceptsRetryActivity(runId, event.timestamp)) return;
       const message = ensureActivityMessage(runId, event.payload.runtime, event.timestamp);
       if (event.payload.toolName === "spawn_subagent") {
         const subagentRun = message.subagentRuns?.find(
@@ -2060,6 +2457,7 @@ export function useAgentConversation(
     }
 
     if (event.type === "agent.message_completed") {
+      if (!acceptsRetryActivity(runId, event.timestamp)) return;
       const message = ensureAssistantMessage(
         runId,
         event.payload.messageId,
@@ -2480,6 +2878,10 @@ export function useAgentConversation(
     handledEventIds.clear();
     finishedRunIds.clear();
     runMessageIds.clear();
+    turnCheckpointByRun.clear();
+    subagentTurnCheckpointByRun.clear();
+    seenTurnIds.clear();
+    seenSubagentTurnIds.clear();
     observedRunByAttempt.clear();
     approvalModeByAttempt.clear();
     approvalModeByRun.clear();
@@ -2490,6 +2892,10 @@ export function useAgentConversation(
     for (const message of messages.value) {
       if (message.status !== "streaming") continue;
       message.status = "stopped";
+      if (message.retry) delete message.retry;
+      for (const run of message.subagentRuns ?? []) {
+        if (run.retry) delete run.retry;
+      }
       if (message.processingStartedAt && !message.processingCompletedAt) {
         message.processingCompletedAt = completedAt;
       }
@@ -2686,6 +3092,10 @@ export function useAgentConversation(
       activeRunId.value = null;
       approvalModeByAttempt.clear();
       approvalModeByRun.clear();
+      turnCheckpointByRun.clear();
+      subagentTurnCheckpointByRun.clear();
+      seenTurnIds.clear();
+      seenSubagentTurnIds.clear();
       stopping.value = false;
       clearIdleTimer();
     }
@@ -2698,6 +3108,8 @@ function isAgentEvent(
   SystemEventEnvelope,
   {
     type:
+      | "agent.turn_started"
+      | "agent.retry_scheduled"
       | "agent.message_delta"
       | "agent.thinking_delta"
       | "agent.message_completed"
@@ -2711,6 +3123,8 @@ function isAgentEvent(
   }
 > {
   return (
+    event.type === "agent.turn_started" ||
+    event.type === "agent.retry_scheduled" ||
     event.type === "agent.message_delta" ||
     event.type === "agent.thinking_delta" ||
     event.type === "agent.message_completed" ||

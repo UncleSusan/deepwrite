@@ -30,6 +30,42 @@ function toEventEnvelope(
     runId: event.runId
   };
 
+  if (event.type === "agent.turn_started") {
+    return createEnvelope(
+      "agent.turn_started",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        messageId: event.payload.messageId,
+        turnId: event.payload.turnId,
+        attempt: event.payload.attempt,
+        maxAttempts: event.payload.maxAttempts,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
+  if (event.type === "agent.retry_scheduled") {
+    return createEnvelope(
+      "agent.retry_scheduled",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        messageId: event.payload.messageId,
+        turnId: event.payload.turnId,
+        failedAttempt: event.payload.failedAttempt,
+        nextAttempt: event.payload.nextAttempt,
+        maxAttempts: event.payload.maxAttempts,
+        delayMs: event.payload.delayMs,
+        retryAt: event.payload.retryAt,
+        reason: event.payload.reason,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
   if (event.type === "agent.delta") {
     return createEnvelope(
       "agent.message_delta",

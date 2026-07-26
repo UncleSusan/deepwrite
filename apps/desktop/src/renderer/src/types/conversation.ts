@@ -103,6 +103,16 @@ export type AgentSubagentRunStatus =
   | "error"
   | "stopped";
 
+export interface AgentRetryMetadata {
+  state: "scheduled" | "trying";
+  turnId: string;
+  attempt: number;
+  maxAttempts: number;
+  retryAt?: string;
+  delayMs?: number;
+  reason?: string;
+}
+
 export type AgentSubagentProcessingStep =
   | {
       id: string;
@@ -147,6 +157,7 @@ export interface AgentSubagentRun {
   summary?: string;
   errorMessage?: string;
   usage?: AgentUsage;
+  retry?: AgentRetryMetadata;
 }
 
 export type AgentProcessingStep =
@@ -189,6 +200,7 @@ export interface ChatMessage {
   tools?: ChatToolActivity[];
   subagentRuns?: AgentSubagentRun[];
   editProposals?: AgentEditProposal[];
+  retry?: AgentRetryMetadata;
 }
 
 export interface ConversationHistoryItem {

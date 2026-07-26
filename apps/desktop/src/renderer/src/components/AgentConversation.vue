@@ -143,6 +143,9 @@ watch(
       message?.id,
       message?.content.length,
       message?.thinking?.length,
+      message?.retry
+        ? `${message.retry.state}:${message.retry.attempt}:${message.retry.retryAt ?? ""}`
+        : "",
       message?.toolCalls
         ?.map((toolCall) => `${toolCall.status}:${toolCall.argumentsText?.length ?? 0}`)
         .join(","),
@@ -761,7 +764,32 @@ function visibleResponse(message: ChatMessage): string {
   return message.content;
 }
 
+function retryProgress(message: ChatMessage): { current: number; total: number } | undefined {
+  if (!message.retry) return undefined;
+  return {
+    current: Math.max(1, message.retry.attempt - 1),
+    total: Math.max(1, message.retry.maxAttempts - 1)
+  };
+}
+
+function retryStatusLabel(message: ChatMessage): string | undefined {
+  const retry = message.retry;
+  const progress = retryProgress(message);
+  if (!retry || !progress) return undefined;
+  const suffix = `（第 ${progress.current}/${progress.total} 次）`;
+  if (retry.state === "trying") {
+    return `正在重试${suffix}`;
+  }
+  const retryAt = retry.retryAt ? Date.parse(retry.retryAt) : Number.NaN;
+  const remainingSeconds = Number.isFinite(retryAt)
+    ? Math.max(0, Math.ceil((retryAt - clock.value) / 1_000))
+    : Math.max(0, Math.ceil((retry.delayMs ?? 0) / 1_000));
+  return `网络波动，${remainingSeconds}s 后重试${suffix}`;
+}
+
 function processingLabel(message: ChatMessage): string {
+  const retryLabel = retryStatusLabel(message);
+  if (retryLabel) return retryLabel;
   const start = Date.parse(message.processingStartedAt ?? message.createdAt);
   const end = message.processingCompletedAt
     ? Date.parse(message.processingCompletedAt)
@@ -1279,7 +1307,7 @@ function copyMessageLabel(message: ChatMessage): string {
         >
           <div class="message-body">
             <div
-              v-if="message.role === 'assistant' && hasProcessing(message) && message.status === 'streaming'"
+              v-if="message.role === 'assistant' && (hasProcessing(message) || message.retry) && message.status === 'streaming'"
               class="processing-live-list"
               aria-label="运行过程"
             >

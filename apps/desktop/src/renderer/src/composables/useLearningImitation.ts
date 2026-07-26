@@ -129,6 +129,8 @@ type LearningImitationRuntimeEvent = Extract<
   SystemEventEnvelope,
   {
     type:
+      | "agent.turn_started"
+      | "agent.retry_scheduled"
       | "agent.message_delta"
       | "agent.thinking_delta"
       | "agent.message_completed"
@@ -160,6 +162,8 @@ function cloneResult(result: LearningImitationResult): LearningImitationResult {
 
 function isRuntimeEvent(event: SystemEventEnvelope): event is LearningImitationRuntimeEvent {
   return (
+    event.type === "agent.turn_started" ||
+    event.type === "agent.retry_scheduled" ||
     event.type === "agent.message_delta" ||
     event.type === "agent.thinking_delta" ||
     event.type === "agent.message_completed" ||
@@ -592,6 +596,10 @@ export function useLearningImitation(
     const runId = event.payload.runId;
     if (!bindRun(runId)) return;
     rememberHandledEvent(event.id);
+
+    if (event.type === "agent.turn_started" || event.type === "agent.retry_scheduled") {
+      return;
+    }
 
     if (event.type === "agent.message_delta") {
       const message = ensureAssistantMessage(

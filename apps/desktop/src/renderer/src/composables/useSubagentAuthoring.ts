@@ -179,6 +179,8 @@ export function useSubagentAuthoring(
 
   function handleEvent(event: SystemEventEnvelope): void {
     if (
+      event.type !== "agent.turn_started" &&
+      event.type !== "agent.retry_scheduled" &&
       event.type !== "agent.message_delta" &&
       event.type !== "agent.message_completed" &&
       event.type !== "agent.error" &&
@@ -190,6 +192,22 @@ export function useSubagentAuthoring(
     }
     if (event.payload.sessionId !== sessionId.value) return;
     if (!bindRun(event.payload.runId)) return;
+
+    if (event.type === "agent.retry_scheduled") {
+      const retryNumber = Math.max(1, event.payload.nextAttempt - 1);
+      const maxRetries = Math.max(1, event.payload.maxAttempts - 1);
+      statusText.value = `网络波动，${Math.ceil(event.payload.delayMs / 1_000)}s 后重试（第 ${retryNumber}/${maxRetries} 次）`;
+      return;
+    }
+
+    if (event.type === "agent.turn_started") {
+      if (event.payload.attempt > 1) {
+        const retryNumber = event.payload.attempt - 1;
+        const maxRetries = Math.max(1, event.payload.maxAttempts - 1);
+        statusText.value = `正在重试（第 ${retryNumber}/${maxRetries} 次）`;
+      }
+      return;
+    }
 
     if (event.type === "subagent_authoring.draft_updated") {
       const parsed = SubagentAuthoringDraftSchema.safeParse(event.payload.draft);

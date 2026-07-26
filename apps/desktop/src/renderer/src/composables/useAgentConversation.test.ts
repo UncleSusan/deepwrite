@@ -2031,6 +2031,267 @@ describe("agent conversation controller", () => {
     controller.dispose();
   });
 
+  it("rolls a failed model turn back to its checkpoint and stays stoppable while retrying", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({ api: () => deferred.api, idleTimeoutMs: 10_000 });
+    controller.draft.value = "先查资料再回答";
+    const sessionId = controller.sessionId.value;
+    const runId = "run_retry";
+    const messageId = "message_retry";
+    const sending = controller.sendMessage(document);
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId,
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+
+    controller.handleEvent(createEnvelope(
+      "agent.turn_started",
+      { sessionId, runId, messageId, turnId: "turn_1", attempt: 1, maxAttempts: 6, runtime },
+      eventOptions(sessionId, runId, "evt_retry_turn_1")
+    ));
+    controller.handleEvent(createEnvelope(
+      "tool.call_requested",
+      {
+        sessionId,
+        runId,
+        toolCallId: "tool_kept",
+        toolName: "read_file",
+        args: { path: "notes.md" },
+        runtime
+      },
+      eventOptions(sessionId, runId, "evt_retry_tool_requested")
+    ));
+    controller.handleEvent(createEnvelope(
+      "tool.execution_completed",
+      {
+        sessionId,
+        runId,
+        toolCallId: "tool_kept",
+        toolName: "read_file",
+        resultSummary: "已读取 notes.md",
+        isError: false,
+        runtime
+      },
+      eventOptions(sessionId, runId, "evt_retry_tool_completed")
+    ));
+    controller.handleEvent(createEnvelope(
+      "agent.turn_started",
+      { sessionId, runId, messageId, turnId: "turn_2", attempt: 1, maxAttempts: 6, runtime },
+      eventOptions(sessionId, runId, "evt_retry_turn_2")
+    ));
+    controller.handleEvent(createEnvelope(
+      "agent.thinking_delta",
+      { sessionId, runId, messageId, delta: "这段思考会被撤销", runtime },
+      eventOptions(sessionId, runId, "evt_retry_partial_thinking")
+    ));
+    controller.handleEvent(createEnvelope(
+      "agent.message_delta",
+      { sessionId, runId, messageId, delta: "这段回复会被撤销", runtime },
+      eventOptions(sessionId, runId, "evt_retry_partial_message")
+    ));
+    controller.handleEvent(createEnvelope(
+      "tool.call_stream",
+      {
+        sessionId,
+        runId,
+        streamId: "retry_stream",
+        toolCallId: "tool_partial",
+        toolName: "write_workspace_editor",
+        phase: "delta",
+        argumentsDelta: '{"text":"未完成',
+        runtime
+      },
+      eventOptions(sessionId, runId, "evt_retry_partial_tool")
+    ));
+    controller.handleEvent(createEnvelope(
+      "agent.retry_scheduled",
+      {
+        sessionId,
+        runId,
+        messageId,
+        turnId: "turn_2",
+        failedAttempt: 1,
+        nextAttempt: 2,
+        maxAttempts: 6,
+        delayMs: 30_000,
+        retryAt: new Date(Date.now() + 30_000).toISOString(),
+        reason: "连接被重置",
+        runtime
+      },
+      eventOptions(sessionId, runId, "evt_retry_scheduled")
+    ));
+
+    const waitingMessage = controller.messages.value.at(-1);
+    expect(waitingMessage).toMatchObject({
+      id: messageId,
+      content: "",
+      status: "streaming",
+      retry: {
+        state: "scheduled",
+        attempt: 2,
+        maxAttempts: 6,
+        delayMs: 30_000,
+        reason: "连接被重置"
+      }
+    });
+    expect(waitingMessage?.thinking).toBeUndefined();
+    expect(waitingMessage?.toolCalls).toMatchObject([
+      { id: "tool_kept", status: "completed" }
+    ]);
+    expect(waitingMessage?.toolCalls?.some((tool) => tool.id === "tool_partial")).toBe(false);
+    expect(controller.isBusy.value).toBe(true);
+    expect(controller.canStop.value).toBe(true);
+
+    controller.handleEvent(createEnvelope(
+      "agent.message_delta",
+      { sessionId, runId, messageId, delta: "失败尝试的迟到内容", runtime },
+      eventOptions(sessionId, runId, "evt_retry_late_delta")
+    ));
+    expect(controller.messages.value.at(-1)?.content).toBe("");
+
+    controller.handleEvent(createEnvelope(
+      "agent.turn_started",
+      { sessionId, runId, messageId, turnId: "turn_2", attempt: 2, maxAttempts: 6, runtime },
+      eventOptions(sessionId, runId, "evt_retry_turn_2_attempt_2")
+    ));
+    expect(controller.messages.value.at(-1)?.retry?.state).toBe("trying");
+
+    controller.handleEvent(createEnvelope(
+      "agent.message_delta",
+      { sessionId, runId, messageId, delta: "重试成功", runtime },
+      eventOptions(sessionId, runId, "evt_retry_success_delta")
+    ));
+    expect(controller.messages.value.at(-1)?.retry).toBeUndefined();
+    expect(controller.messages.value.at(-1)?.content).toBe("重试成功");
+
+    controller.handleEvent(createEnvelope(
+      "agent.message_completed",
+      {
+        sessionId,
+        runId,
+        messageId,
+        role: "assistant" as const,
+        content: "重试成功",
+        runtime
+      },
+      eventOptions(sessionId, runId, "evt_retry_completed")
+    ));
+    expect(controller.messages.value.at(-1)?.retry).toBeUndefined();
+    expect(controller.isBusy.value).toBe(false);
+    controller.dispose();
+  });
+
+  it("rolls back failed subagent turns without discarding earlier tool results", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({ api: () => deferred.api, idleTimeoutMs: 10_000 });
+    controller.draft.value = "让子智能体核对资料";
+    const sessionId = controller.sessionId.value;
+    const runId = "run_subagent_retry";
+    const sending = controller.sendMessage(document);
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId,
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+    const base = {
+      sessionId,
+      runId,
+      parentToolCallId: "spawn_retry",
+      subagentRunId: "subrun_retry",
+      subagentId: "researcher",
+      name: "资料员",
+      runtime
+    };
+    const activity = (
+      value:
+        | { type: "turn_started"; turnId: string; attempt: number; maxAttempts: number }
+        | {
+            type: "retry_scheduled";
+            turnId: string;
+            failedAttempt: number;
+            nextAttempt: number;
+            maxAttempts: number;
+            delayMs: number;
+            retryAt: string;
+            reason: string;
+          }
+        | { type: "thinking_delta"; delta: string }
+        | { type: "message_delta"; delta: string }
+        | { type: "tool_requested"; toolCallId: string; toolName: string; args: unknown }
+        | {
+            type: "tool_completed";
+            toolCallId: string;
+            toolName: string;
+            resultSummary: string;
+            isError: boolean;
+          },
+      eventId: string
+    ) => controller.handleEvent(createEnvelope(
+      "subagent.activity",
+      { ...base, activity: value },
+      eventOptions(sessionId, runId, eventId)
+    ));
+
+    controller.handleEvent(createEnvelope(
+      "subagent.started",
+      { ...base, task: "核对背景资料" },
+      eventOptions(sessionId, runId, "evt_sub_retry_started")
+    ));
+    activity({ type: "turn_started", turnId: "subturn_1", attempt: 1, maxAttempts: 6 }, "evt_sub_retry_turn_1");
+    activity(
+      { type: "tool_requested", toolCallId: "subtool_kept", toolName: "read_file", args: { path: "facts.md" } },
+      "evt_sub_retry_tool_requested"
+    );
+    activity(
+      {
+        type: "tool_completed",
+        toolCallId: "subtool_kept",
+        toolName: "read_file",
+        resultSummary: "已读取 facts.md",
+        isError: false
+      },
+      "evt_sub_retry_tool_completed"
+    );
+    activity({ type: "turn_started", turnId: "subturn_2", attempt: 1, maxAttempts: 6 }, "evt_sub_retry_turn_2");
+    activity({ type: "thinking_delta", delta: "未完成思考" }, "evt_sub_retry_partial_thinking");
+    activity({ type: "message_delta", delta: "未完成回复" }, "evt_sub_retry_partial_message");
+    activity(
+      {
+        type: "retry_scheduled",
+        turnId: "subturn_2",
+        failedAttempt: 1,
+        nextAttempt: 2,
+        maxAttempts: 6,
+        delayMs: 30_000,
+        retryAt: new Date(Date.now() + 30_000).toISOString(),
+        reason: "上游暂时不可用"
+      },
+      "evt_sub_retry_scheduled"
+    );
+
+    const waitingRun = controller.messages.value.at(-1)?.subagentRuns?.[0];
+    expect(waitingRun).toMatchObject({
+      status: "running",
+      retry: { state: "scheduled", attempt: 2, maxAttempts: 6 },
+      toolCalls: [{ id: "subtool_kept", status: "completed" }]
+    });
+    expect(waitingRun?.thinking).toBeUndefined();
+    expect(waitingRun?.output).toBeUndefined();
+    expect(controller.isBusy.value).toBe(true);
+
+    activity({ type: "turn_started", turnId: "subturn_2", attempt: 2, maxAttempts: 6 }, "evt_sub_retry_turn_2_attempt_2");
+    expect(controller.messages.value.at(-1)?.subagentRuns?.[0]?.retry?.state).toBe("trying");
+    activity({ type: "thinking_delta", delta: "重试后的思考" }, "evt_sub_retry_success_thinking");
+    expect(controller.messages.value.at(-1)?.subagentRuns?.[0]?.retry).toBeUndefined();
+    expect(controller.messages.value.at(-1)?.subagentRuns?.[0]?.thinking).toBe("重试后的思考");
+    controller.dispose();
+  });
+
   it("stops the active run and keeps a partial reply without treating it as an error", async () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({ api: () => deferred.api, idleTimeoutMs: 10_000 });

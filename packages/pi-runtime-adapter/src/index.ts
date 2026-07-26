@@ -13,6 +13,7 @@ import {
   fauxProvider,
   fauxText,
   fauxThinking,
+  isRetryableAssistantError,
   type Api,
   type AssistantMessage,
   type AssistantMessageEvent,
@@ -69,6 +70,10 @@ import {
   isSubagentAuthoringToolDetails,
   renderSubagentAuthoringSystemPrompt
 } from "./subagent-authoring-tools";
+import {
+  runAgentWithTurnRetries,
+  type AgentTurnRetryPolicyOptions
+} from "./agent-turn-retry";
 
 export interface AgentRunInput {
   runId: string;
@@ -89,6 +94,34 @@ export interface AgentRunInput {
 }
 
 export type AgentRuntimeEvent =
+  | {
+      type: "agent.turn_started";
+      runId: string;
+      sessionId: string;
+      payload: {
+        messageId: string;
+        turnId: string;
+        attempt: number;
+        maxAttempts: number;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "agent.retry_scheduled";
+      runId: string;
+      sessionId: string;
+      payload: {
+        messageId: string;
+        turnId: string;
+        failedAttempt: number;
+        nextAttempt: number;
+        maxAttempts: number;
+        delayMs: number;
+        retryAt: string;
+        reason: string;
+        runtime: AgentRuntimeRef;
+      };
+    }
   | {
       type: "agent.delta";
       runId: string;
@@ -322,6 +355,7 @@ export interface PiRuntimeAdapterOptions extends AgentToolExecutionHooks {
   subagentTimeoutMs?: number;
   tokensPerSecond?: number;
   systemPrompt?: string;
+  retryPolicy?: AgentTurnRetryPolicyOptions;
 }
 
 class AsyncEventQueue<T> implements AsyncIterable<T> {
@@ -384,21 +418,92 @@ export function interceptToolCallStream(
   return async (model, context, options) => {
     const currentTurnIndex = assistantTurnIndex;
     assistantTurnIndex += 1;
-    const source = await sourceStreamFn(model, context, options);
     const forwarded = createAssistantMessageEventStream();
     void (async () => {
-      for await (const event of source) {
-        if (
-          event.type === "toolcall_start" ||
-          event.type === "toolcall_delta" ||
-          event.type === "toolcall_end"
-        ) {
-          onToolCallEvent(event, currentTurnIndex);
+      let partialMessage: AssistantMessage | undefined;
+      let terminalSeen = false;
+      try {
+        const source = await sourceStreamFn(model, context, {
+          ...options,
+          // DeepWrite owns the visible retry lifecycle. Prevent an SDK retry
+          // budget from multiplying the adapter's attempt budget.
+          maxRetries: 0
+        });
+        for await (const event of source) {
+          if (event.type === "start" || "partial" in event) {
+            partialMessage = event.type === "start" ? event.partial : event.partial;
+          }
+          if (
+            event.type === "toolcall_start" ||
+            event.type === "toolcall_delta" ||
+            event.type === "toolcall_end"
+          ) {
+            onToolCallEvent(event, currentTurnIndex);
+          }
+          if (event.type === "done" || event.type === "error") {
+            terminalSeen = true;
+          }
+          forwarded.push(event);
         }
-        forwarded.push(event);
+        if (!terminalSeen) {
+          forwarded.push({
+            type: "error",
+            reason: options?.signal?.aborted ? "aborted" : "error",
+            error: createStreamFailureMessage(
+              model,
+              partialMessage,
+              options?.signal?.aborted
+                ? "模型请求已中止。"
+                : "Model stream ended without a terminal event.",
+              options?.signal?.aborted === true
+            )
+          });
+        }
+      } catch (error: unknown) {
+        const aborted = options?.signal?.aborted === true;
+        forwarded.push({
+          type: "error",
+          reason: aborted ? "aborted" : "error",
+          error: createStreamFailureMessage(
+            model,
+            partialMessage,
+            aborted
+              ? "模型请求已中止。"
+              : error instanceof Error
+                ? error.message
+                : String(error),
+            aborted
+          )
+        });
       }
     })();
     return forwarded;
+  };
+}
+
+function createStreamFailureMessage(
+  model: Model<Api>,
+  partialMessage: AssistantMessage | undefined,
+  errorMessage: string,
+  aborted: boolean
+): AssistantMessage {
+  return {
+    role: "assistant",
+    content: partialMessage?.content ?? [{ type: "text", text: "" }],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: partialMessage?.usage ?? {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    },
+    stopReason: aborted ? "aborted" : "error",
+    errorMessage,
+    timestamp: Date.now()
   };
 }
 
@@ -415,6 +520,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
   private readonly subagentTimeoutMs: number | undefined;
   private readonly tokensPerSecond: number;
   private readonly systemPrompt: string;
+  private readonly retryPolicy: AgentTurnRetryPolicyOptions | undefined;
   private readonly toolExecutionHooks: AgentToolExecutionHooks;
   private readonly conversationAgents = new Map<string, Agent>();
 
@@ -423,6 +529,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     this.subagentTimeoutMs = options.subagentTimeoutMs;
     this.tokensPerSecond = options.tokensPerSecond ?? 90;
     this.systemPrompt = options.systemPrompt ?? buildDeepWriteSystemPrompt();
+    this.retryPolicy = options.retryPolicy;
     this.toolExecutionHooks = {
       ...(options.beforeToolCall
         ? { beforeToolCall: options.beforeToolCall }
@@ -675,9 +782,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
 
     let settled = false;
     let terminalEmitted = false;
+    let modelRequestInFlight = false;
+    let retryWaiting = false;
+    let idleModelRequestTimedOut = false;
+    let currentTurnAttempt = 0;
+    let currentTurnMaxAttempts = 1;
     let idleTimeout: NodeJS.Timeout | undefined;
     let abortListener: (() => void) | undefined;
     let scheduleIdleTimeout = (): void => {};
+    const retryWaitController = new AbortController();
     const pendingToolDeltas = new Map<
       string,
       Extract<AgentRuntimeEvent, { type: "agent.tool_stream" }>
@@ -744,6 +857,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       pendingToolDeltas.clear();
     };
 
+    const discardAttemptToolDeltas = (): void => {
+      if (toolDeltaTimer) {
+        clearTimeout(toolDeltaTimer);
+        toolDeltaTimer = undefined;
+      }
+      pendingToolDeltas.clear();
+      streamedToolArguments.clear();
+    };
+
     const emitStreamedToolEvent = (
       event: Extract<AgentRuntimeEvent, { type: "agent.tool_stream" }>
     ): void => {
@@ -781,12 +903,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       );
     };
 
-    const unsubscribe = agent.subscribe((event) => {
-      for (const runtimeEvent of toRuntimeEvents(event, input, runtime, messageId)) {
-        emit(runtimeEvent);
-      }
-    });
-
     const cleanup = (): void => {
       if (settled) {
         return;
@@ -803,14 +919,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       pendingToolDeltas.clear();
       streamedToolArguments.clear();
       activeSubagents.clear();
+      retryWaitController.abort();
       if (abortListener && input.signal) {
         input.signal.removeEventListener("abort", abortListener);
       }
-      unsubscribe();
       queue.close();
     };
 
     abortListener = () => {
+      idleModelRequestTimedOut = false;
+      retryWaitController.abort();
       agent.abort();
       emit({
         type: "agent.error",
@@ -831,13 +949,31 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     }
 
     scheduleIdleTimeout = (): void => {
-      if (settled || terminalEmitted || this.idleTimeoutMs <= 0) {
+      if (
+        settled ||
+        terminalEmitted ||
+        retryWaiting ||
+        this.idleTimeoutMs <= 0
+      ) {
         return;
       }
       if (idleTimeout) {
         clearTimeout(idleTimeout);
       }
       idleTimeout = setTimeout(() => {
+        idleTimeout = undefined;
+        if (
+          input.runtimeConfig &&
+          modelRequestInFlight &&
+          currentTurnAttempt < currentTurnMaxAttempts
+        ) {
+          // Aborting only the current Agent invocation yields an assistant
+          // failure that the turn retry coordinator can resume. Tool execution
+          // timeouts remain terminal so completed side effects are never replayed.
+          idleModelRequestTimedOut = true;
+          agent.abort();
+          return;
+        }
         agent.abort();
         emit({
           type: "agent.error",
@@ -861,9 +997,75 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         content: buildRuntimeUserMessageContent(input),
         timestamp: Date.now()
       };
-      void agent
-        .prompt(runtimeUserMessage)
+      void runAgentWithTurnRetries({
+        agent,
+        initialPrompt: runtimeUserMessage,
+        runId: input.runId,
+        signal: retryWaitController.signal,
+        retryPolicy: this.retryPolicy,
+        classifyFailure: (message) => {
+          if (idleModelRequestTimedOut && message.stopReason === "aborted") {
+            return "模型请求长时间没有返回新事件。";
+          }
+          return isRetryableAssistantError(message)
+            ? message.errorMessage || "模型连接暂时不可用。"
+            : undefined;
+        },
+        onTurnStarted: (attempt) => {
+          retryWaiting = false;
+          modelRequestInFlight = true;
+          idleModelRequestTimedOut = false;
+          currentTurnAttempt = attempt.attempt;
+          currentTurnMaxAttempts = attempt.maxAttempts;
+          emit({
+            type: "agent.turn_started",
+            runId: input.runId,
+            sessionId: input.sessionId,
+            payload: {
+              messageId,
+              turnId: attempt.turnId,
+              attempt: attempt.attempt,
+              maxAttempts: attempt.maxAttempts,
+              runtime
+            }
+          });
+        },
+        onRetryRollback: () => {
+          modelRequestInFlight = false;
+          idleModelRequestTimedOut = false;
+          discardAttemptToolDeltas();
+        },
+        onRetryScheduled: (schedule) => {
+          retryWaiting = true;
+          emit({
+            type: "agent.retry_scheduled",
+            runId: input.runId,
+            sessionId: input.sessionId,
+            payload: {
+              messageId,
+              ...schedule,
+              runtime
+            }
+          });
+        },
+        onEvent: (event) => {
+          if (event.type === "message_end" && isAssistantMessage(event.message)) {
+            modelRequestInFlight = false;
+          } else if (event.type === "tool_execution_start") {
+            modelRequestInFlight = false;
+          }
+          for (const runtimeEvent of toRuntimeEvents(
+            event,
+            input,
+            runtime,
+            messageId
+          )) {
+            emit(runtimeEvent);
+          }
+        }
+      })
         .catch((error: unknown) => {
+          if (settled || retryWaitController.signal.aborted) return;
           emit({
             type: "agent.error",
             runId: input.runId,

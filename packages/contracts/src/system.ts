@@ -5,7 +5,9 @@ import {
   AgentErrorEventEnvelopeSchema,
   AgentMessageCompletedEventEnvelopeSchema,
   AgentMessageDeltaEventEnvelopeSchema,
+  AgentRetryScheduledEventEnvelopeSchema,
   AgentThinkingDeltaEventEnvelopeSchema,
+  AgentTurnStartedEventEnvelopeSchema,
   AgentPromptCommandEnvelopeSchema,
   SubagentActivityEventEnvelopeSchema,
   SubagentCompletedEventEnvelopeSchema,
@@ -23,7 +25,9 @@ import {
   type AgentErrorEventEnvelope,
   type AgentMessageCompletedEventEnvelope,
   type AgentMessageDeltaEventEnvelope,
+  type AgentRetryScheduledEventEnvelope,
   type AgentThinkingDeltaEventEnvelope,
+  type AgentTurnStartedEventEnvelope,
   type AgentToolCompletedEventEnvelope,
   type AgentToolCallStreamEventEnvelope,
   type AgentToolRequestedEventEnvelope,
@@ -233,6 +237,8 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   SystemReadyEventEnvelopeSchema,
   SystemWorkerRestartingEventEnvelopeSchema,
   SystemWorkerRestartedEventEnvelopeSchema,
+  AgentTurnStartedEventEnvelopeSchema,
+  AgentRetryScheduledEventEnvelopeSchema,
   AgentMessageDeltaEventEnvelopeSchema,
   AgentThinkingDeltaEventEnvelopeSchema,
   AgentMessageCompletedEventEnvelopeSchema,
@@ -263,6 +269,8 @@ export type SystemEventEnvelope =
   | SystemReadyEventEnvelope
   | SystemWorkerRestartingEventEnvelope
   | SystemWorkerRestartedEventEnvelope
+  | AgentTurnStartedEventEnvelope
+  | AgentRetryScheduledEventEnvelope
   | AgentMessageDeltaEventEnvelope
   | AgentThinkingDeltaEventEnvelope
   | AgentMessageCompletedEventEnvelope
