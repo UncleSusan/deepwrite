@@ -14,15 +14,17 @@ describe("WorkspaceDialog DeepWrite free models", () => {
     expect(source).toContain("applyDeepWriteFreeModel");
   });
 
-  it("renders the editor above the configured model list", () => {
-    expect(source.indexOf('<section v-if="modelEditor" class="model-editor">')).toBeLessThan(
-      source.indexOf('v-for="model in draftModels"')
+  it("renders the editor immediately after the model being edited", () => {
+    expect(source).toContain('rows.push({ key: `model:${model.id}`, type: "model", model })');
+    expect(source).toContain('rows.push({ key: `editor:${model.id}`, type: "editor" })');
+    expect(source).toContain(
+      '<template v-for="row in modelConfigRows" :key="row.key">'
     );
   });
 
   it("scrolls the model editor into view after opening it", () => {
     expect(source).toContain('ref="modelConfigScrollArea"');
-    expect(source).toContain('modelConfigScrollArea.value?.scrollTo({ top: 0, behavior: "auto" })');
-    expect(source.match(/scrollModelEditorToTop\(\);/g)).toHaveLength(2);
+    expect(source).toContain('?.scrollIntoView({ block: "nearest", behavior: "auto" })');
+    expect(source.match(/scrollModelEditorIntoView\(\);/g)).toHaveLength(2);
   });
 });

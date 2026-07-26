@@ -25,6 +25,10 @@ interface DraftModel extends ModelConfig {
   originalId?: string;
 }
 
+type ModelConfigRow =
+  | { key: string; type: "model"; model: DraftModel }
+  | { key: string; type: "editor" };
+
 const props = defineProps<{
   mode: "directory" | "models";
   active?: boolean;
@@ -47,6 +51,23 @@ const draftModels = ref<DraftModel[]>([]);
 const draftDefaultModelId = ref("");
 const modelEditor = ref<DraftModel | null>(null);
 const modelConfigScrollArea = ref<HTMLElement | null>(null);
+const modelConfigRows = computed<ModelConfigRow[]>(() => {
+  const rows: ModelConfigRow[] = [];
+  const editedModelId = modelEditor.value?.originalId;
+
+  for (const model of draftModels.value) {
+    rows.push({ key: `model:${model.id}`, type: "model", model });
+    if (editedModelId === model.id) {
+      rows.push({ key: `editor:${model.id}`, type: "editor" });
+    }
+  }
+
+  if (modelEditor.value && !editedModelId) {
+    rows.push({ key: `editor:${modelEditor.value.id}`, type: "editor" });
+  }
+
+  return rows;
+});
 
 const builtInThinkingLabels: Record<BuiltInReasoningLevel, string> = {
   minimal: "最低",
@@ -196,7 +217,7 @@ function createModel(): void {
     apiKey: "",
     customThinkingLevel: ""
   };
-  scrollModelEditorToTop();
+  scrollModelEditorIntoView();
 }
 
 function editModel(model: DraftModel): void {
@@ -209,12 +230,14 @@ function editModel(model: DraftModel): void {
     customThinkingLevel: findCustomThinkingLevel(model.thinkingLevelOptions),
     originalId: model.id
   };
-  scrollModelEditorToTop();
+  scrollModelEditorIntoView();
 }
 
-function scrollModelEditorToTop(): void {
+function scrollModelEditorIntoView(): void {
   void nextTick(() => {
-    modelConfigScrollArea.value?.scrollTo({ top: 0, behavior: "auto" });
+    modelConfigScrollArea.value
+      ?.querySelector<HTMLElement>(".model-editor")
+      ?.scrollIntoView({ block: "nearest", behavior: "auto" });
   });
 }
 
@@ -539,7 +562,13 @@ function discardModelChanges(): void {
 
             <div v-if="modelLoading" class="dialog-note">正在读取模型配置…</div>
             <template v-else>
-              <section v-if="modelEditor" class="model-editor">
+              <div v-if="draftModels.length === 0" class="model-empty-state">
+                <strong>尚未配置真实模型</strong>
+                <span>当前对话继续使用 DeepWrite Faux。添加模型并设为默认后，新的请求会走真实 Provider。</span>
+              </div>
+
+              <template v-for="row in modelConfigRows" :key="row.key">
+              <section v-if="row.type === 'editor' && modelEditor" class="model-editor">
                 <div class="model-editor-heading">
                   <strong>{{ draftModels.some((model) => model.id === (modelEditor?.originalId ?? modelEditor?.id)) ? "编辑模型" : "添加模型" }}</strong>
                   <button type="button" @click="modelEditor = null">取消</button>
@@ -711,46 +740,41 @@ function discardModelChanges(): void {
                 </div>
               </section>
 
-              <div v-if="draftModels.length === 0" class="model-empty-state">
-                <strong>尚未配置真实模型</strong>
-                <span>当前对话继续使用 DeepWrite Faux。添加模型并设为默认后，新的请求会走真实 Provider。</span>
-              </div>
-
               <article
-                v-for="model in draftModels"
-                :key="model.id"
+                v-else-if="row.type === 'model'"
                 class="model-card model-config-card"
-                :class="{ 'is-default': draftDefaultModelId === model.id }"
+                :class="{ 'is-default': draftDefaultModelId === row.model.id }"
               >
-              <span class="model-logo">{{ model.label.slice(0, 1).toUpperCase() }}</span>
+              <span class="model-logo">{{ row.model.label.slice(0, 1).toUpperCase() }}</span>
               <div>
-                <strong>{{ model.label }}</strong>
-                <small>{{ model.managedBy === "deepwrite-free" ? "DeepWrite 免费模型" : model.provider }} · {{ model.modelId }} · {{ model.api }}</small>
+                <strong>{{ row.model.label }}</strong>
+                <small>{{ row.model.managedBy === "deepwrite-free" ? "DeepWrite 免费模型" : row.model.provider }} · {{ row.model.modelId }} · {{ row.model.api }}</small>
                 <small>
-                  {{ model.reasoning ? `思考：${model.thinkingLevelOptions.map(thinkingLabel).join(" / ")}（默认 ${thinkingLabel(model.defaultThinkingLevel)}）` : `温度：${model.temperatureOptions.join(" / ")}` }} ·
-                  {{ model.hasApiKey || model.apiKey ? "密钥已配置" : "未配置密钥" }}
+                  {{ row.model.reasoning ? `思考：${row.model.thinkingLevelOptions.map(thinkingLabel).join(" / ")}（默认 ${thinkingLabel(row.model.defaultThinkingLevel)}）` : `温度：${row.model.temperatureOptions.join(" / ")}` }} ·
+                  {{ row.model.hasApiKey || row.model.apiKey ? "密钥已配置" : "未配置密钥" }}
                 </small>
               </div>
               <div class="model-card-actions">
                 <button
                   type="button"
-                  :class="{ 'is-active': draftDefaultModelId === model.id }"
-                  @click="setDefaultModel(model.id)"
+                  :class="{ 'is-active': draftDefaultModelId === row.model.id }"
+                  @click="setDefaultModel(row.model.id)"
                 >
-                  {{ draftDefaultModelId === model.id ? "默认" : "设为默认" }}
+                  {{ draftDefaultModelId === row.model.id ? "默认" : "设为默认" }}
                 </button>
-                <button type="button" @click="editModel(model)">编辑</button>
+                <button type="button" @click="editModel(row.model)">编辑</button>
                 <button
                   type="button"
                   :disabled="testingModelId !== null"
                   title="使用当前未保存的配置测试连接"
-                  @click="testDraftModel(model)"
+                  @click="testDraftModel(row.model)"
                 >
-                  {{ testingModelId === model.id ? "测试中…" : "测试连接" }}
+                  {{ testingModelId === row.model.id ? "测试中…" : "测试连接" }}
                 </button>
-                <button class="is-danger" type="button" @click="removeModel(model.id)">删除</button>
+                <button class="is-danger" type="button" @click="removeModel(row.model.id)">删除</button>
               </div>
               </article>
+              </template>
 
               <button
                 v-if="!modelEditor"
