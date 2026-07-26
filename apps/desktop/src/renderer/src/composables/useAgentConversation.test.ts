@@ -219,6 +219,9 @@ function createDeferredApi(): {
       createDraftSection: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
+      createDraftSections: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
       deleteDraftSection: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
@@ -266,9 +269,6 @@ function createDeferredApi(): {
       }),
       importWriteClaw: vi.fn(async () => null),
       importPortable: vi.fn(async () => null),
-      exportPortable: vi.fn(async () => {
-        throw new Error("Long workspace is not used by conversation tests.");
-      }),
       open: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
@@ -719,7 +719,13 @@ describe("agent conversation controller", () => {
     const interruptedProposal = createEditProposal({
       status: "accepting",
       truncated: true,
-      statusMessage: "正在写入"
+      statusMessage: "正在写入",
+      laneId: "run_edit_1:short_story_1:draft:body",
+      generation: 2,
+      approvalMode: "auto-approve",
+      predecessorProposalId: "proposal_0",
+      sourceBaseRevision: "v1:5:22222222",
+      decisionToken: "commit-token-2"
     });
     delete interruptedProposal.proposedText;
     controller.upsertEditProposal("run_edit_1", interruptedProposal);
@@ -734,6 +740,12 @@ describe("agent conversation controller", () => {
       status: "pending",
       truncated: true,
       statusMessage: "正在写入",
+      laneId: "run_edit_1:short_story_1:draft:body",
+      generation: 2,
+      approvalMode: "auto-approve",
+      predecessorProposalId: "proposal_0",
+      sourceBaseRevision: "v1:5:22222222",
+      decisionToken: "commit-token-2",
       hunks: [
         {
           lines: [
@@ -748,6 +760,57 @@ describe("agent conversation controller", () => {
       "proposedText"
     );
     expect(restored.hasPendingEditReview.value).toBe(true);
+    restored.dispose();
+  });
+
+  it("persists accepted draft section ids for dependent proposal recovery", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-draft-section-mapping-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        stageId: "draft",
+        documentId: "draft-section-creation:proposal_1",
+        title: "创建 1 个空白章节",
+        status: "accepted",
+        proposedText: undefined,
+        draftSectionCreationTarget: {
+          sections: [{
+            title: "第一节",
+            wordCountRequirement: "1200 字",
+            provisionalSectionId: "pending:section:proposal_1:1",
+            realSectionId: "section_real_1"
+          }],
+          baseProjectRevision: 7,
+          acceptedDirectoryRevision: "v1:12:1234abcd"
+        }
+      })
+    );
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    expect(
+      restored.getEditProposal("run_edit_1", "proposal_1")
+        ?.draftSectionCreationTarget
+    ).toEqual({
+      sections: [{
+        title: "第一节",
+        wordCountRequirement: "1200 字",
+        provisionalSectionId: "pending:section:proposal_1:1",
+        realSectionId: "section_real_1"
+      }],
+      baseProjectRevision: 7,
+      acceptedDirectoryRevision: "v1:12:1234abcd"
+    });
     restored.dispose();
   });
 

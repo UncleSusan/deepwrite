@@ -1300,8 +1300,8 @@ button { font: inherit; }
 .learning-primary-button:hover { background: color-mix(in srgb, var(--accent) 86%, #000); }
 .learning-primary-button.is-confirm { color: var(--accent-contrast, #fff); background: var(--neutral-solid); border-color: var(--neutral-solid); box-shadow: 0 5px 14px color-mix(in srgb, var(--theme-foreground) 16%, transparent); }
 .learning-primary-button.is-confirm:hover { background: color-mix(in srgb, var(--neutral-solid) 88%, var(--theme-foreground)); border-color: color-mix(in srgb, var(--neutral-solid) 88%, var(--theme-foreground)); }
-:global(html[data-theme="dark"]) .learning-primary-button.is-confirm { color: var(--accent-contrast, #fff); background: var(--accent); border-color: var(--accent); }
-:global(html[data-theme="dark"]) .learning-primary-button.is-confirm:hover { background: color-mix(in srgb, var(--accent) 86%, #000); border-color: color-mix(in srgb, var(--accent) 86%, #000); }
+:global(html[data-theme="dark"] .learning-primary-button.is-confirm) { color: var(--accent-contrast, #fff); background: var(--accent); border-color: var(--accent); }
+:global(html[data-theme="dark"] .learning-primary-button.is-confirm:hover) { background: color-mix(in srgb, var(--accent) 86%, #000); border-color: color-mix(in srgb, var(--accent) 86%, #000); }
 button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
 
 .learning-source-bar {

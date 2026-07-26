@@ -262,6 +262,31 @@ describe("long workspace agent tools", () => {
       sessionId: "session-plot",
       runId: "run-plot"
     }).map((tool) => tool.name);
+    const forgedDraftProfile = profile("draft");
+    forgedDraftProfile.writeAccess.capabilities.push(
+      "write_chapter_files"
+    );
+    const forgedDraftNames = buildLongWorkspaceTools({
+      workspace: workspace("draft", "draft", "chapter_one"),
+      profile: forgedDraftProfile,
+      sessionId: "session-forged-draft",
+      runId: "run-forged-draft"
+    }).map((tool) => tool.name);
+    const rootlessLedgerProfile = profile("continuity_ledger");
+    rootlessLedgerProfile.writeAccess.workspaceRoots =
+      rootlessLedgerProfile.writeAccess.workspaceRoots.filter(
+        (root) => root !== "continuity_ledger"
+      );
+    const rootlessLedgerNames = buildLongWorkspaceTools({
+      workspace: workspace(
+        "continuity_ledger",
+        "continuity_ledger",
+        "chapter_one"
+      ),
+      profile: rootlessLedgerProfile,
+      sessionId: "session-rootless-ledger",
+      runId: "run-rootless-ledger"
+    }).map((tool) => tool.name);
 
     expect(worldNames).toEqual([
       "query_linked_material_entries",
@@ -318,6 +343,12 @@ describe("long workspace agent tools", () => {
     ]);
     expect([...worldNames, ...writerNames, ...ledgerNames]).not.toContain(
       "write_workspace_editor"
+    );
+    expect(forgedDraftNames).not.toContain(
+      "propose_long_chapter_write"
+    );
+    expect(rootlessLedgerNames).not.toContain(
+      "propose_long_ledger_commit"
     );
   });
 
@@ -481,6 +512,24 @@ describe("long workspace agent tools", () => {
         scope: "book" as never
       })
     ).toThrow(/whole-book/u);
+    expect(() =>
+      selectLongChaptersForWritingScope(index, {
+        scope: "chapter",
+        arcId: "arc_one"
+      })
+    ).toThrow(/selector.*another scope/u);
+    expect(() =>
+      selectLongChaptersForWritingScope(index, {
+        scope: "arc",
+        volumeId: "volume_one"
+      })
+    ).toThrow(/selector.*another scope/u);
+    expect(() =>
+      selectLongChaptersForWritingScope(index, {
+        scope: "volume",
+        chapterCardId: "chapter_one"
+      })
+    ).toThrow(/selector.*another scope/u);
 
     index.ledger.commits.push({} as never, {} as never);
     expect(
@@ -802,6 +851,106 @@ describe("long workspace agent tools", () => {
     expect(executor).toHaveBeenCalledTimes(3);
   });
 
+  it("uses unique command ids for concurrent document reads in one run", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(123);
+    try {
+      const index = fixtureIndex();
+      const worldFile = index.worldbuilding[0]!.file;
+      const executor = vi.fn<LongCommandExecutor>(async (command) => {
+        if (command.type === "long.getWorkspaceIndex") {
+          return indexResult(index);
+        }
+        if (command.type !== "long.readDocument") {
+          throw new Error(`Unexpected command: ${command.type}`);
+        }
+        return {
+          status: "accepted",
+          requestId: command.id,
+          payload: {
+            bookId: index.bookId,
+            file: worldFile,
+            content: "世界规则正文",
+            offset: command.payload.offset,
+            totalCharacters: 6,
+            nextOffset: null,
+            workspaceRevision: index.revision,
+            projectRevision: 11
+          }
+        };
+      });
+      const tools = buildLongWorkspaceTools({
+        workspace: workspace("worldbuilding", "worldbuilding"),
+        profile: profile("worldbuilding"),
+        sessionId: "session-concurrent-query",
+        runId: "run-concurrent-query",
+        executor
+      });
+      const readTool = toolByName(tools, "read_long_document");
+
+      await Promise.all([
+        readTool.execute("read-world-one", {
+          file_id: worldFile.id
+        }),
+        readTool.execute("read-world-two", {
+          file_id: worldFile.id
+        })
+      ]);
+
+      const readCommandIds = executor.mock.calls
+        .map(([command]) => command)
+        .filter((command) => command.type === "long.readDocument")
+        .map(({ id }) => id);
+      expect(readCommandIds).toHaveLength(2);
+      expect(new Set(readCommandIds).size).toBe(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("rejects a Core document response that changes the indexed file path", async () => {
+    const index = fixtureIndex();
+    const worldFile = index.worldbuilding[0]!.file;
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(index);
+      }
+      if (command.type !== "long.readDocument") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: index.bookId,
+          file: {
+            ...worldFile,
+            path: "long/worldbuilding/other/content.md"
+          },
+          content: "错误文件",
+          offset: command.payload.offset,
+          totalCharacters: 4,
+          nextOffset: null,
+          workspaceRevision: index.revision,
+          projectRevision: 11
+        }
+      };
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("worldbuilding", "worldbuilding"),
+      profile: profile("worldbuilding"),
+      sessionId: "session-wrong-file",
+      runId: "run-wrong-file",
+      executor
+    });
+
+    await expect(
+      toolByName(tools, "read_long_document").execute(
+        "read-wrong-file",
+        { file_id: worldFile.id }
+      )
+    ).rejects.toThrow(/outside the authorized file/u);
+  });
+
   it("builds typed mutation batches from the latest index without invoking a write command", async () => {
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
       if (command.type !== "long.getWorkspaceIndex") {
@@ -919,6 +1068,15 @@ describe("long workspace agent tools", () => {
         summary: "越权"
       })
     ).rejects.toThrow(/outside the agent's write roots/u);
+    await expect(
+      toolByName(tools, "propose_long_mutation").execute(
+        "mutation-empty-summary",
+        {
+          operations: [],
+          summary: "   "
+        }
+      )
+    ).rejects.toThrow(/non-whitespace text/u);
   });
 
   it("pins a mutation proposal to the Core index revision instead of stale session metadata", async () => {
@@ -1298,6 +1456,18 @@ describe("long workspace agent tools", () => {
         summary: "旧参数"
       })
     ).toBe(false);
+    await expect(
+      tool.execute("chapter-write-empty", {
+        ...writeInput,
+        body: { content: "   " }
+      })
+    ).rejects.toThrow(/non-empty body/u);
+    await expect(
+      tool.execute("chapter-write-empty-summary", {
+        ...writeInput,
+        summary: "   "
+      })
+    ).rejects.toThrow(/summary must contain non-whitespace text/u);
   });
 
   it("validates ledger file roots via a query and never sends a mutation command", async () => {
@@ -1457,6 +1627,55 @@ describe("long workspace agent tools", () => {
         }
       )
     ).rejects.toThrow(/all six non-empty/u);
+    await expect(
+      toolByName(tools, "propose_long_ledger_commit").execute(
+        "ledger-duplicate-update",
+        {
+          file_updates: [
+            {
+              character_id: characterId,
+              document: "current_state",
+              content: "状态一",
+              mode: "replace"
+            },
+            {
+              character_id: characterId,
+              document: "current_state",
+              content: "状态二",
+              mode: "replace"
+            }
+          ],
+          chapter_summary: CHAPTER_SUMMARY,
+          summary: "重复更新"
+        }
+      )
+    ).rejects.toThrow(/same character document twice/u);
+    await expect(
+      toolByName(tools, "propose_long_ledger_commit").execute(
+        "ledger-empty-update",
+        {
+          file_updates: [
+            {
+              character_id: characterId,
+              document: "current_state",
+              content: "   ",
+              mode: "replace"
+            }
+          ],
+          chapter_summary: CHAPTER_SUMMARY,
+          summary: "空更新"
+        }
+      )
+    ).rejects.toThrow(/non-empty content/u);
+    await expect(
+      toolByName(tools, "propose_long_ledger_commit").execute(
+        "ledger-empty-proposal-summary",
+        {
+          chapter_summary: CHAPTER_SUMMARY,
+          summary: "   "
+        }
+      )
+    ).rejects.toThrow(/summary must contain non-whitespace text/u);
     expect(
       executor.mock.calls.every(
         ([command]) =>

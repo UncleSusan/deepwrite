@@ -5,7 +5,8 @@ import type {
   LongFileId,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceFileReference,
-  LongWorkspaceRoot
+  LongWorkspaceRoot,
+  LongWorldbuildingFormat
 } from "@deepwrite/contracts";
 
 export type LongWorkspaceFileRole =
@@ -34,12 +35,28 @@ export interface LongWorkspaceSelectionFile {
 export interface LongWorkspaceSelection {
   key: string;
   root: LongWorkspaceRoot;
+  worldbuildingFormat?: LongWorldbuildingFormat;
   chapterCardId?: LongChapterCardId;
   title: string;
   breadcrumbs: string[];
   files: LongWorkspaceSelectionFile[];
   preferredRole: LongWorkspaceFileRole;
   description?: string;
+}
+
+/**
+ * Completion handshake for a manual structure mutation.
+ *
+ * `succeed` is only valid after the operation was durably applied and the
+ * renderer refreshed. `fail` means nothing was applied and the editor should
+ * preserve the user's draft for a retry. `appliedButRefreshFailed` closes the
+ * submitted surface without offering a blind retry because the durable write
+ * already happened even though the refreshed snapshot is unavailable.
+ */
+export interface LongStructureMutationCompletion {
+  succeed(): void;
+  fail(message?: string): void;
+  appliedButRefreshFailed(message?: string): void;
 }
 
 export type LongWorkspaceRendererApi = DeepWriteApi["long"];
@@ -56,9 +73,11 @@ export function longBookIdFromResourceId(
   resourceId: string
 ): string | undefined {
   const prefix = "long-book:";
-  return resourceId.startsWith(prefix)
-    ? resourceId.slice(prefix.length) || undefined
-    : undefined;
+  if (!resourceId.startsWith(prefix)) return undefined;
+  const suffix = resourceId.slice(prefix.length);
+  const separator = suffix.indexOf(":");
+  const bookId = separator >= 0 ? suffix.slice(0, separator) : suffix;
+  return bookId || undefined;
 }
 
 export function isEditableLongFile(
@@ -155,7 +174,7 @@ export function createLongChapterSelection(
         label: "Handoff",
         file: entry.handoff,
         ...(committed ? { readOnly: true } : {})
-      },
+      }
     ],
     preferredRole: "body",
     description: committed
@@ -185,7 +204,13 @@ export function createLongContinuitySelection(
   const entry = workspaceIndex.chapters.find(
     (candidate) => candidate.chapterCardId === chapterCardId
   );
-  if (!chapter || !volume || !entry || entry.commitId !== null) {
+  if (
+    !chapter ||
+    !volume ||
+    !entry ||
+    entry.commitId !== null ||
+    nextWritableLongChapterId(workspaceIndex) !== chapterCardId
+  ) {
     return undefined;
   }
   return {
@@ -273,6 +298,7 @@ export function reconcileLongWorkspaceSelection(
     return {
       ...selection,
       title: category.title,
+      worldbuildingFormat: category.format,
       breadcrumbs: [summary.title, "世界观", category.title],
       files: [
         {
@@ -285,12 +311,11 @@ export function reconcileLongWorkspaceSelection(
             : {})
         }
       ],
-      ...(isLongMigrationEvidenceCategoryId(category.id)
-        ? {
-            description:
-              "这是迁移生成的只读证据，可搜索并供 Agent 按需读取。"
-          }
-        : {})
+      description: isLongMigrationEvidenceCategoryId(category.id)
+        ? "这是迁移生成的只读证据，可搜索并供 Agent 按需读取。"
+        : category.format === "list"
+          ? "列表型世界设定；通过条目 Tab 切换并编辑内容。"
+          : "文本型世界设定。"
     };
   }
   if (selection.key.startsWith("character:")) {

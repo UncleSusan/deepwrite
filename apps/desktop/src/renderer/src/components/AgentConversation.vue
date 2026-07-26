@@ -41,36 +41,42 @@ import MessageMarkdown from "./MessageMarkdown.vue";
 import PopupSelect from "./PopupSelect.vue";
 import SubagentRunList from "./SubagentRunList.vue";
 
-const props = defineProps<{
-  messages: ChatMessage[];
-  conversationHistory: ConversationHistoryItem[];
-  currentSessionId: string;
-  draft: string;
-  responding: boolean;
-  canSend: boolean;
-  canSendAttachments: boolean;
-  canStop: boolean;
-  runtimeAvailable: boolean;
-  models: ModelConfig[];
-  selectedModelId: string;
-  thinkingLevel: ThinkingLevel;
-  temperature: number;
-  approvalMode: AgentApprovalMode;
-  contextTitle: string;
-  bookTitle: string;
-  stageLabel: string;
-  agentLabel: string;
-  agentId: ShortWorkspaceAgentId | LongAgentId | undefined;
-  agentWorkspaceType?: "short" | "long";
-  libraryDomain: LibraryAgentDomain | undefined;
-  librarySkills: readonly Pick<LibraryAgentSkill, "name">[] | undefined;
-  welcomeShortcuts: readonly [string, string, string] | undefined;
-  availableSkills: ComposerReferenceOption[];
-  availableMaterials: ComposerReferenceOption[];
-  editorReferences: EditorTextReference[];
-  leftCollapsed: boolean;
-  rightCollapsed: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    messages: ChatMessage[];
+    conversationHistory: ConversationHistoryItem[];
+    currentSessionId: string;
+    draft: string;
+    responding: boolean;
+    canSend: boolean;
+    canSendAttachments: boolean;
+    canStop: boolean;
+    runtimeAvailable: boolean;
+    models: ModelConfig[];
+    selectedModelId: string;
+    thinkingLevel: ThinkingLevel;
+    temperature: number;
+    approvalMode: AgentApprovalMode;
+    contextTitle: string;
+    bookTitle: string;
+    stageLabel: string;
+    agentLabel: string;
+    agentId: ShortWorkspaceAgentId | LongAgentId | undefined;
+    agentWorkspaceType?: "short" | "long";
+    allowLiveEditReview?: boolean;
+    libraryDomain: LibraryAgentDomain | undefined;
+    librarySkills: readonly Pick<LibraryAgentSkill, "name">[] | undefined;
+    welcomeShortcuts: readonly [string, string, string] | undefined;
+    availableSkills: ComposerReferenceOption[];
+    availableMaterials: ComposerReferenceOption[];
+    editorReferences: EditorTextReference[];
+    leftCollapsed: boolean;
+    rightCollapsed: boolean;
+  }>(),
+  {
+    allowLiveEditReview: false
+  }
+);
 
 const emit = defineEmits<{
   "update:draft": [value: string];
@@ -1079,6 +1085,12 @@ const proposalStatusMessages: Record<AgentEditProposal["status"], string> = {
 };
 
 function proposalStatusLabel(proposal: AgentEditProposal): string {
+  if (
+    proposal.status === "pending" &&
+    proposal.approvalMode === "auto-approve"
+  ) {
+    return "待自动保存";
+  }
   return proposalStatusLabels[proposal.status];
 }
 
@@ -1087,10 +1099,88 @@ function proposalAcceptLabel(proposal: AgentEditProposal): string {
   return proposal.status === "error" ? "重试接受并保存" : "接受并保存";
 }
 
+function canReviewProposalWhileStreaming(proposal: AgentEditProposal): boolean {
+  return (
+    props.allowLiveEditReview &&
+    proposal.stageId === "draft" &&
+    !proposal.libraryTarget
+  );
+}
+
+function showProposalReviewActions(proposal: AgentEditProposal): boolean {
+  if (
+    proposal.approvalMode === "auto-approve" &&
+    canReviewProposalWhileStreaming(proposal) &&
+    (proposal.status === "pending" || proposal.status === "accepting")
+  ) {
+    return false;
+  }
+  return (
+    proposal.status === "pending" ||
+    proposal.status === "accepting" ||
+    proposal.status === "error" ||
+    proposal.status === "conflict"
+  );
+}
+
+function isProposalReviewable(
+  proposal: AgentEditProposal,
+  decision: "accept" | "reject"
+): boolean {
+  return (
+    proposal.status === "pending" ||
+    proposal.status === "error" ||
+    (decision === "reject" && proposal.status === "conflict")
+  );
+}
+
+function proposalReviewDisabled(
+  proposal: AgentEditProposal,
+  decision: "accept" | "reject",
+  messageStatus: ChatMessage["status"]
+): boolean {
+  if (!isProposalReviewable(proposal, decision)) {
+    return true;
+  }
+  return (
+    messageStatus === "streaming" &&
+    !canReviewProposalWhileStreaming(proposal)
+  );
+}
+
 function proposalStatusMessage(
   proposal: AgentEditProposal,
   messageStatus: ChatMessage["status"]
 ): string {
+  if (
+    messageStatus === "streaming" &&
+    proposal.status === "pending" &&
+    proposal.approvalMode === "auto-approve" &&
+    canReviewProposalWhileStreaming(proposal)
+  ) {
+    return "本项已生成，正在进入实时自动保存队列；智能体仍在继续。";
+  }
+  if (
+    messageStatus === "streaming" &&
+    proposal.status === "pending" &&
+    canReviewProposalWhileStreaming(proposal)
+  ) {
+    return "本项已生成，可立即审阅；智能体仍在继续。";
+  }
+  if (
+    messageStatus === "streaming" &&
+    proposal.status === "error" &&
+    canReviewProposalWhileStreaming(proposal)
+  ) {
+    return proposal.statusMessage ?? "实时保存失败，可立即重试或拒绝；智能体仍在继续。";
+  }
+  if (
+    messageStatus === "streaming" &&
+    proposal.status === "pending" &&
+    proposal.approvalMode === "auto-approve"
+  ) {
+    return "本项已生成，将在本轮完成后自动保存。";
+  }
   if (
     messageStatus === "streaming" &&
     (proposal.status === "pending" || proposal.status === "error")
@@ -1117,14 +1207,7 @@ function reviewEditProposal(
   decision: "accept" | "reject",
   messageStatus: ChatMessage["status"]
 ): void {
-  if (messageStatus === "streaming") {
-    return;
-  }
-  const reviewable =
-    proposal.status === "pending" ||
-    proposal.status === "error" ||
-    (decision === "reject" && proposal.status === "conflict");
-  if (!reviewable) {
+  if (proposalReviewDisabled(proposal, decision, messageStatus)) {
     return;
   }
   emit("reviewEdit", {
@@ -1646,18 +1729,13 @@ function copyMessageLabel(message: ChatMessage): string {
                       {{ proposalStatusMessage(proposal, message.status) }}
                     </span>
                     <div
-                      v-if="
-                        proposal.status === 'pending' ||
-                        proposal.status === 'accepting' ||
-                        proposal.status === 'error' ||
-                        proposal.status === 'conflict'
-                      "
+                      v-if="showProposalReviewActions(proposal)"
                       class="edit-proposal-actions"
                     >
                       <button
                         class="edit-review-button is-reject"
                         type="button"
-                        :disabled="message.status === 'streaming' || proposal.status === 'accepting'"
+                        :disabled="proposalReviewDisabled(proposal, 'reject', message.status)"
                         @click="reviewEditProposal(proposal, 'reject', message.status)"
                       >
                         拒绝
@@ -1666,7 +1744,7 @@ function copyMessageLabel(message: ChatMessage): string {
                         v-if="proposal.status !== 'conflict'"
                         class="edit-review-button is-accept"
                         type="button"
-                        :disabled="message.status === 'streaming' || proposal.status === 'accepting'"
+                        :disabled="proposalReviewDisabled(proposal, 'accept', message.status)"
                         @click="reviewEditProposal(proposal, 'accept', message.status)"
                       >
                         {{ proposalAcceptLabel(proposal) }}
@@ -1948,7 +2026,6 @@ function copyMessageLabel(message: ChatMessage): string {
           </div>
         </div>
       </div>
-      <p class="composer-note">Enter 发送 · Shift + Enter 换行 · + 附件 · / 技能 · @ 素材</p>
     </footer>
   </main>
 </template>

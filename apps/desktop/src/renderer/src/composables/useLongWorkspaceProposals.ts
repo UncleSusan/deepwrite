@@ -85,7 +85,7 @@ export interface LongWorkspaceProposalController {
   ): Promise<LongMutationProposalEvent>;
   retryPreview(bookId: string, eventId: string): Promise<void>;
   approve(bookId: string, eventId: string): Promise<void>;
-  reject(bookId: string, eventId: string): void;
+  reject(bookId: string, eventId: string): boolean;
 }
 
 const LONG_PROPOSAL_TYPES = new Set<SystemEventEnvelope["type"]>([
@@ -110,11 +110,22 @@ export function useLongWorkspaceProposals(
 ): LongWorkspaceProposalController {
   const queues = ref<Record<string, LongWorkspaceProposalItem[]>>({});
   const handledEventIds = new Set<string>();
+  const handledProposalKeys = new Set<string>();
   const discardedBookIds = new Set<string>();
   const quarantinedSessions = new Set<string>();
 
   function sessionKey(bookId: string, sessionId: string): string {
     return `${bookId}\u0000${sessionId}`;
+  }
+
+  function proposalKey(event: LongWorkspaceProposalEvent): string {
+    return [
+      event.type,
+      event.payload.bookId,
+      event.payload.sessionId,
+      event.payload.runId,
+      event.payload.toolCallId
+    ].join("\u0000");
   }
 
   function itemsForBook(
@@ -246,11 +257,16 @@ export function useLongWorkspaceProposals(
     }
   }
 
-  function rememberEventId(eventId: string): boolean {
-    if (handledEventIds.has(eventId)) {
+  function rememberEvent(event: LongWorkspaceProposalEvent): boolean {
+    const semanticKey = proposalKey(event);
+    if (
+      handledEventIds.has(event.id) ||
+      handledProposalKeys.has(semanticKey)
+    ) {
       return false;
     }
-    handledEventIds.add(eventId);
+    handledEventIds.add(event.id);
+    handledProposalKeys.add(semanticKey);
     while (handledEventIds.size > 2_000) {
       const oldest = handledEventIds.values().next().value as
         | string
@@ -258,13 +274,20 @@ export function useLongWorkspaceProposals(
       if (!oldest) break;
       handledEventIds.delete(oldest);
     }
+    while (handledProposalKeys.size > 2_000) {
+      const oldest = handledProposalKeys.values().next().value as
+        | string
+        | undefined;
+      if (!oldest) break;
+      handledProposalKeys.delete(oldest);
+    }
     return true;
   }
 
   async function enqueueProposalEvent(
     event: LongWorkspaceProposalEvent
   ): Promise<boolean> {
-    if (!rememberEventId(event.id)) {
+    if (!rememberEvent(event)) {
       return false;
     }
 
@@ -291,6 +314,7 @@ export function useLongWorkspaceProposals(
         sessionKey(event.payload.bookId, event.payload.sessionId)
       ) ||
       handledEventIds.has(event.id) ||
+      handledProposalKeys.has(proposalKey(event)) ||
       !options.acceptsEvent(event)
     ) {
       return false;
@@ -311,7 +335,6 @@ export function useLongWorkspaceProposals(
   async function enqueueManualMutation(
     input: EnqueueManualLongMutationInput
   ): Promise<LongMutationProposalEvent> {
-    activateBook(input.bookId);
     const eventId = createUniqueManualEventId();
     const sessionId = createId("long_manual_session");
     const runId = createId("long_manual_run");
@@ -343,6 +366,7 @@ export function useLongWorkspaceProposals(
         }
       )
     );
+    activateBook(input.bookId);
     if (!(await enqueueProposalEvent(event))) {
       throw new Error("手工长篇结构提案事件 ID 冲突，请重试。");
     }
@@ -354,7 +378,13 @@ export function useLongWorkspaceProposals(
     eventId: string
   ): Promise<void> {
     const item = currentItem(bookId, eventId);
-    if (!item || item.status === "submitting") return;
+    if (
+      !item ||
+      item.status === "previewing" ||
+      item.status === "submitting"
+    ) {
+      return;
+    }
     await previewMutation(item);
   }
 
@@ -390,6 +420,25 @@ export function useLongWorkspaceProposals(
       status: "submitting",
       clearError: true
     });
+    if (item.event.type === "long.chapter_dispatch_proposal") {
+      try {
+        await options.onDispatchApproved?.(item.event);
+        removeItem(bookId, eventId);
+        options.notifications.success(
+          `已启动从“${item.event.payload.title}”开始的 ${item.event.payload.chapters.length} 章串行写作计划。`
+        );
+      } catch (error: unknown) {
+        updateItem(bookId, eventId, {
+          status: "error",
+          error: errorMessage(error, "处理长篇提案失败。")
+        });
+        options.notifications.error(
+          errorMessage(error, "处理长篇提案失败。")
+        );
+      }
+      return;
+    }
+
     try {
       if (item.event.type === "long.mutation_proposal") {
         await api.applyOperations({
@@ -400,24 +449,10 @@ export function useLongWorkspaceProposals(
           },
           baseProjectRevision: item.event.payload.baseProjectRevision
         });
-        options.notifications.success("长篇结构提案已应用。");
-      } else if (
-        item.event.type === "long.chapter_dispatch_proposal"
-      ) {
-        await options.onDispatchApproved?.(item.event);
-        options.notifications.success(
-          `已启动从“${item.event.payload.title}”开始的 ${item.event.payload.chapters.length} 章串行写作计划。`
-        );
       } else if (item.event.type === "long.chapter_write_proposal") {
         await api.writeChapter(item.event.payload.input);
-        options.notifications.success("章节正文、人物状态和 Handoff 已写入。");
       } else {
         await api.commitChapter(item.event.payload.input);
-        options.notifications.success("章节连续性账本已提交。");
-      }
-      removeItem(bookId, eventId);
-      if (item.event.type !== "long.chapter_dispatch_proposal") {
-        await options.onApplied?.(item.event);
       }
     } catch (error: unknown) {
       updateItem(bookId, eventId, {
@@ -427,13 +462,35 @@ export function useLongWorkspaceProposals(
       options.notifications.error(
         errorMessage(error, "处理长篇提案失败。")
       );
+      return;
+    }
+
+    removeItem(bookId, eventId);
+    options.notifications.success(
+      item.event.type === "long.mutation_proposal"
+        ? "长篇结构提案已应用。"
+        : item.event.type === "long.chapter_write_proposal"
+          ? "章节正文、人物状态和 Handoff 已写入。"
+          : "章节连续性账本已提交。"
+    );
+    try {
+      await options.onApplied?.(item.event);
+    } catch (error: unknown) {
+      options.notifications.warning(
+        `长篇提案已经写入，但后续刷新失败：${errorMessage(
+          error,
+          "请手动刷新长篇工作区。"
+        )}`
+      );
     }
   }
 
-  function reject(bookId: string, eventId: string): void {
+  function reject(bookId: string, eventId: string): boolean {
     const item = currentItem(bookId, eventId);
-    if (item) options.onRejected?.(item.event);
+    if (!item || item.status === "submitting") return false;
+    options.onRejected?.(item.event);
     removeItem(bookId, eventId);
+    return true;
   }
 
   return {

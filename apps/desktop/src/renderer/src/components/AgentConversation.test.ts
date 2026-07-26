@@ -3,6 +3,36 @@ import conversationSource from "./AgentConversation.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 
 describe("AgentConversation edit proposal placement", () => {
+  it("allows explicitly enabled draft proposals to be reviewed while streaming", () => {
+    expect(conversationSource).toContain("allowLiveEditReview?: boolean");
+    expect(conversationSource).toContain("allowLiveEditReview: false");
+    expect(conversationSource).toContain("function canReviewProposalWhileStreaming");
+    expect(conversationSource).toContain('proposal.stageId === "draft"');
+    expect(conversationSource).toContain("!proposal.libraryTarget");
+    expect(conversationSource).toContain(
+      "本项已生成，可立即审阅；智能体仍在继续。"
+    );
+    expect(conversationSource).toContain(
+      "本项已生成，正在进入实时自动保存队列；智能体仍在继续。"
+    );
+    expect(conversationSource).toContain(
+      "本项已生成，将在本轮完成后自动保存。"
+    );
+    expect(conversationSource).toContain(
+      "实时保存失败，可立即重试或拒绝；智能体仍在继续。"
+    );
+    expect(conversationSource).toContain("showProposalReviewActions(proposal)");
+    expect(conversationSource).toContain(
+      ':disabled="proposalReviewDisabled(proposal, \'reject\', message.status)"'
+    );
+    expect(conversationSource).toContain(
+      ':disabled="proposalReviewDisabled(proposal, \'accept\', message.status)"'
+    );
+    expect(conversationSource).not.toContain(
+      ":disabled=\"message.status === 'streaming' || proposal.status === 'accepting'\""
+    );
+  });
+
   it("keeps edit proposals above the completed response actions", () => {
     const messageBodyStart = conversationSource.indexOf('<div class="message-body">');
     const responseStart = conversationSource.indexOf(

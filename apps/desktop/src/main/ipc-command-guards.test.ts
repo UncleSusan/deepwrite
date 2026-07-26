@@ -59,4 +59,28 @@ describe("IPC command requestId handling", () => {
     );
     expect(mainSource).toContain("{ scriptAgentProfile: agentProfile }");
   });
+
+  it("routes idempotent draft-section batches through preload, main, and core", () => {
+    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const preloadSource = readFileSync(
+      new URL("../preload/index.ts", import.meta.url),
+      "utf8"
+    );
+    const coreSource = readFileSync(
+      new URL("../utilities/core-entry.ts", import.meta.url),
+      "utf8"
+    );
+
+    expect(preloadSource).toContain("async function createDraftSections");
+    expect(preloadSource).toContain('"catalog.createDraftSections"');
+    expect(mainSource).toContain(
+      'command.type === "catalog.createDraftSections"'
+    );
+    expect(mainSource).toContain(
+      "CreateDraftSectionsResultSchema.parse(result.payload)"
+    );
+    expect(coreSource).toContain(
+      "await catalogStore.createDraftSections(command.payload)"
+    );
+  });
 });

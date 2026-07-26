@@ -254,44 +254,6 @@ export type LongImportPortableResult = z.infer<
   typeof LongImportPortableResultSchema
 >;
 
-export const LongExportPortableInputSchema = z
-  .object({
-    bookId: LongBookIdSchema,
-    title: z.string().trim().min(1).max(256)
-  })
-  .strict();
-export type LongExportPortableInput = z.infer<
-  typeof LongExportPortableInputSchema
->;
-
-export const LongExportPortableAtPathInputSchema =
-  LongExportPortableInputSchema.extend({
-    destinationPath: z.string().trim().min(1)
-  }).strict();
-export type LongExportPortableAtPathInput = z.infer<
-  typeof LongExportPortableAtPathInputSchema
->;
-
-export const LongExportPortableResultSchema = z.discriminatedUnion("status", [
-  z
-    .object({
-      status: z.literal("cancelled"),
-      bookId: LongBookIdSchema
-    })
-    .strict(),
-  z
-    .object({
-      status: z.literal("saved"),
-      bookId: LongBookIdSchema,
-      filePath: z.string().trim().min(1),
-      bytes: z.number().int().nonnegative()
-    })
-    .strict()
-]);
-export type LongExportPortableResult = z.infer<
-  typeof LongExportPortableResultSchema
->;
-
 export const LongOpenBookInputSchema = z
   .object({
     bookId: LongBookIdSchema
@@ -612,16 +574,6 @@ export const LongImportPortableAtPathCommandEnvelopeSchema =
     type: z.literal("long.importPortableAtPath"),
     payload: LongImportPortableAtPathInputSchema
   });
-export const LongExportPortableCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.exportPortable"),
-    payload: LongExportPortableInputSchema
-  });
-export const LongExportPortableAtPathCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.exportPortableAtPath"),
-    payload: LongExportPortableAtPathInputSchema
-  });
 export const LongListBooksCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("long.list"),
   payload: z.object({}).strict()
@@ -709,8 +661,6 @@ export const LongWorkspaceCommandEnvelopeSchema = z.discriminatedUnion(
     LongImportWriteClawAtPathCommandEnvelopeSchema,
     LongImportPortableCommandEnvelopeSchema,
     LongImportPortableAtPathCommandEnvelopeSchema,
-    LongExportPortableCommandEnvelopeSchema,
-    LongExportPortableAtPathCommandEnvelopeSchema,
     LongListBooksCommandEnvelopeSchema,
     LongOpenBookCommandEnvelopeSchema,
     LongUpdateBindingsCommandEnvelopeSchema,

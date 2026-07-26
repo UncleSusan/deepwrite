@@ -82,6 +82,7 @@ function appliedEvent(
 function approvalProposal(
   type: "long.chapter_write_proposal" | "long.ledger_commit_proposal",
   overrides: {
+    bookId?: string;
     chapterCardId?: string;
     agentId?: "expert_section_writer" | "continuity_ledger";
     sessionId?: string;
@@ -91,7 +92,7 @@ function approvalProposal(
   return {
     type,
     payload: {
-      bookId: "longbook_test",
+      bookId: overrides.bookId ?? "longbook_test",
       agentId:
         overrides.agentId ??
         (type === "long.chapter_write_proposal"
@@ -220,6 +221,29 @@ describe("useLongWritingOrchestrator", () => {
       expect.objectContaining({ chapterCardId: "chapter_one" }),
       expect.objectContaining({ isCurrent: expect.any(Function) })
     );
+  });
+
+  it("refuses to start the ledger when the post-write check returns another chapter", async () => {
+    const test = harness();
+    await test.controller.startDispatch(dispatchEvent());
+    test.live.set(
+      "chapter_one",
+      readiness("chapter_two", "ready_to_commit")
+    );
+
+    expect(
+      await test.controller.handleApplied(
+        appliedEvent("long.chapter_write_proposal", "chapter_one")
+      )
+    ).toBe(true);
+
+    expect(test.controller.state.value).toMatchObject({
+      currentIndex: 0,
+      phase: "error",
+      retryPoint: "after_write",
+      error: "章节三件套保存检查返回了错误的章卡。"
+    });
+    expect(test.startLedger).not.toHaveBeenCalled();
   });
 
   it("does not advance when a different chapter proposal is approved", async () => {
@@ -381,6 +405,13 @@ describe("useLongWritingOrchestrator", () => {
     expect(permits(approvalProposal("long.chapter_write_proposal"))).toBe(
       true
     );
+    expect(
+      permits(
+        approvalProposal("long.chapter_write_proposal", {
+          bookId: "longbook_other"
+        })
+      )
+    ).toBe(false);
     expect(
       permits(
         approvalProposal("long.chapter_write_proposal", {

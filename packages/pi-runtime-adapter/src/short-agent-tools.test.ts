@@ -333,7 +333,7 @@ describe("short workspace tools", () => {
       allow_overwrite_existing: true
     });
 
-    expect(resultText(result)).toContain("将在本轮完成后自动批准并保存");
+    expect(resultText(result)).toContain("将立即提交自动保存队列");
     expect(resultText(result)).not.toContain("已经保存");
   });
 

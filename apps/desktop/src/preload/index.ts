@@ -15,6 +15,8 @@ import {
   CommandResultSchema,
   CreateLibraryEntryInputSchema,
   CreateDraftSectionInputSchema,
+  CreateDraftSectionsInputSchema,
+  CreateDraftSectionsResultSchema,
   CreateLibraryGroupInputSchema,
   CreateLibraryInputSchema,
   CreateScriptBookInputSchema,
@@ -41,8 +43,6 @@ import {
   ModelSettingsInputSchema,
   ModelSettingsSchema,
   CreateLongBookInputSchema,
-  LongExportPortableInputSchema,
-  LongExportPortableResultSchema,
   LongImportPortableResultSchema,
   LongImportWriteClawResultSchema,
   LongApplyOperationsInputSchema,
@@ -116,6 +116,8 @@ import {
   type CatalogSnapshot,
   type CreateLibraryEntryInput,
   type CreateDraftSectionInput,
+  type CreateDraftSectionsInput,
+  type CreateDraftSectionsResult,
   type CreateLibraryGroupInput,
   type CreateLibraryInput,
   type CreateScriptBookInput,
@@ -134,8 +136,6 @@ import {
   type LearningImitationSettingsInput,
   type LearningImitationStageId,
   type CreateLongBookInput,
-  type LongExportPortableInput,
-  type LongExportPortableResult,
   type LongImportPortableResult,
   type LongImportWriteClawResult,
   type LongApplyOperationsInput,
@@ -357,22 +357,6 @@ async function importPortableLongBook(): Promise<LongImportPortableResult | null
   return LongImportPortableResultSchema.nullable().parse(
     await invokeCommand<LongImportPortableResult | null>(
       createEnvelope("long.importPortable", {}, { id, correlationId: id })
-    )
-  );
-}
-
-async function exportLongPortableBundle(
-  rawInput: LongExportPortableInput
-): Promise<LongExportPortableResult> {
-  const input = LongExportPortableInputSchema.parse(rawInput);
-  const id = browserId("cmd_long_export_portable");
-  return LongExportPortableResultSchema.parse(
-    await invokeCommand<LongExportPortableResult>(
-      createEnvelope("long.exportPortable", input, {
-        id,
-        correlationId: id,
-        context: { resourceId: input.bookId }
-      })
     )
   );
 }
@@ -716,6 +700,22 @@ async function createDraftSection(
   return CatalogDraftSectionSchema.parse(
     await invokeCommand<CatalogDraftSection>(
       createEnvelope("catalog.createDraftSection", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function createDraftSections(
+  rawInput: CreateDraftSectionsInput
+): Promise<CreateDraftSectionsResult> {
+  const input = CreateDraftSectionsInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_create_draft_sections");
+  return CreateDraftSectionsResultSchema.parse(
+    await invokeCommand<CreateDraftSectionsResult>(
+      createEnvelope("catalog.createDraftSections", input, {
         id,
         correlationId: id,
         context: { resourceId: input.bookId }
@@ -1242,6 +1242,7 @@ const api: DeepWriteApi = {
     deleteBook,
     saveDocument,
     createDraftSection,
+    createDraftSections,
     deleteDraftSection,
     saveLibraryEntry,
     createLibraryEntry,
@@ -1255,7 +1256,6 @@ const api: DeepWriteApi = {
     updateBindings: updateLongBookBindings,
     importWriteClaw: importWriteClawLongBook,
     importPortable: importPortableLongBook,
-    exportPortable: exportLongPortableBundle,
     open: openLongBook,
     openExisting: openExistingLongBook,
     getWorkspaceIndex: getLongWorkspaceIndex,

@@ -10,6 +10,7 @@ import {
   createEditorTextReference,
   resolveEditorTextReferenceRange
 } from "../utils/editorTextReferences";
+import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 
 const props = defineProps<{
@@ -37,6 +38,9 @@ const emit = defineEmits<{
 
 const editorInput = ref<HTMLTextAreaElement>();
 const selectionMenuElement = ref<HTMLElement>();
+const editorToolsElement = ref<HTMLElement>();
+const findPanelElement = ref<HTMLElement>();
+const findInput = ref<HTMLInputElement>();
 const selectionAction = ref<{
   reference: EditorTextReference;
   left: number;
@@ -46,6 +50,27 @@ const title = ref(props.draftState?.title ?? props.document.title);
 const content = ref(props.draftState?.content ?? props.document.content);
 const dirty = ref(props.draftState?.dirty ?? false);
 const viewMode = ref<"edit" | "preview">("edit");
+const findPanelOpen = ref(false);
+const findPanelMode = ref<"find" | "replace">("find");
+const searchQuery = ref("");
+const replacementText = ref("");
+const currentMatchIndex = ref(-1);
+const searchAnchor = ref(0);
+
+interface EditorHistorySnapshot {
+  content: string;
+  selectionStart: number;
+  selectionEnd: number;
+}
+
+interface EditorSearchMatch {
+  start: number;
+  end: number;
+}
+
+const undoHistory = ref<EditorHistorySnapshot[]>([]);
+const redoHistory = ref<EditorHistorySnapshot[]>([]);
+const HISTORY_LIMIT = 120;
 
 watch(
   () => props.document.id,
@@ -55,6 +80,12 @@ watch(
     dirty.value = props.draftState?.dirty ?? false;
     viewMode.value = "edit";
     selectionAction.value = null;
+    findPanelOpen.value = false;
+    searchQuery.value = "";
+    replacementText.value = "";
+    currentMatchIndex.value = -1;
+    undoHistory.value = [];
+    redoHistory.value = [];
   }
 );
 
@@ -79,6 +110,29 @@ const characterCount = computed(() => content.value.replace(/\s/g, "").length);
 const paragraphs = computed(() => content.value.split(/\n{2,}/).filter(Boolean));
 const showSectionTabs = computed(() => Boolean(props.sectionTabs?.length));
 const showDraftFileTabs = computed(() => Boolean(props.document.draftFileKind));
+const editorReadOnly = computed(() => props.document.readOnly || props.locked);
+const canUndo = computed(() => !editorReadOnly.value && undoHistory.value.length > 0);
+const canRedo = computed(() => !editorReadOnly.value && redoHistory.value.length > 0);
+const searchMatches = computed<EditorSearchMatch[]>(() => {
+  const query = searchQuery.value;
+  if (!query) return [];
+
+  const matches: EditorSearchMatch[] = [];
+  let start = 0;
+  while (start <= content.value.length - query.length) {
+    const index = content.value.indexOf(query, start);
+    if (index < 0) break;
+    matches.push({ start: index, end: index + query.length });
+    start = index + query.length;
+  }
+  return matches;
+});
+const searchResultLabel = computed(() => {
+  if (!searchQuery.value) return "0/0";
+  if (!searchMatches.value.length) return "无结果";
+  const current = currentMatchIndex.value >= 0 ? currentMatchIndex.value + 1 : 0;
+  return `${current}/${searchMatches.value.length}`;
+});
 const draftUnitLabel = computed(() =>
   props.document.workspaceType === "script" ? "剧集" : "小节"
 );
@@ -100,6 +154,112 @@ function markDirty(): void {
   });
 }
 
+function getEditorSnapshot(): EditorHistorySnapshot {
+  const input = editorInput.value;
+  const fallback = content.value.length;
+  return {
+    content: content.value,
+    selectionStart: input?.selectionStart ?? fallback,
+    selectionEnd: input?.selectionEnd ?? fallback
+  };
+}
+
+function pushHistorySnapshot(
+  history: EditorHistorySnapshot[],
+  snapshot: EditorHistorySnapshot
+): void {
+  if (history.at(-1)?.content === snapshot.content) return;
+  history.push(snapshot);
+  if (history.length > HISTORY_LIMIT) history.shift();
+}
+
+function recordUndoSnapshot(snapshot = getEditorSnapshot()): void {
+  pushHistorySnapshot(undoHistory.value, snapshot);
+  redoHistory.value = [];
+}
+
+function handleEditorBeforeInput(event: InputEvent): void {
+  if (editorReadOnly.value) return;
+  if (event.inputType === "historyUndo") {
+    event.preventDefault();
+    undo();
+    return;
+  }
+  if (event.inputType === "historyRedo") {
+    event.preventDefault();
+    redo();
+    return;
+  }
+  const input = event.currentTarget as HTMLTextAreaElement;
+  recordUndoSnapshot({
+    content: content.value,
+    selectionStart: input.selectionStart ?? content.value.length,
+    selectionEnd: input.selectionEnd ?? content.value.length
+  });
+}
+
+function updateContent(nextContent: string): void {
+  content.value = nextContent;
+  currentMatchIndex.value = -1;
+  markDirty();
+}
+
+async function restoreEditorSnapshot(snapshot: EditorHistorySnapshot): Promise<void> {
+  viewMode.value = "edit";
+  updateContent(snapshot.content);
+  await nextTick();
+  const input = editorInput.value;
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd, "forward");
+  scrollEditorToRange(input, snapshot.selectionStart);
+}
+
+function undo(): void {
+  if (!canUndo.value) return;
+  const snapshot = undoHistory.value.pop();
+  if (!snapshot) return;
+  pushHistorySnapshot(redoHistory.value, getEditorSnapshot());
+  void restoreEditorSnapshot(snapshot);
+}
+
+function redo(): void {
+  if (!canRedo.value) return;
+  const snapshot = redoHistory.value.pop();
+  if (!snapshot) return;
+  pushHistorySnapshot(undoHistory.value, getEditorSnapshot());
+  void restoreEditorSnapshot(snapshot);
+}
+
+function handleEditorKeydown(event: KeyboardEvent): void {
+  const modifier = event.metaKey || event.ctrlKey;
+  const key = event.key.toLowerCase();
+
+  if (modifier && key === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
+    return;
+  }
+  if (event.ctrlKey && !event.metaKey && key === "y") {
+    event.preventDefault();
+    redo();
+    return;
+  }
+  if (modifier && key === "f" && !(event.metaKey && event.altKey)) {
+    event.preventDefault();
+    toggleFindPanel("find");
+    return;
+  }
+  if (
+    (event.ctrlKey && !event.metaKey && key === "h") ||
+    (event.metaKey && event.altKey && key === "f")
+  ) {
+    event.preventDefault();
+    toggleFindPanel("replace");
+  }
+}
+
 function save(): void {
   if (props.document.readOnly || props.locked || props.saving) {
     return;
@@ -109,6 +269,144 @@ function save(): void {
 
 function closeSelectionAction(): void {
   selectionAction.value = null;
+}
+
+function closeFindPanel(): void {
+  findPanelOpen.value = false;
+  currentMatchIndex.value = -1;
+}
+
+async function toggleFindPanel(mode: "find" | "replace"): Promise<void> {
+  if (findPanelOpen.value && findPanelMode.value === mode) {
+    closeFindPanel();
+    return;
+  }
+
+  viewMode.value = "edit";
+  closeSelectionAction();
+  findPanelMode.value = mode;
+  findPanelOpen.value = true;
+  searchAnchor.value = editorInput.value?.selectionStart ?? 0;
+  currentMatchIndex.value = -1;
+  await nextTick();
+  findInput.value?.focus({ preventScroll: true });
+  findInput.value?.select();
+}
+
+function resolveInitialMatchIndex(direction: 1 | -1): number {
+  const matches = searchMatches.value;
+  if (!matches.length) return -1;
+
+  if (direction === 1) {
+    const index = matches.findIndex((match) => match.start >= searchAnchor.value);
+    return index >= 0 ? index : 0;
+  }
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    if (matches[index]!.end <= searchAnchor.value) return index;
+  }
+  return matches.length - 1;
+}
+
+function scrollEditorToRange(input: HTMLTextAreaElement, start: number): void {
+  const line = content.value.slice(0, start).split("\n").length;
+  const computedStyle = globalThis.getComputedStyle(input);
+  const lineHeight = Number.parseFloat(computedStyle.lineHeight);
+  const resolvedLineHeight = Number.isFinite(lineHeight)
+    ? lineHeight
+    : Number.parseFloat(computedStyle.fontSize) * 1.95;
+  input.scrollTop = Math.max(0, (line - 1) * resolvedLineHeight - input.clientHeight / 3);
+}
+
+async function selectSearchMatch(index: number): Promise<void> {
+  const match = searchMatches.value[index];
+  if (!match) return;
+  currentMatchIndex.value = index;
+  viewMode.value = "edit";
+  await nextTick();
+  const input = editorInput.value;
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(match.start, match.end, "forward");
+  scrollEditorToRange(input, match.start);
+  await nextTick();
+  findInput.value?.focus({ preventScroll: true });
+}
+
+function findMatch(direction: 1 | -1, quiet = false): void {
+  if (!searchQuery.value) {
+    if (!quiet) uiMessage.info("请输入要查找的文字");
+    return;
+  }
+  if (!searchMatches.value.length) {
+    currentMatchIndex.value = -1;
+    if (!quiet) uiMessage.info("未找到匹配文字");
+    return;
+  }
+
+  const nextIndex =
+    currentMatchIndex.value < 0
+      ? resolveInitialMatchIndex(direction)
+      : (currentMatchIndex.value + direction + searchMatches.value.length) %
+        searchMatches.value.length;
+  void selectSearchMatch(nextIndex);
+}
+
+function handleFindInput(): void {
+  currentMatchIndex.value = -1;
+  if (searchQuery.value) findMatch(1, true);
+}
+
+function replaceCurrentMatch(): void {
+  if (editorReadOnly.value) return;
+  const index =
+    currentMatchIndex.value >= 0
+      ? currentMatchIndex.value
+      : resolveInitialMatchIndex(1);
+  const match = searchMatches.value[index];
+  if (!match) {
+    uiMessage.info(searchQuery.value ? "未找到可替换的文字" : "请输入要替换的文字");
+    return;
+  }
+
+  const nextContent =
+    content.value.slice(0, match.start) +
+    replacementText.value +
+    content.value.slice(match.end);
+  if (nextContent === content.value) {
+    findMatch(1);
+    return;
+  }
+
+  recordUndoSnapshot();
+  updateContent(nextContent);
+  searchAnchor.value = match.start + replacementText.value.length;
+  void nextTick(() => findMatch(1, true));
+}
+
+function replaceAllMatches(): void {
+  if (editorReadOnly.value) return;
+  const matches = searchMatches.value;
+  if (!searchQuery.value || !matches.length) {
+    uiMessage.info(searchQuery.value ? "未找到可替换的文字" : "请输入要替换的文字");
+    return;
+  }
+
+  let cursor = 0;
+  let nextContent = "";
+  for (const match of matches) {
+    nextContent += content.value.slice(cursor, match.start) + replacementText.value;
+    cursor = match.end;
+  }
+  nextContent += content.value.slice(cursor);
+
+  if (nextContent === content.value) {
+    uiMessage.info("查找文字与替换文字相同");
+    return;
+  }
+  recordUndoSnapshot();
+  updateContent(nextContent);
+  searchAnchor.value = 0;
+  uiMessage.success(`已替换 ${matches.length} 处文字`);
 }
 
 function captureEditorSelection(
@@ -161,8 +459,14 @@ function insertSelectedText(): void {
 
 function handleWindowPointerDown(event: PointerEvent): void {
   const target = event.target;
-  if (target instanceof Node && selectionMenuElement.value?.contains(target)) return;
-  closeSelectionAction();
+  if (!(target instanceof Node)) return;
+  if (!selectionMenuElement.value?.contains(target)) closeSelectionAction();
+  if (
+    !editorToolsElement.value?.contains(target) &&
+    !findPanelElement.value?.contains(target)
+  ) {
+    closeFindPanel();
+  }
 }
 
 async function locateEditorReference(
@@ -177,13 +481,7 @@ async function locateEditorReference(
   const range = resolveEditorTextReferenceRange(content.value, navigation.reference);
   input.focus();
   input.setSelectionRange(range.start, range.end, "forward");
-  const line = content.value.slice(0, range.start).split("\n").length;
-  const computedStyle = globalThis.getComputedStyle(input);
-  const lineHeight = Number.parseFloat(computedStyle.lineHeight);
-  const resolvedLineHeight = Number.isFinite(lineHeight)
-    ? lineHeight
-    : Number.parseFloat(computedStyle.fontSize) * 1.95;
-  input.scrollTop = Math.max(0, (line - 1) * resolvedLineHeight - input.clientHeight / 3);
+  scrollEditorToRange(input, range.start);
 }
 
 watch(
@@ -305,11 +603,140 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <span class="toolbar-separator" />
-      <button class="format-button" type="button" aria-label="粗体"><AppIcon name="bold" :size="15" /></button>
-      <button class="format-button" type="button" aria-label="斜体"><AppIcon name="italic" :size="15" /></button>
-      <button class="format-button" type="button" aria-label="引用"><AppIcon name="quote" :size="15" /></button>
-      <span class="toolbar-spacer" />
-      <button class="format-button" type="button" aria-label="更多格式"><AppIcon name="more" :size="16" /></button>
+      <div
+        ref="editorToolsElement"
+        class="editor-text-tools"
+        role="group"
+        aria-label="文本操作"
+      >
+        <button
+          class="format-button"
+          type="button"
+          aria-label="撤销"
+          title="撤销（⌘/Ctrl+Z）"
+          :disabled="!canUndo"
+          @mousedown.prevent
+          @click="undo"
+        >
+          <AppIcon name="undo" :size="16" />
+        </button>
+        <button
+          class="format-button"
+          type="button"
+          aria-label="还原"
+          title="还原（⌘/Ctrl+Shift+Z）"
+          :disabled="!canRedo"
+          @mousedown.prevent
+          @click="redo"
+        >
+          <AppIcon name="redo" :size="16" />
+        </button>
+        <button
+          class="format-button"
+          :class="{ 'is-active': findPanelOpen && findPanelMode === 'find' }"
+          type="button"
+          aria-label="查找"
+          title="查找（⌘/Ctrl+F）"
+          :aria-pressed="findPanelOpen && findPanelMode === 'find'"
+          @mousedown.prevent
+          @click="toggleFindPanel('find')"
+        >
+          <AppIcon name="search" :size="16" />
+        </button>
+        <button
+          class="format-button"
+          :class="{ 'is-active': findPanelOpen && findPanelMode === 'replace' }"
+          type="button"
+          aria-label="替换"
+          title="替换（⌘⌥F / Ctrl+H）"
+          :aria-pressed="findPanelOpen && findPanelMode === 'replace'"
+          @mousedown.prevent
+          @click="toggleFindPanel('replace')"
+        >
+          <AppIcon name="replace" :size="16" />
+        </button>
+      </div>
+
+      <div
+        v-if="findPanelOpen"
+        ref="findPanelElement"
+        class="editor-find-panel"
+        role="dialog"
+        :aria-label="findPanelMode === 'replace' ? '查找和替换' : '查找文字'"
+        @keydown.esc.stop="closeFindPanel"
+      >
+        <div class="editor-find-row">
+          <label class="editor-find-field">
+            <AppIcon name="search" :size="14" />
+            <input
+              ref="findInput"
+              v-model="searchQuery"
+              type="text"
+              aria-label="查找文字"
+              placeholder="查找"
+              @input="handleFindInput"
+              @keydown.enter.prevent="findMatch($event.shiftKey ? -1 : 1)"
+            />
+            <span class="editor-find-count" aria-live="polite">{{ searchResultLabel }}</span>
+          </label>
+          <button
+            class="editor-find-icon-button is-previous"
+            type="button"
+            aria-label="查找上一个"
+            title="查找上一个"
+            @click="findMatch(-1)"
+          >
+            <AppIcon name="chevron" :size="14" />
+          </button>
+          <button
+            class="editor-find-icon-button"
+            type="button"
+            aria-label="查找下一个"
+            title="查找下一个"
+            @click="findMatch(1)"
+          >
+            <AppIcon name="chevron" :size="14" />
+          </button>
+          <button
+            class="editor-find-icon-button"
+            type="button"
+            aria-label="关闭查找"
+            title="关闭"
+            @click="closeFindPanel"
+          >
+            <AppIcon name="close" :size="14" />
+          </button>
+        </div>
+        <div v-if="findPanelMode === 'replace'" class="editor-replace-row">
+          <label class="editor-find-field">
+            <AppIcon name="replace" :size="14" />
+            <input
+              v-model="replacementText"
+              type="text"
+              aria-label="替换为"
+              placeholder="替换为"
+              :disabled="editorReadOnly"
+              @keydown.enter.prevent="replaceCurrentMatch"
+            />
+          </label>
+          <button
+            class="editor-find-action"
+            type="button"
+            :disabled="editorReadOnly"
+            @click="replaceCurrentMatch"
+          >
+            替换
+          </button>
+          <button
+            class="editor-find-action"
+            type="button"
+            :disabled="editorReadOnly"
+            @click="replaceAllMatches"
+          >
+            全部
+          </button>
+        </div>
+      </div>
     </div>
 
     <div class="editor-document" :class="{ 'is-readonly': document.readOnly || locked }">
@@ -338,7 +765,9 @@ onBeforeUnmount(() => {
         :readonly="document.readOnly || locked"
         aria-label="文本内容编辑器"
         spellcheck="false"
+        @beforeinput="handleEditorBeforeInput"
         @input="markDirty"
+        @keydown="handleEditorKeydown"
         @contextmenu="handleEditorContextMenu"
         @scroll="closeSelectionAction"
       />

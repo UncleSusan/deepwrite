@@ -438,6 +438,32 @@ describe("Write Claw long-form import", () => {
     ).toBe(true);
   });
 
+  it("bounds migration warnings before a completed import reaches the IPC result schema", () => {
+    const source = parseWriteClawLongSourceBytes(
+      Buffer.from(JSON.stringify(legacyBook()), "utf8"),
+      "book.json"
+    );
+    source.warnings = Array.from({ length: 10_005 }, (_, index) =>
+      index === 0 ? `  ${"警".repeat(5_000)}  ` : `迁移警告 ${index}`
+    );
+
+    const plan = createWriteClawLongImportPlan(source, {
+      importedAt: FIXED_NOW
+    });
+
+    expect(plan.warnings).toHaveLength(10_000);
+    expect(plan.warnings[0]).toHaveLength(4_000);
+    expect(
+      plan.warnings.every(
+        (warning) =>
+          warning.length >= 1 &&
+          warning.length <= 4_000 &&
+          warning === warning.trim()
+      )
+    ).toBe(true);
+    expect(plan.warnings.at(-1)).toContain("10,000 条返回上限");
+  });
+
   it("normalizes uncommitted legacy foreshadowing to its derived planned state", () => {
     const workspace = legacyWorkspace();
     workspace.chapters[

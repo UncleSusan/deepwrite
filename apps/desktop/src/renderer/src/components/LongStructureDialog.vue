@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from "vue";
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import type {
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
+import type { LongStructureMutationCompletion } from "../types/longWorkspace";
 import AppIcon from "./AppIcon.vue";
 import LongStructureManager from "./LongStructureManager.vue";
 
@@ -16,16 +23,87 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  proposal: [batch: LongWorkspaceOperationBatch];
+  mutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: LongStructureMutationCompletion
+  ];
 }>();
+
+const dialogElement = ref<HTMLElement | null>(null);
+const closeButton = ref<HTMLButtonElement | null>(null);
+let previousFocus: HTMLElement | null = null;
 
 function close(): void {
   if (!props.pending) emit("close");
 }
 
-function handleKeydown(event: KeyboardEvent): void {
-  if (props.open && event.key === "Escape") close();
+function forwardMutation(
+  batch: LongWorkspaceOperationBatch,
+  completion: LongStructureMutationCompletion
+): void {
+  emit("mutation", batch, completion);
 }
+
+function focusableElements(): HTMLElement[] {
+  return dialogElement.value
+    ? Array.from(
+        dialogElement.value.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => !element.hasAttribute("hidden"))
+    : [];
+}
+
+function handleKeydown(event: KeyboardEvent): void {
+  if (!props.open) return;
+  if (event.key === "Escape") {
+    close();
+    return;
+  }
+  if (
+    event.key !== "Tab" ||
+    !(event.target instanceof Node) ||
+    !dialogElement.value?.contains(event.target)
+  ) {
+    return;
+  }
+  const focusable = focusableElements();
+  if (!focusable.length) {
+    event.preventDefault();
+    dialogElement.value.focus({ preventScroll: true });
+    return;
+  }
+  const first = focusable[0]!;
+  const last = focusable.at(-1)!;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus({ preventScroll: true });
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+  }
+}
+
+watch(
+  () => props.open,
+  async (open) => {
+    if (open) {
+      previousFocus =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      await nextTick();
+      (closeButton.value ?? dialogElement.value)?.focus({
+        preventScroll: true
+      });
+      return;
+    }
+    const target = previousFocus;
+    previousFocus = null;
+    await nextTick();
+    if (target?.isConnected) target.focus({ preventScroll: true });
+  }
+);
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
 onBeforeUnmount(() =>
@@ -41,17 +119,22 @@ onBeforeUnmount(() =>
       @mousedown.self="close"
     >
       <section
+        ref="dialogElement"
         class="long-structure-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="长篇结构管理"
+        aria-labelledby="long-structure-dialog-title"
+        tabindex="-1"
       >
         <header class="long-structure-dialog-header">
           <div>
             <span>长篇结构管理</span>
-            <strong>{{ bookTitle }}</strong>
+            <strong id="long-structure-dialog-title">
+              {{ bookTitle }} · 长篇结构管理
+            </strong>
           </div>
           <button
+            ref="closeButton"
             type="button"
             aria-label="关闭长篇结构管理"
             :disabled="pending"
@@ -64,7 +147,7 @@ onBeforeUnmount(() =>
           v-if="snapshot"
           :snapshot="snapshot"
           :disabled="pending"
-          @proposal="emit('proposal', $event)"
+          @mutation="forwardMutation"
         />
       </section>
     </div>

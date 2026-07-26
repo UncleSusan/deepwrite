@@ -17,7 +17,10 @@ import {
   type LongOrderDirection,
   type LongStructureMutationBuilder
 } from "../types/longStructureMutations";
-import { isLongMigrationEvidenceCategoryId } from "../types/longWorkspace";
+import {
+  isLongMigrationEvidenceCategoryId,
+  type LongStructureMutationCompletion
+} from "../types/longWorkspace";
 import PopupSelect, {
   type PopupSelectOption,
   type PopupSelectValue
@@ -69,7 +72,10 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  proposal: [batch: LongWorkspaceOperationBatch];
+  mutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: LongStructureMutationCompletion
+  ];
 }>();
 
 const sectionOptions: readonly PopupSelectOption[] = [
@@ -109,6 +115,15 @@ const formOpen = ref(false);
 const formMode = ref<"create" | "edit">("create");
 const pendingDelete = ref<ManagerRow | null>(null);
 const cascadeDelete = ref(false);
+type MutationSurface = "form" | "delete" | "background";
+const pendingMutation = ref<{
+  id: number;
+  surface: MutationSurface;
+} | null>(null);
+let mutationClock = 0;
+const mutationLocked = computed(
+  () => props.disabled || pendingMutation.value !== null
+);
 
 function emptyDraft(): StructureDraft {
   return {
@@ -425,9 +440,22 @@ function openCreate(): void {
   const firstVolume = volumeOptions.value[0];
   draft.volumeId =
     typeof firstVolume?.value === "string" ? firstVolume.value : "";
-  const firstArc = props.snapshot.plot.arcs
-    .filter((arc) => arc.volumeId === draft.volumeId)
-    .sort((left, right) => left.order - right.order)[0];
+  const firstArc =
+    activeSection.value === "chapter"
+      ? [...props.snapshot.plot.arcs].sort(
+          (left, right) =>
+            (volumeById.value.get(left.volumeId)?.order ??
+              Number.MAX_SAFE_INTEGER) -
+              (volumeById.value.get(right.volumeId)?.order ??
+                Number.MAX_SAFE_INTEGER) ||
+            left.order - right.order
+        )[0]
+      : props.snapshot.plot.arcs
+          .filter((arc) => arc.volumeId === draft.volumeId)
+          .sort((left, right) => left.order - right.order)[0];
+  if (activeSection.value === "chapter" && firstArc) {
+    draft.volumeId = firstArc.volumeId;
+  }
   draft.primaryArcId = firstArc?.id ?? "";
   if (activeSection.value === "chapter" && !draft.primaryArcId) {
     uiMessage.warning("请先在目标卷中创建至少一个剧情弧。");
@@ -505,6 +533,7 @@ function openEdit(row: ManagerRow): void {
 }
 
 function closeForm(): void {
+  if (mutationLocked.value) return;
   formOpen.value = false;
 }
 
@@ -515,18 +544,41 @@ function aliasesFromDraft(): string[] {
     .filter(Boolean);
 }
 
-function propose(
-  build: (builder: LongStructureMutationBuilder) => LongWorkspaceOperationBatch
+function finishMutation(
+  requestId: number,
+  outcome: "succeeded" | "failed" | "applied-refresh-failed"
+): void {
+  const pending = pendingMutation.value;
+  if (!pending || pending.id !== requestId) return;
+  pendingMutation.value = null;
+  if (outcome === "failed") return;
+  if (pending.surface === "form") {
+    formOpen.value = false;
+  } else if (pending.surface === "delete") {
+    pendingDelete.value = null;
+    cascadeDelete.value = false;
+  }
+}
+
+function emitMutation(
+  build: (builder: LongStructureMutationBuilder) => LongWorkspaceOperationBatch,
+  surface: MutationSurface = "background"
 ): boolean {
+  if (mutationLocked.value) return false;
   try {
-    emit(
-      "proposal",
-      build(createLongStructureMutationBuilder(props.snapshot))
-    );
+    const batch = build(createLongStructureMutationBuilder(props.snapshot));
+    const requestId = ++mutationClock;
+    pendingMutation.value = { id: requestId, surface };
+    emit("mutation", batch, {
+      succeed: () => finishMutation(requestId, "succeeded"),
+      fail: () => finishMutation(requestId, "failed"),
+      appliedButRefreshFailed: () =>
+        finishMutation(requestId, "applied-refresh-failed")
+    });
     return true;
   } catch (error) {
     uiMessage.warning(
-      error instanceof Error ? error.message : "无法生成长篇结构变更提案。"
+      error instanceof Error ? error.message : "无法生成长篇结构变更。"
     );
     return false;
   }
@@ -541,7 +593,7 @@ function submitForm(): void {
     return;
   }
 
-  const succeeded = propose((builder) => {
+  emitMutation((builder) => {
     if (formMode.value === "create") {
       switch (activeSection.value) {
         case "worldbuilding":
@@ -614,11 +666,7 @@ function submitForm(): void {
           characterIds: draft.characterIds
         });
     }
-  });
-
-  if (succeeded) {
-    closeForm();
-  }
+  }, "form");
 }
 
 function siblingIds(row: ManagerRow): string[] {
@@ -643,7 +691,7 @@ function reorder(row: ManagerRow, direction: LongOrderDirection): void {
     );
     return;
   }
-  propose((builder) => {
+  emitMutation((builder) => {
     switch (activeSection.value) {
       case "worldbuilding":
         return builder.reorderWorldbuilding(row.id, direction);
@@ -673,6 +721,7 @@ function openDelete(row: ManagerRow): void {
 }
 
 function closeDelete(): void {
+  if (mutationLocked.value) return;
   pendingDelete.value = null;
   cascadeDelete.value = false;
 }
@@ -682,7 +731,7 @@ function confirmDelete(): void {
   if (!target) {
     return;
   }
-  const succeeded = propose((builder) => {
+  emitMutation((builder) => {
     switch (activeSection.value) {
       case "worldbuilding":
         return builder.deleteWorldbuilding(target.id, cascadeDelete.value);
@@ -695,14 +744,7 @@ function confirmDelete(): void {
       case "chapter":
         return builder.deleteChapter(target.id, cascadeDelete.value);
     }
-  });
-  if (succeeded) {
-    uiMessage.info(
-      cascadeDelete.value
-        ? "已生成级联删除提案，等待外层预览确认。"
-        : "已生成安全删除提案；若依赖检查不通过，可改用级联删除。"
-    );
-  }
+  }, "delete");
 }
 
 function handleCharacterToggle(characterId: string, event: Event): void {
@@ -719,8 +761,11 @@ function handleCharacterToggle(characterId: string, event: Event): void {
   }
 }
 
-function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
-  emit("proposal", batch);
+function forwardPlotMutation(
+  batch: LongWorkspaceOperationBatch,
+  completion: LongStructureMutationCompletion
+): void {
+  emit("mutation", batch, completion);
 }
 </script>
 
@@ -730,7 +775,7 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
       <div>
         <p class="manager-eyebrow">LONG-FORM STRUCTURE</p>
         <h2>结构管理</h2>
-        <p>手工维护核心、剧情与叙事结构；所有操作仅生成待预览的变更提案。</p>
+        <p>手工修改会直接保存到本机；智能体发起的结构修改仍需审批。</p>
       </div>
       <div class="manager-toolbar">
         <PopupSelect
@@ -739,14 +784,14 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
           accessible-label="选择长篇结构类型"
           variant="compact"
           size="small"
-          :disabled="disabled"
+          :disabled="mutationLocked"
           :menu-z-index="2300"
           @update:model-value="setSection"
         />
         <button
           class="primary-button"
           type="button"
-          :disabled="disabled"
+          :disabled="mutationLocked"
           @click="openCreate"
         >
           新建{{ selectedSectionLabel }}
@@ -780,7 +825,7 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
             type="button"
             :aria-label="`上移${row.title}`"
             title="上移"
-            :disabled="disabled || !canMove(row, 'up')"
+            :disabled="mutationLocked || !canMove(row, 'up')"
             @click="reorder(row, 'up')"
           >
             ↑
@@ -789,7 +834,7 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
             type="button"
             :aria-label="`下移${row.title}`"
             title="下移"
-            :disabled="disabled || !canMove(row, 'down')"
+            :disabled="mutationLocked || !canMove(row, 'down')"
             @click="reorder(row, 'down')"
           >
             ↓
@@ -797,7 +842,7 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
           <button
             type="button"
             :aria-label="`编辑${row.title}`"
-            :disabled="disabled || row.readOnly || row.editLocked"
+            :disabled="mutationLocked || row.readOnly || row.editLocked"
             @click="openEdit(row)"
           >
             编辑
@@ -806,7 +851,7 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
             class="delete-button"
             type="button"
             :aria-label="`删除${row.title}`"
-            :disabled="disabled || row.readOnly || row.deleteLocked"
+            :disabled="mutationLocked || row.readOnly || row.deleteLocked"
             @click="openDelete(row)"
           >
             删除
@@ -821,8 +866,8 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
 
     <LongPlotStructureManager
       :snapshot="snapshot"
-      :disabled="disabled"
-      @proposal="forwardPlotProposal"
+      :disabled="mutationLocked"
+      @mutation="forwardPlotMutation"
     />
 
     <Teleport to="body">
@@ -830,6 +875,7 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
         v-if="formOpen"
         class="structure-modal-overlay"
         @mousedown.self="closeForm"
+        @keydown.esc.stop="closeForm"
       >
         <section
           class="structure-modal"
@@ -847,13 +893,14 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
                 class="close-button"
                 type="button"
                 aria-label="关闭"
+                :disabled="mutationLocked"
                 @click="closeForm"
               >
                 ×
               </button>
             </header>
 
-            <div class="modal-body">
+            <fieldset class="modal-body" :disabled="mutationLocked">
               <label class="form-field">
                 <span>{{
                   activeSection === "character" ? "人物姓名" : "标题"
@@ -862,6 +909,7 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
                   v-model="draft.title"
                   maxlength="256"
                   autocomplete="off"
+                  autofocus
                   required
                 />
               </label>
@@ -984,12 +1032,28 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
                   </label>
                 </fieldset>
               </template>
-            </div>
+            </fieldset>
 
             <footer class="modal-actions">
-              <button type="button" @click="closeForm">取消</button>
-              <button class="primary-button" type="submit">
-                生成变更提案
+              <button
+                type="button"
+                :disabled="mutationLocked"
+                @click="closeForm"
+              >
+                取消
+              </button>
+              <button
+                class="primary-button"
+                type="submit"
+                :disabled="mutationLocked"
+              >
+                {{
+                  pendingMutation?.surface === "form"
+                    ? "保存中…"
+                    : formMode === "create"
+                      ? "创建"
+                      : "保存修改"
+                }}
               </button>
             </footer>
           </form>
@@ -1002,6 +1066,7 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
         v-if="pendingDelete"
         class="structure-modal-overlay"
         @mousedown.self="closeDelete"
+        @keydown.esc.stop="closeDelete"
       >
         <section
           class="structure-modal delete-modal"
@@ -1012,37 +1077,48 @@ function forwardPlotProposal(batch: LongWorkspaceOperationBatch): void {
         >
           <header class="modal-header">
             <div>
-              <span>DELETE PROPOSAL</span>
+              <span>DELETE</span>
               <h3 id="long-structure-delete-title">
                 删除“{{ pendingDelete.title }}”
               </h3>
             </div>
           </header>
-          <div class="modal-body">
+          <fieldset class="modal-body" :disabled="mutationLocked">
             <p id="long-structure-delete-description" class="delete-copy">
-              默认先用 <code>cascade: false</code>
-              生成安全删除提案，由外层预览依赖冲突；本组件不会直接删除任何文件。
+              删除会直接保存到本机。默认只删除当前条目；如仍有依赖，
+              保存会被阻止，你可以核对后再选择同时删除依赖项。
             </p>
             <label class="cascade-option">
               <input v-model="cascadeDelete" type="checkbox" />
               <span>
                 同时删除依赖项
-                <small>仅在预览确认依赖范围后使用 cascade: true。</small>
+                <small>会一并删除引用当前条目的相关结构。</small>
               </span>
             </label>
-          </div>
+          </fieldset>
           <footer class="modal-actions">
-            <button type="button" @click="closeDelete">取消</button>
+            <button
+              type="button"
+              :disabled="mutationLocked"
+              autofocus
+              @click="closeDelete"
+            >
+              取消
+            </button>
             <button
               class="danger-button"
               type="button"
-              :disabled="disabled"
+              :disabled="mutationLocked"
               @click="confirmDelete"
             >
               {{
                 cascadeDelete
-                  ? "生成级联删除提案"
-                  : "生成安全删除提案"
+                  ? pendingMutation?.surface === "delete"
+                    ? "删除中…"
+                    : "确认并删除依赖项"
+                  : pendingMutation?.surface === "delete"
+                    ? "删除中…"
+                    : "确认删除"
               }}
             </button>
           </footer>
@@ -1282,8 +1358,11 @@ button:disabled {
 
 .modal-body {
   display: grid;
+  min-inline-size: 0;
   gap: 0.85rem;
+  margin: 0;
   padding: 1rem;
+  border: 0;
 }
 
 .form-field {
@@ -1382,14 +1461,14 @@ button:disabled {
 
 .danger-button {
   border-color: var(--danger);
-  color: var(--surface-main);
+  color: #fff;
   background: var(--danger);
   font-weight: 650;
 }
 
 .danger-button:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--danger) 84%, var(--text-primary));
-  color: var(--surface-main);
+  color: #fff;
   background: color-mix(in srgb, var(--danger) 84%, var(--text-primary));
 }
 

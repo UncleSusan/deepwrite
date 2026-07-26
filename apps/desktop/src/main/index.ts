@@ -6,6 +6,7 @@ import {
   BookSchema,
   CatalogDocumentSchema,
   CatalogDraftSectionSchema,
+  CreateDraftSectionsResultSchema,
   CatalogDraftRecoverySaveResultSchema,
   CatalogDraftRecoverySchema,
   CatalogLibrarySchema,
@@ -27,7 +28,6 @@ import {
   LongAgentSettingsSchema,
   LongAgentTeamSettingsSchema,
   LongCommitChapterResultSchema,
-  LongExportPortableResultSchema,
   LongImportPortableResultSchema,
   LongImportWriteClawResultSchema,
   LongListBooksResultSchema,
@@ -509,16 +509,6 @@ function workspaceGroupParent(
   );
 }
 
-function safeLongExportFileName(title: string): string {
-  const normalized = title
-    .normalize("NFC")
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "_")
-    .replace(/[.\s]+$/gu, "")
-    .trim()
-    .slice(0, 120);
-  return normalized || "长篇作品";
-}
-
 function configureCatalogEnvironment(): string {
   const userDataPath = app.getPath("userData");
   process.env.DEEPWRITE_USER_DATA_PATH = userDataPath;
@@ -609,7 +599,6 @@ function registerIpc(): void {
         command.type === "long.createBookAtPath" ||
         command.type === "long.importWriteClawAtPath" ||
         command.type === "long.importPortableAtPath" ||
-        command.type === "long.exportPortableAtPath" ||
         command.type === "long.openAtPath" ||
         command.type === "catalog.createLibraryAtPath" ||
         command.type === "catalog.createLibraryGroupAtPath" ||
@@ -968,72 +957,6 @@ function registerIpc(): void {
         }
       }
 
-      if (command.type === "long.exportPortable") {
-        try {
-          const selection = await dialog.showSaveDialog(mainWindow, {
-            title: "导出长篇可移植工程",
-            buttonLabel: "导出",
-            defaultPath: join(
-              app.getPath("documents"),
-              `${safeLongExportFileName(command.payload.title)}-长篇工程.deepwrite-long.json`
-            ),
-            filters: [
-              {
-                name: "DeepWrite 长篇可移植工程",
-                extensions: ["json"]
-              }
-            ],
-            properties: ["createDirectory", "showOverwriteConfirmation"]
-          });
-          if (selection.canceled || !selection.filePath) {
-            return {
-              status: "accepted",
-              requestId: command.id,
-              payload: LongExportPortableResultSchema.parse({
-                status: "cancelled",
-                bookId: command.payload.bookId
-              })
-            };
-          }
-          const destinationPath = selection.filePath
-            .toLocaleLowerCase()
-            .endsWith(".json")
-            ? selection.filePath
-            : `${selection.filePath}.deepwrite-long.json`;
-          const internalCommand = CommandEnvelopeSchema.parse(
-            createEnvelope(
-              "long.exportPortableAtPath",
-              { ...command.payload, destinationPath },
-              { id: command.id, context: command.context }
-            )
-          );
-          const result = await supervisor.requestCommand(
-            "core",
-            internalCommand,
-            0
-          );
-          if (result.status === "rejected") return result;
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: LongExportPortableResultSchema.parse(result.payload)
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "long.export_portable_failed",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "导出长篇可移植工程失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
       if (
         command.type === "catalog.createShortBook" ||
         command.type === "catalog.createScriptBook" ||
@@ -1350,6 +1273,7 @@ function registerIpc(): void {
         command.type === "catalog.deleteBook" ||
         command.type === "catalog.saveDocument" ||
         command.type === "catalog.createDraftSection" ||
+        command.type === "catalog.createDraftSections" ||
         command.type === "catalog.deleteDraftSection" ||
         command.type === "catalog.saveLibraryEntry" ||
         command.type === "catalog.createLibraryEntry" ||
@@ -1381,6 +1305,9 @@ function registerIpc(): void {
               break;
             case "catalog.createDraftSection":
               payload = CatalogDraftSectionSchema.parse(result.payload);
+              break;
+            case "catalog.createDraftSections":
+              payload = CreateDraftSectionsResultSchema.parse(result.payload);
               break;
             case "catalog.deleteDraftSection":
               payload = DeleteDraftSectionResultSchema.parse(result.payload);

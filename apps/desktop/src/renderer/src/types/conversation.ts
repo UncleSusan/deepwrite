@@ -23,6 +23,22 @@ export interface AgentTextDiffHunk {
 
 export interface AgentEditProposal {
   id: string;
+  /**
+   * Stable logical target key. A new immutable proposal generation is created
+   * when the agent writes the same file while an earlier generation is being
+   * applied or has already been decided.
+   */
+  laneId?: string;
+  /** Monotonic generation within `laneId` (legacy proposals default to 1). */
+  generation?: number;
+  /** Frozen run policy, retained so pending proposals can recover safely. */
+  approvalMode?: AgentApprovalMode;
+  /** Previous immutable generation that must land before this proposal. */
+  predecessorProposalId?: string;
+  /** Revision of the agent overlay from which this mutation was produced. */
+  sourceBaseRevision?: string;
+  /** Unique token assigned when this exact generation enters the commit queue. */
+  decisionToken?: string;
   runId: string;
   workspaceId: string;
   stageId: ShortWorkspaceStageId | "library";
@@ -60,8 +76,14 @@ export interface AgentEditProposal {
       title: string;
       wordCountRequirement: string;
       provisionalSectionId: string;
+      /** Persisted after atomic creation so recovery can rebuild the mapping. */
+      realSectionId?: string;
     }>;
     afterSectionId?: string;
+    /** Project revision captured when this idempotent creation was proposed. */
+    baseProjectRevision?: number;
+    /** Directory revision observed after this creation was durably confirmed. */
+    acceptedDirectoryRevision?: string;
   };
   /** True when this file mutation targets a same-run provisional section. */
   provisionalExpertSection?: boolean;

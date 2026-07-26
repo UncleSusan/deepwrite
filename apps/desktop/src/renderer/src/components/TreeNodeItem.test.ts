@@ -47,7 +47,8 @@ describe("TreeNodeItem actions", () => {
     );
     for (const action of [
       "manage-structure",
-      "export-portable",
+      "bind-skill",
+      "bind-material",
       "unregister",
       "delete"
     ]) {
@@ -72,7 +73,9 @@ describe("TreeNodeItem actions", () => {
       )
     );
     expect(longMenu).toContain("<span>管理长篇结构</span>");
-    expect(longMenu).toContain("<span>导出可迁移项目</span>");
+    expect(longMenu).toContain("<span>技能库绑定</span>");
+    expect(longMenu).toContain("<span>素材库绑定</span>");
+    expect(longMenu).not.toContain("导出可迁移项目");
     expect(longMenu).toContain(
       'activateLongBookAction(\'unregister\')'
     );

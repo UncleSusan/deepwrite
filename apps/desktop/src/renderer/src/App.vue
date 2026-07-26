@@ -38,6 +38,7 @@ import type {
   LongFileRevision,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch,
+  LongWorkspaceRoot,
   LongWorkspaceRuntimeContext,
   LongWriteDocumentResult,
   MaterialKind,
@@ -84,8 +85,12 @@ import AgentConversation from "./components/AgentConversation.vue";
 import AgentTeamSettingsPanel from "./components/AgentTeamSettingsPanel.vue";
 import AppIcon from "./components/AppIcon.vue";
 import BookResourceDialog from "./components/BookResourceDialog.vue";
-import CreateLongBookDialog from "./components/CreateLongBookDialog.vue";
-import CreateShortBookDialog from "./components/CreateShortBookDialog.vue";
+import BookTransferDialog from "./components/BookTransferDialog.vue";
+import type {
+  BookTransferAction,
+  BookTransferDialogMode
+} from "./components/BookTransferDialog.vue";
+import CreateBookDialog from "./components/CreateBookDialog.vue";
 import DeleteExpertSectionDialog from "./components/DeleteExpertSectionDialog.vue";
 import ExportShortManuscriptDialog from "./components/ExportShortManuscriptDialog.vue";
 import LibraryProjectDialog from "./components/LibraryProjectDialog.vue";
@@ -100,7 +105,6 @@ import LongMigrationReportDialog from "./components/LongMigrationReportDialog.vu
 import LongProposalReview from "./components/LongProposalReview.vue";
 import LongRollbackDialog from "./components/LongRollbackDialog.vue";
 import LongStructureDialog from "./components/LongStructureDialog.vue";
-import LongWorkspaceTree from "./components/LongWorkspaceTree.vue";
 import RightEditorPane from "./components/RightEditorPane.vue";
 import SaveConflictDialog from "./components/SaveConflictDialog.vue";
 import SettingsPage from "./components/SettingsPage.vue";
@@ -160,6 +164,7 @@ import {
   reconcileLongWorkspaceSelection,
   replaceLongBookSummary,
   resolveLongWorkspaceApi,
+  type LongStructureMutationCompletion,
   type LongWorkspaceSelection
 } from "./types/longWorkspace";
 import {
@@ -185,6 +190,7 @@ import {
   advanceDraftSectionCreationRevision,
   draftSectionCreationRevisionKey,
   expectedDraftSectionCreationRevision,
+  resolveDraftSectionCreationCommitPlan,
   type DraftSectionCreationRevisionCursor
 } from "./utils/draftSectionCreationRevision";
 import { migrateLegacyDraftRecoveries } from "./utils/legacyDraftRecovery";
@@ -194,10 +200,20 @@ import {
 import { createShortManuscriptExportInput } from "./utils/shortManuscriptExport";
 import {
   agentEditProposalId,
+  latestAgentEditProposalInLane,
   classifyAgentEditAcceptance,
   expectedMutationBaseRevision,
+  expectedMutationDurableRevision,
+  resolveAgentEditProposalGeneration,
   resolveAgentEditorMutationText
 } from "./utils/agentEditReview";
+import {
+  beginAgentEditProposalCommit,
+  createAgentEditProposalRevisionLane,
+  stageAgentEditProposalRevision,
+  type AgentEditProposalCommitSnapshot
+} from "./utils/agentEditProposalRevisionLane";
+import { createKeyedSerialTaskQueue } from "./utils/keyedSerialTaskQueue";
 import {
   AGENT_RUN_PREFERENCES_STORAGE_KEY,
   activeAgentDocumentForSelection,
@@ -215,6 +231,7 @@ import {
   createLongWorkspaceRefreshClock,
   isMonotonicLongWorkspaceRefresh
 } from "./utils/longWorkspaceRefresh";
+import { matchesLongWritingProposalExpectation } from "./utils/longWritingEventExpectation";
 
 const EMPTY_WORKSPACE_DOCUMENT: WorkspaceDocument = {
   id: "deepwrite-empty-workspace",
@@ -245,6 +262,13 @@ const LONG_WORKSPACE_ROOT_LABELS = {
   draft: "正文",
   continuity_ledger: "连续性账本"
 } as const;
+const LONG_WORKSPACE_ROOT_DESCRIPTIONS: Record<LongWorkspaceRoot, string> = {
+  worldbuilding: "维护世界规则、势力、地理、历史、术语、境界与物品。",
+  character_design: "维护人物核心档案、关系、当前状态与历史轨迹。",
+  plot_design: "维护全书故事线、分卷、剧情弧与章节卡。",
+  draft: "按分卷和章卡顺序编辑正文。",
+  continuity_ledger: "核对章节并维护连续性提交记录。"
+};
 const EDITOR_DRAFT_RECOVERY_KEY = "deepwrite:editor-draft-recovery:v1";
 const EDITOR_AUTO_SAVE_DEBOUNCE_MS = 800;
 const EDITOR_AUTO_SAVE_RETRY_MS = 250;
@@ -414,8 +438,8 @@ const catalogLoading = ref(false);
 const catalogMutationPending = ref(false);
 const manuscriptExportPending = ref(false);
 const exportBookTarget = ref<ResourceTreeNode | null>(null);
-const createShortBookDialogOpen = ref(false);
-const createLongBookDialogOpen = ref(false);
+const createBookDialogOpen = ref(false);
+const bookTransferDialogMode = ref<BookTransferDialogMode | null>(null);
 const longBooks = ref<LongBookSummary[]>([]);
 const longCatalogDiagnostics = ref<
   NonNullable<LongListBooksResult["diagnostics"]>
@@ -463,7 +487,7 @@ const longRollbackDialogOpen = ref(false);
 const longRollbackPending = ref(false);
 const longRollbackCommitId = ref<string | null>(null);
 const longStructureDialogOpen = ref(false);
-const longBindingsDialogOpen = ref(false);
+const longBindingsDialogMode = ref<"skill" | "material" | null>(null);
 const longBookActionPending = ref(false);
 const longBookRemovalDialog = ref<{
   action: "unregister" | "delete";
@@ -550,7 +574,8 @@ interface PendingExpertSectionDeletion {
 
 type CreateCreativeBookPayload =
   | ({ workspaceType: "short" } & CreateShortBookInput)
-  | ({ workspaceType: "script" } & CreateScriptBookInput);
+  | ({ workspaceType: "script" } & CreateScriptBookInput)
+  | ({ workspaceType: "long" } & CreateLongBookInput);
 
 const pendingExpertSectionDeletion = ref<PendingExpertSectionDeletion | null>(null);
 interface SaveConflictState {
@@ -640,13 +665,20 @@ const agentRunPreferences = ref<AgentRunPreferencesByScope>(
 const seenCatalogDiagnosticKeys = new Set<string>();
 const warnedUnmappedLegacyRecoveryKeys = new Set<string>();
 const handledWorkspaceMutationEventIds = new Set<string>();
-interface QueuedAutoAgentEdit {
+interface QueuedAgentEdit {
   conversation: AgentConversationController;
   sessionId: string;
   runId: string;
   proposalId: string;
+  workspaceId: string;
+  automatic: boolean;
+  expectedProposedRevision: string;
+  decisionToken: string;
+  snapshot: AgentEditProposalCommitSnapshot<AgentEditProposal>;
 }
-const queuedAutoAgentEdits = new Map<string, QueuedAutoAgentEdit>();
+const queuedAgentEdits = new Map<string, QueuedAgentEdit>();
+const agentEditCommitQueue = createKeyedSerialTaskQueue<string>();
+let agentEditDecisionSequence = 0;
 const acceptedLibraryMutationCounts = new Map<string, number>();
 const acceptedDraftSectionCreationRevisions = new Map<
   string,
@@ -666,7 +698,6 @@ interface LongWritingAgentRunExpectation {
 let longWritingAgentRunExpectation:
   | LongWritingAgentRunExpectation
   | null = null;
-let autoAgentEditFlush = Promise.resolve();
 const longWritingOrchestrator = useLongWritingOrchestrator({
   resolveReadiness: resolveLiveLongChapterReadiness,
   startWriter: startFreshLongChapterWriter,
@@ -711,6 +742,203 @@ function loadBookResourcePreferences(): BookResourcePreferences {
 
 const bookResourcePreferences = ref<BookResourcePreferences>(loadBookResourcePreferences());
 
+function longNavigationNodeId(bookId: string, key: string): string {
+  return `${longBookResourceId(bookId)}:${key}`;
+}
+
+function createLongRootSelection(
+  book: LongBookSummary,
+  root: LongWorkspaceRoot
+): LongWorkspaceSelection {
+  const label = LONG_WORKSPACE_ROOT_LABELS[root];
+  return {
+    key: `root:${root}`,
+    root,
+    title: label,
+    breadcrumbs: [book.title, label],
+    files: [],
+    preferredRole: "content",
+    description: LONG_WORKSPACE_ROOT_DESCRIPTIONS[root]
+  };
+}
+
+function projectLongWorkspaceNavigation(
+  book: LongBookSummary,
+  index: LongWorkspaceIndexSnapshot
+): ResourceTreeNode[] {
+  const node = (
+    selection: LongWorkspaceSelection,
+    options: {
+      icon: NonNullable<ResourceTreeNode["icon"]>;
+      badge?: string;
+      children?: ResourceTreeNode[];
+    }
+  ): ResourceTreeNode => ({
+    id: longNavigationNodeId(book.id, selection.key),
+    label: selection.title,
+    icon: options.icon,
+    ...(options.badge ? { badge: options.badge } : {}),
+    ...(options.children?.length ? { children: options.children } : {}),
+    selectableBranch: Boolean(options.children?.length),
+    workspaceType: "long",
+    longBookId: book.id,
+    catalogNodeType: "category",
+    longWorkspaceSelection: selection
+  });
+
+  const reconcile = (
+    selection: LongWorkspaceSelection
+  ): LongWorkspaceSelection | undefined =>
+    reconcileLongWorkspaceSelection(book, index, selection);
+
+  const worldChildren = [...index.worldbuilding]
+    .sort((left, right) => left.order - right.order)
+    .flatMap((category) => {
+      const selection = reconcile({
+        key: `worldbuilding:${category.id}`,
+        root: "worldbuilding",
+        title: category.title,
+        breadcrumbs: [book.title, "世界观", category.title],
+        files: [],
+        preferredRole: "content",
+        description:
+          category.format === "list" ? "列表型世界设定。" : "文本型世界设定。"
+      });
+      return selection
+        ? [
+            node(selection, {
+              icon: "file",
+              badge: category.format === "list" ? "列表" : "文本"
+            })
+          ]
+        : [];
+    });
+
+  const characterChildren = [...book.navigation.characters]
+    .sort(
+      (left, right) =>
+        left.group.localeCompare(right.group) ||
+        left.order - right.order ||
+        left.id.localeCompare(right.id)
+    )
+    .flatMap((character) => {
+      const selection = reconcile({
+        key: `character:${character.id}`,
+        root: "character_design",
+        title: character.name,
+        breadcrumbs: [book.title, "人物设计", character.name],
+        files: [],
+        preferredRole: "core-profile"
+      });
+      return selection ? [node(selection, { icon: "user" })] : [];
+    });
+
+  const bookLineSelection = reconcile({
+    key: "plot-design:book-line",
+    root: "plot_design",
+    title: "全书故事线",
+    breadcrumbs: [book.title, "情节设计", "全书故事线"],
+    files: [],
+    preferredRole: "book-line",
+    description: "全书级情节主线。"
+  });
+  const plotChildren = bookLineSelection
+    ? [node(bookLineSelection, { icon: "file", badge: "故事线" })]
+    : [];
+
+  const draftChildren = [...book.navigation.volumes]
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.id.localeCompare(right.id)
+    )
+    .flatMap<ResourceTreeNode>((volume) => {
+      const chapters = book.navigation.chapterCards
+        .filter((chapter) => chapter.volumeId === volume.id)
+        .sort(
+          (left, right) =>
+            left.narrativeOrder - right.narrativeOrder ||
+            left.id.localeCompare(right.id)
+        )
+        .flatMap<ResourceTreeNode>((chapter) => {
+          const selection = createLongChapterSelection(book, index, chapter.id);
+          return selection ? [node(selection, { icon: "edit" })] : [];
+        });
+      return chapters.length
+        ? [
+            {
+              id: longNavigationNodeId(book.id, `volume:${volume.id}`),
+              label: volume.title,
+              icon: "folder",
+              badge: `${chapters.length} 章`,
+              workspaceType: "long",
+              longBookId: book.id,
+              catalogNodeType: "category",
+              children: chapters
+            }
+          ]
+        : [];
+    });
+
+  const nextChapterId = nextWritableLongChapterId(index);
+  const continuityChildren: ResourceTreeNode[] = [];
+  if (nextChapterId) {
+    const selection = createLongContinuitySelection(
+      book,
+      index,
+      nextChapterId
+    );
+    if (selection) {
+      continuityChildren.push(
+        node(selection, { icon: "check", badge: "下一章" })
+      );
+    }
+  }
+  for (const commit of index.ledger.commits) {
+    const selection = reconcile({
+      key: `ledger:${commit.id}`,
+      root: "continuity_ledger",
+      title: `提交 #${commit.sequence}`,
+      breadcrumbs: [book.title, "连续性账本", `提交 #${commit.sequence}`],
+      files: [],
+      preferredRole: "ledger-record"
+    });
+    if (selection) {
+      continuityChildren.push(
+        node(selection, { icon: "ledger", badge: `#${commit.sequence}` })
+      );
+    }
+  }
+
+  const counts = book.navigation.counts;
+  return [
+    node(createLongRootSelection(book, "worldbuilding"), {
+      icon: "globe",
+      badge: String(counts.worldbuildingCategories),
+      children: worldChildren
+    }),
+    node(createLongRootSelection(book, "character_design"), {
+      icon: "user",
+      badge: String(counts.characters),
+      children: characterChildren
+    }),
+    node(createLongRootSelection(book, "plot_design"), {
+      icon: "history",
+      badge: String(counts.arcs),
+      children: plotChildren
+    }),
+    node(createLongRootSelection(book, "draft"), {
+      icon: "edit",
+      badge: String(counts.chapterCards),
+      children: draftChildren
+    }),
+    node(createLongRootSelection(book, "continuity_ledger"), {
+      icon: "ledger",
+      badge: String(counts.committedChapters),
+      children: continuityChildren
+    })
+  ];
+}
+
 const longBookResourceNodes = computed<ResourceTreeNode[]>(() => {
   const availableIds = new Set(longBooks.value.map(({ id }) => id));
   const unavailable = new Map(
@@ -719,16 +947,26 @@ const longBookResourceNodes = computed<ResourceTreeNode[]>(() => {
       .map((diagnostic) => [diagnostic.bookId, diagnostic] as const)
   );
   return [
-    ...longBooks.value.map((book) => ({
-      id: longBookResourceId(book.id),
-      label: book.title,
-      icon: "book" as const,
-      badge: `长篇 · ${book.genre}`,
-      workspaceType: "long" as const,
-      longBookId: book.id,
-      catalogNodeType: "long-book" as const,
-      projectRevision: book.projectRevision
-    })),
+    ...longBooks.value.map((book) => {
+      const workspaceIndex =
+        book.id === activeLongBookId.value
+          ? activeLongWorkspaceIndex.value
+          : null;
+      return {
+        id: longBookResourceId(book.id),
+        label: book.title,
+        icon: "book" as const,
+        badge: `长篇 · ${book.genre}`,
+        workspaceType: "long" as const,
+        longBookId: book.id,
+        catalogNodeType: "long-book" as const,
+        selectableBranch: Boolean(workspaceIndex),
+        ...(workspaceIndex
+          ? { children: projectLongWorkspaceNavigation(book, workspaceIndex) }
+          : {}),
+        projectRevision: book.projectRevision
+      };
+    }),
     ...[...unavailable.values()].map((diagnostic) => ({
       id: longBookResourceId(diagnostic.bookId),
       label: `不可用长篇 · ${diagnostic.bookId}`,
@@ -1279,6 +1517,7 @@ function applyCatalogSnapshot(snapshot: CatalogSnapshot): void {
       documents.value[0]?.id ??
       "";
   }
+  queueMicrotask(() => resumeRecoveredAutomaticAgentEdits());
 }
 
 async function loadCatalogSnapshot(): Promise<void> {
@@ -1454,7 +1693,7 @@ async function openLongBook(bookId: string): Promise<void> {
   activeLongFileContext.value = null;
   longRollbackDialogOpen.value = false;
   longStructureDialogOpen.value = false;
-  longBindingsDialogOpen.value = false;
+  longBindingsDialogMode.value = null;
   longWorkspaceLoading.value = true;
   try {
     const opened = await api.open({ bookId });
@@ -1592,6 +1831,16 @@ async function selectLongWorkspaceFile(
   activeLongFileContext.value = null;
   activeLongSelection.value = selection;
   return true;
+}
+
+async function selectLongWorkspaceSearchResult(
+  selection: LongWorkspaceSelection
+): Promise<void> {
+  const bookId = activeLongBookId.value;
+  if (!bookId || !(await selectLongWorkspaceFile(selection))) return;
+  selectedResourceId.value = longNavigationNodeId(bookId, selection.key);
+  workspaceMainView.value = "conversation";
+  rightCollapsed.value = false;
 }
 
 function handleLongFileContextChange(
@@ -1790,6 +2039,7 @@ function conversationForKey(
   } else if (modelSettings.value) {
     persistAgentRunPreferences(scope, captureAgentRunSettings(created));
   }
+  queueMicrotask(() => resumeRecoveredAutomaticAgentEdits([created]));
   return created;
 }
 
@@ -1840,6 +2090,18 @@ function observeLongWritingAgentEvent(
     return;
   }
   if (event.payload.sessionId !== expectation.sessionId) return;
+  const matchesExpectedProposal =
+    event.type === "long.chapter_write_proposal" ||
+    event.type === "long.ledger_commit_proposal"
+      ? matchesLongWritingProposalExpectation(expectation, event)
+      : false;
+  if (
+    (event.type === "long.chapter_write_proposal" ||
+      event.type === "long.ledger_commit_proposal") &&
+    !matchesExpectedProposal
+  ) {
+    return;
+  }
   if (
     expectation.runId &&
     expectation.runId !== event.payload.runId
@@ -1847,16 +2109,7 @@ function observeLongWritingAgentEvent(
     return;
   }
   expectation.runId ??= event.payload.runId;
-  if (
-    (event.type === "long.chapter_write_proposal" &&
-      expectation.agentId === "expert_section_writer" &&
-      event.payload.input.chapterCardId ===
-        expectation.chapterCardId) ||
-    (event.type === "long.ledger_commit_proposal" &&
-      expectation.agentId === "continuity_ledger" &&
-      event.payload.input.chapterCardId ===
-        expectation.chapterCardId)
-  ) {
+  if (matchesExpectedProposal) {
     expectation.proposalSeen = true;
     return;
   }
@@ -1909,7 +2162,10 @@ async function handleLongProposalApplied(
     { type: "long.chapter_dispatch_proposal" }
   >
 ): Promise<void> {
-  if (await longWritingOrchestrator.handleApplied(event)) {
+  if (
+    canApproveLongProposalDuringActivePlan(event) &&
+    await longWritingOrchestrator.handleApplied(event)
+  ) {
     return;
   }
   await refreshLongWritingSaveBarrier(event.payload.bookId);
@@ -2583,21 +2839,6 @@ const longSelectedModelId = computed(
 const longConversationError = computed(
   () => activeLongConversation.value?.conversationError.value ?? null
 );
-watch(
-  [
-    () => activeLongAgentProfile.value?.id,
-    () => longConversationError.value
-  ],
-  ([agentId, error]) => {
-    if (
-      error &&
-      (agentId === "expert_section_writer" ||
-        agentId === "continuity_ledger")
-    ) {
-      longWritingOrchestrator.handleRunFailure(agentId, error);
-    }
-  }
-);
 const longResponding = computed(
   () => activeLongConversation.value?.isBusy.value ?? false
 );
@@ -2896,6 +3137,20 @@ async function selectResource(node: ResourceTreeNode): Promise<void> {
     ) {
       await openLongBook(node.longBookId);
     }
+    if (
+      node.longWorkspaceSelection &&
+      activeLongBookSummary.value?.id === node.longBookId &&
+      activeLongWorkspaceIndex.value
+    ) {
+      const selection = reconcileLongWorkspaceSelection(
+        activeLongBookSummary.value,
+        activeLongWorkspaceIndex.value,
+        node.longWorkspaceSelection
+      );
+      if (selection) {
+        await selectLongWorkspaceFile(selection);
+      }
+    }
     return;
   }
   if (!(await saveActiveLongEditorBeforeLeaving())) {
@@ -2912,7 +3167,7 @@ async function selectResource(node: ResourceTreeNode): Promise<void> {
   longRollbackDialogOpen.value = false;
   longRollbackCommitId.value = null;
   longStructureDialogOpen.value = false;
-  longBindingsDialogOpen.value = false;
+  longBindingsDialogMode.value = null;
   const directory = draftDirectoryForResourceId(node.id);
   if (directory && node.expertSectionId) {
     selectedExpertSectionIds.value = {
@@ -3377,6 +3632,15 @@ function updateBookBindings(payload:
 async function createCreativeBook(
   input: CreateCreativeBookPayload
 ): Promise<void> {
+  if (input.workspaceType === "long") {
+    await createLongBook({
+      title: input.title,
+      genre: input.genre,
+      linkedMaterialIdsByKind: input.linkedMaterialIdsByKind,
+      linkedSkillIdsByKind: input.linkedSkillIdsByKind
+    });
+    return;
+  }
   if (!window.deepwrite || catalogMutationPending.value) {
     return;
   }
@@ -3402,7 +3666,7 @@ async function createCreativeBook(
     }
     await loadWorkspaceDirectory();
     applyCatalogSnapshot(await window.deepwrite.catalog.snapshot());
-    createShortBookDialogOpen.value = false;
+    createBookDialogOpen.value = false;
     const targetResourceId = resolvePreferredBookResourceId(
       catalogProjection.value ?? undefined,
       book.id
@@ -3461,7 +3725,7 @@ async function createLongBook(input: CreateLongBookInput): Promise<void> {
   try {
     const opened = await api.create(input);
     if (!opened) return;
-    createLongBookDialogOpen.value = false;
+    createBookDialogOpen.value = false;
     activateLongBookWorkspace(opened);
     await loadLongBookList({ force: true });
     await loadWorkspaceDirectory();
@@ -3478,6 +3742,20 @@ async function createLongBook(input: CreateLongBookInput): Promise<void> {
 async function handleResourceAction(payload: ResourceSectionActionPayload): Promise<void> {
   if (
     payload.domain === "creation" &&
+    (payload.action === "choose-open-book" ||
+      payload.action === "choose-import-book")
+  ) {
+    if (!window.deepwrite) {
+      uiMessage.warning("浏览器预览不能打开本地作品，请使用桌面客户端。");
+      return;
+    }
+    bookTransferDialogMode.value =
+      payload.action === "choose-open-book" ? "open" : "import";
+    return;
+  }
+
+  if (
+    payload.domain === "creation" &&
     payload.action === "refresh-long-books"
   ) {
     if (!resolveLongWorkspaceApi()) {
@@ -3488,21 +3766,6 @@ async function handleResourceAction(payload: ResourceSectionActionPayload): Prom
     if (!longCatalogLoadError.value) {
       uiMessage.success("长篇列表已刷新");
     }
-    return;
-  }
-
-  if (
-    payload.domain === "creation" &&
-    payload.action === "create-long-book"
-  ) {
-    if (blockActiveLongWritingPlan("新建长篇")) {
-      return;
-    }
-    if (!resolveLongWorkspaceApi()) {
-      uiMessage.warning("浏览器预览不能保存长篇作品，请使用桌面客户端创建。");
-      return;
-    }
-    createLongBookDialogOpen.value = true;
     return;
   }
 
@@ -3617,7 +3880,7 @@ async function handleResourceAction(payload: ResourceSectionActionPayload): Prom
       uiMessage.warning("浏览器预览不能保存作品，请使用桌面客户端创建。");
       return;
     }
-    createShortBookDialogOpen.value = true;
+    createBookDialogOpen.value = true;
     return;
   }
 
@@ -3794,6 +4057,14 @@ async function handleResourceAction(payload: ResourceSectionActionPayload): Prom
   uiMessage.info("当前资源操作暂不可用。");
 }
 
+function handleBookTransferSelect(action: BookTransferAction): void {
+  bookTransferDialogMode.value = null;
+  void handleResourceAction({
+    domain: "creation",
+    action: action === "open-book" ? "import" : action
+  });
+}
+
 async function clearActiveLongBook(bookId: string): Promise<void> {
   if (activeLongBookId.value !== bookId) return;
   longOpenClock += 1;
@@ -3806,7 +4077,7 @@ async function clearActiveLongBook(bookId: string): Promise<void> {
   longRollbackDialogOpen.value = false;
   longRollbackCommitId.value = null;
   longStructureDialogOpen.value = false;
-  longBindingsDialogOpen.value = false;
+  longBindingsDialogMode.value = null;
   const fallback = resourceTreeSections.value
     .find(({ id }) => id === "creation")
     ?.nodes.find((node) => !node.longBookId);
@@ -3858,12 +4129,20 @@ async function handleLongBookAction(
     }
     return;
   }
-  if (payload.action === "manage-bindings") {
+  if (
+    payload.action === "bind-skill" ||
+    payload.action === "bind-material"
+  ) {
     if (
-      blockActiveLongWritingPlan("管理其他长篇的资源绑定", {
+      blockActiveLongWritingPlan(
+        payload.action === "bind-skill"
+          ? "管理其他长篇的技能库绑定"
+          : "管理其他长篇的素材库绑定",
+        {
         targetBookId: bookId,
         allowPlanBook: true
-      })
+        }
+      )
     ) {
       return;
     }
@@ -3880,35 +4159,8 @@ async function handleLongBookAction(
       await openLongBook(bookId);
     }
     if (activeLongBookId.value === bookId && activeLongBookSummary.value) {
-      longBindingsDialogOpen.value = true;
-    }
-    return;
-  }
-  if (payload.action === "export-portable") {
-    if (longBookActionPending.value) return;
-    if (
-      activeLongBookId.value === bookId &&
-      !(await saveActiveLongEditorChanges())
-    ) {
-      return;
-    }
-    longBookActionPending.value = true;
-    try {
-      const result = await api.exportPortable({
-        bookId,
-        title: payload.node.label
-      });
-      if (result.status === "saved") {
-        uiMessage.success(`长篇可移植工程已导出到 ${result.filePath}`);
-      }
-    } catch (error: unknown) {
-      uiMessage.error(
-        error instanceof Error
-          ? error.message
-          : "导出长篇可移植工程失败。"
-      );
-    } finally {
-      longBookActionPending.value = false;
+      longBindingsDialogMode.value =
+        payload.action === "bind-skill" ? "skill" : "material";
     }
     return;
   }
@@ -3933,7 +4185,9 @@ async function updateLongBookBindings(payload: {
   const api = resolveLongWorkspaceApi();
   const summary = activeLongBookSummary.value;
   if (!api || !summary || longBookActionPending.value) return;
-  if (blockActiveLongWritingPlan("修改长篇资源绑定")) {
+  const bindingLabel =
+    longBindingsDialogMode.value === "skill" ? "技能库绑定" : "素材库绑定";
+  if (blockActiveLongWritingPlan(`修改长篇${bindingLabel}`)) {
     return;
   }
   longBookActionPending.value = true;
@@ -3955,12 +4209,14 @@ async function updateLongBookBindings(payload: {
       updated.book.workspaceIndex.revision,
       updated.summary.projectRevision
     );
-    longBindingsDialogOpen.value = false;
+    longBindingsDialogMode.value = null;
     await loadLongBookList({ force: true });
-    uiMessage.success(`已更新长篇“${updated.book.title}”的资源绑定`);
+    uiMessage.success(`已更新长篇“${updated.book.title}”的${bindingLabel}`);
   } catch (error: unknown) {
     uiMessage.error(
-      error instanceof Error ? error.message : "更新长篇资源绑定失败。"
+      error instanceof Error
+        ? error.message
+        : `更新长篇${bindingLabel}失败。`
     );
   } finally {
     longBookActionPending.value = false;
@@ -4026,32 +4282,97 @@ async function confirmLongBookRemoval(): Promise<void> {
   }
 }
 
-async function handleLongStructureProposal(
-  batch: LongWorkspaceOperationBatch
+async function handleLongStructureMutation(
+  batch: LongWorkspaceOperationBatch,
+  completion: LongStructureMutationCompletion
 ): Promise<void> {
+  const api = resolveLongWorkspaceApi();
   const summary = activeLongBookSummary.value;
   const index = activeLongWorkspaceIndex.value;
-  if (!summary || !index || longBookActionPending.value) {
+  if (!api || !summary || !index || longBookActionPending.value) {
     uiMessage.warning("当前长篇结构尚未就绪。");
+    completion.fail("当前长篇结构尚未就绪。");
     return;
   }
   if (blockActiveLongWritingPlan("修改长篇结构")) {
+    completion.fail("当前长篇串行写作计划尚未完成。");
     return;
   }
   longBookActionPending.value = true;
+  let applied = false;
   try {
-    await longWorkspaceProposals.enqueueManualMutation({
-      bookId: summary.id,
-      batch,
-      baseProjectRevision: summary.projectRevision ?? index.revision,
-      summary: `手工结构管理：${batch.operations.length} 项变更`
+    if (!(await saveActiveLongEditorChanges())) {
+      completion.fail("当前长篇修改尚未保存。");
+      return;
+    }
+    if (!(await refreshActiveLongWorkspace(summary.id))) {
+      throw new Error("无法同步最新长篇结构，本次修改未保存。");
+    }
+    const latestSummary = activeLongBookSummary.value;
+    const latestIndex = activeLongWorkspaceIndex.value;
+    if (
+      !latestSummary ||
+      !latestIndex ||
+      latestSummary.id !== summary.id
+    ) {
+      throw new Error("活动长篇已切换，本次结构修改未保存。");
+    }
+    const baseProjectRevision =
+      latestSummary.projectRevision ?? latestIndex.revision;
+    const preview = await api.previewOperations({
+      bookId: latestSummary.id,
+      batch
     });
-    longStructureDialogOpen.value = false;
-    uiMessage.info("结构变更已生成影响预览，请在中间栏确认后应用。");
-  } catch (error: unknown) {
-    uiMessage.error(
-      error instanceof Error ? error.message : "生成结构变更预览失败。"
+    if (
+      preview.bookId !== latestSummary.id ||
+      preview.projectRevision !== baseProjectRevision
+    ) {
+      throw new Error("长篇结构已更新，请基于最新结构重新修改。");
+    }
+    const applyResult = await api.applyOperations({
+      bookId: latestSummary.id,
+      batch: {
+        ...batch,
+        expectedImpact: preview.preview.impact
+      },
+      baseProjectRevision
+    });
+    applied = true;
+    if (
+      applyResult.bookId !== latestSummary.id ||
+      activeLongBookId.value !== latestSummary.id
+    ) {
+      throw new Error("活动长篇已切换，无法发布结构保存结果。");
+    }
+    longBooks.value = replaceLongBookSummary(
+      longBooks.value,
+      applyResult.summary
     );
+    const refreshed = await refreshLongWritingSaveBarrier(latestSummary.id);
+    if (!refreshed) {
+      longStructureDialogOpen.value = false;
+      completion.appliedButRefreshFailed(
+        "结构修改已保存，但界面未能同步最新结构。"
+      );
+      uiMessage.warning(
+        "结构修改已保存，但界面未能同步最新结构；请重新打开长篇设置。"
+      );
+      return;
+    }
+    completion.succeed();
+    uiMessage.success(
+      `已直接保存 ${batch.operations.length} 项长篇结构修改`
+    );
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "保存长篇结构修改失败。";
+    if (applied) {
+      longStructureDialogOpen.value = false;
+      completion.appliedButRefreshFailed(message);
+    } else {
+      completion.fail(message);
+    }
+    uiMessage.error(message);
   } finally {
     longBookActionPending.value = false;
   }
@@ -5758,7 +6079,11 @@ function newConversation(): void {
     newLongConversation();
     return;
   }
-  if (acceptingAgentEditDocumentIds.value.size > 0) {
+  if (
+    acceptingAgentEditDocumentIds.value.size > 0 ||
+    acceptingAgentEditWorkspaceIds.value.size > 0 ||
+    queuedAgentEdits.size > 0
+  ) {
     uiMessage.info("请等待智能体修改保存完成后再新建对话");
     return;
   }
@@ -5768,7 +6093,11 @@ function newConversation(): void {
 }
 
 function selectConversation(sessionId: string): void {
-  if (acceptingAgentEditDocumentIds.value.size > 0) {
+  if (
+    acceptingAgentEditDocumentIds.value.size > 0 ||
+    acceptingAgentEditWorkspaceIds.value.size > 0 ||
+    queuedAgentEdits.size > 0
+  ) {
     uiMessage.info("请等待智能体修改保存完成后再切换对话");
     return;
   }
@@ -5781,6 +6110,9 @@ function selectConversation(sessionId: string): void {
     return;
   }
   clearEditorSelectionReferences();
+  queueMicrotask(() =>
+    resumeRecoveredAutomaticAgentEdits([activeConversation.value])
+  );
 }
 
 function useSuggestion(value: string): void {
@@ -5838,7 +6170,7 @@ async function sendMessage(promptAttachments: UserPromptAttachment[] = []): Prom
     },
     promptAttachments
   );
-  scheduleQueuedAutoAgentEdits(
+  scheduleQueuedAgentEdits(
     (queued) =>
       queued.conversation === conversation && queued.sessionId === sendSessionId
   );
@@ -6194,8 +6526,9 @@ async function approveLongProposal(eventId: string): Promise<void> {
 function rejectLongProposal(eventId: string): void {
   const bookId = activeLongBookId.value;
   if (!bookId) return;
-  longWorkspaceProposals.reject(bookId, eventId);
-  uiMessage.info("已拒绝该长篇提案，未写入任何文件。");
+  if (longWorkspaceProposals.reject(bookId, eventId)) {
+    uiMessage.info("已拒绝该长篇提案，未写入任何文件。");
+  }
 }
 
 function retryLongProposalPreview(eventId: string): void {
@@ -6380,7 +6713,12 @@ async function acceptLibraryCreationProposal(
     return;
   }
   if (!window.deepwrite) {
-    uiMessage.error("桌面文件服务当前不可用。");
+    const message = "桌面文件服务当前不可用。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
     return;
   }
   const library = findCatalogLibrary(target.domain, target.libraryId);
@@ -6591,7 +6929,10 @@ function findPendingDraftSectionCreationForProvisional(
     Boolean(
       proposal.draftSectionCreationTarget?.sections.some(
         (section) => section.provisionalSectionId === provisionalSectionId
-      ) && proposal.status === "pending"
+      ) &&
+        (proposal.status === "pending" ||
+          proposal.status === "accepting" ||
+          proposal.status === "error")
     )
   );
 }
@@ -6604,7 +6945,13 @@ function remapProvisionalExpertSectionFileProposals(
 ): void {
   for (const proposal of conversation.listEditProposals(runId)) {
     if (!proposal.provisionalExpertSection) continue;
-    if (proposal.status !== "pending" && proposal.status !== "error") continue;
+    if (
+      proposal.status !== "pending" &&
+      proposal.status !== "accepting" &&
+      proposal.status !== "error"
+    ) {
+      continue;
+    }
     for (const [provisionalSectionId, realSectionId] of mapping) {
       const provisionalBodyId = catalogDraftBodyDocumentId(provisionalSectionId);
       const provisionalStateId =
@@ -6628,13 +6975,83 @@ function remapProvisionalExpertSectionFileProposals(
         documentId: realDocument.id,
         title: realDocument.title,
         provisionalExpertSection: false,
-        baseRevision: createShortWorkspaceContentRevision(realDocument.content),
+        baseRevision: proposal.predecessorProposalId
+          ? proposal.baseRevision
+          : createShortWorkspaceContentRevision(realDocument.content),
         statusMessage:
           proposal.statusMessage ??
           "已关联到新创建的章节文件，接受后将写入正文。"
       });
       break;
     }
+  }
+}
+
+function restoreAcceptedDraftSectionCreationMappings(
+  conversation: AgentConversationController
+): void {
+  for (const message of conversation.messages.value) {
+    for (const proposal of message.editProposals ?? []) {
+      if (
+        proposal.status !== "accepted" ||
+        !proposal.draftSectionCreationTarget
+      ) {
+        continue;
+      }
+      const mapping = new Map<string, string>();
+      for (const section of proposal.draftSectionCreationTarget.sections) {
+        if (!section.realSectionId) continue;
+        mapping.set(section.provisionalSectionId, section.realSectionId);
+        rememberProvisionalExpertSectionMapping(
+          proposal.runId,
+          proposal.workspaceId,
+          section.provisionalSectionId,
+          section.realSectionId
+        );
+      }
+      if (mapping.size === 0) continue;
+      const acceptedDirectoryRevision =
+        proposal.draftSectionCreationTarget.acceptedDirectoryRevision;
+      if (acceptedDirectoryRevision) {
+        rememberAcceptedDraftSectionCreation(
+          proposal,
+          acceptedDirectoryRevision
+        );
+      }
+      remapProvisionalExpertSectionFileProposals(
+        conversation,
+        proposal.runId,
+        proposal.workspaceId,
+        mapping
+      );
+    }
+  }
+}
+
+function pauseDependentProvisionalFileProposals(
+  conversation: AgentConversationController,
+  runId: string,
+  provisionalSectionIds: readonly string[],
+  message: string
+): void {
+  const provisionalSet = new Set(provisionalSectionIds);
+  for (const proposal of conversation.listEditProposals(runId)) {
+    if (!proposal.provisionalExpertSection) continue;
+    const parsed = parseCatalogDraftDocumentId(proposal.documentId);
+    if (
+      !parsed ||
+      !provisionalSet.has(parsed.sectionId) ||
+      (proposal.status !== "pending" &&
+        proposal.status !== "accepting" &&
+        proposal.status !== "error")
+    ) {
+      continue;
+    }
+    removeQueuedAgentEdit(conversation, runId, proposal.id);
+    conversation.updateEditProposal(runId, proposal.id, {
+      status: "pending",
+      statusMessage: message
+    });
   }
 }
 
@@ -6647,13 +7064,20 @@ function conflictDependentProvisionalFileProposals(
   const provisionalSet = new Set(provisionalSectionIds);
   for (const proposal of conversation.listEditProposals(runId)) {
     if (!proposal.provisionalExpertSection) continue;
-    if (proposal.status !== "pending" && proposal.status !== "error") continue;
+    if (
+      proposal.status !== "pending" &&
+      proposal.status !== "accepting" &&
+      proposal.status !== "error"
+    ) {
+      continue;
+    }
     const matches = [...provisionalSet].some((sectionId) => {
       const bodyId = catalogDraftBodyDocumentId(sectionId);
       const stateId = catalogDraftCharacterStateDocumentId(sectionId);
       return proposal.documentId === bodyId || proposal.documentId === stateId;
     });
     if (!matches) continue;
+    removeQueuedAgentEdit(conversation, runId, proposal.id);
     conversation.updateEditProposal(runId, proposal.id, {
       status: "conflict",
       statusMessage: message,
@@ -6674,18 +7098,305 @@ function autoApproveEditPriority(
   return 2;
 }
 
+function agentEditQueueKey(
+  sessionId: string,
+  runId: string,
+  proposalId: string
+): string {
+  return `${sessionId}\u0000${runId}\u0000${proposalId}`;
+}
+
+function nextAgentEditDecisionToken(proposal: AgentEditProposal): string {
+  agentEditDecisionSequence += 1;
+  return `${proposal.runId}:${proposal.id}:${proposal.generation ?? 1}:${agentEditDecisionSequence}`;
+}
+
+function draftSectionCreationOperationId(
+  proposal: AgentEditProposal
+): string {
+  return [
+    "agent-draft-sections",
+    proposal.proposedRevision,
+    proposal.runId.slice(-120),
+    proposal.id.slice(-240)
+  ].join(":");
+}
+
+function latestProposalForLane(
+  conversation: AgentConversationController,
+  runId: string,
+  laneId: string
+): AgentEditProposal | undefined {
+  return latestAgentEditProposalInLane(
+    conversation.listEditProposals(runId),
+    laneId
+  );
+}
+
+function expectedLaneDurableRevision(
+  conversation: AgentConversationController,
+  runId: string,
+  existing: AgentEditProposal | undefined,
+  currentText: string
+): string {
+  let cursor = existing;
+  const seen = new Set<string>();
+  while (
+    cursor?.predecessorProposalId &&
+    cursor.status !== "accepted" &&
+    !seen.has(cursor.id)
+  ) {
+    seen.add(cursor.id);
+    const predecessor = conversation.getEditProposal(
+      runId,
+      cursor.predecessorProposalId
+    );
+    if (!predecessor || predecessor.status === "accepted") break;
+    cursor = predecessor;
+  }
+  return expectedMutationDurableRevision(cursor, currentText);
+}
+
+function laneDurableRevisionMatches(
+  conversation: AgentConversationController,
+  runId: string,
+  existing: AgentEditProposal | undefined,
+  currentText: string,
+  currentRevision: string
+): boolean {
+  if (!existing) {
+    return (
+      currentRevision === createShortWorkspaceContentRevision(currentText)
+    );
+  }
+  const compatible = new Set<string>();
+  let cursor: AgentEditProposal | undefined = existing;
+  const seen = new Set<string>();
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id);
+    compatible.add(cursor.baseRevision);
+    if (
+      cursor.status === "accepting" ||
+      cursor.status === "accepted"
+    ) {
+      compatible.add(cursor.proposedRevision);
+    }
+    cursor = cursor.predecessorProposalId
+      ? conversation.getEditProposal(runId, cursor.predecessorProposalId)
+      : undefined;
+  }
+  compatible.add(
+    expectedLaneDurableRevision(
+      conversation,
+      runId,
+      existing,
+      currentText
+    )
+  );
+  return compatible.has(currentRevision);
+}
+
+function blockedAgentEditLaneMessage(
+  proposal: AgentEditProposal | undefined
+): string | undefined {
+  if (proposal?.status === "rejected") {
+    return "此前版本已被拒绝；为避免把被拒内容随后续全文重新带回，本次变更已阻断。";
+  }
+  if (proposal?.status === "conflict") {
+    return "此前版本存在冲突，本次后续变更已阻断，未覆盖当前文稿。";
+  }
+  return undefined;
+}
+
+function isShortOrScriptAgentEdit(proposal: AgentEditProposal): boolean {
+  if (proposal.libraryTarget) return false;
+  const book = catalogBook(proposal.workspaceId);
+  return book?.bookType === "short" || book?.bookType === "script";
+}
+
+function canReviewAgentEditDuringRun(proposal: AgentEditProposal): boolean {
+  return (
+    proposal.stageId === "draft" &&
+    isShortOrScriptAgentEdit(proposal)
+  );
+}
+
+function removeQueuedAgentEdit(
+  conversation: AgentConversationController,
+  runId: string,
+  proposalId: string
+): void {
+  for (const [key, queued] of queuedAgentEdits) {
+    if (
+      queued.conversation === conversation &&
+      queued.runId === runId &&
+      queued.proposalId === proposalId
+    ) {
+      queuedAgentEdits.delete(key);
+    }
+  }
+}
+
+function blockLaterAgentEditGenerations(
+  conversation: AgentConversationController,
+  rejected: AgentEditProposal
+): void {
+  const laneId = rejected.laneId ?? rejected.id;
+  const generation = rejected.generation ?? 1;
+  for (const candidate of conversation.listEditProposals(rejected.runId)) {
+    if (
+      candidate.id === rejected.id ||
+      (candidate.laneId ?? candidate.id) !== laneId ||
+      (candidate.generation ?? 1) <= generation ||
+      (candidate.status !== "pending" && candidate.status !== "error")
+    ) {
+      continue;
+    }
+    removeQueuedAgentEdit(
+      conversation,
+      candidate.runId,
+      candidate.id
+    );
+    conversation.updateEditProposal(candidate.runId, candidate.id, {
+      status: "conflict",
+      proposedText: undefined,
+      statusMessage:
+        "此前正文版本已被拒绝；该版本继承了被拒内容，因此未写入本地文件。"
+    });
+  }
+}
+
+function queueAgentEdit(
+  conversation: AgentConversationController,
+  sessionId: string,
+  runId: string,
+  proposalId: string,
+  automatic: boolean,
+  scheduleImmediately: boolean
+): void {
+  const proposal = conversation.getEditProposal(runId, proposalId);
+  if (
+    !proposal ||
+    (proposal.status !== "pending" && proposal.status !== "error")
+  ) {
+    return;
+  }
+  const key = agentEditQueueKey(sessionId, runId, proposalId);
+  const existingQueued = queuedAgentEdits.get(key);
+  if (
+    existingQueued?.expectedProposedRevision === proposal.proposedRevision
+  ) {
+    if (scheduleImmediately) {
+      scheduleQueuedAgentEdits(
+        (queued) => queued === queuedAgentEdits.get(key)
+      );
+    }
+    return;
+  }
+  const decisionToken = nextAgentEditDecisionToken(proposal);
+  const staged = stageAgentEditProposalRevision(
+    createAgentEditProposalRevisionLane<AgentEditProposal>({
+      targetKey: proposal.laneId ?? proposal.id,
+      durableRevision: proposal.baseRevision,
+      overlayRevision: proposal.sourceBaseRevision ?? proposal.baseRevision,
+      generation: Math.max(0, (proposal.generation ?? 1) - 1)
+    }),
+    {
+      approvalMode:
+        proposal.approvalMode ??
+        (automatic ? "auto-approve" : "request-approval"),
+      sourceBaseRevision:
+        proposal.sourceBaseRevision ?? proposal.baseRevision,
+      proposedRevision: proposal.proposedRevision,
+      proposal
+    }
+  );
+  if (staged.status !== "staged") {
+    return;
+  }
+  const started = beginAgentEditProposalCommit(staged.lane, {
+    generation: proposal.generation ?? 1,
+    token: decisionToken
+  });
+  if (started.status !== "started") {
+    return;
+  }
+  if (scheduleImmediately && !automatic) {
+    conversation.updateEditProposal(runId, proposalId, {
+      status: "accepting",
+      decisionToken,
+      statusMessage: automatic
+        ? "已进入实时自动保存队列…"
+        : "已批准，正在等待本作品的保存队列…"
+    });
+  }
+  queuedAgentEdits.set(key, {
+    conversation,
+    sessionId,
+    runId,
+    proposalId,
+    workspaceId: proposal.workspaceId,
+    automatic,
+    expectedProposedRevision: proposal.proposedRevision,
+    decisionToken,
+    snapshot: started.snapshot
+  });
+  if (scheduleImmediately) {
+    scheduleQueuedAgentEdits((queued) => queued === queuedAgentEdits.get(key));
+  }
+}
+
+function resumeRecoveredAutomaticAgentEdits(
+  conversationsToScan: readonly AgentConversationController[] =
+    allConversations()
+): void {
+  if (!catalogSnapshot.value) return;
+  for (const conversation of conversationsToScan) {
+    restoreAcceptedDraftSectionCreationMappings(conversation);
+  }
+  for (const conversation of conversationsToScan) {
+    for (const message of conversation.messages.value) {
+      for (const proposal of message.editProposals ?? []) {
+        if (
+          proposal.approvalMode !== "auto-approve" ||
+          proposal.status !== "pending" ||
+          !isShortOrScriptAgentEdit(proposal) ||
+          (conversation.isBusy.value &&
+            !canReviewAgentEditDuringRun(proposal))
+        ) {
+          continue;
+        }
+        queueAgentEdit(
+          conversation,
+          conversation.sessionId.value,
+          proposal.runId,
+          proposal.id,
+          true,
+          true
+        );
+      }
+    }
+  }
+}
+
 function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
   if (!rememberWorkspaceMutationEvent(event.id)) return;
   const sourceConversation = allConversations().find((conversation) =>
     conversation.acceptsRunEvent(event.payload.sessionId, event.payload.runId)
   );
   if (!sourceConversation) return;
+  const runApprovalMode =
+    sourceConversation.approvalModeForRun(
+      event.payload.sessionId,
+      event.payload.runId
+    ) ?? "request-approval";
 
   const mutationTarget = event.payload.mutationTarget;
   if (mutationTarget?.kind === "expert-draft-section-creation") {
     const directory = catalogProjection.value?.draftDirectories.find(
       (candidate) => candidate.workspaceId === event.payload.workspaceId
     );
+    const book = catalogBook(event.payload.workspaceId);
     const currentRevision = currentExpertDraftDirectoryRevision(
       event.payload.workspaceId
     );
@@ -6700,7 +7411,7 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
         )
       )
     );
-    if (!directory || currentRevision !== expectedDirectoryRevision) {
+    if (!directory || !book || currentRevision !== expectedDirectoryRevision) {
       const message =
         "正文目录版本已变化，本次章节创建未进入审阅，也没有改动现有文件。";
       sourceConversation.markToolConflict(
@@ -6729,6 +7440,10 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     const diff = buildAgentTextDiff("", proposedText);
     const proposal: AgentEditProposal = {
       id: proposalId,
+      laneId: proposalId,
+      generation: 1,
+      approvalMode: runApprovalMode,
+      sourceBaseRevision: event.payload.baseRevision,
       runId: event.payload.runId,
       workspaceId: event.payload.workspaceId,
       stageId: "draft",
@@ -6750,23 +7465,22 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
         sections: mutationTarget.sections.map((section) => ({ ...section })),
         ...(mutationTarget.afterSectionId
           ? { afterSectionId: mutationTarget.afterSectionId }
-          : {})
+          : {}),
+        ...(book.projectRevision === undefined
+          ? {}
+          : { baseProjectRevision: book.projectRevision })
       }
     };
     sourceConversation.upsertEditProposal(event.payload.runId, proposal);
-    if (
-      sourceConversation.approvalModeForRun(
+    if (runApprovalMode === "auto-approve") {
+      queueAgentEdit(
+        sourceConversation,
         event.payload.sessionId,
-        event.payload.runId
-      ) === "auto-approve"
-    ) {
-      const queueKey = `${event.payload.sessionId}\u0000${event.payload.runId}\u0000${proposalId}`;
-      queuedAutoAgentEdits.set(queueKey, {
-        conversation: sourceConversation,
-        sessionId: event.payload.sessionId,
-        runId: event.payload.runId,
-        proposalId
-      });
+        event.payload.runId,
+        proposalId,
+        true,
+        true
+      );
     }
     return;
   }
@@ -6829,17 +7543,27 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
         return;
       }
 
-      const proposalId = agentEditProposalId(
+      const laneId = agentEditProposalId(
         event.payload.runId,
         event.payload.workspaceId,
         event.payload.stageId,
         mutationTarget.documentId
       );
-      const existing = sourceConversation.getEditProposal(
+      const existing = latestProposalForLane(
+        sourceConversation,
         event.payload.runId,
-        proposalId
+        laneId
       );
       if (existing?.toolCallIds.includes(event.payload.toolCallId)) {
+        return;
+      }
+      const blockedMessage = blockedAgentEditLaneMessage(existing);
+      if (blockedMessage) {
+        sourceConversation.markToolConflict(
+          event.payload.runId,
+          event.payload.toolCallId,
+          blockedMessage
+        );
         return;
       }
       const currentRevision = createShortWorkspaceContentRevision(realTarget.content);
@@ -6849,12 +7573,21 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
       );
       if (
         event.payload.baseRevision !== expectedBaseRevision ||
-        (existing !== undefined && currentRevision !== existing.baseRevision)
+        !laneDurableRevisionMatches(
+          sourceConversation,
+          event.payload.runId,
+          existing,
+          realTarget.content,
+          currentRevision
+        )
       ) {
         const message =
           "文稿版本已变化，本次智能体变更未进入审阅，也没有覆盖你的最新编辑。";
-        if (existing) {
-          sourceConversation.updateEditProposal(event.payload.runId, proposalId, {
+        if (
+          existing &&
+          (existing.status === "pending" || existing.status === "error")
+        ) {
+          sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
             status: "conflict",
             statusMessage: message,
             updatedAt: event.timestamp
@@ -6877,7 +7610,7 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
       );
       if ("error" in resolvedMutation) {
         if (existing) {
-          sourceConversation.updateEditProposal(event.payload.runId, proposalId, {
+          sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
             status: "conflict",
             statusMessage: resolvedMutation.error,
             updatedAt: event.timestamp
@@ -6894,10 +7627,22 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
       const proposedText = resolvedMutation.text;
       const proposedRevision = createShortWorkspaceContentRevision(proposedText);
       const diff = buildAgentTextDiff(realTarget.content, proposedText);
+      const identity = resolveAgentEditProposalGeneration(laneId, existing);
+      const applyBaseRevision = identity.coalescesExisting
+        ? existing!.baseRevision
+        : existing?.proposedRevision ?? event.payload.baseRevision;
       const noChanges =
-        proposedRevision === (existing?.baseRevision ?? currentRevision);
+        proposedRevision === currentRevision &&
+        (!existing || existing.status === "accepted" || identity.coalescesExisting);
       const proposal: AgentEditProposal = {
-        id: proposalId,
+        id: identity.id,
+        laneId,
+        generation: identity.generation,
+        approvalMode: runApprovalMode,
+        sourceBaseRevision: event.payload.baseRevision,
+        ...(identity.predecessorProposalId
+          ? { predecessorProposalId: identity.predecessorProposalId }
+          : {}),
         runId: event.payload.runId,
         workspaceId: event.payload.workspaceId,
         stageId: event.payload.stageId,
@@ -6905,12 +7650,12 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
         title: realTarget.title,
         summary: event.payload.summary,
         status: noChanges ? "accepted" : "pending",
-        baseRevision: existing?.baseRevision ?? event.payload.baseRevision,
+        baseRevision: applyBaseRevision,
         proposedRevision,
         ...(noChanges ? {} : { proposedText }),
         toolCallIds: [
           ...new Set([
-            ...(existing?.toolCallIds ?? []),
+            ...(identity.coalescesExisting ? existing?.toolCallIds ?? [] : []),
             event.payload.toolCallId
           ])
         ],
@@ -6921,25 +7666,23 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
         ...(noChanges
           ? { statusMessage: "文本没有实际变化，无需保存。" }
           : {}),
-        createdAt: existing?.createdAt ?? event.timestamp,
+        createdAt:
+          identity.coalescesExisting && existing
+            ? existing.createdAt
+            : event.timestamp,
         updatedAt: event.timestamp,
         provisionalExpertSection: false
       };
       sourceConversation.upsertEditProposal(event.payload.runId, proposal);
-      if (
-        !noChanges &&
-        sourceConversation.approvalModeForRun(
+      if (!noChanges && runApprovalMode === "auto-approve") {
+        queueAgentEdit(
+          sourceConversation,
           event.payload.sessionId,
-          event.payload.runId
-        ) === "auto-approve"
-      ) {
-        const queueKey = `${event.payload.sessionId}\u0000${event.payload.runId}\u0000${proposalId}`;
-        queuedAutoAgentEdits.set(queueKey, {
-          conversation: sourceConversation,
-          sessionId: event.payload.sessionId,
-          runId: event.payload.runId,
-          proposalId
-        });
+          event.payload.runId,
+          proposal.id,
+          true,
+          true
+        );
       }
       return;
     }
@@ -6955,17 +7698,27 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
       uiMessage.warning(message);
       return;
     }
-    const proposalId = agentEditProposalId(
+    const laneId = agentEditProposalId(
       event.payload.runId,
       event.payload.workspaceId,
       event.payload.stageId,
       mutationTarget.documentId
     );
-    const existing = sourceConversation.getEditProposal(
+    const existing = latestProposalForLane(
+      sourceConversation,
       event.payload.runId,
-      proposalId
+      laneId
     );
     if (existing?.toolCallIds.includes(event.payload.toolCallId)) {
+      return;
+    }
+    const blockedMessage = blockedAgentEditLaneMessage(existing);
+    if (blockedMessage) {
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        blockedMessage
+      );
       return;
     }
     const baseText = existing?.proposedText ?? "";
@@ -6973,8 +7726,11 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     if (event.payload.baseRevision !== expectedBaseRevision) {
       const message =
         "待创建章节的文稿版本已变化，本次智能体变更未进入审阅。";
-      if (existing) {
-        sourceConversation.updateEditProposal(event.payload.runId, proposalId, {
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "error")
+      ) {
+        sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
           status: "conflict",
           statusMessage: message,
           updatedAt: event.timestamp
@@ -6991,7 +7747,7 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     const resolvedMutation = resolveAgentEditorMutationText(baseText, event.payload);
     if ("error" in resolvedMutation) {
       if (existing) {
-        sourceConversation.updateEditProposal(event.payload.runId, proposalId, {
+        sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
           status: "conflict",
           statusMessage: resolvedMutation.error,
           updatedAt: event.timestamp
@@ -7008,6 +7764,13 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     const proposedText = resolvedMutation.text;
     const proposedRevision = createShortWorkspaceContentRevision(proposedText);
     const diff = buildAgentTextDiff(baseText, proposedText);
+    const identity = resolveAgentEditProposalGeneration(laneId, existing);
+    const applyBaseRevision = identity.coalescesExisting
+      ? existing!.baseRevision
+      : existing?.proposedRevision ?? event.payload.baseRevision;
+    const noChanges =
+      proposedRevision === createShortWorkspaceContentRevision("") &&
+      (!existing || existing.status === "accepted" || identity.coalescesExisting);
     const sectionTitle =
       creation.draftSectionCreationTarget?.sections.find(
         (section) => section.provisionalSectionId === mutationTarget.sectionId
@@ -7017,42 +7780,52 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
         ? `${sectionTitle} · 人物状态`
         : sectionTitle;
     const proposal: AgentEditProposal = {
-      id: proposalId,
+      id: identity.id,
+      laneId,
+      generation: identity.generation,
+      approvalMode: runApprovalMode,
+      sourceBaseRevision: event.payload.baseRevision,
+      ...(identity.predecessorProposalId
+        ? { predecessorProposalId: identity.predecessorProposalId }
+        : {}),
       runId: event.payload.runId,
       workspaceId: event.payload.workspaceId,
       stageId: event.payload.stageId,
       documentId: mutationTarget.documentId,
       title,
       summary: event.payload.summary,
-      status: "pending",
-      baseRevision: existing?.baseRevision ?? event.payload.baseRevision,
+      status: noChanges ? "accepted" : "pending",
+      baseRevision: applyBaseRevision,
       proposedRevision,
-      proposedText,
+      ...(noChanges ? {} : { proposedText }),
       toolCallIds: [
-        ...new Set([...(existing?.toolCallIds ?? []), event.payload.toolCallId])
+        ...new Set([
+          ...(identity.coalescesExisting ? existing?.toolCallIds ?? [] : []),
+          event.payload.toolCallId
+        ])
       ],
       additions: diff.additions,
       deletions: diff.deletions,
       hunks: diff.hunks,
       ...(diff.truncated ? { truncated: true } : {}),
-      createdAt: existing?.createdAt ?? event.timestamp,
+      ...(noChanges ? { statusMessage: "文本没有实际变化，无需保存。" } : {}),
+      createdAt:
+        identity.coalescesExisting && existing
+          ? existing.createdAt
+          : event.timestamp,
       updatedAt: event.timestamp,
       provisionalExpertSection: true
     };
     sourceConversation.upsertEditProposal(event.payload.runId, proposal);
-    if (
-      sourceConversation.approvalModeForRun(
+    if (!noChanges && runApprovalMode === "auto-approve") {
+      queueAgentEdit(
+        sourceConversation,
         event.payload.sessionId,
-        event.payload.runId
-      ) === "auto-approve"
-    ) {
-      const queueKey = `${event.payload.sessionId}\u0000${event.payload.runId}\u0000${proposalId}`;
-      queuedAutoAgentEdits.set(queueKey, {
-        conversation: sourceConversation,
-        sessionId: event.payload.sessionId,
-        runId: event.payload.runId,
-        proposalId
-      });
+        event.payload.runId,
+        proposal.id,
+        true,
+        true
+      );
     }
     return;
   }
@@ -7068,17 +7841,27 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     return;
   }
 
-  const proposalId = agentEditProposalId(
+  const laneId = agentEditProposalId(
     event.payload.runId,
     event.payload.workspaceId,
     event.payload.stageId,
     target.id
   );
-  const existing = sourceConversation.getEditProposal(
+  const existing = latestProposalForLane(
+    sourceConversation,
     event.payload.runId,
-    proposalId
+    laneId
   );
   if (existing?.toolCallIds.includes(event.payload.toolCallId)) {
+    return;
+  }
+  const blockedMessage = blockedAgentEditLaneMessage(existing);
+  if (blockedMessage) {
+    sourceConversation.markToolConflict(
+      event.payload.runId,
+      event.payload.toolCallId,
+      blockedMessage
+    );
     return;
   }
   const currentRevision = createShortWorkspaceContentRevision(target.content);
@@ -7088,12 +7871,21 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
   );
   if (
     event.payload.baseRevision !== expectedBaseRevision ||
-    (existing !== undefined && currentRevision !== existing.baseRevision)
+    !laneDurableRevisionMatches(
+      sourceConversation,
+      event.payload.runId,
+      existing,
+      target.content,
+      currentRevision
+    )
   ) {
     const message =
       "文稿版本已变化，本次智能体变更未进入审阅，也没有覆盖你的最新编辑。";
-    if (existing) {
-      sourceConversation.updateEditProposal(event.payload.runId, proposalId, {
+    if (
+      existing &&
+      (existing.status === "pending" || existing.status === "error")
+    ) {
+      sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
         status: "conflict",
         statusMessage: message,
         updatedAt: event.timestamp
@@ -7115,8 +7907,11 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     event.payload
   );
   if ("error" in resolvedMutation) {
-    if (existing) {
-      sourceConversation.updateEditProposal(event.payload.runId, proposalId, {
+    if (
+      existing &&
+      (existing.status === "pending" || existing.status === "error")
+    ) {
+      sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
         status: "conflict",
         statusMessage: resolvedMutation.error,
         updatedAt: event.timestamp
@@ -7134,9 +7929,22 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
   const proposedRevision = createShortWorkspaceContentRevision(proposedText);
 
   const diff = buildAgentTextDiff(target.content, proposedText);
-  const noChanges = proposedRevision === (existing?.baseRevision ?? currentRevision);
+  const identity = resolveAgentEditProposalGeneration(laneId, existing);
+  const applyBaseRevision = identity.coalescesExisting
+    ? existing!.baseRevision
+    : existing?.proposedRevision ?? event.payload.baseRevision;
+  const noChanges =
+    proposedRevision === currentRevision &&
+    (!existing || existing.status === "accepted" || identity.coalescesExisting);
   const proposal: AgentEditProposal = {
-    id: proposalId,
+    id: identity.id,
+    laneId,
+    generation: identity.generation,
+    approvalMode: runApprovalMode,
+    sourceBaseRevision: event.payload.baseRevision,
+    ...(identity.predecessorProposalId
+      ? { predecessorProposalId: identity.predecessorProposalId }
+      : {}),
     runId: event.payload.runId,
     workspaceId: event.payload.workspaceId,
     stageId: event.payload.stageId,
@@ -7144,35 +7952,36 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     title: target.title,
     summary: event.payload.summary,
     status: noChanges ? "accepted" : "pending",
-    baseRevision: existing?.baseRevision ?? event.payload.baseRevision,
+    baseRevision: applyBaseRevision,
     proposedRevision,
     ...(noChanges ? {} : { proposedText }),
     toolCallIds: [
-      ...new Set([...(existing?.toolCallIds ?? []), event.payload.toolCallId])
+      ...new Set([
+        ...(identity.coalescesExisting ? existing?.toolCallIds ?? [] : []),
+        event.payload.toolCallId
+      ])
     ],
     additions: diff.additions,
     deletions: diff.deletions,
     hunks: diff.hunks,
     ...(diff.truncated ? { truncated: true } : {}),
     ...(noChanges ? { statusMessage: "文本没有实际变化，无需保存。" } : {}),
-    createdAt: existing?.createdAt ?? event.timestamp,
+    createdAt:
+      identity.coalescesExisting && existing
+        ? existing.createdAt
+        : event.timestamp,
     updatedAt: event.timestamp
   };
   sourceConversation.upsertEditProposal(event.payload.runId, proposal);
-  if (
-    !noChanges &&
-    sourceConversation.approvalModeForRun(
+  if (!noChanges && runApprovalMode === "auto-approve") {
+    queueAgentEdit(
+      sourceConversation,
       event.payload.sessionId,
-      event.payload.runId
-    ) === "auto-approve"
-  ) {
-    const queueKey = `${event.payload.sessionId}\u0000${event.payload.runId}\u0000${proposalId}`;
-    queuedAutoAgentEdits.set(queueKey, {
-      conversation: sourceConversation,
-      sessionId: event.payload.sessionId,
-      runId: event.payload.runId,
-      proposalId
-    });
+      event.payload.runId,
+      proposal.id,
+      true,
+      event.payload.stageId === "draft"
+    );
   }
 }
 
@@ -7182,6 +7991,11 @@ function stageLibraryEditProposal(event: LibraryEditorMutationEvent): void {
     conversation.acceptsRunEvent(event.payload.sessionId, event.payload.runId)
   );
   if (!sourceConversation) return;
+  const runApprovalMode =
+    sourceConversation.approvalModeForRun(
+      event.payload.sessionId,
+      event.payload.runId
+    ) ?? "request-approval";
 
   const library = findCatalogLibrary(
     event.payload.domain,
@@ -7271,6 +8085,7 @@ function stageLibraryEditProposal(event: LibraryEditorMutationEvent): void {
     event.payload.title === target?.title;
   const proposal: AgentEditProposal = {
     id: proposalId,
+    approvalMode: runApprovalMode,
     runId: event.payload.runId,
     workspaceId: scopeId,
     stageId: "library",
@@ -7305,20 +8120,15 @@ function stageLibraryEditProposal(event: LibraryEditorMutationEvent): void {
     }
   };
   sourceConversation.upsertEditProposal(event.payload.runId, proposal);
-  if (
-    !noChanges &&
-    sourceConversation.approvalModeForRun(
+  if (!noChanges && runApprovalMode === "auto-approve") {
+    queueAgentEdit(
+      sourceConversation,
       event.payload.sessionId,
-      event.payload.runId
-    ) === "auto-approve"
-  ) {
-    const queueKey = `${event.payload.sessionId}\u0000${event.payload.runId}\u0000${proposalId}`;
-    queuedAutoAgentEdits.set(queueKey, {
-      conversation: sourceConversation,
-      sessionId: event.payload.sessionId,
-      runId: event.payload.runId,
-      proposalId
-    });
+      event.payload.runId,
+      proposalId,
+      true,
+      false
+    );
   }
 }
 
@@ -7326,10 +8136,11 @@ async function acceptDraftSectionCreationProposal(
   conversation: AgentConversationController,
   request: AgentEditReviewRequest,
   proposal: AgentEditProposal,
-  automatic: boolean
+  automatic: boolean,
+  reserved = false
 ): Promise<void> {
   if (
-    proposal.status === "accepting" ||
+    (proposal.status === "accepting" && !reserved) ||
     proposal.status === "accepted" ||
     proposal.status === "rejected" ||
     proposal.status === "conflict"
@@ -7347,7 +8158,12 @@ async function acceptDraftSectionCreationProposal(
     return;
   }
   if (!window.deepwrite) {
-    uiMessage.error("桌面文件服务当前不可用。");
+    const message = "桌面文件服务当前不可用。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
     return;
   }
   const directory = catalogProjection.value?.draftDirectories.find(
@@ -7363,10 +8179,18 @@ async function acceptDraftSectionCreationProposal(
     uiMessage.warning(message);
     return;
   }
-  if (
-    currentExpertDraftDirectoryRevision(proposal.workspaceId) !==
-    expectedDraftSectionCreationBaseRevision(proposal)
-  ) {
+  const currentDirectoryRevision = currentExpertDraftDirectoryRevision(
+    proposal.workspaceId
+  );
+  const expectedDirectoryRevision =
+    expectedDraftSectionCreationBaseRevision(proposal);
+  const commitPlan = resolveDraftSectionCreationCommitPlan({
+    currentDirectoryRevision,
+    expectedDirectoryRevision,
+    capturedBaseProjectRevision: target.baseProjectRevision,
+    currentProjectRevision: book.projectRevision
+  });
+  if (commitPlan.mode === "conflict") {
     const message = "正文目录已发生变化，未创建章节，请基于最新目录重新生成。";
     conversation.updateEditProposal(request.runId, request.proposalId, {
       status: "conflict",
@@ -7375,7 +8199,12 @@ async function acceptDraftSectionCreationProposal(
     uiMessage.warning(message);
     return;
   }
-  if (directory.sections.length + target.sections.length > 100) {
+  const requiresIdempotentRecoveryProbe =
+    commitPlan.mode === "idempotent-recovery";
+  if (
+    !requiresIdempotentRecoveryProbe &&
+    directory.sections.length + target.sections.length > 100
+  ) {
     const message = "创建后将超过正文最多 100 个章节的限制。";
     conversation.updateEditProposal(request.runId, request.proposalId, {
       status: "conflict",
@@ -7385,9 +8214,11 @@ async function acceptDraftSectionCreationProposal(
     return;
   }
   const existingTitles = new Set(directory.sections.map((section) => section.title));
-  const duplicateTitle = target.sections.find((section) =>
-    existingTitles.has(section.title)
-  )?.title;
+  const duplicateTitle = requiresIdempotentRecoveryProbe
+    ? undefined
+    : target.sections.find((section) =>
+        existingTitles.has(section.title)
+      )?.title;
   if (duplicateTitle) {
     const message = `正文目录已存在同名章节“${duplicateTitle}”，未重复创建。`;
     conversation.updateEditProposal(request.runId, request.proposalId, {
@@ -7405,6 +8236,7 @@ async function acceptDraftSectionCreationProposal(
       )
     : undefined;
   if (
+    !requiresIdempotentRecoveryProbe &&
     resolvedAfterSectionId &&
     !directory.sections.some((section) => section.id === resolvedAfterSectionId)
   ) {
@@ -7417,7 +8249,14 @@ async function acceptDraftSectionCreationProposal(
     return;
   }
   if (acceptingAgentEditWorkspaceIds.value.has(proposal.workspaceId)) {
-    uiMessage.info("同一作品正在保存其他修改，请稍候再接受");
+    const message = automatic
+      ? "检测到作品正在保存其他内容，实时自动建章已暂停，请稍后人工重试。"
+      : "同一作品正在保存其他修改，请稍候再接受";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: automatic ? "error" : "pending",
+      statusMessage: message
+    });
+    uiMessage.info(message);
     return;
   }
 
@@ -7429,32 +8268,35 @@ async function acceptDraftSectionCreationProposal(
   });
   setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
   let createdCount = 0;
-  let afterSectionId =
-    resolvedAfterSectionId ?? directory.sections.at(-1)?.id;
   let lastCreatedSectionId: string | undefined;
   const createdMapping = new Map<string, string>();
   try {
-    for (const section of target.sections) {
-      const created = await window.deepwrite.catalog.createDraftSection({
-        bookId: proposal.workspaceId,
-        ...(afterSectionId ? { afterSectionId } : {}),
+    const created = await window.deepwrite.catalog.createDraftSections({
+      operationId: draftSectionCreationOperationId(proposal),
+      bookId: proposal.workspaceId,
+      ...(resolvedAfterSectionId
+        ? { afterSectionId: resolvedAfterSectionId }
+        : {}),
+      ...(commitPlan.baseProjectRevision === undefined
+        ? {}
+        : { baseProjectRevision: commitPlan.baseProjectRevision }),
+      sections: target.sections.map((section) => ({
+        clientSectionId: section.provisionalSectionId,
         title: section.title,
         ...(section.wordCountRequirement
           ? { wordCountRequirement: section.wordCountRequirement }
-          : {}),
-        ...(book.projectRevision === undefined
-          ? {}
-          : { baseProjectRevision: book.projectRevision + createdCount })
-      });
-      createdCount += 1;
-      afterSectionId = created.id;
-      lastCreatedSectionId = created.id;
-      createdMapping.set(section.provisionalSectionId, created.id);
+          : {})
+      }))
+    });
+    createdCount = created.sections.length;
+    for (const result of created.sections) {
+      lastCreatedSectionId = result.section.id;
+      createdMapping.set(result.clientSectionId, result.section.id);
       rememberProvisionalExpertSectionMapping(
         request.runId,
         proposal.workspaceId,
-        section.provisionalSectionId,
-        created.id
+        result.clientSectionId,
+        result.section.id
       );
     }
     applyCatalogSnapshot(await window.deepwrite.catalog.snapshot());
@@ -7474,7 +8316,7 @@ async function acceptDraftSectionCreationProposal(
     const refreshedDirectory = catalogProjection.value?.draftDirectories.find(
       (candidate) => candidate.workspaceId === proposal.workspaceId
     );
-    if (refreshedDirectory) {
+    if (refreshedDirectory && !automatic) {
       selectedResourceId.value = refreshedDirectory.id;
       activeCreationResourceId.value = refreshedDirectory.id;
       if (lastCreatedSectionId) {
@@ -7491,54 +8333,52 @@ async function acceptDraftSectionCreationProposal(
     conversation.updateEditProposal(request.runId, request.proposalId, {
       status: "accepted",
       proposedText: undefined,
+      draftSectionCreationTarget: {
+        ...target,
+        acceptedDirectoryRevision: savedDirectoryRevision,
+        sections: target.sections.map((section) => ({
+          ...section,
+          ...(createdMapping.get(section.provisionalSectionId)
+            ? {
+                realSectionId: createdMapping.get(
+                  section.provisionalSectionId
+                )!
+              }
+            : {})
+        }))
+      },
       statusMessage: automatic
         ? `已自动批准并创建 ${createdCount} 个空白章节；每章均包含正文和人物状态文件。`
         : `已创建 ${createdCount} 个空白章节并保存到本地 Markdown。`
     });
-    uiMessage.success(`已创建 ${createdCount} 个空白章节文件`);
+    if (!automatic) {
+      uiMessage.success(`已创建 ${createdCount} 个空白章节文件`);
+    }
   } catch (error: unknown) {
     await loadCatalogSnapshot();
-    const message = createdCount
-      ? `已创建前 ${createdCount} 个章节，后续创建失败：${error instanceof Error ? error.message : "未知错误"}`
-      : error instanceof Error
-        ? error.message
-        : "创建空白章节失败。";
+    const conflict = isCatalogConflict(error);
+    const message =
+      error instanceof Error ? error.message : "创建空白章节失败。";
     conversation.updateEditProposal(request.runId, request.proposalId, {
-      status: createdCount ? "conflict" : "error",
+      status: conflict ? "conflict" : "error",
       statusMessage: message
     });
-    if (createdMapping.size > 0) {
-      const savedDirectoryRevision = currentExpertDraftDirectoryRevision(
-        proposal.workspaceId
-      );
-      if (savedDirectoryRevision) {
-        rememberAcceptedDraftSectionCreation(proposal, savedDirectoryRevision);
-      }
-      remapProvisionalExpertSectionFileProposals(
-        conversation,
-        request.runId,
-        proposal.workspaceId,
-        createdMapping
-      );
-    }
-    const failedProvisionalIds = target.sections
-      .map((section) => section.provisionalSectionId)
-      .filter((sectionId) => !createdMapping.has(sectionId));
-    if (failedProvisionalIds.length > 0) {
+    if (conflict) {
       conflictDependentProvisionalFileProposals(
         conversation,
         request.runId,
-        failedProvisionalIds,
-        createdCount
-          ? "关联的空白章节未能完整创建，未落盘章节的正文写入已取消。"
-          : "关联的空白章节未能完整创建，相关正文写入已取消。"
+        target.sections.map((section) => section.provisionalSectionId),
+        "关联的空白章节确认未能创建，相关正文写入已取消。"
+      );
+    } else {
+      pauseDependentProvisionalFileProposals(
+        conversation,
+        request.runId,
+        target.sections.map((section) => section.provisionalSectionId),
+        "章节创建结果尚未确认，正文内容已保留；请先重试章节创建。"
       );
     }
-    if (createdCount) {
-      uiMessage.warning(message);
-    } else {
-      uiMessage.error(message);
-    }
+    uiMessage.error(message);
   } finally {
     setAgentEditWorkspaceAccepting(proposal.workspaceId, false);
   }
@@ -7547,20 +8387,37 @@ async function acceptDraftSectionCreationProposal(
 async function applyAgentEdit(
   conversation: AgentConversationController,
   request: AgentEditReviewRequest,
-  automatic = false
+  automatic = false,
+  reservation?: {
+    decisionToken: string;
+    expectedProposedRevision: string;
+  }
 ): Promise<void> {
   let proposal = conversation.getEditProposal(request.runId, request.proposalId);
   if (!proposal) {
     uiMessage.error("待审阅的智能体变更已不存在，请重新生成修改。");
     return;
   }
-  if (conversation.isBusy.value) {
+  const reserved = Boolean(
+    reservation &&
+      proposal.status === "accepting" &&
+      proposal.decisionToken === reservation.decisionToken &&
+      proposal.proposedRevision === reservation.expectedProposedRevision
+  );
+  if (reservation && !reserved) {
+    return;
+  }
+  if (
+    conversation.isBusy.value &&
+    !canReviewAgentEditDuringRun(proposal)
+  ) {
     uiMessage.info("请等待本轮智能体完成后再审阅文稿变更");
     return;
   }
 
   if (request.decision === "reject") {
     if (proposal.status === "accepting" || proposal.status === "accepted") return;
+    removeQueuedAgentEdit(conversation, request.runId, request.proposalId);
     conversation.updateEditProposal(request.runId, request.proposalId, {
       status: "rejected",
       proposedText: undefined,
@@ -7576,17 +8433,47 @@ async function applyAgentEdit(
         "空白章节创建已被拒绝，相关正文写入无法落盘。"
       );
     }
+    blockLaterAgentEditGenerations(conversation, proposal);
     uiMessage.info("已拒绝智能体修改，原文未改变");
     return;
   }
 
   if (
-    proposal.status === "accepting" ||
+    (proposal.status === "accepting" && !reserved) ||
     proposal.status === "accepted" ||
     proposal.status === "rejected" ||
     proposal.status === "conflict"
   ) {
     return;
+  }
+
+  if (proposal.predecessorProposalId) {
+    const predecessor = conversation.getEditProposal(
+      request.runId,
+      proposal.predecessorProposalId
+    );
+    if (
+      !predecessor ||
+      predecessor.status === "rejected" ||
+      predecessor.status === "conflict" ||
+      predecessor.status === "error"
+    ) {
+      const message =
+        "前一版智能体修改未能落盘，本版依赖已阻断，没有覆盖当前文稿。";
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        status: "conflict",
+        proposedText: undefined,
+        statusMessage: message
+      });
+      return;
+    }
+    if (predecessor.status !== "accepted") {
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        status: "pending",
+        statusMessage: "正在等待前一版修改完成落盘…"
+      });
+      return;
+    }
   }
 
   if (proposal.libraryTarget?.operation === "create") {
@@ -7604,7 +8491,8 @@ async function applyAgentEdit(
       conversation,
       request,
       proposal,
-      automatic
+      automatic,
+      reserved
     );
     return;
   }
@@ -7626,6 +8514,16 @@ async function applyAgentEdit(
       request.runId,
       provisionalSectionId
     );
+    if (creation?.status === "error" || creation?.status === "accepting") {
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        status: "pending",
+        statusMessage:
+          creation.status === "error"
+            ? "章节创建结果尚未确认，正文内容已保留；请先重试章节创建。"
+            : "正在等待关联章节创建完成…"
+      });
+      return;
+    }
     if (creation) {
       await acceptDraftSectionCreationProposal(
         conversation,
@@ -7731,7 +8629,14 @@ async function applyAgentEdit(
         savingDocumentIds.value.has(document.id)
     )
   ) {
-    uiMessage.info("同一作品正在保存其他修改，请稍候再接受");
+    const message = automatic
+      ? "检测到作品正在保存其他内容，实时自动落盘已暂停，请稍后人工重试。"
+      : "同一作品正在保存其他修改，请稍候再接受";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: automatic ? "error" : "pending",
+      statusMessage: message
+    });
+    uiMessage.info(message);
     return;
   }
 
@@ -7765,11 +8670,9 @@ async function applyAgentEdit(
           ? "修改已在本地 Markdown 中；检测到另一份未保存草稿，已为你保留。"
           : "修改已经存在于本地 Markdown 中。"
     });
-    uiMessage.success(
-      automatic
-        ? "已自动批准，智能体修改已经保存在本地文稿中"
-        : "智能体修改已经保存在本地文稿中"
-    );
+    if (!automatic) {
+      uiMessage.success("智能体修改已经保存在本地文稿中");
+    }
     return;
   }
 
@@ -7918,15 +8821,11 @@ async function applyAgentEdit(
           ? `${automatic ? "已自动批准并" : "已接受并"}保存到本地 Markdown。`
           : `${automatic ? "已自动批准并写入" : "已接受到"}当前工作区；该预览资源没有对应的本地文件。`
     });
-    uiMessage.success(
-      automatic
-        ? persisted
-          ? "已自动批准并保存智能体修改"
-          : "已自动批准并写入智能体修改"
-        : persisted
-          ? "已接受并保存智能体修改"
-          : "已接受智能体修改"
-    );
+    if (!automatic) {
+      uiMessage.success(
+        persisted ? "已接受并保存智能体修改" : "已接受智能体修改"
+      );
+    }
   } catch (error: unknown) {
     const conflict = isCatalogConflict(error);
     const message = conflict
@@ -7951,44 +8850,145 @@ async function applyAgentEdit(
 }
 
 async function reviewAgentEdit(request: AgentEditReviewRequest): Promise<void> {
-  await applyAgentEdit(activeConversation.value, request);
+  const conversation = activeConversation.value;
+  const proposal = conversation.getEditProposal(
+    request.runId,
+    request.proposalId
+  );
+  if (
+    request.decision === "accept" &&
+    proposal &&
+    isShortOrScriptAgentEdit(proposal)
+  ) {
+    queueAgentEdit(
+      conversation,
+      conversation.sessionId.value,
+      request.runId,
+      request.proposalId,
+      false,
+      true
+    );
+    return;
+  }
+  await applyAgentEdit(conversation, request);
 }
 
-function scheduleQueuedAutoAgentEdits(
-  matches: (queued: QueuedAutoAgentEdit) => boolean
-): void {
-  autoAgentEditFlush = autoAgentEditFlush
-    .then(async () => {
-      const entries = [...queuedAutoAgentEdits.entries()]
-        .filter(([, queued]) => matches(queued))
-        .sort(
-          ([, left], [, right]) =>
-            autoApproveEditPriority(left.conversation, left.runId, left.proposalId) -
-            autoApproveEditPriority(
-              right.conversation,
-              right.runId,
-              right.proposalId
-            )
+async function drainQueuedAgentEditsForWorkspace(
+  workspaceId: string
+): Promise<void> {
+  const entries = [...queuedAgentEdits.entries()]
+    .filter(([, queued]) => queued.workspaceId === workspaceId)
+    .sort(([, left], [, right]) => {
+      const priority =
+        autoApproveEditPriority(
+          left.conversation,
+          left.runId,
+          left.proposalId
+        ) -
+        autoApproveEditPriority(
+          right.conversation,
+          right.runId,
+          right.proposalId
         );
-      for (const [key, queued] of entries) {
-        if (queued.conversation.isBusy.value) continue;
-        queuedAutoAgentEdits.delete(key);
-        await applyAgentEdit(
-          queued.conversation,
-          {
-            runId: queued.runId,
-            proposalId: queued.proposalId,
-            decision: "accept"
-          },
-          true
-        );
-      }
-    })
-    .catch((error: unknown) => {
-      uiMessage.error(
-        error instanceof Error ? error.message : "自动批准智能体修改失败。"
+      if (priority !== 0) return priority;
+      const leftProposal = left.conversation.getEditProposal(
+        left.runId,
+        left.proposalId
+      );
+      const rightProposal = right.conversation.getEditProposal(
+        right.runId,
+        right.proposalId
+      );
+      return (
+        (leftProposal?.generation ?? 1) -
+          (rightProposal?.generation ?? 1) ||
+        Date.parse(leftProposal?.createdAt ?? "") -
+          Date.parse(rightProposal?.createdAt ?? "")
       );
     });
+
+  for (const [key, queued] of entries) {
+    if (queuedAgentEdits.get(key) !== queued) {
+      continue;
+    }
+    const current = queued.conversation.getEditProposal(
+      queued.runId,
+      queued.proposalId
+    );
+    if (
+      !current ||
+      queued.snapshot.token !== queued.decisionToken ||
+      queued.snapshot.proposal.id !== queued.proposalId ||
+      queued.snapshot.proposedRevision !== queued.expectedProposedRevision ||
+      current.proposedRevision !== queued.expectedProposedRevision ||
+      (current.status !== "pending" &&
+        current.status !== "error" &&
+        !(
+          current.status === "accepting" &&
+          current.decisionToken === queued.decisionToken
+        ))
+    ) {
+      if (queuedAgentEdits.get(key) === queued) {
+        queuedAgentEdits.delete(key);
+      }
+      continue;
+    }
+    if (
+      current.status === "pending" ||
+      current.status === "error"
+    ) {
+      queued.conversation.updateEditProposal(
+        queued.runId,
+        queued.proposalId,
+        {
+          status: "accepting",
+          decisionToken: queued.decisionToken,
+          statusMessage: queued.automatic
+            ? "已进入自动保存队列…"
+            : "已批准，正在等待本作品的保存队列…"
+        }
+      );
+    }
+
+    if (queuedAgentEdits.get(key) !== queued) {
+      continue;
+    }
+    queuedAgentEdits.delete(key);
+    await applyAgentEdit(
+      queued.conversation,
+      {
+        runId: queued.runId,
+        proposalId: queued.proposalId,
+        decision: "accept"
+      },
+      queued.automatic,
+      {
+        decisionToken: queued.decisionToken,
+        expectedProposedRevision: queued.expectedProposedRevision
+      }
+    );
+  }
+}
+
+function scheduleQueuedAgentEdits(
+  matches: (queued: QueuedAgentEdit) => boolean
+): void {
+  const workspaceIds = new Set(
+    [...queuedAgentEdits.values()]
+      .filter(matches)
+      .map((queued) => queued.workspaceId)
+  );
+  for (const workspaceId of workspaceIds) {
+    void agentEditCommitQueue
+      .enqueue(workspaceId, () =>
+        drainQueuedAgentEditsForWorkspace(workspaceId)
+      )
+      .catch((error: unknown) => {
+        uiMessage.error(
+          error instanceof Error ? error.message : "批准智能体修改失败。"
+        );
+      });
+  }
 }
 
 function handleSystemEvent(event: SystemEventEnvelope): void {
@@ -8021,7 +9021,7 @@ function handleSystemEvent(event: SystemEventEnvelope): void {
     conversation.handleEvent(event);
   }
   if (event.type === "agent.message_completed" || event.type === "agent.error") {
-    scheduleQueuedAutoAgentEdits(
+    scheduleQueuedAgentEdits(
       (queued) =>
         queued.sessionId === event.payload.sessionId &&
         queued.runId === event.payload.runId
@@ -8528,8 +9528,8 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     newConversation();
   }
   if (event.key === "Escape") {
-    createShortBookDialogOpen.value = false;
-    createLongBookDialogOpen.value = false;
+    createBookDialogOpen.value = false;
+    bookTransferDialogMode.value = null;
     libraryProjectDialog.value = null;
     libraryGroupDialog.value = null;
     saveConflict.value = null;
@@ -8790,6 +9790,12 @@ onBeforeUnmount(() => {
         :imitation-running="learningImitationRunning"
         :library-entry-clipboard-domain="libraryEntryClipboardDomain"
         :active-primary-feature="activePrimaryFeature"
+        :active-long-book-summary="
+          isLongWorkspaceActive ? activeLongBookSummary ?? undefined : undefined
+        "
+        :active-long-workspace-index="
+          isLongWorkspaceActive ? activeLongWorkspaceIndex ?? undefined : undefined
+        "
         @collapse="leftCollapsed = true"
         @new-conversation="newConversation"
         @open-dialog="openWorkspaceDialog"
@@ -8803,6 +9809,7 @@ onBeforeUnmount(() => {
         @long-book-action="handleLongBookAction"
         @create-expert-section="addExpertSection"
         @remove-expert-section="requestRemoveExpertSection"
+        @select-long-workspace="selectLongWorkspaceSearchResult"
       />
 
       <main
@@ -8902,6 +9909,7 @@ onBeforeUnmount(() => {
       <main
         v-show="isLongWorkspaceActive"
         class="long-workspace-main-view"
+        :class="{ 'is-right-collapsed': rightCollapsed }"
         aria-label="长篇创作空间"
       >
         <button
@@ -8916,12 +9924,6 @@ onBeforeUnmount(() => {
         <template
           v-if="activeLongBookSummary && activeLongWorkspaceIndex"
         >
-          <LongWorkspaceTree
-            :summary="activeLongBookSummary"
-            :workspace-index="activeLongWorkspaceIndex"
-            :selected-key="activeLongSelection?.key ?? ''"
-            @select="selectLongWorkspaceFile"
-          />
           <div class="long-agent-column">
             <AgentConversation
               v-if="activeLongConversation && activeLongAgentProfile"
@@ -8956,13 +9958,15 @@ onBeforeUnmount(() => {
               :available-skills="availableLongSkillReferences"
               :available-materials="availableLongMaterialReferences"
               :editor-references="[]"
-              :left-collapsed="false"
-              :right-collapsed="false"
+              :left-collapsed="leftCollapsed"
+              :right-collapsed="rightCollapsed"
               @new-conversation="newLongConversation"
               @select-conversation="selectLongConversation"
               @send="sendLongMessage"
               @stop="stopLongGeneration"
               @suggestion="useLongSuggestion"
+              @toggle-left="leftCollapsed = !leftCollapsed"
+              @toggle-right="rightCollapsed = !rightCollapsed"
               @select-model="selectLongModel"
               @select-thinking="selectLongThinking"
               @select-temperature="selectLongTemperature"
@@ -9079,6 +10083,7 @@ onBeforeUnmount(() => {
             />
           </div>
           <LongWorkspaceEditor
+            v-show="!rightCollapsed"
             ref="longWorkspaceEditor"
             :book-id="activeLongBookSummary.id"
             :selection="activeLongSelection"
@@ -9095,6 +10100,7 @@ onBeforeUnmount(() => {
             "
             @saved="handleLongDocumentSaved"
             @context-change="handleLongFileContextChange"
+            @collapse="rightCollapsed = true"
             @rollback="openLongRollbackDialog"
           />
         </template>
@@ -9136,6 +10142,11 @@ onBeforeUnmount(() => {
         :thinking-level="thinkingLevel"
         :temperature="temperature"
         :approval-mode="approvalMode"
+        :allow-live-edit-review="
+          activeAgentDocument.domain === 'creation' &&
+          (activeAgentDocument.workspaceType === 'short' ||
+            activeAgentDocument.workspaceType === 'script')
+        "
         :context-title="activeAgentDocument.title"
         :book-title="composerBookTitle"
         :stage-label="composerStageLabel"
@@ -9167,8 +10178,11 @@ onBeforeUnmount(() => {
       />
 
       <RightEditorPane
-        v-if="workspaceMainView === 'conversation' && !rightCollapsed"
-        :class="{ 'is-long-workspace-hidden': isLongWorkspaceActive }"
+        v-if="
+          workspaceMainView === 'conversation' &&
+          !rightCollapsed &&
+          !isLongWorkspaceActive
+        "
         :document="activeDocument"
         :resource-id="selectedResourceId"
         :draft-state="activeEditorDraft"
@@ -9204,7 +10218,6 @@ onBeforeUnmount(() => {
 
       <div
         v-if="workspaceMainView === 'conversation' && !rightCollapsed"
-        v-show="!isLongWorkspaceActive"
         class="pane-resizer pane-resizer-right"
         role="separator"
         aria-label="调整右侧栏宽度"
@@ -9251,25 +10264,22 @@ onBeforeUnmount(() => {
       @close="libraryRemovalDialog = null"
       @confirm="confirmLibraryRemoval"
     />
-    <CreateShortBookDialog
-      :open="createShortBookDialogOpen"
+    <CreateBookDialog
+      :open="createBookDialogOpen"
       :materials="catalogSnapshot?.materials ?? []"
       :material-groups="catalogSnapshot?.materialGroups ?? []"
       :skills="catalogSnapshot?.skills ?? []"
       :skill-groups="catalogSnapshot?.skillGroups ?? []"
       :loading="catalogLoading"
-      :submitting="catalogMutationPending"
-      @close="createShortBookDialogOpen = false"
+      :submitting="catalogMutationPending || longMutationPending"
+      @close="createBookDialogOpen = false"
       @submit="createCreativeBook"
     />
-    <CreateLongBookDialog
-      :open="createLongBookDialogOpen"
-      :materials="catalogSnapshot?.materials ?? []"
-      :skills="catalogSnapshot?.skills ?? []"
-      :loading="catalogLoading"
-      :submitting="longMutationPending"
-      @close="createLongBookDialogOpen = false"
-      @submit="createLongBook"
+    <BookTransferDialog
+      :mode="bookTransferDialogMode"
+      :pending="catalogMutationPending || longMutationPending"
+      @close="bookTransferDialogMode = null"
+      @select="handleBookTransferSelect"
     />
     <LongRollbackDialog
       :open="longRollbackDialogOpen && Boolean(longRollbackCommit)"
@@ -9286,11 +10296,11 @@ onBeforeUnmount(() => {
       :snapshot="activeLongWorkspaceIndex"
       :pending="longBookActionPending"
       @close="longStructureDialogOpen = false"
-      @proposal="handleLongStructureProposal"
+      @mutation="handleLongStructureMutation"
     />
     <LongBookBindingsDialog
       v-if="activeLongBookSummary"
-      :open="longBindingsDialogOpen"
+      :mode="longBindingsDialogMode"
       :book-title="activeLongBookSummary.title"
       :materials="catalogSnapshot?.materials ?? []"
       :skills="catalogSnapshot?.skills ?? []"
@@ -9301,7 +10311,7 @@ onBeforeUnmount(() => {
         activeLongBookSummary.linkedSkillIdsByKind
       "
       :submitting="longBookActionPending"
-      @close="longBindingsDialogOpen = false"
+      @close="longBindingsDialogMode = null"
       @submit="updateLongBookBindings"
     />
     <LongBookRemovalDialog

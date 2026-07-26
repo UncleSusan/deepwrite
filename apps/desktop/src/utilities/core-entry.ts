@@ -1,6 +1,7 @@
 import {
   CatalogDocumentSchema,
   CatalogDraftSectionSchema,
+  CreateDraftSectionsResultSchema,
   CatalogDraftRecoverySaveResultSchema,
   CatalogDraftRecoverySchema,
   CatalogLibrarySchema,
@@ -17,7 +18,6 @@ import {
   ShortBookSchema,
   LongApplyOperationsResultSchema,
   LongCommitChapterResultSchema,
-  LongExportPortableResultSchema,
   LongImportPortableResultSchema,
   LongImportWriteClawResultSchema,
   LongListBooksResultSchema,
@@ -167,22 +167,6 @@ async function handleCatalogCommand(
           book: imported.book,
           summary: imported.summary,
           exportedAt: imported.exportedAt
-        })
-      };
-    }
-    if (command.type === "long.exportPortableAtPath") {
-      const exported = await longWorkspaceService.exportPortableBundleToPath(
-        command.payload.bookId,
-        command.payload.destinationPath
-      );
-      return {
-        status: "accepted",
-        requestId: command.id,
-        payload: LongExportPortableResultSchema.parse({
-          status: "saved",
-          bookId: command.payload.bookId,
-          filePath: exported.filePath,
-          bytes: exported.bytes
         })
       };
     }
@@ -486,6 +470,15 @@ async function handleCatalogCommand(
         requestId: command.id,
         payload: CatalogDraftSectionSchema.parse(
           await catalogStore.createDraftSection(command.payload)
+        )
+      };
+    }
+    if (command.type === "catalog.createDraftSections") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: CreateDraftSectionsResultSchema.parse(
+          await catalogStore.createDraftSections(command.payload)
         )
       };
     }

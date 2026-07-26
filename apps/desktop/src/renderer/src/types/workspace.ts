@@ -31,6 +31,8 @@ export type IconName =
   | "pin"
   | "plus"
   | "quote"
+  | "redo"
+  | "replace"
   | "save"
   | "search"
   | "settings"
@@ -39,6 +41,7 @@ export type IconName =
   | "terminal"
   | "temperature"
   | "trash"
+  | "undo"
   | "user"
   | "wand";
 
@@ -51,12 +54,14 @@ import type {
   ShortWorkspaceStageId,
   SkillKind
 } from "@deepwrite/contracts";
+import type { LongWorkspaceSelection } from "./longWorkspace";
 
 export type ResourceDomain = "creation" | "skill" | "material";
 
 export type ResourceSectionAction =
   | "create"
-  | "create-long-book"
+  | "choose-open-book"
+  | "choose-import-book"
   | "create-group"
   | "import"
   | "open-long-book"
@@ -89,8 +94,8 @@ export interface CatalogResourceNodeActionPayload {
 
 export type LongBookResourceNodeAction =
   | "manage-structure"
-  | "manage-bindings"
-  | "export-portable"
+  | "bind-skill"
+  | "bind-material"
   | "unregister"
   | "delete";
 
@@ -142,6 +147,8 @@ export interface ResourceTreeNode {
   workspaceType?: "short" | "script" | "long";
   /** Long books use a separate store and intentionally do not inherit short-book actions. */
   longBookId?: string;
+  /** Long-form navigation nodes reuse the standard resource tree styling. */
+  longWorkspaceSelection?: LongWorkspaceSelection;
   catalogNodeType?:
     | "book"
     | "long-book"

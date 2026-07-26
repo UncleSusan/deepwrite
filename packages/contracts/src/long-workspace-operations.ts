@@ -79,14 +79,16 @@ function uniqueIdArray<T extends string>(
     .array(schema)
     .max(400_000)
     .superRefine((values, context) => {
+      const seen = new Set<string>();
       values.forEach((value, index) => {
-        if (values.indexOf(value) !== index) {
+        if (seen.has(value)) {
           context.addIssue({
             code: "custom",
             path: [index],
             message: `Duplicate ${label}: ${value}`
           });
         }
+        seen.add(value);
       });
     });
 }
@@ -570,14 +572,16 @@ export type LongDocumentWriteProposal = z.infer<
 
 function sortedUniqueIdArray<T extends string>(schema: z.ZodType<T>) {
   return z.array(schema).superRefine((values, context) => {
+    const seen = new Set<string>();
     values.forEach((value, index) => {
-      if (values.indexOf(value) !== index) {
+      if (seen.has(value)) {
         context.addIssue({
           code: "custom",
           path: [index],
           message: `Duplicate impact id: ${value}`
         });
       }
+      seen.add(value);
       if (index > 0 && values[index - 1]! > value) {
         context.addIssue({
           code: "custom",
@@ -1129,9 +1133,10 @@ function assertExactOrder(
   orderedIds: readonly string[],
   label: string
 ): void {
+  const orderedIdSet = new Set(orderedIds);
   if (
     actualIds.length !== orderedIds.length ||
-    actualIds.some((id) => !orderedIds.includes(id))
+    actualIds.some((id) => !orderedIdSet.has(id))
   ) {
     operationError(
       "invalid_order",
@@ -2568,8 +2573,11 @@ function applyLongWorkspaceOperation(
         operation.orderedIds,
         "Story event"
       );
+      const nextOrderById = new Map(
+        operation.orderedIds.map((id, index) => [id, index + 1])
+      );
       workspace.plot.storyEvents.forEach((event) => {
-        const nextOrder = operation.orderedIds.indexOf(event.id) + 1;
+        const nextOrder = nextOrderById.get(event.id)!;
         if (
           nextOrder !== event.storyOrder &&
           eventParticipatesInCommittedFacts(workspace, event.id)

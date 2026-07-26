@@ -48,35 +48,24 @@ const actionItems = computed<Array<{
         ? "技能库"
         : "素材库";
   return [
-    { id: "create", label: `新建${resourceName}`, icon: "plus" },
-    ...(props.section.id === "creation"
-      ? ([
-          {
-            id: "create-long-book",
-            label: "新建长篇",
-            icon: "book"
-          }
-        ] as const)
-      : []),
+    {
+      id: "create",
+      label: props.section.id === "creation" ? "新建作品" : `新建${resourceName}`,
+      icon: "plus"
+    },
     ...(props.section.id === "creation"
       ? []
       : ([{ id: "create-group", label: "新建分组", icon: "folder" }] as const)),
-    { id: "import", label: `打开已存在${resourceName}`, icon: "folder" },
+    {
+      id: props.section.id === "creation" ? "choose-open-book" : "import",
+      label: props.section.id === "creation" ? "打开已有作品" : `打开已存在${resourceName}`,
+      icon: "folder"
+    },
     ...(props.section.id === "creation"
       ? ([
           {
-            id: "open-long-book",
-            label: "打开已存在长篇",
-            icon: "folder"
-          },
-          {
-            id: "import-portable-long-book",
-            label: "导入 DeepWrite 长篇工程",
-            icon: "archive"
-          },
-          {
-            id: "migrate-write-claw-long-book",
-            label: "迁移 Write Claw 长篇",
+            id: "choose-import-book",
+            label: "导入作品",
             icon: "archive"
           },
           {
@@ -87,13 +76,7 @@ const actionItems = computed<Array<{
         ] as const)
       : []),
     ...(props.section.id === "creation"
-      ? ([
-          {
-            id: "import-legacy-book",
-            label: "导入旧版书籍",
-            icon: "archive"
-          }
-        ] as const)
+      ? []
       : ([
           {
             id: "import-legacy-library",

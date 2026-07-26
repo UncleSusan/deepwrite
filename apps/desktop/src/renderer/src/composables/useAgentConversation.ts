@@ -193,15 +193,10 @@ function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
     ...(proposal.draftSectionCreationTarget
       ? {
           draftSectionCreationTarget: {
+            ...proposal.draftSectionCreationTarget,
             sections: proposal.draftSectionCreationTarget.sections.map((section) => ({
               ...section
-            })),
-            ...(proposal.draftSectionCreationTarget.afterSectionId
-              ? {
-                  afterSectionId:
-                    proposal.draftSectionCreationTarget.afterSectionId
-                }
-              : {})
+            }))
           }
         }
       : {}),
@@ -344,12 +339,15 @@ function parseStoredDraftSectionCreationTarget(
     title: string;
     wordCountRequirement: string;
     provisionalSectionId: string;
+    realSectionId?: string;
   }> = [];
   for (const [index, section] of value.sections.entries()) {
     if (
       !isRecord(section) ||
       typeof section.title !== "string" ||
-      typeof section.wordCountRequirement !== "string"
+      typeof section.wordCountRequirement !== "string" ||
+      (section.realSectionId !== undefined &&
+        typeof section.realSectionId !== "string")
     ) {
       return undefined;
     }
@@ -360,7 +358,10 @@ function parseStoredDraftSectionCreationTarget(
         typeof section.provisionalSectionId === "string" &&
         section.provisionalSectionId.trim()
           ? section.provisionalSectionId
-          : `pending:section:legacy-${index + 1}`
+          : `pending:section:legacy-${index + 1}`,
+      ...(typeof section.realSectionId === "string"
+        ? { realSectionId: section.realSectionId }
+        : {})
     });
   }
   if (
@@ -369,10 +370,28 @@ function parseStoredDraftSectionCreationTarget(
   ) {
     return undefined;
   }
+  if (
+    value.baseProjectRevision !== undefined &&
+    !nonnegativeInteger(value.baseProjectRevision)
+  ) {
+    return undefined;
+  }
+  if (
+    value.acceptedDirectoryRevision !== undefined &&
+    typeof value.acceptedDirectoryRevision !== "string"
+  ) {
+    return undefined;
+  }
   return {
     sections,
     ...(typeof value.afterSectionId === "string"
       ? { afterSectionId: value.afterSectionId }
+      : {}),
+    ...(typeof value.baseProjectRevision === "number"
+      ? { baseProjectRevision: value.baseProjectRevision }
+      : {}),
+    ...(typeof value.acceptedDirectoryRevision === "string"
+      ? { acceptedDirectoryRevision: value.acceptedDirectoryRevision }
       : {})
   };
 }
@@ -403,6 +422,18 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     !Array.isArray(value.hunks) ||
     (value.truncated !== undefined && typeof value.truncated !== "boolean") ||
     (value.statusMessage !== undefined && typeof value.statusMessage !== "string") ||
+    (value.laneId !== undefined && typeof value.laneId !== "string") ||
+    (value.generation !== undefined &&
+      (!nonnegativeInteger(value.generation) || value.generation < 1)) ||
+    (value.approvalMode !== undefined &&
+      value.approvalMode !== "request-approval" &&
+      value.approvalMode !== "auto-approve") ||
+    (value.predecessorProposalId !== undefined &&
+      typeof value.predecessorProposalId !== "string") ||
+    (value.sourceBaseRevision !== undefined &&
+      typeof value.sourceBaseRevision !== "string") ||
+    (value.decisionToken !== undefined &&
+      typeof value.decisionToken !== "string") ||
     (value.provisionalExpertSection !== undefined &&
       typeof value.provisionalExpertSection !== "boolean") ||
     !validDate(value.createdAt) ||
@@ -432,6 +463,22 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
   if (hunks.length !== value.hunks.length) return undefined;
   return {
     id: value.id,
+    ...(value.laneId === undefined ? {} : { laneId: value.laneId }),
+    ...(value.generation === undefined
+      ? {}
+      : { generation: value.generation as number }),
+    ...(value.approvalMode === undefined
+      ? {}
+      : { approvalMode: value.approvalMode as AgentApprovalMode }),
+    ...(value.predecessorProposalId === undefined
+      ? {}
+      : { predecessorProposalId: value.predecessorProposalId }),
+    ...(value.sourceBaseRevision === undefined
+      ? {}
+      : { sourceBaseRevision: value.sourceBaseRevision }),
+    ...(value.decisionToken === undefined
+      ? {}
+      : { decisionToken: value.decisionToken }),
     runId: value.runId,
     workspaceId: value.workspaceId,
     stageId: value.stageId as AgentEditProposal["stageId"],

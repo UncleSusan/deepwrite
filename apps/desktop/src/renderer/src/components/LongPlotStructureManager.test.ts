@@ -34,6 +34,26 @@ describe("LongPlotStructureManager", () => {
     expect(source).not.toContain("previewOperations");
   });
 
+  it("keeps a submitted draft locked until the real apply result arrives", () => {
+    expect(source).toContain("completion: LongStructureMutationCompletion");
+    expect(source).toContain("const pendingMutation = ref<");
+    expect(source).toContain(
+      'succeed: () => finishMutation(requestId, "succeeded")'
+    );
+    expect(source).toContain(
+      'fail: () => finishMutation(requestId, "failed")'
+    );
+    expect(source).toContain("appliedButRefreshFailed");
+    expect(source).toContain('if (outcome === "failed") return');
+    expect(source).toContain('}, "form")');
+    expect(source).toContain('}, "delete")');
+    expect(source).not.toContain("if (succeeded) closeForm()");
+    expect(source).not.toContain("if (succeeded) {\n    closeDelete()");
+    expect(source).toContain(
+      '<fieldset class="modal-body" :disabled="mutationLocked">'
+    );
+  });
+
   it("shows and edits imported fields, including machine story time", () => {
     for (const field of [
       "timeMode",
@@ -78,6 +98,7 @@ describe("LongPlotStructureManager", () => {
     expect(source).toContain('type="checkbox"');
     expect(source).toContain('<Teleport to="body">');
     expect(source).toContain('role="alertdialog"');
+    expect(source).toContain('aria-describedby="long-plot-delete-description"');
     expect(source).toContain("cascadeDelete");
     for (const token of [
       "--surface-main",
@@ -96,6 +117,8 @@ describe("LongPlotStructureManager", () => {
       expect(source).toContain(`var(${token})`);
     }
     expect(source).toContain("@media (max-width: 42rem)");
+    expect(source).toContain('@keydown.esc.stop="closeForm"');
+    expect(source).toContain('@keydown.esc.stop="closeDelete"');
   });
 
   it("locks a foreshadowing truth event once any beat is committed", () => {

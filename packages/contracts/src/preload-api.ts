@@ -53,6 +53,8 @@ import type {
   CatalogLibraryProjectDomain,
   CreateLibraryEntryInput,
   CreateDraftSectionInput,
+  CreateDraftSectionsInput,
+  CreateDraftSectionsResult,
   CreateLibraryGroupInput,
   CreateLibraryInput,
   CreateScriptBookInput,
@@ -77,8 +79,6 @@ import type {
 } from "./catalog";
 import type {
   CreateLongBookInput,
-  LongExportPortableInput,
-  LongExportPortableResult,
   LongImportPortableResult,
   LongImportWriteClawResult,
   LongApplyOperationsInput,
@@ -139,6 +139,9 @@ export interface DeepWriteApi {
     deleteBook(bookId: string): Promise<DeleteBookResult>;
     saveDocument(input: SaveDocumentInput): Promise<CatalogDocument>;
     createDraftSection(input: CreateDraftSectionInput): Promise<CatalogDraftSection>;
+    createDraftSections(
+      input: CreateDraftSectionsInput
+    ): Promise<CreateDraftSectionsResult>;
     deleteDraftSection(
       input: DeleteDraftSectionInput
     ): Promise<DeleteDraftSectionResult>;
@@ -157,9 +160,6 @@ export interface DeepWriteApi {
     create(input: CreateLongBookInput): Promise<LongOpenBookResult | null>;
     importWriteClaw(): Promise<LongImportWriteClawResult | null>;
     importPortable(): Promise<LongImportPortableResult | null>;
-    exportPortable(
-      input: LongExportPortableInput
-    ): Promise<LongExportPortableResult>;
     open(input: LongOpenBookInput): Promise<LongOpenBookResult>;
     updateBindings(
       input: LongUpdateBindingsInput

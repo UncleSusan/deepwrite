@@ -1,16 +1,27 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import {
   LongFileRevisionSchema,
   LongLedgerCommitRecordSchema,
+  parseLongWorldbuildingMarkdownList,
+  serializeLongWorldbuildingMarkdownList,
   type LongLedgerCommitRecord,
   type LongLedgerCommitIndexEntry,
   type LongFileId,
   type LongFileRevision,
   type LongReadDocumentResult,
+  type LongWorldbuildingMarkdownItem,
   type LongWorkspaceFileReference,
   type LongWriteDocumentResult
 } from "@deepwrite/contracts";
+import { createId } from "@deepwrite/shared";
 import { uiMessage } from "../ui-feedback";
 import {
   isEditableLongFile,
@@ -30,6 +41,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  collapse: [];
   saved: [result: LongWriteDocumentResult];
   contextChange: [
     context: {
@@ -51,6 +63,7 @@ interface LongDocumentState {
   loading: boolean;
   saving: boolean;
   loaded: boolean;
+  loadError: string | null;
 }
 
 const DOCUMENT_PAGE_CHARACTERS = 256 * 1024;
@@ -76,7 +89,24 @@ interface LongEditorRecoveryRecord {
 const documentStates = ref<Record<string, LongDocumentState>>({});
 const staleRecoveryByKey = ref<Record<string, LongEditorRecoveryRecord>>({});
 const activeRole = ref<LongWorkspaceFileRole>("content");
+const activeWorldbuildingItemId = ref<string | null>(null);
+const pendingWorldbuildingDeleteId = ref<string | null>(null);
+const worldbuildingDeleteDialog = ref<HTMLElement>();
+const worldbuildingDeleteCancelButton = ref<HTMLButtonElement>();
 const workspaceSavePending = ref(false);
+const editorInput = ref<HTMLTextAreaElement>();
+const editorToolsElement = ref<HTMLElement>();
+const findPanelElement = ref<HTMLElement>();
+const findInput = ref<HTMLInputElement>();
+const viewMode = ref<"edit" | "preview">("edit");
+const findPanelOpen = ref(false);
+const findPanelMode = ref<"find" | "replace">("find");
+const searchQuery = ref("");
+const replacementText = ref("");
+const currentMatchIndex = ref(-1);
+const searchAnchor = ref(0);
+const undoHistory = ref<LongEditorHistorySnapshot[]>([]);
+const redoHistory = ref<LongEditorHistorySnapshot[]>([]);
 const requestClockByFile = new Map<string, number>();
 const recoveryWriteTimers = new Map<
   string,
@@ -85,6 +115,19 @@ const recoveryWriteTimers = new Map<
 const recoveryWriteWarningKeys = new Set<string>();
 let requestClock = 0;
 let activeSavePromise: Promise<boolean> | null = null;
+let worldbuildingDeletePreviousFocus: HTMLElement | null = null;
+const HISTORY_LIMIT = 120;
+
+interface LongEditorHistorySnapshot {
+  content: string;
+  selectionStart: number;
+  selectionEnd: number;
+}
+
+interface LongEditorSearchMatch {
+  start: number;
+  end: number;
+}
 
 const currentSelectionFile = computed<LongWorkspaceSelectionFile | undefined>(
   () => {
@@ -130,8 +173,101 @@ const currentStaleRecoveryPreview = computed(() => {
   const content = currentStaleRecovery.value?.content ?? "";
   return content.length > 600 ? `${content.slice(0, 600)}…` : content;
 });
+const currentIsWorldbuildingList = computed(
+  () =>
+    props.selection?.root === "worldbuilding" &&
+    props.selection.worldbuildingFormat === "list" &&
+    currentSelectionFile.value?.role === "content"
+);
+const currentWorldbuildingListState = computed<{
+  items: LongWorldbuildingMarkdownItem[];
+  error: string | null;
+}>(() => {
+  if (!currentIsWorldbuildingList.value || !currentState.value?.loaded) {
+    return { items: [], error: null };
+  }
+  try {
+    return {
+      items: parseLongWorldbuildingMarkdownList(currentState.value.content),
+      error: null
+    };
+  } catch (error: unknown) {
+    return {
+      items: [],
+      error:
+        error instanceof Error
+          ? error.message
+          : "无法读取列表型世界观内容。"
+    };
+  }
+});
+const currentWorldbuildingItems = computed(
+  () => currentWorldbuildingListState.value.items
+);
+const currentWorldbuildingItem = computed(
+  () =>
+    currentWorldbuildingItems.value.find(
+      ({ id }) => id === activeWorldbuildingItemId.value
+    ) ??
+    currentWorldbuildingItems.value[0] ??
+    null
+);
+const pendingWorldbuildingDeleteItem = computed(
+  () =>
+    currentWorldbuildingItems.value.find(
+      ({ id }) => id === pendingWorldbuildingDeleteId.value
+    ) ?? null
+);
+const currentVisibleContent = computed(() => {
+  if (
+    currentIsWorldbuildingList.value &&
+    !currentWorldbuildingListState.value.error
+  ) {
+    return currentWorldbuildingItem.value?.content ?? "";
+  }
+  return currentState.value?.content ?? "";
+});
+const previewParagraphs = computed(() =>
+  currentVisibleContent.value.split(/\n{2,}/u).filter(Boolean)
+);
+const searchMatches = computed<LongEditorSearchMatch[]>(() => {
+  const content = currentVisibleContent.value;
+  const query = searchQuery.value;
+  if (!query) return [];
+
+  const matches: LongEditorSearchMatch[] = [];
+  let start = 0;
+  while (start <= content.length - query.length) {
+    const index = content.indexOf(query, start);
+    if (index < 0) break;
+    matches.push({ start: index, end: index + query.length });
+    start = index + query.length;
+  }
+  return matches;
+});
+const searchResultLabel = computed(() => {
+  if (!searchQuery.value) return "0/0";
+  if (!searchMatches.value.length) return "无结果";
+  const current = currentMatchIndex.value >= 0 ? currentMatchIndex.value + 1 : 0;
+  return `${current}/${searchMatches.value.length}`;
+});
+const documentEyebrow = computed(() => {
+  const role = currentSelectionFile.value?.role;
+  if (props.selection?.root === "draft") {
+    if (role === "character-state") return "长篇 · 章节人物状态";
+    if (role === "handoff") return "长篇 · 章节交接";
+    return "长篇 · 章节正文";
+  }
+  if (props.selection?.root === "worldbuilding") return "长篇 · 世界设定";
+  if (props.selection?.root === "character_design") return "长篇 · 人物档案";
+  if (props.selection?.root === "plot_design") return "长篇 · 情节设计";
+  if (props.selection?.root === "continuity_ledger") {
+    return "长篇 · 连续性记录";
+  }
+  return "长篇文稿";
+});
 const characterCount = computed(
-  () => currentState.value?.content.replace(/\s/gu, "").length ?? 0
+  () => currentVisibleContent.value.replace(/\s/gu, "").length
 );
 const currentLedgerRecord = computed<LongLedgerCommitRecord | null>(() => {
   if (
@@ -149,6 +285,28 @@ const currentLedgerRecord = computed<LongLedgerCommitRecord | null>(() => {
     return null;
   }
 });
+const canUseTextTools = computed(
+  () =>
+    Boolean(currentState.value?.loaded) &&
+    !currentLedgerRecord.value &&
+    Boolean(
+      !currentIsWorldbuildingList.value ||
+        currentWorldbuildingListState.value.error ||
+        currentWorldbuildingItem.value
+    )
+);
+const canUndo = computed(
+  () =>
+    canUseTextTools.value &&
+    !currentReadOnly.value &&
+    undoHistory.value.length > 0
+);
+const canRedo = computed(
+  () =>
+    canUseTextTools.value &&
+    !currentReadOnly.value &&
+    redoHistory.value.length > 0
+);
 const currentLedgerSummaryRows = computed(() => {
   const summary = currentLedgerRecord.value?.chapterSummary;
   return summary
@@ -401,6 +559,434 @@ function updateCurrentContent(content: string): void {
   }
 }
 
+function replaceCurrentWorldbuildingItems(
+  items: LongWorldbuildingMarkdownItem[]
+): boolean {
+  if (
+    currentReadOnly.value ||
+    !currentIsWorldbuildingList.value ||
+    currentWorldbuildingListState.value.error
+  ) {
+    return false;
+  }
+  try {
+    updateCurrentContent(serializeLongWorldbuildingMarkdownList(items));
+    return true;
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error
+        ? error.message
+        : "无法更新世界观条目。"
+    );
+    return false;
+  }
+}
+
+function selectWorldbuildingItem(itemId: string): void {
+  activeWorldbuildingItemId.value = itemId;
+}
+
+function addWorldbuildingItem(): void {
+  const items = currentWorldbuildingItems.value;
+  if (currentReadOnly.value || items.length >= 10_000) {
+    if (items.length >= 10_000) {
+      uiMessage.warning("单个世界观分类最多支持 10000 个条目。");
+    }
+    return;
+  }
+  const usedTitles = new Set(items.map(({ title }) => title));
+  let sequence = items.length + 1;
+  let title = `新条目 ${sequence}`;
+  while (usedTitles.has(title)) {
+    sequence += 1;
+    title = `新条目 ${sequence}`;
+  }
+  const item: LongWorldbuildingMarkdownItem = {
+    id: createId("worlditem"),
+    title,
+    content: ""
+  };
+  if (replaceCurrentWorldbuildingItems([...items, item])) {
+    activeWorldbuildingItemId.value = item.id;
+  }
+}
+
+function updateWorldbuildingItemContent(
+  itemId: string,
+  content: string
+): void {
+  replaceCurrentWorldbuildingItems(
+    currentWorldbuildingItems.value.map((item) =>
+      item.id === itemId ? { ...item, content } : item
+    )
+  );
+}
+
+function updateVisibleContent(content: string): void {
+  const item = currentWorldbuildingItem.value;
+  if (
+    currentIsWorldbuildingList.value &&
+    !currentWorldbuildingListState.value.error &&
+    item
+  ) {
+    updateWorldbuildingItemContent(item.id, content);
+    return;
+  }
+  updateCurrentContent(content);
+}
+
+function getEditorSnapshot(): LongEditorHistorySnapshot {
+  const input = editorInput.value;
+  const fallback = currentVisibleContent.value.length;
+  return {
+    content: currentVisibleContent.value,
+    selectionStart: input?.selectionStart ?? fallback,
+    selectionEnd: input?.selectionEnd ?? fallback
+  };
+}
+
+function pushHistorySnapshot(
+  history: LongEditorHistorySnapshot[],
+  snapshot: LongEditorHistorySnapshot
+): void {
+  if (history.at(-1)?.content === snapshot.content) return;
+  history.push(snapshot);
+  if (history.length > HISTORY_LIMIT) history.shift();
+}
+
+function recordUndoSnapshot(snapshot = getEditorSnapshot()): void {
+  pushHistorySnapshot(undoHistory.value, snapshot);
+  redoHistory.value = [];
+}
+
+function handleEditorBeforeInput(event: InputEvent): void {
+  if (currentReadOnly.value) return;
+  if (event.inputType === "historyUndo") {
+    event.preventDefault();
+    undo();
+    return;
+  }
+  if (event.inputType === "historyRedo") {
+    event.preventDefault();
+    redo();
+    return;
+  }
+  const input = event.currentTarget as HTMLTextAreaElement;
+  recordUndoSnapshot({
+    content: currentVisibleContent.value,
+    selectionStart:
+      input.selectionStart ?? currentVisibleContent.value.length,
+    selectionEnd: input.selectionEnd ?? currentVisibleContent.value.length
+  });
+}
+
+async function restoreEditorSnapshot(
+  snapshot: LongEditorHistorySnapshot
+): Promise<void> {
+  viewMode.value = "edit";
+  updateVisibleContent(snapshot.content);
+  await nextTick();
+  const input = editorInput.value;
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(
+    snapshot.selectionStart,
+    snapshot.selectionEnd,
+    "forward"
+  );
+  scrollEditorToRange(input, snapshot.selectionStart);
+}
+
+function undo(): void {
+  if (!canUndo.value) return;
+  const snapshot = undoHistory.value.pop();
+  if (!snapshot) return;
+  pushHistorySnapshot(redoHistory.value, getEditorSnapshot());
+  void restoreEditorSnapshot(snapshot);
+}
+
+function redo(): void {
+  if (!canRedo.value) return;
+  const snapshot = redoHistory.value.pop();
+  if (!snapshot) return;
+  pushHistorySnapshot(undoHistory.value, getEditorSnapshot());
+  void restoreEditorSnapshot(snapshot);
+}
+
+function closeFindPanel(): void {
+  findPanelOpen.value = false;
+  currentMatchIndex.value = -1;
+}
+
+async function toggleFindPanel(mode: "find" | "replace"): Promise<void> {
+  if (!canUseTextTools.value) return;
+  if (findPanelOpen.value && findPanelMode.value === mode) {
+    closeFindPanel();
+    return;
+  }
+  viewMode.value = "edit";
+  findPanelMode.value = mode;
+  findPanelOpen.value = true;
+  searchAnchor.value = editorInput.value?.selectionStart ?? 0;
+  currentMatchIndex.value = -1;
+  await nextTick();
+  findInput.value?.focus({ preventScroll: true });
+  findInput.value?.select();
+}
+
+function resolveInitialMatchIndex(direction: 1 | -1): number {
+  const matches = searchMatches.value;
+  if (!matches.length) return -1;
+  if (direction === 1) {
+    const index = matches.findIndex(
+      (match) => match.start >= searchAnchor.value
+    );
+    return index >= 0 ? index : 0;
+  }
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    if (matches[index]!.end <= searchAnchor.value) return index;
+  }
+  return matches.length - 1;
+}
+
+function scrollEditorToRange(
+  input: HTMLTextAreaElement,
+  start: number
+): void {
+  const line = currentVisibleContent.value.slice(0, start).split("\n").length;
+  const computedStyle = globalThis.getComputedStyle(input);
+  const lineHeight = Number.parseFloat(computedStyle.lineHeight);
+  const resolvedLineHeight = Number.isFinite(lineHeight)
+    ? lineHeight
+    : Number.parseFloat(computedStyle.fontSize) * 1.95;
+  input.scrollTop = Math.max(
+    0,
+    (line - 1) * resolvedLineHeight - input.clientHeight / 3
+  );
+}
+
+async function selectSearchMatch(index: number): Promise<void> {
+  const match = searchMatches.value[index];
+  if (!match) return;
+  currentMatchIndex.value = index;
+  viewMode.value = "edit";
+  await nextTick();
+  const input = editorInput.value;
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(match.start, match.end, "forward");
+  scrollEditorToRange(input, match.start);
+  await nextTick();
+  findInput.value?.focus({ preventScroll: true });
+}
+
+function findMatch(direction: 1 | -1, quiet = false): void {
+  if (!searchQuery.value) {
+    if (!quiet) uiMessage.info("请输入要查找的文字");
+    return;
+  }
+  if (!searchMatches.value.length) {
+    currentMatchIndex.value = -1;
+    if (!quiet) uiMessage.info("未找到匹配文字");
+    return;
+  }
+  const nextIndex =
+    currentMatchIndex.value < 0
+      ? resolveInitialMatchIndex(direction)
+      : (currentMatchIndex.value + direction + searchMatches.value.length) %
+        searchMatches.value.length;
+  void selectSearchMatch(nextIndex);
+}
+
+function handleFindInput(): void {
+  currentMatchIndex.value = -1;
+  if (searchQuery.value) findMatch(1, true);
+}
+
+function replaceCurrentMatch(): void {
+  if (currentReadOnly.value) return;
+  const index =
+    currentMatchIndex.value >= 0
+      ? currentMatchIndex.value
+      : resolveInitialMatchIndex(1);
+  const match = searchMatches.value[index];
+  if (!match) {
+    uiMessage.info(
+      searchQuery.value ? "未找到可替换的文字" : "请输入要替换的文字"
+    );
+    return;
+  }
+  const content = currentVisibleContent.value;
+  const nextContent =
+    content.slice(0, match.start) +
+    replacementText.value +
+    content.slice(match.end);
+  if (nextContent === content) {
+    findMatch(1);
+    return;
+  }
+  recordUndoSnapshot();
+  updateVisibleContent(nextContent);
+  searchAnchor.value = match.start + replacementText.value.length;
+  void nextTick(() => findMatch(1, true));
+}
+
+function replaceAllMatches(): void {
+  if (currentReadOnly.value) return;
+  const matches = searchMatches.value;
+  if (!searchQuery.value || !matches.length) {
+    uiMessage.info(
+      searchQuery.value ? "未找到可替换的文字" : "请输入要替换的文字"
+    );
+    return;
+  }
+  const content = currentVisibleContent.value;
+  let cursor = 0;
+  let nextContent = "";
+  for (const match of matches) {
+    nextContent +=
+      content.slice(cursor, match.start) + replacementText.value;
+    cursor = match.end;
+  }
+  nextContent += content.slice(cursor);
+  if (nextContent === content) {
+    uiMessage.info("查找文字与替换文字相同");
+    return;
+  }
+  recordUndoSnapshot();
+  updateVisibleContent(nextContent);
+  searchAnchor.value = 0;
+  uiMessage.success(`已替换 ${matches.length} 处文字`);
+}
+
+function handleEditorKeydown(event: KeyboardEvent): void {
+  const modifier = event.metaKey || event.ctrlKey;
+  const key = event.key.toLowerCase();
+  if (modifier && key === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
+    return;
+  }
+  if (event.ctrlKey && !event.metaKey && key === "y") {
+    event.preventDefault();
+    redo();
+    return;
+  }
+  if (modifier && key === "f" && !(event.metaKey && event.altKey)) {
+    event.preventDefault();
+    void toggleFindPanel("find");
+    return;
+  }
+  if (
+    (event.ctrlKey && !event.metaKey && key === "h") ||
+    (event.metaKey && event.altKey && key === "f")
+  ) {
+    event.preventDefault();
+    void toggleFindPanel("replace");
+  }
+}
+
+function handleWindowPointerDown(event: PointerEvent): void {
+  const target = event.target;
+  if (!(target instanceof Node)) return;
+  if (
+    !editorToolsElement.value?.contains(target) &&
+    !findPanelElement.value?.contains(target)
+  ) {
+    closeFindPanel();
+  }
+}
+
+function updateWorldbuildingItemTitle(itemId: string, event: Event): void {
+  const input = event.currentTarget;
+  if (!(input instanceof HTMLInputElement)) return;
+  const title = input.value.trim();
+  const current = currentWorldbuildingItems.value.find(
+    (item) => item.id === itemId
+  );
+  if (!current) return;
+  if (!title) {
+    input.value = current.title;
+    uiMessage.warning("世界观条目名称不能为空。");
+    return;
+  }
+  if (
+    replaceCurrentWorldbuildingItems(
+      currentWorldbuildingItems.value.map((item) =>
+        item.id === itemId ? { ...item, title } : item
+      )
+    )
+  ) {
+    input.value = title;
+  } else {
+    input.value = current.title;
+  }
+}
+
+function openWorldbuildingItemDelete(itemId: string): void {
+  if (currentReadOnly.value) return;
+  worldbuildingDeletePreviousFocus =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+  pendingWorldbuildingDeleteId.value = itemId;
+  void nextTick(() => {
+    worldbuildingDeleteCancelButton.value?.focus({ preventScroll: true });
+  });
+}
+
+function closeWorldbuildingItemDelete(): void {
+  pendingWorldbuildingDeleteId.value = null;
+  const previousFocus = worldbuildingDeletePreviousFocus;
+  worldbuildingDeletePreviousFocus = null;
+  void nextTick(() => {
+    if (previousFocus?.isConnected) {
+      previousFocus.focus({ preventScroll: true });
+    }
+  });
+}
+
+function handleWorldbuildingDeleteKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    event.stopPropagation();
+    closeWorldbuildingItemDelete();
+    return;
+  }
+  if (event.key !== "Tab" || !worldbuildingDeleteDialog.value) return;
+  const focusable = Array.from(
+    worldbuildingDeleteDialog.value.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    )
+  );
+  if (!focusable.length) {
+    event.preventDefault();
+    worldbuildingDeleteDialog.value.focus({ preventScroll: true });
+    return;
+  }
+  const first = focusable[0]!;
+  const last = focusable.at(-1)!;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus({ preventScroll: true });
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+  }
+}
+
+function confirmWorldbuildingItemDelete(): void {
+  const target = pendingWorldbuildingDeleteItem.value;
+  if (!target) return;
+  const items = currentWorldbuildingItems.value;
+  const targetIndex = items.findIndex(({ id }) => id === target.id);
+  const nextItems = items.filter(({ id }) => id !== target.id);
+  if (!replaceCurrentWorldbuildingItems(nextItems)) return;
+  activeWorldbuildingItemId.value =
+    nextItems[Math.min(targetIndex, nextItems.length - 1)]?.id ?? null;
+  closeWorldbuildingItemDelete();
+}
+
 function initializeLoadingState(
   key: string,
   bookId: string,
@@ -416,7 +1002,11 @@ function initializeLoadingState(
     projectRevision: existing?.projectRevision ?? 0,
     loading: true,
     saving: false,
-    loaded: existing?.loaded ?? false
+    // Never expose a previous clean snapshot as editable after its revision
+    // changed. If the fresh read fails, keeping `loaded` false prevents stale
+    // text from being saved against the newer CAS revision.
+    loaded: false,
+    loadError: null
   });
 }
 
@@ -490,10 +1080,12 @@ async function loadSelectedDocument(force = false): Promise<void> {
 
     if (!firstPage || requestClockByFile.get(key) !== ownRequest) return;
     const content = contentChunks.join("");
+    // `locked` is a transient write barrier (proposal approval / send
+    // preflight), not a property of the document. Recovery still needs to be
+    // discovered while that barrier is active so it is not silently skipped
+    // until a later remount.
     const editable =
-      !props.locked &&
-      !selectedFile.readOnly &&
-      isEditableLongFile(firstPage.file);
+      !selectedFile.readOnly && isEditableLongFile(firstPage.file);
     const recovery = editable
       ? readRecoveryRecord(bookId, firstPage.file.id)
       : null;
@@ -503,16 +1095,26 @@ async function loadSelectedDocument(force = false): Promise<void> {
       recoveryMatchesDisk && recovery.content !== content
         ? recovery.content
         : content;
+    const latestState = documentStates.value[key];
     replaceDocumentState(key, {
       bookId,
       file: firstPage.file,
       content: recoveredContent,
       savedContent: content,
-      workspaceRevision: firstPage.workspaceRevision,
-      projectRevision: firstPage.projectRevision,
+      // Another document save can advance the shared CAS baseline while this
+      // file is being paged in. Never regress to the older read baseline.
+      workspaceRevision: Math.max(
+        firstPage.workspaceRevision,
+        latestState?.workspaceRevision ?? 0
+      ),
+      projectRevision: Math.max(
+        firstPage.projectRevision,
+        latestState?.projectRevision ?? 0
+      ),
       loading: false,
       saving: false,
-      loaded: true
+      loaded: true,
+      loadError: null
     });
     if (recovery?.content === content) {
       clearRecoveryRecordForKey(key, bookId, firstPage.file.id);
@@ -532,7 +1134,10 @@ async function loadSelectedDocument(force = false): Promise<void> {
     } else {
       removeStaleRecoveryState(key);
     }
-    if (currentSelectionFile.value?.file.id === firstPage.file.id) {
+    if (
+      props.bookId === bookId &&
+      currentSelectionFile.value?.file.id === firstPage.file.id
+    ) {
       emit("contextChange", {
         bookId,
         fileId: firstPage.file.id,
@@ -542,13 +1147,15 @@ async function loadSelectedDocument(force = false): Promise<void> {
   } catch (error: unknown) {
     const latest = documentStates.value[key];
     if (requestClockByFile.get(key) === ownRequest && latest) {
+      const message =
+        error instanceof Error ? error.message : "读取长篇文件失败。";
       replaceDocumentState(key, {
         ...latest,
-        loading: false
+        loading: false,
+        loaded: false,
+        loadError: message
       });
-      uiMessage.error(
-        error instanceof Error ? error.message : "读取长篇文件失败。"
-      );
+      uiMessage.error(message);
     }
   }
 }
@@ -621,7 +1228,7 @@ async function saveDocumentState(
     return Boolean(api && state && !state.loading && !state.saving);
   }
 
-  const bookId = props.bookId;
+  const bookId = state.bookId;
   const submittedContent = state.content;
   replaceDocumentState(key, { ...state, saving: true });
   try {
@@ -647,7 +1254,8 @@ async function saveDocumentState(
                     file: result.file,
                     savedContent: submittedContent,
                     saving: false,
-                    loaded: true
+                    loaded: true,
+                    loadError: null
                   }
                 : {}),
               workspaceRevision: result.workspaceRevision,
@@ -657,7 +1265,10 @@ async function saveDocumentState(
       ])
     );
     emit("saved", result);
-    if (currentSelectionFile.value?.file.id === result.file.id) {
+    if (
+      props.bookId === bookId &&
+      currentSelectionFile.value?.file.id === result.file.id
+    ) {
       emit("contextChange", {
         bookId,
         fileId: result.file.id,
@@ -671,9 +1282,13 @@ async function saveDocumentState(
       persistRecoveryForKey(key);
     }
     if (announceSuccess) {
-      uiMessage.success(
-        `已保存“${props.selection?.title ?? state.file.path}”`
-      );
+      if (savedState?.content === savedState?.savedContent) {
+        uiMessage.success(
+          `已保存“${props.selection?.title ?? state.file.path}”`
+        );
+      } else {
+        uiMessage.info("已保存提交时版本；保存期间的新修改仍待保存。");
+      }
     }
     return true;
   } catch (error: unknown) {
@@ -747,7 +1362,15 @@ async function saveAllChanges(): Promise<boolean> {
         return false;
       }
     }
-    return true;
+    // Editing remains available during an asynchronous save. A keystroke
+    // after a file's submitted snapshot must keep navigation blocked instead
+    // of being mistaken for part of the successful write.
+    return !Object.entries(documentStates.value).some(
+      ([key, state]) =>
+        key.startsWith(bookPrefix) &&
+        state.loaded &&
+        state.content !== state.savedContent
+    );
   });
   if (saved) {
     uiMessage.success(
@@ -849,6 +1472,47 @@ watch(
     [
       props.bookId,
       currentSelectionFile.value?.file.id,
+      activeWorldbuildingItemId.value
+    ] as const,
+  () => {
+    viewMode.value = "edit";
+    closeFindPanel();
+    searchQuery.value = "";
+    replacementText.value = "";
+    undoHistory.value = [];
+    redoHistory.value = [];
+  },
+  { flush: "sync" }
+);
+
+watch(
+  () =>
+    [
+      props.bookId,
+      props.selection?.key,
+      currentWorldbuildingItems.value.map(({ id }) => id).join("\u0000")
+    ] as const,
+  () => {
+    const items = currentWorldbuildingItems.value;
+    if (
+      !items.some(({ id }) => id === activeWorldbuildingItemId.value)
+    ) {
+      activeWorldbuildingItemId.value = items[0]?.id ?? null;
+    }
+    if (
+      !items.some(({ id }) => id === pendingWorldbuildingDeleteId.value)
+    ) {
+      pendingWorldbuildingDeleteId.value = null;
+    }
+  },
+  { immediate: true, flush: "sync" }
+);
+
+watch(
+  () =>
+    [
+      props.bookId,
+      currentSelectionFile.value?.file.id,
       currentSelectionFile.value?.file.revision
     ] as const,
   () => {
@@ -868,109 +1532,325 @@ watch(
   { immediate: true }
 );
 
-onMounted(() => window.addEventListener("beforeunload", handleBeforeUnload));
+onMounted(() => {
+  window.addEventListener("beforeunload", handleBeforeUnload);
+  window.addEventListener("pointerdown", handleWindowPointerDown, true);
+});
 onBeforeUnmount(() => {
   flushAllRecoveryRecords();
   for (const key of [...recoveryWriteTimers.keys()]) {
     cancelRecoveryWrite(key);
   }
   window.removeEventListener("beforeunload", handleBeforeUnload);
+  window.removeEventListener("pointerdown", handleWindowPointerDown, true);
   requestClockByFile.clear();
 });
 </script>
 
 <template>
-  <section class="long-workspace-editor" aria-label="长篇文件编辑器">
+  <section
+    class="long-workspace-editor"
+    :class="{
+      'has-navigation-tabs':
+        currentIsWorldbuildingList &&
+          currentState?.loaded &&
+          !currentWorldbuildingListState.error
+    }"
+    aria-label="长篇文件编辑器"
+  >
     <template v-if="selection">
       <header class="long-editor-header">
-        <div class="long-editor-heading">
-          <div
-            class="long-editor-breadcrumbs"
-            :title="selection.breadcrumbs.join(' / ')"
+        <div
+          class="long-editor-breadcrumbs"
+          :title="selection.breadcrumbs.join(' / ')"
+        >
+          <span
+            v-for="(part, index) in selection.breadcrumbs"
+            :key="`${part}-${index}`"
           >
-            <span
-              v-for="(part, index) in selection.breadcrumbs"
-              :key="`${part}-${index}`"
-            >
-              {{ part }}
-              <i v-if="index < selection.breadcrumbs.length - 1">/</i>
-            </span>
-          </div>
-          <h2>{{ selection.title }}</h2>
-        </div>
-        <div class="long-editor-save-state">
-          <AppIcon
-            :name="currentDirty ? 'save' : 'check'"
-            :size="13"
-          />
-          <span>
-            {{
-              !currentSelectionFile
-                ? "已选择工作区上下文"
-                : locked
-                  ? lockedReason ?? "编辑暂时锁定"
-                : currentSelectionFile.readOnly
-                ? "只读记录"
-                : currentState?.loading
-                  ? "正在按需读取"
-                  : currentState?.saving
-                    ? "正在保存"
-                    : currentDirty
-                      ? "有未保存修改"
-                      : currentState?.loaded
-                        ? "已与本机同步"
-                        : "等待读取"
-            }}
+            {{ part }}
+            <i v-if="index < selection.breadcrumbs.length - 1">/</i>
           </span>
+        </div>
+        <div class="long-editor-header-actions">
+          <span
+            class="long-editor-save-state"
+            :class="{ 'is-dirty': currentDirty }"
+          >
+            <AppIcon
+              :name="currentDirty ? 'save' : 'check'"
+              :size="13"
+            />
+            <span>
+              {{
+                !currentSelectionFile
+                  ? "已选择工作区上下文"
+                  : locked
+                    ? lockedReason ?? "编辑暂时锁定"
+                    : currentSelectionFile.readOnly
+                      ? "只读记录"
+                      : currentState?.loading
+                        ? "正在读取"
+                        : currentState?.saving
+                          ? "正在保存到本机"
+                          : currentDirty
+                            ? "有未保存修改"
+                            : currentState?.loaded
+                              ? "已保存到本机"
+                              : "等待读取"
+              }}
+            </span>
+          </span>
+          <button
+            class="long-editor-collapse-button"
+            type="button"
+            aria-label="收起长篇编辑栏"
+            @click="emit('collapse')"
+          >
+            <AppIcon name="panel-right" :size="18" />
+          </button>
         </div>
       </header>
 
       <nav
-        v-if="selection.files.length > 1"
-        class="long-editor-tabs"
-        role="tablist"
-        :aria-label="`${selection.title}文件`"
+        v-if="
+          currentIsWorldbuildingList &&
+          currentState?.loaded &&
+          !currentWorldbuildingListState.error
+        "
+        class="section-tabs-bar long-worldbuilding-tabs"
+        aria-label="世界观条目"
       >
+        <div class="section-tabs-scroll" role="tablist">
+          <button
+            v-for="item in currentWorldbuildingItems"
+            :key="item.id"
+            class="section-tab"
+            :class="{
+              'is-active': currentWorldbuildingItem?.id === item.id
+            }"
+            type="button"
+            role="tab"
+            :aria-selected="currentWorldbuildingItem?.id === item.id"
+            :title="item.title"
+            @click="selectWorldbuildingItem(item.id)"
+          >
+            {{ item.title }}
+          </button>
+        </div>
         <button
-          v-for="file in selection.files"
-          :key="file.role"
+          v-if="!currentReadOnly"
+          class="long-worldbuilding-add"
           type="button"
-          role="tab"
-          :aria-selected="currentSelectionFile?.role === file.role"
-          :class="{ 'is-active': currentSelectionFile?.role === file.role }"
-          :disabled="locked"
-          @click="selectRole(file.role)"
+          aria-label="新建世界观条目"
+          title="新建条目"
+          @click="addWorldbuildingItem"
         >
-          {{ file.label }}
+          <AppIcon name="plus" :size="15" />
         </button>
       </nav>
 
       <div class="long-editor-toolbar">
-        <span>
-          <AppIcon
-            :name="
-              !currentSelectionFile
-                ? 'wand'
-                : currentReadOnly
-                  ? 'ledger'
-                  : 'edit'
+        <div
+          v-if="selection.files.length > 1"
+          class="long-editor-file-tabs"
+          role="tablist"
+          :aria-label="`${selection.title}文件`"
+        >
+          <button
+            v-for="file in selection.files"
+            :key="file.role"
+            type="button"
+            role="tab"
+            :aria-selected="currentSelectionFile?.role === file.role"
+            :class="{ 'is-active': currentSelectionFile?.role === file.role }"
+            :disabled="locked"
+            @click="selectRole(file.role)"
+          >
+            {{ file.label }}
+          </button>
+        </div>
+        <span
+          v-if="selection.files.length > 1"
+          class="long-toolbar-separator"
+        />
+        <div
+          class="long-editor-view-tabs"
+          role="tablist"
+          aria-label="文本视图"
+        >
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="viewMode === 'edit'"
+            :class="{ 'is-active': viewMode === 'edit' }"
+            :disabled="!canUseTextTools"
+            @click="viewMode = 'edit'"
+          >
+            编辑
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="viewMode === 'preview'"
+            :class="{ 'is-active': viewMode === 'preview' }"
+            :disabled="!canUseTextTools"
+            @click="viewMode = 'preview'"
+          >
+            预览
+          </button>
+        </div>
+        <span class="long-toolbar-separator" />
+        <div
+          ref="editorToolsElement"
+          class="long-editor-text-tools"
+          role="group"
+          aria-label="文本操作"
+        >
+          <button
+            class="long-format-button"
+            type="button"
+            aria-label="撤销"
+            title="撤销（⌘/Ctrl+Z）"
+            :disabled="!canUndo"
+            @mousedown.prevent
+            @click="undo"
+          >
+            <AppIcon name="undo" :size="16" />
+          </button>
+          <button
+            class="long-format-button"
+            type="button"
+            aria-label="还原"
+            title="还原（⌘/Ctrl+Shift+Z）"
+            :disabled="!canRedo"
+            @mousedown.prevent
+            @click="redo"
+          >
+            <AppIcon name="redo" :size="16" />
+          </button>
+          <button
+            class="long-format-button"
+            :class="{
+              'is-active': findPanelOpen && findPanelMode === 'find'
+            }"
+            type="button"
+            aria-label="查找"
+            title="查找（⌘/Ctrl+F）"
+            :disabled="!canUseTextTools"
+            :aria-pressed="findPanelOpen && findPanelMode === 'find'"
+            @mousedown.prevent
+            @click="toggleFindPanel('find')"
+          >
+            <AppIcon name="search" :size="16" />
+          </button>
+          <button
+            class="long-format-button"
+            :class="{
+              'is-active': findPanelOpen && findPanelMode === 'replace'
+            }"
+            type="button"
+            aria-label="替换"
+            title="替换（⌘⌥F / Ctrl+H）"
+            :disabled="!canUseTextTools"
+            :aria-pressed="findPanelOpen && findPanelMode === 'replace'"
+            @mousedown.prevent
+            @click="toggleFindPanel('replace')"
+          >
+            <AppIcon name="replace" :size="16" />
+          </button>
+
+          <div
+            v-if="findPanelOpen"
+            ref="findPanelElement"
+            class="long-editor-find-panel"
+            role="dialog"
+            :aria-label="
+              findPanelMode === 'replace' ? '查找和替换' : '查找文字'
             "
-            :size="14"
-          />
-          {{
-            !currentSelectionFile
-              ? "工作区 Agent 上下文"
-              : locked
-                ? lockedReason ?? "编辑暂时锁定"
-              : currentReadOnly &&
-                  selection.root === "draft" &&
-                  selection.chapterCardId
-                ? "已提交章节只读 · 如需修改，请先回滚最后一次提交"
-              : currentReadOnly
-                ? "结构化记录 · 只读"
-                : "Markdown · CAS 保存"
-          }}
-        </span>
+            @keydown.esc.stop="closeFindPanel"
+          >
+            <div class="long-editor-find-row">
+              <label class="long-editor-find-field">
+                <AppIcon name="search" :size="14" />
+                <input
+                  ref="findInput"
+                  v-model="searchQuery"
+                  type="text"
+                  aria-label="查找文字"
+                  placeholder="查找"
+                  @input="handleFindInput"
+                  @keydown.enter.prevent="
+                    findMatch($event.shiftKey ? -1 : 1)
+                  "
+                />
+                <span class="long-editor-find-count" aria-live="polite">
+                  {{ searchResultLabel }}
+                </span>
+              </label>
+              <button
+                class="long-editor-find-icon-button is-previous"
+                type="button"
+                aria-label="查找上一个"
+                title="查找上一个"
+                @click="findMatch(-1)"
+              >
+                <AppIcon name="chevron" :size="14" />
+              </button>
+              <button
+                class="long-editor-find-icon-button"
+                type="button"
+                aria-label="查找下一个"
+                title="查找下一个"
+                @click="findMatch(1)"
+              >
+                <AppIcon name="chevron" :size="14" />
+              </button>
+              <button
+                class="long-editor-find-icon-button"
+                type="button"
+                aria-label="关闭查找"
+                title="关闭"
+                @click="closeFindPanel"
+              >
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
+            <div
+              v-if="findPanelMode === 'replace'"
+              class="long-editor-replace-row"
+            >
+              <label class="long-editor-find-field">
+                <AppIcon name="replace" :size="14" />
+                <input
+                  v-model="replacementText"
+                  type="text"
+                  aria-label="替换为"
+                  placeholder="替换为"
+                  :disabled="currentReadOnly"
+                  @keydown.enter.prevent="replaceCurrentMatch"
+                />
+              </label>
+              <button
+                class="long-editor-find-action"
+                type="button"
+                :disabled="currentReadOnly"
+                @click="replaceCurrentMatch"
+              >
+                替换
+              </button>
+              <button
+                class="long-editor-find-action"
+                type="button"
+                :disabled="currentReadOnly"
+                @click="replaceAllMatches"
+              >
+                全部
+              </button>
+            </div>
+          </div>
+        </div>
+        <span class="long-toolbar-spacer" />
         <div class="long-editor-toolbar-actions">
           <button
             v-if="
@@ -985,22 +1865,7 @@ onBeforeUnmount(() => {
             @click="emit('rollback')"
           >
             <AppIcon name="history" :size="14" />
-            回滚最后提交
-          </button>
-          <button
-            class="long-editor-save-button"
-            type="button"
-            :disabled="
-              currentReadOnly ||
-              !currentDirty ||
-              currentState?.loading ||
-              currentState?.saving ||
-              workspaceSavePending
-            "
-            @click="saveCurrentDocument"
-          >
-            <AppIcon name="save" :size="14" />
-            保存
+            <span>回滚最后提交</span>
           </button>
         </div>
       </div>
@@ -1043,6 +1908,22 @@ onBeforeUnmount(() => {
         <div v-if="currentState?.loading" class="long-editor-loading">
           <span class="long-loading-dot" />
           <span>正在读取文件内容…</span>
+        </div>
+        <div
+          v-else-if="currentState?.loadError"
+          class="long-editor-unavailable"
+          role="status"
+        >
+          <AppIcon name="file" :size="22" />
+          <strong>文件读取失败</strong>
+          <span>{{ currentState.loadError }}</span>
+          <button
+            type="button"
+            :disabled="workspaceSavePending"
+            @click="loadSelectedDocument(true)"
+          >
+            重新读取
+          </button>
         </div>
         <article
           v-else-if="
@@ -1111,20 +1992,114 @@ onBeforeUnmount(() => {
             <pre class="long-editor-readonly">{{ currentState.content }}</pre>
           </details>
         </article>
-        <pre
-          v-else-if="currentReadOnly && currentState?.loaded"
-          class="long-editor-readonly"
-        >{{ currentState.content }}</pre>
-        <textarea
+        <div
           v-else-if="currentState?.loaded"
-          :value="currentState.content"
-          :readonly="locked"
-          :aria-label="`${selection.title} Markdown 内容`"
-          spellcheck="false"
-          @input="
-            updateCurrentContent(($event.target as HTMLTextAreaElement).value)
-          "
-        />
+          class="long-editor-writing-surface"
+          :class="{ 'is-readonly': currentReadOnly }"
+        >
+          <div
+            v-if="
+              currentIsWorldbuildingList &&
+              !currentWorldbuildingListState.error &&
+              !currentWorldbuildingItem
+            "
+            class="long-worldbuilding-empty"
+          >
+            <AppIcon name="file" :size="22" />
+            <strong>还没有世界观条目</strong>
+            <span>新建条目后，可通过上方 Tab 切换并编辑内容。</span>
+            <button
+              v-if="!currentReadOnly"
+              type="button"
+              @click="addWorldbuildingItem"
+            >
+              新建第一个条目
+            </button>
+          </div>
+          <template v-else>
+            <div class="long-document-meta-row">
+              <span>{{ documentEyebrow }}</span>
+              <span v-if="currentSelectionFile" class="long-document-format">
+                {{ currentSelectionFile.label }}
+              </span>
+              <span v-if="currentReadOnly" class="long-readonly-badge">
+                只读内容
+              </span>
+              <button
+                v-if="
+                  currentIsWorldbuildingList &&
+                  currentWorldbuildingItem &&
+                  !currentReadOnly
+                "
+                class="long-worldbuilding-delete-button"
+                type="button"
+                :disabled="locked"
+                @click="
+                  openWorldbuildingItemDelete(
+                    currentWorldbuildingItem.id
+                  )
+                "
+              >
+                删除条目
+              </button>
+            </div>
+            <input
+              v-if="
+                currentIsWorldbuildingList &&
+                !currentWorldbuildingListState.error &&
+                currentWorldbuildingItem
+              "
+              :value="currentWorldbuildingItem.title"
+              class="long-document-title-input"
+              :readonly="currentReadOnly || locked"
+              maxlength="256"
+              autocomplete="off"
+              aria-label="世界观条目名称"
+              @change="
+                updateWorldbuildingItemTitle(
+                  currentWorldbuildingItem.id,
+                  $event
+                )
+              "
+            />
+            <h1 v-else class="long-document-title">
+              {{ selection.title }}
+            </h1>
+            <textarea
+              v-if="viewMode === 'edit'"
+              ref="editorInput"
+              :value="currentVisibleContent"
+              class="long-document-editor"
+              :readonly="currentReadOnly"
+              :aria-label="`${selection.title}内容`"
+              :maxlength="
+                currentIsWorldbuildingList &&
+                !currentWorldbuildingListState.error
+                  ? 1000000
+                  : undefined
+              "
+              spellcheck="false"
+              @beforeinput="handleEditorBeforeInput"
+              @input="
+                updateVisibleContent(
+                  ($event.target as HTMLTextAreaElement).value
+                )
+              "
+              @keydown="handleEditorKeydown"
+            />
+            <article v-else class="long-document-preview">
+              <p
+                v-for="(paragraph, index) in previewParagraphs"
+                :key="index"
+              >
+                {{ paragraph }}
+              </p>
+              <p v-if="!previewParagraphs.length" class="is-empty">
+                暂无正文
+              </p>
+            </article>
+          </template>
+        </div>
         <div v-else class="long-editor-unavailable">
           <AppIcon name="file" :size="22" />
           <span>选择文件后将在这里加载内容</span>
@@ -1132,11 +2107,40 @@ onBeforeUnmount(() => {
       </div>
 
       <footer class="long-editor-footer">
-        <span>{{ selection.description ?? "长篇文件按需加载，不预读其他章节正文。" }}</span>
-        <span v-if="currentState?.loaded">
-          {{ characterCount.toLocaleString() }} 字 ·
-          {{ currentState.file.revision }}
+        <span>
+          {{ characterCount.toLocaleString("zh-CN") }} 字
         </span>
+        <span>
+          {{
+            locked
+              ? lockedReason ?? "编辑暂时锁定 · 防止版本冲突"
+              : currentState?.saving
+                ? "正在原子保存本机文稿"
+                : currentReadOnly
+                  ? "本机文稿 · 只读"
+                  : currentDirty
+                    ? "本机文稿 · 有未保存修改"
+                    : currentState?.loaded
+                      ? "本机文稿 · 已保存"
+                      : "本机文稿 · 等待读取"
+          }}
+        </span>
+        <span class="long-footer-spacer" />
+        <button
+          class="long-editor-save-button"
+          type="button"
+          :disabled="
+            currentReadOnly ||
+            !currentDirty ||
+            currentState?.loading ||
+            currentState?.saving ||
+            workspaceSavePending
+          "
+          @click="saveCurrentDocument"
+        >
+          <AppIcon name="save" :size="14" />
+          {{ currentState?.saving ? "保存中…" : "立即保存" }}
+        </button>
       </footer>
     </template>
 
@@ -1147,18 +2151,83 @@ onBeforeUnmount(() => {
       <h2>选择一个长篇文件</h2>
       <p>从左侧五个工作区根目录中选择设定、人物、故事线、章节或账本记录。</p>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="pendingWorldbuildingDeleteItem"
+        class="long-worldbuilding-delete-overlay"
+        @mousedown.self="closeWorldbuildingItemDelete"
+        @keydown="handleWorldbuildingDeleteKeydown"
+      >
+        <section
+          ref="worldbuildingDeleteDialog"
+          class="long-worldbuilding-delete-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="long-worldbuilding-delete-title"
+          aria-describedby="long-worldbuilding-delete-description"
+          tabindex="-1"
+        >
+          <span>删除世界观条目</span>
+          <h3 id="long-worldbuilding-delete-title">
+            确认删除“{{ pendingWorldbuildingDeleteItem.title }}”？
+          </h3>
+          <p id="long-worldbuilding-delete-description">
+            保存后该条目及其内容将从本机文件中删除。
+          </p>
+          <footer>
+            <button
+              ref="worldbuildingDeleteCancelButton"
+              type="button"
+              @click="closeWorldbuildingItemDelete"
+            >
+              取消
+            </button>
+            <button
+              class="is-danger"
+              type="button"
+              @click="confirmWorldbuildingItemDelete"
+            >
+              确认删除
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
   </section>
 </template>
 
 <style scoped>
 .long-workspace-editor {
+  container-type: inline-size;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows:
+    minmax(50px, auto) minmax(40px, auto) minmax(0, 1fr)
+    minmax(36px, auto);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--surface-raised);
+  border-left: 1px solid var(--theme-line);
+  background: var(--surface-main);
   color: var(--text-primary);
+}
+
+.long-workspace-editor.has-navigation-tabs {
+  grid-template-rows:
+    minmax(50px, auto) minmax(42px, auto) minmax(40px, auto)
+    minmax(0, 1fr) minmax(36px, auto);
+}
+
+:global(html[data-platform="darwin"] .long-workspace-editor) {
+  grid-template-rows:
+    minmax(52px, auto) minmax(40px, auto) minmax(0, 1fr)
+    minmax(36px, auto);
+}
+
+:global(html[data-platform="darwin"] .long-workspace-editor.has-navigation-tabs) {
+  grid-template-rows:
+    minmax(52px, auto) minmax(42px, auto) minmax(40px, auto)
+    minmax(0, 1fr) minmax(36px, auto);
 }
 
 .long-editor-header {
@@ -1166,99 +2235,336 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   min-width: 0;
-  gap: 16px;
-  padding: 13px 18px 11px;
+  gap: 10px;
+  padding: 7px 9px 7px 15px;
   border-bottom: 1px solid var(--theme-line-soft);
   background: var(--surface-raised);
-}
-
-.long-editor-heading {
-  min-width: 0;
+  -webkit-app-region: drag;
 }
 
 .long-editor-breadcrumbs {
   display: flex;
+  align-items: center;
   min-width: 0;
-  gap: 5px;
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 0.642857rem;
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.long-editor-breadcrumbs span {
+  flex: 0 0 auto;
+}
+
+.long-editor-breadcrumbs span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-weight: 560;
+  text-overflow: ellipsis;
 }
 
 .long-editor-breadcrumbs i {
-  margin-left: 5px;
+  margin: 0 6px;
+  color: var(--text-tertiary);
   font-style: normal;
 }
 
-.long-editor-heading h2 {
-  overflow: hidden;
-  margin-top: 4px;
-  font-size: 1.071429rem;
-  font-weight: 640;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.long-editor-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
 }
 
 .long-editor-save-state {
   display: inline-flex;
-  flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   color: var(--text-tertiary);
   font-size: 0.678571rem;
 }
 
-.long-editor-tabs {
-  display: flex;
+.long-editor-save-state > span {
   min-width: 0;
-  gap: 4px;
-  padding: 7px 14px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--theme-line-soft);
-  background: var(--surface-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.long-editor-tabs button {
-  flex: 0 0 auto;
-  min-height: 29px;
-  padding: 5px 10px;
+.long-editor-save-state.is-dirty {
+  color: var(--warning);
+}
+
+.long-editor-collapse-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
   border-radius: 7px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 0.714286rem;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
-.long-editor-tabs button:hover {
+.long-editor-collapse-button:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.long-editor-tabs button.is-active {
-  background: var(--surface-selected);
-  color: var(--text-primary);
-  font-weight: 620;
+:global(html[data-platform="darwin"] .long-editor-header) {
+  min-height: 52px;
+  padding-top: 10px;
+  padding-bottom: 8px;
 }
 
-.long-editor-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.long-worldbuilding-tabs.section-tabs-bar {
   min-height: 42px;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--theme-line-soft);
+  padding-right: 10px;
+  border-color: var(--theme-line-soft);
   background: var(--surface-raised);
 }
 
-.long-editor-toolbar > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.long-worldbuilding-tabs .section-tab {
   color: var(--text-tertiary);
-  font-size: 0.678571rem;
+}
+
+.long-worldbuilding-tabs .section-tab:hover,
+.long-worldbuilding-tabs .section-tab.is-active {
+  color: var(--text-primary);
+}
+
+.long-worldbuilding-add {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.long-worldbuilding-add:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.long-editor-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 5px 13px;
+  border-bottom: 1px solid var(--theme-line-soft);
+  background: var(--surface-muted);
+}
+
+.long-editor-file-tabs,
+.long-editor-view-tabs {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface-hover);
+}
+
+.long-editor-file-tabs {
+  max-width: 48%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.long-editor-file-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.long-editor-file-tabs button,
+.long-editor-view-tabs button {
+  flex: 0 0 auto;
+  height: max(25px, 1.85em);
+  padding: 0 9px;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+  cursor: pointer;
+}
+
+.long-editor-file-tabs button.is-active,
+.long-editor-view-tabs button.is-active {
+  background: var(--surface-main);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgb(24 26 28 / 8%);
+}
+
+.long-editor-file-tabs button:disabled,
+.long-editor-view-tabs button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.long-toolbar-separator {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 19px;
+  margin: 0 4px;
+  background: var(--theme-line);
+}
+
+.long-toolbar-spacer,
+.long-footer-spacer {
+  flex: 1 1 auto;
+}
+
+.long-editor-text-tools {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+
+.long-format-button {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.long-format-button:hover {
+  background: var(--surface-hover);
+  color: var(--neutral-solid);
+}
+
+.long-format-button.is-active {
+  background: var(--surface-selected);
+  color: var(--accent);
+}
+
+.long-format-button:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+  opacity: 0.42;
+}
+
+.long-format-button:disabled:hover {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.long-editor-find-panel {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: min(350px, calc(100vw - 36px));
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--theme-line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow:
+    0 12px 30px rgb(24 27 30 / 16%),
+    0 2px 7px rgb(24 27 30 / 8%);
+}
+
+.long-editor-find-row,
+.long-editor-replace-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+}
+
+.long-editor-find-field {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  height: 30px;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--theme-line);
+  border-radius: 7px;
+  background: var(--surface-main);
+  color: var(--text-tertiary);
+}
+
+.long-editor-find-field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--theme-line));
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.long-editor-find-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+}
+
+.long-editor-find-field input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.long-editor-find-count {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: 0.642857rem;
+  white-space: nowrap;
+}
+
+.long-editor-find-icon-button,
+.long-editor-find-action {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.long-editor-find-icon-button {
+  width: 26px;
+}
+
+.long-editor-find-icon-button:hover,
+.long-editor-find-action:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.long-editor-find-icon-button.is-previous svg {
+  transform: rotate(180deg);
+}
+
+.long-editor-find-action {
+  padding: 0 9px;
+  border: 1px solid var(--theme-line);
+  background: var(--surface-main);
+  font-size: 0.714286rem;
+  font-weight: 560;
+}
+
+.long-editor-find-action:disabled,
+.long-editor-find-field input:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .long-editor-toolbar-actions {
@@ -1283,8 +2589,10 @@ onBeforeUnmount(() => {
 }
 
 .long-editor-rollback-button {
+  min-height: 27px;
+  padding-block: 3px;
   border: 1px solid var(--theme-line);
-  background: var(--surface-raised);
+  background: var(--surface-main);
   color: var(--text-secondary);
 }
 
@@ -1304,6 +2612,171 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   background: var(--surface-main);
+}
+
+.long-editor-writing-surface {
+  --long-document-inline-padding: clamp(18px, 2vw, 24px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  padding: 28px 0 18px;
+  overflow: hidden;
+  background: var(--surface-main);
+}
+
+.long-editor-writing-surface.is-readonly {
+  background: var(--surface-raised);
+}
+
+.long-document-meta-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  padding-inline: var(--long-document-inline-padding);
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+}
+
+.long-document-format,
+.long-readonly-badge {
+  padding: 2px 6px;
+  border: 1px solid var(--theme-line);
+  border-radius: 8px;
+  font-size: 0.607143rem;
+}
+
+.long-readonly-badge {
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--theme-line));
+  background: color-mix(
+    in srgb,
+    var(--warning) 10%,
+    var(--surface-raised)
+  );
+  color: var(--warning);
+}
+
+.long-worldbuilding-delete-button {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.642857rem;
+  cursor: pointer;
+}
+
+.long-worldbuilding-delete-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--danger);
+}
+
+.long-worldbuilding-delete-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.long-document-title-input,
+.long-document-title {
+  width: 100%;
+  margin: 8px 0 13px;
+  padding: 0 var(--long-document-inline-padding);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: Georgia, "Songti SC", "SimSun", serif;
+  font-size: clamp(1.71429rem, 2.2vw, 2.42857rem);
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.025em;
+}
+
+.long-document-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.long-document-title-input[readonly] {
+  color: var(--text-primary);
+}
+
+.long-document-editor,
+.long-document-preview {
+  width: 100%;
+  min-height: 0;
+  padding: 0 var(--long-document-inline-padding) 80px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: Georgia, "Songti SC", "SimSun", serif;
+  font-size: 1.07143rem;
+  line-height: 1.95;
+  letter-spacing: 0.025em;
+  white-space: pre-wrap;
+}
+
+.long-document-editor {
+  resize: none;
+}
+
+.long-document-title-input:focus-visible,
+.long-document-editor:focus-visible {
+  outline: 1px solid
+    color-mix(in srgb, var(--theme-foreground) 22%, transparent);
+}
+
+:global(html[data-theme="dark"] .long-document-title-input:focus-visible),
+:global(html[data-theme="dark"] .long-document-editor:focus-visible) {
+  outline-color: rgb(255 255 255 / 22%);
+}
+
+.long-document-editor[readonly] {
+  color: var(--text-secondary);
+}
+
+.long-document-preview p + p {
+  margin-top: 1.15em;
+}
+
+.long-document-preview .is-empty {
+  color: var(--text-tertiary);
+}
+
+.long-worldbuilding-empty {
+  display: grid;
+  grid-row: 1 / -1;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  min-height: 0;
+  padding: 28px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.long-worldbuilding-empty strong {
+  color: var(--text-primary);
+}
+
+.long-worldbuilding-empty span {
+  font-size: 0.75rem;
+}
+
+.long-worldbuilding-empty button {
+  margin-top: 4px;
+  min-height: 31px;
+  padding: 6px 11px;
+  border-radius: 7px;
+  background: var(--neutral-solid);
+  color: var(--accent-contrast, #ffffff);
+  font-size: 0.75rem;
+  cursor: pointer;
 }
 
 .long-editor-recovery {
@@ -1400,7 +2873,6 @@ onBeforeUnmount(() => {
   cursor: default;
 }
 
-.long-editor-document textarea,
 .long-editor-readonly {
   width: 100%;
   height: 100%;
@@ -1412,17 +2884,10 @@ onBeforeUnmount(() => {
   outline: 0;
   background: var(--surface-main);
   color: var(--text-primary);
-  font-family: var(--ui-font);
-  font-size: 1rem;
-  line-height: 1.95;
-  resize: none;
-  white-space: pre-wrap;
-}
-
-.long-editor-readonly {
   font-family: var(--code-font);
   font-size: var(--code-font-size);
   line-height: 1.75;
+  white-space: pre-wrap;
 }
 
 .long-ledger-record {
@@ -1522,6 +2987,31 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
+.long-editor-unavailable strong {
+  color: var(--text-primary);
+}
+
+.long-editor-unavailable button {
+  min-height: 31px;
+  padding: 6px 11px;
+  border: 1px solid var(--theme-line);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.long-editor-unavailable button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.long-editor-unavailable button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .long-loading-dot {
   width: 8px;
   height: 8px;
@@ -1533,25 +3023,33 @@ onBeforeUnmount(() => {
 .long-editor-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   min-width: 0;
-  gap: 14px;
-  padding: 9px 14px;
+  gap: 10px;
+  padding: 0 13px;
   border-top: 1px solid var(--theme-line-soft);
   background: var(--surface-muted);
   color: var(--text-tertiary);
-  font-size: 0.642857rem;
+  font-size: 0.678571rem;
 }
 
-.long-editor-footer span:first-child {
+.long-editor-footer > span:first-child {
+  flex: 0 0 auto;
+}
+
+.long-editor-footer > span:nth-child(2) {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.long-editor-footer span:last-child {
+.long-editor-footer .long-editor-save-button {
   flex: 0 0 auto;
+  height: max(26px, 1.9em);
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
 }
 
 .long-editor-empty {
@@ -1576,6 +3074,132 @@ onBeforeUnmount(() => {
 .long-editor-empty p {
   max-width: 420px;
   line-height: 1.65;
+}
+
+.long-worldbuilding-delete-overlay {
+  position: fixed;
+  z-index: 2400;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--surface-main) 58%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.long-worldbuilding-delete-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--theme-line);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow: 0 20px 60px
+    color-mix(in srgb, var(--text-primary) 22%, transparent);
+  color: var(--text-primary);
+}
+
+.long-worldbuilding-delete-dialog > span {
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+}
+
+.long-worldbuilding-delete-dialog h3 {
+  margin: 6px 0 0;
+  font-size: 1.071429rem;
+}
+
+.long-worldbuilding-delete-dialog p {
+  margin: 12px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+  line-height: 1.6;
+}
+
+.long-worldbuilding-delete-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.long-worldbuilding-delete-dialog button {
+  min-height: 32px;
+  padding: 6px 11px;
+  border: 1px solid var(--theme-line);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.long-worldbuilding-delete-dialog button:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.long-worldbuilding-delete-dialog button.is-danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: #ffffff;
+}
+
+@container (max-width: 38rem) {
+  .long-editor-header {
+    padding-inline: 10px 7px;
+  }
+
+  .long-editor-save-state {
+    max-width: min(42cqw, 11rem);
+  }
+
+  .long-editor-toolbar {
+    flex-wrap: wrap;
+    padding-inline: 8px;
+  }
+
+  .long-editor-file-tabs {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+
+  .long-toolbar-spacer {
+    display: none;
+  }
+
+  .long-editor-toolbar-actions {
+    margin-left: auto;
+  }
+
+  .long-editor-writing-surface {
+    --long-document-inline-padding: clamp(14px, 4cqw, 20px);
+    padding-top: 18px;
+  }
+
+  .long-document-title-input,
+  .long-document-title {
+    font-size: clamp(1.45rem, 7cqw, 2rem);
+  }
+}
+
+@container (max-width: 27rem) {
+  .long-editor-breadcrumbs span:not(:last-child),
+  .long-editor-breadcrumbs i {
+    display: none;
+  }
+
+  .long-editor-save-state {
+    max-width: 34cqw;
+  }
+
+  .long-editor-rollback-button span,
+  .long-editor-footer > span:nth-child(2) {
+    display: none;
+  }
+
+  .long-editor-find-panel {
+    right: -3.25rem;
+    width: min(350px, calc(100cqw - 16px));
+  }
 }
 
 @keyframes long-editor-pulse {

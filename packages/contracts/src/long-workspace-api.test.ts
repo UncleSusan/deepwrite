@@ -229,11 +229,6 @@ describe("long workspace API contracts", () => {
       },
       { id: "cmd_long_import" }
     );
-    const exportPortable = createEnvelope(
-      "long.exportPortable",
-      { bookId: "longbook_api", title: "时间尽头" },
-      { id: "cmd_long_export" }
-    );
     const importPortable = createEnvelope(
       "long.importPortableAtPath",
       {
@@ -260,9 +255,6 @@ describe("long workspace API contracts", () => {
     expect(CommandEnvelopeSchema.parse(read).context.runId).toBe("run_api");
     expect(CommandEnvelopeSchema.parse(migrate).type).toBe(
       "long.importWriteClawAtPath"
-    );
-    expect(CommandEnvelopeSchema.parse(exportPortable).type).toBe(
-      "long.exportPortable"
     );
     expect(CommandEnvelopeSchema.parse(importPortable).type).toBe(
       "long.importPortableAtPath"

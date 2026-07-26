@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import type {
   LinkedMaterialIdsByKind,
   LinkedSkillIdsByKind,
@@ -11,9 +11,11 @@ import type {
 import AppIcon from "./AppIcon.vue";
 import PopupSelect from "./PopupSelect.vue";
 
+type LongBindingDomain = "skill" | "material";
+
 const props = withDefaults(
   defineProps<{
-    open: boolean;
+    mode: LongBindingDomain | null;
     bookTitle: string;
     materials?: readonly MaterialLibrary[];
     skills?: readonly SkillLibrary[];
@@ -38,19 +40,28 @@ const emit = defineEmits<{
   ];
 }>();
 
-const materialKinds: ReadonlyArray<{ id: MaterialKind; label: string }> = [
-  { id: "character", label: "人设素材库" },
-  { id: "gimmick", label: "梗素材库" },
-  { id: "plot", label: "剧情素材库" },
-  { id: "draft", label: "正文素材库" },
-  { id: "other", label: "其他素材库" }
+const materialKinds: ReadonlyArray<{
+  id: MaterialKind;
+  label: string;
+  description: string;
+}> = [
+  { id: "character", label: "人设素材库", description: "人物与关系设定" },
+  { id: "gimmick", label: "梗素材库", description: "核心创意与钩子" },
+  { id: "plot", label: "剧情素材库", description: "剧情、导语与细化" },
+  { id: "draft", label: "正文素材库", description: "正文片段与表达参考" },
+  { id: "other", label: "其他素材库", description: "未归入以上分类的素材" }
 ];
-const skillKinds: ReadonlyArray<{ id: SkillKind; label: string }> = [
-  { id: "general", label: "通用技能库" },
-  { id: "plot", label: "剧情技能库" },
-  { id: "style", label: "文风技能库" },
-  { id: "other", label: "其他技能库" }
+const skillKinds: ReadonlyArray<{
+  id: SkillKind;
+  label: string;
+  description: string;
+}> = [
+  { id: "general", label: "通用技能库", description: "多个阶段均可使用" },
+  { id: "plot", label: "剧情设计技能库", description: "人物、剧情与大纲方法" },
+  { id: "style", label: "文风写作技能库", description: "正文与章节写作方法" },
+  { id: "other", label: "其他技能库", description: "自定义写作方法" }
 ];
+
 const selectedMaterials = reactive<Record<MaterialKind, string[]>>({
   character: [],
   gimmick: [],
@@ -79,20 +90,32 @@ const skillCandidates = reactive<Record<SkillKind, string>>({
 });
 const dialog = ref<HTMLElement | null>(null);
 
+const title = computed(() =>
+  props.mode === "skill" ? "技能库绑定" : "素材库绑定"
+);
+const heading = computed(() =>
+  props.mode === "skill" ? "绑定技能库" : "关联素材库"
+);
+const description = computed(() =>
+  props.mode === "skill"
+    ? "智能体只会按当前阶段和读取范围加载已绑定技能；每类可绑定多个技能库。"
+    : "按用途关联当前长篇使用的素材库；每类可关联多个素材库。"
+);
+
 function materialOptions(kind: MaterialKind): Array<{
   value: string;
   label: string;
 }> {
-  const libraries = props.materials.filter(
-    (library) =>
-      library.materialType === "long" &&
-      (library.materialKind === kind || library.materialKind === "mixed")
-  );
   const selected = new Set(selectedMaterials[kind]);
   return [
     { value: "", label: "添加一个素材库…" },
-    ...libraries
-      .filter((library) => !selected.has(library.id))
+    ...props.materials
+      .filter(
+        (library) =>
+          library.materialType === "long" &&
+          (library.materialKind === kind || library.materialKind === "mixed") &&
+          !selected.has(library.id)
+      )
       .map((library) => ({
         value: library.id,
         label: library.title
@@ -104,15 +127,16 @@ function skillOptions(kind: SkillKind): Array<{
   value: string;
   label: string;
 }> {
-  const libraries = props.skills.filter(
-    (library) =>
-      library.skillType === "long" && library.skillKind === kind
-  );
   const selected = new Set(selectedSkills[kind]);
   return [
     { value: "", label: "添加一个技能库…" },
-    ...libraries
-      .filter((library) => !selected.has(library.id))
+    ...props.skills
+      .filter(
+        (library) =>
+          library.skillType === "long" &&
+          library.skillKind === kind &&
+          !selected.has(library.id)
+      )
       .map((library) => ({
         value: library.id,
         label: library.isBuiltin ? `${library.title} · 官方` : library.title
@@ -158,8 +182,10 @@ function addSkill(kind: SkillKind, value: unknown): void {
 }
 
 function materialLabel(id: string): string {
-  const library = props.materials.find((candidate) => candidate.id === id);
-  return library?.title ?? `${id} · Catalog 中缺失`;
+  return (
+    props.materials.find((candidate) => candidate.id === id)?.title ??
+    `${id} · Catalog 中缺失`
+  );
 }
 
 function skillLabel(id: string): string {
@@ -180,13 +206,13 @@ function submit(): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
-  if (props.open && event.key === "Escape") requestClose();
+  if (props.mode && event.key === "Escape") requestClose();
 }
 
 watch(
-  () => props.open,
-  (open) => {
-    if (!open) return;
+  () => props.mode,
+  (mode) => {
+    if (!mode) return;
     reset();
     void nextTick(() => dialog.value?.focus());
   },
@@ -199,22 +225,22 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 <template>
   <Teleport to="body">
     <div
-      v-if="open"
-      class="dialog-backdrop long-bindings-backdrop"
+      v-if="mode"
+      class="dialog-backdrop"
       @mousedown.self="requestClose"
     >
       <section
         ref="dialog"
-        class="workspace-dialog long-bindings-dialog"
+        class="workspace-dialog book-binding-dialog long-binding-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="long-bindings-title"
+        :aria-labelledby="`long-binding-title-${mode}`"
         tabindex="-1"
       >
         <header>
           <div>
-            <span class="dialog-eyebrow">长篇资源</span>
-            <h2 id="long-bindings-title">资源绑定 · {{ bookTitle }}</h2>
+            <span class="dialog-eyebrow">{{ bookTitle }}</span>
+            <h2 :id="`long-binding-title-${mode}`">{{ title }}</h2>
           </div>
           <button
             class="dialog-close"
@@ -226,28 +252,36 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             ×
           </button>
         </header>
-        <form class="dialog-content long-bindings-content" @submit.prevent="submit">
-          <div class="long-bindings-note">
-            <AppIcon name="library" :size="18" />
-            <span>这里只更新当前长篇的独立清单。短篇、剧本及 Catalog 项目不会被修改。</span>
-          </div>
 
-          <fieldset>
-            <legend>关联素材库</legend>
-            <div
-              v-for="kind in materialKinds"
-              :key="`material:${kind.id}`"
-              class="long-binding-row"
-            >
-              <span>
-                {{ kind.label }}
-                <small>可同时绑定多个；只有点击移除才会解除已有绑定。</small>
+        <form
+          class="dialog-content create-short-book-form"
+          @submit.prevent="submit"
+        >
+          <section
+            class="create-short-binding-panel"
+            :aria-labelledby="`long-binding-heading-${mode}`"
+          >
+            <div class="create-short-binding-heading">
+              <span class="create-short-binding-icon">
+                <AppIcon :name="mode === 'skill' ? 'library' : 'archive'" :size="17" />
               </span>
-              <div class="long-binding-picker">
-                <div
-                  v-if="selectedMaterials[kind.id].length"
-                  class="long-binding-chips"
-                >
+              <div>
+                <h3 :id="`long-binding-heading-${mode}`">{{ heading }}</h3>
+                <p>{{ description }}</p>
+              </div>
+            </div>
+
+            <div v-if="mode === 'material'" class="create-short-kind-grid">
+              <div
+                v-for="kind in materialKinds"
+                :key="kind.id"
+                class="create-short-kind-field long-binding-kind-field"
+              >
+                <span>
+                  <strong>{{ kind.label }}</strong>
+                  <small>{{ kind.description }}</small>
+                </span>
+                <div v-if="selectedMaterials[kind.id].length" class="long-binding-chips">
                   <span
                     v-for="id in selectedMaterials[kind.id]"
                     :key="id"
@@ -269,11 +303,12 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                     </button>
                   </span>
                 </div>
-                <small v-else>当前未绑定</small>
+                <small v-else class="long-binding-empty">当前未关联</small>
                 <PopupSelect
                   :model-value="materialCandidates[kind.id]"
                   :options="materialOptions(kind.id)"
                   :accessible-label="`添加${kind.label}`"
+                  size="large"
                   :disabled="submitting || materialOptions(kind.id).length <= 1"
                   :menu-min-width="260"
                   :menu-z-index="230"
@@ -281,24 +316,18 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 />
               </div>
             </div>
-          </fieldset>
 
-          <fieldset>
-            <legend>绑定技能库</legend>
-            <div
-              v-for="kind in skillKinds"
-              :key="`skill:${kind.id}`"
-              class="long-binding-row"
-            >
-              <span>
-                {{ kind.label }}
-                <small>可同时绑定多个；只有点击移除才会解除已有绑定。</small>
-              </span>
-              <div class="long-binding-picker">
-                <div
-                  v-if="selectedSkills[kind.id].length"
-                  class="long-binding-chips"
-                >
+            <div v-else class="create-short-kind-grid">
+              <div
+                v-for="kind in skillKinds"
+                :key="kind.id"
+                class="create-short-kind-field long-binding-kind-field"
+              >
+                <span>
+                  <strong>{{ kind.label }}</strong>
+                  <small>{{ kind.description }}</small>
+                </span>
+                <div v-if="selectedSkills[kind.id].length" class="long-binding-chips">
                   <span
                     v-for="id in selectedSkills[kind.id]"
                     :key="id"
@@ -320,11 +349,12 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                     </button>
                   </span>
                 </div>
-                <small v-else>当前未绑定</small>
+                <small v-else class="long-binding-empty">当前未绑定</small>
                 <PopupSelect
                   :model-value="skillCandidates[kind.id]"
                   :options="skillOptions(kind.id)"
                   :accessible-label="`添加${kind.label}`"
+                  size="large"
                   :disabled="submitting || skillOptions(kind.id).length <= 1"
                   :menu-min-width="260"
                   :menu-z-index="230"
@@ -332,9 +362,12 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 />
               </div>
             </div>
-          </fieldset>
+            <p class="create-short-stable-hint">
+              Catalog 中暂时缺失的已有绑定仍会保留，只有点击移除才会解除已有绑定。
+            </p>
+          </section>
 
-          <div class="dialog-actions">
+          <div class="dialog-actions create-short-book-actions">
             <button
               class="dialog-secondary-button"
               type="button"
@@ -358,77 +391,23 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </template>
 
 <style scoped>
-.long-bindings-dialog {
-  width: min(680px, calc(100vw - 48px));
+.long-binding-dialog {
   max-height: min(820px, calc(100vh - 40px));
-  border-color: var(--theme-line);
-  background: var(--surface-main);
 }
 
-.long-bindings-content {
-  display: grid;
-  gap: 16px;
+.long-binding-dialog .dialog-content {
   overflow-y: auto;
 }
 
-.long-bindings-note {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 11px 12px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 9px;
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-  font-size: 0.785714rem;
+.long-binding-kind-field {
+  align-content: start;
 }
 
-fieldset {
-  display: grid;
-  gap: 9px;
-  margin: 0;
-  padding: 13px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 10px;
-  background: var(--surface-muted);
-}
-
-legend {
-  padding: 0 6px;
-  color: var(--text-primary);
-  font-weight: 620;
-}
-
-.long-binding-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(240px, 1.2fr);
-  align-items: center;
-  gap: 12px;
-  color: var(--text-secondary);
-  font-size: 0.785714rem;
-}
-
-.long-binding-row > span {
-  display: grid;
-  gap: 2px;
-}
-
-.long-binding-row small {
-  color: var(--text-tertiary);
-  font-size: 0.7rem;
-  line-height: 1.4;
-}
-
-.long-binding-picker,
 .long-binding-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
-}
-
-.long-binding-picker {
-  display: grid;
 }
 
 .long-binding-chip {
@@ -439,8 +418,9 @@ legend {
   padding: 4px 6px 4px 8px;
   border: 1px solid var(--theme-line-soft);
   border-radius: 999px;
-  background: var(--surface-raised);
+  background: var(--surface-main);
   color: var(--text-secondary);
+  font-size: 0.714286rem;
   overflow-wrap: anywhere;
 }
 
@@ -454,13 +434,17 @@ legend {
   color: var(--text-tertiary);
 }
 
-.dialog-primary-button {
-  background: var(--neutral-solid);
-  color: var(--accent-contrast, #ffffff);
+.long-binding-empty {
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
 }
 
 @media (max-width: 640px) {
-  .long-binding-row {
+  .long-binding-dialog {
+    width: min(100vw - 24px, 760px);
+  }
+
+  .long-binding-dialog .create-short-kind-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

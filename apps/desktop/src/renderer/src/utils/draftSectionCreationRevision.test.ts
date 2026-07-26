@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   advanceDraftSectionCreationRevision,
   draftSectionCreationRevisionKey,
-  expectedDraftSectionCreationRevision
+  expectedDraftSectionCreationRevision,
+  resolveDraftSectionCreationCommitPlan
 } from "./draftSectionCreationRevision";
 
 describe("draft section creation revision chain", () => {
@@ -39,5 +40,44 @@ describe("draft section creation revision chain", () => {
     expect(expectedDraftSectionCreationRevision("external-v4", cursor)).toBe(
       "external-v4"
     );
+  });
+
+  it("uses the live project revision while the expected directory still matches", () => {
+    expect(
+      resolveDraftSectionCreationCommitPlan({
+        currentDirectoryRevision: "directory-v2",
+        expectedDirectoryRevision: "directory-v2",
+        capturedBaseProjectRevision: 4,
+        currentProjectRevision: 7
+      })
+    ).toEqual({
+      mode: "current",
+      baseProjectRevision: 7
+    });
+  });
+
+  it("uses the frozen project revision only as an idempotent recovery probe", () => {
+    expect(
+      resolveDraftSectionCreationCommitPlan({
+        currentDirectoryRevision: "directory-v3",
+        expectedDirectoryRevision: "directory-v2",
+        capturedBaseProjectRevision: 4,
+        currentProjectRevision: 8
+      })
+    ).toEqual({
+      mode: "idempotent-recovery",
+      baseProjectRevision: 4
+    });
+  });
+
+  it("blocks a mismatched legacy proposal that has no frozen project revision", () => {
+    expect(
+      resolveDraftSectionCreationCommitPlan({
+        currentDirectoryRevision: "directory-v3",
+        expectedDirectoryRevision: "directory-v2",
+        capturedBaseProjectRevision: undefined,
+        currentProjectRevision: 8
+      })
+    ).toEqual({ mode: "conflict" });
   });
 });

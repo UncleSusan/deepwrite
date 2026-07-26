@@ -8,6 +8,8 @@ import {
   CatalogSnapshotSchema,
   CommandEnvelopeSchema,
   CreateDraftSectionInputSchema,
+  CreateDraftSectionsInputSchema,
+  CreateDraftSectionsResultSchema,
   CreateLibraryInputSchema,
   CreateLibraryEntryInputSchema,
   CreateLibraryGroupInputSchema,
@@ -108,6 +110,46 @@ describe("catalog contracts", () => {
         bookId: "book-1",
         afterSectionId: sectionId,
         title: sectionTitle
+      }).success
+    ).toBe(true);
+    expect(
+      CreateDraftSectionsInputSchema.safeParse({
+        operationId: "run-1:proposal-1:revision-1",
+        bookId: "book-1",
+        afterSectionId: sectionId,
+        sections: [
+          {
+            clientSectionId: "provisional:section:1",
+            title: "第一批新小节"
+          },
+          {
+            clientSectionId: "provisional:section:2",
+            title: "第二批新小节"
+          }
+        ]
+      }).success
+    ).toBe(true);
+    expect(
+      CreateDraftSectionsInputSchema.safeParse({
+        operationId: "run-1:proposal-1:revision-1",
+        bookId: "book-1",
+        sections: [
+          { clientSectionId: "provisional:section:1" },
+          { clientSectionId: "provisional:section:1" }
+        ]
+      }).success
+    ).toBe(false);
+    expect(
+      CreateDraftSectionsResultSchema.safeParse({
+        operationId: "run-1:proposal-1:revision-1",
+        bookId: "book-1",
+        projectRevision: 3,
+        sections: [
+          {
+            clientSectionId: "provisional:section:1",
+            section: catalogSection
+          }
+        ]
       }).success
     ).toBe(true);
 
@@ -469,6 +511,22 @@ describe("catalog contracts", () => {
         { id: "catalog-create-draft-section" }
       ),
       createEnvelope(
+        "catalog.createDraftSections",
+        {
+          operationId: "run-1:proposal-1:revision-1",
+          bookId: "book-1",
+          afterSectionId: "section-1",
+          baseProjectRevision: 2,
+          sections: [
+            {
+              clientSectionId: "provisional:section:1",
+              title: "新的小节"
+            }
+          ]
+        },
+        { id: "catalog-create-draft-sections" }
+      ),
+      createEnvelope(
         "catalog.deleteDraftSection",
         {
           bookId: "book-1",
@@ -537,6 +595,7 @@ describe("catalog contracts", () => {
         "catalog.deleteBook",
         "catalog.saveDocument",
         "catalog.createDraftSection",
+        "catalog.createDraftSections",
         "catalog.deleteDraftSection",
         "catalog.saveLibraryEntry",
         "catalog.createLibraryEntry",

@@ -81,9 +81,7 @@ import {
   LONG_PORTABLE_BUNDLE_MAX_BYTES,
   assertLongLedgerRecordMatchesIndex,
   assertLongLedgerRecordChain,
-  buildLongPortableExportBundle,
-  parseLongPortableExportBundle,
-  stringifyLongPortableExportBundle
+  parseLongPortableExportBundle
 } from "./long-portable-bundle";
 import {
   readWriteClawLongImportPlan,
@@ -661,30 +659,6 @@ export class LongProjectStore {
       }
       const next = await this.loadProject(loaded.projectDirectory);
       return { book: next.book, summary: next.summary };
-    });
-  }
-
-  async exportPortableBundle(
-    projectDirectory: string
-  ): Promise<string> {
-    const canonical = await secureDirectory(projectDirectory, "长篇项目目录");
-    return await this.runExclusive(canonical, async () => {
-      const loaded = await this.loadProject(canonical);
-      const bundle = await buildLongPortableExportBundle({
-        manifest: loaded.manifest,
-        index: loaded.index,
-        exportedAt: this.timestamp(),
-        readFile: async (reference) => {
-          const file = await loadIndexedFile(loaded, reference.id);
-          if (file.reference.path !== reference.path) {
-            throw new Error(
-              `长篇导出文件路径与索引不一致：${reference.id}`
-            );
-          }
-          return file.disk.content;
-        }
-      });
-      return stringifyLongPortableExportBundle(bundle);
     });
   }
 

@@ -49,15 +49,6 @@ export interface LongPortableExportBundle {
   files: LongPortableBundleFile[];
 }
 
-export interface BuildLongPortableExportBundleInput {
-  manifest: LongProjectManifest;
-  index: LongWorkspaceIndexSnapshot;
-  exportedAt?: string;
-  readFile: (
-    reference: LongWorkspaceFileReference
-  ) => string | Promise<string>;
-}
-
 interface IndexedPortableFile {
   reference: LongWorkspaceFileReference;
   kind: LongPortableBundleFile["kind"];
@@ -162,11 +153,14 @@ function validateLedgerRecord(
 }
 
 function sameIdSet(left: readonly string[], right: readonly string[]): boolean {
+  const leftIds = new Set(left);
+  const rightIds = new Set(right);
   return (
     left.length === right.length &&
-    new Set(left).size === left.length &&
-    new Set(right).size === right.length &&
-    left.every((id) => right.includes(id))
+    leftIds.size === left.length &&
+    rightIds.size === right.length &&
+    leftIds.size === rightIds.size &&
+    left.every((id) => rightIds.has(id))
   );
 }
 
@@ -422,87 +416,6 @@ function assertUniqueIndexedFiles(files: readonly IndexedPortableFile[]): void {
   }
 }
 
-export async function buildLongPortableExportBundle(
-  input: BuildLongPortableExportBundleInput
-): Promise<LongPortableExportBundle> {
-  const manifest = LongProjectManifestSchema.parse(input.manifest);
-  const index = LongWorkspaceIndexSnapshotSchema.parse(input.index);
-  validateManifestIndexPair(manifest, index);
-  const references = indexedFiles(index);
-  assertUniqueIndexedFiles(references);
-  let totalBytes = 0;
-  const files: LongPortableBundleFile[] = [];
-  const ledgerRecords: LongLedgerCommitRecord[] = [];
-  // Keep file I/O bounded even when a long project contains thousands of
-  // chapters and ledger records. The completed bundle necessarily retains
-  // the exported text, but it must not also create one pending read per file.
-  for (const { reference, kind, commitId } of references) {
-    const content = await input.readFile(reference);
-    if (typeof content !== "string") {
-      throw new Error(`长篇文件 ${reference.id} 的读取结果不是文本。`);
-    }
-    const bytes = Buffer.from(content, "utf8");
-    if (bytes.toString("utf8") !== content) {
-      throw new Error(`长篇文件 ${reference.path} 包含无效 Unicode。`);
-    }
-    if (
-      bytes.byteLength >
-      (kind === "ledger-record"
-        ? MAX_LEDGER_RECORD_BYTES
-        : MAX_FILE_BYTES)
-    ) {
-      throw new Error(`长篇文件 ${reference.path} 超过 32 MB 导出上限。`);
-    }
-    totalBytes += bytes.byteLength;
-    if (totalBytes > LONG_PORTABLE_BUNDLE_MAX_BYTES) {
-      throw new Error(
-        `长篇可移植包的文档总大小超过 ${LONG_PORTABLE_BUNDLE_MAX_LABEL} 内存安全上限。`
-      );
-    }
-    if (!revisionMatchesContent(reference.revision, content)) {
-      throw new Error(
-        `长篇文件 ${reference.path} 的内容与索引 revision 不一致。`
-      );
-    }
-    if (kind === "ledger-record") {
-      const entry = index.ledger.commits.find(
-        (candidate) => candidate.id === commitId
-      )!;
-      const record = validateLedgerRecord(content, index.bookId, commitId!);
-      assertLongLedgerRecordMatchesIndex(index, entry, record, content);
-      ledgerRecords.push(record);
-    }
-    files.push({
-      id: reference.id,
-      path: reference.path,
-      kind,
-      revision: reference.revision,
-      sha256: sha256(bytes),
-      content
-    });
-  }
-  assertLongLedgerRecordChain(index, ledgerRecords, manifest.revision);
-  const manifestText = serializeJson(manifest);
-  const indexText = serializeJson(index);
-  return {
-    schema: LONG_PORTABLE_BUNDLE_SCHEMA,
-    schemaVersion: LONG_PORTABLE_BUNDLE_SCHEMA_VERSION,
-    exportedAt: normalizedTimestamp(input.exportedAt ?? new Date().toISOString()),
-    bookId: manifest.id,
-    manifest: {
-      mediaType: "application/json",
-      sha256: sha256(manifestText),
-      value: manifest
-    },
-    index: {
-      mediaType: "application/json",
-      sha256: sha256(indexText),
-      value: index
-    },
-    files
-  };
-}
-
 function parseBundleInput(raw: unknown): Record<string, unknown> {
   if (typeof raw !== "string") {
     if (!isRecord(raw)) {
@@ -687,19 +600,4 @@ export function parseLongPortableExportBundle(
     },
     files
   };
-}
-
-export function stringifyLongPortableExportBundle(
-  bundle: LongPortableExportBundle
-): string {
-  const serialized = serializeJson(parseLongPortableExportBundle(bundle));
-  if (
-    Buffer.byteLength(serialized, "utf8") >
-    LONG_PORTABLE_BUNDLE_MAX_BYTES
-  ) {
-    throw new Error(
-      `长篇可移植包超过 ${LONG_PORTABLE_BUNDLE_MAX_LABEL} 内存安全上限。`
-    );
-  }
-  return serialized;
 }

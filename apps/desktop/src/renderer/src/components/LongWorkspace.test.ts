@@ -1,34 +1,35 @@
 import { describe, expect, it } from "vitest";
 import appSource from "../App.vue?raw";
 import bindingsSource from "./LongBookBindingsDialog.vue?raw";
-import dialogSource from "./CreateLongBookDialog.vue?raw";
+import dialogSource from "./CreateBookDialog.vue?raw";
 import editorSource from "./LongWorkspaceEditor.vue?raw";
 import migrationReportSource from "./LongMigrationReportDialog.vue?raw";
+import leftSidebarSource from "./LeftSidebar.vue?raw";
 import proposalSource from "./LongProposalReview.vue?raw";
 import removalSource from "./LongBookRemovalDialog.vue?raw";
 import rollbackSource from "./LongRollbackDialog.vue?raw";
+import searchSource from "./LongWorkspaceSearch.vue?raw";
 import sectionSource from "./TreeSection.vue?raw";
 import structureSource from "./LongStructureManager.vue?raw";
-import treeSource from "./LongWorkspaceTree.vue?raw";
+import treeNodeSource from "./TreeNodeItem.vue?raw";
 import longWorkspaceTypeSource from "../types/longWorkspace.ts?raw";
 import workspaceTypeSource from "../types/workspace.ts?raw";
 import writingOrchestratorSource from "../composables/useLongWritingOrchestrator.ts?raw";
 import agentRunPreferencesSource from "../utils/agentRunPreferences.ts?raw";
 
 describe("long-form renderer vertical slice", () => {
-  it("offers an independent long-book creation action and themed dialog", () => {
-    expect(sectionSource).toContain('id: "create-long-book"');
-    expect(sectionSource).toContain('label: "新建长篇"');
+  it("offers long-book creation in the unified themed creation dialog", () => {
+    expect(sectionSource).toContain('"新建作品"');
+    expect(sectionSource).not.toContain('id: "create-long-book"');
+    expect(dialogSource).toContain('role="tablist"');
+    expect(dialogSource).toContain('label: "长篇"');
     expect(dialogSource).toContain("<PopupSelect");
     expect(dialogSource).not.toContain("<select");
     expect(dialogSource).toContain("uiMessage.warning");
     expect(dialogSource).toContain("<Teleport to=\"body\">");
-    expect(dialogSource).toContain("var(--surface-main)");
-    expect(dialogSource).toContain("var(--neutral-solid)");
     expect(dialogSource).toContain("linkedMaterialIdsByKind");
     expect(dialogSource).toContain("linkedSkillIdsByKind");
-    expect(dialogSource).toContain('materialType === "long"');
-    expect(dialogSource).toContain('skillType === "long"');
+    expect(dialogSource).toContain('workspaceType.value === "long"');
   });
 
   it("renders all five long-workspace roots from the navigation summary", () => {
@@ -39,12 +40,14 @@ describe("long-form renderer vertical slice", () => {
       "draft",
       "continuity_ledger"
     ]) {
-      expect(treeSource).toContain(`id: "${root}"`);
+      expect(appSource).toContain(`${root}:`);
     }
-    expect(treeSource).toContain("summary.navigation.counts");
-    expect(treeSource).toContain("workspaceIndex.ledger.commits");
-    expect(treeSource).toContain("isLongMigrationEvidenceCategoryId");
-    expect(treeSource).toContain("{ readOnly: true }");
+    expect(appSource).toContain("book.navigation.counts");
+    expect(appSource).toContain("index.ledger.commits");
+    expect(longWorkspaceTypeSource).toContain(
+      "isLongMigrationEvidenceCategoryId"
+    );
+    expect(longWorkspaceTypeSource).toContain("{ readOnly: true }");
     expect(longWorkspaceTypeSource).toContain('role: "body"');
     expect(longWorkspaceTypeSource).toContain('role: "character-state"');
     expect(longWorkspaceTypeSource).toContain('role: "handoff"');
@@ -70,6 +73,36 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain('ref="longWorkspaceEditor"');
   });
 
+  it("renders list worldbuilding as tabs and text worldbuilding as a direct textarea", () => {
+    expect(editorSource).toContain(
+      "parseLongWorldbuildingMarkdownList"
+    );
+    expect(editorSource).toContain(
+      "serializeLongWorldbuildingMarkdownList"
+    );
+    expect(editorSource).toContain('class="section-tabs-bar long-worldbuilding-tabs"');
+    expect(editorSource).toContain('aria-label="世界观条目"');
+    expect(editorSource).toContain(
+      "currentWorldbuildingItem.value?.content"
+    );
+    expect(editorSource).toContain('class="long-document-editor"');
+    expect(editorSource).not.toContain('"文本 · CAS 保存"');
+    expect(longWorkspaceTypeSource).toContain(
+      "worldbuildingFormat?: LongWorldbuildingFormat"
+    );
+  });
+
+  it("uses the shared writing-editor layout without exposing internal revisions", () => {
+    expect(editorSource).toContain('class="long-editor-breadcrumbs"');
+    expect(editorSource).toContain('class="long-editor-file-tabs"');
+    expect(editorSource).toContain('class="long-editor-view-tabs"');
+    expect(editorSource).toContain('class="long-document-title"');
+    expect(editorSource).toContain('class="long-editor-footer"');
+    expect(editorSource).toContain("已保存到本机");
+    expect(editorSource).toContain("立即保存");
+    expect(editorSource).not.toContain("currentState.file.revision");
+  });
+
   it("refreshes clean long-editor CAS baselines on window focus without touching dirty drafts", () => {
     expect(editorSource).toContain(
       "function synchronizeProjectRevisionsIfClean("
@@ -93,10 +126,14 @@ describe("long-form renderer vertical slice", () => {
 
   it("mounts the long workspace without routing it through short/script state", () => {
     expect(appSource).toContain('catalogNodeType: "long-book"');
-    expect(appSource).toContain("<LongWorkspaceTree");
+    expect(appSource).not.toContain("<LongWorkspaceTree");
     expect(appSource).toContain("<LongWorkspaceEditor");
+    expect(appSource).toContain("isLongWorkspaceActive");
     expect(appSource).toContain("!isLongWorkspaceActive");
-    expect(appSource).toContain("<CreateShortBookDialog");
+    const shortEditorMountSource =
+      appSource.split("<RightEditorPane")[1]?.split("/>")[0] ?? "";
+    expect(shortEditorMountSource).toContain("!isLongWorkspaceActive");
+    expect(appSource).toContain("<CreateBookDialog");
     expect(appSource).toContain("async function createCreativeBook(");
     expect(appSource).toContain(
       'input.workspaceType === "script"'
@@ -113,6 +150,35 @@ describe("long-form renderer vertical slice", () => {
     expect(workspaceDocumentSource).not.toContain(
       'workspaceType?: "short" | "script" | "long";'
     );
+  });
+
+  it("projects long-form navigation into the same recursive tree used by short books", () => {
+    expect(appSource).toContain("function projectLongWorkspaceNavigation(");
+    expect(appSource).toContain("longWorkspaceSelection: selection");
+    expect(appSource).toContain(
+      "children: projectLongWorkspaceNavigation(book, workspaceIndex)"
+    );
+    expect(appSource).toContain("node.longWorkspaceSelection");
+    expect(leftSidebarSource).toContain("<TreeSection");
+    expect(leftSidebarSource).not.toContain('<slot name="long-workspace" />');
+    expect(treeNodeSource).toContain("<TreeNodeItem");
+    expect(treeNodeSource).toContain(":depth=\"depth + 1\"");
+    for (const label of [
+      "世界观",
+      "人物设计",
+      "情节设计",
+      "正文",
+      "连续性账本"
+    ]) {
+      expect(appSource).toContain(label);
+    }
+    expect(appSource).toContain("class=\"long-workspace-main-view\"");
+    expect(appSource).toContain("'is-right-collapsed': rightCollapsed");
+    expect(appSource).toContain(':left-collapsed="leftCollapsed"');
+    expect(appSource).toContain(':right-collapsed="rightCollapsed"');
+    expect(appSource).toContain('@toggle-left="leftCollapsed = !leftCollapsed"');
+    expect(appSource).toContain('@toggle-right="rightCollapsed = !rightCollapsed"');
+    expect(appSource).toContain('v-show="!rightCollapsed"');
   });
 
   it("uses dedicated long agent context and approval surfaces", () => {
@@ -223,9 +289,7 @@ describe("long-form renderer vertical slice", () => {
       "导入长篇",
       "迁移长篇",
       "管理其他长篇的结构",
-      "管理其他长篇的资源绑定",
       "回滚连续性提交",
-      "修改长篇资源绑定",
       "修改长篇结构",
       "新建长篇对话",
       "切换长篇对话"
@@ -234,6 +298,9 @@ describe("long-form renderer vertical slice", () => {
         `blockActiveLongWritingPlan("${action}"`
       );
     }
+    expect(appSource).toContain('"管理其他长篇的技能库绑定"');
+    expect(appSource).toContain('"管理其他长篇的素材库绑定"');
+    expect(appSource).toContain("`修改长篇${bindingLabel}`");
     expect(appSource).toContain("请先取消计划");
     expect(appSource).toContain(
       "longWritingOrchestrator.state.value.bookId ==="
@@ -265,15 +332,21 @@ describe("long-form renderer vertical slice", () => {
   });
 
   it("invalidates in-flight searches when the scope or query changes", () => {
-    expect(treeSource).toContain("function setSearchScope(");
-    expect(treeSource).toContain("watch(\n  searchQuery,");
-    expect(treeSource.match(/searchClock \+= 1;/gu)?.length).toBeGreaterThanOrEqual(
-      4
+    expect(searchSource).toContain("function setSearchScope(");
+    expect(searchSource).toContain("watch(searchQuery, clearResults");
+    expect(searchSource).toContain("searchClock += 1");
+    expect(searchSource).toContain("searchLoading.value = false");
+    expect(searchSource).toContain("props.workspaceIndex.revision");
+    expect(searchSource).toContain("props.summary.projectRevision");
+    expect(searchSource).toContain('{ flush: "sync" }');
+    expect(searchSource).toContain(
+      "result.workspaceRevision !== workspaceRevision"
     );
-    expect(treeSource).toContain("searchLoading.value = false");
-    expect(treeSource).toContain("props.workspaceIndex.revision");
-    expect(treeSource).toContain("props.summary.projectRevision");
-    expect(treeSource).toContain('{ flush: "sync" }');
+    expect(searchSource).toContain("searchAttempted");
+    expect(leftSidebarSource).toContain("<LongWorkspaceSearch");
+    expect(appSource).toContain(
+      '@select-long-workspace="selectLongWorkspaceSearchResult"'
+    );
     expect(editorSource).toContain(
       "props.selection?.preferredRole"
     );
@@ -411,9 +484,9 @@ describe("long-form renderer vertical slice", () => {
   });
 
   it("provides a continuity review entry without replacing chapter authoring", () => {
-    expect(treeSource).toContain("createLongChapterSelection");
-    expect(treeSource).toContain("createLongContinuitySelection");
-    expect(treeSource).toContain("核对下一章并提交");
+    expect(appSource).toContain("createLongChapterSelection");
+    expect(appSource).toContain("createLongContinuitySelection");
+    expect(longWorkspaceTypeSource).toContain("连续性核对");
     expect(longWorkspaceTypeSource).toContain(
       'root: "continuity_ledger"'
     );
@@ -423,18 +496,17 @@ describe("long-form renderer vertical slice", () => {
     expect(longWorkspaceTypeSource).toContain(
       "请先回滚最后一次连续性提交"
     );
-    expect(editorSource).toContain(
-      "请先回滚最后一次提交"
-    );
+    expect(editorSource).toContain("回滚最后提交");
+    expect(editorSource).toContain("只读内容");
   });
 
-  it("exposes explicit migration, portable export and isolated book removal", () => {
-    expect(sectionSource).toContain('id: "open-long-book"');
-    expect(sectionSource).toContain('id: "import-portable-long-book"');
-    expect(sectionSource).toContain('id: "migrate-write-claw-long-book"');
+  it("exposes explicit migration and isolated book removal", () => {
+    expect(sectionSource).toContain('"choose-open-book"');
+    expect(sectionSource).toContain('id: "choose-import-book"');
+    expect(appSource).toContain("<BookTransferDialog");
     expect(appSource).toContain("api.importPortable()");
     expect(appSource).toContain("api.importWriteClaw()");
-    expect(appSource).toContain("api.exportPortable({");
+    expect(appSource).not.toContain("api.exportPortable({");
     expect(appSource).toContain(
       "activeLongBookId.value === bookId &&"
     );
@@ -481,18 +553,25 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(editorSource).toContain("function synchronizeProjectRevisions(");
     expect(bindingsSource).toContain("<PopupSelect");
+    expect(bindingsSource).toContain("create-short-binding-panel");
+    expect(bindingsSource).toContain("create-short-kind-grid");
     expect(bindingsSource).toContain("Catalog 中缺失");
-    expect(bindingsSource).toContain("只有点击移除才会解除已有绑定");
     expect(bindingsSource).not.toContain("catalog.updateBook");
   });
 
-  it("routes manual structure changes through the same preview queue", () => {
+  it("applies manual structure changes directly after an internal impact check", () => {
     expect(appSource).toContain("<LongStructureDialog");
+    expect(appSource).toContain("async function handleLongStructureMutation(");
+    expect(appSource).toContain("const preview = await api.previewOperations({");
     expect(appSource).toContain(
-      "longWorkspaceProposals.enqueueManualMutation"
+      "const applyResult = await api.applyOperations({"
+    );
+    expect(appSource).toContain("expectedImpact: preview.preview.impact");
+    expect(appSource).not.toContain(
+      "longWorkspaceProposals.enqueueManualMutation({"
     );
     expect(structureSource).toContain(
-      'proposal: [batch: LongWorkspaceOperationBatch]'
+      "completion: LongStructureMutationCompletion"
     );
   });
 });

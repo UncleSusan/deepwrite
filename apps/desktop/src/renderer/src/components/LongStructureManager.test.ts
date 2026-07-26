@@ -2,10 +2,9 @@ import { describe, expect, it } from "vitest";
 import source from "./LongStructureManager.vue?raw";
 
 describe("LongStructureManager", () => {
-  it("stays an isolated proposal-only renderer boundary", () => {
-    expect(source).toContain(
-      "proposal: [batch: LongWorkspaceOperationBatch]"
-    );
+  it("stays an isolated operation-batch renderer boundary", () => {
+    expect(source).toContain("batch: LongWorkspaceOperationBatch");
+    expect(source).toContain("completion: LongStructureMutationCompletion");
     expect(source).toContain("createLongStructureMutationBuilder(props.snapshot)");
     expect(source).not.toContain("window.deepwrite");
     expect(source).not.toContain("applyOperations");
@@ -13,7 +12,33 @@ describe("LongStructureManager", () => {
     expect(source).not.toContain("<LongWorkspaceTree");
     expect(source).not.toContain("<select");
     expect(source).toContain("<LongPlotStructureManager");
-    expect(source).toContain("@proposal=\"forwardPlotProposal\"");
+    expect(source).toContain("@mutation=\"forwardPlotMutation\"");
+    expect(source).toContain("手工修改会直接保存到本机");
+    expect(source).toContain('formMode === "create"');
+    expect(source).toContain('"保存修改"');
+  });
+
+  it("waits for durable completion and preserves form drafts on failure", () => {
+    expect(source).toContain("const pendingMutation = ref<");
+    expect(source).toContain(
+      "() => props.disabled || pendingMutation.value !== null"
+    );
+    expect(source).toContain(
+      'succeed: () => finishMutation(requestId, "succeeded")'
+    );
+    expect(source).toContain(
+      'fail: () => finishMutation(requestId, "failed")'
+    );
+    expect(source).toContain("appliedButRefreshFailed");
+    expect(source).toContain('if (outcome === "failed") return');
+    expect(source).toContain('}, "form")');
+    expect(source).toContain('}, "delete")');
+    expect(source).not.toContain("if (succeeded) {\n    closeForm()");
+    expect(source).not.toContain("if (succeeded) {\n    closeDelete()");
+    expect(source).toContain(':disabled="mutationLocked"');
+    expect(source).toContain(
+      '<fieldset class="modal-body" :disabled="mutationLocked">'
+    );
   });
 
   it("wires create, edit, move, reorder, and delete interactions to builders", () => {
@@ -46,9 +71,12 @@ describe("LongStructureManager", () => {
     expect(source).toContain("@click=\"reorder(row, 'up')\"");
     expect(source).toContain("@click=\"openEdit(row)\"");
     expect(source).toContain("@click=\"openDelete(row)\"");
+    expect(source).toContain(
+      'activeSection.value === "chapter"\n      ? [...props.snapshot.plot.arcs].sort'
+    );
   });
 
-  it("locks structures referenced by committed event facts before proposing mutations", () => {
+  it("locks structures referenced by committed event facts before emitting mutations", () => {
     expect(source).toContain("const committedEventIds = computed(");
     expect(source).toContain("placement.commitId !== null");
     expect(source).toContain("hasCommittedBeat && thread.truthEventId");
@@ -104,5 +132,7 @@ describe("LongStructureManager", () => {
     expect(source).toContain("font-size: 0.875rem");
     expect(source).toContain("@media (max-width: 42rem)");
     expect(source).toContain("uiMessage.warning");
+    expect(source).toContain('@keydown.esc.stop="closeForm"');
+    expect(source).toContain('@keydown.esc.stop="closeDelete"');
   });
 });

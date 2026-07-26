@@ -31,4 +31,19 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain("emit(\"insertSelection\", reference)");
     expect(source).toContain("input.setSelectionRange(range.start, range.end, \"forward\")");
   });
+
+  it("provides working text undo, redo, find, and replace controls", () => {
+    expect(source).toContain('aria-label="撤销"');
+    expect(source).toContain('aria-label="还原"');
+    expect(source).toContain('aria-label="查找"');
+    expect(source).toContain('aria-label="替换"');
+    expect(source).toContain('@beforeinput="handleEditorBeforeInput"');
+    expect(source).toContain('@keydown="handleEditorKeydown"');
+    expect(source).toContain("recordUndoSnapshot()");
+    expect(source).toContain("replaceCurrentMatch");
+    expect(source).toContain("replaceAllMatches");
+    expect(source).not.toContain('aria-label="粗体"');
+    expect(source).not.toContain('aria-label="斜体"');
+    expect(source).not.toContain('aria-label="引用"');
+  });
 });

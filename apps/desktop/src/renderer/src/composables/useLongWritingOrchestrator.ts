@@ -238,6 +238,9 @@ export function useLongWritingOrchestrator(
         chapter.chapterCardId
       );
       if (runEpoch !== epoch) return;
+      if (readiness.chapterCardId !== chapter.chapterCardId) {
+        throw new Error("章节三件套保存检查返回了错误的章卡。");
+      }
       if (readiness.status !== "ready_to_commit") {
         throw new Error(
           `章节三件套保存后仍不完整：${readiness.missingFiles.join("、")}。`

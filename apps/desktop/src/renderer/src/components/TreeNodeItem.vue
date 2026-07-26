@@ -111,9 +111,17 @@ function containsSelectedDescendant(node: ResourceTreeNode, selectedId: string):
 }
 
 watch(
-  () => props.selectedId,
-  (selectedId) => {
-    if (selectedId && containsSelectedDescendant(props.node, selectedId)) {
+  () =>
+    [
+      props.selectedId,
+      props.node.children?.length ?? 0
+    ] as const,
+  ([selectedId, childCount]) => {
+    if (
+      childCount > 0 &&
+      ((props.node.selectableBranch && selectedId === props.node.id) ||
+        (selectedId && containsSelectedDescendant(props.node, selectedId)))
+    ) {
       open.value = true;
     }
   },
@@ -243,7 +251,11 @@ onBeforeUnmount(() => {
       <span class="tree-label">{{ node.label }}</span>
       <span v-if="node.categoryTag" class="tree-category-tag">{{ node.categoryTag }}</span>
       <span
-        v-if="node.catalogNodeType === 'book' && node.badge"
+        v-if="
+          (node.catalogNodeType === 'book' ||
+            node.catalogNodeType === 'long-book') &&
+          node.badge
+        "
         class="tree-badge"
         :class="{ 'is-script': node.workspaceType === 'script' }"
       >
@@ -257,7 +269,11 @@ onBeforeUnmount(() => {
         <AppIcon name="chevron" :size="13" />
       </span>
       <span
-        v-if="node.catalogNodeType !== 'book' && node.badge"
+        v-if="
+          node.catalogNodeType !== 'book' &&
+          node.catalogNodeType !== 'long-book' &&
+          node.badge
+        "
         class="tree-badge"
       >
         {{ node.badge }}
@@ -337,22 +353,22 @@ onBeforeUnmount(() => {
               type="button"
               role="menuitem"
               @click.stop="
-                activateLongBookAction('manage-bindings')
+                activateLongBookAction('bind-skill')
               "
             >
               <AppIcon name="library" :size="16" />
-              <span>资源绑定</span>
+              <span>技能库绑定</span>
             </button>
             <button
               class="tree-node-action-menu-item"
               type="button"
               role="menuitem"
               @click.stop="
-                activateLongBookAction('export-portable')
+                activateLongBookAction('bind-material')
               "
             >
-              <AppIcon name="download" :size="16" />
-              <span>导出可迁移项目</span>
+              <AppIcon name="archive" :size="16" />
+              <span>素材库绑定</span>
             </button>
           </template>
           <div class="tree-node-action-menu-divider" role="separator" />

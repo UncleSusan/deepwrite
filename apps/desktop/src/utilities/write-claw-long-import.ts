@@ -45,6 +45,10 @@ const MAX_WORLD_TEXT_DOCUMENT_CHARACTERS = 7 * 1024 * 1024;
 const MIGRATION_EVIDENCE_CHUNK_CHARACTERS = 4 * 1024 * 1024;
 const MAX_MIGRATION_EVIDENCE_DOCUMENT_BYTES = 28 * 1024 * 1024;
 const WORLD_ITEM_MARKER_PREFIX = "<!-- deepwrite-world-item:";
+const MAX_MIGRATION_WARNINGS = 10_000;
+const MAX_MIGRATION_WARNING_CHARACTERS = 4_000;
+const MIGRATION_WARNING_OVERFLOW =
+  "迁移过程中还有更多重复或次要警告；已达到 10,000 条返回上限。原始导入文件未被修改，已生成的迁移证据仍保留在项目中。";
 
 const DEFAULT_WORLD_CATEGORIES = [
   ["rules", "规则"],
@@ -211,6 +215,7 @@ function ledgerPath(commitId: string): string {
 class WarningCollector {
   private readonly values: string[] = [];
   private readonly seen = new Set<string>();
+  private overflowed = false;
   private readonly decisions: Array<{
     action: "drop" | "merge" | "coerce" | "unresolved-reference";
     sourcePath: string;
@@ -224,13 +229,25 @@ class WarningCollector {
   }> = [];
 
   add(message: string): void {
-    if (this.seen.has(message)) return;
-    this.seen.add(message);
-    this.values.push(message);
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    let normalized = trimmed.slice(0, MAX_MIGRATION_WARNING_CHARACTERS);
+    if (/[\uD800-\uDBFF]/u.test(normalized.at(-1) ?? "")) {
+      normalized = normalized.slice(0, -1);
+    }
+    if (!normalized || this.seen.has(normalized)) return;
+    if (this.values.length >= MAX_MIGRATION_WARNINGS - 1) {
+      this.overflowed = true;
+      return;
+    }
+    this.seen.add(normalized);
+    this.values.push(normalized);
   }
 
   all(): string[] {
-    return [...this.values];
+    return this.overflowed
+      ? [...this.values, MIGRATION_WARNING_OVERFLOW]
+      : [...this.values];
   }
 
   preserve(title: string, source: string, content: string): void {

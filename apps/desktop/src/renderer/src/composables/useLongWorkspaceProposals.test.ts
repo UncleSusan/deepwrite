@@ -332,6 +332,24 @@ describe("long workspace proposal approval", () => {
     expect(test.previewOperations).toHaveBeenCalledTimes(2);
   });
 
+  it("does not reactivate a discarded book when manual proposal validation fails", async () => {
+    const test = harness();
+    test.controller.discardBook("longbook_test");
+
+    await expect(
+      test.controller.enqueueManualMutation({
+        bookId: proposalBase.bookId,
+        batch: mutationEvent().payload.batch,
+        baseProjectRevision: 11,
+        summary: " "
+      })
+    ).rejects.toThrow();
+
+    expect(await test.controller.handleEvent(ledgerEvent())).toBe(false);
+    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.previewOperations).not.toHaveBeenCalled();
+  });
+
   it("isolates rejected events and never turns rejection into a write", async () => {
     const ignored = harness(false);
     expect(await ignored.controller.handleEvent(chapterEvent())).toBe(false);
@@ -346,6 +364,23 @@ describe("long workspace proposal approval", () => {
       expect.objectContaining({ type: "long.chapter_write_proposal" })
     );
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+  });
+
+  it("deduplicates a replayed tool proposal even when it has a new envelope id", async () => {
+    const test = harness();
+    const original = chapterEvent();
+    const replay = systemEvent({
+      ...original,
+      id: "event_chapter_replayed"
+    });
+
+    expect(await test.controller.handleEvent(original)).toBe(true);
+    expect(await test.controller.handleEvent(replay)).toBe(false);
+
+    expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
+    expect(test.controller.itemsForBook("longbook_test")[0]?.event.id).toBe(
+      "event_chapter"
+    );
   });
 
   it("quarantines a removed book and rejects late proposal events", async () => {
@@ -398,6 +433,32 @@ describe("long workspace proposal approval", () => {
     expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
   });
 
+  it("coalesces duplicate preview retries while one retry is in flight", async () => {
+    const test = harness();
+    test.previewOperations.mockRejectedValueOnce(
+      new Error("首次预览失败")
+    );
+    await test.controller.handleEvent(mutationEvent());
+    expect(test.controller.itemsForBook("longbook_test")[0]).toMatchObject({
+      status: "error"
+    });
+
+    const firstRetry = test.controller.retryPreview(
+      "longbook_test",
+      "event_mutation"
+    );
+    const duplicateRetry = test.controller.retryPreview(
+      "longbook_test",
+      "event_mutation"
+    );
+    await Promise.all([firstRetry, duplicateRetry]);
+
+    expect(test.previewOperations).toHaveBeenCalledTimes(2);
+    expect(test.controller.itemsForBook("longbook_test")[0]).toMatchObject({
+      status: "ready"
+    });
+  });
+
   it("routes chapter and ledger approvals to their dedicated APIs", async () => {
     const test = harness();
     await test.controller.handleEvent(chapterEvent());
@@ -413,6 +474,61 @@ describe("long workspace proposal approval", () => {
       expect.objectContaining({ chapterCardId: "chapter_one" })
     );
     expect(test.onApplied).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let rejection race an in-flight durable approval", async () => {
+    const test = harness();
+    let releaseWrite!: () => void;
+    test.writeChapter.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          releaseWrite = () => resolve(undefined);
+        })
+    );
+    await test.controller.handleEvent(chapterEvent());
+
+    const approval = test.controller.approve(
+      "longbook_test",
+      "event_chapter"
+    );
+    await vi.waitFor(() => {
+      expect(
+        test.controller.itemsForBook("longbook_test")[0]?.status
+      ).toBe("submitting");
+    });
+
+    expect(
+      test.controller.reject("longbook_test", "event_chapter")
+    ).toBe(false);
+    expect(test.onRejected).not.toHaveBeenCalled();
+    expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
+
+    releaseWrite();
+    await approval;
+
+    expect(test.onApplied).toHaveBeenCalledTimes(1);
+    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+  });
+
+  it("does not turn a post-write refresh failure into a retryable write", async () => {
+    const test = harness();
+    test.onApplied.mockRejectedValueOnce(new Error("刷新超时"));
+    await test.controller.handleEvent(chapterEvent());
+
+    await test.controller.approve("longbook_test", "event_chapter");
+
+    expect(test.writeChapter).toHaveBeenCalledTimes(1);
+    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.notifications.success).toHaveBeenCalledWith(
+      "章节正文、人物状态和 Handoff 已写入。"
+    );
+    expect(test.notifications.warning).toHaveBeenCalledWith(
+      "长篇提案已经写入，但后续刷新失败：刷新超时"
+    );
+    expect(test.notifications.error).not.toHaveBeenCalled();
+
+    await test.controller.approve("longbook_test", "event_chapter");
+    expect(test.writeChapter).toHaveBeenCalledTimes(1);
   });
 
   it("delegates an approved dispatch to the serial orchestrator without writing directly", async () => {

@@ -16,6 +16,7 @@ import {
   type LongOrderDirection,
   type LongStructureMutationBuilder
 } from "../types/longStructureMutations";
+import type { LongStructureMutationCompletion } from "../types/longWorkspace";
 import PopupSelect, {
   type PopupSelectOption,
   type PopupSelectValue
@@ -78,7 +79,10 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  proposal: [batch: LongWorkspaceOperationBatch];
+  mutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: LongStructureMutationCompletion
+  ];
 }>();
 
 const sectionLabels: Record<PlotSection, string> = {
@@ -148,7 +152,7 @@ const foreshadowingStatusOptions: readonly PopupSelectOption[] = (
   disabled: value !== "planned" && value !== "abandoned",
   description:
     value === "planned" || value === "abandoned"
-      ? "可由结构提案设置"
+      ? "可在结构管理中设置"
       : "由写作提交和连续性账本维护"
 }));
 
@@ -211,6 +215,15 @@ const formMode = ref<"create" | "edit">("create");
 const pendingDelete = ref<PlotRow | null>(null);
 const cascadeDelete = ref(false);
 const draft = reactive<PlotDraft>(emptyDraft());
+type MutationSurface = "form" | "delete" | "background";
+const pendingMutation = ref<{
+  id: number;
+  surface: MutationSurface;
+} | null>(null);
+let mutationClock = 0;
+const mutationLocked = computed(
+  () => props.disabled || pendingMutation.value !== null
+);
 
 const eventById = computed(
   () =>
@@ -572,7 +585,7 @@ function openCreate(): void {
 function missingReferenceMessage(row: PlotRow): string | null {
   const missing = row.details.filter((line) => line.includes("缺失"));
   return missing.length > 0
-    ? `“${row.title}”存在缺失依赖，请先修复引用后再生成编辑提案。`
+    ? `“${row.title}”存在缺失依赖，请先修复引用后再编辑。`
     : null;
 }
 
@@ -669,23 +682,47 @@ function openEdit(row: PlotRow): void {
 }
 
 function closeForm(): void {
+  if (mutationLocked.value) return;
   formOpen.value = false;
 }
 
-function propose(
-  build: (builder: LongStructureMutationBuilder) => LongWorkspaceOperationBatch
+function finishMutation(
+  requestId: number,
+  outcome: "succeeded" | "failed" | "applied-refresh-failed"
+): void {
+  const pending = pendingMutation.value;
+  if (!pending || pending.id !== requestId) return;
+  pendingMutation.value = null;
+  if (outcome === "failed") return;
+  if (pending.surface === "form") {
+    formOpen.value = false;
+  } else if (pending.surface === "delete") {
+    pendingDelete.value = null;
+    cascadeDelete.value = false;
+  }
+}
+
+function emitMutation(
+  build: (builder: LongStructureMutationBuilder) => LongWorkspaceOperationBatch,
+  surface: MutationSurface = "background"
 ): boolean {
+  if (mutationLocked.value) return false;
   try {
-    emit(
-      "proposal",
-      build(createLongStructureMutationBuilder(props.snapshot))
-    );
+    const batch = build(createLongStructureMutationBuilder(props.snapshot));
+    const requestId = ++mutationClock;
+    pendingMutation.value = { id: requestId, surface };
+    emit("mutation", batch, {
+      succeed: () => finishMutation(requestId, "succeeded"),
+      fail: () => finishMutation(requestId, "failed"),
+      appliedButRefreshFailed: () =>
+        finishMutation(requestId, "applied-refresh-failed")
+    });
     return true;
   } catch (error) {
     uiMessage.warning(
       error instanceof Error
         ? error.message
-        : "无法生成长篇剧情结构变更提案。"
+        : "无法生成长篇剧情结构变更。"
     );
     return false;
   }
@@ -744,7 +781,7 @@ function eventTimeValuePatch(): { timeValue?: string } {
 
 function submitForm(): void {
   if (!validateDraft()) return;
-  const succeeded = propose((builder) => {
+  emitMutation((builder) => {
     if (formMode.value === "create") {
       switch (activeSection.value) {
         case "event":
@@ -843,8 +880,7 @@ function submitForm(): void {
           note: draft.note
         });
     }
-  });
-  if (succeeded) closeForm();
+  }, "form");
 }
 
 function siblingIds(row: PlotRow): string[] {
@@ -865,7 +901,7 @@ function reorder(row: PlotRow, direction: LongOrderDirection): void {
     uiMessage.info("该顺序范围包含已提交事实，不能重排。");
     return;
   }
-  propose((builder) => {
+  emitMutation((builder) => {
     switch (activeSection.value) {
       case "event":
         return builder.reorderStoryEvent(row.id, direction);
@@ -891,6 +927,7 @@ function openDelete(row: PlotRow): void {
 }
 
 function closeDelete(): void {
+  if (mutationLocked.value) return;
   pendingDelete.value = null;
   cascadeDelete.value = false;
 }
@@ -898,7 +935,7 @@ function closeDelete(): void {
 function confirmDelete(): void {
   const target = pendingDelete.value;
   if (!target) return;
-  const succeeded = propose((builder) => {
+  emitMutation((builder) => {
     switch (activeSection.value) {
       case "event":
         return builder.deleteStoryEvent(target.id, cascadeDelete.value);
@@ -917,11 +954,7 @@ function confirmDelete(): void {
       case "foreshadowingBeat":
         return builder.deleteForeshadowingBeat(target.id);
     }
-  });
-  if (succeeded) {
-    closeDelete();
-    uiMessage.info("已生成删除提案，等待影响预览和人工确认。");
-  }
+  }, "delete");
 }
 
 function toggleId(
@@ -991,7 +1024,7 @@ function setBeatPlacement(value: PopupSelectValue) {
     <header class="plot-toolbar">
       <div>
         <strong>剧情与叙事结构</strong>
-        <span>迁移数据会完整列出；修改仅生成待确认提案。</span>
+        <span>迁移数据会完整列出；手工修改会直接保存到本机。</span>
       </div>
       <div class="toolbar-actions">
         <PopupSelect
@@ -1000,14 +1033,14 @@ function setBeatPlacement(value: PopupSelectValue) {
           accessible-label="选择剧情结构类型"
           variant="compact"
           size="small"
-          :disabled="disabled"
+          :disabled="mutationLocked"
           :menu-z-index="2300"
           @update:model-value="setSection"
         />
         <button
           class="primary-button"
           type="button"
-          :disabled="disabled"
+          :disabled="mutationLocked"
           @click="openCreate"
         >
           新建{{ selectedSectionLabel }}
@@ -1033,7 +1066,7 @@ function setBeatPlacement(value: PopupSelectValue) {
             v-if="supportsReorder"
             type="button"
             :aria-label="`上移${row.title}`"
-            :disabled="disabled || !canMove(row, 'up')"
+            :disabled="mutationLocked || !canMove(row, 'up')"
             @click="reorder(row, 'up')"
           >
             ↑
@@ -1042,14 +1075,14 @@ function setBeatPlacement(value: PopupSelectValue) {
             v-if="supportsReorder"
             type="button"
             :aria-label="`下移${row.title}`"
-            :disabled="disabled || !canMove(row, 'down')"
+            :disabled="mutationLocked || !canMove(row, 'down')"
             @click="reorder(row, 'down')"
           >
             ↓
           </button>
           <button
             type="button"
-            :disabled="disabled || row.editLocked"
+            :disabled="mutationLocked || row.editLocked"
             @click="openEdit(row)"
           >
             编辑
@@ -1057,7 +1090,7 @@ function setBeatPlacement(value: PopupSelectValue) {
           <button
             class="delete-button"
             type="button"
-            :disabled="disabled || row.deleteLocked"
+            :disabled="mutationLocked || row.deleteLocked"
             @click="openDelete(row)"
           >
             删除
@@ -1071,6 +1104,7 @@ function setBeatPlacement(value: PopupSelectValue) {
         v-if="formOpen"
         class="plot-modal-overlay"
         @mousedown.self="closeForm"
+        @keydown.esc.stop="closeForm"
       >
         <section
           class="plot-modal"
@@ -1084,15 +1118,25 @@ function setBeatPlacement(value: PopupSelectValue) {
                 <span>{{ formMode === "create" ? "CREATE" : "EDIT" }}</span>
                 <h3>{{ formTitle }}</h3>
               </div>
-              <button type="button" aria-label="关闭" @click="closeForm">
+              <button
+                type="button"
+                aria-label="关闭"
+                :disabled="mutationLocked"
+                @click="closeForm"
+              >
                 ×
               </button>
             </header>
-            <div class="modal-body">
+            <fieldset class="modal-body" :disabled="mutationLocked">
               <template v-if="activeSection === 'event'">
                 <label class="form-field">
                   <span>事件标题</span>
-                  <input v-model="draft.title" maxlength="256" required />
+                  <input
+                    v-model="draft.title"
+                    maxlength="256"
+                    autofocus
+                    required
+                  />
                 </label>
                 <label class="form-field">
                   <span>事件摘要</span>
@@ -1382,11 +1426,27 @@ function setBeatPlacement(value: PopupSelectValue) {
                   <small>执行状态和提交 ID 由章节提交/回滚流程维护。</small>
                 </div>
               </template>
-            </div>
+            </fieldset>
             <footer class="modal-actions">
-              <button type="button" @click="closeForm">取消</button>
-              <button class="primary-button" type="submit">
-                生成变更提案
+              <button
+                type="button"
+                :disabled="mutationLocked"
+                @click="closeForm"
+              >
+                取消
+              </button>
+              <button
+                class="primary-button"
+                type="submit"
+                :disabled="mutationLocked"
+              >
+                {{
+                  pendingMutation?.surface === "form"
+                    ? "保存中…"
+                    : formMode === "create"
+                      ? "创建"
+                      : "保存修改"
+                }}
               </button>
             </footer>
           </form>
@@ -1399,39 +1459,55 @@ function setBeatPlacement(value: PopupSelectValue) {
         v-if="pendingDelete"
         class="plot-modal-overlay"
         @mousedown.self="closeDelete"
+        @keydown.esc.stop="closeDelete"
       >
         <section
           class="plot-modal delete-modal"
           role="alertdialog"
           aria-modal="true"
+          aria-labelledby="long-plot-delete-title"
+          aria-describedby="long-plot-delete-description"
         >
           <header class="modal-header">
             <div>
-              <span>DELETE PROPOSAL</span>
-              <h3>删除“{{ pendingDelete.title }}”</h3>
+              <span>DELETE</span>
+              <h3 id="long-plot-delete-title">
+                删除“{{ pendingDelete.title }}”
+              </h3>
             </div>
           </header>
-          <div class="modal-body">
-            <p class="delete-copy">
-              此操作只生成删除提案；外层仍会展示影响范围并要求人工确认。
+          <fieldset class="modal-body" :disabled="mutationLocked">
+            <p id="long-plot-delete-description" class="delete-copy">
+              删除会直接保存到本机；若仍有依赖，保存会被阻止。
             </p>
             <label v-if="supportsCascade" class="cascade-option">
               <input v-model="cascadeDelete" type="checkbox" />
               <span>
                 同时删除依赖项
-                <small>请仅在影响预览确认依赖范围后使用。</small>
+                <small>会一并删除引用当前条目的相关结构。</small>
               </span>
             </label>
-          </div>
+          </fieldset>
           <footer class="modal-actions">
-            <button type="button" @click="closeDelete">取消</button>
+            <button
+              type="button"
+              :disabled="mutationLocked"
+              autofocus
+              @click="closeDelete"
+            >
+              取消
+            </button>
             <button
               class="danger-button"
               type="button"
-              :disabled="disabled"
+              :disabled="mutationLocked"
               @click="confirmDelete"
             >
-              生成删除提案
+              {{
+                pendingMutation?.surface === "delete"
+                  ? "删除中…"
+                  : "确认删除"
+              }}
             </button>
           </footer>
         </section>
@@ -1627,8 +1703,11 @@ button:disabled {
 
 .modal-body {
   display: grid;
+  min-inline-size: 0;
   gap: 0.85rem;
+  margin: 0;
   padding: 1rem;
+  border: 0;
 }
 
 .field-grid {
@@ -1740,7 +1819,7 @@ textarea:focus-visible {
 
 .danger-button {
   border-color: var(--danger);
-  color: var(--surface-main);
+  color: #fff;
   background: var(--danger);
   font-weight: 650;
 }

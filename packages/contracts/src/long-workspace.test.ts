@@ -8,7 +8,9 @@ import {
   LONG_WORKSPACE_INDEX_PATH,
   LongAgentProfileSchema,
   LongBookSchema,
+  LongBookSummarySchema,
   LongEventConnectionSchema,
+  LongFileRevisionSchema,
   LongProjectManifestSchema,
   LongWorkspaceIndexSnapshotSchema,
   LongWorkspaceSchemaVersionSchema,
@@ -371,6 +373,22 @@ describe("independent long-form workspace contracts", () => {
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(duplicatePath).success
     ).toBe(false);
+
+    const portableDuplicatePath = workspaceIndex();
+    portableDuplicatePath.chapters[1]!.body.path =
+      portableDuplicatePath.chapters[0]!.body.path.replace(
+        "body.md",
+        "BODY.md"
+      );
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(portableDuplicatePath)
+        .success
+    ).toBe(false);
+
+    expect(
+      LongFileRevisionSchema.safeParse(`v2:${"1".repeat(100)}:${"a".repeat(64)}`)
+        .success
+    ).toBe(false);
   });
 
   it("rejects duplicate and unresolved entity references", () => {
@@ -396,7 +414,7 @@ describe("independent long-form workspace contracts", () => {
     ).toBe(false);
   });
 
-  it("requires contiguous volume, arc, chapter and placement order", () => {
+  it("requires contiguous volume, arc, chapter, event and placement order", () => {
     const volumeOrder = workspaceIndex();
     volumeOrder.plot.volumes[0]!.order = 2;
     expect(
@@ -409,10 +427,43 @@ describe("independent long-form workspace contracts", () => {
       LongWorkspaceIndexSnapshotSchema.safeParse(chapterOrder).success
     ).toBe(false);
 
+    const eventOrder = workspaceIndex();
+    eventOrder.plot.storyEvents[1]!.storyOrder = 1;
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(eventOrder).success
+    ).toBe(false);
+
     const placementOrder = workspaceIndex();
     placementOrder.plot.narrativePlacements[0]!.orderInChapter = 2;
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(placementOrder).success
+    ).toBe(false);
+  });
+
+  it("keeps full books and lightweight summaries on one revision", () => {
+    const mismatchedBookRevision = longBook();
+    mismatchedBookRevision.projectRevision = 5;
+    expect(LongBookSchema.safeParse(mismatchedBookRevision).success).toBe(
+      false
+    );
+
+    const mismatchedBookTime = longBook();
+    mismatchedBookTime.updatedAt = "2026-07-26T11:00:00.000Z";
+    expect(LongBookSchema.safeParse(mismatchedBookTime).success).toBe(false);
+
+    const summary = createLongBookSummary(LongBookSchema.parse(longBook()));
+    expect(summary.projectRevision).toBe(summary.navigation.revision);
+    expect(
+      LongBookSummarySchema.safeParse({
+        ...summary,
+        projectRevision: summary.projectRevision + 1
+      }).success
+    ).toBe(false);
+    expect(
+      LongBookSummarySchema.safeParse({
+        ...summary,
+        updatedAt: "2026-07-26T11:00:00.000Z"
+      }).success
     ).toBe(false);
   });
 

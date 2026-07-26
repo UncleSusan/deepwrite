@@ -2,9 +2,14 @@ import { createShortWorkspaceContentRevision } from "@deepwrite/contracts";
 import { describe, expect, it } from "vitest";
 import type { AgentEditProposal } from "../types/conversation";
 import {
+  agentEditProposalGenerationId,
   agentEditProposalId,
+  agentEditProposalLaneId,
   classifyAgentEditAcceptance,
+  expectedMutationDurableRevision,
   expectedMutationBaseRevision,
+  latestAgentEditProposalInLane,
+  resolveAgentEditProposalGeneration,
   resolveAgentEditorMutationText
 } from "./agentEditReview";
 
@@ -26,6 +31,72 @@ describe("agent edit review", () => {
     );
   });
 
+  it("creates a distinct immutable id after an earlier generation is applying", () => {
+    const laneId = agentEditProposalId(
+      "run-1",
+      "book-1",
+      "draft",
+      "body:file/1"
+    );
+    const existing = {
+      ...proposal("原文", "第一版"),
+      id: laneId,
+      laneId,
+      generation: 1,
+      status: "accepting",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    } as AgentEditProposal;
+
+    expect(resolveAgentEditProposalGeneration(laneId, existing)).toEqual({
+      id: agentEditProposalGenerationId(laneId, 2),
+      laneId,
+      generation: 2,
+      coalescesExisting: false,
+      predecessorProposalId: laneId
+    });
+  });
+
+  it("coalesces repeated undecided mutations in the same generation", () => {
+    const existing = {
+      ...proposal("原文", "第一版"),
+      id: "lane",
+      laneId: "lane",
+      generation: 3,
+      status: "pending",
+      predecessorProposalId: "lane:g2"
+    } as AgentEditProposal;
+
+    expect(resolveAgentEditProposalGeneration("lane", existing)).toEqual({
+      id: "lane",
+      laneId: "lane",
+      generation: 3,
+      coalescesExisting: true,
+      predecessorProposalId: "lane:g2"
+    });
+  });
+
+  it("finds the latest immutable generation in a lane", () => {
+    const first = {
+      ...proposal("原文", "第一版"),
+      id: "lane",
+      laneId: "lane",
+      generation: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    } as AgentEditProposal;
+    const second = {
+      ...proposal("第一版", "第二版"),
+      id: "lane:generation:2",
+      laneId: "lane",
+      generation: 2,
+      updatedAt: "2026-01-01T00:00:01.000Z"
+    } as AgentEditProposal;
+
+    expect(latestAgentEditProposalInLane([first, second], "lane")?.id).toBe(
+      second.id
+    );
+    expect(agentEditProposalLaneId(second)).toBe("lane");
+  });
+
   it("uses the current text revision for the first mutation", () => {
     expect(expectedMutationBaseRevision(undefined, "初始大纲")).toBe(
       createShortWorkspaceContentRevision("初始大纲")
@@ -45,6 +116,28 @@ describe("agent edit review", () => {
 
     expect(expectedMutationBaseRevision(existing, "尚未应用的页面文本")).toBe(
       existing.proposedRevision
+    );
+  });
+
+  it("expects the old durable base while a generation is applying", () => {
+    const existing = {
+      ...proposal("原文", "第一版"),
+      status: "accepting"
+    } as AgentEditProposal;
+
+    expect(expectedMutationDurableRevision(existing, "被忽略")).toBe(
+      createShortWorkspaceContentRevision("原文")
+    );
+  });
+
+  it("advances the durable base after a generation was accepted", () => {
+    const existing = {
+      ...proposal("原文", "第一版"),
+      status: "accepted"
+    } as AgentEditProposal;
+
+    expect(expectedMutationDurableRevision(existing, "被忽略")).toBe(
+      createShortWorkspaceContentRevision("第一版")
     );
   });
 

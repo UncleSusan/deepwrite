@@ -623,7 +623,10 @@ function editorMutationResult(
   stageBodies.set(stageId, text);
   stageRevisions.set(stageId, createShortWorkspaceContentRevision(text));
   const resultSummary = input.writeApprovalMode === "auto-approve"
-    ? summary.replace("，等待用户审阅。", "，将在本轮完成后自动批准并保存。")
+    ? summary.replace(
+        "，等待用户审阅。",
+        "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
+      )
     : summary;
   return textResult(resultSummary, {
     kind: "workspace-editor-mutation",
@@ -660,7 +663,10 @@ function expertDraftFileMutationResult(
     }
   });
   const resultSummary = input.writeApprovalMode === "auto-approve"
-    ? summary.replace("，等待用户审阅。", "，将在本轮完成后自动批准并保存。")
+    ? summary.replace(
+        "，等待用户审阅。",
+        "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
+      )
     : summary;
   return textResult(resultSummary, {
     kind: "workspace-expert-draft-file-mutation",
@@ -1007,7 +1013,7 @@ function buildCreateExpertDraftSectionsTool(
         input.writeApprovalMode === "auto-approve"
           ? summary.replace(
               "，等待用户审阅。",
-              "，将在本轮完成后自动批准并保存。"
+              "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
             )
           : summary;
       return textResult(

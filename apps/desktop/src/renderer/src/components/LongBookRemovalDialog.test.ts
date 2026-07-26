@@ -9,7 +9,7 @@ describe("LongBookRemovalDialog", () => {
     expect(source).toContain("不会删除磁盘上的项目文件夹");
     expect(source).toContain("永久删除整个长篇项目文件夹");
     expect(source).toContain("此操作不可恢复");
-    expect(source).toContain("打开已存在长篇");
+    expect(source).toContain("打开已有作品");
   });
 
   it("uses danger styling only when the action is delete", () => {
@@ -33,6 +33,12 @@ describe("LongBookRemovalDialog", () => {
     expect(source).toContain('<Teleport to="body">');
     expect(source).toContain('role="alertdialog"');
     expect(source).toContain('aria-modal="true"');
+    expect(source).toContain(
+      'aria-describedby="long-removal-dialog-description"'
+    );
+    expect(source).toContain('ref="dialogElement"');
+    expect(source).toContain("focusableElements()");
+    expect(source).toContain("previousFocus");
     expect(source).toContain("var(--surface-raised)");
     expect(source).toContain("var(--theme-line)");
     expect(source).toContain("max-height: calc(100vh - 28px)");
@@ -43,8 +49,9 @@ describe("LongBookRemovalDialog", () => {
     expect(source).toContain("close: []");
     expect(source).toContain("confirm: []");
     expect(source).toContain(
-      "@mousedown.self=\"!pending && emit('close')\""
+      'function close(): void {\n  if (!props.pending) emit("close");\n}'
     );
+    expect(source).toContain('@mousedown.self="close"');
     expect(source).toContain(':disabled="pending"');
   });
 });

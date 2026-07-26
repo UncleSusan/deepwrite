@@ -109,9 +109,41 @@ describe("long workspace editor crash recovery", () => {
     );
     expect(editorSource).toContain("isEditableLongFile(state.file)");
     expect(editorSource).toContain("!selectedFile.readOnly");
-    expect(editorSource).toContain("!props.locked");
+    expect(editorSource).toContain(
+      "`locked` is a transient write barrier"
+    );
+    expect(editorSource).not.toMatch(
+      /const editable =[\s\S]{0,120}!props\.locked/
+    );
     expect(editorSource).toContain(
       "A disabled or unavailable localStorage must never break the editor"
+    );
+  });
+
+  it("never exposes stale text as editable when a revision reload fails", () => {
+    expect(editorSource).toMatch(
+      /function initializeLoadingState[\s\S]*loaded: false,[\s\S]*loadError: null/
+    );
+    expect(editorSource).toMatch(
+      /catch \(error: unknown\)[\s\S]*loaded: false,[\s\S]*loadError: message/
+    );
+    expect(editorSource).toContain("Never expose a previous clean snapshot");
+    expect(editorSource).toContain("重新读取");
+    expect(editorSource).toContain("@click=\"loadSelectedDocument(true)\"");
+  });
+
+  it("does not report a leave-save as clean when typing continues during the write", () => {
+    expect(editorSource).toContain("const bookId = state.bookId");
+    expect(editorSource).toMatch(
+      /const saved = await runExclusiveSave[\s\S]*return !Object\.entries\(documentStates\.value\)\.some/
+    );
+    expect(editorSource).toContain(
+      "workspaceRevision: Math.max("
+    );
+    expect(editorSource).toContain("Never regress to the older read baseline");
+    expect(editorSource.match(/props\.bookId === bookId/gu)).toHaveLength(2);
+    expect(editorSource).toContain(
+      "保存期间的新修改仍待保存"
     );
   });
 });

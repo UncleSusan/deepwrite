@@ -1847,6 +1847,15 @@ export function selectLongChaptersForWritingScope(
       "Long writing scope must be chapter, arc, or volume; whole-book scheduling is not supported."
     );
   }
+  if (
+    (input.scope === "chapter" && (input.arcId || input.volumeId)) ||
+    (input.scope === "arc" && (input.chapterCardId || input.volumeId)) ||
+    (input.scope === "volume" && (input.chapterCardId || input.arcId))
+  ) {
+    throw new Error(
+      "Long writing scope includes a selector that belongs to another scope."
+    );
+  }
   const ordered = orderedLongChapterCards(index);
   const firstIndex = index.ledger.commits.length;
   const first = ordered[firstIndex];
@@ -2057,7 +2066,7 @@ export function buildLongWorkspaceTools(
     };
   };
 
-  let documentReadSequence = 0;
+  let querySequence = 0;
   const loadLiveDocumentRevision = async (
     file: LongWorkspaceFileReference,
     expectedWorkspaceRevision: number,
@@ -2074,7 +2083,7 @@ export function buildLongWorkspaceTools(
           maxCharacters: 1
         },
         {
-          id: `long-query-${input.runId}-commit-revision-${++documentReadSequence}`,
+          id: `long-query-${input.runId}-commit-revision-${++querySequence}`,
           context: {
             sessionId: input.sessionId,
             runId: input.runId,
@@ -2119,7 +2128,7 @@ export function buildLongWorkspaceTools(
             maxCharacters: 262_144
           },
           {
-            id: `long-query-${input.runId}-readiness-${++documentReadSequence}`,
+            id: `long-query-${input.runId}-readiness-${++querySequence}`,
             context: {
               sessionId: input.sessionId,
               runId: input.runId,
@@ -2240,7 +2249,7 @@ export function buildLongWorkspaceTools(
                 maxCharacters: params.max_characters ?? 32_768
               },
               {
-                id: `long-query-${input.runId}-read-${Date.now()}`,
+                id: `long-query-${input.runId}-read-${++querySequence}`,
                 context: {
                   sessionId: input.sessionId,
                   runId: input.runId,
@@ -2255,6 +2264,8 @@ export function buildLongWorkspaceTools(
           if (
             result.bookId !== workspace.bookId ||
             result.file.id !== params.file_id ||
+            result.file.path !== known.file.path ||
+            result.offset !== (params.offset ?? 0) ||
             !filePathBelongsToRoot(result.file, known.root)
           ) {
             throw new Error("Core returned a long document outside the authorized file.");
@@ -2308,7 +2319,7 @@ export function buildLongWorkspaceTools(
                 maxSnippetCharacters: params.max_snippet_characters ?? 320
               },
               {
-                id: `long-query-${input.runId}-search-${Date.now()}`,
+                id: `long-query-${input.runId}-search-${++querySequence}`,
                 context: {
                   sessionId: input.sessionId,
                   runId: input.runId,
@@ -2384,6 +2395,12 @@ export function buildLongWorkspaceTools(
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           throwIfAborted(signal);
+          const summary = params.summary.trim();
+          if (!summary) {
+            throw new Error(
+              "Long mutation proposal summary must contain non-whitespace text."
+            );
+          }
           const { index, projectRevision } = await loadIndex(signal);
           const timestamp = new Date().toISOString();
           const idSeed = `${workspace.bookId}:${input.runId}:${toolCallId}`;
@@ -2462,7 +2479,7 @@ export function buildLongWorkspaceTools(
             agentId: profile.id,
             batch,
             baseProjectRevision: projectRevision,
-            summary: params.summary.trim()
+            summary
           });
         }
       })
@@ -2550,10 +2567,14 @@ export function buildLongWorkspaceTools(
   if (
     capabilities.has("write_chapter_files") &&
     writableRoots.has("draft") &&
+    profile.id === "expert_section_writer" &&
     workspace.activeChapterCardId
   ) {
     const fileWrite = strictObject({
-      content: Type.String({ maxLength: 16 * 1024 * 1024 })
+      content: Type.String({
+        minLength: 1,
+        maxLength: 16 * 1024 * 1024
+      })
     });
     tools.push(
       defineTool({
@@ -2570,6 +2591,23 @@ export function buildLongWorkspaceTools(
         executionMode: "sequential",
         execute: async (_toolCallId, params, signal) => {
           throwIfAborted(signal);
+          const summary = params.summary.trim();
+          if (!summary) {
+            throw new Error(
+              "Chapter write proposal summary must contain non-whitespace text."
+            );
+          }
+          if (
+            [
+              params.body.content,
+              params.character_state.content,
+              params.handoff.content
+            ].some((content) => content.trim().length === 0)
+          ) {
+            throw new Error(
+              "Chapter write proposal must provide non-empty body, character state, and handoff content."
+            );
+          }
           const {
             index,
             projectRevision,
@@ -2623,14 +2661,19 @@ export function buildLongWorkspaceTools(
             bookId: workspace.bookId,
             agentId: profile.id,
             input: chapterInput,
-            summary: params.summary.trim()
+            summary
           });
         }
       })
     );
   }
 
-  if (capabilities.has("commit_ledger") && workspace.activeChapterCardId) {
+  if (
+    capabilities.has("commit_ledger") &&
+    writableRoots.has("continuity_ledger") &&
+    profile.id === "continuity_ledger" &&
+    workspace.activeChapterCardId
+  ) {
     tools.push(
       defineTool({
         name: "propose_long_ledger_commit",
@@ -2708,6 +2751,12 @@ export function buildLongWorkspaceTools(
         executionMode: "sequential",
         execute: async (_toolCallId, params, signal) => {
           throwIfAborted(signal);
+          const summary = params.summary.trim();
+          if (!summary) {
+            throw new Error(
+              "Ledger proposal summary must contain non-whitespace text."
+            );
+          }
           const {
             index,
             projectRevision,
@@ -2796,7 +2845,26 @@ export function buildLongWorkspaceTools(
           const characterFilesById = new Map(
             index.characterFiles.map((entry) => [entry.characterId, entry])
           );
-          const resolvedFileUpdateTargets = (params.file_updates ?? []).map(
+          const fileUpdates = params.file_updates ?? [];
+          const fileUpdateKeys = fileUpdates.map(
+            ({ character_id, document }) =>
+              `${character_id}\u0000${document}`
+          );
+          if (new Set(fileUpdateKeys).size !== fileUpdateKeys.length) {
+            throw new Error(
+              "Ledger proposal cannot update the same character document twice."
+            );
+          }
+          if (
+            fileUpdates.some(
+              ({ content }) => content.trim().length === 0
+            )
+          ) {
+            throw new Error(
+              "Ledger file updates must contain non-empty content."
+            );
+          }
+          const resolvedFileUpdateTargets = fileUpdates.map(
             (update) => {
               const characterFiles = characterFilesById.get(
                 update.character_id
@@ -2881,7 +2949,7 @@ export function buildLongWorkspaceTools(
             foreshadowingBeatDecisions:
               params.foreshadowing_beat_decisions ?? {},
             fileUpdates: resolvedFileUpdates,
-            commitMessage: params.summary.trim(),
+            commitMessage: summary,
             chapterSummary: {
               timeline: params.chapter_summary.timeline.trim(),
               characterStates:
@@ -2903,7 +2971,7 @@ export function buildLongWorkspaceTools(
             bookId: workspace.bookId,
             agentId: profile.id,
             input: commitInput,
-            summary: params.summary.trim()
+            summary
           });
         }
       })

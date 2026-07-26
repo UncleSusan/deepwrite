@@ -919,7 +919,7 @@ function entitySnapshotText(
   color: var(--accent-contrast, #fff);
 }
 
-:global(html[data-theme="dark"]) .long-proposal-primary {
+:global(html[data-theme="dark"] .long-proposal-primary) {
   background: var(--accent);
 }
 

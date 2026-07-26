@@ -131,6 +131,11 @@ export type LongProjectRelativePath = z.infer<
 
 export const LongFileRevisionSchema = z
   .string()
+  // Current revisions contain at most a safe-integer byte count and a
+  // 64-character SHA-256. Bound the wire value before applying the regexp so
+  // an untrusted command cannot turn this small token into an unbounded
+  // allocation/scanning surface.
+  .max(96)
   .regex(/^(?:v1:\d+:[0-9a-f]{8}|v2:\d+:[0-9a-f]{64})$/);
 export type LongFileRevision = z.infer<typeof LongFileRevisionSchema>;
 
@@ -1124,6 +1129,15 @@ function validateLongWorkspaceIndexSnapshot(
     "story-event id",
     context
   );
+  validateContiguousOrder(
+    storyEvents.map(({ storyOrder }, index) => ({
+      index,
+      order: storyOrder
+    })),
+    (index) => ["plot", "storyEvents", index, "storyOrder"],
+    "Story event",
+    context
+  );
   const eventById = new Map(storyEvents.map((event) => [event.id, event]));
   storyEvents.forEach((event, index) => {
     event.arcIds.forEach((arcId, arcIndex) => {
@@ -1509,9 +1523,11 @@ function validateLongWorkspaceIndexSnapshot(
     context
   );
   validateUniqueValues(
-    allFiles.map(({ file }) => file.path),
+    allFiles.map(({ file }) =>
+      file.path.normalize("NFC").toLocaleLowerCase("en-US")
+    ),
     (index) => [...allFiles[index]!.path, "path"],
-    "long-form file path",
+    "portable long-form file path",
     context
   );
 
@@ -1545,6 +1561,15 @@ function validateLongWorkspaceIndexSnapshot(
     }
   });
   const commitById = new Map(commits.map((commit) => [commit.id, commit]));
+  const placementIdsByCommitId = new Map(
+    commits.map((commit) => [commit.id, new Set(commit.placementIds)])
+  );
+  const beatIdsByCommitId = new Map(
+    commits.map((commit) => [
+      commit.id,
+      new Set(commit.foreshadowingBeatIds)
+    ])
+  );
   const commitByChapterId = new Map(
     commits.map((commit) => [commit.chapterCardId, commit])
   );
@@ -1717,7 +1742,7 @@ function validateLongWorkspaceIndexSnapshot(
         ["plot", "narrativePlacements", index, "commitId"],
         "Placement commit id must reference an indexed ledger commit."
       );
-    } else if (!commit.placementIds.includes(placement.id)) {
+    } else if (!placementIdsByCommitId.get(commit.id)!.has(placement.id)) {
       addIssue(
         context,
         ["plot", "narrativePlacements", index, "commitId"],
@@ -1779,7 +1804,7 @@ function validateLongWorkspaceIndexSnapshot(
         ],
         "Foreshadowing beat commit id must reference an indexed ledger commit."
       );
-    } else if (!commit.foreshadowingBeatIds.includes(beat.id)) {
+    } else if (!beatIdsByCommitId.get(commit.id)!.has(beat.id)) {
       addIssue(
         context,
         [
@@ -2156,6 +2181,25 @@ export const LongBookSchema = z
         message: "Long book and workspace index ids must match."
       });
     }
+    if (
+      book.projectRevision !== undefined &&
+      book.projectRevision !== book.workspaceIndex.revision
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["projectRevision"],
+        message:
+          "Long book project revision must match its workspace index revision."
+      });
+    }
+    if (book.updatedAt !== book.workspaceIndex.updatedAt) {
+      context.addIssue({
+        code: "custom",
+        path: ["updatedAt"],
+        message:
+          "Long book and workspace index update timestamps must match."
+      });
+    }
   });
 export type LongBook = z.infer<typeof LongBookSchema>;
 
@@ -2174,6 +2218,22 @@ export const LongBookSummarySchema = z
         code: "custom",
         path: ["navigation", "bookId"],
         message: "Long book summary and navigation ids must match."
+      });
+    }
+    if (book.projectRevision !== book.navigation.revision) {
+      context.addIssue({
+        code: "custom",
+        path: ["projectRevision"],
+        message:
+          "Long book summary project revision must match its navigation revision."
+      });
+    }
+    if (book.updatedAt !== book.navigation.updatedAt) {
+      context.addIssue({
+        code: "custom",
+        path: ["updatedAt"],
+        message:
+          "Long book summary and navigation update timestamps must match."
       });
     }
   });

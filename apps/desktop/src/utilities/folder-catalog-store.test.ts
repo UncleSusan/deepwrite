@@ -749,6 +749,183 @@ describe("FolderCatalogStore", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("creates a draft section batch in one revision and replays it idempotently", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-draft-section-batch-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock()
+    });
+    const opened = await store.createShortBook(
+      { title: "批量小节", genre: "其他" },
+      join(root, "books")
+    );
+    const request = {
+      operationId: "run-1:proposal-create:revision-1",
+      bookId: opened.resource.id,
+      afterSectionId: "intro",
+      baseProjectRevision: 0,
+      sections: [
+        {
+          clientSectionId: "provisional:section:alpha",
+          title: "相遇",
+          wordCountRequirement: "约 1200 字"
+        },
+        {
+          clientSectionId: "provisional:section:beta",
+          title: "追逐",
+          wordCountRequirement: "约 1800 字"
+        }
+      ]
+    };
+
+    const created = await store.createDraftSections(request);
+    expect(created).toMatchObject({
+      operationId: request.operationId,
+      bookId: opened.resource.id,
+      projectRevision: 1,
+      sections: [
+        {
+          clientSectionId: "provisional:section:alpha",
+          section: {
+            id: "section-2",
+            title: "相遇",
+            body: {
+              id: catalogDraftBodyDocumentId("section-2"),
+              content: ""
+            },
+            characterState: {
+              id: catalogDraftCharacterStateDocumentId("section-2"),
+              content: ""
+            }
+          }
+        },
+        {
+          clientSectionId: "provisional:section:beta",
+          section: {
+            id: "section-3",
+            title: "追逐",
+            body: {
+              id: catalogDraftBodyDocumentId("section-3"),
+              content: ""
+            },
+            characterState: {
+              id: catalogDraftCharacterStateDocumentId("section-3"),
+              content: ""
+            }
+          }
+        }
+      ]
+    });
+
+    const manifestPath = join(opened.projectDirectory, "deepwrite.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      revision: number;
+      draft: {
+        sections: Array<{
+          id: string;
+          body: { path: string };
+          characterState: { path: string };
+        }>;
+      };
+      draftSectionCreationOperations: Array<{
+        operationId: string;
+        sections: Array<{ clientSectionId: string; sectionId: string }>;
+      }>;
+    };
+    expect(manifest.revision).toBe(1);
+    expect(manifest.draft.sections.map(({ id }) => id)).toEqual([
+      "intro",
+      "section-2",
+      "section-3",
+      "section-1"
+    ]);
+    expect(manifest.draftSectionCreationOperations).toMatchObject([
+      {
+        operationId: request.operationId,
+        sections: [
+          {
+            clientSectionId: "provisional:section:alpha",
+            sectionId: "section-2"
+          },
+          {
+            clientSectionId: "provisional:section:beta",
+            sectionId: "section-3"
+          }
+        ]
+      }
+    ]);
+    for (const sectionId of ["section-2", "section-3"]) {
+      const section = manifest.draft.sections.find(({ id }) => id === sectionId)!;
+      await expect(
+        readFile(join(opened.projectDirectory, section.body.path), "utf8")
+      ).resolves.toBe("");
+      await expect(
+        readFile(
+          join(opened.projectDirectory, section.characterState.path),
+          "utf8"
+        )
+      ).resolves.toBe("");
+    }
+
+    const replayed = await store.createDraftSections(request);
+    expect(replayed).toEqual(created);
+    expect(await store.getProjectRevision(opened.resource.id, "book")).toBe(1);
+    const replayedManifest = JSON.parse(
+      await readFile(manifestPath, "utf8")
+    ) as typeof manifest;
+    expect(replayedManifest.draft.sections).toHaveLength(4);
+    expect(replayedManifest.draftSectionCreationOperations).toHaveLength(1);
+
+    await expect(
+      store.createDraftSections({
+        ...request,
+        sections: [
+          {
+            clientSectionId: "provisional:section:alpha",
+            title: "被篡改的请求"
+          }
+        ]
+      })
+    ).rejects.toThrow(/请求内容与首次提交不一致/u);
+    expect(await store.getProjectRevision(opened.resource.id, "book")).toBe(1);
+  });
+
+  it("uses screenplay episode ids for a batch created through the shared path", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-episode-batch-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock()
+    });
+    const opened = await store.createScriptBook(
+      { title: "批量剧集", genre: "悬疑" },
+      join(root, "books")
+    );
+
+    await expect(
+      store.createDraftSections({
+        operationId: "script-run-1:create-episodes:revision-1",
+        bookId: opened.resource.id,
+        baseProjectRevision: 0,
+        sections: [
+          { clientSectionId: "provisional:episode:2" },
+          { clientSectionId: "provisional:episode:3" }
+        ]
+      })
+    ).resolves.toMatchObject({
+      projectRevision: 1,
+      sections: [
+        {
+          clientSectionId: "provisional:episode:2",
+          section: { id: "episode-2", title: "第二集" }
+        },
+        {
+          clientSectionId: "provisional:episode:3",
+          section: { id: "episode-3", title: "第三集" }
+        }
+      ]
+    });
+  });
+
   it("deletes registered book, material, and skill project folders", async () => {
     const root = await makeTemporaryRoot("deepwrite-folder-delete-projects-");
     const store = new FolderCatalogStore({

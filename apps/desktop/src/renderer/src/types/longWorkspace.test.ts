@@ -7,6 +7,8 @@ import type {
 import {
   createLongChapterSelection,
   createLongContinuitySelection,
+  longBookIdFromResourceId,
+  longBookResourceId,
   reconcileLongWorkspaceSelection
 } from "./longWorkspace";
 
@@ -77,6 +79,16 @@ function fixture(commitId: string | null): {
 }
 
 describe("long workspace chapter navigation", () => {
+  it("keeps the owning book id when a standard tree descendant is selected", () => {
+    const bookId = "longbook_lifecycle";
+    expect(longBookIdFromResourceId(longBookResourceId(bookId))).toBe(bookId);
+    expect(
+      longBookIdFromResourceId(
+        `${longBookResourceId(bookId)}:root:worldbuilding`
+      )
+    ).toBe(bookId);
+  });
+
   it("keeps the authoring entry editable before a continuity commit", () => {
     const { summary, workspaceIndex } = fixture(null);
     const selection = createLongChapterSelection(
@@ -141,5 +153,57 @@ describe("long workspace chapter navigation", () => {
         "chapter_one"
       )
     ).toBeUndefined();
+  });
+
+  it("offers continuity review only for the next chapter in the commit prefix", () => {
+    const { summary, workspaceIndex } = fixture(null);
+    summary.navigation.chapterCards.push({
+      ...summary.navigation.chapterCards[0]!,
+      id: "chapter_two",
+      title: "第二章",
+      narrativeOrder: 2
+    });
+    workspaceIndex.plot.chapterCards.push({
+      ...workspaceIndex.plot.chapterCards[0]!,
+      id: "chapter_two",
+      narrativeOrder: 2
+    });
+    workspaceIndex.chapters.push({
+      chapterCardId: "chapter_two",
+      body: file("file_chapter_two_body", "chapters/chapter-two/body.md"),
+      characterState: file(
+        "file_chapter_two_state",
+        "chapters/chapter-two/character-state.md"
+      ),
+      handoff: file(
+        "file_chapter_two_handoff",
+        "chapters/chapter-two/handoff.md"
+      ),
+      commitId: null
+    });
+
+    expect(
+      createLongContinuitySelection(
+        summary,
+        workspaceIndex,
+        "chapter_two"
+      )
+    ).toBeUndefined();
+
+    workspaceIndex.chapters[0]!.commitId = "commit_one";
+    workspaceIndex.ledger.commits.push({
+      id: "commit_one",
+      chapterCardId: "chapter_one"
+    } as (typeof workspaceIndex.ledger.commits)[number]);
+    expect(
+      createLongContinuitySelection(
+        summary,
+        workspaceIndex,
+        "chapter_two"
+      )
+    ).toMatchObject({
+      key: "continuity:chapter_two",
+      chapterCardId: "chapter_two"
+    });
   });
 });

@@ -268,6 +268,47 @@ export const CatalogDraftSectionSchema = z
   });
 export type CatalogDraftSection = z.infer<typeof CatalogDraftSectionSchema>;
 
+const DraftSectionCreationOperationSchema = z
+  .object({
+    operationId: CatalogIdSchema,
+    requestHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    sections: z
+      .array(
+        z
+          .object({
+            clientSectionId: DraftSectionIdSchema,
+            sectionId: DraftSectionIdSchema
+          })
+          .strict()
+      )
+      .min(1)
+      .max(100),
+    createdAt: TimestampSchema
+  })
+  .strict()
+  .superRefine((operation, context) => {
+    if (
+      !uniqueIds(
+        operation.sections.map(({ clientSectionId }) => clientSectionId)
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sections"],
+        message: "Draft creation client ids cannot contain duplicates."
+      });
+    }
+    if (
+      !uniqueIds(operation.sections.map(({ sectionId }) => sectionId))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sections"],
+        message: "Draft creation section ids cannot contain duplicates."
+      });
+    }
+  });
+
 export const CatalogDraftDirectorySchema = z
   .object({
     id: z.literal(CATALOG_DRAFT_DIRECTORY_ID),
@@ -728,7 +769,11 @@ const CurrentBookProjectManifestSharedShape = {
   documents: z
     .array(BookProjectDocumentManifestSchema)
     .max(CATALOG_PROJECT_MAX_CONTENT_ITEMS),
-  draft: BookProjectDraftDirectoryManifestSchema
+  draft: BookProjectDraftDirectoryManifestSchema,
+  draftSectionCreationOperations: z
+    .array(DraftSectionCreationOperationSchema)
+    .max(256)
+    .optional()
 } as const;
 
 const CurrentShortBookProjectManifestObjectSchema = z
@@ -751,6 +796,9 @@ function validateUniqueBookManifestFiles(
   manifest: {
     documents: ReadonlyArray<{ id: string; path: string }>;
     draft: BookProjectDraftDirectoryManifest;
+    draftSectionCreationOperations?:
+      | ReadonlyArray<{ operationId: string }>
+      | undefined;
   },
   context: z.core.$RefinementCtx<unknown>
 ): void {
@@ -773,6 +821,20 @@ function validateUniqueBookManifestFiles(
       code: "custom",
       path: ["documents"],
       message: "Book files cannot contain duplicate paths."
+    });
+  }
+  if (
+    manifest.draftSectionCreationOperations &&
+    !uniqueIds(
+      manifest.draftSectionCreationOperations.map(
+        ({ operationId }) => operationId
+      )
+    )
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["draftSectionCreationOperations"],
+      message: "Draft creation operation ids cannot contain duplicates."
     });
   }
 }
@@ -1105,6 +1167,88 @@ export const CreateDraftSectionInputSchema = z.object({
 });
 export type CreateDraftSectionInput = z.infer<
   typeof CreateDraftSectionInputSchema
+>;
+
+export const CreateDraftSectionsSectionInputSchema = z
+  .object({
+    clientSectionId: DraftSectionIdSchema,
+    title: DraftSectionTitleSchema.optional(),
+    wordCountRequirement: z.string().max(1_000).optional()
+  })
+  .strict();
+export type CreateDraftSectionsSectionInput = z.infer<
+  typeof CreateDraftSectionsSectionInputSchema
+>;
+
+export const CreateDraftSectionsInputSchema = z
+  .object({
+    operationId: CatalogIdSchema,
+    bookId: CatalogIdSchema,
+    afterSectionId: DraftSectionIdSchema.optional(),
+    baseProjectRevision: z.number().int().nonnegative().optional(),
+    force: z.boolean().optional(),
+    sections: z
+      .array(CreateDraftSectionsSectionInputSchema)
+      .min(1)
+      .max(100)
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const clientSectionIds = input.sections.map(
+      ({ clientSectionId }) => clientSectionId
+    );
+    if (!uniqueIds(clientSectionIds)) {
+      context.addIssue({
+        code: "custom",
+        path: ["sections"],
+        message: "Draft section client ids cannot contain duplicates."
+      });
+    }
+  });
+export type CreateDraftSectionsInput = z.infer<
+  typeof CreateDraftSectionsInputSchema
+>;
+
+export const CreateDraftSectionsResultSchema = z
+  .object({
+    operationId: CatalogIdSchema,
+    bookId: CatalogIdSchema,
+    projectRevision: z.number().int().nonnegative(),
+    sections: z
+      .array(
+        z
+          .object({
+            clientSectionId: DraftSectionIdSchema,
+            section: CatalogDraftSectionSchema
+          })
+          .strict()
+      )
+      .min(1)
+      .max(100)
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if (
+      !uniqueIds(result.sections.map(({ clientSectionId }) => clientSectionId))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sections"],
+        message: "Draft section result client ids cannot contain duplicates."
+      });
+    }
+    if (
+      !uniqueIds(result.sections.map(({ section }) => section.id))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sections"],
+        message: "Draft section result ids cannot contain duplicates."
+      });
+    }
+  });
+export type CreateDraftSectionsResult = z.infer<
+  typeof CreateDraftSectionsResultSchema
 >;
 
 export const DeleteDraftSectionInputSchema = z.object({
@@ -1475,6 +1619,12 @@ export const CatalogCreateDraftSectionCommandEnvelopeSchema =
     payload: CreateDraftSectionInputSchema
   });
 
+export const CatalogCreateDraftSectionsCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.createDraftSections"),
+    payload: CreateDraftSectionsInputSchema
+  });
+
 export const CatalogDeleteDraftSectionCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("catalog.deleteDraftSection"),
@@ -1534,6 +1684,7 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogDeleteBookCommandEnvelopeSchema,
   CatalogSaveDocumentCommandEnvelopeSchema,
   CatalogCreateDraftSectionCommandEnvelopeSchema,
+  CatalogCreateDraftSectionsCommandEnvelopeSchema,
   CatalogDeleteDraftSectionCommandEnvelopeSchema,
   CatalogSaveLibraryEntryCommandEnvelopeSchema,
   CatalogCreateLibraryEntryCommandEnvelopeSchema,
