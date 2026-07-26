@@ -1307,7 +1307,7 @@ function copyMessageLabel(message: ChatMessage): string {
         >
           <div class="message-body">
             <div
-              v-if="message.role === 'assistant' && (hasProcessing(message) || message.retry) && message.status === 'streaming'"
+              v-if="message.role === 'assistant' && (hasProcessing(message) || message.retry || message.processingStartedAt) && message.status === 'streaming'"
               class="processing-live-list"
               aria-label="运行过程"
             >

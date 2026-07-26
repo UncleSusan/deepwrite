@@ -204,4 +204,19 @@ describe("AgentConversation edit proposal placement", () => {
     expect(nestedSubagentStart).toBeLessThan(disclosureEnd);
     expect(streamingSubagentStart).toBeGreaterThan(disclosureEnd);
   });
+
+  it("shows retry countdowns in the existing processing areas", () => {
+    expect(conversationSource).toContain("function retryStatusLabel");
+    expect(conversationSource).toContain("网络波动，${remainingSeconds}s 后重试${suffix}");
+    expect(conversationSource).toContain("正在重试${suffix}");
+    expect(conversationSource).toContain(
+      "hasProcessing(message) || message.retry || message.processingStartedAt"
+    );
+    expect(conversationSource).not.toContain("retry-error");
+
+    expect(subagentSource).toContain("function subagentRetryStatus");
+    expect(subagentSource).toContain("网络波动，${seconds}s 后重试（${progress}）");
+    expect(subagentSource).toContain("正在重试（${progress}）");
+    expect(subagentSource).toContain('v-if="subagentRetryStatus(run)"');
+  });
 });

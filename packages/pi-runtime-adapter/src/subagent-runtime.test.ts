@@ -57,8 +57,10 @@ function makeHarness(options: {
   createRunId?: () => string;
   onContext?: (context: Context) => void;
   onModel?: (model: Model<Api>) => void;
+  onStreamOptions?: (options: Parameters<StreamFn>[2]) => void;
   buildChildTools?: () => AgentTool[];
   toolExecutionHooks?: BuildSpawnSubagentToolInput["toolExecutionHooks"];
+  retryPolicy?: BuildSpawnSubagentToolInput["retryPolicy"];
   timeoutMs?: number;
 }) {
   const faux = fauxProvider({
@@ -75,6 +77,7 @@ function makeHarness(options: {
   const streamFn: StreamFn = (requestModel, context, streamOptions) => {
     options.onModel?.(requestModel);
     options.onContext?.(context);
+    options.onStreamOptions?.(streamOptions);
     return sourceStream(requestModel, context, streamOptions);
   };
   const tool = buildSpawnSubagentTool({
@@ -93,6 +96,7 @@ function makeHarness(options: {
     ...(options.toolExecutionHooks
       ? { toolExecutionHooks: options.toolExecutionHooks }
       : {}),
+    ...(options.retryPolicy ? { retryPolicy: options.retryPolicy } : {}),
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.depth === undefined ? {} : { depth: options.depth }),
     ...(options.createRunId ? { createRunId: options.createRunId } : {})
@@ -111,6 +115,23 @@ function progressFrom(
 }
 
 describe("blocking subagent runtime", () => {
+  it("disables provider SDK retries for child model requests", async () => {
+    const streamOptions: Array<Parameters<StreamFn>[2]> = [];
+    const { tool } = makeHarness({
+      responses: [fauxAssistantMessage("child done")],
+      onStreamOptions: (options) => streamOptions.push(options)
+    });
+    if (!tool) throw new Error("spawn_subagent was not built");
+
+    await tool.execute(
+      "parent-sdk-retry-call",
+      { subagent_id: "continuity_checker", task: "检查 SDK 重试配置" } as never
+    );
+
+    expect(streamOptions).toHaveLength(1);
+    expect(streamOptions[0]?.maxRetries).toBe(0);
+  });
+
   it("keeps the child role prompt and appends runtime facts without a write policy", () => {
     const prompt = buildSubagentSystemPrompt(
       {
@@ -318,6 +339,68 @@ describe("blocking subagent runtime", () => {
       type: "text",
       text: "第二次独立检查完成。"
     }]);
+  });
+
+  it("retries only the failed model turn and never replays a completed child tool", async () => {
+    let toolExecutions = 0;
+    const countingTool = childTool();
+    const originalExecute = countingTool.execute;
+    countingTool.execute = async (...args) => {
+      toolExecutions += 1;
+      return originalExecute(...args);
+    };
+    const { tool, faux } = makeHarness({
+      createRunId: () => "subrun-retry",
+      buildChildTools: () => [countingTool],
+      retryPolicy: {
+        delaysMs: [0, 0, 0, 0, 0],
+        random: () => 0.5
+      },
+      responses: [
+        fauxAssistantMessage(
+          fauxToolCall("echo_child_context", { text: "只执行一次" }, { id: "once" }),
+          { stopReason: "toolUse" }
+        ),
+        fauxAssistantMessage("第一次残片", {
+          stopReason: "error",
+          errorMessage: "fetch failed: connection reset"
+        }),
+        fauxAssistantMessage("网络恢复后的最终交接。")
+      ]
+    });
+    if (!tool) throw new Error("spawn_subagent was not built");
+    const updates: AgentToolResult<SubagentToolDetails>[] = [];
+
+    const result = await tool.execute(
+      "parent-retry-call",
+      { subagent_id: "continuity_checker", task: "验证子任务断线恢复" } as never,
+      undefined,
+      (update) => updates.push(update as AgentToolResult<SubagentToolDetails>)
+    );
+    const progress = progressFrom(updates);
+    const retry = progress.find(
+      (item) => item.type === "activity" && item.activity.type === "retry_scheduled"
+    );
+
+    expect(faux.state.callCount).toBe(3);
+    expect(toolExecutions).toBe(1);
+    expect(retry).toMatchObject({
+      type: "activity",
+      activity: {
+        type: "retry_scheduled",
+        failedAttempt: 1,
+        nextAttempt: 2,
+        maxAttempts: 6
+      }
+    });
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: "网络恢复后的最终交接。"
+    });
+    expect(progress.at(-1)).toMatchObject({
+      type: "completed",
+      status: "completed"
+    });
   });
 
   it("propagates parent cancellation to the active child agent", async () => {

@@ -115,6 +115,49 @@ describe("useLearningImitation", () => {
     ).toBe("雨是在午夜以后落下来的。");
   });
 
+  it("keeps a learning run active across model retry lifecycle events", async () => {
+    const { controller } = setup();
+    await controller.start("material_split");
+    const sessionId = controller.sessionId.value;
+
+    controller.handleEvent(event(
+      "agent.turn_started",
+      {
+        sessionId,
+        runId: "run_1",
+        messageId: "learning_message_1",
+        turnId: "learning_turn_1",
+        attempt: 1,
+        maxAttempts: 6,
+        runtime
+      },
+      "event_learning_turn_started"
+    ));
+    controller.handleEvent(event(
+      "agent.retry_scheduled",
+      {
+        sessionId,
+        runId: "run_1",
+        messageId: "learning_message_1",
+        turnId: "learning_turn_1",
+        failedAttempt: 1,
+        nextAttempt: 2,
+        maxAttempts: 6,
+        delayMs: 30_000,
+        retryAt: "2026-07-22T08:00:30.000Z",
+        reason: "连接暂时中断",
+        runtime
+      },
+      "event_learning_retry_scheduled"
+    ));
+
+    expect(controller.status.value).toBe("running");
+    expect(controller.activeRunId.value).toBe("run_1");
+    expect(controller.runningStage.value).toBe("material_split");
+    expect(controller.isBusy.value).toBe(true);
+    expect(controller.canStop.value).toBe(true);
+  });
+
   it("only applies result updates for the active session, run and frozen stage", async () => {
     const { controller } = setup();
     await controller.start("material_split");

@@ -1442,6 +1442,7 @@ export function useAgentConversation(
     if (message) {
       message.status = "streaming";
       message.runtime = { ...eventRuntime };
+      message.processingStartedAt ??= event.timestamp;
     }
   }
 

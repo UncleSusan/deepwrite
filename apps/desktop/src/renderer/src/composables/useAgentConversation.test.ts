@@ -2100,7 +2100,7 @@ describe("agent conversation controller", () => {
         streamId: "retry_stream",
         toolCallId: "tool_partial",
         toolName: "write_workspace_editor",
-        phase: "delta",
+        phase: "delta" as const,
         argumentsDelta: '{"text":"未完成',
         runtime
       },
@@ -2183,6 +2183,70 @@ describe("agent conversation controller", () => {
     expect(controller.isBusy.value).toBe(false);
     controller.dispose();
   });
+
+  it.each([
+    ["pi_agent.aborted", "stopped", null],
+    ["agent.failed", "error", "重试最终失败"]
+  ] as const)(
+    "clears retry state when a waiting run ends with %s",
+    async (code, expectedStatus, expectedError) => {
+      const deferred = createDeferredApi();
+      const controller = useAgentConversation({ api: () => deferred.api, idleTimeoutMs: 10_000 });
+      controller.draft.value = "验证重试终态";
+      const sessionId = controller.sessionId.value;
+      const runId = `run_retry_terminal_${expectedStatus}`;
+      const messageId = `message_retry_terminal_${expectedStatus}`;
+      const sending = controller.sendMessage(document);
+      deferred.resolveAccepted(0, {
+        sessionId,
+        runId,
+        acceptedAt: new Date().toISOString(),
+        runtime
+      });
+      await sending;
+      controller.handleEvent(createEnvelope(
+        "agent.turn_started",
+        { sessionId, runId, messageId, turnId: "terminal_turn", attempt: 1, maxAttempts: 6, runtime },
+        eventOptions(sessionId, runId, `evt_terminal_turn_${expectedStatus}`)
+      ));
+      controller.handleEvent(createEnvelope(
+        "agent.retry_scheduled",
+        {
+          sessionId,
+          runId,
+          messageId,
+          turnId: "terminal_turn",
+          failedAttempt: 1,
+          nextAttempt: 2,
+          maxAttempts: 6,
+          delayMs: 30_000,
+          retryAt: new Date(Date.now() + 30_000).toISOString(),
+          reason: "暂时断线",
+          runtime
+        },
+        eventOptions(sessionId, runId, `evt_terminal_retry_${expectedStatus}`)
+      ));
+      expect(controller.messages.value.at(-1)?.retry?.state).toBe("scheduled");
+
+      controller.handleEvent(createEnvelope(
+        "agent.error",
+        {
+          sessionId,
+          runId,
+          code,
+          message: expectedError ?? "Agent run aborted.",
+          runtime
+        },
+        eventOptions(sessionId, runId, `evt_terminal_end_${expectedStatus}`)
+      ));
+
+      expect(controller.messages.value.at(-1)?.status).toBe(expectedStatus);
+      expect(controller.messages.value.at(-1)?.retry).toBeUndefined();
+      expect(controller.conversationError.value).toBe(expectedError);
+      expect(controller.isBusy.value).toBe(false);
+      controller.dispose();
+    }
+  );
 
   it("rolls back failed subagent turns without discarding earlier tool results", async () => {
     const deferred = createDeferredApi();

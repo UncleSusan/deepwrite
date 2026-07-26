@@ -430,8 +430,8 @@ export function interceptToolCallStream(
           maxRetries: 0
         });
         for await (const event of source) {
-          if (event.type === "start" || "partial" in event) {
-            partialMessage = event.type === "start" ? event.partial : event.partial;
+          if ("partial" in event) {
+            partialMessage = event.partial;
           }
           if (
             event.type === "toolcall_start" ||
@@ -709,6 +709,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         },
         buildChildTools: buildShortTools,
         toolExecutionHooks: this.toolExecutionHooks,
+        ...(this.retryPolicy ? { retryPolicy: this.retryPolicy } : {}),
         ...(this.subagentTimeoutMs === undefined
           ? {}
           : { timeoutMs: this.subagentTimeoutMs }),
@@ -1002,7 +1003,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         initialPrompt: runtimeUserMessage,
         runId: input.runId,
         signal: retryWaitController.signal,
-        retryPolicy: this.retryPolicy,
+        ...(this.retryPolicy ? { retryPolicy: this.retryPolicy } : {}),
         classifyFailure: (message) => {
           if (idleModelRequestTimedOut && message.stopReason === "aborted") {
             return "模型请求长时间没有返回新事件。";
@@ -1033,10 +1034,18 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         onRetryRollback: () => {
           modelRequestInFlight = false;
           idleModelRequestTimedOut = false;
+          if (idleTimeout) {
+            clearTimeout(idleTimeout);
+            idleTimeout = undefined;
+          }
           discardAttemptToolDeltas();
         },
         onRetryScheduled: (schedule) => {
           retryWaiting = true;
+          if (idleTimeout) {
+            clearTimeout(idleTimeout);
+            idleTimeout = undefined;
+          }
           emit({
             type: "agent.retry_scheduled",
             runId: input.runId,
@@ -1513,9 +1522,6 @@ export function toRuntimeEvents(
   }
 
   if (event.type === "message_end" && isAssistantMessage(event.message)) {
-    if (event.message.content.some((item) => item.type === "toolCall")) {
-      return [];
-    }
     if (
       event.message.stopReason === "error" ||
       event.message.stopReason === "aborted" ||

@@ -27,6 +27,8 @@ import {
 } from "@deepwrite/contracts";
 import {
   runAgentWithTurnRetries,
+  type AgentTurnAttempt,
+  type AgentTurnRetrySchedule,
   type AgentTurnRetryPolicyOptions
 } from "./agent-turn-retry";
 import { sanitizeToolSchemaForGemini } from "./short-agent-tools";
@@ -46,6 +48,8 @@ export interface AgentToolExecutionHooks {
 }
 
 export type SubagentProjectedActivity =
+  | ({ type: "turn_started" } & AgentTurnAttempt)
+  | ({ type: "retry_scheduled" } & AgentTurnRetrySchedule)
   | { type: "thinking_delta"; delta: string }
   | { type: "message_delta"; delta: string }
   | {
@@ -330,6 +334,17 @@ export function buildSpawnSubagentTool(
         const childTools = input.buildChildTools().filter(
           (tool) => tool.name !== "load_skill" && tool.name !== "spawn_subagent"
         );
+        const childStreamWithoutProviderRetries: StreamFn = (
+          requestModel,
+          context,
+          options
+        ) => childStreamFn(requestModel, context, {
+          ...options,
+          // The visible turn coordinator owns the complete retry budget. Keep
+          // provider SDK retries disabled for inherited and custom child models
+          // as well, otherwise one child attempt can fan out into 2+ requests.
+          maxRetries: 0
+        });
         child = new Agent({
           initialState: {
             systemPrompt: buildSubagentSystemPrompt(definition, childTools),
@@ -340,7 +355,7 @@ export function buildSpawnSubagentTool(
             // same parent-run mutation/revision overlay.
             tools: childTools
           },
-          streamFn: childStreamFn,
+          streamFn: childStreamWithoutProviderRetries,
           sessionId: `${input.parentSessionId}:${subagentRunId}`,
           toolExecution: "sequential",
           ...input.toolExecutionHooks

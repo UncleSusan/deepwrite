@@ -135,7 +135,10 @@ export function jitterAgentTurnRetryDelay(
   const normalizedBase = Number.isFinite(baseDelayMs)
     ? Math.max(0, Math.round(baseDelayMs))
     : 0;
-  const sample = Math.min(1, Math.max(0, random()));
+  const randomValue = random();
+  const sample = Number.isFinite(randomValue)
+    ? Math.min(1, Math.max(0, randomValue))
+    : 0.5;
   const factor = 1 - DEFAULT_RETRY_JITTER_RATIO +
     sample * DEFAULT_RETRY_JITTER_RATIO * 2;
   return Math.max(0, Math.round(normalizedBase * factor));
@@ -229,7 +232,10 @@ export async function runAgentWithTurnRetries(
           retryAt: new Date(policy.now() + delayMs).toISOString(),
           reason: reason.slice(0, 4_000)
         };
-        removeFailedAssistantFromTranscript(options.agent, event.message);
+        if (!removeFailedAssistantFromTranscript(options.agent, event.message)) {
+          await options.onEvent?.(event, signal);
+          return;
+        }
         pendingRetry = { schedule, message: event.message };
         await options.onRetryRollback?.(activeTurn, event.message);
         await options.onRetryScheduled?.(schedule, event.message);

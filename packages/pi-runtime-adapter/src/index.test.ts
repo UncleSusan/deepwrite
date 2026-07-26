@@ -222,6 +222,34 @@ describe("DeepWrite Pi runtime adapter", () => {
     ]);
   });
 
+  it("turns an intercepted iterator rejection into a retryable error terminal", async () => {
+    const partial = toolCallMessage("tool_interrupted", "write_workspace_editor");
+    const source = {
+      async *[Symbol.asyncIterator]() {
+        yield { type: "start", partial } as const;
+        throw new Error("socket hang up");
+      },
+      result: async () => partial
+    };
+    const intercepted = interceptToolCallStream(
+      async () => source as unknown as ReturnType<typeof createAssistantMessageEventStream>,
+      () => {}
+    );
+    const forwarded = await intercepted(
+      {} as Parameters<typeof intercepted>[0],
+      { messages: [] },
+      undefined
+    );
+    const received: string[] = [];
+    for await (const event of forwarded) received.push(event.type);
+
+    expect(received).toEqual(["start", "error"]);
+    await expect(forwarded.result()).resolves.toMatchObject({
+      stopReason: "error",
+      errorMessage: "socket hang up"
+    });
+  });
+
   it("assigns unique tool stream ids when content indexes repeat across model turns", () => {
     const input = {
       runId: "run_repeated_content_index",
@@ -358,6 +386,14 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(deltas).toBe(completed?.payload.content);
     expect(completed?.payload.content).toContain("第三章 雨夜回声");
     expect(completed?.payload.runtime.mode).toBe("local-faux");
+    expect(events.filter((event) => event.type === "agent.turn_started"))
+      .toEqual([
+        expect.objectContaining({
+          runId: "run_1",
+          sessionId: "session_1",
+          payload: expect.objectContaining({ attempt: 1, maxAttempts: 6 })
+        })
+      ]);
     expect(events.filter((event) => event.type === "agent.completed" || event.type === "agent.error")).toHaveLength(1);
     expect(events.every((event) => event.runId === "run_1" && event.sessionId === "session_1")).toBe(true);
   });
