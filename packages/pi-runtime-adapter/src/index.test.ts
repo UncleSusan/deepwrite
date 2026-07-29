@@ -29,6 +29,7 @@ import {
   reconcileToolCallArguments,
   toRuntimeEvents,
   toToolStreamRuntimeEvent,
+  toUsageObservedRuntimeEvent,
   type AgentRuntimeEvent
 } from "./index";
 
@@ -110,6 +111,37 @@ function toolCallMessage(id: string, name: string): AssistantMessage {
   };
 }
 
+async function captureDisabledThinkingPayload(
+  config: AgentProviderRuntimeConfig
+): Promise<Record<string, unknown>> {
+  const { model, streamFn } = buildProviderRuntime(
+    config,
+    config.temperatureOptions[1],
+    "off"
+  );
+  let capturedPayload: unknown;
+  const stream = await streamFn(
+    model,
+    {
+      systemPrompt: "Reply with OK only.",
+      messages: [{
+        role: "user",
+        content: "OK",
+        timestamp: Date.now()
+      }]
+    },
+    {
+      onPayload: (payload) => {
+        capturedPayload = payload;
+        throw new Error("payload captured");
+      }
+    }
+  );
+  await stream.result();
+  expect(capturedPayload).toBeDefined();
+  return capturedPayload as Record<string, unknown>;
+}
+
 describe("DeepWrite Pi runtime adapter", () => {
   it("injects immutable screenplay rules only for script workspace runs", () => {
     const scriptWorkspace = screenplayWorkspace();
@@ -164,7 +196,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     );
   });
 
-  it("always requires explicit approval for long-form proposals", () => {
+  it("describes realtime serialized persistence for auto-approved long proposals", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"
     )!;
@@ -207,10 +239,10 @@ describe("DeepWrite Pi runtime adapter", () => {
       workspaceContext: { longWorkspace }
     });
 
-    expect(prompt).toContain("用户明确批准");
+    expect(prompt).toContain("立即加入按书籍串行的后台队列");
     expect(prompt).toContain("影响预览");
-    expect(prompt).not.toContain("自动批准");
-    expect(prompt).not.toContain("自动写入");
+    expect(prompt).toContain("自动完成");
+    expect(prompt).not.toContain("本轮完成后");
   });
 
   it("lets configured long-form teams delegate with the same bounded tools", async () => {
@@ -286,7 +318,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(names).toContain("propose_long_mutation");
   });
 
-  it("enables Pi reasoning when a run selects thinking after non-thinking configuration", () => {
+  it("keeps model reasoning capability separate from the per-run thinking switch", () => {
     const config: AgentProviderRuntimeConfig = {
       id: "writer",
       label: "Writer",
@@ -302,10 +334,131 @@ describe("DeepWrite Pi runtime adapter", () => {
     };
 
     expect(buildProviderRuntime(config, undefined, "high").model.reasoning).toBe(true);
-    expect(buildProviderRuntime(config, 0.6, "off").model.reasoning).toBe(false);
+    expect(buildProviderRuntime(config, 0.6, "off").model.reasoning).toBe(true);
     expect(
       buildProviderRuntime({ ...config, reasoning: true }, 0.6, "off").model.reasoning
+    ).toBe(true);
+
+    const knownNonReasoningConfig: AgentProviderRuntimeConfig = {
+      ...config,
+      id: "gpt-5-chat-latest",
+      label: "GPT-5 Chat",
+      provider: "openai",
+      modelId: "gpt-5-chat-latest",
+      api: "openai-responses",
+      baseUrl: "https://api.openai.com/v1"
+    };
+    expect(
+      buildProviderRuntime(knownNonReasoningConfig, 0.6, "off").model.reasoning
     ).toBe(false);
+  });
+
+  it("serializes disabled thinking for supported provider protocols", async () => {
+    const baseConfig: AgentProviderRuntimeConfig = {
+      id: "writer",
+      label: "Writer",
+      provider: "deepseek",
+      modelId: "deepseek-chat",
+      api: "openai-completions",
+      baseUrl: "https://api.deepseek.com/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: ["low", "medium", "high"],
+      temperatureOptions: [0.2, 0.6, 1.2],
+      apiKey: "test-key"
+    };
+
+    await expect(captureDisabledThinkingPayload(baseConfig)).resolves.toMatchObject({
+      thinking: { type: "disabled" },
+      temperature: 0.6
+    });
+
+    await expect(captureDisabledThinkingPayload({
+      ...baseConfig,
+      id: "claude-sonnet-4-6",
+      label: "Claude Sonnet 4.6",
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      api: "anthropic-messages",
+      baseUrl: "https://api.anthropic.com"
+    })).resolves.toMatchObject({
+      thinking: { type: "disabled" },
+      temperature: 0.6
+    });
+
+    await expect(captureDisabledThinkingPayload({
+      ...baseConfig,
+      id: "gemini-2.5-flash",
+      label: "Gemini 2.5 Flash",
+      provider: "google",
+      modelId: "gemini-2.5-flash",
+      api: "google-generative-ai",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta"
+    })).resolves.toMatchObject({
+      config: {
+        thinkingConfig: { thinkingBudget: 0 },
+        temperature: 0.6
+      }
+    });
+
+    await expect(captureDisabledThinkingPayload({
+      ...baseConfig,
+      id: "gpt-5.4",
+      label: "GPT-5.4",
+      provider: "openai",
+      modelId: "gpt-5.4",
+      api: "openai-responses",
+      baseUrl: "https://api.openai.com/v1"
+    })).resolves.toMatchObject({
+      reasoning: { effort: "none" },
+      temperature: 0.6
+    });
+
+    await expect(captureDisabledThinkingPayload({
+      ...baseConfig,
+      id: "qwen-plus",
+      label: "Qwen Plus",
+      provider: "custom",
+      modelId: "qwen-plus",
+      api: "openai-completions",
+      baseUrl:
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    })).resolves.toMatchObject({
+      enable_thinking: false,
+      temperature: 0.6
+    });
+
+    await expect(captureDisabledThinkingPayload({
+      ...baseConfig,
+      id: "glm-4.7",
+      label: "GLM-4.7",
+      provider: "custom",
+      modelId: "glm-4.7",
+      api: "openai-completions",
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4"
+    })).resolves.toMatchObject({
+      thinking: { type: "disabled" },
+      temperature: 0.6
+    });
+  });
+
+  it("omits disabled-thinking controls for catalog models that cannot turn thinking off", async () => {
+    const payload = await captureDisabledThinkingPayload({
+      id: "gpt-5",
+      label: "GPT-5",
+      provider: "openai",
+      modelId: "gpt-5",
+      api: "openai-responses",
+      baseUrl: "https://api.openai.com/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: ["low", "medium", "high"],
+      temperatureOptions: [0.2, 0.6, 1.2],
+      apiKey: "test-key"
+    });
+
+    expect(payload).not.toHaveProperty("reasoning");
+    expect(payload).not.toHaveProperty("temperature");
   });
 
   it("preserves built-in thinking maps while carrying max and custom levels", () => {
@@ -587,6 +740,74 @@ describe("DeepWrite Pi runtime adapter", () => {
     ).toEqual({ delta: "", next: completed.next });
   });
 
+  it("observes intermediate tool turns and provider errors for accounting", () => {
+    const input = {
+      runId: "run_usage_observed",
+      sessionId: "session_usage_observed",
+      prompt: "执行工具后继续"
+    };
+    const intermediate = toUsageObservedRuntimeEvent(
+      toolCallMessage("tool_usage", "write_draft_section"),
+      input,
+      providerRuntime,
+      "run_usage_observed_assistant",
+      { turnId: "run_usage_observed:turn:1", attempt: 1, maxAttempts: 6 }
+    );
+    const failedMessage: AssistantMessage = {
+      ...toolCallMessage("tool_unused", "unused"),
+      content: [{ type: "text", text: "" }],
+      usage: {
+        input: 21,
+        output: 8,
+        cacheRead: 3,
+        cacheWrite: 2,
+        totalTokens: 34,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+      },
+      stopReason: "error",
+      errorMessage: "connection reset"
+    };
+    const failed = toUsageObservedRuntimeEvent(
+      failedMessage,
+      input,
+      providerRuntime,
+      "run_usage_observed_assistant",
+      { turnId: "run_usage_observed:turn:2", attempt: 2, maxAttempts: 6 }
+    );
+
+    expect(intermediate).toMatchObject({
+      type: "agent.usage_observed",
+      payload: {
+        observationId: "run_usage_observed:turn:1:attempt:1",
+        turnId: "run_usage_observed:turn:1",
+        attempt: 1,
+        status: "completed",
+        hadToolCall: true,
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0
+        },
+        runtime: providerRuntime
+      }
+    });
+    expect(failed).toMatchObject({
+      type: "agent.usage_observed",
+      payload: {
+        observationId: "run_usage_observed:turn:2:attempt:2",
+        status: "error",
+        hadToolCall: false,
+        usage: {
+          inputTokens: 21,
+          outputTokens: 8,
+          cacheReadTokens: 3,
+          cacheWriteTokens: 2,
+          totalTokens: 34
+        }
+      }
+    });
+  });
+
   it("streams thinking and text through pi-agent-core without an API key", async () => {
     const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
     const events: AgentRuntimeEvent[] = [];
@@ -617,11 +838,25 @@ describe("DeepWrite Pi runtime adapter", () => {
       .join("");
     const thinking = events.filter((event) => event.type === "agent.thinking_delta");
     const completed = events.find((event) => event.type === "agent.completed");
+    const usageObserved = events.filter(
+      (event): event is Extract<AgentRuntimeEvent, { type: "agent.usage_observed" }> =>
+        event.type === "agent.usage_observed"
+    );
 
     expect(thinking.length).toBeGreaterThan(0);
     expect(deltas).toBe(completed?.payload.content);
     expect(completed?.payload.content).toContain("第三章 雨夜回声");
     expect(completed?.payload.runtime.mode).toBe("local-faux");
+    expect(usageObserved).toHaveLength(1);
+    expect(usageObserved[0]).toMatchObject({
+      payload: {
+        status: "completed",
+        hadToolCall: false,
+        turnId: "run_1:turn:1",
+        attempt: 1
+      }
+    });
+    expect(usageObserved[0]?.payload.usage).toEqual(completed?.payload.usage);
     expect(events.filter((event) => event.type === "agent.turn_started"))
       .toEqual([
         expect.objectContaining({
@@ -1240,6 +1475,89 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(events.every((event) =>
       event.runId === input.runId && event.sessionId === input.sessionId
     )).toBe(true);
+  });
+
+  it("projects a child usage observation once without using its completed summary", () => {
+    const input = {
+      runId: "parent-usage-run",
+      sessionId: "parent-usage-session",
+      prompt: "委派统计"
+    };
+    const events = toRuntimeEvents(
+      {
+        type: "tool_execution_update",
+        toolCallId: "spawn-usage",
+        toolName: "spawn_subagent",
+        args: {},
+        partialResult: {
+          content: [{ type: "text", text: "子智能体模型请求已完成。" }],
+          details: {
+            kind: "subagent-progress",
+            progress: {
+              type: "usage_observed",
+              parentToolCallId: "spawn-usage",
+              subagentRunId: "subrun-usage",
+              subagentId: "reviewer",
+              name: "审校",
+              observationId: "subrun-usage:turn:1:attempt:1",
+              observedAt: "2026-07-29T10:00:00.000Z",
+              messageId: "subrun-usage_assistant",
+              turnId: "subrun-usage:turn:1",
+              attempt: 1,
+              status: "completed",
+              hadToolCall: true,
+              usage: {
+                inputTokens: 12,
+                outputTokens: 5,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                totalTokens: 17
+              },
+              runtime: {
+                provider: "openai",
+                model: "child-model",
+                mode: "provider",
+                configId: "child-config"
+              }
+            }
+          }
+        }
+      } as never,
+      input,
+      providerRuntime,
+      "parent-usage-assistant"
+    );
+
+    expect(events).toEqual([{
+      type: "agent.usage_observed",
+      runId: input.runId,
+      sessionId: input.sessionId,
+      payload: {
+        observationId: "subrun-usage:turn:1:attempt:1",
+        observedAt: "2026-07-29T10:00:00.000Z",
+        messageId: "subrun-usage_assistant",
+        turnId: "subrun-usage:turn:1",
+        attempt: 1,
+        status: "completed",
+        hadToolCall: true,
+        usage: {
+          inputTokens: 12,
+          outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 17
+        },
+        runtime: {
+          provider: "openai",
+          model: "child-model",
+          mode: "provider",
+          configId: "child-config"
+        },
+        parentToolCallId: "spawn-usage",
+        subagentRunId: "subrun-usage",
+        subagentId: "reviewer"
+      }
+    }]);
   });
 
   it("maps library mutation tool details to the renderer event contract", () => {

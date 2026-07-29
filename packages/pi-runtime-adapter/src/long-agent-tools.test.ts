@@ -1244,6 +1244,191 @@ describe("long workspace agent tools", () => {
     });
   });
 
+  it("translates foreshadowing thread and beat planning fields while preserving legacy calls", async () => {
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type !== "long.getWorkspaceIndex") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      return indexResult();
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-foreshadowing-planning",
+      runId: "run-foreshadowing-planning",
+      executor
+    });
+    const mutationTool = toolByName(tools, "propose_long_mutation");
+    const parameterSchema = JSON.stringify(mutationTool.parameters);
+    expect(parameterSchema).toContain('"hiddenTruth"');
+    expect(parameterSchema).toContain('"plannedSpan"');
+    expect(parameterSchema).toContain('"volumeId"');
+    expect(parameterSchema).toContain('"arcId"');
+    expect(parameterSchema).toContain("卷级计划锚点");
+    expect(parameterSchema).toContain("剧情点计划锚点");
+    expect(
+      Check(mutationTool.parameters, {
+        operations: [
+          {
+            type: "foreshadowing.create",
+            client_ref: "legacy-thread",
+            title: "旧式伏笔调用"
+          },
+          {
+            type: "foreshadowingBeat.create",
+            threadId: "ref:legacy-thread",
+            beatType: "plant",
+            plannedScope: "第一卷"
+          }
+        ],
+        summary: "旧调用仍可使用"
+      })
+    ).toBe(true);
+
+    const proposal = await mutationTool.execute(
+      "foreshadowing-planning",
+      {
+        operations: [
+          {
+            type: "volume.create",
+            client_ref: "second-volume",
+            title: "第二卷"
+          },
+          {
+            type: "arc.create",
+            client_ref: "second-plot-point",
+            volumeId: "ref:second-volume",
+            title: "身份疑云"
+          },
+          {
+            type: "foreshadowing.create",
+            client_ref: "identity-thread",
+            title: "失踪者身份",
+            coreQuestion: "失踪者究竟是谁？",
+            hiddenTruth: "失踪者一直以管家的身份留在宅邸。",
+            plannedSpan: "within_volume"
+          },
+          {
+            type: "foreshadowingBeat.create",
+            client_ref: "identity-touch",
+            threadId: "ref:identity-thread",
+            beatType: "plant",
+            volumeId: "ref:second-volume",
+            arcId: "ref:second-plot-point",
+            note: "先让旧照片露出半张侧脸。"
+          },
+          {
+            type: "foreshadowing.update",
+            id: "ref:identity-thread",
+            patch: {
+              hiddenTruth: "失踪者就是冒名顶替的现任管家。",
+              plannedSpan: "cross_volume"
+            }
+          },
+          {
+            type: "foreshadowingBeat.update",
+            id: "ref:identity-touch",
+            patch: {
+              volumeId: null,
+              arcId: "ref:second-plot-point",
+              note: "触点已细化到第一剧情点。"
+            }
+          }
+        ],
+        summary: "创建并细化伏笔线与触点"
+      }
+    );
+
+    expect(proposal.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [
+          {
+            type: "volume.create",
+            volume: {
+              id: expect.stringMatching(/^volume_[0-9a-f]{24}$/u),
+              title: "第二卷"
+            }
+          },
+          {
+            type: "arc.create",
+            arc: {
+              id: expect.stringMatching(/^arc_[0-9a-f]{24}$/u),
+              volumeId: expect.stringMatching(/^volume_[0-9a-f]{24}$/u),
+              title: "身份疑云"
+            }
+          },
+          {
+            type: "foreshadowing.create",
+            thread: {
+              id: expect.stringMatching(/^foreshadow_[0-9a-f]{24}$/u),
+              title: "失踪者身份",
+              coreQuestion: "失踪者究竟是谁？",
+              hiddenTruth: "失踪者一直以管家的身份留在宅邸。",
+              plannedSpan: "within_volume",
+              beats: []
+            }
+          },
+          {
+            type: "foreshadowingBeat.create",
+            threadId: expect.stringMatching(/^foreshadow_[0-9a-f]{24}$/u),
+            beat: {
+              id: expect.stringMatching(/^beat_[0-9a-f]{24}$/u),
+              type: "plant",
+              volumeId: expect.stringMatching(/^volume_[0-9a-f]{24}$/u),
+              arcId: expect.stringMatching(/^arc_[0-9a-f]{24}$/u),
+              note: "先让旧照片露出半张侧脸。"
+            }
+          },
+          {
+            type: "foreshadowing.update",
+            id: expect.stringMatching(/^foreshadow_[0-9a-f]{24}$/u),
+            patch: {
+              hiddenTruth: "失踪者就是冒名顶替的现任管家。",
+              plannedSpan: "cross_volume"
+            }
+          },
+          {
+            type: "foreshadowingBeat.update",
+            id: expect.stringMatching(/^beat_[0-9a-f]{24}$/u),
+            patch: {
+              volumeId: null,
+              arcId: expect.stringMatching(/^arc_[0-9a-f]{24}$/u),
+              note: "触点已细化到第一剧情点。"
+            }
+          }
+        ]
+      }
+    });
+    if (proposal.details?.kind !== "long-mutation-proposal") {
+      throw new Error("Expected a long mutation proposal.");
+    }
+    const operations = proposal.details.batch.operations;
+    const createdVolume = operations[0];
+    const createdArc = operations[1];
+    const createdThread = operations[2];
+    const createdBeat = operations[3];
+    const updatedThread = operations[4];
+    const updatedBeat = operations[5];
+    if (
+      createdVolume?.type !== "volume.create" ||
+      createdArc?.type !== "arc.create" ||
+      createdThread?.type !== "foreshadowing.create" ||
+      createdBeat?.type !== "foreshadowingBeat.create" ||
+      updatedThread?.type !== "foreshadowing.update" ||
+      updatedBeat?.type !== "foreshadowingBeat.update"
+    ) {
+      throw new Error("Expected translated foreshadowing operations.");
+    }
+    expect(createdArc.arc.volumeId).toBe(createdVolume.volume.id);
+    expect(createdBeat.threadId).toBe(createdThread.thread.id);
+    expect(createdBeat.beat.volumeId).toBe(createdVolume.volume.id);
+    expect(createdBeat.beat.arcId).toBe(createdArc.arc.id);
+    expect(updatedThread.id).toBe(createdThread.thread.id);
+    expect(updatedBeat.id).toBe(createdBeat.beat.id);
+    expect(updatedBeat.patch.arcId).toBe(createdArc.arc.id);
+  });
+
   it("computes document revisions from logical targets and rejects the generic draft-write bypass", async () => {
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
       if (command.type === "long.getWorkspaceIndex") {
@@ -1408,6 +1593,7 @@ describe("long workspace agent tools", () => {
       profile: profile("expert_section_writer"),
       sessionId: "session-chapter",
       runId: "run-chapter",
+      writeApprovalMode: "auto-approve",
       executor
     });
     const writeInput = {
@@ -1441,6 +1627,10 @@ describe("long workspace agent tools", () => {
         baseWorkspaceRevision: 7,
         baseProjectRevision: 11
       }
+    });
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("已提交实时自动保存队列")
     });
     const tool = toolByName(tools, "propose_long_chapter_write");
     const parameters = JSON.stringify(tool.parameters);

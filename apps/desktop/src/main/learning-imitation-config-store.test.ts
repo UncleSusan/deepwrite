@@ -57,10 +57,10 @@ describe("LearningImitationConfigStore", () => {
       createHash("sha256").update(value, "utf8").digest("hex");
 
     expect(digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.material_split)).toBe(
-      "495e8d49413a087a2dbbbdc7e3ea27050992609d61c6ef40bf57250e5658409f"
+      "40f70237736eb0d521d4dec6d5b8f0b527a7c24c0fb7710439b18fa036bb94d7"
     );
     expect(digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.plot_learning)).toBe(
-      "ba4c96aa62a3090ca05901c721d72c06ea19f1cf43f246c1abd5a477e53149d4"
+      "2abefe718588459f1e6531859999671bf390fc02301af3103e03b00c29df2068"
     );
     expect(digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.style_learning)).toBe(
       "000f46bdf64df47b74eee1aabcd380a4ff04e2ae1ce5bb5d33fda99aca797473"

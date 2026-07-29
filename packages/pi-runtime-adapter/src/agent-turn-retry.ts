@@ -65,6 +65,16 @@ export interface RunAgentWithTurnRetriesOptions {
     event: AgentEvent,
     signal: AbortSignal
   ) => Promise<void> | void;
+  /**
+   * Runs for every provider-returned assistant terminal message before retry
+   * suppression. Use this for accounting that must include transient failures
+   * and intermediate tool-call turns without exposing them to presentation.
+   */
+  onAssistantMessageEnded?: (
+    message: AssistantMessage,
+    attempt: AgentTurnAttempt,
+    signal: AbortSignal
+  ) => Promise<void> | void;
   onTurnStarted?: (attempt: AgentTurnAttempt) => Promise<void> | void;
   onRetryScheduled?: (
     schedule: AgentTurnRetrySchedule,
@@ -211,6 +221,18 @@ export async function runAgentWithTurnRetries(
       await options.onTurnStarted?.(activeTurn);
       await options.onEvent?.(event, signal);
       return;
+    }
+
+    if (
+      event.type === "message_end" &&
+      isAssistantMessage(event.message) &&
+      activeTurn
+    ) {
+      await options.onAssistantMessageEnded?.(
+        event.message,
+        { ...activeTurn },
+        signal
+      );
     }
 
     if (

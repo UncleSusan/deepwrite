@@ -57,7 +57,7 @@ function resultText(result: AgentToolResult<unknown>): string {
 }
 
 describe("learning imitation tools", () => {
-  it("builds the four source-compatible tools without forcing tool-level concurrency", () => {
+  it("builds a stage-scoped single-item material writer without forcing tool-level concurrency", () => {
     const tools = buildLearningImitationTools(runtimeContext());
 
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -69,12 +69,26 @@ describe("learning imitation tools", () => {
     expect(tools.every((tool) => tool.executionMode === undefined)).toBe(true);
 
     const writeSchema = toolByName(tools, "write_learning_result").parameters as {
-      properties?: { mode?: Record<string, unknown> };
+      properties?: {
+        type?: Record<string, unknown>;
+        text?: Record<string, unknown>;
+        mode?: Record<string, unknown>;
+        gimmick?: Record<string, unknown>;
+      };
     };
-    expect(writeSchema.properties?.mode).toMatchObject({
-      enum: ["replace", "append"]
+    expect(writeSchema.properties?.type).toMatchObject({
+      enum: [
+        "gimmick",
+        "character",
+        "pacing",
+        "intro",
+        "plot_refine",
+        "draft_excerpt"
+      ]
     });
-    expect(writeSchema.properties?.mode).not.toHaveProperty("anyOf");
+    expect(writeSchema.properties?.text).toBeDefined();
+    expect(writeSchema.properties?.mode).toBeUndefined();
+    expect(writeSchema.properties?.gimmick).toBeUndefined();
   });
 
   it("lists document metadata, chunk counts, and truncation status", async () => {
@@ -98,6 +112,27 @@ describe("learning imitation tools", () => {
     expect(resultText(result)).toContain("分块：2");
     expect(resultText(result)).toContain("正文已截断");
     expect(result.details).toEqual({ kind: "none" });
+  });
+
+  it("maps one material type and text pair to one preview field", async () => {
+    const write = toolByName(
+      buildLearningImitationTools(runtimeContext("material_split")),
+      "write_learning_result"
+    );
+
+    const result = await write.execute("write-material", {
+      type: "gimmick",
+      text: "失踪名单牵出被替换的人生。"
+    });
+
+    expect(result.details).toEqual({
+      kind: "learning-imitation-result-update",
+      stageId: "material_split",
+      update: {
+        mode: "replace",
+        gimmick: "失踪名单牵出被替换的人生。"
+      }
+    });
   });
 
   it("reads long documents in 12000-character, one-based chunks", async () => {
@@ -164,23 +199,42 @@ describe("learning imitation tools", () => {
     expect(resultText(empty)).toBe("请提供搜索关键词");
   });
 
-  it("returns a stage-scoped preview update that the contracts layer can apply", async () => {
+  it("writes plot design and plot refinement skills as separate preview updates", async () => {
     const write = toolByName(
       buildLearningImitationTools(runtimeContext("plot_learning")),
       "write_learning_result"
     );
+    const writeSchema = write.parameters as {
+      properties?: { type?: Record<string, unknown> };
+    };
+
+    expect(writeSchema.properties?.type).toMatchObject({
+      enum: ["plot_design_skill", "plot_refine_skill"]
+    });
 
     const result = await write.execute("write-1", {
-      mode: "append",
-      plot_design_skill: "先制造时间差，再揭示证词矛盾。"
+      type: "plot_design_skill",
+      text: "先制造时间差，再揭示证词矛盾。"
+    });
+    const refinement = await write.execute("write-2", {
+      type: "plot_refine_skill",
+      text: "把证词矛盾拆成逐场递进的剧情点。"
     });
 
     expect(result.details).toEqual({
       kind: "learning-imitation-result-update",
       stageId: "plot_learning",
       update: {
-        mode: "append",
+        mode: "replace",
         plot_design_skill: "先制造时间差，再揭示证词矛盾。"
+      }
+    });
+    expect(refinement.details).toEqual({
+      kind: "learning-imitation-result-update",
+      stageId: "plot_learning",
+      update: {
+        mode: "replace",
+        plot_refine_skill: "把证词矛盾拆成逐场递进的剧情点。"
       }
     });
     expect(isLearningImitationToolDetails(result.details)).toBe(true);
@@ -197,6 +251,19 @@ describe("learning imitation tools", () => {
       "先制造时间差，再揭示证词矛盾。"
     );
     expect(resultText(result)).toContain("等待用户确认落盘");
+
+    const automaticWrite = toolByName(
+      buildLearningImitationTools(
+        runtimeContext("plot_learning"),
+        "auto-approve"
+      ),
+      "write_learning_result"
+    );
+    const automatic = await automaticWrite.execute("write-auto", {
+      type: "plot_design_skill",
+      text: "自动保存的剧情设计技能"
+    });
+    expect(resultText(automatic)).toContain("实时自动落盘队列");
   });
 
   it("defaults writes to replace and rejects empty result payloads", async () => {
@@ -253,19 +320,24 @@ describe("learning imitation tools", () => {
     expect(isLearningImitationToolDetails({ kind: "other" })).toBe(false);
   });
 
-  it("rejects append writes that would overflow the accumulated preview", async () => {
+  it("replaces the same plot skill when its type is written again", async () => {
     const context = runtimeContext("plot_learning");
-    context.result.plot_learning.plotDesignSkill = "甲".repeat(200_000);
+    context.result.plot_learning.plotDesignSkill = "旧剧情设计技能";
     const write = toolByName(
       buildLearningImitationTools(context),
       "write_learning_result"
     );
 
-    await expect(
-      write.execute("write-overflow", {
-        mode: "append",
-        plot_design_skill: "继续追加"
-      })
-    ).rejects.toThrow("超过长度限制");
+    const result = await write.execute("write-replace", {
+      type: "plot_design_skill",
+      text: "新剧情设计技能"
+    });
+    const next = applyLearningImitationWrite(
+      context.result,
+      "plot_learning",
+      (result.details as LearningImitationToolDetails).update
+    );
+
+    expect(next.plot_learning.plotDesignSkill).toBe("新剧情设计技能");
   });
 });

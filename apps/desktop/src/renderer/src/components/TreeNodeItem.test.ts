@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import source from "./TreeNodeItem.vue?raw";
 
 describe("TreeNodeItem actions", () => {
+  it("collapses a selectable branch without selecting the whole branch", () => {
+    expect(source).toContain("const opening = !open.value;");
+    expect(source).toContain("open.value = opening;");
+    expect(source).toContain("if (opening && props.node.selectableBranch)");
+  });
+
   it("places add on the draft parent and delete in each section menu", () => {
     expect(source).toContain('props.node.shortAgentId === "expert_draft_coordinator"');
     expect(source).toContain('props.node.shortAgentId === "expert_section_writer"');
@@ -10,6 +16,12 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain('props.node.workspaceType === "script" ? "剧集" : "小节"');
     expect(source).toContain(":title=\"`新建${draftUnitLabel}`\"");
     expect(source).toContain("<span>删除{{ draftUnitLabel }}</span>");
+  });
+
+  it("keeps long character creation out of the resource tree", () => {
+    expect(source).not.toContain("isLongCharacterGroup");
+    expect(source).not.toContain('title="新增人物"');
+    expect(source).not.toContain("createLongCharacter");
   });
 
   it("raises the whole action area while its menu is open", () => {
@@ -69,7 +81,7 @@ describe("TreeNodeItem actions", () => {
         '<template v-else-if="hasLongBookAction">'
       ),
       source.indexOf(
-        '<template v-else-if="hasBookAction">'
+        '<template v-else-if="isLongStructureItem">'
       )
     );
     expect(longMenu).toContain("<span>管理长篇结构</span>");
@@ -83,5 +95,16 @@ describe("TreeNodeItem actions", () => {
       'activateLongBookAction(\'delete\')'
     );
     expect(longMenu.match(/is-danger/gu)).toHaveLength(1);
+  });
+
+  it("keeps plot-point and chapter-card creation in the right editor", () => {
+    expect(source).not.toContain("isLongStructureCreateTarget");
+    expect(source).not.toContain("activateLongStructureAction('create')");
+    expect(source).not.toContain("longStructureCreateLabel");
+    expect(source).toContain("activateLongStructureAction('edit')");
+    expect(source).toContain("activateLongStructureAction('delete')");
+    expect(source).toContain(
+      '@long-structure-action="emit(\'longStructureAction\', $event)"'
+    );
   });
 });

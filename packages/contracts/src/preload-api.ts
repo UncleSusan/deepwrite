@@ -10,6 +10,7 @@ import type {
   ModelSettings,
   ModelSettingsInput
 } from "./models";
+import type { ModelUsageDashboard, ModelUsageQueryInput } from "./model-usage";
 import type { SystemEventEnvelope, SystemHealthPayload } from "./system";
 import type {
   WorkspaceAgentId,
@@ -26,6 +27,10 @@ import type {
   AppearanceSettings,
   AppearanceSettingsSnapshot
 } from "./appearance";
+import type {
+  GeneralSettings,
+  GeneralSettingsSnapshot
+} from "./general-settings";
 import type {
   ExportShortManuscriptInput,
   ExportShortManuscriptResult
@@ -92,8 +97,6 @@ import type {
   LongReadDocumentResult,
   LongRemoveBookInput,
   LongRemoveBookResult,
-  LongSearchInput,
-  LongSearchResult,
   LongUpdateBindingsInput,
   LongWorkspaceIndexResult,
   LongWriteDocumentInput,
@@ -171,7 +174,6 @@ export interface DeepWriteApi {
     readDocument(
       input: LongReadDocumentInput
     ): Promise<LongReadDocumentResult>;
-    search(input: LongSearchInput): Promise<LongSearchResult>;
     writeDocument(
       input: LongWriteDocumentInput
     ): Promise<LongWriteDocumentResult>;
@@ -201,6 +203,9 @@ export interface DeepWriteApi {
     list(): Promise<ModelSettings>;
     save(settings: ModelSettingsInput): Promise<ModelSettings>;
     test(model: ModelConfigInput): Promise<ModelConnectionTestResult>;
+  };
+  modelUsage: {
+    query(input?: ModelUsageQueryInput): Promise<ModelUsageDashboard>;
   };
   workspaceAgents: {
     list(workspaceType: WorkspaceType): Promise<WorkspaceAgentSettings>;
@@ -244,6 +249,10 @@ export interface DeepWriteApi {
   appearance: {
     list(): Promise<AppearanceSettingsSnapshot>;
     save(settings: AppearanceSettings): Promise<AppearanceSettingsSnapshot>;
+  };
+  generalSettings: {
+    list(): Promise<GeneralSettingsSnapshot>;
+    save(settings: GeneralSettings): Promise<GeneralSettingsSnapshot>;
   };
   manuscript: {
     exportShort(

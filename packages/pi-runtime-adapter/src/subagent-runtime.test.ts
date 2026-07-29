@@ -312,6 +312,10 @@ describe("blocking subagent runtime", () => {
       (update) => updates.push(update as AgentToolResult<SubagentToolDetails>)
     );
     const progress = progressFrom(updates);
+    const usageObserved = progress.filter(
+      (item): item is Extract<SubagentToolProgress, { type: "usage_observed" }> =>
+        item.type === "usage_observed"
+    );
 
     expect(contexts[0]?.messages).toHaveLength(1);
     expect(contexts[0]?.messages[0]).toMatchObject({
@@ -344,6 +348,15 @@ describe("blocking subagent runtime", () => {
       item.activity.toolCallId === "subrun-fixed-1:child-tool"
     )).toBe(true);
     expect(progress.some((item) => item.type === "child_tool_details")).toBe(true);
+    expect(usageObserved).toHaveLength(2);
+    expect(usageObserved.map((item) => ({
+      status: item.status,
+      hadToolCall: item.hadToolCall,
+      attempt: item.attempt
+    }))).toEqual([
+      { status: "completed", hadToolCall: true, attempt: 1 },
+      { status: "completed", hadToolCall: false, attempt: 1 }
+    ]);
     expect(progress.at(-1)).toMatchObject({
       type: "completed",
       status: "completed",
@@ -427,9 +440,38 @@ describe("blocking subagent runtime", () => {
     const retry = progress.find(
       (item) => item.type === "activity" && item.activity.type === "retry_scheduled"
     );
+    const usageObserved = progress.filter(
+      (item): item is Extract<SubagentToolProgress, { type: "usage_observed" }> =>
+        item.type === "usage_observed"
+    );
 
     expect(faux.state.callCount).toBe(3);
     expect(toolExecutions).toBe(1);
+    expect(usageObserved.map((item) => ({
+      status: item.status,
+      hadToolCall: item.hadToolCall,
+      turnId: item.turnId,
+      attempt: item.attempt
+    }))).toEqual([
+      {
+        status: "completed",
+        hadToolCall: true,
+        turnId: "subrun-retry:turn:1",
+        attempt: 1
+      },
+      {
+        status: "error",
+        hadToolCall: false,
+        turnId: "subrun-retry:turn:2",
+        attempt: 1
+      },
+      {
+        status: "completed",
+        hadToolCall: false,
+        turnId: "subrun-retry:turn:2",
+        attempt: 2
+      }
+    ]);
     expect(retry).toMatchObject({
       type: "activity",
       activity: {
@@ -595,14 +637,26 @@ describe("blocking subagent runtime", () => {
       responses: [fauxAssistantMessage(fauxText("不应使用父模型。"))]
     });
     if (!tool) throw new Error("spawn_subagent was not built");
+    const updates: AgentToolResult<SubagentToolDetails>[] = [];
 
     const result = await tool.execute(
       "parent-custom-model",
-      { subagent_id: "continuity_checker", task: "用单独模型执行" } as never
+      { subagent_id: "continuity_checker", task: "用单独模型执行" } as never,
+      undefined,
+      (update) => updates.push(update as AgentToolResult<SubagentToolDetails>)
     );
 
     expect(seenModels[0]?.id).toBe("custom-child-model");
     expect(seenModels[0]?.id).not.toBe(parentModel.id);
+    expect(progressFrom(updates).find((item) => item.type === "usage_observed"))
+      .toMatchObject({
+        runtime: {
+          provider: "openai-compatible",
+          model: "custom-child-model",
+          mode: "provider",
+          configId: "cfg-custom-1"
+        }
+      });
     expect(result.content[0]).toMatchObject({
       type: "text",
       text: "自定义模型交接完成。"

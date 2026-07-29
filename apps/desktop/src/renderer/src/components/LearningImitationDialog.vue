@@ -14,6 +14,7 @@ import {
   LEARNING_IMITATION_STAGE_IDS,
   LEARNING_IMITATION_STAGE_LABELS,
   learningImitationStageHasResult,
+  type AgentWriteApprovalMode,
   type CatalogLibrary,
   type CatalogSnapshot,
   type LearningImitationDocument,
@@ -46,10 +47,12 @@ const props = withDefaults(
     controller: LearningImitationController;
     models?: readonly ModelConfig[];
     catalogSnapshot?: CatalogSnapshot | null;
+    approvalMode?: AgentWriteApprovalMode;
   }>(),
   {
     models: () => [],
-    catalogSnapshot: null
+    catalogSnapshot: null,
+    approvalMode: "request-approval"
   }
 );
 
@@ -184,7 +187,13 @@ const newSkillLibraryNames = reactive<Record<LearningSkillKind, string>>({
   style: `学习仿写-文风技能 ${new Date().toLocaleDateString("zh-CN")}`
 });
 const transientLibraries = new Map<string, CatalogLibrary>();
-const backgroundPersistRunIds = new Set<string>();
+const localCatalogSnapshot = ref<CatalogSnapshot | null>(null);
+const automaticPersistFingerprints = new Map<string, string>();
+const automaticPersistRequests = new Map<
+  LearningImitationStageId,
+  { fingerprint: string; runId: string }
+>();
+let automaticPersistChain: Promise<void> = Promise.resolve();
 
 const documents = computed(() => props.controller.documents.value);
 const result = computed(() => props.controller.result.value);
@@ -203,10 +212,15 @@ const modelOptions = computed<PopupSelectOption[]>(() => [
   { value: "", label: "请先配置并选择模型" },
   ...props.models.map((model) => ({ value: model.id, label: model.label }))
 ]);
-const materialLibraries = computed(
-  () => props.catalogSnapshot?.materials ?? []
+const effectiveCatalogSnapshot = computed(
+  () => localCatalogSnapshot.value ?? props.catalogSnapshot
 );
-const skillLibraries = computed(() => props.catalogSnapshot?.skills ?? []);
+const materialLibraries = computed(
+  () => effectiveCatalogSnapshot.value?.materials ?? []
+);
+const skillLibraries = computed(
+  () => effectiveCatalogSnapshot.value?.skills ?? []
+);
 const activeHasResult = computed(() =>
   learningImitationStageHasResult(activeStage.value, result.value)
 );
@@ -439,7 +453,8 @@ async function runStage(
   activeStage.value = stageId;
   const started = await props.controller.start(stageId, {
     prompt,
-    ...(selectedModelId.value ? { modelId: selectedModelId.value } : {})
+    ...(selectedModelId.value ? { modelId: selectedModelId.value } : {}),
+    writeApprovalMode: props.approvalMode
   });
   if (!started) {
     uiMessage.error(props.controller.error.value ?? "学习任务启动失败。");
@@ -585,7 +600,7 @@ async function resolveNewTargetLibraries(
         materialKind: kind
       });
       if (!created) {
-        if (mutated) emit("refreshCatalog");
+        if (mutated) await refreshLocalCatalogSnapshot();
         uiMessage.info("已取消新建资料库，本次落盘未继续。");
         return { proceed: false, mutated };
       }
@@ -603,6 +618,7 @@ async function resolveNewTargetLibraries(
         skillKind: kind
       });
       if (!created) {
+        if (mutated) await refreshLocalCatalogSnapshot();
         uiMessage.info("已取消新建资料库，本次落盘未继续。");
         return { proceed: false, mutated: false };
       }
@@ -611,7 +627,6 @@ async function resolveNewTargetLibraries(
       mutated = true;
     }
   }
-  if (mutated) emit("refreshCatalog");
   return { proceed: true, mutated };
 }
 
@@ -643,10 +658,10 @@ async function persistStage(
   mode: PersistMode,
   stageId: LearningImitationStageId = activeStage.value,
   background = false
-): Promise<void> {
+): Promise<boolean> {
   if (!window.deepwrite) {
     uiMessage.warning("浏览器预览不能写入本地资料库，请使用桌面客户端。");
-    return;
+    return false;
   }
   try {
     validateTargetSelections(stageId);
@@ -654,11 +669,11 @@ async function persistStage(
     uiMessage.warning(
       cause instanceof Error ? cause.message : "请先选择匹配的目标资料库。"
     );
-    return;
+    return false;
   }
   if (!learningImitationStageHasResult(stageId, result.value)) {
     uiMessage.warning("当前阶段预览为空，暂无可落盘内容。");
-    return;
+    return false;
   }
 
   saving.value = true;
@@ -666,11 +681,11 @@ async function persistStage(
   try {
     const targetResolution = await resolveNewTargetLibraries(stageId);
     mutated = targetResolution.mutated;
-    if (!targetResolution.proceed) return;
+    if (!targetResolution.proceed) return false;
     const artifacts = buildPersistArtifacts(stageId);
     if (!artifacts.length) {
       uiMessage.warning("当前阶段预览为空，暂无可落盘内容。");
-      return;
+      return false;
     }
     const revisions = new Map<string, number | undefined>();
     for (const artifact of artifacts) {
@@ -745,7 +760,7 @@ async function persistStage(
       if (projectRevision !== undefined) revisions.set(key, projectRevision + 1);
     }
     saveDialogOpen.value = false;
-    emit("refreshCatalog");
+    await refreshLocalCatalogSnapshot();
     uiMessage.success(
       background
         ? `「${LEARNING_IMITATION_STAGE_LABELS[stageId]}」已在后台完成并自动覆盖落盘。`
@@ -753,12 +768,72 @@ async function persistStage(
             mode === "append" ? "追加" : "覆盖"
           }到本地资料库。`
     );
+    return true;
   } catch (cause: unknown) {
-    if (mutated) emit("refreshCatalog");
+    if (mutated) await refreshLocalCatalogSnapshot();
     uiMessage.error(cause instanceof Error ? cause.message : "学习结果落盘失败。");
+    return false;
   } finally {
     saving.value = false;
   }
+}
+
+async function refreshLocalCatalogSnapshot(): Promise<void> {
+  const api = window.deepwrite;
+  if (!api) return;
+  try {
+    localCatalogSnapshot.value = await api.catalog.snapshot();
+  } catch {
+    // The persistence result remains authoritative even if the UI refresh must
+    // fall back to the parent-driven catalog reload.
+  }
+  emit("refreshCatalog");
+}
+
+function learningStageResultFingerprint(
+  stageId: LearningImitationStageId
+): string {
+  const stageResult =
+    stageId === "material_split"
+      ? result.value.material_split
+      : stageId === "plot_learning"
+        ? result.value.plot_learning
+        : result.value.style_learning;
+  return JSON.stringify(stageResult);
+}
+
+function queueAutomaticStagePersist(
+  stageId: LearningImitationStageId,
+  runId: string
+): boolean {
+  if (
+    props.approvalMode !== "auto-approve" ||
+    !learningImitationStageHasResult(stageId, result.value) ||
+    !hasConfiguredTargets(stageId)
+  ) {
+    return false;
+  }
+  const fingerprint = `${runId}:${learningStageResultFingerprint(stageId)}`;
+  if (
+    automaticPersistFingerprints.get(stageId) === fingerprint ||
+    automaticPersistRequests.get(stageId)?.fingerprint === fingerprint
+  ) {
+    return true;
+  }
+  automaticPersistRequests.set(stageId, { fingerprint, runId });
+  automaticPersistChain = automaticPersistChain
+    .catch(() => {
+      // A failed write must not poison later learning-stage saves.
+    })
+    .then(async () => {
+      const request = automaticPersistRequests.get(stageId);
+      if (!request) return;
+      automaticPersistRequests.delete(stageId);
+      if (await persistStage("overwrite", stageId, true)) {
+        automaticPersistFingerprints.set(stageId, request.fingerprint);
+      }
+    });
+  return true;
 }
 
 function confirmNewSession(): void {
@@ -774,6 +849,9 @@ function confirmNewSession(): void {
   }
   selectedSkillLibraryIds.plot = "";
   selectedSkillLibraryIds.style = "";
+  localCatalogSnapshot.value = null;
+  automaticPersistFingerprints.clear();
+  automaticPersistRequests.clear();
   newSessionConfirmOpen.value = false;
   uiMessage.success("已新建学习仿写会话。");
 }
@@ -805,7 +883,10 @@ watch(
 
 watch(
   () => props.catalogSnapshot,
-  () => resetInvalidTargets(),
+  () => {
+    localCatalogSnapshot.value = null;
+    resetInvalidTargets();
+  },
   { immediate: true }
 );
 
@@ -816,21 +897,33 @@ watch(
   }
 );
 
+watch(
+  result,
+  () => {
+    const stageId = runningStage.value;
+    const runId = props.controller.activeRunId.value;
+    if (!stageId || !runId || !isBusy.value) return;
+    queueAutomaticStagePersist(stageId, runId);
+  },
+  { deep: true }
+);
+
 watch(status, (next, previous) => {
   if (next === previous) return;
   if (next === "completed") {
     const runId = props.controller.lastCompletedRunId.value;
     const stageId = props.controller.lastCompletedStage.value;
-    if (!props.active && runId && stageId && !backgroundPersistRunIds.has(runId)) {
-      backgroundPersistRunIds.add(runId);
+    if (
+      runId &&
+      stageId &&
+      queueAutomaticStagePersist(stageId, runId)
+    ) {
       activeStage.value = stageId;
-      if (hasConfiguredTargets(stageId)) {
-        void persistStage("overwrite", stageId, true);
-      } else {
-        uiMessage.success(
-          "后台完成，预览已保留；重新打开后选择目标确认落盘。"
-        );
-      }
+      uiMessage.success("学习仿写已完成，结果已进入后台自动落盘队列。");
+    } else if (props.approvalMode === "auto-approve") {
+      uiMessage.success(
+        "学习仿写已完成；尚未选择完整目标库，结果预览已保留。"
+      );
     } else {
       uiMessage.success("学习仿写已完成，结果预览已保留。");
     }

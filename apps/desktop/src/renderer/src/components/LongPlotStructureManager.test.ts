@@ -130,4 +130,11 @@ describe("LongPlotStructureManager", () => {
     expect(source).toContain("editLocked: committedEventIds.value.has(event.id)");
     expect(source).toContain("deleteLocked: committedEventIds.value.has(event.id)");
   });
+
+  it("uses direct tabs to switch narrative structure types", () => {
+    expect(source).toContain('aria-label="剧情叙事结构类型"');
+    expect(source).toContain('class="plot-section-tabs"');
+    expect(source).toContain('role="tab"');
+    expect(source).toContain('@click="setSection(section.value)"');
+  });
 });

@@ -1,12 +1,6 @@
 <script setup lang="ts">
-import {
-  computed,
-  reactive,
-  ref,
-  watch
-} from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import type {
-  LongCharacterGroup,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch,
   LongWorldbuildingFormat
@@ -21,42 +15,28 @@ import {
   isLongMigrationEvidenceCategoryId,
   type LongStructureMutationCompletion
 } from "../types/longWorkspace";
+import type {
+  LongStructureTreeAction,
+  LongStructureTreeSection
+} from "../types/workspace";
 import PopupSelect, {
   type PopupSelectOption,
   type PopupSelectValue
 } from "./PopupSelect.vue";
-import LongPlotStructureManager from "./LongPlotStructureManager.vue";
 
-type ManagerSection =
-  | "worldbuilding"
-  | "character"
-  | "volume"
-  | "arc"
-  | "chapter";
+type StructurePanel = "foundation" | "features";
 
 interface ManagerRow {
   id: string;
   title: string;
   detail: string;
-  scopeId: string;
   readOnly?: boolean;
-  editLocked?: boolean;
-  deleteLocked?: boolean;
-  reorderLocked?: boolean;
 }
 
 interface StructureDraft {
   id: string | null;
   title: string;
   format: LongWorldbuildingFormat;
-  group: LongCharacterGroup;
-  aliasesText: string;
-  summary: string;
-  outline: string;
-  worldConstraints: string;
-  volumeId: string;
-  primaryArcId: string;
-  characterIds: string[];
 }
 
 const props = withDefaults(
@@ -64,6 +44,9 @@ const props = withDefaults(
     snapshot: LongWorkspaceIndexSnapshot;
     disabled?: boolean;
     previewError?: string | null;
+    initialSection: LongStructureTreeSection | undefined;
+    initialAction: LongStructureTreeAction | undefined;
+    initialItemId: string | undefined;
   }>(),
   {
     disabled: false,
@@ -78,39 +61,29 @@ const emit = defineEmits<{
   ];
 }>();
 
-const sectionOptions: readonly PopupSelectOption[] = [
-  { value: "worldbuilding", label: "世界观分类" },
-  { value: "character", label: "人物" },
-  { value: "volume", label: "卷" },
-  { value: "arc", label: "剧情弧" },
-  { value: "chapter", label: "章卡" }
-];
-
 const formatOptions: readonly PopupSelectOption[] = [
   { value: "list", label: "条目列表" },
   { value: "text", label: "连续文本" }
 ];
 
-const groupLabels: Record<LongCharacterGroup, string> = {
-  protagonist: "主角",
-  major_supporting: "重要配角",
-  minor_supporting: "次要配角",
-  passerby: "过场人物"
-};
+const panelOptions: ReadonlyArray<{
+  value: StructurePanel;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "foundation",
+    label: "基础结构",
+    description: "世界观分类"
+  },
+  {
+    value: "features",
+    label: "功能配置",
+    description: "功能配置项暂时为空"
+  }
+];
 
-const groupOptions: readonly PopupSelectOption[] = (
-  Object.entries(groupLabels) as Array<[LongCharacterGroup, string]>
-).map(([value, label]) => ({ value, label }));
-
-const sectionLabels: Record<ManagerSection, string> = {
-  worldbuilding: "世界观分类",
-  character: "人物",
-  volume: "卷",
-  arc: "剧情弧",
-  chapter: "章卡"
-};
-
-const activeSection = ref<ManagerSection>("worldbuilding");
+const activePanel = ref<StructurePanel>("foundation");
 const formOpen = ref(false);
 const formMode = ref<"create" | "edit">("create");
 const pendingDelete = ref<ManagerRow | null>(null);
@@ -129,240 +102,25 @@ function emptyDraft(): StructureDraft {
   return {
     id: null,
     title: "",
-    format: "text",
-    group: "protagonist",
-    aliasesText: "",
-    summary: "",
-    outline: "",
-    worldConstraints: "",
-    volumeId: "",
-    primaryArcId: "",
-    characterIds: []
+    format: "text"
   };
 }
 
 const draft = reactive<StructureDraft>(emptyDraft());
 
-const volumeById = computed(
-  () =>
-    new Map(
-      props.snapshot.plot.volumes.map((volume) => [volume.id, volume] as const)
-    )
-);
-
-const arcById = computed(
-  () =>
-    new Map(props.snapshot.plot.arcs.map((arc) => [arc.id, arc] as const))
-);
-
-const committedChapterIds = computed(
-  () =>
-    new Set(
-      props.snapshot.ledger.commits.map(({ chapterCardId }) => chapterCardId)
-    )
-);
-const committedEventIds = computed(() => {
-  const ids = new Set<string>();
-  for (const placement of props.snapshot.plot.narrativePlacements) {
-    if (placement.commitId !== null) ids.add(placement.eventId);
-  }
-  for (const thread of props.snapshot.plot.foreshadowing) {
-    const hasCommittedBeat = thread.beats.some(
-      ({ commitId }) => commitId !== null
-    );
-    if (hasCommittedBeat && thread.truthEventId) {
-      ids.add(thread.truthEventId);
-    }
-    for (const beat of thread.beats) {
-      if (beat.commitId !== null && beat.eventId) {
-        ids.add(beat.eventId);
-      }
-    }
-  }
-  return ids;
-});
-const committedCharacterIds = computed(() => {
-  const ids = new Set<string>();
-  for (const chapter of props.snapshot.plot.chapterCards) {
-    if (!committedChapterIds.value.has(chapter.id)) continue;
-    chapter.characterIds.forEach((id) => ids.add(id));
-  }
-  for (const event of props.snapshot.plot.storyEvents) {
-    if (!committedEventIds.value.has(event.id)) continue;
-    event.characterIds.forEach((id) => ids.add(id));
-  }
-  return ids;
-});
-const committedCharacterGroups = computed(
-  () =>
-    new Set(
-      props.snapshot.characters
-        .filter(({ id }) => committedCharacterIds.value.has(id))
-        .map(({ group }) => group)
-    )
-);
-const committedArcIds = computed(() => {
-  const ids = new Set<string>();
-  for (const chapter of props.snapshot.plot.chapterCards) {
-    if (committedChapterIds.value.has(chapter.id)) {
-      ids.add(chapter.primaryArcId);
-    }
-  }
-  for (const event of props.snapshot.plot.storyEvents) {
-    if (!committedEventIds.value.has(event.id)) continue;
-    event.arcIds.forEach((id) => ids.add(id));
-  }
-  return ids;
-});
-const committedVolumeIds = computed(
-  () =>
-    new Set(
-      [
-        ...props.snapshot.plot.chapterCards
-          .filter(({ id }) => committedChapterIds.value.has(id))
-          .map(({ volumeId }) => volumeId),
-        ...props.snapshot.plot.arcs
-          .filter(({ id }) => committedArcIds.value.has(id))
-          .map(({ volumeId }) => volumeId)
-      ]
-    )
-);
-
-const volumeOptions = computed<PopupSelectOption[]>(() =>
-  [...props.snapshot.plot.volumes]
+const rows = computed<ManagerRow[]>(() =>
+  [...props.snapshot.worldbuilding]
     .sort((left, right) => left.order - right.order)
-    .map((volume) => ({
-      value: volume.id,
-      label: volume.title
+    .map((category) => ({
+      id: category.id,
+      title: category.title,
+      detail: category.format === "list" ? "条目列表" : "连续文本",
+      readOnly: isLongMigrationEvidenceCategoryId(category.id)
     }))
-);
-
-const draftArcOptions = computed<PopupSelectOption[]>(() =>
-  props.snapshot.plot.arcs
-    .filter((arc) => arc.volumeId === draft.volumeId)
-    .sort((left, right) => left.order - right.order)
-    .map((arc) => ({
-      value: arc.id,
-      label: arc.title
-    }))
-);
-
-const rows = computed<ManagerRow[]>(() => {
-  switch (activeSection.value) {
-    case "worldbuilding":
-      return [...props.snapshot.worldbuilding]
-        .sort((left, right) => left.order - right.order)
-        .map((category) => ({
-          id: category.id,
-          title: category.title,
-          detail: category.format === "list" ? "条目列表" : "连续文本",
-          scopeId: "worldbuilding",
-          readOnly: isLongMigrationEvidenceCategoryId(category.id)
-        }));
-    case "character":
-      return [...props.snapshot.characters]
-        .sort((left, right) => {
-          const groupOrder = groupOptions.findIndex(
-            (option) => option.value === left.group
-          );
-          const otherGroupOrder = groupOptions.findIndex(
-            (option) => option.value === right.group
-          );
-          return groupOrder - otherGroupOrder || left.order - right.order;
-        })
-        .map((character) => ({
-          id: character.id,
-          title: character.name,
-          detail: `${groupLabels[character.group]}${
-            character.aliases.length > 0
-              ? ` · 别名：${character.aliases.join("、")}`
-              : ""
-          }`,
-          scopeId: character.group,
-          deleteLocked: committedCharacterIds.value.has(character.id),
-          reorderLocked: committedCharacterGroups.value.has(character.group)
-        }));
-    case "volume":
-      return [...props.snapshot.plot.volumes]
-        .sort((left, right) => left.order - right.order)
-        .map((volume) => ({
-          id: volume.id,
-          title: volume.title,
-          detail: volume.summary || "尚未填写卷概要",
-          scopeId: "volume",
-          deleteLocked: committedVolumeIds.value.has(volume.id),
-          reorderLocked: committedVolumeIds.value.size > 0
-        }));
-    case "arc":
-      return [...props.snapshot.plot.arcs]
-        .sort((left, right) => {
-          const leftVolumeOrder =
-            volumeById.value.get(left.volumeId)?.order ?? 0;
-          const rightVolumeOrder =
-            volumeById.value.get(right.volumeId)?.order ?? 0;
-          return leftVolumeOrder - rightVolumeOrder || left.order - right.order;
-        })
-        .map((arc) => ({
-          id: arc.id,
-          title: arc.title,
-          detail: `${volumeById.value.get(arc.volumeId)?.title ?? "未知卷"}${
-            arc.outline ? ` · ${arc.outline}` : ""
-          }`,
-          scopeId: arc.volumeId,
-          deleteLocked: committedArcIds.value.has(arc.id),
-          reorderLocked: committedVolumeIds.value.has(arc.volumeId)
-        }));
-    case "chapter":
-      return [...props.snapshot.plot.chapterCards]
-        .sort((left, right) => {
-          const leftVolumeOrder =
-            volumeById.value.get(left.volumeId)?.order ?? 0;
-          const rightVolumeOrder =
-            volumeById.value.get(right.volumeId)?.order ?? 0;
-          return (
-            leftVolumeOrder - rightVolumeOrder ||
-            left.narrativeOrder - right.narrativeOrder
-          );
-        })
-        .map((chapter) => {
-          const committed = committedChapterIds.value.has(chapter.id);
-          return {
-            id: chapter.id,
-            title: chapter.title,
-            detail: `${
-              volumeById.value.get(chapter.volumeId)?.title ?? "未知卷"
-            } · ${
-              arcById.value.get(chapter.primaryArcId)?.title ?? "未知剧情弧"
-            } · ${chapter.characterIds.length} 位人物`,
-            scopeId: chapter.volumeId,
-            editLocked: committed,
-            deleteLocked: committed,
-            reorderLocked: committedVolumeIds.value.has(chapter.volumeId)
-          };
-        });
-  }
-});
-
-const selectedSectionLabel = computed(
-  () => sectionLabels[activeSection.value]
 );
 
 const formTitle = computed(() =>
-  formMode.value === "create"
-    ? `新建${selectedSectionLabel.value}`
-    : `编辑${selectedSectionLabel.value}`
-);
-
-const arcVolumeLocked = computed(
-  () =>
-    formMode.value === "edit" &&
-    activeSection.value === "arc" &&
-    draft.id !== null &&
-    committedArcIds.value.has(draft.id)
-);
-
-const emptyDescription = computed(
-  () => `还没有${selectedSectionLabel.value}，可先创建第一项。`
+  formMode.value === "create" ? "新建世界观分类" : "编辑世界观分类"
 );
 
 watch(
@@ -374,18 +132,11 @@ watch(
   }
 );
 
-function setSection(value: PopupSelectValue): void {
-  if (
-    value === "worldbuilding" ||
-    value === "character" ||
-    value === "volume" ||
-    value === "arc" ||
-    value === "chapter"
-  ) {
-    activeSection.value = value;
-    closeForm();
-    closeDelete();
-  }
+function setPanel(panel: StructurePanel): void {
+  if (panel === activePanel.value || mutationLocked.value) return;
+  closeForm();
+  closeDelete();
+  activePanel.value = panel;
 }
 
 function setFormat(value: PopupSelectValue): void {
@@ -394,154 +145,36 @@ function setFormat(value: PopupSelectValue): void {
   }
 }
 
-function setGroup(value: PopupSelectValue): void {
-  if (
-    value === "protagonist" ||
-    value === "major_supporting" ||
-    value === "minor_supporting" ||
-    value === "passerby"
-  ) {
-    draft.group = value;
-  }
-}
-
-function setDraftVolume(value: PopupSelectValue): void {
-  if (typeof value !== "string") {
-    return;
-  }
-  draft.volumeId = value;
-  if (!draftArcOptions.value.some((option) => option.value === draft.primaryArcId)) {
-    const firstArc = draftArcOptions.value[0];
-    draft.primaryArcId =
-      typeof firstArc?.value === "string" ? firstArc.value : "";
-  }
-}
-
-function setDraftArc(value: PopupSelectValue): void {
-  if (typeof value === "string") {
-    draft.primaryArcId = value;
-  }
-}
-
 function resetDraft(): void {
   Object.assign(draft, emptyDraft());
 }
 
 function openCreate(): void {
-  if (
-    (activeSection.value === "arc" || activeSection.value === "chapter") &&
-    volumeOptions.value.length === 0
-  ) {
-    uiMessage.warning("请先创建至少一个卷。");
-    return;
-  }
   resetDraft();
   formMode.value = "create";
-  const firstVolume = volumeOptions.value[0];
-  draft.volumeId =
-    typeof firstVolume?.value === "string" ? firstVolume.value : "";
-  const firstArc =
-    activeSection.value === "chapter"
-      ? [...props.snapshot.plot.arcs].sort(
-          (left, right) =>
-            (volumeById.value.get(left.volumeId)?.order ??
-              Number.MAX_SAFE_INTEGER) -
-              (volumeById.value.get(right.volumeId)?.order ??
-                Number.MAX_SAFE_INTEGER) ||
-            left.order - right.order
-        )[0]
-      : props.snapshot.plot.arcs
-          .filter((arc) => arc.volumeId === draft.volumeId)
-          .sort((left, right) => left.order - right.order)[0];
-  if (activeSection.value === "chapter" && firstArc) {
-    draft.volumeId = firstArc.volumeId;
-  }
-  draft.primaryArcId = firstArc?.id ?? "";
-  if (activeSection.value === "chapter" && !draft.primaryArcId) {
-    uiMessage.warning("请先在目标卷中创建至少一个剧情弧。");
-    return;
-  }
   formOpen.value = true;
 }
 
 function openEdit(row: ManagerRow): void {
-  if (row.readOnly || row.editLocked) {
-    uiMessage.info(
-      row.readOnly
-        ? "迁移证据是只读资料，不能改名、改格式或删除。"
-        : "该结构已被已提交的连续性事实引用，不能编辑或移动；请先回滚相关提交。"
-    );
+  if (row.readOnly) {
+    uiMessage.info("迁移证据是只读资料，不能改名、改格式或删除。");
     return;
   }
+  const category = props.snapshot.worldbuilding.find(
+    (candidate) => candidate.id === row.id
+  );
+  if (!category) return;
   resetDraft();
   formMode.value = "edit";
-  draft.id = row.id;
-  switch (activeSection.value) {
-    case "worldbuilding": {
-      const category = props.snapshot.worldbuilding.find(
-        (candidate) => candidate.id === row.id
-      );
-      if (!category) return;
-      draft.title = category.title;
-      draft.format = category.format;
-      break;
-    }
-    case "character": {
-      const character = props.snapshot.characters.find(
-        (candidate) => candidate.id === row.id
-      );
-      if (!character) return;
-      draft.title = character.name;
-      draft.group = character.group;
-      draft.aliasesText = character.aliases.join("、");
-      break;
-    }
-    case "volume": {
-      const volume = props.snapshot.plot.volumes.find(
-        (candidate) => candidate.id === row.id
-      );
-      if (!volume) return;
-      draft.title = volume.title;
-      draft.summary = volume.summary;
-      break;
-    }
-    case "arc": {
-      const arc = props.snapshot.plot.arcs.find(
-        (candidate) => candidate.id === row.id
-      );
-      if (!arc) return;
-      draft.title = arc.title;
-      draft.volumeId = arc.volumeId;
-      draft.outline = arc.outline;
-      break;
-    }
-    case "chapter": {
-      const chapter = props.snapshot.plot.chapterCards.find(
-        (candidate) => candidate.id === row.id
-      );
-      if (!chapter) return;
-      draft.title = chapter.title;
-      draft.volumeId = chapter.volumeId;
-      draft.primaryArcId = chapter.primaryArcId;
-      draft.outline = chapter.outline;
-      draft.worldConstraints = chapter.worldConstraints;
-      draft.characterIds = [...chapter.characterIds];
-      break;
-    }
-  }
+  draft.id = category.id;
+  draft.title = category.title;
+  draft.format = category.format;
   formOpen.value = true;
 }
 
 function closeForm(): void {
   if (mutationLocked.value) return;
   formOpen.value = false;
-}
-
-function aliasesFromDraft(): string[] {
-  return draft.aliasesText
-    .split(/[,，、\n]/u)
-    .map((alias) => alias.trim())
-    .filter(Boolean);
 }
 
 function finishMutation(
@@ -587,133 +220,48 @@ function emitMutation(
 function submitForm(): void {
   const title = draft.title.trim();
   if (!title) {
-    uiMessage.warning(
-      activeSection.value === "character" ? "请输入人物姓名。" : "请输入标题。"
-    );
+    uiMessage.warning("请输入标题。");
     return;
   }
 
   emitMutation((builder) => {
     if (formMode.value === "create") {
-      switch (activeSection.value) {
-        case "worldbuilding":
-          return builder.createWorldbuilding({
-            title,
-            format: draft.format
-          });
-        case "character":
-          return builder.createCharacter({
-            name: title,
-            group: draft.group,
-            aliases: aliasesFromDraft()
-          });
-        case "volume":
-          return builder.createVolume({
-            title,
-            summary: draft.summary
-          });
-        case "arc":
-          return builder.createArc({
-            title,
-            volumeId: draft.volumeId,
-            outline: draft.outline
-          });
-        case "chapter":
-          return builder.createChapter({
-            title,
-            volumeId: draft.volumeId,
-            primaryArcId: draft.primaryArcId,
-            outline: draft.outline,
-            worldConstraints: draft.worldConstraints,
-            characterIds: draft.characterIds
-          });
-      }
+      return builder.createWorldbuilding({
+        title,
+        format: draft.format
+      });
     }
-
     if (!draft.id) {
       throw new Error("缺少待编辑条目的稳定 ID。");
     }
-    switch (activeSection.value) {
-      case "worldbuilding":
-        return builder.updateWorldbuilding(draft.id, {
-          title,
-          format: draft.format
-        });
-      case "character":
-        return builder.updateCharacter(draft.id, {
-          name: title,
-          group: draft.group,
-          aliases: aliasesFromDraft()
-        });
-      case "volume":
-        return builder.updateVolume(draft.id, {
-          title,
-          summary: draft.summary
-        });
-      case "arc":
-        return builder.updateArc(draft.id, {
-          title,
-          volumeId: draft.volumeId,
-          outline: draft.outline
-        });
-      case "chapter":
-        return builder.updateChapter(draft.id, {
-          title,
-          volumeId: draft.volumeId,
-          primaryArcId: draft.primaryArcId,
-          outline: draft.outline,
-          worldConstraints: draft.worldConstraints,
-          characterIds: draft.characterIds
-        });
-    }
+    return builder.updateWorldbuilding(draft.id, {
+      title,
+      format: draft.format
+    });
   }, "form");
 }
 
-function siblingIds(row: ManagerRow): string[] {
-  return rows.value
-    .filter((candidate) => candidate.scopeId === row.scopeId)
-    .map((candidate) => candidate.id);
-}
-
 function canMove(row: ManagerRow, direction: LongOrderDirection): boolean {
-  if (row.readOnly || row.reorderLocked) return false;
-  const ids = siblingIds(row);
-  const index = ids.indexOf(row.id);
-  return direction === "up" ? index > 0 : index >= 0 && index < ids.length - 1;
+  if (row.readOnly) return false;
+  const index = rows.value.findIndex((candidate) => candidate.id === row.id);
+  return direction === "up"
+    ? index > 0
+    : index >= 0 && index < rows.value.length - 1;
 }
 
 function reorder(row: ManagerRow, direction: LongOrderDirection): void {
-  if (row.readOnly || row.reorderLocked) {
-    uiMessage.info(
-      row.readOnly
-        ? "迁移证据保持稳定顺序，不能重排。"
-        : "该顺序范围包含已提交的连续性事实，不能重排。"
-    );
+  if (row.readOnly) {
+    uiMessage.info("迁移证据保持稳定顺序，不能重排。");
     return;
   }
-  emitMutation((builder) => {
-    switch (activeSection.value) {
-      case "worldbuilding":
-        return builder.reorderWorldbuilding(row.id, direction);
-      case "character":
-        return builder.reorderCharacter(row.id, direction);
-      case "volume":
-        return builder.reorderVolume(row.id, direction);
-      case "arc":
-        return builder.reorderArc(row.id, direction);
-      case "chapter":
-        return builder.reorderChapter(row.id, direction);
-    }
-  });
+  emitMutation((builder) =>
+    builder.reorderWorldbuilding(row.id, direction)
+  );
 }
 
 function openDelete(row: ManagerRow): void {
-  if (row.readOnly || row.deleteLocked) {
-    uiMessage.info(
-      row.readOnly
-        ? "迁移证据是只读资料，不能删除。"
-        : "该结构已被已提交的连续性事实引用，不能删除。"
-    );
+  if (row.readOnly) {
+    uiMessage.info("迁移证据是只读资料，不能删除。");
     return;
   }
   cascadeDelete.value = false;
@@ -728,44 +276,12 @@ function closeDelete(): void {
 
 function confirmDelete(): void {
   const target = pendingDelete.value;
-  if (!target) {
-    return;
-  }
-  emitMutation((builder) => {
-    switch (activeSection.value) {
-      case "worldbuilding":
-        return builder.deleteWorldbuilding(target.id, cascadeDelete.value);
-      case "character":
-        return builder.deleteCharacter(target.id, cascadeDelete.value);
-      case "volume":
-        return builder.deleteVolume(target.id, cascadeDelete.value);
-      case "arc":
-        return builder.deleteArc(target.id, cascadeDelete.value);
-      case "chapter":
-        return builder.deleteChapter(target.id, cascadeDelete.value);
-    }
-  }, "delete");
-}
-
-function handleCharacterToggle(characterId: string, event: Event): void {
-  const input = event.currentTarget;
-  if (!(input instanceof HTMLInputElement)) {
-    return;
-  }
-  if (input.checked) {
-    if (!draft.characterIds.includes(characterId)) {
-      draft.characterIds.push(characterId);
-    }
-  } else {
-    draft.characterIds = draft.characterIds.filter((id) => id !== characterId);
-  }
-}
-
-function forwardPlotMutation(
-  batch: LongWorkspaceOperationBatch,
-  completion: LongStructureMutationCompletion
-): void {
-  emit("mutation", batch, completion);
+  if (!target) return;
+  emitMutation(
+    (builder) =>
+      builder.deleteWorldbuilding(target.id, cascadeDelete.value),
+    "delete"
+  );
 }
 </script>
 
@@ -777,103 +293,130 @@ function forwardPlotMutation(
         <h2>结构管理</h2>
         <p>手工修改会直接保存到本机；智能体发起的结构修改仍需审批。</p>
       </div>
-      <div class="manager-toolbar">
-        <PopupSelect
-          :model-value="activeSection"
-          :options="sectionOptions"
-          accessible-label="选择长篇结构类型"
-          variant="compact"
-          size="small"
-          :disabled="mutationLocked"
-          :menu-z-index="2300"
-          @update:model-value="setSection"
-        />
+    </header>
+
+    <div class="structure-panel-tabs" role="tablist" aria-label="长篇结构分区">
+      <button
+        v-for="panel in panelOptions"
+        :id="`long-structure-panel-${panel.value}`"
+        :key="panel.value"
+        class="structure-panel-tab"
+        type="button"
+        role="tab"
+        :aria-selected="activePanel === panel.value"
+        :aria-controls="`long-structure-panel-content-${panel.value}`"
+        :disabled="mutationLocked"
+        @click="setPanel(panel.value)"
+      >
+        <strong>{{ panel.label }}</strong>
+        <span>{{ panel.description }}</span>
+      </button>
+    </div>
+
+    <div
+      v-if="activePanel === 'foundation'"
+      id="long-structure-panel-content-foundation"
+      class="structure-panel-content"
+      role="tabpanel"
+      aria-labelledby="long-structure-panel-foundation"
+    >
+      <header class="manager-toolbar">
+        <div class="section-tabs" role="tablist" aria-label="基础结构类型">
+          <button
+            id="long-structure-section-worldbuilding"
+            type="button"
+            role="tab"
+            aria-selected="true"
+          >
+            世界观分类
+          </button>
+        </div>
         <button
           class="primary-button"
           type="button"
           :disabled="mutationLocked"
           @click="openCreate"
         >
-          新建{{ selectedSectionLabel }}
+          新建世界观分类
         </button>
-      </div>
-    </header>
+      </header>
 
-    <div v-if="rows.length === 0" class="manager-empty">
-      <strong>{{ emptyDescription }}</strong>
-      <span>创建后会生成完整稳定 ID；需要 Markdown 的结构也会带齐空文件引用。</span>
+      <div v-if="rows.length === 0" class="manager-empty">
+        <strong>还没有世界观分类，可先创建第一项。</strong>
+        <span>创建后会生成完整稳定 ID，并带齐对应的空文件引用。</span>
+      </div>
+
+      <ol v-else class="manager-list">
+        <li v-for="row in rows" :key="row.id" class="manager-row">
+          <div class="row-copy">
+            <strong>{{ row.title }}</strong>
+            <span>
+              {{ row.detail }}{{ row.readOnly ? " · 迁移证据只读" : "" }}
+            </span>
+            <code>{{ row.id }}</code>
+          </div>
+          <div class="row-actions">
+            <button
+              type="button"
+              :aria-label="`上移${row.title}`"
+              title="上移"
+              :disabled="mutationLocked || !canMove(row, 'up')"
+              @click="reorder(row, 'up')"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              :aria-label="`下移${row.title}`"
+              title="下移"
+              :disabled="mutationLocked || !canMove(row, 'down')"
+              @click="reorder(row, 'down')"
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              :aria-label="`编辑${row.title}`"
+              :disabled="mutationLocked || row.readOnly"
+              @click="openEdit(row)"
+            >
+              编辑
+            </button>
+            <button
+              class="delete-button"
+              type="button"
+              :aria-label="`删除${row.title}`"
+              :disabled="mutationLocked || row.readOnly"
+              @click="openDelete(row)"
+            >
+              删除
+            </button>
+          </div>
+        </li>
+      </ol>
+
+      <p class="manager-footnote">
+        排序只调整世界观分类的展示顺序，不会改动分类中的现有内容。
+      </p>
     </div>
 
-    <ol v-else class="manager-list">
-      <li v-for="row in rows" :key="row.id" class="manager-row">
-        <div class="row-copy">
-          <strong>{{ row.title }}</strong>
-          <span>
-            {{ row.detail
-            }}{{
-              row.readOnly
-                ? " · 迁移证据只读"
-                : row.editLocked || row.deleteLocked || row.reorderLocked
-                  ? " · 连续性保护"
-                  : ""
-            }}
-          </span>
-          <code>{{ row.id }}</code>
-        </div>
-        <div class="row-actions">
-          <button
-            type="button"
-            :aria-label="`上移${row.title}`"
-            title="上移"
-            :disabled="mutationLocked || !canMove(row, 'up')"
-            @click="reorder(row, 'up')"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            :aria-label="`下移${row.title}`"
-            title="下移"
-            :disabled="mutationLocked || !canMove(row, 'down')"
-            @click="reorder(row, 'down')"
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            :aria-label="`编辑${row.title}`"
-            :disabled="mutationLocked || row.readOnly || row.editLocked"
-            @click="openEdit(row)"
-          >
-            编辑
-          </button>
-          <button
-            class="delete-button"
-            type="button"
-            :aria-label="`删除${row.title}`"
-            :disabled="mutationLocked || row.readOnly || row.deleteLocked"
-            @click="openDelete(row)"
-          >
-            删除
-          </button>
-        </div>
-      </li>
-    </ol>
-
-    <p class="manager-footnote">
-      排序只在同一人物分组、卷或剧情弧作用域内调整，不会重排现有短篇或剧本资源。
-    </p>
-
-    <LongPlotStructureManager
-      :snapshot="snapshot"
-      :disabled="mutationLocked"
-      @mutation="forwardPlotMutation"
-    />
+    <div
+      v-else
+      id="long-structure-panel-content-features"
+      class="structure-panel-content"
+      role="tabpanel"
+      aria-labelledby="long-structure-panel-features"
+    >
+      <div class="manager-empty feature-empty">
+        <strong>功能配置项暂时为空</strong>
+        <span>后续可在这里集中管理长篇写作相关功能。</span>
+      </div>
+    </div>
 
     <Teleport to="body">
       <div
         v-if="formOpen"
-        class="structure-modal-overlay"
+        class="dialog-backdrop structure-modal-overlay"
         @mousedown.self="closeForm"
         @keydown.esc.stop="closeForm"
       >
@@ -902,9 +445,7 @@ function forwardPlotMutation(
 
             <fieldset class="modal-body" :disabled="mutationLocked">
               <label class="form-field">
-                <span>{{
-                  activeSection === "character" ? "人物姓名" : "标题"
-                }}</span>
+                <span>标题</span>
                 <input
                   v-model="draft.title"
                   maxlength="256"
@@ -914,10 +455,7 @@ function forwardPlotMutation(
                 />
               </label>
 
-              <label
-                v-if="activeSection === 'worldbuilding'"
-                class="form-field"
-              >
+              <label class="form-field">
                 <span>内容格式</span>
                 <PopupSelect
                   :model-value="draft.format"
@@ -927,111 +465,6 @@ function forwardPlotMutation(
                   @update:model-value="setFormat"
                 />
               </label>
-
-              <template v-if="activeSection === 'character'">
-                <label class="form-field">
-                  <span>人物分组</span>
-                  <PopupSelect
-                    :model-value="draft.group"
-                    :options="groupOptions"
-                    accessible-label="选择人物分组"
-                    :menu-z-index="2300"
-                    @update:model-value="setGroup"
-                  />
-                </label>
-                <label class="form-field">
-                  <span>别名</span>
-                  <textarea
-                    v-model="draft.aliasesText"
-                    rows="2"
-                    maxlength="8000"
-                    placeholder="多个别名可用逗号、顿号或换行分隔"
-                  />
-                </label>
-              </template>
-
-              <label
-                v-if="activeSection === 'volume'"
-                class="form-field"
-              >
-                <span>卷概要</span>
-                <textarea
-                  v-model="draft.summary"
-                  rows="4"
-                  maxlength="200000"
-                />
-              </label>
-
-              <template
-                v-if="activeSection === 'arc' || activeSection === 'chapter'"
-              >
-                <label class="form-field">
-                  <span>所属卷</span>
-                  <PopupSelect
-                    :model-value="draft.volumeId"
-                    :options="volumeOptions"
-                    accessible-label="选择所属卷"
-                    :disabled="arcVolumeLocked"
-                    :menu-z-index="2300"
-                    @update:model-value="setDraftVolume"
-                  />
-                  <small v-if="arcVolumeLocked">
-                    已提交剧情弧可更新标题与提纲，但不能迁移到其他卷。
-                  </small>
-                </label>
-                <label
-                  v-if="activeSection === 'chapter'"
-                  class="form-field"
-                >
-                  <span>主剧情弧</span>
-                  <PopupSelect
-                    :model-value="draft.primaryArcId"
-                    :options="draftArcOptions"
-                    accessible-label="选择章卡主剧情弧"
-                    placeholder="当前卷还没有剧情弧"
-                    :menu-z-index="2300"
-                    @update:model-value="setDraftArc"
-                  />
-                </label>
-                <label class="form-field">
-                  <span>{{ activeSection === "arc" ? "剧情弧提纲" : "章卡提纲" }}</span>
-                  <textarea
-                    v-model="draft.outline"
-                    rows="4"
-                    maxlength="200000"
-                  />
-                </label>
-              </template>
-
-              <template v-if="activeSection === 'chapter'">
-                <label class="form-field">
-                  <span>世界观约束</span>
-                  <textarea
-                    v-model="draft.worldConstraints"
-                    rows="3"
-                    maxlength="200000"
-                  />
-                </label>
-                <fieldset class="character-picker">
-                  <legend>关联人物</legend>
-                  <p v-if="snapshot.characters.length === 0">
-                    尚未创建人物，可稍后再关联。
-                  </p>
-                  <label
-                    v-for="character in snapshot.characters"
-                    v-else
-                    :key="character.id"
-                  >
-                    <input
-                      type="checkbox"
-                      :checked="draft.characterIds.includes(character.id)"
-                      @change="handleCharacterToggle(character.id, $event)"
-                    />
-                    <span>{{ character.name }}</span>
-                    <small>{{ groupLabels[character.group] }}</small>
-                  </label>
-                </fieldset>
-              </template>
             </fieldset>
 
             <footer class="modal-actions">
@@ -1064,7 +497,7 @@ function forwardPlotMutation(
     <Teleport to="body">
       <div
         v-if="pendingDelete"
-        class="structure-modal-overlay"
+        class="dialog-backdrop structure-modal-overlay"
         @mousedown.self="closeDelete"
         @keydown.esc.stop="closeDelete"
       >
@@ -1085,14 +518,14 @@ function forwardPlotMutation(
           </header>
           <fieldset class="modal-body" :disabled="mutationLocked">
             <p id="long-structure-delete-description" class="delete-copy">
-              删除会直接保存到本机。默认只删除当前条目；如仍有依赖，
-              保存会被阻止，你可以核对后再选择同时删除依赖项。
+              删除会直接保存到本机。默认只删除当前分类；如分类中仍有内容，
+              保存会被阻止，你可以核对后再选择同时删除分类内容。
             </p>
             <label class="cascade-option">
               <input v-model="cascadeDelete" type="checkbox" />
               <span>
-                同时删除依赖项
-                <small>会一并删除引用当前条目的相关结构。</small>
+                同时删除分类内容
+                <small>会一并删除当前世界观分类中的现有内容。</small>
               </span>
             </label>
           </fieldset>
@@ -1115,7 +548,7 @@ function forwardPlotMutation(
                 cascadeDelete
                   ? pendingMutation?.surface === "delete"
                     ? "删除中…"
-                    : "确认并删除依赖项"
+                    : "确认并删除分类内容"
                   : pendingMutation?.surface === "delete"
                     ? "删除中…"
                     : "确认删除"
@@ -1149,6 +582,57 @@ function forwardPlotMutation(
   gap: 1rem;
 }
 
+.structure-panel-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.3rem;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 0.75rem;
+  background: var(--surface-muted);
+}
+
+.structure-panel-tab {
+  display: grid;
+  min-width: 0;
+  min-height: 3.5rem;
+  gap: 0.16rem;
+  padding: 0.62rem 0.75rem;
+  border-color: transparent;
+  text-align: left;
+  background: transparent;
+}
+
+.structure-panel-tab strong {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.structure-panel-tab span {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.structure-panel-tab[aria-selected="true"] {
+  border-color: var(--theme-line);
+  background: var(--surface-raised);
+  box-shadow: 0 0.1rem 0.35rem
+    color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+
+.structure-panel-tab[aria-selected="true"] strong {
+  color: var(--accent);
+}
+
+.structure-panel-content {
+  display: grid;
+  min-width: 0;
+  gap: 0.85rem;
+}
+
 .manager-header h2,
 .modal-header h3 {
   margin: 0;
@@ -1180,9 +664,32 @@ function forwardPlotMutation(
   gap: 0.5rem;
 }
 
+.manager-toolbar {
+  justify-content: space-between;
+}
+
+.section-tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0.18rem;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 0.65rem;
+  background: var(--surface-muted);
+}
+
+.section-tabs button {
+  flex: 0 0 auto;
+  min-height: 1.9rem;
+  padding: 0.34rem 0.58rem;
+  border-color: var(--theme-line);
+  color: var(--accent);
+  background: var(--surface-raised);
+  white-space: nowrap;
+}
+
 button,
-input,
-textarea {
+input {
   font: inherit;
 }
 
@@ -1202,8 +709,7 @@ button:hover:not(:disabled) {
 }
 
 button:focus-visible,
-input:focus-visible,
-textarea:focus-visible {
+input:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 0.2rem var(--accent-soft);
@@ -1271,8 +777,7 @@ button:disabled {
   font-size: 0.82rem;
 }
 
-.row-copy code,
-.delete-copy code {
+.row-copy code {
   color: var(--text-tertiary);
   font: 0.72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -1303,16 +808,14 @@ button:disabled {
   font-size: 0.8rem;
 }
 
+.feature-empty {
+  min-height: 10rem;
+}
+
 .structure-modal-overlay {
-  position: fixed;
-  inset: 0;
   z-index: 2200;
-  display: grid;
-  place-items: center;
   overflow: auto;
   padding: 1rem;
-  background: color-mix(in srgb, var(--theme-foreground) 28%, transparent);
-  backdrop-filter: blur(0.2rem);
 }
 
 .structure-modal {
@@ -1372,8 +875,7 @@ button:disabled {
   font-weight: 600;
 }
 
-.form-field input,
-.form-field textarea {
+.form-field input {
   width: 100%;
   box-sizing: border-box;
   padding: 0.6rem 0.65rem;
@@ -1385,48 +887,6 @@ button:disabled {
   line-height: 1.5;
 }
 
-.form-field textarea {
-  resize: vertical;
-}
-
-.character-picker {
-  display: grid;
-  gap: 0.45rem;
-  margin: 0;
-  padding: 0.75rem;
-  border: 1px solid var(--theme-line);
-  border-radius: 0.65rem;
-  background: var(--surface-muted);
-}
-
-.character-picker legend {
-  padding-inline: 0.25rem;
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.character-picker > label {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem;
-  border-radius: 0.45rem;
-  background: var(--surface-raised);
-}
-
-.character-picker p,
-.delete-copy {
-  margin: 0;
-  color: var(--text-secondary);
-  line-height: 1.55;
-}
-
-.character-picker small,
-.cascade-option small {
-  color: var(--text-tertiary);
-}
-
 .modal-actions {
   justify-content: flex-end;
   border-top: 1px solid var(--theme-line-soft);
@@ -1435,6 +895,12 @@ button:disabled {
 
 .delete-modal {
   width: min(31rem, 100%);
+}
+
+.delete-copy {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
 }
 
 .cascade-option {
@@ -1452,6 +918,10 @@ button:disabled {
 .cascade-option span {
   display: grid;
   gap: 0.2rem;
+}
+
+.cascade-option small {
+  color: var(--text-tertiary);
 }
 
 .cascade-option input {
@@ -1473,9 +943,22 @@ button:disabled {
 }
 
 @media (max-width: 42rem) {
+  .structure-panel-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-toolbar,
   .manager-header,
   .manager-row {
     align-items: stretch;
+  }
+
+  .manager-toolbar .primary-button {
+    flex: 0 0 auto;
+  }
+
+  .manager-header,
+  .manager-row {
     grid-template-columns: 1fr;
   }
 

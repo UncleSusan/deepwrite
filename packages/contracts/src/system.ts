@@ -5,6 +5,7 @@ import {
   AgentErrorEventEnvelopeSchema,
   AgentMessageCompletedEventEnvelopeSchema,
   AgentMessageDeltaEventEnvelopeSchema,
+  AgentUsageObservedEventEnvelopeSchema,
   AgentRetryScheduledEventEnvelopeSchema,
   AgentThinkingDeltaEventEnvelopeSchema,
   AgentTurnStartedEventEnvelopeSchema,
@@ -29,6 +30,7 @@ import {
   type AgentErrorEventEnvelope,
   type AgentMessageCompletedEventEnvelope,
   type AgentMessageDeltaEventEnvelope,
+  type AgentUsageObservedEventEnvelope,
   type AgentRetryScheduledEventEnvelope,
   type AgentThinkingDeltaEventEnvelope,
   type AgentTurnStartedEventEnvelope,
@@ -63,6 +65,7 @@ import {
   ModelsSaveCommandEnvelopeSchema,
   ModelsTestCommandEnvelopeSchema
 } from "./models";
+import { ModelUsageQueryCommandEnvelopeSchema } from "./model-usage";
 import {
   WorkspaceAgentsListCommandEnvelopeSchema,
   WorkspaceAgentsResetCommandEnvelopeSchema,
@@ -121,6 +124,10 @@ import {
   AppearanceListCommandEnvelopeSchema,
   AppearanceSaveCommandEnvelopeSchema
 } from "./appearance";
+import {
+  GeneralSettingsListCommandEnvelopeSchema,
+  GeneralSettingsSaveCommandEnvelopeSchema
+} from "./general-settings";
 import { ExportShortManuscriptCommandEnvelopeSchema } from "./short-manuscript-export";
 import {
   LongApplyOperationsCommandEnvelopeSchema,
@@ -233,6 +240,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   ModelsListCommandEnvelopeSchema,
   ModelsSaveCommandEnvelopeSchema,
   ModelsTestCommandEnvelopeSchema,
+  ModelUsageQueryCommandEnvelopeSchema,
   WorkspaceAgentsListCommandEnvelopeSchema,
   WorkspaceAgentsSaveCommandEnvelopeSchema,
   WorkspaceAgentsResetCommandEnvelopeSchema,
@@ -253,6 +261,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   WorkspaceDirectoryChooseCommandEnvelopeSchema,
   AppearanceListCommandEnvelopeSchema,
   AppearanceSaveCommandEnvelopeSchema,
+  GeneralSettingsListCommandEnvelopeSchema,
+  GeneralSettingsSaveCommandEnvelopeSchema,
   ExportShortManuscriptCommandEnvelopeSchema,
   AgentPromptCommandEnvelopeSchema,
   AgentAbortCommandEnvelopeSchema,
@@ -316,6 +326,7 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   AgentMessageDeltaEventEnvelopeSchema,
   AgentThinkingDeltaEventEnvelopeSchema,
   AgentMessageCompletedEventEnvelopeSchema,
+  AgentUsageObservedEventEnvelopeSchema,
   AgentToolCallStreamEventEnvelopeSchema,
   AgentToolRequestedEventEnvelopeSchema,
   AgentToolCompletedEventEnvelopeSchema,
@@ -352,6 +363,7 @@ export type SystemEventEnvelope =
   | AgentMessageDeltaEventEnvelope
   | AgentThinkingDeltaEventEnvelope
   | AgentMessageCompletedEventEnvelope
+  | AgentUsageObservedEventEnvelope
   | AgentToolCallStreamEventEnvelope
   | AgentToolRequestedEventEnvelope
   | AgentToolCompletedEventEnvelope

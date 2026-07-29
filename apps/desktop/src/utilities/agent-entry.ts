@@ -116,6 +116,18 @@ function toEventEnvelope(
     );
   }
 
+  if (event.type === "agent.usage_observed") {
+    return createEnvelope(
+      "agent.usage_observed",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        ...event.payload
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
   if (event.type === "subagent.started") {
     return createEnvelope(
       "subagent.started",

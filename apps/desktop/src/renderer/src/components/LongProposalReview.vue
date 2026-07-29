@@ -35,6 +35,9 @@ function proposalTitle(item: LongWorkspaceProposalItem): string {
 
 function proposalAction(item: LongWorkspaceProposalItem): string {
   if (item.status === "submitting") return "处理中…";
+  if (item.approvalMode === "auto-approve" && item.status === "error") {
+    return "重试自动保存";
+  }
   if (
     item.status === "error" &&
     item.event.type !== "long.mutation_proposal"
@@ -146,8 +149,8 @@ function entitySnapshotText(
   >
     <header>
       <div>
-        <span>写入审批</span>
-        <strong>{{ pendingCount }} 项待确认</strong>
+        <span>智能体写入</span>
+        <strong>{{ pendingCount }} 项处理中</strong>
       </div>
       <small>所有变更均按当前书籍隔离</small>
     </header>
@@ -183,12 +186,20 @@ function entitySnapshotText(
           >
             {{
               item.status === "previewing"
-                ? "正在预览"
+                ? item.approvalMode === "auto-approve"
+                  ? "自动预览中"
+                  : "正在预览"
                 : item.status === "submitting"
-                  ? "正在处理"
+                  ? item.approvalMode === "auto-approve"
+                    ? "自动保存中"
+                    : "正在处理"
                   : item.status === "error"
-                    ? "需要重试"
-                    : "等待确认"
+                    ? item.approvalMode === "auto-approve"
+                      ? "自动保存失败"
+                      : "需要重试"
+                    : item.approvalMode === "auto-approve"
+                      ? "等待自动保存"
+                      : "等待确认"
             }}
           </span>
         </div>
@@ -579,7 +590,12 @@ function entitySnapshotText(
           {{ item.error }}
         </p>
 
-        <footer>
+        <footer
+          v-if="
+            item.approvalMode !== 'auto-approve' ||
+            item.status === 'error'
+          "
+        >
           <button
             class="long-proposal-secondary"
             type="button"

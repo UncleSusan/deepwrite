@@ -385,6 +385,7 @@ export const LongArcSchema = z
     volumeId: LongVolumeIdSchema,
     title: LongTitleSchema,
     order: z.number().int().positive(),
+    summary: LongTextSchema.optional(),
     outline: LongTextSchema
   })
   .strict();
@@ -584,11 +585,30 @@ export type LongForeshadowingBeatType = z.infer<
   typeof LongForeshadowingBeatTypeSchema
 >;
 
+export const LONG_FORESHADOWING_SPANS = [
+  "local",
+  "within_volume",
+  "cross_volume"
+] as const;
+export const LongForeshadowingSpanSchema = z.enum(
+  LONG_FORESHADOWING_SPANS
+);
+export type LongForeshadowingSpan = z.infer<
+  typeof LongForeshadowingSpanSchema
+>;
+
 export const LongForeshadowingBeatSchema = z
   .object({
     id: LongForeshadowingBeatIdSchema,
     type: LongForeshadowingBeatTypeSchema,
     order: z.number().int().positive(),
+    /**
+     * Planning anchors are intentionally independent from chapter execution
+     * anchors. A beat may first be assigned only to a volume, then refined to
+     * a plot point before its concrete event/chapter placement is known.
+     */
+    volumeId: LongVolumeIdSchema.nullable().optional(),
+    arcId: LongArcIdSchema.nullable().optional(),
     eventId: LongStoryEventIdSchema.nullable(),
     placementId: LongNarrativePlacementIdSchema.nullable(),
     chapterCardId: LongChapterCardIdSchema.nullable(),
@@ -616,13 +636,15 @@ export const LongForeshadowingBeatSchema = z
       beat.eventId === null &&
       beat.placementId === null &&
       beat.chapterCardId === null &&
+      (beat.volumeId ?? null) === null &&
+      (beat.arcId ?? null) === null &&
       beat.plannedScope.trim().length === 0
     ) {
       context.addIssue({
         code: "custom",
         path: ["plannedScope"],
         message:
-          "A foreshadowing beat must reference an entity or a planned scope."
+          "A foreshadowing beat must reference a planning/execution anchor or a planned scope."
       });
     }
   });
@@ -670,6 +692,8 @@ export const LongForeshadowingSchema = z
     id: LongForeshadowingIdSchema,
     title: LongTitleSchema,
     coreQuestion: LongTextSchema,
+    hiddenTruth: LongTextSchema.optional(),
+    plannedSpan: LongForeshadowingSpanSchema.optional(),
     truthEventId: LongStoryEventIdSchema.nullable(),
     expectedReaderEffect: LongTextSchema,
     status: LongForeshadowingStatusSchema,
@@ -1318,6 +1342,60 @@ function validateLongWorkspaceIndexSnapshot(
       } else {
         beatById.set(beat.id, { beat, threadIndex, beatIndex });
       }
+      const plannedVolumeId = beat.volumeId ?? null;
+      const plannedArcId = beat.arcId ?? null;
+      const plannedVolume =
+        plannedVolumeId === null
+          ? undefined
+          : volumeById.get(plannedVolumeId);
+      const plannedArc =
+        plannedArcId === null ? undefined : arcById.get(plannedArcId);
+      if (plannedVolumeId !== null && !plannedVolume) {
+        addIssue(
+          context,
+          [
+            "plot",
+            "foreshadowing",
+            threadIndex,
+            "beats",
+            beatIndex,
+            "volumeId"
+          ],
+          "Foreshadowing beat must reference an existing planning volume."
+        );
+      }
+      if (plannedArcId !== null && !plannedArc) {
+        addIssue(
+          context,
+          [
+            "plot",
+            "foreshadowing",
+            threadIndex,
+            "beats",
+            beatIndex,
+            "arcId"
+          ],
+          "Foreshadowing beat must reference an existing planning arc."
+        );
+      }
+      if (
+        plannedVolume &&
+        plannedArc &&
+        plannedArc.volumeId !== plannedVolume.id
+      ) {
+        addIssue(
+          context,
+          [
+            "plot",
+            "foreshadowing",
+            threadIndex,
+            "beats",
+            beatIndex,
+            "arcId"
+          ],
+          "Foreshadowing beat planning arc must belong to its planning volume."
+        );
+      }
       if (beat.eventId !== null && !eventById.has(beat.eventId)) {
         addIssue(
           context,
@@ -1365,6 +1443,88 @@ function validateLongWorkspaceIndexSnapshot(
             "chapterCardId"
           ],
           "Foreshadowing beat must reference an existing chapter card."
+        );
+      }
+      const anchoredChapter =
+        beat.chapterCardId !== null
+          ? chapterById.get(beat.chapterCardId)
+          : placement
+            ? chapterById.get(placement.chapterCardId)
+            : undefined;
+      if (
+        plannedVolume &&
+        anchoredChapter &&
+        anchoredChapter.volumeId !== plannedVolume.id
+      ) {
+        addIssue(
+          context,
+          [
+            "plot",
+            "foreshadowing",
+            threadIndex,
+            "beats",
+            beatIndex,
+            "volumeId"
+          ],
+          "Foreshadowing beat planning volume must match its concrete chapter."
+        );
+      }
+      if (
+        plannedArc &&
+        anchoredChapter &&
+        anchoredChapter.primaryArcId !== plannedArc.id
+      ) {
+        addIssue(
+          context,
+          [
+            "plot",
+            "foreshadowing",
+            threadIndex,
+            "beats",
+            beatIndex,
+            "arcId"
+          ],
+          "Foreshadowing beat planning arc must match its concrete chapter."
+        );
+      }
+      const anchoredEvent =
+        beat.eventId === null ? undefined : eventById.get(beat.eventId);
+      if (
+        plannedVolume &&
+        anchoredEvent &&
+        !anchoredEvent.arcIds.some(
+          (arcId) => arcById.get(arcId)?.volumeId === plannedVolume.id
+        )
+      ) {
+        addIssue(
+          context,
+          [
+            "plot",
+            "foreshadowing",
+            threadIndex,
+            "beats",
+            beatIndex,
+            "volumeId"
+          ],
+          "Foreshadowing beat planning volume must match its concrete event."
+        );
+      }
+      if (
+        plannedArc &&
+        anchoredEvent &&
+        !anchoredEvent.arcIds.includes(plannedArc.id)
+      ) {
+        addIssue(
+          context,
+          [
+            "plot",
+            "foreshadowing",
+            threadIndex,
+            "beats",
+            beatIndex,
+            "arcId"
+          ],
+          "Foreshadowing beat planning arc must match its concrete event."
         );
       }
       if (

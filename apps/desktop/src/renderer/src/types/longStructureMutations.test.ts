@@ -437,6 +437,21 @@ describe("long structure mutation builder", () => {
       volume: { id: "volume_generated", order: 3 }
     });
     expect(
+      mutations.updateArc("arc_letter", {
+        summary: "剧情点概要",
+        outline: "完整故事情节"
+      }).operations
+    ).toEqual([
+      {
+        type: "arc.update",
+        id: "arc_letter",
+        patch: {
+          summary: "剧情点概要",
+          outline: "完整故事情节"
+        }
+      }
+    ]);
+    expect(
       mutations.createArc({
         volumeId: "volume_one",
         title: "第三条弧"
@@ -757,6 +772,8 @@ describe("long structure mutation builder", () => {
       mutations.createForeshadowing({
         title: "  错误日期  ",
         coreQuestion: "日历为何快了一天？",
+        hiddenTruth: "寄信人提前撕掉了一页日历。",
+        plannedSpan: "within_volume",
         truthEventId: "event_letter",
         expectedReaderEffect: "怀疑叙述时间。",
         status: "planned"
@@ -766,6 +783,8 @@ describe("long structure mutation builder", () => {
       thread: {
         id: "foreshadow_generated",
         title: "错误日期",
+        hiddenTruth: "寄信人提前撕掉了一页日历。",
+        plannedSpan: "within_volume",
         truthEventId: "event_letter",
         status: "planned",
         beats: []
@@ -773,6 +792,8 @@ describe("long structure mutation builder", () => {
     });
     expect(
       mutations.updateForeshadowing("foreshadow_bell", {
+        hiddenTruth: "钟声来自地下机关。",
+        plannedSpan: "cross_volume",
         truthEventId: null,
         status: "abandoned"
       }).operations
@@ -780,7 +801,12 @@ describe("long structure mutation builder", () => {
       {
         type: "foreshadowing.update",
         id: "foreshadow_bell",
-        patch: { truthEventId: null, status: "abandoned" }
+        patch: {
+          hiddenTruth: "钟声来自地下机关。",
+          plannedSpan: "cross_volume",
+          truthEventId: null,
+          status: "abandoned"
+        }
       }
     ]);
     expect(
@@ -795,6 +821,7 @@ describe("long structure mutation builder", () => {
       mutations.createForeshadowingBeat({
         threadId: "foreshadow_letter",
         type: "plant",
+        arcId: "arc_letter",
         placementId: "placement_letter",
         eventId: "event_letter",
         chapterCardId: "chapter_one",
@@ -808,6 +835,7 @@ describe("long structure mutation builder", () => {
           id: "beat_generated",
           type: "plant",
           order: 1,
+          arcId: "arc_letter",
           eventId: "event_letter",
           placementId: "placement_letter",
           chapterCardId: "chapter_one",
@@ -819,20 +847,42 @@ describe("long structure mutation builder", () => {
       }
     ]);
     expect(
-      mutations.updateForeshadowingBeat("beat_bell_plant", {
+      mutations.createForeshadowingBeat({
         threadId: "foreshadow_letter",
         type: "reinforce",
+        volumeId: "volume_two",
+        plannedScope: "",
+        note: "第二卷待落剧情点。"
+      }).operations[0]
+    ).toMatchObject({
+      type: "foreshadowingBeat.create",
+      beat: {
+        volumeId: "volume_two",
+        note: "第二卷待落剧情点。"
+      }
+    });
+    expect(
+      mutations.updateForeshadowingBeat("beat_bell_reinforce", {
+        threadId: "foreshadow_letter",
+        type: "reinforce",
+        volumeId: null,
+        arcId: "arc_clock",
         note: "再次出现。"
       }).operations
     ).toEqual([
       {
         type: "foreshadowingBeat.update",
-        id: "beat_bell_plant",
-        patch: { type: "reinforce", note: "再次出现。" }
+        id: "beat_bell_reinforce",
+        patch: {
+          type: "reinforce",
+          volumeId: null,
+          arcId: "arc_clock",
+          note: "再次出现。"
+        }
       },
       {
         type: "foreshadowingBeat.move",
-        id: "beat_bell_plant",
+        id: "beat_bell_reinforce",
         toThreadId: "foreshadow_letter"
       }
     ]);
@@ -867,7 +917,19 @@ describe("long structure mutation builder", () => {
         threadId: "foreshadow_letter",
         type: "plant"
       })
-    ).toThrow("needs an event, placement, chapter, or planned scope");
+    ).toThrow(
+      "needs a volume, plot point, event, placement, chapter, or planned scope"
+    );
+    expect(() =>
+      mutations.createForeshadowingBeat({
+        threadId: "foreshadow_letter",
+        type: "plant",
+        volumeId: "volume_two",
+        eventId: "event_letter"
+      })
+    ).toThrow(
+      "planning volume must match its concrete event"
+    );
   });
 
   it("produces plot proposals accepted by the shared impact preview engine", () => {

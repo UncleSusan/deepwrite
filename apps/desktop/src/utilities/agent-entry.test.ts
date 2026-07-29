@@ -339,6 +339,69 @@ describe("Agent Utility prompt forwarding", () => {
     expect(requestInternalCommand).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards internal usage observations to Main as validated envelopes", async () => {
+    await import("./agent-entry");
+    captured.runtimeEvents.push({
+      type: "agent.usage_observed",
+      runId: "run-usage-envelope",
+      sessionId: "session-usage-envelope",
+      payload: {
+        observationId: "run-usage-envelope:turn:1:attempt:1",
+        observedAt: "2026-07-29T10:00:00.000Z",
+        messageId: "run-usage-envelope_assistant",
+        turnId: "run-usage-envelope:turn:1",
+        attempt: 1,
+        status: "completed",
+        hadToolCall: false,
+        usage: {
+          inputTokens: 10,
+          outputTokens: 4,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 14
+        },
+        runtime: {
+          provider: "openai",
+          model: "writer",
+          mode: "provider",
+          configId: "writer-config"
+        }
+      }
+    });
+    const command = CommandEnvelopeSchema.parse(
+      createEnvelope(
+        "agent.prompt",
+        {
+          sessionId: "session-usage-envelope",
+          message: "记录用量"
+        },
+        {
+          id: "command-usage-envelope",
+          context: {
+            correlationId: "correlation-usage-envelope",
+            sessionId: "session-usage-envelope"
+          }
+        }
+      )
+    );
+    const emitted: SystemEventEnvelope[] = [];
+
+    await expect(
+      captured.commandHandler!(command, (event) => emitted.push(event))
+    ).resolves.toMatchObject({ status: "accepted" });
+    await vi.waitFor(() => expect(emitted).toHaveLength(1));
+
+    expect(SystemEventEnvelopeSchema.parse(emitted[0]).type).toBe(
+      "agent.usage_observed"
+    );
+    expect(emitted[0]).toMatchObject({
+      payload: {
+        observationId: "run-usage-envelope:turn:1:attempt:1",
+        runtime: { configId: "writer-config" }
+      }
+    });
+  });
+
   it("maps all long proposal runtime events to validated system envelopes", async () => {
     await import("./agent-entry");
     const eventBase = {

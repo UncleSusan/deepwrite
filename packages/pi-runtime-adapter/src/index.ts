@@ -36,6 +36,7 @@ import {
   type AgentProviderRuntimeConfig,
   type AgentRuntimeRef,
   type AgentUsage,
+  type AgentUsageObservationStatus,
   type AgentWriteApprovalMode,
   type LearningImitationAgentProfile,
   type LibraryAgentProfile,
@@ -77,6 +78,7 @@ import {
 } from "./subagent-authoring-tools";
 import {
   runAgentWithTurnRetries,
+  type AgentTurnAttempt,
   type AgentTurnRetryPolicyOptions
 } from "./agent-turn-retry";
 import {
@@ -182,6 +184,30 @@ export type AgentRuntimeEvent =
         stopReason?: string;
         usage?: AgentUsage;
         runtime: AgentRuntimeRef;
+      };
+    }
+  /**
+   * Internal accounting signal emitted once for every provider-returned
+   * assistant message. Unlike `agent.completed`, this also includes tool-call
+   * turns and retryable error attempts.
+   */
+  | {
+      type: "agent.usage_observed";
+      runId: string;
+      sessionId: string;
+      payload: {
+        observationId: string;
+        observedAt: string;
+        messageId: string;
+        turnId: string;
+        attempt: number;
+        status: AgentUsageObservationStatus;
+        hadToolCall: boolean;
+        usage: AgentUsage;
+        runtime: AgentRuntimeRef;
+        parentToolCallId?: string;
+        subagentRunId?: string;
+        subagentId?: string;
       };
     }
   | {
@@ -630,7 +656,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       return {
         provider: config.provider,
         model: config.modelId,
-        mode: "provider"
+        mode: "provider",
+        configId: config.id
       };
     }
     return { ...DEEPWRITE_FAUX_RUNTIME };
@@ -657,11 +684,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     if (result.stopReason === "error" || result.stopReason === "aborted") {
       throw new Error(result.errorMessage || "模型连接测试失败。");
     }
+    const usage = normalizeUsage(result.usage);
     return {
       modelId: config.id,
       ok: true,
       message: "连接成功，模型已返回有效响应。",
-      testedAt: new Date().toISOString()
+      testedAt: new Date().toISOString(),
+      ...(usage ? { usage } : {})
     };
   }
 
@@ -778,6 +807,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             profile: input.longAgentProfile,
             sessionId: input.sessionId,
             runId: input.runId,
+            writeApprovalMode:
+              input.writeApprovalMode ?? "request-approval",
             attachedSkills: input.workspaceContext?.attachedSkills,
             attachedMaterials: input.workspaceContext?.attachedMaterials,
             ...(input.longCommandExecutor
@@ -788,7 +819,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     let tools: AgentTool[] = subagentAuthoring
       ? buildSubagentAuthoringTools(subagentAuthoring)
       : learningImitation && input.learningImitationProfile
-      ? buildLearningImitationTools(learningImitation)
+      ? buildLearningImitationTools(
+          learningImitation,
+          input.writeApprovalMode ?? "request-approval"
+        )
       : libraryWorkspace && input.libraryAgentProfile
         ? buildLibraryAgentTools({
             workspace: libraryWorkspace,
@@ -810,6 +844,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     ) {
       const spawnTool = buildSpawnSubagentTool({
         parentSessionId: input.sessionId,
+        parentRuntime: runtime,
         model,
         thinkingLevel: effectiveThinkingLevel,
         streamFn,
@@ -847,7 +882,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
           : longWorkspace
             ? {
                 systemPromptRequirements:
-                  "这是长篇主智能体委派的单层子任务。只能使用继承的长篇查询/提案工具和当前 bookId；任何写入仍须形成可审阅提案，不能宣称已落盘或已提交连续性账本。"
+                  input.writeApprovalMode === "auto-approve"
+                    ? "这是长篇主智能体委派的单层子任务。只能使用继承的长篇查询/提案工具和当前 bookId；提案会进入实时自动保存队列，在客户端确认成功前不能宣称已落盘或已提交连续性账本。"
+                    : "这是长篇主智能体委派的单层子任务。只能使用继承的长篇查询/提案工具和当前 bookId；任何写入仍须形成可审阅提案，不能宣称已落盘或已提交连续性账本。"
               }
             : {}),
         toolExecutionHooks: this.toolExecutionHooks,
@@ -1203,6 +1240,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             }
           });
         },
+        onAssistantMessageEnded: (message, attempt) => {
+          const usageEvent = toUsageObservedRuntimeEvent(
+            message,
+            input,
+            runtime,
+            messageId,
+            attempt
+          );
+          if (usageEvent) emit(usageEvent);
+        },
         onEvent: (event) => {
           if (event.type === "message_end" && isAssistantMessage(event.message)) {
             modelRequestInFlight = false;
@@ -1303,6 +1350,36 @@ function findBuiltinModel(config: AgentProviderRuntimeConfig): Model<Api> | unde
   ) as Model<Api> | undefined;
 }
 
+function resolveOpenAICompletionsCompat(
+  config: AgentProviderRuntimeConfig,
+  builtin: Model<Api> | undefined
+): Model<"openai-completions">["compat"] | undefined {
+  if (config.api !== "openai-completions") {
+    return undefined;
+  }
+  if (builtin?.api === "openai-completions" && builtin.compat) {
+    return builtin.compat;
+  }
+
+  const provider = config.provider.toLowerCase();
+  const baseUrl = config.baseUrl.toLowerCase();
+  if (
+    provider === "qwen" ||
+    provider === "dashscope" ||
+    (baseUrl.includes("dashscope") && baseUrl.includes("aliyuncs.com"))
+  ) {
+    return { thinkingFormat: "qwen" };
+  }
+  if (
+    provider === "zai" ||
+    provider === "zhipu" ||
+    baseUrl.includes("bigmodel.cn")
+  ) {
+    return { thinkingFormat: "zai" };
+  }
+  return undefined;
+}
+
 function toPiThinkingLevel(level: ConfiguredThinkingLevel): PiThinkingLevel {
   if (
     level === "off" ||
@@ -1333,10 +1410,17 @@ export function buildProviderRuntime(
   if (!baseUrl) {
     throw new Error("当前模型不在 Pi 内置目录中，请填写 API 地址后再试。");
   }
+  const effectiveTemperature =
+    configuredThinkingLevel === "off" &&
+    builtin?.reasoning === true &&
+    builtin.thinkingLevelMap?.off === null
+      ? undefined
+      : temperature;
 
   const thinkingLevelMap: ThinkingLevelMap = {
     ...(builtin?.thinkingLevelMap ?? {})
   };
+  const compat = resolveOpenAICompletionsCompat(config, builtin);
   if (configuredThinkingLevel && configuredThinkingLevel !== "off") {
     const carrier = toPiThinkingLevel(configuredThinkingLevel);
     if (configuredThinkingLevel !== carrier) {
@@ -1352,9 +1436,14 @@ export function buildProviderRuntime(
     api: config.api,
     provider: config.provider,
     baseUrl,
-    reasoning: configuredThinkingLevel === undefined
-      ? config.reasoning
-      : configuredThinkingLevel !== "off",
+    // `reasoning` describes a model capability to pi-ai; it is not the
+    // per-request switch. Keep that capability enabled while a run selects
+    // "off" so pi-ai can serialize the provider-specific disable control
+    // (`thinking: disabled`, `enable_thinking: false`, thinkingBudget: 0,
+    // etc.). For catalog models, retain the catalog's known capability.
+    // Unknown/custom models are treated as capable: compatible providers can
+    // honor the control, while providers without a control simply omit it.
+    reasoning: builtin?.reasoning ?? true,
     // A custom endpoint has no Pi catalog metadata. Keep image blocks enabled
     // and let that endpoint return an explicit capability error if its selected
     // model is text-only; silently dropping a user image is never acceptable.
@@ -1364,7 +1453,7 @@ export function buildProviderRuntime(
     maxTokens: builtin?.maxTokens ?? 8_192,
     ...(builtin?.headers ? { headers: builtin.headers } : {}),
     ...(Object.keys(thinkingLevelMap).length > 0 ? { thinkingLevelMap } : {}),
-    ...(builtin?.compat && builtin.api === config.api ? { compat: builtin.compat } : {})
+    ...(compat ? { compat } : {})
   } as Model<Api>;
   const streams = providerStreams(config.api);
   const streamFn = (
@@ -1373,7 +1462,9 @@ export function buildProviderRuntime(
     options?: SimpleStreamOptions
   ) => streams.streamSimple(requestModel, context, {
     ...options,
-    ...(temperature !== undefined ? { temperature } : {}),
+    ...(effectiveTemperature !== undefined
+      ? { temperature: effectiveTemperature }
+      : {}),
     ...(config.apiKey
       ? { apiKey: config.apiKey }
       : options?.apiKey
@@ -1471,6 +1562,45 @@ export function reconcileToolCallArguments(
     }
   }
   return { delta, next: `${current}${delta}` };
+}
+
+/**
+ * Converts one raw assistant terminal message into the internal accounting
+ * event. This runs outside `toRuntimeEvents` because retryable failures are
+ * intentionally withheld from the presentation event stream.
+ *
+ * @internal Exported for accounting protocol regression tests.
+ */
+export function toUsageObservedRuntimeEvent(
+  message: AssistantMessage,
+  input: AgentRunInput,
+  runtime: AgentRuntimeRef,
+  messageId: string,
+  attempt: AgentTurnAttempt
+): Extract<AgentRuntimeEvent, { type: "agent.usage_observed" }> | undefined {
+  const usage = normalizeUsage(message.usage);
+  if (!usage) return undefined;
+  const status: AgentUsageObservationStatus = message.stopReason === "aborted"
+    ? "aborted"
+    : message.stopReason === "error" || message.errorMessage
+      ? "error"
+      : "completed";
+  return {
+    type: "agent.usage_observed",
+    runId: input.runId,
+    sessionId: input.sessionId,
+    payload: {
+      observationId: `${attempt.turnId}:attempt:${attempt.attempt}`,
+      observedAt: new Date().toISOString(),
+      messageId,
+      turnId: attempt.turnId,
+      attempt: attempt.attempt,
+      status,
+      hadToolCall: message.content.some((item) => item.type === "toolCall"),
+      usage,
+      runtime
+    }
+  };
 }
 
 /** @internal Exported for runtime event contract tests. */
@@ -1761,6 +1891,7 @@ export function toRuntimeEvents(
     }
 
     const thinking = readAssistantThinking(event.message);
+    const usage = normalizeUsage(event.message.usage);
     return [{
       type: "agent.completed",
       runId: input.runId,
@@ -1770,7 +1901,7 @@ export function toRuntimeEvents(
         content: readAssistantText(event.message),
         ...(thinking ? { thinking } : {}),
         ...(event.message.stopReason ? { stopReason: event.message.stopReason } : {}),
-        usage: normalizeUsage(event.message.usage),
+        ...(usage ? { usage } : {}),
         runtime
       }
     }];
@@ -1786,12 +1917,13 @@ export function toSubagentRuntimeEvents(
   runtime: AgentRuntimeRef,
   messageId: string
 ): AgentRuntimeEvent[] {
+  const progressRuntime = progress.runtime ?? runtime;
   const base = {
     parentToolCallId: progress.parentToolCallId,
     subagentRunId: progress.subagentRunId,
     subagentId: progress.subagentId,
     name: progress.name,
-    runtime
+    runtime: progressRuntime
   };
   if (progress.type === "started") {
     return [{
@@ -1823,6 +1955,30 @@ export function toSubagentRuntimeEvents(
       }
     }];
   }
+
+  if (progress.type === "usage_observed") {
+    return [{
+      type: "agent.usage_observed",
+      runId: input.runId,
+      sessionId: input.sessionId,
+      payload: {
+        observationId: progress.observationId,
+        observedAt: progress.observedAt,
+        messageId: progress.messageId,
+        turnId: progress.turnId,
+        attempt: progress.attempt,
+        status: progress.status,
+        hadToolCall: progress.hadToolCall,
+        usage: progress.usage,
+        runtime: progress.runtime,
+        parentToolCallId: progress.parentToolCallId,
+        subagentRunId: progress.subagentRunId,
+        subagentId: progress.subagentId
+      }
+    }];
+  }
+
+  if (progress.type !== "child_tool_details") return [];
 
   // Child workspace mutations remain ordinary parent-run workspace events so
   // the existing review/approval chain can process them. Only their tool-call
@@ -1899,7 +2055,18 @@ function summarizeToolResult(result: unknown): string {
   }
 }
 
-function normalizeUsage(usage: Usage): AgentUsage {
+function normalizeUsage(usage: Usage | undefined): AgentUsage | undefined {
+  if (!usage) return undefined;
+  const values = [
+    usage.input,
+    usage.output,
+    usage.cacheRead,
+    usage.cacheWrite,
+    usage.totalTokens
+  ];
+  if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    return undefined;
+  }
   return {
     inputTokens: usage.input,
     outputTokens: usage.output,
@@ -1959,6 +2126,10 @@ export function buildEffectiveSystemPrompt(
   const learningProfile = input.learningImitationProfile;
   const learningContext = input.workspaceContext?.learningImitation;
   if (learningProfile && learningContext) {
+    const writeBoundary =
+      input.writeApprovalMode === "auto-approve"
+        ? "只能使用本轮列出的样本文档读取、搜索与预览写入工具。write_learning_result 更新预览区后，客户端会立即把结果加入后台串行落盘队列并写入预先选择的目标库；若目标库尚未选全则保留预览。界面确认成功前不得声称已正式落盘。"
+        : "只能使用本轮列出的样本文档读取、搜索与预览写入工具。write_learning_result 只更新预览区，不会写入正式素材库或技能库。正式落盘必须等待用户在界面中确认。";
     return [
       basePrompt,
       "",
@@ -1969,7 +2140,7 @@ export function buildEffectiveSystemPrompt(
       ).trim(),
       "",
       "【DeepWrite 学习仿写工具边界】",
-      "只能使用本轮列出的样本文档读取、搜索与预览写入工具。write_learning_result 只更新预览区，不会写入正式素材库或技能库。正式落盘必须等待用户在界面中确认。"
+      writeBoundary
     ].join("\n");
   }
   const libraryProfile = input.libraryAgentProfile;
@@ -1977,7 +2148,7 @@ export function buildEffectiveSystemPrompt(
   if (libraryProfile && libraryWorkspace) {
     const writeBoundary =
       input.writeApprovalMode === "auto-approve"
-        ? "写入工具只提交资料库条目变更；客户端会在本轮完成后自动批准并尝试保存。当前回复可以说明已提交自动写入，但不得提前声称已经保存成功。"
+        ? "写入工具只提交资料库条目变更；提案生成后客户端会立即加入后台串行队列、自动批准并尝试保存。智能体可以继续当前回复，但在审批卡确认成功前不得声称已经保存成功。"
         : "写入工具提交待用户审阅的资料库条目变更；用户接受后客户端才会保存到本地 Markdown，当前回复不得提前声称已经保存。";
     return [
       basePrompt,
@@ -1998,12 +2169,10 @@ export function buildEffectiveSystemPrompt(
   const longWorkspace = input.workspaceContext?.longWorkspace;
   const longProfile = input.longAgentProfile;
   if (longProfile && longWorkspace) {
-    // Long-form operations can cascade across the structure graph or create a
-    // reversible continuity commit. They therefore always stay in the
-    // explicit review queue even when another workspace mode uses automatic
-    // approval.
     const writeBoundary =
-      "长篇写入工具只形成带基线版本和影响预览的提案；用户明确批准且冲突检查通过后才会原子落盘。不得提前声称已经保存或提交账本。";
+      input.writeApprovalMode === "auto-approve"
+        ? "长篇写入工具只形成带基线版本和影响预览的提案；提案生成后客户端会立即加入按书籍串行的后台队列，自动完成影响预览、冲突检查和原子落盘。智能体可以继续当前回复，但在长篇写入卡确认成功前不得声称已经保存或提交账本。"
+        : "长篇写入工具只形成带基线版本和影响预览的提案；用户明确批准且冲突检查通过后才会原子落盘。不得提前声称已经保存或提交账本。";
     return [
       basePrompt,
       "",
@@ -2030,7 +2199,7 @@ export function buildEffectiveSystemPrompt(
   const draftUnit = scriptWorkspace ? "剧集" : "章节";
   const writeBoundary =
     input.writeApprovalMode === "auto-approve"
-      ? "写入工具只提交文本变更；客户端会在本轮完成后自动批准并尝试保存到本地 Markdown。当前回复可以说明已提交自动写入，但不得提前声称已经保存成功。"
+      ? "写入工具只提交文本变更；提案生成后客户端会立即加入后台串行队列、自动批准并尝试保存到本地 Markdown。智能体可以继续当前回复，但在审批卡确认成功前不得声称已经保存成功。"
       : "写入工具提交待用户审阅的文本变更；用户接受后客户端才会自动持久化到本地 Markdown，当前回复不得提前声称已经保存。";
   return [
     basePrompt,

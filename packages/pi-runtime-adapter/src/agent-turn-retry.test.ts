@@ -115,6 +115,10 @@ describe("agent turn retry coordinator", () => {
     const attempts: AgentTurnAttempt[] = [];
     const retries: AgentTurnRetrySchedule[] = [];
     const forwardedFailures: AgentEvent[] = [];
+    const observedMessages: Array<{
+      attempt: number;
+      stopReason: AssistantMessage["stopReason"];
+    }> = [];
     const slept: number[] = [];
 
     await runAgentWithTurnRetries({
@@ -134,6 +138,12 @@ describe("agent turn retry coordinator", () => {
       },
       onTurnStarted: (attempt) => {
         attempts.push({ ...attempt });
+      },
+      onAssistantMessageEnded: (message, attempt) => {
+        observedMessages.push({
+          attempt: attempt.attempt,
+          stopReason: message.stopReason
+        });
       },
       onRetryScheduled: (schedule) => {
         retries.push({ ...schedule });
@@ -175,6 +185,11 @@ describe("agent turn retry coordinator", () => {
       }
     ]);
     expect(forwardedFailures).toEqual([]);
+    expect(observedMessages).toEqual([
+      { attempt: 1, stopReason: "error" },
+      { attempt: 2, stopReason: "error" },
+      { attempt: 3, stopReason: "stop" }
+    ]);
     expect(contexts.map((context) => context.messages.map((message) => message.role)))
       .toEqual([["user"], ["user"], ["user"]]);
     expect(agent.state.messages.map((message) => message.role)).toEqual([

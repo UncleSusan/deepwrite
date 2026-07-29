@@ -1,11 +1,15 @@
 import type {
   DeepWriteApi,
+  LongArcId,
   LongBookSummary,
   LongChapterCardId,
+  LongCharacterGroup,
+  LongCharacterId,
   LongFileId,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceFileReference,
   LongWorkspaceRoot,
+  LongVolumeId,
   LongWorldbuildingFormat
 } from "@deepwrite/contracts";
 
@@ -20,6 +24,23 @@ export type LongWorkspaceFileRole =
   | "character-state"
   | "handoff"
   | "ledger-record";
+
+export const LONG_CHARACTER_GROUP_OPTIONS: ReadonlyArray<{
+  value: LongCharacterGroup;
+  label: string;
+}> = [
+  { value: "protagonist", label: "主角" },
+  { value: "major_supporting", label: "主要配角" },
+  { value: "minor_supporting", label: "次要配角" },
+  { value: "passerby", label: "路人" }
+];
+
+export function longCharacterGroupLabel(group: LongCharacterGroup): string {
+  return (
+    LONG_CHARACTER_GROUP_OPTIONS.find(({ value }) => value === group)?.label ??
+    group
+  );
+}
 
 export interface LongWorkspaceSelectionFile {
   role: LongWorkspaceFileRole;
@@ -37,6 +58,23 @@ export interface LongWorkspaceSelection {
   root: LongWorkspaceRoot;
   worldbuildingFormat?: LongWorldbuildingFormat;
   chapterCardId?: LongChapterCardId;
+  characterGroup?: LongCharacterGroup;
+  characterId?: LongCharacterId;
+  characterTabs?: Array<{
+    id: LongCharacterId;
+    label: string;
+  }>;
+  plotPointVolumeId?: LongVolumeId;
+  plotPointId?: LongArcId;
+  plotPointTabs?: Array<{
+    id: LongArcId;
+    label: string;
+  }>;
+  chapterCardVolumeId?: LongVolumeId;
+  chapterCardTabs?: Array<{
+    id: LongChapterCardId;
+    label: string;
+  }>;
   title: string;
   breadcrumbs: string[];
   files: LongWorkspaceSelectionFile[];
@@ -126,6 +164,219 @@ export function nextWritableLongChapterId(
     ({ chapterCardId }) => chapterCardId === candidate.id
   );
   return entry?.commitId === null ? candidate.id : null;
+}
+
+export function createLongCharacterGroupSelection(
+  summary: LongBookSummary,
+  workspaceIndex: LongWorkspaceIndexSnapshot,
+  group: LongCharacterGroup,
+  preferredCharacterId?: LongCharacterId
+): LongWorkspaceSelection {
+  const groupLabel = longCharacterGroupLabel(group);
+  const characters = summary.navigation.characters
+    .filter((character) => character.group === group)
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.id.localeCompare(right.id)
+    );
+  const characterTabs = characters.map((character) => ({
+    id: character.id,
+    label: character.name
+  }));
+  const character =
+    characters.find(({ id }) => id === preferredCharacterId) ??
+    characters[0];
+  const baseSelection = {
+    key: `character-group:${group}`,
+    root: "character_design" as const,
+    characterGroup: group,
+    characterTabs,
+    preferredRole: "core-profile" as const
+  };
+  if (!character) {
+    return {
+      ...baseSelection,
+      title: groupLabel,
+      breadcrumbs: [summary.title, "人物设计", groupLabel],
+      files: [],
+      description: `还没有${groupLabel}，请使用右侧人物标签栏的加号新建人物。`
+    };
+  }
+  const entry = workspaceIndex.characterFiles.find(
+    (candidate) => candidate.characterId === character.id
+  );
+  if (!entry) {
+    return {
+      ...baseSelection,
+      title: groupLabel,
+      breadcrumbs: [summary.title, "人物设计", groupLabel],
+      files: [],
+      description: `${character.name}的人物档案索引尚未就绪。`
+    };
+  }
+  const continuityLocked = workspaceIndex.ledger.commits.length > 0;
+  return {
+    ...baseSelection,
+    characterId: character.id,
+    title: character.name,
+    breadcrumbs: [
+      summary.title,
+      "人物设计",
+      groupLabel,
+      character.name
+    ],
+    files: [
+      {
+        role: "core-profile",
+        label: "核心档案",
+        file: entry.coreProfile
+      },
+      {
+        role: "relationships",
+        label: "人物关系",
+        file: entry.relationships,
+        readOnly: continuityLocked
+      },
+      {
+        role: "current-state",
+        label: "当前状态",
+        file: entry.currentState,
+        readOnly: continuityLocked
+      },
+      {
+        role: "history",
+        label: "历史轨迹",
+        file: entry.history,
+        readOnly: continuityLocked
+      }
+    ],
+    description: continuityLocked
+      ? "人物关系、当前状态与历史轨迹已由连续性账本接管；核心档案仍可编辑。"
+      : "首章连续性提交前，人物四份档案均可直接编辑。"
+  };
+}
+
+export function createLongPlotPointVolumeSelection(
+  summary: LongBookSummary,
+  workspaceIndex: LongWorkspaceIndexSnapshot,
+  volumeId: LongVolumeId,
+  preferredPlotPointId?: LongArcId
+): LongWorkspaceSelection | undefined {
+  const volume = summary.navigation.volumes.find(({ id }) => id === volumeId);
+  if (!volume) return undefined;
+  const plotPoints = summary.navigation.arcs
+    .filter((arc) => arc.volumeId === volumeId)
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.id.localeCompare(right.id)
+    );
+  const plotPointTabs = plotPoints.map((plotPoint) => ({
+    id: plotPoint.id,
+    label: plotPoint.title
+  }));
+  const plotPoint =
+    plotPoints.find(({ id }) => id === preferredPlotPointId) ??
+    plotPoints[0];
+  const baseSelection = {
+    key: `plot-design:plot-points:${volume.id}`,
+    root: "plot_design" as const,
+    plotPointVolumeId: volume.id,
+    plotPointTabs,
+    preferredRole: "book-line" as const
+  };
+  if (!plotPoint) {
+    return {
+      ...baseSelection,
+      title: volume.title,
+      breadcrumbs: [summary.title, "剧情设计", "剧情点", volume.title],
+      files: [],
+      description: `${volume.title}还没有剧情点，请使用左侧分卷旁的加号新建。`
+    };
+  }
+  const entry = workspaceIndex.plot.arcs.find(
+    ({ id }) => id === plotPoint.id
+  );
+  if (!entry) return undefined;
+  return {
+    ...baseSelection,
+    plotPointId: plotPoint.id,
+    title: plotPoint.title,
+    breadcrumbs: [
+      summary.title,
+      "剧情设计",
+      "剧情点",
+      volume.title,
+      plotPoint.title
+    ],
+    files: [
+      {
+        role: "book-line",
+        label: "剧情点",
+        file: workspaceIndex.bookLine
+      }
+    ],
+    description: `${volume.title} · ${plotPoint.title}`
+  };
+}
+
+export function createLongChapterCardVolumeSelection(
+  summary: LongBookSummary,
+  workspaceIndex: LongWorkspaceIndexSnapshot,
+  volumeId: LongVolumeId,
+  preferredChapterCardId?: LongChapterCardId
+): LongWorkspaceSelection | undefined {
+  const volume = summary.navigation.volumes.find(({ id }) => id === volumeId);
+  if (!volume) return undefined;
+  const indexedChapterIds = new Set(
+    workspaceIndex.plot.chapterCards.map(({ id }) => id)
+  );
+  const chapterCards = summary.navigation.chapterCards
+    .filter(
+      (chapter) =>
+        chapter.volumeId === volumeId && indexedChapterIds.has(chapter.id)
+    )
+    .sort(
+      (left, right) =>
+        left.narrativeOrder - right.narrativeOrder ||
+        left.id.localeCompare(right.id)
+    );
+  const chapterCardTabs = chapterCards.map((chapter) => ({
+    id: chapter.id,
+    label: chapter.title
+  }));
+  const chapterCard =
+    chapterCards.find(({ id }) => id === preferredChapterCardId) ??
+    chapterCards[0];
+  const baseSelection = {
+    key: `plot-design:chapter-cards:${volume.id}`,
+    root: "plot_design" as const,
+    chapterCardVolumeId: volume.id,
+    chapterCardTabs,
+    preferredRole: "book-line" as const
+  };
+  if (!chapterCard) {
+    return {
+      ...baseSelection,
+      title: volume.title,
+      breadcrumbs: [summary.title, "剧情设计", "章卡", volume.title],
+      files: [],
+      description: `${volume.title}还没有章卡，请使用右侧章卡标签栏的加号新建。`
+    };
+  }
+  return {
+    ...baseSelection,
+    chapterCardId: chapterCard.id,
+    title: chapterCard.title,
+    breadcrumbs: [
+      summary.title,
+      "剧情设计",
+      "章卡",
+      volume.title,
+      chapterCard.title
+    ],
+    files: [],
+    description: `${volume.title} · ${chapterCard.title}`
+  };
 }
 
 export function createLongChapterSelection(
@@ -279,7 +530,7 @@ export function reconcileLongWorkspaceSelection(
   if (selection.key === "plot-design:book-line") {
     return {
       ...selection,
-      breadcrumbs: [summary.title, "情节设计", "全书故事线"],
+      breadcrumbs: [summary.title, "剧情设计", "全书故事线"],
       files: [
         {
           role: "book-line",
@@ -288,6 +539,38 @@ export function reconcileLongWorkspaceSelection(
         }
       ]
     };
+  }
+  if (selection.key === "plot-design:foreshadowing") {
+    return {
+      ...selection,
+      title: "伏笔总览",
+      breadcrumbs: [summary.title, "剧情设计", "伏笔总览"],
+      files: [],
+      description:
+        "集中管理伏笔线及其埋设、推进、揭示与回收触点。"
+    };
+  }
+  if (selection.key.startsWith("plot-design:plot-points:")) {
+    const volumeId = selection.key.slice(
+      "plot-design:plot-points:".length
+    ) as LongVolumeId;
+    return createLongPlotPointVolumeSelection(
+      summary,
+      workspaceIndex,
+      volumeId,
+      selection.plotPointId
+    );
+  }
+  if (selection.key.startsWith("plot-design:chapter-cards:")) {
+    const volumeId = selection.key.slice(
+      "plot-design:chapter-cards:".length
+    ) as LongVolumeId;
+    return createLongChapterCardVolumeSelection(
+      summary,
+      workspaceIndex,
+      volumeId,
+      selection.chapterCardId
+    );
   }
   if (selection.key.startsWith("worldbuilding:")) {
     const category = workspaceIndex.worldbuilding.find(
@@ -318,6 +601,19 @@ export function reconcileLongWorkspaceSelection(
           : "文本型世界设定。"
     };
   }
+  if (selection.key.startsWith("character-group:")) {
+    const groupId = selection.key.slice("character-group:".length);
+    const group = LONG_CHARACTER_GROUP_OPTIONS.find(
+      ({ value }) => value === groupId
+    );
+    if (!group) return undefined;
+    return createLongCharacterGroupSelection(
+      summary,
+      workspaceIndex,
+      group.value,
+      selection.characterId
+    );
+  }
   if (selection.key.startsWith("character:")) {
     const characterId = selection.key.slice("character:".length);
     const character = summary.navigation.characters.find(
@@ -328,10 +624,16 @@ export function reconcileLongWorkspaceSelection(
     );
     if (!character || !entry) return undefined;
     const continuityLocked = workspaceIndex.ledger.commits.length > 0;
+    const groupLabel = longCharacterGroupLabel(character.group);
     return {
       ...selection,
       title: character.name,
-      breadcrumbs: [summary.title, "人物设计", character.name],
+      breadcrumbs: [
+        summary.title,
+        "人物设计",
+        groupLabel,
+        character.name
+      ],
       files: [
         {
           role: "core-profile",

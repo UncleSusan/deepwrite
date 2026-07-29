@@ -191,6 +191,81 @@ describe("useLongWritingOrchestrator", () => {
     );
   });
 
+  it("accepts a realtime write proposal before the writer response finishes", async () => {
+    const test = harness();
+    let rejectWriter!: (error: Error) => void;
+    test.startWriter.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectWriter = reject;
+        })
+    );
+
+    const dispatch = test.controller.startDispatch(dispatchEvent());
+    await vi.waitFor(() => {
+      expect(test.controller.state.value.phase).toBe(
+        "awaiting_writer_approval"
+      );
+    });
+
+    test.live.set(
+      "chapter_one",
+      readiness("chapter_one", "ready_to_commit")
+    );
+    await test.controller.handleApplied(
+      appliedEvent("long.chapter_write_proposal", "chapter_one")
+    );
+    expect(test.controller.state.value.phase).toBe(
+      "awaiting_ledger_approval"
+    );
+
+    rejectWriter(new Error("提案落盘后的迟到回复错误"));
+    await dispatch;
+
+    expect(test.controller.state.value.phase).toBe(
+      "awaiting_ledger_approval"
+    );
+    expect(test.notifications.error).not.toHaveBeenCalled();
+  });
+
+  it("ignores a prior chapter's late agent error after the next chapter starts", async () => {
+    const test = harness();
+    let rejectFirstLedger!: (error: Error) => void;
+    test.startLedger.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectFirstLedger = reject;
+        })
+    );
+    test.live.set(
+      "chapter_one",
+      readiness("chapter_one", "ready_to_commit")
+    );
+
+    const dispatch = test.controller.startDispatch(dispatchEvent());
+    await vi.waitFor(() => {
+      expect(test.startLedger).toHaveBeenCalledTimes(1);
+    });
+
+    const firstLedgerApplied = test.controller.handleApplied(
+      appliedEvent("long.ledger_commit_proposal", "chapter_one")
+    );
+    await vi.waitFor(() => {
+      expect(test.controller.state.value.currentIndex).toBe(1);
+      expect(test.startLedger).toHaveBeenCalledTimes(2);
+    });
+
+    rejectFirstLedger(new Error("上一章账本回复迟到失败"));
+    await Promise.all([dispatch, firstLedgerApplied]);
+
+    expect(test.controller.state.value).toMatchObject({
+      currentIndex: 1,
+      phase: "awaiting_ledger_approval",
+      error: null
+    });
+    expect(test.notifications.error).not.toHaveBeenCalled();
+  });
+
   it("stops on a failed save barrier and retries the same chapter without skipping", async () => {
     const test = harness();
     await test.controller.startDispatch(dispatchEvent());

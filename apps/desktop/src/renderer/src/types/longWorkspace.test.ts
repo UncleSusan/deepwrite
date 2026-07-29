@@ -5,6 +5,8 @@ import type {
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import {
+  createLongCharacterGroupSelection,
+  createLongChapterCardVolumeSelection,
   createLongChapterSelection,
   createLongContinuitySelection,
   longBookIdFromResourceId,
@@ -42,12 +44,51 @@ function fixture(commitId: string | null): {
         }
       ],
       characters: [],
-      arcs: []
+      arcs: [
+        {
+          id: "arc_one",
+          volumeId: "volume_one",
+          title: "剧情点一",
+          order: 1
+        },
+        {
+          id: "arc_two",
+          volumeId: "volume_one",
+          title: "剧情点二",
+          order: 2
+        }
+      ]
     }
   } as unknown as LongBookSummary;
   const workspaceIndex = {
+    bookLine: file("file_plot:book-line", "long/plot/book-line.md"),
     plot: {
-      volumes: [{ id: "volume_one", order: 1 }],
+      volumes: [
+        {
+          id: "volume_one",
+          title: "第一卷",
+          order: 1,
+          summary: ""
+        }
+      ],
+      arcs: [
+        {
+          id: "arc_one",
+          volumeId: "volume_one",
+          title: "剧情点一",
+          order: 1,
+          summary: "概要一",
+          outline: "故事情节一"
+        },
+        {
+          id: "arc_two",
+          volumeId: "volume_one",
+          title: "剧情点二",
+          order: 2,
+          summary: "概要二",
+          outline: "故事情节二"
+        }
+      ],
       chapterCards: [
         {
           id: "chapter_one",
@@ -79,6 +120,207 @@ function fixture(commitId: string | null): {
 }
 
 describe("long workspace chapter navigation", () => {
+  it("keeps chapter cards in right-side volume tabs", () => {
+    const { summary, workspaceIndex } = fixture(null);
+    summary.navigation.chapterCards.push({
+      ...summary.navigation.chapterCards[0]!,
+      id: "chapter_two",
+      title: "第二章",
+      narrativeOrder: 2
+    });
+    workspaceIndex.plot.chapterCards.push({
+      ...workspaceIndex.plot.chapterCards[0]!,
+      id: "chapter_two",
+      narrativeOrder: 2
+    });
+
+    const selection = createLongChapterCardVolumeSelection(
+      summary,
+      workspaceIndex,
+      "volume_one",
+      "chapter_two"
+    );
+
+    expect(selection).toMatchObject({
+      key: "plot-design:chapter-cards:volume_one",
+      chapterCardVolumeId: "volume_one",
+      chapterCardId: "chapter_two",
+      title: "第二章",
+      breadcrumbs: [
+        "长篇生命周期",
+        "剧情设计",
+        "章卡",
+        "第一卷",
+        "第二章"
+      ],
+      chapterCardTabs: [
+        { id: "chapter_one", label: "第一章" },
+        { id: "chapter_two", label: "第二章" }
+      ]
+    });
+  });
+
+  it("binds one volume to multiple plot-point tabs", () => {
+    const { summary, workspaceIndex } = fixture(null);
+    const selection = reconcileLongWorkspaceSelection(
+      summary,
+      workspaceIndex,
+      {
+        key: "plot-design:plot-points:volume_one",
+        root: "plot_design",
+        plotPointVolumeId: "volume_one",
+        plotPointId: "arc_two",
+        title: "第一卷",
+        breadcrumbs: [],
+        files: [],
+        preferredRole: "book-line"
+      }
+    );
+
+    expect(selection).toMatchObject({
+      key: "plot-design:plot-points:volume_one",
+      plotPointVolumeId: "volume_one",
+      plotPointId: "arc_two",
+      title: "剧情点二",
+      breadcrumbs: [
+        "长篇生命周期",
+        "剧情设计",
+        "剧情点",
+        "第一卷",
+        "剧情点二"
+      ],
+      plotPointTabs: [
+        { id: "arc_one", label: "剧情点一" },
+        { id: "arc_two", label: "剧情点二" }
+      ]
+    });
+    expect(selection?.files).toEqual([
+      {
+        role: "book-line",
+        label: "剧情点",
+        file: workspaceIndex.bookLine
+      }
+    ]);
+  });
+
+  it("reconciles the dedicated foreshadowing overview without a duplicate document", () => {
+    const { summary, workspaceIndex } = fixture(null);
+    const selection = reconcileLongWorkspaceSelection(
+      summary,
+      workspaceIndex,
+      {
+        key: "plot-design:foreshadowing",
+        root: "plot_design",
+        title: "伏笔总览",
+        breadcrumbs: [],
+        files: [],
+        preferredRole: "book-line"
+      }
+    );
+
+    expect(selection).toMatchObject({
+      key: "plot-design:foreshadowing",
+      root: "plot_design",
+      title: "伏笔总览",
+      breadcrumbs: ["长篇生命周期", "剧情设计", "伏笔总览"],
+      files: []
+    });
+  });
+
+  it("keeps character names in right-side tabs instead of tree descendants", () => {
+    const { summary, workspaceIndex } = fixture(null);
+    summary.navigation.characters = [
+      {
+        id: "character_lead",
+        name: "沈文佳",
+        group: "protagonist",
+        order: 1
+      },
+      {
+        id: "character_partner",
+        name: "顾临",
+        group: "protagonist",
+        order: 2
+      }
+    ] as typeof summary.navigation.characters;
+    workspaceIndex.characterFiles = [
+      {
+        characterId: "character_lead",
+        coreProfile: file(
+          "file_character_lead:core-profile",
+          "long/characters/character_lead/core-profile.md"
+        ),
+        relationships: file(
+          "file_character_lead:relationships",
+          "long/characters/character_lead/relationships.md"
+        ),
+        currentState: file(
+          "file_character_lead:current-state",
+          "long/characters/character_lead/current-state.md"
+        ),
+        history: file(
+          "file_character_lead:history",
+          "long/characters/character_lead/history.md"
+        )
+      },
+      {
+        characterId: "character_partner",
+        coreProfile: file(
+          "file_character_partner:core-profile",
+          "long/characters/character_partner/core-profile.md"
+        ),
+        relationships: file(
+          "file_character_partner:relationships",
+          "long/characters/character_partner/relationships.md"
+        ),
+        currentState: file(
+          "file_character_partner:current-state",
+          "long/characters/character_partner/current-state.md"
+        ),
+        history: file(
+          "file_character_partner:history",
+          "long/characters/character_partner/history.md"
+        )
+      }
+    ] as typeof workspaceIndex.characterFiles;
+
+    const selection = createLongCharacterGroupSelection(
+      summary,
+      workspaceIndex,
+      "protagonist",
+      "character_partner"
+    );
+
+    expect(selection).toMatchObject({
+      key: "character-group:protagonist",
+      characterGroup: "protagonist",
+      characterId: "character_partner",
+      title: "顾临"
+    });
+    expect(selection.characterTabs).toEqual([
+      { id: "character_lead", label: "沈文佳" },
+      { id: "character_partner", label: "顾临" }
+    ]);
+    expect(selection.files.map(({ role }) => role)).toEqual([
+      "core-profile",
+      "relationships",
+      "current-state",
+      "history"
+    ]);
+
+    const emptyGroup = createLongCharacterGroupSelection(
+      summary,
+      workspaceIndex,
+      "major_supporting"
+    );
+    expect(emptyGroup).toMatchObject({
+      key: "character-group:major_supporting",
+      title: "主要配角",
+      characterTabs: [],
+      files: []
+    });
+  });
+
   it("keeps the owning book id when a standard tree descendant is selected", () => {
     const bookId = "longbook_lifecycle";
     expect(longBookIdFromResourceId(longBookResourceId(bookId))).toBe(bookId);

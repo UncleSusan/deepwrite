@@ -167,11 +167,28 @@ export const AgentProviderRuntimeConfigSchema = ModelIdentitySchema.and(z.object
 }));
 export type AgentProviderRuntimeConfig = z.infer<typeof AgentProviderRuntimeConfigSchema>;
 
+/**
+ * Kept local to the model-test contract to avoid a `models -> session -> models`
+ * dependency cycle. Its shape intentionally matches `AgentUsage`.
+ */
+export const ModelConnectionTestUsageSchema = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cacheReadTokens: z.number().int().nonnegative(),
+  cacheWriteTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative()
+});
+export type ModelConnectionTestUsage = z.infer<
+  typeof ModelConnectionTestUsageSchema
+>;
+
 export const ModelConnectionTestResultSchema = z.object({
   modelId: z.string().min(1),
   ok: z.boolean(),
   message: z.string().min(1),
-  testedAt: z.string().datetime()
+  testedAt: z.string().datetime(),
+  /** Present when the provider returned token accounting for this test call. */
+  usage: ModelConnectionTestUsageSchema.optional()
 });
 export type ModelConnectionTestResult = z.infer<typeof ModelConnectionTestResultSchema>;
 

@@ -8,6 +8,32 @@ describe("SettingsPage", () => {
     expect(source).toContain("emit('updateAutoSave'");
   });
 
+  it("keeps only the requested general controls and makes permission modes exclusive", () => {
+    expect(source).toContain('role="radiogroup"');
+    expect(source).toContain('type="radio"');
+    expect(source).toContain("permissionMode === 'request-approval'");
+    expect(source).toContain("permissionMode === 'auto-approve'");
+    expect(source).toContain("<strong>请求批准</strong>");
+    expect(source).toContain("<strong>替我审批</strong>");
+    expect(source).not.toContain("permissionMode === 'full-access'");
+    expect(source).not.toContain("<strong>完全访问权限</strong>");
+    expect(source).toContain("emit('updatePermissionMode'");
+    expect(source).not.toContain("<strong>默认文件打开目标</strong>");
+  });
+
+  it("wires language and menu-bar controls to persisted settings", () => {
+    expect(source).toContain(':model-value="language"');
+    expect(source).toContain("emit('updateLanguage'");
+    expect(source).toContain(':checked="showInMenuBar"');
+    expect(source).toContain("emit('updateShowInMenuBar'");
+  });
+
+  it("keeps the language selector from squeezing its label column", () => {
+    expect(source).toContain('class="settings-item settings-select-item"');
+    expect(source).toContain(".settings-select-item { flex-wrap: wrap; }");
+    expect(source).toContain("flex: 0 1 210px;");
+  });
+
   it("provides a dedicated learning-imitation prompt category", () => {
     expect(source).toContain('label: "学习仿写设置"');
     expect(source).toContain("<LearningImitationSettingsPanel");

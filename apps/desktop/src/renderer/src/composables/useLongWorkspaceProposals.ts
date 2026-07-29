@@ -2,6 +2,7 @@ import { ref, type Ref } from "vue";
 import {
   LongMutationProposalEventEnvelopeSchema,
   createEnvelope,
+  type AgentWriteApprovalMode,
   type LongAgentId,
   type LongWorkspaceImpactPreview,
   type LongWorkspaceOperationBatch,
@@ -9,6 +10,7 @@ import {
 } from "@deepwrite/contracts";
 import { createId } from "@deepwrite/shared";
 import type { LongWorkspaceRendererApi } from "../types/longWorkspace";
+import { createKeyedSerialTaskQueue } from "../utils/keyedSerialTaskQueue";
 
 export type LongWorkspaceProposalEvent = Extract<
   SystemEventEnvelope,
@@ -34,6 +36,7 @@ export type LongWorkspaceProposalStatus =
 
 export interface LongWorkspaceProposalItem {
   event: LongWorkspaceProposalEvent;
+  approvalMode: AgentWriteApprovalMode;
   status: LongWorkspaceProposalStatus;
   preview?: LongWorkspaceImpactPreview;
   previewProjectRevision?: number;
@@ -49,6 +52,12 @@ interface LongProposalNotifications {
 export interface UseLongWorkspaceProposalsOptions {
   api: () => LongWorkspaceRendererApi | undefined;
   acceptsEvent: (event: LongWorkspaceProposalEvent) => boolean;
+  approvalModeForEvent?: (
+    event: LongWorkspaceProposalEvent
+  ) => AgentWriteApprovalMode | undefined;
+  prepareAutoApprove?: (
+    event: LongWorkspaceProposalEvent
+  ) => void | Promise<void>;
   onApplied?: (
     event: Exclude<
       LongWorkspaceProposalEvent,
@@ -113,6 +122,7 @@ export function useLongWorkspaceProposals(
   const handledProposalKeys = new Set<string>();
   const discardedBookIds = new Set<string>();
   const quarantinedSessions = new Set<string>();
+  const automaticProposalQueue = createKeyedSerialTaskQueue<string>();
 
   function sessionKey(bookId: string, sessionId: string): string {
     return `${bookId}\u0000${sessionId}`;
@@ -284,8 +294,43 @@ export function useLongWorkspaceProposals(
     return true;
   }
 
+  async function processAutomaticProposal(
+    event: LongWorkspaceProposalEvent,
+    previewFirst: boolean
+  ): Promise<void> {
+    await automaticProposalQueue.enqueue(event.payload.bookId, async () => {
+      let current = currentItem(event.payload.bookId, event.id);
+      if (!current) return;
+      if (
+        previewFirst &&
+        current.event.type === "long.mutation_proposal"
+      ) {
+        await previewMutation(current);
+        current = currentItem(event.payload.bookId, event.id);
+      }
+      if (!current || current.status !== "ready") return;
+      try {
+        await options.prepareAutoApprove?.(event);
+      } catch (error: unknown) {
+        const message = errorMessage(
+          error,
+          "长篇提案实时自动保存前检查失败。"
+        );
+        updateItem(event.payload.bookId, event.id, {
+          status: "error",
+          error: message
+        });
+        options.notifications.error(message);
+        return;
+      }
+      await approve(event.payload.bookId, event.id);
+    });
+  }
+
   async function enqueueProposalEvent(
-    event: LongWorkspaceProposalEvent
+    event: LongWorkspaceProposalEvent,
+    approvalMode: AgentWriteApprovalMode =
+      options.approvalModeForEvent?.(event) ?? "request-approval"
   ): Promise<boolean> {
     if (!rememberEvent(event)) {
       return false;
@@ -293,6 +338,7 @@ export function useLongWorkspaceProposals(
 
     const item: LongWorkspaceProposalItem = {
       event,
+      approvalMode,
       status:
         event.type === "long.mutation_proposal" ? "previewing" : "ready"
     };
@@ -300,7 +346,9 @@ export function useLongWorkspaceProposals(
       ...itemsForBook(event.payload.bookId),
       item
     ]);
-    if (event.type === "long.mutation_proposal") {
+    if (approvalMode === "auto-approve") {
+      await processAutomaticProposal(event, true);
+    } else if (event.type === "long.mutation_proposal") {
       await previewMutation(item);
     }
     return true;
@@ -367,7 +415,7 @@ export function useLongWorkspaceProposals(
       )
     );
     activateBook(input.bookId);
-    if (!(await enqueueProposalEvent(event))) {
+    if (!(await enqueueProposalEvent(event, "request-approval"))) {
       throw new Error("手工长篇结构提案事件 ID 冲突，请重试。");
     }
     return event;
@@ -386,6 +434,13 @@ export function useLongWorkspaceProposals(
       return;
     }
     await previewMutation(item);
+    const current = currentItem(bookId, eventId);
+    if (
+      current?.approvalMode === "auto-approve" &&
+      current.status === "ready"
+    ) {
+      await processAutomaticProposal(current.event, false);
+    }
   }
 
   async function approve(bookId: string, eventId: string): Promise<void> {

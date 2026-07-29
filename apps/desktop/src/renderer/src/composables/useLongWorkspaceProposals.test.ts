@@ -162,7 +162,10 @@ function dispatchEvent() {
   );
 }
 
-function harness(acceptsEvent = true) {
+function harness(
+  acceptsEvent = true,
+  approvalMode: "request-approval" | "auto-approve" = "request-approval"
+) {
   const previewOperations = vi.fn(async () => ({
     bookId: proposalBase.bookId,
     preview: {
@@ -193,9 +196,12 @@ function harness(acceptsEvent = true) {
   const onApplied = vi.fn();
   const onDispatchApproved = vi.fn();
   const onRejected = vi.fn();
+  const prepareAutoApprove = vi.fn(async () => undefined);
   const controller = useLongWorkspaceProposals({
     api: () => api,
     acceptsEvent: () => acceptsEvent,
+    approvalModeForEvent: () => approvalMode,
+    prepareAutoApprove,
     onApplied,
     onDispatchApproved,
     onRejected,
@@ -210,11 +216,71 @@ function harness(acceptsEvent = true) {
     onApplied,
     onDispatchApproved,
     onRejected,
+    prepareAutoApprove,
     notifications
   };
 }
 
 describe("long workspace proposal approval", () => {
+  it("previews and atomically applies auto-approved structure proposals immediately", async () => {
+    const test = harness(true, "auto-approve");
+
+    await test.controller.handleEvent(mutationEvent());
+
+    expect(test.previewOperations).toHaveBeenCalledTimes(1);
+    expect(test.prepareAutoApprove).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "event_mutation" })
+    );
+    expect(test.applyOperations).toHaveBeenCalledTimes(1);
+    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+  });
+
+  it("immediately routes every auto-approved long proposal type", async () => {
+    const chapter = harness(true, "auto-approve");
+    await chapter.controller.handleEvent(chapterEvent());
+    expect(chapter.writeChapter).toHaveBeenCalledTimes(1);
+
+    const ledger = harness(true, "auto-approve");
+    await ledger.controller.handleEvent(ledgerEvent());
+    expect(ledger.commitChapter).toHaveBeenCalledTimes(1);
+
+    const dispatch = harness(true, "auto-approve");
+    await dispatch.controller.handleEvent(dispatchEvent());
+    expect(dispatch.onDispatchApproved).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes realtime durable writes for the same long book", async () => {
+    const test = harness(true, "auto-approve");
+    const order: string[] = [];
+    let releaseChapter!: () => void;
+    test.writeChapter.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          order.push("chapter:start");
+          releaseChapter = () => {
+            order.push("chapter:end");
+            resolve(undefined);
+          };
+        })
+    );
+    test.commitChapter.mockImplementationOnce(async () => {
+      order.push("ledger");
+      return undefined;
+    });
+
+    const chapter = test.controller.handleEvent(chapterEvent());
+    const ledger = test.controller.handleEvent(ledgerEvent());
+    await vi.waitFor(() => {
+      expect(order).toEqual(["chapter:start"]);
+    });
+    expect(test.commitChapter).not.toHaveBeenCalled();
+
+    releaseChapter();
+    await Promise.all([chapter, ledger]);
+
+    expect(order).toEqual(["chapter:start", "chapter:end", "ledger"]);
+  });
+
   it("previews structure impact before apply and binds expected impact", async () => {
     const test = harness();
     await test.controller.handleEvent(mutationEvent());

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type {
+  AppLanguage,
+  GeneralPermissionMode,
   LearningImitationSettings,
   LearningImitationSettingsInput,
   LearningImitationStageId,
@@ -9,6 +11,8 @@ import type {
   LibraryAgentSettingsInput,
   LongAgentSettings,
   LongAgentSettingsInput,
+  ModelUsageDashboard,
+  ModelUsageQueryInput,
   WorkspaceAgentSettings,
   WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
@@ -26,6 +30,7 @@ import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 import LearningImitationSettingsPanel from "./LearningImitationSettingsPanel.vue";
 import LibraryAgentSettingsPanel from "./LibraryAgentSettingsPanel.vue";
+import ModelUsagePanel from "./ModelUsagePanel.vue";
 import PopupSelect from "./PopupSelect.vue";
 import ShortAgentSettingsPanel from "./ShortAgentSettingsPanel.vue";
 
@@ -38,7 +43,9 @@ interface SettingsCategory {
     | "keyboard"
     | "globe"
     | "model"
+    | "ledger"
     | "brain"
+    | "settings"
     | "wand"
     | "archive";
 }
@@ -50,7 +57,10 @@ interface SettingsSection {
 }
 
 defineProps<{
+  permissionMode: GeneralPermissionMode;
   autoSaveEnabled: boolean;
+  language: AppLanguage;
+  showInMenuBar: boolean;
   workspaceAgentSettings: readonly WorkspaceAgentSettings[];
   longAgentSettings: LongAgentSettings | null;
   workspaceAgentLoading: boolean;
@@ -64,6 +74,8 @@ defineProps<{
   learningImitationSettings: LearningImitationSettings | null;
   learningImitationLoading: boolean;
   learningImitationSaving: boolean;
+  modelUsageDashboard: ModelUsageDashboard | null;
+  modelUsageLoading: boolean;
   libraryAgentSettings: LibraryAgentSettings | null;
   libraryAgentLoading: boolean;
   libraryAgentSaving: boolean;
@@ -72,7 +84,10 @@ defineProps<{
 
 const emit = defineEmits<{
   back: [];
+  updatePermissionMode: [mode: GeneralPermissionMode];
   updateAutoSave: [enabled: boolean];
+  updateLanguage: [language: AppLanguage];
+  updateShowInMenuBar: [enabled: boolean];
   saveWorkspaceAgents: [settings: WorkspaceAgentSettingsInput];
   retryLongAgents: [];
   saveLongAgents: [settings: LongAgentSettingsInput];
@@ -80,6 +95,7 @@ const emit = defineEmits<{
   resetLearningImitation: [stageId: LearningImitationStageId];
   saveLibraryAgents: [settings: LibraryAgentSettingsInput];
   resetLibraryAgent: [domain: LibraryAgentDomain];
+  loadModelUsage: [input?: ModelUsageQueryInput];
 }>();
 const appearance = useAppearance();
 const activeCategory = ref("general");
@@ -108,31 +124,26 @@ const sections: SettingsSection[] = [
     ]
   },
   {
+    id: "models-and-usage",
+    label: "模型与用量",
+    categories: [
+      { id: "official-models", label: "DeepWrite 官方模型", icon: "model" },
+      { id: "usage", label: "用量", icon: "ledger" }
+    ]
+  },
+  {
     id: "personal",
     label: "个人",
     categories: [
-      { id: "general", label: "常规" },
+      { id: "general", label: "常规", icon: "settings" },
       { id: "profile", label: "个人资料", icon: "user" },
       { id: "appearance", label: "外观", icon: "sparkles" },
       { id: "voice", label: "语音", icon: "brain" },
       { id: "configuration", label: "配置", icon: "model" },
       { id: "personalization", label: "个性化", icon: "sparkles" },
-      { id: "keyboard", label: "键盘快捷键", icon: "keyboard" },
-      { id: "billing", label: "使用情况和计费" },
-      { id: "account", label: "账户" }
+      { id: "keyboard", label: "键盘快捷键", icon: "keyboard" }
     ]
-  },
-  {
-    id: "integration",
-    label: "集成",
-    categories: [
-      { id: "snapshots", label: "智能快照" },
-      { id: "security", label: "安全" },
-      { id: "browser", label: "浏览器" },
-      { id: "computer", label: "电脑操控" }
-    ]
-  },
-  { id: "coding", label: "编码", categories: [{ id: "hooks", label: "钩子" }] }
+  }
 ];
 
 const visibleSections = computed(() => {
@@ -172,6 +183,10 @@ const appearanceModes: Array<{ id: AppearanceMode; label: string }> = [
   { id: "system", label: "系统" },
   { id: "light", label: "浅色" },
   { id: "dark", label: "深色" }
+];
+const languageOptions: Array<{ value: AppLanguage; label: string }> = [
+  { value: "auto", label: "自动检测（简体中文）" },
+  { value: "zh-CN", label: "简体中文" }
 ];
 
 async function selectCategory(id: string): Promise<void> {
@@ -392,20 +407,23 @@ async function importThemeFile(event: Event): Promise<void> {
           @reset="emit('resetLibraryAgent', $event)"
         />
 
+        <ModelUsagePanel
+          v-else-if="activeCategory === 'usage'"
+          :dashboard="modelUsageDashboard"
+          :loading="modelUsageLoading"
+          @query="emit('loadModelUsage', $event)"
+        />
+
         <section v-else-if="activeCategory === 'general'" class="settings-group">
           <h2 class="settings-group-title">权限</h2>
-          <div class="settings-card">
+          <div class="settings-card" role="radiogroup" aria-label="智能体默认审批方式">
             <label class="settings-item">
-              <span class="settings-item-text"><strong>默认权限</strong><small>默认情况下，应用可以读取和编辑其工作空间中的文件。需要时，它可以请求额外访问权限。</small></span>
-              <span class="settings-toggle"><input type="checkbox" checked /></span>
+              <span class="settings-item-text"><strong>请求批准</strong><small>智能体修改或写入正文前，需要由你确认。</small></span>
+              <span class="settings-toggle"><input type="radio" name="general-permission-mode" :checked="permissionMode === 'request-approval'" aria-label="请求批准" @change="emit('updatePermissionMode', 'request-approval')" /></span>
             </label>
             <label class="settings-item">
-              <span class="settings-item-text"><strong>自动审核</strong><small>应用会自动审查额外访问权限请求。自动审核可能会出错。</small></span>
-              <span class="settings-toggle"><input type="checkbox" checked /></span>
-            </label>
-            <label class="settings-item">
-              <span class="settings-item-text"><strong>完全访问权限</strong><small>以完整访问权限运行时，它无需你的批准即可编辑你电脑上的任何文件。这会增加数据丢失或泄露的风险。</small></span>
-              <span class="settings-toggle"><input type="checkbox" checked /></span>
+              <span class="settings-item-text"><strong>替我审批</strong><small>智能体产生写入后立即自动批准，并在后台串行保存。自动审批可能会出错。</small></span>
+              <span class="settings-toggle"><input type="radio" name="general-permission-mode" :checked="permissionMode === 'auto-approve'" aria-label="替我审批" @change="emit('updatePermissionMode', 'auto-approve')" /></span>
             </label>
           </div>
 
@@ -415,9 +433,19 @@ async function importThemeFile(event: Event): Promise<void> {
               <span class="settings-item-text"><strong>自动保存</strong><small>文稿发生变化并停止输入片刻后，自动保存到本机</small></span>
               <span class="settings-toggle"><input type="checkbox" :checked="autoSaveEnabled" @change="emit('updateAutoSave', ($event.target as HTMLInputElement).checked)" /></span>
             </label>
-            <div class="settings-item"><span class="settings-item-text"><strong>默认文件打开目标</strong><small>默认打开文件和文件夹的位置</small></span><button class="settings-select" type="button">Cursor</button></div>
-            <div class="settings-item"><span class="settings-item-text"><strong>语言</strong><small>应用 UI 语言</small></span><button class="settings-select" type="button">自动检测</button></div>
-            <label class="settings-item"><span class="settings-item-text"><strong>在菜单栏中显示</strong><small>关闭主窗口后，仍在菜单栏中保留应用图标</small></span><span class="settings-toggle"><input type="checkbox" checked /></span></label>
+            <div class="settings-item settings-select-item">
+              <span class="settings-item-text"><strong>语言</strong><small>应用 UI 语言；当前版本提供简体中文</small></span>
+              <PopupSelect
+                class="general-select-control"
+                :model-value="language"
+                :options="languageOptions"
+                accessible-label="选择应用语言"
+                align="end"
+                :menu-min-width="210"
+                @update:model-value="emit('updateLanguage', String($event) as AppLanguage)"
+              />
+            </div>
+            <label class="settings-item"><span class="settings-item-text"><strong>在菜单栏中显示</strong><small>关闭主窗口后，仍在菜单栏中保留应用图标</small></span><span class="settings-toggle"><input type="checkbox" :checked="showInMenuBar" @change="emit('updateShowInMenuBar', ($event.target as HTMLInputElement).checked)" /></span></label>
           </div>
         </section>
 
@@ -653,6 +681,14 @@ async function importThemeFile(event: Event): Promise<void> {
 .settings-toggle input:checked { background: var(--accent); }
 .settings-toggle input:checked::after { transform: translateX(18px); }
 .settings-select { padding: 5px 10px; border: 1px solid var(--theme-line); border-radius: 7px; background: var(--surface-raised); color: var(--text-primary); cursor: pointer; }
+.settings-select-item { flex-wrap: wrap; }
+.settings-select-item .settings-item-text { min-width: min(240px, 100%); }
+.general-select-control {
+  width: 210px;
+  min-width: 160px;
+  max-width: 210px;
+  flex: 0 1 210px;
+}
 .settings-placeholder { padding: 24px 18px; color: var(--text-secondary); font-size: 0.964286rem; }
 
 .appearance-group { width: 100%; }

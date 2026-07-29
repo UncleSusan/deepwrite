@@ -26,7 +26,11 @@ describe("TreeSection resource actions", () => {
     expect(source).toContain(
       "@long-book-action=\"emit('longBookAction', $event)\""
     );
+    expect(source).toContain(
+      "@long-structure-action=\"emit('longStructureAction', $event)\""
+    );
     expect(sidebarSource.match(/@long-book-action=/gu)).toHaveLength(2);
+    expect(sidebarSource.match(/@long-structure-action=/gu)).toHaveLength(2);
     expect(sidebarSource).toContain(
       "longBookAction: [payload: LongBookResourceNodeActionPayload]"
     );

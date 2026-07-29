@@ -29,6 +29,8 @@ import {
   DeleteDraftSectionResultSchema,
   ExportShortManuscriptInputSchema,
   ExportShortManuscriptResultSchema,
+  GeneralSettingsSchema,
+  GeneralSettingsSnapshotSchema,
   ImportLegacyLibraryResultSchema,
   IPC_COMMAND_CHANNEL,
   IPC_EVENT_CHANNEL,
@@ -42,6 +44,8 @@ import {
   ModelConfigInputSchema,
   ModelSettingsInputSchema,
   ModelSettingsSchema,
+  ModelUsageDashboardSchema,
+  ModelUsageQueryInputSchema,
   CreateLongBookInputSchema,
   LongImportPortableResultSchema,
   LongImportWriteClawResultSchema,
@@ -65,8 +69,6 @@ import {
   LongRemoveBookResultSchema,
   LongRollbackLastCommitInputSchema,
   LongRollbackLastCommitResultSchema,
-  LongSearchInputSchema,
-  LongSearchResultSchema,
   LongUpdateBindingsInputSchema,
   LongWorkspaceIndexResultSchema,
   LongWriteChapterInputSchema,
@@ -130,6 +132,8 @@ import {
   type DeleteDraftSectionResult,
   type ExportShortManuscriptInput,
   type ExportShortManuscriptResult,
+  type GeneralSettings,
+  type GeneralSettingsSnapshot,
   type ModelConnectionTestResult,
   type ImportLegacyLibraryResult,
   type LearningImitationSettings,
@@ -158,8 +162,6 @@ import {
   type LongRemoveBookResult,
   type LongRollbackLastCommitInput,
   type LongRollbackLastCommitResult,
-  type LongSearchInput,
-  type LongSearchResult,
   type LongUpdateBindingsInput,
   type LongWorkspaceIndexResult,
   type LongWriteChapterInput,
@@ -172,6 +174,8 @@ import {
   type ModelConfigInput,
   type ModelSettings,
   type ModelSettingsInput,
+  type ModelUsageDashboard,
+  type ModelUsageQueryInput,
   type RemoveLibraryEntryInput,
   type RemoveLibraryEntryResult,
   type SessionAbortAcceptedPayload,
@@ -410,22 +414,6 @@ async function readLongDocument(
   return LongReadDocumentResultSchema.parse(
     await invokeCommand<LongReadDocumentResult>(
       createEnvelope("long.readDocument", input, {
-        id,
-        correlationId: id,
-        context: { resourceId: input.bookId }
-      })
-    )
-  );
-}
-
-async function searchLongWorkspace(
-  rawInput: LongSearchInput
-): Promise<LongSearchResult> {
-  const input = LongSearchInputSchema.parse(rawInput);
-  const id = browserId("cmd_long_search");
-  return LongSearchResultSchema.parse(
-    await invokeCommand<LongSearchResult>(
-      createEnvelope("long.search", input, {
         id,
         correlationId: id,
         context: { resourceId: input.bookId }
@@ -892,6 +880,18 @@ async function testModel(rawModel: ModelConfigInput): Promise<ModelConnectionTes
   );
 }
 
+async function queryModelUsage(
+  rawInput: ModelUsageQueryInput = {}
+): Promise<ModelUsageDashboard> {
+  const input = ModelUsageQueryInputSchema.parse(rawInput);
+  const id = browserId("cmd_model_usage_query");
+  return ModelUsageDashboardSchema.parse(
+    await invokeCommand<ModelUsageDashboard>(
+      createEnvelope("modelUsage.query", input, { id, correlationId: id })
+    )
+  );
+}
+
 async function listWorkspaceAgents(
   workspaceType: "short"
 ): Promise<ShortWorkspaceAgentSettings>;
@@ -1207,6 +1207,30 @@ async function saveAppearance(
   );
 }
 
+async function listGeneralSettings(): Promise<GeneralSettingsSnapshot> {
+  const id = browserId("cmd_general_settings_list");
+  return GeneralSettingsSnapshotSchema.parse(
+    await invokeCommand<GeneralSettingsSnapshot>(
+      createEnvelope("generalSettings.list", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function saveGeneralSettings(
+  rawSettings: GeneralSettings
+): Promise<GeneralSettingsSnapshot> {
+  const settings = GeneralSettingsSchema.parse(rawSettings);
+  const id = browserId("cmd_general_settings_save");
+  return GeneralSettingsSnapshotSchema.parse(
+    await invokeCommand<GeneralSettingsSnapshot>(
+      createEnvelope("generalSettings.save", settings, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
 async function exportShortManuscript(
   rawInput: ExportShortManuscriptInput
 ): Promise<ExportShortManuscriptResult> {
@@ -1260,7 +1284,6 @@ const api: DeepWriteApi = {
     openExisting: openExistingLongBook,
     getWorkspaceIndex: getLongWorkspaceIndex,
     readDocument: readLongDocument,
-    search: searchLongWorkspace,
     writeDocument: writeLongDocument,
     previewOperations: previewLongOperations,
     applyOperations: applyLongOperations,
@@ -1278,6 +1301,9 @@ const api: DeepWriteApi = {
     list: listModels,
     save: saveModels,
     test: testModel
+  },
+  modelUsage: {
+    query: queryModelUsage
   },
   workspaceAgents: {
     list: listWorkspaceAgents,
@@ -1314,6 +1340,10 @@ const api: DeepWriteApi = {
   appearance: {
     list: listAppearance,
     save: saveAppearance
+  },
+  generalSettings: {
+    list: listGeneralSettings,
+    save: saveGeneralSettings
   },
   manuscript: {
     exportShort: exportShortManuscript

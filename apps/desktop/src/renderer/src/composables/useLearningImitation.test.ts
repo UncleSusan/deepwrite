@@ -87,7 +87,8 @@ describe("useLearningImitation", () => {
     await expect(
       controller.start("material_split", {
         prompt: "按当前样本拆解素材。",
-        modelId: "model_a"
+        modelId: "model_a",
+        writeApprovalMode: "auto-approve"
       })
     ).resolves.toBe(true);
 
@@ -99,6 +100,7 @@ describe("useLearningImitation", () => {
       sessionId: controller.sessionId.value,
       message: "按当前样本拆解素材。",
       modelId: "model_a",
+      writeApprovalMode: "auto-approve",
       workspaceContext: {
         learningImitation: {
           stageId: "material_split",

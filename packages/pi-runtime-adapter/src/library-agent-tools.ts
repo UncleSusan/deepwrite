@@ -531,7 +531,10 @@ function approvalSummary(
   approvalMode: AgentWriteApprovalMode | undefined
 ): string {
   return approvalMode === "auto-approve"
-    ? summary.replace("，等待用户审阅。", "，将在本轮完成后自动批准并保存。")
+    ? summary.replace(
+        "，等待用户审阅。",
+        "，已提交实时自动保存队列；以审批卡的落盘状态为准。"
+      )
     : summary;
 }
 

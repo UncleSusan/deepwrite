@@ -111,7 +111,7 @@ onBeforeUnmount(() =>
   <Teleport to="body">
     <div
       v-if="open"
-      class="long-removal-backdrop"
+      class="dialog-backdrop long-removal-backdrop"
       @mousedown.self="close"
     >
       <section
@@ -186,14 +186,8 @@ onBeforeUnmount(() =>
 
 <style scoped>
 .long-removal-backdrop {
-  position: fixed;
   z-index: 1800;
-  inset: 0;
-  display: grid;
-  place-items: center;
   padding: clamp(14px, 3vw, 24px);
-  background: rgb(0 0 0 / 42%);
-  backdrop-filter: blur(4px);
 }
 
 .long-removal-dialog {

@@ -12,7 +12,7 @@
 
 ## 一、最高优先级执行规则
 
-- 本提示词是最终执行规范；所有分析、写入和汇报都必须服务于 `plot_design_skill` 与 `plot_refine_skill` 两个字段。
+- 本提示词是最终执行规范；所有分析、写入和汇报都必须服务于 `plot_design_skill` 与 `plot_refine_skill` 两类技能。
 - 必须优先使用 `list_learning_documents` 了解样本列表、数量、标题、正文状态。
 - 再用 `read_learning_document` 或 `search_learning_documents` 读取正文。分析前必须尽量读完每篇正文。
 - 可读样本少于 2 篇时，不要归纳类型共性；先说明样本不足，只能形成单篇观察或请求补充样本。
@@ -206,12 +206,12 @@
 
 ## 六、最终写入格式
 
-需要写入预览区时，调用 `write_learning_result`，只填写以下两个字段：
+需要写入预览区时，必须分别调用两次 `write_learning_result`。每次只填写一个 `type` 和对应的 `text`：
 
-- `plot_design_skill`
-- `plot_refine_skill`
+- 第一次：`type` 为 `plot_design_skill`，`text` 为完整的剧情设计技能。
+- 第二次：`type` 为 `plot_refine_skill`，`text` 为完整的剧情细化技能。
 
-不要填写无关字段，不要直接写入正式技能库。
+禁止在一次调用中合并两项技能，不要直接写入正式技能库。
 
 ### `plot_design_skill` 内容模板
 
@@ -458,14 +458,14 @@
 - 是否提炼了情绪推进曲线和承段公式。
 - 是否把共性、变体、单篇特色分开。
 - 是否所有共性结论都有至少 2 篇样本支撑。
-- 是否两个字段都写成技能库条目，而不是样本复盘。
+- 是否两项技能都写成技能库条目，而不是样本复盘。
 - 是否没有照搬长段原文。
-- 是否只调用 `write_learning_result` 写入预览区，等待用户确认落盘。
+- 是否分别调用两次 `write_learning_result` 写入预览区，等待用户确认落盘。
 
 任一项不通过，先修正再写入预览区。
 
 ## 八、汇报规则
 
 - 工具调用前后可以用简短中文说明进度，但不要把完整内部拆解过程全部倾倒给用户。
-- 最终汇报只说明：已读取/分析哪些样本、写入了 `plot_design_skill` 和 `plot_refine_skill`、是否存在样本不足或 OCR 风险。
+- 最终汇报只说明：已读取/分析哪些样本、是否分别写入了 `plot_design_skill` 和 `plot_refine_skill`、是否存在样本不足或 OCR 风险。
 - 不要声称已经写入正式技能库；只能说已写入预览区，等待用户确认落盘。

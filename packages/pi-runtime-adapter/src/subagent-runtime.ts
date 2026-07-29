@@ -21,7 +21,9 @@ import {
 } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import {
+  type AgentRuntimeRef,
   type AgentUsage,
+  type AgentUsageObservationStatus,
   type AgentProviderRuntimeConfig,
   type ShortAgentSubagentDefinition
 } from "@deepwrite/contracts";
@@ -71,6 +73,12 @@ interface SubagentProgressBase {
   subagentRunId: string;
   subagentId: string;
   name: string;
+  /**
+   * The child can use a custom model different from its parent. Older progress
+   * payloads do not contain this field, so projection retains a parent-runtime
+   * fallback for backward compatibility.
+   */
+  runtime?: AgentRuntimeRef;
 }
 
 export type SubagentToolProgress =
@@ -88,6 +96,18 @@ export type SubagentToolProgress =
       summary: string;
       errorMessage?: string;
       usage?: AgentUsage;
+    })
+  | (SubagentProgressBase & {
+      type: "usage_observed";
+      observationId: string;
+      observedAt: string;
+      messageId: string;
+      turnId: string;
+      attempt: number;
+      status: AgentUsageObservationStatus;
+      hadToolCall: boolean;
+      usage: AgentUsage;
+      runtime: AgentRuntimeRef;
     })
   | (SubagentProgressBase & {
       type: "child_tool_details";
@@ -115,6 +135,8 @@ export function isSubagentToolProgressDetails(
 
 export interface BuildSpawnSubagentToolInput {
   parentSessionId: string;
+  /** Runtime attribution inherited by children using `modelMode: inherit`. */
+  parentRuntime?: AgentRuntimeRef;
   model: Model<Api>;
   thinkingLevel: PiThinkingLevel;
   streamFn: StreamFn;
@@ -164,7 +186,18 @@ function readAssistantText(message: AssistantMessage): string {
     .join("");
 }
 
-function normalizeUsage(usage: Usage): AgentUsage {
+function normalizeUsage(usage: Usage | undefined): AgentUsage | undefined {
+  if (!usage) return undefined;
+  const values = [
+    usage.input,
+    usage.output,
+    usage.cacheRead,
+    usage.cacheWrite,
+    usage.totalTokens
+  ];
+  if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    return undefined;
+  }
   return {
     inputTokens: usage.input,
     outputTokens: usage.output,
@@ -172,6 +205,33 @@ function normalizeUsage(usage: Usage): AgentUsage {
     cacheWriteTokens: usage.cacheWrite,
     totalTokens: usage.totalTokens
   };
+}
+
+function runtimeFromConfig(
+  config: AgentProviderRuntimeConfig
+): AgentRuntimeRef {
+  return {
+    provider: config.provider,
+    model: config.modelId,
+    mode: "provider",
+    configId: config.id
+  };
+}
+
+function runtimeFromModel(model: Model<Api>): AgentRuntimeRef {
+  return {
+    provider: model.provider,
+    model: model.id,
+    mode: "provider"
+  };
+}
+
+function usageObservationStatus(
+  message: AssistantMessage
+): AgentUsageObservationStatus {
+  if (message.stopReason === "aborted") return "aborted";
+  if (message.stopReason === "error" || message.errorMessage) return "error";
+  return "completed";
 }
 
 function summarizeToolResult(result: unknown): string {
@@ -295,11 +355,21 @@ export function buildSpawnSubagentTool(
       if (!task) throw new Error("子智能体任务不能为空。");
 
       const subagentRunId = input.createRunId?.() ?? `subrun_${randomBytes(4).toString("hex")}`;
+      const configuredChildModelId = definition.modelMode === "custom"
+        ? definition.modelId?.trim()
+        : undefined;
+      const configuredChildRuntime = configuredChildModelId
+        ? input.subagentRuntimeConfigs?.[configuredChildModelId]
+        : undefined;
+      const childRuntime = configuredChildRuntime
+        ? runtimeFromConfig(configuredChildRuntime)
+        : input.parentRuntime ?? runtimeFromModel(input.model);
       const progressBase: SubagentProgressBase = {
         parentToolCallId,
         subagentRunId,
         subagentId: definition.id,
-        name: definition.name
+        name: definition.name,
+        runtime: childRuntime
       };
       const emitProgress = (progress: SubagentToolProgress, text: string): void => {
         onUpdate?.(textResult(text, { kind: "subagent-progress", progress }));
@@ -541,6 +611,29 @@ export function buildSpawnSubagentTool(
             signal: lifecycleController.signal,
             ...(input.retryPolicy ? { retryPolicy: input.retryPolicy } : {}),
             onEvent: handleChildEvent,
+            onAssistantMessageEnded: (message, attempt) => {
+              const usage = normalizeUsage(message.usage);
+              if (!usage) return;
+              emitProgress(
+                {
+                  ...progressBase,
+                  type: "usage_observed",
+                  observationId:
+                    `${attempt.turnId}:attempt:${attempt.attempt}`,
+                  observedAt: new Date().toISOString(),
+                  messageId: `${subagentRunId}_assistant`,
+                  turnId: attempt.turnId,
+                  attempt: attempt.attempt,
+                  status: usageObservationStatus(message),
+                  hadToolCall: message.content.some(
+                    (item) => item.type === "toolCall"
+                  ),
+                  usage,
+                  runtime: childRuntime
+                },
+                "子智能体模型请求已完成。"
+              );
+            },
             onTurnStarted: (attempt) => {
               emitProgress(
                 {

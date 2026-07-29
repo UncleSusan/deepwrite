@@ -11,6 +11,10 @@ import type {
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
 import type { LongStructureMutationCompletion } from "../types/longWorkspace";
+import type {
+  LongStructureTreeAction,
+  LongStructureTreeSection
+} from "../types/workspace";
 import AppIcon from "./AppIcon.vue";
 import LongStructureManager from "./LongStructureManager.vue";
 
@@ -19,6 +23,9 @@ const props = defineProps<{
   bookTitle: string;
   snapshot: LongWorkspaceIndexSnapshot | null;
   pending?: boolean;
+  initialSection: LongStructureTreeSection | undefined;
+  initialAction: LongStructureTreeAction | undefined;
+  initialItemId: string | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -115,7 +122,7 @@ onBeforeUnmount(() =>
   <Teleport to="body">
     <div
       v-if="open"
-      class="long-structure-dialog-overlay"
+      class="dialog-backdrop long-structure-dialog-overlay"
       @mousedown.self="close"
     >
       <section
@@ -147,6 +154,9 @@ onBeforeUnmount(() =>
           v-if="snapshot"
           :snapshot="snapshot"
           :disabled="pending"
+          :initial-section="initialSection"
+          :initial-action="initialAction"
+          :initial-item-id="initialItemId"
           @mutation="forwardMutation"
         />
       </section>
@@ -156,14 +166,8 @@ onBeforeUnmount(() =>
 
 <style scoped>
 .long-structure-dialog-overlay {
-  position: fixed;
   z-index: 2200;
-  inset: 0;
-  display: grid;
-  place-items: center;
   padding: clamp(12px, 3vw, 32px);
-  background: color-mix(in srgb, var(--surface-main) 58%, transparent);
-  backdrop-filter: blur(8px);
 }
 
 .long-structure-dialog {

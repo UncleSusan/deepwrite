@@ -551,6 +551,103 @@ describe("independent long-form workspace contracts", () => {
     ).toBe(false);
   });
 
+  it("keeps legacy foreshadowing records compatible while validating planning anchors", () => {
+    const legacy = LongWorkspaceIndexSnapshotSchema.parse(workspaceIndex());
+    const legacyThread = legacy.plot.foreshadowing[0]!;
+    const legacyBeat = legacyThread.beats[0]!;
+    expect("hiddenTruth" in legacyThread).toBe(false);
+    expect("plannedSpan" in legacyThread).toBe(false);
+    expect("volumeId" in legacyBeat).toBe(false);
+    expect("arcId" in legacyBeat).toBe(false);
+
+    const volumePlanned = workspaceIndex();
+    const volumeThread = volumePlanned.plot.foreshadowing[0]!;
+    Object.assign(volumeThread, {
+      hiddenTruth: "寄信人正是失踪多年的兄长。",
+      plannedSpan: "cross_volume"
+    });
+    Object.assign(volumeThread.beats[0]!, {
+      volumeId: "volume_one",
+      eventId: null,
+      placementId: null,
+      chapterCardId: null
+    });
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(volumePlanned).success
+    ).toBe(true);
+
+    const arcPlanned = workspaceIndex();
+    Object.assign(arcPlanned.plot.foreshadowing[0]!.beats[0]!, {
+      arcId: "arc_letter"
+    });
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(arcPlanned).success
+    ).toBe(true);
+
+    const missingAnchor = workspaceIndex();
+    Object.assign(missingAnchor.plot.foreshadowing[0]!.beats[0]!, {
+      volumeId: "volume_missing"
+    });
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(missingAnchor).success
+    ).toBe(false);
+
+    const conflictingAnchors = workspaceIndex();
+    conflictingAnchors.plot.volumes.push({
+      id: "volume_two",
+      title: "第二卷",
+      order: 2,
+      summary: ""
+    });
+    Object.assign(
+      conflictingAnchors.plot.foreshadowing[0]!.beats[0]!,
+      {
+        volumeId: "volume_two",
+        arcId: "arc_letter"
+      }
+    );
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(conflictingAnchors)
+        .success
+    ).toBe(false);
+
+    const conflictingEventVolume = workspaceIndex();
+    conflictingEventVolume.plot.volumes.push({
+      id: "volume_two",
+      title: "第二卷",
+      order: 2,
+      summary: ""
+    });
+    conflictingEventVolume.plot.arcs.push({
+      id: "arc_second",
+      volumeId: "volume_two",
+      title: "第二卷主线",
+      order: 1,
+      outline: ""
+    });
+    Object.assign(
+      conflictingEventVolume.plot.foreshadowing[0]!.beats[0]!,
+      {
+        volumeId: "volume_two",
+        arcId: null,
+        placementId: null,
+        chapterCardId: null
+      }
+    );
+    const conflictingEventVolumeResult =
+      LongWorkspaceIndexSnapshotSchema.safeParse(conflictingEventVolume);
+    expect(conflictingEventVolumeResult.success).toBe(false);
+    if (!conflictingEventVolumeResult.success) {
+      expect(
+        conflictingEventVolumeResult.error.issues.some(({ message }) =>
+          message.includes(
+            "planning volume must match its concrete event"
+          )
+        )
+      ).toBe(true);
+    }
+  });
+
   it("derives non-abandoned foreshadowing status from committed beats", () => {
     const inconsistent = commitFirstChapter(workspaceIndex());
     (

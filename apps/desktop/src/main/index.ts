@@ -1,4 +1,15 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  Tray,
+  dialog,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  shell
+} from "electron";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
@@ -20,6 +31,7 @@ import {
   DeleteBookResultSchema,
   DeleteDraftSectionResultSchema,
   ExportShortManuscriptResultSchema,
+  GeneralSettingsSnapshotSchema,
   IPC_COMMAND_CHANNEL,
   IPC_EVENT_CHANNEL,
   LearningImitationSettingsSchema,
@@ -42,6 +54,7 @@ import {
   LongWriteDocumentResultSchema,
   ModelConnectionTestResultSchema,
   ModelSettingsSchema,
+  ModelUsageDashboardSchema,
   RemoveLibraryEntryResultSchema,
   SessionAbortAcceptedPayloadSchema,
   SessionPromptAcceptedPayloadSchema,
@@ -54,11 +67,16 @@ import {
   UnregisterCatalogProjectResultSchema,
   WorkspaceDirectorySettingsSchema,
   createDefaultAppearanceSettings,
+  createDefaultGeneralSettings,
   createEnvelope,
   type AgentProviderRuntimeConfig,
   type AgentRuntimeRef,
   type AppearanceSettings,
   type CommandResult,
+  type GeneralSettings,
+  type ModelUsageModelSnapshot,
+  type ModelUsageModule,
+  type SessionPromptCommandPayload,
   type SystemEventEnvelope,
   type UtilityWorkerName
 } from "@deepwrite/contracts";
@@ -69,7 +87,12 @@ import {
 } from "./legacy-library-import-batch";
 import { AppearanceConfigStore } from "./appearance-config-store";
 import { AgentTeamConfigStore } from "./agent-team-config-store";
+import { GeneralSettingsStore } from "./general-settings-store";
 import { ModelConfigStore } from "./model-config-store";
+import {
+  createModelUsageRevisionId,
+  ModelUsageStore
+} from "./model-usage-store";
 import { LearningImitationConfigStore } from "./learning-imitation-config-store";
 import { LibraryAgentConfigStore } from "./library-agent-config-store";
 import { LongAgentConfigStore } from "./long-agent-config-store";
@@ -95,25 +118,37 @@ import { WorkspaceDirectoryStore } from "./workspace-directory-store";
 interface ActiveRun extends MainInternalCommandActiveRun {
   correlationId: string;
   runtime: AgentRuntimeRef;
+  usageContext?: UsageRunContext;
+}
+
+interface UsageRunContext {
+  module: ModelUsageModule;
+  snapshotsByConfigId: ReadonlyMap<string, ModelUsageModelSnapshot>;
+  snapshotsByRuntime: ReadonlyMap<string, ModelUsageModelSnapshot>;
 }
 
 const activeRuns = new Map<string, ActiveRun>();
 const terminalRuns = new Set<string>();
+const pendingUsageContexts = new Map<string, UsageRunContext>();
 let smokeEventTap: ((event: SystemEventEnvelope) => void) | undefined;
 let mainWindow: BrowserWindow | undefined;
 let modelConfigStore: ModelConfigStore | undefined;
+let modelUsageStore: ModelUsageStore | undefined;
 let agentTeamConfigStore: AgentTeamConfigStore | undefined;
 let appearanceConfigStore: AppearanceConfigStore | undefined;
+let generalSettingsStore: GeneralSettingsStore | undefined;
 let learningImitationConfigStore: LearningImitationConfigStore | undefined;
 let libraryAgentConfigStore: LibraryAgentConfigStore | undefined;
 let longAgentConfigStore: LongAgentConfigStore | undefined;
 let longAgentTeamConfigStore: LongAgentTeamConfigStore | undefined;
 let cachedAppearanceSettings: AppearanceSettings = createDefaultAppearanceSettings();
+let cachedGeneralSettings: GeneralSettings = createDefaultGeneralSettings();
 let nativeAppearanceListenerBound = false;
 let workspaceAgentConfigStore: WorkspaceAgentConfigStore | undefined;
 let workspaceDirectoryStore: WorkspaceDirectoryStore | undefined;
 let quitting = false;
 let shutdownComplete = false;
+let menuBarTray: Tray | undefined;
 const RENDERER_DRAFT_FLUSH_GRACE_MS = 500;
 
 function broadcastEvent(event: SystemEventEnvelope): void {
@@ -133,6 +168,7 @@ type AgentEventEnvelope = Extract<
       | "agent.message_delta"
       | "agent.thinking_delta"
       | "agent.message_completed"
+      | "agent.usage_observed"
       | "agent.error"
       | "tool.call_stream"
       | "tool.call_requested"
@@ -159,6 +195,7 @@ function isAgentEvent(event: SystemEventEnvelope): event is AgentEventEnvelope {
     event.type === "agent.message_delta" ||
     event.type === "agent.thinking_delta" ||
     event.type === "agent.message_completed" ||
+    event.type === "agent.usage_observed" ||
     event.type === "agent.error" ||
     event.type === "tool.call_stream" ||
     event.type === "tool.call_requested" ||
@@ -189,23 +226,60 @@ function rememberTerminalRun(runId: string): void {
   }
 }
 
+function recordUsageObservation(
+  event: Extract<SystemEventEnvelope, { type: "agent.usage_observed" }>
+): void {
+  if (!modelUsageStore || event.payload.runtime.mode === "local-faux") return;
+  const activeRun = activeRuns.get(event.payload.runId);
+  const usageContext =
+    activeRun?.usageContext ??
+    pendingUsageContexts.get(event.context.correlationId);
+  const snapshot = usageSnapshotForRuntime(usageContext, event.payload.runtime);
+  void modelUsageStore
+    .record({
+      id: `v2:${event.payload.observationId}`,
+      occurredAt: event.payload.observedAt,
+      model: snapshot,
+      module: usageContext?.module ?? "unknown",
+      actor: event.payload.subagentRunId ? "subagent" : "main-agent",
+      status: event.payload.status,
+      usage: event.payload.usage
+    })
+    .catch((error: unknown) => {
+      console.warn(
+        "DeepWrite model usage record was not persisted:",
+        error instanceof Error ? error.message : "unknown error"
+      );
+    });
+}
+
 function handleUtilityEvent(event: SystemEventEnvelope, worker: UtilityWorkerName): void {
   if (isAgentEvent(event) && worker !== "agent") {
     return;
   }
 
   const validated = SystemEventEnvelopeSchema.parse(event) as SystemEventEnvelope;
+  if (validated.type === "agent.usage_observed") {
+    recordUsageObservation(validated);
+    return;
+  }
   if (isAgentEvent(validated)) {
     const runId = validated.payload.runId;
     if (validated.type === "agent.message_completed" || validated.type === "agent.error") {
+      const activeRun = activeRuns.get(runId);
       rememberTerminalRun(runId);
       activeRuns.delete(runId);
+      pendingUsageContexts.delete(
+        activeRun?.correlationId ?? validated.context.correlationId
+      );
     } else if (!terminalRuns.has(runId) && !activeRuns.has(runId)) {
+      const usageContext = pendingUsageContexts.get(validated.context.correlationId);
       activeRuns.set(runId, {
         sessionId: validated.payload.sessionId,
         correlationId: validated.context.correlationId,
         runtime: validated.payload.runtime,
-        accepted: false
+        accepted: false,
+        ...(usageContext ? { usageContext } : {})
       });
     }
   }
@@ -242,6 +316,7 @@ function handleUnexpectedExit(worker: UtilityWorkerName, reason: string): void {
       broadcastEvent(event);
     }
     activeRuns.clear();
+    pendingUsageContexts.clear();
   }
 
   broadcastEvent(
@@ -343,7 +418,81 @@ function createMainWindow(): BrowserWindow {
   }
 
   window.webContents.once("did-finish-load", () => void announceReady(window));
+  window.on("close", (event) => {
+    if (
+      cachedGeneralSettings.showInMenuBar &&
+      !quitting &&
+      !shutdownComplete
+    ) {
+      event.preventDefault();
+      window.hide();
+    }
+  });
+  window.on("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = undefined;
+    }
+  });
   return window;
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createMainWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function destroyMenuBarTray(): void {
+  menuBarTray?.destroy();
+  menuBarTray = undefined;
+}
+
+function syncMenuBarTray(): void {
+  if (!cachedGeneralSettings.showInMenuBar) {
+    destroyMenuBarTray();
+    return;
+  }
+  if (menuBarTray && !menuBarTray.isDestroyed()) {
+    return;
+  }
+
+  const rendererIconPath = join(__dirname, "../renderer/app-icon.png");
+  const buildIconPath = join(__dirname, "../../build/icon.png");
+  const sourceIcon = existsSync(rendererIconPath)
+    ? rendererIconPath
+    : buildIconPath;
+  let trayIcon = nativeImage.createFromPath(sourceIcon);
+  if (process.platform === "darwin" && !trayIcon.isEmpty()) {
+    trayIcon = trayIcon.resize({ width: 18, height: 18 });
+    trayIcon.setTemplateImage(true);
+  }
+  menuBarTray = new Tray(trayIcon);
+  menuBarTray.setToolTip("DeepWrite");
+  menuBarTray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "显示 DeepWrite",
+        click: showMainWindow
+      },
+      { type: "separator" },
+      {
+        label: "退出",
+        click: () => app.quit()
+      }
+    ])
+  );
+  menuBarTray.on("click", showMainWindow);
+}
+
+function syncGeneralSettings(settings: GeneralSettings): void {
+  cachedGeneralSettings = settings;
+  syncMenuBarTray();
 }
 
 function safeErrorDetails(error: unknown): Record<string, unknown> {
@@ -383,6 +532,114 @@ function requireModelConfigStore(): ModelConfigStore {
     throw new Error("模型配置存储尚未初始化。");
   }
   return modelConfigStore;
+}
+
+function requireModelUsageStore(): ModelUsageStore {
+  if (!modelUsageStore) {
+    throw new Error("模型用量存储尚未初始化。");
+  }
+  return modelUsageStore;
+}
+
+function usageRuntimeKey(runtime: Pick<AgentRuntimeRef, "provider" | "model">): string {
+  return `${runtime.provider}\u0000${runtime.model}`;
+}
+
+function usageEndpointOrigin(baseUrl: string): string {
+  if (!baseUrl) return "";
+  try {
+    return new URL(baseUrl).origin;
+  } catch {
+    return "";
+  }
+}
+
+function createUsageModelSnapshot(
+  runtime: AgentRuntimeRef,
+  config?: AgentProviderRuntimeConfig
+): ModelUsageModelSnapshot {
+  const provider = config?.provider ?? runtime.provider;
+  const modelId = config?.modelId ?? runtime.model;
+  const api = config?.api;
+  const endpointOrigin = config ? usageEndpointOrigin(config.baseUrl) : "";
+  const revisionId = config
+    ? createModelUsageRevisionId(config)
+    : createHash("sha256")
+        .update(JSON.stringify({ provider, modelId, api: api ?? "", endpointOrigin }))
+        .digest("hex");
+  const configId =
+    config?.id ??
+    runtime.configId ??
+    `runtime:${provider}:${modelId}`;
+  return {
+    configId,
+    revisionId,
+    label: config?.label ?? modelId,
+    provider,
+    modelId,
+    ...(api ? { api } : {}),
+    ...(config?.managedBy ? { managedBy: config.managedBy } : {})
+  };
+}
+
+function usageModuleForPrompt(payload: SessionPromptCommandPayload): ModelUsageModule {
+  const context = payload.workspaceContext;
+  if (!context) return "unknown";
+  if (context.shortWorkspace) return "short-writing";
+  if (context.scriptWorkspace) return "script-writing";
+  if (context.longWorkspace) return "long-writing";
+  if (context.libraryWorkspace) {
+    return context.libraryWorkspace.domain === "skill"
+      ? "skill-library"
+      : "material-library";
+  }
+  if (context.learningImitation) return "learning-imitation";
+  if (context.subagentAuthoring) return "subagent-authoring";
+  return "unknown";
+}
+
+function createUsageRunContext(
+  payload: SessionPromptCommandPayload,
+  runtimeConfig: AgentProviderRuntimeConfig | undefined,
+  subagentRuntimeConfigs: Readonly<Record<string, AgentProviderRuntimeConfig>>
+): UsageRunContext {
+  const snapshotsByConfigId = new Map<string, ModelUsageModelSnapshot>();
+  const snapshotsByRuntime = new Map<string, ModelUsageModelSnapshot>();
+  const add = (config: AgentProviderRuntimeConfig | undefined): void => {
+    if (!config) return;
+    const runtime: AgentRuntimeRef = {
+      provider: config.provider,
+      model: config.modelId,
+      mode: "provider",
+      configId: config.id
+    };
+    const snapshot = createUsageModelSnapshot(runtime, config);
+    snapshotsByConfigId.set(config.id, snapshot);
+    snapshotsByRuntime.set(usageRuntimeKey(runtime), snapshot);
+  };
+  add(runtimeConfig);
+  for (const config of Object.values(subagentRuntimeConfigs)) {
+    add(config);
+  }
+  return {
+    module: usageModuleForPrompt(payload),
+    snapshotsByConfigId,
+    snapshotsByRuntime
+  };
+}
+
+function usageSnapshotForRuntime(
+  context: UsageRunContext | undefined,
+  runtime: AgentRuntimeRef
+): ModelUsageModelSnapshot {
+  const byConfigId = runtime.configId
+    ? context?.snapshotsByConfigId.get(runtime.configId)
+    : undefined;
+  return (
+    byConfigId ??
+    context?.snapshotsByRuntime.get(usageRuntimeKey(runtime)) ??
+    createUsageModelSnapshot(runtime)
+  );
 }
 
 function requireWorkspaceAgentConfigStore(): WorkspaceAgentConfigStore {
@@ -439,6 +696,13 @@ function requireAppearanceConfigStore(): AppearanceConfigStore {
     throw new Error("外观设置存储尚未初始化。");
   }
   return appearanceConfigStore;
+}
+
+function requireGeneralSettingsStore(): GeneralSettingsStore {
+  if (!generalSettingsStore) {
+    throw new Error("常规设置存储尚未初始化。");
+  }
+  return generalSettingsStore;
 }
 
 function syncNativeAppearanceChrome(settings: AppearanceSettings): void {
@@ -729,6 +993,56 @@ function registerIpc(): void {
             error: {
               code: "appearance.save_failed",
               message: error instanceof Error ? error.message : "保存外观设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "generalSettings.list") {
+        try {
+          const snapshot = GeneralSettingsSnapshotSchema.parse(
+            await requireGeneralSettingsStore().list()
+          );
+          syncGeneralSettings(snapshot.settings);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: snapshot
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "general_settings.list_failed",
+              message:
+                error instanceof Error ? error.message : "加载常规设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "generalSettings.save") {
+        try {
+          const snapshot = GeneralSettingsSnapshotSchema.parse(
+            await requireGeneralSettingsStore().save(command.payload)
+          );
+          syncGeneralSettings(snapshot.settings);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: snapshot
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "general_settings.save_failed",
+              message:
+                error instanceof Error ? error.message : "保存常规设置失败。",
               details: safeErrorDetails(error)
             }
           };
@@ -1366,14 +1680,45 @@ function registerIpc(): void {
         }
       }
 
-      if (command.type === "models.save") {
+      if (command.type === "modelUsage.query") {
         try {
           return {
             status: "accepted",
             requestId: command.id,
-            payload: ModelSettingsSchema.parse(
-              await requireModelConfigStore().save(command.payload)
+            payload: ModelUsageDashboardSchema.parse(
+              await requireModelUsageStore().query(command.payload)
             )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "model_usage.query_failed",
+              message: error instanceof Error ? error.message : "加载模型用量失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.save") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().save(command.payload)
+          );
+          void requireModelUsageStore()
+            .syncConfiguredModels(settings.models)
+            .catch((error: unknown) => {
+              console.warn(
+                "DeepWrite model usage registry was not synchronized:",
+                error instanceof Error ? error.message : "unknown error"
+              );
+            });
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
           };
         } catch (error: unknown) {
           return {
@@ -1402,10 +1747,35 @@ function registerIpc(): void {
           );
           const result = await supervisor.requestCommand("agent", internalCommand, 20_000);
           if (result.status === "accepted") {
+            const payload = ModelConnectionTestResultSchema.parse(result.payload);
+            if (payload.usage) {
+              const runtime: AgentRuntimeRef = {
+                provider: runtimeConfig.provider,
+                model: runtimeConfig.modelId,
+                mode: "provider",
+                configId: runtimeConfig.id
+              };
+              void requireModelUsageStore()
+                .record({
+                  id: `v2:model-test:${command.id}`,
+                  occurredAt: payload.testedAt,
+                  model: createUsageModelSnapshot(runtime, runtimeConfig),
+                  module: "model-test",
+                  actor: "connection-test",
+                  status: "completed",
+                  usage: payload.usage
+                })
+                .catch((error: unknown) => {
+                  console.warn(
+                    "DeepWrite model-test usage was not persisted:",
+                    error instanceof Error ? error.message : "unknown error"
+                  );
+                });
+            }
             return {
               status: "accepted",
               requestId: command.id,
-              payload: ModelConnectionTestResultSchema.parse(result.payload)
+              payload
             };
           }
           return result;
@@ -1918,6 +2288,12 @@ function registerIpc(): void {
             temperature: _requestedTemperature,
             ...promptPayload
           } = command.payload;
+          const usageContext = createUsageRunContext(
+            command.payload,
+            runtimeConfig,
+            subagentRuntimeConfigs
+          );
+          pendingUsageContexts.set(command.context.correlationId, usageContext);
           const internalCommand = CommandEnvelopeSchema.parse(
             createEnvelope(
               "agent.prompt",
@@ -1975,15 +2351,19 @@ function registerIpc(): void {
                 runtime: accepted.runtime,
                 accepted: true,
                 promptRequestId: internalCommand.id,
+                usageContext,
                 ...(longWorkspace
                   ? { resourceId: longWorkspace.bookId }
                   : {})
               });
             }
+            pendingUsageContexts.delete(command.context.correlationId);
             return { status: "accepted", requestId: command.id, payload: accepted };
           }
+          pendingUsageContexts.delete(command.context.correlationId);
           return result;
         } catch (error: unknown) {
+          pendingUsageContexts.delete(command.context.correlationId);
           return {
             status: "rejected",
             requestId: command.id,
@@ -2120,15 +2500,7 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      mainWindow = createMainWindow();
-      return;
-    }
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-    mainWindow.show();
-    mainWindow.focus();
+    showMainWindow();
   });
 
   app.whenReady().then(async () => {
@@ -2137,7 +2509,17 @@ if (!hasSingleInstanceLock) {
     modelConfigStore = new ModelConfigStore(userDataPath, {
       appVersion: app.getVersion()
     });
+    modelUsageStore = new ModelUsageStore(userDataPath);
     void modelConfigStore.initialize();
+    void modelConfigStore
+      .list()
+      .then((settings) => modelUsageStore?.syncConfiguredModels(settings.models))
+      .catch((error: unknown) => {
+        console.warn(
+          "DeepWrite model usage registry could not initialize:",
+          error instanceof Error ? error.message : "unknown error"
+        );
+      });
     workspaceAgentConfigStore = new WorkspaceAgentConfigStore(userDataPath);
     agentTeamConfigStore = new AgentTeamConfigStore(userDataPath);
     libraryAgentConfigStore = new LibraryAgentConfigStore(userDataPath);
@@ -2146,16 +2528,18 @@ if (!hasSingleInstanceLock) {
     learningImitationConfigStore = new LearningImitationConfigStore(userDataPath);
     workspaceDirectoryStore = new WorkspaceDirectoryStore(userDataPath);
     appearanceConfigStore = new AppearanceConfigStore(userDataPath);
+    generalSettingsStore = new GeneralSettingsStore(userDataPath);
     await workspaceDirectoryStore.initializeDefault(app.getPath("documents"));
     await loadAndSyncNativeAppearanceChrome();
+    syncGeneralSettings(
+      (await generalSettingsStore.list()).settings
+    );
     registerIpc();
     supervisor.startAll();
     mainWindow = createMainWindow();
 
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        mainWindow = createMainWindow();
-      }
+      showMainWindow();
     });
   });
 }
@@ -2175,10 +2559,28 @@ app.on("before-quit", (event) => {
     return;
   }
   quitting = true;
+  destroyMenuBarTray();
   setTimeout(() => {
-    void supervisor.shutdownAll().finally(() => {
-      shutdownComplete = true;
-      app.quit();
-    });
+    void (async () => {
+      try {
+        await supervisor.shutdownAll();
+      } catch (error: unknown) {
+        console.warn(
+          "DeepWrite utilities did not shut down cleanly:",
+          error instanceof Error ? error.message : "unknown error"
+        );
+      } finally {
+        try {
+          await modelUsageStore?.flush();
+        } catch (error: unknown) {
+          console.warn(
+            "DeepWrite model usage records could not finish flushing:",
+            error instanceof Error ? error.message : "unknown error"
+          );
+        }
+        shutdownComplete = true;
+        app.quit();
+      }
+    })();
   }, RENDERER_DRAFT_FLUSH_GRACE_MS);
 });

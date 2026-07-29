@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type {
-  LongBookSummary,
-  LongWorkspaceIndexSnapshot
-} from "@deepwrite/contracts";
-import type {
   BookResourceDialogMode,
   CatalogResourceNodeActionPayload,
   DialogMode,
   IconName,
   LongBookResourceNodeActionPayload,
+  LongStructureTreeActionPayload,
   ResourceDomain,
   ResourceSectionActionPayload,
   ResourceTreeNode,
@@ -18,8 +15,6 @@ import type {
 import AppIcon from "./AppIcon.vue";
 import TreeSection from "./TreeSection.vue";
 import TreeNodeItem from "./TreeNodeItem.vue";
-import LongWorkspaceSearch from "./LongWorkspaceSearch.vue";
-import type { LongWorkspaceSelection } from "../types/longWorkspace";
 import { uiMessage } from "../ui-feedback";
 import {
   collectPinnedResourceNodes,
@@ -36,8 +31,6 @@ const props = defineProps<{
   imitationRunning?: boolean;
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
   activePrimaryFeature: PrimaryFeatureId | undefined;
-  activeLongBookSummary?: LongBookSummary | undefined;
-  activeLongWorkspaceIndex?: LongWorkspaceIndexSnapshot | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -54,7 +47,7 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
-  selectLongWorkspace: [selection: LongWorkspaceSelection];
+  longStructureAction: [payload: LongStructureTreeActionPayload];
 }>();
 
 const USER_NAME_STORAGE_KEY = "deepwrite:user-name:v1";
@@ -360,12 +353,6 @@ watch(
       </nav>
 
       <div class="resource-list">
-        <LongWorkspaceSearch
-          v-if="activeLongBookSummary && activeLongWorkspaceIndex"
-          :summary="activeLongBookSummary"
-          :workspace-index="activeLongWorkspaceIndex"
-          @select="emit('selectLongWorkspace', $event)"
-        />
         <section v-if="pinnedResourceNodes.length" class="resource-section pinned-resource-section">
           <div class="pinned-resource-heading">
             <AppIcon name="pin" :size="15" />
@@ -391,6 +378,7 @@ watch(
               @resource-node-action="emit('resourceNodeAction', $event)"
               @create-expert-section="emit('createExpertSection', $event)"
               @remove-expert-section="emit('removeExpertSection', $event)"
+              @long-structure-action="emit('longStructureAction', $event)"
             />
           </ul>
         </section>
@@ -411,6 +399,7 @@ watch(
           @resource-node-action="emit('resourceNodeAction', $event)"
           @create-expert-section="emit('createExpertSection', $event)"
           @remove-expert-section="emit('removeExpertSection', $event)"
+          @long-structure-action="emit('longStructureAction', $event)"
         />
       </div>
     </div>

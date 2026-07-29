@@ -28,6 +28,7 @@ import type { IconName } from "../types/workspace";
 import { uiMessage } from "../ui-feedback";
 import {
   PROMPT_ATTACHMENT_ACCEPT,
+  promptAttachmentFilesFromClipboard,
   readPromptAttachment
 } from "../utils/promptAttachments";
 import {
@@ -102,6 +103,8 @@ const emit = defineEmits<{
 }>();
 
 const scroller = ref<HTMLElement>();
+const messageList = ref<HTMLElement>();
+const conversationNavigatorList = ref<HTMLElement>();
 const composerInput = ref<HTMLTextAreaElement>();
 const attachmentInput = ref<HTMLInputElement>();
 const pendingAttachments = ref<UserPromptAttachment[]>([]);
@@ -114,8 +117,11 @@ const activeReferenceIndex = ref(0);
 let clockTimer: number | undefined;
 let copiedTimer: number | undefined;
 let scrollFrame: number | undefined;
+let conversationNavigatorFrame: number | undefined;
+let conversationNavigatorResizeObserver: ResizeObserver | undefined;
 let attachmentReadEpoch = 0;
 const followsConversationTail = ref(true);
+const activeConversationTurnId = ref<string | null>(null);
 
 const TAIL_FOLLOW_THRESHOLD = 72;
 
@@ -123,10 +129,126 @@ function isNearConversationTail(element: HTMLElement): boolean {
   return element.scrollHeight - element.scrollTop - element.clientHeight <= TAIL_FOLLOW_THRESHOLD;
 }
 
-function handleConversationScroll(): void {
-  if (scroller.value) {
-    followsConversationTail.value = isNearConversationTail(scroller.value);
+function compactConversationTurn(message: ChatMessage): string {
+  const compact = message.content
+    .slice(0, 1_200)
+    .replace(/```[\s\S]*?```/g, " 代码片段 ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, " 图片 ")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/[`*_~>#]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (compact) {
+    return compact.length > 56 ? `${compact.slice(0, 56)}…` : compact;
   }
+  const attachmentNames = message.attachments
+    ?.map((attachment) => attachment.name)
+    .filter(Boolean)
+    .join("、");
+  return attachmentNames ? `附件：${attachmentNames}` : "无文字消息";
+}
+
+const conversationTurns = computed(() => {
+  let turnNumber = 0;
+  return props.messages.flatMap((message) => {
+    if (message.role !== "user") return [];
+    turnNumber += 1;
+    return [
+      {
+        id: message.id,
+        number: turnNumber,
+        text: compactConversationTurn(message)
+      }
+    ];
+  });
+});
+
+function conversationMessageElement(messageId: string): HTMLElement | undefined {
+  const list = messageList.value;
+  if (!list) return undefined;
+  return Array.from(
+    list.querySelectorAll<HTMLElement>(
+      ":scope > .message[data-conversation-message-id]"
+    )
+  ).find(
+    (element) => element.dataset.conversationMessageId === messageId
+  );
+}
+
+function keepActiveConversationCardVisible(): void {
+  const list = conversationNavigatorList.value;
+  const activeId = activeConversationTurnId.value;
+  if (!list || !activeId) return;
+  const activeCard = Array.from(
+    list.querySelectorAll<HTMLElement>("[data-conversation-turn-id]")
+  ).find(
+    (element) => element.dataset.conversationTurnId === activeId
+  );
+  if (!activeCard) return;
+  const listRect = list.getBoundingClientRect();
+  const cardRect = activeCard.getBoundingClientRect();
+  if (cardRect.top < listRect.top) {
+    list.scrollTop -= listRect.top - cardRect.top + 6;
+  } else if (cardRect.bottom > listRect.bottom) {
+    list.scrollTop += cardRect.bottom - listRect.bottom + 6;
+  }
+}
+
+function updateActiveConversationTurn(): void {
+  const container = scroller.value;
+  if (!container || !conversationTurns.value.length) {
+    activeConversationTurnId.value = null;
+    return;
+  }
+  const focusLine =
+    container.getBoundingClientRect().top + container.clientHeight * 0.34;
+  let activeId = conversationTurns.value[0]!.id;
+  for (const turn of conversationTurns.value) {
+    const messageElement = conversationMessageElement(turn.id);
+    if (!messageElement || messageElement.getBoundingClientRect().top > focusLine) {
+      break;
+    }
+    activeId = turn.id;
+  }
+  if (activeConversationTurnId.value !== activeId) {
+    activeConversationTurnId.value = activeId;
+    void nextTick(keepActiveConversationCardVisible);
+  }
+}
+
+function scheduleActiveConversationTurnUpdate(): void {
+  if (conversationNavigatorFrame !== undefined) return;
+  conversationNavigatorFrame = globalThis.requestAnimationFrame(() => {
+    conversationNavigatorFrame = undefined;
+    updateActiveConversationTurn();
+  });
+}
+
+function handleConversationScroll(): void {
+  if (!scroller.value) return;
+  followsConversationTail.value = isNearConversationTail(scroller.value);
+  scheduleActiveConversationTurnUpdate();
+}
+
+function scrollToConversationTurn(messageId: string): void {
+  const container = scroller.value;
+  const messageElement = conversationMessageElement(messageId);
+  if (!container || !messageElement) return;
+  followsConversationTail.value = false;
+  activeConversationTurnId.value = messageId;
+  keepActiveConversationCardVisible();
+  const targetTop =
+    container.scrollTop +
+    messageElement.getBoundingClientRect().top -
+    container.getBoundingClientRect().top -
+    22;
+  const reduceMotion = globalThis.matchMedia?.(
+    "(prefers-reduced-motion: reduce)"
+  ).matches;
+  container.scrollTo({
+    top: Math.max(0, targetTop),
+    behavior: reduceMotion ? "auto" : "smooth"
+  });
 }
 
 function scheduleConversationTailFollow(): void {
@@ -184,8 +306,19 @@ watch(
   }
 );
 
-onMounted(() => {
+onMounted(async () => {
+  await nextTick();
   scheduleConversationTailFollow();
+  updateActiveConversationTurn();
+  conversationNavigatorResizeObserver = new ResizeObserver(
+    scheduleActiveConversationTurnUpdate
+  );
+  if (scroller.value) {
+    conversationNavigatorResizeObserver.observe(scroller.value);
+  }
+  if (messageList.value) {
+    conversationNavigatorResizeObserver.observe(messageList.value);
+  }
 });
 
 watch(
@@ -213,7 +346,21 @@ watch(
     readingAttachments.value = false;
     pendingAttachments.value = [];
     followsConversationTail.value = true;
-    void nextTick(scheduleConversationTailFollow);
+    void nextTick(() => {
+      scheduleConversationTailFollow();
+      updateActiveConversationTurn();
+    });
+  }
+);
+
+watch(
+  () => props.messages.length,
+  async () => {
+    await nextTick();
+    if (messageList.value) {
+      conversationNavigatorResizeObserver?.observe(messageList.value);
+    }
+    updateActiveConversationTurn();
   }
 );
 
@@ -321,6 +468,19 @@ function handleAttachmentChange(event: Event): void {
   void addAttachmentFiles(files);
 }
 
+function handleComposerPaste(event: ClipboardEvent): void {
+  const files = promptAttachmentFilesFromClipboard(event.clipboardData);
+  if (!files.length) return;
+
+  event.preventDefault();
+  closeReferenceMenu();
+  if (readingAttachments.value) {
+    uiMessage.warning("正在读取附件，请稍后再粘贴。");
+    return;
+  }
+  void addAttachmentFiles(files);
+}
+
 function removePendingAttachment(id: string): void {
   pendingAttachments.value = pendingAttachments.value.filter(
     (attachment) => attachment.id !== id
@@ -381,6 +541,10 @@ onBeforeUnmount(() => {
   if (scrollFrame !== undefined) {
     globalThis.cancelAnimationFrame(scrollFrame);
   }
+  if (conversationNavigatorFrame !== undefined) {
+    globalThis.cancelAnimationFrame(conversationNavigatorFrame);
+  }
+  conversationNavigatorResizeObserver?.disconnect();
 });
 
 const referenceOptions = computed(() =>
@@ -1099,12 +1263,10 @@ function proposalAcceptLabel(proposal: AgentEditProposal): string {
   return proposal.status === "error" ? "重试接受并保存" : "接受并保存";
 }
 
-function canReviewProposalWhileStreaming(proposal: AgentEditProposal): boolean {
-  return (
-    props.allowLiveEditReview &&
-    proposal.stageId === "draft" &&
-    !proposal.libraryTarget
-  );
+function canReviewProposalWhileStreaming(
+  _proposal: AgentEditProposal
+): boolean {
+  return props.allowLiveEditReview;
 }
 
 function showProposalReviewActions(proposal: AgentEditProposal): boolean {
@@ -1179,7 +1341,7 @@ function proposalStatusMessage(
     proposal.status === "pending" &&
     proposal.approvalMode === "auto-approve"
   ) {
-    return "本项已生成，将在本轮完成后自动保存。";
+    return "本项已生成，已加入实时自动保存队列。";
   }
   if (
     messageStatus === "streaming" &&
@@ -1350,12 +1512,13 @@ function copyMessageLabel(message: ChatMessage): string {
       </div>
     </header>
 
-    <section
-      ref="scroller"
-      class="conversation-scroll"
-      aria-live="polite"
-      @scroll.passive="handleConversationScroll"
-    >
+    <div class="conversation-scroll-shell">
+      <section
+        ref="scroller"
+        class="conversation-scroll"
+        aria-live="polite"
+        @scroll.passive="handleConversationScroll"
+      >
       <div v-if="messages.length === 0" class="conversation-empty">
         <span class="empty-agent-mark"><AppIcon name="logo" :size="40" /></span>
         <h1>{{ welcomeContent.title }}</h1>
@@ -1373,10 +1536,15 @@ function copyMessageLabel(message: ChatMessage): string {
         </div>
       </div>
 
-      <div v-else class="message-list">
+      <div
+        v-else
+        ref="messageList"
+        class="message-list"
+      >
         <article
           v-for="message in messages"
           :key="message.id"
+          :data-conversation-message-id="message.id"
           class="message"
           :class="[
             `is-${message.role}`,
@@ -1777,7 +1945,54 @@ function copyMessageLabel(message: ChatMessage): string {
           </div>
         </article>
       </div>
-    </section>
+      </section>
+
+      <nav
+        v-if="conversationTurns.length"
+        class="conversation-turn-navigator"
+        aria-label="当前对话轮次"
+      >
+        <button
+          class="conversation-turn-navigator-toggle"
+          type="button"
+          aria-label="展开对话定位"
+          title="悬停查看对话定位"
+        >
+          <span class="conversation-turn-indicators" aria-hidden="true">
+            <i
+              v-for="turn in conversationTurns"
+              :key="turn.id"
+              :class="{ 'is-active': activeConversationTurnId === turn.id }"
+            />
+          </span>
+        </button>
+        <div class="conversation-turn-navigator-panel">
+          <div
+            ref="conversationNavigatorList"
+            class="conversation-turn-navigator-list"
+          >
+            <button
+              v-for="turn in conversationTurns"
+              :key="turn.id"
+              type="button"
+              class="conversation-turn-card"
+              :class="{ 'is-active': activeConversationTurnId === turn.id }"
+              :data-conversation-turn-id="turn.id"
+              :aria-current="
+                activeConversationTurnId === turn.id ? 'location' : undefined
+              "
+              :title="`第 ${turn.number} 轮：${turn.text}`"
+              @click="scrollToConversationTurn(turn.id)"
+            >
+              <span class="conversation-turn-card-number">
+                {{ String(turn.number).padStart(2, '0') }}
+              </span>
+              <span class="conversation-turn-card-copy">{{ turn.text }}</span>
+            </button>
+          </div>
+        </div>
+      </nav>
+    </div>
 
     <footer class="composer-wrap">
       <div class="composer-stack">
@@ -1939,6 +2154,7 @@ function copyMessageLabel(message: ChatMessage): string {
               @click="updateActiveReference($event.target as HTMLTextAreaElement)"
               @input="handleInput"
               @keydown="handleKeydown"
+              @paste="handleComposerPaste"
             />
             <div class="composer-toolbar">
               <div class="composer-tools">

@@ -16,6 +16,8 @@ import type {
   CreateLibraryEntryInput,
   CreateScriptBookInput,
   CreateShortBookInput,
+  GeneralPermissionMode,
+  GeneralSettings,
   LearningImitationSettings,
   LearningImitationSettingsInput,
   LearningImitationStageId,
@@ -29,8 +31,12 @@ import type {
   LongAgentSettingsInput,
   LongAgentTeamSettings,
   LongAgentTeamSettingsInput,
+  LongArcId,
   LongBookSummary,
+  LongChapterCardId,
   LongChapterReadiness,
+  LongCharacterGroup,
+  LongCharacterId,
   LongImportWriteClawResult,
   LongListBooksResult,
   LongOpenBookResult,
@@ -47,6 +53,8 @@ import type {
   ModelConfigInput,
   ModelSettings,
   ModelSettingsInput,
+  ModelUsageDashboard,
+  ModelUsageQueryInput,
   ShortManuscriptExportFormat,
   ShortWorkspaceAgentId,
   WorkspaceAgentSettings,
@@ -70,6 +78,7 @@ import {
   PROMPT_ATTACHMENT_MAX_ITEMS,
   SKILL_KINDS,
   SkillStageIdSchema,
+  createDefaultGeneralSettings,
   createExpertDraftDirectoryRevision,
   createLongWorkspaceNavigationSnapshot,
   createShortWorkspaceContentRevision,
@@ -91,6 +100,9 @@ import type {
   BookTransferDialogMode
 } from "./components/BookTransferDialog.vue";
 import CreateBookDialog from "./components/CreateBookDialog.vue";
+import CreateLongCharacterDialog from "./components/CreateLongCharacterDialog.vue";
+import CreateLongPlotPointDialog from "./components/CreateLongPlotPointDialog.vue";
+import CreateLongVolumeDialog from "./components/CreateLongVolumeDialog.vue";
 import DeleteExpertSectionDialog from "./components/DeleteExpertSectionDialog.vue";
 import ExportShortManuscriptDialog from "./components/ExportShortManuscriptDialog.vue";
 import LibraryProjectDialog from "./components/LibraryProjectDialog.vue";
@@ -150,14 +162,19 @@ import type {
   DialogMode,
   EditorDraftState,
   LongBookResourceNodeActionPayload,
+  LongStructureTreeActionPayload,
   ResourceSectionActionPayload,
   ResourceTreeNode,
   ResourceTreeSection,
   WorkspaceDocument
 } from "./types/workspace";
 import {
+  LONG_CHARACTER_GROUP_OPTIONS,
+  createLongChapterCardVolumeSelection,
+  createLongCharacterGroupSelection,
   createLongChapterSelection,
   createLongContinuitySelection,
+  createLongPlotPointVolumeSelection,
   longBookIdFromResourceId,
   longBookResourceId,
   nextWritableLongChapterId,
@@ -167,6 +184,9 @@ import {
   type LongStructureMutationCompletion,
   type LongWorkspaceSelection
 } from "./types/longWorkspace";
+import {
+  createLongStructureMutationBuilder
+} from "./types/longStructureMutations";
 import {
   applyBookResourcePreferences,
   BOOK_RESOURCE_PREFERENCES_STORAGE_KEY,
@@ -258,14 +278,14 @@ const COMPOSER_STAGE_LABELS = {
 const LONG_WORKSPACE_ROOT_LABELS = {
   worldbuilding: "世界观",
   character_design: "人物设计",
-  plot_design: "情节设计",
+  plot_design: "剧情设计",
   draft: "正文",
   continuity_ledger: "连续性账本"
 } as const;
 const LONG_WORKSPACE_ROOT_DESCRIPTIONS: Record<LongWorkspaceRoot, string> = {
   worldbuilding: "维护世界规则、势力、地理、历史、术语、境界与物品。",
   character_design: "维护人物核心档案、关系、当前状态与历史轨迹。",
-  plot_design: "维护全书故事线、分卷、剧情弧与章节卡。",
+  plot_design: "维护全书故事线、分卷、剧情点与章节卡。",
   draft: "按分卷和章卡顺序编辑正文。",
   continuity_ledger: "核对章节并维护连续性提交记录。"
 };
@@ -402,13 +422,19 @@ const rightPaneWidth = ref(
   window.innerWidth <= 1220 ? 395 : Math.min(650, Math.max(410, window.innerWidth * 0.34))
 );
 const resizingPane = ref<"left" | "right" | null>(null);
-const selectedResourceId = ref(EMPTY_WORKSPACE_DOCUMENT.id);
-const activeCreationResourceId = ref(EMPTY_WORKSPACE_DOCUMENT.id);
+// Keep the workspace unselected on launch. A resource ID is set only after the
+// user explicitly opens a book or another resource from the tree.
+const selectedResourceId = ref("");
+const activeCreationResourceId = ref("");
 const documents = ref<WorkspaceDocument[]>([{ ...EMPTY_WORKSPACE_DOCUMENT }]);
 const editorDrafts = ref<Record<string, EditorDraftState>>({});
-const editorAutoSaveEnabled = ref(
-  loadGeneralPreferences(window.localStorage).autoSave
-);
+const legacyGeneralPreferences = loadGeneralPreferences(window.localStorage);
+const generalSettings = ref<GeneralSettings>({
+  ...createDefaultGeneralSettings(),
+  autoSave: legacyGeneralPreferences.autoSave
+});
+const editorAutoSaveEnabled = ref(generalSettings.value.autoSave);
+let generalSettingsSaveChain: Promise<void> = Promise.resolve();
 const editorAutoSaveTimers = new Map<string, number>();
 let editorSaveChain: Promise<void> = Promise.resolve();
 const selectedExpertSectionIds = ref<Record<string, string>>({});
@@ -449,6 +475,7 @@ const activeLongWorkspaceIndex = ref<LongWorkspaceIndexSnapshot | null>(null);
 const activeLongSelection = ref<LongWorkspaceSelection | null>(null);
 const longWorkspaceEditor = ref<{
   saveAllChanges(): Promise<boolean>;
+  selectBookLineVolume(volumeId: string): void;
   synchronizeProjectRevisions(
     workspaceRevision: number,
     projectRevision: number
@@ -487,6 +514,22 @@ const longRollbackDialogOpen = ref(false);
 const longRollbackPending = ref(false);
 const longRollbackCommitId = ref<string | null>(null);
 const longStructureDialogOpen = ref(false);
+const longStructureDialogTarget = ref<{
+  section: LongStructureTreeActionPayload["node"]["longStructureSection"];
+  action: LongStructureTreeActionPayload["action"];
+  itemId?: string;
+} | null>(null);
+const longCharacterCreate = ref<{
+  bookId: string;
+  group: LongCharacterGroup;
+  groupLabel: string;
+} | null>(null);
+const longPlotPointCreate = ref<{
+  bookId: string;
+  volumeId: string;
+  volumeTitle: string;
+} | null>(null);
+const longVolumeCreateOpen = ref(false);
 const longBindingsDialogMode = ref<"skill" | "material" | null>(null);
 const longBookActionPending = ref(false);
 const longBookRemovalDialog = ref<{
@@ -605,6 +648,11 @@ const modelSaving = ref(false);
 const modelError = ref<string | null>(null);
 const modelTestMessage = ref<string | null>(null);
 const testingModelId = ref<string | null>(null);
+const modelUsageDashboard = ref<ModelUsageDashboard | null>(null);
+const modelUsageLoading = ref(false);
+const modelUsageError = ref<string | null>(null);
+const modelUsageQuery = ref<ModelUsageQueryInput>({});
+let modelUsageRequestSequence = 0;
 const workspaceAgentSettings = ref<WorkspaceAgentSettings[]>([
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS
@@ -708,6 +756,8 @@ const longWritingOrchestrator = useLongWritingOrchestrator({
 const longWorkspaceProposals = useLongWorkspaceProposals({
   api: resolveLongWorkspaceApi,
   acceptsEvent: acceptsLongProposalEvent,
+  approvalModeForEvent: longProposalApprovalMode,
+  prepareAutoApprove: prepareAutomaticLongProposal,
   onApplied: handleLongProposalApplied,
   onDispatchApproved: handleLongChapterDispatchApproved,
   onRejected: (event) => {
@@ -764,21 +814,26 @@ function createLongRootSelection(
 
 function projectLongWorkspaceNavigation(
   book: LongBookSummary,
-  index: LongWorkspaceIndexSnapshot
+  index?: LongWorkspaceIndexSnapshot | null
 ): ResourceTreeNode[] {
   const node = (
     selection: LongWorkspaceSelection,
     options: {
       icon: NonNullable<ResourceTreeNode["icon"]>;
+      label?: string;
       badge?: string;
       children?: ResourceTreeNode[];
+      longCharacterGroup?: LongCharacterGroup;
     }
   ): ResourceTreeNode => ({
     id: longNavigationNodeId(book.id, selection.key),
-    label: selection.title,
+    label: options.label ?? selection.title,
     icon: options.icon,
     ...(options.badge ? { badge: options.badge } : {}),
     ...(options.children?.length ? { children: options.children } : {}),
+    ...(options.longCharacterGroup
+      ? { longCharacterGroup: options.longCharacterGroup }
+      : {}),
     selectableBranch: Boolean(options.children?.length),
     workspaceType: "long",
     longBookId: book.id,
@@ -789,9 +844,16 @@ function projectLongWorkspaceNavigation(
   const reconcile = (
     selection: LongWorkspaceSelection
   ): LongWorkspaceSelection | undefined =>
-    reconcileLongWorkspaceSelection(book, index, selection);
+    index
+      ? reconcileLongWorkspaceSelection(book, index, selection)
+      : selection;
 
-  const worldChildren = [...index.worldbuilding]
+  // Long book summaries already contain the lightweight navigation needed by
+  // the resource tree. Render it before the book is opened, then reconcile
+  // the selection against the complete index when a user selects an item.
+  // This keeps the first render consistent with short/script books without
+  // loading every long project's file references or document contents.
+  const worldChildren = [...book.navigation.worldbuilding]
     .sort((left, right) => left.order - right.order)
     .flatMap((category) => {
       const selection = reconcile({
@@ -814,37 +876,206 @@ function projectLongWorkspaceNavigation(
         : [];
     });
 
-  const characterChildren = [...book.navigation.characters]
-    .sort(
-      (left, right) =>
-        left.group.localeCompare(right.group) ||
-        left.order - right.order ||
-        left.id.localeCompare(right.id)
-    )
-    .flatMap((character) => {
-      const selection = reconcile({
-        key: `character:${character.id}`,
-        root: "character_design",
-        title: character.name,
-        breadcrumbs: [book.title, "人物设计", character.name],
-        files: [],
-        preferredRole: "core-profile"
-      });
-      return selection ? [node(selection, { icon: "user" })] : [];
+  const characterChildren = LONG_CHARACTER_GROUP_OPTIONS.map((group) => {
+    const characterCount = book.navigation.characters.filter(
+      (character) => character.group === group.value
+    ).length;
+    const selection = reconcile({
+      key: `character-group:${group.value}`,
+      root: "character_design",
+      characterGroup: group.value,
+      title: group.label,
+      breadcrumbs: [book.title, "人物设计", group.label],
+      files: [],
+      preferredRole: "core-profile",
+      description: `管理${group.label}人物；使用右侧人物标签栏的加号新建人物。`
     });
+    const groupSelection = selection ?? {
+      key: `character-group:${group.value}`,
+      root: "character_design" as const,
+      title: group.label,
+      breadcrumbs: [book.title, "人物设计", group.label],
+      files: [],
+      preferredRole: "core-profile" as const
+    };
+    return node(groupSelection, {
+      icon: "folder",
+      label: group.label,
+      badge: String(characterCount),
+      longCharacterGroup: group.value
+    });
+  });
 
   const bookLineSelection = reconcile({
     key: "plot-design:book-line",
     root: "plot_design",
     title: "全书故事线",
-    breadcrumbs: [book.title, "情节设计", "全书故事线"],
+    breadcrumbs: [book.title, "剧情设计", "全书故事线"],
     files: [],
     preferredRole: "book-line",
     description: "全书级情节主线。"
   });
-  const plotChildren = bookLineSelection
-    ? [node(bookLineSelection, { icon: "file", badge: "故事线" })]
-    : [];
+  const foreshadowingSelection = reconcile({
+    key: "plot-design:foreshadowing",
+    root: "plot_design",
+    title: "伏笔总览",
+    breadcrumbs: [book.title, "剧情设计", "伏笔总览"],
+    files: [],
+    preferredRole: "book-line",
+    description:
+      "集中管理伏笔线，并查看各卷、各剧情点中的伏笔触点。"
+  });
+  const plotPointVolumeChildren: ResourceTreeNode[] = [
+    ...book.navigation.volumes
+  ]
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.id.localeCompare(right.id)
+    )
+    .map((volume) => {
+      const plotPointCount = book.navigation.arcs.filter(
+        (arc) => arc.volumeId === volume.id
+      ).length;
+      const selection = reconcile({
+        key: `plot-design:plot-points:${volume.id}`,
+        root: "plot_design",
+        plotPointVolumeId: volume.id,
+        title: volume.title,
+        breadcrumbs: [
+          book.title,
+          "剧情设计",
+          "剧情点",
+          volume.title
+        ],
+        files: [],
+        preferredRole: "book-line",
+        description: `${volume.title}共有 ${plotPointCount} 个剧情点。`
+      });
+      const volumeSelection = selection ?? {
+        key: `plot-design:plot-points:${volume.id}`,
+        root: "plot_design" as const,
+        plotPointVolumeId: volume.id,
+        title: volume.title,
+        breadcrumbs: [
+          book.title,
+          "剧情设计",
+          "剧情点",
+          volume.title
+        ],
+        files: [],
+        preferredRole: "book-line" as const
+      };
+      return {
+        ...node(volumeSelection, {
+          icon: "folder",
+          label: volume.title,
+          badge: `${plotPointCount} 点`
+        }),
+        longStructureSection: "arc" as const,
+        longStructureParentId: volume.id
+      };
+    });
+
+  const chapterCardManagementChildren: ResourceTreeNode[] =
+    [...book.navigation.volumes]
+      .sort(
+        (left, right) =>
+          left.order - right.order || left.id.localeCompare(right.id)
+      )
+      .map((volume) => {
+        const chapters = book.navigation.chapterCards
+          .filter((chapter) => chapter.volumeId === volume.id)
+          .sort(
+            (left, right) =>
+              left.narrativeOrder - right.narrativeOrder ||
+              left.id.localeCompare(right.id)
+          );
+        const fallbackSelection: LongWorkspaceSelection = {
+          key: `plot-design:chapter-cards:${volume.id}`,
+          root: "plot_design",
+          chapterCardVolumeId: volume.id,
+          ...(chapters[0] ? { chapterCardId: chapters[0].id } : {}),
+          chapterCardTabs: chapters.map((chapter) => ({
+            id: chapter.id,
+            label: chapter.title
+          })),
+          title: chapters[0]?.title ?? volume.title,
+          breadcrumbs: [
+            book.title,
+            "剧情设计",
+            "章卡",
+            volume.title,
+            ...(chapters[0] ? [chapters[0].title] : [])
+          ],
+          files: [],
+          preferredRole: "book-line",
+          description: chapters.length
+            ? `${volume.title} · ${chapters[0]!.title}`
+            : `${volume.title}还没有章卡，请使用右侧章卡标签栏的加号新建。`
+        };
+        const selection =
+          (index
+            ? createLongChapterCardVolumeSelection(book, index, volume.id)
+            : undefined) ?? fallbackSelection;
+        return {
+          ...node(selection, {
+            icon: "folder",
+            label: volume.title,
+            badge: `${chapters.length} 章`
+          }),
+          longStructureSection: "chapter" as const,
+          longStructureParentId: volume.id
+        };
+      });
+
+  const plotChildren: ResourceTreeNode[] = [
+    ...(bookLineSelection
+      ? [node(bookLineSelection, { icon: "file", badge: "故事线" })]
+      : []),
+    ...(foreshadowingSelection
+      ? [
+          node(foreshadowingSelection, {
+            icon: "pin",
+            badge: String(book.navigation.counts.foreshadowingThreads)
+          })
+        ]
+      : []),
+    node(
+      {
+        key: "root:plot-points",
+        root: "plot_design",
+        title: "剧情点",
+        breadcrumbs: [book.title, "剧情设计", "剧情点"],
+        files: [],
+        preferredRole: "book-line",
+        description: "按分卷管理剧情点；一卷可以包含多个剧情点。"
+      },
+      {
+        icon: "history",
+        badge: String(book.navigation.counts.arcs),
+        children: plotPointVolumeChildren
+      }
+    ),
+    {
+      ...node(
+        {
+          key: "root:plot-chapter-cards",
+          root: "plot_design",
+          title: "章卡",
+          breadcrumbs: [book.title, "剧情设计", "章卡"],
+          files: [],
+          preferredRole: "book-line",
+          description: "直接管理长篇章节卡；正文仍在“正文”中编辑。"
+        },
+        {
+          icon: "file",
+          badge: String(book.navigation.counts.chapterCards),
+          children: chapterCardManagementChildren
+        }
+      ),
+      longStructureSection: "chapter" as const
+    }
+  ];
 
   const draftChildren = [...book.navigation.volumes]
     .sort(
@@ -860,7 +1091,17 @@ function projectLongWorkspaceNavigation(
             left.id.localeCompare(right.id)
         )
         .flatMap<ResourceTreeNode>((chapter) => {
-          const selection = createLongChapterSelection(book, index, chapter.id);
+          const selection = index
+            ? createLongChapterSelection(book, index, chapter.id)
+            : {
+                key: `chapter:${chapter.id}`,
+                root: "draft" as const,
+                chapterCardId: chapter.id,
+                title: chapter.title,
+                breadcrumbs: [book.title, "正文", volume.title, chapter.title],
+                files: [],
+                preferredRole: "body" as const
+              };
           return selection ? [node(selection, { icon: "edit" })] : [];
         });
       return chapters.length
@@ -879,9 +1120,9 @@ function projectLongWorkspaceNavigation(
         : [];
     });
 
-  const nextChapterId = nextWritableLongChapterId(index);
   const continuityChildren: ResourceTreeNode[] = [];
-  if (nextChapterId) {
+  const nextChapterId = index ? nextWritableLongChapterId(index) : null;
+  if (index && nextChapterId) {
     const selection = createLongContinuitySelection(
       book,
       index,
@@ -893,19 +1134,21 @@ function projectLongWorkspaceNavigation(
       );
     }
   }
-  for (const commit of index.ledger.commits) {
-    const selection = reconcile({
-      key: `ledger:${commit.id}`,
-      root: "continuity_ledger",
-      title: `提交 #${commit.sequence}`,
-      breadcrumbs: [book.title, "连续性账本", `提交 #${commit.sequence}`],
-      files: [],
-      preferredRole: "ledger-record"
-    });
-    if (selection) {
-      continuityChildren.push(
-        node(selection, { icon: "ledger", badge: `#${commit.sequence}` })
-      );
+  if (index) {
+    for (const commit of index.ledger.commits) {
+      const selection = reconcile({
+        key: `ledger:${commit.id}`,
+        root: "continuity_ledger",
+        title: `提交 #${commit.sequence}`,
+        breadcrumbs: [book.title, "连续性账本", `提交 #${commit.sequence}`],
+        files: [],
+        preferredRole: "ledger-record"
+      });
+      if (selection) {
+        continuityChildren.push(
+          node(selection, { icon: "ledger", badge: `#${commit.sequence}` })
+        );
+      }
     }
   }
 
@@ -923,11 +1166,12 @@ function projectLongWorkspaceNavigation(
     }),
     node(createLongRootSelection(book, "plot_design"), {
       icon: "history",
-      badge: String(counts.arcs),
+      badge: String(counts.arcs + counts.volumes + counts.chapterCards),
       children: plotChildren
     }),
     node(createLongRootSelection(book, "draft"), {
       icon: "edit",
+      label: "正文",
       badge: String(counts.chapterCards),
       children: draftChildren
     }),
@@ -956,14 +1200,12 @@ const longBookResourceNodes = computed<ResourceTreeNode[]>(() => {
         id: longBookResourceId(book.id),
         label: book.title,
         icon: "book" as const,
-        badge: `长篇 · ${book.genre}`,
+        badge: "长篇",
         workspaceType: "long" as const,
         longBookId: book.id,
         catalogNodeType: "long-book" as const,
-        selectableBranch: Boolean(workspaceIndex),
-        ...(workspaceIndex
-          ? { children: projectLongWorkspaceNavigation(book, workspaceIndex) }
-          : {}),
+        selectableBranch: true,
+        children: projectLongWorkspaceNavigation(book, workspaceIndex),
         projectRevision: book.projectRevision
       };
     }),
@@ -1482,6 +1724,7 @@ function applyCatalogSnapshot(snapshot: CatalogSnapshot): void {
       longBooks.value.some((book) => book.id === selectedLongBookId)
   );
   if (
+    selectedResourceId.value &&
     !selectedLongBookExists &&
     !documents.value.some((document) => document.id === selectedTargetId)
   ) {
@@ -1498,7 +1741,10 @@ function applyCatalogSnapshot(snapshot: CatalogSnapshot): void {
     projection.resourceSections,
     activeCreationResourceId.value
   );
-  if (!documents.value.some((document) => document.id === activeCreationTargetId)) {
+  if (
+    activeCreationResourceId.value &&
+    !documents.value.some((document) => document.id === activeCreationTargetId)
+  ) {
     const selectedCreationTargetId = resourceTargetDocumentId(
       projection.resourceSections,
       selectedResourceId.value
@@ -1693,6 +1939,9 @@ async function openLongBook(bookId: string): Promise<void> {
   activeLongFileContext.value = null;
   longRollbackDialogOpen.value = false;
   longStructureDialogOpen.value = false;
+  longCharacterCreate.value = null;
+  longPlotPointCreate.value = null;
+  longVolumeCreateOpen.value = false;
   longBindingsDialogMode.value = null;
   longWorkspaceLoading.value = true;
   try {
@@ -1823,7 +2072,9 @@ async function selectLongWorkspaceFile(
   selection: LongWorkspaceSelection
 ): Promise<boolean> {
   if (
-    activeLongSelection.value?.key !== selection.key &&
+    (activeLongSelection.value?.key !== selection.key ||
+      activeLongSelection.value?.characterId !== selection.characterId ||
+      activeLongSelection.value?.plotPointId !== selection.plotPointId) &&
     !(await saveActiveLongEditorChanges())
   ) {
     return false;
@@ -1833,14 +2084,222 @@ async function selectLongWorkspaceFile(
   return true;
 }
 
-async function selectLongWorkspaceSearchResult(
-  selection: LongWorkspaceSelection
+async function selectLongCharacterTab(
+  characterId: LongCharacterId
 ): Promise<void> {
-  const bookId = activeLongBookId.value;
-  if (!bookId || !(await selectLongWorkspaceFile(selection))) return;
-  selectedResourceId.value = longNavigationNodeId(bookId, selection.key);
-  workspaceMainView.value = "conversation";
-  rightCollapsed.value = false;
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  const group = activeLongSelection.value?.characterGroup;
+  if (!summary || !index || !group) return;
+  await selectLongWorkspaceFile(
+    createLongCharacterGroupSelection(
+      summary,
+      index,
+      group,
+      characterId
+    )
+  );
+}
+
+async function selectLongPlotPointTab(
+  plotPointId: LongArcId
+): Promise<void> {
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  const volumeId = activeLongSelection.value?.plotPointVolumeId;
+  if (!summary || !index || !volumeId) return;
+  const selection = createLongPlotPointVolumeSelection(
+    summary,
+    index,
+    volumeId,
+    plotPointId
+  );
+  if (selection) {
+    await selectLongWorkspaceFile(selection);
+  }
+}
+
+async function selectLongChapterCardTab(
+  chapterCardId: string
+): Promise<void> {
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  const volumeId = activeLongSelection.value?.chapterCardVolumeId;
+  if (!summary || !index || !volumeId) return;
+  const selection = createLongChapterCardVolumeSelection(
+    summary,
+    index,
+    volumeId,
+    chapterCardId
+  );
+  if (selection) {
+    await selectLongWorkspaceFile(selection);
+  }
+}
+
+function openLongChapterCardCreate(): void {
+  const volumeId = activeLongSelection.value?.chapterCardVolumeId;
+  if (
+    !volumeId ||
+    !activeLongWorkspaceIndex.value ||
+    blockActiveLongWritingPlan("新增章卡")
+  ) {
+    return;
+  }
+  longStructureDialogTarget.value = {
+    section: "chapter",
+    action: "create",
+    itemId: volumeId
+  };
+  longStructureDialogOpen.value = true;
+}
+
+async function renameLongCharacter(
+  input: { characterId: LongCharacterId; name: string },
+  completion: (succeeded: boolean) => void
+): Promise<void> {
+  const index = activeLongWorkspaceIndex.value;
+  const character = index?.characters.find(
+    ({ id }) => id === input.characterId
+  );
+  const name = input.name.trim();
+  if (!index || !character) {
+    uiMessage.warning("该人物已不存在，请刷新后重试。");
+    completion(false);
+    return;
+  }
+  if (!name) {
+    uiMessage.warning("人物姓名不能为空。");
+    completion(false);
+    return;
+  }
+  if (name === character.name) {
+    completion(true);
+    return;
+  }
+
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    batch = createLongStructureMutationBuilder(index).updateCharacter(
+      character.id,
+      { name }
+    );
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法修改人物姓名。"
+    );
+    completion(false);
+    return;
+  }
+
+  await applyLongStructureMutation(
+    batch,
+    {
+      succeed: () => completion(true),
+      fail: () => completion(false),
+      appliedButRefreshFailed: () => completion(true)
+    },
+    {
+      successMessage: `已将人物姓名修改为“${name}”`
+    }
+  );
+}
+
+async function renameLongStructureTitle(
+  input: {
+    kind: "worldbuilding" | "volume" | "plotPoint" | "chapterCard";
+    id: string;
+    title: string;
+  },
+  completion: (succeeded: boolean) => void
+): Promise<void> {
+  const index = activeLongWorkspaceIndex.value;
+  const title = input.title.trim();
+  if (!index) {
+    uiMessage.warning("当前长篇结构尚未就绪。");
+    completion(false);
+    return;
+  }
+  if (!title) {
+    uiMessage.warning("标题不能为空。");
+    completion(false);
+    return;
+  }
+
+  let batch: LongWorkspaceOperationBatch | undefined;
+  let currentTitle: string | undefined;
+  let structureLabel = "结构项";
+  try {
+    const builder = createLongStructureMutationBuilder(index);
+    switch (input.kind) {
+      case "worldbuilding": {
+        const category = index.worldbuilding.find(({ id }) => id === input.id);
+        currentTitle = category?.title;
+        structureLabel = "世界观分类";
+        if (category) {
+          batch = builder.updateWorldbuilding(category.id, { title });
+        }
+        break;
+      }
+      case "volume": {
+        const volume = index.plot.volumes.find(({ id }) => id === input.id);
+        currentTitle = volume?.title;
+        structureLabel = "分卷";
+        if (volume) {
+          batch = builder.updateVolume(volume.id, { title });
+        }
+        break;
+      }
+      case "plotPoint": {
+        const plotPoint = index.plot.arcs.find(({ id }) => id === input.id);
+        currentTitle = plotPoint?.title;
+        structureLabel = "剧情点";
+        if (plotPoint) {
+          batch = builder.updateArc(plotPoint.id, { title });
+        }
+        break;
+      }
+      case "chapterCard": {
+        const chapter = index.plot.chapterCards.find(
+          ({ id }) => id === input.id
+        );
+        currentTitle = chapter?.title;
+        structureLabel = "章卡";
+        if (chapter) {
+          batch = builder.updateChapter(chapter.id, { title });
+        }
+        break;
+      }
+    }
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法修改标题。"
+    );
+    completion(false);
+    return;
+  }
+
+  if (currentTitle === undefined || !batch) {
+    uiMessage.warning(`该${structureLabel}已不存在，请刷新后重试。`);
+    completion(false);
+    return;
+  }
+  if (title === currentTitle) {
+    completion(true);
+    return;
+  }
+
+  await applyLongStructureMutation(
+    batch,
+    {
+      succeed: () => completion(true),
+      fail: () => completion(false),
+      appliedButRefreshFailed: () => completion(true)
+    },
+    {
+      successMessage: `已将${structureLabel}标题修改为“${title}”`
+    }
+  );
 }
 
 function handleLongFileContextChange(
@@ -2017,6 +2476,7 @@ function conversationForKey(
         existing.applyRunSettings(preferences);
       }
     }
+    existing.selectApprovalMode(generalSettings.value.permissionMode);
     return existing;
   }
   const created = useAgentConversation({
@@ -2039,6 +2499,7 @@ function conversationForKey(
   } else if (modelSettings.value) {
     persistAgentRunPreferences(scope, captureAgentRunSettings(created));
   }
+  created.selectApprovalMode(generalSettings.value.permissionMode);
   queueMicrotask(() => resumeRecoveredAutomaticAgentEdits([created]));
   return created;
 }
@@ -2061,6 +2522,12 @@ function longConversationKey(
 function acceptsLongProposalEvent(
   event: LongWorkspaceProposalEvent
 ): boolean {
+  return longConversationForProposalEvent(event) !== undefined;
+}
+
+function longConversationForProposalEvent(
+  event: LongWorkspaceProposalEvent
+): AgentConversationController | undefined {
   const prefix = `long:${encodeURIComponent(event.payload.bookId)}:`;
   for (const [key, conversation] of conversations) {
     if (
@@ -2070,10 +2537,19 @@ function acceptsLongProposalEvent(
         event.payload.runId
       )
     ) {
-      return true;
+      return conversation;
     }
   }
-  return false;
+  return undefined;
+}
+
+function longProposalApprovalMode(
+  event: LongWorkspaceProposalEvent
+): AgentRunSettings["approvalMode"] | undefined {
+  return longConversationForProposalEvent(event)?.approvalModeForRun(
+    event.payload.sessionId,
+    event.payload.runId
+  );
 }
 
 function observeLongWritingAgentEvent(
@@ -2363,7 +2839,7 @@ async function startFreshLongAgentRun(input: {
     proposalSeen: false
   };
   longWritingAgentRunExpectation = runExpectation;
-  conversation.selectApprovalMode("request-approval");
+  conversation.selectApprovalMode(generalSettings.value.permissionMode);
   conversation.draft.value = input.prompt;
   if (!guard.isCurrent()) {
     if (longWritingAgentRunExpectation === runExpectation) {
@@ -2532,7 +3008,7 @@ async function handleLongChapterDispatchApproved(
     event.payload.scope === "arc" &&
     first.primaryArcId === null
   ) {
-    throw new Error("连续下一章没有主剧情弧，不能启动剧情弧写作。");
+    throw new Error("连续下一章没有主剧情点，不能启动剧情点写作。");
   }
   for (const chapter of remaining) {
     if (
@@ -2553,7 +3029,7 @@ async function handleLongChapterDispatchApproved(
         event.payload.chapters[index]?.chapterCardId !== id
     )
   ) {
-    throw new Error("串行写作章序与当前卷/剧情弧不一致，请重新生成提案。");
+    throw new Error("串行写作章序与当前卷/剧情点不一致，请重新生成提案。");
   }
   await longWritingOrchestrator.startDispatch(event);
 }
@@ -2577,6 +3053,7 @@ function applyModelSettingsToConversations(settings: ModelSettings): void {
     }
     synchronizeAgentRunPreferences(scope, representative);
   }
+  applyDefaultApprovalMode(generalSettings.value.permissionMode);
 }
 
 conversationForKey("general");
@@ -2704,8 +3181,7 @@ function promptDocumentForResourceId(resourceId: string): WorkspaceDocument | un
 
 const activeDocument = computed<WorkspaceDocument>(() => {
   const source =
-    documentForResourceId(selectedResourceId.value) ??
-    documents.value[0]!;
+    documentForResourceId(selectedResourceId.value) ?? EMPTY_WORKSPACE_DOCUMENT;
   return liveDocument(source);
 });
 const activeEditorDraft = computed<EditorDraftState | undefined>(
@@ -2722,8 +3198,7 @@ const activeExpertSectionId = computed(() => activeDocument.value.expertSectionI
 const activePromptDocument = computed<WorkspaceDocument>(() => {
   return (
     promptDocumentForResourceId(activeCreationResourceId.value) ??
-    documents.value.find((document) => document.domain === "creation") ??
-    documents.value[0]!
+    EMPTY_WORKSPACE_DOCUMENT
   );
 });
 const activeAgentDocument = computed<WorkspaceDocument>(() =>
@@ -2816,6 +3291,11 @@ const longConversationHistory = computed(
 );
 const longCurrentSessionId = computed(
   () => activeLongConversation.value?.sessionId.value ?? ""
+);
+const longApprovalMode = computed(
+  () =>
+    activeLongConversation.value?.approvalMode.value ??
+    generalSettings.value.permissionMode
 );
 const longComposerDraft = computed({
   get: () => activeLongConversation.value?.draft.value ?? "",
@@ -3167,6 +3647,9 @@ async function selectResource(node: ResourceTreeNode): Promise<void> {
   longRollbackDialogOpen.value = false;
   longRollbackCommitId.value = null;
   longStructureDialogOpen.value = false;
+  longCharacterCreate.value = null;
+  longPlotPointCreate.value = null;
+  longVolumeCreateOpen.value = false;
   longBindingsDialogMode.value = null;
   const directory = draftDirectoryForResourceId(node.id);
   if (directory && node.expertSectionId) {
@@ -3189,6 +3672,355 @@ async function selectResource(node: ResourceTreeNode): Promise<void> {
     activeCreationResourceId.value = node.id;
   }
   rightCollapsed.value = false;
+}
+
+function openLongCharacterCreate(): void {
+  const group = activeLongSelection.value?.characterGroup;
+  const bookId = activeLongBookSummary.value?.id;
+  if (!group || !bookId || !activeLongWorkspaceIndex.value) {
+    uiMessage.warning("当前人物分组尚未就绪。");
+    return;
+  }
+  if (blockActiveLongWritingPlan("新增人物")) return;
+  const groupOption = LONG_CHARACTER_GROUP_OPTIONS.find(
+    ({ value }) => value === group
+  );
+  if (!groupOption) return;
+  longCharacterCreate.value = {
+    bookId,
+    group,
+    groupLabel: groupOption.label
+  };
+}
+
+async function openLongStructureTreeAction(
+  payload: LongStructureTreeActionPayload
+): Promise<void> {
+  const { node, action } = payload;
+  const bookId = node.longBookId;
+  if (
+    action === "create" &&
+    node.longStructureSection === "arc" &&
+    node.longStructureParentId
+  ) {
+    await openLongPlotPointCreateForVolume(
+      bookId,
+      node.longStructureParentId
+    );
+    return;
+  }
+  if (
+    (action === "edit" || action === "delete") &&
+    !node.longStructureId
+  ) {
+    return;
+  }
+  if (blockActiveLongWritingPlan("修改长篇结构")) {
+    return;
+  }
+  await selectResource(node);
+  if (
+    selectedResourceId.value !== node.id ||
+    activeLongBookId.value !== bookId ||
+    !activeLongWorkspaceIndex.value
+  ) {
+    return;
+  }
+  longStructureDialogTarget.value = {
+    section: node.longStructureSection,
+    action,
+    ...(node.longStructureId || node.longStructureParentId
+      ? { itemId: node.longStructureId ?? node.longStructureParentId }
+      : {})
+  };
+  longStructureDialogOpen.value = true;
+}
+
+async function openLongVolumeCreate(): Promise<void> {
+  if (
+    !activeLongWorkspaceIndex.value ||
+    activeLongSelection.value?.key !== "plot-design:book-line" ||
+    blockActiveLongWritingPlan("新增分卷")
+  ) {
+    return;
+  }
+  if (!(await saveActiveLongEditorChanges())) {
+    return;
+  }
+  longVolumeCreateOpen.value = true;
+}
+
+async function openLongPlotPointCreateForVolume(
+  bookId: string,
+  volumeId: string
+): Promise<void> {
+  if (blockActiveLongWritingPlan("新增剧情点")) {
+    return;
+  }
+  if (activeLongBookId.value !== bookId) {
+    if (!(await saveActiveLongEditorBeforeLeaving(bookId))) {
+      return;
+    }
+    await openLongBook(bookId);
+  } else if (!(await saveActiveLongEditorChanges())) {
+    return;
+  }
+  const index = activeLongWorkspaceIndex.value;
+  const volume = index?.plot.volumes.find(({ id }) => id === volumeId);
+  if (
+    activeLongBookId.value !== bookId ||
+    !index ||
+    !volume
+  ) {
+    uiMessage.warning("该分卷已不存在，请刷新后重试。");
+    return;
+  }
+  longPlotPointCreate.value = {
+    bookId,
+    volumeId,
+    volumeTitle: volume.title
+  };
+}
+
+async function openLongPlotPointCreate(): Promise<void> {
+  const bookId = activeLongBookId.value;
+  const volumeId = activeLongSelection.value?.plotPointVolumeId;
+  if (!bookId || !volumeId) {
+    uiMessage.warning("当前分卷尚未就绪。");
+    return;
+  }
+  await openLongPlotPointCreateForVolume(bookId, volumeId);
+}
+
+async function saveLongVolumeOutline(
+  input: { volumeId: string; outline: string },
+  completion: (succeeded: boolean) => void
+): Promise<void> {
+  const index = activeLongWorkspaceIndex.value;
+  const volume = index?.plot.volumes.find(({ id }) => id === input.volumeId);
+  if (!index || !volume) {
+    uiMessage.warning("该分卷已不存在，请刷新后重试。");
+    completion(false);
+    return;
+  }
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    batch = createLongStructureMutationBuilder(index).updateVolume(
+      volume.id,
+      { summary: input.outline }
+    );
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法保存分卷卷纲。"
+    );
+    completion(false);
+    return;
+  }
+  await applyLongStructureMutation(
+    batch,
+    {
+      succeed: () => completion(true),
+      fail: () => completion(false),
+      appliedButRefreshFailed: () => completion(true)
+    },
+    {
+      saveEditor: false,
+      successMessage: `已保存“${volume.title}”的卷纲`
+    }
+  );
+}
+
+async function saveLongPlotPointContent(
+  input: {
+    plotPointId: LongArcId;
+    field: "summary" | "storyline";
+    content: string;
+  },
+  completion: (succeeded: boolean) => void
+): Promise<void> {
+  const index = activeLongWorkspaceIndex.value;
+  const plotPoint = index?.plot.arcs.find(
+    ({ id }) => id === input.plotPointId
+  );
+  if (!index || !plotPoint) {
+    uiMessage.warning("该剧情点已不存在，请刷新后重试。");
+    completion(false);
+    return;
+  }
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    batch = createLongStructureMutationBuilder(index).updateArc(
+      plotPoint.id,
+      input.field === "summary"
+        ? { summary: input.content }
+        : { outline: input.content }
+    );
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法保存剧情点内容。"
+    );
+    completion(false);
+    return;
+  }
+  await applyLongStructureMutation(
+    batch,
+    {
+      succeed: () => completion(true),
+      fail: () => completion(false),
+      appliedButRefreshFailed: () => completion(true)
+    },
+    {
+      saveEditor: false,
+      successMessage: `已保存“${plotPoint.title}”的${
+        input.field === "summary" ? "概要" : "故事情节"
+      }`
+    }
+  );
+}
+
+async function saveLongChapterCardContent(
+  input: {
+    chapterCardId: LongChapterCardId;
+    field: "outline" | "worldConstraints";
+    content: string;
+  },
+  completion: (succeeded: boolean) => void
+): Promise<void> {
+  const index = activeLongWorkspaceIndex.value;
+  const chapterCard = index?.plot.chapterCards.find(
+    ({ id }) => id === input.chapterCardId
+  );
+  if (!index || !chapterCard) {
+    uiMessage.warning("该章卡已不存在，请刷新后重试。");
+    completion(false);
+    return;
+  }
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    batch = createLongStructureMutationBuilder(index).updateChapter(
+      chapterCard.id,
+      { [input.field]: input.content }
+    );
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法保存章卡内容。"
+    );
+    completion(false);
+    return;
+  }
+  await applyLongStructureMutation(
+    batch,
+    {
+      succeed: () => completion(true),
+      fail: () => completion(false),
+      appliedButRefreshFailed: () => completion(true)
+    },
+    {
+      saveEditor: false,
+      successMessage: `已保存“${chapterCard.title}”的${
+        input.field === "outline" ? "章节大纲" : "世界约束"
+      }`
+    }
+  );
+}
+
+async function createLongVolume(
+  input: { title: string; summary: string }
+): Promise<void> {
+  const index = activeLongWorkspaceIndex.value;
+  if (
+    !longVolumeCreateOpen.value ||
+    !index ||
+    longBookActionPending.value
+  ) {
+    uiMessage.warning("当前长篇工作区尚未准备好新建分卷。");
+    return;
+  }
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    batch = createLongStructureMutationBuilder(index).createVolume(input);
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法创建分卷。"
+    );
+    return;
+  }
+  const created = batch.operations.find(
+    (operation) => operation.type === "volume.create"
+  );
+  if (!created || created.type !== "volume.create") {
+    uiMessage.warning("无法确定新建分卷。");
+    return;
+  }
+
+  let succeeded = false;
+  let applied = false;
+  await handleLongStructureMutation(batch, {
+    succeed: () => {
+      succeeded = true;
+      applied = true;
+    },
+    fail: () => undefined,
+    appliedButRefreshFailed: () => {
+      applied = true;
+    }
+  });
+  if (!applied) return;
+  longVolumeCreateOpen.value = false;
+  if (!succeeded) return;
+  await nextTick();
+  longWorkspaceEditor.value?.selectBookLineVolume(created.volume.id);
+}
+
+async function createLongPlotPoint(
+  input: { title: string; summary: string; outline: string }
+): Promise<void> {
+  const target = longPlotPointCreate.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (
+    !target ||
+    !index ||
+    activeLongBookId.value !== target.bookId ||
+    longBookActionPending.value
+  ) {
+    uiMessage.warning("当前分卷尚未准备好新建剧情点。");
+    return;
+  }
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    batch = createLongStructureMutationBuilder(index).createArc({
+      volumeId: target.volumeId,
+      title: input.title,
+      summary: input.summary,
+      outline: input.outline
+    });
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法创建剧情点。"
+    );
+    return;
+  }
+
+  let applied = false;
+  await applyLongStructureMutation(
+    batch,
+    {
+      succeed: () => {
+        applied = true;
+      },
+      fail: () => undefined,
+      appliedButRefreshFailed: () => {
+        applied = true;
+      }
+    },
+    {
+      saveEditor: false,
+      successMessage: `已创建剧情点“${input.title}”`
+    }
+  );
+  if (applied) {
+    longPlotPointCreate.value = null;
+  }
 }
 
 function collectResourceNodeIds(node: ResourceTreeNode): string[] {
@@ -4077,6 +4909,9 @@ async function clearActiveLongBook(bookId: string): Promise<void> {
   longRollbackDialogOpen.value = false;
   longRollbackCommitId.value = null;
   longStructureDialogOpen.value = false;
+  longCharacterCreate.value = null;
+  longPlotPointCreate.value = null;
+  longVolumeCreateOpen.value = false;
   longBindingsDialogMode.value = null;
   const fallback = resourceTreeSections.value
     .find(({ id }) => id === "creation")
@@ -4125,6 +4960,7 @@ async function handleLongBookAction(
       activeLongBookId.value === bookId &&
       activeLongWorkspaceIndex.value
     ) {
+      longStructureDialogTarget.value = null;
       longStructureDialogOpen.value = true;
     }
     return;
@@ -4286,6 +5122,17 @@ async function handleLongStructureMutation(
   batch: LongWorkspaceOperationBatch,
   completion: LongStructureMutationCompletion
 ): Promise<void> {
+  await applyLongStructureMutation(batch, completion);
+}
+
+async function applyLongStructureMutation(
+  batch: LongWorkspaceOperationBatch,
+  completion: LongStructureMutationCompletion,
+  options: {
+    saveEditor?: boolean;
+    successMessage?: string;
+  } = {}
+): Promise<void> {
   const api = resolveLongWorkspaceApi();
   const summary = activeLongBookSummary.value;
   const index = activeLongWorkspaceIndex.value;
@@ -4298,13 +5145,20 @@ async function handleLongStructureMutation(
     completion.fail("当前长篇串行写作计划尚未完成。");
     return;
   }
+  if (
+    options.saveEditor !== false &&
+    !(await saveActiveLongEditorChanges())
+  ) {
+    completion.fail("当前长篇修改尚未保存。");
+    return;
+  }
+  if (longBookActionPending.value) {
+    completion.fail("另一项长篇结构修改仍在处理中。");
+    return;
+  }
   longBookActionPending.value = true;
   let applied = false;
   try {
-    if (!(await saveActiveLongEditorChanges())) {
-      completion.fail("当前长篇修改尚未保存。");
-      return;
-    }
     if (!(await refreshActiveLongWorkspace(summary.id))) {
       throw new Error("无法同步最新长篇结构，本次修改未保存。");
     }
@@ -4361,7 +5215,8 @@ async function handleLongStructureMutation(
     }
     completion.succeed();
     uiMessage.success(
-      `已直接保存 ${batch.operations.length} 项长篇结构修改`
+      options.successMessage ??
+        `已直接保存 ${batch.operations.length} 项长篇结构修改`
     );
   } catch (error: unknown) {
     const message =
@@ -4376,6 +5231,83 @@ async function handleLongStructureMutation(
   } finally {
     longBookActionPending.value = false;
   }
+}
+
+async function createLongCharacter(
+  input: { name: string; aliases: string[] }
+): Promise<void> {
+  const target = longCharacterCreate.value;
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (
+    !target ||
+    !summary ||
+    !index ||
+    summary.id !== target.bookId ||
+    longBookActionPending.value
+  ) {
+    uiMessage.warning("当前人物分组尚未就绪。");
+    return;
+  }
+
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    batch = createLongStructureMutationBuilder(index).createCharacter({
+      name: input.name,
+      group: target.group,
+      aliases: input.aliases
+    });
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法创建人物。"
+    );
+    return;
+  }
+  const created = batch.operations.find(
+    (operation) => operation.type === "character.create"
+  );
+  if (!created || created.type !== "character.create") {
+    uiMessage.warning("无法确定新建人物。");
+    return;
+  }
+
+  let succeeded = false;
+  let applied = false;
+  await handleLongStructureMutation(batch, {
+    succeed: () => {
+      succeeded = true;
+      applied = true;
+    },
+    fail: () => undefined,
+    appliedButRefreshFailed: () => {
+      applied = true;
+    }
+  });
+  if (!applied) return;
+  longCharacterCreate.value = null;
+  if (!succeeded) return;
+
+  const latestSummary = activeLongBookSummary.value;
+  const latestIndex = activeLongWorkspaceIndex.value;
+  if (
+    !latestSummary ||
+    !latestIndex ||
+    latestSummary.id !== target.bookId
+  ) {
+    return;
+  }
+  const selection = createLongCharacterGroupSelection(
+    latestSummary,
+    latestIndex,
+    target.group,
+    created.character.id
+  );
+  selectedResourceId.value = longNavigationNodeId(
+    target.bookId,
+    `character-group:${target.group}`
+  );
+  rightCollapsed.value = false;
+  await selectLongWorkspaceFile(selection);
 }
 
 function findCatalogLibrary(
@@ -4993,16 +5925,126 @@ function scheduleDirtyEditorDraftsForAutoSave(): void {
   }
 }
 
+function applyAppLanguage(language: GeneralSettings["language"]): void {
+  const resolvedLanguage =
+    language === "auto" && navigator.language.toLowerCase().startsWith("zh")
+      ? navigator.language
+      : "zh-CN";
+  document.documentElement.lang = resolvedLanguage;
+  document.documentElement.dataset.appLanguage = language;
+}
+
+function applyDefaultApprovalMode(permissionMode: GeneralPermissionMode): void {
+  const approvalMode = permissionMode;
+  const nextPreferences: AgentRunPreferencesByScope = Object.fromEntries(
+    Object.entries(agentRunPreferences.value).map(([scope, preference]) => [
+      scope,
+      { ...preference, approvalMode }
+    ])
+  );
+  for (const [key, conversation] of conversations) {
+    conversation.selectApprovalMode(approvalMode);
+    const scope = conversationScopes.get(key) ?? "general";
+    nextPreferences[scope] = {
+      ...captureAgentRunSettings(conversation),
+      approvalMode
+    };
+  }
+  agentRunPreferences.value = nextPreferences;
+  storeAgentRunPreferences();
+}
+
+function queueGeneralSettingsSave(): void {
+  const api = window.deepwrite?.generalSettings;
+  if (!api) return;
+  const snapshot = { ...generalSettings.value };
+  const operation = generalSettingsSaveChain
+    .catch(() => undefined)
+    .then(async () => {
+      await api.save(snapshot);
+    });
+  generalSettingsSaveChain = operation.catch((error: unknown) => {
+    uiMessage.warning(
+      error instanceof Error
+        ? `常规设置已在本次运行中生效，但写入本机失败：${error.message}`
+        : "常规设置已在本次运行中生效，但暂时无法写入本机"
+    );
+  });
+}
+
+async function loadGeneralSettings(): Promise<void> {
+  const api = window.deepwrite?.generalSettings;
+  if (!api) {
+    applyAppLanguage(generalSettings.value.language);
+    applyDefaultApprovalMode(generalSettings.value.permissionMode);
+    return;
+  }
+  try {
+    const snapshot = await api.list();
+    const settings =
+      !snapshot.persisted && legacyGeneralPreferences.autoSave
+        ? { ...snapshot.settings, autoSave: true }
+        : snapshot.settings;
+    generalSettings.value = settings;
+    editorAutoSaveEnabled.value = settings.autoSave;
+    applyAppLanguage(settings.language);
+    applyDefaultApprovalMode(settings.permissionMode);
+    if (!snapshot.persisted && legacyGeneralPreferences.autoSave) {
+      queueGeneralSettingsSave();
+    }
+  } catch (error: unknown) {
+    applyAppLanguage(generalSettings.value.language);
+    applyDefaultApprovalMode(generalSettings.value.permissionMode);
+    uiMessage.warning(
+      error instanceof Error ? error.message : "加载常规设置失败，已使用默认设置"
+    );
+  }
+}
+
+function updatePermissionMode(permissionMode: GeneralPermissionMode): void {
+  generalSettings.value = {
+    ...generalSettings.value,
+    permissionMode
+  };
+  applyDefaultApprovalMode(permissionMode);
+  queueGeneralSettingsSave();
+  if (permissionMode === "auto-approve") {
+    queueMicrotask(() => resumeRecoveredAutomaticAgentEdits());
+  }
+}
+
 function updateEditorAutoSave(enabled: boolean): void {
   editorAutoSaveEnabled.value = enabled;
+  generalSettings.value = {
+    ...generalSettings.value,
+    autoSave: enabled
+  };
   if (!saveGeneralPreferences(window.localStorage, { autoSave: enabled })) {
     uiMessage.warning("自动保存设置已生效，但暂时无法写入本机配置");
   }
+  queueGeneralSettingsSave();
   if (enabled) {
     scheduleDirtyEditorDraftsForAutoSave();
   } else {
     cancelEditorAutoSave();
   }
+}
+
+function updateAppLanguage(language: GeneralSettings["language"]): void {
+  generalSettings.value = {
+    ...generalSettings.value,
+    language
+  };
+  applyAppLanguage(language);
+  queueGeneralSettingsSave();
+}
+
+function updateShowInMenuBar(enabled: boolean): void {
+  generalSettings.value = {
+    ...generalSettings.value,
+    showInMenuBar: enabled
+  };
+  queueGeneralSettingsSave();
 }
 
 function stageEditorDraft(payload: { id: string; title: string; content: string }): void {
@@ -6355,7 +7397,7 @@ async function sendLongMessage(
           : `${first.message}（另有 ${libraryAttachments.diagnostics.length - 1} 项长篇资源提示）`
       );
     }
-    target.conversation.selectApprovalMode("request-approval");
+    target.conversation.selectApprovalMode(generalSettings.value.permissionMode);
     await target.conversation.sendLongMessage(
       runtimeContext,
       activeLongReadableAttachments.value,
@@ -6457,11 +7499,7 @@ function selectLongTemperature(value: number): void {
 function selectLongApprovalMode(
   mode: AgentRunSettings["approvalMode"]
 ): void {
-  if (mode === "auto-approve") {
-    uiMessage.info("长篇结构、章节和账本写入必须逐项确认。");
-    activeLongConversation.value?.selectApprovalMode("request-approval");
-    return;
-  }
+  updatePermissionMode(mode);
   activeLongConversation.value?.selectApprovalMode(mode);
   synchronizeLongAgentRunPreferences();
 }
@@ -6476,6 +7514,28 @@ function canApproveLongProposalDuringActivePlan(
     expectation: longWritingAgentRunExpectation,
     event
   });
+}
+
+async function prepareAutomaticLongProposal(
+  event: LongWorkspaceProposalEvent
+): Promise<void> {
+  if (!canApproveLongProposalDuringActivePlan(event)) {
+    throw new Error(
+      "长篇串行写作阶段已变化，实时自动保存已暂停；请核对当前章后重试。"
+    );
+  }
+  if (activeLongBookId.value !== event.payload.bookId) return;
+  await nextTick();
+  if (!(await saveActiveLongEditorChanges())) {
+    throw new Error(
+      "当前长篇编辑内容尚未保存，智能体提案未自动覆盖；请处理编辑器保存状态后重试。"
+    );
+  }
+  if (!canApproveLongProposalDuringActivePlan(event)) {
+    throw new Error(
+      "长篇串行写作阶段已在保存检查期间变化，实时自动保存已暂停。"
+    );
+  }
 }
 
 async function approveLongProposal(eventId: string): Promise<void> {
@@ -7215,10 +8275,7 @@ function isShortOrScriptAgentEdit(proposal: AgentEditProposal): boolean {
 }
 
 function canReviewAgentEditDuringRun(proposal: AgentEditProposal): boolean {
-  return (
-    proposal.stageId === "draft" &&
-    isShortOrScriptAgentEdit(proposal)
-  );
+  return Boolean(proposal.libraryTarget) || isShortOrScriptAgentEdit(proposal);
 }
 
 function removeQueuedAgentEdit(
@@ -7360,9 +8417,7 @@ function resumeRecoveredAutomaticAgentEdits(
         if (
           proposal.approvalMode !== "auto-approve" ||
           proposal.status !== "pending" ||
-          !isShortOrScriptAgentEdit(proposal) ||
-          (conversation.isBusy.value &&
-            !canReviewAgentEditDuringRun(proposal))
+          !canReviewAgentEditDuringRun(proposal)
         ) {
           continue;
         }
@@ -7980,7 +9035,7 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
       event.payload.runId,
       proposal.id,
       true,
-      event.payload.stageId === "draft"
+      true
     );
   }
 }
@@ -8127,7 +9182,7 @@ function stageLibraryEditProposal(event: LibraryEditorMutationEvent): void {
       event.payload.runId,
       proposalId,
       true,
-      false
+      true
     );
   }
 }
@@ -8858,7 +9913,7 @@ async function reviewAgentEdit(request: AgentEditReviewRequest): Promise<void> {
   if (
     request.decision === "accept" &&
     proposal &&
-    isShortOrScriptAgentEdit(proposal)
+    canReviewAgentEditDuringRun(proposal)
   ) {
     queueAgentEdit(
       conversation,
@@ -9047,6 +10102,35 @@ async function loadModelSettings(): Promise<void> {
     modelError.value = error instanceof Error ? error.message : "加载模型配置失败。";
   } finally {
     modelLoading.value = false;
+  }
+}
+
+async function loadModelUsage(input: ModelUsageQueryInput = modelUsageQuery.value): Promise<void> {
+  const api = window.deepwrite?.modelUsage;
+  if (!api) return;
+  const query = {
+    ...(input.startAt ? { startAt: input.startAt } : {}),
+    ...(input.endAt ? { endAt: input.endAt } : {}),
+    ...(input.modelConfigIds?.length ? { modelConfigIds: [...input.modelConfigIds] } : {}),
+    ...(input.modules?.length ? { modules: [...input.modules] } : {})
+  } satisfies ModelUsageQueryInput;
+  const requestSequence = ++modelUsageRequestSequence;
+  modelUsageLoading.value = true;
+  modelUsageError.value = null;
+  try {
+    const dashboard = await api.query(query);
+    if (requestSequence !== modelUsageRequestSequence) return;
+    modelUsageDashboard.value = dashboard;
+    modelUsageQuery.value = query;
+  } catch (error: unknown) {
+    if (requestSequence !== modelUsageRequestSequence) return;
+    modelUsageError.value =
+      error instanceof Error ? error.message : "加载模型用量失败。";
+    uiMessage.warning(modelUsageError.value);
+  } finally {
+    if (requestSequence === modelUsageRequestSequence) {
+      modelUsageLoading.value = false;
+    }
   }
 }
 
@@ -9518,6 +10602,7 @@ function selectTemperature(value: number): void {
 }
 
 function selectApprovalMode(mode: AgentRunSettings["approvalMode"]): void {
+  updatePermissionMode(mode);
   activeConversation.value.selectApprovalMode(mode);
   synchronizeActiveAgentRunPreferences();
 }
@@ -9682,6 +10767,7 @@ onMounted(async () => {
   window.addEventListener("beforeunload", handleBeforeUnload);
   reconcilePaneWidths();
   await loadEditorDraftRecovery();
+  await loadGeneralSettings();
   if (!window.deepwrite) {
     if (recoveredEditorDraftCount > 0) {
       uiMessage.info(`已恢复 ${recoveredEditorDraftCount} 份未保存草稿`, {
@@ -9746,7 +10832,10 @@ onBeforeUnmount(() => {
   <NConfigProvider :theme="naiveTheme" :theme-overrides="themeOverrides">
       <SettingsPage
         v-if="currentView === 'settings'"
+        :permission-mode="generalSettings.permissionMode"
         :auto-save-enabled="editorAutoSaveEnabled"
+        :language="generalSettings.language"
+        :show-in-menu-bar="generalSettings.showInMenuBar"
         :workspace-agent-settings="workspaceAgentSettings"
         :long-agent-settings="longAgentSettings"
         :workspace-agent-loading="workspaceAgentLoading"
@@ -9763,9 +10852,14 @@ onBeforeUnmount(() => {
         :learning-imitation-settings="learningImitationSettings"
         :learning-imitation-loading="learningImitationLoading"
         :learning-imitation-saving="learningImitationSaving"
+        :model-usage-dashboard="modelUsageDashboard"
+        :model-usage-loading="modelUsageLoading"
         :runtime-available="hasDesktopRuntime"
         @back="closeSettings"
+        @update-permission-mode="updatePermissionMode"
         @update-auto-save="updateEditorAutoSave"
+        @update-language="updateAppLanguage"
+        @update-show-in-menu-bar="updateShowInMenuBar"
         @save-workspace-agents="saveWorkspaceAgentSettings"
         @retry-long-agents="loadLongAgentSettings"
         @save-long-agents="saveLongAgentSettings"
@@ -9773,6 +10867,7 @@ onBeforeUnmount(() => {
         @reset-library-agent="resetLibraryAgentSettings"
         @save-learning-imitation="saveLearningImitationSettings"
         @reset-learning-imitation="resetLearningImitationSettings"
+        @load-model-usage="loadModelUsage"
       />
 
     <div
@@ -9790,12 +10885,6 @@ onBeforeUnmount(() => {
         :imitation-running="learningImitationRunning"
         :library-entry-clipboard-domain="libraryEntryClipboardDomain"
         :active-primary-feature="activePrimaryFeature"
-        :active-long-book-summary="
-          isLongWorkspaceActive ? activeLongBookSummary ?? undefined : undefined
-        "
-        :active-long-workspace-index="
-          isLongWorkspaceActive ? activeLongWorkspaceIndex ?? undefined : undefined
-        "
         @collapse="leftCollapsed = true"
         @new-conversation="newConversation"
         @open-dialog="openWorkspaceDialog"
@@ -9809,7 +10898,7 @@ onBeforeUnmount(() => {
         @long-book-action="handleLongBookAction"
         @create-expert-section="addExpertSection"
         @remove-expert-section="requestRemoveExpertSection"
-        @select-long-workspace="selectLongWorkspaceSearchResult"
+        @long-structure-action="openLongStructureTreeAction"
       />
 
       <main
@@ -9902,6 +10991,7 @@ onBeforeUnmount(() => {
           :controller="learningImitation"
           :models="modelSettings?.models ?? []"
           :catalog-snapshot="catalogSnapshot"
+          :approval-mode="generalSettings.permissionMode"
           @refresh-catalog="loadCatalogSnapshot"
         />
       </main>
@@ -9941,7 +11031,7 @@ onBeforeUnmount(() => {
               :selected-model-id="longSelectedModelId"
               :thinking-level="longThinkingLevel"
               :temperature="longTemperature"
-              approval-mode="request-approval"
+              :approval-mode="longApprovalMode"
               :context-title="
                 activeLongSelection?.title ?? activeLongBookSummary.title
               "
@@ -10087,6 +11177,7 @@ onBeforeUnmount(() => {
             ref="longWorkspaceEditor"
             :book-id="activeLongBookSummary.id"
             :selection="activeLongSelection"
+            :workspace-index="activeLongWorkspaceIndex"
             :latest-commit="latestLongLedgerCommit"
             :locked="
               longProposalApprovalPending || longSendPreflightPending
@@ -10102,6 +11193,19 @@ onBeforeUnmount(() => {
             @context-change="handleLongFileContextChange"
             @collapse="rightCollapsed = true"
             @rollback="openLongRollbackDialog"
+            @select-character="selectLongCharacterTab"
+            @select-plot-point="selectLongPlotPointTab"
+            @select-chapter-card="selectLongChapterCardTab"
+            @rename-character="renameLongCharacter"
+            @rename-structure-title="renameLongStructureTitle"
+            @create-character="openLongCharacterCreate"
+            @create-plot-point="openLongPlotPointCreate"
+            @create-chapter-card="openLongChapterCardCreate"
+            @create-volume="openLongVolumeCreate"
+            @save-volume-outline="saveLongVolumeOutline"
+            @save-plot-point-content="saveLongPlotPointContent"
+            @save-chapter-card-content="saveLongChapterCardContent"
+            @mutation="handleLongStructureMutation"
           />
         </template>
         <div v-else class="long-workspace-loading-state">
@@ -10142,11 +11246,7 @@ onBeforeUnmount(() => {
         :thinking-level="thinkingLevel"
         :temperature="temperature"
         :approval-mode="approvalMode"
-        :allow-live-edit-review="
-          activeAgentDocument.domain === 'creation' &&
-          (activeAgentDocument.workspaceType === 'short' ||
-            activeAgentDocument.workspaceType === 'script')
-        "
+        allow-live-edit-review
         :context-title="activeAgentDocument.title"
         :book-title="composerBookTitle"
         :stage-label="composerStageLabel"
@@ -10295,8 +11395,31 @@ onBeforeUnmount(() => {
       :book-title="activeLongBookSummary?.title ?? ''"
       :snapshot="activeLongWorkspaceIndex"
       :pending="longBookActionPending"
+      :initial-section="longStructureDialogTarget?.section"
+      :initial-action="longStructureDialogTarget?.action"
+      :initial-item-id="longStructureDialogTarget?.itemId"
       @close="longStructureDialogOpen = false"
       @mutation="handleLongStructureMutation"
+    />
+    <CreateLongCharacterDialog
+      :open="Boolean(longCharacterCreate)"
+      :group-label="longCharacterCreate?.groupLabel ?? ''"
+      :pending="longBookActionPending"
+      @close="longCharacterCreate = null"
+      @submit="createLongCharacter"
+    />
+    <CreateLongPlotPointDialog
+      :open="Boolean(longPlotPointCreate)"
+      :volume-title="longPlotPointCreate?.volumeTitle ?? ''"
+      :pending="longBookActionPending"
+      @close="longPlotPointCreate = null"
+      @submit="createLongPlotPoint"
+    />
+    <CreateLongVolumeDialog
+      :open="longVolumeCreateOpen"
+      :pending="longBookActionPending"
+      @close="longVolumeCreateOpen = false"
+      @submit="createLongVolume"
     />
     <LongBookBindingsDialog
       v-if="activeLongBookSummary"

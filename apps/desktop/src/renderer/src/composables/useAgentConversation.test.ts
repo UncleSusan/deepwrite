@@ -279,9 +279,6 @@ function createDeferredApi(): {
       readDocument: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
-      search: vi.fn(async () => {
-        throw new Error("Long workspace is not used by conversation tests.");
-      }),
       writeDocument: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
@@ -350,6 +347,26 @@ function createDeferredApi(): {
           ok: true,
           message: "连接成功",
           testedAt: new Date().toISOString()
+        };
+      }
+    },
+    modelUsage: {
+      async query() {
+        return {
+          generatedAt: new Date().toISOString(),
+          totals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 0,
+            requestCount: 0
+          },
+          trendGranularity: "day",
+          trend: [],
+          models: [],
+          modules: [],
+          recentCalls: []
         };
       }
     },
@@ -445,6 +462,22 @@ function createDeferredApi(): {
               codeFontSize: 13,
               translucentSidebar: true
             }
+          }
+        };
+      },
+      async save(settings) {
+        return { persisted: true, settings };
+      }
+    },
+    generalSettings: {
+      async list() {
+        return {
+          persisted: false,
+          settings: {
+            permissionMode: "request-approval" as const,
+            autoSave: false,
+            language: "auto" as const,
+            showInMenuBar: true
           }
         };
       },

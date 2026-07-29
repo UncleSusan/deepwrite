@@ -377,7 +377,7 @@ describe("library agent tools", () => {
     });
     expect(details).not.toHaveProperty("entryId");
     expect(details).not.toHaveProperty("documentId");
-    expect(resultText(created)).toContain("将在本轮完成后自动批准并保存");
+    expect(resultText(created)).toContain("已提交实时自动保存队列");
     expect(resultText(read)).toContain("逐句检查抽象总结和重复句式。");
     expect(isLibraryAgentToolDetails(created.details)).toBe(true);
   });

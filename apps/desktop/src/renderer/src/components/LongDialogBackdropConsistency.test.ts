@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+import characterDialogSource from "./CreateLongCharacterDialog.vue?raw";
+import plotPointDialogSource from "./CreateLongPlotPointDialog.vue?raw";
+import volumeDialogSource from "./CreateLongVolumeDialog.vue?raw";
+import removalDialogSource from "./LongBookRemovalDialog.vue?raw";
+import migrationDialogSource from "./LongMigrationReportDialog.vue?raw";
+import plotManagerSource from "./LongPlotStructureManager.vue?raw";
+import rollbackDialogSource from "./LongRollbackDialog.vue?raw";
+import structureDialogSource from "./LongStructureDialog.vue?raw";
+import structureManagerSource from "./LongStructureManager.vue?raw";
+import workspaceEditorSource from "./LongWorkspaceEditor.vue?raw";
+
+describe("long-form dialog backdrops", () => {
+  it("reuse the same backdrop treatment as short-form dialogs", () => {
+    for (const source of [
+      characterDialogSource,
+      plotPointDialogSource,
+      volumeDialogSource,
+      removalDialogSource,
+      migrationDialogSource,
+      plotManagerSource,
+      rollbackDialogSource,
+      structureDialogSource,
+      structureManagerSource,
+      workspaceEditorSource
+    ]) {
+      expect(source).toMatch(/class="dialog-backdrop [^"]+"/);
+      expect(source).not.toContain("backdrop-filter:");
+    }
+  });
+});

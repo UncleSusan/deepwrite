@@ -6,6 +6,7 @@ import {
   LEARNING_IMITATION_STAGE_LABELS,
   LearningImitationWritePayloadSchema,
   applyLearningImitationWrite,
+  type AgentWriteApprovalMode,
   type LearningImitationDocument,
   type LearningImitationRuntimeContext,
   type LearningImitationStageId,
@@ -234,26 +235,98 @@ function buildSearchLearningDocumentsTool(
 }
 
 function buildWriteLearningResultTool(
-  context: LearningImitationRuntimeContext
+  context: LearningImitationRuntimeContext,
+  writeApprovalMode: AgentWriteApprovalMode
 ): AgentTool {
   let accumulatedResult = structuredClone(context.result);
   const resultText = Type.String({
     maxLength: LEARNING_IMITATION_RESULT_FIELD_MAX_CHARACTERS
   });
+  const writeUpdate = async (
+    update: LearningImitationWritePayload
+  ): Promise<AgentToolResult<LearningImitationToolResultDetails>> => {
+    try {
+      accumulatedResult = applyLearningImitationWrite(
+        accumulatedResult,
+        context.stageId,
+        update
+      );
+    } catch {
+      throw new Error(
+        `「${LEARNING_IMITATION_STAGE_LABELS[context.stageId]}」预览结果超过长度限制，请压缩结果后重新写入。`
+      );
+    }
+    return textResult(
+      writeApprovalMode === "auto-approve"
+        ? `已写入「${LEARNING_IMITATION_STAGE_LABELS[context.stageId]}」预览区，并提交实时自动落盘队列；以界面状态为准。`
+        : `已写入「${LEARNING_IMITATION_STAGE_LABELS[context.stageId]}」预览区，等待用户确认落盘。`,
+      {
+        kind: "learning-imitation-result-update",
+        stageId: context.stageId,
+        update
+      }
+    );
+  };
+
+  if (context.stageId === "material_split") {
+    return defineTool({
+      name: "write_learning_result",
+      label: "写入单项素材预览",
+      description:
+        "把一种素材拆分结果写入对应预览区。每次只写一个类型；六种素材必须分别调用。只写预览，不会直接写入素材库。",
+      parameters: Type.Object({
+        type: Type.Union([
+          Type.Literal("gimmick"),
+          Type.Literal("character"),
+          Type.Literal("pacing"),
+          Type.Literal("intro"),
+          Type.Literal("plot_refine"),
+          Type.Literal("draft_excerpt")
+        ]),
+        text: resultText
+      }),
+      execute: async (_toolCallId, params) => {
+        const update = LearningImitationWritePayloadSchema.parse({
+          mode: "replace",
+          [params.type]: params.text
+        });
+        return writeUpdate(update);
+      }
+    });
+  }
+
+  if (context.stageId === "plot_learning") {
+    return defineTool({
+      name: "write_learning_result",
+      label: "写入单项剧情技能预览",
+      description:
+        "把一项剧情学习技能写入对应预览区。剧情设计技能与剧情细化技能必须分别调用。只写预览，不会直接写入技能库。",
+      parameters: Type.Object({
+        type: Type.Union([
+          Type.Literal("plot_design_skill"),
+          Type.Literal("plot_refine_skill")
+        ]),
+        text: resultText
+      }),
+      execute: async (_toolCallId, params) => {
+        const update = LearningImitationWritePayloadSchema.parse({
+          mode: "replace",
+          [params.type]: params.text
+        });
+        return writeUpdate(update);
+      }
+    });
+  }
+
   return defineTool({
     name: "write_learning_result",
     label: "写入学习结果预览",
-    description: "把当前阶段的学习结果写入界面预览区。只写预览，不会直接写入素材库或技能库。",
+    description:
+      "把文风学习结果写入界面预览区。只写预览，不会直接写入技能库。",
     parameters: Type.Object({
-      mode: Type.Optional(Type.Union([Type.Literal("replace"), Type.Literal("append")])),
-      gimmick: Type.Optional(resultText),
-      character: Type.Optional(resultText),
-      pacing: Type.Optional(resultText),
-      intro: Type.Optional(resultText),
-      plot_refine: Type.Optional(resultText),
-      draft_excerpt: Type.Optional(resultText),
-      plot_design_skill: Type.Optional(resultText),
-      plot_refine_skill: Type.Optional(resultText),
+      mode: Type.Optional(
+        Type.Union([Type.Literal("replace"), Type.Literal("append")])
+      ),
       style_skill_title: Type.Optional(Type.String({ maxLength: 256 })),
       style_skill_body: Type.Optional(resultText)
     }),
@@ -262,56 +335,25 @@ function buildWriteLearningResultTool(
         ...params,
         mode: params.mode === "append" ? "append" : "replace"
       });
-      const hasStageOutput = context.stageId === "material_split"
-        ? [
-            update.gimmick,
-            update.character,
-            update.pacing,
-            update.intro,
-            update.plot_refine,
-            update.draft_excerpt
-          ].some((value) => value?.trim())
-        : context.stageId === "plot_learning"
-          ? [update.plot_design_skill, update.plot_refine_skill].some(
-              (value) => value?.trim()
-            )
-          : Boolean(update.style_skill_body?.trim());
-      if (!hasStageOutput) {
+      if (!update.style_skill_body?.trim()) {
         throw new Error(
           `write_learning_result 未包含「${LEARNING_IMITATION_STAGE_LABELS[context.stageId]}」阶段可用的正文结果。`
         );
       }
-      try {
-        accumulatedResult = applyLearningImitationWrite(
-          accumulatedResult,
-          context.stageId,
-          update
-        );
-      } catch {
-        throw new Error(
-          `「${LEARNING_IMITATION_STAGE_LABELS[context.stageId]}」预览结果超过长度限制，请压缩结果后重新写入。`
-        );
-      }
-      return textResult(
-        `已写入「${LEARNING_IMITATION_STAGE_LABELS[context.stageId]}」预览区，等待用户确认落盘。`,
-        {
-          kind: "learning-imitation-result-update",
-          stageId: context.stageId,
-          update
-        }
-      );
+      return writeUpdate(update);
     }
   });
 }
 
 export function buildLearningImitationTools(
-  context: LearningImitationRuntimeContext
+  context: LearningImitationRuntimeContext,
+  writeApprovalMode: AgentWriteApprovalMode = "request-approval"
 ): AgentTool[] {
   return [
     buildListLearningDocumentsTool(context),
     buildReadLearningDocumentTool(context),
     buildSearchLearningDocumentsTool(context),
-    buildWriteLearningResultTool(context)
+    buildWriteLearningResultTool(context, writeApprovalMode)
   ];
 }
 

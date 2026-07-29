@@ -107,6 +107,7 @@ const VolumeUpdatePatchSchema = nonEmptyPatch({
 });
 const ArcUpdatePatchSchema = nonEmptyPatch({
   title: OperationTitleSchema.optional(),
+  summary: OperationTextSchema.optional(),
   outline: OperationTextSchema.optional()
 });
 const ChapterCardUpdatePatchSchema = nonEmptyPatch({
@@ -166,6 +167,10 @@ const NarrativePlacementUpdatePatchSchema = nonEmptyPatch({
 const ForeshadowingUpdatePatchSchema = nonEmptyPatch({
   title: OperationTitleSchema.optional(),
   coreQuestion: OperationTextSchema.optional(),
+  hiddenTruth: OperationTextSchema.optional(),
+  plannedSpan: z
+    .enum(["local", "within_volume", "cross_volume"])
+    .optional(),
   truthEventId: LongStoryEventIdSchema.nullable().optional(),
   expectedReaderEffect: OperationTextSchema.optional(),
   status: z.enum(["planned", "abandoned"]).optional()
@@ -183,6 +188,8 @@ const ForeshadowingBeatUpdatePatchSchema = nonEmptyPatch({
       "aftermath"
     ])
     .optional(),
+  volumeId: LongVolumeIdSchema.nullable().optional(),
+  arcId: LongArcIdSchema.nullable().optional(),
   eventId: LongStoryEventIdSchema.nullable().optional(),
   placementId: LongNarrativePlacementIdSchema.nullable().optional(),
   chapterCardId: LongChapterCardIdSchema.nullable().optional(),
@@ -1016,6 +1023,67 @@ function assertBeatIsMutable(
   }
 }
 
+function concreteChapterIdForBeat(
+  workspace: LongWorkspaceIndexSnapshot,
+  beat: LongForeshadowingBeat
+): string | null {
+  if (beat.chapterCardId !== null) return beat.chapterCardId;
+  if (beat.placementId === null) return null;
+  return (
+    workspace.plot.narrativePlacements.find(
+      (placement) => placement.id === beat.placementId
+    )?.chapterCardId ?? null
+  );
+}
+
+function retargetBeatPlanningAnchorsToChapter(
+  state: MutationState,
+  beat: LongForeshadowingBeat,
+  chapter: {
+    id: string;
+    volumeId: string;
+    primaryArcId: string;
+  },
+  action: string
+): void {
+  const hasVolumeAnchor = (beat.volumeId ?? null) !== null;
+  const hasArcAnchor = (beat.arcId ?? null) !== null;
+  const volumeChanged =
+    hasVolumeAnchor && beat.volumeId !== chapter.volumeId;
+  const arcChanged =
+    hasArcAnchor && beat.arcId !== chapter.primaryArcId;
+  if (!volumeChanged && !arcChanged) return;
+
+  assertBeatIsMutable(beat, action);
+  const event =
+    beat.eventId === null
+      ? undefined
+      : state.draft.plot.storyEvents[
+          findEntityIndex(
+            state.draft.plot.storyEvents,
+            beat.eventId,
+            "Foreshadowing beat event"
+          )
+        ];
+  const eventSupportsTargetVolume =
+    !event ||
+    event.arcIds.some(
+      (eventArcId) =>
+        state.draft.plot.arcs.find(
+          (candidate) => candidate.id === eventArcId
+        )?.volumeId === chapter.volumeId
+    );
+  const eventSupportsTargetArc =
+    !event || event.arcIds.includes(chapter.primaryArcId);
+  if (hasVolumeAnchor) {
+    beat.volumeId = eventSupportsTargetVolume ? chapter.volumeId : null;
+  }
+  if (hasArcAnchor) {
+    beat.arcId = eventSupportsTargetArc ? chapter.primaryArcId : null;
+  }
+  markUpdated(state, beat.id);
+}
+
 function stableGroupRank(group: string): number {
   return [
     "protagonist",
@@ -1481,6 +1549,12 @@ function assertCommittedFactAnchorsPreserved(
         id: before.id,
         title: before.title,
         coreQuestion: before.coreQuestion,
+        ...(before.hiddenTruth === undefined
+          ? {}
+          : { hiddenTruth: before.hiddenTruth }),
+        ...(before.plannedSpan === undefined
+          ? {}
+          : { plannedSpan: before.plannedSpan }),
         truthEventId: before.truthEventId,
         expectedReaderEffect: before.expectedReaderEffect
       },
@@ -1488,6 +1562,12 @@ function assertCommittedFactAnchorsPreserved(
         id: after.id,
         title: after.title,
         coreQuestion: after.coreQuestion,
+        ...(before.hiddenTruth === undefined
+          ? {}
+          : { hiddenTruth: after.hiddenTruth }),
+        ...(before.plannedSpan === undefined
+          ? {}
+          : { plannedSpan: after.plannedSpan }),
         truthEventId: after.truthEventId,
         expectedReaderEffect: after.expectedReaderEffect
       },
@@ -1611,6 +1691,10 @@ function assertCommittedFactAnchorsPreserved(
       .get(eventId)
       ?.arcIds.forEach((arcId) => committedArcIds.add(arcId));
   }
+  for (const beatId of committedBeatIds) {
+    const arcId = originalBeatById.get(beatId)?.beat.arcId ?? null;
+    if (arcId !== null) committedArcIds.add(arcId);
+  }
   const originalArcById = new Map(
     original.plot.arcs.map((arc) => [arc.id, arc])
   );
@@ -1655,6 +1739,11 @@ function assertCommittedFactAnchorsPreserved(
   for (const chapterId of committedChapterIdSet) {
     const volumeId = originalChapterById.get(chapterId)?.volumeId;
     if (volumeId) committedVolumeIds.add(volumeId);
+  }
+  for (const beatId of committedBeatIds) {
+    const volumeId =
+      originalBeatById.get(beatId)?.beat.volumeId ?? null;
+    if (volumeId !== null) committedVolumeIds.add(volumeId);
   }
   assertFrozenOrderPrefix(
     orderedIdsByOrder(original.plot.volumes, ({ order }) => order),
@@ -1790,6 +1879,12 @@ function deleteArc(
   const eventIds = state.draft.plot.storyEvents
     .filter((event) => event.arcIds.includes(arcId))
     .map(({ id }) => id);
+  const directBeatIds = state.draft.plot.foreshadowing.flatMap(
+    (thread) =>
+      thread.beats
+        .filter((beat) => (beat.arcId ?? null) === arcId)
+        .map(({ id }) => id)
+  );
   if (
     eventIds.some((eventId) =>
       eventParticipatesInCommittedFacts(state.draft, eventId)
@@ -1802,9 +1897,15 @@ function deleteArc(
   }
   requireCascade(
     cascade,
-    [...chapterIds, ...eventIds],
+    [...chapterIds, ...eventIds, ...directBeatIds],
     `Arc ${arcId}`
   );
+  for (const beatId of new Set(directBeatIds)) {
+    const stillExists = state.draft.plot.foreshadowing.some((thread) =>
+      thread.beats.some((beat) => beat.id === beatId)
+    );
+    if (stillExists) deleteForeshadowingBeat(state, beatId);
+  }
   chapterIds.forEach((chapterId) =>
     deleteChapter(state, chapterId, true)
   );
@@ -1812,6 +1913,40 @@ function deleteArc(
     if (!event.arcIds.includes(arcId)) return;
     event.arcIds = event.arcIds.filter((candidate) => candidate !== arcId);
     markUpdated(state, event.id);
+    const remainingVolumeIds = [
+      ...new Set(
+        event.arcIds
+          .map(
+            (eventArcId) =>
+              state.draft.plot.arcs.find(
+                (candidate) => candidate.id === eventArcId
+              )?.volumeId
+          )
+          .filter((volumeId): volumeId is string => Boolean(volumeId))
+      )
+    ];
+    state.draft.plot.foreshadowing.forEach((thread) => {
+      thread.beats.forEach((beat) => {
+        const plannedVolumeId = beat.volumeId ?? null;
+        if (
+          beat.eventId !== event.id ||
+          plannedVolumeId === null ||
+          remainingVolumeIds.includes(plannedVolumeId)
+        ) {
+          return;
+        }
+        assertBeatIsMutable(beat, "retarget after deleting its event arc");
+        const concreteChapterId = concreteChapterIdForBeat(
+          state.draft,
+          beat
+        );
+        beat.volumeId =
+          concreteChapterId === null && remainingVolumeIds.length === 1
+            ? remainingVolumeIds[0]!
+            : null;
+        markUpdated(state, beat.id);
+      });
+    });
   });
   state.draft.plot.arcs.splice(
     findEntityIndex(state.draft.plot.arcs, arcId, "Arc"),
@@ -1837,11 +1972,23 @@ function deleteVolume(
   const arcIds = state.draft.plot.arcs
     .filter((arc) => arc.volumeId === volumeId)
     .map(({ id }) => id);
+  const directBeatIds = state.draft.plot.foreshadowing.flatMap(
+    (thread) =>
+      thread.beats
+        .filter((beat) => (beat.volumeId ?? null) === volumeId)
+        .map(({ id }) => id)
+  );
   requireCascade(
     cascade,
-    [...arcIds, ...chapterIds],
+    [...arcIds, ...chapterIds, ...directBeatIds],
     `Volume ${volumeId}`
   );
+  for (const beatId of new Set(directBeatIds)) {
+    const stillExists = state.draft.plot.foreshadowing.some((thread) =>
+      thread.beats.some((beat) => beat.id === beatId)
+    );
+    if (stillExists) deleteForeshadowingBeat(state, beatId);
+  }
   chapterIds.forEach((chapterId) =>
     deleteChapter(state, chapterId, true)
   );
@@ -2331,6 +2478,7 @@ function applyLongWorkspaceOperation(
         workspace.plot.arcs[
           findEntityIndex(workspace.plot.arcs, operation.id, "Arc")
         ]!;
+      const sourceVolumeId = arc.volumeId;
       const childChapters = workspace.plot.chapterCards.filter(
         (chapter) => chapter.primaryArcId === arc.id
       );
@@ -2353,6 +2501,52 @@ function applyLongWorkspaceOperation(
       childChapters.forEach((chapter) => {
         chapter.volumeId = operation.toVolumeId;
         markUpdated(state, chapter.id);
+      });
+      const movedChapterIds = new Set(
+        childChapters.map((chapter) => chapter.id)
+      );
+      workspace.plot.foreshadowing.forEach((thread) => {
+        thread.beats.forEach((beat) => {
+          const followsMovedArc = (beat.arcId ?? null) === arc.id;
+          const followsMovedChapter = movedChapterIds.has(
+            concreteChapterIdForBeat(workspace, beat) ?? ""
+          );
+          const anchoredEvent =
+            beat.eventId === null
+              ? undefined
+              : workspace.plot.storyEvents.find(
+                  (event) => event.id === beat.eventId
+                );
+          const followsMovedEvent =
+            anchoredEvent?.arcIds.includes(arc.id) === true &&
+            beat.volumeId === sourceVolumeId &&
+            !anchoredEvent.arcIds.some((eventArcId) => {
+              const eventArc = workspace.plot.arcs.find(
+                (candidate) => candidate.id === eventArcId
+              );
+              return eventArc?.volumeId === sourceVolumeId;
+            });
+          if (
+            (!followsMovedArc &&
+              !followsMovedChapter &&
+              !followsMovedEvent) ||
+            (beat.volumeId ?? null) === null
+          ) {
+            return;
+          }
+          assertBeatIsMutable(beat, "move with its planning arc");
+          const concreteChapterId = concreteChapterIdForBeat(
+            workspace,
+            beat
+          );
+          beat.volumeId =
+            followsMovedEvent &&
+            !followsMovedChapter &&
+            concreteChapterId !== null
+              ? null
+              : operation.toVolumeId;
+          markUpdated(state, beat.id);
+        });
       });
       const target = workspace.plot.arcs
         .filter(({ volumeId }) => volumeId === operation.toVolumeId)
@@ -2483,6 +2677,19 @@ function applyLongWorkspaceOperation(
         ]!;
       chapter.volumeId = operation.toVolumeId;
       chapter.primaryArcId = operation.toPrimaryArcId;
+      workspace.plot.foreshadowing.forEach((thread) => {
+        thread.beats.forEach((beat) => {
+          if (concreteChapterIdForBeat(workspace, beat) !== chapter.id) {
+            return;
+          }
+          retargetBeatPlanningAnchorsToChapter(
+            state,
+            beat,
+            chapter,
+            "move with its concrete chapter"
+          );
+        });
+      });
       const target = workspace.plot.chapterCards
         .filter(({ volumeId }) => volumeId === operation.toVolumeId)
         .sort(
@@ -2560,6 +2767,65 @@ function applyLongWorkspaceOperation(
           )
         ]!;
       Object.assign(event, operation.patch);
+      if (operation.patch.arcIds !== undefined) {
+        const eventVolumeIds = [
+          ...new Set(
+            event.arcIds
+              .map(
+                (eventArcId) =>
+                  workspace.plot.arcs.find(
+                    (candidate) => candidate.id === eventArcId
+                  )?.volumeId
+              )
+              .filter((volumeId): volumeId is string => Boolean(volumeId))
+          )
+        ];
+        workspace.plot.foreshadowing.forEach((thread) => {
+          thread.beats.forEach((beat) => {
+            if (beat.eventId !== event.id) return;
+            const plannedArcId = beat.arcId ?? null;
+            const plannedVolumeId = beat.volumeId ?? null;
+            const arcNeedsRetarget =
+              plannedArcId !== null &&
+              !event.arcIds.includes(plannedArcId);
+            const volumeNeedsRetarget =
+              plannedVolumeId !== null &&
+              !eventVolumeIds.includes(plannedVolumeId);
+            if (!arcNeedsRetarget && !volumeNeedsRetarget) return;
+
+            assertBeatIsMutable(beat, "retarget with its event");
+            const concreteChapterId = concreteChapterIdForBeat(
+              workspace,
+              beat
+            );
+            const concreteChapter =
+              concreteChapterId === null
+                ? undefined
+                : workspace.plot.chapterCards.find(
+                    (chapter) => chapter.id === concreteChapterId
+                  );
+            if (arcNeedsRetarget) {
+              beat.arcId =
+                concreteChapter &&
+                event.arcIds.includes(concreteChapter.primaryArcId)
+                  ? concreteChapter.primaryArcId
+                  : !concreteChapter && event.arcIds.length === 1
+                    ? event.arcIds[0]!
+                    : null;
+            }
+            if (volumeNeedsRetarget) {
+              beat.volumeId =
+                concreteChapter &&
+                eventVolumeIds.includes(concreteChapter.volumeId)
+                  ? concreteChapter.volumeId
+                  : !concreteChapter && eventVolumeIds.length === 1
+                    ? eventVolumeIds[0]!
+                    : null;
+            }
+            markUpdated(state, beat.id);
+          });
+        });
+      }
       markUpdated(state, event.id);
       break;
     }
@@ -2734,22 +3000,29 @@ function applyLongWorkspaceOperation(
         operation.toChapterCardId,
         "receive a moved placement"
       );
-      findEntityIndex(
-        workspace.plot.chapterCards,
-        operation.toChapterCardId,
-        "Target chapter"
-      );
+      const targetChapter =
+        workspace.plot.chapterCards[
+          findEntityIndex(
+            workspace.plot.chapterCards,
+            operation.toChapterCardId,
+            "Target chapter"
+          )
+        ]!;
       placement.chapterCardId = operation.toChapterCardId;
       workspace.plot.foreshadowing.forEach((thread) => {
         thread.beats.forEach((beat) => {
-          if (
-            beat.placementId === placement.id &&
-            beat.chapterCardId !== null
-          ) {
+          if (beat.placementId !== placement.id) return;
+          if (beat.chapterCardId !== null) {
             assertBeatIsMutable(beat, "move with its placement");
             beat.chapterCardId = operation.toChapterCardId;
             markUpdated(state, beat.id);
           }
+          retargetBeatPlanningAnchorsToChapter(
+            state,
+            beat,
+            targetChapter,
+            "move with its placement"
+          );
         });
       });
       const target = workspace.plot.narrativePlacements
@@ -2863,9 +3136,21 @@ function applyLongWorkspaceOperation(
       const hasCommittedBeat = thread.beats.some(
         (beat) => beat.commitId !== null
       );
+      const changesLockedCoreField = Object.keys(operation.patch).some(
+        (field) =>
+          field !== "status" &&
+          !(
+            field === "hiddenTruth" &&
+            thread.hiddenTruth === undefined
+          ) &&
+          !(
+            field === "plannedSpan" &&
+            thread.plannedSpan === undefined
+          )
+      );
       if (
         hasCommittedBeat &&
-        Object.keys(operation.patch).some((field) => field !== "status")
+        changesLockedCoreField
       ) {
         operationError(
           "committed_prefix_protected",

@@ -31,7 +31,7 @@ onBeforeUnmount(() =>
   <Teleport to="body">
     <div
       v-if="open"
-      class="long-rollback-backdrop"
+      class="dialog-backdrop long-rollback-backdrop"
       @mousedown.self="!pending && emit('close')"
     >
       <section
@@ -84,14 +84,8 @@ onBeforeUnmount(() =>
 
 <style scoped>
 .long-rollback-backdrop {
-  position: fixed;
   z-index: 1800;
-  inset: 0;
-  display: grid;
-  place-items: center;
   padding: 22px;
-  background: rgb(0 0 0 / 42%);
-  backdrop-filter: blur(4px);
 }
 
 .long-rollback-dialog {

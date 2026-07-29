@@ -51,14 +51,24 @@ describe("LearningImitationDialog", () => {
     expect(source).toContain('v-for="kind in LEARNING_MATERIAL_KINDS"');
   });
 
-  it("auto-overwrites once after a background page run completes, otherwise only preserves preview", () => {
+  it("inherits auto approval, coalesces stage saves, and refreshes local revisions", () => {
+    expect(source).toContain("approvalMode?: AgentWriteApprovalMode");
+    expect(source).toContain("writeApprovalMode: props.approvalMode");
+    expect(source).toContain("watch(\n  result");
+    expect(source).toContain("queueAutomaticStagePersist(stageId, runId)");
+    expect(source).toContain("automaticPersistChain");
+    expect(source).toContain("automaticPersistRequests");
+    expect(source).toContain("localCatalogSnapshot");
+    expect(source).toContain("await api.catalog.snapshot()");
+    expect(source).toContain("automaticPersistRequests.get(stageId)?.fingerprint");
+    expect(source).toContain("automaticPersistRequests.delete(stageId)");
+    expect(source).toContain("automaticPersistFingerprints.set(stageId, request.fingerprint)");
+    expect(source).toContain('props.approvalMode !== "auto-approve"');
     expect(source).toContain("props.controller.lastCompletedRunId.value");
     expect(source).toContain("props.controller.lastCompletedStage.value");
-    expect(source).toContain("!props.active");
-    expect(source).toContain("backgroundPersistRunIds.has(runId)");
     expect(source).toContain('persistStage("overwrite", stageId, true)');
     expect(source).toContain(
-      "后台完成，预览已保留；重新打开后选择目标确认落盘。"
+      "尚未选择完整目标库，结果预览已保留。"
     );
   });
 

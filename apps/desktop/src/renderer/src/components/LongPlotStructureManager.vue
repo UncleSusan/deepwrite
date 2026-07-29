@@ -1027,16 +1027,20 @@ function setBeatPlacement(value: PopupSelectValue) {
         <span>迁移数据会完整列出；手工修改会直接保存到本机。</span>
       </div>
       <div class="toolbar-actions">
-        <PopupSelect
-          :model-value="activeSection"
-          :options="sectionOptions"
-          accessible-label="选择剧情结构类型"
-          variant="compact"
-          size="small"
-          :disabled="mutationLocked"
-          :menu-z-index="2300"
-          @update:model-value="setSection"
-        />
+        <div class="plot-section-tabs" role="tablist" aria-label="剧情叙事结构类型">
+          <button
+            v-for="section in sectionOptions"
+            :id="`long-plot-section-${section.value}`"
+            :key="section.value"
+            type="button"
+            role="tab"
+            :aria-selected="activeSection === section.value"
+            :disabled="mutationLocked"
+            @click="setSection(section.value)"
+          >
+            {{ section.label }}
+          </button>
+        </div>
         <button
           class="primary-button"
           type="button"
@@ -1102,7 +1106,7 @@ function setBeatPlacement(value: PopupSelectValue) {
     <Teleport to="body">
       <div
         v-if="formOpen"
-        class="plot-modal-overlay"
+        class="dialog-backdrop plot-modal-overlay"
         @mousedown.self="closeForm"
         @keydown.esc.stop="closeForm"
       >
@@ -1457,7 +1461,7 @@ function setBeatPlacement(value: PopupSelectValue) {
     <Teleport to="body">
       <div
         v-if="pendingDelete"
-        class="plot-modal-overlay"
+        class="dialog-backdrop plot-modal-overlay"
         @mousedown.self="closeDelete"
         @keydown.esc.stop="closeDelete"
       >
@@ -1538,6 +1542,36 @@ function setBeatPlacement(value: PopupSelectValue) {
   border: 1px solid var(--theme-line-soft);
   border-radius: 0.7rem;
   background: var(--surface-muted);
+}
+
+.toolbar-actions {
+  min-width: 0;
+}
+
+.plot-section-tabs {
+  display: flex;
+  min-width: 0;
+  max-width: 34rem;
+  overflow-x: auto;
+  padding: 0.18rem;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 0.65rem;
+  background: var(--surface-main);
+}
+
+.plot-section-tabs button {
+  flex: 0 0 auto;
+  min-height: 1.9rem;
+  padding: 0.34rem 0.58rem;
+  border-color: transparent;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.plot-section-tabs button[aria-selected="true"] {
+  border-color: var(--theme-line);
+  color: var(--accent);
+  background: var(--surface-raised);
 }
 
 .plot-toolbar > div:first-child {
@@ -1652,15 +1686,9 @@ button:disabled {
 }
 
 .plot-modal-overlay {
-  position: fixed;
-  inset: 0;
   z-index: 2200;
-  display: grid;
-  place-items: center;
   overflow: auto;
   padding: 1rem;
-  background: color-mix(in srgb, var(--theme-foreground) 28%, transparent);
-  backdrop-filter: blur(0.2rem);
 }
 
 .plot-modal {
@@ -1836,6 +1864,10 @@ textarea:focus-visible {
   .toolbar-actions,
   .row-actions {
     flex-wrap: wrap;
+  }
+
+  .plot-section-tabs {
+    max-width: 100%;
   }
 
   .row-actions button {

@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import appSource from "../App.vue?raw";
 import bindingsSource from "./LongBookBindingsDialog.vue?raw";
+import characterDialogSource from "./CreateLongCharacterDialog.vue?raw";
+import plotPointDialogSource from "./CreateLongPlotPointDialog.vue?raw";
 import dialogSource from "./CreateBookDialog.vue?raw";
 import editorSource from "./LongWorkspaceEditor.vue?raw";
+import foreshadowingSource from "./LongForeshadowingWorkspace.vue?raw";
 import migrationReportSource from "./LongMigrationReportDialog.vue?raw";
 import leftSidebarSource from "./LeftSidebar.vue?raw";
 import proposalSource from "./LongProposalReview.vue?raw";
 import removalSource from "./LongBookRemovalDialog.vue?raw";
 import rollbackSource from "./LongRollbackDialog.vue?raw";
-import searchSource from "./LongWorkspaceSearch.vue?raw";
 import sectionSource from "./TreeSection.vue?raw";
 import structureSource from "./LongStructureManager.vue?raw";
 import treeNodeSource from "./TreeNodeItem.vue?raw";
@@ -18,6 +20,37 @@ import writingOrchestratorSource from "../composables/useLongWritingOrchestrator
 import agentRunPreferencesSource from "../utils/agentRunPreferences.ts?raw";
 
 describe("long-form renderer vertical slice", () => {
+  it("projects one foreshadowing data source into overview, volume, and plot-point views", () => {
+    expect(appSource).toContain('key: "plot-design:foreshadowing"');
+    expect(appSource).toContain(
+      "book.navigation.counts.foreshadowingThreads"
+    );
+    expect(longWorkspaceTypeSource).toContain(
+      'selection.key === "plot-design:foreshadowing"'
+    );
+    expect(editorSource).toContain("<LongForeshadowingWorkspace");
+    expect(editorSource).toContain("currentIsForeshadowingWorkspace");
+    expect(editorSource).toContain("currentIsVolumeForeshadowing");
+    expect(editorSource).toContain("currentIsPlotPointForeshadowing");
+    expect(editorSource).toContain("本卷伏笔");
+    expect(editorSource).toContain("伏笔触点");
+    expect(editorSource).toContain(
+      '@mutation="forwardForeshadowingMutation"'
+    );
+    expect(editorSource).toContain('if (tab === "foreshadowing")');
+    expect(editorSource).toContain(
+      "if (!(await saveAllChanges())) return;"
+    );
+    expect(editorSource).toContain(
+      "if (currentIsPlotPointForeshadowing.value)"
+    );
+    expect(appSource).toContain('@mutation="handleLongStructureMutation"');
+    expect(foreshadowingSource).toContain(
+      "createLongStructureMutationBuilder"
+    );
+    expect(foreshadowingSource).toContain('"overview" | "volume" | "plotPoint"');
+  });
+
   it("offers long-book creation in the unified themed creation dialog", () => {
     expect(sectionSource).toContain('"新建作品"');
     expect(sectionSource).not.toContain('id: "create-long-book"');
@@ -53,6 +86,263 @@ describe("long-form renderer vertical slice", () => {
     expect(longWorkspaceTypeSource).toContain('role: "handoff"');
   });
 
+  it("groups characters into four permanent folders with tab-bar creation", () => {
+    for (const [group, label] of [
+      ["protagonist", "主角"],
+      ["major_supporting", "主要配角"],
+      ["minor_supporting", "次要配角"],
+      ["passerby", "路人"]
+    ]) {
+      expect(longWorkspaceTypeSource).toContain(
+        `{ value: "${group}", label: "${label}" }`
+      );
+    }
+    expect(appSource).toContain(
+      "const characterChildren = LONG_CHARACTER_GROUP_OPTIONS.map"
+    );
+    expect(appSource).toContain("character.group === group.value");
+    expect(appSource).toContain("longCharacterGroup: group.value");
+    expect(appSource).toContain("label: options.label ?? selection.title");
+    expect(appSource).toContain("label: group.label");
+    const characterProjection = appSource.slice(
+      appSource.indexOf(
+        "const characterChildren = LONG_CHARACTER_GROUP_OPTIONS.map"
+      ),
+      appSource.indexOf("const bookLineSelection")
+    );
+    expect(characterProjection).not.toContain(
+      "key: `character:${character.id}`"
+    );
+    expect(characterProjection).not.toContain("children: characters");
+    expect(treeNodeSource).not.toContain("createLongCharacter");
+    expect(editorSource).toContain("currentIsCharacterGroup");
+    expect(editorSource).toContain('aria-label="新增人物"');
+    expect(editorSource).toContain("emit('createCharacter')");
+    expect(editorSource).toContain("currentEmptyCollection");
+    expect(editorSource).toContain("还没有${selection.title}");
+    expect(editorSource).toContain("新建第一个人物");
+    expect(editorSource).toContain("新建第一个剧情点");
+    expect(editorSource).toContain("新建第一张章卡");
+    expect(editorSource).toContain("@click=\"createFirstCollectionItem\"");
+    expect(appSource).toContain(
+      '@create-character="openLongCharacterCreate"'
+    );
+    expect(appSource).toContain('plot_design: "剧情设计"');
+    expect(appSource).toContain('key: "root:plot-points"');
+    expect(appSource).toContain(
+      "const plotPointVolumeChildren: ResourceTreeNode[]"
+    );
+    expect(appSource).toContain(
+      "key: `plot-design:plot-points:${volume.id}`"
+    );
+    expect(appSource).toContain("label: volume.title");
+    expect(appSource).toContain('title: "剧情点"');
+    expect(appSource).toContain('title: "章卡"');
+    expect(appSource).toContain('label: "正文"');
+    const chapterCardProjection = appSource.slice(
+      appSource.indexOf(
+        "const chapterCardManagementChildren: ResourceTreeNode[]"
+      ),
+      appSource.indexOf("const plotChildren: ResourceTreeNode[]")
+    );
+    expect(chapterCardProjection).toContain(
+      "key: `plot-design:chapter-cards:${volume.id}`"
+    );
+    expect(chapterCardProjection).toContain("chapterCardTabs:");
+    expect(chapterCardProjection).not.toContain(
+      "root:chapter-card-management:"
+    );
+    expect(chapterCardProjection).not.toContain("children: chapters");
+    const plotChildrenProjection = appSource.slice(
+      appSource.indexOf("const plotChildren: ResourceTreeNode[]"),
+      appSource.indexOf("const draftChildren")
+    );
+    expect(plotChildrenProjection).not.toContain('key: "root:plot-volumes"');
+    expect(plotChildrenProjection).not.toContain(
+      'key: `root:plot-arc:${arc.id}`'
+    );
+    expect(
+      plotChildrenProjection.indexOf('key: "root:plot-points"')
+    ).toBeLessThan(
+      plotChildrenProjection.indexOf('key: "root:plot-chapter-cards"')
+    );
+    const longRootProjection = appSource.slice(
+      appSource.indexOf("const counts = book.navigation.counts;"),
+      appSource.indexOf("const longBookResourceNodes")
+    );
+    expect(
+      longRootProjection.match(/node\(createLongRootSelection/gu)
+    ).toHaveLength(5);
+    expect(longRootProjection).not.toContain('title: "章卡"');
+    expect(editorSource).toContain("全书总纲");
+    expect(editorSource).toContain("orderedBookLineVolumes");
+    expect(editorSource).toContain("currentIsPlotPointWorkspace");
+    expect(editorSource).toContain("selection.plotPointTabs");
+    expect(editorSource).toContain("emit('selectPlotPoint', plotPoint.id)");
+    expect(editorSource).toContain("currentIsChapterCardWorkspace");
+    expect(editorSource).toContain("selection.chapterCardTabs");
+    expect(editorSource).toContain(
+      "emit('selectChapterCard', chapterCard.id)"
+    );
+    expect(appSource).toContain(
+      '@select-chapter-card="selectLongChapterCardTab"'
+    );
+    expect(editorSource).toContain("概要");
+    expect(editorSource).toContain("故事情节");
+    expect(editorSource).toContain("selection.plotPointId === plotPoint.id");
+    expect(editorSource).toContain('aria-label="新建分卷"');
+    expect(editorSource).toContain('emit("createVolume")');
+    expect(editorSource).toContain('"saveVolumeOutline"');
+    expect(appSource).toContain('@create-volume="openLongVolumeCreate"');
+    expect(appSource).toContain(
+      '@save-volume-outline="saveLongVolumeOutline"'
+    );
+    expect(editorSource).toContain('"savePlotPointContent"');
+    expect(appSource).toContain(
+      '@save-plot-point-content="saveLongPlotPointContent"'
+    );
+    expect(editorSource).toContain("activeChapterCardTab");
+    expect(editorSource).toContain("章节大纲");
+    expect(editorSource).toContain("世界约束");
+    expect(editorSource).toContain('"saveChapterCardContent"');
+    expect(appSource).toContain(
+      '@save-chapter-card-content="saveLongChapterCardContent"'
+    );
+    expect(appSource).toContain(
+      "createLongStructureMutationBuilder(index).updateChapter"
+    );
+    expect(appSource).toContain("<CreateLongVolumeDialog");
+    expect(appSource).toContain("@submit=\"createLongVolume\"");
+    expect(appSource).toContain("<CreateLongPlotPointDialog");
+    expect(appSource).toContain("@submit=\"createLongPlotPoint\"");
+    expect(plotPointDialogSource).toContain("新建剧情点");
+    expect(plotPointDialogSource).not.toContain("LongStructureManager");
+    const createVolumeEntry = appSource.slice(
+      appSource.indexOf("async function openLongVolumeCreate"),
+      appSource.indexOf("async function openLongPlotPointCreate")
+    );
+    expect(createVolumeEntry).toContain("longVolumeCreateOpen.value = true");
+    expect(createVolumeEntry).not.toContain(
+      "longStructureDialogOpen.value = true"
+    );
+    expect(appSource).toContain(
+      '@long-structure-action="openLongStructureTreeAction"'
+    );
+    const createPlotPointEntry = appSource.slice(
+      appSource.indexOf("async function openLongPlotPointCreateForVolume"),
+      appSource.indexOf("async function saveLongVolumeOutline")
+    );
+    expect(createPlotPointEntry).toContain(
+      "longPlotPointCreate.value = {"
+    );
+    expect(createPlotPointEntry).not.toContain(
+      "longStructureDialogOpen.value = true"
+    );
+    const treeStructureEntry = appSource.slice(
+      appSource.indexOf("async function openLongStructureTreeAction"),
+      appSource.indexOf("async function openLongVolumeCreate")
+    );
+    expect(treeStructureEntry).toContain(
+      "await openLongPlotPointCreateForVolume("
+    );
+    expect(
+      treeStructureEntry.indexOf(
+        "await openLongPlotPointCreateForVolume("
+      )
+    ).toBeLessThan(treeStructureEntry.indexOf("await selectResource(node)"));
+    expect(appSource).toContain(
+      "longStructureSection: \"arc\" as const"
+    );
+    expect(appSource).toContain(
+      "longStructureSection: \"chapter\" as const"
+    );
+    expect(appSource).toContain(
+      "createLongStructureMutationBuilder(index).createCharacter"
+    );
+    expect(appSource).toContain(
+      '@select-character="selectLongCharacterTab"'
+    );
+    expect(editorSource).toContain('v-if="currentIsCharacterGroup"');
+    expect(editorSource).toContain(
+      "@click=\"emit('selectCharacter', character.id)\""
+    );
+    expect(editorSource).toContain(
+      "selection.characterId === character.id"
+    );
+    expect(editorSource).toContain(
+      "selection.key.startsWith('character-group:')"
+    );
+    expect(editorSource).toContain("selection.description ??");
+    expect(editorSource).toContain(
+      "'has-navigation-tabs':\n        currentIsCharacterGroup ||"
+    );
+    expect(editorSource).not.toContain(
+      "Boolean(selection?.characterTabs?.length) ||"
+    );
+    expect(characterDialogSource).toContain("新增人物");
+    expect(characterDialogSource).toContain(
+      "核心档案、人物关系、当前状态和历史轨迹"
+    );
+    expect(characterDialogSource).toContain("<Teleport to=\"body\">");
+    expect(characterDialogSource).toContain("uiMessage.warning");
+  });
+
+  it("edits and persists a character name directly from the document title", () => {
+    expect(editorSource).toContain('v-else-if="currentIsCharacterDocument"');
+    expect(editorSource).toContain('v-model="characterNameDraft"');
+    expect(editorSource).toContain('aria-label="人物姓名"');
+    expect(editorSource).toContain('@change="saveCharacterName"');
+    expect(editorSource).toContain(
+      '@keydown="handleCharacterNameKeydown"'
+    );
+    expect(editorSource).toContain(
+      'emit("renameCharacter", { characterId, name }'
+    );
+    expect(appSource).toContain(
+      '@rename-character="renameLongCharacter"'
+    );
+    expect(appSource).toContain(
+      "createLongStructureMutationBuilder(index).updateCharacter"
+    );
+  });
+
+  it("edits and persists long-form structure titles from the document title", () => {
+    expect(editorSource).toContain("currentStructureTitleTarget");
+    expect(editorSource).toContain('inputLabel: "剧情点标题"');
+    expect(editorSource).toContain('inputLabel: "分卷名称"');
+    expect(editorSource).toContain('inputLabel: "章卡标题"');
+    expect(editorSource).toContain('inputLabel: "世界观分类名称"');
+    expect(editorSource).toContain('v-model="structureTitleDraft"');
+    expect(editorSource).toContain('@change="saveStructureTitle"');
+    expect(editorSource).toContain(
+      '@keydown="handleStructureTitleKeydown"'
+    );
+    expect(editorSource).toContain(
+      'emit(\n    "renameStructureTitle"'
+    );
+    expect(appSource).toContain(
+      '@rename-structure-title="renameLongStructureTitle"'
+    );
+    expect(appSource).toContain(
+      "createLongStructureMutationBuilder(index)"
+    );
+    expect(appSource).toContain(
+      "builder.updateWorldbuilding(category.id, { title })"
+    );
+    expect(appSource).toContain(
+      "builder.updateVolume(volume.id, { title })"
+    );
+    expect(appSource).toContain(
+      "builder.updateArc(plotPoint.id, { title })"
+    );
+    expect(appSource).toContain(
+      "builder.updateChapter(chapter.id, { title })"
+    );
+    expect(editorSource).toContain(
+      'chapterCardId === target.id && commitId !== null'
+    );
+  });
+
   it("lazy-loads selected files and saves Markdown with all CAS revisions", () => {
     expect(editorSource).toContain("api.readDocument({");
     expect(editorSource).toContain("api.writeDocument({");
@@ -71,6 +361,24 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).toContain("离开前已自动保存");
     expect(appSource).toContain("saveActiveLongEditorBeforeLeaving");
     expect(appSource).toContain('ref="longWorkspaceEditor"');
+  });
+
+  it("loads only the selected character document and avoids unbounded sibling prefetches", () => {
+    expect(editorSource).not.toContain("prefetchCharacterDocuments");
+    expect(editorSource).not.toContain(
+      "void loadWorkspaceDocument(file, false, true)"
+    );
+    expect(editorSource).toContain("async function loadSelectedDocument");
+    expect(editorSource).toContain("await loadWorkspaceDocument(selectedFile, force)");
+  });
+
+  it("reconciles structural drafts from the workspace revision without a deep synchronous watcher", () => {
+    expect(editorSource).toContain("props.workspaceIndex?.revision");
+    expect(editorSource).toContain('flush: "post"');
+    expect(editorSource).not.toContain(
+      'props.workspaceIndex?.plot.volumes,\n      props.workspaceIndex?.plot.arcs'
+    );
+    expect(editorSource).not.toContain('{ immediate: true, deep: true, flush: "sync" }');
   });
 
   it("renders list worldbuilding as tabs and text worldbuilding as a direct textarea", () => {
@@ -158,6 +466,13 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain(
       "children: projectLongWorkspaceNavigation(book, workspaceIndex)"
     );
+    expect(appSource).toContain(
+      "index\n      ? reconcileLongWorkspaceSelection(book, index, selection)\n      : selection"
+    );
+    expect(appSource).toContain("[...book.navigation.worldbuilding]");
+    expect(appSource).toContain("selectableBranch: true");
+    expect(appSource).toContain('badge: "长篇"');
+    expect(appSource).not.toContain("badge: `长篇 · ${book.genre}`");
     expect(appSource).toContain("node.longWorkspaceSelection");
     expect(leftSidebarSource).toContain("<TreeSection");
     expect(leftSidebarSource).not.toContain('<slot name="long-workspace" />');
@@ -166,7 +481,7 @@ describe("long-form renderer vertical slice", () => {
     for (const label of [
       "世界观",
       "人物设计",
-      "情节设计",
+      "剧情设计",
       "正文",
       "连续性账本"
     ]) {
@@ -200,6 +515,10 @@ describe("long-form renderer vertical slice", () => {
     expect(proposalSource).not.toContain(".slice(0, 80)");
     expect(proposalSource).toContain("本章六类连续性摘要");
     expect(proposalSource).toContain("decision.note");
+    expect(proposalSource).toContain("item.approvalMode === \"auto-approve\"");
+    expect(proposalSource).toContain("自动保存中");
+    expect(appSource).toContain("approvalModeForEvent: longProposalApprovalMode");
+    expect(appSource).toContain("prepareAutoApprove: prepareAutomaticLongProposal");
     expect(editorSource).toContain("LongLedgerCommitRecordSchema");
     expect(editorSource).toContain("本章连续性摘要");
     expect(editorSource).toContain("伏笔线状态推导");
@@ -328,27 +647,6 @@ describe("long-form renderer vertical slice", () => {
         ?.split("function selectLongConversation(")[0] ?? "";
     expect(newLongConversationSource).toContain(
       'workspaceMainView.value = "conversation"'
-    );
-  });
-
-  it("invalidates in-flight searches when the scope or query changes", () => {
-    expect(searchSource).toContain("function setSearchScope(");
-    expect(searchSource).toContain("watch(searchQuery, clearResults");
-    expect(searchSource).toContain("searchClock += 1");
-    expect(searchSource).toContain("searchLoading.value = false");
-    expect(searchSource).toContain("props.workspaceIndex.revision");
-    expect(searchSource).toContain("props.summary.projectRevision");
-    expect(searchSource).toContain('{ flush: "sync" }');
-    expect(searchSource).toContain(
-      "result.workspaceRevision !== workspaceRevision"
-    );
-    expect(searchSource).toContain("searchAttempted");
-    expect(leftSidebarSource).toContain("<LongWorkspaceSearch");
-    expect(appSource).toContain(
-      '@select-long-workspace="selectLongWorkspaceSearchResult"'
-    );
-    expect(editorSource).toContain(
-      "props.selection?.preferredRole"
     );
   });
 
@@ -573,5 +871,11 @@ describe("long-form renderer vertical slice", () => {
     expect(structureSource).toContain(
       "completion: LongStructureMutationCompletion"
     );
+    expect(structureSource).toContain("builder.createWorldbuilding");
+    expect(structureSource).toContain("builder.updateWorldbuilding");
+    expect(structureSource).not.toContain("<LongPlotStructureManager");
+    expect(structureSource).toContain('@click="openCreate"');
+    expect(structureSource).toContain('@click="openEdit(row)"');
+    expect(structureSource).toContain('@click="openDelete(row)"');
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentMessageCompletedEventEnvelopeSchema,
   AgentMessageDeltaEventEnvelopeSchema,
+  AgentUsageObservedEventEnvelopeSchema,
   AgentRetryScheduledEventEnvelopeSchema,
   AgentTurnStartedEventEnvelopeSchema,
   AgentPromptCommandPayloadSchema,
@@ -455,6 +456,44 @@ describe("DeepWrite desktop contracts", () => {
       "第一段"
     );
     expect(SystemEventEnvelopeSchema.parse(completed).type).toBe("agent.message_completed");
+  });
+
+  it("validates internal assistant usage observations without making them UI terminal events", () => {
+    const context = { sessionId: "session_usage", runId: "run_usage" };
+    const observed = createEnvelope(
+      "agent.usage_observed",
+      {
+        ...context,
+        messageId: "run_usage_assistant",
+        observationId: "run_usage:turn:1:attempt:1",
+        observedAt: "2026-07-29T10:00:00.000Z",
+        turnId: "run_usage:turn:1",
+        attempt: 1,
+        status: "completed" as const,
+        hadToolCall: true,
+        usage: {
+          inputTokens: 13,
+          outputTokens: 5,
+          cacheReadTokens: 2,
+          cacheWriteTokens: 0,
+          totalTokens: 20
+        },
+        runtime: {
+          provider: "openai",
+          model: "gpt-test",
+          mode: "provider" as const,
+          configId: "model-config-1"
+        }
+      },
+      { id: "event_usage", context }
+    );
+
+    expect(AgentUsageObservedEventEnvelopeSchema.parse(observed).payload).toMatchObject({
+      observationId: "run_usage:turn:1:attempt:1",
+      hadToolCall: true,
+      runtime: { configId: "model-config-1" }
+    });
+    expect(SystemEventEnvelopeSchema.parse(observed).type).toBe("agent.usage_observed");
   });
 
   it("validates turn attempts and scheduled retries as non-terminal agent events", () => {

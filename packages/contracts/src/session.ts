@@ -61,7 +61,12 @@ export type AgentWriteApprovalMode = z.infer<typeof AgentWriteApprovalModeSchema
 export const AgentRuntimeRefSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
-  mode: z.enum(["local-faux", "provider"])
+  mode: z.enum(["local-faux", "provider"]),
+  /**
+   * The local model-configuration id that resolved this runtime. It is kept
+   * optional for the built-in faux runtime and for historical event payloads.
+   */
+  configId: z.string().trim().min(1).max(120).optional()
 });
 export type AgentRuntimeRef = z.infer<typeof AgentRuntimeRefSchema>;
 
@@ -700,6 +705,41 @@ export const AgentUsageSchema = z.object({
 });
 export type AgentUsage = z.infer<typeof AgentUsageSchema>;
 
+export const AgentUsageObservationStatusSchema = z.enum([
+  "completed",
+  "error",
+  "aborted"
+]);
+export type AgentUsageObservationStatus = z.infer<
+  typeof AgentUsageObservationStatusSchema
+>;
+
+/**
+ * One provider-returned assistant message, including intermediate tool-call
+ * turns and retry attempts. This is an internal accounting event: consumers
+ * must not derive usage from `agent.message_completed` or `subagent.completed`,
+ * because those UI lifecycle events deliberately omit intermediate turns.
+ */
+export const AgentUsageObservedPayloadSchema = AgentEventIdentitySchema.extend({
+  /** Stable retry-safe id for local at-least-once persistence. */
+  // Main prefixes this with `v2:` before persisting it in a 240-character
+  // ModelUsageRecord id, so reserve those three characters here.
+  observationId: z.string().trim().min(1).max(237),
+  observedAt: z.string().datetime(),
+  turnId: z.string().min(1),
+  attempt: z.number().int().positive(),
+  status: AgentUsageObservationStatusSchema,
+  hadToolCall: z.boolean(),
+  usage: AgentUsageSchema,
+  /** Present only when this model message came from a delegated child run. */
+  parentToolCallId: z.string().min(1).optional(),
+  subagentRunId: z.string().min(1).optional(),
+  subagentId: z.string().min(1).max(120).optional()
+});
+export type AgentUsageObservedPayload = z.infer<
+  typeof AgentUsageObservedPayloadSchema
+>;
+
 export const SubagentEventBaseSchema = z.object({
   sessionId: z.string().min(1),
   runId: z.string().min(1),
@@ -1143,6 +1183,11 @@ export const AgentMessageCompletedEventEnvelopeSchema = EnvelopeBaseSchema.exten
   payload: AgentMessageCompletedPayloadSchema
 }).superRefine(validateAgentEventContext);
 
+export const AgentUsageObservedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("agent.usage_observed"),
+  payload: AgentUsageObservedPayloadSchema
+}).superRefine(validateAgentEventContext);
+
 export const AgentToolRequestedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("tool.call_requested"),
   payload: AgentToolRequestedPayloadSchema
@@ -1260,6 +1305,10 @@ export type SubagentCompletedEventEnvelope = Envelope<
 >;
 export type AgentThinkingDeltaEventEnvelope = Envelope<AgentThinkingDeltaPayload, "agent.thinking_delta">;
 export type AgentMessageCompletedEventEnvelope = Envelope<AgentMessageCompletedPayload, "agent.message_completed">;
+export type AgentUsageObservedEventEnvelope = Envelope<
+  AgentUsageObservedPayload,
+  "agent.usage_observed"
+>;
 export type AgentToolRequestedEventEnvelope = Envelope<AgentToolRequestedPayload, "tool.call_requested">;
 export type AgentToolCallStreamEventEnvelope = Envelope<
   AgentToolCallStreamPayload,

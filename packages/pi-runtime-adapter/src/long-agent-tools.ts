@@ -27,6 +27,7 @@ import {
   longCharacterRelationshipsFileId,
   longWorldbuildingContentPath,
   longWorldbuildingFileId,
+  type AgentWriteApprovalMode,
   type CommandResult,
   type LongAgentProfile,
   type LongChapterReadiness,
@@ -109,9 +110,22 @@ export interface BuildLongWorkspaceToolsInput {
   profile: LongAgentProfile;
   sessionId: string;
   runId: string;
+  writeApprovalMode?: AgentWriteApprovalMode;
   attachedSkills?: WorkspaceRuntimeContext["attachedSkills"];
   attachedMaterials?: WorkspaceRuntimeContext["attachedMaterials"];
   executor?: LongCommandExecutor;
+}
+
+function longProposalResultSummary(
+  input: BuildLongWorkspaceToolsInput,
+  pendingSummary: string
+): string {
+  return input.writeApprovalMode === "auto-approve"
+    ? pendingSummary.replace(
+        /等待客户端审阅(?:与冲突检查)?。$/,
+        "已提交实时自动保存队列；以长篇写入卡的落盘状态为准。"
+      )
+    : pendingSummary;
 }
 
 const ALL_ROOTS = new Set<LongWorkspaceRoot>(LONG_WORKSPACE_ROOTS);
@@ -209,6 +223,31 @@ const beatTypeParameter = literalUnion([
   "payoff",
   "aftermath"
 ] as const);
+const foreshadowingSpanParameter = Type.Union(
+  [
+    Type.Literal("local"),
+    Type.Literal("within_volume"),
+    Type.Literal("cross_volume")
+  ],
+  {
+    description:
+      "伏笔计划跨度：local 为局部剧情点，within_volume 为卷内，cross_volume 为跨卷。"
+  }
+);
+const foreshadowingHiddenTruthParameter = Type.String({
+  maxLength: 200_000,
+  description: "作者掌握但暂不向读者公开的伏笔真相。"
+});
+
+function nullableEntityReferenceParameter(
+  prefix: string,
+  description: string
+) {
+  return Type.Union(
+    [entityReferenceParameter(prefix), Type.Null()],
+    { description }
+  );
+}
 
 function patchParameter<T extends Record<string, TSchema>>(
   properties: T
@@ -525,6 +564,8 @@ const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     client_ref: clientReferenceParameter,
     title: titleParameter,
     coreQuestion: Type.Optional(textParameter),
+    hiddenTruth: Type.Optional(foreshadowingHiddenTruthParameter),
+    plannedSpan: Type.Optional(foreshadowingSpanParameter),
     truthEventId: Type.Optional(
       Type.Union([entityReferenceParameter("event"), Type.Null()])
     ),
@@ -537,6 +578,8 @@ const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     patch: patchParameter({
       title: Type.Optional(titleParameter),
       coreQuestion: Type.Optional(textParameter),
+      hiddenTruth: Type.Optional(foreshadowingHiddenTruthParameter),
+      plannedSpan: Type.Optional(foreshadowingSpanParameter),
       truthEventId: Type.Optional(
         Type.Union([entityReferenceParameter("event"), Type.Null()])
       ),
@@ -562,6 +605,18 @@ const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     client_ref: clientReferenceParameter,
     threadId: entityReferenceParameter("foreshadow"),
     beatType: beatTypeParameter,
+    volumeId: Type.Optional(
+      nullableEntityReferenceParameter(
+        "volume",
+        "卷级计划锚点；触点尚未细化到剧情点时使用，传 null 可清空。"
+      )
+    ),
+    arcId: Type.Optional(
+      nullableEntityReferenceParameter(
+        "arc",
+        "剧情点计划锚点（内部 LongArc）；传 null 可清空。"
+      )
+    ),
     eventId: Type.Optional(
       Type.Union([entityReferenceParameter("event"), Type.Null()])
     ),
@@ -579,6 +634,18 @@ const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     id: entityReferenceParameter("beat"),
     patch: patchParameter({
       beatType: Type.Optional(beatTypeParameter),
+      volumeId: Type.Optional(
+        nullableEntityReferenceParameter(
+          "volume",
+          "更新卷级计划锚点；传 null 可清空。"
+        )
+      ),
+      arcId: Type.Optional(
+        nullableEntityReferenceParameter(
+          "arc",
+          "更新剧情点计划锚点（内部 LongArc）；传 null 可清空。"
+        )
+      ),
       eventId: Type.Optional(
         Type.Union([entityReferenceParameter("event"), Type.Null()])
       ),
@@ -1509,6 +1576,12 @@ function buildRuntimeOperations(input: {
               id: generatedId!,
               title: operation.title,
               coreQuestion: operation.coreQuestion ?? "",
+              ...(operation.hiddenTruth !== undefined
+                ? { hiddenTruth: operation.hiddenTruth }
+                : {}),
+              ...(operation.plannedSpan !== undefined
+                ? { plannedSpan: operation.plannedSpan }
+                : {}),
               truthEventId:
                 optionalRef(operation.truthEventId, "event") ?? null,
               expectedReaderEffect: operation.expectedReaderEffect ?? "",
@@ -1552,6 +1625,17 @@ function buildRuntimeOperations(input: {
               id: generatedId!,
               type: operation.beatType,
               order: incrementCounter(beatOrders, threadId),
+              ...(operation.volumeId !== undefined
+                ? {
+                    volumeId: optionalRef(
+                      operation.volumeId,
+                      "volume"
+                    )
+                  }
+                : {}),
+              ...(operation.arcId !== undefined
+                ? { arcId: optionalRef(operation.arcId, "arc") }
+                : {}),
               eventId: optionalRef(operation.eventId, "event") ?? null,
               placementId:
                 optionalRef(operation.placementId, "placement") ?? null,
@@ -1567,6 +1651,8 @@ function buildRuntimeOperations(input: {
         case "foreshadowingBeat.update": {
           const {
             beatType,
+            volumeId,
+            arcId,
             eventId,
             placementId,
             chapterCardId,
@@ -1578,6 +1664,14 @@ function buildRuntimeOperations(input: {
             patch: {
               ...patch,
               ...(beatType !== undefined ? { type: beatType } : {}),
+              ...(volumeId !== undefined
+                ? {
+                    volumeId: optionalRef(volumeId, "volume")
+                  }
+                : {}),
+              ...(arcId !== undefined
+                ? { arcId: optionalRef(arcId, "arc") }
+                : {}),
               ...(eventId !== undefined
                 ? { eventId: optionalRef(eventId, "event") }
                 : {}),
@@ -2390,7 +2484,7 @@ export function buildLongWorkspaceTools(
         name: "propose_long_mutation",
         label: "提议长篇结构变更",
         description:
-          "按显式领域操作提交当前长篇的结构变更提案。运行时锁定项目版本、生成新实体与文件信息并计算文档内容修订；只能更新逻辑文档目标，不能传路径或文件修订。提案只进入审阅队列，不直接写磁盘。",
+          "按显式领域操作提交当前长篇的结构变更提案。伏笔线可分别填写 hiddenTruth 与 plannedSpan，伏笔触点可用 volumeId 或 arcId 设置卷级/剧情点计划锚点。运行时锁定项目版本、生成新实体与文件信息并计算文档内容修订；只能更新逻辑文档目标，不能传路径或文件修订。提案只进入审阅队列，不直接写磁盘。",
         parameters: LONG_MUTATION_PARAMETERS,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
@@ -2473,7 +2567,10 @@ export function buildLongWorkspaceTools(
             }
           }
           throwIfAborted(signal);
-          return textResult("已形成长篇结构变更提案，等待客户端审阅与冲突检查。", {
+          return textResult(longProposalResultSummary(
+            input,
+            "已形成长篇结构变更提案，等待客户端审阅与冲突检查。"
+          ), {
             kind: "long-mutation-proposal",
             bookId: workspace.bookId,
             agentId: profile.id,
@@ -2495,7 +2592,7 @@ export function buildLongWorkspaceTools(
         name: "propose_long_chapter_dispatch",
         label: "提议启动长篇写作",
         description:
-          "按卷序和卷内叙事顺序，为单章、当前主弧的连续章节或当前卷形成串行写作调度提案；不支持整本调度。提案获批后客户端才启动每章独立写手运行，且所有磁盘写入仍逐项审批。",
+          "按卷序和卷内叙事顺序，为单章、当前主弧的连续章节或当前卷形成串行写作调度提案；不支持整本调度。提案由客户端依据本轮审批模式处理，获批后启动每章独立写手运行。",
         parameters: Type.Object({
           scope: Type.Optional(
             literalUnion(["chapter", "arc", "volume"])
@@ -2545,7 +2642,10 @@ export function buildLongWorkspaceTools(
             params.summary?.trim() ||
             `准备按${scope === "chapter" ? "单章" : scope === "arc" ? "主弧" : "当前卷"}串行写作 ${chapters.length} 章，从《${firstChapter.title}》开始。`;
           return textResult(
-            `已形成从《${firstChapter.title}》开始的 ${chapters.length} 章串行写作调度提案，等待客户端审阅。`,
+            longProposalResultSummary(
+              input,
+              `已形成从《${firstChapter.title}》开始的 ${chapters.length} 章串行写作调度提案，等待客户端审阅。`
+            ),
             {
               kind: "long-chapter-dispatch-proposal",
               bookId: workspace.bookId,
@@ -2656,7 +2756,10 @@ export function buildLongWorkspaceTools(
             baseWorkspaceRevision: index.revision,
             baseProjectRevision: projectRevision
           });
-          return textResult("已形成当前章三文件写入提案，等待客户端审阅。", {
+          return textResult(longProposalResultSummary(
+            input,
+            "已形成当前章三文件写入提案，等待客户端审阅。"
+          ), {
             kind: "long-chapter-write-proposal",
             bookId: workspace.bookId,
             agentId: profile.id,
@@ -2966,7 +3069,10 @@ export function buildLongWorkspaceTools(
             baseProjectRevision: projectRevision
           });
           throwIfAborted(signal);
-          return textResult("已形成连续性账本提交提案，等待客户端审阅。", {
+          return textResult(longProposalResultSummary(
+            input,
+            "已形成连续性账本提交提案，等待客户端审阅。"
+          ), {
             kind: "long-ledger-commit-proposal",
             bookId: workspace.bookId,
             agentId: profile.id,

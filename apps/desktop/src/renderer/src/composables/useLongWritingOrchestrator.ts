@@ -177,16 +177,21 @@ export function useLongWritingOrchestrator(
   ): Promise<void> {
     const bookId = state.value.bookId;
     if (!bookId || runEpoch !== epoch) return;
+    patch({
+      phase: "awaiting_ledger_approval",
+      error: null,
+      retryPoint: null
+    });
     try {
       await options.startLedger(bookId, readiness, runGuard(runEpoch));
-      if (runEpoch !== epoch) return;
-      patch({
-        phase: "awaiting_ledger_approval",
-        error: null,
-        retryPoint: null
-      });
     } catch (error: unknown) {
-      if (runEpoch === epoch) fail(error, "after_write");
+      if (
+        runEpoch === epoch &&
+        state.value.phase === "awaiting_ledger_approval" &&
+        currentChapter.value?.chapterCardId === readiness.chapterCardId
+      ) {
+        fail(error, "after_write");
+      }
     }
   }
 
@@ -209,15 +214,20 @@ export function useLongWritingOrchestrator(
         await startLedger(runEpoch, readiness);
         return;
       }
-      await options.startWriter(bookId, readiness, runGuard(runEpoch));
-      if (runEpoch !== epoch) return;
       patch({
         phase: "awaiting_writer_approval",
         error: null,
         retryPoint: null
       });
+      await options.startWriter(bookId, readiness, runGuard(runEpoch));
     } catch (error: unknown) {
-      if (runEpoch === epoch) fail(error, "check");
+      if (
+        runEpoch === epoch &&
+        state.value.phase === "awaiting_writer_approval" &&
+        currentChapter.value?.chapterCardId === chapter.chapterCardId
+      ) {
+        fail(error, "check");
+      }
     }
   }
 

@@ -34,6 +34,19 @@ export interface PromptAttachmentReadResult {
   warning?: string;
 }
 
+export function promptAttachmentFilesFromClipboard(
+  clipboardData: Pick<DataTransfer, "files" | "items"> | null
+): File[] {
+  if (!clipboardData) return [];
+
+  const itemFiles = Array.from(clipboardData.items)
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null);
+
+  return itemFiles.length > 0 ? itemFiles : Array.from(clipboardData.files);
+}
+
 function extensionOf(name: string): string {
   return name.includes(".") ? (name.split(".").pop() ?? "").toLowerCase() : "";
 }

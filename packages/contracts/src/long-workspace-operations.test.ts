@@ -1305,10 +1305,590 @@ describe("long workspace operation engine", () => {
     );
   });
 
+  it("creates, refines, and cascades typed foreshadowing planning anchors", () => {
+    const source = workspace();
+    const created = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "foreshadowing.create",
+          thread: {
+            id: "foreshadow_identity",
+            title: "寄信人身份",
+            coreQuestion: "寄信人究竟是谁？",
+            hiddenTruth: "寄信人是林岚失踪的兄长。",
+            plannedSpan: "cross_volume",
+            truthEventId: null,
+            expectedReaderEffect: "先怀疑管家，再回看兄长留下的暗号。",
+            status: "planned",
+            beats: []
+          }
+        },
+        {
+          type: "foreshadowingBeat.create",
+          threadId: "foreshadow_identity",
+          beat: {
+            id: "beat_identity_plant",
+            type: "plant",
+            order: 1,
+            volumeId: "volume_one",
+            arcId: null,
+            eventId: null,
+            placementId: null,
+            chapterCardId: null,
+            plannedScope: "",
+            note: "卷内待选择具体剧情点。",
+            status: "planned",
+            commitId: null
+          }
+        }
+      ]
+    });
+    expect(created.snapshot.plot.foreshadowing[0]).toMatchObject({
+      hiddenTruth: "寄信人是林岚失踪的兄长。",
+      plannedSpan: "cross_volume",
+      beats: [{ volumeId: "volume_one", arcId: null }]
+    });
+
+    const refined = applyLongWorkspaceOperations(created.snapshot, {
+      baseRevision: created.resultRevision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "foreshadowingBeat.update",
+          id: "beat_identity_plant",
+          patch: {
+            volumeId: null,
+            arcId: "arc_letter",
+            note: "已经细化到“来信之谜”剧情点。"
+          }
+        }
+      ]
+    });
+    expect(
+      refined.snapshot.plot.foreshadowing[0]!.beats[0]
+    ).toMatchObject({
+      volumeId: null,
+      arcId: "arc_letter",
+      note: "已经细化到“来信之谜”剧情点。"
+    });
+
+    expectOperationError(
+      () =>
+        applyLongWorkspaceOperations(refined.snapshot, {
+          baseRevision: refined.resultRevision,
+          updatedAt: later,
+          operations: [
+            {
+              type: "arc.delete",
+              id: "arc_letter",
+              cascade: false
+            }
+          ]
+        }),
+      "cascade_required"
+    );
+
+    const deletePlan = LongWorkspaceOperationBatchSchema.parse({
+      baseRevision: refined.resultRevision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "arc.delete",
+          id: "arc_letter",
+          cascade: true
+        }
+      ]
+    });
+    const deletePreview = previewLongWorkspaceOperations(
+      refined.snapshot,
+      deletePlan
+    );
+    expect(deletePreview.impact.deletedEntityIds).toContain(
+      "beat_identity_plant"
+    );
+    const deleted = applyLongWorkspaceOperations(
+      refined.snapshot,
+      LongWorkspaceOperationBatchSchema.parse({
+        ...deletePlan,
+        expectedImpact: deletePreview.impact
+      })
+    );
+    expect(
+      deleted.snapshot.plot.foreshadowing[0]!.beats
+    ).toHaveLength(0);
+  });
+
+  it("keeps typed foreshadowing anchors aligned when their plot context moves", () => {
+    const secondVolume = {
+      id: "volume_two",
+      title: "第二卷",
+      order: 2,
+      summary: ""
+    } as const;
+    const secondArc = {
+      id: "arc_two",
+      volumeId: "volume_two",
+      title: "第二卷主线",
+      order: 1,
+      outline: ""
+    } as const;
+    const planningThread = (
+      beat: LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number]["beats"][number]
+    ): LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number] => ({
+      id: "foreshadow_moving",
+      title: "移动中的线索",
+      coreQuestion: "线索最终落在哪里？",
+      truthEventId: null,
+      expectedReaderEffect: "位置变化后仍保持同一条伏笔线。",
+      status: "planned",
+      beats: [beat]
+    });
+
+    const arcSource = workspace();
+    arcSource.plot.volumes.push(secondVolume);
+    arcSource.plot.arcs.push({
+      id: "arc_stays_in_volume_one",
+      volumeId: "volume_one",
+      title: "仍在第一卷的支线",
+      order: 2,
+      outline: ""
+    });
+    arcSource.plot.storyEvents[0]!.arcIds.push(
+      "arc_stays_in_volume_one"
+    );
+    arcSource.plot.chapterCards[0]!.primaryArcId =
+      "arc_stays_in_volume_one";
+    arcSource.plot.storyEvents.push({
+      id: "event_follows_moved_arc",
+      title: "跟随主线移动的事件",
+      summary: "",
+      timeMode: "sequence",
+      timeLabel: "",
+      storyOrder: 2,
+      location: "",
+      arcIds: ["arc_letter"],
+      characterIds: []
+    });
+    const arcThread = planningThread({
+      id: "beat_follows_arc",
+      type: "plant",
+      order: 1,
+      volumeId: "volume_one",
+      arcId: null,
+      eventId: null,
+      placementId: null,
+      chapterCardId: "chapter_two",
+      plannedScope: "",
+      note: "",
+      status: "planned",
+      commitId: null
+    });
+    arcThread.beats.push(
+      {
+        id: "beat_follows_event",
+        type: "reinforce",
+        order: 2,
+        volumeId: "volume_one",
+        arcId: null,
+        eventId: "event_follows_moved_arc",
+        placementId: null,
+        chapterCardId: null,
+        plannedScope: "",
+        note: "",
+        status: "planned",
+        commitId: null
+      },
+      {
+        id: "beat_stays_with_multiarc_event",
+        type: "misdirect",
+        order: 3,
+        volumeId: "volume_one",
+        arcId: null,
+        eventId: "event_letter",
+        placementId: null,
+        chapterCardId: null,
+        plannedScope: "",
+        note: "",
+        status: "planned",
+        commitId: null
+      },
+      {
+        id: "beat_clears_conflicting_event_volume",
+        type: "partial_reveal",
+        order: 4,
+        volumeId: "volume_one",
+        arcId: null,
+        eventId: "event_follows_moved_arc",
+        placementId: null,
+        chapterCardId: "chapter_one",
+        plannedScope: "",
+        note: "",
+        status: "planned",
+        commitId: null
+      }
+    );
+    arcSource.plot.foreshadowing.push(arcThread);
+    const movedArc = applyLongWorkspaceOperations(arcSource, {
+      baseRevision: arcSource.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "arc.move",
+          id: "arc_letter",
+          toVolumeId: "volume_two"
+        }
+      ]
+    });
+    expect(
+      movedArc.snapshot.plot.foreshadowing[0]!.beats[0]
+    ).toMatchObject({
+      volumeId: "volume_two",
+      arcId: null
+    });
+    expect(
+      movedArc.snapshot.plot.foreshadowing[0]!.beats[1]
+    ).toMatchObject({
+      volumeId: "volume_two",
+      eventId: "event_follows_moved_arc"
+    });
+    expect(
+      movedArc.snapshot.plot.foreshadowing[0]!.beats[2]
+    ).toMatchObject({
+      volumeId: "volume_one",
+      eventId: "event_letter"
+    });
+    expect(
+      movedArc.snapshot.plot.foreshadowing[0]!.beats[3]
+    ).toMatchObject({
+      volumeId: null,
+      eventId: "event_follows_moved_arc",
+      chapterCardId: "chapter_one"
+    });
+
+    const chapterSource = workspace();
+    chapterSource.plot.volumes.push(secondVolume);
+    chapterSource.plot.arcs.push(secondArc);
+    const chapterThread = planningThread({
+      id: "beat_follows_chapter",
+      type: "reinforce",
+      order: 1,
+      volumeId: "volume_one",
+      arcId: "arc_letter",
+      eventId: null,
+      placementId: null,
+      chapterCardId: "chapter_two",
+      plannedScope: "",
+      note: "",
+      status: "planned",
+      commitId: null
+    });
+    chapterThread.beats.push({
+      id: "beat_clears_incompatible_event_anchors",
+      type: "misdirect",
+      order: 2,
+      volumeId: "volume_one",
+      arcId: "arc_letter",
+      eventId: "event_letter",
+      placementId: null,
+      chapterCardId: "chapter_two",
+      plannedScope: "",
+      note: "",
+      status: "planned",
+      commitId: null
+    });
+    chapterSource.plot.foreshadowing.push(chapterThread);
+    const movedChapter = applyLongWorkspaceOperations(chapterSource, {
+      baseRevision: chapterSource.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "chapter.move",
+          id: "chapter_two",
+          toVolumeId: "volume_two",
+          toPrimaryArcId: "arc_two"
+        }
+      ]
+    });
+    expect(
+      movedChapter.snapshot.plot.foreshadowing[0]!.beats[0]
+    ).toMatchObject({
+      volumeId: "volume_two",
+      arcId: "arc_two",
+      chapterCardId: "chapter_two"
+    });
+    expect(
+      movedChapter.snapshot.plot.foreshadowing[0]!.beats[1]
+    ).toMatchObject({
+      volumeId: null,
+      arcId: null,
+      eventId: "event_letter",
+      chapterCardId: "chapter_two"
+    });
+
+    const placementSource = workspace();
+    placementSource.plot.volumes.push(secondVolume);
+    placementSource.plot.arcs.push(secondArc);
+    const targetChapter = placementSource.plot.chapterCards.find(
+      ({ id }) => id === "chapter_two"
+    )!;
+    targetChapter.volumeId = "volume_two";
+    targetChapter.primaryArcId = "arc_two";
+    targetChapter.narrativeOrder = 1;
+    placementSource.plot.narrativePlacements.push({
+      id: "placement_moving",
+      eventId: "event_letter",
+      chapterCardId: "chapter_one",
+      orderInChapter: 1,
+      mode: "clue",
+      disclosure: "hint",
+      writingPrompt: "",
+      status: "planned",
+      commitId: null
+    });
+    placementSource.plot.foreshadowing.push(
+      planningThread({
+        id: "beat_follows_placement",
+        type: "misdirect",
+        order: 1,
+        volumeId: "volume_one",
+        arcId: "arc_letter",
+        eventId: null,
+        placementId: "placement_moving",
+        chapterCardId: "chapter_one",
+        plannedScope: "",
+        note: "",
+        status: "planned",
+        commitId: null
+      })
+    );
+    const movedPlacement = applyLongWorkspaceOperations(placementSource, {
+      baseRevision: placementSource.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "placement.move",
+          id: "placement_moving",
+          toChapterCardId: "chapter_two"
+        }
+      ]
+    });
+    expect(
+      movedPlacement.snapshot.plot.foreshadowing[0]!.beats[0]
+    ).toMatchObject({
+      volumeId: "volume_two",
+      arcId: "arc_two",
+      chapterCardId: "chapter_two",
+      placementId: "placement_moving"
+    });
+  });
+
+  it("reconciles event-only volume anchors when an event arc is deleted", () => {
+    const source = workspace();
+    source.plot.arcs.push({
+      id: "arc_same_volume",
+      volumeId: "volume_one",
+      title: "同卷保留线",
+      order: 2,
+      outline: ""
+    });
+    source.plot.storyEvents[0]!.arcIds.push("arc_same_volume");
+    source.plot.storyEvents.push({
+      id: "event_loses_only_arc",
+      title: "失去唯一剧情点的事件",
+      summary: "",
+      timeMode: "sequence",
+      timeLabel: "",
+      storyOrder: 2,
+      location: "",
+      arcIds: ["arc_letter"],
+      characterIds: []
+    });
+    source.plot.foreshadowing.push({
+      id: "foreshadow_arc_delete",
+      title: "删除剧情点后的触点",
+      coreQuestion: "事件触点如何保留？",
+      truthEventId: null,
+      expectedReaderEffect: "",
+      status: "planned",
+      beats: [
+        {
+          id: "beat_clears_orphaned_volume",
+          type: "plant",
+          order: 1,
+          volumeId: "volume_one",
+          arcId: null,
+          eventId: "event_loses_only_arc",
+          placementId: null,
+          chapterCardId: null,
+          plannedScope: "",
+          note: "",
+          status: "planned",
+          commitId: null
+        },
+        {
+          id: "beat_keeps_same_volume",
+          type: "reinforce",
+          order: 2,
+          volumeId: "volume_one",
+          arcId: null,
+          eventId: "event_letter",
+          placementId: null,
+          chapterCardId: null,
+          plannedScope: "",
+          note: "",
+          status: "planned",
+          commitId: null
+        }
+      ]
+    });
+    const batch = LongWorkspaceOperationBatchSchema.parse({
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "arc.delete",
+          id: "arc_letter",
+          cascade: true
+        }
+      ]
+    });
+    const preview = previewLongWorkspaceOperations(source, batch);
+    const result = applyLongWorkspaceOperations(source, {
+      ...batch,
+      expectedImpact: preview.impact
+    });
+    const beats = result.snapshot.plot.foreshadowing[0]!.beats;
+    expect(
+      beats.find(({ id }) => id === "beat_clears_orphaned_volume")
+    ).toMatchObject({
+      volumeId: null,
+      eventId: "event_loses_only_arc"
+    });
+    expect(
+      beats.find(({ id }) => id === "beat_keeps_same_volume")
+    ).toMatchObject({
+      volumeId: "volume_one",
+      eventId: "event_letter"
+    });
+  });
+
+  it("retargets typed foreshadowing anchors when an event changes plot points", () => {
+    const source = workspace();
+    source.plot.volumes.push({
+      id: "volume_two",
+      title: "第二卷",
+      order: 2,
+      summary: ""
+    });
+    source.plot.arcs.push({
+      id: "arc_two",
+      volumeId: "volume_two",
+      title: "第二卷主线",
+      order: 1,
+      outline: ""
+    });
+    source.plot.foreshadowing.push({
+      id: "foreshadow_event_move",
+      title: "事件改绑后的触点",
+      coreQuestion: "事件改变剧情点后如何投影？",
+      truthEventId: null,
+      expectedReaderEffect: "",
+      status: "planned",
+      beats: [
+        {
+          id: "beat_follows_event_rebind",
+          type: "plant",
+          order: 1,
+          volumeId: "volume_one",
+          arcId: "arc_letter",
+          eventId: "event_letter",
+          placementId: null,
+          chapterCardId: null,
+          plannedScope: "",
+          note: "",
+          status: "planned",
+          commitId: null
+        },
+        {
+          id: "beat_keeps_concrete_chapter",
+          type: "reinforce",
+          order: 2,
+          volumeId: "volume_one",
+          arcId: "arc_letter",
+          eventId: "event_letter",
+          placementId: null,
+          chapterCardId: "chapter_one",
+          plannedScope: "",
+          note: "",
+          status: "planned",
+          commitId: null
+        }
+      ]
+    });
+    const result = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "event.update",
+          id: "event_letter",
+          patch: { arcIds: ["arc_two"] }
+        }
+      ]
+    });
+    expect(result.snapshot.plot.foreshadowing[0]!.beats[0]).toMatchObject({
+      volumeId: "volume_two",
+      arcId: "arc_two",
+      eventId: "event_letter"
+    });
+    expect(result.snapshot.plot.foreshadowing[0]!.beats[1]).toMatchObject({
+      volumeId: null,
+      arcId: null,
+      eventId: "event_letter",
+      chapterCardId: "chapter_one"
+    });
+  });
+
   it("allows abandoning and restoring a derived thread but locks committed core facts", () => {
     const source = committedForeshadowingWorkspace();
-    const abandoned = applyLongWorkspaceOperations(source, {
+    const backfilled = applyLongWorkspaceOperations(source, {
       baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "foreshadowing.update",
+          id: "foreshadow_letter",
+          patch: {
+            hiddenTruth: "寄信人是失踪多年的兄长。",
+            plannedSpan: "cross_volume"
+          }
+        }
+      ]
+    });
+    expect(backfilled.snapshot.plot.foreshadowing[0]).toMatchObject({
+      hiddenTruth: "寄信人是失踪多年的兄长。",
+      plannedSpan: "cross_volume"
+    });
+    expectOperationError(
+      () =>
+        applyLongWorkspaceOperations(backfilled.snapshot, {
+          baseRevision: backfilled.resultRevision,
+          updatedAt: later,
+          operations: [
+            {
+              type: "foreshadowing.update",
+              id: "foreshadow_letter",
+              patch: { hiddenTruth: "不能再次改写已经补全的真相。" }
+            }
+          ]
+        }),
+      "committed_prefix_protected"
+    );
+
+    const abandoned = applyLongWorkspaceOperations(backfilled.snapshot, {
+      baseRevision: backfilled.resultRevision,
       updatedAt: later,
       operations: [
         {

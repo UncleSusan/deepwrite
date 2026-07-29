@@ -3,12 +3,12 @@ import conversationSource from "./AgentConversation.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 
 describe("AgentConversation edit proposal placement", () => {
-  it("allows explicitly enabled draft proposals to be reviewed while streaming", () => {
+  it("allows every explicitly enabled agent proposal to save while streaming", () => {
     expect(conversationSource).toContain("allowLiveEditReview?: boolean");
     expect(conversationSource).toContain("allowLiveEditReview: false");
     expect(conversationSource).toContain("function canReviewProposalWhileStreaming");
-    expect(conversationSource).toContain('proposal.stageId === "draft"');
-    expect(conversationSource).toContain("!proposal.libraryTarget");
+    expect(conversationSource).not.toContain('proposal.stageId === "draft"');
+    expect(conversationSource).not.toContain("!proposal.libraryTarget");
     expect(conversationSource).toContain(
       "本项已生成，可立即审阅；智能体仍在继续。"
     );
@@ -16,7 +16,7 @@ describe("AgentConversation edit proposal placement", () => {
       "本项已生成，正在进入实时自动保存队列；智能体仍在继续。"
     );
     expect(conversationSource).toContain(
-      "本项已生成，将在本轮完成后自动保存。"
+      "本项已生成，已加入实时自动保存队列。"
     );
     expect(conversationSource).toContain(
       "实时保存失败，可立即重试或拒绝；智能体仍在继续。"
@@ -109,6 +109,41 @@ describe("AgentConversation edit proposal placement", () => {
     expect(assistantTimeStart).toBeGreaterThan(copyButtonStart);
   });
 
+  it("adds one clickable turn-card navigator for every agent conversation", () => {
+    expect(conversationSource).toContain(
+      'class="conversation-turn-navigator"'
+    );
+    expect(conversationSource).toContain(
+      'class="conversation-turn-card"'
+    );
+    expect(conversationSource).toContain(
+      'class="conversation-turn-navigator-toggle"'
+    );
+    expect(conversationSource).toContain(
+      'class="conversation-turn-indicators"'
+    );
+    expect(conversationSource).toContain(
+      ":class=\"{ 'is-active': activeConversationTurnId === turn.id }\""
+    );
+    expect(conversationSource).toContain(
+      'class="conversation-turn-navigator-panel"'
+    );
+    expect(conversationSource).not.toContain(
+      'class="conversation-turn-navigator-header"'
+    );
+    expect(conversationSource).toContain(
+      "const conversationTurns = computed"
+    );
+    expect(conversationSource).toContain(
+      "@click=\"scrollToConversationTurn(turn.id)\""
+    );
+    expect(conversationSource).toContain(
+      ':data-conversation-message-id="message.id"'
+    );
+    expect(conversationSource).toContain("activeConversationTurnId");
+    expect(conversationSource).not.toContain("role=\"scrollbar\"");
+  });
+
   it("shows multiple independently clickable editor references inside the composer", () => {
     expect(conversationSource).toContain('class="composer-editor-reference-list"');
     expect(conversationSource).toContain('v-for="editorReference in editorReferences"');
@@ -124,6 +159,15 @@ describe("AgentConversation edit proposal placement", () => {
       "emit('removeEditorReference', editorReference.id)"
     );
     expect(conversationSource).toContain('emit("clearEditorReferences")');
+  });
+
+  it("adds pasted clipboard files through the existing attachment flow", () => {
+    expect(conversationSource).toContain("function handleComposerPaste");
+    expect(conversationSource).toContain(
+      "promptAttachmentFilesFromClipboard(event.clipboardData)"
+    );
+    expect(conversationSource).toContain("void addAttachmentFiles(files)");
+    expect(conversationSource).toContain('@paste="handleComposerPaste"');
   });
 
   it("only lists configured models in the composer model selector", () => {

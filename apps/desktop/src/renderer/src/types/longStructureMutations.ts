@@ -16,6 +16,7 @@ import {
   type LongDisclosureLevel,
   type LongEventConnectionType,
   type LongForeshadowingBeatType,
+  type LongForeshadowingSpan,
   type LongForeshadowingStatus,
   type LongNarrativeMode,
   type LongStoryTimeMode,
@@ -73,11 +74,13 @@ export interface UpdateLongVolumeInput {
 export interface CreateLongArcInput {
   volumeId: string;
   title: string;
+  summary?: string;
   outline?: string;
 }
 
 export interface UpdateLongArcInput {
   title?: string;
+  summary?: string;
   outline?: string;
   volumeId?: string;
 }
@@ -142,6 +145,8 @@ export interface UpdateLongNarrativePlacementInput {
 export interface CreateLongForeshadowingInput {
   title: string;
   coreQuestion?: string;
+  hiddenTruth?: string;
+  plannedSpan?: LongForeshadowingSpan;
   truthEventId?: string | null;
   expectedReaderEffect?: string;
   status?: LongForeshadowingStatus;
@@ -150,6 +155,8 @@ export interface CreateLongForeshadowingInput {
 export interface UpdateLongForeshadowingInput {
   title?: string;
   coreQuestion?: string;
+  hiddenTruth?: string;
+  plannedSpan?: LongForeshadowingSpan;
   truthEventId?: string | null;
   expectedReaderEffect?: string;
   status?: "planned" | "abandoned";
@@ -158,6 +165,8 @@ export interface UpdateLongForeshadowingInput {
 export interface CreateLongForeshadowingBeatInput {
   threadId: string;
   type: LongForeshadowingBeatType;
+  volumeId?: string | null;
+  arcId?: string | null;
   eventId?: string | null;
   placementId?: string | null;
   chapterCardId?: string | null;
@@ -168,6 +177,8 @@ export interface CreateLongForeshadowingBeatInput {
 export interface UpdateLongForeshadowingBeatInput {
   threadId?: string;
   type?: LongForeshadowingBeatType;
+  volumeId?: string | null;
+  arcId?: string | null;
   eventId?: string | null;
   placementId?: string | null;
   chapterCardId?: string | null;
@@ -473,11 +484,21 @@ export function createLongStructureMutationBuilder(
   };
 
   const assertBeatReferences = (input: {
+    volumeId?: string | null;
+    arcId?: string | null;
     eventId?: string | null;
     placementId?: string | null;
     chapterCardId?: string | null;
     plannedScope?: string;
   }): void => {
+    const volumeAnchor =
+      input.volumeId === null || input.volumeId === undefined
+        ? undefined
+        : volume(input.volumeId);
+    const arcAnchor =
+      input.arcId === null || input.arcId === undefined
+        ? undefined
+        : arc(input.arcId);
     const event =
       input.eventId === null || input.eventId === undefined
         ? undefined
@@ -490,12 +511,27 @@ export function createLongStructureMutationBuilder(
       input.chapterCardId === null || input.chapterCardId === undefined
         ? undefined
         : chapter(input.chapterCardId);
+    if (input.volumeId) {
+      assertPresent(volumeAnchor, "Foreshadowing beat planning volume");
+    }
+    if (input.arcId) {
+      assertPresent(arcAnchor, "Foreshadowing beat planning arc");
+    }
     if (input.eventId) assertPresent(event, "Foreshadowing beat event");
     if (input.placementId) {
       assertPresent(placement, "Foreshadowing beat placement");
     }
     if (input.chapterCardId) {
       assertPresent(chapterCard, "Foreshadowing beat chapter");
+    }
+    if (
+      volumeAnchor &&
+      arcAnchor &&
+      arcAnchor.volumeId !== volumeAnchor.id
+    ) {
+      throw new Error(
+        "Foreshadowing beat planning arc must belong to its planning volume."
+      );
     }
     if (placement && event && placement.eventId !== event.id) {
       throw new Error(
@@ -511,14 +547,57 @@ export function createLongStructureMutationBuilder(
         "Foreshadowing beat chapter must match its narrative placement."
       );
     }
+    const anchoredChapter =
+      chapterCard ??
+      (placement ? chapter(placement.chapterCardId) : undefined);
     if (
+      volumeAnchor &&
+      anchoredChapter &&
+      anchoredChapter.volumeId !== volumeAnchor.id
+    ) {
+      throw new Error(
+        "Foreshadowing beat planning volume must match its concrete chapter."
+      );
+    }
+    if (
+      arcAnchor &&
+      anchoredChapter &&
+      anchoredChapter.primaryArcId !== arcAnchor.id
+    ) {
+      throw new Error(
+        "Foreshadowing beat planning arc must match its concrete chapter."
+      );
+    }
+    if (
+      arcAnchor &&
+      event &&
+      !event.arcIds.includes(arcAnchor.id)
+    ) {
+      throw new Error(
+        "Foreshadowing beat planning arc must match its concrete event."
+      );
+    }
+    if (
+      volumeAnchor &&
+      event &&
+      !event.arcIds.some(
+        (eventArcId) => arc(eventArcId)?.volumeId === volumeAnchor.id
+      )
+    ) {
+      throw new Error(
+        "Foreshadowing beat planning volume must match its concrete event."
+      );
+    }
+    if (
+      !volumeAnchor &&
+      !arcAnchor &&
       !event &&
       !placement &&
       !chapterCard &&
       !(input.plannedScope ?? "").trim()
     ) {
       throw new Error(
-        "Foreshadowing beat needs an event, placement, chapter, or planned scope."
+        "Foreshadowing beat needs a volume, plot point, event, placement, chapter, or planned scope."
       );
     }
   };
@@ -817,6 +896,9 @@ export function createLongStructureMutationBuilder(
               snapshot.plot.arcs.filter(
                 (candidate) => candidate.volumeId === input.volumeId
               ).length + 1,
+            ...(input.summary !== undefined
+              ? { summary: input.summary }
+              : {}),
             outline: input.outline ?? ""
           }
         }
@@ -830,6 +912,7 @@ export function createLongStructureMutationBuilder(
       assertPresent(volume(targetVolumeId), "Target volume");
       const patch: Partial<OperationOf<"arc.update">["patch"]> = {
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+        ...(input.summary !== undefined ? { summary: input.summary } : {}),
         ...(input.outline !== undefined ? { outline: input.outline } : {})
       };
       return batch([
@@ -1190,6 +1273,12 @@ export function createLongStructureMutationBuilder(
             id: createId("foreshadow"),
             title: input.title.trim(),
             coreQuestion: input.coreQuestion ?? "",
+            ...(input.hiddenTruth !== undefined
+              ? { hiddenTruth: input.hiddenTruth }
+              : {}),
+            ...(input.plannedSpan !== undefined
+              ? { plannedSpan: input.plannedSpan }
+              : {}),
             truthEventId: input.truthEventId ?? null,
             expectedReaderEffect: input.expectedReaderEffect ?? "",
             status: input.status ?? "planned",
@@ -1211,6 +1300,12 @@ export function createLongStructureMutationBuilder(
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
         ...(input.coreQuestion !== undefined
           ? { coreQuestion: input.coreQuestion }
+          : {}),
+        ...(input.hiddenTruth !== undefined
+          ? { hiddenTruth: input.hiddenTruth }
+          : {}),
+        ...(input.plannedSpan !== undefined
+          ? { plannedSpan: input.plannedSpan }
           : {}),
         ...(input.truthEventId !== undefined
           ? { truthEventId: input.truthEventId }
@@ -1252,6 +1347,10 @@ export function createLongStructureMutationBuilder(
             id: createId("beat"),
             type: input.type,
             order: thread.beats.length + 1,
+            ...(input.volumeId !== undefined
+              ? { volumeId: input.volumeId }
+              : {}),
+            ...(input.arcId !== undefined ? { arcId: input.arcId } : {}),
             eventId: input.eventId ?? null,
             placementId: input.placementId ?? null,
             chapterCardId: input.chapterCardId ?? null,
@@ -1267,7 +1366,17 @@ export function createLongStructureMutationBuilder(
     updateForeshadowingBeat(id, input) {
       const current = foreshadowingBeat(id);
       assertPresent(current, "Foreshadowing beat");
+      const resolvedVolumeId =
+        input.volumeId !== undefined
+          ? input.volumeId
+          : current.beat.volumeId;
+      const resolvedArcId =
+        input.arcId !== undefined ? input.arcId : current.beat.arcId;
       const references = {
+        ...(resolvedVolumeId !== undefined
+          ? { volumeId: resolvedVolumeId }
+          : {}),
+        ...(resolvedArcId !== undefined ? { arcId: resolvedArcId } : {}),
         eventId:
           input.eventId !== undefined
             ? input.eventId
@@ -1295,6 +1404,10 @@ export function createLongStructureMutationBuilder(
         OperationOf<"foreshadowingBeat.update">["patch"]
       > = {
         ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.volumeId !== undefined
+          ? { volumeId: input.volumeId }
+          : {}),
+        ...(input.arcId !== undefined ? { arcId: input.arcId } : {}),
         ...(input.eventId !== undefined ? { eventId: input.eventId } : {}),
         ...(input.placementId !== undefined
           ? { placementId: input.placementId }

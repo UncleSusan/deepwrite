@@ -4,6 +4,7 @@ import {
   LearningImitationResultSchema,
   applyLearningImitationWrite,
   cloneEmptyLearningImitationResult,
+  type AgentWriteApprovalMode,
   type DeepWriteApi,
   type LearningImitationDocument,
   type LearningImitationResult,
@@ -18,12 +19,12 @@ export const LEARNING_IMITATION_PRESET_PROMPTS = {
     "请执行「一键拆素材」。",
     "先调用 list_learning_documents 了解全部样本，再按需要逐篇读取正文。",
     "提炼可复用的人设、梗、剧情设计、导语设计、剧情细化和优秀正文片段。",
-    "最后必须调用 write_learning_result，mode 使用 replace，并尽量完整写入 character、gimmick、pacing、intro、plot_refine、draft_excerpt。"
+    "最后必须按类型分别调用 write_learning_result；每次只传一个 type 和对应的 text，依次完整写入 gimmick、character、pacing、intro、plot_refine、draft_excerpt。"
   ].join("\n"),
   plot_learning: [
     "请执行「一键学习剧情设计」。",
     "先调用 list_learning_documents 了解所有样本，再按需要读取样本正文，归纳它们可复用的剧情组织方法。",
-    "最后必须调用 write_learning_result，mode 使用 replace，并写入 plot_design_skill 和 plot_refine_skill。",
+    "最后必须分别调用两次 write_learning_result：一次以 type=plot_design_skill 写入剧情设计技能，一次以 type=plot_refine_skill 写入剧情细化技能；每次只传 type 和 text。",
     "结果要像技能库条目，包含方法、步骤、判断标准和可执行模板。"
   ].join("\n"),
   style_learning: [
@@ -84,6 +85,7 @@ export interface LearningImitationToolState {
 export interface LearningImitationStartOptions {
   prompt?: string;
   modelId?: string;
+  writeApprovalMode?: AgentWriteApprovalMode;
 }
 
 export interface UseLearningImitationOptions {
@@ -521,7 +523,8 @@ export function useLearningImitation(
         sessionId: sessionId.value,
         message: prompt,
         modelId,
-        writeApprovalMode: "request-approval",
+        writeApprovalMode:
+          startOptions.writeApprovalMode ?? "request-approval",
         workspaceContext: {
           learningImitation: {
             stageId,
