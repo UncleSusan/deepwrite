@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import source from "./App.vue?raw";
 
 describe("App agent realtime auto persistence", () => {
-  it("allows every short, script, and library proposal to commit during a run", () => {
+  it("allows every short, script, library, and long worldbuilding proposal to commit during a run", () => {
     const eligibilityStart = source.indexOf(
       "function canReviewAgentEditDuringRun"
     );
@@ -13,8 +13,27 @@ describe("App agent realtime auto persistence", () => {
     const eligibility = source.slice(eligibilityStart, eligibilityEnd);
 
     expect(eligibility).toContain("Boolean(proposal.libraryTarget)");
+    expect(eligibility).toContain(
+      "Boolean(proposal.longWorldbuildingTarget)"
+    );
     expect(eligibility).toContain("isShortOrScriptAgentEdit(proposal)");
     expect(eligibility).not.toContain('proposal.stageId === "draft"');
+  });
+
+  it("routes long worldbuilding files into the standard conversation approval flow", () => {
+    expect(source).toContain(
+      'if (event.type === "long.worldbuilding_file_proposal")'
+    );
+    expect(source).toContain("stageLongWorldbuildingEditProposal(event)");
+    expect(source).toContain(
+      'stageId: "long-worldbuilding"'
+    );
+    expect(source).toContain(
+      "async function acceptLongWorldbuildingFileProposal"
+    );
+    expect(source).toContain(
+      "await acceptLongWorldbuildingFileProposal("
+    );
   });
 
   it("immediately schedules ordinary workspace and library auto approvals", () => {

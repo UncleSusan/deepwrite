@@ -15,6 +15,7 @@ import type {
 
 export type LongWorkspaceFileRole =
   | "content"
+  | "overview"
   | "book-line"
   | "core-profile"
   | "relationships"
@@ -24,6 +25,13 @@ export type LongWorkspaceFileRole =
   | "character-state"
   | "handoff"
   | "ledger-record";
+
+export type LongContinuityView =
+  | "inbox"
+  | "snapshot"
+  | "execution"
+  | "knowledge"
+  | "history";
 
 export const LONG_CHARACTER_GROUP_OPTIONS: ReadonlyArray<{
   value: LongCharacterGroup;
@@ -56,7 +64,14 @@ export interface LongWorkspaceSelectionFile {
 export interface LongWorkspaceSelection {
   key: string;
   root: LongWorkspaceRoot;
+  continuityView?: LongContinuityView;
   worldbuildingFormat?: LongWorldbuildingFormat;
+  worldbuildingItems?: Array<{
+    id: string;
+    title: string;
+    order: number;
+    file: LongWorkspaceFileReference;
+  }>;
   chapterCardId?: LongChapterCardId;
   characterGroup?: LongCharacterGroup;
   characterId?: LongCharacterId;
@@ -416,30 +431,30 @@ export function createLongChapterSelection(
       },
       {
         role: "character-state",
-        label: "人物状态",
+        label: "章末状态",
         file: entry.characterState,
-        ...(committed ? { readOnly: true } : {})
+        readOnly: true
       },
       {
         role: "handoff",
-        label: "Handoff",
+        label: "下一章接续包",
         file: entry.handoff,
-        ...(committed ? { readOnly: true } : {})
+        readOnly: true
       }
     ],
     preferredRole: "body",
     description: committed
       ? "本章已提交并锁定；如需修改，请先回滚最后一次连续性提交。"
       : nextWritable === chapter.id
-        ? "这是连续下一章，可由单章写作智能体写入三份文档。"
+        ? "这是连续下一章；单章写手只写正文，章末状态和接续包将在连续性入账时生成。"
         : "本章尚未提交，但不是连续下一章；可手工编辑，自动写作需先完成前文章节。"
   };
 }
 
 /**
  * Keeps chapter authoring and continuity review as two distinct entry points.
- * The same chapter triplet is visible for evidence, but locked while the
- * continuity agent reviews it and proposes an atomic ledger commit.
+ * The body is the only evidence. The two output files stay in the locked
+ * selection so their current revisions remain visible to the atomic commit.
  */
 export function createLongContinuitySelection(
   summary: LongBookSummary,
@@ -467,6 +482,7 @@ export function createLongContinuitySelection(
   return {
     key: `continuity:${chapter.id}`,
     root: "continuity_ledger",
+    continuityView: "inbox",
     chapterCardId: chapter.id,
     title: `${chapter.title} · 连续性核对`,
     breadcrumbs: [
@@ -484,20 +500,20 @@ export function createLongContinuitySelection(
       },
       {
         role: "character-state",
-        label: "人物状态",
+        label: "章末状态（账本生成）",
         file: entry.characterState,
         readOnly: true
       },
       {
         role: "handoff",
-        label: "Handoff",
+        label: "接续包（账本生成）",
         file: entry.handoff,
         readOnly: true
       }
     ],
     preferredRole: "body",
     description:
-      "连续性账本 Agent 将核对本章三件套；提交提案仍需你在影响预览中确认。"
+      "连续性账本将以正文为证据，生成章末状态、接续包和全部事实投影；入账提案仍需你确认。"
   };
 }
 
@@ -583,17 +599,42 @@ export function reconcileLongWorkspaceSelection(
       title: category.title,
       worldbuildingFormat: category.format,
       breadcrumbs: [summary.title, "世界观", category.title],
-      files: [
-        {
-          role: "content",
-          label:
-            category.format === "list" ? "设定条目" : "设定正文",
-          file: category.file,
-          ...(isLongMigrationEvidenceCategoryId(category.id)
-            ? { readOnly: true }
-            : {})
-        }
-      ],
+      ...(category.format === "list"
+        ? {
+            worldbuildingItems: category.items,
+            files: [
+              ...(category.overview
+                ? [{
+                    role: "overview" as const,
+                    label: "概览",
+                    file: category.overview,
+                    ...(isLongMigrationEvidenceCategoryId(category.id)
+                      ? { readOnly: true }
+                      : {})
+                  }]
+                : []),
+              ...category.items.map((item) => ({
+                role: "content" as const,
+                label: item.title,
+                file: item.file,
+                ...(isLongMigrationEvidenceCategoryId(category.id)
+                  ? { readOnly: true }
+                  : {})
+              }))
+            ]
+          }
+        : {
+            files: [
+              {
+                role: "content" as const,
+                label: "设定正文",
+                file: category.file,
+                ...(isLongMigrationEvidenceCategoryId(category.id)
+                  ? { readOnly: true }
+                  : {})
+              }
+            ]
+          }),
       description: isLongMigrationEvidenceCategoryId(category.id)
         ? "这是迁移生成的只读证据，可搜索并供 Agent 按需读取。"
         : category.format === "list"
@@ -674,6 +715,7 @@ export function reconcileLongWorkspaceSelection(
     );
     return {
       ...selection,
+      continuityView: "history",
       title: `提交 #${commit.sequence}`,
       breadcrumbs: [
         summary.title,

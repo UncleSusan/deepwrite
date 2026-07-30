@@ -1141,12 +1141,12 @@ function registerIpc(): void {
             };
           }
           const selection = await dialog.showOpenDialog(mainWindow, {
-            title: "迁移 Write Claw 长篇",
+            title: "导入旧版本长篇",
             defaultPath: app.getPath("documents"),
-            buttonLabel: "选择并迁移",
+            buttonLabel: "选择并导入",
             filters: [
               {
-                name: "Write Claw 长篇导出",
+                name: "旧版本长篇导出",
                 extensions: ["zip", "json"]
               }
             ],
@@ -1193,7 +1193,7 @@ function registerIpc(): void {
               message:
                 error instanceof Error
                   ? error.message
-                  : "迁移 Write Claw 长篇失败。",
+                  : "导入旧版本长篇失败。",
               details: safeErrorDetails(error)
             }
           };

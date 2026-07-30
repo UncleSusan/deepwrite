@@ -181,13 +181,24 @@ describe("LongWorkspaceService", () => {
             id: "world_weather",
             title: "气候",
             order: 8,
-            format: "list" as const,
+            format: "text" as const,
             contentAuthority: "markdown" as const,
             file: createEmptyLongMarkdownFileReference(
               longWorldbuildingFileId("world_weather"),
               longWorldbuildingContentPath("world_weather"),
               "2026-07-26T11:00:00.000Z"
             )
+          }
+        },
+        {
+          type: "worldbuilding.create" as const,
+          category: {
+            id: "world_biomes",
+            title: "生态区",
+            order: 9,
+            format: "list" as const,
+            contentAuthority: "files" as const,
+            items: []
           }
         }
       ],
@@ -211,6 +222,7 @@ describe("LongWorkspaceService", () => {
     const weather = reopened.book.workspaceIndex.worldbuilding.find(
       ({ id }) => id === "world_weather"
     )!;
+    if (weather.format !== "text") throw new Error("expected text category");
     await expect(
       service.readDocument({
         bookId: created.book.id,
@@ -219,7 +231,28 @@ describe("LongWorkspaceService", () => {
         maxCharacters: 100
       })
     ).resolves.toMatchObject({
-      content: expect.stringContaining("deepwrite-worldbuilding-list:v1")
+      content: ""
+    });
+    const geography = reopened.book.workspaceIndex.worldbuilding.find(
+      ({ id }) => id === "world_biomes"
+    );
+    if (
+      !geography ||
+      geography.format !== "list" ||
+      !geography.overview
+    ) {
+      throw new Error("expected list category overview");
+    }
+    await expect(
+      service.readDocument({
+        bookId: created.book.id,
+        fileId: geography.overview.id,
+        offset: 0,
+        maxCharacters: 100
+      })
+    ).resolves.toMatchObject({
+      file: expect.objectContaining({ id: geography.overview.id }),
+      content: ""
     });
   });
 });

@@ -56,6 +56,16 @@ describe("SettingsPage", () => {
     expect(source).toContain("emit('resetLibraryAgent', $event)");
   });
 
+  it("shows usage above the official models entry", () => {
+    const usageIndex = source.indexOf('{ id: "usage", label: "用量"');
+    const officialModelsIndex = source.indexOf(
+      '{ id: "official-models", label: "DeepWrite 官方模型"'
+    );
+
+    expect(usageIndex).toBeGreaterThan(-1);
+    expect(officialModelsIndex).toBeGreaterThan(usageIndex);
+  });
+
   it("lets users replace a font-size value and previews valid input immediately", () => {
     expect(source).toContain('@input="previewFontSize(\'uiFontSize\', $event)"');
     expect(source).toContain('@change="commitFontSize(\'uiFontSize\', $event)"');

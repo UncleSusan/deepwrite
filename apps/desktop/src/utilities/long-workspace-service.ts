@@ -24,7 +24,6 @@ import {
   LongWriteChapterResultSchema,
   LongWriteDocumentInputSchema,
   LongWriteDocumentResultSchema,
-  previewLongWorkspaceOperations,
   type CreateLongBookInput,
   type LongApplyOperationsInput,
   type LongApplyOperationsResult,
@@ -432,8 +431,8 @@ export class LongWorkspaceService {
     const opened = await this.openProject(parsed);
     return LongPreviewOperationsResultSchema.parse({
       bookId: parsed.bookId,
-      preview: previewLongWorkspaceOperations(
-        opened.book.workspaceIndex,
+      preview: await this.store.previewWorkspaceOperations(
+        opened.projectDirectory,
         parsed.batch
       ),
       projectRevision:
@@ -584,7 +583,14 @@ function allWorkspaceFiles(
 ): LongWorkspaceFileReference[] {
   return [
     index.bookLine,
-    ...index.worldbuilding.map(({ file }) => file),
+    ...index.worldbuilding.flatMap((category) =>
+      category.format === "text"
+        ? [category.file]
+        : [
+            ...(category.overview ? [category.overview] : []),
+            ...category.items.map(({ file }) => file)
+          ]
+    ),
     ...index.characterFiles.flatMap((entry) => [
       entry.coreProfile,
       entry.relationships,
@@ -626,11 +632,28 @@ function searchFiles(
       root: "plot_design",
       title: "全书主线"
     },
-    ...index.worldbuilding.map((category) => ({
-      file: category.file,
-      root: "worldbuilding" as const,
-      title: category.title
-    })),
+    ...index.worldbuilding.flatMap((category) =>
+      category.format === "text"
+        ? [{
+            file: category.file,
+            root: "worldbuilding" as const,
+            title: category.title
+          }]
+        : [
+            ...(category.overview
+              ? [{
+                  file: category.overview,
+                  root: "worldbuilding" as const,
+                  title: `${category.title} / 概览`
+                }]
+              : []),
+            ...category.items.map((item) => ({
+              file: item.file,
+              root: "worldbuilding" as const,
+              title: `${category.title} / ${item.title}`
+            }))
+          ]
+    ),
     ...index.characterFiles.flatMap((entry) => {
       const title =
         characterById.get(entry.characterId)?.name ?? entry.characterId;

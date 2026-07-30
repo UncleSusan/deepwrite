@@ -207,7 +207,7 @@ export function useLongWritingOrchestrator(
       );
       if (runEpoch !== epoch) return;
       if (readiness.chapterCardId !== chapter.chapterCardId) {
-        throw new Error("章节三件套检查返回了错误的章卡。");
+        throw new Error("章节正文检查返回了错误的章卡。");
       }
       replaceReadiness(readiness);
       if (readiness.status === "ready_to_commit") {
@@ -239,7 +239,7 @@ export function useLongWritingOrchestrator(
     try {
       if (!(await options.saveBarrier(bookId))) {
         throw new Error(
-          "章节三件套已经写入，但工作区刷新屏障尚未完成；请重试后再进入连续性提交。"
+          "章节正文已经写入，但工作区刷新屏障尚未完成；请重试后再进入连续性结算。"
         );
       }
       if (runEpoch !== epoch) return;
@@ -249,11 +249,11 @@ export function useLongWritingOrchestrator(
       );
       if (runEpoch !== epoch) return;
       if (readiness.chapterCardId !== chapter.chapterCardId) {
-        throw new Error("章节三件套保存检查返回了错误的章卡。");
+        throw new Error("章节正文保存检查返回了错误的章卡。");
       }
       if (readiness.status !== "ready_to_commit") {
         throw new Error(
-          `章节三件套保存后仍不完整：${readiness.missingFiles.join("、")}。`
+          `章节正文保存后仍不完整：${readiness.missingFiles.join("、")}。`
         );
       }
       replaceReadiness(readiness);
@@ -393,7 +393,7 @@ export function useLongWritingOrchestrator(
     ) {
       fail(
         new Error(
-          `已拒绝“${chapter.title}”的三件套写入；可修改要求后重试当前章，计划不会跳章。`
+          `已拒绝“${chapter.title}”的正文写入；可修改要求后重试当前章，计划不会跳章。`
         ),
         "check"
       );

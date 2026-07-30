@@ -23,7 +23,12 @@ import {
   longCharacterCurrentStateFileId,
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
-  parseLongWorldbuildingMarkdownList,
+  createEmptyLongMarkdownFileReference,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
+  longWorldbuildingFileId,
+  longWorldbuildingOverviewContentPath,
+  longWorldbuildingOverviewFileId,
   serializeLongWorldbuildingMarkdownList,
   type LongForeshadowing
 } from "@deepwrite/contracts";
@@ -129,6 +134,118 @@ describe("LongProjectStore", () => {
       content: "",
       revision: expect.stringMatching(/^v2:0:[0-9a-f]{64}$/u)
     });
+  });
+
+  it("migrates legacy aggregate worldbuilding Markdown into independent item files on open", async () => {
+    const { projectStore, created } = await createFixture(
+      "legacy-worldbuilding-storage"
+    );
+    const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
+    const manifestPath = join(created.projectDirectory, "deepwrite.json");
+    const legacyPath = "long/worldbuilding/legacy-rules/content.md";
+    const legacyContent = serializeLongWorldbuildingMarkdownList([
+      {
+        id: "worlditem_legacy_rule",
+        title: "旧规则",
+        content: "旧项目中的独立规则正文。"
+      }
+    ]);
+    await mkdir(join(created.projectDirectory, "long/worldbuilding/legacy-rules"), {
+      recursive: true
+    });
+    await writeFile(
+      join(created.projectDirectory, legacyPath),
+      legacyContent,
+      "utf8"
+    );
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as {
+      worldbuilding: Array<Record<string, unknown>>;
+    };
+    const category = index.worldbuilding[0]!;
+    const overview = category.overview as { path: string };
+    await unlink(join(created.projectDirectory, overview.path));
+    index.worldbuilding[0] = {
+      id: category.id,
+      title: category.title,
+      order: category.order,
+      format: "list",
+      contentAuthority: "markdown",
+      file: {
+        id: longWorldbuildingFileId(String(category.id)),
+        path: legacyPath,
+        revision: createLongFileRevision(legacyContent),
+        updatedAt: FIXED_NOW
+      }
+    };
+    const indexContent = `${JSON.stringify(index, null, 2)}\n`;
+    await writeFile(indexPath, indexContent, "utf8");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      workspaceIndexFile: { revision: string };
+    };
+    manifest.workspaceIndexFile.revision =
+      createLongFileRevision(indexContent);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8"
+    );
+
+    const opened = await projectStore.openBook(created.projectDirectory);
+    const migrated = opened.book.workspaceIndex.worldbuilding[0]!;
+    if (migrated.format !== "list") throw new Error("expected list category");
+    expect(migrated.contentAuthority).toBe("files");
+    expect(migrated.overview).toMatchObject({
+      id: longWorldbuildingOverviewFileId(migrated.id),
+      path: longWorldbuildingOverviewContentPath(migrated.id)
+    });
+    expect(migrated.items).toHaveLength(1);
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: migrated.items[0]!.file.id
+      })
+    ).resolves.toMatchObject({
+      content: "旧项目中的独立规则正文。"
+    });
+    await expect(
+      lstat(join(created.projectDirectory, legacyPath))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("repairs missing overview files for existing list worldbuilding categories", async () => {
+    const { projectStore, created } = await createFixture(
+      "missing-worldbuilding-overview"
+    );
+    const categories = created.book.workspaceIndex.worldbuilding.filter(
+      (category) => category.format === "list"
+    );
+    expect(categories.length).toBeGreaterThan(1);
+    for (const category of categories) {
+      expect(category.overview).toBeDefined();
+      await expect(
+        lstat(
+          join(
+            created.projectDirectory,
+            category.overview!.path
+          )
+        )
+      ).resolves.toBeDefined();
+    }
+
+    const target = categories[0]!;
+    await unlink(join(created.projectDirectory, target.overview!.path));
+
+    const opened = await projectStore.openBook(created.projectDirectory);
+    const repaired = opened.book.workspaceIndex.worldbuilding.find(
+      ({ id }) => id === target.id
+    );
+    if (!repaired || repaired.format !== "list" || !repaired.overview) {
+      throw new Error("expected repaired list worldbuilding category");
+    }
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: repaired.overview.id
+      })
+    ).resolves.toMatchObject({ content: "" });
   });
 
   it("derives every foreshadowing lifecycle status from committed beat types", () => {
@@ -537,41 +654,60 @@ describe("LongProjectStore", () => {
     });
   });
 
-  it("keeps list worldbuilding Markdown versioned and item-id stable", async () => {
+  it("stores every list worldbuilding item in its own versioned Markdown file", async () => {
     const { projectStore, created } = await createFixture("world-list");
     const category = created.book.workspaceIndex.worldbuilding[0]!;
-    const initial = await projectStore.readDocument(
-      created.projectDirectory,
-      { fileId: category.file.id }
+    expect(category.format).toBe("list");
+    if (category.format !== "list") throw new Error("expected list category");
+    expect(category.overview).toMatchObject({
+      id: longWorldbuildingOverviewFileId(category.id),
+      path: longWorldbuildingOverviewContentPath(category.id)
+    });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: category.overview!.id
+      })
+    ).resolves.toMatchObject({ content: "" });
+    const itemId = "worlditem_memory_cost";
+    const updatedAt = FIXED_NOW;
+    const file = createEmptyLongMarkdownFileReference(
+      longWorldbuildingItemFileId(itemId),
+      longWorldbuildingItemContentPath(category.id, itemId),
+      updatedAt
     );
-    expect(initial.content).toContain("deepwrite-worldbuilding-list:v1");
-
-    await expect(
-      projectStore.writeDocument(created.projectDirectory, {
-        fileId: category.file.id,
-        content: "没有稳定条目 ID 的自由文本",
-        expectedFileRevision: initial.revision,
-        expectedWorkspaceRevision: initial.workspaceRevision,
-        expectedProjectRevision: initial.projectRevision
-      })
-    ).rejects.toThrow(/v1 format header/u);
-
-    const content = serializeLongWorldbuildingMarkdownList([
+    const createdItem = await projectStore.applyWorkspaceOperations(
+      created.projectDirectory,
       {
-        id: "worlditem_memory_cost",
-        title: "记忆代价",
-        content: "每次施法都会遗忘一段记忆。"
+        batch: {
+          baseRevision: 0,
+          updatedAt,
+          operations: [{
+            type: "worldbuildingItem.create",
+            categoryId: category.id,
+            item: {
+              id: itemId,
+              title: "记忆代价",
+              order: 1,
+              file
+            }
+          }],
+          documentWrites: []
+        },
+        expectedProjectRevision: 0
       }
-    ]);
+    );
+    const item = createdItem.book.workspaceIndex.worldbuilding[0]!;
+    if (item.format !== "list") throw new Error("expected list category");
+    expect(item.items).toHaveLength(1);
     await expect(
       projectStore.writeDocument(created.projectDirectory, {
-        fileId: category.file.id,
-        content,
-        expectedFileRevision: initial.revision,
-        expectedWorkspaceRevision: initial.workspaceRevision,
-        expectedProjectRevision: initial.projectRevision
+        fileId: item.items[0]!.file.id,
+        content: "每次施法都会遗忘一段记忆。",
+        expectedFileRevision: item.items[0]!.file.revision,
+        expectedWorkspaceRevision: 1,
+        expectedProjectRevision: 1
       })
-    ).resolves.toMatchObject({ workspaceRevision: 1 });
+    ).resolves.toMatchObject({ workspaceRevision: 2 });
   });
 
   it("converts worldbuilding list/text formats transactionally without dropping existing content", async () => {
@@ -579,46 +715,96 @@ describe("LongProjectStore", () => {
       "world-format-conversion"
     );
     const category = created.book.workspaceIndex.worldbuilding[0]!;
-    const sourceContent = serializeLongWorldbuildingMarkdownList([
+    if (category.format !== "list") throw new Error("expected list category");
+    const itemId = "worlditem_conversion_source";
+    const itemFile = createEmptyLongMarkdownFileReference(
+      longWorldbuildingItemFileId(itemId),
+      longWorldbuildingItemContentPath(category.id, itemId),
+      FIXED_NOW
+    );
+    const withItem = await projectStore.applyWorkspaceOperations(
+      created.projectDirectory,
       {
-        id: "worlditem_conversion_source",
-        title: "潮汐历法",
-        content: "每逢双月，海岸时间会比内陆慢一刻。"
+        batch: {
+          baseRevision: 0,
+          updatedAt: FIXED_NOW,
+          operations: [{
+            type: "worldbuildingItem.create",
+            categoryId: category.id,
+            item: {
+              id: itemId,
+              title: "潮汐历法",
+              order: 1,
+              file: itemFile
+            }
+          }],
+          documentWrites: []
+        },
+        expectedProjectRevision: 0
       }
-    ]);
+    );
     const written = await projectStore.writeDocument(
       created.projectDirectory,
       {
-        fileId: category.file.id,
-        content: sourceContent,
-        expectedFileRevision: category.file.revision,
-        expectedWorkspaceRevision: 0,
-        expectedProjectRevision: 0
+        fileId: itemFile.id,
+        content: "每逢双月，海岸时间会比内陆慢一刻。",
+        expectedFileRevision: itemFile.revision,
+        expectedWorkspaceRevision: withItem.book.workspaceIndex.revision,
+        expectedProjectRevision: withItem.projectRevision
       }
+    );
+
+    const conversionBatch = {
+      baseRevision: written.workspaceRevision,
+      updatedAt: FIXED_NOW,
+      operations: [
+        {
+          type: "worldbuilding.update" as const,
+          id: category.id,
+          patch: { format: "text" as const }
+        }
+      ],
+      documentWrites: []
+    };
+    const conversionPreview =
+      await projectStore.previewWorkspaceOperations(
+        created.projectDirectory,
+        conversionBatch
+      );
+    expect(conversionPreview.documentWrites).toHaveLength(1);
+    expect(conversionPreview.documentWrites[0]).toMatchObject({
+      mode: "create",
+      content: expect.stringContaining(
+        "每逢双月，海岸时间会比内陆慢一刻。"
+      )
+    });
+    expect(
+      conversionPreview.entityChanges.find(
+        ({ id }) => id === category.id
+      )?.after
+    ).toEqual(
+      expect.objectContaining({
+        format: "text",
+        file: expect.objectContaining({
+          revision: conversionPreview.documentWrites[0]!.nextRevision
+        })
+      })
     );
 
     const convertedToText =
       await projectStore.applyWorkspaceOperations(
         created.projectDirectory,
         {
-          batch: {
-            baseRevision: written.workspaceRevision,
-            updatedAt: FIXED_NOW,
-            operations: [
-              {
-                type: "worldbuilding.update",
-                id: category.id,
-                patch: { format: "text" }
-              }
-            ],
-            documentWrites: []
-          },
+          batch: conversionBatch,
           expectedProjectRevision: written.projectRevision
         }
       );
+    const textCategory =
+      convertedToText.book.workspaceIndex.worldbuilding[0]!;
+    if (textCategory.format !== "text") throw new Error("expected text category");
     const textDocument = await projectStore.readDocument(
       created.projectDirectory,
-      { fileId: category.file.id }
+      { fileId: textCategory.file.id }
     );
     expect(textDocument.content).not.toContain(
       "deepwrite-worldbuilding-list:v1"
@@ -651,16 +837,15 @@ describe("LongProjectStore", () => {
           expectedProjectRevision: convertedToText.projectRevision
         }
       );
+    const listCategory = convertedBack.book.workspaceIndex.worldbuilding[0]!;
+    if (listCategory.format !== "list") throw new Error("expected list category");
     const listDocument = await projectStore.readDocument(
       created.projectDirectory,
-      { fileId: category.file.id }
+      { fileId: listCategory.items[0]!.file.id }
     );
-    const restoredItems = parseLongWorldbuildingMarkdownList(
-      listDocument.content
-    );
-    expect(restoredItems).toHaveLength(1);
-    expect(restoredItems[0]!.content).toContain("## 潮汐历法");
-    expect(restoredItems[0]!.content).toContain(
+    expect(listCategory.items).toHaveLength(1);
+    expect(listDocument.content).toContain("## 潮汐历法");
+    expect(listDocument.content).toContain(
       "每逢双月，海岸时间会比内陆慢一刻。"
     );
     expect(
@@ -670,14 +855,32 @@ describe("LongProjectStore", () => {
 
   it("physically deletes workspace files transactionally and permits the same id and path to be recreated", async () => {
     const { projectStore, created } = await createFixture("delete-recreate");
-    const category = structuredClone(
-      created.book.workspaceIndex.worldbuilding[0]!
+    const initialCategory = created.book.workspaceIndex.worldbuilding[0]!;
+    const converted = await projectStore.applyWorkspaceOperations(
+      created.projectDirectory,
+      {
+        batch: {
+          baseRevision: 0,
+          updatedAt: FIXED_NOW,
+          operations: [{
+            type: "worldbuilding.update",
+            id: initialCategory.id,
+            patch: { format: "text" }
+          }],
+          documentWrites: []
+        },
+        expectedProjectRevision: 0
+      }
     );
+    const category = structuredClone(
+      converted.book.workspaceIndex.worldbuilding[0]!
+    );
+    if (category.format !== "text") throw new Error("expected text category");
 
     await expect(
       projectStore.applyWorkspaceOperations(created.projectDirectory, {
         batch: {
-          baseRevision: 0,
+          baseRevision: 1,
           updatedAt: FIXED_NOW,
           operations: [
             {
@@ -688,17 +891,14 @@ describe("LongProjectStore", () => {
           ],
           documentWrites: []
         },
-        expectedProjectRevision: 0
+        expectedProjectRevision: 1
       })
-    ).resolves.toMatchObject({ projectRevision: 1 });
+    ).resolves.toMatchObject({ projectRevision: 2 });
     await expect(
       lstat(join(created.projectDirectory, category.file.path))
     ).rejects.toMatchObject({ code: "ENOENT" });
 
-    const content =
-      category.format === "list"
-        ? serializeLongWorldbuildingMarkdownList([])
-        : "重建后的世界观内容";
+    const content = "重建后的世界观内容";
     const recreatedFile = {
       ...category.file,
       revision: createLongFileRevision(content),
@@ -707,7 +907,7 @@ describe("LongProjectStore", () => {
     await expect(
       projectStore.applyWorkspaceOperations(created.projectDirectory, {
         batch: {
-          baseRevision: 1,
+          baseRevision: 2,
           updatedAt: FIXED_NOW,
           operations: [
             {
@@ -731,9 +931,9 @@ describe("LongProjectStore", () => {
             }
           ]
         },
-        expectedProjectRevision: 1
+        expectedProjectRevision: 2
       })
-    ).resolves.toMatchObject({ projectRevision: 2 });
+    ).resolves.toMatchObject({ projectRevision: 3 });
     await expect(
       projectStore.readDocument(created.projectDirectory, {
         fileId: recreatedFile.id
@@ -745,14 +945,26 @@ describe("LongProjectStore", () => {
     const { projectStore, created } = await createFixture(
       "delete-external-conflict"
     );
-    const category = created.book.workspaceIndex.worldbuilding[0]!;
-    const externalContent = serializeLongWorldbuildingMarkdownList([
+    const initialCategory = created.book.workspaceIndex.worldbuilding[0]!;
+    const converted = await projectStore.applyWorkspaceOperations(
+      created.projectDirectory,
       {
-        id: "worlditem_external",
-        title: "外部新增规则",
-        content: "该内容尚未经过 DeepWrite 的 CAS 确认。"
+        batch: {
+          baseRevision: 0,
+          updatedAt: FIXED_NOW,
+          operations: [{
+            type: "worldbuilding.update",
+            id: initialCategory.id,
+            patch: { format: "text" }
+          }],
+          documentWrites: []
+        },
+        expectedProjectRevision: 0
       }
-    ]);
+    );
+    const category = converted.book.workspaceIndex.worldbuilding[0]!;
+    if (category.format !== "text") throw new Error("expected text category");
+    const externalContent = "该内容尚未经过 DeepWrite 的 CAS 确认。";
     await writeFile(
       join(created.projectDirectory, category.file.path),
       externalContent,
@@ -762,7 +974,7 @@ describe("LongProjectStore", () => {
     await expect(
       projectStore.applyWorkspaceOperations(created.projectDirectory, {
         batch: {
-          baseRevision: 0,
+          baseRevision: 1,
           updatedAt: FIXED_NOW,
           operations: [
             {
@@ -773,7 +985,7 @@ describe("LongProjectStore", () => {
           ],
           documentWrites: []
         },
-        expectedProjectRevision: 0
+        expectedProjectRevision: 1
       })
     ).rejects.toMatchObject({ scope: "file" });
     await expect(
@@ -783,8 +995,8 @@ describe("LongProjectStore", () => {
       projectStore.openBook(created.projectDirectory)
     ).resolves.toMatchObject({
       book: {
-        projectRevision: 0,
-        workspaceIndex: { revision: 0 }
+        projectRevision: 1,
+        workspaceIndex: { revision: 1 }
       }
     });
   });
@@ -979,11 +1191,11 @@ describe("LongProjectStore", () => {
           baseRevision: files.body.revision
         },
         characterState: {
-          content: "林岚：开始怀疑寄信人。",
+          content: "",
           baseRevision: files.characterState.revision
         },
         handoff: {
-          content: "下一章追查信封上的旧邮戳。",
+          content: "",
           baseRevision: files.handoff.revision
         },
         baseWorkspaceRevision: 1,
@@ -995,6 +1207,15 @@ describe("LongProjectStore", () => {
       workspaceRevision: 2,
       projectRevision: 2
     });
+    await expect(
+      projectStore.writeDocument(created.projectDirectory, {
+        fileId: files.characterState.id,
+        content: "不应直接维护章末状态",
+        expectedFileRevision: written.characterStateRevision,
+        expectedWorkspaceRevision: 2,
+        expectedProjectRevision: 2
+      })
+    ).rejects.toThrow(/由连续性账本生成/u);
 
     const bookLine = created.book.workspaceIndex.bookLine;
     const commitInput: Parameters<LongProjectStore["commitChapter"]>[1] = {
@@ -1039,6 +1260,71 @@ describe("LongProjectStore", () => {
             mode: "append"
           }
         ],
+        coverage: {
+          character: {
+            status: "changed",
+            note: "林岚收到旧信并决定追查寄信人。"
+          },
+          plot: {
+            status: "changed",
+            note: "旧信推动调查线正式开始。"
+          },
+          foreshadowing: {
+            status: "changed",
+            note: "寄信人身份伏笔已经种下。"
+          },
+          world: {
+            status: "unchanged",
+            note: "本章没有新增世界观揭露。"
+          },
+          knowledge: {
+            status: "changed",
+            note: "读者确认旧信存在。"
+          },
+          openLoops: {
+            status: "changed",
+            note: "留下旧邮戳追查事项。"
+          }
+        },
+        factMutations: [
+          {
+            factId: "fact_alice-suspicion",
+            domain: "character",
+            subjectId: "character_alice",
+            field: "current_goal",
+            value: "追查旧信的寄信人",
+            evidence: "正文写明林岚决定调查寄信人。"
+          }
+        ],
+        knowledgeMutations: [
+          {
+            factId: "fact_alice-suspicion",
+            audienceType: "reader",
+            audienceId: null,
+            level: "knows",
+            evidence: "读者随林岚一同看到旧信。"
+          }
+        ],
+        openLoopMutations: [
+          {
+            loopId: "loop_old-postmark",
+            kind: "plot",
+            status: "open",
+            detail: "追查信封上的旧邮戳",
+            subjectId: "event_letter",
+            factId: "fact_alice-suspicion",
+            evidence: "章末决定从旧邮戳继续调查。"
+          }
+        ],
+        chapterOutputs: {
+          characterState: "林岚已收到旧信，当前目标是追查寄信人。",
+          handoff: {
+            summary: "下一章从旧邮戳线索继续追查。",
+            mustCarry: ["林岚已经持有旧信"],
+            nextChapterConstraints: ["调查必须从旧邮戳展开"],
+            openLoops: ["loop_old-postmark"]
+          }
+        },
         baseWorkspaceRevision: 2,
         baseProjectRevision: 2
     };
@@ -1062,11 +1348,31 @@ describe("LongProjectStore", () => {
       preexistingRelationshipContent,
       "utf8"
     );
+    await expect(
+      projectStore.commitChapter(created.projectDirectory, {
+        ...commitInput,
+        factMutations: [
+          {
+            ...commitInput.factMutations![0]!,
+            subjectId: "character_missing"
+          }
+        ]
+      })
+    ).rejects.toThrow(/subjectId 未关联工作区现有对象/u);
+    await expect(
+      projectStore.commitChapter(created.projectDirectory, {
+        ...commitInput,
+        fileUpdates: commitInput.fileUpdates.filter(
+          ({ fileId }) => fileId !== characterFiles.history.id
+        )
+      })
+    ).rejects.toThrow(/必须同步更新人物当前状态和历史轨迹/u);
     const committed = await projectStore.commitChapter(
       created.projectDirectory,
       commitInput
     );
     expect(committed.record).toMatchObject({
+      schemaVersion: 3,
       sequence: 1,
       chapterCardId,
       sourceWorkspaceRevision: 2,
@@ -1092,6 +1398,21 @@ describe("LongProjectStore", () => {
           before: "planned",
           after: "open"
         }
+      ],
+      factChanges: [
+        {
+          before: null,
+          after: {
+            factId: "fact_alice-suspicion",
+            value: "追查旧信的寄信人"
+          }
+        }
+      ],
+      openLoopChanges: [
+        {
+          before: null,
+          after: { loopId: "loop_old-postmark", status: "open" }
+        }
       ]
     });
     const afterCommit = await projectStore.openBook(
@@ -1104,7 +1425,46 @@ describe("LongProjectStore", () => {
     expect(
       afterCommit.book.workspaceIndex.plot.foreshadowing[0]!.status
     ).toBe("open");
+    expect(afterCommit.book.workspaceIndex.ledger.projection).toMatchObject({
+      throughCommitId: committed.record.id,
+      facts: [
+        {
+          factId: "fact_alice-suspicion",
+          value: "追查旧信的寄信人"
+        }
+      ],
+      knowledge: [
+        {
+          factId: "fact_alice-suspicion",
+          audienceType: "reader",
+          level: "knows"
+        }
+      ],
+      openLoops: [
+        { loopId: "loop_old-postmark", status: "open" }
+      ],
+      latestHandoff: {
+        commitId: committed.record.id,
+        summary: "下一章从旧邮戳线索继续追查。"
+      }
+    });
     const committedFiles = firstChapterFiles(afterCommit.book);
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: committedFiles.characterState.id
+      })
+    ).resolves.toMatchObject({
+      content: "林岚已收到旧信，当前目标是追查寄信人。"
+    });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: committedFiles.handoff.id
+      })
+    ).resolves.toMatchObject({
+      content: expect.stringContaining(
+        "## 未闭合事项\n\n- loop_old-postmark"
+      )
+    });
     for (const file of Object.values(committedFiles)) {
       await expect(
         projectStore.writeDocument(created.projectDirectory, {
@@ -1114,7 +1474,7 @@ describe("LongProjectStore", () => {
           expectedWorkspaceRevision: 3,
           expectedProjectRevision: 3
         })
-      ).rejects.toThrow(/已提交章节/u);
+      ).rejects.toThrow(/已提交章节|由连续性账本生成/u);
     }
     await writeFile(
       join(created.projectDirectory, committedFiles.body.path),
@@ -1321,6 +1681,13 @@ describe("LongProjectStore", () => {
       created.projectDirectory
     );
     expect(afterRollback.book.workspaceIndex.ledger.commits).toEqual([]);
+    expect(afterRollback.book.workspaceIndex.ledger.projection).toEqual({
+      throughCommitId: null,
+      facts: [],
+      knowledge: [],
+      openLoops: [],
+      latestHandoff: null
+    });
     expect(afterRollback.book.workspaceIndex.chapters[0]!.commitId).toBeNull();
     expect(
       afterRollback.book.workspaceIndex.plot.narrativePlacements[0]
@@ -1331,6 +1698,21 @@ describe("LongProjectStore", () => {
     expect(
       afterRollback.book.workspaceIndex.plot.foreshadowing[0]!.status
     ).toBe("planned");
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: committedFiles.body.id
+      })
+    ).resolves.toMatchObject({ content: "雨夜里，她收到一封信。" });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: committedFiles.characterState.id
+      })
+    ).resolves.toMatchObject({ content: "" });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: committedFiles.handoff.id
+      })
+    ).resolves.toMatchObject({ content: "" });
     await expect(
       projectStore.readDocument(created.projectDirectory, {
         fileId: committedCharacterFiles.relationships.id
@@ -1798,5 +2180,113 @@ describe("LongProjectStore", () => {
         { fileId: utf8Body.id }
       )
     ).rejects.toThrow(/UTF-8/u);
+  });
+
+  it("rejects worldbuilding files placed outside the worldbuilding role directory", async () => {
+    const { projectStore, created } = await createFixture(
+      "world-role-path"
+    );
+    const category = created.book.workspaceIndex.worldbuilding[0]!;
+    if (category.format !== "list") throw new Error("expected list category");
+    const itemId = "worlditem_wrong_role_path";
+    const itemFile = createEmptyLongMarkdownFileReference(
+      longWorldbuildingItemFileId(itemId),
+      longWorldbuildingItemContentPath(category.id, itemId),
+      FIXED_NOW
+    );
+    await projectStore.applyWorkspaceOperations(created.projectDirectory, {
+      batch: {
+        baseRevision: 0,
+        updatedAt: FIXED_NOW,
+        operations: [{
+          type: "worldbuildingItem.create",
+          categoryId: category.id,
+          item: {
+            id: itemId,
+            title: "错误目录测试",
+            order: 1,
+            file: itemFile
+          }
+        }],
+        documentWrites: []
+      },
+      expectedProjectRevision: 0
+    });
+
+    const indexPath = join(
+      created.projectDirectory,
+      LONG_WORKSPACE_INDEX_PATH
+    );
+    const manifestPath = join(created.projectDirectory, "deepwrite.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as {
+      worldbuilding: Array<{
+        items: Array<{ file: { path: string } }>;
+      }>;
+    };
+    index.worldbuilding[0]!.items[0]!.file.path =
+      "long/chapters/rogue-worldbuilding.md";
+    const indexContent = `${JSON.stringify(index, null, 2)}\n`;
+    const manifest = JSON.parse(
+      await readFile(manifestPath, "utf8")
+    ) as { workspaceIndexFile: { revision: string } };
+    manifest.workspaceIndexFile.revision =
+      createLongFileRevision(indexContent);
+    await writeFile(indexPath, indexContent, "utf8");
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8"
+    );
+
+    await expect(
+      projectStore.openBook(created.projectDirectory)
+    ).rejects.toThrow(/文件路径不符合其文件角色/u);
+  });
+
+  it("continues to open legacy hashed worldbuilding paths", async () => {
+    const { projectStore, created } = await createFixture(
+      "legacy-world-role-path"
+    );
+    const categoryId = "world_legacy_hashed_path";
+    const legacyPath =
+      `long/worldbuilding/${
+        projectTransactionContentSha256(categoryId).slice(0, 32)
+      }/content.md`;
+    const result = await projectStore.applyWorkspaceOperations(
+      created.projectDirectory,
+      {
+        batch: {
+          baseRevision: 0,
+          updatedAt: FIXED_NOW,
+          operations: [{
+            type: "worldbuilding.create",
+            category: {
+              id: categoryId,
+              title: "旧版哈希路径",
+              order: created.book.workspaceIndex.worldbuilding.length + 1,
+              format: "text",
+              contentAuthority: "markdown",
+              file: createEmptyLongMarkdownFileReference(
+                longWorldbuildingFileId(categoryId),
+                legacyPath,
+                FIXED_NOW
+              )
+            }
+          }],
+          documentWrites: []
+        },
+        expectedProjectRevision: 0
+      }
+    );
+
+    await expect(
+      projectStore.openBook(created.projectDirectory)
+    ).resolves.toMatchObject({
+      book: {
+        workspaceIndex: {
+          revision: result.book.workspaceIndex.revision
+        }
+      }
+    });
   });
 });

@@ -1,6 +1,8 @@
 import type {
   AgentRuntimeRef,
   AgentUsage,
+  LongWorkspaceOperationBatch,
+  LongWorldbuildingFileChange,
   ShortWorkspaceStageId
 } from "@deepwrite/contracts";
 
@@ -41,7 +43,7 @@ export interface AgentEditProposal {
   decisionToken?: string;
   runId: string;
   workspaceId: string;
-  stageId: ShortWorkspaceStageId | "library";
+  stageId: ShortWorkspaceStageId | "library" | "long-worldbuilding";
   documentId: string;
   title: string;
   summary: string;
@@ -70,6 +72,12 @@ export interface AgentEditProposal {
     stageId: string;
     baseProjectRevision?: number;
     entryId?: string;
+  };
+  longWorldbuildingTarget?: {
+    bookId: string;
+    batch: LongWorkspaceOperationBatch;
+    baseProjectRevision: number;
+    file: LongWorldbuildingFileChange;
   };
   draftSectionCreationTarget?: {
     sections: Array<{

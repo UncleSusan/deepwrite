@@ -1,8 +1,17 @@
 import { createHash } from "node:crypto";
 import {
+  LongContinuityProjectionSchema,
   LongLedgerCommitRecordSchema,
   LongProjectManifestSchema,
+  LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
+  longWorldbuildingOverviewContentPath,
+  longWorldbuildingOverviewFileId,
+  parseLongWorldbuildingMarkdownList,
+  type LongContinuityHandoff,
+  type LongContinuityProjection,
   type LongLedgerCommitRecord,
   type LongLedgerCommitIndexEntry,
   type LongProjectManifest,
@@ -67,6 +76,10 @@ function sha256(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+function contentRevision(content: string): string {
+  return `v2:${Buffer.byteLength(content, "utf8")}:${sha256(content)}`;
+}
+
 function revisionMatchesContent(revision: string, content: string): boolean {
   const bytes = Buffer.from(content, "utf8");
   const match = /^(v1|v2):(\d+):([0-9a-f]+)$/u.exec(revision);
@@ -75,6 +88,166 @@ function revisionMatchesContent(revision: string, content: string): boolean {
   return match[1] === "v1"
     ? digest.startsWith(match[3]!)
     : digest === match[3];
+}
+
+function continuityFactKey(
+  value: Pick<
+    LongContinuityProjection["facts"][number],
+    "domain" | "subjectId" | "field"
+  >
+): string {
+  return `${value.domain}\0${value.subjectId}\0${value.field.normalize("NFC")}`;
+}
+
+function continuityKnowledgeKey(
+  value: Pick<
+    LongContinuityProjection["knowledge"][number],
+    "factId" | "audienceType" | "audienceId"
+  >
+): string {
+  return `${value.factId}\0${value.audienceType}\0${value.audienceId ?? ""}`;
+}
+
+function sameContinuityEntity(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function serializeContinuityHandoff(
+  handoff: LongContinuityHandoff
+): string {
+  const bullets = (items: readonly string[]): string =>
+    items.length === 0
+      ? "- 无"
+      : items
+          .map(
+            (item) =>
+              `- ${item.replace(/\r\n?/gu, "\n").replace(/\n/gu, "\n  ")}`
+          )
+          .join("\n");
+  return [
+    "# 下一章交接",
+    "",
+    "## 摘要",
+    "",
+    handoff.summary,
+    "",
+    "## 必须承接",
+    "",
+    bullets(handoff.mustCarry),
+    "",
+    "## 下一章约束",
+    "",
+    bullets(handoff.nextChapterConstraints),
+    "",
+    "## 未闭合事项",
+    "",
+    bullets(handoff.openLoops),
+    ""
+  ].join("\n");
+}
+
+function replayContinuityProjection(
+  records: readonly LongLedgerCommitRecord[]
+): LongContinuityProjection {
+  const projection: LongContinuityProjection = {
+    throughCommitId: null,
+    facts: [],
+    knowledge: [],
+    openLoops: [],
+    latestHandoff: null
+  };
+  const factIndexById = new Map<string, number>();
+  const factIndexByKey = new Map<string, number>();
+  const knowledgeIndexByKey = new Map<string, number>();
+  const openLoopIndexById = new Map<string, number>();
+  for (const record of records) {
+    if (record.schemaVersion !== 3) continue;
+    for (const change of record.factChanges) {
+      const factKey = continuityFactKey(change.after);
+      const idIndex = factIndexById.get(change.after.factId);
+      const keyIndex = factIndexByKey.get(factKey);
+      if (
+        idIndex !== keyIndex ||
+        (change.before === null
+          ? idIndex !== undefined
+          : idIndex === undefined ||
+            !sameContinuityEntity(
+              projection.facts[idIndex],
+              change.before
+            ))
+      ) {
+        throw new Error(
+          `连续性事实变更链不一致：${change.after.factId}。`
+        );
+      }
+      if (idIndex === undefined) {
+        const nextIndex = projection.facts.length;
+        projection.facts.push({ ...change.after });
+        factIndexById.set(change.after.factId, nextIndex);
+        factIndexByKey.set(factKey, nextIndex);
+      } else {
+        projection.facts[idIndex] = { ...change.after };
+      }
+    }
+    for (const change of record.knowledgeChanges) {
+      const key = continuityKnowledgeKey(change.after);
+      const index = knowledgeIndexByKey.get(key);
+      if (
+        change.before === null
+          ? index !== undefined
+          : index === undefined ||
+            !sameContinuityEntity(
+              projection.knowledge[index],
+              change.before
+            )
+      ) {
+        throw new Error(`连续性认知变更链不一致：${key}。`);
+      }
+      if (index === undefined) {
+        knowledgeIndexByKey.set(key, projection.knowledge.length);
+        projection.knowledge.push({ ...change.after });
+      } else {
+        projection.knowledge[index] = { ...change.after };
+      }
+    }
+    for (const change of record.openLoopChanges) {
+      const index = openLoopIndexById.get(change.after.loopId);
+      if (
+        change.before === null
+          ? index !== undefined
+          : index === undefined ||
+            !sameContinuityEntity(
+              projection.openLoops[index],
+              change.before
+            )
+      ) {
+        throw new Error(
+          `连续性未闭合事项变更链不一致：${change.after.loopId}。`
+        );
+      }
+      if (index === undefined) {
+        openLoopIndexById.set(
+          change.after.loopId,
+          projection.openLoops.length
+        );
+        projection.openLoops.push({ ...change.after });
+      } else {
+        projection.openLoops[index] = { ...change.after };
+      }
+    }
+    projection.throughCommitId = record.id;
+    projection.latestHandoff = {
+      ...record.chapterOutputs.handoff,
+      mustCarry: [...record.chapterOutputs.handoff.mustCarry],
+      nextChapterConstraints: [
+        ...record.chapterOutputs.handoff.nextChapterConstraints
+      ],
+      openLoops: [...record.chapterOutputs.handoff.openLoops],
+      chapterCardId: record.chapterCardId,
+      commitId: record.id
+    };
+  }
+  return LongContinuityProjectionSchema.parse(projection);
 }
 
 function normalizedTimestamp(value: unknown): string {
@@ -91,10 +264,18 @@ function indexedFiles(
 ): IndexedPortableFile[] {
   return [
     { reference: index.bookLine, kind: "markdown" },
-    ...index.worldbuilding.map(({ file }) => ({
-      reference: file,
-      kind: "markdown" as const
-    })),
+    ...index.worldbuilding.flatMap((category) =>
+      (category.format === "text"
+        ? [category.file]
+        : [
+            ...(category.overview ? [category.overview] : []),
+            ...category.items.map(({ file }) => file)
+          ]
+      ).map((reference) => ({
+        reference,
+        kind: "markdown" as const
+      }))
+    ),
     ...index.characterFiles.flatMap((entry) => [
       { reference: entry.coreProfile, kind: "markdown" as const },
       { reference: entry.relationships, kind: "markdown" as const },
@@ -227,7 +408,13 @@ export function assertLongLedgerRecordChain(
     string,
     {
       reference: LongWorkspaceFileReference;
-      role: "relationships" | "current-state" | "history";
+      role:
+        | "relationships"
+        | "current-state"
+        | "history"
+        | "chapter-character-state"
+        | "chapter-handoff";
+      chapterCardId?: string;
     }
   >();
   for (const entry of index.characterFiles) {
@@ -244,6 +431,42 @@ export function assertLongLedgerRecordChain(
       role: "history"
     });
   }
+  for (const chapter of index.chapters) {
+    continuityFiles.set(chapter.characterState.id, {
+      reference: chapter.characterState,
+      role: "chapter-character-state",
+      chapterCardId: chapter.chapterCardId
+    });
+    continuityFiles.set(chapter.handoff.id, {
+      reference: chapter.handoff,
+      role: "chapter-handoff",
+      chapterCardId: chapter.chapterCardId
+    });
+  }
+  const characterSubjectIds = new Set(
+    index.characters.map(({ id }) => id)
+  );
+  const worldSubjectIds = new Set(
+    index.worldbuilding.map(({ id }) => id)
+  );
+  const plotSubjectIds = new Set<string>([
+    index.bookId,
+    ...index.plot.volumes.map(({ id }) => id),
+    ...index.plot.arcs.map(({ id }) => id),
+    ...index.plot.chapterCards.map(({ id }) => id),
+    ...index.plot.storyEvents.map(({ id }) => id),
+    ...index.plot.eventConnections.map(({ id }) => id),
+    ...index.plot.narrativePlacements.map(({ id }) => id)
+  ]);
+  const foreshadowingSubjectIds = new Set<string>(
+    index.plot.foreshadowing.flatMap((thread) => [
+      thread.id,
+      ...thread.beats.map(({ id }) => id)
+    ])
+  );
+  const characterFilesByCharacterId = new Map(
+    index.characterFiles.map((entry) => [entry.characterId, entry] as const)
+  );
   const lastFileState = new Map<
     string,
     LongLedgerCommitRecord["fileChanges"][number]["after"]
@@ -273,12 +496,84 @@ export function assertLongLedgerRecordChain(
     }
     previousRecord = record;
     orderedRecords.push(record);
+    if (record.schemaVersion === 3) {
+      const changedFileIds = new Set(
+        record.fileChanges.map(({ fileId }) => fileId)
+      );
+      for (const { after: fact } of record.factChanges) {
+        const subjectExists =
+          fact.domain === "character" ||
+          fact.domain === "relationship"
+            ? characterSubjectIds.has(fact.subjectId)
+            : fact.domain === "world"
+              ? worldSubjectIds.has(fact.subjectId)
+              : fact.domain === "plot"
+                ? plotSubjectIds.has(fact.subjectId)
+                : foreshadowingSubjectIds.has(fact.subjectId);
+        if (!subjectExists) {
+          throw new Error(
+            `v3 连续性事实包含孤立 subjectId：${fact.factId} / ${fact.subjectId}。`
+          );
+        }
+        if (
+          fact.domain !== "character" &&
+          fact.domain !== "relationship"
+        ) {
+          continue;
+        }
+        const files = characterFilesByCharacterId.get(fact.subjectId);
+        const requiredFileIds =
+          files === undefined
+            ? []
+            : fact.domain === "character"
+              ? [files.currentState.id, files.history.id]
+              : [files.relationships.id, files.history.id];
+        if (
+          requiredFileIds.length !== 2 ||
+          requiredFileIds.some((fileId) => !changedFileIds.has(fileId))
+        ) {
+          throw new Error(
+            `v3 连续性事实缺少人物物化文件变更：${fact.factId}。`
+          );
+        }
+      }
+      const chapter = index.chapters.find(
+        ({ chapterCardId }) => chapterCardId === record.chapterCardId
+      );
+      const characterStateChange = record.fileChanges.find(
+        ({ fileId }) => fileId === chapter?.characterState.id
+      );
+      const handoffChange = record.fileChanges.find(
+        ({ fileId }) => fileId === chapter?.handoff.id
+      );
+      if (
+        !chapter ||
+        !characterStateChange ||
+        characterStateChange.mode !== "replace" ||
+        characterStateChange.after.content !==
+          record.chapterOutputs.characterState ||
+        !handoffChange ||
+        handoffChange.mode !== "replace" ||
+        handoffChange.after.content !==
+          serializeContinuityHandoff(record.chapterOutputs.handoff)
+      ) {
+        throw new Error(
+          `v3 连续性账本缺少可信的章节输出变更：${record.id}。`
+        );
+      }
+    }
     for (const change of record.fileChanges) {
       const file = continuityFiles.get(change.fileId);
       const previous = lastFileState.get(change.fileId);
+      const chapterOutput =
+        file?.role === "chapter-character-state" ||
+        file?.role === "chapter-handoff";
       if (
         !file ||
         file.reference.path !== change.path ||
+        (chapterOutput &&
+          (record.schemaVersion !== 3 ||
+            file.chapterCardId !== record.chapterCardId)) ||
         (file.role === "history" && change.mode !== "append") ||
         (file.role !== "history" && change.mode !== "replace") ||
         !revisionMatchesContent(
@@ -310,6 +605,10 @@ export function assertLongLedgerRecordChain(
     ) {
       throw new Error(`连续性账本末态与索引不一致：${fileId}。`);
     }
+  }
+  const replayedProjection = replayContinuityProjection(orderedRecords);
+  if (!sameContinuityEntity(replayedProjection, index.ledger.projection)) {
+    throw new Error("连续性账本类型化投影与记录链不一致。");
   }
 
   const placementState = new Map(
@@ -465,6 +764,135 @@ function recordOrThrow(
   return value;
 }
 
+function normalizeLegacyPortableWorldbuilding(
+  rawIndex: unknown,
+  rawFiles: unknown
+): {
+  index: unknown;
+  files: unknown[];
+} {
+  if (!Array.isArray(rawFiles)) {
+    throw new Error("长篇可移植包的 files 格式无效。");
+  }
+  if (
+    !isRecord(rawIndex) ||
+    !Array.isArray(rawIndex.worldbuilding)
+  ) {
+    return { index: rawIndex, files: rawFiles };
+  }
+
+  let migrated = false;
+  let files = [...rawFiles];
+  const worldbuilding = rawIndex.worldbuilding.map((rawCategory) => {
+    if (
+      !isRecord(rawCategory) ||
+      rawCategory.format !== "list" ||
+      rawCategory.contentAuthority !== "markdown"
+    ) {
+      return rawCategory;
+    }
+
+    const categoryId =
+      typeof rawCategory.id === "string" ? rawCategory.id : "";
+    const legacyFile = LongWorkspaceFileReferenceSchema.parse(
+      rawCategory.file
+    );
+    const matching = files.filter(
+      (rawFile) =>
+        isRecord(rawFile) && rawFile.id === legacyFile.id
+    );
+    if (matching.length !== 1) {
+      throw new Error(
+        `旧版世界观分类 ${categoryId} 的聚合文件缺失或重复。`
+      );
+    }
+    const aggregate = recordOrThrow(
+      matching[0],
+      `旧版世界观分类 ${categoryId} 的聚合文件`
+    );
+    if (
+      aggregate.kind !== "markdown" ||
+      aggregate.path !== legacyFile.path ||
+      aggregate.revision !== legacyFile.revision ||
+      typeof aggregate.sha256 !== "string" ||
+      typeof aggregate.content !== "string" ||
+      aggregate.sha256 !== sha256(aggregate.content) ||
+      !revisionMatchesContent(legacyFile.revision, aggregate.content)
+    ) {
+      throw new Error(
+        `旧版世界观分类 ${categoryId} 的聚合文件完整性校验失败。`
+      );
+    }
+
+    const items = parseLongWorldbuildingMarkdownList(
+      aggregate.content
+    ).map((item, itemIndex) => {
+      const path = longWorldbuildingItemContentPath(
+        categoryId,
+        item.id
+      );
+      const revision = contentRevision(item.content);
+      const file = {
+        id: longWorldbuildingItemFileId(item.id),
+        path,
+        revision,
+        updatedAt: legacyFile.updatedAt
+      };
+      files.push({
+        id: file.id,
+        path,
+        kind: "markdown",
+        revision,
+        sha256: sha256(item.content),
+        content: item.content
+      });
+      return {
+        id: item.id,
+        title: item.title,
+        order: itemIndex + 1,
+        file
+      };
+    });
+    files = files.filter((rawFile) => rawFile !== matching[0]);
+    const overviewPath = longWorldbuildingOverviewContentPath(categoryId);
+    const overviewRevision = contentRevision("");
+    const overview = {
+      id: longWorldbuildingOverviewFileId(categoryId),
+      path: overviewPath,
+      revision: overviewRevision,
+      updatedAt: legacyFile.updatedAt
+    };
+    files.push({
+      id: overview.id,
+      path: overviewPath,
+      kind: "markdown",
+      revision: overviewRevision,
+      sha256: sha256(""),
+      content: ""
+    });
+    migrated = true;
+    return {
+      id: rawCategory.id,
+      title: rawCategory.title,
+      order: rawCategory.order,
+      format: "list",
+      contentAuthority: "files",
+      overview,
+      items
+    };
+  });
+
+  return migrated
+    ? {
+        index: {
+          ...rawIndex,
+          worldbuilding
+        },
+        files
+      }
+    : { index: rawIndex, files };
+}
+
 export function parseLongPortableExportBundle(
   raw: unknown
 ): LongPortableExportBundle {
@@ -478,13 +906,44 @@ export function parseLongPortableExportBundle(
   const exportedAt = normalizedTimestamp(bundle.exportedAt);
   const manifestEntry = parseJsonEntry(bundle.manifest, "manifest");
   const indexEntry = parseJsonEntry(bundle.index, "index");
-  const manifest = LongProjectManifestSchema.parse(manifestEntry.value);
-  const index = LongWorkspaceIndexSnapshotSchema.parse(indexEntry.value);
+  const rawManifestContent = serializeJson(manifestEntry.value);
+  const rawIndexContent = serializeJson(indexEntry.value);
   if (
-    manifestEntry.sha256 !== sha256(serializeJson(manifest)) ||
-    indexEntry.sha256 !== sha256(serializeJson(index))
+    manifestEntry.sha256 !== sha256(rawManifestContent) ||
+    indexEntry.sha256 !== sha256(rawIndexContent)
   ) {
     throw new Error("长篇可移植包的 manifest 或 index SHA-256 校验失败。");
+  }
+  const normalizedWorldbuilding = normalizeLegacyPortableWorldbuilding(
+    indexEntry.value,
+    bundle.files
+  );
+  let manifest = LongProjectManifestSchema.parse(manifestEntry.value);
+  const index = LongWorkspaceIndexSnapshotSchema.parse(
+    normalizedWorldbuilding.index
+  );
+  if (
+    manifest.id !== index.bookId ||
+    manifest.revision !== index.revision ||
+    !revisionMatchesContent(
+      manifest.workspaceIndexFile.revision,
+      rawIndexContent
+    )
+  ) {
+    throw new Error("长篇清单与可移植包原始索引不一致。");
+  }
+  const normalizedIndexContent = serializeJson(index);
+  if (normalizedIndexContent !== rawIndexContent) {
+    manifest = LongProjectManifestSchema.parse({
+      ...manifest,
+      workspaceIndexFile: {
+        ...manifest.workspaceIndexFile,
+        revision: `v2:${Buffer.byteLength(
+          normalizedIndexContent,
+          "utf8"
+        )}:${sha256(normalizedIndexContent)}`
+      }
+    });
   }
   validateManifestIndexPair(manifest, index);
   if (bundle.bookId !== manifest.id) {
@@ -496,14 +955,16 @@ export function parseLongPortableExportBundle(
   const expectedById = new Map(
     expected.map((entry) => [entry.reference.id, entry])
   );
-  if (!Array.isArray(bundle.files) || bundle.files.length !== expected.length) {
+  if (
+    normalizedWorldbuilding.files.length !== expected.length
+  ) {
     throw new Error("长篇可移植包没有完整包含索引中的全部文档。");
   }
   let totalBytes = 0;
   const seenIds = new Set<string>();
   const seenPaths = new Set<string>();
   const ledgerRecords: LongLedgerCommitRecord[] = [];
-  const files = bundle.files.map((rawFile) => {
+  const files = normalizedWorldbuilding.files.map((rawFile) => {
     const file = recordOrThrow(rawFile, "文件条目");
     if (
       typeof file.id !== "string" ||
@@ -590,12 +1051,12 @@ export function parseLongPortableExportBundle(
     bookId: manifest.id,
     manifest: {
       mediaType: "application/json",
-      sha256: manifestEntry.sha256,
+      sha256: sha256(serializeJson(manifest)),
       value: manifest
     },
     index: {
       mediaType: "application/json",
-      sha256: indexEntry.sha256,
+      sha256: sha256(normalizedIndexContent),
       value: index
     },
     files

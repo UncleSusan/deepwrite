@@ -211,6 +211,9 @@ describe("long import store integration", () => {
     const memoryCategory = imported.book.workspaceIndex.worldbuilding.find(
       ({ title }) => title === "书籍记忆（旧版）"
     )!;
+    if (memoryCategory.format !== "text") {
+      throw new Error("expected migration evidence to use a text category");
+    }
     const memoryDocument = await store.readDocument(
       imported.projectDirectory,
       { fileId: memoryCategory.file.id }

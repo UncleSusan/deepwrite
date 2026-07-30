@@ -20,7 +20,7 @@ const emit = defineEmits<{
 }>();
 
 const sourceLabels: Record<LongMigrationSourceKind, string> = {
-  "write-claw-zip": "Write Claw 长篇压缩包",
+  "write-claw-zip": "旧版本长篇压缩包",
   "long-workspace-json": "long_workspace.json",
   "book-json": "book.json"
 };
@@ -63,8 +63,8 @@ onBeforeUnmount(() =>
             <AppIcon name="check" :size="20" />
           </span>
           <div>
-            <span>Write Claw 长篇迁移</span>
-            <h2 id="long-migration-dialog-title">迁移完成</h2>
+            <span>旧版本长篇导入</span>
+            <h2 id="long-migration-dialog-title">导入完成</h2>
           </div>
         </header>
 
@@ -105,7 +105,7 @@ onBeforeUnmount(() =>
           <section class="long-migration-source-note">
             <h3>源文件保持不变</h3>
             <p>
-              迁移只会新建 DeepWrite 长篇项目，不会修改、覆盖或删除所选的 Write Claw 源文件。
+              导入只会新建 DeepWrite 长篇项目，不会修改、覆盖或删除所选的旧版本源文件。
             </p>
           </section>
 

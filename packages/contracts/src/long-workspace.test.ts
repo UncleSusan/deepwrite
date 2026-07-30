@@ -9,6 +9,7 @@ import {
   LongAgentProfileSchema,
   LongBookSchema,
   LongBookSummarySchema,
+  LongContinuityProjectionSchema,
   LongEventConnectionSchema,
   LongFileRevisionSchema,
   LongProjectManifestSchema,
@@ -67,7 +68,7 @@ function workspaceIndex() {
         id: "world_rules",
         title: "世界规则",
         order: 1,
-        format: "list" as const,
+        format: "text" as const,
         contentAuthority: "markdown" as const,
         file: file(
           longWorldbuildingFileId("world_rules"),
@@ -330,6 +331,13 @@ describe("independent long-form workspace contracts", () => {
     };
 
     expect(navigation.counts.chapterCards).toBe(2);
+    expect(book.workspaceIndex.ledger.projection).toEqual({
+      throughCommitId: null,
+      facts: [],
+      knowledge: [],
+      openLoops: [],
+      latestHandoff: null
+    });
     expect(navigation.chapterCards[0]).toEqual({
       id: "chapter_one",
       volumeId: "volume_one",
@@ -349,6 +357,128 @@ describe("independent long-form workspace contracts", () => {
     expect(CatalogProjectManifestSchema.safeParse(manifest).success).toBe(
       false
     );
+  });
+
+  it("validates structured continuity projection keys and provenance", () => {
+    const fact = {
+      factId: "fact_alice-location",
+      domain: "character" as const,
+      subjectId: "character_alice",
+      field: "location",
+      value: "林岚家",
+      sourceCommitId: "commit_first",
+      sourceChapterCardId: "chapter_one",
+      evidence: "正文写明林岚在家中。"
+    };
+    const projection = {
+      throughCommitId: "commit_first",
+      facts: [fact],
+      knowledge: [
+        {
+          factId: fact.factId,
+          audienceType: "reader" as const,
+          audienceId: null,
+          level: "knows" as const,
+          sourceCommitId: "commit_first",
+          sourceChapterCardId: "chapter_one",
+          evidence: "读者直接读到地点。"
+        }
+      ],
+      openLoops: [
+        {
+          loopId: "loop_sender",
+          kind: "foreshadowing" as const,
+          status: "open" as const,
+          detail: "寄信人身份尚未揭晓。",
+          subjectId: "foreshadow_sender",
+          factId: null,
+          sourceCommitId: "commit_first",
+          sourceChapterCardId: "chapter_one",
+          evidence: "正文只给出蜡封线索。"
+        }
+      ],
+      latestHandoff: {
+        chapterCardId: "chapter_one",
+        commitId: "commit_first",
+        summary: "下一章追查旧邮戳。",
+        mustCarry: ["林岚持有旧信。"],
+        nextChapterConstraints: ["不能提前揭晓寄信人。"],
+        openLoops: ["loop_sender"]
+      }
+    };
+    expect(LongContinuityProjectionSchema.safeParse(projection).success).toBe(
+      true
+    );
+    expect(
+      LongContinuityProjectionSchema.safeParse({
+        ...projection,
+        facts: [
+          fact,
+          {
+            ...fact,
+            factId: "fact_duplicate-location"
+          }
+        ]
+      }).success
+    ).toBe(false);
+    expect(
+      LongContinuityProjectionSchema.safeParse({
+        ...projection,
+        knowledge: [
+          {
+            ...projection.knowledge[0],
+            factId: "fact_missing"
+          }
+        ]
+      }).success
+    ).toBe(false);
+  });
+
+  it("anchors workspace continuity projections to indexed commits and domain objects", () => {
+    const committed = commitFirstChapter(workspaceIndex());
+    Object.assign(committed.ledger, {
+      projection: {
+        throughCommitId: "commit_first",
+        facts: [
+          {
+            factId: "fact_alice-location",
+            domain: "character",
+            subjectId: "character_alice",
+            field: "location",
+            value: "林岚家",
+            sourceCommitId: "commit_first",
+            sourceChapterCardId: "chapter_one",
+            evidence: "正文写明林岚仍在家中。"
+          }
+        ],
+        knowledge: [],
+        openLoops: [],
+        latestHandoff: null
+      }
+    });
+    const parsedCommitted =
+      LongWorkspaceIndexSnapshotSchema.parse(committed);
+
+    const orphanSubject = structuredClone(parsedCommitted);
+    orphanSubject.ledger.projection.facts[0]!.subjectId =
+      "character_missing";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(orphanSubject).success
+    ).toBe(false);
+
+    const unknownSource = structuredClone(parsedCommitted);
+    unknownSource.ledger.projection.facts[0]!.sourceCommitId =
+      "commit_missing";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(unknownSource).success
+    ).toBe(false);
+
+    const wrongSourceChapter = structuredClone(parsedCommitted);
+    wrongSourceChapter.ledger.projection.facts[0]!.sourceChapterCardId =
+      "chapter_two";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(wrongSourceChapter).success
+    ).toBe(false);
   });
 
   it("enforces versioned opaque ids and canonical three-file indexes", () => {
@@ -754,5 +884,40 @@ describe("independent long-form workspace contracts", () => {
     expect(resolveLongAgentIdForRoot("draft", true)).toBe(
       "expert_section_writer"
     );
+    const worldbuildingProfile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "worldbuilding"
+    )!;
+    expect(worldbuildingProfile.systemPrompt).toContain("category_id");
+    expect(worldbuildingProfile.systemPrompt).toContain("item_id");
+    expect(worldbuildingProfile.systemPrompt).toContain("list_worldbuilding");
+    expect(worldbuildingProfile.systemPrompt).toContain("read_worldbuilding");
+    expect(worldbuildingProfile.systemPrompt).toContain("search_worldbuilding");
+    expect(worldbuildingProfile.systemPrompt).not.toContain(
+      "get_long_workspace_index"
+    );
+    expect(worldbuildingProfile.systemPrompt).not.toContain(
+      "read_long_document"
+    );
+    expect(worldbuildingProfile.systemPrompt).not.toContain(
+      "search_long_workspace"
+    );
+    expect(worldbuildingProfile.systemPrompt).not.toContain("fileId");
+    expect(worldbuildingProfile.systemPrompt).not.toContain("file_id");
+    expect(worldbuildingProfile.systemPrompt).not.toContain("bookId");
+    expect(worldbuildingProfile.systemPrompt).not.toContain("路径");
+    const characterProfile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "character_design"
+    )!;
+    expect(characterProfile.systemPrompt).toContain(
+      "每名人物都有稳定 character_id"
+    );
+    expect(characterProfile.systemPrompt).toContain("create_characters");
+    expect(characterProfile.systemPrompt).toContain(
+      "read_character_document"
+    );
+    expect(characterProfile.systemPrompt).toContain(
+      "replace_character_text"
+    );
+    expect(characterProfile.systemPrompt).toContain("连续性账本接管");
   });
 });

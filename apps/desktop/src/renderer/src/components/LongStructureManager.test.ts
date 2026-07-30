@@ -3,6 +3,8 @@ import source from "./LongStructureManager.vue?raw";
 
 describe("LongStructureManager", () => {
   it("keeps worldbuilding as the only editable structure category", () => {
+    expect(source).toContain("世界观与功能设置");
+    expect(source).toContain("其他内容请在对应工作区编辑");
     expect(source).toContain("props.snapshot.worldbuilding");
     expect(source).toContain("builder.createWorldbuilding");
     expect(source).toContain("builder.updateWorldbuilding");

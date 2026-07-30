@@ -81,10 +81,10 @@ describe("TreeNodeItem actions", () => {
         '<template v-else-if="hasLongBookAction">'
       ),
       source.indexOf(
-        '<template v-else-if="isLongStructureItem">'
+        '<template v-else-if="hasBookAction">'
       )
     );
-    expect(longMenu).toContain("<span>管理长篇结构</span>");
+    expect(longMenu).toContain("<span>世界观与功能设置</span>");
     expect(longMenu).toContain("<span>技能库绑定</span>");
     expect(longMenu).toContain("<span>素材库绑定</span>");
     expect(longMenu).not.toContain("导出可迁移项目");
@@ -97,14 +97,9 @@ describe("TreeNodeItem actions", () => {
     expect(longMenu.match(/is-danger/gu)).toHaveLength(1);
   });
 
-  it("keeps plot-point and chapter-card creation in the right editor", () => {
-    expect(source).not.toContain("isLongStructureCreateTarget");
-    expect(source).not.toContain("activateLongStructureAction('create')");
-    expect(source).not.toContain("longStructureCreateLabel");
-    expect(source).toContain("activateLongStructureAction('edit')");
-    expect(source).toContain("activateLongStructureAction('delete')");
-    expect(source).toContain(
-      '@long-structure-action="emit(\'longStructureAction\', $event)"'
-    );
+  it("keeps long-form content operations out of the resource tree menu", () => {
+    expect(source).not.toContain("isLongStructureItem");
+    expect(source).not.toContain("activateLongStructureAction");
+    expect(source).not.toContain("longStructureAction");
   });
 });

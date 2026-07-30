@@ -97,6 +97,33 @@ describe("LongAgentConfigStore", () => {
     ).toBe("custom:plot");
   });
 
+  it("upgrades only the retired worldbuilding builtin prompt", async () => {
+    const { store } = await createStore();
+    const input = editableDefaults();
+    const worldbuilding = input.agents.find(
+      ({ id }) => id === "worldbuilding"
+    )!;
+    worldbuilding.systemPrompt =
+      "你负责长篇世界观。先查询现有结构和相关正文，再提出可审阅的结构或文档变更；不得凭空覆盖未读取的设定。";
+    await store.save(input);
+
+    expect(
+      (await store.list()).agents.find(({ id }) => id === "worldbuilding")!
+        .systemPrompt
+    ).toBe(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
+        ({ id }) => id === "worldbuilding"
+      )!.systemPrompt
+    );
+
+    worldbuilding.systemPrompt = "自定义世界观提示词";
+    await store.save(input);
+    expect(
+      (await store.list()).agents.find(({ id }) => id === "worldbuilding")!
+        .systemPrompt
+    ).toBe("自定义世界观提示词");
+  });
+
   it("does not silently overwrite a malformed settings file", async () => {
     const { root, store } = await createStore();
     const path = join(root, "config", "long-workspace-agents.json");

@@ -109,19 +109,6 @@ export interface LongBookResourceNodeActionPayload {
   };
 }
 
-export type LongStructureTreeSection = "volume" | "arc" | "chapter";
-
-export type LongStructureTreeAction = "create" | "edit" | "delete";
-
-export interface LongStructureTreeActionPayload {
-  action: LongStructureTreeAction;
-  node: ResourceTreeNode & {
-    longBookId: string;
-    workspaceType: "long";
-    longStructureSection: LongStructureTreeSection;
-  };
-}
-
 export type BookResourceDialogMode =
   | "rename"
   | "remove"
@@ -165,12 +152,6 @@ export interface ResourceTreeNode {
   longWorkspaceSelection?: LongWorkspaceSelection;
   /** Identifies one of the fixed long-form character folders. */
   longCharacterGroup?: LongCharacterGroup;
-  /** Enables direct create/edit/delete controls for projected long-form structures. */
-  longStructureSection?: LongStructureTreeSection;
-  /** Stable structure ID for edit/delete actions; omitted on create-only roots. */
-  longStructureId?: string;
-  /** Optional parent ID used to preselect the owning scope for create actions. */
-  longStructureParentId?: string;
   catalogNodeType?:
     | "book"
     | "long-book"

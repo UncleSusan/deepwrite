@@ -6,7 +6,6 @@ export type BookTransferDialogMode = "open" | "import";
 export type BookTransferAction =
   | "open-book"
   | "open-long-book"
-  | "import-portable-long-book"
   | "migrate-write-claw-long-book"
   | "import-legacy-book";
 
@@ -38,22 +37,16 @@ const options = computed(() =>
       ]
     : [
         {
-          action: "import-portable-long-book" as const,
-          icon: "archive" as const,
-          title: "DeepWrite 长篇工程",
-          description: "导入可移植的 DeepWrite 长篇工程"
-        },
-        {
           action: "migrate-write-claw-long-book" as const,
           icon: "archive" as const,
-          title: "Write Claw 长篇",
-          description: "迁移 Write Claw 长篇，源文件保持不变"
+          title: "旧版本长篇",
+          description: "导入旧版本长篇，源文件保持不变"
         },
         {
           action: "import-legacy-book" as const,
           icon: "archive" as const,
-          title: "旧版书籍",
-          description: "导入旧版书籍并转换为当前文件结构"
+          title: "旧版本短篇/剧本",
+          description: "导入旧版本短篇或剧本并转换为当前文件结构"
         }
       ]
 );

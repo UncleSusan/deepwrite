@@ -15,10 +15,6 @@ import {
   isLongMigrationEvidenceCategoryId,
   type LongStructureMutationCompletion
 } from "../types/longWorkspace";
-import type {
-  LongStructureTreeAction,
-  LongStructureTreeSection
-} from "../types/workspace";
 import PopupSelect, {
   type PopupSelectOption,
   type PopupSelectValue
@@ -44,9 +40,6 @@ const props = withDefaults(
     snapshot: LongWorkspaceIndexSnapshot;
     disabled?: boolean;
     previewError?: string | null;
-    initialSection: LongStructureTreeSection | undefined;
-    initialAction: LongStructureTreeAction | undefined;
-    initialItemId: string | undefined;
   }>(),
   {
     disabled: false,
@@ -286,16 +279,20 @@ function confirmDelete(): void {
 </script>
 
 <template>
-  <section class="long-structure-manager" aria-label="长篇结构管理">
+  <section class="long-structure-manager" aria-label="世界观与功能设置">
     <header class="manager-header">
       <div>
         <p class="manager-eyebrow">LONG-FORM STRUCTURE</p>
-        <h2>结构管理</h2>
-        <p>手工修改会直接保存到本机；智能体发起的结构修改仍需审批。</p>
+        <h2>世界观与功能设置</h2>
+        <p>在这里管理世界观分类和长篇功能配置；其他内容请在对应工作区编辑。</p>
       </div>
     </header>
 
-    <div class="structure-panel-tabs" role="tablist" aria-label="长篇结构分区">
+    <div
+      class="structure-panel-tabs"
+      role="tablist"
+      aria-label="世界观与功能设置分区"
+    >
       <button
         v-for="panel in panelOptions"
         :id="`long-structure-panel-${panel.value}`"

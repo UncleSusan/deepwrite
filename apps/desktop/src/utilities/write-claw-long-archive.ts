@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { TextDecoder } from "node:util";
@@ -63,7 +64,7 @@ function checkedRange(
     length < 0 ||
     offset + length > buffer.length
   ) {
-    throw new Error(`Write Claw 长篇压缩包中的${label}已损坏。`);
+    throw new Error(`旧版本长篇压缩包中的${label}已损坏。`);
   }
 }
 
@@ -77,7 +78,7 @@ function decodeUtf8(bytes: Uint8Array, label: string): string {
 
 function normalizeArchivePath(rawName: string): string {
   if (rawName.includes("\\")) {
-    throw new Error("Write Claw 长篇压缩包包含反斜杠文件路径。");
+    throw new Error("旧版本长篇压缩包包含反斜杠文件路径。");
   }
   const name = rawName.normalize("NFC");
   if (
@@ -86,7 +87,7 @@ function normalizeArchivePath(rawName: string): string {
     name.startsWith("/") ||
     /^[a-zA-Z]:\//u.test(name)
   ) {
-    throw new Error("Write Claw 长篇压缩包包含不安全的文件路径。");
+    throw new Error("旧版本长篇压缩包包含不安全的文件路径。");
   }
   const directory = name.endsWith("/");
   const path = directory ? name.slice(0, -1) : name;
@@ -96,7 +97,7 @@ function normalizeArchivePath(rawName: string): string {
       (segment) => segment.length === 0 || segment === "." || segment === ".."
     )
   ) {
-    throw new Error("Write Claw 长篇压缩包包含不安全的文件路径。");
+    throw new Error("旧版本长篇压缩包包含不安全的文件路径。");
   }
   return directory ? `${path}/` : path;
 }
@@ -128,12 +129,12 @@ function readZipEntries(archive: Buffer): ZipEntry[] {
       archive.readUInt16LE(offset + 4) !== 0 ||
       archive.readUInt16LE(offset + 6) !== 0
     ) {
-      throw new Error("暂不支持分卷 Write Claw 长篇压缩包。");
+      throw new Error("暂不支持旧版本长篇分卷压缩包。");
     }
     const entriesOnDisk = archive.readUInt16LE(offset + 8);
     entryCount = archive.readUInt16LE(offset + 10);
     if (entriesOnDisk !== entryCount) {
-      throw new Error("Write Claw 长篇压缩包的分卷目录信息无效。");
+      throw new Error("旧版本长篇压缩包的分卷目录信息无效。");
     }
     directorySize = archive.readUInt32LE(offset + 12);
     directoryOffset = archive.readUInt32LE(offset + 16);
@@ -142,20 +143,20 @@ function readZipEntries(archive: Buffer): ZipEntry[] {
       directorySize === 0xffffffff ||
       directoryOffset === 0xffffffff
     ) {
-      throw new Error("暂不支持 ZIP64 Write Claw 长篇压缩包。");
+      throw new Error("暂不支持旧版本长篇 ZIP64 压缩包。");
     }
     endOffset = offset;
     break;
   }
   if (endOffset < 0 || directoryOffset < 0) {
-    throw new Error("无效的 Write Claw 长篇 zip：找不到压缩包目录。");
+    throw new Error("无效的旧版本长篇 ZIP：找不到压缩包目录。");
   }
   if (entryCount > MAX_ARCHIVE_ENTRIES) {
-    throw new Error("Write Claw 长篇压缩包文件数量超过安全上限。");
+    throw new Error("旧版本长篇压缩包文件数量超过安全上限。");
   }
   checkedRange(archive, directoryOffset, directorySize, "文件目录");
   if (directoryOffset + directorySize > endOffset) {
-    throw new Error("Write Claw 长篇压缩包的文件目录范围无效。");
+    throw new Error("旧版本长篇压缩包的文件目录范围无效。");
   }
 
   const entries: ZipEntry[] = [];
@@ -166,7 +167,7 @@ function readZipEntries(archive: Buffer): ZipEntry[] {
   for (let index = 0; index < entryCount; index += 1) {
     checkedRange(archive, cursor, 46, "文件目录项");
     if (archive.readUInt32LE(cursor) !== CENTRAL_DIRECTORY_SIGNATURE) {
-      throw new Error("Write Claw 长篇压缩包的文件目录已损坏。");
+      throw new Error("旧版本长篇压缩包的文件目录已损坏。");
     }
     const flags = archive.readUInt16LE(cursor + 8);
     const method = archive.readUInt16LE(cursor + 10);
@@ -180,45 +181,45 @@ function readZipEntries(archive: Buffer): ZipEntry[] {
     const recordLength = 46 + nameLength + extraLength + commentLength;
     checkedRange(archive, cursor, recordLength, "文件目录项");
     if (nameLength > MAX_ARCHIVE_PATH_BYTES) {
-      throw new Error("Write Claw 长篇压缩包包含过长的文件路径。");
+      throw new Error("旧版本长篇压缩包包含过长的文件路径。");
     }
     totalPathBytes += nameLength;
     if (totalPathBytes > MAX_TOTAL_ARCHIVE_PATH_BYTES) {
       throw new Error(
-        "Write Claw 长篇压缩包的文件路径总量超过安全上限。"
+        "旧版本长篇压缩包的文件路径总量超过安全上限。"
       );
     }
     const name = normalizeArchivePath(
       decodeUtf8(
         archive.subarray(cursor + 46, cursor + 46 + nameLength),
-        "Write Claw 长篇压缩包文件名"
+        "旧版本长篇压缩包文件名"
       )
     );
     const pathKey = archivePathKey(name);
     if (pathKeys.has(pathKey)) {
-      throw new Error(`Write Claw 长篇压缩包包含重复文件：${name}。`);
+      throw new Error(`旧版本长篇压缩包包含重复文件：${name}。`);
     }
     pathKeys.add(pathKey);
 
     if (!name.endsWith("/")) {
       if ((flags & 0x41) !== 0) {
-        throw new Error("Write Claw 长篇压缩包已加密，无法导入。");
+        throw new Error("旧版本长篇压缩包已加密，无法导入。");
       }
       if (method !== 0 && method !== 8) {
         throw new Error(
-          `Write Claw 长篇压缩包使用了不支持的压缩方式：${method}。`
+          `旧版本长篇压缩包使用了不支持的压缩方式：${method}。`
         );
       }
       totalUncompressedBytes += uncompressedSize;
       if (totalUncompressedBytes > MAX_TOTAL_UNCOMPRESSED_BYTES) {
-        throw new Error("Write Claw 长篇压缩包解压后总大小超过安全上限。");
+        throw new Error("旧版本长篇压缩包解压后总大小超过安全上限。");
       }
       if (
         uncompressedSize > 1024 * 1024 &&
         compressedSize * MAX_COMPRESSION_RATIO < uncompressedSize
       ) {
         throw new Error(
-          `Write Claw 长篇压缩包中的“${name}”压缩率异常，已拒绝导入。`
+          `旧版本长篇压缩包中的“${name}”压缩率异常，已拒绝导入。`
         );
       }
       entries.push({
@@ -234,7 +235,7 @@ function readZipEntries(archive: Buffer): ZipEntry[] {
     cursor += recordLength;
   }
   if (cursor !== directoryOffset + directorySize) {
-    throw new Error("Write Claw 长篇压缩包的文件目录长度不一致。");
+    throw new Error("旧版本长篇压缩包的文件目录长度不一致。");
   }
   return entries;
 }
@@ -269,7 +270,7 @@ function readZipEntry(
 ): Buffer {
   if (entry.uncompressedSize > maxEntryBytes) {
     throw new Error(
-      `Write Claw 长篇压缩包中的“${entry.name}”超过 ${Math.floor(
+      `旧版本长篇压缩包中的“${entry.name}”超过 ${Math.floor(
         maxEntryBytes / 1024 / 1024
       )} MB 安全上限。`
     );
@@ -277,7 +278,7 @@ function readZipEntry(
   checkedRange(archive, entry.localHeaderOffset, 30, `文件“${entry.name}”`);
   if (archive.readUInt32LE(entry.localHeaderOffset) !== LOCAL_FILE_SIGNATURE) {
     throw new Error(
-      `Write Claw 长篇压缩包中文件“${entry.name}”的本地头已损坏。`
+      `旧版本长篇压缩包中文件“${entry.name}”的本地头已损坏。`
     );
   }
   const localFlags = archive.readUInt16LE(entry.localHeaderOffset + 6);
@@ -286,7 +287,7 @@ function readZipEntry(
   const extraLength = archive.readUInt16LE(entry.localHeaderOffset + 28);
   if (nameLength > MAX_ARCHIVE_PATH_BYTES) {
     throw new Error(
-      `Write Claw 长篇压缩包中文件“${entry.name}”的本地路径过长。`
+      `旧版本长篇压缩包中文件“${entry.name}”的本地路径过长。`
     );
   }
   checkedRange(
@@ -301,7 +302,7 @@ function readZipEntry(
         entry.localHeaderOffset + 30,
         entry.localHeaderOffset + 30 + nameLength
       ),
-      "Write Claw 长篇压缩包文件名"
+      "旧版本长篇压缩包文件名"
     )
   );
   if (
@@ -310,7 +311,7 @@ function readZipEntry(
     (localFlags & 0x41) !== (entry.flags & 0x41)
   ) {
     throw new Error(
-      `Write Claw 长篇压缩包中文件“${entry.name}”的目录信息不一致。`
+      `旧版本长篇压缩包中文件“${entry.name}”的目录信息不一致。`
     );
   }
   const contentOffset = entry.localHeaderOffset + 30 + nameLength + extraLength;
@@ -334,7 +335,7 @@ function readZipEntry(
           });
   } catch {
     throw new Error(
-      `Write Claw 长篇压缩包中文件“${entry.name}”无法安全解压。`
+      `旧版本长篇压缩包中文件“${entry.name}”无法安全解压。`
     );
   }
   if (
@@ -342,7 +343,7 @@ function readZipEntry(
     crc32(content) !== entry.crc32
   ) {
     throw new Error(
-      `Write Claw 长篇压缩包中文件“${entry.name}”的完整性校验失败。`
+      `旧版本长篇压缩包中文件“${entry.name}”的完整性校验失败。`
     );
   }
   return content;
@@ -361,19 +362,78 @@ function parseJsonObject(content: Uint8Array, label: string): Record<string, unk
   }
 }
 
-function findUniqueEntry(
+interface AuthorityEntrySelection {
+  entry: ZipEntry | undefined;
+  warnings: string[];
+}
+
+function summarizedEntryPaths(entries: readonly ZipEntry[]): string {
+  const visible = entries
+    .slice(0, 8)
+    .map(
+      ({ name }) =>
+        `“${name.length > 240 ? `${name.slice(0, 237)}...` : name}”`
+    );
+  const remaining = entries.length - visible.length;
+  return `${visible.join("、")}${
+    remaining > 0 ? `等 ${entries.length} 个路径` : ""
+  }`;
+}
+
+function authorityEntryDigest(archive: Buffer, entry: ZipEntry): string {
+  return createHash("sha256")
+    .update(readZipEntry(archive, entry, MAX_AUTHORITY_JSON_ENTRY_BYTES))
+    .digest("hex");
+}
+
+function compareEntryPaths(left: ZipEntry, right: ZipEntry): number {
+  if (left.name.length !== right.name.length) {
+    return left.name.length - right.name.length;
+  }
+  return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+}
+
+function selectAuthorityEntry(
+  archive: Buffer,
   entries: readonly ZipEntry[],
   basename: string
-): ZipEntry | undefined {
+): AuthorityEntrySelection {
   const matches = entries.filter(
     ({ name }) => name === basename || name.endsWith(`/${basename}`)
   );
-  if (matches.length > 1) {
-    throw new Error(
-      `Write Claw 长篇压缩包包含多个 ${basename}，无法确定导入来源。`
-    );
+  if (matches.length <= 1) {
+    return { entry: matches[0], warnings: [] };
   }
-  return matches[0];
+
+  const rootEntry = matches.find(({ name }) => name === basename);
+  if (rootEntry) {
+    const ignored = matches.filter((entry) => entry !== rootEntry);
+    return {
+      entry: rootEntry,
+      warnings: [
+        `压缩包包含多份 ${basename}，已优先采用根目录“${basename}”，并忽略 ${summarizedEntryPaths(ignored)}。`
+      ]
+    };
+  }
+
+  const ordered = [...matches].sort(compareEntryPaths);
+  const selected = ordered[0]!;
+  const selectedDigest = authorityEntryDigest(archive, selected);
+  const identical = ordered
+    .slice(1)
+    .every((entry) => authorityEntryDigest(archive, entry) === selectedDigest);
+  if (identical) {
+    return {
+      entry: selected,
+      warnings: [
+        `压缩包包含多份内容相同的 ${basename}，已自动去重并采用“${selected.name}”；候选路径：${summarizedEntryPaths(ordered)}。`
+      ]
+    };
+  }
+
+  throw new Error(
+    `旧版本长篇压缩包包含多份内容不一致的 ${basename}：${summarizedEntryPaths(ordered)}。请只保留需要导入的一份后重新压缩。`
+  );
 }
 
 function workspaceFromBook(
@@ -389,16 +449,31 @@ function assertLongBook(book: Record<string, unknown> | null): void {
     book.book_type.trim() !== "" &&
     book.book_type !== "long"
   ) {
-    throw new Error("选择的 Write Claw 书籍不是长篇创作空间。");
+    throw new Error("选择的旧版本书籍不是长篇创作空间。");
   }
 }
 
 function readZipSource(archive: Buffer): WriteClawLongArchiveSource {
   const entries = readZipEntries(archive);
-  const bookEntry = findUniqueEntry(entries, "book.json");
-  const workspaceEntry = findUniqueEntry(entries, "long_workspace.json");
-  const metadataEntry = findUniqueEntry(entries, "metadata.json");
-  const warnings: string[] = [];
+  const bookSelection = selectAuthorityEntry(archive, entries, "book.json");
+  const workspaceSelection = selectAuthorityEntry(
+    archive,
+    entries,
+    "long_workspace.json"
+  );
+  const metadataSelection = selectAuthorityEntry(
+    archive,
+    entries,
+    "metadata.json"
+  );
+  const bookEntry = bookSelection.entry;
+  const workspaceEntry = workspaceSelection.entry;
+  const metadataEntry = metadataSelection.entry;
+  const warnings: string[] = [
+    ...bookSelection.warnings,
+    ...workspaceSelection.warnings,
+    ...metadataSelection.warnings
+  ];
   const standaloneWorkspace = workspaceEntry
     ? parseJsonObject(
         readZipEntry(
@@ -460,7 +535,7 @@ function readZipSource(archive: Buffer): WriteClawLongArchiveSource {
   const workspace = standaloneWorkspace ?? embeddedWorkspace;
   if (!workspace) {
     throw new Error(
-      "无效的 Write Claw 长篇压缩包：缺少 long_workspace.json 或 book.json.long_workspace。"
+      "无效的 旧版本长篇压缩包：缺少 long_workspace.json 或 book.json.long_workspace。"
     );
   }
   if (standaloneWorkspace && embeddedWorkspace) {
@@ -481,7 +556,7 @@ function readZipSource(archive: Buffer): WriteClawLongArchiveSource {
         archivePath: entry.name,
         content: decodeUtf8(
           readZipEntry(archive, entry),
-          `Write Claw 长篇压缩包文件“${entry.name}”`
+          `旧版本长篇压缩包文件“${entry.name}”`
         )
       });
     } catch (error: unknown) {
@@ -516,13 +591,13 @@ export function parseWriteClawLongSourceBytes(
 ): WriteClawLongArchiveSource {
   const content = Buffer.from(rawContent);
   if (content.byteLength > MAX_ARCHIVE_BYTES) {
-    throw new Error("Write Claw 长篇导入文件超过 256 MB 安全上限。");
+    throw new Error("旧版本长篇导入文件超过 256 MB 安全上限。");
   }
   if (looksLikeZip(content, sourceName)) {
     return readZipSource(content);
   }
   if (content.byteLength > MAX_AUTHORITY_JSON_ENTRY_BYTES) {
-    throw new Error("Write Claw 长篇 JSON 超过 128 MB 安全上限。");
+    throw new Error("旧版本长篇 JSON 超过 128 MB 安全上限。");
   }
   const value = parseJsonObject(content, sourceName || "长篇 JSON");
   const lowerName = sourceName.toLocaleLowerCase("en-US");
@@ -534,7 +609,7 @@ export function parseWriteClawLongSourceBytes(
     assertLongBook(value);
     const workspace = workspaceFromBook(value);
     if (!workspace) {
-      throw new Error("Write Claw book.json 缺少 long_workspace。");
+      throw new Error("旧版本 book.json 缺少 long_workspace。");
     }
     return {
       sourceKind: "book-json",
@@ -569,7 +644,7 @@ export async function readWriteClawLongSource(
       (error as NodeJS.ErrnoException).code === "ELOOP"
     ) {
       throw new Error(
-        "选择的 Write Claw 长篇导入来源不能是符号链接。"
+        "选择的 旧版本长篇导入来源不能是符号链接。"
       );
     }
     throw error;
@@ -578,11 +653,11 @@ export async function readWriteClawLongSource(
     const info = await handle.stat();
     if (!info.isFile() || info.nlink > 1) {
       throw new Error(
-        "选择的 Write Claw 长篇导入来源必须是无硬链接的普通文件。"
+        "选择的 旧版本长篇导入来源必须是无硬链接的普通文件。"
       );
     }
     if (info.size > MAX_ARCHIVE_BYTES) {
-      throw new Error("Write Claw 长篇导入文件超过 256 MB 安全上限。");
+      throw new Error("旧版本长篇导入文件超过 256 MB 安全上限。");
     }
     const canonicalPath = await realpath(path);
     const pathInfo = await lstat(path);
@@ -591,7 +666,7 @@ export async function readWriteClawLongSource(
       pathInfo.dev !== info.dev ||
       pathInfo.ino !== info.ino
     ) {
-      throw new Error("Write Claw 长篇导入来源在读取期间发生替换。");
+      throw new Error("旧版本长篇导入来源在读取期间发生替换。");
     }
     const content = await handle.readFile();
     const after = await handle.stat();
@@ -601,7 +676,7 @@ export async function readWriteClawLongSource(
       after.size !== content.byteLength ||
       content.byteLength > MAX_ARCHIVE_BYTES
     ) {
-      throw new Error("Write Claw 长篇导入来源在读取期间发生变化。");
+      throw new Error("旧版本长篇导入来源在读取期间发生变化。");
     }
     return parseWriteClawLongSourceBytes(content, canonicalPath);
   } finally {

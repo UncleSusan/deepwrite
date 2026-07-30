@@ -28,7 +28,16 @@ import {
   LongWorkspaceIndexSnapshotSchema,
   LongWorldbuildingCategoryIdSchema,
   LongWorldbuildingCategorySchema,
-  deriveLongForeshadowingStatusFromCommittedBeats
+  LongWorldbuildingItemIdSchema,
+  LongWorldbuildingItemSchema,
+  createEmptyLongMarkdownFileReference,
+  deriveLongForeshadowingStatusFromCommittedBeats,
+  longWorldbuildingContentPath,
+  longWorldbuildingFileId,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
+  longWorldbuildingOverviewContentPath,
+  longWorldbuildingOverviewFileId
 } from "./long-workspace";
 import type {
   LongForeshadowing,
@@ -225,6 +234,42 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
       orderedIds: uniqueIdArray(
         LongWorldbuildingCategoryIdSchema,
         "worldbuilding reorder id"
+      )
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("worldbuildingItem.create"),
+      categoryId: LongWorldbuildingCategoryIdSchema,
+      item: LongWorldbuildingItemSchema,
+      ...OptionalProvisionalIdShape
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("worldbuildingItem.update"),
+      categoryId: LongWorldbuildingCategoryIdSchema,
+      id: LongWorldbuildingItemIdSchema,
+      patch: nonEmptyPatch({
+        title: OperationTitleSchema.optional()
+      })
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("worldbuildingItem.delete"),
+      categoryId: LongWorldbuildingCategoryIdSchema,
+      id: LongWorldbuildingItemIdSchema,
+      ...DeleteControlShape
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("worldbuildingItem.reorder"),
+      categoryId: LongWorldbuildingCategoryIdSchema,
+      orderedIds: uniqueIdArray(
+        LongWorldbuildingItemIdSchema,
+        "worldbuilding item reorder id"
       )
     })
     .strict(),
@@ -656,6 +701,7 @@ export type LongWorkspaceFileIntent = z.infer<
 
 export const LONG_WORKSPACE_ENTITY_KINDS = [
   "worldbuilding-category",
+  "worldbuilding-item",
   "character",
   "volume",
   "arc",
@@ -719,14 +765,24 @@ export const LongWorkspaceOperationBatchSchema = z
   .object({
     baseRevision: z.number().int().nonnegative(),
     updatedAt: OperationTimestampSchema,
-    operations: z.array(LongWorkspaceOperationSchema).min(1).max(10_000),
+    operations: z.array(LongWorkspaceOperationSchema).max(10_000),
     documentWrites: z
       .array(LongDocumentWriteProposalSchema)
       .max(10_000)
       .default([]),
     expectedImpact: LongWorkspaceImpactSummarySchema.optional()
   })
-  .strict();
+  .strict()
+  .superRefine((batch, context) => {
+    if (batch.operations.length === 0 && batch.documentWrites.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["operations"],
+        message:
+          "A long workspace batch must contain an operation or document write."
+      });
+    }
+  });
 export type LongWorkspaceOperationBatch = z.infer<
   typeof LongWorkspaceOperationBatchSchema
 >;
@@ -901,7 +957,14 @@ function allWorkspaceFiles(
 ): LongWorkspaceFileReference[] {
   return [
     workspace.bookLine,
-    ...workspace.worldbuilding.map(({ file }) => file),
+    ...workspace.worldbuilding.flatMap((category) =>
+      category.format === "text"
+        ? [category.file]
+        : [
+            ...(category.overview ? [category.overview] : []),
+            ...category.items.map(({ file }) => file)
+          ]
+    ),
     ...workspace.characterFiles.flatMap((entry) => [
       entry.coreProfile,
       entry.relationships,
@@ -1120,6 +1183,12 @@ function normalizeLongWorkspaceOrders(
   workspace.worldbuilding.sort((left, right) => left.order - right.order);
   workspace.worldbuilding.forEach((category, index) => {
     category.order = index + 1;
+    if (category.format === "list") {
+      category.items.sort((left, right) => left.order - right.order);
+      category.items.forEach((item, itemIndex) => {
+        item.order = itemIndex + 1;
+      });
+    }
   });
 
   workspace.characters.sort(
@@ -2231,32 +2300,143 @@ function applyLongWorkspaceOperation(
         operation.category.id,
         "Worldbuilding category"
       );
-      ensureFilesAvailable(state, [operation.category.file]);
-      workspace.worldbuilding.push(structuredClone(operation.category));
-      addFileCreateIntent(
-        state,
-        operation.category.file,
-        `Create worldbuilding category ${operation.category.id}`
+      const category = structuredClone(operation.category);
+      if (category.format === "list" && !category.overview) {
+        category.overview = createEmptyLongMarkdownFileReference(
+          longWorldbuildingOverviewFileId(category.id),
+          longWorldbuildingOverviewContentPath(category.id),
+          workspace.updatedAt
+        );
+      }
+      const categoryFiles =
+        category.format === "text"
+          ? [category.file]
+          : [
+              ...(category.overview
+                ? [category.overview]
+                : []),
+              ...category.items.map(({ file }) => file)
+            ];
+      ensureFilesAvailable(state, categoryFiles);
+      workspace.worldbuilding.push(category);
+      categoryFiles.forEach((file) =>
+        addFileCreateIntent(
+          state,
+          file,
+          `Create worldbuilding category ${category.id}`
+        )
       );
-      markCreated(state, operation.category.id);
+      markCreated(state, category.id);
       registerProvisionalId(
         state,
         operation.provisionalId,
-        operation.category.id
+        category.id
       );
       break;
     }
     case "worldbuilding.update": {
-      const category =
-        workspace.worldbuilding[
-          findEntityIndex(
-            workspace.worldbuilding,
-            operation.id,
-            "Worldbuilding category"
-          )
-        ]!;
-      Object.assign(category, operation.patch);
-      markUpdated(state, category.id);
+      const categoryIndex = findEntityIndex(
+        workspace.worldbuilding,
+        operation.id,
+        "Worldbuilding category"
+      );
+      const category = workspace.worldbuilding[categoryIndex]!;
+      if (
+        operation.patch.format !== undefined &&
+        operation.patch.format !== category.format
+      ) {
+        const title = operation.patch.title ?? category.title;
+        if (category.format === "list") {
+          if (category.overview) {
+            addFileDeleteIntent(
+              state,
+              category.overview,
+              `Convert worldbuilding category ${category.id} to text`
+            );
+          }
+          category.items.forEach((item) =>
+            addFileDeleteIntent(
+              state,
+              item.file,
+              `Convert worldbuilding category ${category.id} to text`
+            )
+          );
+          const file = createEmptyLongMarkdownFileReference(
+            longWorldbuildingFileId(category.id),
+            longWorldbuildingContentPath(category.id),
+            workspace.updatedAt
+          );
+          ensureFilesAvailable(state, [file]);
+          addFileCreateIntent(
+            state,
+            file,
+            `Convert worldbuilding category ${category.id} to text`
+          );
+          workspace.worldbuilding[categoryIndex] = {
+            id: category.id,
+            title,
+            order: category.order,
+            format: "text",
+            contentAuthority: "markdown",
+            file
+          };
+        } else {
+          addFileDeleteIntent(
+            state,
+            category.file,
+            `Convert worldbuilding category ${category.id} to list`
+          );
+          const itemId = `worlditem_${category.id
+            .replace(/^world_/u, "")
+            .slice(0, 120)}:converted`;
+          const existingItems = workspace.worldbuilding.flatMap((candidate) =>
+            candidate.format === "list" ? candidate.items : []
+          );
+          assertNewEntityId(
+            existingItems,
+            itemId,
+            "Converted worldbuilding item"
+          );
+          const file = createEmptyLongMarkdownFileReference(
+            longWorldbuildingItemFileId(itemId),
+            longWorldbuildingItemContentPath(category.id, itemId),
+            workspace.updatedAt
+          );
+          const overview = createEmptyLongMarkdownFileReference(
+            longWorldbuildingOverviewFileId(category.id),
+            longWorldbuildingOverviewContentPath(category.id),
+            workspace.updatedAt
+          );
+          ensureFilesAvailable(state, [overview, file]);
+          addFileCreateIntent(
+            state,
+            overview,
+            `Convert worldbuilding category ${category.id} to list`
+          );
+          addFileCreateIntent(
+            state,
+            file,
+            `Convert worldbuilding category ${category.id} to list`
+          );
+          workspace.worldbuilding[categoryIndex] = {
+            id: category.id,
+            title,
+            order: category.order,
+            format: "list",
+            contentAuthority: "files",
+            overview,
+            items: [{
+              id: itemId,
+              title: "原文本内容",
+              order: 1,
+              file
+            }]
+          };
+        }
+      } else if (operation.patch.title !== undefined) {
+        category.title = operation.patch.title;
+      }
+      markUpdated(state, operation.id);
       break;
     }
     case "worldbuilding.delete": {
@@ -2266,13 +2446,129 @@ function applyLongWorkspaceOperation(
         "Worldbuilding category"
       );
       const category = workspace.worldbuilding[index]!;
-      addFileDeleteIntent(
-        state,
-        category.file,
-        `Delete worldbuilding category ${category.id}`
+      const files =
+        category.format === "text"
+          ? [category.file]
+          : [
+              ...(category.overview ? [category.overview] : []),
+              ...category.items.map(({ file }) => file)
+            ];
+      files.forEach((file) =>
+        addFileDeleteIntent(
+          state,
+          file,
+          `Delete worldbuilding category ${category.id}`
+        )
       );
       workspace.worldbuilding.splice(index, 1);
       markDeleted(state, category.id);
+      break;
+    }
+    case "worldbuildingItem.create": {
+      const category = workspace.worldbuilding[
+        findEntityIndex(
+          workspace.worldbuilding,
+          operation.categoryId,
+          "Worldbuilding category"
+        )
+      ]!;
+      if (category.format !== "list") {
+        operationError(
+          "invalid_reference",
+          `Worldbuilding category ${category.id} is not a list.`
+        );
+      }
+      const allItems = workspace.worldbuilding.flatMap((candidate) =>
+        candidate.format === "list" ? candidate.items : []
+      );
+      assertNewEntityId(allItems, operation.item.id, "Worldbuilding item");
+      ensureFilesAvailable(state, [operation.item.file]);
+      category.items.push(structuredClone(operation.item));
+      addFileCreateIntent(
+        state,
+        operation.item.file,
+        `Create worldbuilding item ${operation.item.id}`
+      );
+      markCreated(state, operation.item.id);
+      markUpdated(state, category.id);
+      registerProvisionalId(
+        state,
+        operation.provisionalId,
+        operation.item.id
+      );
+      break;
+    }
+    case "worldbuildingItem.update": {
+      const category = workspace.worldbuilding[
+        findEntityIndex(
+          workspace.worldbuilding,
+          operation.categoryId,
+          "Worldbuilding category"
+        )
+      ]!;
+      if (category.format !== "list") {
+        operationError("invalid_reference", "Worldbuilding category is not a list.");
+      }
+      const item = category.items[
+        findEntityIndex(category.items, operation.id, "Worldbuilding item")
+      ]!;
+      Object.assign(item, operation.patch);
+      markUpdated(state, item.id);
+      markUpdated(state, category.id);
+      break;
+    }
+    case "worldbuildingItem.delete": {
+      const category = workspace.worldbuilding[
+        findEntityIndex(
+          workspace.worldbuilding,
+          operation.categoryId,
+          "Worldbuilding category"
+        )
+      ]!;
+      if (category.format !== "list") {
+        operationError("invalid_reference", "Worldbuilding category is not a list.");
+      }
+      const itemIndex = findEntityIndex(
+        category.items,
+        operation.id,
+        "Worldbuilding item"
+      );
+      const item = category.items[itemIndex]!;
+      addFileDeleteIntent(
+        state,
+        item.file,
+        `Delete worldbuilding item ${item.id}`
+      );
+      category.items.splice(itemIndex, 1);
+      markDeleted(state, item.id);
+      markUpdated(state, category.id);
+      break;
+    }
+    case "worldbuildingItem.reorder": {
+      const category = workspace.worldbuilding[
+        findEntityIndex(
+          workspace.worldbuilding,
+          operation.categoryId,
+          "Worldbuilding category"
+        )
+      ]!;
+      if (category.format !== "list") {
+        operationError("invalid_reference", "Worldbuilding category is not a list.");
+      }
+      assertExactOrder(
+        category.items.map(({ id }) => id),
+        operation.orderedIds,
+        "Worldbuilding items"
+      );
+      updateOrdersById(
+        category.items,
+        operation.orderedIds,
+        (item, order) => {
+          item.order = order;
+        },
+        state
+      );
+      markUpdated(state, category.id);
       break;
     }
     case "worldbuilding.reorder": {
@@ -3401,15 +3697,10 @@ function applyDocumentWriteProposals(
           `Create proposal ${proposal.proposalId} must target a newly created file.`
         );
       }
-      if (
-        file.revision !== proposal.nextRevision ||
-        file.updatedAt !== proposal.updatedAt
-      ) {
-        operationError(
-          "invalid_document_write",
-          `Create proposal ${proposal.proposalId} must match its new file revision and timestamp.`
-        );
-      }
+      file.revision = proposal.nextRevision;
+      file.updatedAt = proposal.updatedAt;
+      intent.file.revision = proposal.nextRevision;
+      intent.file.updatedAt = proposal.updatedAt;
       continue;
     }
 
@@ -3482,6 +3773,11 @@ function workspaceEntityRecords(
   snapshot.worldbuilding.forEach((entity) =>
     add("worldbuilding-category", entity)
   );
+  snapshot.worldbuilding.forEach((category) => {
+    if (category.format === "list") {
+      category.items.forEach((item) => add("worldbuilding-item", item));
+    }
+  });
   snapshot.characters.forEach((entity) => add("character", entity));
   snapshot.plot.volumes.forEach((entity) => add("volume", entity));
   snapshot.plot.arcs.forEach((entity) => add("arc", entity));

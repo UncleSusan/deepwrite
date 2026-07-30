@@ -349,11 +349,21 @@ async function updateLongBookBindings(
 
 async function importWriteClawLongBook(): Promise<LongImportWriteClawResult | null> {
   const id = browserId("cmd_long_import_write_claw");
-  return LongImportWriteClawResultSchema.nullable().parse(
-    await invokeCommand<LongImportWriteClawResult | null>(
-      createEnvelope("long.importWriteClaw", {}, { id, correlationId: id })
-    )
-  );
+  try {
+    return LongImportWriteClawResultSchema.nullable().parse(
+      await invokeCommand<LongImportWriteClawResult | null>(
+        createEnvelope("long.importWriteClaw", {}, { id, correlationId: id })
+      )
+    );
+  } catch (error: unknown) {
+    const rawMessage =
+      error instanceof Error ? error.message : "导入旧版本长篇失败。";
+    const userMessage = rawMessage.replace(
+      /^[a-z][a-z0-9_.-]*:\s*/u,
+      ""
+    );
+    throw new Error(userMessage || "导入旧版本长篇失败。");
+  }
 }
 
 async function importPortableLongBook(): Promise<LongImportPortableResult | null> {

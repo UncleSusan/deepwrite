@@ -13,6 +13,8 @@ import type {
 } from "@deepwrite/contracts";
 import {
   LibraryAgentWorkspaceSnapshotSchema,
+  LongWorldbuildingFileChangeSchema,
+  LongWorkspaceOperationBatchSchema,
   LongWorkspaceRuntimeContextSchema,
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   ScriptWorkspaceSnapshotSchema,
@@ -189,6 +191,19 @@ function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
     ...proposal,
     ...(proposal.libraryTarget
       ? { libraryTarget: { ...proposal.libraryTarget } }
+      : {}),
+    ...(proposal.longWorldbuildingTarget
+      ? {
+          longWorldbuildingTarget: {
+            ...proposal.longWorldbuildingTarget,
+            batch: LongWorkspaceOperationBatchSchema.parse(
+              proposal.longWorldbuildingTarget.batch
+            ),
+            file: LongWorldbuildingFileChangeSchema.parse(
+              proposal.longWorldbuildingTarget.file
+            )
+          }
+        }
       : {}),
     ...(proposal.draftSectionCreationTarget
       ? {
@@ -396,6 +411,28 @@ function parseStoredDraftSectionCreationTarget(
   };
 }
 
+function parseStoredLongWorldbuildingTarget(
+  value: unknown
+): AgentEditProposal["longWorldbuildingTarget"] | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.bookId !== "string" ||
+    !value.bookId.trim() ||
+    !nonnegativeInteger(value.baseProjectRevision)
+  ) {
+    return undefined;
+  }
+  const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
+  const file = LongWorldbuildingFileChangeSchema.safeParse(value.file);
+  if (!batch.success || !file.success) return undefined;
+  return {
+    bookId: value.bookId,
+    batch: batch.data,
+    baseProjectRevision: value.baseProjectRevision,
+    file: file.data
+  };
+}
+
 function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined {
   if (
     !isRecord(value) ||
@@ -403,6 +440,7 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     typeof value.runId !== "string" ||
     typeof value.workspaceId !== "string" ||
     (value.stageId !== "library" &&
+      value.stageId !== "long-worldbuilding" &&
       !SHORT_WORKSPACE_STAGE_IDS.includes(
         value.stageId as (typeof SHORT_WORKSPACE_STAGE_IDS)[number]
       )) ||
@@ -442,9 +480,16 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     return undefined;
   }
   const libraryTarget = parseStoredLibraryTarget(value.libraryTarget);
+  const longWorldbuildingTarget = parseStoredLongWorldbuildingTarget(
+    value.longWorldbuildingTarget
+  );
   if (
     (value.stageId === "library" && !libraryTarget) ||
-    (value.stageId !== "library" && value.libraryTarget !== undefined)
+    (value.stageId !== "library" && value.libraryTarget !== undefined) ||
+    (value.stageId === "long-worldbuilding" &&
+      !longWorldbuildingTarget) ||
+    (value.stageId !== "long-worldbuilding" &&
+      value.longWorldbuildingTarget !== undefined)
   ) {
     return undefined;
   }
@@ -500,6 +545,7 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     ...(libraryTarget ? { libraryTarget } : {}),
+    ...(longWorldbuildingTarget ? { longWorldbuildingTarget } : {}),
     ...(draftSectionCreationTarget ? { draftSectionCreationTarget } : {}),
     ...(value.provisionalExpertSection
       ? { provisionalExpertSection: true }

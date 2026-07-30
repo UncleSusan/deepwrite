@@ -26,6 +26,9 @@ import {
   LongAgentProfileSchema,
   LongBookIdSchema,
   LongChapterCardIdSchema,
+  LongFileIdSchema,
+  LongFileRevisionSchema,
+  LongProjectRelativePathSchema,
   resolveLongAgentIdForRoot
 } from "./long-workspace";
 import { LongWorkspaceRuntimeContextSchema } from "./long-workspace-api";
@@ -950,6 +953,69 @@ export type LongMutationProposalPayload = z.infer<
   typeof LongMutationProposalPayloadSchema
 >;
 
+export const LongWorldbuildingFileChangeSchema = z
+  .object({
+    categoryId: z.string().trim().min(3).max(160),
+    itemId: z.string().trim().min(3).max(160).optional(),
+    fileId: LongFileIdSchema,
+    filePath: LongProjectRelativePathSchema,
+    title: z.string().trim().min(1).max(256),
+    operation: z.enum(["create", "write", "edit"]),
+    beforeText: z.string().max(1_000_000),
+    afterText: z.string().max(1_000_000),
+    beforeRevision: LongFileRevisionSchema.nullable(),
+    nextRevision: LongFileRevisionSchema
+  })
+  .strict();
+export type LongWorldbuildingFileChange = z.infer<
+  typeof LongWorldbuildingFileChangeSchema
+>;
+
+export const LongWorldbuildingFileProposalPayloadSchema =
+  LongProposalBasePayloadSchema.extend({
+    batch: LongWorkspaceOperationBatchSchema,
+    baseProjectRevision: z.number().int().nonnegative(),
+    files: z.array(LongWorldbuildingFileChangeSchema).min(1).max(100)
+  }).superRefine((value, context) => {
+    const fileIds = new Set(value.files.map(({ fileId }) => fileId));
+    if (fileIds.size !== value.files.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["files"],
+        message: "Worldbuilding file proposals must target unique files."
+      });
+    }
+    const proposedFileIds = new Set(
+      value.batch.documentWrites.map(({ fileId }) => fileId)
+    );
+    for (const [index, file] of value.files.entries()) {
+      if (
+        file.operation !== "create" &&
+        !proposedFileIds.has(file.fileId)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["files", index, "fileId"],
+          message:
+            "Worldbuilding write and edit changes must have a document write proposal."
+        });
+      }
+      if (
+        file.operation === "create" &&
+        file.beforeRevision !== null
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["files", index, "beforeRevision"],
+          message: "Created worldbuilding files cannot have a prior revision."
+        });
+      }
+    }
+  });
+export type LongWorldbuildingFileProposalPayload = z.infer<
+  typeof LongWorldbuildingFileProposalPayloadSchema
+>;
+
 export const LongChapterWriteProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({
     input: LongWriteChapterInputSchema
@@ -1027,17 +1093,17 @@ export const LongChapterReadinessSchema = z
       });
     }
     const expectedStatus =
-      value.missingFiles.length === 3
-        ? "empty"
-        : value.missingFiles.length === 0
-          ? "ready_to_commit"
+      value.missingFiles.length === 0
+        ? "ready_to_commit"
+        : value.missingFiles.includes("body")
+          ? "empty"
           : "partial";
     if (value.status !== expectedStatus) {
       context.addIssue({
         code: "custom",
         path: ["status"],
         message:
-          "Chapter readiness status must match the missing triplet files."
+          "Chapter readiness status must match the missing body evidence or legacy output files."
       });
     }
   });
@@ -1226,6 +1292,12 @@ export const LongMutationProposalEventEnvelopeSchema =
     payload: LongMutationProposalPayloadSchema
   }).superRefine(validateAgentEventContext);
 
+export const LongWorldbuildingFileProposalEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.worldbuilding_file_proposal"),
+    payload: LongWorldbuildingFileProposalPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
 export const LongChapterWriteProposalEventEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.chapter_write_proposal"),
@@ -1330,6 +1402,10 @@ export type WorkspaceEditorMutationEventEnvelope = Envelope<
 export type LongMutationProposalEventEnvelope = Envelope<
   LongMutationProposalPayload,
   "long.mutation_proposal"
+>;
+export type LongWorldbuildingFileProposalEventEnvelope = Envelope<
+  LongWorldbuildingFileProposalPayload,
+  "long.worldbuilding_file_proposal"
 >;
 export type LongChapterWriteProposalEventEnvelope = Envelope<
   LongChapterWriteProposalPayload,

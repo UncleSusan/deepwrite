@@ -6,7 +6,9 @@ import {
   LongLedgerCommitRecordSchema,
   LongProjectManifestSchema,
   LongWorkspaceIndexSnapshotSchema,
-  longLedgerCommitFileId
+  longLedgerCommitFileId,
+  longWorldbuildingItemFileId,
+  serializeLongWorldbuildingMarkdownList
 } from "@deepwrite/contracts";
 import {
   LONG_PORTABLE_BUNDLE_SCHEMA,
@@ -245,6 +247,95 @@ describe("long portable import parser", () => {
     );
   });
 
+  it("hydrates an older portable index that predates the continuity projection", () => {
+    const legacy = structuredClone(portableImportFixture());
+    const legacyLedger = legacy.index.value.ledger as unknown as Record<
+      string,
+      unknown
+    >;
+    delete legacyLedger.projection;
+    const legacyIndexContent = serializeJson(legacy.index.value);
+    legacy.index.sha256 = sha256(legacyIndexContent);
+    legacy.manifest.value.workspaceIndexFile.revision =
+      revision(legacyIndexContent) as never;
+    legacy.manifest.sha256 = sha256(
+      serializeJson(legacy.manifest.value)
+    );
+
+    const parsed = parseLongPortableExportBundle(legacy);
+
+    expect(parsed.index.value.ledger.projection).toEqual({
+      throughCommitId: null,
+      facts: [],
+      knowledge: [],
+      openLoops: [],
+      latestHandoff: null
+    });
+    expect(parsed.manifest.value.workspaceIndexFile.revision).toBe(
+      revision(serializeJson(parsed.index.value))
+    );
+  });
+
+  it("migrates an older aggregate worldbuilding list into item files", () => {
+    const legacy = structuredClone(portableImportFixture());
+    const category = legacy.index.value.worldbuilding[0] as unknown as Record<
+      string,
+      unknown
+    >;
+    const categoryFile = category.file as Record<string, unknown>;
+    const aggregateContent = serializeLongWorldbuildingMarkdownList([
+      {
+        id: "worlditem_legacy_rule",
+        title: "潮汐规则",
+        content: "逆潮每十年出现一次。"
+      }
+    ]);
+    const aggregateRevision = revision(aggregateContent);
+    const aggregateFile = legacy.files.find(
+      ({ id }) => id === categoryFile.id
+    )!;
+    aggregateFile.content = aggregateContent;
+    aggregateFile.revision = aggregateRevision;
+    aggregateFile.sha256 = sha256(aggregateContent);
+    category.format = "list";
+    category.contentAuthority = "markdown";
+    categoryFile.revision = aggregateRevision;
+
+    const legacyIndexContent = serializeJson(legacy.index.value);
+    legacy.index.sha256 = sha256(legacyIndexContent);
+    legacy.manifest.value.workspaceIndexFile.revision =
+      revision(legacyIndexContent) as never;
+    legacy.manifest.sha256 = sha256(
+      serializeJson(legacy.manifest.value)
+    );
+
+    const parsed = parseLongPortableExportBundle(legacy);
+    const migrated = parsed.index.value.worldbuilding[0]!;
+
+    expect(migrated).toMatchObject({
+      format: "list",
+      contentAuthority: "files",
+      items: [
+        {
+          id: "worlditem_legacy_rule",
+          title: "潮汐规则",
+          order: 1
+        }
+      ]
+    });
+    expect(
+      parsed.files.find(
+        ({ id }) =>
+          id === longWorldbuildingItemFileId("worlditem_legacy_rule")
+      )
+    ).toMatchObject({
+      content: "逆潮每十年出现一次。"
+    });
+    expect(parsed.files).not.toContainEqual(
+      expect.objectContaining({ id: categoryFile.id })
+    );
+  });
+
   it("rejects tampered content and manifest hashes", () => {
     const tamperedContent = structuredClone(portableImportFixture());
     tamperedContent.files[0]!.content += "篡改";
@@ -287,6 +378,60 @@ describe("long portable import parser", () => {
 
     expect(() => parseLongPortableExportBundle(tampered)).toThrow(
       /账本记录.*索引不一致/u
+    );
+  });
+
+  it("rejects a rehashed v3 record whose fact subject is not in the workspace", () => {
+    const orphanedFact = structuredClone(portableImportFixture());
+    rehashLedgerMutation(orphanedFact, (record) => {
+      record.schemaVersion = 3;
+      record.commitMessage = "伪造 v3 记录";
+      record.chapterSummary = {
+        timeline: "时间线无变化。",
+        characterStates: "人物状态无变化。",
+        factionStates: "阵营状态无变化。",
+        realmStates: "境界状态无变化。",
+        foreshadowingStates: "伏笔状态无变化。",
+        continuityNotes: "伪造世界事实。"
+      };
+      record.coverage = {
+        character: { status: "unchanged", note: "无人物变化。" },
+        plot: { status: "unchanged", note: "无剧情变化。" },
+        foreshadowing: { status: "unchanged", note: "无伏笔变化。" },
+        world: { status: "changed", note: "伪造世界事实。" },
+        knowledge: { status: "unchanged", note: "无认知变化。" },
+        openLoops: { status: "unchanged", note: "无未闭合事项。" }
+      };
+      record.chapterOutputs = {
+        characterState: "章末状态",
+        handoff: {
+          summary: "继续下一章。",
+          mustCarry: [],
+          nextChapterConstraints: [],
+          openLoops: []
+        }
+      };
+      record.factChanges = [
+        {
+          before: null,
+          after: {
+            factId: "fact_orphan-world",
+            domain: "world",
+            subjectId: "world_missing",
+            field: "rule",
+            value: "不存在的世界事实",
+            sourceCommitId: record.id,
+            sourceChapterCardId: record.chapterCardId,
+            evidence: "伪造证据。"
+          }
+        }
+      ];
+      record.knowledgeChanges = [];
+      record.openLoopChanges = [];
+    });
+
+    expect(() => parseLongPortableExportBundle(orphanedFact)).toThrow(
+      /孤立 subjectId/u
     );
   });
 

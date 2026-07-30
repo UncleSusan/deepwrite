@@ -4,8 +4,11 @@ import {
   LongChapterDispatchProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
   LongMutationProposalEventEnvelopeSchema,
+  LongWorldbuildingFileProposalEventEnvelopeSchema,
   SystemEventEnvelopeSchema,
-  createEnvelope
+  createEnvelope,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId
 } from "./index";
 
 const runtime = {
@@ -79,6 +82,56 @@ describe("long proposal event contracts", () => {
       },
       { id: "event-long-chapter", context }
     );
+    const worldbuildingFile = createEnvelope(
+      "long.worldbuilding_file_proposal",
+      {
+        ...common,
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:00.000Z",
+          operations: [
+            {
+              type: "worldbuildingItem.create" as const,
+              categoryId: "world_rules",
+              item: {
+                id: "worlditem_memory",
+                title: "记忆代价",
+                order: 1,
+                file: {
+                  id: longWorldbuildingItemFileId("worlditem_memory"),
+                  path: longWorldbuildingItemContentPath(
+                    "world_rules",
+                    "worlditem_memory"
+                  ),
+                  revision,
+                  updatedAt: "2026-07-26T12:00:00.000Z"
+                }
+              }
+            }
+          ],
+          documentWrites: []
+        },
+        baseProjectRevision: 11,
+        files: [
+          {
+            categoryId: "world_rules",
+            itemId: "worlditem_memory",
+            fileId: longWorldbuildingItemFileId("worlditem_memory"),
+            filePath: longWorldbuildingItemContentPath(
+              "world_rules",
+              "worlditem_memory"
+            ),
+            title: "记忆代价",
+            operation: "create" as const,
+            beforeText: "",
+            afterText: "",
+            beforeRevision: null,
+            nextRevision: revision
+          }
+        ]
+      },
+      { id: "event-long-worldbuilding-file", context }
+    );
     const dispatch = createEnvelope(
       "long.chapter_dispatch_proposal",
       {
@@ -133,6 +186,20 @@ describe("long proposal event contracts", () => {
         bookId: "longbook_proposal",
         baseProjectRevision: 11
       });
+    expect(
+      LongWorldbuildingFileProposalEventEnvelopeSchema.parse(
+        worldbuildingFile
+      ).payload
+    ).toMatchObject({
+      bookId: "longbook_proposal",
+      files: [
+        {
+          title: "记忆代价",
+          operation: "create",
+          beforeRevision: null
+        }
+      ]
+    });
     expect(LongChapterWriteProposalEventEnvelopeSchema.parse(chapter).payload.input)
       .toMatchObject({
         chapterCardId: "chapter_one",
@@ -158,10 +225,11 @@ describe("long proposal event contracts", () => {
         chapterCardId: "chapter_one",
         fileUpdates: []
       });
-    expect([mutation, dispatch, chapter, ledger].map(
+    expect([mutation, worldbuildingFile, dispatch, chapter, ledger].map(
       (event) => SystemEventEnvelopeSchema.parse(event).type
     )).toEqual([
       "long.mutation_proposal",
+      "long.worldbuilding_file_proposal",
       "long.chapter_dispatch_proposal",
       "long.chapter_write_proposal",
       "long.ledger_commit_proposal"

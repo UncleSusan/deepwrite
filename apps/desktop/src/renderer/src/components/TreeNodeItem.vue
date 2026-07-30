@@ -6,8 +6,6 @@ import type {
   CatalogResourceNodeActionPayload,
   LongBookResourceNodeAction,
   LongBookResourceNodeActionPayload,
-  LongStructureTreeAction,
-  LongStructureTreeActionPayload,
   ResourceDomain,
   ResourceTreeNode
 } from "../types/workspace";
@@ -35,7 +33,6 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
-  longStructureAction: [payload: LongStructureTreeActionPayload];
 }>();
 
 const open = ref(
@@ -90,14 +87,6 @@ const isExpertDraftSection = computed(
     props.node.shortAgentId === "expert_section_writer" &&
     Boolean(props.node.expertSectionId)
 );
-const isLongStructureItem = computed(
-  () =>
-    props.resourceDomain === "creation" &&
-    props.node.workspaceType === "long" &&
-    Boolean(props.node.longBookId) &&
-    Boolean(props.node.longStructureSection) &&
-    Boolean(props.node.longStructureId)
-);
 const hasActionMenu = computed(
   () =>
     Boolean(props.pinnable) ||
@@ -105,7 +94,6 @@ const hasActionMenu = computed(
     hasGroupAction.value ||
     hasBookAction.value ||
     hasLongBookAction.value ||
-    isLongStructureItem.value ||
     isExpertDraftSection.value
 );
 const hasNodeAction = computed(
@@ -213,22 +201,6 @@ function removeExpertSection(): void {
   actionMenuOpen.value = false;
   emit("select", props.node);
   emit("removeExpertSection", props.node);
-}
-
-function activateLongStructureAction(action: LongStructureTreeAction): void {
-  const node = props.node;
-  if (
-    node.workspaceType !== "long" ||
-    !node.longBookId ||
-    !node.longStructureSection
-  ) {
-    return;
-  }
-  actionMenuOpen.value = false;
-  emit("longStructureAction", {
-    action,
-    node: node as LongStructureTreeActionPayload["node"]
-  });
 }
 
 function handleDocumentPointerDown(event: PointerEvent): void {
@@ -377,7 +349,7 @@ onBeforeUnmount(() => {
               "
             >
               <AppIcon name="settings" :size="16" />
-              <span>管理长篇结构</span>
+              <span>世界观与功能设置</span>
             </button>
             <button
               class="tree-node-action-menu-item"
@@ -421,26 +393,6 @@ onBeforeUnmount(() => {
           >
             <AppIcon name="trash" :size="16" />
             <span>删除本地长篇</span>
-          </button>
-        </template>
-        <template v-else-if="isLongStructureItem">
-          <button
-            class="tree-node-action-menu-item"
-            type="button"
-            role="menuitem"
-            @click.stop="activateLongStructureAction('edit')"
-          >
-            <AppIcon name="edit" :size="16" />
-            <span>编辑</span>
-          </button>
-          <button
-            class="tree-node-action-menu-item is-danger"
-            type="button"
-            role="menuitem"
-            @click.stop="activateLongStructureAction('delete')"
-          >
-            <AppIcon name="trash" :size="16" />
-            <span>删除</span>
           </button>
         </template>
         <template v-else-if="hasBookAction">
@@ -615,7 +567,6 @@ onBeforeUnmount(() => {
         @resource-node-action="emit('resourceNodeAction', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @remove-expert-section="emit('removeExpertSection', $event)"
-        @long-structure-action="emit('longStructureAction', $event)"
       />
     </ul>
   </li>

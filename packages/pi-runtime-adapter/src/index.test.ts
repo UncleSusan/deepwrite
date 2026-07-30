@@ -245,6 +245,116 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(prompt).not.toContain("本轮完成后");
   });
 
+  it("keeps worldbuilding prompts on business ids and hides file controls", () => {
+    const profile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "worldbuilding"
+    )!;
+    const longWorkspace: LongWorkspaceRuntimeContext = {
+      bookId: "longbook_world_prompt",
+      title: "雾港长篇",
+      activeRoot: "worldbuilding",
+      activeAgentId: profile.id,
+      activeFileId: "file_world_rules:content",
+      activeFileRevision: "v1:0:00000000",
+      workspaceRevision: 3,
+      projectRevision: 5,
+      worldbuildingFocus: {
+        categoryTitle: "世界规则",
+        format: "text",
+        currentStage: {
+          kind: "text",
+          title: "世界规则",
+          text: { content: "雾潮期间禁止点燃蓝焰。" }
+        }
+      },
+      navigation: {
+        schemaVersion: 1,
+        revision: 3,
+        bookId: "longbook_world_prompt",
+        updatedAt: "2026-07-26T10:00:00.000Z",
+        counts: {
+          worldbuildingCategories: 1,
+          characters: 0,
+          volumes: 1,
+          arcs: 0,
+          chapterCards: 0,
+          storyEvents: 0,
+          foreshadowingThreads: 0,
+          committedChapters: 0
+        },
+        worldbuilding: [{
+          id: "world_rules",
+          title: "世界规则",
+          order: 1,
+          format: "text"
+        }],
+        characters: [],
+        volumes: [{ id: "volume_world_prompt", title: "第一卷", order: 1 }],
+        arcs: [],
+        chapterCards: [],
+        committedThroughChapterId: null
+      }
+    };
+    const input = {
+      runId: "run_world_prompt",
+      sessionId: "session_world_prompt",
+      prompt: "核对世界规则",
+      longAgentProfile: profile,
+      workspaceContext: { longWorkspace }
+    };
+
+    const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", input);
+    expect(systemPrompt).toContain("category_id");
+    expect(systemPrompt).toContain("item_id");
+    expect(systemPrompt).toContain("list_worldbuilding");
+    expect(systemPrompt).not.toContain("fileId");
+    expect(systemPrompt).not.toContain("file_id");
+    expect(systemPrompt).not.toContain("bookId");
+    expect(systemPrompt).not.toContain(" / worldbuilding");
+
+    const userPrompt = buildRuntimeUserPrompt(input);
+    expect(userPrompt).toContain("长篇作品: 《雾港长篇》");
+    expect(userPrompt).toContain("当前智能体: 世界观智能体");
+    expect(userPrompt).toContain(
+      "当前用户所处的世界观阶段: 文本型分类「世界规则」"
+    );
+    expect(userPrompt).toContain(
+      "当前阶段信息:\n雾潮期间禁止点燃蓝焰。"
+    );
+    expect(userPrompt).not.toContain("当前分类概览");
+    expect(userPrompt).not.toContain("当前根节点:");
+    expect(userPrompt).not.toContain("(worldbuilding)");
+    expect(userPrompt).not.toContain("longbook_world_prompt");
+    expect(userPrompt).not.toContain("file_world_rules:content");
+    expect(userPrompt).not.toContain("v1:0:00000000");
+    expect(userPrompt).not.toContain("session_world_prompt");
+    expect(userPrompt).not.toContain("run_world_prompt");
+
+    const listPrompt = buildRuntimeUserPrompt({
+      ...input,
+      workspaceContext: {
+        longWorkspace: {
+          ...longWorkspace,
+          worldbuildingFocus: {
+            categoryTitle: "势力",
+            format: "list",
+            currentStage: {
+              kind: "item",
+              title: "守夜人",
+              text: { content: "守夜人负责执行宵禁。" }
+            },
+            overview: { content: "各势力争夺港务权。" }
+          }
+        }
+      }
+    });
+    expect(listPrompt).toContain(
+      "当前用户所处的世界观阶段: 列表型分类「势力」 / 条目「守夜人」"
+    );
+    expect(listPrompt).toContain("当前阶段信息:\n守夜人负责执行宵禁。");
+    expect(listPrompt).toContain("当前分类概览:\n各势力争夺港务权。");
+  });
+
   it("lets configured long-form teams delegate with the same bounded tools", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"
@@ -919,7 +1029,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(events.filter((event) => event.type === "agent.completed")).toHaveLength(1);
   });
 
-  it("keeps multi-turn history but removes per-run context wrappers", async () => {
+  it("permanently injects context only into the first user message", async () => {
     const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
 
     for (const [index, prompt] of ["先检查人物", "再检查剧情"].entries()) {
@@ -956,15 +1066,185 @@ describe("DeepWrite Pi runtime adapter", () => {
       (message) => message.role === "user"
     );
 
-    expect(userMessages?.map((message) => message.content)).toEqual([
-      "先检查人物",
-      "再检查剧情"
-    ]);
-    expect(
-      agent?.state.messages.some((message) =>
-        String(message.content).includes("run_history_")
-      )
-    ).toBe(false);
+    expect(userMessages).toHaveLength(2);
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "【本次智能体会话固定上下文】"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "实时内容:\n第 1 轮快照"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain("先检查人物");
+    expect(userMessages?.[1]?.content).toBe("再检查剧情");
+    expect(String(userMessages?.[0]?.content)).not.toContain("run_history_1");
+  });
+
+  it("uses the same permanent-context transcript for creative workspace agents", async () => {
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+    const scriptWorkspace = screenplayWorkspace();
+    const profile = scriptAgentProfile();
+
+    for (const [index, prompt] of ["先规划第一集", "继续细化开场"].entries()) {
+      for await (const _event of runtime.start({
+        runId: `run_script_history_${index}`,
+        sessionId: "session_script_history",
+        prompt,
+        thinkingLevel: "off",
+        scriptAgentProfile: profile,
+        workspaceContext: { scriptWorkspace }
+      })) {
+        // Consume both turns before inspecting the script-agent transcript.
+      }
+    }
+
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          { state: { messages: Array<{ role?: string; content?: unknown }> } }
+        >;
+      }
+    ).conversationAgents;
+    const agent = cache.get(
+      "session_script_history:script:expert_section_writer"
+    );
+    const userMessages = agent?.state.messages.filter(
+      (message) => message.role === "user"
+    );
+
+    expect(userMessages).toHaveLength(2);
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "【本次智能体会话固定上下文】"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "剧本作品: 《雾港剧本》"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain("先规划第一集");
+    expect(userMessages?.[1]?.content).toBe("继续细化开场");
+
+    const shortProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
+      ({ id }) => id === "expert_section_writer"
+    )!;
+    const shortWorkspace = {
+      ...(scriptWorkspace as unknown as ShortWorkspaceSnapshot),
+      id: "short-history",
+      title: "雾港短篇"
+    };
+    for (const [index, prompt] of ["先规划第一节", "继续细化冲突"].entries()) {
+      for await (const _event of runtime.start({
+        runId: `run_short_history_${index}`,
+        sessionId: "session_short_history",
+        prompt,
+        thinkingLevel: "off",
+        agentProfile: shortProfile,
+        workspaceContext: { shortWorkspace }
+      })) {
+        // Consume both turns before inspecting the short-agent transcript.
+      }
+    }
+    const shortAgent = cache.get(
+      "session_short_history:expert_section_writer"
+    );
+    const shortUserMessages = shortAgent?.state.messages.filter(
+      (message) => message.role === "user"
+    );
+    expect(shortUserMessages).toHaveLength(2);
+    expect(String(shortUserMessages?.[0]?.content)).toContain(
+      "短篇作品: 《雾港短篇》"
+    );
+    expect(shortUserMessages?.[1]?.content).toBe("继续细化冲突");
+  });
+
+  it("permanently injects worldbuilding context only into the first user message", async () => {
+    const profile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "worldbuilding"
+    )!;
+    const longWorkspace: LongWorkspaceRuntimeContext = {
+      bookId: "longbook_world_history",
+      title: "雾港长篇",
+      activeRoot: "worldbuilding",
+      activeAgentId: profile.id,
+      activeFileId: "file_faction_watch:content",
+      activeFileRevision: "v1:3:1234abcd",
+      workspaceRevision: 3,
+      projectRevision: 5,
+      worldbuildingFocus: {
+        categoryTitle: "势力",
+        format: "list",
+        currentStage: {
+          kind: "item",
+          title: "守夜人",
+          text: { content: "守夜人负责执行宵禁。" }
+        },
+        overview: { content: "各势力争夺港务权。" }
+      },
+      navigation: {
+        schemaVersion: 1,
+        revision: 3,
+        bookId: "longbook_world_history",
+        updatedAt: "2026-07-30T10:00:00.000Z",
+        counts: {
+          worldbuildingCategories: 0,
+          characters: 0,
+          volumes: 1,
+          arcs: 0,
+          chapterCards: 0,
+          storyEvents: 0,
+          foreshadowingThreads: 0,
+          committedChapters: 0
+        },
+        worldbuilding: [],
+        characters: [],
+        volumes: [{ id: "volume_world_history", title: "第一卷", order: 1 }],
+        arcs: [],
+        chapterCards: [],
+        committedThroughChapterId: null
+      }
+    };
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+
+    for (const [index, prompt] of ["先检查世界规则", "再补充力量体系"].entries()) {
+      for await (const _event of runtime.start({
+        runId: `run_world_history_${index}`,
+        sessionId: "session_world_history",
+        prompt,
+        thinkingLevel: "off",
+        longAgentProfile: profile,
+        workspaceContext: { longWorkspace }
+      })) {
+        // Consume both turns before inspecting the cache-stable transcript.
+      }
+    }
+
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          { state: { messages: Array<{ role?: string; content?: unknown }> } }
+        >;
+      }
+    ).conversationAgents;
+    const agent = cache.get(
+      "session_world_history:long:worldbuilding:longbook_world_history"
+    );
+    const userMessages = agent?.state.messages.filter(
+      (message) => message.role === "user"
+    );
+
+    expect(userMessages).toHaveLength(2);
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "【本次智能体会话固定上下文】"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "长篇作品: 《雾港长篇》"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "当前用户所处的世界观阶段: 列表型分类「势力」 / 条目「守夜人」"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "当前分类概览:\n各势力争夺港务权。"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain("先检查世界规则");
+    expect(userMessages?.[1]?.content).toBe("再补充力量体系");
   });
 
   it("assembles only the active library tools and keeps entry bodies out of the prompt", async () => {
@@ -1021,11 +1301,24 @@ describe("DeepWrite Pi runtime adapter", () => {
     for await (const _event of runtime.start(input)) {
       // Consume the local run before inspecting its domain-scoped agent.
     }
+    for await (const _event of runtime.start({
+      ...input,
+      runId: "run_library_followup",
+      prompt: "继续整理人物关系"
+    })) {
+      // Consume the follow-up turn to verify the stable library prefix.
+    }
     const cache = (
       runtime as unknown as {
         conversationAgents: Map<
           string,
-          { state: { tools: Array<{ name: string }>; systemPrompt: string } }
+          {
+            state: {
+              tools: Array<{ name: string }>;
+              systemPrompt: string;
+              messages: Array<{ role?: string; content?: unknown }>;
+            };
+          }
         >;
       }
     ).conversationAgents;
@@ -1041,6 +1334,73 @@ describe("DeepWrite Pi runtime adapter", () => {
       "edit_material_entry"
     ]);
     expect(agent?.state.systemPrompt).toContain("素材库管理智能体");
+    const userMessages = agent?.state.messages.filter(
+      (message) => message.role === "user"
+    );
+    expect(userMessages).toHaveLength(2);
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "【本次智能体会话固定上下文】"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "当前资料库: 《人物素材》"
+    );
+    expect(userMessages?.[1]?.content).toBe("继续整理人物关系");
+  });
+
+  it("uses the same permanent-context transcript for skill-library agents", async () => {
+    const profile = DEFAULT_LIBRARY_AGENT_PROFILES.find(
+      ({ domain }) => domain === "skill"
+    )!;
+    const libraryWorkspace = {
+      domain: "skill" as const,
+      libraryId: "skill-library-history",
+      title: "悬疑写作技能",
+      libraryType: "short" as const,
+      kind: "general" as const,
+      overview: "沉淀悬疑写作检查方法",
+      readOnly: false,
+      projectRevision: 1,
+      entries: []
+    };
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+
+    for (const [index, prompt] of ["先检查技能结构", "继续补充验收标准"].entries()) {
+      for await (const _event of runtime.start({
+        runId: `run_skill_library_history_${index}`,
+        sessionId: "session_skill_library_history",
+        prompt,
+        thinkingLevel: "off",
+        libraryAgentProfile: profile,
+        workspaceContext: { libraryWorkspace }
+      })) {
+        // Consume both turns before inspecting the skill-library transcript.
+      }
+    }
+
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          { state: { messages: Array<{ role?: string; content?: unknown }> } }
+        >;
+      }
+    ).conversationAgents;
+    const agent = cache.get(
+      "session_skill_library_history:library:skill:skill-library-history"
+    );
+    const userMessages = agent?.state.messages.filter(
+      (message) => message.role === "user"
+    );
+
+    expect(userMessages).toHaveLength(2);
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "【本次智能体会话固定上下文】"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "当前资料库: 《悬疑写作技能》"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain("先检查技能结构");
+    expect(userMessages?.[1]?.content).toBe("继续补充验收标准");
   });
 
   it("injects spawn_subagent only when the active short agent has enabled definitions", async () => {
@@ -1199,6 +1559,47 @@ describe("DeepWrite Pi runtime adapter", () => {
         }
       },
       {
+        toolName: "write_worldbuilding_file",
+        eventType: "long.worldbuilding_file_proposal",
+        details: {
+          kind: "long-worldbuilding-file-proposal",
+          bookId: "longbook-child",
+          agentId: "worldbuilding",
+          batch: {
+            baseRevision: 3,
+            updatedAt: "2026-07-26T12:00:00.000Z",
+            operations: [],
+            documentWrites: [
+              {
+                proposalId: "proposal_world_rules",
+                fileId: "long.worldbuilding.world_rules",
+                content: "新规则",
+                mode: "replace",
+                expectedRevision: "v1:0:00000000",
+                nextRevision: "v1:3:12345678",
+                updatedAt: "2026-07-26T12:00:00.000Z",
+                reason: "更新世界规则文件"
+              }
+            ]
+          },
+          baseProjectRevision: 5,
+          summary: "更新世界规则文件",
+          files: [
+            {
+              categoryId: "world_rules",
+              fileId: "long.worldbuilding.world_rules",
+              filePath: "long/worldbuilding/world_rules/content.md",
+              title: "世界规则",
+              operation: "edit",
+              beforeText: "旧规则",
+              afterText: "新规则",
+              beforeRevision: "v1:0:00000000",
+              nextRevision: "v1:3:12345678"
+            }
+          ]
+        }
+      },
+      {
         toolName: "propose_long_chapter_dispatch",
         eventType: "long.chapter_dispatch_proposal",
         details: {
@@ -1213,7 +1614,7 @@ describe("DeepWrite Pi runtime adapter", () => {
               chapterCardId: "chapter_one",
               title: "第一章",
               status: "empty",
-              missingFiles: ["body", "character_state", "handoff"]
+              missingFiles: ["body"]
             }
           ],
           workspaceRevision: 3,
@@ -1233,11 +1634,11 @@ describe("DeepWrite Pi runtime adapter", () => {
             chapterCardId: "chapter_one",
             body: { content: "正文", baseRevision: "v1:0:00000000" },
             characterState: {
-              content: "人物状态",
+              content: "",
               baseRevision: "v1:0:00000000"
             },
             handoff: {
-              content: "下一章交接",
+              content: "",
               baseRevision: "v1:0:00000000"
             },
             baseWorkspaceRevision: 3,
@@ -1273,6 +1674,53 @@ describe("DeepWrite Pi runtime adapter", () => {
             placementDecisions: {},
             foreshadowingBeatDecisions: {},
             fileUpdates: [],
+            coverage: {
+              character: { status: "changed", note: "人物状态已核验。" },
+              plot: { status: "changed", note: "剧情推进已核验。" },
+              foreshadowing: { status: "unchanged", note: "伏笔状态已核验。" },
+              world: { status: "unchanged", note: "世界状态已核验。" },
+              knowledge: { status: "changed", note: "知识边界已核验。" },
+              openLoops: { status: "changed", note: "开放环已核验。" }
+            },
+            factMutations: [
+              {
+                factId: "fact_alice_location",
+                domain: "character",
+                subjectId: "character_alice",
+                field: "location",
+                value: "北门",
+                evidence: "正文写明林岚抵达北门。"
+              }
+            ],
+            knowledgeMutations: [
+              {
+                factId: "fact_alice_location",
+                audienceType: "reader",
+                audienceId: null,
+                level: "knows",
+                evidence: "正文直接呈现。"
+              }
+            ],
+            openLoopMutations: [
+              {
+                loopId: "loop_alice_return",
+                kind: "character",
+                status: "open",
+                detail: "林岚能否安全返回。",
+                subjectId: "character_alice",
+                factId: "fact_alice_location",
+                evidence: "章末仍有追兵。"
+              }
+            ],
+            chapterOutputs: {
+              characterState: "林岚已抵达北门。",
+              handoff: {
+                summary: "下一章从北门继续。",
+                mustCarry: ["林岚位于北门。"],
+                nextChapterConstraints: ["追兵仍在场。"],
+                openLoops: ["loop_alice_return"]
+              }
+            },
             baseWorkspaceRevision: 3,
             baseProjectRevision: 5
           },
@@ -1663,9 +2111,11 @@ describe("DeepWrite Pi runtime adapter", () => {
       (message) => message.role === "user"
     );
 
-    expect(userMessages?.map((message) => message.content)).toEqual([
-      "第二次素材学习"
-    ]);
+    expect(userMessages).toHaveLength(1);
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "【本次智能体会话固定上下文】"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain("第二次素材学习");
   });
 
   it("aborts an active run through the caller signal", async () => {

@@ -25,6 +25,7 @@ const props = defineProps<{
   boundToCurrentBook?: boolean;
   sectionTabs?: readonly { id: string; title: string }[];
   activeSectionId?: string | undefined;
+  canCreateSection?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   liveChange: [payload: { id: string; title: string; content: string }];
   insertSelection: [reference: EditorTextReference];
   selectSection: [sectionId: string];
+  createSection: [];
   selectDraftFile: [fileKind: "body" | "character-state"];
 }>();
 
@@ -553,6 +555,16 @@ onBeforeUnmount(() => {
           {{ section.title }}
         </button>
       </div>
+      <button
+        v-if="canCreateSection"
+        class="section-tabs-add"
+        type="button"
+        aria-label="在正文末尾新建小节"
+        title="新建小节"
+        @click="emit('createSection')"
+      >
+        <AppIcon name="plus" :size="16" />
+      </button>
     </nav>
 
     <div class="editor-toolbar">

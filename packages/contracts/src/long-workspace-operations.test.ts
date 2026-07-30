@@ -14,6 +14,8 @@ import {
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
   longWorldbuildingFileId,
+  longWorldbuildingOverviewContentPath,
+  longWorldbuildingOverviewFileId,
   previewLongWorkspaceOperations
 } from "./index";
 import type {
@@ -461,7 +463,7 @@ function createBatch() {
           id: "world_magic",
           title: "魔法规则",
           order: 99,
-          format: "list",
+          format: "text",
           contentAuthority: "markdown",
           file: newWorldFile
         }
@@ -671,6 +673,46 @@ describe("long workspace operation engine", () => {
     expect(deletedConnection.snapshot.plot.eventConnections).toHaveLength(0);
     expect(deletedConnection.impact.deletedEntityIds).toContain(
       "connection_letter_enables_bell"
+    );
+  });
+
+  it("adds an overview file to every newly-created list worldbuilding category", () => {
+    const source = workspace();
+    const result = applyLongWorkspaceOperations(
+      source,
+      LongWorkspaceOperationBatchSchema.parse({
+        baseRevision: source.revision,
+        updatedAt: later,
+        operations: [{
+          type: "worldbuilding.create",
+          category: {
+            id: "world_geography",
+            title: "地理",
+            order: source.worldbuilding.length + 1,
+            format: "list",
+            contentAuthority: "files",
+            items: []
+          }
+        }]
+      })
+    );
+    const category = result.snapshot.worldbuilding.find(
+      ({ id }) => id === "world_geography"
+    );
+    expect(category).toMatchObject({
+      format: "list",
+      overview: {
+        id: longWorldbuildingOverviewFileId("world_geography"),
+        path: longWorldbuildingOverviewContentPath("world_geography")
+      }
+    });
+    expect(result.fileIntents).toContainEqual(
+      expect.objectContaining({
+        action: "create",
+        file: expect.objectContaining({
+          id: longWorldbuildingOverviewFileId("world_geography")
+        })
+      })
     );
   });
 

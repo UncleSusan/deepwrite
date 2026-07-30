@@ -26,6 +26,7 @@ import {
   LongBookIdSchema,
   LongBookSchema,
   LongCommitChapterInputSchema,
+  LongContinuityProjectionSchema,
   LongLedgerCommitRecordSchema,
   LongFileIdSchema,
   LongFileRevisionSchema,
@@ -34,6 +35,7 @@ import {
   LongRollbackLastCommitInputSchema,
   LongWorkspaceIndexSnapshotSchema,
   LongWorkspaceOperationBatchSchema,
+  LongWorkspaceFileReferenceSchema,
   LongWriteChapterInputSchema,
   applyLongWorkspaceOperations,
   createLongBookSummary,
@@ -46,13 +48,20 @@ import {
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
+  longWorldbuildingContentPath,
   longWorldbuildingFileId,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
+  longWorldbuildingOverviewContentPath,
+  longWorldbuildingOverviewFileId,
   parseLongWorldbuildingMarkdownList,
-  serializeLongWorldbuildingMarkdownList,
+  previewLongWorkspaceOperations,
   type LongBook,
   type LongBookSummary,
   type LongCommitChapterInput,
   type LongCommitChapterResult,
+  type LongContinuityHandoff,
+  type LongContinuityProjection,
   type LongFileRevision,
   type LongForeshadowing,
   type LongForeshadowingStatus,
@@ -61,10 +70,10 @@ import {
   type LongRollbackLastCommitInput,
   type LongRollbackLastCommitResult,
   type LongWorkspaceFileReference,
+  type LongWorkspaceImpactPreview,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperationBatch,
   type LongWorkspaceOperationResult,
-  type LongWorldbuildingMarkdownList,
   type LongWriteChapterInput,
   type LongWriteChapterResult
 } from "@deepwrite/contracts";
@@ -262,10 +271,19 @@ export type StoreWriteLongChapterInput = Omit<
   LongWriteChapterInput,
   "bookId"
 >;
+type StoreCommitTypedContinuityFields = Pick<
+  LongCommitChapterInput,
+  | "coverage"
+  | "factMutations"
+  | "knowledgeMutations"
+  | "openLoopMutations"
+  | "chapterOutputs"
+>;
 export type StoreCommitLongChapterInput = Omit<
   LongCommitChapterInput,
-  "bookId"
->;
+  "bookId" | keyof StoreCommitTypedContinuityFields
+> &
+  Partial<StoreCommitTypedContinuityFields>;
 export type StoreRollbackLastCommitInput = Omit<
   LongRollbackLastCommitInput,
   "bookId"
@@ -319,6 +337,7 @@ interface LoadedPagedIndexedFile extends LoadedIndexedFile {
 interface IndexedFileSlot {
   reference: LongWorkspaceFileReference;
   expectedPath: string;
+  compatiblePaths?: readonly string[];
   kind: "markdown" | "json";
 }
 
@@ -937,13 +956,6 @@ export class LongProjectStore {
           file.disk.revision
         );
       }
-      const worldbuildingCategory = loaded.index.worldbuilding.find(
-        (category) => category.file.id === fileId
-      );
-      if (worldbuildingCategory?.format === "list") {
-        parseLongWorldbuildingMarkdownList(input.content);
-      }
-
       const nextBytes = encodeUtf8Strict(input.content);
       if (nextBytes.byteLength > MAX_DOCUMENT_BYTES) {
         throw new Error("长篇 Markdown 文件超过 32 MiB 限制。");
@@ -1017,6 +1029,26 @@ export class LongProjectStore {
     });
   }
 
+  async previewWorkspaceOperations(
+    projectDirectory: string,
+    batchInput: LongWorkspaceOperationBatch
+  ): Promise<LongWorkspaceImpactPreview> {
+    const canonical = await secureDirectory(
+      projectDirectory,
+      "长篇项目目录"
+    );
+    const requestedBatch =
+      LongWorkspaceOperationBatchSchema.parse(batchInput);
+    return await this.runExclusive(canonical, async () => {
+      const loaded = await this.loadProject(canonical);
+      const batch = await materializeWorldbuildingConversionBatch(
+        loaded,
+        requestedBatch
+      );
+      return previewLongWorkspaceOperations(loaded.index, batch);
+    });
+  }
+
   async applyWorkspaceOperations(
     projectDirectory: string,
     input: ApplyLongWorkspaceOperationsInput
@@ -1025,7 +1057,7 @@ export class LongProjectStore {
       projectDirectory,
       "长篇项目目录"
     );
-    const batch = LongWorkspaceOperationBatchSchema.parse(input.batch);
+    const requestedBatch = LongWorkspaceOperationBatchSchema.parse(input.batch);
     return await this.runExclusive(canonical, async () => {
       const loaded = await this.loadProject(canonical);
       if (input.expectedProjectRevision !== loaded.manifest.revision) {
@@ -1035,6 +1067,10 @@ export class LongProjectStore {
           loaded.manifest.revision
         );
       }
+      const batch = await materializeWorldbuildingConversionBatch(
+        loaded,
+        requestedBatch
+      );
       for (const operation of batch.operations) {
         const raw = operation as unknown as Record<string, unknown>;
         const targetId =
@@ -1097,17 +1133,7 @@ export class LongProjectStore {
           continue;
         }
         const proposal = proposalByFileId.get(intent.file.id);
-        const worldbuildingCategory = nextIndex.worldbuilding.find(
-          (category) => category.file.id === intent.file.id
-        );
-        const content =
-          proposal?.content ??
-          (worldbuildingCategory?.format === "list"
-            ? serializeLongWorldbuildingMarkdownList([])
-            : "");
-        if (worldbuildingCategory?.format === "list") {
-          parseLongWorldbuildingMarkdownList(content);
-        }
+        const content = proposal?.content ?? "";
         const actualRevision = createLongFileRevision(content);
         if (
           proposal &&
@@ -1163,12 +1189,6 @@ export class LongProjectStore {
           proposal.mode === "append"
             ? `${current.disk.content}${proposal.content}`
             : proposal.content;
-        const worldbuildingCategory = nextIndex.worldbuilding.find(
-          (category) => category.file.id === proposal.fileId
-        );
-        if (worldbuildingCategory?.format === "list") {
-          parseLongWorldbuildingMarkdownList(content);
-        }
         const actualRevision = createLongFileRevision(content);
         if (
           !longRevisionsMatchContent(
@@ -1202,47 +1222,6 @@ export class LongProjectStore {
           expectedSha256: current.disk.sha256
         });
       }
-      const previousWorldbuildingById = new Map(
-        loaded.index.worldbuilding.map((category) => [category.id, category])
-      );
-      for (const category of nextIndex.worldbuilding) {
-        const previous = previousWorldbuildingById.get(category.id);
-        if (
-          !previous ||
-          previous.format === category.format ||
-          proposalByFileId.has(category.file.id) ||
-          operationResult.fileIntents.some(
-            (intent) =>
-              intent.action === "create" &&
-              intent.file.id === category.file.id
-          )
-        ) {
-          continue;
-        }
-        const currentDescriptor = loaded.files.get(category.file.id);
-        if (!currentDescriptor) {
-          throw new Error(
-            `待转换的世界观文件不存在：${category.file.id}`
-          );
-        }
-        const current = await loadIndexedFile(loaded, category.file.id);
-        const content =
-          category.format === "list"
-            ? convertWorldbuildingTextToList(
-                category.id,
-                current.disk.content
-              )
-            : convertWorldbuildingListToText(current.disk.content);
-        const actualRevision = createLongFileRevision(content);
-        category.file.revision = actualRevision;
-        category.file.updatedAt = nextIndex.updatedAt;
-        fileOperations.push({
-          path: current.reference.path,
-          content,
-          expectedSha256: current.disk.sha256
-        });
-      }
-
       const indexContent = serializeJson(nextIndex);
       const nextManifest = LongProjectManifestSchema.parse({
         ...loaded.manifest,
@@ -1456,6 +1435,16 @@ export class LongProjectStore {
         ...rawInput,
         bookId: loaded.manifest.id
       });
+      const usesTypedContinuity =
+        input.factMutations.length > 0 ||
+        input.knowledgeMutations.length > 0 ||
+        input.openLoopMutations.length > 0 ||
+        input.chapterOutputs.characterState.trim().length > 0 ||
+        input.chapterOutputs.handoff.summary.trim().length > 0 ||
+        Object.values(input.coverage).some(
+          ({ status, note }) =>
+            status !== "not_applicable" || note.trim().length > 0
+        );
       assertProjectRevisions(
         loaded,
         input.baseWorkspaceRevision,
@@ -1506,11 +1495,17 @@ export class LongProjectStore {
             chapterFile.disk.revision
           );
         }
-        if (!chapterFile.disk.content.trim()) {
-          throw new Error(
-            "提交章节前必须完成正文、角色状态和下一章交接摘要三份文档。"
-          );
-        }
+      }
+      if (!chapterFiles[0]!.disk.content.trim()) {
+        throw new Error("提交章节前必须完成章节正文。");
+      }
+      if (
+        !usesTypedContinuity &&
+        chapterFiles.slice(1).some(({ disk }) => !disk.content.trim())
+      ) {
+        throw new Error(
+          "旧版连续性提交前必须完成正文、角色状态和下一章交接摘要三份文档。"
+        );
       }
       const newlyPinnedChecks: ProjectTransactionFileOperation[] =
         chapterFiles.map((chapterFile) => ({
@@ -1578,9 +1573,28 @@ export class LongProjectStore {
           );
         }
       }
+      if (usesTypedContinuity) {
+        assertLongContinuityMutationAuthority(loaded.index, input);
+      }
 
       const commitId = createId("commit");
       const timestamp = this.timestamp();
+      const continuityUpdate = usesTypedContinuity
+        ? materializeLongContinuityProjection({
+            projection: loaded.index.ledger.projection,
+            commitId,
+            chapterCardId: input.chapterCardId,
+            factMutations: input.factMutations,
+            knowledgeMutations: input.knowledgeMutations,
+            openLoopMutations: input.openLoopMutations,
+            handoff: input.chapterOutputs.handoff
+          })
+        : {
+            projection: loaded.index.ledger.projection,
+            factChanges: [],
+            knowledgeChanges: [],
+            openLoopChanges: []
+          };
       const placementChanges: LongLedgerCommitRecord["placementChanges"] =
         placements.map((placement) => {
           const decision = input.placementDecisions[placement.id]!;
@@ -1692,6 +1706,49 @@ export class LongProjectStore {
         content: string;
         expectedSha256: string | null;
       }> = [];
+      const generatedChapterOutputs = usesTypedContinuity
+        ? [
+            {
+              file: chapterFiles[1]!,
+              content: input.chapterOutputs.characterState
+            },
+            {
+              file: chapterFiles[2]!,
+              content: serializeLongContinuityHandoff(
+                input.chapterOutputs.handoff
+              )
+            }
+          ]
+        : [];
+      for (const output of generatedChapterOutputs) {
+        if (
+          encodeUtf8Strict(output.content).byteLength >
+          MAX_DOCUMENT_BYTES
+        ) {
+          throw new Error("账本生成的章节连续性文档超过 32 MiB 限制。");
+        }
+        const afterRevision = createLongFileRevision(output.content);
+        fileChanges.push({
+          fileId: output.file.reference.id,
+          path: output.file.reference.path,
+          mode: "replace",
+          before: {
+            revision: output.file.disk.revision,
+            content: output.file.disk.content
+          },
+          after: {
+            revision: afterRevision,
+            content: output.content
+          }
+        });
+        output.file.reference.revision = afterRevision;
+        output.file.reference.updatedAt = timestamp;
+        fileOperations.push({
+          path: output.file.reference.path,
+          content: output.content,
+          expectedSha256: output.file.disk.sha256
+        });
+      }
       for (const update of input.fileUpdates) {
         const file = await loadIndexedFile(loaded, update.fileId);
         const continuityRole = continuityFileRoles.get(update.fileId);
@@ -1766,7 +1823,7 @@ export class LongProjectStore {
       }
 
       const record = LongLedgerCommitRecordSchema.parse({
-        schemaVersion: 2,
+        schemaVersion: usesTypedContinuity ? 3 : 2,
         id: commitId,
         bookId: loaded.manifest.id,
         sequence: loaded.index.ledger.commits.length + 1,
@@ -1786,7 +1843,12 @@ export class LongProjectStore {
         placementChanges,
         foreshadowingBeatChanges,
         foreshadowingThreadChanges,
-        fileChanges
+        fileChanges,
+        coverage: input.coverage,
+        factChanges: continuityUpdate.factChanges,
+        knowledgeChanges: continuityUpdate.knowledgeChanges,
+        openLoopChanges: continuityUpdate.openLoopChanges,
+        chapterOutputs: input.chapterOutputs
       });
       const recordContent = serializeJson(record);
       if (
@@ -1806,6 +1868,7 @@ export class LongProjectStore {
       chapterEntry.commitId = commitId;
       loaded.index.ledger.committedThroughChapterId =
         input.chapterCardId;
+      loaded.index.ledger.projection = continuityUpdate.projection;
       loaded.index.ledger.commits.push({
         id: commitId,
         sequence: record.sequence,
@@ -1941,6 +2004,36 @@ export class LongProjectStore {
       if (!chapterEntry || chapterEntry.commitId !== record.id) {
         throw new Error("最后提交的章节状态已发生变化，不能安全回滚。");
       }
+      let rolledBackProjection = loaded.index.ledger.projection;
+      if (record.schemaVersion === 3) {
+        let previousV3Record: LongLedgerCommitRecord | null = null;
+        for (
+          let index = loaded.index.ledger.commits.length - 2;
+          index >= 0;
+          index -= 1
+        ) {
+          const previousEntry = loaded.index.ledger.commits[index]!;
+          const previousFile = await loadIndexedFile(
+            loaded,
+            previousEntry.recordFile.id
+          );
+          const previousRecord = LongLedgerCommitRecordSchema.parse(
+            parseJson(
+              previousFile.disk.content,
+              `长篇连续性账本记录 ${previousEntry.id}`
+            )
+          );
+          if (previousRecord.schemaVersion === 3) {
+            previousV3Record = previousRecord;
+            break;
+          }
+        }
+        rolledBackProjection = rollbackLongContinuityProjection({
+          projection: loaded.index.ledger.projection,
+          record,
+          previousV3Record
+        });
+      }
       const newlyUnpinnedChecks: ProjectTransactionFileOperation[] = [];
       for (const reference of [
         chapterEntry.body,
@@ -2037,7 +2130,12 @@ export class LongProjectStore {
         string,
         {
           path: string;
-          role: "relationships" | "current-state" | "history";
+          role:
+            | "relationships"
+            | "current-state"
+            | "history"
+            | "chapter-character-state"
+            | "chapter-handoff";
         }
       >();
       for (const entry of loaded.index.characterFiles) {
@@ -2052,6 +2150,16 @@ export class LongProjectStore {
         rollbackContinuityRoles.set(entry.history.id, {
           path: entry.history.path,
           role: "history"
+        });
+      }
+      if (record.schemaVersion === 3) {
+        rollbackContinuityRoles.set(chapterEntry.characterState.id, {
+          path: chapterEntry.characterState.path,
+          role: "chapter-character-state"
+        });
+        rollbackContinuityRoles.set(chapterEntry.handoff.id, {
+          path: chapterEntry.handoff.path,
+          role: "chapter-handoff"
         });
       }
       for (const change of record.fileChanges) {
@@ -2104,6 +2212,7 @@ export class LongProjectStore {
       loaded.index.ledger.commits.pop();
       loaded.index.ledger.committedThroughChapterId =
         record.previousCommittedThroughChapterId;
+      loaded.index.ledger.projection = rolledBackProjection;
       const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
         ...loaded.index,
         revision: loaded.index.revision + 1,
@@ -2193,21 +2302,18 @@ export class LongProjectStore {
         content === "" ? emptyRevision : createLongFileRevision(content),
       updatedAt: timestamp
     });
-    const emptyWorldbuildingList =
-      serializeLongWorldbuildingMarkdownList([]);
-
     const worldbuilding = DEFAULT_WORLD_CATEGORIES.map(
       ([id, title], index) => ({
         id,
         title,
         order: index + 1,
         format: "list" as const,
-        contentAuthority: "markdown" as const,
-        file: file(
-          longWorldbuildingFileId(id),
-          worldbuildingPath(id),
-          emptyWorldbuildingList
-        )
+        contentAuthority: "files" as const,
+        overview: file(
+          longWorldbuildingOverviewFileId(id),
+          longWorldbuildingOverviewContentPath(id)
+        ),
+        items: []
       })
     );
     const chapterBody = file(
@@ -2306,9 +2412,9 @@ export class LongProjectStore {
           content: "",
           expectedSha256: null as null
         },
-        ...worldbuilding.map(({ file: worldFile }) => ({
-          path: worldFile.path,
-          content: emptyWorldbuildingList,
+        ...worldbuilding.map(({ overview }) => ({
+          path: overview.path,
+          content: "",
           expectedSha256: null as null
         })),
         ...[chapterBody.path, chapterState.path, chapterHandoff.path].map(
@@ -2358,10 +2464,6 @@ export class LongProjectStore {
       manifest.workspaceIndexFile.path,
       MAX_INDEX_BYTES
     );
-    const index = LongWorkspaceIndexSnapshotSchema.parse(
-      parseJson(indexDisk.content, "长篇工作区索引")
-    );
-
     if (
       !longRevisionsMatchContent(
         manifest.workspaceIndexFile.revision,
@@ -2371,6 +2473,19 @@ export class LongProjectStore {
     ) {
       throw new Error("长篇 manifest 中的索引 revision 与实际文件不一致。");
     }
+    const rawIndex = parseJson(indexDisk.content, "长篇工作区索引");
+    if (
+      await migrateLegacyWorldbuildingStorage({
+        projectDirectory,
+        manifest,
+        manifestDisk,
+        indexDisk,
+        rawIndex
+      })
+    ) {
+      return await this.loadProject(projectDirectory);
+    }
+    const index = LongWorkspaceIndexSnapshotSchema.parse(rawIndex);
     if (manifest.id !== index.bookId) {
       throw new Error("长篇 manifest 与工作区索引的 book id 不一致。");
     }
@@ -2628,10 +2743,24 @@ function assertDirectlyMutableDocument(
     index.worldbuilding.some(
       (category) =>
         category.id.startsWith(MIGRATION_EVIDENCE_WORLD_ID_PREFIX) &&
-        category.file.id === fileId
+        (category.format === "text"
+          ? category.file.id === fileId
+          : category.overview?.id === fileId ||
+            category.items.some(({ file }) => file.id === fileId))
     )
   ) {
     throw new Error("只读迁移证据不能修改。");
+  }
+  if (
+    index.chapters.some(
+      (chapter) =>
+        chapter.characterState.id === fileId ||
+        chapter.handoff.id === fileId
+    )
+  ) {
+    throw new Error(
+      "章末角色状态和下一章接续包由连续性账本生成，不能直接编辑。"
+    );
   }
   assertMutableChapterDocument(index, fileId);
   if (
@@ -2647,6 +2776,413 @@ function assertDirectlyMutableDocument(
       "首次连续性提交后，人物关系、当前状态和历史轨迹只能通过连续性账本更新；核心档案仍可直接编辑。"
     );
   }
+}
+
+function continuityFactKey(
+  value: Pick<
+    LongContinuityProjection["facts"][number],
+    "domain" | "subjectId" | "field"
+  >
+): string {
+  return `${value.domain}\0${value.subjectId}\0${value.field.normalize("NFC")}`;
+}
+
+function continuityKnowledgeKey(
+  value: Pick<
+    LongContinuityProjection["knowledge"][number],
+    "factId" | "audienceType" | "audienceId"
+  >
+): string {
+  return `${value.factId}\0${value.audienceType}\0${value.audienceId ?? ""}`;
+}
+
+function assertLongContinuityMutationAuthority(
+  index: LongWorkspaceIndexSnapshot,
+  input: LongCommitChapterInput
+): void {
+  const characterIds = new Set(
+    index.characters.map(({ id }) => id)
+  );
+  const worldIds = new Set(
+    index.worldbuilding.map(({ id }) => id)
+  );
+  const plotIds = new Set<string>([
+    index.bookId,
+    ...index.plot.volumes.map(({ id }) => id),
+    ...index.plot.arcs.map(({ id }) => id),
+    ...index.plot.chapterCards.map(({ id }) => id),
+    ...index.plot.storyEvents.map(({ id }) => id),
+    ...index.plot.eventConnections.map(({ id }) => id),
+    ...index.plot.narrativePlacements.map(({ id }) => id)
+  ]);
+  const foreshadowingIds = new Set<string>(
+    index.plot.foreshadowing.flatMap((thread) => [
+      thread.id,
+      ...thread.beats.map(({ id }) => id)
+    ])
+  );
+  const updatedFileIds = new Set(
+    input.fileUpdates.map(({ fileId }) => fileId)
+  );
+  const characterFilesById = new Map(
+    index.characterFiles.map((entry) => [entry.characterId, entry] as const)
+  );
+
+  for (const fact of input.factMutations) {
+    const subjectExists =
+      fact.domain === "character" || fact.domain === "relationship"
+        ? characterIds.has(fact.subjectId)
+        : fact.domain === "world"
+          ? worldIds.has(fact.subjectId)
+          : fact.domain === "plot"
+            ? plotIds.has(fact.subjectId)
+            : foreshadowingIds.has(fact.subjectId);
+    if (!subjectExists) {
+      throw new Error(
+        `连续性事实 ${fact.factId} 的 ${fact.domain} subjectId 未关联工作区现有对象：${fact.subjectId}。`
+      );
+    }
+    if (fact.domain !== "character" && fact.domain !== "relationship") {
+      continue;
+    }
+    const files = characterFilesById.get(fact.subjectId);
+    if (!files) {
+      throw new Error(
+        `连续性事实 ${fact.factId} 缺少人物物化文件：${fact.subjectId}。`
+      );
+    }
+    const requiredFiles =
+      fact.domain === "character"
+        ? [files.currentState.id, files.history.id]
+        : [files.relationships.id, files.history.id];
+    if (requiredFiles.some((fileId) => !updatedFileIds.has(fileId))) {
+      throw new Error(
+        fact.domain === "character"
+          ? `人物事实 ${fact.factId} 必须同步更新人物当前状态和历史轨迹。`
+          : `关系事实 ${fact.factId} 必须同步更新人物关系和历史轨迹。`
+      );
+    }
+  }
+}
+
+function materializeLongContinuityProjection(input: {
+  projection: LongContinuityProjection;
+  commitId: string;
+  chapterCardId: string;
+  factMutations: LongCommitChapterInput["factMutations"];
+  knowledgeMutations: LongCommitChapterInput["knowledgeMutations"];
+  openLoopMutations: LongCommitChapterInput["openLoopMutations"];
+  handoff: LongContinuityHandoff;
+}): {
+  projection: LongContinuityProjection;
+  factChanges: LongLedgerCommitRecord["factChanges"];
+  knowledgeChanges: LongLedgerCommitRecord["knowledgeChanges"];
+  openLoopChanges: LongLedgerCommitRecord["openLoopChanges"];
+} {
+  const projection: LongContinuityProjection = {
+    throughCommitId: input.projection.throughCommitId,
+    facts: input.projection.facts.map((fact) => ({ ...fact })),
+    knowledge: input.projection.knowledge.map((knowledge) => ({
+      ...knowledge
+    })),
+    openLoops: input.projection.openLoops.map((loop) => ({ ...loop })),
+    latestHandoff:
+      input.projection.latestHandoff === null
+        ? null
+        : {
+            ...input.projection.latestHandoff,
+            mustCarry: [...input.projection.latestHandoff.mustCarry],
+            nextChapterConstraints: [
+              ...input.projection.latestHandoff.nextChapterConstraints
+            ],
+            openLoops: [...input.projection.latestHandoff.openLoops]
+          }
+  };
+  const factChanges: LongLedgerCommitRecord["factChanges"] = [];
+  const factIndexById = new Map(
+    projection.facts.map((fact, index) => [fact.factId, index] as const)
+  );
+  const factIndexByKey = new Map(
+    projection.facts.map(
+      (fact, index) => [continuityFactKey(fact), index] as const
+    )
+  );
+  for (const mutation of input.factMutations) {
+    const key = continuityFactKey(mutation);
+    const idIndex = factIndexById.get(mutation.factId);
+    const keyIndex = factIndexByKey.get(key);
+    if (
+      (idIndex === undefined) !== (keyIndex === undefined) ||
+      (idIndex !== undefined &&
+        keyIndex !== undefined &&
+        idIndex !== keyIndex)
+    ) {
+      throw new Error(
+        `连续性事实 ${mutation.factId} 不能更换事实 ID 或逻辑键。`
+      );
+    }
+    const after: LongContinuityProjection["facts"][number] = {
+      ...mutation,
+      sourceCommitId: input.commitId,
+      sourceChapterCardId: input.chapterCardId
+    };
+    const before = idIndex === undefined ? null : projection.facts[idIndex]!;
+    factChanges.push({
+      before: before === null ? null : { ...before },
+      after: { ...after }
+    });
+    if (idIndex === undefined) {
+      const nextIndex = projection.facts.length;
+      projection.facts.push(after);
+      factIndexById.set(after.factId, nextIndex);
+      factIndexByKey.set(key, nextIndex);
+    } else {
+      projection.facts[idIndex] = after;
+    }
+  }
+
+  const projectedFactIds = new Set(
+    projection.facts.map(({ factId }) => factId)
+  );
+  const knowledgeChanges: LongLedgerCommitRecord["knowledgeChanges"] = [];
+  const knowledgeIndexByKey = new Map(
+    projection.knowledge.map(
+      (knowledge, index) =>
+        [continuityKnowledgeKey(knowledge), index] as const
+    )
+  );
+  for (const mutation of input.knowledgeMutations) {
+    if (!projectedFactIds.has(mutation.factId)) {
+      throw new Error(
+        `连续性认知引用了不存在的事实：${mutation.factId}。`
+      );
+    }
+    const key = continuityKnowledgeKey(mutation);
+    const existingIndex = knowledgeIndexByKey.get(key);
+    const after: LongContinuityProjection["knowledge"][number] = {
+      ...mutation,
+      sourceCommitId: input.commitId,
+      sourceChapterCardId: input.chapterCardId
+    };
+    const before =
+      existingIndex === undefined
+        ? null
+        : projection.knowledge[existingIndex]!;
+    knowledgeChanges.push({
+      before: before === null ? null : { ...before },
+      after: { ...after }
+    });
+    if (existingIndex === undefined) {
+      knowledgeIndexByKey.set(key, projection.knowledge.length);
+      projection.knowledge.push(after);
+    } else {
+      projection.knowledge[existingIndex] = after;
+    }
+  }
+
+  const openLoopChanges: LongLedgerCommitRecord["openLoopChanges"] = [];
+  const openLoopIndexById = new Map(
+    projection.openLoops.map(
+      (loop, index) => [loop.loopId, index] as const
+    )
+  );
+  for (const mutation of input.openLoopMutations) {
+    if (
+      mutation.factId !== null &&
+      !projectedFactIds.has(mutation.factId)
+    ) {
+      throw new Error(
+        `未闭合事项引用了不存在的事实：${mutation.factId}。`
+      );
+    }
+    const existingIndex = openLoopIndexById.get(mutation.loopId);
+    const after: LongContinuityProjection["openLoops"][number] = {
+      ...mutation,
+      sourceCommitId: input.commitId,
+      sourceChapterCardId: input.chapterCardId
+    };
+    const before =
+      existingIndex === undefined
+        ? null
+        : projection.openLoops[existingIndex]!;
+    openLoopChanges.push({
+      before: before === null ? null : { ...before },
+      after: { ...after }
+    });
+    if (existingIndex === undefined) {
+      openLoopIndexById.set(after.loopId, projection.openLoops.length);
+      projection.openLoops.push(after);
+    } else {
+      projection.openLoops[existingIndex] = after;
+    }
+  }
+
+  projection.throughCommitId = input.commitId;
+  projection.latestHandoff = {
+    ...input.handoff,
+    mustCarry: [...input.handoff.mustCarry],
+    nextChapterConstraints: [...input.handoff.nextChapterConstraints],
+    openLoops: [...input.handoff.openLoops],
+    chapterCardId: input.chapterCardId,
+    commitId: input.commitId
+  };
+  return {
+    projection: LongContinuityProjectionSchema.parse(projection),
+    factChanges,
+    knowledgeChanges,
+    openLoopChanges
+  };
+}
+
+function sameContinuityEntity(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function rollbackLongContinuityProjection(input: {
+  projection: LongContinuityProjection;
+  record: LongLedgerCommitRecord;
+  previousV3Record: LongLedgerCommitRecord | null;
+}): LongContinuityProjection {
+  if (input.record.schemaVersion !== 3) {
+    throw new Error("只有 v3 连续性账本记录包含可回滚的类型化投影。");
+  }
+  if (input.projection.throughCommitId !== input.record.id) {
+    throw new Error(
+      "连续性投影水位与最后一次 v3 账本提交不一致，不能安全回滚。"
+    );
+  }
+  const projection: LongContinuityProjection = {
+    throughCommitId: input.projection.throughCommitId,
+    facts: input.projection.facts.map((fact) => ({ ...fact })),
+    knowledge: input.projection.knowledge.map((knowledge) => ({
+      ...knowledge
+    })),
+    openLoops: input.projection.openLoops.map((loop) => ({ ...loop })),
+    latestHandoff:
+      input.projection.latestHandoff === null
+        ? null
+        : {
+            ...input.projection.latestHandoff,
+            mustCarry: [...input.projection.latestHandoff.mustCarry],
+            nextChapterConstraints: [
+              ...input.projection.latestHandoff.nextChapterConstraints
+            ],
+            openLoops: [...input.projection.latestHandoff.openLoops]
+          }
+  };
+
+  for (const change of [...input.record.openLoopChanges].reverse()) {
+    const index = projection.openLoops.findIndex(
+      ({ loopId }) => loopId === change.after.loopId
+    );
+    if (
+      index < 0 ||
+      !sameContinuityEntity(projection.openLoops[index], change.after)
+    ) {
+      throw new Error(
+        `未闭合事项 ${change.after.loopId} 已在提交后变化，不能安全回滚。`
+      );
+    }
+    if (change.before === null) {
+      projection.openLoops.splice(index, 1);
+    } else {
+      projection.openLoops[index] = { ...change.before };
+    }
+  }
+  for (const change of [...input.record.knowledgeChanges].reverse()) {
+    const key = continuityKnowledgeKey(change.after);
+    const index = projection.knowledge.findIndex(
+      (knowledge) => continuityKnowledgeKey(knowledge) === key
+    );
+    if (
+      index < 0 ||
+      !sameContinuityEntity(projection.knowledge[index], change.after)
+    ) {
+      throw new Error("正文认知状态已在提交后变化，不能安全回滚。");
+    }
+    if (change.before === null) {
+      projection.knowledge.splice(index, 1);
+    } else {
+      projection.knowledge[index] = { ...change.before };
+    }
+  }
+  for (const change of [...input.record.factChanges].reverse()) {
+    const index = projection.facts.findIndex(
+      ({ factId }) => factId === change.after.factId
+    );
+    if (
+      index < 0 ||
+      !sameContinuityEntity(projection.facts[index], change.after)
+    ) {
+      throw new Error(
+        `连续性事实 ${change.after.factId} 已在提交后变化，不能安全回滚。`
+      );
+    }
+    if (change.before === null) {
+      projection.facts.splice(index, 1);
+    } else {
+      projection.facts[index] = { ...change.before };
+    }
+  }
+
+  const previousV3Record =
+    input.previousV3Record?.schemaVersion === 3
+      ? input.previousV3Record
+      : null;
+  projection.throughCommitId = previousV3Record?.id ?? null;
+  projection.latestHandoff =
+    previousV3Record === null
+      ? null
+      : {
+          ...previousV3Record.chapterOutputs.handoff,
+          mustCarry: [
+            ...previousV3Record.chapterOutputs.handoff.mustCarry
+          ],
+          nextChapterConstraints: [
+            ...previousV3Record.chapterOutputs.handoff
+              .nextChapterConstraints
+          ],
+          openLoops: [
+            ...previousV3Record.chapterOutputs.handoff.openLoops
+          ],
+          chapterCardId: previousV3Record.chapterCardId,
+          commitId: previousV3Record.id
+        };
+  return LongContinuityProjectionSchema.parse(projection);
+}
+
+function serializeLongContinuityHandoff(
+  handoff: LongContinuityHandoff
+): string {
+  const bullets = (items: readonly string[]): string =>
+    items.length === 0
+      ? "- 无"
+      : items
+          .map(
+            (item) =>
+              `- ${item.replace(/\r\n?/gu, "\n").replace(/\n/gu, "\n  ")}`
+          )
+          .join("\n");
+  return [
+    "# 下一章交接",
+    "",
+    "## 摘要",
+    "",
+    handoff.summary,
+    "",
+    "## 必须承接",
+    "",
+    bullets(handoff.mustCarry),
+    "",
+    "## 下一章约束",
+    "",
+    bullets(handoff.nextChapterConstraints),
+    "",
+    "## 未闭合事项",
+    "",
+    bullets(handoff.openLoops),
+    ""
+  ].join("\n");
 }
 
 function appendLongCharacterHistoryEntry(
@@ -2700,11 +3236,39 @@ function indexedFileSlots(
       expectedPath: BOOK_LINE_PATH,
       kind: "markdown"
     },
-    ...index.worldbuilding.map((category) => ({
-      reference: category.file,
-      expectedPath: worldbuildingPath(category.id),
-      kind: "markdown" as const
-    })),
+    ...index.worldbuilding.flatMap((category) =>
+      category.format === "text"
+        ? [{
+            reference: category.file,
+            expectedPath: longWorldbuildingContentPath(category.id),
+            compatiblePaths: [
+              legacyWorldbuildingPath(category.id)
+            ],
+            kind: "markdown" as const
+          }]
+        : [
+            ...(category.overview
+              ? [{
+                  reference: category.overview,
+                  expectedPath: longWorldbuildingOverviewContentPath(
+                    category.id
+                  ),
+                  kind: "markdown" as const
+                }]
+              : []),
+            ...category.items.map((item) => ({
+              reference: item.file,
+              expectedPath: longWorldbuildingItemContentPath(
+                category.id,
+                item.id
+              ),
+              compatiblePaths: [
+                legacyWorldbuildingItemPath(category.id, item.id)
+              ],
+              kind: "markdown" as const
+            }))
+          ]
+    ),
     ...index.characterFiles.flatMap((entry) => [
       {
         reference: entry.coreProfile,
@@ -2860,20 +3424,14 @@ function validatePortableAndCanonicalPaths(slots: IndexedFileSlot[]): void {
 }
 
 function isCompatibleRolePath(slot: IndexedFileSlot): boolean {
-  if (slot.reference.path === slot.expectedPath) return true;
+  if (
+    slot.reference.path === slot.expectedPath ||
+    slot.compatiblePaths?.includes(slot.reference.path)
+  ) {
+    return true;
+  }
   if (slot.kind === "json") return false;
   const parts = slot.reference.path.split("/");
-  if (
-    slot.expectedPath.startsWith("long/worldbuilding/") &&
-    parts.length === 4
-  ) {
-    return (
-      parts[0] === "long" &&
-      parts[1] === "worldbuilding" &&
-      Boolean(parts[2]) &&
-      parts[3] === "content.md"
-    );
-  }
   if (
     slot.expectedPath.startsWith("long/characters/") &&
     parts.length === 4
@@ -2903,8 +3461,15 @@ function storageKey(id: string): string {
   return createHash("sha256").update(id, "utf8").digest("hex").slice(0, 32);
 }
 
-function worldbuildingPath(categoryId: string): string {
+function legacyWorldbuildingPath(categoryId: string): string {
   return `long/worldbuilding/${storageKey(categoryId)}/content.md`;
+}
+
+function legacyWorldbuildingItemPath(
+  categoryId: string,
+  itemId: string
+): string {
+  return `long/worldbuilding/${storageKey(categoryId)}/items/${storageKey(itemId)}.md`;
 }
 
 function characterPath(characterId: string, filename: string): string {
@@ -2996,6 +3561,102 @@ async function loadIndexedFile(
   descriptor.reference.updatedAt = disk.updatedAt;
   descriptor.disk = disk;
   return descriptor as LoadedIndexedFile;
+}
+
+async function materializeWorldbuildingConversionBatch(
+  loaded: LoadedLongProject,
+  requestedBatch: LongWorkspaceOperationBatch
+): Promise<LongWorkspaceOperationBatch> {
+  const structuralPreview = previewLongWorkspaceOperations(
+    loaded.index,
+    {
+      ...requestedBatch,
+      expectedImpact: undefined
+    }
+  );
+  const structuralResult = applyLongWorkspaceOperations(
+    loaded.index,
+    {
+      ...requestedBatch,
+      expectedImpact: structuralPreview.impact
+    }
+  );
+  const previousById = new Map(
+    loaded.index.worldbuilding.map((category) => [category.id, category])
+  );
+  const documentWrites = [...requestedBatch.documentWrites];
+  const writtenFileIds = new Set(
+    documentWrites.map(({ fileId }) => fileId)
+  );
+
+  for (const category of structuralResult.snapshot.worldbuilding) {
+    const previous = previousById.get(category.id);
+    if (!previous || previous.format === category.format) continue;
+
+    let targetFile: LongWorkspaceFileReference | undefined;
+    let content = "";
+    if (previous.format === "list" && category.format === "text") {
+      const parts: string[] = [];
+      if (previous.overview) {
+        const overviewSource = await loadIndexedFile(
+          loaded,
+          previous.overview.id
+        );
+        const overviewBody = overviewSource.disk.content.replace(/\s+$/u, "");
+        if (overviewBody) {
+          parts.push(["## 概览", "", overviewBody].join("\n"));
+        }
+      }
+      for (const item of previous.items) {
+        const source = await loadIndexedFile(loaded, item.file.id);
+        const body = source.disk.content.replace(/\s+$/u, "");
+        parts.push(
+          [
+            `<!-- 原世界观条目 ID：${item.id} -->`,
+            `## ${item.title}`,
+            ...(body ? ["", body] : [])
+          ].join("\n")
+        );
+      }
+      targetFile = category.file;
+      content = parts.length ? `${parts.join("\n\n")}\n` : "";
+    } else if (
+      previous.format === "text" &&
+      category.format === "list"
+    ) {
+      const target = category.items[0];
+      if (!target) continue;
+      const source = await loadIndexedFile(loaded, previous.file.id);
+      targetFile = target.file;
+      content = source.disk.content;
+    }
+    if (!targetFile || writtenFileIds.has(targetFile.id)) continue;
+
+    documentWrites.push({
+      proposalId: `proposal_${createHash("sha256")
+        .update(
+          `worldbuilding-conversion:${requestedBatch.baseRevision}:${category.id}:${category.format}`,
+          "utf8"
+        )
+        .digest("hex")
+        .slice(0, 24)}`,
+      fileId: targetFile.id,
+      content,
+      mode: "create",
+      expectedRevision: null,
+      nextRevision: createLongFileRevision(content),
+      updatedAt: requestedBatch.updatedAt,
+      reason: `转换世界观分类“${category.title}”为${
+        category.format === "text" ? "文本" : "列表"
+      }格式并保留原内容`
+    });
+    writtenFileIds.add(targetFile.id);
+  }
+
+  return LongWorkspaceOperationBatchSchema.parse({
+    ...requestedBatch,
+    documentWrites
+  });
 }
 
 interface ScannedSearchFile {
@@ -3277,75 +3938,190 @@ function requireIndexedFileReference(
   return file;
 }
 
-const WORLDBUILDING_CONVERTED_ITEM_CHARACTERS = 900_000;
-const WORLDBUILDING_RESERVED_ITEM_MARKER =
-  "<!-- deepwrite-world-item:";
-
-function convertWorldbuildingListToText(content: string): string {
-  const items = parseLongWorldbuildingMarkdownList(content);
-  if (items.length === 0) return "";
-  return `${items
-    .map((item) => {
-      const body = item.content.replace(/\s+$/u, "");
-      return [
-        `<!-- 原列表条目 ID：${item.id} -->`,
-        `## ${item.title}`,
-        ...(body ? ["", body] : [])
-      ].join("\n");
-    })
-    .join("\n\n")}\n`;
-}
-
-function convertWorldbuildingTextToList(
-  categoryId: string,
-  content: string
-): string {
-  if (!content.trim()) {
-    return serializeLongWorldbuildingMarkdownList([]);
-  }
-  if (content.includes(WORLDBUILDING_RESERVED_ITEM_MARKER)) {
-    throw new Error(
-      "文本中包含 DeepWrite 列表格式的保留标记；为避免改写原文，请先删除或改写该标记后再切换为列表格式。"
-    );
-  }
-  const chunks = splitWorldbuildingText(content);
-  const key = storageKey(categoryId).slice(0, 16);
-  const items: LongWorldbuildingMarkdownList = chunks.map(
-    (chunk, index) => ({
-      id: `worlditem_converted-${key}-${index + 1}`,
-      title:
-        chunks.length === 1
-          ? "原文本内容"
-          : `原文本内容（${index + 1}/${chunks.length}）`,
-      content: chunk
-    })
-  );
-  return serializeLongWorldbuildingMarkdownList(items);
-}
-
-function splitWorldbuildingText(content: string): string[] {
-  const chunks: string[] = [];
-  let offset = 0;
-  while (offset < content.length) {
-    let end = Math.min(
-      content.length,
-      offset + WORLDBUILDING_CONVERTED_ITEM_CHARACTERS
-    );
-    if (
-      end < content.length &&
-      end > offset &&
-      /[\uD800-\uDBFF]/u.test(content[end - 1]!)
-    ) {
-      end -= 1;
-    }
-    chunks.push(content.slice(offset, end));
-    offset = end;
-  }
-  return chunks;
-}
-
 function serializeJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function unknownRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+async function migrateLegacyWorldbuildingStorage(input: {
+  projectDirectory: string;
+  manifest: LongProjectManifest;
+  manifestDisk: SecureTextFile;
+  indexDisk: SecureTextFile;
+  rawIndex: unknown;
+}): Promise<boolean> {
+  const rawIndex = unknownRecord(input.rawIndex);
+  if (!rawIndex || !Array.isArray(rawIndex.worldbuilding)) return false;
+
+  let migrated = false;
+  const fileOperations: ProjectTransactionFileOperation[] = [];
+  const worldbuilding: unknown[] = [];
+  for (const rawCategory of rawIndex.worldbuilding) {
+    const category = unknownRecord(rawCategory);
+    if (!category || category.format !== "list") {
+      worldbuilding.push(rawCategory);
+      continue;
+    }
+    const categoryId =
+      typeof category.id === "string" ? category.id : "";
+    const overviewPath = longWorldbuildingOverviewContentPath(categoryId);
+    const overview = {
+      id: longWorldbuildingOverviewFileId(categoryId),
+      path: overviewPath,
+      revision: createLongFileRevision(""),
+      updatedAt:
+        typeof rawIndex.updatedAt === "string"
+          ? rawIndex.updatedAt
+          : input.manifest.updatedAt
+    };
+    if (category.contentAuthority === "files") {
+      if (category.overview !== undefined) {
+        try {
+          await lstat(join(input.projectDirectory, overviewPath));
+          worldbuilding.push(rawCategory);
+          continue;
+        } catch (error: unknown) {
+          if (!isNodeError(error, "ENOENT")) throw error;
+        }
+      } else {
+        try {
+          const existingOverview = await readSecureTextFile(
+            input.projectDirectory,
+            overviewPath,
+            MAX_DOCUMENT_BYTES
+          );
+          worldbuilding.push({
+            ...category,
+            overview: {
+              ...overview,
+              revision: existingOverview.revision,
+              updatedAt: existingOverview.updatedAt
+            }
+          });
+          migrated = true;
+          continue;
+        } catch (error: unknown) {
+          if (!isNodeError(error, "ENOENT")) throw error;
+        }
+      }
+      fileOperations.push({
+        path: overviewPath,
+        content: "",
+        expectedSha256: null
+      });
+      worldbuilding.push({
+        ...category,
+        overview
+      });
+      migrated = true;
+      continue;
+    }
+    const legacyFile = LongWorkspaceFileReferenceSchema.parse(category.file);
+    const legacyDisk = await readSecureTextFile(
+      input.projectDirectory,
+      legacyFile.path,
+      MAX_DOCUMENT_BYTES
+    );
+    if (
+      !longRevisionsMatchContent(
+        legacyFile.revision,
+        legacyDisk.revision,
+        legacyDisk.bytes
+      )
+    ) {
+      throw new Error(
+        `旧版世界观分类 ${categoryId} 的索引 revision 与聚合文件不一致。`
+      );
+    }
+    const legacyItems = parseLongWorldbuildingMarkdownList(
+      legacyDisk.content
+    );
+    const items = legacyItems.map((item, itemIndex) => {
+      const path = longWorldbuildingItemContentPath(categoryId, item.id);
+      const bytes = encodeUtf8Strict(item.content);
+      if (bytes.byteLength > MAX_DOCUMENT_BYTES) {
+        throw new Error(
+          `旧版世界观条目“${item.title}”超过 32 MiB，无法迁移。`
+        );
+      }
+      const file: LongWorkspaceFileReference = {
+        id: longWorldbuildingItemFileId(item.id),
+        path,
+        revision: createLongFileRevision(bytes),
+        updatedAt: legacyFile.updatedAt
+      };
+      fileOperations.push({
+        path,
+        content: item.content,
+        expectedSha256: null
+      });
+      return {
+        id: item.id,
+        title: item.title,
+        order: itemIndex + 1,
+        file
+      };
+    });
+    fileOperations.push({
+      action: "delete",
+      path: legacyFile.path,
+      expectedSha256: legacyDisk.sha256
+    });
+    fileOperations.push({
+      path: overviewPath,
+      content: "",
+      expectedSha256: null
+    });
+    worldbuilding.push({
+      id: category.id,
+      title: category.title,
+      order: category.order,
+      format: "list",
+      contentAuthority: "files",
+      overview,
+      items
+    });
+    migrated = true;
+  }
+  if (!migrated) return false;
+
+  const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    worldbuilding
+  });
+  const indexContent = serializeJson(nextIndex);
+  const nextManifest = LongProjectManifestSchema.parse({
+    ...input.manifest,
+    workspaceIndexFile: {
+      ...input.manifest.workspaceIndexFile,
+      revision: createLongFileRevision(indexContent)
+    }
+  });
+  await commitLongProjectTransaction({
+    projectRoot: input.projectDirectory,
+    operations: [
+      ...fileOperations,
+      {
+        path: LONG_WORKSPACE_INDEX_PATH,
+        content: indexContent,
+        expectedSha256: input.indexDisk.sha256
+      },
+      {
+        path: MANIFEST_PATH,
+        content: serializeJson(nextManifest),
+        expectedSha256: input.manifestDisk.sha256
+      }
+    ],
+    maxFileBytes: MAX_LEDGER_RECORD_BYTES
+  });
+  return true;
 }
 
 function parseJson(text: string, label: string): unknown {

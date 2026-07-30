@@ -9,8 +9,11 @@ import {
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
+  createEmptyLongMarkdownFileReference,
   createShortWorkspaceContentRevision,
   createEnvelope,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
   type DeepWriteApi,
   type ModelSettings,
   type SessionAbortCommandPayload,
@@ -843,6 +846,91 @@ describe("agent conversation controller", () => {
       }],
       baseProjectRevision: 7,
       acceptedDirectoryRevision: "v1:12:1234abcd"
+    });
+    restored.dispose();
+  });
+
+  it("persists long worldbuilding targets for the standard approval card", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-long-worldbuilding-proposal-test";
+    const file = createEmptyLongMarkdownFileReference(
+      longWorldbuildingItemFileId("worlditem_memory"),
+      longWorldbuildingItemContentPath(
+        "world_rules",
+        "worlditem_memory"
+      ),
+      "2026-07-30T12:00:00.000Z"
+    );
+    const controller = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        workspaceId: "long:longbook_test",
+        stageId: "long-worldbuilding",
+        documentId: file.id,
+        title: "记忆代价",
+        baseRevision: `long-missing:${file.id}`,
+        proposedRevision: file.revision,
+        proposedText: "",
+        longWorldbuildingTarget: {
+          bookId: "longbook_test",
+          baseProjectRevision: 11,
+          batch: {
+            baseRevision: 7,
+            updatedAt: "2026-07-30T12:00:00.000Z",
+            operations: [{
+              type: "worldbuildingItem.create",
+              categoryId: "world_rules",
+              item: {
+                id: "worlditem_memory",
+                title: "记忆代价",
+                order: 1,
+                file
+              }
+            }],
+            documentWrites: []
+          },
+          file: {
+            categoryId: "world_rules",
+            itemId: "worlditem_memory",
+            fileId: file.id,
+            filePath: file.path,
+            title: "记忆代价",
+            operation: "create",
+            beforeText: "",
+            afterText: "",
+            beforeRevision: null,
+            nextRevision: file.revision
+          }
+        }
+      })
+    );
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    expect(
+      restored.getEditProposal("run_edit_1", "proposal_1")
+        ?.longWorldbuildingTarget
+    ).toMatchObject({
+      bookId: "longbook_test",
+      baseProjectRevision: 11,
+      file: {
+        itemId: "worlditem_memory",
+        operation: "create",
+        beforeRevision: null
+      },
+      batch: {
+        operations: [{ type: "worldbuildingItem.create" }],
+        documentWrites: []
+      }
     });
     restored.dispose();
   });

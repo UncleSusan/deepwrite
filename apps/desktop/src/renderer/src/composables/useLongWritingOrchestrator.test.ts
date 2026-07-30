@@ -316,7 +316,7 @@ describe("useLongWritingOrchestrator", () => {
       currentIndex: 0,
       phase: "error",
       retryPoint: "after_write",
-      error: "章节三件套保存检查返回了错误的章卡。"
+      error: "章节正文保存检查返回了错误的章卡。"
     });
     expect(test.startLedger).not.toHaveBeenCalled();
   });

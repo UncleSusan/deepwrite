@@ -5,6 +5,7 @@ import type {
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
+import { buildAgentTextDiff } from "../utils/agentTextDiff";
 import AppIcon from "./AppIcon.vue";
 
 const props = defineProps<{
@@ -18,12 +19,45 @@ const emit = defineEmits<{
   retryPreview: [eventId: string];
 }>();
 
-const pendingCount = computed(() => props.items.length);
+const pendingCount = computed(
+  () => props.items.filter(({ status }) => status !== "accepted").length
+);
+const completedCount = computed(
+  () => props.items.filter(({ status }) => status === "accepted").length
+);
+
+const worldbuildingFileCards = computed(() => {
+  const cards = new Map<
+    string,
+    Array<{
+      file: Extract<
+        LongWorkspaceProposalItem["event"],
+        { type: "long.worldbuilding_file_proposal" }
+      >["payload"]["files"][number];
+      diff: ReturnType<typeof buildAgentTextDiff>;
+    }>
+  >();
+  for (const item of props.items) {
+    if (item.event.type !== "long.worldbuilding_file_proposal") continue;
+    cards.set(
+      item.event.id,
+      item.event.payload.files.map((file) => ({
+        file,
+        diff: buildAgentTextDiff(file.beforeText, file.afterText)
+      }))
+    );
+  }
+  return cards;
+});
 
 function proposalTitle(item: LongWorkspaceProposalItem): string {
   switch (item.event.type) {
     case "long.mutation_proposal":
       return "结构变更";
+    case "long.worldbuilding_file_proposal":
+      return item.event.payload.files.length === 1
+        ? item.event.payload.files[0]!.title
+        : `${item.event.payload.files.length} 个世界观文件`;
     case "long.chapter_dispatch_proposal":
       return "串行写作调度";
     case "long.chapter_write_proposal":
@@ -47,6 +81,8 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
   switch (item.event.type) {
     case "long.mutation_proposal":
       return "确认应用";
+    case "long.worldbuilding_file_proposal":
+      return "确认写入并保存";
     case "long.chapter_dispatch_proposal":
       return "确认启动串行写作";
     case "long.chapter_write_proposal":
@@ -54,6 +90,43 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
     case "long.ledger_commit_proposal":
       return "确认提交";
   }
+}
+
+function proposalStatusText(item: LongWorkspaceProposalItem): string {
+  if (item.status === "accepted") return "已接受";
+  if (item.status === "waiting") return "等待前序文件";
+  if (item.status === "previewing") {
+    return item.approvalMode === "auto-approve"
+      ? "自动预览中"
+      : "正在预览";
+  }
+  if (item.status === "submitting") {
+    return item.approvalMode === "auto-approve"
+      ? "自动保存中"
+      : "正在处理";
+  }
+  if (item.status === "error") {
+    return item.approvalMode === "auto-approve"
+      ? "自动保存失败"
+      : "需要重试";
+  }
+  return item.approvalMode === "auto-approve"
+    ? "等待自动保存"
+    : "等待确认";
+}
+
+function worldbuildingOperationLabel(
+  operation: "create" | "write" | "edit"
+): string {
+  if (operation === "create") return "创建文件";
+  if (operation === "write") return "写入文件";
+  return "编辑文件";
+}
+
+function diffLineMark(type: "context" | "addition" | "deletion"): string {
+  if (type === "addition") return "+";
+  if (type === "deletion") return "−";
+  return " ";
 }
 
 function structureImpactTotal(item: LongWorkspaceProposalItem): number {
@@ -72,7 +145,13 @@ const workspaceFilePaths = computed(() => {
   if (!index) return new Map(entries);
   entries.push([index.bookLine.id, index.bookLine.path]);
   for (const category of index.worldbuilding) {
-    entries.push([category.file.id, category.file.path]);
+    if (category.format === "text") {
+      entries.push([category.file.id, category.file.path]);
+    } else {
+      for (const item of category.items) {
+        entries.push([item.file.id, item.file.path]);
+      }
+    }
   }
   for (const character of index.characterFiles) {
     entries.push(
@@ -110,6 +189,7 @@ function proposalFilePath(
 
 const entityKindLabels: Record<LongWorkspaceEntityChange["kind"], string> = {
   "worldbuilding-category": "世界观分类",
+  "worldbuilding-item": "世界观条目",
   character: "人物",
   volume: "卷",
   arc: "剧情弧",
@@ -150,7 +230,8 @@ function entitySnapshotText(
     <header>
       <div>
         <span>智能体写入</span>
-        <strong>{{ pendingCount }} 项处理中</strong>
+        <strong v-if="pendingCount">{{ pendingCount }} 项处理中</strong>
+        <strong v-else>{{ completedCount }} 项已保存</strong>
       </div>
       <small>所有变更均按当前书籍隔离</small>
     </header>
@@ -168,6 +249,8 @@ function entitySnapshotText(
               :name="
                 item.event.type === 'long.ledger_commit_proposal'
                   ? 'ledger'
+                  : item.event.type === 'long.worldbuilding_file_proposal'
+                    ? 'file'
                   : item.event.type === 'long.chapter_write_proposal' ||
                       item.event.type === 'long.chapter_dispatch_proposal'
                     ? 'edit'
@@ -184,27 +267,100 @@ function entitySnapshotText(
             class="long-proposal-status"
             :class="`is-${item.status}`"
           >
-            {{
-              item.status === "previewing"
-                ? item.approvalMode === "auto-approve"
-                  ? "自动预览中"
-                  : "正在预览"
-                : item.status === "submitting"
-                  ? item.approvalMode === "auto-approve"
-                    ? "自动保存中"
-                    : "正在处理"
-                  : item.status === "error"
-                    ? item.approvalMode === "auto-approve"
-                      ? "自动保存失败"
-                      : "需要重试"
-                    : item.approvalMode === "auto-approve"
-                      ? "等待自动保存"
-                      : "等待确认"
-            }}
+            {{ proposalStatusText(item) }}
           </span>
         </div>
 
         <p>{{ item.event.payload.summary }}</p>
+
+        <div
+          v-if="item.event.type === 'long.worldbuilding_file_proposal'"
+          class="worldbuilding-file-list"
+        >
+          <section
+            v-for="card in worldbuildingFileCards.get(item.event.id) ?? []"
+            :key="card.file.fileId"
+            class="worldbuilding-file-card"
+          >
+            <header>
+              <span class="worldbuilding-file-card-icon" aria-hidden="true">
+                <AppIcon name="file" :size="16" />
+              </span>
+              <div>
+                <strong>{{ card.file.title }}</strong>
+                <small>
+                  {{ worldbuildingOperationLabel(card.file.operation) }} ·
+                  {{ card.file.filePath }}
+                </small>
+              </div>
+              <div
+                class="worldbuilding-file-stats"
+                :aria-label="`增加 ${card.diff.additions} 行，删除 ${card.diff.deletions} 行`"
+              >
+                <span class="is-addition">+{{ card.diff.additions }}</span>
+                <span class="is-deletion">−{{ card.diff.deletions }}</span>
+              </div>
+            </header>
+            <details
+              v-if="card.diff.hunks.length"
+              class="worldbuilding-file-diff"
+            >
+              <summary>
+                <span>查看差异</span>
+                <small>{{ card.diff.hunks.length }} 个变更块</small>
+                <AppIcon name="chevron" :size="13" />
+              </summary>
+              <div class="worldbuilding-diff-content">
+                <div
+                  v-for="(hunk, hunkIndex) in card.diff.hunks"
+                  :key="`${card.file.fileId}:hunk:${hunkIndex}`"
+                  class="worldbuilding-diff-hunk"
+                >
+                  <div class="worldbuilding-diff-hunk-header">
+                    @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
+                  </div>
+                  <div
+                    v-for="(line, lineIndex) in hunk.lines"
+                    :key="`${card.file.fileId}:${hunkIndex}:${lineIndex}`"
+                    class="worldbuilding-diff-line"
+                    :class="`is-${line.type}`"
+                  >
+                    <span>{{ line.oldLineNumber ?? "" }}</span>
+                    <span>{{ line.newLineNumber ?? "" }}</span>
+                    <span aria-hidden="true">{{ diffLineMark(line.type) }}</span>
+                    <code>{{ line.text }}</code>
+                  </div>
+                </div>
+                <p
+                  v-if="card.diff.truncated"
+                  class="worldbuilding-diff-truncated"
+                >
+                  差异较大，仅显示部分变更；行数统计包含完整提案。
+                </p>
+              </div>
+            </details>
+            <p v-else class="worldbuilding-file-empty">
+              已创建空白 Markdown 文件，没有正文行级差异。
+            </p>
+          </section>
+          <p class="worldbuilding-file-status-message">
+            {{
+              item.status === "accepted"
+                ? item.approvalMode === "auto-approve"
+                  ? "已自动批准并保存到本地 Markdown。"
+                  : "已接受并保存到本地 Markdown。"
+                : item.status === "waiting"
+                  ? "正在等待前序文件创建或写入完成，随后继续检查并保存。"
+                : item.status === "submitting"
+                  ? "正在校验版本、应用变更并保存……"
+                  : item.status === "error"
+                    ? item.error || "文件变更未能保存，可重试或拒绝。"
+                    : item.approvalMode === "auto-approve"
+                      ? "已加入实时自动保存队列。"
+                      : "接受后将写入长篇世界观文件并保存到本机。"
+            }}
+          </p>
+        </div>
 
         <div
           v-if="
@@ -365,7 +521,7 @@ function entitySnapshotText(
           v-if="item.event.type === 'long.chapter_dispatch_proposal'"
           class="long-proposal-details"
         >
-          <summary>查看串行章序与三件套缺失项</summary>
+          <summary>查看串行章序与正文证据状态</summary>
           <div class="long-proposal-detail-group">
             <span
               v-for="(chapter, chapterIndex) in item.event.payload.chapters"
@@ -374,9 +530,9 @@ function entitySnapshotText(
               {{ chapterIndex + 1 }}. {{ chapter.title }} ·
               {{
                 chapter.status === "ready_to_commit"
-                  ? "三件套完整，直接核对提交"
+                  ? "正文已完成，直接进入连续性结算"
                   : chapter.status === "empty"
-                    ? "三件套均为空"
+                    ? "正文为空"
                     : `缺失 ${chapter.missingFiles.join("、")}`
               }}
             </span>
@@ -391,22 +547,13 @@ function entitySnapshotText(
             <strong>{{ item.event.payload.input.body.content.length }}</strong>
             正文字符
           </span>
-          <span>
-            <strong>
-              {{ item.event.payload.input.characterState.content.length }}
-            </strong>
-            状态字符
-          </span>
-          <span>
-            <strong>{{ item.event.payload.input.handoff.content.length }}</strong>
-            Handoff
-          </span>
+          <span><strong>账本生成</strong> 章末状态与接续包</span>
         </div>
         <details
           v-if="item.event.type === 'long.chapter_write_proposal'"
           class="long-proposal-details"
         >
-          <summary>审阅章节三份拟写内容</summary>
+          <summary>审阅章节正文证据</summary>
           <div class="long-proposal-detail-group long-proposal-write-list">
             <details class="long-proposal-content">
               <summary>
@@ -420,31 +567,6 @@ function entitySnapshotText(
                 :value="item.event.payload.input.body.content"
               />
             </details>
-            <details class="long-proposal-content">
-              <summary>
-                人物状态 ·
-                {{ item.event.payload.input.characterState.baseRevision }} →
-                提交后计算
-              </summary>
-              <textarea
-                readonly
-                spellcheck="false"
-                aria-label="章末人物状态拟写内容"
-                :value="item.event.payload.input.characterState.content"
-              />
-            </details>
-            <details class="long-proposal-content">
-              <summary>
-                Handoff · {{ item.event.payload.input.handoff.baseRevision }} →
-                提交后计算
-              </summary>
-              <textarea
-                readonly
-                spellcheck="false"
-                aria-label="下一章交接拟写内容"
-                :value="item.event.payload.input.handoff.content"
-              />
-            </details>
           </div>
         </details>
 
@@ -453,28 +575,20 @@ function entitySnapshotText(
           class="long-proposal-impact"
         >
           <span>
-            <strong>
-              {{
-                Object.keys(
-                  item.event.payload.input.placementDecisions
-                ).length
-              }}
-            </strong>
-            叙事落点
+            <strong>{{ item.event.payload.input.factMutations.length }}</strong>
+            事实变化
           </span>
           <span>
             <strong>
-              {{
-                Object.keys(
-                  item.event.payload.input.foreshadowingBeatDecisions
-                ).length
-              }}
+              {{ item.event.payload.input.knowledgeMutations.length }}
             </strong>
-            伏笔决策
+            知识变化
           </span>
           <span>
-            <strong>{{ item.event.payload.input.fileUpdates.length }}</strong>
-            文件更新
+            <strong>
+              {{ item.event.payload.input.openLoopMutations.length }}
+            </strong>
+            开放事项
           </span>
         </div>
         <details
@@ -540,6 +654,93 @@ function entitySnapshotText(
             </span>
           </div>
           <div class="long-proposal-detail-group">
+            <strong>六域核验覆盖</strong>
+            <span>
+              人物 · {{ item.event.payload.input.coverage.character.status }} ·
+              {{ item.event.payload.input.coverage.character.note }}
+            </span>
+            <span>
+              剧情 · {{ item.event.payload.input.coverage.plot.status }} ·
+              {{ item.event.payload.input.coverage.plot.note }}
+            </span>
+            <span>
+              伏笔 ·
+              {{ item.event.payload.input.coverage.foreshadowing.status }} ·
+              {{ item.event.payload.input.coverage.foreshadowing.note }}
+            </span>
+            <span>
+              世界 · {{ item.event.payload.input.coverage.world.status }} ·
+              {{ item.event.payload.input.coverage.world.note }}
+            </span>
+            <span>
+              知识 · {{ item.event.payload.input.coverage.knowledge.status }} ·
+              {{ item.event.payload.input.coverage.knowledge.note }}
+            </span>
+            <span>
+              开放事项 ·
+              {{ item.event.payload.input.coverage.openLoops.status }} ·
+              {{ item.event.payload.input.coverage.openLoops.note }}
+            </span>
+          </div>
+          <div
+            v-if="item.event.payload.input.factMutations.length"
+            class="long-proposal-detail-group"
+          >
+            <strong>结构化事实变化</strong>
+            <code
+              v-for="fact in item.event.payload.input.factMutations"
+              :key="fact.factId"
+            >{{ fact.domain }} · {{ fact.subjectId }} · {{ fact.field }} → {{ fact.value }} · {{ fact.evidence }}</code>
+          </div>
+          <div
+            v-if="item.event.payload.input.knowledgeMutations.length"
+            class="long-proposal-detail-group"
+          >
+            <strong>揭露与知识边界</strong>
+            <code
+              v-for="knowledge in item.event.payload.input
+                .knowledgeMutations"
+              :key="`${knowledge.factId}:${knowledge.audienceType}:${knowledge.audienceId ?? 'reader'}`"
+            >{{ knowledge.factId }} · {{ knowledge.audienceType }} {{ knowledge.audienceId ?? "读者" }} → {{ knowledge.level }} · {{ knowledge.evidence }}</code>
+          </div>
+          <div
+            v-if="item.event.payload.input.openLoopMutations.length"
+            class="long-proposal-detail-group"
+          >
+            <strong>开放事项</strong>
+            <code
+              v-for="loop in item.event.payload.input.openLoopMutations"
+              :key="loop.loopId"
+            >{{ loop.kind }} · {{ loop.status }} · {{ loop.detail }} · {{ loop.evidence }}</code>
+          </div>
+          <div class="long-proposal-detail-group">
+            <strong>入账后生成</strong>
+            <span>
+              章末状态：{{
+                item.event.payload.input.chapterOutputs.characterState
+              }}
+            </span>
+            <span>
+              下一章接续：{{
+                item.event.payload.input.chapterOutputs.handoff.summary
+              }}
+            </span>
+            <span
+              v-for="carry in item.event.payload.input.chapterOutputs.handoff
+                .mustCarry"
+              :key="`carry:${carry}`"
+            >
+              必须延续 · {{ carry }}
+            </span>
+            <span
+              v-for="constraint in item.event.payload.input.chapterOutputs
+                .handoff.nextChapterConstraints"
+              :key="`constraint:${constraint}`"
+            >
+              下一章约束 · {{ constraint }}
+            </span>
+          </div>
+          <div class="long-proposal-detail-group">
             <strong>叙事落点</strong>
             <code
               v-for="(decision, id) in item.event.payload.input
@@ -592,8 +793,9 @@ function entitySnapshotText(
 
         <footer
           v-if="
-            item.approvalMode !== 'auto-approve' ||
-            item.status === 'error'
+            item.status !== 'accepted' &&
+            (item.approvalMode !== 'auto-approve' ||
+              item.status === 'error')
           "
         >
           <button
@@ -606,7 +808,9 @@ function entitySnapshotText(
           </button>
           <button
             v-if="
-              item.event.type === 'long.mutation_proposal' &&
+              (item.event.type === 'long.mutation_proposal' ||
+                item.event.type ===
+                  'long.worldbuilding_file_proposal') &&
               item.status === 'error'
             "
             class="long-proposal-secondary"
@@ -621,7 +825,9 @@ function entitySnapshotText(
             :disabled="
               item.status === 'previewing' ||
               item.status === 'submitting' ||
-              (item.event.type === 'long.mutation_proposal' &&
+              ((item.event.type === 'long.mutation_proposal' ||
+                item.event.type ===
+                  'long.worldbuilding_file_proposal') &&
                 (item.status !== 'ready' || !item.preview))
             "
             @click="emit('approve', item.event.id)"
@@ -732,6 +938,17 @@ function entitySnapshotText(
 .long-proposal-status.is-error,
 .long-proposal-error {
   color: var(--danger);
+}
+
+.long-proposal-status.is-accepted {
+  background: color-mix(in srgb, var(--success) 13%, transparent);
+  color: var(--success);
+}
+
+.long-proposal-card[data-proposal-type="long.worldbuilding_file_proposal"]:has(
+    .long-proposal-status.is-accepted
+  ) {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--theme-line-soft));
 }
 
 .long-proposal-card > p {
@@ -898,6 +1115,168 @@ function entitySnapshotText(
 .long-proposal-detail-group.is-danger strong,
 .long-proposal-detail-group .is-danger {
   color: var(--danger);
+}
+
+.worldbuilding-file-list {
+  display: grid;
+  gap: 7px;
+}
+
+.worldbuilding-file-card {
+  overflow: hidden;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 8px;
+  background: var(--surface-main);
+}
+
+.worldbuilding-file-card > header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+
+.worldbuilding-file-card-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+}
+
+.worldbuilding-file-card > header > div:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.worldbuilding-file-card > header strong {
+  color: var(--text-primary);
+  font-size: 0.75rem;
+}
+
+.worldbuilding-file-card > header small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.607143rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worldbuilding-file-stats {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.worldbuilding-file-stats .is-addition {
+  color: var(--success);
+}
+
+.worldbuilding-file-stats .is-deletion {
+  color: var(--danger);
+}
+
+.worldbuilding-file-diff {
+  border-top: 1px solid var(--theme-line-soft);
+  background: var(--surface-raised);
+}
+
+.worldbuilding-file-diff > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.642857rem;
+}
+
+.worldbuilding-file-diff > summary small {
+  color: var(--text-tertiary);
+}
+
+.worldbuilding-file-diff > summary svg {
+  margin-left: auto;
+  transition: transform 0.16s ease;
+}
+
+.worldbuilding-file-diff[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.worldbuilding-diff-content {
+  max-height: 260px;
+  overflow: auto;
+  border-top: 1px solid var(--theme-line-soft);
+  background: var(--surface-muted);
+  font-family: var(--code-font);
+  font-size: var(--code-font-size);
+}
+
+.worldbuilding-diff-hunk + .worldbuilding-diff-hunk {
+  border-top: 1px solid var(--theme-line-soft);
+}
+
+.worldbuilding-diff-hunk-header {
+  padding: 4px 8px;
+  background: var(--surface-selected);
+  color: var(--text-tertiary);
+}
+
+.worldbuilding-diff-line {
+  display: grid;
+  grid-template-columns: 36px 36px 18px minmax(0, 1fr);
+  min-height: 21px;
+}
+
+.worldbuilding-diff-line > span {
+  padding: 2px 5px;
+  color: var(--text-tertiary);
+  text-align: right;
+  user-select: none;
+}
+
+.worldbuilding-diff-line code {
+  padding: 2px 7px;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.worldbuilding-diff-line.is-addition {
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+.worldbuilding-diff-line.is-deletion {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.worldbuilding-diff-line.is-addition > span:nth-child(3) {
+  color: var(--success);
+}
+
+.worldbuilding-diff-line.is-deletion > span:nth-child(3) {
+  color: var(--danger);
+}
+
+.worldbuilding-diff-truncated,
+.worldbuilding-file-empty,
+.worldbuilding-file-status-message {
+  padding: 7px 9px;
+  color: var(--text-tertiary);
+  font-size: 0.642857rem;
+  line-height: 1.5;
+}
+
+.worldbuilding-file-status-message {
+  border-top: 1px solid var(--theme-line-soft);
+  background: var(--surface-raised);
 }
 
 .long-proposal-card footer {

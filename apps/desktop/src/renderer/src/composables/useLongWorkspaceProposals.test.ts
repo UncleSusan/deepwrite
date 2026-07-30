@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   SystemEventEnvelopeSchema,
   createEnvelope,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
+  type LongWorkspaceOperationBatch,
   type SystemEventEnvelope
 } from "@deepwrite/contracts";
 import type { LongWorkspaceRendererApi } from "../types/longWorkspace";
@@ -77,6 +80,111 @@ function mutationEvent(): LongMutationProposalEvent {
       { id: "event_mutation", context: envelopeContext }
     )
   ) as LongMutationProposalEvent;
+}
+
+function worldbuildingFileEvent() {
+  const fileId = longWorldbuildingItemFileId("worlditem_memory");
+  const filePath = longWorldbuildingItemContentPath(
+    "world_rules",
+    "worlditem_memory"
+  );
+  return systemEvent(
+    createEnvelope(
+      "long.worldbuilding_file_proposal",
+      {
+        ...proposalBase,
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:00.000Z",
+          operations: [
+            {
+              type: "worldbuildingItem.create" as const,
+              categoryId: "world_rules",
+              item: {
+                id: "worlditem_memory",
+                title: "记忆代价",
+                order: 1,
+                file: {
+                  id: fileId,
+                  path: filePath,
+                  revision: fileRevision,
+                  updatedAt: "2026-07-26T12:00:00.000Z"
+                }
+              }
+            }
+          ],
+          documentWrites: []
+        },
+        baseProjectRevision: 11,
+        files: [
+          {
+            categoryId: "world_rules",
+            itemId: "worlditem_memory",
+            fileId,
+            filePath,
+            title: "记忆代价",
+            operation: "create" as const,
+            beforeText: "",
+            afterText: "",
+            beforeRevision: null,
+            nextRevision: fileRevision
+          }
+        ]
+      },
+      { id: "event_worldbuilding_file", context: envelopeContext }
+    )
+  );
+}
+
+function worldbuildingWriteEvent() {
+  const fileId = longWorldbuildingItemFileId("worlditem_memory");
+  const filePath = longWorldbuildingItemContentPath(
+    "world_rules",
+    "worlditem_memory"
+  );
+  return systemEvent(
+    createEnvelope(
+      "long.worldbuilding_file_proposal",
+      {
+        ...proposalBase,
+        toolCallId: "tool_worldbuilding_write",
+        summary: "写入记忆代价",
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:01.000Z",
+          operations: [],
+          documentWrites: [
+            {
+              proposalId: "proposal_worlditem_memory_write",
+              fileId,
+              content: "每次施法都会遗忘一段记忆。",
+              mode: "replace" as const,
+              expectedRevision: fileRevision,
+              nextRevision: "v1:4:11111111",
+              updatedAt: "2026-07-26T12:00:01.000Z",
+              reason: "写入记忆代价"
+            }
+          ]
+        },
+        baseProjectRevision: 11,
+        files: [
+          {
+            categoryId: "world_rules",
+            itemId: "worlditem_memory",
+            fileId,
+            filePath,
+            title: "记忆代价",
+            operation: "write" as const,
+            beforeText: "",
+            afterText: "每次施法都会遗忘一段记忆。",
+            beforeRevision: fileRevision,
+            nextRevision: "v1:4:11111111"
+          }
+        ]
+      },
+      { id: "event_worldbuilding_write", context: envelopeContext }
+    )
+  );
 }
 
 function chapterEvent() {
@@ -166,7 +274,10 @@ function harness(
   acceptsEvent = true,
   approvalMode: "request-approval" | "auto-approve" = "request-approval"
 ) {
-  const previewOperations = vi.fn(async () => ({
+  const previewOperations = vi.fn(async (_input: {
+    bookId: string;
+    batch: LongWorkspaceOperationBatch;
+  }) => ({
     bookId: proposalBase.bookId,
     preview: {
       baseRevision: 7,
@@ -174,15 +285,49 @@ function harness(
       impact: emptyImpact,
       entityChanges: [],
       fileIntents: [],
-      documentWrites: [],
+      documentWrites:
+        [] as LongWorkspaceOperationBatch["documentWrites"],
       provisionalIdMap: {}
     },
     projectRevision: 11
   }));
   const applyOperations = vi.fn(async () => undefined);
+  const getWorkspaceIndex = vi.fn(async () => ({
+    bookId: proposalBase.bookId,
+    workspaceIndex: {
+      revision: 9,
+      worldbuilding: [
+        {
+          id: "world_rules",
+          title: "世界规则",
+          order: 1,
+          format: "list" as const,
+          contentAuthority: "files" as const,
+          items: [
+            {
+              id: "worlditem_existing",
+              title: "已有条目",
+              order: 1,
+              file: {
+                id: longWorldbuildingItemFileId("worlditem_existing"),
+                path: longWorldbuildingItemContentPath(
+                  "world_rules",
+                  "worlditem_existing"
+                ),
+                revision: fileRevision,
+                updatedAt: "2026-07-26T11:00:00.000Z"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    projectRevision: 13
+  }));
   const writeChapter = vi.fn(async () => undefined);
   const commitChapter = vi.fn(async () => undefined);
   const api = {
+    getWorkspaceIndex,
     previewOperations,
     applyOperations,
     writeChapter,
@@ -209,6 +354,7 @@ function harness(
   });
   return {
     controller,
+    getWorkspaceIndex,
     previewOperations,
     applyOperations,
     writeChapter,
@@ -222,6 +368,104 @@ function harness(
 }
 
 describe("long workspace proposal approval", () => {
+  it("waits for an empty-file creation before previewing its separate write", async () => {
+    const test = harness();
+    test.previewOperations.mockImplementation(async ({ batch }) => ({
+      bookId: proposalBase.bookId,
+      preview: {
+        baseRevision: batch.baseRevision,
+        resultRevision: batch.baseRevision + 1,
+        impact: emptyImpact,
+        entityChanges: [],
+        fileIntents: [],
+        documentWrites: batch.documentWrites,
+        provisionalIdMap: {}
+      },
+      projectRevision: 13
+    }));
+
+    await test.controller.handleEvent(worldbuildingFileEvent());
+    await test.controller.handleEvent(worldbuildingWriteEvent());
+
+    expect(test.previewOperations).toHaveBeenCalledTimes(1);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      { status: "ready" },
+      {
+        status: "waiting",
+        event: { type: "long.worldbuilding_file_proposal" }
+      }
+    ]);
+
+    expect(
+      test.controller.reject(
+        "longbook_test",
+        "event_worldbuilding_file"
+      )
+    ).toBe(true);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        status: "error",
+        error: expect.stringContaining("前序写入已被拒绝")
+      }
+    ]);
+  });
+
+  it("rebases and retains accepted long worldbuilding file cards", async () => {
+    const test = harness(true, "auto-approve");
+    test.previewOperations.mockImplementationOnce(async ({ batch }) => ({
+      bookId: proposalBase.bookId,
+      preview: {
+        baseRevision: batch.baseRevision,
+        resultRevision: batch.baseRevision + 1,
+        impact: {
+          ...emptyImpact,
+          createdEntityIds: ["worlditem_memory"],
+          createdFileIds: [
+            longWorldbuildingItemFileId("worlditem_memory")
+          ]
+        },
+        entityChanges: [],
+        fileIntents: [],
+        documentWrites: [],
+        provisionalIdMap: {}
+      },
+      projectRevision: 13
+    }));
+
+    await test.controller.handleEvent(worldbuildingFileEvent());
+
+    expect(test.getWorkspaceIndex).toHaveBeenCalledWith({
+      bookId: "longbook_test"
+    });
+    expect(test.previewOperations).toHaveBeenCalledWith({
+      bookId: "longbook_test",
+      batch: expect.objectContaining({
+        baseRevision: 9,
+        operations: [
+          expect.objectContaining({
+            item: expect.objectContaining({ order: 2 })
+          })
+        ]
+      })
+    });
+    expect(test.applyOperations).toHaveBeenCalledWith({
+      bookId: "longbook_test",
+      batch: expect.objectContaining({
+        baseRevision: 9,
+        expectedImpact: expect.objectContaining({
+          createdEntityIds: ["worlditem_memory"]
+        })
+      }),
+      baseProjectRevision: 13
+    });
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        status: "accepted",
+        event: { type: "long.worldbuilding_file_proposal" }
+      }
+    ]);
+  });
+
   it("previews and atomically applies auto-approved structure proposals immediately", async () => {
     const test = harness(true, "auto-approve");
 
@@ -586,7 +830,7 @@ describe("long workspace proposal approval", () => {
     expect(test.writeChapter).toHaveBeenCalledTimes(1);
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
     expect(test.notifications.success).toHaveBeenCalledWith(
-      "章节正文、人物状态和 Handoff 已写入。"
+      "章节正文证据已写入；正在进入连续性结算。"
     );
     expect(test.notifications.warning).toHaveBeenCalledWith(
       "长篇提案已经写入，但后续刷新失败：刷新超时"

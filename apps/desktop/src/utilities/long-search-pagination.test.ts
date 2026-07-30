@@ -256,19 +256,19 @@ describe("LongWorkspaceService opaque search cursor", () => {
       })
     ).rejects.toThrow(/游标/u);
 
-    const handoff = await service.readDocument({
+    const latestBody = await service.readDocument({
       bookId: created.book.id,
-      fileId: chapter.handoff.id,
+      fileId: chapter.body.id,
       offset: 0,
       maxCharacters: 10
     });
     await service.writeDocument({
       bookId: created.book.id,
-      fileId: chapter.handoff.id,
+      fileId: chapter.body.id,
       content: "结构版本发生变化",
-      baseRevision: handoff.file.revision,
-      baseWorkspaceRevision: handoff.workspaceRevision,
-      baseProjectRevision: handoff.projectRevision
+      baseRevision: latestBody.file.revision,
+      baseWorkspaceRevision: latestBody.workspaceRevision,
+      baseProjectRevision: latestBody.projectRevision
     });
     await expect(
       service.search({

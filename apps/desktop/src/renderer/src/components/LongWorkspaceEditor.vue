@@ -10,10 +10,12 @@ import {
 import {
   LongFileRevisionSchema,
   LongLedgerCommitRecordSchema,
-  parseLongWorldbuildingMarkdownList,
-  serializeLongWorldbuildingMarkdownList,
+  createEmptyLongMarkdownFileReference,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
   type LongLedgerCommitRecord,
   type LongLedgerCommitIndexEntry,
+  type LongContinuityDomain,
   type LongArcId,
   type LongChapterCardId,
   type LongCharacterId,
@@ -22,7 +24,7 @@ import {
   type LongReadDocumentResult,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperationBatch,
-  type LongWorldbuildingMarkdownItem,
+  type LongWorkspaceOperation,
   type LongWorkspaceFileReference,
   type LongWriteDocumentResult
 } from "@deepwrite/contracts";
@@ -37,6 +39,7 @@ import {
   type LongWorkspaceSelectionFile
 } from "../types/longWorkspace";
 import AppIcon from "./AppIcon.vue";
+import LongContinuityWorkspace from "./LongContinuityWorkspace.vue";
 import LongForeshadowingWorkspace from "./LongForeshadowingWorkspace.vue";
 
 const props = defineProps<{
@@ -59,6 +62,7 @@ const emit = defineEmits<{
     } | null
   ];
   rollback: [];
+  selectLedgerCommit: [commitId: string];
   selectCharacter: [characterId: LongCharacterId];
   selectPlotPoint: [plotPointId: LongArcId];
   selectChapterCard: [chapterCardId: LongChapterCardId];
@@ -155,6 +159,7 @@ const documentStates = ref<Record<string, LongDocumentState>>({});
 const staleRecoveryByKey = ref<Record<string, LongEditorRecoveryRecord>>({});
 const activeRole = ref<LongWorkspaceFileRole>("content");
 const activeWorldbuildingItemId = ref<string | null>(null);
+const pendingWorldbuildingItemId = ref<string | null>(null);
 const activeBookLineVolumeId = ref<string | null>(null);
 const activeBookLineContentTab = ref<"outline" | "foreshadowing">(
   "outline"
@@ -205,6 +210,7 @@ let requestClock = 0;
 let activeSavePromise: Promise<boolean> | null = null;
 let worldbuildingDeletePreviousFocus: HTMLElement | null = null;
 let volumeDraftBookId = "";
+let worldbuildingSelectionRequest = 0;
 const HISTORY_LIMIT = 120;
 
 interface LongEditorHistorySnapshot {
@@ -222,6 +228,15 @@ const currentSelectionFile = computed<LongWorkspaceSelectionFile | undefined>(
   () => {
     const selection = props.selection;
     if (!selection) return undefined;
+    if (selection.worldbuildingFormat === "list") {
+      const item = selection.worldbuildingItems?.find(
+        ({ id }) => id === activeWorldbuildingItemId.value
+      );
+      return item
+        ? selection.files.find(({ file }) => file.id === item.file.id)
+        : selection.files.find(({ role }) => role === "overview") ??
+            selection.files[0];
+    }
     return (
       selection.files.find(({ role }) => role === activeRole.value) ??
       selection.files[0]
@@ -239,6 +254,16 @@ const currentState = computed<LongDocumentState | undefined>(() => {
     ? documentStates.value[stateKey(selectedFile.file.id)]
     : undefined;
 });
+const currentIsContinuityWorkspace = computed(
+  () =>
+    props.selection?.root === "continuity_ledger" &&
+    currentSelectionFile.value?.role !== "ledger-record"
+);
+const currentContinuityWorkspaceChapterProps = computed(() =>
+  props.selection?.chapterCardId
+    ? { activeChapterId: props.selection.chapterCardId }
+    : {}
+);
 const currentIsBookLineWorkspace = computed(
   () =>
     props.selection?.key === "plot-design:book-line" &&
@@ -594,30 +619,30 @@ const currentStaleRecoveryPreview = computed(() => {
 const currentIsWorldbuildingList = computed(
   () =>
     props.selection?.root === "worldbuilding" &&
-    props.selection.worldbuildingFormat === "list" &&
-    currentSelectionFile.value?.role === "content"
+    props.selection.worldbuildingFormat === "list"
+);
+const showGenericFileTabs = computed(
+  () =>
+    Boolean(props.selection && props.selection.files.length > 1) &&
+    !currentIsContinuityWorkspace.value &&
+    !currentIsWorldbuildingList.value
 );
 const currentWorldbuildingListState = computed<{
-  items: LongWorldbuildingMarkdownItem[];
+  items: Array<{ id: string; title: string; content: string }>;
   error: string | null;
 }>(() => {
-  if (!currentIsWorldbuildingList.value || !currentState.value?.loaded) {
+  if (!currentIsWorldbuildingList.value) {
     return { items: [], error: null };
   }
-  try {
-    return {
-      items: parseLongWorldbuildingMarkdownList(currentState.value.content),
-      error: null
-    };
-  } catch (error: unknown) {
-    return {
-      items: [],
-      error:
-        error instanceof Error
-          ? error.message
-          : "无法读取列表型世界观内容。"
-    };
-  }
+  return {
+    items: (props.selection?.worldbuildingItems ?? []).map((item) => ({
+      id: item.id,
+      title: item.title,
+      content:
+        documentStates.value[stateKey(item.file.id)]?.content ?? ""
+    })),
+    error: null
+  };
 });
 const currentWorldbuildingItems = computed(
   () => currentWorldbuildingListState.value.items
@@ -626,9 +651,7 @@ const currentWorldbuildingItem = computed(
   () =>
     currentWorldbuildingItems.value.find(
       ({ id }) => id === activeWorldbuildingItemId.value
-    ) ??
-    currentWorldbuildingItems.value[0] ??
-    null
+    ) ?? null
 );
 const pendingWorldbuildingDeleteItem = computed(
   () =>
@@ -652,16 +675,17 @@ const currentVisibleContent = computed(() => {
   if (currentIsVolumeOutline.value) {
     return currentVolumeOutlineDraft.value?.content ?? "";
   }
-  if (
-    currentIsWorldbuildingList.value &&
-    !currentWorldbuildingListState.value.error
-  ) {
-    return currentWorldbuildingItem.value?.content ?? "";
+  if (currentIsWorldbuildingList.value) {
+    return currentState.value?.content ?? "";
   }
   return currentState.value?.content ?? "";
 });
 const currentDocumentTitle = computed(
   () =>
+    (currentIsWorldbuildingList.value &&
+    activeWorldbuildingItemId.value === null
+      ? "概览"
+      : undefined) ??
     (currentIsChapterCardWorkspace.value
       ? currentChapterCard.value?.title
       : undefined) ??
@@ -763,13 +787,14 @@ const currentLedgerRecord = computed<LongLedgerCommitRecord | null>(() => {
 const canUseTextTools = computed(
   () =>
     !currentIsForeshadowingView.value &&
+    !currentIsContinuityWorkspace.value &&
     (Boolean(currentState.value?.loaded) ||
       currentIsStructuredText.value) &&
     !currentLedgerRecord.value &&
     Boolean(
       !currentIsWorldbuildingList.value ||
         currentWorldbuildingListState.value.error ||
-        currentWorldbuildingItem.value
+        currentSelectionFile.value
     )
 );
 const canUndo = computed(
@@ -797,6 +822,83 @@ const currentLedgerSummaryRows = computed(() => {
       ]
     : [];
 });
+const currentLedgerCoverageRows = computed<
+  ReadonlyArray<
+    readonly [
+      string,
+      LongLedgerCommitRecord["coverage"]["character"]
+    ]
+  >
+>(() => {
+  const coverage = currentLedgerRecord.value?.coverage;
+  return coverage
+    ? [
+        ["人物状态", coverage.character],
+        ["剧情推进", coverage.plot],
+        ["伏笔变化", coverage.foreshadowing],
+        ["世界观揭露", coverage.world],
+        ["知识变化", coverage.knowledge],
+        ["开放事项", coverage.openLoops]
+      ]
+    : [];
+});
+
+function ledgerCoverageStatusLabel(
+  status: LongLedgerCommitRecord["coverage"]["character"]["status"]
+): string {
+  return {
+    changed: "有变化",
+    unchanged: "已核验，无变化",
+    not_applicable: "本章不适用"
+  }[status];
+}
+
+function ledgerFactDomainLabel(domain: LongContinuityDomain): string {
+  return {
+    character: "人物",
+    relationship: "人物关系",
+    world: "世界观",
+    plot: "剧情",
+    foreshadowing: "伏笔"
+  }[domain];
+}
+
+function ledgerKnowledgeAudienceLabel(
+  knowledge: LongLedgerCommitRecord["knowledgeChanges"][number]["after"]
+): string {
+  if (knowledge.audienceType === "reader") return "读者";
+  if (knowledge.audienceType === "character" && knowledge.audienceId) {
+    return (
+      props.workspaceIndex?.characters.find(
+        ({ id }) => id === knowledge.audienceId
+      )?.name ?? knowledge.audienceId
+    );
+  }
+  return knowledge.audienceId ?? "未命名势力";
+}
+
+function ledgerKnowledgeLevelLabel(
+  level: LongLedgerCommitRecord["knowledgeChanges"][number]["after"]["level"]
+): string {
+  return {
+    unknown: "未知",
+    suspects: "有所怀疑",
+    believes: "相信",
+    knows: "已知晓",
+    misled: "被误导"
+  }[level];
+}
+
+function ledgerOpenLoopStatusLabel(
+  status: LongLedgerCommitRecord["openLoopChanges"][number]["after"]["status"]
+): string {
+  return {
+    open: "新开",
+    progressing: "推进中",
+    resolved: "已闭合",
+    abandoned: "已放弃"
+  }[status];
+}
 const hasUnsavedChanges = computed(() =>
   Object.values(documentStates.value).some(
     (state) => state.loaded && state.content !== state.savedContent
@@ -1051,31 +1153,97 @@ function updateCurrentContent(content: string): void {
   }
 }
 
-function replaceCurrentWorldbuildingItems(
-  items: LongWorldbuildingMarkdownItem[]
-): boolean {
+function emitWorldbuildingItemMutation(
+  operations: LongWorkspaceOperation[],
+  onSuccess?: () => void
+): void {
+  const index = props.workspaceIndex;
+  if (!index || currentReadOnly.value) return;
+  emit(
+    "mutation",
+    {
+      baseRevision: index.revision,
+      updatedAt: new Date().toISOString(),
+      operations,
+      documentWrites: []
+    },
+    {
+      succeed() {
+        onSuccess?.();
+      },
+      fail() {},
+      appliedButRefreshFailed() {
+        onSuccess?.();
+      }
+    }
+  );
+}
+
+async function selectWorldbuildingItem(itemId: string): Promise<void> {
   if (
-    currentReadOnly.value ||
-    !currentIsWorldbuildingList.value ||
-    currentWorldbuildingListState.value.error
+    itemId === activeWorldbuildingItemId.value ||
+    itemId === pendingWorldbuildingItemId.value
   ) {
-    return false;
+    return;
   }
-  try {
-    updateCurrentContent(serializeLongWorldbuildingMarkdownList(items));
-    return true;
-  } catch (error: unknown) {
-    uiMessage.warning(
-      error instanceof Error
-        ? error.message
-        : "无法更新世界观条目。"
-    );
-    return false;
+  const selection = props.selection;
+  const item = selection?.worldbuildingItems?.find(
+    ({ id }) => id === itemId
+  );
+  const selectedFile = item
+    ? selection?.files.find(({ file }) => file.id === item.file.id)
+    : undefined;
+  if (!selection || !item || !selectedFile) return;
+
+  const request = ++worldbuildingSelectionRequest;
+  const bookId = props.bookId;
+  const selectionKey = selection.key;
+  pendingWorldbuildingItemId.value = itemId;
+  await loadWorkspaceDocument(selectedFile);
+
+  if (
+    request !== worldbuildingSelectionRequest ||
+    props.bookId !== bookId ||
+    props.selection?.key !== selectionKey
+  ) {
+    return;
+  }
+  pendingWorldbuildingItemId.value = null;
+  const state = documentStates.value[stateKey(selectedFile.file.id, bookId)];
+  if (state?.loaded) {
+    activeWorldbuildingItemId.value = itemId;
   }
 }
 
-function selectWorldbuildingItem(itemId: string): void {
-  activeWorldbuildingItemId.value = itemId;
+async function selectWorldbuildingOverview(): Promise<void> {
+  if (
+    activeWorldbuildingItemId.value === null &&
+    pendingWorldbuildingItemId.value === null
+  ) {
+    return;
+  }
+  const selection = props.selection;
+  const selectedFile = selection?.files.find(
+    ({ role }) => role === "overview"
+  );
+  if (!selection || !selectedFile) return;
+
+  const request = ++worldbuildingSelectionRequest;
+  const bookId = props.bookId;
+  const selectionKey = selection.key;
+  pendingWorldbuildingItemId.value = null;
+  await loadWorkspaceDocument(selectedFile);
+  if (
+    request !== worldbuildingSelectionRequest ||
+    props.bookId !== bookId ||
+    props.selection?.key !== selectionKey
+  ) {
+    return;
+  }
+  const state = documentStates.value[stateKey(selectedFile.file.id, bookId)];
+  if (state?.loaded) {
+    activeWorldbuildingItemId.value = null;
+  }
 }
 
 function addWorldbuildingItem(): void {
@@ -1093,25 +1261,42 @@ function addWorldbuildingItem(): void {
     sequence += 1;
     title = `新条目 ${sequence}`;
   }
-  const item: LongWorldbuildingMarkdownItem = {
+  const item = {
     id: createId("worlditem"),
     title,
     content: ""
   };
-  if (replaceCurrentWorldbuildingItems([...items, item])) {
-    activeWorldbuildingItemId.value = item.id;
-  }
+  const categoryId = props.selection?.key.slice("worldbuilding:".length);
+  if (!categoryId) return;
+  const updatedAt = new Date().toISOString();
+  emitWorldbuildingItemMutation(
+    [{
+      type: "worldbuildingItem.create",
+      categoryId,
+      item: {
+        id: item.id,
+        title: item.title,
+        order: items.length + 1,
+        file: createEmptyLongMarkdownFileReference(
+          longWorldbuildingItemFileId(item.id),
+          longWorldbuildingItemContentPath(categoryId, item.id),
+          updatedAt
+        )
+      }
+    }],
+    () => {
+      activeWorldbuildingItemId.value = item.id;
+    }
+  );
 }
 
 function updateWorldbuildingItemContent(
   itemId: string,
   content: string
 ): void {
-  replaceCurrentWorldbuildingItems(
-    currentWorldbuildingItems.value.map((item) =>
-      item.id === itemId ? { ...item, content } : item
-    )
-  );
+  if (currentWorldbuildingItem.value?.id === itemId) {
+    updateCurrentContent(content);
+  }
 }
 
 function updateVisibleContent(content: string): void {
@@ -1643,17 +1828,22 @@ function updateWorldbuildingItemTitle(itemId: string, event: Event): void {
     uiMessage.warning("世界观条目名称不能为空。");
     return;
   }
-  if (
-    replaceCurrentWorldbuildingItems(
-      currentWorldbuildingItems.value.map((item) =>
-        item.id === itemId ? { ...item, title } : item
-      )
-    )
-  ) {
-    input.value = title;
-  } else {
+  const categoryId = props.selection?.key.slice("worldbuilding:".length);
+  if (!categoryId) {
     input.value = current.title;
+    return;
   }
+  emitWorldbuildingItemMutation(
+    [{
+      type: "worldbuildingItem.update",
+      categoryId,
+      id: itemId,
+      patch: { title }
+    }],
+    () => {
+      input.value = title;
+    }
+  );
 }
 
 function resetCharacterNameDraft(): void {
@@ -1809,10 +1999,21 @@ function confirmWorldbuildingItemDelete(): void {
   const items = currentWorldbuildingItems.value;
   const targetIndex = items.findIndex(({ id }) => id === target.id);
   const nextItems = items.filter(({ id }) => id !== target.id);
-  if (!replaceCurrentWorldbuildingItems(nextItems)) return;
-  activeWorldbuildingItemId.value =
-    nextItems[Math.min(targetIndex, nextItems.length - 1)]?.id ?? null;
-  closeWorldbuildingItemDelete();
+  const categoryId = props.selection?.key.slice("worldbuilding:".length);
+  if (!categoryId) return;
+  emitWorldbuildingItemMutation(
+    [{
+      type: "worldbuildingItem.delete",
+      categoryId,
+      id: target.id,
+      cascade: true
+    }],
+    () => {
+      activeWorldbuildingItemId.value =
+        nextItems[Math.min(targetIndex, nextItems.length - 1)]?.id ?? null;
+      closeWorldbuildingItemDelete();
+    }
+  );
 }
 
 function initializeLoadingState(
@@ -2594,6 +2795,18 @@ watch(
 );
 
 watch(
+  [
+    () => props.bookId,
+    () => props.selection?.key
+  ],
+  () => {
+    worldbuildingSelectionRequest += 1;
+    pendingWorldbuildingItemId.value = null;
+  },
+  { flush: "sync" }
+);
+
+watch(
   () =>
     [
       props.bookId,
@@ -2603,9 +2816,17 @@ watch(
   () => {
     const items = currentWorldbuildingItems.value;
     if (
+      pendingWorldbuildingItemId.value &&
+      !items.some(({ id }) => id === pendingWorldbuildingItemId.value)
+    ) {
+      worldbuildingSelectionRequest += 1;
+      pendingWorldbuildingItemId.value = null;
+    }
+    if (
+      activeWorldbuildingItemId.value !== null &&
       !items.some(({ id }) => id === activeWorldbuildingItemId.value)
     ) {
-      activeWorldbuildingItemId.value = items[0]?.id ?? null;
+      activeWorldbuildingItemId.value = null;
     }
     if (
       !items.some(({ id }) => id === pendingWorldbuildingDeleteId.value)
@@ -2645,6 +2866,7 @@ onMounted(() => {
   window.addEventListener("pointerdown", handleWindowPointerDown, true);
 });
 onBeforeUnmount(() => {
+  worldbuildingSelectionRequest += 1;
   flushAllRecoveryRecords();
   for (const key of [...recoveryWriteTimers.keys()]) {
     cancelRecoveryWrite(key);
@@ -2665,9 +2887,7 @@ onBeforeUnmount(() => {
         currentIsBookLineWorkspace ||
         currentIsPlotPointWorkspace ||
         currentIsChapterCardWorkspace ||
-        (currentIsWorldbuildingList &&
-          currentState?.loaded &&
-          !currentWorldbuildingListState.error)
+        currentIsWorldbuildingList
     }"
     aria-label="长篇文件编辑器"
   >
@@ -2878,25 +3098,36 @@ onBeforeUnmount(() => {
       </nav>
 
       <nav
-        v-if="
-          currentIsWorldbuildingList &&
-          currentState?.loaded &&
-          !currentWorldbuildingListState.error
-        "
+        v-if="currentIsWorldbuildingList"
         class="section-tabs-bar long-worldbuilding-tabs"
         aria-label="世界观条目"
       >
         <div class="section-tabs-scroll" role="tablist">
           <button
+            class="section-tab"
+            :class="{
+              'is-active': activeWorldbuildingItemId === null
+            }"
+            type="button"
+            role="tab"
+            :aria-selected="activeWorldbuildingItemId === null"
+            title="概览"
+            @click="selectWorldbuildingOverview"
+          >
+            概览
+          </button>
+          <button
             v-for="item in currentWorldbuildingItems"
             :key="item.id"
             class="section-tab"
             :class="{
-              'is-active': currentWorldbuildingItem?.id === item.id
+              'is-active': currentWorldbuildingItem?.id === item.id,
+              'is-loading': pendingWorldbuildingItemId === item.id
             }"
             type="button"
             role="tab"
             :aria-selected="currentWorldbuildingItem?.id === item.id"
+            :aria-busy="pendingWorldbuildingItemId === item.id"
             :title="item.title"
             @click="selectWorldbuildingItem(item.id)"
           >
@@ -3022,7 +3253,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div
-          v-if="selection.files.length > 1"
+          v-if="showGenericFileTabs"
           class="long-editor-file-tabs"
           role="tablist"
           :aria-label="`${selection.title}文件`"
@@ -3043,15 +3274,16 @@ onBeforeUnmount(() => {
         <span
           v-if="
             !currentIsForeshadowingView &&
+            !currentIsContinuityWorkspace &&
             ((currentIsBookLineWorkspace && currentBookLineVolume) ||
               (currentIsPlotPointWorkspace && currentPlotPoint) ||
               (currentIsChapterCardWorkspace && currentChapterCard) ||
-              selection.files.length > 1)
+              showGenericFileTabs)
           "
           class="long-toolbar-separator"
         />
         <div
-          v-if="!currentIsForeshadowingView"
+          v-if="!currentIsForeshadowingView && !currentIsContinuityWorkspace"
           class="long-editor-view-tabs"
           role="tablist"
           aria-label="文本视图"
@@ -3078,11 +3310,11 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <span
-          v-if="!currentIsForeshadowingView"
+          v-if="!currentIsForeshadowingView && !currentIsContinuityWorkspace"
           class="long-toolbar-separator"
         />
         <div
-          v-if="!currentIsForeshadowingView"
+          v-if="!currentIsForeshadowingView && !currentIsContinuityWorkspace"
           ref="editorToolsElement"
           class="long-editor-text-tools"
           role="group"
@@ -3286,8 +3518,18 @@ onBeforeUnmount(() => {
             </div>
           </details>
         </aside>
+        <LongContinuityWorkspace
+          v-if="currentIsContinuityWorkspace && workspaceIndex"
+          class="long-continuity-workspace-host"
+          :book-id="bookId"
+          :snapshot="workspaceIndex"
+          :view="selection.continuityView ?? 'inbox'"
+          :evidence-content="currentVisibleContent"
+          v-bind="currentContinuityWorkspaceChapterProps"
+          @select-commit="emit('selectLedgerCommit', $event)"
+        />
         <LongForeshadowingWorkspace
-          v-if="currentIsForeshadowingView && workspaceIndex"
+          v-else-if="currentIsForeshadowingView && workspaceIndex"
           :snapshot="workspaceIndex"
           :mode="currentForeshadowingMode"
           :volume-id="currentForeshadowingVolumeId"
@@ -3350,6 +3592,127 @@ onBeforeUnmount(() => {
               </template>
             </dl>
           </section>
+          <section v-if="currentLedgerRecord.schemaVersion === 3">
+            <h4>六域核验</h4>
+            <dl>
+              <template
+                v-for="([label, item], index) in currentLedgerCoverageRows"
+                :key="`${label}-${index}`"
+              >
+                <dt>
+                  {{ label }} ·
+                  {{ ledgerCoverageStatusLabel(item.status) }}
+                </dt>
+                <dd>{{ item.note }}</dd>
+              </template>
+            </dl>
+          </section>
+          <section
+            v-if="
+              currentLedgerRecord.schemaVersion === 3 &&
+              currentLedgerRecord.factChanges.length
+            "
+          >
+            <h4>当前事实变更</h4>
+            <p
+              v-for="change in currentLedgerRecord.factChanges"
+              :key="change.after.factId"
+            >
+              <code>
+                {{ ledgerFactDomainLabel(change.after.domain) }} ·
+                {{ change.after.subjectId }} · {{ change.after.field }}
+              </code>
+              <span>
+                <small v-if="change.before">
+                  原状态：{{ change.before.value }}
+                </small>
+                <strong>{{ change.after.value }}</strong>
+                <small>证据：{{ change.after.evidence }}</small>
+              </span>
+            </p>
+          </section>
+          <section
+            v-if="
+              currentLedgerRecord.schemaVersion === 3 &&
+              currentLedgerRecord.knowledgeChanges.length
+            "
+          >
+            <h4>信息揭露与知识变化</h4>
+            <p
+              v-for="change in currentLedgerRecord.knowledgeChanges"
+              :key="`${change.after.factId}:${change.after.audienceType}:${change.after.audienceId ?? 'reader'}`"
+            >
+              <code>
+                {{ ledgerKnowledgeAudienceLabel(change.after) }} ·
+                {{ change.after.factId }}
+              </code>
+              <span>
+                <strong>
+                  {{ ledgerKnowledgeLevelLabel(change.after.level) }}
+                </strong>
+                <small>证据：{{ change.after.evidence }}</small>
+              </span>
+            </p>
+          </section>
+          <section
+            v-if="
+              currentLedgerRecord.schemaVersion === 3 &&
+              currentLedgerRecord.openLoopChanges.length
+            "
+          >
+            <h4>开放事项变化</h4>
+            <p
+              v-for="change in currentLedgerRecord.openLoopChanges"
+              :key="change.after.loopId"
+            >
+              <code>
+                {{ change.after.loopId }} ·
+                {{ ledgerOpenLoopStatusLabel(change.after.status) }}
+              </code>
+              <span>
+                <strong>{{ change.after.detail }}</strong>
+                <small>证据：{{ change.after.evidence }}</small>
+              </span>
+            </p>
+          </section>
+          <section v-if="currentLedgerRecord.schemaVersion === 3">
+            <h4>账本生成的章末输出</h4>
+            <div class="long-ledger-output">
+              <article>
+                <strong>正文人物状态</strong>
+                <p>{{ currentLedgerRecord.chapterOutputs.characterState }}</p>
+              </article>
+              <article>
+                <strong>下一章接续包</strong>
+                <p>
+                  {{ currentLedgerRecord.chapterOutputs.handoff.summary }}
+                </p>
+                <dl>
+                  <dt>必须延续</dt>
+                  <dd>
+                    {{
+                      currentLedgerRecord.chapterOutputs.handoff.mustCarry
+                        .join("\n") || "无"
+                    }}
+                  </dd>
+                  <dt>下一章约束</dt>
+                  <dd>
+                    {{
+                      currentLedgerRecord.chapterOutputs.handoff
+                        .nextChapterConstraints.join("\n") || "无"
+                    }}
+                  </dd>
+                  <dt>关联开放事项</dt>
+                  <dd>
+                    {{
+                      currentLedgerRecord.chapterOutputs.handoff.openLoops
+                        .join("\n") || "无"
+                    }}
+                  </dd>
+                </dl>
+              </article>
+            </div>
+          </section>
           <section>
             <h4>执行证据</h4>
             <p
@@ -3388,6 +3751,7 @@ onBeforeUnmount(() => {
         <div
           v-else-if="
             currentState?.loaded ||
+            currentIsWorldbuildingList ||
             (currentIsChapterCardWorkspace && currentChapterCard)
           "
           class="long-editor-writing-surface"
@@ -3397,7 +3761,7 @@ onBeforeUnmount(() => {
             v-if="
               currentIsWorldbuildingList &&
               !currentWorldbuildingListState.error &&
-              !currentWorldbuildingItem
+              !currentSelectionFile
             "
             class="long-worldbuilding-empty"
           >
@@ -3568,7 +3932,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <footer class="long-editor-footer">
+      <footer v-if="!currentIsContinuityWorkspace" class="long-editor-footer">
         <span>
           {{
             currentIsForeshadowingView
@@ -3818,6 +4182,11 @@ onBeforeUnmount(() => {
 .long-worldbuilding-tabs .section-tab:hover,
 .long-worldbuilding-tabs .section-tab.is-active {
   color: var(--text-primary);
+}
+
+.long-worldbuilding-tabs .section-tab.is-loading {
+  color: var(--text-secondary);
+  cursor: progress;
 }
 
 .long-worldbuilding-add {
@@ -4112,6 +4481,12 @@ onBeforeUnmount(() => {
   padding: 28px 0 18px;
   overflow: hidden;
   background: var(--surface-main);
+}
+
+.long-continuity-workspace-host {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
 }
 
 .long-editor-writing-surface.is-readonly {
@@ -4434,6 +4809,48 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   font-size: 0.714286rem;
   line-height: 1.55;
+}
+
+.long-ledger-record section > p > span,
+.long-ledger-output,
+.long-ledger-output article {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.long-ledger-record section > p small,
+.long-ledger-output p {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.long-ledger-output {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+.long-ledger-output article {
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.long-ledger-output article > strong {
+  font-size: 0.75rem;
+}
+
+.long-ledger-output p {
+  margin: 0;
+  font-size: 0.714286rem;
+  line-height: 1.6;
+}
+
+.long-ledger-output dl {
+  grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
+  padding-top: 8px;
+  border-top: 1px solid var(--theme-line-soft);
 }
 
 .long-ledger-record code {

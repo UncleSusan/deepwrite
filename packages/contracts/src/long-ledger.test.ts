@@ -40,6 +40,43 @@ const record = {
   ]
 };
 
+const chapterSummary = {
+  timeline: "第一天雨夜收到旧信。",
+  characterStates: "林岚开始怀疑寄信人。",
+  factionStates: "守夜人尚未介入。",
+  realmStates: "本章无境界变化。",
+  foreshadowingStates: "蜡封线索已经种下。",
+  continuityNotes: "下一章追查旧邮戳。"
+};
+
+const coverage = {
+  character: { status: "changed" as const, note: "人物状态发生变化。" },
+  plot: { status: "changed" as const, note: "来信事件已经发生。" },
+  foreshadowing: {
+    status: "changed" as const,
+    note: "寄信人伏笔已经种下。"
+  },
+  world: { status: "unchanged" as const, note: "世界规则没有变化。" },
+  knowledge: {
+    status: "changed" as const,
+    note: "林岚得知来信存在。"
+  },
+  openLoops: {
+    status: "changed" as const,
+    note: "新增寄信人身份悬而未决事项。"
+  }
+};
+
+const chapterOutputs = {
+  characterState: "林岚收到旧信，开始追查寄信人。",
+  handoff: {
+    summary: "下一章追查旧邮戳。",
+    mustCarry: ["林岚持有不可燃烧的旧信。"],
+    nextChapterConstraints: ["不能提前揭露寄信人身份。"],
+    openLoops: ["loop_sender"]
+  }
+};
+
 describe("long ledger contracts", () => {
   it("keeps schemaVersion 1 records readable with explicit legacy defaults", () => {
     const parsed = LongLedgerCommitRecordSchema.parse(record);
@@ -55,17 +92,25 @@ describe("long ledger contracts", () => {
     });
     expect(parsed.placementChanges[0]?.note).toBe("");
     expect(parsed.foreshadowingThreadChanges).toEqual([]);
+    expect(parsed.coverage.character).toEqual({
+      status: "not_applicable",
+      note: ""
+    });
+    expect(parsed.factChanges).toEqual([]);
+    expect(parsed.knowledgeChanges).toEqual([]);
+    expect(parsed.openLoopChanges).toEqual([]);
+    expect(parsed.chapterOutputs).toEqual({
+      characterState: "",
+      handoff: {
+        summary: "",
+        mustCarry: [],
+        nextChapterConstraints: [],
+        openLoops: []
+      }
+    });
   });
 
   it("round-trips commit message, six summaries, evidence and thread status", () => {
-    const chapterSummary = {
-      timeline: "第一天雨夜收到旧信。",
-      characterStates: "林岚开始怀疑寄信人。",
-      factionStates: "守夜人尚未介入。",
-      realmStates: "本章无境界变化。",
-      foreshadowingStates: "蜡封线索已经种下。",
-      continuityNotes: "下一章追查旧邮戳。"
-    };
     const input = LongCommitChapterInputSchema.parse({
       bookId: "longbook_alpha",
       chapterCardId: "chapter_one",
@@ -89,6 +134,11 @@ describe("long ledger contracts", () => {
         }
       },
       fileUpdates: [],
+      coverage,
+      factMutations: [],
+      knowledgeMutations: [],
+      openLoopMutations: [],
+      chapterOutputs,
       baseWorkspaceRevision: 3,
       baseProjectRevision: 7
     });
@@ -126,6 +176,111 @@ describe("long ledger contracts", () => {
         }
       ]
     });
+  });
+
+  it("round-trips v3 projection changes, coverage and chapter outputs", () => {
+    const fact = {
+      factId: "fact_alice-location",
+      domain: "character" as const,
+      subjectId: "character_alice",
+      field: "location",
+      value: "林岚家",
+      sourceCommitId: "commit_first",
+      sourceChapterCardId: "chapter_one",
+      evidence: "正文写明林岚在家中接过旧信。"
+    };
+    const knowledge = {
+      factId: "fact_alice-location",
+      audienceType: "reader" as const,
+      audienceId: null,
+      level: "knows" as const,
+      sourceCommitId: "commit_first",
+      sourceChapterCardId: "chapter_one",
+      evidence: "正文直接展示林岚所在地点。"
+    };
+    const openLoop = {
+      loopId: "loop_sender",
+      kind: "foreshadowing" as const,
+      status: "open" as const,
+      detail: "寄信人的身份尚未揭晓。",
+      subjectId: "foreshadow_sender",
+      factId: null,
+      sourceCommitId: "commit_first",
+      sourceChapterCardId: "chapter_one",
+      evidence: "本章只展示蜡封线索。"
+    };
+    const parsed = LongLedgerCommitRecordSchema.parse({
+      ...record,
+      schemaVersion: 3,
+      commitMessage: "核验并入账第一章",
+      chapterSummary,
+      placementChanges: [
+        {
+          ...record.placementChanges[0],
+          note: "正文明确写出林岚收到旧信。"
+        }
+      ],
+      coverage,
+      factChanges: [{ before: null, after: fact }],
+      knowledgeChanges: [{ before: null, after: knowledge }],
+      openLoopChanges: [{ before: null, after: openLoop }],
+      chapterOutputs
+    });
+
+    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed.factChanges[0]?.after).toEqual(fact);
+    expect(parsed.knowledgeChanges[0]?.after).toEqual(knowledge);
+    expect(parsed.openLoopChanges[0]?.after).toEqual(openLoop);
+    expect(parsed.chapterOutputs).toEqual(chapterOutputs);
+  });
+
+  it("rejects incomplete v3 records and duplicate mutation keys", () => {
+    expect(
+      LongLedgerCommitRecordSchema.safeParse({
+        ...record,
+        schemaVersion: 3,
+        commitMessage: "核验并入账第一章",
+        chapterSummary,
+        placementChanges: [
+          {
+            ...record.placementChanges[0],
+            note: "正文明确写出林岚收到旧信。"
+          }
+        ]
+      }).success
+    ).toBe(false);
+
+    const mutation = {
+      factId: "fact_alice-location",
+      domain: "character" as const,
+      subjectId: "character_alice",
+      field: "location",
+      value: "林岚家",
+      evidence: "正文写明林岚在家中。"
+    };
+    expect(
+      LongCommitChapterInputSchema.safeParse({
+        bookId: "longbook_alpha",
+        chapterCardId: "chapter_one",
+        chapterFileRevisions: {
+          body: "v1:0:00000000",
+          characterState: "v1:0:00000000",
+          handoff: "v1:0:00000000"
+        },
+        commitMessage: "核验并入账第一章",
+        chapterSummary,
+        placementDecisions: {},
+        foreshadowingBeatDecisions: {},
+        fileUpdates: [],
+        coverage,
+        factMutations: [mutation, mutation],
+        knowledgeMutations: [],
+        openLoopMutations: [],
+        chapterOutputs,
+        baseWorkspaceRevision: 3,
+        baseProjectRevision: 7
+      }).success
+    ).toBe(false);
   });
 
   it("rejects revision skips and decisions assigned to another commit", () => {

@@ -123,6 +123,68 @@ describe("long workspace API contracts", () => {
     ).toThrow(/navigation revision/iu);
   });
 
+  it("bounds worldbuilding focus and keeps it exclusive to the worldbuilding agent", () => {
+    const focus = {
+      categoryTitle: "势力",
+      format: "list",
+      currentStage: {
+        kind: "item",
+        title: "守夜人",
+        text: { content: "负责维持雾港宵禁。" }
+      },
+      overview: { content: "各势力争夺港务权。" }
+    };
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "worldbuilding",
+          activeAgentId: "worldbuilding",
+          activeFileId: "file_faction_watch:content",
+          activeFileRevision: "v1:3:1234abcd",
+          worldbuildingFocus: focus
+        })
+      )
+    ).toMatchObject({ worldbuildingFocus: focus });
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({ worldbuildingFocus: focus })
+      )
+    ).toThrow(/worldbuilding agent/iu);
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "worldbuilding",
+          activeAgentId: "worldbuilding",
+          activeFileId: "file_faction_watch:content",
+          activeFileRevision: "v1:3:1234abcd",
+          worldbuildingFocus: {
+            ...focus,
+            overview: undefined
+          }
+        })
+      )
+    ).toThrow(/overview/iu);
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "worldbuilding",
+          activeAgentId: "worldbuilding",
+          activeFileId: "file_world_rules:content",
+          activeFileRevision: "v1:3:1234abcd",
+          worldbuildingFocus: {
+            categoryTitle: "世界规则",
+            format: "text",
+            currentStage: {
+              kind: "text",
+              title: "世界规则",
+              text: { content: "界".repeat(20_001) }
+            }
+          }
+        })
+      )
+    ).toThrow(/maximum character count/iu);
+  });
+
   it("applies bounded defaults to paged reads and searches", () => {
     expect(
       LongReadDocumentInputSchema.parse({

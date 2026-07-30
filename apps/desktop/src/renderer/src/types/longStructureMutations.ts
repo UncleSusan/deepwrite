@@ -12,6 +12,8 @@ import {
   longCharacterRelationshipsFileId,
   longWorldbuildingContentPath,
   longWorldbuildingFileId,
+  longWorldbuildingOverviewContentPath,
+  longWorldbuildingOverviewFileId,
   type LongCharacterGroup,
   type LongDisclosureLevel,
   type LongEventConnectionType,
@@ -47,6 +49,40 @@ export interface CreateLongWorldbuildingInput {
 export interface UpdateLongWorldbuildingInput {
   title?: string;
   format?: LongWorldbuildingFormat;
+}
+
+function longStructureFingerprint(
+  snapshot: LongWorkspaceIndexSnapshot
+): string {
+  return JSON.stringify(snapshot, (key, value) =>
+    key === "revision" || key === "updatedAt" ? undefined : value
+  );
+}
+
+/**
+ * Direct document saves advance the workspace revision even though the
+ * structural graph is unchanged. Rebase a structure batch only for that exact
+ * case; a real concurrent structure change must still surface as a conflict.
+ */
+export function rebaseLongStructureBatchAfterDocumentSave(input: {
+  batch: LongWorkspaceOperationBatch;
+  before: LongWorkspaceIndexSnapshot;
+  after: LongWorkspaceIndexSnapshot;
+}): LongWorkspaceOperationBatch {
+  if (input.batch.baseRevision === input.after.revision) {
+    return input.batch;
+  }
+  if (
+    input.batch.baseRevision !== input.before.revision ||
+    longStructureFingerprint(input.before) !==
+      longStructureFingerprint(input.after)
+  ) {
+    throw new Error("长篇结构已更新，请基于最新结构重新修改。");
+  }
+  return LongWorkspaceOperationBatchSchema.parse({
+    ...input.batch,
+    baseRevision: input.after.revision
+  });
 }
 
 export interface CreateLongCharacterInput {
@@ -713,18 +749,33 @@ export function createLongStructureMutationBuilder(
       const id = createId("world");
       const operation: OperationOf<"worldbuilding.create"> = {
         type: "worldbuilding.create",
-        category: {
-          id,
-          title: input.title.trim(),
-          order: snapshot.worldbuilding.length + 1,
-          format: input.format,
-          contentAuthority: "markdown",
-          file: createEmptyLongMarkdownFileReference(
-            longWorldbuildingFileId(id),
-            longWorldbuildingContentPath(id),
-            updatedAt
-          )
-        }
+        category:
+          input.format === "list"
+            ? {
+                id,
+                title: input.title.trim(),
+                order: snapshot.worldbuilding.length + 1,
+                format: "list",
+                contentAuthority: "files",
+                overview: createEmptyLongMarkdownFileReference(
+                  longWorldbuildingOverviewFileId(id),
+                  longWorldbuildingOverviewContentPath(id),
+                  updatedAt
+                ),
+                items: []
+              }
+            : {
+                id,
+                title: input.title.trim(),
+                order: snapshot.worldbuilding.length + 1,
+                format: "text",
+                contentAuthority: "markdown",
+                file: createEmptyLongMarkdownFileReference(
+                  longWorldbuildingFileId(id),
+                  longWorldbuildingContentPath(id),
+                  updatedAt
+                )
+              }
       };
       return batch([operation], updatedAt);
     },

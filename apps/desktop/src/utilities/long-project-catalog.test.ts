@@ -60,7 +60,17 @@ function fakeOpened(
       foreshadowing: []
     },
     chapters: [],
-    ledger: { committedThroughChapterId: null, commits: [] }
+    ledger: {
+      committedThroughChapterId: null,
+      commits: [],
+      projection: {
+        throughCommitId: null,
+        facts: [],
+        knowledge: [],
+        openLoops: [],
+        latestHandoff: null
+      }
+    }
   };
   const common = {
     schemaVersion: 1 as const,

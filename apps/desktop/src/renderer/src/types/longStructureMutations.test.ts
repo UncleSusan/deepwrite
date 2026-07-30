@@ -16,7 +16,8 @@ import {
 } from "@deepwrite/contracts";
 import {
   createLongStructureMutationBuilder,
-  moveLongOrderedId
+  moveLongOrderedId,
+  rebaseLongStructureBatchAfterDocumentSave
 } from "./longStructureMutations";
 
 const now = "2026-07-26T12:00:00.000Z";
@@ -92,11 +93,8 @@ function snapshot(): LongWorkspaceIndexSnapshot {
         title: "地理",
         order: 2,
         format: "list",
-        contentAuthority: "markdown",
-        file: file(
-          longWorldbuildingFileId("world_geography"),
-          "long/worldbuilding/world_geography/content.md"
-        )
+        contentAuthority: "files",
+        items: []
       }
     ],
     characters: [
@@ -313,6 +311,47 @@ function plotSnapshot(): LongWorkspaceIndexSnapshot {
 }
 
 describe("long structure mutation builder", () => {
+  it("rebases a pending structure batch only across document-only revisions", () => {
+    const before = snapshot();
+    const batch = builder(before).updateWorldbuilding("world_history", {
+      title: "新历史"
+    });
+    const afterDocumentSave = LongWorkspaceIndexSnapshotSchema.parse({
+      ...before,
+      revision: 12,
+      updatedAt: later,
+      bookLine: {
+        ...before.bookLine,
+        revision: "v1:0:11111111",
+        updatedAt: later
+      }
+    });
+
+    expect(
+      rebaseLongStructureBatchAfterDocumentSave({
+        batch,
+        before,
+        after: afterDocumentSave
+      }).baseRevision
+    ).toBe(12);
+
+    const afterStructureChange = LongWorkspaceIndexSnapshotSchema.parse({
+      ...afterDocumentSave,
+      worldbuilding: afterDocumentSave.worldbuilding.map((category) =>
+        category.id === "world_history"
+          ? { ...category, title: "并发修改" }
+          : category
+      )
+    });
+    expect(() =>
+      rebaseLongStructureBatchAfterDocumentSave({
+        batch,
+        before,
+        after: afterStructureChange
+      })
+    ).toThrow(/结构已更新/u);
+  });
+
   it("creates stable ids and complete empty Markdown file indexes", () => {
     const worldBatch = builder().createWorldbuilding({
       title: "  政治制度  ",
@@ -331,13 +370,15 @@ describe("long structure mutation builder", () => {
           title: "政治制度",
           order: 3,
           format: "list",
-          contentAuthority: "markdown",
-          file: {
-            id: "file_world_generated:content",
-            path: "long/worldbuilding/world_generated/content.md",
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
+          contentAuthority: "files",
+          overview: {
+            id: "file_world_generated:overview",
+            path: "long/worldbuilding/world_generated/overview.md",
+            revision:
+              "v2:0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             updatedAt: later
-          }
+          },
+          items: []
         }
       }
     ]);

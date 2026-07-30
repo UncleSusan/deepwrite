@@ -11,7 +11,7 @@ describe("LongMigrationReportDialog", () => {
   it("states that the legacy source is never modified", () => {
     expect(source).toContain("源文件保持不变");
     expect(source).toContain(
-      "不会修改、覆盖或删除所选的 Write Claw 源文件"
+      "不会修改、覆盖或删除所选的旧版本源文件"
     );
   });
 

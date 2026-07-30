@@ -1054,7 +1054,7 @@ function setBeatPlacement(value: PopupSelectValue) {
 
     <div v-if="rows.length === 0" class="plot-empty">
       <strong>还没有{{ selectedSectionLabel }}</strong>
-      <span>可以新建，也可导入 Write Claw 长篇后在这里核对字段。</span>
+      <span>可以新建，也可导入旧版本长篇后在这里核对字段。</span>
     </div>
     <ol v-else class="plot-list">
       <li v-for="row in rows" :key="row.id" class="plot-row">

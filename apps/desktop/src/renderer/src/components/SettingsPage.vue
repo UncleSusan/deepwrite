@@ -127,8 +127,8 @@ const sections: SettingsSection[] = [
     id: "models-and-usage",
     label: "模型与用量",
     categories: [
-      { id: "official-models", label: "DeepWrite 官方模型", icon: "model" },
-      { id: "usage", label: "用量", icon: "ledger" }
+      { id: "usage", label: "用量", icon: "ledger" },
+      { id: "official-models", label: "DeepWrite 官方模型", icon: "model" }
     ]
   },
   {

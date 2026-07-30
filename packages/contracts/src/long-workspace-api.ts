@@ -30,6 +30,117 @@ import {
   LONG_WORKSPACE_ROOT_TO_AGENT_ID
 } from "./long-workspace";
 
+export const LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS = 20_000;
+export const LONG_WORLDBUILDING_OVERVIEW_FOCUS_MAX_CHARACTERS = 8_000;
+
+const LongWorldbuildingFocusTextSnapshotSchema = z
+  .object({
+    content: z
+      .string()
+      .max(LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS * 2),
+    truncated: z.literal(true).optional(),
+    originalLength: z.number().int().nonnegative().optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const contentLength = Array.from(value.content).length;
+    if (contentLength > LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS) {
+      context.addIssue({
+        code: "custom",
+        path: ["content"],
+        message:
+          "Long worldbuilding focus text exceeds the maximum character count."
+      });
+    }
+    if (
+      value.truncated === true &&
+      (value.originalLength === undefined ||
+        value.originalLength <= contentLength)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message:
+          "A truncated long worldbuilding focus text must report its original length."
+      });
+    }
+    if (
+      value.truncated !== true &&
+      value.originalLength !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message:
+          "An untruncated long worldbuilding focus text must omit its original length."
+      });
+    }
+  });
+
+export const LongWorldbuildingFocusSnapshotSchema = z
+  .object({
+    categoryTitle: z.string().trim().min(1).max(256),
+    format: z.enum(["list", "text"]),
+    currentStage: z
+      .object({
+        kind: z.enum(["item", "overview", "text"]),
+        title: z.string().trim().min(1).max(256),
+        text: LongWorldbuildingFocusTextSnapshotSchema
+      })
+      .strict(),
+    overview: LongWorldbuildingFocusTextSnapshotSchema.optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      (value.format === "text" && value.currentStage.kind !== "text") ||
+      (value.format === "list" && value.currentStage.kind === "text")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["currentStage", "kind"],
+        message:
+          "Long worldbuilding focus stage kind must match its category format."
+      });
+    }
+    if (
+      value.currentStage.kind === "item" &&
+      value.overview === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["overview"],
+        message:
+          "A focused worldbuilding item must include its category overview."
+      });
+    }
+    if (
+      value.format === "text" &&
+      value.overview !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["overview"],
+        message:
+          "A text worldbuilding category must not include an overview snapshot."
+      });
+    }
+    const totalCharacters =
+      Array.from(value.currentStage.text.content).length +
+      Array.from(value.overview?.content ?? "").length;
+    if (totalCharacters > LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS) {
+      context.addIssue({
+        code: "custom",
+        path: ["currentStage", "text", "content"],
+        message:
+          "Combined long worldbuilding focus text exceeds the maximum character count."
+      });
+    }
+  });
+export type LongWorldbuildingFocusSnapshot = z.infer<
+  typeof LongWorldbuildingFocusSnapshotSchema
+>;
+
 export const LongWorkspaceRuntimeContextSchema = z
   .object({
     bookId: LongBookIdSchema,
@@ -41,7 +152,8 @@ export const LongWorkspaceRuntimeContextSchema = z
     activeChapterCardId: LongChapterCardIdSchema.optional(),
     workspaceRevision: z.number().int().nonnegative(),
     projectRevision: z.number().int().nonnegative(),
-    navigation: LongWorkspaceNavigationSnapshotSchema
+    navigation: LongWorkspaceNavigationSnapshotSchema,
+    worldbuildingFocus: LongWorldbuildingFocusSnapshotSchema.optional()
   })
   .strict()
   .superRefine((value, context) => {
@@ -106,6 +218,29 @@ export const LongWorkspaceRuntimeContextSchema = z
         path: ["activeFileRevision"],
         message:
           "Long runtime active file id and revision must be provided together."
+      });
+    }
+    if (
+      value.worldbuildingFocus !== undefined &&
+      (value.activeRoot !== "worldbuilding" ||
+        value.activeAgentId !== "worldbuilding")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["worldbuildingFocus"],
+        message:
+          "Long worldbuilding focus may only be provided to the worldbuilding agent."
+      });
+    }
+    if (
+      value.worldbuildingFocus !== undefined &&
+      value.activeFileId === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["activeFileId"],
+        message:
+          "Long worldbuilding focus requires the active worldbuilding file."
       });
     }
   });

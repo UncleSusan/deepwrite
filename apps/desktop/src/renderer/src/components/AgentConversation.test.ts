@@ -1,6 +1,12 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import conversationSource from "./AgentConversation.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
+
+const rendererStyles = readFileSync(
+  new URL("../styles.css", import.meta.url),
+  "utf8"
+);
 
 describe("AgentConversation edit proposal placement", () => {
   it("allows every explicitly enabled agent proposal to save while streaming", () => {
@@ -54,6 +60,30 @@ describe("AgentConversation edit proposal placement", () => {
     expect(actionsStart).toBeGreaterThan(proposalsStart);
   });
 
+  it("does not rewrite the conversation scroll position for status-only proposal updates", () => {
+    const tailFollowStart = conversationSource.indexOf(
+      "function scheduleConversationTailFollow"
+    );
+    const tailFollowEnd = conversationSource.indexOf(
+      "\nwatch(",
+      tailFollowStart
+    );
+    const tailFollow = conversationSource.slice(
+      tailFollowStart,
+      tailFollowEnd
+    );
+
+    expect(tailFollow).toContain(
+      "element.scrollHeight - element.clientHeight"
+    );
+    expect(tailFollow).toContain(
+      "Math.abs(element.scrollTop - tailScrollTop) > 1"
+    );
+    expect(tailFollow).not.toContain(
+      "element.scrollTop = element.scrollHeight"
+    );
+  });
+
   it("uses distinct composer placeholders for creative space and library agents", () => {
     expect(conversationSource).toContain("composerPlaceholder");
     expect(conversationSource).toContain("随心输入，输入 / 调用技能，输入 @ 引用素材");
@@ -62,6 +92,18 @@ describe("AgentConversation edit proposal placement", () => {
     );
     expect(conversationSource).toContain(
       "输入 / 加载方法技能，输入 @ 引用当前库或同分组其它库的素材"
+    );
+  });
+
+  it("keeps the composer focus treatment steady when the app regains focus", () => {
+    const surfaceStart = rendererStyles.indexOf(".composer-input-surface {");
+    const surfaceEnd = rendererStyles.indexOf("\n}", surfaceStart);
+    const surfaceStyles = rendererStyles.slice(surfaceStart, surfaceEnd);
+
+    expect(surfaceStart).toBeGreaterThan(-1);
+    expect(surfaceStyles).toContain("transition: none;");
+    expect(rendererStyles).toContain(
+      ".composer:focus-within .composer-input-surface"
     );
   });
 
@@ -193,6 +235,18 @@ describe("AgentConversation edit proposal placement", () => {
     expect(labels).toContain('read_draft_sections: "读取正文章节"');
     expect(labels).toContain('write_draft_section: "写入正文章节"');
     expect(labels).toContain('replace_draft_section_text: "替换正文章节文本"');
+    expect(labels).toContain(
+      'create_worldbuilding_file: "创建世界观文件"'
+    );
+    expect(labels).toContain(
+      'write_worldbuilding_file: "写入世界观文件"'
+    );
+    expect(labels).toContain(
+      'edit_worldbuilding_file: "编辑世界观文件"'
+    );
+    expect(labels).toContain(
+      'create_worldbuilding_items: "创建世界观文件"'
+    );
 
     const writeStart = conversationSource.indexOf("const WRITE_TOOL_NAMES");
     const directStart = conversationSource.indexOf(
@@ -205,14 +259,19 @@ describe("AgentConversation edit proposal placement", () => {
     expect(writeNames).toContain('"write_draft_section"');
     expect(writeNames).toContain('"create_draft_sections"');
     expect(writeNames).toContain('"replace_draft_section_text"');
+    expect(writeNames).toContain('"create_worldbuilding_file"');
+    expect(writeNames).toContain('"write_worldbuilding_file"');
+    expect(writeNames).toContain('"edit_worldbuilding_file"');
     expect(writeNames).not.toContain('"read_draft_sections"');
     expect(directWriteNames).toContain('"write_draft_section"');
     expect(directWriteNames).toContain('"create_draft_sections"');
+    expect(directWriteNames).toContain('"write_worldbuilding_file"');
     expect(directWriteNames).not.toContain('"replace_draft_section_text"');
     expect(conversationSource).not.toContain("initialize_expert_draft");
     expect(conversationSource).toContain(
       "writeToolText(item.tool).length.toLocaleString('zh-CN')"
     );
+    expect(conversationSource).toContain('return "正在创建文件"');
   });
 
   it("renders subagent runs via a shared collapsed card list", () => {

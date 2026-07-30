@@ -93,6 +93,14 @@ export type LongForeshadowingBeatId = z.infer<
 >;
 export const LongLedgerCommitIdSchema = stableIdWithPrefix("commit");
 export type LongLedgerCommitId = z.infer<typeof LongLedgerCommitIdSchema>;
+export const LongContinuityFactIdSchema = stableIdWithPrefix("fact");
+export type LongContinuityFactId = z.infer<
+  typeof LongContinuityFactIdSchema
+>;
+export const LongContinuityOpenLoopIdSchema = stableIdWithPrefix("loop");
+export type LongContinuityOpenLoopId = z.infer<
+  typeof LongContinuityOpenLoopIdSchema
+>;
 export const LongFileIdSchema = stableIdWithPrefix("file");
 export type LongFileId = z.infer<typeof LongFileIdSchema>;
 
@@ -179,6 +187,14 @@ export function longWorldbuildingFileId(categoryId: string): string {
   return `file_${categoryId}:content`;
 }
 
+export function longWorldbuildingOverviewFileId(categoryId: string): string {
+  return `file_${categoryId}:overview`;
+}
+
+export function longWorldbuildingItemFileId(itemId: string): string {
+  return `file_${itemId}:content`;
+}
+
 export function longCharacterCoreProfileFileId(characterId: string): string {
   return `file_${characterId}:core-profile`;
 }
@@ -218,6 +234,19 @@ export const EMPTY_LONG_MARKDOWN_REVISION =
 
 export function longWorldbuildingContentPath(categoryId: string): string {
   return `long/worldbuilding/${categoryId}/content.md`;
+}
+
+export function longWorldbuildingOverviewContentPath(
+  categoryId: string
+): string {
+  return `long/worldbuilding/${categoryId}/overview.md`;
+}
+
+export function longWorldbuildingItemContentPath(
+  categoryId: string,
+  itemId: string
+): string {
+  return `long/worldbuilding/${categoryId}/items/${itemId}.md`;
 }
 
 export function longCharacterFilePath(
@@ -260,17 +289,98 @@ export type LongWorldbuildingFormat = z.infer<
   typeof LongWorldbuildingFormatSchema
 >;
 
-export const LongWorldbuildingCategorySchema = z
+export const LongWorldbuildingItemSchema = z
   .object({
-    id: LongWorldbuildingCategoryIdSchema,
+    id: LongWorldbuildingItemIdSchema,
     title: LongTitleSchema,
     order: z.number().int().positive(),
-    format: LongWorldbuildingFormatSchema,
+    file: LongMarkdownFileReferenceSchema
+  })
+  .strict()
+  .superRefine((item, context) => {
+    if (item.file.id !== longWorldbuildingItemFileId(item.id)) {
+      context.addIssue({
+        code: "custom",
+        path: ["file", "id"],
+        message:
+          "Worldbuilding item file id must match its stable item id."
+      });
+    }
+  });
+export type LongWorldbuildingItem = z.infer<
+  typeof LongWorldbuildingItemSchema
+>;
+
+const LongWorldbuildingCategorySharedShape = {
+  id: LongWorldbuildingCategoryIdSchema,
+  title: LongTitleSchema,
+  order: z.number().int().positive()
+};
+
+export const LongWorldbuildingListCategorySchema = z
+  .object({
+    ...LongWorldbuildingCategorySharedShape,
+    format: z.literal("list"),
+    contentAuthority: z.literal("files"),
     /**
-     * Schema v1 does not duplicate list-item bodies in the index. The
-     * category Markdown file is authoritative for item ids (validated with
-     * LongWorldbuildingItemIdSchema) and content.
+     * Optional only for loading pre-overview v1 projects. All newly-created
+     * list categories include this file, and the project store migrates older
+     * categories before exposing them.
      */
+    overview: LongMarkdownFileReferenceSchema.optional(),
+    items: z.array(LongWorldbuildingItemSchema).max(10_000)
+  })
+  .strict()
+  .superRefine((category, context) => {
+    if (
+      category.overview &&
+      category.overview.id !== longWorldbuildingOverviewFileId(category.id)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["overview", "id"],
+        message:
+          "Worldbuilding overview file id must match its stable category id."
+      });
+    }
+    const ids = new Set<string>();
+    const fileIds = new Set<string>();
+    const paths = new Set<string>();
+    category.items.forEach((item, index) => {
+      if (ids.has(item.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "id"],
+          message: `Duplicate worldbuilding item id: ${item.id}`
+        });
+      }
+      if (fileIds.has(item.file.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "file", "id"],
+          message: `Duplicate worldbuilding item file id: ${item.file.id}`
+        });
+      }
+      if (paths.has(item.file.path)) {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "file", "path"],
+          message: `Duplicate worldbuilding item file path: ${item.file.path}`
+        });
+      }
+      ids.add(item.id);
+      fileIds.add(item.file.id);
+      paths.add(item.file.path);
+    });
+  });
+export type LongWorldbuildingListCategory = z.infer<
+  typeof LongWorldbuildingListCategorySchema
+>;
+
+export const LongWorldbuildingTextCategorySchema = z
+  .object({
+    ...LongWorldbuildingCategorySharedShape,
+    format: z.literal("text"),
     contentAuthority: z.literal("markdown"),
     file: LongMarkdownFileReferenceSchema
   })
@@ -281,10 +391,18 @@ export const LongWorldbuildingCategorySchema = z
         code: "custom",
         path: ["file", "id"],
         message:
-          "Worldbuilding file id must match its stable category id."
+          "Worldbuilding text file id must match its stable category id."
       });
     }
   });
+export type LongWorldbuildingTextCategory = z.infer<
+  typeof LongWorldbuildingTextCategorySchema
+>;
+
+export const LongWorldbuildingCategorySchema = z.discriminatedUnion("format", [
+  LongWorldbuildingListCategorySchema,
+  LongWorldbuildingTextCategorySchema
+]);
 export type LongWorldbuildingCategory = z.infer<
   typeof LongWorldbuildingCategorySchema
 >;
@@ -787,6 +905,355 @@ const UniqueForeshadowingBeatIdListSchema = z
     });
   });
 
+export const LONG_CONTINUITY_DOMAINS = [
+  "character",
+  "relationship",
+  "world",
+  "plot",
+  "foreshadowing"
+] as const;
+export const LongContinuityDomainSchema = z.enum(
+  LONG_CONTINUITY_DOMAINS
+);
+export type LongContinuityDomain = z.infer<
+  typeof LongContinuityDomainSchema
+>;
+
+export const LongContinuityFactFieldSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(160)
+  .refine((value) => !/[\r\n\0]/u.test(value), {
+    message: "Continuity fact fields must use one safe line."
+  });
+export type LongContinuityFactField = z.infer<
+  typeof LongContinuityFactFieldSchema
+>;
+
+const LongContinuityEvidenceSchema = z.string().trim().min(1).max(4_000);
+const LongContinuityFactValueSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200_000);
+
+export const LongContinuityFactSchema = z
+  .object({
+    factId: LongContinuityFactIdSchema,
+    domain: LongContinuityDomainSchema,
+    subjectId: LongStableIdSchema,
+    field: LongContinuityFactFieldSchema,
+    value: LongContinuityFactValueSchema,
+    sourceCommitId: LongLedgerCommitIdSchema,
+    sourceChapterCardId: LongChapterCardIdSchema,
+    evidence: LongContinuityEvidenceSchema
+  })
+  .strict();
+export type LongContinuityFact = z.infer<
+  typeof LongContinuityFactSchema
+>;
+
+function continuityFactKey(
+  value: Pick<LongContinuityFact, "domain" | "subjectId" | "field">
+): string {
+  return `${value.domain}\0${value.subjectId}\0${value.field.normalize("NFC")}`;
+}
+
+export const LongContinuityFactListSchema = z
+  .array(LongContinuityFactSchema)
+  .max(200_000)
+  .superRefine((facts, context) => {
+    const ids = new Set<string>();
+    const keys = new Set<string>();
+    facts.forEach((fact, index) => {
+      if (ids.has(fact.factId)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "factId"],
+          message: `Duplicate continuity fact id: ${fact.factId}`
+        });
+      }
+      ids.add(fact.factId);
+      const key = continuityFactKey(fact);
+      if (keys.has(key)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "field"],
+          message:
+            "Continuity facts must be unique by domain, subject id and field."
+        });
+      }
+      keys.add(key);
+    });
+  });
+
+export const LONG_CONTINUITY_AUDIENCE_TYPES = [
+  "reader",
+  "character",
+  "faction"
+] as const;
+export const LongContinuityAudienceTypeSchema = z.enum(
+  LONG_CONTINUITY_AUDIENCE_TYPES
+);
+export type LongContinuityAudienceType = z.infer<
+  typeof LongContinuityAudienceTypeSchema
+>;
+
+export const LONG_CONTINUITY_KNOWLEDGE_LEVELS = [
+  "unknown",
+  "suspects",
+  "believes",
+  "knows",
+  "misled"
+] as const;
+export const LongContinuityKnowledgeLevelSchema = z.enum(
+  LONG_CONTINUITY_KNOWLEDGE_LEVELS
+);
+export type LongContinuityKnowledgeLevel = z.infer<
+  typeof LongContinuityKnowledgeLevelSchema
+>;
+
+export const LongContinuityKnowledgeSchema = z
+  .object({
+    factId: LongContinuityFactIdSchema,
+    audienceType: LongContinuityAudienceTypeSchema,
+    audienceId: LongStableIdSchema.nullable(),
+    level: LongContinuityKnowledgeLevelSchema,
+    sourceCommitId: LongLedgerCommitIdSchema,
+    sourceChapterCardId: LongChapterCardIdSchema,
+    evidence: LongContinuityEvidenceSchema
+  })
+  .strict()
+  .superRefine((knowledge, context) => {
+    if (
+      (knowledge.audienceType === "reader") !==
+      (knowledge.audienceId === null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["audienceId"],
+        message:
+          "Reader knowledge must use a null audience id; character and faction knowledge require one."
+      });
+    }
+    if (
+      knowledge.audienceType === "character" &&
+      !knowledge.audienceId?.startsWith("character_")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["audienceId"],
+        message: "Character knowledge requires a stable character id."
+      });
+    }
+  });
+export type LongContinuityKnowledge = z.infer<
+  typeof LongContinuityKnowledgeSchema
+>;
+
+function continuityKnowledgeKey(
+  value: Pick<
+    LongContinuityKnowledge,
+    "factId" | "audienceType" | "audienceId"
+  >
+): string {
+  return `${value.factId}\0${value.audienceType}\0${value.audienceId ?? ""}`;
+}
+
+export const LongContinuityKnowledgeListSchema = z
+  .array(LongContinuityKnowledgeSchema)
+  .max(400_000)
+  .superRefine((entries, context) => {
+    const keys = new Set<string>();
+    entries.forEach((entry, index) => {
+      const key = continuityKnowledgeKey(entry);
+      if (keys.has(key)) {
+        context.addIssue({
+          code: "custom",
+          path: [index],
+          message:
+            "Continuity knowledge must be unique by fact and audience."
+        });
+      }
+      keys.add(key);
+    });
+  });
+
+export const LONG_CONTINUITY_OPEN_LOOP_KINDS = [
+  "character",
+  "relationship",
+  "world",
+  "plot",
+  "foreshadowing",
+  "knowledge",
+  "continuity"
+] as const;
+export const LongContinuityOpenLoopKindSchema = z.enum(
+  LONG_CONTINUITY_OPEN_LOOP_KINDS
+);
+export type LongContinuityOpenLoopKind = z.infer<
+  typeof LongContinuityOpenLoopKindSchema
+>;
+
+export const LONG_CONTINUITY_OPEN_LOOP_STATUSES = [
+  "open",
+  "progressing",
+  "resolved",
+  "abandoned"
+] as const;
+export const LongContinuityOpenLoopStatusSchema = z.enum(
+  LONG_CONTINUITY_OPEN_LOOP_STATUSES
+);
+export type LongContinuityOpenLoopStatus = z.infer<
+  typeof LongContinuityOpenLoopStatusSchema
+>;
+
+export const LongContinuityOpenLoopSchema = z
+  .object({
+    loopId: LongContinuityOpenLoopIdSchema,
+    kind: LongContinuityOpenLoopKindSchema,
+    status: LongContinuityOpenLoopStatusSchema,
+    detail: z.string().trim().min(1).max(200_000),
+    subjectId: LongStableIdSchema.nullable(),
+    factId: LongContinuityFactIdSchema.nullable(),
+    sourceCommitId: LongLedgerCommitIdSchema,
+    sourceChapterCardId: LongChapterCardIdSchema,
+    evidence: LongContinuityEvidenceSchema
+  })
+  .strict();
+export type LongContinuityOpenLoop = z.infer<
+  typeof LongContinuityOpenLoopSchema
+>;
+
+export const LongContinuityOpenLoopListSchema = z
+  .array(LongContinuityOpenLoopSchema)
+  .max(200_000)
+  .superRefine((loops, context) => {
+    const ids = new Set<string>();
+    loops.forEach((loop, index) => {
+      if (ids.has(loop.loopId)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "loopId"],
+          message: `Duplicate continuity open-loop id: ${loop.loopId}`
+        });
+      }
+      ids.add(loop.loopId);
+    });
+  });
+
+const UniqueContinuityTextListSchema = z
+  .array(z.string().trim().min(1).max(4_000))
+  .max(1_024)
+  .superRefine((values, context) => {
+    const seen = new Set<string>();
+    values.forEach((value, index) => {
+      const key = value.normalize("NFC");
+      if (seen.has(key)) {
+        context.addIssue({
+          code: "custom",
+          path: [index],
+          message: "Continuity handoff lists cannot contain duplicates."
+        });
+      }
+      seen.add(key);
+    });
+  });
+
+const UniqueContinuityOpenLoopIdListSchema = z
+  .array(LongContinuityOpenLoopIdSchema)
+  .max(100_000)
+  .superRefine((values, context) => {
+    const seen = new Set<string>();
+    values.forEach((value, index) => {
+      if (seen.has(value)) {
+        context.addIssue({
+          code: "custom",
+          path: [index],
+          message: `Duplicate continuity open-loop reference: ${value}`
+        });
+      }
+      seen.add(value);
+    });
+  });
+
+export const LongContinuityHandoffSchema = z
+  .object({
+    summary: z.string().trim().min(1).max(200_000),
+    mustCarry: UniqueContinuityTextListSchema,
+    nextChapterConstraints: UniqueContinuityTextListSchema,
+    openLoops: UniqueContinuityOpenLoopIdListSchema
+  })
+  .strict();
+export type LongContinuityHandoff = z.infer<
+  typeof LongContinuityHandoffSchema
+>;
+
+export const LongContinuityLatestHandoffSchema =
+  LongContinuityHandoffSchema.extend({
+    chapterCardId: LongChapterCardIdSchema,
+    commitId: LongLedgerCommitIdSchema
+  });
+export type LongContinuityLatestHandoff = z.infer<
+  typeof LongContinuityLatestHandoffSchema
+>;
+
+export const LongContinuityProjectionSchema = z
+  .object({
+    throughCommitId: LongLedgerCommitIdSchema.nullable(),
+    facts: LongContinuityFactListSchema,
+    knowledge: LongContinuityKnowledgeListSchema,
+    openLoops: LongContinuityOpenLoopListSchema,
+    latestHandoff: LongContinuityLatestHandoffSchema.nullable()
+  })
+  .strict()
+  .superRefine((projection, context) => {
+    const factIds = new Set(projection.facts.map(({ factId }) => factId));
+    projection.knowledge.forEach((knowledge, index) => {
+      if (!factIds.has(knowledge.factId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["knowledge", index, "factId"],
+          message: "Continuity knowledge must reference a projected fact."
+        });
+      }
+    });
+    const loopIds = new Set(projection.openLoops.map(({ loopId }) => loopId));
+    projection.latestHandoff?.openLoops.forEach((loopId, index) => {
+      if (!loopIds.has(loopId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["latestHandoff", "openLoops", index],
+          message:
+            "The latest continuity handoff must reference a projected open loop."
+        });
+      }
+    });
+    if (
+      projection.latestHandoff &&
+      projection.latestHandoff.commitId !== projection.throughCommitId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["latestHandoff", "commitId"],
+        message:
+          "The latest handoff commit must match the projection watermark."
+      });
+    }
+  });
+export type LongContinuityProjection = z.infer<
+  typeof LongContinuityProjectionSchema
+>;
+
+export const EMPTY_LONG_CONTINUITY_PROJECTION: LongContinuityProjection = {
+  throughCommitId: null,
+  facts: [],
+  knowledge: [],
+  openLoops: [],
+  latestHandoff: null
+};
+
 export const LongLedgerCommitIndexEntrySchema = z
   .object({
     id: LongLedgerCommitIdSchema,
@@ -816,7 +1283,10 @@ export type LongLedgerCommitIndexEntry = z.infer<
 export const LongLedgerCommitIndexSchema = z
   .object({
     committedThroughChapterId: LongChapterCardIdSchema.nullable(),
-    commits: z.array(LongLedgerCommitIndexEntrySchema).max(100_000)
+    commits: z.array(LongLedgerCommitIndexEntrySchema).max(100_000),
+    projection: LongContinuityProjectionSchema.default(
+      EMPTY_LONG_CONTINUITY_PROJECTION
+    )
   })
   .strict();
 export type LongLedgerCommitIndex = z.infer<
@@ -977,6 +1447,28 @@ function validateLongWorkspaceIndexSnapshot(
     "Worldbuilding category",
     context
   );
+  const worldbuildingIds = new Set(
+    snapshot.worldbuilding.map(({ id }) => id)
+  );
+  validateUniqueValues(
+    snapshot.worldbuilding.flatMap((category) =>
+      category.format === "list"
+        ? category.items.map(({ id }) => id)
+        : []
+    ),
+    (index) => ["worldbuilding", index, "items"],
+    "worldbuilding item id",
+    context
+  );
+  snapshot.worldbuilding.forEach((category, categoryIndex) => {
+    if (category.format !== "list") return;
+    validateContiguousOrder(
+      category.items.map(({ order }, index) => ({ index, order })),
+      (index) => ["worldbuilding", categoryIndex, "items", index, "order"],
+      "Worldbuilding item",
+      context
+    );
+  });
 
   validateUniqueValues(
     snapshot.characters.map(({ id }) => id),
@@ -1646,10 +2138,35 @@ function validateLongWorkspaceIndexSnapshot(
     path: ValidationPath;
   }> = [
     { file: snapshot.bookLine, path: ["bookLine"] },
-    ...snapshot.worldbuilding.map((category, index) => ({
-      file: category.file,
-      path: ["worldbuilding", index, "file"] as ValidationPath
-    })),
+    ...snapshot.worldbuilding.flatMap((category, index) =>
+      category.format === "text"
+        ? [{
+            file: category.file,
+            path: ["worldbuilding", index, "file"] as ValidationPath
+          }]
+        : [
+            ...(category.overview
+              ? [{
+                  file: category.overview,
+                  path: [
+                    "worldbuilding",
+                    index,
+                    "overview"
+                  ] as ValidationPath
+                }]
+              : []),
+            ...category.items.map((item, itemIndex) => ({
+              file: item.file,
+              path: [
+                "worldbuilding",
+                index,
+                "items",
+                itemIndex,
+                "file"
+              ] as ValidationPath
+            }))
+          ]
+    ),
     ...snapshot.characterFiles.flatMap((entry, index) =>
       [
         ["coreProfile", entry.coreProfile],
@@ -1979,6 +2496,138 @@ function validateLongWorkspaceIndexSnapshot(
       );
     }
   }
+
+  const projection = snapshot.ledger.projection;
+  const throughCommit =
+    projection.throughCommitId === null
+      ? undefined
+      : commitById.get(projection.throughCommitId);
+  if (projection.throughCommitId !== null && !throughCommit) {
+    addIssue(
+      context,
+      ["ledger", "projection", "throughCommitId"],
+      "Continuity projection watermark must reference an indexed ledger commit."
+    );
+  }
+  if (
+    projection.latestHandoff &&
+    commitById.get(projection.latestHandoff.commitId)?.chapterCardId !==
+      projection.latestHandoff.chapterCardId
+  ) {
+    addIssue(
+      context,
+      ["ledger", "projection", "latestHandoff", "chapterCardId"],
+      "The latest continuity handoff chapter must match its source commit."
+    );
+  }
+
+  const plotSubjectIds = new Set<string>([
+    snapshot.bookId,
+    ...volumes.map(({ id }) => id),
+    ...arcs.map(({ id }) => id),
+    ...chapterCards.map(({ id }) => id),
+    ...storyEvents.map(({ id }) => id),
+    ...eventConnections.map(({ id }) => id),
+    ...narrativePlacements.map(({ id }) => id)
+  ]);
+  const foreshadowingSubjectIds = new Set<string>([
+    ...foreshadowing.map(({ id }) => id),
+    ...beatById.keys()
+  ]);
+  const projectionSubjectExists = (
+    domain: LongContinuityDomain,
+    subjectId: string
+  ): boolean => {
+    if (domain === "character" || domain === "relationship") {
+      return characterIds.has(subjectId);
+    }
+    if (domain === "world") return worldbuildingIds.has(subjectId);
+    if (domain === "plot") return plotSubjectIds.has(subjectId);
+    return foreshadowingSubjectIds.has(subjectId);
+  };
+  const validateProjectionProvenance = (
+    value: {
+      sourceCommitId: string;
+      sourceChapterCardId: string;
+    },
+    path: ValidationPath
+  ): void => {
+    const sourceCommit = commitById.get(value.sourceCommitId);
+    if (!sourceCommit) {
+      addIssue(
+        context,
+        [...path, "sourceCommitId"],
+        "Continuity projection entries must reference an indexed source commit."
+      );
+      return;
+    }
+    if (sourceCommit.chapterCardId !== value.sourceChapterCardId) {
+      addIssue(
+        context,
+        [...path, "sourceChapterCardId"],
+        "Continuity projection entry chapter must match its source commit."
+      );
+    }
+    if (throughCommit && sourceCommit.sequence > throughCommit.sequence) {
+      addIssue(
+        context,
+        [...path, "sourceCommitId"],
+        "Continuity projection entries cannot come from after the projection watermark."
+      );
+    }
+  };
+  projection.facts.forEach((fact, index) => {
+    const path = ["ledger", "projection", "facts", index] as ValidationPath;
+    validateProjectionProvenance(fact, path);
+    if (!projectionSubjectExists(fact.domain, fact.subjectId)) {
+      addIssue(
+        context,
+        [...path, "subjectId"],
+        "Continuity facts must reference an existing object in their domain."
+      );
+    }
+  });
+  projection.knowledge.forEach((knowledge, index) => {
+    const path = [
+      "ledger",
+      "projection",
+      "knowledge",
+      index
+    ] as ValidationPath;
+    validateProjectionProvenance(knowledge, path);
+    if (
+      knowledge.audienceType === "character" &&
+      knowledge.audienceId !== null &&
+      !characterIds.has(knowledge.audienceId)
+    ) {
+      addIssue(
+        context,
+        [...path, "audienceId"],
+        "Character knowledge must reference an existing character."
+      );
+    }
+  });
+  projection.openLoops.forEach((loop, index) => {
+    const path = [
+      "ledger",
+      "projection",
+      "openLoops",
+      index
+    ] as ValidationPath;
+    validateProjectionProvenance(loop, path);
+    if (
+      loop.subjectId !== null &&
+      loop.kind !== "knowledge" &&
+      loop.kind !== "continuity" &&
+      !projectionSubjectExists(loop.kind, loop.subjectId)
+    ) {
+      addIssue(
+        context,
+        [...path, "subjectId"],
+        "Continuity open-loop subjects must reference an existing object in their domain."
+      );
+    }
+  });
 }
 
 export const LongWorkspaceIndexSnapshotSchema =
@@ -2640,8 +3289,19 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
     id: "worldbuilding",
     label: "世界观智能体",
     description: "维护世界规则、势力、地理、历史、术语、境界与物品。",
-    systemPrompt:
-      "你负责长篇世界观。先查询现有结构和相关正文，再提出可审阅的结构或文档变更；不得凭空覆盖未读取的设定。",
+    systemPrompt: `你负责长篇世界观。模型只使用世界观业务标识：
+- 文本型分类以 category_id 唯一定位；列表型分类以 category_id 和 item_id 唯一定位。
+- 其余实现细节由工具内部处理；不要索取、推断或复述。
+
+工作规则：
+1. 先调用 list_worldbuilding 获取分类列表；需要列表型条目时，再用 category_id 获取该分类的条目列表。
+2. 读取正文使用 read_worldbuilding；列表型必须指定 item_id，文本型必须省略 item_id。需要编辑前，必须以 mode=full 完整读取。
+3. 搜索已有设定使用 search_worldbuilding；命中只用于定位，需要修改时仍须以 mode=full 完整读取相应正文。
+4. 新增列表条目使用 create_worldbuilding_file；一次只创建一个空白条目，不得在创建参数中夹带初始化正文。创建后使用返回的 item_id 单独调用 write_worldbuilding_file。
+5. 新建空条目的首次正文、空正文写入或用户明确要求整体重写时使用 write_worldbuilding_file；已有正文必须先以 mode=full 完整读取，并明确允许覆盖。
+6. 局部修改必须先以 mode=full 完整读取，再使用 edit_worldbuilding_file 做唯一原文片段替换。
+7. 分类创建，以及分类和已有条目的重命名、删除、排序使用 propose_long_mutation；条目创建不得使用该工具，必须使用 create_worldbuilding_file。不得通过拼接伪造列表结构。
+8. 所有写入都只形成待审阅提案，不得声称尚未获批的内容已经落盘。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -2661,8 +3321,19 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
     id: "character_design",
     label: "人物设计智能体",
     description: "维护人物核心设定、关系、当前状态和历史。",
-    systemPrompt:
-      "你负责长篇人物设计。人物稳定身份与章节中的临时状态必须分开；写入前查询相关人物、事件和连续性记录。",
+    systemPrompt: `你负责长篇人物设计。人物列表不是一份聚合正文：
+- 每名人物都有稳定 character_id，并拥有核心档案、人物关系、当前状态、历史轨迹四份独立 Markdown 文件。
+- 核心档案表达稳定身份与设计意图；当前状态和历史轨迹表达连续性事实，不能与某一章节的临时人物状态混写。
+
+工作规则：
+1. 先调用 get_long_workspace_index 确认人物 ID、分组、别名和四份文件关系，并查询相关世界观、事件与连续性记录。
+2. 批量新增人物使用 create_characters；可在同一次调用中提供各自四份文件的初始内容。
+3. 读取人物内容使用 read_character_document，必须同时指定 character_id 和 document。
+4. 空文件或用户明确要求整体重写时使用 write_character_document；已有正文必须先完整读取，并明确允许覆盖。
+5. 局部修改必须先完整读取，再使用 replace_character_text 做唯一原文片段替换。
+6. 人物重命名、别名、分组、删除和排序使用 propose_long_mutation；不得把多名人物拼接到同一文件中。
+7. 首次连续性提交后，人物关系、当前状态和历史轨迹由连续性账本接管；人物设计智能体只能直接修改核心档案。
+8. 所有写入都只形成待审阅提案，不得声称尚未获批的内容已经落盘。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -2733,9 +3404,9 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "expert_section_writer",
     label: "单章写作智能体",
-    description: "根据一张章卡写入正文、人物状态和下一章交接。",
+    description: "根据一张章卡完成可供连续性核验的正文证据。",
     systemPrompt:
-      "你是长篇单章写手。每次只处理当前章卡，输出正文、人物状态和 handoff 三个文件；必须依据查询到的设定与已提交连续性，不得宣称提交账本。",
+      "你是长篇单章写手。每次只处理当前章卡，只负责写出可供核验的正文证据；必须依据查询到的设定与已提交连续性，不得自行确定章末状态、接续包或宣称提交账本。",
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -2755,9 +3426,9 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "continuity_ledger",
     label: "连续性账本智能体",
-    description: "核对单章事实并原子提交连续性状态。",
+    description: "核验正文并生成章末状态、接续包和结构化全域投影。",
     systemPrompt:
-      "你负责长篇连续性账本。只处理正文已经写完的下一章，核对叙事落点和伏笔决策后形成提交提案；不得跳章提交。",
+      "你负责长篇连续性账本。只处理正文已经写完的下一章，以正文为证据核对人物、关系、世界、剧情、伏笔与知识边界，生成章末人物状态、下一章接续包和结构化全域投影后形成提交提案；不得跳章提交。",
     readAccess: {
       workspaceRoots: [
         "worldbuilding",

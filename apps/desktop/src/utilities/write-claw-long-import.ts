@@ -15,8 +15,12 @@ import {
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
+  longWorldbuildingContentPath,
   longWorldbuildingFileId,
-  serializeLongWorldbuildingMarkdownList,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
+  longWorldbuildingOverviewContentPath,
+  longWorldbuildingOverviewFileId,
   type LinkedMaterialIdsByKind,
   type LinkedSkillIdsByKind,
   type LongFileRevision,
@@ -194,10 +198,6 @@ function fileRevision(content: string): LongFileRevision {
 
 function storageKey(id: string): string {
   return contentSha256(id).slice(0, 32);
-}
-
-function worldbuildingPath(categoryId: string): string {
-  return `long/worldbuilding/${storageKey(categoryId)}/content.md`;
 }
 
 function characterPath(characterId: string, filename: string): string {
@@ -985,7 +985,7 @@ function appendMigrationEvidenceCategories(
       contentAuthority: "markdown",
       file: documents.add(
         longWorldbuildingFileId(categoryId),
-        worldbuildingPath(categoryId),
+        longWorldbuildingContentPath(categoryId),
         content
       )
     });
@@ -1300,13 +1300,13 @@ export function createWriteClawLongImportPlan(
   source.warnings.forEach((warning) => warnings.add(warning));
   const workspace = source.workspace;
   warnings.preserve(
-    "Write Claw 原始工作区完整快照",
+    "旧版本原始工作区完整快照",
     "long_workspace.json",
     serializeJson(workspace)
   );
   if (source.book) {
     warnings.preserve(
-      "Write Claw 原始书籍元数据完整快照",
+      "旧版本原始书籍元数据完整快照",
       "book.json",
       serializeJson(source.book)
     );
@@ -1317,12 +1317,12 @@ export function createWriteClawLongImportPlan(
   );
   if (legacySchemaVersion > 5) {
     throw new Error(
-      `Write Claw 长篇 schema v${legacySchemaVersion} 高于当前导入器支持的 v5。`
+      `旧版本长篇 schema v${legacySchemaVersion} 高于当前导入器支持的 v5。`
     );
   }
   if (legacySchemaVersion !== 5) {
     warnings.add(
-      `来源长篇 schema 版本为 v${legacySchemaVersion || "未知"}；已按 Write Claw v5 兼容字段进行保守迁移。`
+      `来源长篇 schema 版本为 v${legacySchemaVersion || "未知"}；已按旧版本 v5 兼容字段进行保守迁移。`
     );
   }
 
@@ -1467,7 +1467,12 @@ export function createWriteClawLongImportPlan(
         category.format
       );
     }
-    let content: string;
+    let content = "";
+    let listItems: Array<{
+      id: string;
+      title: string;
+      content: string;
+    }> = [];
     if (format === "text") {
       content = clipped(
         [stringValue(category.overview), stringValue(category.text)]
@@ -1619,25 +1624,49 @@ export function createWriteClawLongImportPlan(
           content: legacyContent
         });
       }
-      content = serializeLongWorldbuildingMarkdownList(markdownItems);
+      listItems = markdownItems;
     }
-    return {
-      id: categoryId,
-      title: title(
-        category.name,
-        `未命名分类${index + 1}`,
-        warnings,
-        `世界观分类 ${index + 1} 标题`
-      ),
-      order: index + 1,
-      format,
-      contentAuthority: "markdown" as const,
-      file: documents.add(
-        longWorldbuildingFileId(categoryId),
-        worldbuildingPath(categoryId),
-        content
-      )
-    };
+    const categoryTitle = title(
+      category.name,
+      `未命名分类${index + 1}`,
+      warnings,
+      `世界观分类 ${index + 1} 标题`
+    );
+    return format === "text"
+      ? {
+          id: categoryId,
+          title: categoryTitle,
+          order: index + 1,
+          format: "text" as const,
+          contentAuthority: "markdown" as const,
+          file: documents.add(
+            longWorldbuildingFileId(categoryId),
+            longWorldbuildingContentPath(categoryId),
+            content
+          )
+        }
+      : {
+          id: categoryId,
+          title: categoryTitle,
+          order: index + 1,
+          format: "list" as const,
+          contentAuthority: "files" as const,
+          overview: documents.add(
+            longWorldbuildingOverviewFileId(categoryId),
+            longWorldbuildingOverviewContentPath(categoryId),
+            ""
+          ),
+          items: listItems.map((item, itemIndex) => ({
+            id: item.id,
+            title: item.title,
+            order: itemIndex + 1,
+            file: documents.add(
+              longWorldbuildingItemFileId(item.id),
+              longWorldbuildingItemContentPath(categoryId, item.id),
+              item.content
+            )
+          }))
+        };
   });
 
   const charactersSource = record(workspace.characters);

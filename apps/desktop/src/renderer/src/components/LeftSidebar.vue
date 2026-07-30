@@ -6,7 +6,6 @@ import type {
   DialogMode,
   IconName,
   LongBookResourceNodeActionPayload,
-  LongStructureTreeActionPayload,
   ResourceDomain,
   ResourceSectionActionPayload,
   ResourceTreeNode,
@@ -47,7 +46,6 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
-  longStructureAction: [payload: LongStructureTreeActionPayload];
 }>();
 
 const USER_NAME_STORAGE_KEY = "deepwrite:user-name:v1";
@@ -378,7 +376,6 @@ watch(
               @resource-node-action="emit('resourceNodeAction', $event)"
               @create-expert-section="emit('createExpertSection', $event)"
               @remove-expert-section="emit('removeExpertSection', $event)"
-              @long-structure-action="emit('longStructureAction', $event)"
             />
           </ul>
         </section>
@@ -399,7 +396,6 @@ watch(
           @resource-node-action="emit('resourceNodeAction', $event)"
           @create-expert-section="emit('createExpertSection', $event)"
           @remove-expert-section="emit('removeExpertSection', $event)"
-          @long-structure-action="emit('longStructureAction', $event)"
         />
       </div>
     </div>

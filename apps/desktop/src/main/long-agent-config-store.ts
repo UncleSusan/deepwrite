@@ -19,6 +19,11 @@ interface DiskLongAgentSettings extends LongAgentSettingsInput {
   version: 1;
 }
 
+/** Byte-identical retired builtins are upgraded; customized prompts stay put. */
+const RETIRED_WORLDBUILDING_SYSTEM_PROMPTS: readonly string[] = [
+  "你负责长篇世界观。先查询现有结构和相关正文，再提出可审阅的结构或文档变更；不得凭空覆盖未读取的设定。"
+];
+
 function cloneReadAccess(access: LongAgentReadAccess): LongAgentReadAccess {
   return {
     workspaceRoots: [...access.workspaceRoots],
@@ -117,7 +122,14 @@ function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
   }
   return {
     workspaceType: "long",
-    agents: parsed.data.agents.map(cloneInputAgent)
+    agents: parsed.data.agents.map((agent) => ({
+      ...cloneInputAgent(agent),
+      systemPrompt:
+        agent.id === "worldbuilding" &&
+        RETIRED_WORLDBUILDING_SYSTEM_PROMPTS.includes(agent.systemPrompt)
+          ? getDefaultLongAgentProfile(agent.id).systemPrompt
+          : agent.systemPrompt
+    }))
   };
 }
 

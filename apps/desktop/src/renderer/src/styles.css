@@ -2348,6 +2348,7 @@ html[data-platform="darwin"] .conversation-header {
 }
 
 .edit-proposal-card {
+  contain: paint;
   overflow: hidden;
   border: 1px solid var(--theme-line, #dedfdf);
   border-radius: 10px;
@@ -2417,6 +2418,7 @@ html[data-platform="darwin"] .conversation-header {
 
 .edit-proposal-status {
   flex: 0 0 auto;
+  min-width: 5.5em;
   padding: 2px 6px;
   border-radius: 999px;
   background: var(--surface-muted, #f0f0ee);
@@ -2424,6 +2426,7 @@ html[data-platform="darwin"] .conversation-header {
   font-size: 0.714286rem;
   font-weight: 600;
   line-height: 1.45;
+  text-align: center;
 }
 
 .edit-proposal-status.is-pending,
@@ -3202,7 +3205,7 @@ html[data-theme="dark"] :where(
   border-radius: 21px;
   background: var(--surface-main);
   box-shadow: 0 5px 18px rgba(25, 28, 31, 0.07), 0 1px 2px rgba(25, 28, 31, 0.05);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: none;
 }
 
 .composer:focus-within .composer-input-surface {
@@ -3633,6 +3636,27 @@ html[data-platform="darwin"] .editor-header {
 
 .section-tab.is-active::after {
   background: var(--accent, #7c5c3e);
+}
+
+.section-tabs-add {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  flex: 0 0 auto;
+  width: 27px;
+  height: 27px;
+  margin-left: 5px;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.section-tabs-add:hover,
+.section-tabs-add:focus-visible {
+  outline: none;
+  background: var(--theme-line);
+  color: var(--text-primary);
 }
 
 .save-state {

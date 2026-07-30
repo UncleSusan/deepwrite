@@ -5,7 +5,6 @@ import type {
   CatalogResourceNodeActionPayload,
   IconName,
   LongBookResourceNodeActionPayload,
-  LongStructureTreeActionPayload,
   ResourceSectionAction,
   ResourceSectionActionPayload,
   ResourceTreeNode,
@@ -31,7 +30,6 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
-  longStructureAction: [payload: LongStructureTreeActionPayload];
 }>();
 
 const collapsed = ref(false);
@@ -190,7 +188,6 @@ onBeforeUnmount(() => {
         @resource-node-action="emit('resourceNodeAction', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @remove-expert-section="emit('removeExpertSection', $event)"
-        @long-structure-action="emit('longStructureAction', $event)"
       />
     </ul>
   </section>

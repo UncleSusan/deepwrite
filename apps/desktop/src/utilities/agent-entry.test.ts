@@ -442,6 +442,53 @@ describe("Agent Utility prompt forwarding", () => {
       },
       {
         ...eventBase,
+        type: "long.worldbuilding_file_proposal",
+        payload: {
+          ...payloadBase,
+          agentId: "worldbuilding",
+          batch: {
+            baseRevision: 2,
+            updatedAt: "2026-07-26T12:00:00.000Z",
+            operations: [
+              {
+                type: "worldbuildingItem.create",
+                categoryId: "world_rules",
+                item: {
+                  id: "worlditem_memory",
+                  title: "记忆代价",
+                  order: 1,
+                  file: {
+                    id: "file_worlditem_memory:content",
+                    path:
+                      "long/worldbuilding/world_rules/items/worlditem_memory.md",
+                    revision: "v1:0:00000000",
+                    updatedAt: "2026-07-26T12:00:00.000Z"
+                  }
+                }
+              }
+            ],
+            documentWrites: []
+          },
+          baseProjectRevision: 3,
+          files: [
+            {
+              categoryId: "world_rules",
+              itemId: "worlditem_memory",
+              fileId: "file_worlditem_memory:content",
+              filePath:
+                "long/worldbuilding/world_rules/items/worlditem_memory.md",
+              title: "记忆代价",
+              operation: "create",
+              beforeText: "",
+              afterText: "",
+              beforeRevision: null,
+              nextRevision: "v1:0:00000000"
+            }
+          ]
+        }
+      },
+      {
+        ...eventBase,
         type: "long.chapter_dispatch_proposal",
         payload: {
           ...payloadBase,
@@ -454,7 +501,7 @@ describe("Agent Utility prompt forwarding", () => {
               chapterCardId: "chapter_one",
               title: "第一章",
               status: "empty",
-              missingFiles: ["body", "character_state", "handoff"]
+              missingFiles: ["body"]
             }
           ],
           workspaceRevision: 2,
@@ -472,11 +519,11 @@ describe("Agent Utility prompt forwarding", () => {
             chapterCardId: "chapter_one",
             body: { content: "正文", baseRevision: "v1:0:00000000" },
             characterState: {
-              content: "人物状态",
+              content: "",
               baseRevision: "v1:0:00000000"
             },
             handoff: {
-              content: "下一章交接",
+              content: "",
               baseRevision: "v1:0:00000000"
             },
             baseWorkspaceRevision: 2,
@@ -510,6 +557,44 @@ describe("Agent Utility prompt forwarding", () => {
             placementDecisions: {},
             foreshadowingBeatDecisions: {},
             fileUpdates: [],
+            coverage: {
+              character: {
+                status: "unchanged",
+                note: "人物状态已核验。"
+              },
+              plot: {
+                status: "unchanged",
+                note: "剧情推进已核验。"
+              },
+              foreshadowing: {
+                status: "unchanged",
+                note: "伏笔状态已核验。"
+              },
+              world: {
+                status: "unchanged",
+                note: "世界状态已核验。"
+              },
+              knowledge: {
+                status: "unchanged",
+                note: "知识边界已核验。"
+              },
+              openLoops: {
+                status: "unchanged",
+                note: "开放事项已核验。"
+              }
+            },
+            factMutations: [],
+            knowledgeMutations: [],
+            openLoopMutations: [],
+            chapterOutputs: {
+              characterState: "第一章章末人物状态。",
+              handoff: {
+                summary: "下一章继续。",
+                mustCarry: [],
+                nextChapterConstraints: [],
+                openLoops: []
+              }
+            },
             baseWorkspaceRevision: 2,
             baseProjectRevision: 3
           }
@@ -537,12 +622,13 @@ describe("Agent Utility prompt forwarding", () => {
     await expect(
       captured.commandHandler!(command, (event) => emitted.push(event))
     ).resolves.toMatchObject({ status: "accepted" });
-    await vi.waitFor(() => expect(emitted).toHaveLength(4));
+    await vi.waitFor(() => expect(emitted).toHaveLength(5));
 
     expect(
       emitted.map((event) => SystemEventEnvelopeSchema.parse(event).type)
     ).toEqual([
       "long.mutation_proposal",
+      "long.worldbuilding_file_proposal",
       "long.chapter_dispatch_proposal",
       "long.chapter_write_proposal",
       "long.ledger_commit_proposal"

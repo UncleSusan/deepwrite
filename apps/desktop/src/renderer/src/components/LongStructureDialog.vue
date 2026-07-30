@@ -11,10 +11,6 @@ import type {
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
 import type { LongStructureMutationCompletion } from "../types/longWorkspace";
-import type {
-  LongStructureTreeAction,
-  LongStructureTreeSection
-} from "../types/workspace";
 import AppIcon from "./AppIcon.vue";
 import LongStructureManager from "./LongStructureManager.vue";
 
@@ -23,9 +19,6 @@ const props = defineProps<{
   bookTitle: string;
   snapshot: LongWorkspaceIndexSnapshot | null;
   pending?: boolean;
-  initialSection: LongStructureTreeSection | undefined;
-  initialAction: LongStructureTreeAction | undefined;
-  initialItemId: string | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -135,15 +128,15 @@ onBeforeUnmount(() =>
       >
         <header class="long-structure-dialog-header">
           <div>
-            <span>长篇结构管理</span>
+            <span>长篇设置</span>
             <strong id="long-structure-dialog-title">
-              {{ bookTitle }} · 长篇结构管理
+              {{ bookTitle }} · 世界观与功能设置
             </strong>
           </div>
           <button
             ref="closeButton"
             type="button"
-            aria-label="关闭长篇结构管理"
+            aria-label="关闭世界观与功能设置"
             :disabled="pending"
             @click="close"
           >
@@ -154,9 +147,6 @@ onBeforeUnmount(() =>
           v-if="snapshot"
           :snapshot="snapshot"
           :disabled="pending"
-          :initial-section="initialSection"
-          :initial-action="initialAction"
-          :initial-item-id="initialItemId"
           @mutation="forwardMutation"
         />
       </section>

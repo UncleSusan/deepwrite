@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import chapterCardDialogSource from "./CreateLongChapterCardDialog.vue?raw";
 import characterDialogSource from "./CreateLongCharacterDialog.vue?raw";
 import plotPointDialogSource from "./CreateLongPlotPointDialog.vue?raw";
 import volumeDialogSource from "./CreateLongVolumeDialog.vue?raw";
@@ -13,6 +14,7 @@ import workspaceEditorSource from "./LongWorkspaceEditor.vue?raw";
 describe("long-form dialog backdrops", () => {
   it("reuse the same backdrop treatment as short-form dialogs", () => {
     for (const source of [
+      chapterCardDialogSource,
       characterDialogSource,
       plotPointDialogSource,
       volumeDialogSource,

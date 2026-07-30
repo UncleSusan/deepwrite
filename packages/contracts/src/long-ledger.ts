@@ -2,6 +2,18 @@ import { z } from "zod";
 import {
   LongBookIdSchema,
   LongChapterCardIdSchema,
+  LongContinuityAudienceTypeSchema,
+  LongContinuityDomainSchema,
+  LongContinuityFactFieldSchema,
+  LongContinuityFactIdSchema,
+  LongContinuityFactSchema,
+  LongContinuityHandoffSchema,
+  LongContinuityKnowledgeLevelSchema,
+  LongContinuityKnowledgeSchema,
+  LongContinuityOpenLoopIdSchema,
+  LongContinuityOpenLoopKindSchema,
+  LongContinuityOpenLoopSchema,
+  LongContinuityOpenLoopStatusSchema,
   LongExecutionStatusSchema,
   LongFileIdSchema,
   LongFileRevisionSchema,
@@ -10,7 +22,8 @@ import {
   LongForeshadowingStatusSchema,
   LongLedgerCommitIdSchema,
   LongNarrativePlacementIdSchema,
-  LongProjectRelativePathSchema
+  LongProjectRelativePathSchema,
+  LongStableIdSchema
 } from "./long-workspace";
 
 const LedgerTimestampSchema = z.string().datetime();
@@ -126,6 +139,244 @@ export type LongLedgerFileChange = z.infer<
   typeof LongLedgerFileChangeSchema
 >;
 
+export const LongLedgerCoverageStatusSchema = z.enum([
+  "changed",
+  "unchanged",
+  "not_applicable"
+]);
+export type LongLedgerCoverageStatus = z.infer<
+  typeof LongLedgerCoverageStatusSchema
+>;
+
+export const LongLedgerCoverageItemSchema = z
+  .object({
+    status: LongLedgerCoverageStatusSchema,
+    note: LedgerEvidenceNoteSchema
+  })
+  .strict();
+export type LongLedgerCoverageItem = z.infer<
+  typeof LongLedgerCoverageItemSchema
+>;
+
+export const LongRequiredLedgerCoverageItemSchema = z
+  .object({
+    status: LongLedgerCoverageStatusSchema,
+    note: RequiredLedgerEvidenceNoteSchema
+  })
+  .strict();
+
+export const LongLedgerCoverageSchema = z
+  .object({
+    character: LongLedgerCoverageItemSchema,
+    plot: LongLedgerCoverageItemSchema,
+    foreshadowing: LongLedgerCoverageItemSchema,
+    world: LongLedgerCoverageItemSchema,
+    knowledge: LongLedgerCoverageItemSchema,
+    openLoops: LongLedgerCoverageItemSchema
+  })
+  .strict();
+export type LongLedgerCoverage = z.infer<
+  typeof LongLedgerCoverageSchema
+>;
+
+export const LongRequiredLedgerCoverageSchema = z
+  .object({
+    character: LongRequiredLedgerCoverageItemSchema,
+    plot: LongRequiredLedgerCoverageItemSchema,
+    foreshadowing: LongRequiredLedgerCoverageItemSchema,
+    world: LongRequiredLedgerCoverageItemSchema,
+    knowledge: LongRequiredLedgerCoverageItemSchema,
+    openLoops: LongRequiredLedgerCoverageItemSchema
+  })
+  .strict();
+
+const EMPTY_LONG_LEDGER_COVERAGE: LongLedgerCoverage = {
+  character: { status: "not_applicable", note: "" },
+  plot: { status: "not_applicable", note: "" },
+  foreshadowing: { status: "not_applicable", note: "" },
+  world: { status: "not_applicable", note: "" },
+  knowledge: { status: "not_applicable", note: "" },
+  openLoops: { status: "not_applicable", note: "" }
+};
+
+const EmptyLongContinuityHandoffSchema = z
+  .object({
+    summary: z.literal(""),
+    mustCarry: z.array(z.never()).max(0),
+    nextChapterConstraints: z.array(z.never()).max(0),
+    openLoops: z.array(z.never()).max(0)
+  })
+  .strict();
+
+export const LongLedgerChapterOutputsSchema = z
+  .object({
+    characterState: LedgerSummaryTextSchema,
+    handoff: z.union([
+      LongContinuityHandoffSchema,
+      EmptyLongContinuityHandoffSchema
+    ])
+  })
+  .strict();
+export type LongLedgerChapterOutputs = z.infer<
+  typeof LongLedgerChapterOutputsSchema
+>;
+
+export const LongRequiredLedgerChapterOutputsSchema = z
+  .object({
+    characterState: RequiredLedgerSummaryTextSchema,
+    handoff: LongContinuityHandoffSchema
+  })
+  .strict();
+export type LongRequiredLedgerChapterOutputs = z.infer<
+  typeof LongRequiredLedgerChapterOutputsSchema
+>;
+
+const EMPTY_LONG_LEDGER_CHAPTER_OUTPUTS: LongLedgerChapterOutputs = {
+  characterState: "",
+  handoff: {
+    summary: "",
+    mustCarry: [],
+    nextChapterConstraints: [],
+    openLoops: []
+  }
+};
+
+export const LongLedgerFactMutationSchema = z
+  .object({
+    factId: LongContinuityFactIdSchema,
+    domain: LongContinuityDomainSchema,
+    subjectId: LongStableIdSchema,
+    field: LongContinuityFactFieldSchema,
+    value: RequiredLedgerSummaryTextSchema,
+    evidence: RequiredLedgerEvidenceNoteSchema
+  })
+  .strict();
+export type LongLedgerFactMutation = z.infer<
+  typeof LongLedgerFactMutationSchema
+>;
+
+export const LongLedgerKnowledgeMutationSchema = z
+  .object({
+    factId: LongContinuityFactIdSchema,
+    audienceType: LongContinuityAudienceTypeSchema,
+    audienceId: LongStableIdSchema.nullable(),
+    level: LongContinuityKnowledgeLevelSchema,
+    evidence: RequiredLedgerEvidenceNoteSchema
+  })
+  .strict()
+  .superRefine((mutation, context) => {
+    if (
+      (mutation.audienceType === "reader") !==
+      (mutation.audienceId === null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["audienceId"],
+        message:
+          "Reader knowledge must use a null audience id; character and faction knowledge require one."
+      });
+    }
+    if (
+      mutation.audienceType === "character" &&
+      !mutation.audienceId?.startsWith("character_")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["audienceId"],
+        message: "Character knowledge requires a stable character id."
+      });
+    }
+  });
+export type LongLedgerKnowledgeMutation = z.infer<
+  typeof LongLedgerKnowledgeMutationSchema
+>;
+
+export const LongLedgerOpenLoopMutationSchema = z
+  .object({
+    loopId: LongContinuityOpenLoopIdSchema,
+    kind: LongContinuityOpenLoopKindSchema,
+    status: LongContinuityOpenLoopStatusSchema,
+    detail: RequiredLedgerSummaryTextSchema,
+    subjectId: LongStableIdSchema.nullable().default(null),
+    factId: LongContinuityFactIdSchema.nullable().default(null),
+    evidence: RequiredLedgerEvidenceNoteSchema
+  })
+  .strict();
+export type LongLedgerOpenLoopMutation = z.infer<
+  typeof LongLedgerOpenLoopMutationSchema
+>;
+
+export const LongLedgerFactChangeSchema = z
+  .object({
+    before: LongContinuityFactSchema.nullable(),
+    after: LongContinuityFactSchema
+  })
+  .strict()
+  .superRefine((change, context) => {
+    if (
+      change.before &&
+      (change.before.factId !== change.after.factId ||
+        change.before.domain !== change.after.domain ||
+        change.before.subjectId !== change.after.subjectId ||
+        change.before.field !== change.after.field)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["before"],
+        message: "A continuity fact change cannot change its logical key."
+      });
+    }
+  });
+export type LongLedgerFactChange = z.infer<
+  typeof LongLedgerFactChangeSchema
+>;
+
+export const LongLedgerKnowledgeChangeSchema = z
+  .object({
+    before: LongContinuityKnowledgeSchema.nullable(),
+    after: LongContinuityKnowledgeSchema
+  })
+  .strict()
+  .superRefine((change, context) => {
+    if (
+      change.before &&
+      (change.before.factId !== change.after.factId ||
+        change.before.audienceType !== change.after.audienceType ||
+        change.before.audienceId !== change.after.audienceId)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["before"],
+        message: "A continuity knowledge change cannot change its logical key."
+      });
+    }
+  });
+export type LongLedgerKnowledgeChange = z.infer<
+  typeof LongLedgerKnowledgeChangeSchema
+>;
+
+export const LongLedgerOpenLoopChangeSchema = z
+  .object({
+    before: LongContinuityOpenLoopSchema.nullable(),
+    after: LongContinuityOpenLoopSchema
+  })
+  .strict()
+  .superRefine((change, context) => {
+    if (
+      change.before &&
+      change.before.loopId !== change.after.loopId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["before", "loopId"],
+        message: "A continuity open-loop change cannot change its id."
+      });
+    }
+  });
+export type LongLedgerOpenLoopChange = z.infer<
+  typeof LongLedgerOpenLoopChangeSchema
+>;
+
 /**
  * The record contains the exact before/after values needed for deterministic
  * last-commit rollback. It is an audit record, not an alternate workspace
@@ -133,7 +384,11 @@ export type LongLedgerFileChange = z.infer<
  */
 export const LongLedgerCommitRecordSchema = z
   .object({
-    schemaVersion: z.union([z.literal(1), z.literal(2)]),
+    schemaVersion: z.union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(3)
+    ]),
     id: LongLedgerCommitIdSchema,
     bookId: LongBookIdSchema,
     sequence: z.number().int().positive(),
@@ -166,11 +421,29 @@ export const LongLedgerCommitRecordSchema = z
       .array(LongLedgerForeshadowingThreadChangeSchema)
       .max(100_000)
       .default([]),
-    fileChanges: z.array(LongLedgerFileChangeSchema).max(1_024)
+    fileChanges: z.array(LongLedgerFileChangeSchema).max(1_024),
+    coverage: LongLedgerCoverageSchema.default(
+      EMPTY_LONG_LEDGER_COVERAGE
+    ),
+    factChanges: z
+      .array(LongLedgerFactChangeSchema)
+      .max(200_000)
+      .default([]),
+    knowledgeChanges: z
+      .array(LongLedgerKnowledgeChangeSchema)
+      .max(400_000)
+      .default([]),
+    openLoopChanges: z
+      .array(LongLedgerOpenLoopChangeSchema)
+      .max(200_000)
+      .default([]),
+    chapterOutputs: LongLedgerChapterOutputsSchema.default(
+      EMPTY_LONG_LEDGER_CHAPTER_OUTPUTS
+    )
   })
   .strict()
   .superRefine((record, context) => {
-    if (record.schemaVersion === 2) {
+    if (record.schemaVersion >= 2) {
       if (record.commitMessage.length === 0) {
         context.addIssue({
           code: "custom",
@@ -213,6 +486,68 @@ export const LongLedgerCommitRecordSchema = z
           });
         }
       }
+    }
+    if (record.schemaVersion === 3) {
+      for (const [key, item] of Object.entries(record.coverage)) {
+        if (item.note.length === 0) {
+          context.addIssue({
+            code: "custom",
+            path: ["coverage", key, "note"],
+            message:
+              "A v3 ledger record requires a non-empty note for every coverage domain."
+          });
+        }
+      }
+      if (
+        record.chapterOutputs.characterState.length === 0 ||
+        record.chapterOutputs.handoff.summary.length === 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["chapterOutputs"],
+          message:
+            "A v3 ledger record requires non-empty character state and handoff outputs."
+        });
+      }
+      record.factChanges.forEach((change, index) => {
+        if (
+          change.after.sourceCommitId !== record.id ||
+          change.after.sourceChapterCardId !== record.chapterCardId
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["factChanges", index, "after"],
+            message:
+              "A v3 fact change must carry this commit and chapter as its source."
+          });
+        }
+      });
+      record.knowledgeChanges.forEach((change, index) => {
+        if (
+          change.after.sourceCommitId !== record.id ||
+          change.after.sourceChapterCardId !== record.chapterCardId
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["knowledgeChanges", index, "after"],
+            message:
+              "A v3 knowledge change must carry this commit and chapter as its source."
+          });
+        }
+      });
+      record.openLoopChanges.forEach((change, index) => {
+        if (
+          change.after.sourceCommitId !== record.id ||
+          change.after.sourceChapterCardId !== record.chapterCardId
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["openLoopChanges", index, "after"],
+            message:
+              "A v3 open-loop change must carry this commit and chapter as its source."
+          });
+        }
+      });
     }
     if (
       record.committedWorkspaceRevision !==
@@ -314,6 +649,47 @@ export const LongLedgerCommitRecordSchema = z
         message: "Ledger rollback content exceeds the 64 MiB safety budget."
       });
     }
+    const factIds = record.factChanges.map(
+      ({ after }) => after.factId
+    );
+    const factKeys = record.factChanges.map(
+      ({ after }) =>
+        `${after.domain}\0${after.subjectId}\0${after.field.normalize("NFC")}`
+    );
+    if (
+      new Set(factIds).size !== factIds.length ||
+      new Set(factKeys).size !== factKeys.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["factChanges"],
+        message:
+          "A ledger record cannot change the same continuity fact key twice."
+      });
+    }
+    const knowledgeKeys = record.knowledgeChanges.map(
+      ({ after }) =>
+        `${after.factId}\0${after.audienceType}\0${after.audienceId ?? ""}`
+    );
+    if (new Set(knowledgeKeys).size !== knowledgeKeys.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["knowledgeChanges"],
+        message:
+          "A ledger record cannot change the same knowledge key twice."
+      });
+    }
+    const loopIds = record.openLoopChanges.map(
+      ({ after }) => after.loopId
+    );
+    if (new Set(loopIds).size !== loopIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["openLoopChanges"],
+        message:
+          "A ledger record cannot change the same open loop twice."
+      });
+    }
   });
 export type LongLedgerCommitRecord = z.infer<
   typeof LongLedgerCommitRecordSchema
@@ -409,10 +785,67 @@ export const LongCommitChapterInputSchema = z
       )
       .max(1_024)
       .default([]),
+    coverage: LongLedgerCoverageSchema.default(
+      EMPTY_LONG_LEDGER_COVERAGE
+    ),
+    factMutations: z
+      .array(LongLedgerFactMutationSchema)
+      .max(200_000)
+      .default([]),
+    knowledgeMutations: z
+      .array(LongLedgerKnowledgeMutationSchema)
+      .max(400_000)
+      .default([]),
+    openLoopMutations: z
+      .array(LongLedgerOpenLoopMutationSchema)
+      .max(200_000)
+      .default([]),
+    chapterOutputs: LongLedgerChapterOutputsSchema.default(
+      EMPTY_LONG_LEDGER_CHAPTER_OUTPUTS
+    ),
     baseWorkspaceRevision: LedgerRevisionSchema,
     baseProjectRevision: LedgerRevisionSchema
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    const factIds = input.factMutations.map(({ factId }) => factId);
+    const factKeys = input.factMutations.map(
+      ({ domain, subjectId, field }) =>
+        `${domain}\0${subjectId}\0${field.normalize("NFC")}`
+    );
+    if (
+      new Set(factIds).size !== factIds.length ||
+      new Set(factKeys).size !== factKeys.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["factMutations"],
+        message:
+          "A ledger commit cannot mutate the same continuity fact key twice."
+      });
+    }
+    const knowledgeKeys = input.knowledgeMutations.map(
+      ({ factId, audienceType, audienceId }) =>
+        `${factId}\0${audienceType}\0${audienceId ?? ""}`
+    );
+    if (new Set(knowledgeKeys).size !== knowledgeKeys.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["knowledgeMutations"],
+        message:
+          "A ledger commit cannot mutate the same knowledge key twice."
+      });
+    }
+    const loopIds = input.openLoopMutations.map(({ loopId }) => loopId);
+    if (new Set(loopIds).size !== loopIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["openLoopMutations"],
+        message:
+          "A ledger commit cannot mutate the same open loop twice."
+      });
+    }
+  });
 export type LongCommitChapterInput = z.infer<
   typeof LongCommitChapterInputSchema
 >;

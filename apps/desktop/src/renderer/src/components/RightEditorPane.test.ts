@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import appSource from "../App.vue?raw";
 import source from "./RightEditorPane.vue?raw";
 
 describe("RightEditorPane expert draft navigation", () => {
@@ -16,8 +17,22 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain(':aria-label="`正文${draftUnitLabel}`"');
     expect(source).toContain('props.document.workspaceType === "script" ? "剧集" : "小节"');
     expect(source).toContain("emit('selectSection', section.id)");
-    expect(source).not.toContain("emit('addSection')");
+    expect(source).toContain('v-if="canCreateSection"');
+    expect(source).toContain('aria-label="在正文末尾新建小节"');
+    expect(source).toContain("emit('createSection')");
     expect(editorStart).toBeGreaterThan(tabsStart);
+  });
+
+  it("routes the short-story tab add button through the existing sidebar creation flow", () => {
+    expect(appSource).toContain("async function addExpertSectionFromEditor()");
+    expect(appSource).toContain('directory.workspaceType !== "short"');
+    expect(appSource).toContain("await addExpertSection(draftNode)");
+    expect(appSource).toContain(
+      '@create-section="addExpertSectionFromEditor"'
+    );
+    expect(appSource).toContain(
+      "activeDocument.workspaceType === 'short'"
+    );
   });
 
   it("offers one insert action only after right-clicking a selected editor range", () => {

@@ -331,7 +331,7 @@ describe("long workspace chapter navigation", () => {
     ).toBe(bookId);
   });
 
-  it("keeps the authoring entry editable before a continuity commit", () => {
+  it("keeps only the body editable before continuity generates projections", () => {
     const { summary, workspaceIndex } = fixture(null);
     const selection = createLongChapterSelection(
       summary,
@@ -344,7 +344,15 @@ describe("long workspace chapter navigation", () => {
       root: "draft",
       chapterCardId: "chapter_one"
     });
-    expect(selection?.files.every((entry) => !entry.readOnly)).toBe(true);
+    expect(
+      selection?.files.find(({ role }) => role === "body")?.readOnly
+    ).toBeUndefined();
+    expect(
+      selection?.files
+        .filter(({ role }) => role !== "body")
+        .every((entry) => entry.readOnly)
+    ).toBe(true);
+    expect(selection?.description).toContain("单章写手只写正文");
   });
 
   it("gives the continuity agent the chapter id with a read-only triplet", () => {
@@ -358,6 +366,7 @@ describe("long workspace chapter navigation", () => {
     expect(selection).toMatchObject({
       key: "continuity:chapter_one",
       root: "continuity_ledger",
+      continuityView: "inbox",
       chapterCardId: "chapter_one"
     });
     expect(selection?.files.map(({ role }) => role)).toEqual([

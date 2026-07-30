@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import appSource from "../App.vue?raw";
 import bindingsSource from "./LongBookBindingsDialog.vue?raw";
+import chapterCardDialogSource from "./CreateLongChapterCardDialog.vue?raw";
 import characterDialogSource from "./CreateLongCharacterDialog.vue?raw";
 import plotPointDialogSource from "./CreateLongPlotPointDialog.vue?raw";
 import dialogSource from "./CreateBookDialog.vue?raw";
@@ -215,6 +216,10 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain("@submit=\"createLongVolume\"");
     expect(appSource).toContain("<CreateLongPlotPointDialog");
     expect(appSource).toContain("@submit=\"createLongPlotPoint\"");
+    expect(appSource).toContain("<CreateLongChapterCardDialog");
+    expect(appSource).toContain("@submit=\"createLongChapterCard\"");
+    expect(chapterCardDialogSource).toContain("新建章卡");
+    expect(chapterCardDialogSource).not.toContain("LongStructureManager");
     expect(plotPointDialogSource).toContain("新建剧情点");
     expect(plotPointDialogSource).not.toContain("LongStructureManager");
     const createVolumeEntry = appSource.slice(
@@ -224,9 +229,6 @@ describe("long-form renderer vertical slice", () => {
     expect(createVolumeEntry).toContain("longVolumeCreateOpen.value = true");
     expect(createVolumeEntry).not.toContain(
       "longStructureDialogOpen.value = true"
-    );
-    expect(appSource).toContain(
-      '@long-structure-action="openLongStructureTreeAction"'
     );
     const createPlotPointEntry = appSource.slice(
       appSource.indexOf("async function openLongPlotPointCreateForVolume"),
@@ -238,24 +240,21 @@ describe("long-form renderer vertical slice", () => {
     expect(createPlotPointEntry).not.toContain(
       "longStructureDialogOpen.value = true"
     );
-    const treeStructureEntry = appSource.slice(
-      appSource.indexOf("async function openLongStructureTreeAction"),
-      appSource.indexOf("async function openLongVolumeCreate")
+    const createChapterCardEntry = appSource.slice(
+      appSource.indexOf("async function openLongChapterCardCreate"),
+      appSource.indexOf("async function renameLongCharacter")
     );
-    expect(treeStructureEntry).toContain(
-      "await openLongPlotPointCreateForVolume("
+    expect(createChapterCardEntry).toContain(
+      "longChapterCardCreate.value = {"
     );
-    expect(
-      treeStructureEntry.indexOf(
-        "await openLongPlotPointCreateForVolume("
-      )
-    ).toBeLessThan(treeStructureEntry.indexOf("await selectResource(node)"));
-    expect(appSource).toContain(
-      "longStructureSection: \"arc\" as const"
+    expect(createChapterCardEntry).not.toContain(
+      "longStructureDialogOpen.value = true"
     );
-    expect(appSource).toContain(
-      "longStructureSection: \"chapter\" as const"
-    );
+    expect(appSource).not.toContain("openLongStructureTreeAction");
+    expect(appSource).not.toContain("longStructureSection");
+    expect(appSource).not.toContain(":initial-section=");
+    expect(appSource).not.toContain(":initial-action=");
+    expect(appSource).not.toContain(":initial-item-id=");
     expect(appSource).toContain(
       "createLongStructureMutationBuilder(index).createCharacter"
     );
@@ -355,8 +354,8 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(editorSource).toContain("currentReadOnly");
     expect(longWorkspaceTypeSource).toContain('label: "正文"');
-    expect(longWorkspaceTypeSource).toContain('label: "人物状态"');
-    expect(longWorkspaceTypeSource).toContain('label: "Handoff"');
+    expect(longWorkspaceTypeSource).toContain('label: "章末状态"');
+    expect(longWorkspaceTypeSource).toContain('label: "下一章接续包"');
     expect(editorSource).toContain("async function saveAllChanges()");
     expect(editorSource).toContain("离开前已自动保存");
     expect(appSource).toContain("saveActiveLongEditorBeforeLeaving");
@@ -383,20 +382,42 @@ describe("long-form renderer vertical slice", () => {
 
   it("renders list worldbuilding as tabs and text worldbuilding as a direct textarea", () => {
     expect(editorSource).toContain(
-      "parseLongWorldbuildingMarkdownList"
+      'selection.files.find(({ role }) => role === "overview")'
     );
+    expect(editorSource).toContain('@click="selectWorldbuildingOverview"');
     expect(editorSource).toContain(
-      "serializeLongWorldbuildingMarkdownList"
+      'type: "worldbuildingItem.create"'
     );
     expect(editorSource).toContain('class="section-tabs-bar long-worldbuilding-tabs"');
     expect(editorSource).toContain('aria-label="世界观条目"');
     expect(editorSource).toContain(
-      "currentWorldbuildingItem.value?.content"
+      "!currentIsWorldbuildingList.value"
+    );
+    expect(editorSource).toContain(
+      'v-if="showGenericFileTabs"'
+    );
+    expect(editorSource).toContain(
+      "currentState.value?.content"
     );
     expect(editorSource).toContain('class="long-document-editor"');
     expect(editorSource).not.toContain('"文本 · CAS 保存"');
     expect(longWorkspaceTypeSource).toContain(
       "worldbuildingFormat?: LongWorldbuildingFormat"
+    );
+  });
+
+  it("loads a list worldbuilding item before activating its tab", () => {
+    expect(editorSource).toContain(
+      "async function selectWorldbuildingItem(itemId: string)"
+    );
+    expect(editorSource).toContain(
+      "await loadWorkspaceDocument(selectedFile)"
+    );
+    expect(editorSource).toContain(
+      "activeWorldbuildingItemId.value = itemId"
+    );
+    expect(editorSource).toContain(
+      "'is-loading': pendingWorldbuildingItemId === item.id"
     );
   });
 
@@ -606,7 +627,7 @@ describe("long-form renderer vertical slice", () => {
       "新建长篇",
       "打开其他长篇",
       "导入长篇",
-      "迁移长篇",
+      "导入旧版本长篇",
       "管理其他长篇的结构",
       "回滚连续性提交",
       "修改长篇结构",

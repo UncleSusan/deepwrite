@@ -2,8 +2,7 @@ import { deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   LongProjectManifestSchema,
-  LongWorkspaceIndexSnapshotSchema,
-  parseLongWorldbuildingMarkdownList
+  LongWorkspaceIndexSnapshotSchema
 } from "@deepwrite/contracts";
 import {
   parseWriteClawLongSourceBytes
@@ -386,10 +385,15 @@ describe("Write Claw long-form import", () => {
         plan.idMap.chapterStage?.["draft.volume-1.arc-1.chapter-1"]
       ).toBe(plan.index.plot.chapterCards[0]!.id);
       expect(plan.documents.length).toBeGreaterThanOrEqual(1 + 1 + 4 + 3);
-      const worldDocument = plan.documents.find(
-        ({ fileId }) => fileId === plan.index.worldbuilding[0]!.file.id
-      )!;
-      expect(parseLongWorldbuildingMarkdownList(worldDocument.content)).toEqual(
+      const worldCategory = plan.index.worldbuilding[0]!;
+      if (worldCategory.format !== "list") throw new Error("expected list");
+      const worldItems = worldCategory.items.map((item) => ({
+        title: item.title,
+        content:
+          plan.documents.find(({ fileId }) => fileId === item.file.id)
+            ?.content ?? ""
+      }));
+      expect(worldItems).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             title: "分类概览",
@@ -601,6 +605,88 @@ describe("Write Claw long-form import", () => {
     });
   });
 
+  it("prefers a root authority file when nested copies are also present", () => {
+    const rootWorkspace = legacyWorkspace();
+    const nestedWorkspace = {
+      ...legacyWorkspace(),
+      revision: 999
+    };
+    const archive = zipFixture([
+      {
+        name: "book.json",
+        content: JSON.stringify(legacyBook(rootWorkspace))
+      },
+      {
+        name: "long_workspace.json",
+        content: JSON.stringify(rootWorkspace)
+      },
+      {
+        name: "backup/long_workspace.json",
+        content: JSON.stringify(nestedWorkspace)
+      }
+    ]);
+
+    const source = parseWriteClawLongSourceBytes(archive, "root-priority.zip");
+
+    expect(source.workspace.revision).toBe(rootWorkspace.revision);
+    expect(source.warnings.join("\n")).toContain(
+      "已优先采用根目录“long_workspace.json”"
+    );
+    expect(source.warnings.join("\n")).toContain(
+      "backup/long_workspace.json"
+    );
+  });
+
+  it("deduplicates identical nested authority files deterministically", () => {
+    const workspace = legacyWorkspace();
+    const archive = zipFixture([
+      {
+        name: "book.json",
+        content: JSON.stringify(legacyBook(workspace))
+      },
+      {
+        name: "export/long_workspace.json",
+        content: JSON.stringify(workspace)
+      },
+      {
+        name: "backup/long_workspace.json",
+        content: JSON.stringify(workspace)
+      }
+    ]);
+
+    const source = parseWriteClawLongSourceBytes(archive, "same-copies.zip");
+
+    expect(source.workspace.revision).toBe(workspace.revision);
+    expect(source.warnings.join("\n")).toContain(
+      "多份内容相同的 long_workspace.json"
+    );
+    expect(source.warnings.join("\n")).toContain(
+      "已自动去重并采用“backup/long_workspace.json”"
+    );
+  });
+
+  it("lists conflicting nested authority paths instead of choosing silently", () => {
+    const archive = zipFixture([
+      {
+        name: "first/long_workspace.json",
+        content: JSON.stringify(legacyWorkspace())
+      },
+      {
+        name: "second/long_workspace.json",
+        content: JSON.stringify({
+          ...legacyWorkspace(),
+          revision: 999
+        })
+      }
+    ]);
+
+    expect(() =>
+      parseWriteClawLongSourceBytes(archive, "conflicting-copies.zip")
+    ).toThrow(
+      /内容不一致的 long_workspace\.json.*first\/long_workspace\.json.*second\/long_workspace\.json/u
+    );
+  });
+
   it("preserves legacy bindings, memories, orphan ledger, overflow text and zip artifacts", () => {
     const workspace = legacyWorkspace();
     workspace.plot.volumes[0]!.outline = `${"长".repeat(200_000)}完整尾部`;
@@ -675,9 +761,14 @@ describe("Write Claw long-form import", () => {
     });
 
     const evidenceDocuments = plan.index.worldbuilding
-      .filter(({ format }) => format === "text")
-      .map(({ file }) =>
-        plan.documents.find(({ fileId }) => fileId === file.id)?.content ?? ""
+      .flatMap((category) =>
+        category.format === "text"
+          ? [
+              plan.documents.find(
+                ({ fileId }) => fileId === category.file.id
+              )?.content ?? ""
+            ]
+          : []
       )
       .join("\n");
     expect(evidenceDocuments).toContain("书籍记忆（旧版）");
@@ -724,10 +815,13 @@ describe("Write Claw long-form import", () => {
     const category = plan.index.worldbuilding.find(
       ({ title }) => title === "超大世界观"
     )!;
-    const document = plan.documents.find(
-      ({ fileId }) => fileId === category.file.id
-    )!;
-    const items = parseLongWorldbuildingMarkdownList(document.content);
+    if (category.format !== "list") throw new Error("expected list");
+    const items = category.items.map((item) => ({
+      title: item.title,
+      content:
+        plan.documents.find(({ fileId }) => fileId === item.file.id)
+          ?.content ?? ""
+    }));
 
     expect(items).toHaveLength(10_000);
     expect(items[1]).toMatchObject({ title: "双行 标题" });
@@ -742,8 +836,14 @@ describe("Write Claw long-form import", () => {
     );
     const evidence = plan.index.worldbuilding
       .filter(({ id }) => id.startsWith("world_migration-evidence-"))
-      .map(({ file }) =>
-        plan.documents.find(({ fileId }) => fileId === file.id)?.content ?? ""
+      .flatMap((category) =>
+        category.format === "text"
+          ? [
+              plan.documents.find(
+                ({ fileId }) => fileId === category.file.id
+              )?.content ?? ""
+            ]
+          : []
       )
       .join("\n");
     expect(evidence).toContain(
@@ -767,9 +867,14 @@ describe("Write Claw long-form import", () => {
     const evidenceCategories = plan.index.worldbuilding.filter(({ id }) =>
       id.startsWith("world_migration-evidence-")
     );
-    const evidenceDocuments = evidenceCategories.map(
-      ({ file }) =>
-        plan.documents.find(({ fileId }) => fileId === file.id)?.content ?? ""
+    const evidenceDocuments = evidenceCategories.flatMap((category) =>
+      category.format === "text"
+        ? [
+            plan.documents.find(
+              ({ fileId }) => fileId === category.file.id
+            )?.content ?? ""
+          ]
+        : []
     );
 
     expect(plan.index.worldbuilding.length).toBeLessThanOrEqual(10_000);
@@ -832,9 +937,14 @@ describe("Write Claw long-form import", () => {
     });
     const searchableEvidence = plan.index.worldbuilding
       .filter(({ id }) => id.startsWith("world_migration-evidence-"))
-      .map(
-        ({ file }) =>
-          plan.documents.find(({ fileId }) => fileId === file.id)?.content ?? ""
+      .flatMap((category) =>
+        category.format === "text"
+          ? [
+              plan.documents.find(
+                ({ fileId }) => fileId === category.file.id
+              )?.content ?? ""
+            ]
+          : []
       )
       .join("\n");
 

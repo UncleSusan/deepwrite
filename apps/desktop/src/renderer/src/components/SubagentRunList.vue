@@ -31,13 +31,28 @@ const WRITE_TOOL_NAMES = new Set([
   "replace_current_stage_text",
   "create_draft_sections",
   "write_draft_section",
-  "replace_draft_section_text"
+  "replace_draft_section_text",
+  "create_worldbuilding_file",
+  "write_worldbuilding_file",
+  "edit_worldbuilding_file",
+  "create_worldbuilding_items",
+  "write_worldbuilding_content",
+  "replace_worldbuilding_text"
+]);
+
+const CREATE_FILE_TOOL_NAMES = new Set([
+  "create_draft_sections",
+  "create_worldbuilding_file",
+  "create_worldbuilding_files",
+  "create_worldbuilding_items"
 ]);
 
 const DIRECT_WRITE_TOOL_NAMES = new Set([
   "write_workspace_editor",
   "create_draft_sections",
-  "write_draft_section"
+  "write_draft_section",
+  "write_worldbuilding_file",
+  "write_worldbuilding_content"
 ]);
 
 const WORKSPACE_TOOL_LABELS: Record<string, string> = {
@@ -51,7 +66,19 @@ const WORKSPACE_TOOL_LABELS: Record<string, string> = {
   create_draft_sections: "创建章节文件",
   read_draft_sections: "读取正文章节",
   write_draft_section: "写入正文章节",
-  replace_draft_section_text: "替换正文章节文本"
+  replace_draft_section_text: "替换正文章节文本",
+  list_worldbuilding: "列出世界观",
+  read_worldbuilding: "读取世界观",
+  search_worldbuilding: "搜索世界观",
+  read_worldbuilding_file: "读取世界观文件",
+  create_worldbuilding_file: "创建世界观文件",
+  write_worldbuilding_file: "写入世界观文件",
+  edit_worldbuilding_file: "编辑世界观文件",
+  create_worldbuilding_files: "创建世界观文件",
+  read_worldbuilding_content: "读取世界观文件",
+  create_worldbuilding_items: "创建世界观文件",
+  write_worldbuilding_content: "写入世界观文件",
+  replace_worldbuilding_text: "编辑世界观文件"
 };
 
 type ToolKind = "read" | "command" | "write" | "web" | "other";
@@ -102,6 +129,11 @@ function workspaceToolLabel(name: string): string {
 
 function toolLabel(tool: AgentToolTrace): string {
   const displayName = workspaceToolLabel(tool.name);
+  if (CREATE_FILE_TOOL_NAMES.has(tool.name)) {
+    if (tool.status === "error") return "创建文件失败";
+    if (tool.status === "completed") return "文件创建变更已生成";
+    return "正在创建文件";
+  }
   if (isWriteTool(tool)) {
     const action = writeActionLabel(writeToolAction(tool));
     if (tool.status === "error") return `${action}失败`;
