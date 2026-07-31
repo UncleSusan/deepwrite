@@ -6,6 +6,7 @@ import {
   LongGetWorkspaceIndexCommandEnvelopeSchema,
   SystemEventEnvelopeSchema,
   createEnvelope,
+  createDefaultCreativePlotStages,
   createExpertDraftDirectoryRevision,
   createShortWorkspaceContentRevision,
   type CommandResult,
@@ -81,6 +82,7 @@ describe("Agent Utility prompt forwarding", () => {
       )!;
     const emptyRevision = createShortWorkspaceContentRevision("");
     const characterContent = "人物设定快照";
+    const plotStages = createDefaultCreativePlotStages();
     const command = CommandEnvelopeSchema.parse(
       createEnvelope(
         "agent.prompt",
@@ -103,6 +105,7 @@ describe("Agent Utility prompt forwarding", () => {
               categories: ["悬疑"],
               activeStageId: "character_design",
               activeAgentId: "character_design",
+              plotStages,
               expertDraft: {
                 id: "draft",
                 title: "剧集",
@@ -149,8 +152,20 @@ describe("Agent Utility prompt forwarding", () => {
                   revision: emptyRevision
                 },
                 {
+                  stageId: "intro_design",
+                  title: "导语设计",
+                  content: "",
+                  revision: emptyRevision
+                },
+                {
                   stageId: "plot_refine",
                   title: "剧情细化",
+                  content: "",
+                  revision: emptyRevision
+                },
+                {
+                  stageId: "narrative_perspective",
+                  title: "叙事视角",
                   content: "",
                   revision: emptyRevision
                 },
@@ -240,6 +255,7 @@ describe("Agent Utility prompt forwarding", () => {
                   arcs: 0,
                   chapterCards: 0,
                   storyEvents: 0,
+                  storyPlots: 0,
                   foreshadowingThreads: 0,
                   committedChapters: 0
                 },

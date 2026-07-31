@@ -18,9 +18,13 @@ describe("demo workspace contract", () => {
     expect(resourceSections[0]?.nodes[0]?.children?.map((node) => node.label)).toEqual([
       "人物",
       "剧情",
-      "大纲",
       "正文"
     ]);
+    expect(
+      resourceSections[0]?.nodes[0]?.children?.find(
+        (node) => node.label === "剧情"
+      )?.children?.map((node) => node.label)
+    ).toEqual(["剧情设计", "导语设计", "剧情细化", "叙事视角", "大纲"]);
     expect(resourceSections[0]?.nodes[1]?.children?.map((node) => node.label)).toEqual([
       "世界观",
       "人物",

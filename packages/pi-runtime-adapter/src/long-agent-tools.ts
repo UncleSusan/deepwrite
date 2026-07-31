@@ -14,6 +14,7 @@ import {
   LongWorkspaceIndexResultSchema,
   LongWorkspaceOperationBatchSchema,
   LongWriteChapterInputSchema,
+  LONG_CHARACTER_OVERVIEW_CHANGE_ID,
   createEmptyLongMarkdownFileReference,
   createEnvelope,
   longChapterBodyFileId,
@@ -1494,6 +1495,9 @@ function fileRootMap(
       }
     }
   }
+  if (index.characterOverview) {
+    addFile(map, "character_design", index.characterOverview);
+  }
   for (const entry of index.characterFiles) {
     addFile(map, "character_design", entry.coreProfile);
     addFile(map, "character_design", entry.relationships);
@@ -2865,6 +2869,7 @@ export function buildLongWorkspaceTools(
         | "passerby";
       aliases?: string[];
       document:
+        | "overview"
         | "core_profile"
         | "relationships"
         | "current_state"
@@ -3153,6 +3158,32 @@ export function buildLongWorkspaceTools(
       }
       offset = result.nextOffset;
     }
+  };
+
+  const resolveCharacterOverviewTarget = (
+    index: LongWorkspaceIndexSnapshot
+  ): {
+    file: LongWorkspaceFileReference;
+    overlay?: {
+      content: string;
+      pendingCreation: boolean;
+    };
+  } => {
+    if (!index.characterOverview) {
+      throw new Error("Character overview file does not exist.");
+    }
+    const overlay = characterDocumentOverlay.get(index.characterOverview.id);
+    return {
+      file: overlay?.file ?? index.characterOverview,
+      ...(overlay
+        ? {
+            overlay: {
+              content: overlay.content,
+              pendingCreation: overlay.pendingCreation
+            }
+          }
+        : {})
+    };
   };
 
   const resolveCharacterDocumentTarget = (
@@ -4307,14 +4338,14 @@ export function buildLongWorkspaceTools(
         name: "list_characters",
         label: "列出人物",
         description:
-          "列出人物业务索引，可按分组筛选。返回 character_id、姓名、分组和别名，不暴露文件与版本信息。",
+          "列出人物业务索引，可按分组筛选，并自动附带人物设计阶段手动维护的概览内容。优先使用 read_character_overview；仅当概览不足时再调用本工具。返回 character_id、姓名、分组和别名，不暴露文件与版本信息。",
         parameters: strictObject({
           group: Type.Optional(characterGroupParameter),
           page: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
         }),
         execute: async (_toolCallId, params, signal) => {
-          const { index } = await loadIndex(signal);
+          const { index, projectRevision } = await loadIndex(signal);
           const pending = new Map<
             string,
             {
@@ -4327,6 +4358,7 @@ export function buildLongWorkspaceTools(
           for (const candidate of characterDocumentOverlay.values()) {
             if (
               !candidate.pendingCreation ||
+              candidate.document === "overview" ||
               pending.has(candidate.characterId)
             ) {
               continue;
@@ -4350,14 +4382,93 @@ export function buildLongWorkspaceTools(
             (character) =>
               !params.group || character.group === params.group
           );
+          let overview = "";
+          if (index.characterOverview) {
+            const cached = characterDocumentOverlay.get(
+              index.characterOverview.id
+            );
+            if (cached) {
+              overview = cached.content;
+            } else {
+              const result = await readWholeCharacterDocument(
+                index.characterOverview,
+                index.revision,
+                projectRevision,
+                signal
+              );
+              overview = result.content;
+              characterDocumentOverlay.set(result.file.id, {
+                characterId: LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+                characterName: "人物概览",
+                document: "overview",
+                file: result.file,
+                content: result.content,
+                pendingCreation: false
+              });
+            }
+          }
           const page = params.page ?? 1;
           const limit = params.limit ?? 50;
           const start = (page - 1) * limit;
           const end = Math.min(start + limit, characters.length);
           return textResult(JSON.stringify({
+            overview,
             characters: characters.slice(start, end),
             next_page: end < characters.length ? page + 1 : null
           }));
+        }
+      }),
+      defineTool({
+        name: "read_character_overview",
+        label: "读取人物概览",
+        description:
+          "读取人物设计阶段概览。概览应统计全部人物的 character_id、姓名、分组、别名与一句话定位；优先用它定位人物，再调用 read_character。mode=preview 只返回摘录，mode=full 会建立本轮后续编辑所需的完整读取凭据。",
+        parameters: strictObject({
+          mode: Type.Optional(worldbuildingReadModeParameter)
+        }),
+        execute: async (_toolCallId, params, signal) => {
+          const { index, projectRevision } = await loadIndex(signal);
+          const mode = params.mode ?? "full";
+          const target = resolveCharacterOverviewTarget(index);
+          const result = target.overlay
+            ? { content: target.overlay.content, file: target.file }
+            : await readWholeCharacterDocument(
+                target.file,
+                index.revision,
+                projectRevision,
+                signal
+              );
+          characterDocumentOverlay.set(result.file.id, {
+            characterId: LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+            characterName: "人物概览",
+            document: "overview",
+            file: result.file,
+            content: result.content,
+            pendingCreation: target.overlay?.pendingCreation ?? false
+          });
+          if (mode === "full") {
+            fullyReadCharacterDocuments.set(result.file.id, {
+              content: result.content,
+              file: result.file,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
+          }
+          const previewLength = 240;
+          const visible =
+            mode === "preview" && result.content.length > previewLength * 2
+              ? `${result.content.slice(0, previewLength)}\n\n……（中间省略 ${result.content.length - previewLength * 2} 个字符）……\n\n${result.content.slice(-previewLength)}`
+              : result.content;
+          return textResult(
+            [
+              "【人物概览】",
+              mode === "preview"
+                ? "预览（不建立整体覆盖凭据）："
+                : "正文：",
+              "",
+              visible || "（概览为空）"
+            ].join("\n")
+          );
         }
       }),
       defineTool({
@@ -4692,13 +4803,14 @@ export function buildLongWorkspaceTools(
             })
           );
           for (const change of changes) {
+            const document = change.document as keyof typeof files;
             characterDocumentOverlay.set(change.fileId, {
               characterId,
               characterName: name,
               characterGroup: params.group,
               aliases: params.aliases ?? [],
-              document: change.document,
-              file: files[change.document],
+              document,
+              file: files[document],
               content: "",
               pendingCreation: true
             });
@@ -4950,6 +5062,218 @@ export function buildLongWorkspaceTools(
               fileId: evidence.file.id,
               filePath: evidence.file.path,
               title: `${target.characterName} / ${CHARACTER_DOCUMENT_TITLES[params.document]}`,
+              operation: "edit",
+              beforeText: evidence.content,
+              afterText: content,
+              beforeRevision: evidence.file.revision,
+              nextRevision
+            }
+          ]);
+        }
+      }),
+      defineTool({
+        name: "write_character_overview",
+        label: "写入人物概览",
+        description:
+          "覆盖人物设计阶段概览。空文件可直接写入；已有正文必须先用 read_character_overview mode=full 完整读取并明确 allow_overwrite_existing=true。局部修改应使用 edit_character_overview。概览应持续同步全部人物的 character_id、姓名、分组、别名与一句话定位。",
+        parameters: strictObject({
+          text: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+          allow_overwrite_existing: Type.Optional(Type.Boolean()),
+          summary: Type.Optional(
+            Type.String({ minLength: 1, maxLength: 1_000 })
+          )
+        }),
+        executionMode: "sequential",
+        execute: async (toolCallId, params, signal) => {
+          const { index, projectRevision } = await loadIndex(signal);
+          const target = resolveCharacterOverviewTarget(index);
+          const live = target.overlay
+            ? { file: target.file, content: target.overlay.content }
+            : await readWholeCharacterDocument(
+                target.file,
+                index.revision,
+                projectRevision,
+                signal
+              );
+          const evidence = fullyReadCharacterDocuments.get(target.file.id);
+          if (live.content.trim() && !evidence) {
+            return textResult(
+              "未写入：目标已有正文，请先调用 read_character_overview（mode=full）完整读取。"
+            );
+          }
+          if (live.content.trim() && params.allow_overwrite_existing !== true) {
+            return textResult(
+              "未写入：目标已有正文；局部修改请使用 edit_character_overview，整体重写需设置 allow_overwrite_existing=true。"
+            );
+          }
+          if (
+            evidence &&
+            (evidence.file.revision !== live.file.revision ||
+              evidence.workspaceRevision !== index.revision ||
+              evidence.projectRevision !== projectRevision)
+          ) {
+            throw new Error("Character overview changed after it was read.");
+          }
+          const timestamp = new Date().toISOString();
+          const nextRevision = nextContentRevision(
+            live.file.revision,
+            params.text
+          );
+          const summary = params.summary?.trim() || "写入人物概览";
+          const batch = LongWorkspaceOperationBatchSchema.parse({
+            baseRevision: index.revision,
+            updatedAt: timestamp,
+            operations: [],
+            documentWrites: [{
+              proposalId: `proposal_${stableHash(
+                `${workspace.bookId}:${input.runId}:${toolCallId}`
+              ).slice(0, 24)}`,
+              fileId: live.file.id,
+              content: params.text,
+              mode: "replace",
+              expectedRevision: live.file.revision,
+              nextRevision,
+              updatedAt: timestamp,
+              reason: summary
+            }]
+          });
+          const nextFile = {
+            ...live.file,
+            revision: nextRevision,
+            updatedAt: timestamp
+          };
+          characterDocumentOverlay.set(live.file.id, {
+            characterId: LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+            characterName: "人物概览",
+            document: "overview",
+            file: nextFile,
+            content: params.text,
+            pendingCreation: false
+          });
+          fullyReadCharacterDocuments.set(live.file.id, {
+            content: params.text,
+            file: nextFile,
+            workspaceRevision: index.revision,
+            projectRevision
+          });
+          return proposalResult(batch, projectRevision, summary, [
+            {
+              characterId: LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+              characterName: "人物概览",
+              document: "overview",
+              fileId: live.file.id,
+              filePath: live.file.path,
+              title: "人物概览",
+              operation: "write",
+              beforeText: live.content,
+              afterText: params.text,
+              beforeRevision: live.file.revision,
+              nextRevision
+            }
+          ]);
+        }
+      }),
+      defineTool({
+        name: "edit_character_overview",
+        label: "编辑人物概览",
+        description:
+          "在已用 read_character_overview mode=full 完整读取的人物概览中按原文片段精确替换。每个 original_text 必须唯一存在。创建、重命名、改组或删除人物后应同步更新概览。",
+        parameters: strictObject({
+          replacements: Type.Array(
+            strictObject({
+              original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
+              new_text: Type.String({ maxLength: 20_000 })
+            }),
+            { minItems: 1, maxItems: 20 }
+          ),
+          summary: Type.Optional(
+            Type.String({ minLength: 1, maxLength: 1_000 })
+          )
+        }),
+        executionMode: "sequential",
+        execute: async (toolCallId, params) => {
+          const { index, projectRevision } = await loadIndex();
+          const target = resolveCharacterOverviewTarget(index);
+          const evidence = fullyReadCharacterDocuments.get(target.file.id);
+          if (
+            !evidence ||
+            evidence.workspaceRevision !== index.revision ||
+            evidence.projectRevision !== projectRevision ||
+            evidence.file.revision !== target.file.revision
+          ) {
+            return textResult(
+              "未编辑：请先调用 read_character_overview（mode=full）完整读取目标内容。"
+            );
+          }
+          let content = evidence.content;
+          for (const replacement of params.replacements) {
+            const first = content.indexOf(replacement.original_text);
+            const second = first < 0
+              ? -1
+              : content.indexOf(
+                  replacement.original_text,
+                  first + replacement.original_text.length
+                );
+            if (first < 0 || second >= 0) {
+              return textResult(
+                `未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`
+              );
+            }
+            content =
+              content.slice(0, first) +
+              replacement.new_text +
+              content.slice(first + replacement.original_text.length);
+          }
+          const timestamp = new Date().toISOString();
+          const nextRevision = nextContentRevision(
+            evidence.file.revision,
+            content
+          );
+          const summary = params.summary?.trim() || "局部修改人物概览";
+          const batch = LongWorkspaceOperationBatchSchema.parse({
+            baseRevision: index.revision,
+            updatedAt: timestamp,
+            operations: [],
+            documentWrites: [{
+              proposalId: `proposal_${stableHash(
+                `${workspace.bookId}:${input.runId}:${toolCallId}`
+              ).slice(0, 24)}`,
+              fileId: evidence.file.id,
+              content,
+              mode: "replace",
+              expectedRevision: evidence.file.revision,
+              nextRevision,
+              updatedAt: timestamp,
+              reason: summary
+            }]
+          });
+          const nextFile = {
+            ...evidence.file,
+            revision: nextRevision,
+            updatedAt: timestamp
+          };
+          characterDocumentOverlay.set(evidence.file.id, {
+            characterId: LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+            characterName: "人物概览",
+            document: "overview",
+            file: nextFile,
+            content,
+            pendingCreation: false
+          });
+          fullyReadCharacterDocuments.set(evidence.file.id, {
+            content,
+            file: nextFile,
+            workspaceRevision: index.revision,
+            projectRevision
+          });
+          return proposalResult(batch, projectRevision, summary, [
+            {
+              characterId: LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+              characterName: "人物概览",
+              document: "overview",
+              fileId: evidence.file.id,
+              filePath: evidence.file.path,
+              title: "人物概览",
               operation: "edit",
               beforeText: evidence.content,
               afterText: content,

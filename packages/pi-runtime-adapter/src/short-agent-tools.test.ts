@@ -5,6 +5,7 @@ import {
   SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
+  createDefaultCreativePlotStages,
   createShortWorkspaceContentRevision,
   type ScriptWorkspaceAgentProfile,
   type ScriptWorkspaceAgentId,
@@ -48,6 +49,7 @@ function workspace(
     title: "雾港回声",
     categories: ["悬疑"],
     activeStageId,
+    plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft",
       title: "正文",
@@ -106,6 +108,7 @@ function scriptWorkspace(
     title: "雾港剧本",
     categories: ["悬疑"],
     activeStageId,
+    plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft",
       title: "正文",
@@ -219,7 +222,7 @@ describe("short workspace tools", () => {
     });
   });
 
-  it("keeps the script plot tools isolated from intro design", async () => {
+  it("exposes the same dynamic plot stages to script tools", async () => {
     const tools = buildScriptWorkspaceTools({
       workspace: scriptWorkspace(),
       profile: scriptProfile("plot_design")
@@ -234,15 +237,71 @@ describe("short workspace tools", () => {
       const parameters = JSON.stringify(toolByName(tools, toolName).parameters);
       expect(parameters).toContain("plot_design");
       expect(parameters).toContain("plot_refine");
-      expect(parameters).not.toContain("intro_design");
+      expect(parameters).toContain("intro_design");
+      expect(parameters).toContain("narrative_perspective");
+      expect(parameters).toContain("outline");
     }
     expect(switchTool.description).toContain("剧本剧情父节点");
 
-    const blocked = await switchTool.execute("switch-intro", {
+    const selected = await switchTool.execute("switch-intro", {
       target_stage_id: "intro_design"
     } as never);
-    expect(blocked.details).toEqual({ kind: "none" });
-    expect(resultText(blocked)).toContain("当前剧本没有剧情方向");
+    expect(selected.details).toMatchObject({
+      kind: "workspace-stage-selection",
+      stageId: "intro_design"
+    });
+  });
+
+  it("switches, reads, and writes an arbitrary configured plot stage", async () => {
+    const snapshot = workspace();
+    snapshot.plotStages = [
+      ...snapshot.plotStages,
+      {
+        id: "custom_reversal",
+        title: "反转校验",
+        description: "核对关键反转的证据链与知情边界。"
+      }
+    ];
+    snapshot.stages = [
+      ...snapshot.stages,
+      {
+        stageId: "custom_reversal",
+        title: "反转校验",
+        content: "旧反转证据。",
+        revision: createShortWorkspaceContentRevision("旧反转证据。")
+      }
+    ];
+    const tools = buildShortWorkspaceTools({
+      workspace: snapshot,
+      profile: profile("plot_design")
+    });
+    const switched = await toolByName(
+      tools,
+      "switch_storyline_stage"
+    ).execute("switch-custom", { target_stage_id: "custom_reversal" });
+    expect(switched.details).toMatchObject({
+      kind: "workspace-stage-selection",
+      stageId: "custom_reversal"
+    });
+    const read = await toolByName(tools, "read_workspace_content").execute(
+      "read-custom",
+      { stage_id: "custom_reversal" }
+    );
+    expect(resultText(read)).toContain("【反转校验】（custom_reversal）");
+    expect(resultText(read)).toContain("旧反转证据");
+    const written = await toolByName(tools, "write_workspace_editor").execute(
+      "write-custom",
+      {
+        target_stage_id: "custom_reversal",
+        text: "新反转证据。",
+        allow_overwrite_existing: true
+      }
+    );
+    expect(written.details).toMatchObject({
+      kind: "workspace-editor-mutation",
+      stageId: "custom_reversal",
+      text: "新反转证据。"
+    });
   });
 
   it("marks script draft tools with episode wording and immutable format rules", async () => {
@@ -508,6 +567,178 @@ describe("short workspace tools", () => {
     expect(resultText(readBack)).toContain("尾声里只剩下潮水声。");
   });
 
+  it("proposes deleting an existing chapter for approval", async () => {
+    const snapshot = workspace("draft");
+    const tools = buildShortWorkspaceTools({
+      workspace: snapshot,
+      profile: profile("expert_draft_coordinator")
+    });
+
+    const deleted = await toolByName(tools, "delete_draft_section").execute(
+      "delete-section",
+      { section_id: "section-2" }
+    );
+    expect(deleted.details).toMatchObject({
+      kind: "workspace-expert-draft-section-deletion",
+      workspaceId: snapshot.id,
+      stageId: "draft",
+      sectionId: "section-2",
+      title: "第二节·暗房",
+      baseRevision: snapshot.expertDraft.revision,
+      summary:
+        "已生成删除章节「第二节·暗房」及其正文与人物状态文件的变更，等待用户审阅。"
+    });
+
+    const directory = await toolByName(tools, "read_workspace_content").execute(
+      "read-after-delete",
+      { stage_id: "draft" }
+    );
+    expect(resultText(directory)).not.toContain("section-2");
+    expect(resultText(directory)).toContain("section-1");
+
+    expect(SHORT_WORKSPACE_TOOL_MANIFEST.draft).toContain("delete_draft_section");
+    expect(SHORT_WORKSPACE_TOOL_MANIFEST.coordinator).toContain(
+      "delete_draft_section"
+    );
+    expect(SHORT_WORKSPACE_TOOL_MANIFEST.sectionWriter).toContain(
+      "delete_draft_section"
+    );
+  });
+
+  it("rejects deleting the last remaining chapter", async () => {
+    const snapshot = workspace("draft");
+    const sharedState = createShortWorkspaceToolSharedState(snapshot);
+    const tools = buildShortWorkspaceTools({
+      workspace: snapshot,
+      profile: profile("expert_draft_coordinator"),
+      sharedState
+    });
+    await toolByName(tools, "delete_draft_section").execute("delete-1", {
+      section_id: "intro"
+    });
+    await toolByName(tools, "delete_draft_section").execute("delete-2", {
+      section_id: "section-1"
+    });
+    const last = await toolByName(tools, "delete_draft_section").execute(
+      "delete-last",
+      { section_id: "section-2" }
+    );
+    expect(last.details).toEqual({ kind: "none" });
+    expect(resultText(last)).toContain("至少需要保留一个章节");
+  });
+
+  it("proposes renaming an existing chapter title for approval", async () => {
+    const snapshot = workspace("draft");
+    const tools = buildShortWorkspaceTools({
+      workspace: snapshot,
+      profile: profile("expert_draft_coordinator")
+    });
+
+    const renamed = await toolByName(tools, "rename_draft_section").execute(
+      "rename-section",
+      {
+        section_id: "section-2",
+        title: "第二节·底片"
+      }
+    );
+    expect(renamed.details).toMatchObject({
+      kind: "workspace-expert-draft-section-rename",
+      workspaceId: snapshot.id,
+      stageId: "draft",
+      sectionId: "section-2",
+      previousTitle: "第二节·暗房",
+      title: "第二节·底片",
+      baseRevision: snapshot.expertDraft.revision,
+      summary: "已生成将章节「第二节·暗房」改名为「第二节·底片」的变更，等待用户审阅。"
+    });
+
+    const directory = await toolByName(tools, "read_workspace_content").execute(
+      "read-after-rename",
+      { stage_id: "draft" }
+    );
+    expect(resultText(directory)).toContain("第二节·底片");
+    expect(resultText(directory)).not.toContain("第二节·暗房");
+
+    const duplicate = await toolByName(tools, "rename_draft_section").execute(
+      "rename-duplicate",
+      {
+        section_id: "section-1",
+        title: "第二节·底片"
+      }
+    );
+    expect(duplicate.details).toEqual({ kind: "none" });
+    expect(resultText(duplicate)).toContain("已存在同名章节");
+
+    expect(SHORT_WORKSPACE_TOOL_MANIFEST.draft).toContain("rename_draft_section");
+    expect(SHORT_WORKSPACE_TOOL_MANIFEST.coordinator).toContain(
+      "rename_draft_section"
+    );
+    expect(SHORT_WORKSPACE_TOOL_MANIFEST.sectionWriter).toContain(
+      "rename_draft_section"
+    );
+  });
+
+  it("rejects renaming provisional chapters and pins section writers to the active chapter", async () => {
+    const snapshot = workspace("draft");
+    const sharedState = createShortWorkspaceToolSharedState(snapshot);
+    const coordinatorTools = buildShortWorkspaceTools({
+      workspace: snapshot,
+      profile: profile("expert_draft_coordinator"),
+      sharedState
+    });
+    const created = await toolByName(
+      coordinatorTools,
+      "create_draft_sections"
+    ).execute("create-for-rename", {
+      sections: [{ title: "第五节·潮汐" }]
+    });
+    const details = created.details as Extract<
+      ShortWorkspaceToolDetails,
+      { kind: "workspace-expert-draft-section-creation" }
+    >;
+    const provisionalId = details.sections[0]!.provisionalSectionId;
+    const provisionalRename = await toolByName(
+      coordinatorTools,
+      "rename_draft_section"
+    ).execute("rename-provisional", {
+      section_id: provisionalId,
+      title: "第五节·落潮"
+    });
+    expect(provisionalRename.details).toEqual({ kind: "none" });
+    expect(resultText(provisionalRename)).toContain("尚在本轮待创建");
+
+    const writerTools = buildShortWorkspaceTools({
+      workspace: {
+        ...snapshot,
+        activeAgentId: "expert_section_writer",
+        activeSectionId: "section-1"
+      },
+      profile: profile("expert_section_writer")
+    });
+    const cross = await toolByName(writerTools, "rename_draft_section").execute(
+      "rename-other",
+      {
+        section_id: "section-2",
+        title: "第二节·别名"
+      }
+    );
+    expect(cross.details).toEqual({ kind: "none" });
+    expect(resultText(cross)).toContain("只能修改当前章节");
+
+    const own = await toolByName(writerTools, "rename_draft_section").execute(
+      "rename-own",
+      {
+        title: "第一节·夜车"
+      }
+    );
+    expect(own.details).toMatchObject({
+      kind: "workspace-expert-draft-section-rename",
+      sectionId: "section-1",
+      previousTitle: "第一节·迟到的汽笛",
+      title: "第一节·夜车"
+    });
+  });
+
   it("lets only the draft coordinator propose one batch of blank chapter files", async () => {
     const snapshot = workspace("draft");
     const coordinatorTools = buildShortWorkspaceTools({
@@ -577,7 +808,6 @@ describe("short workspace tools", () => {
     for (const agentId of [
       "character_design",
       "plot_design",
-      "outline",
       "expert_section_writer"
     ] as const) {
       expect(

@@ -12,6 +12,7 @@ import {
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
   cloneEmptyLearningImitationResult,
+  createDefaultCreativePlotStages,
   createShortWorkspaceContentRevision,
   type AgentProviderRuntimeConfig,
   type LongWorkspaceRuntimeContext,
@@ -58,6 +59,7 @@ function screenplayWorkspace(): ScriptWorkspaceSnapshot {
     activeStageId: "draft",
     activeAgentId: "expert_section_writer",
     activeSectionId: "episode-1",
+    plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft",
       title: "正文",
@@ -171,6 +173,11 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(scriptSystemPrompt).toContain(
       "不得混入 Markdown 表格、分析标题或格式讲解"
     );
+    expect(scriptSystemPrompt).toContain("【当前剧情结构配置（顺序即执行顺序）】");
+    expect(scriptSystemPrompt).toContain("叙事视角（narrative_perspective）");
+    expect(scriptSystemPrompt).toContain(
+      "阶段边界与交付标准：确定叙事人称"
+    );
 
     const runtimePrompt = buildRuntimeUserPrompt(scriptInput);
     expect(runtimePrompt).toContain("剧本作品: 《雾港剧本》");
@@ -219,6 +226,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           arcs: 0,
           chapterCards: 0,
           storyEvents: 0,
+          storyPlots: 0,
           foreshadowingThreads: 0,
           committedChapters: 0
         },
@@ -279,6 +287,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           arcs: 0,
           chapterCards: 0,
           storyEvents: 0,
+          storyPlots: 0,
           foreshadowingThreads: 0,
           committedChapters: 0
         },
@@ -390,6 +399,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           arcs: 0,
           chapterCards: 0,
           storyEvents: 0,
+          storyPlots: 0,
           foreshadowingThreads: 0,
           committedChapters: 0
         },
@@ -459,6 +469,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           arcs: 0,
           chapterCards: 0,
           storyEvents: 0,
+          storyPlots: 0,
           foreshadowingThreads: 0,
           committedChapters: 0
         },
@@ -1272,6 +1283,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           arcs: 0,
           chapterCards: 0,
           storyEvents: 0,
+          storyPlots: 0,
           foreshadowingThreads: 0,
           committedChapters: 0
         },
@@ -1496,6 +1508,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       categories: ["悬疑"],
       activeStageId: "character_design" as const,
       activeAgentId: "character_design" as const,
+      plotStages: createDefaultCreativePlotStages(),
       expertDraft: {
         id: "draft" as const,
         title: "正文",
@@ -1942,6 +1955,112 @@ describe("DeepWrite Pi runtime adapter", () => {
         },
         baseRevision,
         summary: "已生成创建 2 个空白章节文件的变更，等待用户审阅。",
+        runtime: providerRuntime
+      }
+    });
+  });
+
+  it("maps a chapter deletion result into one reviewable workspace event", () => {
+    const baseRevision = createShortWorkspaceContentRevision("draft-directory");
+    const events = toRuntimeEvents(
+      {
+        type: "tool_execution_end",
+        toolCallId: "delete-chapter",
+        toolName: "delete_draft_section",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "等待审阅" }],
+          details: {
+            kind: "workspace-expert-draft-section-deletion",
+            workspaceId: "short-1",
+            stageId: "draft",
+            sectionId: "section-2",
+            title: "第二节·暗房",
+            baseRevision,
+            summary:
+              "已生成删除章节「第二节·暗房」及其正文与人物状态文件的变更，等待用户审阅。"
+          }
+        }
+      } as never,
+      {
+        runId: "run-delete-chapter",
+        sessionId: "session-delete-chapter",
+        prompt: "删除"
+      },
+      providerRuntime,
+      "assistant-delete-chapter"
+    );
+
+    expect(events.at(-1)).toEqual({
+      type: "workspace.editor_mutation",
+      runId: "run-delete-chapter",
+      sessionId: "session-delete-chapter",
+      payload: {
+        toolCallId: "delete-chapter",
+        workspaceId: "short-1",
+        stageId: "draft",
+        text: "删除：第二节·暗房",
+        mutationTarget: {
+          kind: "expert-draft-section-deletion",
+          sectionId: "section-2",
+          title: "第二节·暗房"
+        },
+        baseRevision,
+        summary:
+          "已生成删除章节「第二节·暗房」及其正文与人物状态文件的变更，等待用户审阅。",
+        runtime: providerRuntime
+      }
+    });
+  });
+
+  it("maps a chapter rename result into one reviewable workspace event", () => {
+    const baseRevision = createShortWorkspaceContentRevision("draft-directory");
+    const events = toRuntimeEvents(
+      {
+        type: "tool_execution_end",
+        toolCallId: "rename-chapter",
+        toolName: "rename_draft_section",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "等待审阅" }],
+          details: {
+            kind: "workspace-expert-draft-section-rename",
+            workspaceId: "short-1",
+            stageId: "draft",
+            sectionId: "section-2",
+            previousTitle: "第二节·暗房",
+            title: "第二节·底片",
+            baseRevision,
+            summary: "已生成将章节「第二节·暗房」改名为「第二节·底片」的变更，等待用户审阅。"
+          }
+        }
+      } as never,
+      {
+        runId: "run-rename-chapter",
+        sessionId: "session-rename-chapter",
+        prompt: "改名"
+      },
+      providerRuntime,
+      "assistant-rename-chapter"
+    );
+
+    expect(events.at(-1)).toEqual({
+      type: "workspace.editor_mutation",
+      runId: "run-rename-chapter",
+      sessionId: "session-rename-chapter",
+      payload: {
+        toolCallId: "rename-chapter",
+        workspaceId: "short-1",
+        stageId: "draft",
+        text: "第二节·暗房 → 第二节·底片",
+        mutationTarget: {
+          kind: "expert-draft-section-rename",
+          sectionId: "section-2",
+          previousTitle: "第二节·暗房",
+          title: "第二节·底片"
+        },
+        baseRevision,
+        summary: "已生成将章节「第二节·暗房」改名为「第二节·底片」的变更，等待用户审阅。",
         runtime: providerRuntime
       }
     });

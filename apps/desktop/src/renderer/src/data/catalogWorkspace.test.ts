@@ -244,16 +244,17 @@ describe("catalog workspace projection", () => {
     });
     expect(book?.boundMaterialLibraryIdsByKind?.plot).toEqual(["material-plot"]);
     expect(book?.children?.map((node) => node.label)).toEqual([
-      "人物设计",
+      "人物",
       "剧情",
-      "大纲",
-      "正文",
-      "其他文稿"
+      "正文"
     ]);
     expect(book?.children?.[1]?.children?.map((node) => node.label)).toEqual([
       "剧情设计",
       "导语设计",
-      "剧情细化"
+      "剧情细化",
+      "叙事视角",
+      "大纲",
+      "迁移备注"
     ]);
 
     const bookDocuments = projection.workspaceDocuments.filter(
@@ -291,12 +292,12 @@ describe("catalog workspace projection", () => {
     );
     expect(bookDocuments.find((document) => document.catalogDocumentId === "notes")?.path).toEqual([
       "迁移短篇",
-      "其他文稿",
+      "剧情",
       "迁移备注"
     ]);
   });
 
-  it("projects scripts without either intro and uses episode terminology", () => {
+  it("projects scripts with the shared plot structure and episode terminology", () => {
     const source = fixture();
     const base = structuredClone(source.books[0]!);
     source.books = [
@@ -305,9 +306,7 @@ describe("catalog workspace projection", () => {
         id: "book-script",
         title: "雨夜剧本",
         bookType: "script",
-        documents: base.documents.filter(
-          (document) => document.id !== "intro_design"
-        ),
+        documents: base.documents,
         draft: {
           ...base.draft,
           sections: [
@@ -346,9 +345,13 @@ describe("catalog workspace projection", () => {
     });
     expect(book.children?.[1]?.children?.map((node) => node.label)).toEqual([
       "剧情设计",
-      "剧情细化"
+      "导语设计",
+      "剧情细化",
+      "叙事视角",
+      "大纲",
+      "迁移备注"
     ]);
-    expect(flattenNodes([book]).some((node) => node.label === "导语设计")).toBe(false);
+    expect(flattenNodes([book]).some((node) => node.label === "导语设计")).toBe(true);
     expect(draft.children).toMatchObject([
       { label: "第一集", workspaceType: "script" }
     ]);

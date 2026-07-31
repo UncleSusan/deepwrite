@@ -79,11 +79,6 @@ const PARENT_AGENTS = [
     description: "为剧情主智能体配置结构、因果和钩子等专项助手。"
   },
   {
-    id: "outline",
-    label: "大纲",
-    description: "为大纲主智能体配置拆分、连续性和逻辑审阅助手。"
-  },
-  {
     id: "expert_draft_coordinator",
     label: "正文",
     description: "为正文总控配置审阅、润色和一致性检查助手。"

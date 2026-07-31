@@ -85,6 +85,12 @@ export interface LongWorkspaceSelection {
     id: LongArcId;
     label: string;
   }>;
+  storyPlots?: Array<{
+    id: string;
+    title: string;
+    order: number;
+    file: LongWorkspaceFileReference;
+  }>;
   chapterCardVolumeId?: LongVolumeId;
   chapterCardTabs?: Array<{
     id: LongChapterCardId;
@@ -179,6 +185,29 @@ export function nextWritableLongChapterId(
     ({ chapterCardId }) => chapterCardId === candidate.id
   );
   return entry?.commitId === null ? candidate.id : null;
+}
+
+export function createLongCharacterOverviewSelection(
+  summary: LongBookSummary,
+  workspaceIndex: LongWorkspaceIndexSnapshot
+): LongWorkspaceSelection | undefined {
+  if (!workspaceIndex.characterOverview) return undefined;
+  return {
+    key: "character-overview",
+    root: "character_design",
+    title: "概览",
+    breadcrumbs: [summary.title, "人物设计", "概览"],
+    files: [
+      {
+        role: "overview",
+        label: "概览",
+        file: workspaceIndex.characterOverview
+      }
+    ],
+    preferredRole: "overview",
+    description:
+      "人物设计阶段概览；统计全部人物的简单信息，供智能体先读后定位。"
+  };
 }
 
 export function createLongCharacterGroupSelection(
@@ -312,6 +341,18 @@ export function createLongPlotPointVolumeSelection(
     ({ id }) => id === plotPoint.id
   );
   if (!entry) return undefined;
+  const storyPlots = [...(workspaceIndex.plot.storyPlots ?? [])]
+    .filter((storyPlot) => storyPlot.arcId === plotPoint.id)
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.id.localeCompare(right.id)
+    )
+    .map((storyPlot) => ({
+      id: storyPlot.id,
+      title: storyPlot.title,
+      order: storyPlot.order,
+      file: storyPlot.file
+    }));
   return {
     ...baseSelection,
     plotPointId: plotPoint.id,
@@ -323,12 +364,18 @@ export function createLongPlotPointVolumeSelection(
       volume.title,
       plotPoint.title
     ],
+    storyPlots,
     files: [
       {
         role: "book-line",
         label: "剧情点",
         file: workspaceIndex.bookLine
-      }
+      },
+      ...storyPlots.map((storyPlot) => ({
+        role: "content" as const,
+        label: storyPlot.title,
+        file: storyPlot.file
+      }))
     ],
     description: `${volume.title} · ${plotPoint.title}`
   };
@@ -641,6 +688,9 @@ export function reconcileLongWorkspaceSelection(
           ? "列表型世界设定；通过条目 Tab 切换并编辑内容。"
           : "文本型世界设定。"
     };
+  }
+  if (selection.key === "character-overview") {
+    return createLongCharacterOverviewSelection(summary, workspaceIndex);
   }
   if (selection.key.startsWith("character-group:")) {
     const groupId = selection.key.slice("character-group:".length);

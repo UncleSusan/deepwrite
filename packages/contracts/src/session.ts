@@ -895,6 +895,17 @@ export const WorkspaceEditorMutationTargetSchema = z.discriminatedUnion("kind", 
       .min(1)
       .max(100),
     afterSectionId: z.string().trim().min(1).max(120).optional()
+  }),
+  z.object({
+    kind: z.literal("expert-draft-section-rename"),
+    sectionId: z.string().trim().min(1).max(120),
+    previousTitle: z.string().trim().min(1).max(240),
+    title: z.string().trim().min(1).max(240)
+  }),
+  z.object({
+    kind: z.literal("expert-draft-section-deletion"),
+    sectionId: z.string().trim().min(1).max(120),
+    title: z.string().trim().min(1).max(240)
   })
 ]);
 export type WorkspaceEditorMutationTarget = z.infer<
@@ -926,7 +937,8 @@ export const WorkspaceEditorMutationPayloadSchema = z
       context.addIssue({
         code: "custom",
         path: ["mutationTarget"],
-        message: "Draft mutations must target a physical file or section creation."
+        message:
+          "Draft mutations must target a physical file, section creation, section rename, or section deletion."
       });
     }
   });
@@ -1029,11 +1041,25 @@ export type LongCharacterDocument = z.infer<
   typeof LongCharacterDocumentSchema
 >;
 
+/** Stage-level overview is proposed alongside character file changes. */
+export const LONG_CHARACTER_OVERVIEW_CHANGE_ID =
+  "characters_overview" as const;
+export const LONG_CHARACTER_FILE_CHANGE_DOCUMENTS = [
+  ...LONG_CHARACTER_DOCUMENTS,
+  "overview"
+] as const;
+export const LongCharacterFileChangeDocumentSchema = z.enum(
+  LONG_CHARACTER_FILE_CHANGE_DOCUMENTS
+);
+export type LongCharacterFileChangeDocument = z.infer<
+  typeof LongCharacterFileChangeDocumentSchema
+>;
+
 export const LongCharacterFileChangeSchema = z
   .object({
     characterId: z.string().trim().min(3).max(160),
     characterName: z.string().trim().min(1).max(256),
-    document: LongCharacterDocumentSchema,
+    document: LongCharacterFileChangeDocumentSchema,
     fileId: LongFileIdSchema,
     filePath: LongProjectRelativePathSchema,
     title: z.string().trim().min(1).max(256),
@@ -1043,7 +1069,28 @@ export const LongCharacterFileChangeSchema = z
     beforeRevision: LongFileRevisionSchema.nullable(),
     nextRevision: LongFileRevisionSchema
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.document === "overview") {
+      if (value.characterId !== LONG_CHARACTER_OVERVIEW_CHANGE_ID) {
+        context.addIssue({
+          code: "custom",
+          path: ["characterId"],
+          message:
+            "Character overview changes must use the stage-level overview id."
+        });
+      }
+      return;
+    }
+    if (value.characterId === LONG_CHARACTER_OVERVIEW_CHANGE_ID) {
+      context.addIssue({
+        code: "custom",
+        path: ["characterId"],
+        message:
+          "Stage-level overview id is reserved for character overview changes."
+      });
+    }
+  });
 export type LongCharacterFileChange = z.infer<
   typeof LongCharacterFileChangeSchema
 >;

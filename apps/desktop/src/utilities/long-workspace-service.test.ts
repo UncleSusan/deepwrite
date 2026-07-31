@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createEmptyLongMarkdownFileReference,
+  longStoryPlotBodyFileId,
+  longStoryPlotFilePath,
   longWorldbuildingContentPath,
   longWorldbuildingFileId
 } from "@deepwrite/contracts";
@@ -253,6 +255,81 @@ describe("LongWorkspaceService", () => {
     ).resolves.toMatchObject({
       file: expect.objectContaining({ id: geography.overview.id }),
       content: ""
+    });
+  });
+
+  it("creates a story plot file and can read it back by file id", async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "deepwrite-long-story-plot-service-"))
+    );
+    const service = new LongWorkspaceService({
+      userDataPath: join(root, "user-data"),
+      now: () => "2026-07-26T10:00:00.000Z"
+    });
+    const created = await service.create(root, {
+      title: "故事情节书",
+      genre: "奇幻"
+    });
+    const arcId = created.book.workspaceIndex.plot.arcs[0]!.id;
+    const storyPlotId = "storyplot_daily_collapse";
+    const updatedAt = "2026-07-26T10:00:00.000Z";
+    const applied = await service.applyOperations({
+      bookId: created.book.id,
+      baseProjectRevision: created.summary.projectRevision,
+      batch: {
+        baseRevision: created.book.workspaceIndex.revision,
+        updatedAt,
+        operations: [
+          {
+            type: "storyPlot.create",
+            storyPlot: {
+              id: storyPlotId,
+              arcId,
+              title: "日常崩塌",
+              order: 1,
+              file: createEmptyLongMarkdownFileReference(
+                longStoryPlotBodyFileId(storyPlotId),
+                longStoryPlotFilePath(storyPlotId),
+                updatedAt
+              )
+            }
+          }
+        ],
+        documentWrites: []
+      }
+    });
+    const storyPlot = applied.operationResult.snapshot.plot.storyPlots.find(
+      ({ id }) => id === storyPlotId
+    );
+    expect(storyPlot).toBeTruthy();
+
+    const empty = await service.readDocument({
+      bookId: created.book.id,
+      fileId: longStoryPlotBodyFileId(storyPlotId),
+      offset: 0,
+      maxCharacters: 100
+    });
+    expect(empty.file.id).toBe(longStoryPlotBodyFileId(storyPlotId));
+    expect(empty.content).toBe("");
+
+    const opened = await service.open({ bookId: created.book.id });
+    await service.writeDocument({
+      bookId: created.book.id,
+      fileId: longStoryPlotBodyFileId(storyPlotId),
+      content: "世界突然变得透明。",
+      baseRevision: empty.file.revision,
+      baseWorkspaceRevision: opened.book.workspaceIndex.revision,
+      baseProjectRevision: opened.summary.projectRevision
+    });
+    await expect(
+      service.readDocument({
+        bookId: created.book.id,
+        fileId: longStoryPlotBodyFileId(storyPlotId),
+        offset: 0,
+        maxCharacters: 100
+      })
+    ).resolves.toMatchObject({
+      content: "世界突然变得透明。"
     });
   });
 });

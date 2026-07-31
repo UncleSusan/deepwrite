@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type {
   LongContinuityFact,
   LongContinuityKnowledge,
@@ -49,7 +49,7 @@ const viewMeta = [
     id: "snapshot",
     label: "当前事实快照",
     compactLabel: "快照",
-    icon: "ledger"
+    icon: "file"
   },
   {
     id: "execution",
@@ -67,21 +67,23 @@ const viewMeta = [
     id: "history",
     label: "章节流水与接续",
     compactLabel: "流水",
-    icon: "history"
+    icon: "undo"
   }
 ] as const satisfies ReadonlyArray<{
   id: LongContinuityWorkspaceView;
   label: string;
   compactLabel: string;
-  icon: "check" | "ledger" | "pin" | "globe" | "history";
+  icon: "check" | "file" | "pin" | "globe" | "undo";
 }>;
 
 const activeView = ref<LongContinuityWorkspaceView>(props.view);
+const contentEl = ref<HTMLElement | null>(null);
 
 watch(
   () => props.view,
   (view) => {
     activeView.value = view;
+    void resetContentScroll();
   }
 );
 
@@ -217,6 +219,24 @@ const latestHandoff = computed(() => {
   return projection.value.latestHandoff;
 });
 
+const historyStats = computed(() => [
+  {
+    id: "commits",
+    label: "已提交次数",
+    value: orderedCommits.value.length
+  },
+  {
+    id: "handoff",
+    label: "最近接续",
+    value: latestHandoff.value ? 1 : 0
+  },
+  {
+    id: "record",
+    label: "可审计记录",
+    value: props.currentRecord ? 1 : 0
+  }
+]);
+
 const currentSummaryRows = computed(() => {
   const summary = props.currentRecord?.chapterSummary;
   if (!summary) return [];
@@ -233,6 +253,12 @@ const currentSummaryRows = computed(() => {
 function switchView(view: LongContinuityWorkspaceView): void {
   activeView.value = view;
   emit("update:view", view);
+  void resetContentScroll();
+}
+
+async function resetContentScroll(): Promise<void> {
+  await nextTick();
+  if (contentEl.value) contentEl.value.scrollTop = 0;
 }
 
 function chapterLabel(chapterCardId: string | null | undefined): string {
@@ -431,7 +457,7 @@ function forwardCommit(commitId: string): void {
       </button>
     </nav>
 
-    <div class="continuity-content">
+    <div ref="contentEl" class="continuity-content">
       <section
         v-if="activeView === 'inbox'"
         class="continuity-view continuity-inbox"
@@ -439,12 +465,12 @@ function forwardCommit(commitId: string): void {
       >
         <header class="view-heading">
           <div>
-            <span>INBOX</span>
+            <span class="view-kicker">INBOX</span>
             <h3>待核验入账</h3>
             <p>正文是唯一事实证据；人物状态、知识变化和接续均由入账生成。</p>
           </div>
           <span
-            class="readiness-badge"
+            class="status-badge"
             :class="{ 'is-ready': evidenceReady }"
           >
             {{ evidenceReady ? "证据已齐" : "等待证据" }}
@@ -511,7 +537,9 @@ function forwardCommit(commitId: string): void {
         </div>
 
         <div v-else class="continuity-empty">
-          <AppIcon name="check" :size="24" />
+          <span class="continuity-empty-icon">
+            <AppIcon name="check" :size="20" />
+          </span>
           <strong>没有等待核验的章节</strong>
           <p>所有现有章节都已入账，新增章卡后会出现在这里。</p>
         </div>
@@ -547,11 +575,11 @@ function forwardCommit(commitId: string): void {
       >
         <header class="view-heading">
           <div>
-            <span>SNAPSHOT</span>
+            <span class="view-kicker">SNAPSHOT</span>
             <h3>当前事实快照</h3>
             <p>这里只呈现最近一次已批准提交后的有效状态，并保留来源追踪。</p>
           </div>
-          <span class="through-badge">
+          <span class="status-badge">
             {{
               throughCommit
                 ? `截至提交 #${throughCommit.sequence}`
@@ -572,7 +600,7 @@ function forwardCommit(commitId: string): void {
       >
         <header class="view-heading">
           <div>
-            <span>EXECUTION</span>
+            <span class="view-kicker">EXECUTION</span>
             <h3>剧情与伏笔</h3>
             <p>计划仍在剧情设计中；这里记录正文实际执行并已入账的结果。</p>
           </div>
@@ -588,7 +616,7 @@ function forwardCommit(commitId: string): void {
         <section class="continuity-card">
           <header class="section-heading">
             <div>
-              <span>OPEN LOOPS</span>
+              <span>待续事项</span>
               <strong>仍需推进或回收</strong>
             </div>
             <span>{{ activeOpenLoops.length }}</span>
@@ -623,47 +651,55 @@ function forwardCommit(commitId: string): void {
       >
         <header class="view-heading">
           <div>
-            <span>KNOWLEDGE</span>
+            <span class="view-kicker">KNOWLEDGE</span>
             <h3>信息揭露与知识</h3>
             <p>区分世界真相、正文已揭露内容与角色当前知道的内容。</p>
           </div>
-          <span class="through-badge">{{ knowledge.length }} 项知识状态</span>
+          <span class="status-badge">{{ knowledge.length }} 项知识状态</span>
         </header>
 
-        <div v-if="knowledge.length" class="knowledge-grid">
-          <article
-            v-for="item in knowledge"
-            :key="`${item.factId}:${item.audienceType}:${item.audienceId ?? 'reader'}`"
-            class="knowledge-card"
-          >
-            <header>
-              <span><AppIcon name="globe" :size="15" /></span>
-              <div>
-                <small>{{ audienceLabel(item) }}</small>
-                <strong>{{ knowledgeTitle(item) }}</strong>
-              </div>
-              <em>{{ knowledgeLevelLabel(item.level) }}</em>
-            </header>
-            <p>{{ knowledgeDetail(item) }}</p>
-            <footer>
-              <span>
-                {{ chapterLabel(item.sourceChapterCardId) }}
-                · {{ commitLabel(item.sourceCommitId) }}
-              </span>
-              <button
-                type="button"
-                @click="forwardCommit(item.sourceCommitId)"
-              >
-                查看来源
-              </button>
-            </footer>
-          </article>
-        </div>
-        <div v-else class="continuity-empty">
-          <AppIcon name="globe" :size="24" />
-          <strong>还没有可追踪的知识状态</strong>
-          <p>章节入账时记录揭露对象、知情范围和来源证据后会显示在这里。</p>
-        </div>
+        <section class="continuity-card">
+          <header class="section-heading">
+            <div>
+              <span>知识状态</span>
+              <strong>信息揭露记录</strong>
+            </div>
+            <span>{{ knowledge.length }}</span>
+          </header>
+
+          <div v-if="knowledge.length" class="knowledge-grid">
+            <article
+              v-for="item in knowledge"
+              :key="`${item.factId}:${item.audienceType}:${item.audienceId ?? 'reader'}`"
+              class="knowledge-card"
+            >
+              <header>
+                <span><AppIcon name="globe" :size="15" /></span>
+                <div>
+                  <small>{{ audienceLabel(item) }}</small>
+                  <strong>{{ knowledgeTitle(item) }}</strong>
+                </div>
+                <em>{{ knowledgeLevelLabel(item.level) }}</em>
+              </header>
+              <p>{{ knowledgeDetail(item) }}</p>
+              <footer>
+                <span>
+                  {{ chapterLabel(item.sourceChapterCardId) }}
+                  · {{ commitLabel(item.sourceCommitId) }}
+                </span>
+                <button
+                  type="button"
+                  @click="forwardCommit(item.sourceCommitId)"
+                >
+                  查看来源
+                </button>
+              </footer>
+            </article>
+          </div>
+          <div v-else class="card-empty">
+            还没有可追踪的知识状态。章节入账时记录揭露对象、知情范围和来源证据后会显示在这里。
+          </div>
+        </section>
 
         <LongContinuityProjectionPanel
           :snapshot="snapshot"
@@ -679,12 +715,19 @@ function forwardCommit(commitId: string): void {
       >
         <header class="view-heading">
           <div>
-            <span>HISTORY</span>
+            <span class="view-kicker">HISTORY</span>
             <h3>章节流水与接续</h3>
             <p>按章节查看发生了什么、改变了什么，以及下一章要接住什么。</p>
           </div>
-          <span class="through-badge">{{ orderedCommits.length }} 次提交</span>
+          <span class="status-badge">{{ orderedCommits.length }} 次提交</span>
         </header>
+
+        <dl class="history-stats">
+          <div v-for="stat in historyStats" :key="stat.id">
+            <dt>{{ stat.label }}</dt>
+            <dd>{{ stat.value }}</dd>
+          </div>
+        </dl>
 
         <section v-if="latestHandoff" class="handoff-card">
           <header>
@@ -731,65 +774,74 @@ function forwardCommit(commitId: string): void {
           </div>
         </section>
 
-        <div v-if="orderedCommits.length" class="history-layout">
-          <ol class="history-timeline">
-            <li v-for="commit in orderedCommits" :key="commit.id">
-              <span class="history-marker" />
-              <button type="button" @click="forwardCommit(commit.id)">
-                <span>
-                  提交 #{{ commit.sequence }} ·
-                  {{ formatTimestamp(commit.committedAt) }}
-                </span>
-                <strong>{{ chapterLabel(commit.chapterCardId) }}</strong>
-                <small>
-                  {{ commit.placementIds.length }} 个剧情落点 ·
-                  {{ commit.foreshadowingBeatIds.length }} 个伏笔触点
-                </small>
-              </button>
-            </li>
-          </ol>
+        <section class="continuity-card">
+          <header class="section-heading">
+            <div>
+              <span>入账时间线</span>
+              <strong>章节提交流水</strong>
+            </div>
+            <span>{{ orderedCommits.length }}</span>
+          </header>
 
-          <article v-if="currentRecord" class="record-inspector">
-            <header>
-              <small>当前审计记录</small>
-              <h4>
-                {{
-                  currentRecord.commitMessage ||
-                  `提交 #${currentRecord.sequence}`
-                }}
-              </h4>
-            </header>
-            <dl>
-              <template
-                v-for="([label, value], index) in currentSummaryRows"
-                :key="`${label}:${index}`"
-              >
-                <dt>{{ label }}</dt>
-                <dd>{{ value }}</dd>
-              </template>
-            </dl>
-            <section v-if="currentRecord.fileChanges.length">
-              <strong>资料投影变更</strong>
-              <ul>
-                <li
-                  v-for="change in currentRecord.fileChanges"
-                  :key="change.fileId"
-                >
-                  <span>{{ change.path }}</span>
+          <div v-if="orderedCommits.length" class="history-layout">
+            <ol class="history-timeline">
+              <li v-for="commit in orderedCommits" :key="commit.id">
+                <span class="history-marker" />
+                <button type="button" @click="forwardCommit(commit.id)">
+                  <span>
+                    提交 #{{ commit.sequence }} ·
+                    {{ formatTimestamp(commit.committedAt) }}
+                  </span>
+                  <strong>{{ chapterLabel(commit.chapterCardId) }}</strong>
                   <small>
-                    {{ change.mode === "append" ? "追加历史" : "更新当前快照" }}
+                    {{ commit.placementIds.length }} 个剧情落点 ·
+                    {{ commit.foreshadowingBeatIds.length }} 个伏笔触点
                   </small>
-                </li>
-              </ul>
-            </section>
-          </article>
-        </div>
+                </button>
+              </li>
+            </ol>
 
-        <div v-else class="continuity-empty">
-          <AppIcon name="history" :size="24" />
-          <strong>还没有章节流水</strong>
-          <p>批准第一章连续性提交后，会在这里形成可追溯的章节历史。</p>
-        </div>
+            <article v-if="currentRecord" class="record-inspector">
+              <header>
+                <small>当前审计记录</small>
+                <h4>
+                  {{
+                    currentRecord.commitMessage ||
+                    `提交 #${currentRecord.sequence}`
+                  }}
+                </h4>
+              </header>
+              <dl>
+                <template
+                  v-for="([label, value], index) in currentSummaryRows"
+                  :key="`${label}:${index}`"
+                >
+                  <dt>{{ label }}</dt>
+                  <dd>{{ value }}</dd>
+                </template>
+              </dl>
+              <section v-if="currentRecord.fileChanges.length">
+                <strong>资料投影变更</strong>
+                <ul>
+                  <li
+                    v-for="change in currentRecord.fileChanges"
+                    :key="change.fileId"
+                  >
+                    <span>{{ change.path }}</span>
+                    <small>
+                      {{
+                        change.mode === "append" ? "追加历史" : "更新当前快照"
+                      }}
+                    </small>
+                  </li>
+                </ul>
+              </section>
+            </article>
+          </div>
+          <div v-else class="card-empty">
+            还没有章节流水。批准第一章连续性提交后，会在这里形成可追溯的章节历史。
+          </div>
+        </section>
       </section>
     </div>
   </section>
@@ -799,8 +851,11 @@ function forwardCommit(commitId: string): void {
 .continuity-workspace {
   container: continuity-workspace / inline-size;
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   color: var(--text-primary);
   background: var(--surface-main);
 }
@@ -841,7 +896,7 @@ function forwardCommit(commitId: string): void {
 }
 
 .continuity-kicker,
-.view-heading > div > span,
+.view-kicker,
 .section-heading > div > span,
 .continuity-card small,
 .inbox-chapter-card small,
@@ -862,7 +917,7 @@ function forwardCommit(commitId: string): void {
 }
 
 .continuity-heading h2 {
-  font-size: 1rem;
+  font-size: 1.071429rem;
 }
 
 .continuity-heading p,
@@ -874,18 +929,20 @@ function forwardCommit(commitId: string): void {
 }
 
 .continuity-headline-stats,
-.execution-stats {
+.execution-stats,
+.history-stats {
   display: grid;
   grid-auto-flow: column;
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--theme-line-soft);
-  border-radius: 11px;
+  border-radius: 12px;
   background: var(--surface-muted);
 }
 
 .continuity-headline-stats > div,
-.execution-stats > div {
+.execution-stats > div,
+.history-stats > div {
   display: grid;
   min-width: 88px;
   gap: 2px;
@@ -893,18 +950,21 @@ function forwardCommit(commitId: string): void {
 }
 
 .continuity-headline-stats > div + div,
-.execution-stats > div + div {
+.execution-stats > div + div,
+.history-stats > div + div {
   border-left: 1px solid var(--theme-line-soft);
 }
 
 .continuity-headline-stats dt,
-.execution-stats dt {
+.execution-stats dt,
+.history-stats dt {
   color: var(--text-tertiary);
   font-size: 0.642857rem;
 }
 
 .continuity-headline-stats dd,
-.execution-stats dd {
+.execution-stats dd,
+.history-stats dd {
   margin: 0;
   font-size: 0.928571rem;
   font-weight: 700;
@@ -925,13 +985,14 @@ function forwardCommit(commitId: string): void {
   justify-content: center;
   min-width: 0;
   gap: 7px;
-  padding: 11px 8px 10px;
+  padding: 12px 8px 10px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--text-tertiary);
   font: inherit;
   font-size: 0.714286rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -942,8 +1003,13 @@ function forwardCommit(commitId: string): void {
 
 .continuity-view-tabs button.is-active {
   border-bottom-color: var(--accent);
-  background: var(--surface-selected);
+  background: transparent;
   color: var(--text-primary);
+}
+
+.continuity-view-tabs button:focus-visible {
+  background: var(--surface-selected);
+  outline: none;
 }
 
 .view-label-compact {
@@ -953,6 +1019,8 @@ function forwardCommit(commitId: string): void {
 .continuity-content {
   min-width: 0;
   min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .continuity-view {
@@ -968,15 +1036,23 @@ function forwardCommit(commitId: string): void {
   align-items: flex-start;
   justify-content: space-between;
   min-width: 0;
+  min-height: 4.2rem;
   gap: 14px;
 }
 
-.view-heading h3 {
-  font-size: 1.071429rem;
+.view-heading > div > p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.readiness-badge,
-.through-badge {
+.view-heading h3 {
+  margin-top: 1px;
+  font-size: 1rem;
+}
+
+.status-badge {
   flex: 0 0 auto;
   padding: 5px 9px;
   border: 1px solid var(--theme-line-soft);
@@ -986,7 +1062,7 @@ function forwardCommit(commitId: string): void {
   font-size: 0.678571rem;
 }
 
-.readiness-badge.is-ready {
+.status-badge.is-ready {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--theme-line));
   background: var(--accent-soft);
   color: var(--accent);
@@ -1178,17 +1254,27 @@ function forwardCommit(commitId: string): void {
   line-height: 1.55;
 }
 
-.execution-stats {
+.execution-stats,
+.history-stats {
   grid-auto-flow: initial;
+}
+
+.execution-stats {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.execution-stats > div {
+.history-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.execution-stats > div,
+.history-stats > div {
   min-width: 0;
   padding: 12px 14px;
 }
 
-.execution-stats dd {
+.execution-stats dd,
+.history-stats dd {
   font-size: 1.285714rem;
 }
 
@@ -1203,6 +1289,8 @@ function forwardCommit(commitId: string): void {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
   gap: 10px;
+  padding: 12px;
+  background: var(--surface-main);
 }
 
 .knowledge-card {
@@ -1304,13 +1392,23 @@ function forwardCommit(commitId: string): void {
   display: grid;
   place-items: center;
   min-height: 170px;
-  gap: 7px;
+  gap: 8px;
   padding: 24px;
   border: 1px dashed var(--theme-line);
   border-radius: 12px;
   background: var(--surface-muted);
   color: var(--text-tertiary);
   text-align: center;
+}
+
+.continuity-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .continuity-empty strong {
@@ -1345,6 +1443,11 @@ function forwardCommit(commitId: string): void {
   grid-template-columns: minmax(250px, 0.72fr) minmax(320px, 1.28fr);
   align-items: start;
   gap: 14px;
+  padding: 12px;
+}
+
+.history-layout .record-inspector {
+  border-radius: 10px;
 }
 
 .history-timeline {
@@ -1533,6 +1636,10 @@ function forwardCommit(commitId: string): void {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .history-stats {
+    grid-template-columns: 1fr;
+  }
+
   .execution-stats > div:nth-child(3) {
     border-left: 0;
     border-top: 1px solid var(--theme-line-soft);
@@ -1540,6 +1647,11 @@ function forwardCommit(commitId: string): void {
 
   .execution-stats > div:nth-child(4) {
     border-top: 1px solid var(--theme-line-soft);
+  }
+
+  .history-stats > div + div {
+    border-top: 1px solid var(--theme-line-soft);
+    border-left: 0;
   }
 
   .loop-list li {

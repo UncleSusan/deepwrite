@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createCatalogDraftDirectory, type ShortBook } from "@deepwrite/contracts";
+import {
+  createCatalogDraftDirectory,
+  createDefaultBookPlotStages,
+  type ShortBook
+} from "@deepwrite/contracts";
 import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
 import { createShortManuscriptExportInput } from "./shortManuscriptExport";
 
@@ -18,6 +22,7 @@ function fixtureBook(): ShortBook {
     status: "editing",
     linkedMaterialIdsByKind: { character: [], gimmick: [], plot: [], draft: [], other: [] },
     linkedSkillIdsByKind: { general: [], plot: [], style: [], other: [] },
+    plotStages: createDefaultBookPlotStages({ allEnabled: true }),
     documents: [],
     draft,
     createdAt: NOW,

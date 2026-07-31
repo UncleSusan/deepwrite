@@ -1,11 +1,13 @@
 import {
   LONG_CHARACTER_CORE_FOCUS_MAX_CHARACTERS,
   LONG_CHARACTER_FOCUS_MAX_CHARACTERS,
+  LONG_CHARACTER_OVERVIEW_FOCUS_MAX_CHARACTERS,
   type LongBookId,
   type LongCharacterFocusSnapshot,
   type LongFileId,
   type LongReadDocumentInput,
-  type LongReadDocumentResult
+  type LongReadDocumentResult,
+  type LongWorkspaceFileReference
 } from "@deepwrite/contracts";
 import type {
   LongWorkspaceFileRole,
@@ -20,7 +22,10 @@ const CHARACTER_DOCUMENTS: Partial<
   Record<
     LongWorkspaceFileRole,
     {
-      kind: LongCharacterFocusSnapshot["currentDocument"]["kind"];
+      kind: Exclude<
+        LongCharacterFocusSnapshot["currentDocument"]["kind"],
+        "overview"
+      >;
       title: string;
     }
   >
@@ -68,14 +73,44 @@ export async function buildLongCharacterFocusSnapshot(input: {
   bookId: LongBookId;
   selection: LongWorkspaceSelection | null;
   activeFileId: LongFileId | null;
+  characterOverviewFile?: LongWorkspaceFileReference | null;
   readDocument: ReadLongDocument;
 }): Promise<LongCharacterFocusSnapshot | undefined> {
-  const { bookId, selection, activeFileId, readDocument } = input;
+  const {
+    bookId,
+    selection,
+    activeFileId,
+    characterOverviewFile,
+    readDocument
+  } = input;
+  if (selection?.root !== "character_design" || !activeFileId) {
+    return undefined;
+  }
+
+  const overviewFile =
+    selection.files.find(({ role }) => role === "overview")?.file ??
+    characterOverviewFile ??
+    null;
+
+  if (selection.key === "character-overview") {
+    if (!overviewFile || overviewFile.id !== activeFileId) return undefined;
+    return {
+      currentDocument: {
+        kind: "overview",
+        title: "概览",
+        text: await readFocusText(
+          readDocument,
+          bookId,
+          overviewFile.id,
+          LONG_CHARACTER_FOCUS_MAX_CHARACTERS
+        )
+      }
+    };
+  }
+
   if (
-    selection?.root !== "character_design" ||
     !selection.characterId ||
-    !selection.characterGroup ||
-    !activeFileId
+    !selection.characterGroup
   ) {
     return undefined;
   }
@@ -89,12 +124,21 @@ export async function buildLongCharacterFocusSnapshot(input: {
   );
   const isCoreProfile = document.kind === "core_profile";
   if (!isCoreProfile && !coreProfile) return undefined;
-  const currentMaximum = isCoreProfile
-    ? LONG_CHARACTER_FOCUS_MAX_CHARACTERS
-    : LONG_CHARACTER_FOCUS_MAX_CHARACTERS -
-      LONG_CHARACTER_CORE_FOCUS_MAX_CHARACTERS;
-  const [currentText, coreText] = await Promise.all([
+
+  const reserved =
+    LONG_CHARACTER_OVERVIEW_FOCUS_MAX_CHARACTERS +
+    (isCoreProfile ? 0 : LONG_CHARACTER_CORE_FOCUS_MAX_CHARACTERS);
+  const currentMaximum = LONG_CHARACTER_FOCUS_MAX_CHARACTERS - reserved;
+  const [currentText, overviewText, coreText] = await Promise.all([
     readFocusText(readDocument, bookId, activeFileId, currentMaximum),
+    overviewFile
+      ? readFocusText(
+          readDocument,
+          bookId,
+          overviewFile.id,
+          LONG_CHARACTER_OVERVIEW_FOCUS_MAX_CHARACTERS
+        )
+      : Promise.resolve({ content: "" }),
     !isCoreProfile && coreProfile
       ? readFocusText(
           readDocument,
@@ -112,6 +156,7 @@ export async function buildLongCharacterFocusSnapshot(input: {
       title: document.title,
       text: currentText
     },
+    overview: overviewText,
     ...(coreText ? { coreProfile: coreText } : {})
   };
 }

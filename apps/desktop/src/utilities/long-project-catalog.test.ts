@@ -55,6 +55,7 @@ function fakeOpened(
       arcs: [],
       chapterCards: [],
       storyEvents: [],
+      storyPlots: [],
       eventConnections: [],
       narrativePlacements: [],
       foreshadowing: []
@@ -116,6 +117,7 @@ function fakeOpened(
         arcs: 0,
         chapterCards: 0,
         storyEvents: 0,
+        storyPlots: 0,
         foreshadowingThreads: 0,
         committedChapters: 0
       },

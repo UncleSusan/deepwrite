@@ -23,6 +23,8 @@ import {
   LongStableIdSchema,
   LongStoryEventIdSchema,
   LongStoryEventSchema,
+  LongStoryPlotIdSchema,
+  LongStoryPlotSchema,
   LongVolumeIdSchema,
   LongVolumeSchema,
   LongWorkspaceIndexSnapshotSchema,
@@ -452,6 +454,40 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
 
   z
     .object({
+      type: z.literal("storyPlot.create"),
+      storyPlot: LongStoryPlotSchema,
+      ...OptionalProvisionalIdShape
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("storyPlot.update"),
+      id: LongStoryPlotIdSchema,
+      patch: nonEmptyPatch({
+        title: OperationTitleSchema.optional()
+      })
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("storyPlot.delete"),
+      id: LongStoryPlotIdSchema,
+      ...DeleteControlShape
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("storyPlot.reorder"),
+      arcId: LongArcIdSchema,
+      orderedIds: uniqueIdArray(
+        LongStoryPlotIdSchema,
+        "story-plot reorder id"
+      )
+    })
+    .strict(),
+
+  z
+    .object({
       type: z.literal("connection.create"),
       connection: LongEventConnectionSchema,
       ...OptionalProvisionalIdShape
@@ -707,6 +743,7 @@ export const LONG_WORKSPACE_ENTITY_KINDS = [
   "arc",
   "chapter-card",
   "story-event",
+  "story-plot",
   "event-connection",
   "narrative-placement",
   "foreshadowing-thread",
@@ -965,6 +1002,7 @@ function allWorkspaceFiles(
             ...category.items.map(({ file }) => file)
           ]
     ),
+    ...(workspace.characterOverview ? [workspace.characterOverview] : []),
     ...workspace.characterFiles.flatMap((entry) => [
       entry.coreProfile,
       entry.relationships,
@@ -976,6 +1014,7 @@ function allWorkspaceFiles(
       entry.characterState,
       entry.handoff
     ]),
+    ...workspace.plot.storyPlots.map(({ file }) => file),
     ...workspace.ledger.commits.map(({ recordFile }) => recordFile)
   ];
 }
@@ -1935,6 +1974,22 @@ function deleteChapter(
   markDeleted(state, chapter.id);
 }
 
+function deleteStoryPlot(state: MutationState, storyPlotId: string): void {
+  const storyPlotIndex = findEntityIndex(
+    state.draft.plot.storyPlots,
+    storyPlotId,
+    "Story plot"
+  );
+  const storyPlot = state.draft.plot.storyPlots[storyPlotIndex]!;
+  addFileDeleteIntent(
+    state,
+    storyPlot.file,
+    `Delete story plot ${storyPlotId}`
+  );
+  state.draft.plot.storyPlots.splice(storyPlotIndex, 1);
+  markDeleted(state, storyPlot.id);
+}
+
 function deleteArc(
   state: MutationState,
   arcId: string,
@@ -1947,6 +2002,9 @@ function deleteArc(
     .map(({ id }) => id);
   const eventIds = state.draft.plot.storyEvents
     .filter((event) => event.arcIds.includes(arcId))
+    .map(({ id }) => id);
+  const storyPlotIds = state.draft.plot.storyPlots
+    .filter((storyPlot) => storyPlot.arcId === arcId)
     .map(({ id }) => id);
   const directBeatIds = state.draft.plot.foreshadowing.flatMap(
     (thread) =>
@@ -1966,7 +2024,7 @@ function deleteArc(
   }
   requireCascade(
     cascade,
-    [...chapterIds, ...eventIds, ...directBeatIds],
+    [...chapterIds, ...eventIds, ...storyPlotIds, ...directBeatIds],
     `Arc ${arcId}`
   );
   for (const beatId of new Set(directBeatIds)) {
@@ -1978,6 +2036,7 @@ function deleteArc(
   chapterIds.forEach((chapterId) =>
     deleteChapter(state, chapterId, true)
   );
+  storyPlotIds.forEach((storyPlotId) => deleteStoryPlot(state, storyPlotId));
   state.draft.plot.storyEvents.forEach((event) => {
     if (!event.arcIds.includes(arcId)) return;
     event.arcIds = event.arcIds.filter((candidate) => candidate !== arcId);
@@ -3161,6 +3220,70 @@ function applyLongWorkspaceOperation(
       break;
     }
 
+    case "storyPlot.create": {
+      findEntityIndex(
+        workspace.plot.arcs,
+        operation.storyPlot.arcId,
+        "Arc"
+      );
+      assertNewEntityId(
+        workspace.plot.storyPlots,
+        operation.storyPlot.id,
+        "Story plot"
+      );
+      ensureFilesAvailable(state, [operation.storyPlot.file]);
+      workspace.plot.storyPlots.push(structuredClone(operation.storyPlot));
+      addFileCreateIntent(
+        state,
+        operation.storyPlot.file,
+        `Create story plot ${operation.storyPlot.id}`
+      );
+      markCreated(state, operation.storyPlot.id);
+      registerProvisionalId(
+        state,
+        operation.provisionalId,
+        operation.storyPlot.id
+      );
+      break;
+    }
+    case "storyPlot.update": {
+      const storyPlot =
+        workspace.plot.storyPlots[
+          findEntityIndex(
+            workspace.plot.storyPlots,
+            operation.id,
+            "Story plot"
+          )
+        ]!;
+      Object.assign(storyPlot, operation.patch);
+      markUpdated(state, storyPlot.id);
+      break;
+    }
+    case "storyPlot.delete": {
+      deleteStoryPlot(state, operation.id);
+      break;
+    }
+    case "storyPlot.reorder": {
+      findEntityIndex(workspace.plot.arcs, operation.arcId, "Arc");
+      const target = workspace.plot.storyPlots.filter(
+        (storyPlot) => storyPlot.arcId === operation.arcId
+      );
+      assertExactOrder(
+        target.map(({ id }) => id),
+        operation.orderedIds,
+        `Story plots in ${operation.arcId}`
+      );
+      updateOrdersById(
+        target,
+        operation.orderedIds,
+        (value, order) => {
+          value.order = order;
+        },
+        state
+      );
+      break;
+    }
+
     case "connection.create": {
       assertNewEntityId(
         workspace.plot.eventConnections,
@@ -3787,6 +3910,7 @@ function workspaceEntityRecords(
   snapshot.plot.storyEvents.forEach((entity) =>
     add("story-event", entity)
   );
+  snapshot.plot.storyPlots.forEach((entity) => add("story-plot", entity));
   snapshot.plot.eventConnections.forEach((entity) =>
     add("event-connection", entity)
   );

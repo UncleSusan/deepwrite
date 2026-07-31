@@ -20,6 +20,7 @@ import {
   WorkspaceAgentsSaveCommandEnvelopeSchema,
   WorkspaceRuntimeContextSchema,
   createEnvelope,
+  createDefaultCreativePlotStages,
   createExpertDraftDirectoryRevision,
   createShortWorkspaceContentRevision,
   resolveScriptWorkspaceAgentIdForStage
@@ -57,6 +58,7 @@ function scriptWorkspaceSnapshot() {
     title: "测试剧本",
     categories: ["悬疑"],
     activeStageId: "plot_refine" as const,
+    plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft" as const,
       title: "剧集",
@@ -76,18 +78,18 @@ function scriptWorkspaceSnapshot() {
 }
 
 describe("script workspace contracts", () => {
-  it("keeps script stages isolated from the short-story intro stage", () => {
+  it("uses the same default dynamic plot structure as short stories", () => {
     expect(SCRIPT_WORKSPACE_STAGE_IDS).toEqual([
       "character_design",
       "plot_design",
+      "intro_design",
       "plot_refine",
+      "narrative_perspective",
       "outline",
       "draft"
     ]);
-    expect(SCRIPT_WORKSPACE_STAGE_IDS).not.toContain("intro_design");
-    expect(SCRIPT_WORKSPACE_TEXT_STAGE_IDS).not.toContain("intro_design");
-    expect(DEFAULT_SCRIPT_AGENT_READ_ACCESS.plot_design.workspace).not.toContain(
-      "intro_design"
+    expect(DEFAULT_SCRIPT_AGENT_READ_ACCESS.plot_design.workspace).toContain(
+      "plot_structure"
     );
     expect(resolveScriptWorkspaceAgentIdForStage("plot_refine")).toBe(
       "plot_design"
@@ -127,7 +129,7 @@ describe("script workspace contracts", () => {
     const snapshot = ScriptWorkspaceSnapshotSchema.parse(
       scriptWorkspaceSnapshot()
     );
-    expect(snapshot.stages).toHaveLength(4);
+    expect(snapshot.stages).toHaveLength(6);
     expect(CreativeWorkspaceSnapshotSchema.parse(snapshot).id).toBe("script_1");
 
     for (const profile of DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES) {
@@ -156,7 +158,7 @@ describe("script workspace contracts", () => {
       )
     };
     expect(ScriptWorkspaceAgentSettingsInputSchema.parse(input).agents).toHaveLength(
-      5
+      4
     );
     expect(WorkspaceAgentSettingsInputSchema.parse(input).workspaceType).toBe(
       "script"

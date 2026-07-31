@@ -591,6 +591,7 @@ function allWorkspaceFiles(
             ...category.items.map(({ file }) => file)
           ]
     ),
+    ...(index.characterOverview ? [index.characterOverview] : []),
     ...index.characterFiles.flatMap((entry) => [
       entry.coreProfile,
       entry.relationships,
@@ -602,6 +603,7 @@ function allWorkspaceFiles(
       entry.characterState,
       entry.handoff
     ]),
+    ...index.plot.storyPlots.map(({ file }) => file),
     ...index.ledger.commits.map(({ recordFile }) => recordFile)
   ];
 }
@@ -654,6 +656,13 @@ function searchFiles(
             }))
           ]
     ),
+    ...(index.characterOverview
+      ? [{
+          file: index.characterOverview,
+          root: "character_design" as const,
+          title: "人物概览"
+        }]
+      : []),
     ...index.characterFiles.flatMap((entry) => {
       const title =
         characterById.get(entry.characterId)?.name ?? entry.characterId;
@@ -702,6 +711,11 @@ function searchFiles(
         }
       ];
     }),
+    ...index.plot.storyPlots.map((entry) => ({
+      file: entry.file,
+      root: "plot_design" as const,
+      title: entry.title
+    })),
     ...index.ledger.commits.map((commit) => ({
       file: commit.recordFile,
       root: "continuity_ledger" as const,

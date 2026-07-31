@@ -516,7 +516,7 @@ describe("CatalogStore", () => {
       linkedMaterialIdsByKind: { character: ["material-character"] },
       linkedSkillIdsByKind: { general: ["skill-general"] }
     });
-    expect(book.documents).toHaveLength(5);
+    expect(book.documents).toHaveLength(6);
     expect(book.draft.sections).toHaveLength(2);
     expect(book.linkedMaterialIdsByKind.character).toEqual(["material-character"]);
 
@@ -655,7 +655,9 @@ describe("CatalogStore", () => {
     expect(script.documents.map(({ id }) => id)).toEqual([
       "character_design",
       "plot_design",
+      "intro_design",
       "plot_refine",
+      "narrative_perspective",
       "outline"
     ]);
     expect(script.draft.sections).toMatchObject([
@@ -682,6 +684,122 @@ describe("CatalogStore", () => {
       id: script.id,
       bookType: "script",
       draft: { sections: [{ id: "episode-1", title: "第一集" }] }
+    });
+  });
+
+  it("mutates dynamic plot stages without changing their stable document ids", async () => {
+    const root = await makeTemporaryRoot("deepwrite-catalog-plot-structure-");
+    const store = new CatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock()
+    });
+    const created = await store.createShortBook({
+      title: "动态剧情",
+      genre: "悬疑"
+    });
+    const withStage = await store.mutatePlotStructure({
+      bookId: created.id,
+      baseProjectRevision: 0,
+      mutation: {
+        type: "create",
+        title: "反转校验",
+        description: "核对证据链。"
+      }
+    });
+    const stage = withStage.plotStages.at(-1)!;
+    expect(stage.id).toMatch(/^plot-stage-/u);
+    expect(withStage.documents.find(({ id }) => id === stage.id)).toMatchObject({
+      title: "反转校验",
+      content: ""
+    });
+
+    const updated = await store.mutatePlotStructure({
+      bookId: created.id,
+      baseProjectRevision: 0,
+      mutation: {
+        type: "update",
+        stageId: stage.id,
+        title: "反转与证据",
+        description: "核对反转证据链和人物知情边界。"
+      }
+    });
+    expect(updated.plotStages.at(-1)).toMatchObject({
+      id: stage.id,
+      title: "反转与证据"
+    });
+    expect(updated.documents.find(({ id }) => id === stage.id)?.id).toBe(
+      stage.id
+    );
+
+    const moved = await store.mutatePlotStructure({
+      bookId: created.id,
+      baseProjectRevision: 0,
+      mutation: { type: "move", stageId: stage.id, direction: "up" }
+    });
+    expect(moved.plotStages.at(-2)?.id).toBe(stage.id);
+    const deleted = await store.mutatePlotStructure({
+      bookId: created.id,
+      baseProjectRevision: 0,
+      mutation: { type: "delete", stageId: stage.id }
+    });
+    expect(deleted.plotStages.some(({ id }) => id === stage.id)).toBe(false);
+    expect(deleted.documents.some(({ id }) => id === stage.id)).toBe(false);
+
+    await expect(
+      store.mutatePlotStructure({
+        bookId: created.id,
+        baseProjectRevision: 0,
+        mutation: {
+          type: "create",
+          title: "剧情设计",
+          description: "重名。"
+        }
+      })
+    ).rejects.toThrow(/已经存在/u);
+
+    await expect(
+      store.mutatePlotStructure({
+        bookId: created.id,
+        baseProjectRevision: 0,
+        mutation: { type: "delete", stageId: "plot_design" }
+      })
+    ).rejects.toThrow(/默认剧情结构不可删除/u);
+
+    const toggled = await store.mutatePlotStructure({
+      bookId: created.id,
+      baseProjectRevision: 0,
+      mutation: {
+        type: "setEnabled",
+        stageId: "outline",
+        enabled: true
+      }
+    });
+    expect(toggled.plotStages.find(({ id }) => id === "outline")?.enabled).toBe(
+      true
+    );
+    expect(
+      toggled.plotStages.filter((stage) => stage.enabled).map(({ id }) => id)
+    ).toEqual([
+      "plot_design",
+      "intro_design",
+      "plot_refine",
+      "outline"
+    ]);
+
+    await expect(
+      store.mutatePlotStructure({
+        bookId: created.id,
+        baseProjectRevision: 0,
+        mutation: {
+          type: "setEnabled",
+          stageId: "plot_design",
+          enabled: false
+        }
+      })
+    ).resolves.toMatchObject({
+      plotStages: expect.arrayContaining([
+        expect.objectContaining({ id: "plot_design", enabled: false })
+      ])
     });
   });
 

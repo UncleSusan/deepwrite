@@ -18,10 +18,7 @@ import {
   LongWorldbuildingFileChangeSchema,
   LongWorkspaceOperationBatchSchema,
   LongWorkspaceRuntimeContextSchema,
-  SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   ScriptWorkspaceSnapshotSchema,
-  SHORT_WORKSPACE_STAGE_IDS,
-  SHORT_WORKSPACE_TEXT_STAGE_IDS,
   ShortWorkspaceSnapshotSchema,
   createExpertDraftDirectoryRevision,
   createShortWorkspaceContentRevision
@@ -240,6 +237,20 @@ function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
           }
         }
       : {}),
+    ...(proposal.draftSectionRenameTarget
+      ? {
+          draftSectionRenameTarget: {
+            ...proposal.draftSectionRenameTarget
+          }
+        }
+      : {}),
+    ...(proposal.draftSectionDeletionTarget
+      ? {
+          draftSectionDeletionTarget: {
+            ...proposal.draftSectionDeletionTarget
+          }
+        }
+      : {}),
     toolCallIds: [...proposal.toolCallIds],
     hunks: proposal.hunks.map(cloneTextDiffHunk)
   };
@@ -436,6 +447,63 @@ function parseStoredDraftSectionCreationTarget(
   };
 }
 
+function parseStoredDraftSectionRenameTarget(
+  value: unknown
+): AgentEditProposal["draftSectionRenameTarget"] | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.sectionId !== "string" ||
+    !value.sectionId.trim() ||
+    typeof value.previousTitle !== "string" ||
+    !value.previousTitle.trim() ||
+    typeof value.title !== "string" ||
+    !value.title.trim()
+  ) {
+    return undefined;
+  }
+  if (
+    value.baseProjectRevision !== undefined &&
+    !nonnegativeInteger(value.baseProjectRevision)
+  ) {
+    return undefined;
+  }
+  return {
+    sectionId: value.sectionId,
+    previousTitle: value.previousTitle,
+    title: value.title,
+    ...(typeof value.baseProjectRevision === "number"
+      ? { baseProjectRevision: value.baseProjectRevision }
+      : {})
+  };
+}
+
+function parseStoredDraftSectionDeletionTarget(
+  value: unknown
+): AgentEditProposal["draftSectionDeletionTarget"] | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.sectionId !== "string" ||
+    !value.sectionId.trim() ||
+    typeof value.title !== "string" ||
+    !value.title.trim()
+  ) {
+    return undefined;
+  }
+  if (
+    value.baseProjectRevision !== undefined &&
+    !nonnegativeInteger(value.baseProjectRevision)
+  ) {
+    return undefined;
+  }
+  return {
+    sectionId: value.sectionId,
+    title: value.title,
+    ...(typeof value.baseProjectRevision === "number"
+      ? { baseProjectRevision: value.baseProjectRevision }
+      : {})
+  };
+}
+
 function parseStoredLongWorldbuildingTarget(
   value: unknown
 ): AgentEditProposal["longWorldbuildingTarget"] | undefined {
@@ -521,13 +589,9 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     typeof value.id !== "string" ||
     typeof value.runId !== "string" ||
     typeof value.workspaceId !== "string" ||
-    (value.stageId !== "library" &&
-      value.stageId !== "long-worldbuilding" &&
-      value.stageId !== "long-character" &&
-      value.stageId !== "long-plot-design" &&
-      !SHORT_WORKSPACE_STAGE_IDS.includes(
-        value.stageId as (typeof SHORT_WORKSPACE_STAGE_IDS)[number]
-      )) ||
+    (typeof value.stageId !== "string" ||
+      value.stageId.length > 120 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value.stageId)) ||
     typeof value.documentId !== "string" ||
     typeof value.title !== "string" ||
     typeof value.summary !== "string" ||
@@ -598,6 +662,24 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
   ) {
     return undefined;
   }
+  const draftSectionRenameTarget = parseStoredDraftSectionRenameTarget(
+    value.draftSectionRenameTarget
+  );
+  if (
+    value.draftSectionRenameTarget !== undefined &&
+    !draftSectionRenameTarget
+  ) {
+    return undefined;
+  }
+  const draftSectionDeletionTarget = parseStoredDraftSectionDeletionTarget(
+    value.draftSectionDeletionTarget
+  );
+  if (
+    value.draftSectionDeletionTarget !== undefined &&
+    !draftSectionDeletionTarget
+  ) {
+    return undefined;
+  }
   const hunks = value.hunks
     .map(parseStoredTextDiffHunk)
     .filter((hunk): hunk is AgentTextDiffHunk => hunk !== undefined);
@@ -645,6 +727,8 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     ...(longCharacterTarget ? { longCharacterTarget } : {}),
     ...(longPlotDesignTarget ? { longPlotDesignTarget } : {}),
     ...(draftSectionCreationTarget ? { draftSectionCreationTarget } : {}),
+    ...(draftSectionRenameTarget ? { draftSectionRenameTarget } : {}),
+    ...(draftSectionDeletionTarget ? { draftSectionDeletionTarget } : {}),
     ...(value.provisionalExpertSection
       ? { provisionalExpertSection: true }
       : {})
@@ -2796,16 +2880,32 @@ export function useAgentConversation(
       activeDocument.stageId
     ) {
       const workspaceType = activeDocument.workspaceType;
-      const textStageIds =
-        workspaceType === "script"
-          ? SCRIPT_WORKSPACE_TEXT_STAGE_IDS
-          : SHORT_WORKSPACE_TEXT_STAGE_IDS;
       const liveStages = workspaceDocuments.filter(
         (document) =>
           document.workspaceType === workspaceType &&
           document.workspaceId === activeDocument.workspaceId &&
           document.stageId
       );
+      const plotStageDocuments = liveStages
+        .filter(
+          (document) =>
+            document.draftFileKind === undefined &&
+            document.plotStageOrder !== undefined &&
+            document.plotStageDescription !== undefined
+        )
+        .sort(
+          (left, right) =>
+            (left.plotStageOrder ?? 0) - (right.plotStageOrder ?? 0)
+        );
+      const plotStages = plotStageDocuments.map((document) => ({
+        id: document.stageId!,
+        title: document.title,
+        description: document.plotStageDescription!
+      }));
+      const textStageIds = [
+        "character_design",
+        ...plotStages.map(({ id }) => id)
+      ];
       const stages = textStageIds.map((stageId) => {
         const document = liveStages.find(
           (candidate) =>
@@ -2906,6 +3006,7 @@ export function useAgentConversation(
           title: activeDocument.workspaceTitle,
           categories: [...(activeDocument.workspaceCategories ?? [])],
           activeStageId: activeDocument.stageId,
+          plotStages,
           ...(activeDocument.shortAgentId
             ? { activeAgentId: activeDocument.shortAgentId }
             : {}),

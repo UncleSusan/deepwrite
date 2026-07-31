@@ -75,22 +75,21 @@ describe("App agent-team integration", () => {
     );
   });
 
-  it("keeps short/script and long feedback timers independent in both directions", () => {
-    const workspaceFeedback =
-      source
-        .split("function showWorkspaceAgentFeedback")[1]
-        ?.split("function showLongAgentFeedback")[0] ?? "";
-    const longFeedback =
-      source
-        .split("function showLongAgentFeedback")[1]
-        ?.split("async function loadShortAndScriptAgentSettings")[0] ?? "";
-    expect(workspaceFeedback).toContain("workspaceAgentFeedbackTimer");
-    expect(workspaceFeedback).not.toContain("longAgentFeedbackTimer");
-    expect(longFeedback).toContain("longAgentFeedbackTimer");
-    expect(longFeedback).not.toContain("workspaceAgentFeedbackTimer");
+  it("routes short/script and long agent setting feedback through top-centered uiMessage", () => {
+    expect(source).toContain('import { uiMessage } from "./ui-feedback"');
+    expect(source).toContain("uiMessage.success(");
     expect(source).toContain(
-      "window.clearTimeout(longAgentFeedbackTimer)"
+      "长篇六个智能体的提示词、欢迎快捷与读取范围已保存，下一轮对话立即生效。"
     );
+    expect(source).toContain("保存创作空间智能体设置失败。");
+    expect(source).toContain("保存长篇智能体设置失败。");
+    expect(source).not.toContain("function showWorkspaceAgentFeedback");
+    expect(source).not.toContain("function showLongAgentFeedback");
+    expect(source).not.toContain("workspaceAgentFeedbackTimer");
+    expect(source).not.toContain("longAgentFeedbackTimer");
+    expect(source).not.toContain("workspaceAgentStatus");
+    expect(source).not.toContain("longAgentStatus");
+    expect(source).toContain(':long-agent-error="longAgentLoadError"');
   });
 
   it("keeps long loading outside the short/script startup and focus critical paths", () => {

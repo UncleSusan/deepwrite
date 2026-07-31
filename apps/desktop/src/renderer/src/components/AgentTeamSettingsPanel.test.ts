@@ -37,10 +37,11 @@ describe("AgentTeamSettingsPanel", () => {
     expect(longSource).toContain("LongAgentTeamSettingsInputSchema.safeParse");
   });
 
-  it("maps the five short parent agents and prevents recursive delegation", () => {
-    for (const label of ["人设", "剧情", "大纲", "正文", "分节"]) {
+  it("maps the four short parent agents and prevents recursive delegation", () => {
+    for (const label of ["人设", "剧情", "正文", "分节"]) {
       expect(source).toContain(`label: "${label}"`);
     }
+    expect(source).not.toContain('label: "大纲"');
     expect(source).toContain("不能继续创建子智能体");
     expect(source).toContain("默认跟随所属主智能体的模型");
   });

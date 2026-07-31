@@ -73,6 +73,9 @@ export const LongChapterCardIdSchema = stableIdWithPrefix("chapter");
 export type LongChapterCardId = z.infer<typeof LongChapterCardIdSchema>;
 export const LongStoryEventIdSchema = stableIdWithPrefix("event");
 export type LongStoryEventId = z.infer<typeof LongStoryEventIdSchema>;
+/** Plot-point-bound story plot entries shown in the「故事情节」tab. */
+export const LongStoryPlotIdSchema = stableIdWithPrefix("storyplot");
+export type LongStoryPlotId = z.infer<typeof LongStoryPlotIdSchema>;
 export const LongEventConnectionIdSchema =
   stableIdWithPrefix("connection");
 export type LongEventConnectionId = z.infer<
@@ -195,6 +198,19 @@ export function longWorldbuildingItemFileId(itemId: string): string {
   return `file_${itemId}:content`;
 }
 
+export const LONG_CHARACTER_OVERVIEW_FILE_ID =
+  "file_characters:overview" as const;
+export const LONG_CHARACTER_OVERVIEW_PATH =
+  "long/characters/overview.md" as const;
+
+export function longCharacterOverviewFileId(): string {
+  return LONG_CHARACTER_OVERVIEW_FILE_ID;
+}
+
+export function longCharacterOverviewContentPath(): string {
+  return LONG_CHARACTER_OVERVIEW_PATH;
+}
+
 export function longCharacterCoreProfileFileId(characterId: string): string {
   return `file_${characterId}:core-profile`;
 }
@@ -209,6 +225,10 @@ export function longCharacterCurrentStateFileId(characterId: string): string {
 
 export function longCharacterHistoryFileId(characterId: string): string {
   return `file_${characterId}:history`;
+}
+
+export function longStoryPlotBodyFileId(storyPlotId: string): string {
+  return `file_${storyPlotId}:body`;
 }
 
 export function longChapterBodyFileId(chapterCardId: string): string {
@@ -265,6 +285,13 @@ export function longChapterFilePath(
   filename: "body.md" | "character-state.md" | "handoff.md"
 ): string {
   return `long/chapters/${chapterCardId}/${filename}`;
+}
+
+export function longStoryPlotFilePath(
+  storyPlotId: string,
+  filename: "body.md" = "body.md"
+): string {
+  return `long/story-plots/${storyPlotId}/${filename}`;
 }
 
 export function createEmptyLongMarkdownFileReference(
@@ -582,6 +609,32 @@ export const LongStoryEventSchema = z
   .strict();
 export type LongStoryEvent = z.infer<typeof LongStoryEventSchema>;
 
+/**
+ * A story-plot beat under a plot point (arc). Each entry owns one Markdown body
+ * file; the arc.outline field is retained only for legacy compatibility and is
+ * no longer the UI editing surface for「故事情节」.
+ */
+export const LongStoryPlotSchema = z
+  .object({
+    id: LongStoryPlotIdSchema,
+    arcId: LongArcIdSchema,
+    title: LongTitleSchema,
+    order: z.number().int().positive(),
+    file: LongMarkdownFileReferenceSchema
+  })
+  .strict()
+  .superRefine((entry, context) => {
+    if (entry.file.id !== longStoryPlotBodyFileId(entry.id)) {
+      context.addIssue({
+        code: "custom",
+        path: ["file", "id"],
+        message:
+          "Story-plot file id must match its stable story-plot id and body role."
+      });
+    }
+  });
+export type LongStoryPlot = z.infer<typeof LongStoryPlotSchema>;
+
 export const LONG_EVENT_CONNECTION_TYPES = [
   "before",
   "same_time",
@@ -828,6 +881,7 @@ export const LongPlotIndexSchema = z
     arcs: z.array(LongArcSchema).max(100_000),
     chapterCards: z.array(LongChapterCardSchema).max(100_000),
     storyEvents: z.array(LongStoryEventSchema).max(200_000),
+    storyPlots: z.array(LongStoryPlotSchema).max(200_000).default([]),
     eventConnections: z
       .array(LongEventConnectionSchema)
       .max(400_000),
@@ -1303,6 +1357,12 @@ const LongWorkspaceIndexSnapshotObjectSchema = z
     worldbuilding: z
       .array(LongWorldbuildingCategorySchema)
       .max(10_000),
+    /**
+     * Optional only for loading pre-overview projects. All newly-created books
+     * include this file, and the project store migrates older indexes before
+     * exposing them.
+     */
+    characterOverview: LongMarkdownFileReferenceSchema.optional(),
     characters: z.array(LongCharacterSchema).max(100_000),
     characterFiles: z
       .array(LongCharacterFileIndexEntrySchema)
@@ -1434,6 +1494,26 @@ function validateLongWorkspaceIndexSnapshot(
       `Book-line file id must be ${LONG_BOOK_LINE_FILE_ID}.`
     );
   }
+  if (
+    snapshot.characterOverview &&
+    snapshot.characterOverview.id !== LONG_CHARACTER_OVERVIEW_FILE_ID
+  ) {
+    addIssue(
+      context,
+      ["characterOverview", "id"],
+      `Character overview file id must be ${LONG_CHARACTER_OVERVIEW_FILE_ID}.`
+    );
+  }
+  if (
+    snapshot.characterOverview &&
+    snapshot.characterOverview.path !== LONG_CHARACTER_OVERVIEW_PATH
+  ) {
+    addIssue(
+      context,
+      ["characterOverview", "path"],
+      `Character overview file path must be ${LONG_CHARACTER_OVERVIEW_PATH}.`
+    );
+  }
 
   validateUniqueValues(
     snapshot.worldbuilding.map(({ id }) => id),
@@ -1525,6 +1605,7 @@ function validateLongWorkspaceIndexSnapshot(
     arcs,
     chapterCards,
     storyEvents,
+    storyPlots,
     eventConnections,
     narrativePlacements,
     foreshadowing
@@ -1638,6 +1719,34 @@ function validateLongWorkspaceIndexSnapshot(
   const chapterById = new Map(
     chapterCards.map((chapter) => [chapter.id, chapter])
   );
+
+  validateUniqueValues(
+    storyPlots.map(({ id }) => id),
+    (index) => ["plot", "storyPlots", index, "id"],
+    "story-plot id",
+    context
+  );
+  storyPlots.forEach((storyPlot, index) => {
+    if (!arcById.has(storyPlot.arcId)) {
+      addIssue(
+        context,
+        ["plot", "storyPlots", index, "arcId"],
+        "Story plot must reference an existing arc."
+      );
+    }
+  });
+  for (const [arcId, entries] of groupOrderedEntries(
+    storyPlots,
+    ({ arcId }) => arcId,
+    ({ order }) => order
+  )) {
+    validateContiguousOrder(
+      entries,
+      (index) => ["plot", "storyPlots", index, "order"],
+      `Story-plot group ${arcId}`,
+      context
+    );
+  }
 
   validateUniqueValues(
     storyEvents.map(({ id }) => id),
@@ -2167,6 +2276,12 @@ function validateLongWorkspaceIndexSnapshot(
             }))
           ]
     ),
+    ...(snapshot.characterOverview
+      ? [{
+          file: snapshot.characterOverview,
+          path: ["characterOverview"] as ValidationPath
+        }]
+      : []),
     ...snapshot.characterFiles.flatMap((entry, index) =>
       [
         ["coreProfile", entry.coreProfile],
@@ -2188,6 +2303,10 @@ function validateLongWorkspaceIndexSnapshot(
         path: ["chapters", index, field as string] as ValidationPath
       }))
     ),
+    ...snapshot.plot.storyPlots.map((entry, index) => ({
+      file: entry.file,
+      path: ["plot", "storyPlots", index, "file"] as ValidationPath
+    })),
     ...snapshot.ledger.commits.map((entry, index) => ({
       file: entry.recordFile,
       path: ["ledger", "commits", index, "recordFile"] as ValidationPath
@@ -2527,6 +2646,7 @@ function validateLongWorkspaceIndexSnapshot(
     ...arcs.map(({ id }) => id),
     ...chapterCards.map(({ id }) => id),
     ...storyEvents.map(({ id }) => id),
+    ...storyPlots.map(({ id }) => id),
     ...eventConnections.map(({ id }) => id),
     ...narrativePlacements.map(({ id }) => id)
   ]);
@@ -2646,6 +2766,7 @@ export const LongWorkspaceNavigationCountsSchema = z
     arcs: z.number().int().nonnegative(),
     chapterCards: z.number().int().nonnegative(),
     storyEvents: z.number().int().nonnegative(),
+    storyPlots: z.number().int().nonnegative().default(0),
     foreshadowingThreads: z.number().int().nonnegative(),
     committedChapters: z.number().int().nonnegative()
   })
@@ -2926,6 +3047,7 @@ export function createLongWorkspaceNavigationSnapshot(
       arcs: workspace.plot.arcs.length,
       chapterCards: workspace.plot.chapterCards.length,
       storyEvents: workspace.plot.storyEvents.length,
+      storyPlots: workspace.plot.storyPlots.length,
       foreshadowingThreads: workspace.plot.foreshadowing.length,
       committedChapters: workspace.ledger.commits.length
     },
@@ -3323,16 +3445,17 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
     description: "维护人物核心设定、关系、当前状态和历史。",
     systemPrompt: `你负责长篇人物设计。模型只使用人物业务标识：
 - 每名人物以 character_id 唯一定位；人物内容按 core_profile、relationships、current_state、history 四种 document 区分。
+- 人物设计阶段另有一份手动维护的概览，用于统计全部人物的 character_id、姓名、分组、别名与一句话定位。
 - 其余实现细节由工具内部处理；不要索取、推断或复述。
 
 工作规则：
-1. 先调用 list_characters 获取人物列表，可用 group 筛选；需要查找已有内容时使用 search_characters。人物设计涉及世界规则、地理、组织或其他背景约束时，使用 list_worldbuilding、search_worldbuilding 和 read_worldbuilding 查询世界观正文。
+1. 先调用 read_character_overview 读取人物概览，根据其中的 character_id 直接定位人物；仅当概览缺失、过期或不足以定位时，再调用 list_characters（可用 group 筛选）。需要查找正文内容时使用 search_characters。人物设计涉及世界规则、地理、组织或其他背景约束时，使用 list_worldbuilding、search_worldbuilding 和 read_worldbuilding 查询世界观正文。
 2. 读取人物正文使用 read_character；必须同时指定 character_id 和 document。需要编辑前，必须以 mode=full 完整读取。世界观内容只读，不得由人物设计智能体修改。
-3. 新增人物使用 create_character；一次只创建一名人物及四份空白文档，不得在创建参数中夹带初始化正文。创建后使用返回的 character_id，分别调用 write_character_file 写入需要的文档。
-4. 新人物空白文档的首次正文、空正文写入或用户明确要求整体重写时使用 write_character_file；已有正文必须先以 mode=full 完整读取，并明确允许覆盖。
+3. 新增人物使用 create_character；一次只创建一名人物及四份空白文档，不得在创建参数中夹带初始化正文。创建后使用返回的 character_id，分别调用 write_character_file 写入需要的文档，并同步更新人物概览。
+4. 新人物空白文档的首次正文、空正文写入或用户明确要求整体重写时使用 write_character_file；已有正文必须先以 mode=full 完整读取，并明确允许覆盖。概览使用 write_character_overview / edit_character_overview 维护。
 5. 局部修改必须先以 mode=full 完整读取，再使用 edit_character_file 做唯一原文片段替换。
-6. 人物重命名、别名、分组、删除和排序使用 propose_long_mutation；人物创建不得使用该工具，必须使用 create_character。不得把多名人物拼接到同一文件中。
-7. 核心档案表达稳定身份与设计意图；首次连续性提交后，人物关系、当前状态和历史轨迹由连续性账本接管，人物设计智能体只能直接修改核心档案。
+6. 人物重命名、别名、分组、删除和排序使用 propose_long_mutation；人物创建不得使用该工具，必须使用 create_character。结构变更后必须同步更新人物概览。不得把多名人物拼接到同一人物文档中。
+7. 核心档案表达稳定身份与设计意图；首次连续性提交后，人物关系、当前状态和历史轨迹由连续性账本接管，人物设计智能体只能直接修改核心档案与人物概览。
 8. 搜索命中和当前页面快照只用于定位与理解；修改前仍须完整读取目标文档。
 9. 所有写入都只形成待审阅提案，不得声称尚未获批的内容已经落盘。`,
     readAccess: {

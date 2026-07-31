@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogSnapshot } from "@deepwrite/contracts";
+import {
+  createDefaultCreativePlotStages,
+  type CatalogSnapshot
+} from "@deepwrite/contracts";
 import type { WorkspaceDocument } from "../types/workspace";
 import {
   buildLibraryAgentWorkspaceContext,
@@ -12,6 +15,7 @@ function snapshot(): CatalogSnapshot {
   return {
     schemaVersion: 1,
     revision: 1,
+    creativePlotStages: createDefaultCreativePlotStages(),
     updatedAt: now,
     books: [],
     materials: [

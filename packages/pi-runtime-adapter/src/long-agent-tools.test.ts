@@ -5,6 +5,8 @@ import { Check } from "typebox/value";
 import {
   DEFAULT_LONG_AGENT_PROFILES,
   LONG_BOOK_LINE_FILE_ID,
+  LONG_CHARACTER_OVERVIEW_FILE_ID,
+  LONG_CHARACTER_OVERVIEW_PATH,
   LongWorkspaceIndexSnapshotSchema,
   createLongWorkspaceNavigationSnapshot,
   longChapterBodyFileId,
@@ -149,6 +151,10 @@ function fixtureIndex(): LongWorkspaceIndexSnapshot {
         )
       }
     ],
+    characterOverview: file(
+      LONG_CHARACTER_OVERVIEW_FILE_ID,
+      LONG_CHARACTER_OVERVIEW_PATH
+    ),
     characters: [
       {
         id: "character_alice",
@@ -210,6 +216,7 @@ function fixtureIndex(): LongWorkspaceIndexSnapshot {
         }
       ],
       storyEvents: [],
+      storyPlots: [],
       eventConnections: [],
       narrativePlacements: [],
       foreshadowing: []
@@ -481,11 +488,14 @@ describe("long workspace agent tools", () => {
       "search_worldbuilding",
       "read_worldbuilding",
       "list_characters",
+      "read_character_overview",
       "search_characters",
       "read_character",
       "create_character",
       "write_character_file",
       "edit_character_file",
+      "write_character_overview",
+      "edit_character_overview",
       "propose_long_mutation"
     ]);
     expect(characterNames).not.toEqual(
@@ -556,6 +566,7 @@ describe("long workspace agent tools", () => {
       "search_worldbuilding",
       "read_worldbuilding",
       "list_characters",
+      "read_character_overview",
       "search_characters",
       "read_character",
       "list_plot_design",

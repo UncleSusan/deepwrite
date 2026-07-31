@@ -7,6 +7,7 @@ import {
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   SubagentActivityEventEnvelopeSchema,
   createEnvelope,
+  createDefaultCreativePlotStages,
   createShortWorkspaceContentRevision,
   type ShortAgentSubagentDefinition
 } from "./index";
@@ -26,7 +27,7 @@ function completeSettings() {
     teams: DEFAULT_AGENT_TEAM_SETTINGS.teams.map((team) => ({
       parentAgentId: team.parentAgentId,
       subagents:
-        team.parentAgentId === "outline" ? [{ ...definition }] : []
+        team.parentAgentId === "plot_design" ? [{ ...definition }] : []
     }))
   };
 }
@@ -38,6 +39,7 @@ function shortWorkspace() {
     title: "雨夜来信",
     categories: ["悬疑"],
     activeStageId: "outline" as const,
+    plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft" as const,
       title: "正文",
@@ -64,10 +66,7 @@ function shortWorkspace() {
     },
     stages: [
       "character_design",
-      "plot_design",
-      "intro_design",
-      "plot_refine",
-      "outline"
+      ...createDefaultCreativePlotStages().map(({ id }) => id)
     ].map((stageId) => ({
       stageId,
       title: stageId,
@@ -78,7 +77,7 @@ function shortWorkspace() {
 }
 
 describe("agent-team contracts", () => {
-  it("accepts the fixed five-team short workspace shape", () => {
+  it("accepts the four-team short workspace shape", () => {
     expect(AgentTeamSettingsInputSchema.parse(completeSettings())).toEqual(
       completeSettings()
     );
@@ -86,8 +85,8 @@ describe("agent-team contracts", () => {
 
   it("defaults missing modelMode to inherit and requires modelId for custom", () => {
     const legacy = completeSettings();
-    const outline = legacy.teams.find((team) => team.parentAgentId === "outline")!;
-    outline.subagents = [
+    const plotTeam = legacy.teams.find((team) => team.parentAgentId === "plot_design")!;
+    plotTeam.subagents = [
       {
         id: "legacy_helper",
         name: "旧配置助手",
@@ -98,12 +97,12 @@ describe("agent-team contracts", () => {
     ];
     const parsed = AgentTeamSettingsInputSchema.parse(legacy);
     expect(
-      parsed.teams.find((team) => team.parentAgentId === "outline")?.subagents[0]
+      parsed.teams.find((team) => team.parentAgentId === "plot_design")?.subagents[0]
     ).toMatchObject({ modelMode: "inherit" });
 
     const customMissingModel = completeSettings();
     customMissingModel.teams.find(
-      (team) => team.parentAgentId === "outline"
+      (team) => team.parentAgentId === "plot_design"
     )!.subagents = [
       {
         ...definition,
@@ -116,7 +115,7 @@ describe("agent-team contracts", () => {
 
     const customWithModel = completeSettings();
     customWithModel.teams.find(
-      (team) => team.parentAgentId === "outline"
+      (team) => team.parentAgentId === "plot_design"
     )!.subagents = [
       {
         ...definition,
@@ -131,7 +130,7 @@ describe("agent-team contracts", () => {
 
     const customOffWithoutTemperature = completeSettings();
     customOffWithoutTemperature.teams.find(
-      (team) => team.parentAgentId === "outline"
+      (team) => team.parentAgentId === "plot_design"
     )!.subagents = [
       {
         ...definition,
@@ -146,7 +145,7 @@ describe("agent-team contracts", () => {
 
     const customOffWithTemperature = completeSettings();
     customOffWithTemperature.teams.find(
-      (team) => team.parentAgentId === "outline"
+      (team) => team.parentAgentId === "plot_design"
     )!.subagents = [
       {
         ...definition,
@@ -163,7 +162,7 @@ describe("agent-team contracts", () => {
 
   it("rejects duplicate ids and names inside one parent team", () => {
     const duplicate = completeSettings();
-    duplicate.teams.find((team) => team.parentAgentId === "outline")!.subagents = [
+    duplicate.teams.find((team) => team.parentAgentId === "plot_design")!.subagents = [
       { ...definition },
       { ...definition, id: "other", name: definition.name.toUpperCase() }
     ];
@@ -179,7 +178,7 @@ describe("agent-team contracts", () => {
 
   it("keeps subagent definitions internal to agent.prompt", () => {
     const profile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
-      (candidate) => candidate.id === "outline"
+      (candidate) => candidate.id === "plot_design"
     )!;
     expect(
       AgentPromptCommandPayloadSchema.safeParse({

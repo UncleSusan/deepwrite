@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  CreativePlotStageIdSchema,
+  CreativePlotStagesSchema,
+  type CreativePlotStageId
+} from "./catalog";
 import { EnvelopeBaseSchema } from "./envelope";
 import {
   DraftSectionIdSchema,
@@ -19,6 +24,7 @@ export const SHORT_WORKSPACE_STAGE_IDS = [
   "plot_design",
   "intro_design",
   "plot_refine",
+  "narrative_perspective",
   "outline",
   "draft"
 ] as const;
@@ -29,14 +35,20 @@ export const SHORT_WORKSPACE_TEXT_STAGE_IDS = [
   "plot_design",
   "intro_design",
   "plot_refine",
+  "narrative_perspective",
   "outline"
 ] as const;
 
-export const ShortWorkspaceStageIdSchema = z.enum(SHORT_WORKSPACE_STAGE_IDS);
-export type ShortWorkspaceStageId = z.infer<typeof ShortWorkspaceStageIdSchema>;
-export const ShortWorkspaceTextStageIdSchema = z.enum(
-  SHORT_WORKSPACE_TEXT_STAGE_IDS
-);
+export const ShortWorkspaceStageIdSchema = z.union([
+  z.literal("character_design"),
+  z.literal("draft"),
+  CreativePlotStageIdSchema
+]);
+export type ShortWorkspaceStageId = "character_design" | "draft" | CreativePlotStageId;
+export const ShortWorkspaceTextStageIdSchema = z.union([
+  z.literal("character_design"),
+  CreativePlotStageIdSchema
+]);
 export type ShortWorkspaceTextStageId = z.infer<
   typeof ShortWorkspaceTextStageIdSchema
 >;
@@ -44,7 +56,6 @@ export type ShortWorkspaceTextStageId = z.infer<
 export const SHORT_WORKSPACE_AGENT_IDS = [
   "character_design",
   "plot_design",
-  "outline",
   "expert_draft_coordinator",
   "expert_section_writer"
 ] as const;
@@ -52,20 +63,25 @@ export const SHORT_WORKSPACE_AGENT_IDS = [
 export const ShortWorkspaceAgentIdSchema = z.enum(SHORT_WORKSPACE_AGENT_IDS);
 export type ShortWorkspaceAgentId = z.infer<typeof ShortWorkspaceAgentIdSchema>;
 
-export const SHORT_WORKSPACE_STAGE_TO_AGENT_ID = {
-  character_design: "character_design",
-  plot_design: "plot_design",
-  intro_design: "plot_design",
-  plot_refine: "plot_design",
-  outline: "outline",
-  draft: "expert_draft_coordinator"
-} as const satisfies Record<ShortWorkspaceStageId, ShortWorkspaceAgentId>;
-
 export function resolveShortWorkspaceAgentIdForStage(
   stageId: ShortWorkspaceStageId
 ): ShortWorkspaceAgentId {
-  return SHORT_WORKSPACE_STAGE_TO_AGENT_ID[stageId];
+  if (stageId === "character_design") return "character_design";
+  if (stageId === "draft") return "expert_draft_coordinator";
+  return "plot_design";
 }
+
+export const SHORT_WORKSPACE_READ_TARGETS = [
+  "character_design",
+  "plot_structure",
+  "draft"
+] as const;
+export const ShortWorkspaceReadTargetSchema = z.enum(
+  SHORT_WORKSPACE_READ_TARGETS
+);
+export type ShortWorkspaceReadTarget = z.infer<
+  typeof ShortWorkspaceReadTargetSchema
+>;
 
 export function createShortWorkspaceContentRevision(content: string): string {
   let hash = 0x811c9dc5;
@@ -148,79 +164,44 @@ export const DEFAULT_SHORT_CHARACTER_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite �
 - 不要凭空推翻已经确认的剧情事实；发现冲突时先指出冲突并给出最小改动方案。
 `;
 
-export const DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite 的短篇剧情智能体，统一负责剧情设计、导语设计和剧情细化。
+export const DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite 的剧情设计智能体，负责当前作品“剧情”节点下全部动态配置阶段。
 
-三个内容槽位的边界：
-- 剧情设计（plot_design）：核心命题、人物目标、主要冲突、因果链、关键转折、真实时间线和结局兑现。
-- 导语设计（intro_design）：书名建议、开篇导语和前十秒钩子；必须与主线事实一致，不能提前泄露不该公开的信息。
-- 剧情细化（plot_refine）：供正文直接执行的场景链、节拍、信息投放、人物选择、情绪推进、伏笔与回收。
+阶段名称、顺序、稳定 ID 和任务说明会在每轮运行时注入。不得假设存在固定的剧情设计、导语、细化、视角或大纲阶段；只处理当前配置实际存在的阶段，并以每个阶段的说明作为该阶段的任务边界和成品要求。
 
 工作流程：
-1. 先确认用户本次处理哪个子方向；需要跨子方向时，明确每一部分的目标。
-2. 调用 read_workspace_content 读取人物设计、当前目标槽位和与任务有关的已有剧情，避免重复设计或制造矛盾。
-3. 用户点名技能或需要特定剧情方法时调用 load_skill；需要素材时调用 query_linked_material_entries，先检索再读取原文。
-4. 检查因果是否成立、冲突是否递进、转折是否由人物选择触发、伏笔是否可回收、结局是否兑现前文承诺。
-5. 使用工具把成品写入正确的剧情子槽位。
-
-创作标准：
-- 每个重要情节点都要说明触发原因、人物选择、直接后果和后续压力。
-- 区分“故事真实时间线”和“读者看到的信息顺序”。
-- 导语只负责抓住读者并建立悬念，不代替剧情设计。
-- 剧情细化要具体到可写场景，但不要直接写成小说正文。
-- 尊重已确认的人设、分类和记忆要求；题材方法来自用户、技能和素材，不套用固定题材模板。
+1. 确认当前目标阶段；需要跨阶段时，明确每一部分目标，并先读取人物设计、目标阶段和有关的其它剧情阶段。
+2. 用户点名技能或需要特定剧情方法时调用 load_skill；需要素材时调用 query_linked_material_entries，先检索再读取原文。
+3. 检查人物逻辑、因果、冲突递进、信息顺序、转折、伏笔与结局承诺是否一致。
+4. 使用工具把正式成品写入正确的动态阶段。
 
 工具规则：
-- 切换剧情子方向时先调用 switch_storyline_stage，或在写入工具中明确 target_stage_id。
-- 空白槽位或用户明确要求整体重写时使用 write_workspace_editor。
+- 切换阶段时调用 switch_storyline_stage，或在写入工具中明确 target_stage_id。
+- 空白阶段或用户明确要求整体重写时使用 write_workspace_editor。
 - 局部修改已有内容时先读取原文，再使用 replace_current_stage_text。
-- 写入编辑器的只能是正式剧情内容，不要混入分析过程或工具说明。
-`;
-
-export const DEFAULT_SHORT_OUTLINE_SYSTEM_PROMPT = `你是 DeepWrite 的短篇大纲智能体，负责把已经存在的人物和剧情内容梳理成可直接指导分节写作的完整大纲。
-
-开始任何大纲任务前，必须分别调用 read_workspace_content 检查以下阶段，存在的内容全部读取，不得只凭聊天摘要：
-1. 人物设计（character_design）
-2. 剧情设计（plot_design）
-3. 导语设计（intro_design）
-4. 剧情细化（plot_refine）
-5. 当前大纲（outline）
-
-工作模式：
-- 整理大纲：保留前置阶段已经确认的人物、因果、时间线、关键情节和结局，不得遗漏重要内容；发现冲突时明确标注并采用最小改动方案。
-- 创作大纲：在已有内容基础上补足缺口；用户点名技能或需要特定大纲方法时，调用 load_skill 后再组织。
-- 前置内容为空时可以说明缺口，但不要声称已经读到不存在的设定。
-
-大纲成品必须包含：
-- 全文定位、主线目标、核心冲突、时间线与结局。
-- 正文小节总数及顺序；短篇有导语时单独列出。
-- 每个小节的标题、预估字数或字数范围。
-- 每个小节的出场人物、场景、起始状态、详细剧情、关键选择、冲突或转折、信息投放、结尾钩子。
-- 小节之间的承接关系、人物状态变化、伏笔埋设与回收位置。
-
-工具规则：
-- 目标编辑框为空，或用户明确要求整体重做时，使用 write_workspace_editor 写入完整大纲。
-- 已有大纲只需局部调整时，先读取原文，再使用 replace_current_stage_text。
-- 写入编辑器的只能是最终大纲，不要写分析过程、读取记录或操作说明。
+- 写入编辑器的只能是当前阶段的正式内容，不要混入分析过程或工具说明。
 `;
 
 export const DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 DeepWrite 的短篇正文专家编写智能体，站在整篇的角度处理正文：目录初始化、全文审阅、润色、去 AI 味、格式整理和跨章节修订。正文是一个虚拟目录，每个章节的正文和人物状态是两个独立文件，不存在可覆盖的合并正文文件。
 
 工作流程：
-1. 用户要求初始化正文、按大纲创建章节或批量创建空白章节时，先调用 read_workspace_content（stage_id=outline）读取完整大纲，再调用 read_workspace_content（stage_id=draft）核对现有目录。
-2. 根据大纲一次调用 create_draft_sections，批量提交所有尚未存在的章节标题和字数要求；该工具只创建空白正文文件和空白人物状态文件，不会写入小说正文。
+1. 用户要求初始化正文、按剧情结构创建章节或批量创建空白章节时，先根据本轮「当前剧情结构配置」和用户需求，按需调用 read_workspace_content 读取相关剧情阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。
+2. 优先依据已被读取、且结构说明承担章节规划职责的内容，一次调用 create_draft_sections 批量提交所有尚未存在的章节标题和字数要求；该工具只创建空白正文文件和空白人物状态文件，不会写入小说正文。
 3. 处理整篇正文时，先调用 read_draft_sections（mode=preview）扫描相关章节，定位真正需要处理的那几章，再对它们调用 read_draft_sections（mode=full）精读原文。
 4. 只处理某一章节时，直接对该 section_id 调用 read_draft_sections（mode=full）。
 5. 局部修改使用 replace_draft_section_text；只有章节为空或用户明确要求整章重写时，才使用 write_draft_section。
+6. 用户要求修改章节名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。
+7. 用户要求删除章节时，先核对目录，再调用 delete_draft_section；正文至少保留一个章节，删除会同时移除正文与人物状态文件。
 
 读取规则：
+- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。
 - read_draft_sections 单次完整读取有章数和字数上限，超出的章节会被留到下一次调用。工具返回“本次未读取”时，必须继续分批读完再下结论，不得假设剩余章节为空或与已读部分一致。
 - 不要一次性把整本正文读进上下文。先用 preview 判断范围，再对目标章节 full 精读。
 - preview 不算完整读取；只有被 mode=full 完整读取的文件才允许整章覆盖。
 - 改动会影响后续章节连贯性时，用 include 一并读取相关章节的 character_state，并在修改正文后同步更新受影响章节的人物状态。
 
 初始化规则：
-- 大纲为空且用户没有明确给出章节清单时，不得猜测章节结构，应引导用户先补充大纲或章节标题。
-- 章节标题、顺序和字数要求应与大纲或用户本轮明确要求一致；创建前必须排除目录中已经存在的同名章节。
+- 当前剧情结构不足以确定章节清单且用户没有明确给出时，不得猜测章节结构，应引导用户补充章节规划或标题。
+- 章节标题、顺序和字数要求应与已读取的相关剧情内容或用户本轮明确要求一致；创建前必须排除目录中已经存在的同名章节。
 - 批量初始化必须在一次 create_draft_sections 调用中提交全部待创建章节，不得拆成多次单章调用。
 - 初始化只新增空白章节文件，不删除、不改名、不排序、不覆盖已有章节；创建后若需立即写正文，使用工具返回的 section_id（含 pending:section: 临时 id）在同一轮继续写入。
 
@@ -228,22 +209,23 @@ export const DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 Deep
 - 你没有选中章节，每次写入或替换都必须显式指定稳定 section_id，不得把多个章节拼成一份文本覆盖。
 - file 参数决定写正文还是写人物状态；默认是 body。
 - 同一轮内先创建再写文时，必须使用创建结果给出的 section_id；不要假设章节已落盘到磁盘。
-- 正文目录只接通了新增空白章节文件；删除、改名和排序仍由界面管理。
+- 修改已有章节名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。
+- 删除已有章节时调用 delete_draft_section；正文至少保留一个章节。排序仍由界面管理。
 - 写入的只能是正式小说正文或正式人物状态，不要混入分析过程、操作说明或工具记录。
 - 需要技能时调用 load_skill；只有当前读取范围允许素材且确有必要时，才查询关联素材。
 `;
 
-export const DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWrite 的短篇分节写手智能体，是实际创作小说正文的主要智能体。你的工具和正文专家编写智能体完全一致，区别只在职责：你一次只完成当前选中的这一个章节，不改动其它章节。
+export const DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWrite 的短篇分节写手智能体，是实际创作小说正文的主要智能体。你与正文专家共用正文读写、改名和删除工具，但不包含批量创建章节；职责区别是：你一次只完成当前选中的这一个章节，不改动其它章节。
 
 写作前必须完成：
-1. 调用 read_workspace_content 读取大纲；读取范围允许时，可补充读取剧情细化。
+1. 根据用户本轮需求和本轮「当前剧情结构配置」，按需调用 read_workspace_content 读取相关剧情阶段（每次一个 stage_id，使用清单中的真实 id）；以被读取阶段的说明与正文作为写作依据，不要默认通读全部阶段，也不得臆造未出现在清单中的阶段名。
 2. 调用 read_workspace_content（stage_id=draft）确认当前章节在目录中的位置和相邻章节 id。
 3. 调用 read_draft_sections（mode=full）读取当前章节，以及紧邻的前 2 到 3 个已有正文的章节；正文为空的前置章节可跳过。读取紧邻上一章时，include 必须包含 character_state。
 4. 只有在用户明确要求跨章节呼应、或前文伏笔必须核对时，才扩大读取范围；这时优先用 mode=preview 扫描，再对确有必要的章节 full 精读，避免把无关正文塞满上下文。
 5. 用户点名技能或文风方法时调用 load_skill；确需参考正文素材时，调用 query_linked_material_entries 检索并读取相关条目。
 
 写作标准：
-- 严格执行当前章节在大纲中的任务、承接点和字数要求；未指定字数时，以 800—1500 字为默认范围。
+- 严格执行当前章节在已读取剧情内容中的任务、承接点和字数要求；未指定字数时，以 800—1500 字为默认范围。
 - 延续前文的时间、空间、人物关系、信息知情范围、物品位置、伤势和情绪，不重复已经完成的情节。
 - 让冲突通过人物行动、选择、对白和可感知细节推进，避免用总结代替场景。
 - 保持题材、叙述视角、文风和节奏一致；用户本轮要求优先于一般写作习惯。
@@ -255,6 +237,8 @@ export const DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWri
 - 当前正文为空时，调用 write_draft_section（file=body）写入完整正文；text 只能包含小说正文，不得包含章节名、标题、分析、解释或工具说明。
 - 当前正文已有内容且用户要求局部修改时，使用 replace_draft_section_text；只有明确要求整章重写时才允许整章覆盖。
 - 当前人物状态为空时调用 write_draft_section（file=character_state）；已有状态只需修改时用 replace_draft_section_text（file=character_state）。
+- 用户要求修改当前章节名称时，调用 rename_draft_section；只能改当前选中章节，不改正文内容。
+- 用户要求删除当前章节时，调用 delete_draft_section；只能删除当前选中章节，且正文至少保留一个章节。
 - 人物状态应记录本章结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一章接续点。
 - 没有完成正文与人物状态的必要写回工具调用，本章不算完成。
 `;
@@ -265,14 +249,13 @@ export const DEFAULT_SHORT_WORKSPACE_AGENT_SYSTEM_PROMPTS: Record<
 > = {
   character_design: DEFAULT_SHORT_CHARACTER_DESIGN_SYSTEM_PROMPT,
   plot_design: DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT,
-  outline: DEFAULT_SHORT_OUTLINE_SYSTEM_PROMPT,
   expert_draft_coordinator: DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
   expert_section_writer: DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT
 };
 
 const UniqueShortWorkspaceStageIdsSchema = z
-  .array(ShortWorkspaceStageIdSchema)
-  .max(SHORT_WORKSPACE_STAGE_IDS.length)
+  .array(ShortWorkspaceReadTargetSchema)
+  .max(SHORT_WORKSPACE_READ_TARGETS.length)
   .superRefine((values, context) => {
     values.forEach((value, index) => {
       if (values.indexOf(value) !== index) {
@@ -328,43 +311,22 @@ export const DEFAULT_SHORT_AGENT_READ_ACCESS: Record<
   ShortAgentReadAccess
 > = {
   character_design: {
-    workspace: [
-      "character_design",
-      "plot_design",
-      "plot_refine",
-      "intro_design"
-    ],
+    workspace: ["character_design", "plot_structure"],
     material: ["character"],
     skill: ["general", "plot", "other"]
   },
   plot_design: {
-    workspace: [
-      "character_design",
-      "plot_design",
-      "intro_design",
-      "plot_refine"
-    ],
+    workspace: ["character_design", "plot_structure"],
     material: ["gimmick", "character", "plot"],
     skill: ["general", "plot", "other"]
   },
-  outline: {
-    workspace: [
-      "plot_design",
-      "intro_design",
-      "plot_refine",
-      "outline",
-      "character_design"
-    ],
-    material: [],
-    skill: ["general", "other"]
-  },
   expert_draft_coordinator: {
-    workspace: ["outline", "draft", "character_design", "intro_design"],
+    workspace: ["plot_structure", "draft", "character_design"],
     material: [],
     skill: ["general", "other"]
   },
   expert_section_writer: {
-    workspace: ["outline", "draft", "character_design", "intro_design"],
+    workspace: ["plot_structure", "draft", "character_design"],
     material: ["draft"],
     skill: ["style", "general"]
   }
@@ -491,10 +453,9 @@ export const ShortWorkspaceSnapshotSchema = z
     activeStageId: ShortWorkspaceStageIdSchema,
     activeAgentId: ShortWorkspaceAgentIdSchema.optional(),
     activeSectionId: z.string().trim().min(1).max(120).optional(),
+    plotStages: CreativePlotStagesSchema,
     expertDraft: ExpertDraftDirectorySnapshotSchema,
-    stages: z
-      .array(ShortWorkspaceStageSnapshotSchema)
-      .length(SHORT_WORKSPACE_TEXT_STAGE_IDS.length)
+    stages: z.array(ShortWorkspaceStageSnapshotSchema).min(2).max(33)
   })
   .superRefine((value, context) => {
     const stageIds = value.stages.map((stage) => stage.stageId);
@@ -507,6 +468,21 @@ export const ShortWorkspaceSnapshotSchema = z
         });
       }
     });
+    const expectedStageIds = [
+      "character_design",
+      ...value.plotStages.map((stage) => stage.id)
+    ];
+    if (
+      expectedStageIds.length !== stageIds.length ||
+      expectedStageIds.some((stageId, index) => stageIds[index] !== stageId)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["stages"],
+        message:
+          "Workspace text stages must contain character design followed by configured plot stages."
+      });
+    }
     if (
       value.activeStageId !== "draft" &&
       !stageIds.includes(value.activeStageId)
@@ -615,18 +591,13 @@ export const DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS = {
     "帮我写一个抓人的开篇导语",
     "细化当前剧情的场景和节拍"
   ],
-  outline: [
-    "根据现有人物和剧情生成完整大纲",
-    "检查当前大纲是否有逻辑漏洞",
-    "把大纲拆成可写作的小节"
-  ],
   expert_draft_coordinator: [
-    "根据大纲初始化并开始写正文",
+    "根据剧情结构初始化并开始写正文",
     "帮我写指定的正文小节",
     "审阅并润色当前正文"
   ],
   expert_section_writer: [
-    "按照大纲写当前小节",
+    "按照剧情结构写当前小节",
     "续写当前小节并衔接前文",
     "重写当前小节，增强冲突和画面感"
   ]
@@ -656,18 +627,10 @@ export const DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES: readonly ShortWorkspaceAgen
   {
     id: "plot_design",
     label: "剧情",
-    description: "统一负责剧情设计、导语设计和剧情细化三个内容阶段。",
+    description: "负责当前作品动态配置的全部剧情结构阶段。",
     systemPrompt: DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT,
     welcomeShortcuts: [...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.plot_design],
     readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.plot_design
-  },
-  {
-    id: "outline",
-    label: "大纲",
-    description: "将人物与剧情内容整理成可直接指导分节写作的完整大纲。",
-    systemPrompt: DEFAULT_SHORT_OUTLINE_SYSTEM_PROMPT,
-    welcomeShortcuts: [...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.outline],
-    readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.outline
   },
   {
     id: "expert_draft_coordinator",
@@ -682,7 +645,7 @@ export const DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES: readonly ShortWorkspaceAgen
   {
     id: "expert_section_writer",
     label: "分节写手智能体",
-    description: "按大纲和连续人物状态完成单个正文小节的实际创作。",
+    description: "按剧情结构和连续人物状态完成单个正文小节的实际创作。",
     systemPrompt: DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT,
     welcomeShortcuts: [
       ...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.expert_section_writer

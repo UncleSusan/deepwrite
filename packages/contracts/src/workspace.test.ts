@@ -16,6 +16,7 @@ import {
   createShortWorkspaceContentRevision,
   createExpertDraftDirectoryRevision,
   createEnvelope,
+  createDefaultCreativePlotStages,
   resolveShortWorkspaceAgentIdForStage,
 } from "./index";
 
@@ -34,6 +35,7 @@ function workspaceSnapshot() {
     title: "测试短篇",
     categories: ["悬疑"],
     activeStageId: "plot_refine" as const,
+    plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft" as const,
       title: "正文",
@@ -84,12 +86,13 @@ function workspaceSnapshot() {
 }
 
 describe("short workspace contracts", () => {
-  it("maps all six content stages to the five workspace agents", () => {
+  it("maps the default dynamic stages to four workspace agents", () => {
     expect(SHORT_WORKSPACE_STAGE_IDS).toEqual([
       "character_design",
       "plot_design",
       "intro_design",
       "plot_refine",
+      "narrative_perspective",
       "outline",
       "draft"
     ]);
@@ -105,20 +108,21 @@ describe("short workspace contracts", () => {
       plot_design: "plot_design",
       intro_design: "plot_design",
       plot_refine: "plot_design",
-      outline: "outline",
+      narrative_perspective: "plot_design",
+      outline: "plot_design",
       draft: "expert_draft_coordinator"
     });
   });
 
-  it("exposes five complete default agent profiles", () => {
+  it("exposes four complete default agent profiles", () => {
     expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.map((profile) => profile.id)).toEqual(
       SHORT_WORKSPACE_AGENT_IDS
     );
-    expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES).toHaveLength(5);
+    expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES).toHaveLength(4);
     for (const profile of DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES) {
       expect(profile.label).not.toBe("");
       expect(profile.description).not.toBe("");
-      expect(profile.systemPrompt).toMatch(/^你是 DeepWrite 的短篇/);
+      expect(profile.systemPrompt).toMatch(/^你是 DeepWrite 的/);
       expect(profile.systemPrompt.endsWith("\n")).toBe(true);
       expect(profile.welcomeShortcuts).toHaveLength(3);
       expect(profile.welcomeShortcuts.every((value) => value.trim().length > 0)).toBe(
@@ -130,7 +134,7 @@ describe("short workspace contracts", () => {
     ).not.toThrow();
   });
 
-  it("preserves the five reference shared prompt files byte-for-byte", () => {
+  it("keeps the four current builtin prompts stable", () => {
     const digest = (value: string): string => {
       let hash = 2_166_136_261;
       for (const byte of new TextEncoder().encode(value)) {
@@ -148,53 +152,31 @@ describe("short workspace contracts", () => {
       )
     ).toEqual({
       character_design: "d758185c",
-      plot_design: "6ed0f6fe",
-      outline: "2479c31a",
-      expert_draft_coordinator: "2a659742",
-      expert_section_writer: "dceacaca"
+      plot_design: "fcd5f710",
+      expert_draft_coordinator: "bff26c0a",
+      expert_section_writer: "f7bc517f"
     });
   });
 
   it("keeps the reference project's default read ranges", () => {
     expect(DEFAULT_SHORT_AGENT_READ_ACCESS).toEqual({
       character_design: {
-        workspace: [
-          "character_design",
-          "plot_design",
-          "plot_refine",
-          "intro_design"
-        ],
+        workspace: ["character_design", "plot_structure"],
         material: ["character"],
         skill: ["general", "plot", "other"]
       },
       plot_design: {
-        workspace: [
-          "character_design",
-          "plot_design",
-          "intro_design",
-          "plot_refine"
-        ],
+        workspace: ["character_design", "plot_structure"],
         material: ["gimmick", "character", "plot"],
         skill: ["general", "plot", "other"]
       },
-      outline: {
-        workspace: [
-          "plot_design",
-          "intro_design",
-          "plot_refine",
-          "outline",
-          "character_design"
-        ],
-        material: [],
-        skill: ["general", "other"]
-      },
       expert_draft_coordinator: {
-        workspace: ["outline", "draft", "character_design", "intro_design"],
+        workspace: ["plot_structure", "draft", "character_design"],
         material: [],
         skill: ["general", "other"]
       },
       expert_section_writer: {
-        workspace: ["outline", "draft", "character_design", "intro_design"],
+        workspace: ["plot_structure", "draft", "character_design"],
         material: ["draft"],
         skill: ["style", "general"]
       }
@@ -205,7 +187,7 @@ describe("short workspace contracts", () => {
     const snapshot = workspaceSnapshot();
 
     const parsed = ShortWorkspaceSnapshotSchema.parse(snapshot);
-    expect(parsed.stages).toHaveLength(5);
+    expect(parsed.stages).toHaveLength(6);
     expect(parsed.stages.map((stage) => stage.stageId)).toEqual(
       SHORT_WORKSPACE_TEXT_STAGE_IDS
     );
@@ -236,7 +218,7 @@ describe("short workspace contracts", () => {
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
         activeStageId: "plot_refine",
-        activeAgentId: "outline"
+        activeAgentId: "character_design"
       })
     ).toThrow();
     expect(() =>
@@ -303,7 +285,7 @@ describe("short workspace contracts", () => {
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
         activeStageId: "draft",
-        activeAgentId: "outline"
+        activeAgentId: "character_design"
       })
     ).toThrow();
 
@@ -340,7 +322,7 @@ describe("short workspace contracts", () => {
       )
     };
 
-    expect(ShortWorkspaceAgentSettingsInputSchema.parse(input).agents).toHaveLength(5);
+    expect(ShortWorkspaceAgentSettingsInputSchema.parse(input).agents).toHaveLength(4);
     expect(
       WorkspaceAgentsListCommandEnvelopeSchema.parse(
         createEnvelope(

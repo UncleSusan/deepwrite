@@ -9,6 +9,7 @@ import {
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
+  createDefaultCreativePlotStages,
   createEmptyLongMarkdownFileReference,
   createShortWorkspaceContentRevision,
   createEnvelope,
@@ -21,7 +22,6 @@ import {
   type SessionAbortCommandPayload,
   type SessionPromptAcceptedPayload,
   type SessionPromptCommandPayload,
-  type ShortWorkspaceStageId
 } from "@deepwrite/contracts";
 import { useAgentConversation } from "./useAgentConversation";
 import type { AgentEditProposal } from "../types/conversation";
@@ -43,29 +43,36 @@ const runtime = {
   mode: "local-faux" as const
 };
 
-const shortStageTitles: Record<ShortWorkspaceStageId, string> = {
-  character_design: "人物",
-  plot_design: "剧情设计",
-  intro_design: "导语设计",
-  plot_refine: "剧情细化",
-  outline: "大纲",
-  draft: "正文"
-};
+const plotStages = createDefaultCreativePlotStages();
+
+function shortStageTitle(stageId: string): string {
+  return stageId === "character_design"
+    ? "人物"
+    : stageId === "draft"
+      ? "正文"
+      : plotStages.find(({ id }) => id === stageId)?.title ?? stageId;
+}
 
 function createShortWorkspaceDocuments(): WorkspaceDocument[] {
   const stages: WorkspaceDocument[] = SHORT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
     id: `short_${stageId}`,
     domain: "creation",
-    title: shortStageTitles[stageId],
+    title: shortStageTitle(stageId),
     eyebrow: "短篇创作",
-    path: ["雨夜来信", shortStageTitles[stageId]],
+    path: ["雨夜来信", shortStageTitle(stageId)],
     format: "设定" as const,
     content: `${stageId} 的实时内容`,
     workspaceId: "short_story_1",
     workspaceType: "short",
     workspaceTitle: "雨夜来信",
     workspaceCategories: ["都市", "悬疑"],
-    stageId
+    stageId,
+    ...(stageId === "character_design"
+      ? {}
+      : {
+          plotStageDescription: plotStages.find(({ id }) => id === stageId)!.description,
+          plotStageOrder: plotStages.findIndex(({ id }) => id === stageId)
+        })
   }));
   const draftFiles: WorkspaceDocument[] = ["intro", "section-1"].flatMap(
     (sectionId, index) => {
@@ -113,16 +120,22 @@ function createScriptWorkspaceDocuments(): WorkspaceDocument[] {
   const stages: WorkspaceDocument[] = SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
     id: `script_${stageId}`,
     domain: "creation",
-    title: shortStageTitles[stageId],
+    title: shortStageTitle(stageId),
     eyebrow: "剧本创作",
-    path: ["雨夜剧本", shortStageTitles[stageId]],
+    path: ["雨夜剧本", shortStageTitle(stageId)],
     format: "设定" as const,
     content: `${stageId} 的剧本实时内容`,
     workspaceId: "script_story_1",
     workspaceType: "script",
     workspaceTitle: "雨夜剧本",
     workspaceCategories: ["悬疑"],
-    stageId
+    stageId,
+    ...(stageId === "character_design"
+      ? {}
+      : {
+          plotStageDescription: plotStages.find(({ id }) => id === stageId)!.description,
+          plotStageOrder: plotStages.findIndex(({ id }) => id === stageId)
+        })
   }));
   const common = {
     domain: "creation" as const,
@@ -219,6 +232,9 @@ function createDeferredApi(): {
         throw new Error("Catalog is not used by conversation tests.");
       }),
       createScriptBook: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
+      mutatePlotStructure: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
       createDraftSection: vi.fn(async () => {
@@ -848,6 +864,90 @@ describe("agent conversation controller", () => {
       }],
       baseProjectRevision: 7,
       acceptedDirectoryRevision: "v1:12:1234abcd"
+    });
+    restored.dispose();
+  });
+
+  it("persists draft section rename targets for the standard approval card", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-draft-section-rename-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        stageId: "draft",
+        documentId: "draft-section-rename:proposal_1",
+        title: "修改章节名称：旧名 → 新名",
+        status: "pending",
+        proposedText: "旧名 → 新名",
+        draftSectionRenameTarget: {
+          sectionId: "section-1",
+          previousTitle: "旧名",
+          title: "新名",
+          baseProjectRevision: 3
+        }
+      })
+    );
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    expect(
+      restored.getEditProposal("run_edit_1", "proposal_1")
+        ?.draftSectionRenameTarget
+    ).toEqual({
+      sectionId: "section-1",
+      previousTitle: "旧名",
+      title: "新名",
+      baseProjectRevision: 3
+    });
+    restored.dispose();
+  });
+
+  it("persists draft section deletion targets for the standard approval card", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-draft-section-deletion-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        stageId: "draft",
+        documentId: "draft-section-deletion:proposal_1",
+        title: "删除章节：旧名",
+        status: "pending",
+        proposedText: "删除：旧名",
+        draftSectionDeletionTarget: {
+          sectionId: "section-1",
+          title: "旧名",
+          baseProjectRevision: 4
+        }
+      })
+    );
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    expect(
+      restored.getEditProposal("run_edit_1", "proposal_1")
+        ?.draftSectionDeletionTarget
+    ).toEqual({
+      sectionId: "section-1",
+      title: "旧名",
+      baseProjectRevision: 4
     });
     restored.dispose();
   });
@@ -3078,7 +3178,7 @@ describe("agent conversation controller", () => {
         activeStageId,
         stages: SHORT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
           stageId,
-          title: shortStageTitles[stageId],
+          title: shortStageTitle(stageId),
           content: `${stageId} 的实时内容`,
           revision: createShortWorkspaceContentRevision(
             `${stageId} 的实时内容`
@@ -3126,7 +3226,7 @@ describe("agent conversation controller", () => {
     }
   });
 
-  it("builds an isolated script workspace without either intro", async () => {
+  it("builds an isolated script workspace with the shared dynamic stages", async () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({
       api: () => deferred.api,
@@ -3170,7 +3270,7 @@ describe("agent conversation controller", () => {
         ]
       }
     });
-    expect(context?.scriptWorkspace?.stages.map((stage) => stage.stageId)).not.toContain(
+    expect(context?.scriptWorkspace?.stages.map((stage) => stage.stageId)).toContain(
       "intro_design"
     );
     controller.dispose();
@@ -3666,6 +3766,7 @@ describe("agent conversation controller", () => {
             arcs: 0,
             chapterCards: 0,
             storyEvents: 0,
+            storyPlots: 0,
             foreshadowingThreads: 0,
             committedChapters: 0
           },

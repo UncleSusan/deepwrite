@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   LONG_BOOK_LINE_FILE_ID,
+  LONG_CHARACTER_OVERVIEW_FILE_ID,
+  LONG_CHARACTER_OVERVIEW_PATH,
   LONG_WORKSPACE_INDEX_PATH,
   longChapterBodyFileId,
   longChapterCharacterStateFileId,
@@ -652,6 +654,56 @@ describe("LongProjectStore", () => {
       totalCharacters: 5,
       nextOffset: 4
     });
+  });
+
+  it("creates a stage-level character overview file for new books", async () => {
+    const { projectStore, created } = await createFixture("character-overview");
+    expect(created.book.workspaceIndex.characterOverview).toMatchObject({
+      id: LONG_CHARACTER_OVERVIEW_FILE_ID,
+      path: LONG_CHARACTER_OVERVIEW_PATH
+    });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: LONG_CHARACTER_OVERVIEW_FILE_ID
+      })
+    ).resolves.toMatchObject({ content: "" });
+  });
+
+  it("migrates missing character overview onto existing projects", async () => {
+    const { projectStore, created } = await createFixture(
+      "missing-character-overview"
+    );
+    const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
+    const manifestPath = join(created.projectDirectory, "deepwrite.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as {
+      characterOverview?: unknown;
+    };
+    expect(index.characterOverview).toBeDefined();
+    await unlink(join(created.projectDirectory, LONG_CHARACTER_OVERVIEW_PATH));
+    delete index.characterOverview;
+    const indexContent = `${JSON.stringify(index, null, 2)}\n`;
+    await writeFile(indexPath, indexContent, "utf8");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      workspaceIndexFile: { revision: string };
+    };
+    manifest.workspaceIndexFile.revision =
+      createLongFileRevision(indexContent);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8"
+    );
+
+    const opened = await projectStore.openBook(created.projectDirectory);
+    expect(opened.book.workspaceIndex.characterOverview).toMatchObject({
+      id: LONG_CHARACTER_OVERVIEW_FILE_ID,
+      path: LONG_CHARACTER_OVERVIEW_PATH
+    });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: LONG_CHARACTER_OVERVIEW_FILE_ID
+      })
+    ).resolves.toMatchObject({ content: "" });
   });
 
   it("stores every list worldbuilding item in its own versioned Markdown file", async () => {

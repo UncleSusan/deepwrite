@@ -6,6 +6,7 @@ import type {
 } from "@deepwrite/contracts";
 import {
   createLongCharacterGroupSelection,
+  createLongCharacterOverviewSelection,
   createLongChapterCardVolumeSelection,
   createLongChapterSelection,
   createLongContinuitySelection,
@@ -225,6 +226,42 @@ describe("long workspace chapter navigation", () => {
       breadcrumbs: ["长篇生命周期", "剧情设计", "伏笔总览"],
       files: []
     });
+  });
+
+  it("reconciles the stage-level character overview selection", () => {
+    const { summary, workspaceIndex } = fixture(null);
+    workspaceIndex.characterOverview = file(
+      "file_characters:overview",
+      "long/characters/overview.md"
+    );
+
+    const selection = createLongCharacterOverviewSelection(
+      summary,
+      workspaceIndex
+    );
+    expect(selection).toMatchObject({
+      key: "character-overview",
+      root: "character_design",
+      title: "概览",
+      preferredRole: "overview"
+    });
+    expect(selection?.files).toEqual([
+      {
+        role: "overview",
+        label: "概览",
+        file: workspaceIndex.characterOverview
+      }
+    ]);
+    expect(
+      reconcileLongWorkspaceSelection(summary, workspaceIndex, {
+        key: "character-overview",
+        root: "character_design",
+        title: "概览",
+        breadcrumbs: [summary.title, "人物设计", "概览"],
+        files: [],
+        preferredRole: "overview"
+      })
+    ).toMatchObject({ key: "character-overview", preferredRole: "overview" });
   });
 
   it("keeps character names in right-side tabs instead of tree descendants", () => {

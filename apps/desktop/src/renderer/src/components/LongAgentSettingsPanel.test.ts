@@ -56,11 +56,17 @@ describe("long agent settings UI", () => {
     expect(workspacePanelSource).toContain("longLoading: boolean");
     expect(workspacePanelSource).toContain("longSaving: boolean");
     expect(workspacePanelSource).toContain("longErrorMessage: string | null");
-    expect(workspacePanelSource).toContain("activeErrorMessage");
+    expect(workspacePanelSource).toContain('import { uiMessage } from "../ui-feedback"');
+    expect(workspacePanelSource).not.toContain("toast-stack");
+    expect(workspacePanelSource).not.toContain("settings-toast");
+    expect(workspacePanelSource).not.toContain("statusMessage");
+    expect(workspacePanelSource).not.toContain("errorMessage: string | null");
     expect(workspacePanelSource).toContain(':loading="longLoading"');
     expect(workspacePanelSource).toContain(':saving="longSaving"');
     expect(settingsPageSource).toContain(':long-loading="longAgentLoading"');
     expect(settingsPageSource).toContain(':long-saving="longAgentSaving"');
+    expect(settingsPageSource).not.toContain("workspaceAgentStatus");
+    expect(settingsPageSource).not.toContain("longAgentStatus");
     expect(longPanelSource).toContain("loadError?: string | null");
     expect(longPanelSource).toContain('v-else-if="loadError"');
     expect(longPanelSource).toContain("@click=\"emit('retry')\"");

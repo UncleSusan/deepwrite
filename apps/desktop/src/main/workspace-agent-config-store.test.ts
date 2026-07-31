@@ -15,18 +15,24 @@ import {
   DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
-  SHORT_WORKSPACE_TEXT_STAGE_IDS,
+  createDefaultCreativePlotStages,
   createShortWorkspaceContentRevision,
   type ShortWorkspaceAgentId,
   type ShortWorkspaceAgentSettingsInput,
-  type ShortWorkspaceStageId,
+  type ShortWorkspaceReadTarget,
   type ScriptWorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
 import {
+  RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1,
+  RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
+  RETIRED_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT_V1,
   RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1,
   RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2,
   RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3,
+  RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4,
   RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
+  RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2,
+  RETIRED_SHORT_PLOT_DESIGN_SYSTEM_PROMPT_V1,
   WorkspaceAgentConfigStore
 } from "./workspace-agent-config-store";
 
@@ -123,6 +129,99 @@ describe("WorkspaceAgentConfigStore", () => {
     );
   });
 
+  it("folds legacy fixed-stage permissions into plot_structure and removes the outline agent", async () => {
+    const root = await makeTemporaryRoot();
+    const configDirectory = join(root, "config");
+    await mkdir(configDirectory);
+    const current = defaultInput();
+    const legacyAgents = current.agents.map((agent) => ({
+      ...agent,
+      readAccess: {
+        ...agent.readAccess,
+        workspace:
+          agent.id === "character_design"
+            ? ["character_design", "plot_design", "outline"]
+            : ["plot_design", "intro_design", "plot_refine", "outline", "draft"]
+      }
+    }));
+    legacyAgents.push({
+      ...legacyAgents.find(({ id }) => id === "plot_design")!,
+      id: "outline" as never,
+      systemPrompt: "旧用户自定义大纲提示词"
+    });
+    await writeFile(
+      join(configDirectory, "workspace-agents.json"),
+      JSON.stringify({ version: 1, workspaceType: "short", agents: legacyAgents }),
+      "utf8"
+    );
+
+    const settings = await new WorkspaceAgentConfigStore(root).list();
+    expect(settings.agents).toHaveLength(4);
+    expect(settings.agents.some(({ id }) => (id as string) === "outline")).toBe(false);
+    expect(
+      byAgentId(settings.agents, "plot_design").readAccess.workspace
+    ).toEqual(expect.arrayContaining(["plot_structure"]));
+    expect(
+      byAgentId(settings.agents, "expert_section_writer").readAccess.workspace
+    ).toEqual(expect.arrayContaining(["plot_structure", "draft"]));
+  });
+
+  it("upgrades the last fixed-stage short and script builtins without overwriting custom prompts", async () => {
+    const root = await makeTemporaryRoot();
+    const configDirectory = join(root, "config");
+    await mkdir(configDirectory);
+    const short = defaultInput();
+    byAgentId(short.agents, "plot_design").systemPrompt =
+      RETIRED_SHORT_PLOT_DESIGN_SYSTEM_PROMPT_V1;
+    byAgentId(short.agents, "expert_draft_coordinator").systemPrompt =
+      RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4;
+    byAgentId(short.agents, "expert_section_writer").systemPrompt =
+      RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2;
+    const script = customizedScriptInput("placeholder");
+    byAgentId(script.agents, "plot_design").systemPrompt =
+      RETIRED_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT_V1;
+    byAgentId(script.agents, "expert_draft_coordinator").systemPrompt =
+      RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1;
+    byAgentId(script.agents, "expert_section_writer").systemPrompt =
+      RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1;
+    byAgentId(script.agents, "character_design").systemPrompt =
+      "保留剧本人物自定义提示词";
+    await Promise.all([
+      writeFile(
+        join(configDirectory, "workspace-agents.json"),
+        JSON.stringify({ version: 1, ...short }),
+        "utf8"
+      ),
+      writeFile(
+        join(configDirectory, "workspace-agents-script.json"),
+        JSON.stringify({ version: 1, ...script }),
+        "utf8"
+      )
+    ]);
+
+    const store = new WorkspaceAgentConfigStore(root);
+    const [shortSettings, scriptSettings] = await Promise.all([
+      store.list("short"),
+      store.list("script")
+    ]);
+
+    for (const agentId of [
+      "plot_design",
+      "expert_draft_coordinator",
+      "expert_section_writer"
+    ] as const) {
+      expect(byAgentId(shortSettings.agents, agentId).systemPrompt).toBe(
+        byAgentId(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES, agentId).systemPrompt
+      );
+      expect(byAgentId(scriptSettings.agents, agentId).systemPrompt).toBe(
+        byAgentId(DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES, agentId).systemPrompt
+      );
+    }
+    expect(
+      byAgentId(scriptSettings.agents, "character_design").systemPrompt
+    ).toBe("保留剧本人物自定义提示词");
+  });
+
   it("keeps short and screenplay settings in independent compatible files", async () => {
     const root = await makeTemporaryRoot();
     const store = new WorkspaceAgentConfigStore(root);
@@ -138,13 +237,13 @@ describe("WorkspaceAgentConfigStore", () => {
         (await store.list("short")).agents,
         "plot_design"
       ).readAccess.workspace
-    ).toEqual(["plot_design", "intro_design", "plot_refine"]);
+    ).toEqual(["plot_structure"]);
     expect(
       byAgentId(
         (await store.list("script")).agents,
         "plot_design"
       ).readAccess.workspace
-    ).toEqual(["plot_design", "plot_refine"]);
+    ).toEqual(["plot_structure"]);
     expect(
       JSON.parse(
         await readFile(join(root, "config", "workspace-agents.json"), "utf8")
@@ -239,7 +338,6 @@ describe("WorkspaceAgentConfigStore", () => {
     const input = defaultInput();
     byAgentId(input.agents, "expert_draft_coordinator").systemPrompt =
       RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2;
-    byAgentId(input.agents, "outline").systemPrompt = "自定义大纲提示词";
     await writeFile(
       join(configDirectory, "workspace-agents.json"),
       JSON.stringify({ version: 1, ...input }),
@@ -251,9 +349,7 @@ describe("WorkspaceAgentConfigStore", () => {
     expect(
       byAgentId(settings.agents, "expert_draft_coordinator").systemPrompt
     ).toContain("create_draft_sections");
-    expect(byAgentId(settings.agents, "outline").systemPrompt).toBe(
-      "自定义大纲提示词"
-    );
+    expect(settings.agents.some(({ id }) => (id as string) === "outline")).toBe(false);
   });
 
   it("upgrades both draft agents to the unified draft tool prompts", async () => {
@@ -338,18 +434,17 @@ describe("WorkspaceAgentConfigStore", () => {
   it("restores each agent's required workspace stages before saving", async () => {
     const root = await makeTemporaryRoot();
     const store = new WorkspaceAgentConfigStore(root);
-    const required: Record<ShortWorkspaceAgentId, readonly ShortWorkspaceStageId[]> = {
+    const required: Record<ShortWorkspaceAgentId, readonly ShortWorkspaceReadTarget[]> = {
       character_design: ["character_design"],
-      plot_design: ["plot_design", "intro_design", "plot_refine"],
-      outline: ["outline"],
-      expert_draft_coordinator: ["draft"],
-      expert_section_writer: ["draft"]
+      plot_design: ["plot_structure"],
+      expert_draft_coordinator: ["draft", "plot_structure"],
+      expert_section_writer: ["draft", "plot_structure"]
     };
 
     const saved = await store.save(customizedInput("required"));
 
     for (const [agentId, requiredStages] of Object.entries(required) as Array<
-      [ShortWorkspaceAgentId, readonly ShortWorkspaceStageId[]]
+      [ShortWorkspaceAgentId, readonly ShortWorkspaceReadTarget[]]
     >) {
       expect(byAgentId(saved.agents, agentId).readAccess.workspace).toEqual(
         requiredStages
@@ -362,7 +457,7 @@ describe("WorkspaceAgentConfigStore", () => {
       agents: ShortWorkspaceAgentSettingsInput["agents"];
     };
     for (const [agentId, requiredStages] of Object.entries(required) as Array<
-      [ShortWorkspaceAgentId, readonly ShortWorkspaceStageId[]]
+      [ShortWorkspaceAgentId, readonly ShortWorkspaceReadTarget[]]
     >) {
       expect(byAgentId(disk.agents, agentId).readAccess.workspace).toEqual(
         requiredStages
@@ -382,7 +477,9 @@ describe("WorkspaceAgentConfigStore", () => {
     expect(byAgentId(reset.agents, "character_design").systemPrompt).toBe(
       "custom:character_design"
     );
-    expect(byAgentId(reset.agents, "outline").systemPrompt).toBe("custom:outline");
+    expect(byAgentId(reset.agents, "expert_draft_coordinator").systemPrompt).toBe(
+      "custom:expert_draft_coordinator"
+    );
 
     const reloaded = await store.list();
     expect(reloaded).toEqual(reset);
@@ -408,6 +505,7 @@ describe("WorkspaceAgentConfigStore", () => {
       activeStageId: "draft" as const,
       activeAgentId: "expert_section_writer" as const,
       activeSectionId: "section-1",
+      plotStages: createDefaultCreativePlotStages(),
       expertDraft: {
         id: "draft" as const,
         title: "正文",
@@ -432,7 +530,10 @@ describe("WorkspaceAgentConfigStore", () => {
           }
         ]
       },
-      stages: SHORT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
+      stages: [
+        "character_design",
+        ...createDefaultCreativePlotStages().map(({ id }) => id)
+      ].map((stageId) => ({
         stageId,
         title: stageId,
         content: "",
@@ -465,8 +566,8 @@ describe("WorkspaceAgentConfigStore", () => {
     await mkdir(blockingConfigPath);
     const recovered = await store.save(customizedInput("recovered"));
 
-    expect(byAgentId(recovered.agents, "outline").systemPrompt).toBe(
-      "recovered:outline"
+    expect(byAgentId(recovered.agents, "plot_design").systemPrompt).toBe(
+      "recovered:plot_design"
     );
     expect(await store.list()).toEqual(recovered);
   });

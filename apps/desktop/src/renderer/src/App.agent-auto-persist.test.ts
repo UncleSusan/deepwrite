@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import source from "./App.vue?raw";
 
 describe("App agent realtime auto persistence", () => {
+  it("keeps editor writes behind the active run and review revision barrier", () => {
+    expect(source).toContain("function agentRunScopeHasWriteBarrier");
+    expect(source).toContain(
+      "conversation.isBusy.value || conversation.hasPendingEditReview.value"
+    );
+    const autoSaveSource =
+      source
+        .split("async function runEditorAutoSave(")[1]
+        ?.split("function applyDocument(")[0] ?? "";
+    expect(autoSaveSource).toContain(
+      "agentRunScopeHasWriteBarrier(agentRunScopeForDocument(document))"
+    );
+    expect(source).toContain("请先接受或拒绝待审阅变更");
+  });
+
   it("allows every short, script, library, and long content proposal to commit during a run", () => {
     const eligibilityStart = source.indexOf(
       "function canReviewAgentEditDuringRun"

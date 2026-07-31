@@ -20,10 +20,11 @@ export const resourceSections: ResourceTreeSection[] = [
             children: [
               { id: "short-mist:plot_design", label: "剧情设计", icon: "file" },
               { id: "short-mist:intro_design", label: "导语设计", icon: "file" },
-              { id: "short-mist:plot_refine", label: "剧情细化", icon: "file" }
+              { id: "short-mist:plot_refine", label: "剧情细化", icon: "file" },
+              { id: "short-mist:narrative_perspective", label: "叙事视角", icon: "file" },
+              { id: "short-mist:outline", label: "大纲", icon: "file" }
             ]
           },
-          { id: "short-mist:outline", label: "大纲", icon: "file" },
           { id: "short-mist:draft", label: "正文", icon: "file" }
         ]
       },
@@ -194,6 +195,20 @@ export const workspaceDocuments: WorkspaceDocument[] = [
       "场景一：午夜灯塔。林默发现名单与迟到七分钟的汽笛，楼梯间出现不属于守塔人的脚步。\n\n场景二：旧报社暗房。苏遥冲洗出一张尚未拍摄的照片，照片里林默站在灰潮中央。\n\n场景三：地下通道。两人因苏遥隐瞒第十八个名字爆发冲突，随后从墙上旧刻痕确认姐姐仍以记忆形式维持灯塔。\n\n场景四：灯室抉择。林默破坏名单机制，代价是姐姐从所有人的记忆中彻底消失；城市第一次准时听见汽笛。"
   },
   {
+    id: "short-mist:narrative_perspective",
+    domain: "creation",
+    workspaceId: "short-mist",
+    workspaceType: "short",
+    workspaceTitle: "雾港回声",
+    workspaceCategories: ["悬疑"],
+    stageId: "narrative_perspective",
+    title: "叙事视角",
+    eyebrow: "短篇 · 剧情",
+    path: ["雾港回声", "剧情", "叙事视角"],
+    format: "设定",
+    content: "第三人称限知，以林默为主要视角；只呈现他能感知或合理推断的信息，苏遥隐瞒的事实通过行为与对白间接显露。"
+  },
+  {
     id: "short-mist:outline",
     domain: "creation",
     workspaceId: "short-mist",
@@ -201,9 +216,9 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     workspaceTitle: "雾港回声",
     workspaceCategories: ["悬疑"],
     stageId: "outline",
-    title: "短篇大纲",
-    eyebrow: "短篇 · 大纲",
-    path: ["雾港回声", "大纲"],
+    title: "大纲",
+    eyebrow: "短篇 · 剧情",
+    path: ["雾港回声", "剧情", "大纲"],
     format: "设定",
     content:
       "全文约 7000 字，分为导语与四节。\n\n导语（150 字）：名单最后一行出现林默的名字，日期是明天。\n\n第一节·迟到的汽笛（1400 字）：灯塔异常与陌生脚步，建立七分钟规则。\n\n第二节·尚未拍摄的照片（1600 字）：苏遥带来预见死亡的底片，两人决定调查。\n\n第三节·第十八个名字（1900 字）：地下通道揭露隐瞒与献祭机制，关系破裂后重新结盟。\n\n第四节·准时的回声（1950 字）：林默面对姐姐的记忆并破坏名单，完成选择与代价。"

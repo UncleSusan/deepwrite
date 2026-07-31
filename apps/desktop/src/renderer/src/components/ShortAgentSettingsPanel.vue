@@ -11,7 +11,8 @@ import {
   DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES
 } from "@deepwrite/contracts";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { uiMessage } from "../ui-feedback";
 import LongAgentSettingsPanel from "./LongAgentSettingsPanel.vue";
 
 type EditableAgent = ShortWorkspaceAgentSettingsInput["agents"][number];
@@ -37,12 +38,9 @@ const props = defineProps<{
   longSettings: LongAgentSettings | null;
   loading: boolean;
   saving: boolean;
-  errorMessage: string | null;
-  statusMessage: string | null;
   longLoading: boolean;
   longSaving: boolean;
   longErrorMessage: string | null;
-  longStatusMessage: string | null;
   runtimeAvailable: boolean;
 }>();
 
@@ -55,7 +53,6 @@ const emit = defineEmits<{
 const AGENTS = [
   { id: "character_design", label: "人物", eyebrow: "前置阶段" },
   { id: "plot_design", label: "剧情", eyebrow: "前置阶段" },
-  { id: "outline", label: "大纲", eyebrow: "前置阶段" },
   {
     id: "expert_draft_coordinator",
     label: "正文专家",
@@ -74,10 +71,11 @@ const WORKSPACE_OPTIONS = [
     label: "人物",
     description: "人物设定与人物关系"
   },
-  { id: "plot_design", label: "剧情设计", description: "故事主线与核心冲突" },
-  { id: "intro_design", label: "导语设计", description: "开篇导语与阅读钩子" },
-  { id: "plot_refine", label: "剧情细化", description: "剧情节点与细节展开" },
-  { id: "outline", label: "大纲", description: "完整故事大纲" },
+  {
+    id: "plot_structure",
+    label: "全部剧情结构",
+    description: "当前作品动态配置的全部剧情结构项"
+  },
   { id: "draft", label: "正文", description: "已规划或已生成的正文内容" }
 ] as const satisfies readonly ReadOption<WorkspaceStageId>[];
 
@@ -98,19 +96,14 @@ const SKILL_OPTIONS = [
 
 const REQUIRED_WORKSPACE_STAGES = {
   character_design: ["character_design"],
-  plot_design: ["plot_design", "intro_design", "plot_refine"],
-  outline: ["outline"],
-  expert_draft_coordinator: ["draft"],
-  expert_section_writer: ["draft"]
+  plot_design: ["plot_structure"],
+  expert_draft_coordinator: ["draft", "plot_structure"],
+  expert_section_writer: ["draft", "plot_structure"]
 } as const satisfies Record<ShortWorkspaceAgentId, readonly WorkspaceStageId[]>;
 
 const activeAgentId = ref<ShortWorkspaceAgentId>(AGENTS[0].id);
 const activeWorkspaceType = ref<"short" | "script" | "long">("short");
 const draftAgents = ref<ShortWorkspaceAgentSettingsInput["agents"]>([]);
-const visibleErrorMessage = ref<string | null>(null);
-const visibleStatusMessage = ref<string | null>(null);
-let errorToastTimer: ReturnType<typeof setTimeout> | undefined;
-let statusToastTimer: ReturnType<typeof setTimeout> | undefined;
 
 const activeAgent = computed(() =>
   draftAgents.value.find((agent) => agent.id === activeAgentId.value)
@@ -128,11 +121,7 @@ const activeSettingsAgent = computed(() =>
   activeSettings.value?.agents.find((agent) => agent.id === activeAgentId.value)
 );
 
-const visibleWorkspaceOptions = computed(() =>
-  activeWorkspaceType.value === "script"
-    ? WORKSPACE_OPTIONS.filter((option) => option.id !== "intro_design")
-    : WORKSPACE_OPTIONS
-);
+const visibleWorkspaceOptions = computed(() => WORKSPACE_OPTIONS);
 
 const activeMeta = computed(
   () => AGENTS.find((agent) => agent.id === activeAgentId.value) ?? AGENTS[0]
@@ -143,16 +132,6 @@ const activeLoading = computed(() =>
 );
 const activeSaving = computed(() =>
   activeWorkspaceType.value === "long" ? props.longSaving : props.saving
-);
-const activeErrorMessage = computed(() =>
-  activeWorkspaceType.value === "long"
-    ? props.longErrorMessage
-    : props.errorMessage
-);
-const activeStatusMessage = computed(() =>
-  activeWorkspaceType.value === "long"
-    ? props.longStatusMessage
-    : props.statusMessage
 );
 const formDisabled = computed(
   () =>
@@ -203,52 +182,13 @@ watch(
   { immediate: true, deep: true }
 );
 
-watch(
-  activeErrorMessage,
-  (message) => {
-    visibleErrorMessage.value = message;
-    if (errorToastTimer) clearTimeout(errorToastTimer);
-    if (message) {
-      errorToastTimer = setTimeout(() => {
-        if (visibleErrorMessage.value === message) {
-          visibleErrorMessage.value = null;
-        }
-      }, 4_500);
-    }
-  },
-  { immediate: true }
-);
-
-watch(
-  activeStatusMessage,
-  (message) => {
-    visibleStatusMessage.value = message;
-    if (statusToastTimer) clearTimeout(statusToastTimer);
-    if (message) {
-      statusToastTimer = setTimeout(() => {
-        if (visibleStatusMessage.value === message) {
-          visibleStatusMessage.value = null;
-        }
-      }, 3_000);
-    }
-  },
-  { immediate: true }
-);
-
-onBeforeUnmount(() => {
-  if (errorToastTimer) clearTimeout(errorToastTimer);
-  if (statusToastTimer) clearTimeout(statusToastTimer);
-});
-
 function selectAgent(agentId: ShortWorkspaceAgentId): void {
   activeAgentId.value = agentId;
 }
 
 function isRequiredWorkspaceStage(stageId: WorkspaceStageId): boolean {
   const requiredStages: readonly WorkspaceStageId[] =
-    activeWorkspaceType.value === "script" && activeAgentId.value === "plot_design"
-      ? (["plot_design", "plot_refine"] as const)
-      : REQUIRED_WORKSPACE_STAGES[activeAgentId.value];
+    REQUIRED_WORKSPACE_STAGES[activeAgentId.value];
   return requiredStages.includes(stageId);
 }
 
@@ -315,11 +255,7 @@ function resetActiveAgent(): void {
       skill: [...builtin.readAccess.skill]
     }
   };
-  visibleStatusMessage.value = "当前智能体已恢复内置默认值；点击保存后生效。";
-  if (statusToastTimer) clearTimeout(statusToastTimer);
-  statusToastTimer = setTimeout(() => {
-    visibleStatusMessage.value = null;
-  }, 3_000);
+  uiMessage.info("当前智能体已恢复内置默认值；点击保存后生效。");
 }
 
 function saveSettings(): void {
@@ -338,28 +274,15 @@ function saveSettings(): void {
 
     const shortcuts = agent.welcomeShortcuts.map((value) => value.trim());
     if (shortcuts.some((value) => value.length === 0) || shortcuts.length !== 3) {
-      visibleErrorMessage.value = "每个智能体的三个欢迎快捷按钮都不能为空";
-      if (errorToastTimer) clearTimeout(errorToastTimer);
-      errorToastTimer = setTimeout(() => {
-        if (visibleErrorMessage.value === "每个智能体的三个欢迎快捷按钮都不能为空") {
-          visibleErrorMessage.value = null;
-        }
-      }, 4_500);
+      uiMessage.warning("每个智能体的三个欢迎快捷按钮都不能为空");
       return null;
     }
 
     const workspace = new Set<WorkspaceStageId>(agent.readAccess.workspace);
-    const requiredStages =
-      workspaceType === "script" && id === "plot_design"
-        ? (["plot_design", "plot_refine"] as const)
-        : REQUIRED_WORKSPACE_STAGES[id];
+    const requiredStages = REQUIRED_WORKSPACE_STAGES[id];
     for (const requiredStage of requiredStages) {
       workspace.add(requiredStage);
     }
-    if (workspaceType === "script") {
-      workspace.delete("intro_design");
-    }
-
     return {
       id,
       systemPrompt: agent.systemPrompt,
@@ -426,26 +349,6 @@ function saveSettings(): void {
         长篇
       </button>
     </div>
-
-    <Teleport to="body">
-      <div
-        v-if="visibleErrorMessage || visibleStatusMessage"
-        class="toast-stack"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        <p
-          v-if="visibleErrorMessage"
-          class="settings-toast is-error"
-          role="alert"
-        >
-          {{ visibleErrorMessage }}
-        </p>
-        <p v-if="visibleStatusMessage" class="settings-toast is-success">
-          {{ visibleStatusMessage }}
-        </p>
-      </div>
-    </Teleport>
 
     <LongAgentSettingsPanel
       v-if="activeWorkspaceType === 'long'"
@@ -720,38 +623,6 @@ function saveSettings(): void {
 .runtime-note {
   margin-top: 5px !important;
   color: var(--warning) !important;
-}
-
-.toast-stack {
-  position: fixed;
-  z-index: 4000;
-  top: 22px;
-  right: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  width: min(360px, calc(100vw - 32px));
-  pointer-events: none;
-}
-
-.settings-toast {
-  margin: 0;
-  padding: 10px 13px;
-  border: 1px solid color-mix(in srgb, var(--success) 28%, var(--theme-line));
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--success) 10%, var(--surface-raised));
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--theme-foreground) 14%, transparent);
-  color: var(--success);
-  font-size: 0.892857rem;
-  font-weight: 560;
-  line-height: 1.5;
-}
-
-.settings-toast.is-error {
-  border-color: color-mix(in srgb, var(--danger) 28%, var(--theme-line));
-  background: color-mix(in srgb, var(--danger) 8%, var(--surface-raised));
-  color: var(--danger);
 }
 
 .panel-state {

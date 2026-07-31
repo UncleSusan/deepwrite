@@ -30,6 +30,7 @@ import {
   UserPromptAttachmentsSchema,
   WorkspaceRuntimeContextSchema,
   WorkspaceEditorMutationPayloadSchema,
+  createDefaultCreativePlotStages,
   createDefaultAppearanceSettings,
   createShortWorkspaceContentRevision,
   createEnvelope
@@ -44,6 +45,7 @@ const runtime = {
 function shortWorkspaceRuntimeFixture() {
   const contentRevision = (content: string): string =>
     createShortWorkspaceContentRevision(content);
+  const plotStages = createDefaultCreativePlotStages();
 
   return {
     id: "book_runtime",
@@ -51,6 +53,7 @@ function shortWorkspaceRuntimeFixture() {
     categories: ["悬疑"],
     activeStageId: "draft" as const,
     activeAgentId: "expert_draft_coordinator" as const,
+    plotStages,
     expertDraft: {
       id: "draft" as const,
       title: "正文",
@@ -713,6 +716,80 @@ describe("DeepWrite desktop contracts", () => {
       WorkspaceEditorMutationPayloadSchema.safeParse({
         ...payload,
         stageId: "outline"
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates expert-draft section rename mutations", () => {
+    const payload = {
+      sessionId: "session_section_rename",
+      runId: "run_section_rename",
+      toolCallId: "tool_section_rename",
+      workspaceId: "book-1",
+      stageId: "draft" as const,
+      text: "旧章名 → 新章名",
+      mutationTarget: {
+        kind: "expert-draft-section-rename" as const,
+        sectionId: "section-1",
+        previousTitle: "旧章名",
+        title: "新章名"
+      },
+      baseRevision: "v1:100:1234abcd",
+      summary: "已生成章节改名变更。",
+      runtime
+    };
+
+    expect(WorkspaceEditorMutationPayloadSchema.parse(payload)).toMatchObject({
+      mutationTarget: {
+        kind: "expert-draft-section-rename",
+        sectionId: "section-1",
+        previousTitle: "旧章名",
+        title: "新章名"
+      }
+    });
+    expect(
+      WorkspaceEditorMutationPayloadSchema.safeParse({
+        ...payload,
+        mutationTarget: {
+          ...payload.mutationTarget,
+          title: ""
+        }
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates expert-draft section deletion mutations", () => {
+    const payload = {
+      sessionId: "session_section_deletion",
+      runId: "run_section_deletion",
+      toolCallId: "tool_section_deletion",
+      workspaceId: "book-1",
+      stageId: "draft" as const,
+      text: "删除：旧章名",
+      mutationTarget: {
+        kind: "expert-draft-section-deletion" as const,
+        sectionId: "section-1",
+        title: "旧章名"
+      },
+      baseRevision: "v1:100:1234abcd",
+      summary: "已生成章节删除变更。",
+      runtime
+    };
+
+    expect(WorkspaceEditorMutationPayloadSchema.parse(payload)).toMatchObject({
+      mutationTarget: {
+        kind: "expert-draft-section-deletion",
+        sectionId: "section-1",
+        title: "旧章名"
+      }
+    });
+    expect(
+      WorkspaceEditorMutationPayloadSchema.safeParse({
+        ...payload,
+        mutationTarget: {
+          ...payload.mutationTarget,
+          title: ""
+        }
       }).success
     ).toBe(false);
   });

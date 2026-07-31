@@ -6,8 +6,21 @@ describe("App agent chapter-file creation", () => {
     expect(source).toContain(
       'mutationTarget?.kind === "expert-draft-section-creation"'
     );
+    expect(source).toContain(
+      'mutationTarget?.kind === "expert-draft-section-rename"'
+    );
+    expect(source).toContain(
+      'mutationTarget?.kind === "expert-draft-section-deletion"'
+    );
     expect(source).toContain("draftSectionCreationTarget: {");
+    expect(source).toContain("draftSectionRenameTarget: {");
+    expect(source).toContain("draftSectionDeletionTarget: {");
     expect(source).toContain("acceptDraftSectionCreationProposal(");
+    expect(source).toContain("acceptDraftSectionRenameProposal(");
+    expect(source).toContain("acceptDraftSectionDeletionProposal(");
+    expect(source).toContain(
+      "await window.deepwrite.catalog.deleteDraftSection({"
+    );
     expect(source).toContain(
       "await window.deepwrite.catalog.createDraftSections({"
     );

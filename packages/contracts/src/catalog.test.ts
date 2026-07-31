@@ -15,18 +15,78 @@ import {
   CreateLibraryGroupInputSchema,
   ImportLegacyLibraryResultSchema,
   CreateShortBookInputSchema,
+  BookPlotStagesSchema,
+  CreativePlotStagesSchema,
   MATERIAL_KINDS,
+  MutatePlotStructureInputSchema,
   SKILL_KINDS,
   UpdateLibraryGroupInputSchema,
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
   createEnvelope,
+  createDefaultBookPlotStages,
+  createDefaultCreativePlotStages,
+  isBuiltinCreativePlotStageId,
   parseCatalogDraftDocumentId
 } from "./index";
 
 const now = "2026-07-18T10:00:00.000Z";
 
 describe("catalog contracts", () => {
+  it("requires versioned plot mutations and enforces stable structure bounds", () => {
+    const defaults = createDefaultCreativePlotStages();
+    expect(CreativePlotStagesSchema.parse(defaults)).toEqual(defaults);
+    expect(
+      CreativePlotStagesSchema.safeParse([
+        ...defaults,
+        ...Array.from({ length: 28 }, (_, index) => ({
+          id: `custom_${index}`,
+          title: `自定义结构 ${index}`,
+          description: "结构说明"
+        }))
+      ]).success
+    ).toBe(false);
+    expect(
+      CreativePlotStagesSchema.safeParse([
+        ...defaults,
+        { id: "custom", title: "剧情设计", description: "重名" }
+      ]).success
+    ).toBe(false);
+    expect(
+      MutatePlotStructureInputSchema.safeParse({
+        bookId: "book_1",
+        mutation: {
+          type: "create",
+          title: "自定义结构",
+          description: "结构说明"
+        }
+      }).success
+    ).toBe(false);
+    const newBookStages = createDefaultBookPlotStages();
+    expect(
+      newBookStages.filter((stage) => stage.enabled).map(({ id }) => id)
+    ).toEqual(["plot_design", "intro_design", "plot_refine"]);
+    expect(BookPlotStagesSchema.parse(newBookStages)).toEqual(newBookStages);
+    expect(
+      BookPlotStagesSchema.safeParse(
+        newBookStages.map((stage) => ({ ...stage, enabled: false }))
+      ).success
+    ).toBe(false);
+    expect(isBuiltinCreativePlotStageId("plot_design")).toBe(true);
+    expect(isBuiltinCreativePlotStageId("custom")).toBe(false);
+    expect(
+      MutatePlotStructureInputSchema.safeParse({
+        bookId: "book_1",
+        baseProjectRevision: 0,
+        mutation: {
+          type: "setEnabled",
+          stageId: "outline",
+          enabled: true
+        }
+      }).success
+    ).toBe(true);
+  });
+
   it("round-trips draft section document ids through parseCatalogDraftDocumentId", () => {
     const sectionId = "pending:section:1";
     expect(parseCatalogDraftDocumentId(catalogDraftBodyDocumentId(sectionId))).toEqual({
@@ -343,7 +403,20 @@ describe("catalog contracts", () => {
     expect(snapshot.books[0]?.linkedMaterialIdsByKind.character).toEqual([
       "material-1"
     ]);
-    expect(snapshot.books[0]?.documents).toEqual([]);
+    expect(snapshot.books[0]?.plotStages.map(({ id }) => id)).toEqual([
+      "plot_design",
+      "intro_design",
+      "plot_refine",
+      "narrative_perspective",
+      "outline"
+    ]);
+    expect(snapshot.books[0]?.documents.map(({ id }) => id)).toEqual([
+      "plot_design",
+      "intro_design",
+      "plot_refine",
+      "narrative_perspective",
+      "outline"
+    ]);
     expect(
       snapshot.books[0]?.draft.sections.find((section) => section.body.content)?.body
         .content
@@ -404,9 +477,9 @@ describe("catalog contracts", () => {
       updatedAt: now
     });
 
-    expect(snapshot.books[0]?.documents).toMatchObject([
-      { id: "notes", content: "同名普通文档" }
-    ]);
+    expect(
+      snapshot.books[0]?.documents.find(({ id }) => id === "notes")
+    ).toMatchObject({ id: "notes", content: "同名普通文档" });
     expect(
       snapshot.books[0]?.draft.sections.find(({ id }) => id === "section-1")?.body
         .content

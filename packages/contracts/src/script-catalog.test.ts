@@ -14,6 +14,7 @@ import {
   SCRIPT_BOOK_GENRES,
   ScriptBookSchema,
   ScriptBookProjectManifestSchema,
+  createDefaultCreativePlotStages,
   createCatalogDraftDirectory,
   createDefaultScriptDraft,
   createEnvelope,
@@ -68,8 +69,9 @@ function shortBook() {
 }
 
 function scriptManifest() {
+  const plotStages = createDefaultCreativePlotStages();
   return {
-    schemaVersion: 2 as const,
+    schemaVersion: 3 as const,
     revision: 0,
     kind: "deepwrite.book" as const,
     id: "script_1",
@@ -81,7 +83,14 @@ function scriptManifest() {
     status: "editing" as const,
     linkedMaterialIdsByKind,
     linkedSkillIdsByKind,
-    documents: [],
+    plotStages,
+    documents: plotStages.map((stage) => ({
+      id: stage.id,
+      title: stage.title,
+      path: `documents/${stage.id}.md`,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    })),
     draft: {
       id: "draft" as const,
       title: "正文",

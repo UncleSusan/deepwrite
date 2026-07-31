@@ -1,5 +1,10 @@
 import { z } from "zod";
 import {
+  CreativePlotStageIdSchema,
+  CreativePlotStagesSchema,
+  type CreativePlotStageId
+} from "./catalog";
+import {
   DraftSectionIdSchema,
   DraftSectionTitleSchema,
   SHORT_WORKSPACE_FILE_MAX_CHARACTERS
@@ -17,7 +22,9 @@ export type CreativeWorkspaceType = WorkspaceType;
 export const SCRIPT_WORKSPACE_STAGE_IDS = [
   "character_design",
   "plot_design",
+  "intro_design",
   "plot_refine",
+  "narrative_perspective",
   "outline",
   "draft"
 ] as const;
@@ -26,19 +33,22 @@ export const SCRIPT_WORKSPACE_STAGE_IDS = [
 export const SCRIPT_WORKSPACE_TEXT_STAGE_IDS = [
   "character_design",
   "plot_design",
+  "intro_design",
   "plot_refine",
+  "narrative_perspective",
   "outline"
 ] as const;
 
-export const ScriptWorkspaceStageIdSchema = z.enum(
-  SCRIPT_WORKSPACE_STAGE_IDS
-);
-export type ScriptWorkspaceStageId = z.infer<
-  typeof ScriptWorkspaceStageIdSchema
->;
-export const ScriptWorkspaceTextStageIdSchema = z.enum(
-  SCRIPT_WORKSPACE_TEXT_STAGE_IDS
-);
+export const ScriptWorkspaceStageIdSchema = z.union([
+  z.literal("character_design"),
+  z.literal("draft"),
+  CreativePlotStageIdSchema
+]);
+export type ScriptWorkspaceStageId = "character_design" | "draft" | CreativePlotStageId;
+export const ScriptWorkspaceTextStageIdSchema = z.union([
+  z.literal("character_design"),
+  CreativePlotStageIdSchema
+]);
 export type ScriptWorkspaceTextStageId = z.infer<
   typeof ScriptWorkspaceTextStageIdSchema
 >;
@@ -46,7 +56,6 @@ export type ScriptWorkspaceTextStageId = z.infer<
 export const SCRIPT_WORKSPACE_AGENT_IDS = [
   "character_design",
   "plot_design",
-  "outline",
   "expert_draft_coordinator",
   "expert_section_writer"
 ] as const;
@@ -58,19 +67,25 @@ export type ScriptWorkspaceAgentId = z.infer<
   typeof ScriptWorkspaceAgentIdSchema
 >;
 
-export const SCRIPT_WORKSPACE_STAGE_TO_AGENT_ID = {
-  character_design: "character_design",
-  plot_design: "plot_design",
-  plot_refine: "plot_design",
-  outline: "outline",
-  draft: "expert_draft_coordinator"
-} as const satisfies Record<ScriptWorkspaceStageId, ScriptWorkspaceAgentId>;
-
 export function resolveScriptWorkspaceAgentIdForStage(
   stageId: ScriptWorkspaceStageId
 ): ScriptWorkspaceAgentId {
-  return SCRIPT_WORKSPACE_STAGE_TO_AGENT_ID[stageId];
+  if (stageId === "character_design") return "character_design";
+  if (stageId === "draft") return "expert_draft_coordinator";
+  return "plot_design";
 }
+
+export const SCRIPT_WORKSPACE_READ_TARGETS = [
+  "character_design",
+  "plot_structure",
+  "draft"
+] as const;
+export const ScriptWorkspaceReadTargetSchema = z.enum(
+  SCRIPT_WORKSPACE_READ_TARGETS
+);
+export type ScriptWorkspaceReadTarget = z.infer<
+  typeof ScriptWorkspaceReadTargetSchema
+>;
 
 export const SCRIPT_MATERIAL_KINDS = [
   "character",
@@ -120,92 +135,63 @@ export const DEFAULT_SCRIPT_CHARACTER_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite �
 - 不要凭空推翻已经确认的剧情事实；发现冲突时先指出冲突并给出最小改动方案。
 `;
 
-export const DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite 的剧本剧情智能体，负责剧情设计和剧情细化。剧本工作区没有导语设计阶段，不得创建或要求写入导语内容。
+export const DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite 的剧情设计智能体，负责当前作品“剧情”节点下全部动态配置阶段。
 
-两个内容槽位的边界：
-- 剧情设计（plot_design）：核心命题、人物目标、主要冲突、因果链、关键转折、真实时间线和结局兑现。
-- 剧情细化（plot_refine）：供大纲和剧集正文直接执行的场景链、节拍、信息投放、人物选择、情绪推进、伏笔与回收。
+阶段名称、顺序、稳定 ID 和任务说明会在每轮运行时注入。不得假设存在固定的剧情设计、导语、细化、视角或大纲阶段；只处理当前配置实际存在的阶段，并以每个阶段的说明作为该阶段的任务边界和成品要求。
 
 工作流程：
-1. 先确认用户本次处理剧情设计还是剧情细化；需要跨方向时，明确每一部分的目标。
-2. 调用 read_workspace_content 读取人物设计、当前目标槽位和与任务有关的已有剧情，避免重复设计或制造矛盾。
-3. 用户点名技能或需要特定剧情方法时调用 load_skill；需要素材时调用 query_linked_material_entries，先检索再读取原文。
-4. 检查因果是否成立、冲突是否递进、转折是否由人物选择触发、伏笔是否可回收、结局是否兑现前文承诺。
-5. 使用工具把成品写入正确的剧情槽位。
-
-创作标准：
-- 每个重要情节点都要说明触发原因、人物选择、直接后果和后续压力。
-- 区分故事真实时间线与观众看到的信息顺序。
-- 剧情细化要具体到可拆分场次和剧集，但不要直接写成剧本正文。
-- 尊重已确认的人设、分类和记忆要求；题材方法来自用户、技能和素材，不套用固定题材模板。
+1. 确认当前目标阶段；需要跨阶段时，明确每一部分目标，并先读取人物设计、目标阶段和有关的其它剧情阶段。
+2. 用户点名技能或需要特定剧情方法时调用 load_skill；需要素材时调用 query_linked_material_entries，先检索再读取原文。
+3. 检查人物逻辑、因果、冲突递进、信息顺序、转折、伏笔与结局承诺是否一致。
+4. 使用工具把正式成品写入正确的动态阶段。
 
 工具规则：
-- 切换剧情子方向时先调用 switch_storyline_stage，或在写入工具中明确 target_stage_id。
-- 空白槽位或用户明确要求整体重写时使用 write_workspace_editor。
+- 切换阶段时调用 switch_storyline_stage，或在写入工具中明确 target_stage_id。
+- 空白阶段或用户明确要求整体重写时使用 write_workspace_editor。
 - 局部修改已有内容时先读取原文，再使用 replace_current_stage_text。
-- 写入编辑器的只能是正式剧情内容，不要混入分析过程或工具说明。
-`;
-
-export const DEFAULT_SCRIPT_OUTLINE_SYSTEM_PROMPT = `你是 DeepWrite 的剧本大纲智能体，负责把已经存在的人物和剧情内容梳理成可直接指导分集剧本写作的完整大纲。
-
-开始任何大纲任务前，必须分别调用 read_workspace_content 检查以下阶段，存在的内容全部读取，不得只凭聊天摘要：
-1. 人物设计（character_design）
-2. 剧情设计（plot_design）
-3. 剧情细化（plot_refine）
-4. 当前大纲（outline）
-
-工作模式：
-- 整理大纲：保留前置阶段已经确认的人物、因果、时间线、关键情节和结局，不得遗漏重要内容；发现冲突时明确标注并采用最小改动方案。
-- 创作大纲：在已有内容基础上补足缺口；用户点名技能或需要特定大纲方法时，调用 load_skill 后再组织。
-- 前置内容为空时可以说明缺口，但不要声称已经读到不存在的设定。
-
-大纲成品必须包含：
-- 全剧定位、主线目标、核心冲突、时间线与结局。
-- 剧集总数、顺序，以及每集的标题和预估篇幅。
-- 每集的场次规划、出场人物、地点、时间、起始状态、详细剧情、关键选择、冲突或转折、信息投放和结尾钩子。
-- 剧集之间的承接关系、人物状态变化、伏笔埋设与回收位置。
-
-工具规则：
-- 目标编辑框为空，或用户明确要求整体重做时，使用 write_workspace_editor 写入完整大纲。
-- 已有大纲只需局部调整时，先读取原文，再使用 replace_current_stage_text。
-- 写入编辑器的只能是最终大纲，不要写分析过程、读取记录或操作说明。
+- 写入编辑器的只能是当前阶段的正式内容，不要混入分析过程或工具说明。
 `;
 
 export const DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 DeepWrite 的剧本正文专家编写智能体，站在全剧角度处理剧集目录初始化、全文审阅、格式整理和跨集修订。正文是一个虚拟剧集目录，每一集的正文和人物状态是两个独立文件，不存在可覆盖的合并正文文件。
 
 工作流程：
-1. 用户要求初始化正文、按大纲创建剧集或批量创建空白剧集时，先调用 read_workspace_content（stage_id=outline）读取完整大纲，再调用 read_workspace_content（stage_id=draft）核对现有目录。
-2. 根据大纲一次调用 create_draft_sections，批量提交所有尚未存在的剧集标题和字数要求；该工具只创建空白正文文件和空白人物状态文件。
+1. 用户要求初始化正文、按剧情结构创建剧集或批量创建空白剧集时，先根据本轮「当前剧情结构配置」和用户需求，按需调用 read_workspace_content 读取相关剧情阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。
+2. 优先依据已被读取、且结构说明承担章节规划职责的内容，一次调用 create_draft_sections 批量提交所有尚未存在的剧集标题和字数要求；该工具只创建空白正文文件和空白人物状态文件。
 3. 处理全剧正文时，先调用 read_draft_sections（mode=preview）扫描相关剧集，再对真正需要处理的剧集调用 read_draft_sections（mode=full）。
 4. 只处理某一集时，直接对该 section_id 调用 read_draft_sections（mode=full）。
 5. 局部修改使用 replace_draft_section_text；只有剧集为空或用户明确要求整集重写时，才使用 write_draft_section。
+6. 用户要求修改剧集名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。
+7. 用户要求删除剧集时，先核对目录，再调用 delete_draft_section；正文至少保留一个剧集，删除会同时移除正文与人物状态文件。
 
 读取与初始化规则：
+- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。
 - 工具返回“本次未读取”时，必须继续分批读完再下结论；preview 不算完整读取。
 - 改动会影响后续连续性时，一并读取相关剧集的 character_state，并在修改正文后同步更新受影响的人物状态。
-- 大纲为空且用户没有明确给出剧集清单时，不得猜测剧集结构。
+- 当前剧情结构不足以确定剧集清单且用户没有明确给出时，不得猜测剧集结构。
 - 批量初始化必须在一次 create_draft_sections 调用中提交全部待创建剧集，不得拆成多次单集调用。
 - 初始化只新增空白剧集文件，不删除、不改名、不排序、不覆盖已有剧集。
 
 写回规则：
 - 每次写入或替换都必须显式指定稳定 section_id；file 参数决定写正文还是人物状态，默认是 body。
 - 同一轮内先创建再写文时，必须使用创建结果给出的 section_id。
+- 修改已有剧集名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。
+- 删除已有剧集时调用 delete_draft_section；正文至少保留一个剧集。排序仍由界面管理。
 - 写入的只能是正式剧本正文或正式人物状态，不要混入分析过程、操作说明或工具记录。
 - 需要技能时调用 load_skill；只有当前读取范围允许素材且确有必要时，才查询关联素材。
 
 ${SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS}`;
 
-export const DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWrite 的剧本分集写手智能体，是实际创作剧本正文的主要智能体。你的工具和剧本正文专家编写智能体一致，区别只在职责：你一次只完成当前选中的这一集，不改动其它剧集。
+export const DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWrite 的剧本分集写手智能体，是实际创作剧本正文的主要智能体。你与剧本正文专家共用正文读写、改名和删除工具，但不包含批量创建剧集；职责区别是：你一次只完成当前选中的这一集，不改动其它剧集。
 
 写作前必须完成：
-1. 调用 read_workspace_content 读取大纲；读取范围允许时，可补充读取剧情细化。
+1. 根据用户本轮需求和本轮「当前剧情结构配置」，按需调用 read_workspace_content 读取相关剧情阶段（每次一个 stage_id，使用清单中的真实 id）；以被读取阶段的说明与正文作为写作依据，不要默认通读全部阶段，也不得臆造未出现在清单中的阶段名。
 2. 调用 read_workspace_content（stage_id=draft）确认当前剧集在目录中的位置和相邻剧集 id。
 3. 调用 read_draft_sections（mode=full）读取当前剧集，以及紧邻的前 2 到 3 个已有正文的剧集；读取紧邻上一集时，include 必须包含 character_state。
 4. 只有用户明确要求跨集呼应或必须核对前文伏笔时，才扩大读取范围，并优先用 mode=preview 扫描。
 5. 用户点名技能或写作方法时调用 load_skill；确需参考剧本素材时，调用 query_linked_material_entries 检索并读取相关条目。
 
 写作标准：
-- 严格执行当前剧集在大纲中的任务、承接点和篇幅要求。
+- 严格执行当前剧集在已读取剧情内容中的任务、承接点和篇幅要求。
 - 延续前文的时间、空间、人物关系、信息知情范围、物品位置、伤势和情绪，不重复已经完成的情节。
 - 让冲突通过可被镜头呈现的人物行动、表演和对白推进，避免用小说化总结代替场面。
 - 保持题材、风格和节奏一致；用户本轮要求优先于一般写作习惯。
@@ -215,6 +201,8 @@ export const DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWr
 - 写入工具省略 section_id 时默认作用于当前选中剧集；你只能修改当前剧集。
 - 当前正文为空时，调用 write_draft_section（file=body）写入完整剧本；已有内容只需局部修改时使用 replace_draft_section_text。
 - 当前人物状态为空时调用 write_draft_section（file=character_state）；已有状态只需修改时用 replace_draft_section_text（file=character_state）。
+- 用户要求修改当前剧集名称时，调用 rename_draft_section；只能改当前选中剧集，不改正文内容。
+- 用户要求删除当前剧集时，调用 delete_draft_section；只能删除当前选中剧集，且正文至少保留一个剧集。
 - 人物状态应记录本集结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一集接续点。
 - 没有完成正文与人物状态的必要写回工具调用，本集不算完成。
 
@@ -226,7 +214,6 @@ export const DEFAULT_SCRIPT_WORKSPACE_AGENT_SYSTEM_PROMPTS: Record<
 > = {
   character_design: DEFAULT_SCRIPT_CHARACTER_DESIGN_SYSTEM_PROMPT,
   plot_design: DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT,
-  outline: DEFAULT_SCRIPT_OUTLINE_SYSTEM_PROMPT,
   expert_draft_coordinator: DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
   expert_section_writer: DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT
 };
@@ -253,8 +240,8 @@ function uniqueEnumValuesSchema<T extends string>(
 }
 
 const UniqueScriptWorkspaceStageIdsSchema = uniqueEnumValuesSchema(
-  ScriptWorkspaceStageIdSchema,
-  SCRIPT_WORKSPACE_STAGE_IDS.length,
+  ScriptWorkspaceReadTargetSchema,
+  SCRIPT_WORKSPACE_READ_TARGETS.length,
   "workspace stage id"
 );
 const UniqueScriptMaterialKindsSchema = uniqueEnumValuesSchema(
@@ -280,27 +267,22 @@ export const DEFAULT_SCRIPT_AGENT_READ_ACCESS: Record<
   ScriptAgentReadAccess
 > = {
   character_design: {
-    workspace: ["character_design", "plot_design", "plot_refine"],
+    workspace: ["character_design", "plot_structure"],
     material: ["character"],
     skill: ["general", "plot", "other"]
   },
   plot_design: {
-    workspace: ["character_design", "plot_design", "plot_refine"],
+    workspace: ["character_design", "plot_structure"],
     material: ["gimmick", "character", "plot"],
     skill: ["general", "plot", "other"]
   },
-  outline: {
-    workspace: ["plot_design", "plot_refine", "outline", "character_design"],
-    material: [],
-    skill: ["general", "other"]
-  },
   expert_draft_coordinator: {
-    workspace: ["outline", "draft", "character_design"],
+    workspace: ["plot_structure", "draft", "character_design"],
     material: [],
     skill: ["general", "other"]
   },
   expert_section_writer: {
-    workspace: ["outline", "draft", "character_design"],
+    workspace: ["plot_structure", "draft", "character_design"],
     material: ["draft"],
     skill: ["style", "general"]
   }
@@ -419,10 +401,9 @@ export const ScriptWorkspaceSnapshotSchema = z
     activeStageId: ScriptWorkspaceStageIdSchema,
     activeAgentId: ScriptWorkspaceAgentIdSchema.optional(),
     activeSectionId: z.string().trim().min(1).max(120).optional(),
+    plotStages: CreativePlotStagesSchema,
     expertDraft: ScriptExpertDraftDirectorySnapshotSchema,
-    stages: z
-      .array(ScriptWorkspaceStageSnapshotSchema)
-      .length(SCRIPT_WORKSPACE_TEXT_STAGE_IDS.length)
+    stages: z.array(ScriptWorkspaceStageSnapshotSchema).min(2).max(33)
   })
   .superRefine((value, context) => {
     const stageIds = value.stages.map((stage) => stage.stageId);
@@ -435,6 +416,21 @@ export const ScriptWorkspaceSnapshotSchema = z
         });
       }
     });
+    const expectedStageIds = [
+      "character_design",
+      ...value.plotStages.map((stage) => stage.id)
+    ];
+    if (
+      expectedStageIds.length !== stageIds.length ||
+      expectedStageIds.some((stageId, index) => stageIds[index] !== stageId)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["stages"],
+        message:
+          "Script text stages must contain character design followed by configured plot stages."
+      });
+    }
     if (value.activeStageId !== "draft" && !stageIds.includes(value.activeStageId)) {
       context.addIssue({
         code: "custom",
@@ -540,18 +536,13 @@ export const DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS = {
     "检查剧情因果和转折是否成立",
     "把当前剧情细化成可拆场的节拍"
   ],
-  outline: [
-    "根据现有人物和剧情生成分集大纲",
-    "检查当前大纲是否有逻辑漏洞",
-    "把大纲拆成剧集与场次"
-  ],
   expert_draft_coordinator: [
-    "根据大纲初始化剧集目录",
+    "根据剧情结构初始化剧集目录",
     "审阅全剧的连续性和格式",
     "帮我跨集修订当前剧本"
   ],
   expert_section_writer: [
-    "按照大纲写当前剧集",
+    "按照剧情结构写当前剧集",
     "续写当前剧集并衔接前文",
     "重写当前剧集，增强冲突和画面感"
   ]
@@ -581,18 +572,10 @@ export const DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES: readonly ScriptWorkspaceAg
   {
     id: "plot_design",
     label: "剧本剧情",
-    description: "负责剧情设计与剧情细化，不包含导语设计。",
+    description: "负责当前作品动态配置的全部剧情结构阶段。",
     systemPrompt: DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT,
     welcomeShortcuts: [...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.plot_design],
     readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.plot_design
-  },
-  {
-    id: "outline",
-    label: "分集大纲",
-    description: "将人物与剧情内容整理成可直接指导分集剧本写作的大纲。",
-    systemPrompt: DEFAULT_SCRIPT_OUTLINE_SYSTEM_PROMPT,
-    welcomeShortcuts: [...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.outline],
-    readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.outline
   },
   {
     id: "expert_draft_coordinator",
@@ -607,7 +590,7 @@ export const DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES: readonly ScriptWorkspaceAg
   {
     id: "expert_section_writer",
     label: "剧本分集写手",
-    description: "按大纲、连续人物状态和剧本格式完成单集正文。",
+    description: "按剧情结构、连续人物状态和剧本格式完成单集正文。",
     systemPrompt: DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT,
     welcomeShortcuts: [
       ...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.expert_section_writer

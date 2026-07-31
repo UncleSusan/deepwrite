@@ -1146,7 +1146,6 @@ onBeforeUnmount(() =>
   >
     <header class="foreshadow-header">
       <div class="foreshadow-heading">
-        <span class="foreshadow-eyebrow">FORESHADOWING</span>
         <h2>{{ workspaceTitle }}</h2>
         <p>{{ workspaceDescription }}</p>
       </div>
@@ -1820,13 +1819,6 @@ onBeforeUnmount(() =>
   gap: 4px;
 }
 
-.foreshadow-eyebrow {
-  color: var(--accent);
-  font-size: 0.642857rem;
-  font-weight: 720;
-  letter-spacing: 0.12em;
-}
-
 .foreshadow-heading h2 {
   overflow: hidden;
   margin: 0;
@@ -2079,19 +2071,20 @@ button:disabled {
 
 .foreshadow-layout {
   display: grid;
-  grid-template-columns: minmax(170px, 38%) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 38%);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
 
 .thread-pane {
+  order: 2;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid var(--theme-line-soft);
+  border-left: 1px solid var(--theme-line-soft);
   background: var(--surface-raised);
 }
 
@@ -2262,6 +2255,7 @@ button:disabled {
 }
 
 .thread-detail {
+  order: 1;
   min-width: 0;
   min-height: 0;
   padding: 14px 16px 24px;
@@ -2697,7 +2691,7 @@ button:disabled {
   }
 
   .foreshadow-layout {
-    grid-template-columns: minmax(145px, 35%) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(145px, 35%);
   }
 
   .thread-detail {
@@ -2723,7 +2717,6 @@ button:disabled {
     align-items: center;
   }
 
-  .foreshadow-eyebrow,
   .foreshadow-header-actions .primary-button svg,
   .quiet-add-button span {
     display: none;
@@ -2736,8 +2729,8 @@ button:disabled {
 
   .thread-pane {
     max-height: 210px;
-    border-right: 0;
-    border-bottom: 1px solid var(--theme-line-soft);
+    border-left: 0;
+    border-top: 1px solid var(--theme-line-soft);
   }
 
   .thread-detail {

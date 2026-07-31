@@ -75,6 +75,7 @@ import {
   LongWriteChapterResultSchema,
   LongWriteDocumentInputSchema,
   LongWriteDocumentResultSchema,
+  MutatePlotStructureInputSchema,
   RemoveLibraryEntryInputSchema,
   RemoveLibraryEntryResultSchema,
   SessionAbortAcceptedPayloadSchema,
@@ -176,6 +177,7 @@ import {
   type ModelSettingsInput,
   type ModelUsageDashboard,
   type ModelUsageQueryInput,
+  type MutatePlotStructureInput,
   type RemoveLibraryEntryInput,
   type RemoveLibraryEntryResult,
   type SessionAbortAcceptedPayload,
@@ -636,6 +638,22 @@ async function updateBook(rawInput: UpdateBookInput): Promise<Book> {
   return BookSchema.parse(
     await invokeCommand<Book>(
       createEnvelope("catalog.updateBook", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function mutatePlotStructure(
+  rawInput: MutatePlotStructureInput
+): Promise<Book> {
+  const input = MutatePlotStructureInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_mutate_plot_structure");
+  return BookSchema.parse(
+    await invokeCommand<Book>(
+      createEnvelope("catalog.mutatePlotStructure", input, {
         id,
         correlationId: id,
         context: { resourceId: input.bookId }
@@ -1272,6 +1290,7 @@ const api: DeepWriteApi = {
     importLegacyBook,
     importLegacyLibrary,
     updateBook,
+    mutatePlotStructure,
     updateLibraryGroup,
     deleteBook,
     saveDocument,

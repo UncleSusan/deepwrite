@@ -6,6 +6,8 @@ import type {
 } from "@deepwrite/contracts";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import { buildAgentTextDiff } from "../utils/agentTextDiff";
+import { longCharacterFiles } from "../utils/longCharacterFiles";
+import { longWorldbuildingFiles } from "../utils/longWorldbuildingFiles";
 import AppIcon from "./AppIcon.vue";
 
 const props = withDefaults(
@@ -162,22 +164,11 @@ const workspaceFilePaths = computed(() => {
   const entries: Array<readonly [string, string]> = [];
   if (!index) return new Map(entries);
   entries.push([index.bookLine.id, index.bookLine.path]);
-  for (const category of index.worldbuilding) {
-    if (category.format === "text") {
-      entries.push([category.file.id, category.file.path]);
-    } else {
-      for (const item of category.items) {
-        entries.push([item.file.id, item.file.path]);
-      }
-    }
+  for (const file of longWorldbuildingFiles(index.worldbuilding)) {
+    entries.push([file.id, file.path]);
   }
-  for (const character of index.characterFiles) {
-    entries.push(
-      [character.coreProfile.id, character.coreProfile.path],
-      [character.relationships.id, character.relationships.path],
-      [character.currentState.id, character.currentState.path],
-      [character.history.id, character.history.path]
-    );
+  for (const file of longCharacterFiles(index)) {
+    entries.push([file.id, file.path]);
   }
   for (const chapter of index.chapters) {
     entries.push(
@@ -213,6 +204,7 @@ const entityKindLabels: Record<LongWorkspaceEntityChange["kind"], string> = {
   arc: "剧情弧",
   "chapter-card": "章卡",
   "story-event": "故事事件",
+  "story-plot": "故事情节",
   "event-connection": "事件连接",
   "narrative-placement": "叙事落点",
   "foreshadowing-thread": "伏笔线",

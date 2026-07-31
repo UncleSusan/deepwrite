@@ -276,6 +276,9 @@ function indexedFiles(
         kind: "markdown" as const
       }))
     ),
+    ...(index.characterOverview
+      ? [{ reference: index.characterOverview, kind: "markdown" as const }]
+      : []),
     ...index.characterFiles.flatMap((entry) => [
       { reference: entry.coreProfile, kind: "markdown" as const },
       { reference: entry.relationships, kind: "markdown" as const },
@@ -287,6 +290,10 @@ function indexedFiles(
       { reference: entry.characterState, kind: "markdown" as const },
       { reference: entry.handoff, kind: "markdown" as const }
     ]),
+    ...index.plot.storyPlots.map((entry) => ({
+      reference: entry.file,
+      kind: "markdown" as const
+    })),
     ...index.ledger.commits.map((commit) => ({
       reference: commit.recordFile,
       kind: "ledger-record" as const,
@@ -455,6 +462,7 @@ export function assertLongLedgerRecordChain(
     ...index.plot.arcs.map(({ id }) => id),
     ...index.plot.chapterCards.map(({ id }) => id),
     ...index.plot.storyEvents.map(({ id }) => id),
+    ...index.plot.storyPlots.map(({ id }) => id),
     ...index.plot.eventConnections.map(({ id }) => id),
     ...index.plot.narrativePlacements.map(({ id }) => id)
   ]);

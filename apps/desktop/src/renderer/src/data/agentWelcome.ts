@@ -35,12 +35,6 @@ export const SHORT_AGENT_WELCOME_CONTENT = {
       "我是剧情设计智能体，用于设计和管理故事主线、导语钩子与剧情细节，让冲突、转折和结局前后连贯。",
     questions: DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.plot_design
   },
-  outline: {
-    title: "从一份完整大纲开始",
-    description:
-      "我是大纲智能体，用于梳理人物与剧情，创建和管理可直接指导分节写作的完整大纲。",
-    questions: DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.outline
-  },
   expert_draft_coordinator: {
     title: "从一篇完整正文开始",
     description:

@@ -248,10 +248,10 @@ describe("FolderCatalogStore", () => {
       };
     };
     expect(bookManifest).toMatchObject({
-      schemaVersion: 2,
-      kind: "deepwrite.book",
-      documents: []
+      schemaVersion: 3,
+      kind: "deepwrite.book"
     });
+    expect(bookManifest.documents).toHaveLength(5);
     expect(bookManifest.draft.sections).toHaveLength(2);
     await Promise.all(
       bookManifest.draft.sections.map(async (section, index) => {
@@ -382,7 +382,7 @@ describe("FolderCatalogStore", () => {
     expect(second.projectDirectory).toMatch(/\/雨夜-来信-2$/u);
     expect(first.resource.id).toMatch(/^book-[0-9a-f]{8}$/);
     expect(second.resource.id).toMatch(/^book-[0-9a-f]{8}$/);
-    expect(first.resource.documents).toHaveLength(5);
+    expect(first.resource.documents).toHaveLength(6);
     expect(first.resource.draft.sections).toHaveLength(2);
 
     const emptyRevision = createShortWorkspaceContentRevision("");
@@ -431,7 +431,241 @@ describe("FolderCatalogStore", () => {
     expect((await store.snapshot()).books).toHaveLength(2);
   });
 
-  it("creates screenplay projects without intro content and allocates numbered episodes", async () => {
+  it("atomically creates, updates, reorders, and deletes plot structure files", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-plot-structure-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock()
+    });
+    const opened = await store.createShortBook(
+      { title: "剧情结构测试", genre: "悬疑" },
+      join(root, "books")
+    );
+    const created = await store.mutatePlotStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 0,
+      mutation: {
+        type: "create",
+        title: "反转校验",
+        description: "核对反转证据链。"
+      }
+    });
+    const stage = created.plotStages.at(-1)!;
+    expect(created.projectRevision).toBe(1);
+    const createdManifest = JSON.parse(
+      await readFile(join(opened.projectDirectory, "deepwrite.json"), "utf8")
+    ) as {
+      documents: Array<{ id: string; title: string; path: string }>;
+    };
+    const originalFile = createdManifest.documents.find(
+      ({ id }) => id === stage.id
+    )!;
+    await expect(
+      readFile(join(opened.projectDirectory, originalFile.path), "utf8")
+    ).resolves.toBe("");
+
+    const updated = await store.mutatePlotStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 1,
+      mutation: {
+        type: "update",
+        stageId: stage.id,
+        title: "反转与证据",
+        description: "核对证据链和人物知情边界。"
+      }
+    });
+    expect(updated.plotStages.at(-1)).toMatchObject({
+      id: stage.id,
+      title: "反转与证据"
+    });
+    const updatedManifest = JSON.parse(
+      await readFile(join(opened.projectDirectory, "deepwrite.json"), "utf8")
+    ) as { documents: Array<{ id: string; path: string }> };
+    expect(updatedManifest.documents.find(({ id }) => id === stage.id)?.path).toBe(
+      originalFile.path
+    );
+
+    const moved = await store.mutatePlotStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 2,
+      mutation: { type: "move", stageId: stage.id, direction: "up" }
+    });
+    expect(moved.plotStages.at(-2)?.id).toBe(stage.id);
+    await store.saveDocument({
+      bookId: opened.resource.id,
+      documentId: stage.id,
+      content: "不可静默删除的反转内容。",
+      baseRevision: createShortWorkspaceContentRevision(""),
+      baseProjectRevision: 3
+    });
+    await expect(
+      store.mutatePlotStructure({
+        bookId: opened.resource.id,
+        baseProjectRevision: 4,
+        mutation: { type: "delete", stageId: "plot_design" }
+      })
+    ).rejects.toThrow(/默认剧情结构不可删除/u);
+
+    expect(
+      opened.resource.plotStages
+        .filter((stage) => stage.enabled)
+        .map(({ id }) => id)
+    ).toEqual(["plot_design", "intro_design", "plot_refine"]);
+    const enabled = await store.mutatePlotStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 4,
+      mutation: {
+        type: "setEnabled",
+        stageId: "outline",
+        enabled: true
+      }
+    });
+    expect(
+      enabled.plotStages.find(({ id }) => id === "outline")?.enabled
+    ).toBe(true);
+
+    const deleted = await store.mutatePlotStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 5,
+      mutation: { type: "delete", stageId: stage.id }
+    });
+    expect(deleted.plotStages.some(({ id }) => id === stage.id)).toBe(false);
+    expect(deleted.documents.some(({ id }) => id === stage.id)).toBe(false);
+    await expect(
+      access(join(opened.projectDirectory, originalFile.path))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      store.mutatePlotStructure({
+        bookId: opened.resource.id,
+        baseProjectRevision: 5,
+        mutation: {
+          type: "move",
+          stageId: "outline",
+          direction: "up"
+        }
+      })
+    ).rejects.toBeInstanceOf(FolderCatalogConflictError);
+
+    const manifestPath = join(opened.projectDirectory, "deepwrite.json");
+    const manifestBytes = Buffer.byteLength(
+      await readFile(manifestPath, "utf8"),
+      "utf8"
+    );
+    const stageFilesBefore = await readdir(join(opened.projectDirectory, "stages"));
+    const constrained = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock(),
+      maxManifestBytes: manifestBytes + 8
+    });
+    await expect(
+      constrained.mutatePlotStructure({
+        bookId: opened.resource.id,
+        baseProjectRevision: 6,
+        mutation: {
+          type: "create",
+          title: "无法提交的结构",
+          description: "这段说明会让 manifest 超过预设测试上限。"
+        }
+      })
+    ).rejects.toThrow(/byte limit/u);
+    expect(await readdir(join(opened.projectDirectory, "stages"))).toEqual(
+      stageFilesBefore
+    );
+  });
+
+  it("migrates v2 short and script manifests to the same five plot stages without changing existing content or revisions", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-v2-plot-migration-");
+    const userDataPath = join(root, "user-data");
+    const store = new FolderCatalogStore({
+      userDataPath,
+      now: tickingClock()
+    });
+    const projects = [
+      await store.createShortBook(
+        { title: "v2 短篇", genre: "悬疑" },
+        join(root, "books")
+      ),
+      await store.createScriptBook(
+        { title: "v2 剧本", genre: "悬疑" },
+        join(root, "books")
+      )
+    ];
+
+    for (const project of projects) {
+      await store.saveDocument({
+        bookId: project.resource.id,
+        documentId: "plot_design",
+        content: `${project.resource.bookType} 原剧情`,
+        baseRevision: createShortWorkspaceContentRevision(""),
+        baseProjectRevision: 0
+      });
+      const manifestPath = join(project.projectDirectory, "deepwrite.json");
+      const current = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        schemaVersion: number;
+        revision: number;
+        createdAt: string;
+        updatedAt: string;
+        plotStages?: unknown;
+        documents: Array<{ id: string; path: string }>;
+        [key: string]: unknown;
+      };
+      const missingIds = new Set(
+        project.resource.bookType === "script"
+          ? ["intro_design", "narrative_perspective"]
+          : ["narrative_perspective"]
+      );
+      for (const document of current.documents) {
+        if (missingIds.has(document.id)) {
+          await rm(join(project.projectDirectory, document.path));
+        }
+      }
+      const {
+        plotStages: _plotStages,
+        ...withoutPlotStages
+      } = current;
+      await writeJson(manifestPath, {
+        ...withoutPlotStages,
+        schemaVersion: 2,
+        documents: current.documents.filter(({ id }) => !missingIds.has(id))
+      });
+    }
+
+    const restarted = new FolderCatalogStore({
+      userDataPath,
+      now: tickingClock()
+    });
+    const snapshot = await restarted.snapshot();
+    for (const book of snapshot.books) {
+      expect(book.projectRevision).toBe(1);
+      expect(book.plotStages.map(({ id }) => id)).toEqual([
+        "plot_design",
+        "intro_design",
+        "plot_refine",
+        "narrative_perspective",
+        "outline"
+      ]);
+      expect(book.documents.find(({ id }) => id === "plot_design")?.content).toBe(
+        `${book.bookType} 原剧情`
+      );
+      expect(
+        book.documents.find(({ id }) => id === "narrative_perspective")?.content
+      ).toBe("");
+      expect(book.draft.sections.length).toBeGreaterThan(0);
+      const migratedManifest = JSON.parse(
+        await readFile(
+          join(
+            projects.find(({ resource }) => resource.id === book.id)!
+              .projectDirectory,
+            "deepwrite.json"
+          ),
+          "utf8"
+        )
+      ) as { schemaVersion: number; revision: number };
+      expect(migratedManifest).toMatchObject({ schemaVersion: 3, revision: 1 });
+    }
+  });
+
+  it("creates screenplay projects with the shared five-part plot structure and numbered episodes", async () => {
     const root = await makeTemporaryRoot("deepwrite-folder-script-create-");
     const store = new FolderCatalogStore({
       userDataPath: join(root, "user-data"),
@@ -447,7 +681,9 @@ describe("FolderCatalogStore", () => {
       documents: [
         { id: "character_design", title: "人物设计" },
         { id: "plot_design", title: "剧情设计" },
+        { id: "intro_design", title: "导语设计" },
         { id: "plot_refine", title: "剧情细化" },
+        { id: "narrative_perspective", title: "叙事视角" },
         { id: "outline", title: "大纲" }
       ],
       draft: {
@@ -456,7 +692,7 @@ describe("FolderCatalogStore", () => {
     });
     expect(
       created.resource.documents.some(({ id }) => id === "intro_design")
-    ).toBe(false);
+    ).toBe(true);
     expect(
       created.resource.draft.sections.some(({ title }) => title === "导语")
     ).toBe(false);
@@ -490,7 +726,9 @@ describe("FolderCatalogStore", () => {
     expect(manifest.documents.map(({ id }) => id)).toEqual([
       "character_design",
       "plot_design",
+      "intro_design",
       "plot_refine",
+      "narrative_perspective",
       "outline"
     ]);
     expect(manifest.draft.sections.map(({ id }) => id)).toEqual([
@@ -1006,7 +1244,7 @@ describe("FolderCatalogStore", () => {
     expect(imported.projectDirectory).toBe(
       join(await realpath(parentDirectory), "旧版雨夜来信")
     );
-    expect(imported.resource.documents).toHaveLength(6);
+    expect(imported.resource.documents).toHaveLength(7);
     expect(
       imported.resource.draft.sections.find(({ id }) => id === "section-1")
         ?.body.content
@@ -1025,7 +1263,7 @@ describe("FolderCatalogStore", () => {
         }>;
       };
     };
-    expect(manifest.schemaVersion).toBe(2);
+    expect(manifest.schemaVersion).toBe(3);
     expect(manifest.kind).toBe("deepwrite.book");
     expect(manifest.documents.some(({ id }) => id === "draft")).toBe(false);
     const firstSection = manifest.draft.sections.find(({ id }) => id === "section-1")!;
@@ -2212,10 +2450,13 @@ describe("FolderCatalogStore", () => {
         id: "book-external",
         title: "潮汐来信",
         projectRevision: 4,
-        documents: [{ id: "notes", content: "同名普通文档" }],
         draft: { id: "draft", title: "正文" }
       }
     });
+    expect(
+      opened.resource.documents.find(({ id }) => id === "notes")
+    ).toMatchObject({ id: "notes", content: "同名普通文档" });
+    expect(opened.resource.plotStages).toHaveLength(5);
     const openedSection = opened.resource.draft.sections.find(
       ({ id }) => id === "section-1"
     );
@@ -2243,7 +2484,7 @@ describe("FolderCatalogStore", () => {
         }>;
       };
     };
-    expect(migratedManifest).toMatchObject({ schemaVersion: 2, revision: 4 });
+    expect(migratedManifest).toMatchObject({ schemaVersion: 3, revision: 4 });
     const migratedSection = migratedManifest.draft.sections.find(
       ({ id }) => id === "section-1"
     )!;

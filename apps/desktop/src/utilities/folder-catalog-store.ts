@@ -38,6 +38,7 @@ import {
   CurrentBookProjectManifestSchema,
   DeleteDraftSectionInputSchema,
   LegacyBookProjectManifestSchema,
+  MutatePlotStructureInputSchema,
   SaveDocumentInputSchema,
   MaterialGroupProjectManifestSchema,
   MaterialLibraryProjectManifestSchema,
@@ -51,9 +52,16 @@ import {
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
   createCatalogDraftDirectory,
+  BookPlotStagesSchema,
+  CreativePlotStagesSchema,
+  DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS,
+  createDefaultBookPlotStages,
+  createDefaultCreativePlotStages,
   createScriptCatalogDraftDirectory,
   createShortWorkspaceContentRevision,
+  isBuiltinCreativePlotStageId,
   migrateCatalogDraftDocument,
+  type BookPlotStage,
   type BookProjectDraftSectionManifest,
   type BookProjectDocumentManifest,
   type BookProjectManifest,
@@ -72,6 +80,7 @@ import {
   type CreateDraftSectionInput,
   type CreateDraftSectionsInput,
   type CreateDraftSectionsResult,
+  type CreativePlotStage,
   type CurrentBookProjectManifest,
   type DeleteDraftSectionInput,
   type DeleteDraftSectionResult,
@@ -81,6 +90,7 @@ import {
   type MaterialLibraryGroup,
   type MaterialEntry,
   type MaterialStageId,
+  type MutatePlotStructureInput,
   type SaveLibraryEntryInput,
   type SaveDocumentInput,
   type ScriptBook,
@@ -91,7 +101,8 @@ import {
   type SkillEntry,
   type SkillStageId,
   type UpdateBookInput,
-  type UpdateLibraryGroupInput
+  type UpdateLibraryGroupInput,
+  type V2BookProjectManifest
 } from "@deepwrite/contracts";
 import type { ImportedLegacyBook } from "./legacy-book-import";
 import type { ImportedLegacyLibrary } from "./legacy-library-import";
@@ -148,6 +159,8 @@ interface FolderCatalogRegistry {
   updatedAt: string;
   legacyImport?: CatalogLegacyImport;
   sourceCatalogMigrated: boolean;
+  /** Global short/script plot stage definitions (title/description). */
+  creativePlotStages: CreativePlotStage[];
   projects: RegistryProject[];
 }
 
@@ -395,12 +408,18 @@ export class FolderCatalogStore {
         return await this.aggregateSnapshot(existing);
       }
       const base = existing ?? emptyRegistry(snapshot.updatedAt);
+      base.creativePlotStages = mergeCreativePlotStageDefinitions(
+        base.creativePlotStages,
+        snapshot.creativePlotStages,
+        snapshot.books.flatMap((book) => book.plotStages)
+      );
       const { registry: next, createdProjectDirectories } =
         await this.writeMissingSnapshotProjects(base, snapshot);
       next.revision = snapshot.revision;
       next.updatedAt = snapshot.updatedAt;
       setLegacyImport(next, snapshot.legacyImport);
       next.sourceCatalogMigrated = true;
+      next.creativePlotStages = base.creativePlotStages;
       try {
         await this.writeRegistry(next);
       } catch (error: unknown) {
@@ -416,9 +435,20 @@ export class FolderCatalogStore {
     return await this.mutate(async () => {
       const current = await this.ensureRegistry();
       const before = current.projects.length;
+      const mergedStages = mergeCreativePlotStageDefinitions(
+        current.creativePlotStages,
+        snapshot.creativePlotStages,
+        snapshot.books.flatMap((book) => book.plotStages)
+      );
+      const stagesChanged = !sameCreativePlotStageDefinitions(
+        current.creativePlotStages,
+        mergedStages
+      );
+      current.creativePlotStages = mergedStages;
       const { registry: next, createdProjectDirectories } =
         await this.writeMissingSnapshotProjects(current, snapshot);
-      const changed = next.projects.length !== before;
+      next.creativePlotStages = mergedStages;
+      const changed = next.projects.length !== before || stagesChanged;
       if (changed || snapshot.legacyImport !== undefined) {
         next.revision = Math.max(current.revision + (changed ? 1 : 0), snapshot.revision);
         next.updatedAt = changed ? this.now() : current.updatedAt;
@@ -464,6 +494,7 @@ export class FolderCatalogStore {
         linkedSkillIdsByKind: linkedSkillIdsFromInput(
           input.linkedSkillIdsByKind
         ),
+        plotStages: createDefaultBookPlotStages(),
         documents: DEFAULT_SHORT_DOCUMENTS.map(([id, title]) => ({
           id,
           title,
@@ -509,6 +540,7 @@ export class FolderCatalogStore {
         linkedSkillIdsByKind: linkedSkillIdsFromInput(
           input.linkedSkillIdsByKind
         ),
+        plotStages: createDefaultBookPlotStages(),
         documents: DEFAULT_SCRIPT_DOCUMENTS.map(([id, title]) => ({
           id,
           title,
@@ -529,8 +561,11 @@ export class FolderCatalogStore {
   ): Promise<OpenFolderCatalogProjectResult<Resource>> {
     return await this.mutate(async () => {
       const now = this.now();
-      const book = createBook(now);
       const registry = await this.ensureRegistry();
+      const book = applyGlobalPlotStagesToNewBook(
+        createBook(now),
+        registry.creativePlotStages
+      );
       const snapshot = await this.aggregateSnapshot(registry);
       assertBookLibraryReferences(book, snapshot);
       const projectDirectory = await this.writeNewResourceProject(
@@ -955,6 +990,373 @@ export class FolderCatalogStore {
     });
   }
 
+  async mutatePlotStructure(
+    rawInput: MutatePlotStructureInput
+  ): Promise<Book> {
+    const input = MutatePlotStructureInputSchema.parse(rawInput);
+    if (input.baseProjectRevision !== undefined) {
+      assertProjectRevision(input.baseProjectRevision);
+    }
+    return await this.mutate(async () => {
+      const registry = await this.ensureRegistry();
+      const registration = findRegistration(registry, input.bookId, "book");
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        input.bookId
+      );
+      if (!input.force) {
+        assertBaseRevision(input.baseProjectRevision, manifest.revision);
+      }
+
+      const now = this.now();
+      const mutation = input.mutation;
+
+      if (mutation.type === "move" || mutation.type === "setEnabled") {
+        const plotStages = manifest.plotStages.map((stage) => ({ ...stage }));
+        const stageIndex = plotStages.findIndex(
+          ({ id }) => id === mutation.stageId
+        );
+        if (stageIndex < 0) {
+          throw new Error("该剧情结构已删除或不存在。");
+        }
+        if (mutation.type === "move") {
+          const targetIndex =
+            mutation.direction === "up" ? stageIndex - 1 : stageIndex + 1;
+          if (targetIndex < 0 || targetIndex >= plotStages.length) {
+            throw new Error("该剧情结构已经位于列表边界。");
+          }
+          const [stage] = plotStages.splice(stageIndex, 1);
+          plotStages.splice(targetIndex, 0, stage!);
+        } else {
+          if (
+            !mutation.enabled &&
+            !plotStages.some(
+              (stage, index) => index !== stageIndex && stage.enabled
+            )
+          ) {
+            throw new Error("至少需要保留一个启用的剧情结构项。");
+          }
+          plotStages[stageIndex] = {
+            ...plotStages[stageIndex]!,
+            enabled: mutation.enabled
+          };
+        }
+        const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
+          ...manifest,
+          revision: manifest.revision + 1,
+          plotStages: BookPlotStagesSchema.parse(plotStages),
+          updatedAt: now
+        });
+        await atomicWriteJson(
+          join(projectDirectory, MANIFEST_FILE),
+          nextManifest,
+          this.maxManifestBytes
+        );
+        await this.bumpRegistry(registry, now);
+        return (await this.readProject(projectDirectory, "book", input.bookId))
+          .resource as Book;
+      }
+
+      const globalStages = registry.creativePlotStages.map((stage) => ({
+        ...stage
+      }));
+      const assertUniqueGlobalTitle = (
+        title: string,
+        exceptStageId?: string
+      ): void => {
+        const key = title.trim().toLocaleLowerCase();
+        if (
+          globalStages.some(
+            (stage) =>
+              stage.id !== exceptStageId &&
+              stage.title.trim().toLocaleLowerCase() === key
+          )
+        ) {
+          throw new Error(`剧情结构名称“${title.trim()}”已存在。`);
+        }
+      };
+
+      if (mutation.type === "create") {
+        if (globalStages.length >= 32) {
+          throw new Error("剧情结构最多支持 32 项。");
+        }
+        assertUniqueGlobalTitle(mutation.title);
+        const ids = new Set(globalStages.map(({ id }) => id));
+        let stageId = createCatalogId("plot-stage");
+        while (ids.has(stageId)) {
+          stageId = createCatalogId("plot-stage");
+        }
+        const definition: CreativePlotStage = {
+          id: stageId,
+          title: mutation.title.trim(),
+          description: mutation.description.trim()
+        };
+        globalStages.push(definition);
+        registry.creativePlotStages =
+          CreativePlotStagesSchema.parse(globalStages);
+        await this.applyGlobalPlotStageCreate(
+          registry,
+          definition,
+          input.bookId,
+          now
+        );
+      } else if (mutation.type === "update") {
+        const stageIndex = globalStages.findIndex(
+          ({ id }) => id === mutation.stageId
+        );
+        if (stageIndex < 0) {
+          throw new Error("该剧情结构已删除或不存在。");
+        }
+        assertUniqueGlobalTitle(mutation.title, mutation.stageId);
+        globalStages[stageIndex] = {
+          id: mutation.stageId,
+          title: mutation.title.trim(),
+          description: mutation.description.trim()
+        };
+        registry.creativePlotStages =
+          CreativePlotStagesSchema.parse(globalStages);
+        await this.applyGlobalPlotStageUpdate(
+          registry,
+          globalStages[stageIndex]!,
+          now
+        );
+      } else {
+        if (isBuiltinCreativePlotStageId(mutation.stageId)) {
+          throw new Error("默认剧情结构不可删除。");
+        }
+        const stageIndex = globalStages.findIndex(
+          ({ id }) => id === mutation.stageId
+        );
+        if (stageIndex < 0) {
+          throw new Error("该剧情结构已删除或不存在。");
+        }
+        if (globalStages.length <= 1) {
+          throw new Error("至少需要保留一个剧情结构项。");
+        }
+        globalStages.splice(stageIndex, 1);
+        registry.creativePlotStages =
+          CreativePlotStagesSchema.parse(globalStages);
+        await this.applyGlobalPlotStageDelete(registry, mutation.stageId, now);
+      }
+
+      await this.bumpRegistry(registry, now);
+      return (await this.readProject(projectDirectory, "book", input.bookId))
+        .resource as Book;
+    });
+  }
+
+  private async applyGlobalPlotStageCreate(
+    registry: FolderCatalogRegistry,
+    definition: CreativePlotStage,
+    enabledBookId: string,
+    now: string
+  ): Promise<void> {
+    for (const registration of registry.projects.filter(
+      (project) => project.domain === "book"
+    )) {
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        registration.id
+      );
+      if (manifest.plotStages.some(({ id }) => id === definition.id)) {
+        continue;
+      }
+      if (manifest.plotStages.length >= 32) {
+        throw new Error(
+          `作品“${manifest.title}”的剧情结构已达上限，无法同步新增阶段。`
+        );
+      }
+      const path = await uniqueRelativeMarkdownPath(
+        projectDirectory,
+        "stages",
+        definition.id,
+        new Set(
+          manifestContentItems(manifest).map(({ path: itemPath }) =>
+            portableContentPathKey(itemPath)
+          )
+        )
+      );
+      const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
+        ...manifest,
+        revision: manifest.revision + 1,
+        plotStages: BookPlotStagesSchema.parse([
+          ...manifest.plotStages,
+          {
+            ...definition,
+            enabled: registration.id === enabledBookId
+          }
+        ]),
+        documents: [
+          ...manifest.documents,
+          {
+            id: definition.id,
+            title: definition.title,
+            path,
+            createdAt: now,
+            updatedAt: now
+          }
+        ],
+        updatedAt: now
+      });
+      await commitProjectMarkdownUpdate(
+        await secureWritableProjectPath(projectDirectory, path),
+        "",
+        undefined,
+        join(projectDirectory, MANIFEST_FILE),
+        nextManifest,
+        this.maxMarkdownBytes,
+        this.maxManifestBytes
+      );
+    }
+  }
+
+  private async applyGlobalPlotStageUpdate(
+    registry: FolderCatalogRegistry,
+    definition: CreativePlotStage,
+    now: string
+  ): Promise<void> {
+    for (const registration of registry.projects.filter(
+      (project) => project.domain === "book"
+    )) {
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        registration.id
+      );
+      const stageIndex = manifest.plotStages.findIndex(
+        ({ id }) => id === definition.id
+      );
+      const documentIndex = manifest.documents.findIndex(
+        ({ id }) => id === definition.id
+      );
+      if (stageIndex < 0 || documentIndex < 0) {
+        continue;
+      }
+      const plotStages = manifest.plotStages.map((stage) =>
+        stage.id === definition.id
+          ? {
+              ...stage,
+              title: definition.title,
+              description: definition.description
+            }
+          : stage
+      );
+      const documents = manifest.documents.map((document) =>
+        document.id === definition.id
+          ? { ...document, title: definition.title, updatedAt: now }
+          : document
+      );
+      const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
+        ...manifest,
+        revision: manifest.revision + 1,
+        plotStages: BookPlotStagesSchema.parse(plotStages),
+        documents,
+        updatedAt: now
+      });
+      await atomicWriteJson(
+        join(projectDirectory, MANIFEST_FILE),
+        nextManifest,
+        this.maxManifestBytes
+      );
+    }
+  }
+
+  private async applyGlobalPlotStageDelete(
+    registry: FolderCatalogRegistry,
+    stageId: string,
+    now: string
+  ): Promise<void> {
+    for (const registration of registry.projects.filter(
+      (project) => project.domain === "book"
+    )) {
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        registration.id
+      );
+      const stageIndex = manifest.plotStages.findIndex(({ id }) => id === stageId);
+      const documentIndex = manifest.documents.findIndex(
+        ({ id }) => id === stageId
+      );
+      if (stageIndex < 0) {
+        continue;
+      }
+      if (manifest.plotStages.length <= 1) {
+        throw new Error(
+          `作品“${manifest.title}”至少需要保留一个剧情结构项。`
+        );
+      }
+      if (
+        !manifest.plotStages.some(
+          (stage, index) => index !== stageIndex && stage.enabled
+        )
+      ) {
+        throw new Error(
+          `作品“${manifest.title}”至少需要保留一个启用的剧情结构项，请先启用其他阶段再删除。`
+        );
+      }
+      const documents = [...manifest.documents];
+      const plotStages = [...manifest.plotStages];
+      plotStages.splice(stageIndex, 1);
+      let deletedPath: string | undefined;
+      if (documentIndex >= 0) {
+        deletedPath = documents[documentIndex]!.path;
+        documents.splice(documentIndex, 1);
+      }
+      const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
+        ...manifest,
+        revision: manifest.revision + 1,
+        plotStages: BookPlotStagesSchema.parse(plotStages),
+        documents,
+        updatedAt: now
+      });
+      if (deletedPath) {
+        const target = await secureExistingProjectPath(
+          projectDirectory,
+          deletedPath,
+          false
+        );
+        const backup = `${target}.${randomHex8()}.plot-delete.bak`;
+        assertJsonByteLength(nextManifest, this.maxManifestBytes);
+        await rename(target, backup);
+        try {
+          await atomicWriteJson(
+            join(projectDirectory, MANIFEST_FILE),
+            nextManifest,
+            this.maxManifestBytes
+          );
+        } catch (error: unknown) {
+          try {
+            await rename(backup, target);
+          } catch (rollbackError: unknown) {
+            throw new AggregateError(
+              [error, rollbackError],
+              "剧情结构删除失败，且无法自动恢复 Markdown 文件。"
+            );
+          }
+          throw error;
+        }
+        await unlinkOptional(backup);
+      } else {
+        await atomicWriteJson(
+          join(projectDirectory, MANIFEST_FILE),
+          nextManifest,
+          this.maxManifestBytes
+        );
+      }
+    }
+  }
+
   async updateLibraryGroup(
     rawInput: UpdateLibraryGroupInput
   ): Promise<MaterialLibraryGroup | SkillLibraryGroup> {
@@ -1064,6 +1466,7 @@ export class FolderCatalogStore {
         ({ id }) => id === input.documentId
       );
       const documents = [...manifest.documents];
+      const plotStages = manifest.plotStages.map((stage) => ({ ...stage }));
       const draft = structuredClone(manifest.draft);
       const draftTarget =
         regularDocumentIndex < 0
@@ -1092,6 +1495,16 @@ export class FolderCatalogStore {
       let existingPhysicalFile = true;
       if (regularDocumentIndex >= 0) {
         const existing = documents[regularDocumentIndex]!;
+        const plotStageIndex = plotStages.findIndex(
+          ({ id }) => id === existing.id
+        );
+        if (plotStageIndex >= 0 && input.title !== undefined) {
+          // Plot stage titles are owned by the global creativePlotStages catalog.
+          // Keep the document title aligned with the stage definition.
+          if (input.title.trim() !== plotStages[plotStageIndex]!.title) {
+            throw new Error("请在剧情结构管理中修改阶段名称；名称修改会全局生效。");
+          }
+        }
         currentContent = await readProjectMarkdown(
           projectDirectory,
           existing.path,
@@ -1099,7 +1512,9 @@ export class FolderCatalogStore {
         );
         documentManifest = {
           ...existing,
-          ...(input.title === undefined ? {} : { title: input.title }),
+          ...(input.title === undefined || plotStageIndex >= 0
+            ? {}
+            : { title: input.title }),
           updatedAt: now
         };
         documents[regularDocumentIndex] = documentManifest;
@@ -1186,6 +1601,7 @@ export class FolderCatalogStore {
       const next = FolderCurrentBookProjectManifestSchema.parse({
         ...manifest,
         revision: manifest.revision + 1,
+        plotStages,
         documents,
         draft,
         updatedAt: now
@@ -2051,12 +2467,17 @@ export class FolderCatalogStore {
     if (this.initialSnapshot) {
       const snapshot = this.initialSnapshot;
       const base = emptyRegistry(snapshot.updatedAt);
+      base.creativePlotStages = mergeCreativePlotStageDefinitions(
+        snapshot.creativePlotStages,
+        snapshot.books.flatMap((book) => book.plotStages)
+      );
       const { registry: next, createdProjectDirectories } =
         await this.writeMissingSnapshotProjects(base, snapshot);
       next.revision = snapshot.revision;
       next.updatedAt = snapshot.updatedAt;
       setLegacyImport(next, snapshot.legacyImport);
       next.sourceCatalogMigrated = true;
+      next.creativePlotStages = base.creativePlotStages;
       try {
         await this.writeRegistry(next);
       } catch (error: unknown) {
@@ -2268,6 +2689,16 @@ export class FolderCatalogStore {
       assertManifestUniqueness(manifest);
       await assertManifestContentFilesUnique(root, manifest);
     }
+    if (manifest.kind === "deepwrite.book" && manifest.schemaVersion === 2) {
+      manifest = await migrateV2BookProject(
+        root,
+        manifest,
+        text,
+        this.maxManifestBytes
+      );
+      assertManifestUniqueness(manifest);
+      await assertManifestContentFilesUnique(root, manifest);
+    }
     if (expectedKind && manifest.kind !== expectedKind) {
       throw new Error(
         `项目类型不匹配：需要 ${expectedKind}，实际为 ${manifest.kind}。`
@@ -2288,8 +2719,8 @@ export class FolderCatalogStore {
       "deepwrite.book",
       expectedResourceId
     );
-    if (manifest.schemaVersion !== 2) {
-      throw new Error("书籍项目未完成正文目录迁移。");
+    if (manifest.schemaVersion !== 3) {
+      throw new Error("书籍项目未完成剧情结构迁移。");
     }
     return manifest;
   }
@@ -2460,9 +2891,110 @@ export class FolderCatalogStore {
           break;
       }
     }
+    const creativePlotStages = mergeCreativePlotStageDefinitions(
+      registry.creativePlotStages,
+      books.flatMap((book) => book.plotStages)
+    );
+    if (
+      !sameCreativePlotStageDefinitions(
+        registry.creativePlotStages,
+        creativePlotStages
+      )
+    ) {
+      registry.creativePlotStages = creativePlotStages;
+      await this.writeRegistry(registry);
+    }
+    const now = this.now();
+    for (let index = 0; index < books.length; index += 1) {
+      const book = books[index]!;
+      const missing = creativePlotStages.filter(
+        (stage) => !book.plotStages.some((candidate) => candidate.id === stage.id)
+      );
+      if (missing.length === 0) continue;
+      const registration = findRegistration(registry, book.id, "book");
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        book.id
+      );
+      let plotStages = manifest.plotStages.map((stage) => ({ ...stage }));
+      let documents = manifest.documents.map((document) => ({ ...document }));
+      const usedPaths = new Set(
+        manifestContentItems(manifest).map(({ path }) =>
+          portableContentPathKey(path)
+        )
+      );
+      const pendingFiles: Array<{ path: string; content: string }> = [];
+      for (const stage of missing) {
+        if (plotStages.length >= 32) {
+          throw new Error(
+            `作品“${manifest.title}”的剧情结构已达上限，无法同步全局阶段。`
+          );
+        }
+        plotStages.push({ ...stage, enabled: false });
+        if (!documents.some((document) => document.id === stage.id)) {
+          const path = await uniqueRelativeMarkdownPath(
+            projectDirectory,
+            "stages",
+            stage.id,
+            usedPaths
+          );
+          usedPaths.add(portableContentPathKey(path));
+          pendingFiles.push({ path, content: "" });
+          documents.push({
+            id: stage.id,
+            title: stage.title,
+            path,
+            createdAt: now,
+            updatedAt: now
+          });
+        }
+      }
+      // Align titles/descriptions with the global catalog.
+      plotStages = plotStages.map((stage) => {
+        const definition = creativePlotStages.find(({ id }) => id === stage.id);
+        return definition
+          ? {
+              ...stage,
+              title: definition.title,
+              description: definition.description
+            }
+          : stage;
+      });
+      documents = documents.map((document) => {
+        const definition = creativePlotStages.find(({ id }) => id === document.id);
+        return definition
+          ? { ...document, title: definition.title }
+          : document;
+      });
+      const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
+        ...manifest,
+        revision: manifest.revision + 1,
+        plotStages: BookPlotStagesSchema.parse(plotStages),
+        documents,
+        updatedAt: now
+      });
+      for (const file of pendingFiles) {
+        await atomicWriteText(
+          await secureWritableProjectPath(projectDirectory, file.path),
+          file.content
+        );
+      }
+      await atomicWriteJson(
+        join(projectDirectory, MANIFEST_FILE),
+        nextManifest,
+        this.maxManifestBytes
+      );
+      books[index] = (
+        await this.readProject(projectDirectory, "book", book.id)
+      ).resource as Book;
+    }
     return CatalogSnapshotSchema.parse({
       schemaVersion: 1,
       revision: registry.revision,
+      creativePlotStages,
       books,
       materials,
       materialGroups,
@@ -2512,13 +3044,16 @@ const DEFAULT_SHORT_DOCUMENTS = [
   ["plot_design", "剧情设计"],
   ["intro_design", "导语设计"],
   ["plot_refine", "剧情细化"],
+  ["narrative_perspective", "叙事视角"],
   ["outline", "大纲"]
 ] as const;
 
 const DEFAULT_SCRIPT_DOCUMENTS = [
   ["character_design", "人物设计"],
   ["plot_design", "剧情设计"],
+  ["intro_design", "导语设计"],
   ["plot_refine", "剧情细化"],
+  ["narrative_perspective", "叙事视角"],
   ["outline", "大纲"]
 ] as const;
 
@@ -2730,6 +3265,7 @@ function emptyRegistry(updatedAt: string): FolderCatalogRegistry {
     revision: 0,
     updatedAt,
     sourceCatalogMigrated: false,
+    creativePlotStages: createDefaultCreativePlotStages(),
     projects: []
   };
 }
@@ -2806,13 +3342,97 @@ function parseRegistry(value: unknown): FolderCatalogRegistry {
     value.legacyImport === undefined
       ? undefined
       : CatalogLegacyImportSchema.parse(value.legacyImport);
+  const creativePlotStages =
+    Array.isArray(value.creativePlotStages) && value.creativePlotStages.length > 0
+      ? CreativePlotStagesSchema.parse(value.creativePlotStages)
+      : createDefaultCreativePlotStages();
   return {
     schemaVersion: 1,
     revision,
     updatedAt,
     sourceCatalogMigrated: value.sourceCatalogMigrated,
+    creativePlotStages,
     projects,
     ...(legacyImport === undefined ? {} : { legacyImport })
+  };
+}
+
+function mergeCreativePlotStageDefinitions(
+  ...groups: ReadonlyArray<ReadonlyArray<{ id: string; title: string; description: string }>>
+): CreativePlotStage[] {
+  const definitions = new Map<string, CreativePlotStage>();
+  for (const stage of createDefaultCreativePlotStages()) {
+    definitions.set(stage.id, stage);
+  }
+  for (const group of groups) {
+    for (const stage of group) {
+      if (!definitions.has(stage.id)) {
+        definitions.set(stage.id, {
+          id: stage.id,
+          title: stage.title,
+          description: stage.description
+        });
+      }
+    }
+  }
+  return CreativePlotStagesSchema.parse([...definitions.values()]);
+}
+
+function sameCreativePlotStageDefinitions(
+  left: readonly CreativePlotStage[],
+  right: readonly CreativePlotStage[]
+): boolean {
+  if (left.length !== right.length) return false;
+  const rightById = new Map(right.map((stage) => [stage.id, stage]));
+  return left.every((stage) => {
+    const other = rightById.get(stage.id);
+    return (
+      other !== undefined &&
+      other.title === stage.title &&
+      other.description === stage.description
+    );
+  });
+}
+
+function applyGlobalPlotStagesToNewBook<Resource extends Book>(
+  book: Resource,
+  globalStages: readonly CreativePlotStage[]
+): Resource {
+  const definitions =
+    globalStages.length > 0
+      ? mergeCreativePlotStageDefinitions(globalStages)
+      : createDefaultCreativePlotStages();
+  const existingDocuments = new Map(
+    book.documents.map((document) => [document.id, document])
+  );
+  const plotStages: BookPlotStage[] = definitions.map((stage) => ({
+    ...stage,
+    enabled: DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS.has(stage.id)
+  }));
+  const documents = [
+    ...(existingDocuments.get("character_design")
+      ? [existingDocuments.get("character_design")!]
+      : []),
+    ...plotStages.map((stage) => {
+      const existing = existingDocuments.get(stage.id);
+      return {
+        id: stage.id,
+        title: stage.title,
+        content: existing?.content ?? "",
+        createdAt: existing?.createdAt ?? book.createdAt,
+        updatedAt: existing?.updatedAt ?? book.updatedAt
+      };
+    }),
+    ...book.documents.filter(
+      (document) =>
+        document.id !== "character_design" &&
+        !plotStages.some((stage) => stage.id === document.id)
+    )
+  ];
+  return {
+    ...book,
+    plotStages,
+    documents
   };
 }
 
@@ -2909,7 +3529,7 @@ function manifestContentItems(
   manifest: FolderCatalogProjectManifest
 ): Array<{ id: string; path: string }> {
   if (manifest.kind === "deepwrite.book") {
-    return manifest.schemaVersion === 2
+    return manifest.schemaVersion !== 1
       ? [
           ...manifest.documents,
           ...manifest.draft.sections.flatMap((section) => [
@@ -3142,7 +3762,7 @@ async function migrateLegacyBookProject(
     manifest.createdAt,
     manifest.updatedAt
   );
-  const documents = manifest.documents.filter((_, index) => index !== draftIndex);
+  let documents = manifest.documents.filter((_, index) => index !== draftIndex);
   const usedPaths = new Set(
     manifest.documents.map(({ path }) => portableContentPathKey(path))
   );
@@ -3201,9 +3821,36 @@ async function migrateLegacyBookProject(
       updatedAt: section.updatedAt
     });
   }
+  const plotStages = createDefaultBookPlotStages({ allEnabled: true });
+  for (const stage of plotStages) {
+    const documentIndex = documents.findIndex(({ id }) => id === stage.id);
+    if (documentIndex >= 0) {
+      documents[documentIndex] = {
+        ...documents[documentIndex]!,
+        title: stage.title
+      };
+      continue;
+    }
+    const path = await uniqueRelativeMarkdownPath(
+      projectDirectory,
+      "stages",
+      stage.id,
+      usedPaths
+    );
+    usedPaths.add(portableContentPathKey(path));
+    pendingFiles.push({ path, content: "" });
+    documents.push({
+      id: stage.id,
+      title: stage.title,
+      path,
+      createdAt: manifest.createdAt,
+      updatedAt: manifest.updatedAt
+    });
+  }
   const next = FolderCurrentBookProjectManifestSchema.parse({
     ...manifest,
-    schemaVersion: 2,
+    schemaVersion: 3,
+    plotStages,
     documents,
     draft: {
       id: draft.id,
@@ -3240,6 +3887,74 @@ async function migrateLegacyBookProject(
     originalLegacyDraftContent: legacyDraft?.content,
     currentLegacyDraftContent
   });
+  await atomicWriteJson(
+    join(projectDirectory, MANIFEST_FILE),
+    next,
+    maxManifestBytes
+  );
+  return next;
+}
+
+async function migrateV2BookProject(
+  projectDirectory: string,
+  manifest: V2BookProjectManifest,
+  originalManifestText: string,
+  maxManifestBytes: number
+): Promise<FolderCurrentBookProjectManifest> {
+  const plotStages = createDefaultBookPlotStages({ allEnabled: true });
+  const documents = manifest.documents.map((document) => ({ ...document }));
+  const usedPaths = new Set(
+    manifestContentItems(manifest).map(({ path }) => portableContentPathKey(path))
+  );
+  const pendingFiles: Array<{ path: string; content: string }> = [];
+
+  for (const stage of plotStages) {
+    const documentIndex = documents.findIndex(({ id }) => id === stage.id);
+    if (documentIndex >= 0) {
+      documents[documentIndex] = {
+        ...documents[documentIndex]!,
+        title: stage.title
+      };
+      continue;
+    }
+    const path = await uniqueRelativeMarkdownPath(
+      projectDirectory,
+      "stages",
+      stage.id,
+      usedPaths
+    );
+    usedPaths.add(portableContentPathKey(path));
+    pendingFiles.push({ path, content: "" });
+    documents.push({
+      id: stage.id,
+      title: stage.title,
+      path,
+      createdAt: manifest.createdAt,
+      updatedAt: manifest.updatedAt
+    });
+  }
+
+  const next = FolderCurrentBookProjectManifestSchema.parse({
+    ...manifest,
+    schemaVersion: 3,
+    plotStages,
+    documents
+  });
+  assertJsonByteLength(next, maxManifestBytes);
+
+  // v2 remains authoritative until every missing stage document is durable.
+  for (const file of pendingFiles) {
+    const target = await secureWritableProjectPath(projectDirectory, file.path);
+    await atomicWriteText(target, file.content);
+  }
+  const currentManifestText = await readRequiredUtf8File(
+    join(projectDirectory, MANIFEST_FILE),
+    maxManifestBytes,
+    "project manifest"
+  );
+  if (currentManifestText !== originalManifestText) {
+    throw new Error("书籍在剧情结构迁移期间被外部修改，已中止迁移。");
+  }
   await atomicWriteJson(
     join(projectDirectory, MANIFEST_FILE),
     next,
@@ -3359,13 +4074,14 @@ async function writeResourceContents(
       }
       return FolderCurrentBookProjectManifestSchema.parse({
         ...common,
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: kindForDomain(domain),
         bookType: book.bookType,
         genre: book.genre,
         status: book.status,
         linkedMaterialIdsByKind: book.linkedMaterialIdsByKind,
         linkedSkillIdsByKind: book.linkedSkillIdsByKind,
+        plotStages: book.plotStages,
         documents,
         draft: {
           id: book.draft.id,
@@ -3487,7 +4203,7 @@ async function hydrateResource(
 ): Promise<FolderCatalogResource> {
   switch (manifest.kind) {
     case "deepwrite.book": {
-      if (manifest.schemaVersion !== 2) {
+      if (manifest.schemaVersion !== 3) {
         throw new Error("书籍项目未完成正文目录迁移。");
       }
       const draftFiles = manifest.draft.sections.flatMap((section) => [
@@ -3509,6 +4225,7 @@ async function hydrateResource(
         status: manifest.status,
         linkedMaterialIdsByKind: manifest.linkedMaterialIdsByKind,
         linkedSkillIdsByKind: manifest.linkedSkillIdsByKind,
+        plotStages: manifest.plotStages,
         projectRevision: manifest.revision,
         documents: manifest.documents.map((document, index) => ({
             id: document.id,

@@ -10,6 +10,8 @@ import {
   longCharacterFilePath,
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
+  longStoryPlotBodyFileId,
+  longStoryPlotFilePath,
   longWorldbuildingContentPath,
   longWorldbuildingFileId,
   longWorldbuildingOverviewContentPath,
@@ -151,6 +153,15 @@ export interface CreateLongStoryEventInput {
 }
 
 export type UpdateLongStoryEventInput = Partial<CreateLongStoryEventInput>;
+
+export interface CreateLongStoryPlotInput {
+  arcId: string;
+  title: string;
+}
+
+export interface UpdateLongStoryPlotInput {
+  title?: string;
+}
 
 export interface CreateLongEventConnectionInput {
   sourceEventId: string;
@@ -306,6 +317,17 @@ export interface LongStructureMutationBuilder {
   ): LongWorkspaceOperationBatch;
   deleteStoryEvent(id: string, cascade: boolean): LongWorkspaceOperationBatch;
 
+  createStoryPlot(input: CreateLongStoryPlotInput): LongWorkspaceOperationBatch;
+  updateStoryPlot(
+    id: string,
+    input: UpdateLongStoryPlotInput
+  ): LongWorkspaceOperationBatch;
+  reorderStoryPlot(
+    id: string,
+    direction: LongOrderDirection
+  ): LongWorkspaceOperationBatch;
+  deleteStoryPlot(id: string, cascade?: boolean): LongWorkspaceOperationBatch;
+
   createEventConnection(
     input: CreateLongEventConnectionInput
   ): LongWorkspaceOperationBatch;
@@ -445,6 +467,10 @@ export function createLongStructureMutationBuilder(
     snapshot.characters.find((candidate) => candidate.id === id);
   const storyEvent = (id: string) =>
     snapshot.plot.storyEvents.find((candidate) => candidate.id === id);
+  const storyPlot = (id: string) =>
+    (snapshot.plot.storyPlots ?? []).find(
+      (candidate) => candidate.id === id
+    );
   const eventConnection = (id: string) =>
     snapshot.plot.eventConnections.find((candidate) => candidate.id === id);
   const narrativePlacement = (id: string) =>
@@ -487,6 +513,11 @@ export function createLongStructureMutationBuilder(
   const orderedStoryEvents = () =>
     [...snapshot.plot.storyEvents]
       .sort((left, right) => left.storyOrder - right.storyOrder)
+      .map(({ id }) => id);
+  const orderedStoryPlots = (arcId: string) =>
+    (snapshot.plot.storyPlots ?? [])
+      .filter((candidate) => candidate.arcId === arcId)
+      .sort((left, right) => left.order - right.order)
       .map(({ id }) => id);
   const orderedNarrativePlacements = (chapterCardId: string) =>
     snapshot.plot.narrativePlacements
@@ -1181,6 +1212,60 @@ export function createLongStructureMutationBuilder(
 
     deleteStoryEvent(id, cascade) {
       return batch([{ type: "event.delete", id, cascade }]);
+    },
+
+    createStoryPlot(input) {
+      assertPresent(arc(input.arcId), "Arc");
+      const id = createId("storyplot");
+      const updatedAt = now();
+      return batch(
+        [
+          {
+            type: "storyPlot.create",
+            storyPlot: {
+              id,
+              arcId: input.arcId,
+              title: input.title.trim(),
+              order: orderedStoryPlots(input.arcId).length + 1,
+              file: createEmptyLongMarkdownFileReference(
+                longStoryPlotBodyFileId(id),
+                longStoryPlotFilePath(id),
+                updatedAt
+              )
+            }
+          }
+        ],
+        updatedAt
+      );
+    },
+
+    updateStoryPlot(id, input) {
+      assertPresent(storyPlot(id), "Story plot");
+      const patch: OperationOf<"storyPlot.update">["patch"] = {
+        ...(input.title !== undefined ? { title: input.title.trim() } : {})
+      };
+      return batch([{ type: "storyPlot.update", id, patch }]);
+    },
+
+    reorderStoryPlot(id, direction) {
+      const current = storyPlot(id);
+      assertPresent(current, "Story plot");
+      return batch([
+        {
+          type: "storyPlot.reorder",
+          arcId: current.arcId,
+          orderedIds: moveLongOrderedId(
+            orderedStoryPlots(current.arcId),
+            id,
+            direction
+          )
+        }
+      ]);
+    },
+
+    deleteStoryPlot(id, cascade = true) {
+      assertPresent(storyPlot(id), "Story plot");
+      return batch([{ type: "storyPlot.delete", id, cascade }]);
     },
 
     createEventConnection(input) {

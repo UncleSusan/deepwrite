@@ -21,6 +21,8 @@ import {
 import { TextDecoder } from "node:util";
 import {
   LONG_BOOK_LINE_FILE_ID,
+  LONG_CHARACTER_OVERVIEW_FILE_ID,
+  LONG_CHARACTER_OVERVIEW_PATH,
   LONG_WORKSPACE_INDEX_FILE_ID,
   LONG_WORKSPACE_INDEX_PATH,
   LongBookIdSchema,
@@ -48,6 +50,7 @@ import {
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
+  longStoryPlotBodyFileId,
   longWorldbuildingContentPath,
   longWorldbuildingFileId,
   longWorldbuildingItemContentPath,
@@ -2336,6 +2339,10 @@ export class LongProjectStore {
       updatedAt: timestamp,
       bookLine: file(LONG_BOOK_LINE_FILE_ID, BOOK_LINE_PATH),
       worldbuilding,
+      characterOverview: file(
+        LONG_CHARACTER_OVERVIEW_FILE_ID,
+        LONG_CHARACTER_OVERVIEW_PATH
+      ),
       characters: [],
       characterFiles: [],
       plot: {
@@ -2364,6 +2371,7 @@ export class LongProjectStore {
           }
         ],
         storyEvents: [],
+        storyPlots: [],
         eventConnections: [],
         narrativePlacements: [],
         foreshadowing: []
@@ -2417,6 +2425,11 @@ export class LongProjectStore {
           content: "",
           expectedSha256: null as null
         })),
+        {
+          path: LONG_CHARACTER_OVERVIEW_PATH,
+          content: "",
+          expectedSha256: null as null
+        },
         ...[chapterBody.path, chapterState.path, chapterHandoff.path].map(
           (path) => ({
             path,
@@ -2476,6 +2489,28 @@ export class LongProjectStore {
     const rawIndex = parseJson(indexDisk.content, "长篇工作区索引");
     if (
       await migrateLegacyWorldbuildingStorage({
+        projectDirectory,
+        manifest,
+        manifestDisk,
+        indexDisk,
+        rawIndex
+      })
+    ) {
+      return await this.loadProject(projectDirectory);
+    }
+    if (
+      await migrateLegacyCharacterOverviewStorage({
+        projectDirectory,
+        manifest,
+        manifestDisk,
+        indexDisk,
+        rawIndex
+      })
+    ) {
+      return await this.loadProject(projectDirectory);
+    }
+    if (
+      await migrateLegacyArcOutlineToStoryPlots({
         projectDirectory,
         manifest,
         manifestDisk,
@@ -3269,6 +3304,13 @@ function indexedFileSlots(
             }))
           ]
     ),
+    ...(index.characterOverview
+      ? [{
+          reference: index.characterOverview,
+          expectedPath: LONG_CHARACTER_OVERVIEW_PATH,
+          kind: "markdown" as const
+        }]
+      : []),
     ...index.characterFiles.flatMap((entry) => [
       {
         reference: entry.coreProfile,
@@ -3311,6 +3353,11 @@ function indexedFileSlots(
         kind: "markdown" as const
       }
     ]),
+    ...index.plot.storyPlots.map((entry) => ({
+      reference: entry.file,
+      expectedPath: storyPlotPath(entry.id, "body.md"),
+      kind: "markdown" as const
+    })),
     ...index.ledger.commits.map((commit) => ({
       reference: commit.recordFile,
       expectedPath: ledgerPath(commit.id),
@@ -3454,6 +3501,17 @@ function isCompatibleRolePath(slot: IndexedFileSlot): boolean {
       parts[3] === basename(slot.expectedPath)
     );
   }
+  if (
+    slot.expectedPath.startsWith("long/story-plots/") &&
+    parts.length === 4
+  ) {
+    return (
+      parts[0] === "long" &&
+      parts[1] === "story-plots" &&
+      Boolean(parts[2]) &&
+      parts[3] === basename(slot.expectedPath)
+    );
+  }
   return false;
 }
 
@@ -3478,6 +3536,10 @@ function characterPath(characterId: string, filename: string): string {
 
 function chapterPath(chapterId: string, filename: string): string {
   return `long/chapters/${storageKey(chapterId)}/${filename}`;
+}
+
+function storyPlotPath(storyPlotId: string, filename: string): string {
+  return `long/story-plots/${storageKey(storyPlotId)}/${filename}`;
 }
 
 function ledgerPath(commitId: string): string {
@@ -3950,6 +4012,148 @@ function unknownRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function storyPlotTitleFromOutline(outline: string): string {
+  const firstLine =
+    outline
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? "";
+  const cleaned = firstLine
+    .replace(/^#{1,6}\s+/u, "")
+    .replace(/^\d+[\.、．)]\s*/u, "")
+    .replace(/^\*\*(.+?)\*\*$/u, "$1")
+    .trim();
+  return (cleaned || "故事情节").slice(0, 256);
+}
+
+/**
+ * Moves legacy arc.outline prose into per-arc story-plot Markdown files.
+ * The outline field is cleared after migration;「故事情节」editing uses files.
+ */
+async function migrateLegacyArcOutlineToStoryPlots(input: {
+  projectDirectory: string;
+  manifest: LongProjectManifest;
+  manifestDisk: SecureTextFile;
+  indexDisk: SecureTextFile;
+  rawIndex: unknown;
+}): Promise<boolean> {
+  const rawIndex = unknownRecord(input.rawIndex);
+  const plot = unknownRecord(rawIndex?.plot);
+  if (!rawIndex || !plot || !Array.isArray(plot.arcs)) return false;
+
+  const existingStoryPlots = Array.isArray(plot.storyPlots)
+    ? [...plot.storyPlots]
+    : [];
+  const arcsWithPlots = new Set(
+    existingStoryPlots
+      .map((entry) => unknownRecord(entry)?.arcId)
+      .filter((arcId): arcId is string => typeof arcId === "string")
+  );
+
+  const updatedAt =
+    typeof rawIndex.updatedAt === "string"
+      ? rawIndex.updatedAt
+      : input.manifest.updatedAt;
+  const nextArcs: unknown[] = [];
+  const createdStoryPlots: Array<{
+    id: string;
+    arcId: string;
+    title: string;
+    order: number;
+    file: {
+      id: string;
+      path: string;
+      revision: LongFileRevision;
+      updatedAt: string;
+    };
+    content: string;
+  }> = [];
+
+  for (const rawArc of plot.arcs) {
+    const arc = unknownRecord(rawArc);
+    if (!arc || typeof arc.id !== "string") {
+      nextArcs.push(rawArc);
+      continue;
+    }
+    const outline =
+      typeof arc.outline === "string" ? arc.outline : "";
+    if (!outline.trim() || arcsWithPlots.has(arc.id)) {
+      nextArcs.push(rawArc);
+      continue;
+    }
+    const storyPlotId = createId("storyplot");
+    const path = storyPlotPath(storyPlotId, "body.md");
+    const order =
+      existingStoryPlots.filter((entry) => {
+        const candidate = unknownRecord(entry);
+        return candidate?.arcId === arc.id;
+      }).length +
+      createdStoryPlots.filter((entry) => entry.arcId === arc.id).length +
+      1;
+    createdStoryPlots.push({
+      id: storyPlotId,
+      arcId: arc.id,
+      title: storyPlotTitleFromOutline(outline),
+      order,
+      file: {
+        id: longStoryPlotBodyFileId(storyPlotId),
+        path,
+        revision: createLongFileRevision(outline),
+        updatedAt
+      },
+      content: outline
+    });
+    nextArcs.push({
+      ...arc,
+      outline: ""
+    });
+  }
+
+  if (createdStoryPlots.length === 0) return false;
+
+  const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    plot: {
+      ...plot,
+      arcs: nextArcs,
+      storyPlots: [
+        ...existingStoryPlots,
+        ...createdStoryPlots.map(({ content: _content, ...entry }) => entry)
+      ]
+    }
+  });
+  const indexContent = serializeJson(nextIndex);
+  const nextManifest = LongProjectManifestSchema.parse({
+    ...input.manifest,
+    workspaceIndexFile: {
+      ...input.manifest.workspaceIndexFile,
+      revision: createLongFileRevision(indexContent)
+    }
+  });
+  await commitLongProjectTransaction({
+    projectRoot: input.projectDirectory,
+    operations: [
+      ...createdStoryPlots.map((entry) => ({
+        path: entry.file.path,
+        content: entry.content,
+        expectedSha256: null as string | null
+      })),
+      {
+        path: LONG_WORKSPACE_INDEX_PATH,
+        content: indexContent,
+        expectedSha256: input.indexDisk.sha256
+      },
+      {
+        path: MANIFEST_PATH,
+        content: serializeJson(nextManifest),
+        expectedSha256: input.manifestDisk.sha256
+      }
+    ],
+    maxFileBytes: MAX_LEDGER_RECORD_BYTES
+  });
+  return true;
+}
+
 async function migrateLegacyWorldbuildingStorage(input: {
   projectDirectory: string;
   manifest: LongProjectManifest;
@@ -4108,6 +4312,127 @@ async function migrateLegacyWorldbuildingStorage(input: {
     projectRoot: input.projectDirectory,
     operations: [
       ...fileOperations,
+      {
+        path: LONG_WORKSPACE_INDEX_PATH,
+        content: indexContent,
+        expectedSha256: input.indexDisk.sha256
+      },
+      {
+        path: MANIFEST_PATH,
+        content: serializeJson(nextManifest),
+        expectedSha256: input.manifestDisk.sha256
+      }
+    ],
+    maxFileBytes: MAX_LEDGER_RECORD_BYTES
+  });
+  return true;
+}
+
+async function migrateLegacyCharacterOverviewStorage(input: {
+  projectDirectory: string;
+  manifest: LongProjectManifest;
+  manifestDisk: SecureTextFile;
+  indexDisk: SecureTextFile;
+  rawIndex: unknown;
+}): Promise<boolean> {
+  const rawIndex = unknownRecord(input.rawIndex);
+  if (!rawIndex || !Array.isArray(rawIndex.characters)) return false;
+
+  const overviewPath = LONG_CHARACTER_OVERVIEW_PATH;
+  const overview = {
+    id: LONG_CHARACTER_OVERVIEW_FILE_ID,
+    path: overviewPath,
+    revision: createLongFileRevision(""),
+    updatedAt:
+      typeof rawIndex.updatedAt === "string"
+        ? rawIndex.updatedAt
+        : input.manifest.updatedAt
+  };
+
+  if (rawIndex.characterOverview !== undefined) {
+    try {
+      await lstat(join(input.projectDirectory, overviewPath));
+      return false;
+    } catch (error: unknown) {
+      if (!isNodeError(error, "ENOENT")) throw error;
+    }
+    await commitLongProjectTransaction({
+      projectRoot: input.projectDirectory,
+      operations: [
+        {
+          path: overviewPath,
+          content: "",
+          expectedSha256: null
+        }
+      ],
+      maxFileBytes: MAX_LEDGER_RECORD_BYTES
+    });
+    return true;
+  }
+
+  try {
+    const existingOverview = await readSecureTextFile(
+      input.projectDirectory,
+      overviewPath,
+      MAX_DOCUMENT_BYTES
+    );
+    const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+      ...rawIndex,
+      characterOverview: {
+        ...overview,
+        revision: existingOverview.revision,
+        updatedAt: existingOverview.updatedAt
+      }
+    });
+    const indexContent = serializeJson(nextIndex);
+    const nextManifest = LongProjectManifestSchema.parse({
+      ...input.manifest,
+      workspaceIndexFile: {
+        ...input.manifest.workspaceIndexFile,
+        revision: createLongFileRevision(indexContent)
+      }
+    });
+    await commitLongProjectTransaction({
+      projectRoot: input.projectDirectory,
+      operations: [
+        {
+          path: LONG_WORKSPACE_INDEX_PATH,
+          content: indexContent,
+          expectedSha256: input.indexDisk.sha256
+        },
+        {
+          path: MANIFEST_PATH,
+          content: serializeJson(nextManifest),
+          expectedSha256: input.manifestDisk.sha256
+        }
+      ],
+      maxFileBytes: MAX_LEDGER_RECORD_BYTES
+    });
+    return true;
+  } catch (error: unknown) {
+    if (!isNodeError(error, "ENOENT")) throw error;
+  }
+
+  const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    characterOverview: overview
+  });
+  const indexContent = serializeJson(nextIndex);
+  const nextManifest = LongProjectManifestSchema.parse({
+    ...input.manifest,
+    workspaceIndexFile: {
+      ...input.manifest.workspaceIndexFile,
+      revision: createLongFileRevision(indexContent)
+    }
+  });
+  await commitLongProjectTransaction({
+    projectRoot: input.projectDirectory,
+    operations: [
+      {
+        path: overviewPath,
+        content: "",
+        expectedSha256: null
+      },
       {
         path: LONG_WORKSPACE_INDEX_PATH,
         content: indexContent,

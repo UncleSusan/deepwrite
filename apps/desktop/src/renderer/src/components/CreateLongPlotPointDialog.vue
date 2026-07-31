@@ -17,14 +17,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  submit: [input: { title: string; summary: string; outline: string }];
+  submit: [input: { title: string; summary: string }];
 }>();
 
 const dialogElement = ref<HTMLElement | null>(null);
 const titleInput = ref<HTMLInputElement | null>(null);
 const title = ref("");
 const summary = ref("");
-const outline = ref("");
 let previousFocus: HTMLElement | null = null;
 
 function close(): void {
@@ -40,8 +39,7 @@ function submit(): void {
   }
   emit("submit", {
     title: normalizedTitle,
-    summary: summary.value,
-    outline: outline.value
+    summary: summary.value
   });
 }
 
@@ -95,7 +93,6 @@ watch(
           : null;
       title.value = "";
       summary.value = "";
-      outline.value = "";
       await nextTick();
       titleInput.value?.focus({ preventScroll: true });
       return;
@@ -164,15 +161,6 @@ onBeforeUnmount(() =>
                 rows="4"
                 maxlength="200000"
                 placeholder="可选；概括这个剧情点的核心目标和结果"
-              />
-            </label>
-            <label>
-              <span>故事情节</span>
-              <textarea
-                v-model="outline"
-                rows="6"
-                maxlength="200000"
-                placeholder="可选；补充完整的情节推进过程"
               />
             </label>
           </fieldset>

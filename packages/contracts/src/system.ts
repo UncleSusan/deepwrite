@@ -117,6 +117,7 @@ import {
   CatalogRemoveLibraryEntryCommandEnvelopeSchema,
   CatalogSnapshotCommandEnvelopeSchema,
   CatalogUpdateBookCommandEnvelopeSchema,
+  CatalogMutatePlotStructureCommandEnvelopeSchema,
   CatalogUpdateLibraryGroupCommandEnvelopeSchema,
   CatalogUnregisterProjectCommandEnvelopeSchema
 } from "./catalog";
@@ -206,6 +207,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogImportLegacyBookAtPathCommandEnvelopeSchema,
   CatalogImportLegacyLibraryAtPathCommandEnvelopeSchema,
   CatalogUpdateBookCommandEnvelopeSchema,
+  CatalogMutatePlotStructureCommandEnvelopeSchema,
   CatalogUpdateLibraryGroupCommandEnvelopeSchema,
   CatalogDeleteBookCommandEnvelopeSchema,
   CatalogCreateDraftSectionCommandEnvelopeSchema,

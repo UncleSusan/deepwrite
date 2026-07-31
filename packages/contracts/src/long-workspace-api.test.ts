@@ -23,6 +23,7 @@ const runtimeNavigation = {
     arcs: 1,
     chapterCards: 1,
     storyEvents: 0,
+    storyPlots: 0,
     foreshadowingThreads: 0,
     committedChapters: 0
   },
@@ -194,6 +195,7 @@ describe("long workspace API contracts", () => {
         title: "人物关系",
         text: { content: "与沈砚暂时合作。" }
       },
+      overview: { content: "- character_id=`character_lan` 林岚" },
       coreProfile: { content: "雾港巡夜人。" }
     };
     expect(

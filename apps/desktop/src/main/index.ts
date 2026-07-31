@@ -1583,6 +1583,7 @@ function registerIpc(): void {
         command.type === "catalog.loadDraftRecovery" ||
         command.type === "catalog.saveDraftRecovery" ||
         command.type === "catalog.updateBook" ||
+        command.type === "catalog.mutatePlotStructure" ||
         command.type === "catalog.updateLibraryGroup" ||
         command.type === "catalog.deleteBook" ||
         command.type === "catalog.saveDocument" ||
@@ -1640,6 +1641,7 @@ function registerIpc(): void {
               payload = DeleteCatalogProjectResultSchema.parse(result.payload);
               break;
             case "catalog.updateBook":
+            case "catalog.mutatePlotStructure":
               payload = BookSchema.parse(result.payload);
               break;
             case "catalog.updateLibraryGroup":

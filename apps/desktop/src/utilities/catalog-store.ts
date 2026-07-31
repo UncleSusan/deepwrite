@@ -20,6 +20,7 @@ import {
   MATERIAL_STAGE_IDS,
   MaterialLibraryKindSchema,
   MaterialStageIdSchema,
+  MutatePlotStructureInputSchema,
   SaveDocumentInputSchema,
   SKILL_KINDS,
   SKILL_STAGE_IDS,
@@ -28,6 +29,9 @@ import {
   SkillKindSchema,
   SkillStageIdSchema,
   UpdateBookInputSchema,
+  createDefaultBookPlotStages,
+  createDefaultCreativePlotStages,
+  isBuiltinCreativePlotStageId,
   createCatalogDraftDirectory,
   createScriptCatalogDraftDirectory,
   type Book,
@@ -46,6 +50,7 @@ import {
   type MaterialLibrary,
   type MaterialLibraryGroup,
   type MaterialStageId,
+  type MutatePlotStructureInput,
   type SaveDocumentInput,
   type ScriptBook,
   type ShortBook,
@@ -102,13 +107,16 @@ const DEFAULT_SHORT_DOCUMENTS = [
   ["plot_design", "剧情设计"],
   ["intro_design", "导语设计"],
   ["plot_refine", "剧情细化"],
+  ["narrative_perspective", "叙事视角"],
   ["outline", "大纲"]
 ] as const;
 
 const DEFAULT_SCRIPT_DOCUMENTS = [
   ["character_design", "人物设计"],
   ["plot_design", "剧情设计"],
+  ["intro_design", "导语设计"],
   ["plot_refine", "剧情细化"],
+  ["narrative_perspective", "叙事视角"],
   ["outline", "大纲"]
 ] as const;
 
@@ -912,6 +920,7 @@ async function importLegacyCatalog(
   const empty: CatalogSnapshot = {
     schemaVersion: 1,
     revision: 0,
+    creativePlotStages: createDefaultCreativePlotStages(),
     books: [],
     materials: [],
     materialGroups: [],
@@ -960,6 +969,7 @@ async function importLegacyCatalog(
   return CatalogSnapshotSchema.parse({
     schemaVersion: 1,
     revision: 1,
+    creativePlotStages: createDefaultCreativePlotStages(),
     books: [],
     materials,
     materialGroups,
@@ -1061,6 +1071,10 @@ async function importMissingLegacySources(
   return CatalogSnapshotSchema.parse({
     schemaVersion: 1,
     revision: existing.revision + 1,
+    creativePlotStages: mergeLegacyCreativePlotStages(
+      existing.creativePlotStages,
+      existing.books.flatMap((book) => book.plotStages)
+    ),
     books: structuredClone(existing.books),
     materials,
     materialGroups,
@@ -1210,6 +1224,29 @@ function createDefaultDocuments(
   }));
 }
 
+function mergeLegacyCreativePlotStages(
+  ...groups: ReadonlyArray<
+    ReadonlyArray<{ id: string; title: string; description: string }> | undefined
+  >
+): NonNullable<CatalogSnapshot["creativePlotStages"]> {
+  const definitions = new Map(
+    createDefaultCreativePlotStages().map((stage) => [stage.id, stage] as const)
+  );
+  for (const group of groups) {
+    if (!group) continue;
+    for (const stage of group) {
+      if (!definitions.has(stage.id)) {
+        definitions.set(stage.id, {
+          id: stage.id,
+          title: stage.title,
+          description: stage.description
+        });
+      }
+    }
+  }
+  return [...definitions.values()];
+}
+
 function defaultDocumentTitle(documentId: string): string {
   return (
     [...DEFAULT_SHORT_DOCUMENTS, ...DEFAULT_SCRIPT_DOCUMENTS].find(
@@ -1267,12 +1304,17 @@ export class CatalogStore {
         input.linkedMaterialIdsByKind
       ),
       linkedSkillIdsByKind: normalizeLinkedSkillIds(input.linkedSkillIdsByKind),
+      plotStages: createDefaultBookPlotStages(),
       documents: createDefaultDocuments("short", now),
       draft: createCatalogDraftDirectory(now),
       createdAt: now,
       updatedAt: now
     });
     const next = await this.commit((draft) => {
+      draft.creativePlotStages = mergeLegacyCreativePlotStages(
+        draft.creativePlotStages,
+        book.plotStages
+      );
       draft.books.push(book);
       return true;
     });
@@ -1295,12 +1337,17 @@ export class CatalogStore {
         input.linkedMaterialIdsByKind
       ),
       linkedSkillIdsByKind: normalizeLinkedSkillIds(input.linkedSkillIdsByKind),
+      plotStages: createDefaultBookPlotStages(),
       documents: createDefaultDocuments("script", now),
       draft: createScriptCatalogDraftDirectory(now),
       createdAt: now,
       updatedAt: now
     });
     const next = await this.commit((draft) => {
+      draft.creativePlotStages = mergeLegacyCreativePlotStages(
+        draft.creativePlotStages,
+        book.plotStages
+      );
       draft.books.push(book);
       return true;
     });
@@ -1342,6 +1389,164 @@ export class CatalogStore {
       structuredClone(
         next.books.find((candidate) => candidate.id === input.bookId)!
       )
+    );
+  }
+
+  async mutatePlotStructure(
+    rawInput: MutatePlotStructureInput
+  ): Promise<Book> {
+    const input = MutatePlotStructureInputSchema.parse(rawInput);
+    const next = await this.commit((draft) => {
+      const book = draft.books.find((candidate) => candidate.id === input.bookId);
+      if (!book) throw new Error("书籍不存在或已被删除。");
+      const now = this.now();
+      const mutation = input.mutation;
+      draft.creativePlotStages = mergeLegacyCreativePlotStages(
+        draft.creativePlotStages,
+        draft.books.flatMap((candidate) => candidate.plotStages)
+      );
+      if (mutation.type === "move" || mutation.type === "setEnabled") {
+        const index = book.plotStages.findIndex(
+          (stage) => stage.id === mutation.stageId
+        );
+        if (index < 0) throw new Error("剧情结构项不存在或已被删除。");
+        if (mutation.type === "move") {
+          const target = mutation.direction === "up" ? index - 1 : index + 1;
+          if (target >= 0 && target < book.plotStages.length) {
+            [book.plotStages[index], book.plotStages[target]] = [
+              book.plotStages[target]!,
+              book.plotStages[index]!
+            ];
+          }
+        } else {
+          if (
+            !mutation.enabled &&
+            !book.plotStages.some(
+              (stage, stageIndex) => stageIndex !== index && stage.enabled
+            )
+          ) {
+            throw new Error("至少需要保留一个启用的剧情结构项。");
+          }
+          book.plotStages[index] = {
+            ...book.plotStages[index]!,
+            enabled: mutation.enabled
+          };
+        }
+        book.updatedAt = now;
+        return true;
+      }
+      if (mutation.type === "create") {
+        if (draft.creativePlotStages.length >= 32) {
+          throw new Error("剧情结构最多只能创建 32 项。");
+        }
+        if (
+          draft.creativePlotStages.some(
+            (stage) =>
+              stage.title.toLocaleLowerCase() ===
+              mutation.title.toLocaleLowerCase()
+          )
+        ) {
+          throw new Error(`剧情结构“${mutation.title}”已经存在。`);
+        }
+        let stageId = createCatalogId("plot-stage");
+        const ids = new Set(
+          draft.books.flatMap((candidate) =>
+            candidate.documents.map((document) => document.id)
+          )
+        );
+        while (ids.has(stageId)) stageId = createCatalogId("plot-stage");
+        const definition = {
+          id: stageId,
+          title: mutation.title,
+          description: mutation.description
+        };
+        draft.creativePlotStages.push(definition);
+        for (const candidate of draft.books) {
+          if (candidate.plotStages.some((stage) => stage.id === stageId)) {
+            continue;
+          }
+          candidate.plotStages.push({
+            ...definition,
+            enabled: candidate.id === input.bookId
+          });
+          candidate.documents.push({
+            id: stageId,
+            title: mutation.title,
+            content: "",
+            createdAt: now,
+            updatedAt: now
+          });
+          candidate.updatedAt = now;
+        }
+      } else if (mutation.type === "update") {
+        const globalIndex = draft.creativePlotStages.findIndex(
+          (stage) => stage.id === mutation.stageId
+        );
+        if (globalIndex < 0) throw new Error("剧情结构项不存在或已被删除。");
+        if (
+          draft.creativePlotStages.some(
+            (candidate, candidateIndex) =>
+              candidateIndex !== globalIndex &&
+              candidate.title.toLocaleLowerCase() ===
+                mutation.title.toLocaleLowerCase()
+          )
+        ) {
+          throw new Error(`剧情结构“${mutation.title}”已经存在。`);
+        }
+        draft.creativePlotStages[globalIndex] = {
+          id: mutation.stageId,
+          title: mutation.title,
+          description: mutation.description
+        };
+        for (const candidate of draft.books) {
+          const stage = candidate.plotStages.find(
+            (item) => item.id === mutation.stageId
+          );
+          const document = candidate.documents.find(
+            ({ id }) => id === mutation.stageId
+          );
+          if (!stage || !document) continue;
+          stage.title = mutation.title;
+          stage.description = mutation.description;
+          document.title = mutation.title;
+          document.updatedAt = now;
+          candidate.updatedAt = now;
+        }
+      } else {
+        if (isBuiltinCreativePlotStageId(mutation.stageId)) {
+          throw new Error("默认剧情结构不可删除。");
+        }
+        if (draft.creativePlotStages.length === 1) {
+          throw new Error("至少需要保留一个剧情结构项。");
+        }
+        draft.creativePlotStages = draft.creativePlotStages.filter(
+          (stage) => stage.id !== mutation.stageId
+        );
+        for (const candidate of draft.books) {
+          const index = candidate.plotStages.findIndex(
+            (stage) => stage.id === mutation.stageId
+          );
+          if (index < 0) continue;
+          if (
+            !candidate.plotStages.some(
+              (stage, stageIndex) => stageIndex !== index && stage.enabled
+            )
+          ) {
+            throw new Error(
+              `作品“${candidate.title}”至少需要保留一个启用的剧情结构项，请先启用其他阶段再删除。`
+            );
+          }
+          candidate.plotStages.splice(index, 1);
+          candidate.documents = candidate.documents.filter(
+            ({ id }) => id !== mutation.stageId
+          );
+          candidate.updatedAt = now;
+        }
+      }
+      return true;
+    });
+    return BookSchema.parse(
+      structuredClone(next.books.find((book) => book.id === input.bookId)!)
     );
   }
 

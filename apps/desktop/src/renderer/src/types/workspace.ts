@@ -111,6 +111,7 @@ export interface LongBookResourceNodeActionPayload {
 }
 
 export type BookResourceDialogMode =
+  | "manage-plot-structure"
   | "rename"
   | "remove"
   | "delete"
@@ -191,6 +192,8 @@ export interface WorkspaceDocument {
   workspaceTitle?: string;
   workspaceCategories?: string[];
   stageId?: ShortWorkspaceStageId;
+  plotStageDescription?: string;
+  plotStageOrder?: number;
   shortAgentId?: ShortWorkspaceAgentId;
   expertSectionId?: string;
   expertSectionOrder?: number;

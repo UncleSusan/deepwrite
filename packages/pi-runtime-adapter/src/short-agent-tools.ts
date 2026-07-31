@@ -4,7 +4,6 @@ import {
   SHORT_MATERIAL_KINDS,
   SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
   SHORT_SKILL_KINDS,
-  SHORT_WORKSPACE_STAGE_IDS,
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
   createShortWorkspaceContentRevision,
@@ -62,6 +61,25 @@ export type ShortWorkspaceToolDetails =
       summary: string;
     }
   | {
+      kind: "workspace-expert-draft-section-rename";
+      workspaceId: string;
+      stageId: "draft";
+      sectionId: string;
+      previousTitle: string;
+      title: string;
+      baseRevision: string;
+      summary: string;
+    }
+  | {
+      kind: "workspace-expert-draft-section-deletion";
+      workspaceId: string;
+      stageId: "draft";
+      sectionId: string;
+      title: string;
+      baseRevision: string;
+      summary: string;
+    }
+  | {
       kind: "workspace-stage-selection";
       workspaceId: string;
       stageId: ShortWorkspaceStageId;
@@ -103,6 +121,7 @@ interface WritingWorkspaceSnapshot {
   activeAgentId?: ShortWorkspaceSnapshot["activeAgentId"];
   activeSectionId?: ShortWorkspaceSnapshot["activeSectionId"];
   expertDraft: ShortWorkspaceSnapshot["expertDraft"];
+  plotStages: ShortWorkspaceSnapshot["plotStages"];
   stages: ShortWorkspaceSnapshot["stages"];
 }
 
@@ -149,7 +168,9 @@ export type ScriptWorkspaceToolSharedState = ShortWorkspaceToolSharedState;
 const SHORT_WORKSPACE_DRAFT_TOOLS = [
   "read_draft_sections",
   "write_draft_section",
-  "replace_draft_section_text"
+  "replace_draft_section_text",
+  "rename_draft_section",
+  "delete_draft_section"
 ] as const;
 
 export const SHORT_WORKSPACE_TOOL_MANIFEST = {
@@ -272,16 +293,16 @@ function defineTool<T extends ReturnType<typeof Type.Object>>(definition: {
   };
 }
 
-function stageLabel(stageId: ShortWorkspaceStageId): string {
-  const labels: Record<ShortWorkspaceStageId, string> = {
-    character_design: "人物",
-    plot_design: "剧情设计",
-    intro_design: "导语设计",
-    plot_refine: "剧情细化",
-    outline: "大纲",
-    draft: "正文"
-  };
-  return labels[stageId];
+function stageLabel(
+  input: BuildWritingWorkspaceToolsInput,
+  stageId: ShortWorkspaceStageId
+): string {
+  if (stageId === "character_design") return "人物";
+  if (stageId === "draft") return "正文";
+  return (
+    input.workspace.plotStages.find(({ id }) => id === stageId)?.title ??
+    stageId
+  );
 }
 
 function workspaceKindLabel(input: BuildWritingWorkspaceToolsInput): string {
@@ -310,11 +331,31 @@ function storylineStageIds(
   const available = new Set<ShortWorkspaceStageId>(
     input.workspace.stages.map((stage) => stage.stageId)
   );
-  const candidates: ShortWorkspaceStageId[] =
-    input.workspaceType === "script"
-      ? ["plot_design", "plot_refine"]
-      : ["plot_design", "intro_design", "plot_refine"];
-  return candidates.filter((stageId) => available.has(stageId));
+  return input.workspace.plotStages
+    .map(({ id }) => id)
+    .filter((stageId) => available.has(stageId));
+}
+
+function readableStageIds(
+  input: BuildWritingWorkspaceToolsInput
+): ShortWorkspaceStageId[] {
+  const available = new Set(
+    input.workspace.stages.map(({ stageId }) => stageId)
+  );
+  available.add("draft");
+  const targets: ShortWorkspaceStageId[] = [];
+  for (const scope of input.profile.readAccess.workspace) {
+    const stageIds =
+      scope === "plot_structure"
+        ? storylineStageIds(input)
+        : ([scope] as ShortWorkspaceStageId[]);
+    for (const stageId of stageIds) {
+      if (available.has(stageId) && !targets.includes(stageId)) {
+        targets.push(stageId);
+      }
+    }
+  }
+  return targets;
 }
 
 function scriptBodyToolConstraint(
@@ -364,7 +405,6 @@ function writableStageIds(
   if (profile.id === "plot_design") {
     return storylineStageIds(input);
   }
-  if (profile.id === "outline") return ["outline"];
   return ["draft"];
 }
 
@@ -372,18 +412,20 @@ function buildReadWorkspaceContentTool(
   input: BuildWritingWorkspaceToolsInput,
   stageBodies: Map<ShortWorkspaceStageId, string>
 ): AgentTool {
-  const allowed = input.profile.readAccess.workspace;
+  const allowed = readableStageIds(input);
   return defineTool({
     name: "read_workspace_content",
     label: "读取工作区内容",
     description: `读取当前${workspaceKindLabel(input)}某一阶段的实时快照。仅允许：${allowed
-      .map((stageId) => `${stageLabel(stageId)}(${stageId})`)
+      .map((stageId) => `${stageLabel(input, stageId)}(${stageId})`)
       .join("、")}。每次只读取一个阶段。`,
     parameters: Type.Object({ stage_id: literalUnion(allowed) }),
     execute: async (_toolCallId, params) => {
       const stageId = String(params.stage_id) as ShortWorkspaceStageId;
       if (!allowed.includes(stageId)) {
-        return textResult(`当前智能体不允许读取「${stageLabel(stageId)}」。`);
+        return textResult(
+          `当前智能体不允许读取「${stageLabel(input, stageId)}」。`
+        );
       }
       if (stageId === "draft") {
         const shared = input.sharedState;
@@ -426,7 +468,7 @@ function buildReadWorkspaceContentTool(
         ? `\n注意：本轮只提供前 ${storedBody.length.toLocaleString("zh-CN")} 个字符，原文共 ${snapshot.originalLength?.toLocaleString("zh-CN") ?? "更多"} 个字符。`
         : "";
       return textResult(
-        `${workspaceTitleLabel(input)}：《${input.workspace.title}》\n【${stageLabel(stageId)}】（${stageId}）\n本轮可读字数：${storedBody.replace(/\s/g, "").length}${truncationNote}\n\n${storedBody || "该阶段当前文本为空。"}`
+        `${workspaceTitleLabel(input)}：《${input.workspace.title}》\n【${stageLabel(input, stageId)}】（${stageId}）\n本轮可读字数：${storedBody.replace(/\s/g, "").length}${truncationNote}\n\n${storedBody || "该阶段当前文本为空。"}`
       );
     }
   });
@@ -437,7 +479,7 @@ function buildSearchWorkspaceTextTool(
   stageBodies: Map<ShortWorkspaceStageId, string>,
   expertSections: ExpertSectionMap
 ): AgentTool {
-  const allowed = input.profile.readAccess.workspace;
+  const allowed = readableStageIds(input);
   return defineTool({
     name: "search_workspace_text",
     label: "搜索工作区文本",
@@ -464,7 +506,7 @@ function buildSearchWorkspaceTextTool(
               label: `${section.title}（${section.id}）`,
               body: section.body.content
             }))
-          : [{ label: `${stageLabel(stageId)}(${stageId})`, body: stageBodies.get(stageId) ?? "" }];
+          : [{ label: `${stageLabel(input, stageId)}(${stageId})`, body: stageBodies.get(stageId) ?? "" }];
         for (const source of sources) {
           let cursor = 0;
           while (matches.length < maxMatches) {
@@ -490,7 +532,7 @@ function buildSearchWorkspaceTextTool(
             (stage) => stage.stageId === stageId && stage.truncated
           )
         )
-        .map(stageLabel);
+        .map((stageId) => stageLabel(input, stageId));
       const truncationNote = truncatedLabels.length
         ? `\n\n注意：${truncatedLabels.join("、")}仅搜索了本轮可见的前段快照，不能据此判断全文无匹配。`
         : "";
@@ -598,7 +640,7 @@ function buildSwitchStorylineStageTool(
         );
       }
       selectStage(stageId);
-      return textResult(`已切换到「${stageLabel(stageId)}」。`, {
+      return textResult(`已切换到「${stageLabel(input, stageId)}」。`, {
         kind: "workspace-stage-selection",
         workspaceId: input.workspace.id,
         stageId
@@ -618,7 +660,9 @@ function editorMutationResult(
 ): AgentToolResult<ShortWorkspaceToolDetails> {
   const baseRevision = stageRevisions.get(stageId);
   if (!baseRevision) {
-    return textResult(`未写入：缺少「${stageLabel(stageId)}」的基础版本标识。`);
+    return textResult(
+      `未写入：缺少「${stageLabel(input, stageId)}」的基础版本标识。`
+    );
   }
   stageBodies.set(stageId, text);
   stageRevisions.set(stageId, createShortWorkspaceContentRevision(text));
@@ -713,13 +757,13 @@ function buildWriteWorkspaceEditorTool(
       );
       if (snapshot?.truncated) {
         return textResult(
-          `未写入：「${stageLabel(stageId)}」超过本轮安全快照上限，无法在看不到全文尾部时覆盖阶段内容。`
+          `未写入：「${stageLabel(input, stageId)}」超过本轮安全快照上限，无法在看不到全文尾部时覆盖阶段内容。`
         );
       }
       const current = stageBodies.get(stageId) ?? "";
       if (current.trim() && params.allow_overwrite_existing !== true) {
         return textResult(
-          `「${stageLabel(stageId)}」已有内容。局部修改请使用 replace_current_stage_text；整体重写需明确设置 allow_overwrite_existing=true。`
+          `「${stageLabel(input, stageId)}」已有内容。局部修改请使用 replace_current_stage_text；整体重写需明确设置 allow_overwrite_existing=true。`
         );
       }
       const text = String(params.text ?? "").trim();
@@ -730,7 +774,7 @@ function buildWriteWorkspaceEditorTool(
         stageRevisions,
         stageId,
         text,
-        `已生成覆盖「${stageLabel(stageId)}」的文本变更，等待用户审阅。`
+        `已生成覆盖「${stageLabel(input, stageId)}」的文本变更，等待用户审阅。`
       );
     },
     executionMode: "sequential"
@@ -772,7 +816,7 @@ function buildReplaceStageTextTool(
       );
       if (snapshot?.truncated) {
         return textResult(
-          `未替换：「${stageLabel(stageId)}」超过本轮安全快照上限，无法在看不到全文尾部时执行局部替换。请缩小文稿或等待后续持久化编辑接口。`
+          `未替换：「${stageLabel(input, stageId)}」超过本轮安全快照上限，无法在看不到全文尾部时执行局部替换。请缩小文稿或等待后续持久化编辑接口。`
         );
       }
       const replacements = params.replacements as Array<{
@@ -789,7 +833,7 @@ function buildReplaceStageTextTool(
         stageRevisions,
         stageId,
         result.next,
-        `已生成「${stageLabel(stageId)}」的 ${result.count} 处文本变更，等待用户审阅。`
+        `已生成「${stageLabel(input, stageId)}」的 ${result.count} 处文本变更，等待用户审阅。`
       );
     },
     executionMode: "sequential"
@@ -890,6 +934,171 @@ function orderedExpertSections(
   return order
     .map((sectionId) => expertSections.get(sectionId))
     .filter((section): section is ExpertDraftSectionSnapshot => Boolean(section));
+}
+
+function buildRenameExpertDraftSectionTool(
+  input: BuildWritingWorkspaceToolsInput,
+  expertSections: ExpertSectionMap,
+  sharedState: ShortWorkspaceToolSharedState
+): AgentTool {
+  return defineTool({
+    name: "rename_draft_section",
+    label: `修改${draftUnitLabel(input)}名称`,
+    description:
+      `修改已有${draftContentUnitLabel(input)}的目录名称；同步更新正文文件标题与人物状态文件标题，不改正文内容、不删除、不调序。` +
+      `变更形成待审阅提案，由客户端按本轮审批模式处理。`,
+    parameters: Type.Object({
+      section_id: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+      title: Type.String({ minLength: 1, maxLength: 240 })
+    }),
+    execute: async (_toolCallId, params) => {
+      const target = resolveDraftWriteTarget(
+        input,
+        expertSections,
+        params.section_id
+      );
+      if ("error" in target) {
+        return textResult(target.error.replace(/^未修改：/u, "未改名："));
+      }
+      const section = expertSections.get(target.sectionId);
+      if (!section) {
+        return textResult(
+          `未改名：没有找到${draftContentUnitLabel(input)} ${target.sectionId}。`
+        );
+      }
+      if (isProvisionalExpertDraftSectionId(section.id)) {
+        return textResult(
+          `未改名：${draftUnitLabel(input)}「${section.title}」尚在本轮待创建，请在创建审批通过后再改名，或在创建时直接使用目标标题。`
+        );
+      }
+      const title = String(params.title ?? "").trim();
+      if (!title) {
+        return textResult(`未改名：${draftUnitLabel(input)}标题不能为空。`);
+      }
+      if (title === section.title) {
+        return textResult(
+          `未改名：「${section.title}」的标题没有变化。`
+        );
+      }
+      const conflicting = orderedExpertSections(input, expertSections).find(
+        (candidate) =>
+          candidate.id !== section.id && candidate.title === title
+      );
+      if (conflicting) {
+        return textResult(
+          `未改名：正文目录已存在同名${draftUnitLabel(input)}「${title}」。`
+        );
+      }
+      if (sharedState.pendingExpertSectionTitles.has(title)) {
+        return textResult(
+          `未改名：本轮待创建目录中已有同名${draftUnitLabel(input)}「${title}」。`
+        );
+      }
+
+      const previousTitle = section.title;
+      expertSections.set(section.id, {
+        ...section,
+        title,
+        body: {
+          ...section.body,
+          title
+        },
+        characterState: {
+          ...section.characterState,
+          title: `${title} · 人物状态`
+        }
+      });
+
+      const summary = `已生成将${draftUnitLabel(input)}「${previousTitle}」改名为「${title}」的变更，等待用户审阅。`;
+      const resultSummary =
+        input.writeApprovalMode === "auto-approve"
+          ? summary.replace(
+              "，等待用户审阅。",
+              "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
+            )
+          : summary;
+      return textResult(resultSummary, {
+        kind: "workspace-expert-draft-section-rename",
+        workspaceId: input.workspace.id,
+        stageId: "draft",
+        sectionId: section.id,
+        previousTitle,
+        title,
+        baseRevision: sharedState.expertDraftDirectoryBaseRevision,
+        summary: resultSummary
+      });
+    },
+    executionMode: "sequential"
+  });
+}
+
+function buildDeleteExpertDraftSectionTool(
+  input: BuildWritingWorkspaceToolsInput,
+  expertSections: ExpertSectionMap,
+  sharedState: ShortWorkspaceToolSharedState
+): AgentTool {
+  return defineTool({
+    name: "delete_draft_section",
+    label: `删除${draftUnitLabel(input)}`,
+    description:
+      `删除已有${draftContentUnitLabel(input)}及其正文文件、人物状态文件；正文至少保留一个${draftUnitLabel(input)}，不改名、不调序。` +
+      `变更形成待审阅提案，由客户端按本轮审批模式处理。`,
+    parameters: Type.Object({
+      section_id: Type.Optional(Type.String({ minLength: 1, maxLength: 120 }))
+    }),
+    execute: async (_toolCallId, params) => {
+      const target = resolveDraftWriteTarget(
+        input,
+        expertSections,
+        params.section_id
+      );
+      if ("error" in target) {
+        return textResult(target.error.replace(/^未修改：/u, "未删除："));
+      }
+      const section = expertSections.get(target.sectionId);
+      if (!section) {
+        return textResult(
+          `未删除：没有找到${draftContentUnitLabel(input)} ${target.sectionId}。`
+        );
+      }
+      if (isProvisionalExpertDraftSectionId(section.id)) {
+        return textResult(
+          `未删除：${draftUnitLabel(input)}「${section.title}」尚在本轮待创建，请拒绝对应创建审批，或待创建落盘后再删除。`
+        );
+      }
+      if (sharedState.expertSectionOrder.length <= 1) {
+        return textResult(
+          `未删除：正文至少需要保留一个${draftUnitLabel(input)}。`
+        );
+      }
+
+      const title = section.title;
+      expertSections.delete(section.id);
+      const orderIndex = sharedState.expertSectionOrder.indexOf(section.id);
+      if (orderIndex >= 0) {
+        sharedState.expertSectionOrder.splice(orderIndex, 1);
+      }
+
+      const summary = `已生成删除${draftUnitLabel(input)}「${title}」及其正文与人物状态文件的变更，等待用户审阅。`;
+      const resultSummary =
+        input.writeApprovalMode === "auto-approve"
+          ? summary.replace(
+              "，等待用户审阅。",
+              "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
+            )
+          : summary;
+      return textResult(resultSummary, {
+        kind: "workspace-expert-draft-section-deletion",
+        workspaceId: input.workspace.id,
+        stageId: "draft",
+        sectionId: section.id,
+        title,
+        baseRevision: sharedState.expertDraftDirectoryBaseRevision,
+        summary: resultSummary
+      });
+    },
+    executionMode: "sequential"
+  });
 }
 
 function buildCreateExpertDraftSectionsTool(
@@ -1425,7 +1634,9 @@ function buildWritingWorkspaceTools(
     const draftTools = [
       buildReadDraftSectionsTool(toolInput, expertSections, readExpertFileIds),
       buildWriteDraftSectionTool(toolInput, expertSections, readExpertFileIds),
-      buildReplaceDraftSectionTextTool(toolInput, expertSections, readExpertFileIds)
+      buildReplaceDraftSectionTextTool(toolInput, expertSections, readExpertFileIds),
+      buildRenameExpertDraftSectionTool(toolInput, expertSections, sharedState),
+      buildDeleteExpertDraftSectionTool(toolInput, expertSections, sharedState)
     ];
     return toolInput.profile.id === "expert_draft_coordinator"
       ? [
@@ -1479,12 +1690,18 @@ export function isShortWorkspaceToolDetails(
     kind === "workspace-editor-mutation" ||
     kind === "workspace-expert-draft-file-mutation" ||
     kind === "workspace-expert-draft-section-creation" ||
+    kind === "workspace-expert-draft-section-rename" ||
+    kind === "workspace-expert-draft-section-deletion" ||
     kind === "workspace-stage-selection"
   );
 }
 
 export function assertKnownShortWorkspaceStage(stageId: string): ShortWorkspaceStageId {
-  if (!SHORT_WORKSPACE_STAGE_IDS.includes(stageId as ShortWorkspaceStageId)) {
+  if (
+    stageId !== "character_design" &&
+    stageId !== "draft" &&
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(stageId)
+  ) {
     throw new Error(`Unknown short workspace stage: ${stageId}`);
   }
   return stageId as ShortWorkspaceStageId;

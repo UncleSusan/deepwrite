@@ -63,5 +63,9 @@ describe("LongContinuityProjectionPanel", () => {
     expect(source).toContain(
       "@container continuity-projection (max-width: 22rem)"
     );
+    expect(source).toContain("hideHeading");
+    expect(source).toContain('class="projection-card"');
+    expect(source).toContain("来源映射");
+    expect(source).toContain("项");
   });
 });

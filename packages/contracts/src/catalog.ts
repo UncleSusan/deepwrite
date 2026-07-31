@@ -86,6 +86,166 @@ export const SCRIPT_BOOK_GENRES = [...SHORT_BOOK_GENRES] as const;
 export const ScriptBookGenreSchema = z.enum(SCRIPT_BOOK_GENRES);
 export type ScriptBookGenre = z.infer<typeof ScriptBookGenreSchema>;
 
+export const CREATIVE_PLOT_STAGE_MAX_COUNT = 32;
+export const CreativePlotStageIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u,
+    "Plot stage ids may contain only letters, numbers, dots, underscores, colons, and hyphens."
+  )
+  .refine((value) => value !== "character_design" && value !== "draft", {
+    message: "Plot stage ids cannot use reserved workspace stage ids."
+  });
+export type CreativePlotStageId = z.infer<typeof CreativePlotStageIdSchema>;
+
+export const CreativePlotStageSchema = z
+  .object({
+    id: CreativePlotStageIdSchema,
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(20_000)
+  })
+  .strict();
+export type CreativePlotStage = z.infer<typeof CreativePlotStageSchema>;
+
+function refineUniqueCreativePlotStages(
+  stages: ReadonlyArray<{ id: string; title: string }>,
+  context: z.core.$RefinementCtx<unknown>
+): void {
+  const ids = new Set<string>();
+  const titles = new Set<string>();
+  stages.forEach((stage, index) => {
+    if (ids.has(stage.id)) {
+      context.addIssue({
+        code: "custom",
+        path: [index, "id"],
+        message: `Duplicate plot stage id: ${stage.id}`
+      });
+    }
+    ids.add(stage.id);
+    const normalizedTitle = stage.title.toLocaleLowerCase();
+    if (titles.has(normalizedTitle)) {
+      context.addIssue({
+        code: "custom",
+        path: [index, "title"],
+        message: `Duplicate plot stage title: ${stage.title}`
+      });
+    }
+    titles.add(normalizedTitle);
+  });
+}
+
+export const CreativePlotStagesSchema = z
+  .array(CreativePlotStageSchema)
+  .min(1)
+  .max(CREATIVE_PLOT_STAGE_MAX_COUNT)
+  .superRefine(refineUniqueCreativePlotStages);
+
+/** Per-book binding: definition is global; order + enabled are book-local. */
+export const BookPlotStageSchema = z
+  .object({
+    id: CreativePlotStageIdSchema,
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(20_000),
+    enabled: z.boolean()
+  })
+  .strict();
+export type BookPlotStage = z.infer<typeof BookPlotStageSchema>;
+
+export const BookPlotStagesSchema = z
+  .array(BookPlotStageSchema)
+  .min(1)
+  .max(CREATIVE_PLOT_STAGE_MAX_COUNT)
+  .superRefine((stages, context) => {
+    refineUniqueCreativePlotStages(stages, context);
+    if (!stages.some((stage) => stage.enabled)) {
+      context.addIssue({
+        code: "custom",
+        path: ["enabled"],
+        message: "At least one plot stage must remain enabled."
+      });
+    }
+  });
+
+export const DEFAULT_CREATIVE_PLOT_STAGES = [
+  {
+    id: "plot_design",
+    title: "剧情设计",
+    description:
+      "设计核心命题、人物目标、主要冲突、因果链、关键转折、真实时间线和结局兑现。每个重要情节点都要明确触发原因、人物选择、直接后果与后续压力，并区分故事真实时间线和读者看到的信息顺序。"
+  },
+  {
+    id: "intro_design",
+    title: "导语设计",
+    description:
+      "设计书名建议、开篇导语和前十秒钩子。导语必须与主线事实一致，建立人物处境、阅读期待与悬念，但不能替代完整剧情设计，也不能提前泄露尚不该公开的信息。"
+  },
+  {
+    id: "plot_refine",
+    title: "剧情细化",
+    description:
+      "把已确认剧情细化为可供正文直接执行的场景链、节拍、信息投放、人物选择、情绪推进、伏笔与回收。内容应具体到可写场景，同时保持因果、转折、人物状态与结局承诺一致，不直接写成小说正文。"
+  },
+  {
+    id: "narrative_perspective",
+    title: "叙事视角",
+    description:
+      "确定叙事人称、主要视角角色、时态、叙事距离与语言基调；明确读者和各人物在不同阶段的知识边界、可感知信息及视角切换规则，避免越过当前视角泄露未知事实。"
+  },
+  {
+    id: "outline",
+    title: "大纲",
+    description:
+      "把人物与全部剧情结构整理为可直接指导分节写作的完整大纲。保留已确认的人物、因果、时间线、关键情节和结局；列出全文定位、主线目标、核心冲突、正文小节总数与顺序，以及每节标题、字数、出场人物、场景、起始状态、详细剧情、关键选择、转折、信息投放、结尾钩子、人物状态变化和伏笔回收。发现冲突时应标明并采用最小改动方案。"
+  }
+] as const satisfies readonly CreativePlotStage[];
+
+export const BUILTIN_CREATIVE_PLOT_STAGE_IDS = new Set<string>(
+  DEFAULT_CREATIVE_PLOT_STAGES.map((stage) => stage.id)
+);
+
+/** Newly created short/script books enable only these three by default. */
+export const DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS = new Set<string>([
+  "plot_design",
+  "intro_design",
+  "plot_refine"
+]);
+
+export function isBuiltinCreativePlotStageId(stageId: string): boolean {
+  return BUILTIN_CREATIVE_PLOT_STAGE_IDS.has(stageId);
+}
+
+export function createDefaultCreativePlotStages(): CreativePlotStage[] {
+  return DEFAULT_CREATIVE_PLOT_STAGES.map((stage) => ({ ...stage }));
+}
+
+export function createDefaultBookPlotStages(options?: {
+  /** Existing books migrate with every stage enabled. */
+  allEnabled?: boolean;
+}): BookPlotStage[] {
+  const allEnabled = options?.allEnabled === true;
+  return DEFAULT_CREATIVE_PLOT_STAGES.map((stage) => ({
+    ...stage,
+    enabled: allEnabled || DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS.has(stage.id)
+  }));
+}
+
+export function toCreativePlotStage(stage: BookPlotStage): CreativePlotStage {
+  return {
+    id: stage.id,
+    title: stage.title,
+    description: stage.description
+  };
+}
+
+export function enabledCreativePlotStages(
+  stages: readonly BookPlotStage[]
+): CreativePlotStage[] {
+  return stages.filter((stage) => stage.enabled).map(toCreativePlotStage);
+}
+
 export const MATERIAL_KINDS = [
   "character",
   "gimmick",
@@ -418,13 +578,18 @@ export const CurrentShortBookSchema = z.object({
   status: z.enum(["editing", "completed"]),
   linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
   linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
+  plotStages: BookPlotStagesSchema,
   documents: z.array(CatalogDocumentSchema),
   draft: CatalogDraftDirectorySchema,
   projectRevision: z.number().int().nonnegative().optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema
 });
-const LegacyShortBookSchema = CurrentShortBookSchema.omit({ draft: true });
+const LegacyShortBookSchema = CurrentShortBookSchema.omit({
+  draft: true,
+  plotStages: true
+});
+const V2ShortBookSchema = CurrentShortBookSchema.omit({ plotStages: true });
 
 export const CurrentScriptBookSchema = z.object({
   id: CatalogIdSchema,
@@ -434,12 +599,14 @@ export const CurrentScriptBookSchema = z.object({
   status: z.enum(["editing", "completed"]),
   linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
   linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
+  plotStages: BookPlotStagesSchema,
   documents: z.array(CatalogDocumentSchema),
   draft: CatalogDraftDirectorySchema,
   projectRevision: z.number().int().nonnegative().optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema
 });
+const V2ScriptBookSchema = CurrentScriptBookSchema.omit({ plotStages: true });
 
 function migrateLegacyShortBook(value: unknown): unknown {
   const legacy = LegacyShortBookSchema.safeParse(value);
@@ -467,6 +634,95 @@ function migrateLegacyShortBook(value: unknown): unknown {
   };
 }
 
+function migrateMissingPlotStages(value: unknown): unknown {
+  const parsed = z.union([V2ShortBookSchema, V2ScriptBookSchema]).safeParse(value);
+  if (!parsed.success || (value && typeof value === "object" && "plotStages" in value)) {
+    return value;
+  }
+  const documentIds = new Set(parsed.data.documents.map((document) => document.id));
+  const missingDocuments = DEFAULT_CREATIVE_PLOT_STAGES.filter(
+    (stage) => !documentIds.has(stage.id)
+  ).map((stage) => ({
+    id: stage.id,
+    title: stage.title,
+    content: "",
+    createdAt: parsed.data.createdAt,
+    updatedAt: parsed.data.updatedAt
+  }));
+  return {
+    ...parsed.data,
+    // Existing books without plotStages migrate with every stage enabled.
+    plotStages: createDefaultBookPlotStages({ allEnabled: true }),
+    documents: [...parsed.data.documents, ...missingDocuments]
+  };
+}
+
+function migrateBookPlotStageEnabled(value: unknown): unknown {
+  if (!value || typeof value !== "object" || !("plotStages" in value)) {
+    return value;
+  }
+  const plotStages = (value as { plotStages?: unknown }).plotStages;
+  if (!Array.isArray(plotStages) || plotStages.length === 0) {
+    return value;
+  }
+  if (
+    plotStages.every(
+      (stage) =>
+        stage &&
+        typeof stage === "object" &&
+        "enabled" in stage &&
+        typeof (stage as { enabled?: unknown }).enabled === "boolean"
+    )
+  ) {
+    return value;
+  }
+  return {
+    ...(value as Record<string, unknown>),
+    plotStages: plotStages.map((stage) => {
+      if (!stage || typeof stage !== "object") {
+        return stage;
+      }
+      const record = stage as Record<string, unknown>;
+      return {
+        ...record,
+        enabled:
+          typeof record.enabled === "boolean" ? record.enabled : true
+      };
+    })
+  };
+}
+
+function migrateBook(value: unknown): unknown {
+  return migrateBookPlotStageEnabled(
+    migrateMissingPlotStages(migrateLegacyShortBook(value))
+  );
+}
+
+function validatePlotStageDocuments(
+  book: {
+    plotStages: ReadonlyArray<{ id: string; title: string }>;
+    documents: ReadonlyArray<{ id: string; title: string }>;
+  },
+  context: z.core.$RefinementCtx<unknown>
+): void {
+  for (const [index, stage] of book.plotStages.entries()) {
+    const document = book.documents.find((candidate) => candidate.id === stage.id);
+    if (!document) {
+      context.addIssue({
+        code: "custom",
+        path: ["plotStages", index, "id"],
+        message: `Plot stage ${stage.id} must reference a book document.`
+      });
+    } else if (document.title !== stage.title) {
+      context.addIssue({
+        code: "custom",
+        path: ["plotStages", index, "title"],
+        message: `Plot stage ${stage.id} title must match its document title.`
+      });
+    }
+  }
+}
+
 function validateUniqueBookDocumentIds(
   book: {
     documents: ReadonlyArray<{ id: string }>;
@@ -491,13 +747,22 @@ function validateUniqueBookDocumentIds(
 }
 
 export const ShortBookSchema = z
-  .preprocess(migrateLegacyShortBook, CurrentShortBookSchema)
-  .superRefine(validateUniqueBookDocumentIds);
+  .preprocess(migrateBook, CurrentShortBookSchema)
+  .superRefine((book, context) => {
+    validateUniqueBookDocumentIds(book, context);
+    validatePlotStageDocuments(book, context);
+  });
 export type ShortBook = z.infer<typeof ShortBookSchema>;
 
-export const ScriptBookSchema = CurrentScriptBookSchema.superRefine(
-  validateUniqueBookDocumentIds
-);
+export const ScriptBookSchema = z
+  .preprocess(
+    (value) => migrateBookPlotStageEnabled(migrateMissingPlotStages(value)),
+    CurrentScriptBookSchema
+  )
+  .superRefine((book, context) => {
+    validateUniqueBookDocumentIds(book, context);
+    validatePlotStageDocuments(book, context);
+  });
 export type ScriptBook = z.infer<typeof ScriptBookSchema>;
 
 export const CurrentBookSchema = z.discriminatedUnion("bookType", [
@@ -507,8 +772,11 @@ export const CurrentBookSchema = z.discriminatedUnion("bookType", [
 
 /** Current books are discriminated by `bookType`; legacy short books migrate first. */
 export const BookSchema = z
-  .preprocess(migrateLegacyShortBook, CurrentBookSchema)
-  .superRefine(validateUniqueBookDocumentIds);
+  .preprocess(migrateBook, CurrentBookSchema)
+  .superRefine((book, context) => {
+    validateUniqueBookDocumentIds(book, context);
+    validatePlotStageDocuments(book, context);
+  });
 export type Book = z.infer<typeof BookSchema>;
 
 export const MaterialEntrySchema = z.object({
@@ -755,7 +1023,7 @@ export type BookProjectDraftDirectoryManifest = z.infer<
   typeof BookProjectDraftDirectoryManifestSchema
 >;
 
-const CurrentBookProjectManifestSharedShape = {
+const V2BookProjectManifestSharedShape = {
   schemaVersion: z.literal(2),
   revision: z.number().int().nonnegative(),
   kind: z.literal("deepwrite.book"),
@@ -774,6 +1042,36 @@ const CurrentBookProjectManifestSharedShape = {
     .array(DraftSectionCreationOperationSchema)
     .max(256)
     .optional()
+} as const;
+
+const V2ShortBookProjectManifestObjectSchema = z
+  .object({
+    ...V2BookProjectManifestSharedShape,
+    bookType: z.literal("short"),
+    genre: ShortBookGenreSchema
+  })
+  .strict();
+
+const V2ScriptBookProjectManifestObjectSchema = z
+  .object({
+    ...V2BookProjectManifestSharedShape,
+    bookType: z.literal("script"),
+    genre: ScriptBookGenreSchema
+  })
+  .strict();
+
+export const V2BookProjectManifestSchema = z
+  .discriminatedUnion("bookType", [
+    V2ShortBookProjectManifestObjectSchema,
+    V2ScriptBookProjectManifestObjectSchema
+  ])
+  .superRefine(validateUniqueBookManifestFiles);
+export type V2BookProjectManifest = z.infer<typeof V2BookProjectManifestSchema>;
+
+const CurrentBookProjectManifestSharedShape = {
+  ...V2BookProjectManifestSharedShape,
+  schemaVersion: z.literal(3),
+  plotStages: BookPlotStagesSchema
 } as const;
 
 const CurrentShortBookProjectManifestObjectSchema = z
@@ -839,18 +1137,42 @@ function validateUniqueBookManifestFiles(
   }
 }
 
-export const CurrentShortBookProjectManifestSchema =
-  CurrentShortBookProjectManifestObjectSchema.superRefine(
-    validateUniqueBookManifestFiles
-  );
+function validatePlotStageManifestFiles(
+  manifest: {
+    plotStages: ReadonlyArray<{ id: string; title: string }>;
+    documents: ReadonlyArray<{ id: string; title: string }>;
+  },
+  context: z.core.$RefinementCtx<unknown>
+): void {
+  validatePlotStageDocuments(manifest, context);
+}
+
+function preprocessBookProjectManifestPlotStages(value: unknown): unknown {
+  return migrateBookPlotStageEnabled(value);
+}
+
+export const CurrentShortBookProjectManifestSchema = z
+  .preprocess(
+    preprocessBookProjectManifestPlotStages,
+    CurrentShortBookProjectManifestObjectSchema
+  )
+  .superRefine((manifest, context) => {
+    validateUniqueBookManifestFiles(manifest, context);
+    validatePlotStageManifestFiles(manifest, context);
+  });
 export type CurrentShortBookProjectManifest = z.infer<
   typeof CurrentShortBookProjectManifestSchema
 >;
 
-export const ScriptBookProjectManifestSchema =
-  ScriptBookProjectManifestObjectSchema.superRefine(
-    validateUniqueBookManifestFiles
-  );
+export const ScriptBookProjectManifestSchema = z
+  .preprocess(
+    preprocessBookProjectManifestPlotStages,
+    ScriptBookProjectManifestObjectSchema
+  )
+  .superRefine((manifest, context) => {
+    validateUniqueBookManifestFiles(manifest, context);
+    validatePlotStageManifestFiles(manifest, context);
+  });
 export const CurrentScriptBookProjectManifestSchema =
   ScriptBookProjectManifestSchema;
 export type ScriptBookProjectManifest = z.infer<
@@ -859,17 +1181,24 @@ export type ScriptBookProjectManifest = z.infer<
 export type CurrentScriptBookProjectManifest = ScriptBookProjectManifest;
 
 export const CurrentBookProjectManifestSchema = z
-  .discriminatedUnion("bookType", [
-    CurrentShortBookProjectManifestObjectSchema,
-    ScriptBookProjectManifestObjectSchema
-  ])
-  .superRefine(validateUniqueBookManifestFiles);
+  .preprocess(
+    preprocessBookProjectManifestPlotStages,
+    z.discriminatedUnion("bookType", [
+      CurrentShortBookProjectManifestObjectSchema,
+      ScriptBookProjectManifestObjectSchema
+    ])
+  )
+  .superRefine((manifest, context) => {
+    validateUniqueBookManifestFiles(manifest, context);
+    validatePlotStageManifestFiles(manifest, context);
+  });
 export type CurrentBookProjectManifest = z.infer<
   typeof CurrentBookProjectManifestSchema
 >;
 
 export const BookProjectManifestSchema = z.union([
   CurrentBookProjectManifestSchema,
+  V2BookProjectManifestSchema,
   LegacyBookProjectManifestSchema
 ]);
 export type BookProjectManifest = z.infer<typeof BookProjectManifestSchema>;
@@ -932,6 +1261,7 @@ export type SkillGroupProjectManifest = z.infer<
 
 export const CatalogProjectManifestSchema = z.union([
   CurrentBookProjectManifestSchema,
+  V2BookProjectManifestSchema,
   LegacyBookProjectManifestSchema,
   MaterialLibraryProjectManifestSchema,
   SkillLibraryProjectManifestSchema,
@@ -988,19 +1318,69 @@ export type CatalogDraftRecoverySaveResult = z.infer<
   typeof CatalogDraftRecoverySaveResultSchema
 >;
 
+function migrateCatalogSnapshotCreativePlotStages(value: unknown): unknown {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(record.creativePlotStages) && record.creativePlotStages.length > 0) {
+    return value;
+  }
+  const books = Array.isArray(record.books) ? record.books : [];
+  const definitions = new Map<string, CreativePlotStage>();
+  for (const stage of DEFAULT_CREATIVE_PLOT_STAGES) {
+    definitions.set(stage.id, { ...stage });
+  }
+  for (const book of books) {
+    if (!book || typeof book !== "object") continue;
+    const plotStages = (book as { plotStages?: unknown }).plotStages;
+    if (!Array.isArray(plotStages)) continue;
+    for (const stage of plotStages) {
+      if (!stage || typeof stage !== "object") continue;
+      const candidate = stage as {
+        id?: unknown;
+        title?: unknown;
+        description?: unknown;
+      };
+      if (
+        typeof candidate.id !== "string" ||
+        typeof candidate.title !== "string" ||
+        typeof candidate.description !== "string"
+      ) {
+        continue;
+      }
+      if (!definitions.has(candidate.id)) {
+        definitions.set(candidate.id, {
+          id: candidate.id,
+          title: candidate.title,
+          description: candidate.description
+        });
+      }
+    }
+  }
+  return {
+    ...record,
+    creativePlotStages: [...definitions.values()]
+  };
+}
+
 export const CatalogSnapshotSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    revision: z.number().int().nonnegative(),
-    books: z.array(BookSchema),
-    materials: z.array(MaterialLibrarySchema),
-    materialGroups: z.array(MaterialLibraryGroupSchema),
-    skills: z.array(SkillLibrarySchema),
-    skillGroups: z.array(SkillLibraryGroupSchema),
-    updatedAt: TimestampSchema,
-    legacyImport: CatalogLegacyImportSchema.optional(),
-    projectDiagnostics: z.array(CatalogProjectDiagnosticSchema).optional()
-  })
+  .preprocess(
+    migrateCatalogSnapshotCreativePlotStages,
+    z.object({
+      schemaVersion: z.literal(1),
+      revision: z.number().int().nonnegative(),
+      creativePlotStages: CreativePlotStagesSchema,
+      books: z.array(BookSchema),
+      materials: z.array(MaterialLibrarySchema),
+      materialGroups: z.array(MaterialLibraryGroupSchema),
+      skills: z.array(SkillLibrarySchema),
+      skillGroups: z.array(SkillLibraryGroupSchema),
+      updatedAt: TimestampSchema,
+      legacyImport: CatalogLegacyImportSchema.optional(),
+      projectDiagnostics: z.array(CatalogProjectDiagnosticSchema).optional()
+    })
+  )
   .superRefine((snapshot, context) => {
     const collections: Array<
       [string, ReadonlyArray<{ id: string }>]
@@ -1020,6 +1400,9 @@ export const CatalogSnapshotSchema = z
         });
       }
     }
+    const globalIds = new Set(
+      snapshot.creativePlotStages.map((stage) => stage.id)
+    );
     for (const [bookIndex, book] of snapshot.books.entries()) {
       if (!uniqueIds(book.documents.map(({ id }) => id))) {
         context.addIssue({
@@ -1027,6 +1410,15 @@ export const CatalogSnapshotSchema = z
           path: ["books", bookIndex, "documents"],
           message: "Book documents cannot contain duplicate ids."
         });
+      }
+      for (const [stageIndex, stage] of book.plotStages.entries()) {
+        if (!globalIds.has(stage.id)) {
+          context.addIssue({
+            code: "custom",
+            path: ["books", bookIndex, "plotStages", stageIndex, "id"],
+            message: `Book plot stage ${stage.id} must exist in creativePlotStages.`
+          });
+        }
       }
     }
   });
@@ -1134,6 +1526,61 @@ export const UpdateBookInputSchema = z
     { message: "Book update must contain at least one changed field." }
   );
 export type UpdateBookInput = z.infer<typeof UpdateBookInputSchema>;
+
+export const PlotStructureMutationSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("create"),
+      title: CreativePlotStageSchema.shape.title,
+      description: CreativePlotStageSchema.shape.description
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("update"),
+      stageId: CreativePlotStageIdSchema,
+      title: CreativePlotStageSchema.shape.title,
+      description: CreativePlotStageSchema.shape.description
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("move"),
+      stageId: CreativePlotStageIdSchema,
+      direction: z.enum(["up", "down"])
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("setEnabled"),
+      stageId: CreativePlotStageIdSchema,
+      enabled: z.boolean()
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("delete"),
+      stageId: CreativePlotStageIdSchema,
+      /** Custom stages are hard-deleted globally; content is always removed. */
+      deleteContent: z.boolean().optional()
+    })
+    .strict()
+]);
+export type PlotStructureMutation = z.infer<
+  typeof PlotStructureMutationSchema
+>;
+
+export const MutatePlotStructureInputSchema = z
+  .object({
+    bookId: CatalogIdSchema,
+    baseProjectRevision: z.number().int().nonnegative(),
+    force: z.boolean().optional(),
+    mutation: PlotStructureMutationSchema
+  })
+  .strict();
+export type MutatePlotStructureInput = z.infer<
+  typeof MutatePlotStructureInputSchema
+>;
 
 export const DeleteBookInputSchema = z.object({
   bookId: CatalogIdSchema
@@ -1597,6 +2044,12 @@ export const CatalogUpdateBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
   payload: UpdateBookInputSchema
 });
 
+export const CatalogMutatePlotStructureCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.mutatePlotStructure"),
+    payload: MutatePlotStructureInputSchema
+  });
+
 export const CatalogUpdateLibraryGroupCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("catalog.updateLibraryGroup"),
@@ -1680,6 +2133,7 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogImportLegacyBookAtPathCommandEnvelopeSchema,
   CatalogImportLegacyLibraryAtPathCommandEnvelopeSchema,
   CatalogUpdateBookCommandEnvelopeSchema,
+  CatalogMutatePlotStructureCommandEnvelopeSchema,
   CatalogUpdateLibraryGroupCommandEnvelopeSchema,
   CatalogDeleteBookCommandEnvelopeSchema,
   CatalogSaveDocumentCommandEnvelopeSchema,

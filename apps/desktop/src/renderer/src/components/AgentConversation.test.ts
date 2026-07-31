@@ -250,6 +250,8 @@ describe("AgentConversation edit proposal placement", () => {
     expect(labels).toContain('read_draft_sections: "读取正文章节"');
     expect(labels).toContain('write_draft_section: "写入正文章节"');
     expect(labels).toContain('replace_draft_section_text: "替换正文章节文本"');
+    expect(labels).toContain('rename_draft_section: "修改章节名称"');
+    expect(labels).toContain('delete_draft_section: "删除章节"');
     expect(labels).toContain(
       'create_worldbuilding_file: "创建世界观文件"'
     );
@@ -274,12 +276,16 @@ describe("AgentConversation edit proposal placement", () => {
     expect(writeNames).toContain('"write_draft_section"');
     expect(writeNames).toContain('"create_draft_sections"');
     expect(writeNames).toContain('"replace_draft_section_text"');
+    expect(writeNames).toContain('"rename_draft_section"');
+    expect(writeNames).toContain('"delete_draft_section"');
     expect(writeNames).toContain('"create_worldbuilding_file"');
     expect(writeNames).toContain('"write_worldbuilding_file"');
     expect(writeNames).toContain('"edit_worldbuilding_file"');
     expect(writeNames).not.toContain('"read_draft_sections"');
     expect(directWriteNames).toContain('"write_draft_section"');
     expect(directWriteNames).toContain('"create_draft_sections"');
+    expect(directWriteNames).toContain('"rename_draft_section"');
+    expect(directWriteNames).toContain('"delete_draft_section"');
     expect(directWriteNames).toContain('"write_worldbuilding_file"');
     expect(directWriteNames).not.toContain('"replace_draft_section_text"');
     expect(conversationSource).not.toContain("initialize_expert_draft");

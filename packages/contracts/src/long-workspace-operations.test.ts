@@ -2124,4 +2124,106 @@ describe("long workspace operation engine", () => {
         .documentWrites[0]?.fileId
     ).toBe(files.coreProfile.id);
   });
+
+  it("creates, updates, reorders, and deletes story plots bound to an arc", () => {
+    const source = workspace();
+    const created = applyLongWorkspaceOperations(
+      source,
+      LongWorkspaceOperationBatchSchema.parse({
+        baseRevision: source.revision,
+        updatedAt: later,
+        operations: [
+          {
+            type: "storyPlot.create",
+            storyPlot: {
+              id: "storyplot_daily",
+              arcId: "arc_letter",
+              title: "日常崩塌",
+              order: 1,
+              file: file(
+                "file_storyplot_daily:body",
+                "long/story-plots/storyplot_daily/body.md",
+                later
+              )
+            }
+          },
+          {
+            type: "storyPlot.create",
+            storyPlot: {
+              id: "storyplot_ripple",
+              arcId: "arc_letter",
+              title: "不可逆的涟漪",
+              order: 2,
+              file: file(
+                "file_storyplot_ripple:body",
+                "long/story-plots/storyplot_ripple/body.md",
+                later
+              )
+            }
+          }
+        ]
+      })
+    );
+    expect(created.snapshot.plot.storyPlots.map(({ id }) => id)).toEqual([
+      "storyplot_daily",
+      "storyplot_ripple"
+    ]);
+    expect(created.fileIntents.map(({ file: entry }) => entry.id)).toEqual([
+      "file_storyplot_daily:body",
+      "file_storyplot_ripple:body"
+    ]);
+
+    const reordered = applyLongWorkspaceOperations(
+      created.snapshot,
+      LongWorkspaceOperationBatchSchema.parse({
+        baseRevision: created.resultRevision,
+        updatedAt: later,
+        operations: [
+          {
+            type: "storyPlot.reorder",
+            arcId: "arc_letter",
+            orderedIds: ["storyplot_ripple", "storyplot_daily"]
+          },
+          {
+            type: "storyPlot.update",
+            id: "storyplot_ripple",
+            patch: { title: "涟漪扩散" }
+          }
+        ]
+      })
+    );
+    expect(
+      [...reordered.snapshot.plot.storyPlots]
+        .sort((left, right) => left.order - right.order)
+        .map(({ id, title, order }) => ({
+          id,
+          title,
+          order
+        }))
+    ).toEqual([
+      { id: "storyplot_ripple", title: "涟漪扩散", order: 1 },
+      { id: "storyplot_daily", title: "日常崩塌", order: 2 }
+    ]);
+
+    const deleted = applyLongWorkspaceOperations(
+      reordered.snapshot,
+      LongWorkspaceOperationBatchSchema.parse({
+        baseRevision: reordered.resultRevision,
+        updatedAt: later,
+        operations: [
+          {
+            type: "storyPlot.delete",
+            id: "storyplot_daily",
+            cascade: false
+          }
+        ]
+      })
+    );
+    expect(deleted.snapshot.plot.storyPlots.map(({ id }) => id)).toEqual([
+      "storyplot_ripple"
+    ]);
+    expect(deleted.fileIntents.map(({ action, file: entry }) => [action, entry.id])).toEqual([
+      ["delete", "file_storyplot_daily:body"]
+    ]);
+  });
 });

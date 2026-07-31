@@ -316,6 +316,15 @@ export type AgentRuntimeEvent =
             provisionalSectionId: string;
           }>;
           afterSectionId?: string;
+        } | {
+          kind: "expert-draft-section-rename";
+          sectionId: string;
+          previousTitle: string;
+          title: string;
+        } | {
+          kind: "expert-draft-section-deletion";
+          sectionId: string;
+          title: string;
         };
         baseRevision: string;
         summary: string;
@@ -1680,7 +1689,9 @@ export function toRuntimeEvents(
       if (
         details.kind === "workspace-editor-mutation" ||
         details.kind === "workspace-expert-draft-file-mutation" ||
-        details.kind === "workspace-expert-draft-section-creation"
+        details.kind === "workspace-expert-draft-section-creation" ||
+        details.kind === "workspace-expert-draft-section-rename" ||
+        details.kind === "workspace-expert-draft-section-deletion"
       ) {
         const text =
           details.kind === "workspace-expert-draft-section-creation"
@@ -1690,7 +1701,11 @@ export function toRuntimeEvents(
                     `${index + 1}. ${section.title}${section.wordCountRequirement ? `（${section.wordCountRequirement}）` : ""}`
                 )
                 .join("\n")
-            : details.text;
+            : details.kind === "workspace-expert-draft-section-rename"
+              ? `${details.previousTitle} → ${details.title}`
+              : details.kind === "workspace-expert-draft-section-deletion"
+                ? `删除：${details.title}`
+                : details.text;
         events.push({
           type: "workspace.editor_mutation",
           runId: input.runId,
@@ -1717,6 +1732,23 @@ export function toRuntimeEvents(
                       ...(details.afterSectionId
                         ? { afterSectionId: details.afterSectionId }
                         : {})
+                    }
+                  }
+              : details.kind === "workspace-expert-draft-section-rename"
+                ? {
+                    mutationTarget: {
+                      kind: "expert-draft-section-rename" as const,
+                      sectionId: details.sectionId,
+                      previousTitle: details.previousTitle,
+                      title: details.title
+                    }
+                  }
+              : details.kind === "workspace-expert-draft-section-deletion"
+                ? {
+                    mutationTarget: {
+                      kind: "expert-draft-section-deletion" as const,
+                      sectionId: details.sectionId,
+                      title: details.title
                     }
                   }
               : {}),
@@ -2158,6 +2190,19 @@ function scriptRuntimeFormatRequirements(): string {
   ].join("\n");
 }
 
+function renderCreativePlotStructure(
+  workspace:
+    | NonNullable<WorkspaceRuntimeContext["shortWorkspace"]>
+    | NonNullable<WorkspaceRuntimeContext["scriptWorkspace"]>
+): string {
+  return workspace.plotStages
+    .map(
+      (stage, index) =>
+        `${index + 1}. ${stage.title}（${stage.id}）\n   阶段边界与交付标准：${stage.description}`
+    )
+    .join("\n");
+}
+
 /** @internal Exported for workspace-type prompt regression tests. */
 export function buildEffectiveSystemPrompt(
   basePrompt: string,
@@ -2252,6 +2297,8 @@ export function buildEffectiveSystemPrompt(
       .join("\n");
   }
   const scriptWorkspace = input.workspaceContext?.scriptWorkspace;
+  const shortWorkspace = input.workspaceContext?.shortWorkspace;
+  const writingWorkspace = scriptWorkspace ?? shortWorkspace;
   const profile = input.scriptAgentProfile ?? input.agentProfile;
   if (!profile) return basePrompt;
   const workspaceKind = scriptWorkspace ? "剧本" : "短篇";
@@ -2265,6 +2312,14 @@ export function buildEffectiveSystemPrompt(
     "",
     `【当前${workspaceKind}智能体：${profile.label} / ${profile.id}】`,
     profile.systemPrompt.trim(),
+    ...(writingWorkspace
+      ? [
+          "",
+          "【当前剧情结构配置（顺序即执行顺序）】",
+          renderCreativePlotStructure(writingWorkspace),
+          `当前阶段：${writingWorkspace.activeStageId}。剧情智能体处理每一项时，必须以该项说明作为任务边界和交付标准。`
+        ]
+      : []),
     ...(scriptWorkspace
       ? [
           "",
@@ -2277,9 +2332,9 @@ export function buildEffectiveSystemPrompt(
     "只使用本轮实际提供的工具；没有出现在工具列表中的能力尚未接通，不得声称已经执行。",
     writeBoundary,
     profile.id === "expert_draft_coordinator"
-      ? `当前已接通正文目录索引、批量创建空白${draftUnit}文件、全部/单${scriptWorkspace ? "集" : "章"}正文读取及按${draftUnit}正文文件写入与替换；删除、改名、排序和后台${scriptWorkspace ? "分集" : "分节"}写手调度尚未接通，不得声称已经执行。`
+      ? `当前已接通正文目录索引、批量创建空白${draftUnit}文件、修改${draftUnit}名称、删除${draftUnit}、全部/单${scriptWorkspace ? "集" : "章"}正文读取及按${draftUnit}正文文件写入与替换；排序和后台${scriptWorkspace ? "分集" : "分节"}写手调度尚未接通，不得声称已经执行。`
       : profile.id === "expert_section_writer"
-        ? `当前${scriptWorkspace ? "分集" : "分节"}写手只允许修改运行上下文锁定的${draftUnit}；正文与人物状态工具分别按 documentId 提交到两个独立文件，由客户端生成独立的待审阅变更。`
+        ? `当前${scriptWorkspace ? "分集" : "分节"}写手只允许修改运行上下文锁定的${draftUnit}；可改名或删除当前${draftUnit}，正文与人物状态工具分别按 documentId 提交到两个独立文件，由客户端生成独立的待审阅变更。`
         : ""
   ].filter(Boolean).join("\n");
 }
@@ -2396,10 +2451,17 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       ? `当前分类概览${worldbuildingFocus.overview.truncated ? "（已截断）" : ""}:\n${worldbuildingFocus.overview.content || "未填写"}`
       : "",
     characterFocus
-      ? `当前用户所处的人物阶段: 「${characterFocus.characterName}」 / ${characterFocus.currentDocument.title}`
+      ? `当前用户所处的人物阶段: ${
+          characterFocus.currentDocument.kind === "overview"
+            ? "人物概览"
+            : `「${characterFocus.characterName}」 / ${characterFocus.currentDocument.title}`
+        }`
       : "",
     characterFocus
       ? `当前阶段信息${characterFocus.currentDocument.text.truncated ? "（已截断）" : ""}:\n${characterFocus.currentDocument.text.content || "未填写"}`
+      : "",
+    characterFocus?.overview
+      ? `人物设计概览${characterFocus.overview.truncated ? "（已截断）" : ""}:\n${characterFocus.overview.content || "未填写"}`
       : "",
     characterFocus?.coreProfile
       ? `人物核心档案${characterFocus.coreProfile.truncated ? "（已截断）" : ""}:\n${characterFocus.coreProfile.content || "未填写"}`
@@ -2425,6 +2487,11 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       : "",
     writingWorkspace
       ? `当前阶段: ${writingWorkspace.activeStageId}`
+      : "",
+    writingWorkspace
+      ? `剧情结构顺序: ${writingWorkspace.plotStages
+          .map((stage) => `${stage.title} (${stage.id})`)
+          .join(" → ")}`
       : "",
     writingWorkspace?.activeSectionId
       ? `当前${scriptWorkspace ? "剧集" : "小节"}: ${writingWorkspace.activeSectionId}`

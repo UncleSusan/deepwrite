@@ -121,13 +121,18 @@ describe("long workspace editor crash recovery", () => {
   });
 
   it("never exposes stale text as editable when a revision reload fails", () => {
-    expect(editorSource).toMatch(
-      /function initializeLoadingState[\s\S]*loaded: false,[\s\S]*loadError: null/
+    expect(editorSource).toContain("const dirty =");
+    expect(editorSource).toContain("loaded: dirty,");
+    expect(editorSource).toContain(
+      "Clean revision refreshes stay"
     );
     expect(editorSource).toMatch(
       /catch \(error: unknown\)[\s\S]*loaded: false,[\s\S]*loadError: message/
     );
-    expect(editorSource).toContain("Never expose a previous clean snapshot");
+    expect(editorSource).toContain(
+      "never keep it editable after"
+    );
+    expect(editorSource).toContain("!state.loaded");
     expect(editorSource).toContain("重新读取");
     expect(editorSource).toContain("@click=\"loadSelectedDocument(true)\"");
   });

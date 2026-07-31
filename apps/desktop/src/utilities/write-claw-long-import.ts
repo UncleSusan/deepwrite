@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   LONG_BOOK_LINE_FILE_ID,
+  LONG_CHARACTER_OVERVIEW_FILE_ID,
+  LONG_CHARACTER_OVERVIEW_PATH,
   LONG_WORKSPACE_INDEX_FILE_ID,
   LONG_WORKSPACE_INDEX_PATH,
   LongProjectManifestSchema,
@@ -487,6 +489,46 @@ class DeterministicIdRegistry {
       ])
     );
   }
+}
+
+const CHARACTER_OVERVIEW_GROUPS = [
+  ["protagonist", "主角"],
+  ["major_supporting", "主要配角"],
+  ["minor_supporting", "次要配角"],
+  ["passerby", "路人"]
+] as const;
+
+function buildCharacterOverviewMarkdown(
+  characters: LongWorkspaceIndexSnapshot["characters"]
+): string {
+  if (characters.length === 0) return "";
+  const sections = CHARACTER_OVERVIEW_GROUPS.map(([group, label]) => {
+    const rows = characters
+      .filter((character) => character.group === group)
+      .sort(
+        (left, right) =>
+          left.order - right.order || left.id.localeCompare(right.id)
+      )
+      .map((character) => {
+        const aliases = character.aliases.length
+          ? `；别名：${character.aliases.join("、")}`
+          : "";
+        return `- character_id=\`${character.id}\` ${character.name}${aliases}`;
+      });
+    return [
+      `## ${label}`,
+      "",
+      ...(rows.length ? rows : ["（暂无）"])
+    ].join("\n");
+  });
+  return [
+    "# 人物概览",
+    "",
+    "按分组统计当前阶段全部人物的简单信息；智能体应先读本概览，再按 character_id 直接读取人物文档。",
+    "",
+    ...sections,
+    ""
+  ].join("\n");
 }
 
 interface ImportDocumentBuilder {
@@ -2779,6 +2821,12 @@ export function createWriteClawLongImportPlan(
     warnings
   );
 
+  const characterOverview = documents.add(
+    LONG_CHARACTER_OVERVIEW_FILE_ID,
+    LONG_CHARACTER_OVERVIEW_PATH,
+    buildCharacterOverviewMarkdown(characters)
+  );
+
   const index = LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
     revision: legacyCommits.length,
@@ -2786,6 +2834,7 @@ export function createWriteClawLongImportPlan(
     updatedAt: importedAt,
     bookLine,
     worldbuilding,
+    characterOverview,
     characters,
     characterFiles,
     plot: {

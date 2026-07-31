@@ -144,6 +144,7 @@ export type LongWorldbuildingFocusSnapshot = z.infer<
 
 export const LONG_CHARACTER_FOCUS_MAX_CHARACTERS = 20_000;
 export const LONG_CHARACTER_CORE_FOCUS_MAX_CHARACTERS = 8_000;
+export const LONG_CHARACTER_OVERVIEW_FOCUS_MAX_CHARACTERS = 8_000;
 
 const LongCharacterFocusTextSnapshotSchema = z
   .object({
@@ -185,11 +186,12 @@ const LongCharacterFocusTextSnapshotSchema = z
 
 export const LongCharacterFocusSnapshotSchema = z
   .object({
-    characterName: z.string().trim().min(1).max(256),
-    group: LongCharacterGroupSchema,
+    characterName: z.string().trim().min(1).max(256).optional(),
+    group: LongCharacterGroupSchema.optional(),
     currentDocument: z
       .object({
         kind: z.enum([
+          "overview",
           "core_profile",
           "relationships",
           "current_state",
@@ -199,34 +201,79 @@ export const LongCharacterFocusSnapshotSchema = z
         text: LongCharacterFocusTextSnapshotSchema
       })
       .strict(),
+    overview: LongCharacterFocusTextSnapshotSchema.optional(),
     coreProfile: LongCharacterFocusTextSnapshotSchema.optional()
   })
   .strict()
   .superRefine((value, context) => {
-    if (
-      value.currentDocument.kind !== "core_profile" &&
-      value.coreProfile === undefined
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["coreProfile"],
-        message:
-          "A focused secondary character document must include the core profile."
-      });
-    }
-    if (
-      value.currentDocument.kind === "core_profile" &&
-      value.coreProfile !== undefined
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["coreProfile"],
-        message:
-          "A focused core profile must not duplicate the core profile snapshot."
-      });
+    if (value.currentDocument.kind === "overview") {
+      if (value.characterName !== undefined || value.group !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["characterName"],
+          message:
+            "A focused character overview must not include a character name or group."
+        });
+      }
+      if (value.overview !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["overview"],
+          message:
+            "A focused character overview must not duplicate the overview snapshot."
+        });
+      }
+      if (value.coreProfile !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["coreProfile"],
+          message:
+            "A focused character overview must not include a core profile snapshot."
+        });
+      }
+    } else {
+      if (!value.characterName || !value.group) {
+        context.addIssue({
+          code: "custom",
+          path: ["characterName"],
+          message:
+            "A focused character document must include the character name and group."
+        });
+      }
+      if (value.overview === undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["overview"],
+          message:
+            "A focused character document must include the stage overview."
+        });
+      }
+      if (
+        value.currentDocument.kind !== "core_profile" &&
+        value.coreProfile === undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["coreProfile"],
+          message:
+            "A focused secondary character document must include the core profile."
+        });
+      }
+      if (
+        value.currentDocument.kind === "core_profile" &&
+        value.coreProfile !== undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["coreProfile"],
+          message:
+            "A focused core profile must not duplicate the core profile snapshot."
+        });
+      }
     }
     const totalCharacters =
       Array.from(value.currentDocument.text.content).length +
+      Array.from(value.overview?.content ?? "").length +
       Array.from(value.coreProfile?.content ?? "").length;
     if (totalCharacters > LONG_CHARACTER_FOCUS_MAX_CHARACTERS) {
       context.addIssue({

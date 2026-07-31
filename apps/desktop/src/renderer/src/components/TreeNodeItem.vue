@@ -401,6 +401,15 @@ onBeforeUnmount(() => {
             class="tree-node-action-menu-item"
             type="button"
             role="menuitem"
+            @click.stop="openBookAction('manage-plot-structure')"
+          >
+            <AppIcon name="settings" :size="16" />
+            <span>剧情结构管理</span>
+          </button>
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
             @click.stop="openBookAction('rename')"
           >
             <AppIcon name="edit" :size="16" />

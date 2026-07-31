@@ -1,6 +1,5 @@
 import {
   MATERIAL_KINDS,
-  SHORT_WORKSPACE_STAGE_IDS,
   SKILL_KINDS,
   type CatalogDocument,
   type CatalogDraftSection,
@@ -63,27 +62,6 @@ export const SKILL_STAGE_LABELS: Record<SkillStageId, string> = {
   outline: "大纲技能",
   draft: "正文专家编写技能",
   expert_section_writer: "分节写手技能"
-};
-
-const SHORT_STAGE_LABELS: Record<ShortWorkspaceStageId, string> = {
-  character_design: "人物",
-  plot_design: "剧情设计",
-  intro_design: "导语设计",
-  plot_refine: "剧情细化",
-  outline: "大纲",
-  draft: "正文"
-};
-
-const SHORT_STAGE_TITLE_ALIASES: Record<string, ShortWorkspaceStageId> = {
-  人物: "character_design",
-  人物设计: "character_design",
-  剧情设计: "plot_design",
-  导语设计: "intro_design",
-  剧情细化: "plot_refine",
-  大纲: "outline",
-  短篇大纲: "outline",
-  正文: "draft",
-  正文编写: "draft"
 };
 
 const MATERIAL_TREE_KIND_ORDER: readonly MaterialKind[] = [
@@ -261,26 +239,23 @@ function linkedSkillLibraryIds(book: Book): string[] {
   return uniqueIds(SKILL_KINDS.flatMap((kind) => book.linkedSkillIdsByKind[kind]));
 }
 
+function enabledBookPlotStages(book: Book) {
+  return book.plotStages.filter((stage) => stage.enabled);
+}
+
 function inferWorkspaceStageId(
   book: Book,
   document: CatalogDocument
 ): ShortWorkspaceStageId | undefined {
-  const candidates = [
-    document.id,
-    ...document.id.split(/[/:.]/).reverse(),
-    document.title
-  ];
-  for (const candidate of candidates) {
-    if (
-      SHORT_WORKSPACE_STAGE_IDS.includes(candidate as ShortWorkspaceStageId) &&
-      !(book.bookType === "script" && candidate === "intro_design")
-    ) {
-      return candidate as ShortWorkspaceStageId;
-    }
-    const alias = SHORT_STAGE_TITLE_ALIASES[candidate.trim()];
-    if (alias && !(book.bookType === "script" && alias === "intro_design")) {
-      return alias;
-    }
+  if (
+    document.id === "character_design" ||
+    document.title.trim() === "人物" ||
+    document.title.trim() === "人物设计"
+  ) {
+    return "character_design";
+  }
+  if (enabledBookPlotStages(book).some(({ id }) => id === document.id)) {
+    return document.id;
   }
   return undefined;
 }
@@ -290,13 +265,21 @@ function createBookDocument(
   document: CatalogDocument,
   stageId: ShortWorkspaceStageId | undefined
 ): WorkspaceDocument {
-  const stageLabel = stageId ? SHORT_STAGE_LABELS[stageId] : document.title;
-  const path =
-    stageId === "plot_design" || stageId === "intro_design" || stageId === "plot_refine"
-      ? [book.title, "剧情", stageLabel]
-      : stageId
-        ? [book.title, stageLabel]
-        : [book.title, "其他文稿", document.title];
+  const enabledPlotStages = enabledBookPlotStages(book);
+  const plotStageIndex = enabledPlotStages.findIndex(
+    ({ id }) => id === stageId
+  );
+  const plotStage =
+    plotStageIndex >= 0 ? enabledPlotStages[plotStageIndex] : undefined;
+  const stageLabel =
+    stageId === "character_design"
+      ? "人物"
+      : plotStage?.title ?? document.title;
+  const path = plotStage
+    ? [book.title, "剧情", plotStage.title]
+    : stageId === "character_design"
+      ? [book.title, "人物"]
+      : [book.title, "剧情", document.title];
   return {
     id: bookDocumentId(book.id, document.id),
     domain: "creation",
@@ -312,6 +295,15 @@ function createBookDocument(
     workspaceTitle: book.title,
     workspaceCategories: [book.genre],
     ...(stageId ? { stageId } : {}),
+    ...(stageId === "character_design"
+      ? { shortAgentId: "character_design" as const }
+      : plotStage
+        ? {
+            shortAgentId: "plot_design" as const,
+            plotStageDescription: plotStage.description,
+            plotStageOrder: plotStageIndex
+          }
+        : {}),
     catalogDocumentId: document.id,
     ...(book.projectRevision === undefined
       ? {}
@@ -361,28 +353,33 @@ function createBookProjection(book: Book): {
   documents: WorkspaceDocument[];
   draftDirectory: DraftDirectoryProjection;
 } {
-  const claimedStages = new Set<ShortWorkspaceStageId>();
-  const projected = book.documents.map((document) => {
-    const inferred = inferWorkspaceStageId(book, document);
-    const stageId =
-      inferred && inferred !== "draft" && !claimedStages.has(inferred)
-        ? inferred
-        : undefined;
-    if (stageId) {
-      claimedStages.add(stageId);
-    }
-    return {
-      source: document,
-      stageId,
-      document: createBookDocument(book, document, stageId)
-    };
-  });
+  const enabledPlotStageIds = new Set(
+    enabledBookPlotStages(book).map((stage) => stage.id)
+  );
+  const projected = book.documents
+    .filter((document) => {
+      const isPlotStage = book.plotStages.some(
+        (stage) => stage.id === document.id
+      );
+      return !isPlotStage || enabledPlotStageIds.has(document.id);
+    })
+    .map((document) => {
+      const stageId = inferWorkspaceStageId(book, document);
+      return {
+        source: document,
+        stageId,
+        document: createBookDocument(book, document, stageId)
+      };
+    });
   const stageNodes = new Map<ShortWorkspaceStageId, ResourceTreeNode>();
   const otherNodes: ResourceTreeNode[] = [];
   for (const item of projected) {
     const node: ResourceTreeNode = {
       id: item.document.id,
-      label: item.document.title,
+      label:
+        item.stageId === "character_design"
+          ? "人物"
+          : item.document.title,
       icon: "file",
       catalogNodeType: "document",
       stageCategoryId: item.stageId ?? "other",
@@ -451,39 +448,20 @@ function createBookProjection(book: Book): {
   const children: ResourceTreeNode[] = [];
   const character = stageNodes.get("character_design");
   if (character) children.push(character);
-  const plotChildren = (
-    book.bookType === "script"
-      ? ["plot_design", "plot_refine"]
-      : ["plot_design", "intro_design", "plot_refine"]
-  )
-    .map((stageId) => stageNodes.get(stageId as ShortWorkspaceStageId))
+  const plotChildren = enabledBookPlotStages(book)
+    .map(({ id }) => stageNodes.get(id))
     .filter((node): node is ResourceTreeNode => node !== undefined);
-  if (plotChildren.length) {
-    children.push({
-      id: catalogNodeId("book-category", book.id, "plot"),
-      label: "剧情",
-      icon: "sparkles",
-      catalogNodeType: "category",
-      stageCategoryId: "plot",
-      workspaceType: book.bookType,
-      children: plotChildren
-    });
-  }
-  const outline = stageNodes.get("outline");
-  if (outline) children.push(outline);
+  children.push({
+    id: catalogNodeId("book-category", book.id, "plot"),
+    label: "剧情",
+    icon: "sparkles",
+    catalogNodeType: "category",
+    stageCategoryId: "plot",
+    workspaceType: book.bookType,
+    children: [...plotChildren, ...otherNodes]
+  });
   const draft = stageNodes.get("draft");
   if (draft) children.push(draft);
-  if (otherNodes.length) {
-    children.push({
-      id: catalogNodeId("book-category", book.id, "other"),
-      label: "其他文稿",
-      icon: "folder",
-      catalogNodeType: "category",
-      stageCategoryId: "other",
-      workspaceType: book.bookType,
-      children: otherNodes
-    });
-  }
 
   return {
     node: {

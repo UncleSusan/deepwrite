@@ -55,6 +55,7 @@ import type {
   ModelSettingsInput,
   ModelUsageDashboard,
   ModelUsageQueryInput,
+  PlotStructureMutation,
   ShortManuscriptExportFormat,
   ShortWorkspaceAgentId,
   WorkspaceAgentSettings,
@@ -118,6 +119,9 @@ import LongBookRemovalDialog from "./components/LongBookRemovalDialog.vue";
 import LongMigrationReportDialog from "./components/LongMigrationReportDialog.vue";
 import LongRollbackDialog from "./components/LongRollbackDialog.vue";
 import LongStructureDialog from "./components/LongStructureDialog.vue";
+import PlotStructureDialog, {
+  type PlotStructureMutationCompletion
+} from "./components/PlotStructureDialog.vue";
 import RightEditorPane from "./components/RightEditorPane.vue";
 import SaveConflictDialog from "./components/SaveConflictDialog.vue";
 import SettingsPage from "./components/SettingsPage.vue";
@@ -255,6 +259,7 @@ import {
   createLongWorkspaceRefreshClock,
   isMonotonicLongWorkspaceRefresh
 } from "./utils/longWorkspaceRefresh";
+import { findLongWorldbuildingFile } from "./utils/longWorldbuildingFiles";
 import { matchesLongWritingProposalExpectation } from "./utils/longWritingEventExpectation";
 
 const EMPTY_WORKSPACE_DOCUMENT: WorkspaceDocument = {
@@ -275,7 +280,6 @@ const EMPTY_RESOURCE_SECTIONS: ResourceTreeSection[] = resourceSections.map((sec
 const COMPOSER_STAGE_LABELS = {
   character_design: "人设",
   plot_design: "剧情",
-  outline: "大纲",
   expert_draft_coordinator: "正文",
   expert_section_writer: "分节"
 } as const satisfies Record<ShortWorkspaceAgentId, string>;
@@ -464,6 +468,7 @@ const subagentAuthoring = useSubagentAuthoring({
 });
 const bookDialogMode = ref<BookResourceDialogMode | null>(null);
 const activeBook = ref<ResourceTreeNode | null>(null);
+const plotStructureBookId = ref<string | null>(null);
 const catalogSnapshot = ref<CatalogSnapshot | null>(null);
 const catalogLoading = ref(false);
 const catalogMutationPending = ref(false);
@@ -481,6 +486,9 @@ const activeLongSelection = ref<LongWorkspaceSelection | null>(null);
 const longWorkspaceEditor = ref<{
   saveAllChanges(): Promise<boolean>;
   selectBookLineVolume(volumeId: string): void;
+  ensureDocumentsLoaded(
+    files: LongWorkspaceSelection["files"]
+  ): Promise<boolean>;
   synchronizeProjectRevisions(
     workspaceRevision: number,
     projectRevision: number
@@ -680,14 +688,10 @@ const longAgentTeamLoaded = ref(false);
 const longAgentTeamLoadError = ref<string | null>(null);
 const workspaceAgentLoading = ref(false);
 const workspaceAgentSaving = ref(false);
-const workspaceAgentError = ref<string | null>(null);
-const workspaceAgentStatus = ref<string | null>(null);
 const longAgentLoading = ref(false);
 const longAgentSaving = ref(false);
 const longAgentLoaded = ref(false);
 const longAgentLoadError = ref<string | null>(null);
-const longAgentError = ref<string | null>(null);
-const longAgentStatus = ref<string | null>(null);
 let longAgentLoadPromise: Promise<boolean> | null = null;
 const libraryAgentSettings = ref<LibraryAgentSettings>({
   agents: DEFAULT_LIBRARY_AGENT_PROFILES.map((agent) => ({
@@ -704,8 +708,6 @@ const learningImitationLoading = ref(false);
 const learningImitationSaving = ref(false);
 const workspaceDirectoryPath = ref<string | null>(null);
 const workspaceDirectoryLoading = ref(false);
-let workspaceAgentFeedbackTimer: number | undefined;
-let longAgentFeedbackTimer: number | undefined;
 let draftRecoveryTimer: number | undefined;
 let draftPersistenceWarningShown = false;
 let conversationPersistenceWarningShown = false;
@@ -882,7 +884,17 @@ function projectLongWorkspaceNavigation(
         : [];
     });
 
-  const characterChildren = LONG_CHARACTER_GROUP_OPTIONS.map((group) => {
+  const characterOverviewSelection = reconcile({
+    key: "character-overview",
+    root: "character_design",
+    title: "概览",
+    breadcrumbs: [book.title, "人物设计", "概览"],
+    files: [],
+    preferredRole: "overview",
+    description:
+      "人物设计阶段概览；统计全部人物的简单信息，供智能体先读后定位。"
+  });
+  const characterGroupChildren = LONG_CHARACTER_GROUP_OPTIONS.map((group) => {
     const characterCount = book.navigation.characters.filter(
       (character) => character.group === group.value
     ).length;
@@ -911,6 +923,17 @@ function projectLongWorkspaceNavigation(
       longCharacterGroup: group.value
     });
   });
+  const characterChildren = [
+    ...(characterOverviewSelection
+      ? [
+          node(characterOverviewSelection, {
+            icon: "file",
+            label: "概览"
+          })
+        ]
+      : []),
+    ...characterGroupChildren
+  ];
 
   const bookLineSelection = reconcile({
     key: "plot-design:book-line",
@@ -1646,6 +1669,12 @@ function catalogBook(bookId: string): Book | undefined {
   return catalogSnapshot.value?.books.find((book) => book.id === bookId);
 }
 
+const plotStructureBook = computed(() =>
+  plotStructureBookId.value
+    ? catalogBook(plotStructureBookId.value) ?? null
+    : null
+);
+
 function findResourceNodeIn(
   sections: readonly ResourceTreeSection[],
   resourceId: string
@@ -2145,10 +2174,19 @@ async function selectLongWorkspaceFile(
   if (
     (activeLongSelection.value?.key !== selection.key ||
       activeLongSelection.value?.characterId !== selection.characterId ||
-      activeLongSelection.value?.plotPointId !== selection.plotPointId) &&
+      activeLongSelection.value?.plotPointId !== selection.plotPointId ||
+      activeLongSelection.value?.chapterCardId !== selection.chapterCardId) &&
     !(await saveActiveLongEditorChanges())
   ) {
     return false;
+  }
+  const preferredFile =
+    selection.files.find((file) => file.role === selection.preferredRole) ??
+    selection.files[0];
+  // Prefetch the target document before publishing the selection so the right
+  // pane can swap in ready content instead of flashing a full-page loader.
+  if (preferredFile) {
+    await longWorkspaceEditor.value?.ensureDocumentsLoaded([preferredFile]);
   }
   activeLongFileContext.value = null;
   activeLongSelection.value = selection;
@@ -2156,13 +2194,17 @@ async function selectLongWorkspaceFile(
 }
 
 async function selectLongCharacterTab(
-  characterId: LongCharacterId
+  characterId: LongCharacterId,
+  done?: (accepted: boolean) => void
 ): Promise<void> {
   const summary = activeLongBookSummary.value;
   const index = activeLongWorkspaceIndex.value;
   const group = activeLongSelection.value?.characterGroup;
-  if (!summary || !index || !group) return;
-  await selectLongWorkspaceFile(
+  if (!summary || !index || !group) {
+    done?.(false);
+    return;
+  }
+  const accepted = await selectLongWorkspaceFile(
     createLongCharacterGroupSelection(
       summary,
       index,
@@ -2170,6 +2212,7 @@ async function selectLongCharacterTab(
       characterId
     )
   );
+  done?.(accepted);
 }
 
 async function selectLongPlotPointTab(
@@ -3429,10 +3472,74 @@ const longCanSendAttachments = computed(
 const longCanStop = computed(
   () => activeLongConversation.value?.canStop.value ?? false
 );
+function agentRunScopeHasWriteBarrier(scope: string): boolean {
+  if (scope === "general") return false;
+  return [...conversations.entries()].some(
+    ([key, conversation]) =>
+      conversationScopes.get(key) === scope &&
+      (conversation.isBusy.value || conversation.hasPendingEditReview.value)
+  );
+}
+
+function agentRunScopeIsBusy(scope: string): boolean {
+  return [...conversations.entries()].some(
+    ([key, conversation]) =>
+      conversationScopes.get(key) === scope && conversation.isBusy.value
+  );
+}
+
+function agentRunScopeHasPendingEditReview(scope: string): boolean {
+  return [...conversations.entries()].some(
+    ([key, conversation]) =>
+      conversationScopes.get(key) === scope &&
+      conversation.hasPendingEditReview.value
+  );
+}
+
+const activeLongAgentRunScope = computed(() =>
+  activeLongBookSummary.value
+    ? `long:${activeLongBookSummary.value.id}`
+    : null
+);
+const longEditorLocked = computed(() => {
+  const scope = activeLongAgentRunScope.value;
+  const workspaceId = activeLongBookSummary.value
+    ? `long:${activeLongBookSummary.value.id}`
+    : null;
+  return (
+    longSendPreflightPending.value ||
+    longProposalApprovalPending.value ||
+    Boolean(
+      workspaceId && acceptingAgentEditWorkspaceIds.value.has(workspaceId)
+    ) ||
+    Boolean(scope && agentRunScopeHasWriteBarrier(scope)) ||
+    activeLongConversationProposalItems.value.some(
+      ({ status }) => status !== "accepted"
+    )
+  );
+});
+const longEditorLockedReason = computed(() => {
+  if (longSendPreflightPending.value) {
+    return "正在保存并准备发送，编辑暂时锁定";
+  }
+  if (
+    longProposalApprovalPending.value ||
+    (activeLongBookSummary.value &&
+      acceptingAgentEditWorkspaceIds.value.has(
+        `long:${activeLongBookSummary.value.id}`
+      ))
+  ) {
+    return "正在应用长篇提案，编辑暂时锁定";
+  }
+  const scope = activeLongAgentRunScope.value;
+  if (scope && agentRunScopeIsBusy(scope)) {
+    return "长篇智能体运行中 · 暂停编辑以防止版本冲突";
+  }
+  return "请先接受或拒绝待审阅变更，再继续编辑";
+});
 const editorLocked = computed(() => {
   const selectedDocument =
     promptDocumentForResourceId(selectedResourceId.value) ?? activeDocument.value;
-  const key = conversationKeyForDocument(selectedDocument);
   return (
     acceptingAgentEditDocumentIds.value.has(activeDocument.value.id) ||
     acceptingAgentEditWorkspaceIds.value.has(
@@ -3440,23 +3547,26 @@ const editorLocked = computed(() => {
     ) ||
     (activeDocument.value.workspaceId !== undefined &&
       acceptingAgentEditWorkspaceIds.value.has(activeDocument.value.workspaceId)) ||
-    (key !== "general" &&
-      conversationForKey(
-        key,
-        agentRunScopeForDocument(selectedDocument)
-      ).isBusy.value)
+    agentRunScopeHasWriteBarrier(agentRunScopeForDocument(selectedDocument))
   );
 });
-const editorLockedLabel = computed(() =>
-  acceptingAgentEditDocumentIds.value.has(activeDocument.value.id) ||
-  acceptingAgentEditWorkspaceIds.value.has(
+const editorLockedLabel = computed(() => {
+  if (
+    acceptingAgentEditDocumentIds.value.has(activeDocument.value.id) ||
+    acceptingAgentEditWorkspaceIds.value.has(
+      agentRunScopeForDocument(activeAgentDocument.value)
+    ) ||
+    (activeDocument.value.workspaceId !== undefined &&
+      acceptingAgentEditWorkspaceIds.value.has(activeDocument.value.workspaceId))
+  ) {
+    return "正在接受并保存智能体修改";
+  }
+  return agentRunScopeHasPendingEditReview(
     agentRunScopeForDocument(activeAgentDocument.value)
-  ) ||
-  (activeDocument.value.workspaceId !== undefined &&
-    acceptingAgentEditWorkspaceIds.value.has(activeDocument.value.workspaceId))
-    ? "正在接受并保存智能体修改"
-    : undefined
-);
+  )
+    ? "请先接受或拒绝待审阅变更"
+    : undefined;
+});
 const editorSaving = computed(() => savingDocumentIds.value.has(activeDocument.value.id));
 const activeAgentId = computed<ShortWorkspaceAgentId | undefined>(() => {
   const document = activeAgentDocument.value;
@@ -3885,7 +3995,7 @@ async function saveLongVolumeOutline(
 async function saveLongPlotPointContent(
   input: {
     plotPointId: LongArcId;
-    field: "summary" | "storyline";
+    field: "summary";
     content: string;
   },
   completion: (succeeded: boolean) => void
@@ -3903,9 +4013,7 @@ async function saveLongPlotPointContent(
   try {
     batch = createLongStructureMutationBuilder(index).updateArc(
       plotPoint.id,
-      input.field === "summary"
-        ? { summary: input.content }
-        : { outline: input.content }
+      { summary: input.content }
     );
   } catch (error: unknown) {
     uiMessage.warning(
@@ -4025,7 +4133,7 @@ async function createLongVolume(
 }
 
 async function createLongPlotPoint(
-  input: { title: string; summary: string; outline: string }
+  input: { title: string; summary: string }
 ): Promise<void> {
   const target = longPlotPointCreate.value;
   const index = activeLongWorkspaceIndex.value;
@@ -4044,7 +4152,7 @@ async function createLongPlotPoint(
       volumeId: target.volumeId,
       title: input.title,
       summary: input.summary,
-      outline: input.outline
+      outline: ""
     });
   } catch (error: unknown) {
     uiMessage.warning(
@@ -4171,14 +4279,174 @@ function updateBookPreference(bookId: string, patch: BookResourcePreference): vo
   }
 }
 
-function openBookDialog(mode: BookResourceDialogMode, book: ResourceTreeNode): void {
+async function preparePlotStructureMutation(bookId: string): Promise<boolean> {
+  await editorSaveChain;
+  const scopedDocuments = documents.value.filter(
+    (document) => document.workspaceId === bookId
+  );
+  const scope = scopedDocuments[0]
+    ? agentRunScopeForDocument(scopedDocuments[0])
+    : `book:${bookId}`;
+  // Load every conversation that can still own a pending write for this book,
+  // including persisted section-writer reviews that have not been opened in
+  // the current app session yet.
+  for (const agentId of [
+    "character_design",
+    "plot_design",
+    "expert_draft_coordinator"
+  ] as const) {
+    conversationForKey(`${bookId}:${agentId}`, scope);
+  }
+  for (const sectionId of new Set(
+    scopedDocuments.flatMap((document) =>
+      document.expertSectionId ? [document.expertSectionId] : []
+    )
+  )) {
+    conversationForKey(
+      `${bookId}:expert_section_writer:${encodeURIComponent(sectionId)}`,
+      scope
+    );
+  }
+  if (
+    agentRunScopeHasWriteBarrier(scope) ||
+    acceptingAgentEditWorkspaceIds.value.has(bookId)
+  ) {
+    uiMessage.warning("请先等待当前智能体结束，并接受或拒绝待审阅变更。");
+    return false;
+  }
+  if (
+    saveConflict.value &&
+    scopedDocuments.some(({ id }) => id === saveConflict.value?.documentId)
+  ) {
+    uiMessage.warning("请先处理该作品尚未解决的保存冲突。");
+    return false;
+  }
+  const dirtyDocuments = scopedDocuments.filter(
+    ({ id, readOnly }) => !readOnly && editorDrafts.value[id]?.dirty
+  );
+  for (const document of dirtyDocuments) {
+    const draft = editorDrafts.value[document.id];
+    if (!draft?.dirty) continue;
+    cancelEditorAutoSave(document.id);
+    const saved = await persistEditorDocument(
+      { id: document.id, title: draft.title, content: draft.content },
+      false
+    );
+    if (!saved) {
+      uiMessage.warning("存在无法安全保存的草稿，剧情结构未变更。");
+      return false;
+    }
+  }
+  return true;
+}
+
+async function openBookDialog(
+  mode: BookResourceDialogMode,
+  book: ResourceTreeNode
+): Promise<void> {
+  if (mode === "manage-plot-structure") {
+    if (!(await preparePlotStructureMutation(book.id))) return;
+    if (catalogBook(book.id)?.projectRevision === undefined) {
+      uiMessage.error("当前作品缺少项目版本，无法安全管理剧情结构。");
+      return;
+    }
+    activeBook.value = book;
+    plotStructureBookId.value = book.id;
+    bookDialogMode.value = null;
+    return;
+  }
   activeBook.value = book;
   bookDialogMode.value = mode;
 }
 
 function closeBookDialog(): void {
   bookDialogMode.value = null;
+  plotStructureBookId.value = null;
   activeBook.value = null;
+}
+
+async function mutatePlotStructure(
+  mutation: PlotStructureMutation,
+  completion: PlotStructureMutationCompletion
+): Promise<void> {
+  if (!window.deepwrite || catalogMutationPending.value) {
+    completion.fail();
+    return;
+  }
+  const bookId = plotStructureBookId.value;
+  const book = bookId ? catalogBook(bookId) : undefined;
+  if (!bookId || !book || !(await preparePlotStructureMutation(bookId))) {
+    completion.fail();
+    return;
+  }
+  if (book.projectRevision === undefined) {
+    completion.fail();
+    uiMessage.error("当前作品缺少项目版本，无法安全变更剧情结构。");
+    return;
+  }
+  const deletedIndex =
+    mutation.type === "delete"
+      ? book.plotStages.findIndex(({ id }) => id === mutation.stageId)
+      : -1;
+  const selectedPlotStageId = documents.value.find(
+    ({ id }) => id === selectedResourceId.value
+  )?.stageId;
+  catalogMutationPending.value = true;
+  try {
+    await window.deepwrite.catalog.mutatePlotStructure({
+      bookId,
+      baseProjectRevision: book.projectRevision,
+      mutation
+    });
+    applyCatalogSnapshot(await window.deepwrite.catalog.snapshot());
+    if (
+      mutation.type === "delete" &&
+      selectedPlotStageId === mutation.stageId
+    ) {
+      const refreshed = catalogBook(bookId);
+      const fallbackStage = refreshed?.plotStages[
+        Math.min(Math.max(0, deletedIndex), refreshed.plotStages.length - 1)
+      ];
+      const fallbackDocument = fallbackStage
+        ? documents.value.find(
+            (document) =>
+              document.workspaceId === bookId &&
+              document.stageId === fallbackStage.id &&
+              document.draftFileKind === undefined
+          )
+        : undefined;
+      if (fallbackDocument) {
+        selectedResourceId.value = fallbackDocument.id;
+        activeCreationResourceId.value = fallbackDocument.id;
+      }
+    }
+    completion.succeed();
+    uiMessage.success(
+      mutation.type === "create"
+        ? "剧情结构已创建，并同步到全部短篇与剧本"
+        : mutation.type === "update"
+          ? "剧情结构已全局更新"
+          : mutation.type === "move"
+            ? "剧情结构顺序已更新"
+            : mutation.type === "setEnabled"
+              ? mutation.enabled
+                ? "已启用该剧情结构"
+                : "已关闭该剧情结构"
+              : "剧情结构已从全部作品中删除"
+    );
+  } catch (error: unknown) {
+    completion.fail();
+    if (isCatalogConflict(error)) {
+      await loadCatalogSnapshot();
+      uiMessage.warning("作品已在其他位置更新，已重新加载；请确认后重试。");
+    } else {
+      uiMessage.error(
+        error instanceof Error ? error.message : "剧情结构变更失败。"
+      );
+    }
+  } finally {
+    catalogMutationPending.value = false;
+  }
 }
 
 const MANUSCRIPT_EXPORT_FORMAT_LABELS: Record<
@@ -7238,6 +7506,7 @@ async function runEditorAutoSave(documentId: string): Promise<void> {
   if (
     saveConflict.value?.documentId === documentId ||
     savingDocumentIds.value.size > 0 ||
+    agentRunScopeHasWriteBarrier(agentRunScopeForDocument(document)) ||
     acceptingAgentEditDocumentIds.value.has(documentId) ||
     (document.workspaceId !== undefined &&
       acceptingAgentEditWorkspaceIds.value.has(document.workspaceId))
@@ -7632,6 +7901,8 @@ async function sendLongMessage(
           bookId: target.bookId,
           selection: activeLongSelection.value,
           activeFileId: target.fileId,
+          characterOverviewFile:
+            activeLongWorkspaceIndex.value?.characterOverview ?? null,
           readDocument: (input) => api.readDocument(input)
         });
         if (!confirmLongMessageSendTarget(target)) return;
@@ -8846,6 +9117,249 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     return;
   }
 
+  if (mutationTarget?.kind === "expert-draft-section-rename") {
+    const directory = catalogProjection.value?.draftDirectories.find(
+      (candidate) => candidate.workspaceId === event.payload.workspaceId
+    );
+    const book = catalogBook(event.payload.workspaceId);
+    const currentRevision = currentExpertDraftDirectoryRevision(
+      event.payload.workspaceId
+    );
+    const expectedDirectoryRevision = expectedDraftSectionCreationRevision(
+      event.payload.baseRevision,
+      acceptedDraftSectionCreationRevisions.get(
+        draftSectionCreationRevisionKey(
+          event.payload.runId,
+          event.payload.workspaceId
+        )
+      )
+    );
+    const section = directory?.sections.find(
+      (candidate) => candidate.id === mutationTarget.sectionId
+    );
+    if (
+      !directory ||
+      !book ||
+      !section ||
+      currentRevision !== expectedDirectoryRevision
+    ) {
+      const message =
+        "正文目录版本已变化，本次章节改名未进入审阅，也没有改动现有文件。";
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        message
+      );
+      uiMessage.warning(message);
+      return;
+    }
+    if (section.title !== mutationTarget.previousTitle) {
+      const message =
+        `章节「${mutationTarget.previousTitle}」的当前标题已变化，本次改名未进入审阅。`;
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        message
+      );
+      uiMessage.warning(message);
+      return;
+    }
+    if (
+      directory.sections.some(
+        (candidate) =>
+          candidate.id !== mutationTarget.sectionId &&
+          candidate.title === mutationTarget.title
+      )
+    ) {
+      const message = `正文目录已存在同名章节「${mutationTarget.title}」，本次改名未进入审阅。`;
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        message
+      );
+      uiMessage.warning(message);
+      return;
+    }
+
+    const documentId = `draft-section-rename:${event.payload.toolCallId}`;
+    const proposalId = agentEditProposalId(
+      event.payload.runId,
+      event.payload.workspaceId,
+      "draft",
+      documentId
+    );
+    const existing = sourceConversation.getEditProposal(
+      event.payload.runId,
+      proposalId
+    );
+    if (existing?.toolCallIds.includes(event.payload.toolCallId)) return;
+
+    const proposedText = event.payload.text;
+    const diff = buildAgentTextDiff(mutationTarget.previousTitle, mutationTarget.title);
+    const proposal: AgentEditProposal = {
+      id: proposalId,
+      laneId: proposalId,
+      generation: 1,
+      approvalMode: runApprovalMode,
+      sourceBaseRevision: event.payload.baseRevision,
+      runId: event.payload.runId,
+      workspaceId: event.payload.workspaceId,
+      stageId: "draft",
+      documentId,
+      title: `修改章节名称：${mutationTarget.previousTitle} → ${mutationTarget.title}`,
+      summary: event.payload.summary,
+      status: "pending",
+      baseRevision: event.payload.baseRevision,
+      proposedRevision: createShortWorkspaceContentRevision(proposedText),
+      proposedText,
+      toolCallIds: [event.payload.toolCallId],
+      additions: diff.additions,
+      deletions: diff.deletions,
+      hunks: diff.hunks,
+      ...(diff.truncated ? { truncated: true } : {}),
+      createdAt: event.timestamp,
+      updatedAt: event.timestamp,
+      draftSectionRenameTarget: {
+        sectionId: mutationTarget.sectionId,
+        previousTitle: mutationTarget.previousTitle,
+        title: mutationTarget.title,
+        ...(book.projectRevision === undefined
+          ? {}
+          : { baseProjectRevision: book.projectRevision })
+      }
+    };
+    sourceConversation.upsertEditProposal(event.payload.runId, proposal);
+    if (runApprovalMode === "auto-approve") {
+      queueAgentEdit(
+        sourceConversation,
+        event.payload.sessionId,
+        event.payload.runId,
+        proposalId,
+        true,
+        true
+      );
+    }
+    return;
+  }
+
+  if (mutationTarget?.kind === "expert-draft-section-deletion") {
+    const directory = catalogProjection.value?.draftDirectories.find(
+      (candidate) => candidate.workspaceId === event.payload.workspaceId
+    );
+    const book = catalogBook(event.payload.workspaceId);
+    const currentRevision = currentExpertDraftDirectoryRevision(
+      event.payload.workspaceId
+    );
+    const expectedDirectoryRevision = expectedDraftSectionCreationRevision(
+      event.payload.baseRevision,
+      acceptedDraftSectionCreationRevisions.get(
+        draftSectionCreationRevisionKey(
+          event.payload.runId,
+          event.payload.workspaceId
+        )
+      )
+    );
+    const section = directory?.sections.find(
+      (candidate) => candidate.id === mutationTarget.sectionId
+    );
+    if (
+      !directory ||
+      !book ||
+      !section ||
+      currentRevision !== expectedDirectoryRevision
+    ) {
+      const message =
+        "正文目录版本已变化，本次章节删除未进入审阅，也没有改动现有文件。";
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        message
+      );
+      uiMessage.warning(message);
+      return;
+    }
+    if (section.title !== mutationTarget.title) {
+      const message =
+        `章节「${mutationTarget.title}」的当前标题已变化，本次删除未进入审阅。`;
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        message
+      );
+      uiMessage.warning(message);
+      return;
+    }
+    if (directory.sections.length <= 1) {
+      const message = "正文至少需要保留一个章节，本次删除未进入审阅。";
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        message
+      );
+      uiMessage.warning(message);
+      return;
+    }
+
+    const documentId = `draft-section-deletion:${event.payload.toolCallId}`;
+    const proposalId = agentEditProposalId(
+      event.payload.runId,
+      event.payload.workspaceId,
+      "draft",
+      documentId
+    );
+    const existing = sourceConversation.getEditProposal(
+      event.payload.runId,
+      proposalId
+    );
+    if (existing?.toolCallIds.includes(event.payload.toolCallId)) return;
+
+    const proposedText = event.payload.text;
+    const diff = buildAgentTextDiff(mutationTarget.title, "");
+    const proposal: AgentEditProposal = {
+      id: proposalId,
+      laneId: proposalId,
+      generation: 1,
+      approvalMode: runApprovalMode,
+      sourceBaseRevision: event.payload.baseRevision,
+      runId: event.payload.runId,
+      workspaceId: event.payload.workspaceId,
+      stageId: "draft",
+      documentId,
+      title: `删除章节：${mutationTarget.title}`,
+      summary: event.payload.summary,
+      status: "pending",
+      baseRevision: event.payload.baseRevision,
+      proposedRevision: createShortWorkspaceContentRevision(proposedText),
+      proposedText,
+      toolCallIds: [event.payload.toolCallId],
+      additions: diff.additions,
+      deletions: diff.deletions,
+      hunks: diff.hunks,
+      ...(diff.truncated ? { truncated: true } : {}),
+      createdAt: event.timestamp,
+      updatedAt: event.timestamp,
+      draftSectionDeletionTarget: {
+        sectionId: mutationTarget.sectionId,
+        title: mutationTarget.title,
+        ...(book.projectRevision === undefined
+          ? {}
+          : { baseProjectRevision: book.projectRevision })
+      }
+    };
+    sourceConversation.upsertEditProposal(event.payload.runId, proposal);
+    if (runApprovalMode === "auto-approve") {
+      queueAgentEdit(
+        sourceConversation,
+        event.payload.sessionId,
+        event.payload.runId,
+        proposalId,
+        true,
+        true
+      );
+    }
+    return;
+  }
+
   const expectedDraftFileKind =
     mutationTarget?.fileKind === "characterState"
       ? "character-state"
@@ -9634,13 +10148,18 @@ function longCharacterBatchForFiles(
       operation.character.id !== files[0]?.characterId ||
       !files.every((file) => {
         const operationFiles = operation.files;
-        const expected = {
-          core_profile: operationFiles.coreProfile,
-          relationships: operationFiles.relationships,
-          current_state: operationFiles.currentState,
-          history: operationFiles.history
-        }[file.document];
-        return expected.id === file.fileId;
+        switch (file.document) {
+          case "core_profile":
+            return operationFiles.coreProfile.id === file.fileId;
+          case "relationships":
+            return operationFiles.relationships.id === file.fileId;
+          case "current_state":
+            return operationFiles.currentState.id === file.fileId;
+          case "history":
+            return operationFiles.history.id === file.fileId;
+          case "overview":
+            return false;
+        }
       })
     ) {
       return undefined;
@@ -10220,6 +10739,453 @@ async function acceptDraftSectionCreationProposal(
   }
 }
 
+async function acceptDraftSectionRenameProposal(
+  conversation: AgentConversationController,
+  request: AgentEditReviewRequest,
+  proposal: AgentEditProposal,
+  automatic: boolean,
+  reserved = false
+): Promise<void> {
+  if (
+    (proposal.status === "accepting" && !reserved) ||
+    proposal.status === "accepted" ||
+    proposal.status === "rejected" ||
+    proposal.status === "conflict"
+  ) {
+    return;
+  }
+  const target = proposal.draftSectionRenameTarget;
+  if (!target) {
+    const message = "待审阅的章节改名缺少完整参数，请重新生成。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+    return;
+  }
+  if (!window.deepwrite) {
+    const message = "桌面文件服务当前不可用。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+    return;
+  }
+  const directory = catalogProjection.value?.draftDirectories.find(
+    (candidate) => candidate.workspaceId === proposal.workspaceId
+  );
+  const book = catalogBook(proposal.workspaceId);
+  const bodyDocument = liveWorkspaceDocuments.value.find(
+    (document) =>
+      document.workspaceId === proposal.workspaceId &&
+      document.stageId === "draft" &&
+      document.expertSectionId === target.sectionId &&
+      document.draftFileKind === "body" &&
+      document.catalogDocumentId
+  );
+  if (!directory || !book || !bodyDocument?.catalogDocumentId) {
+    const message = "目标章节已不可用，无法修改名称。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  const section = directory.sections.find(
+    (candidate) => candidate.id === target.sectionId
+  );
+  if (!section) {
+    const message = "目标章节已不存在，无法修改名称。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  const currentDirectoryRevision = currentExpertDraftDirectoryRevision(
+    proposal.workspaceId
+  );
+  const expectedDirectoryRevision =
+    expectedDraftSectionCreationBaseRevision(proposal);
+  if (currentDirectoryRevision !== expectedDirectoryRevision) {
+    const message = "正文目录已发生变化，未修改章节名称，请基于最新目录重新生成。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  if (section.title !== target.previousTitle) {
+    if (section.title === target.title) {
+      rememberAcceptedDraftSectionCreation(
+        proposal,
+        currentDirectoryRevision ?? proposal.baseRevision
+      );
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        status: "accepted",
+        proposedText: undefined,
+        statusMessage: automatic
+          ? `章节名称已是「${target.title}」，无需重复保存。`
+          : `章节名称已是「${target.title}」，无需重复保存。`
+      });
+      return;
+    }
+    const message = `章节「${target.previousTitle}」的当前标题已变化，未应用本次改名。`;
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  if (
+    directory.sections.some(
+      (candidate) =>
+        candidate.id !== target.sectionId && candidate.title === target.title
+    )
+  ) {
+    const message = `正文目录已存在同名章节「${target.title}」，未修改名称。`;
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  if (acceptingAgentEditWorkspaceIds.value.has(proposal.workspaceId)) {
+    const message = automatic
+      ? "检测到作品正在保存其他内容，实时自动改名已暂停，请稍后人工重试。"
+      : "同一作品正在保存其他修改，请稍候再接受";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: automatic ? "error" : "pending",
+      statusMessage: message
+    });
+    uiMessage.info(message);
+    return;
+  }
+
+  conversation.updateEditProposal(request.runId, request.proposalId, {
+    status: "accepting",
+    statusMessage: automatic
+      ? "正在自动批准并修改章节名称…"
+      : "正在校验目录版本并修改章节名称…"
+  });
+  setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
+  try {
+    // Rename must preserve on-disk body bytes; dirty editor drafts stay local.
+    const diskContent = bodyDocument.content;
+    const saved = await window.deepwrite.catalog.saveDocument({
+      bookId: proposal.workspaceId,
+      documentId: bodyDocument.catalogDocumentId,
+      title: target.title,
+      content: diskContent,
+      baseRevision: createShortWorkspaceContentRevision(diskContent),
+      ...(book.projectRevision === undefined
+        ? {}
+        : { baseProjectRevision: book.projectRevision })
+    });
+    applyCatalogSnapshot(await window.deepwrite.catalog.snapshot());
+    const draft = editorDrafts.value[bodyDocument.id];
+    if (draft) {
+      editorDrafts.value = {
+        ...editorDrafts.value,
+        [bodyDocument.id]: {
+          ...draft,
+          title: saved.title
+        }
+      };
+    }
+    const characterStateDocument = liveWorkspaceDocuments.value.find(
+      (document) =>
+        document.workspaceId === proposal.workspaceId &&
+        document.stageId === "draft" &&
+        document.expertSectionId === target.sectionId &&
+        document.draftFileKind === "character-state"
+    );
+    const characterDraft = characterStateDocument
+      ? editorDrafts.value[characterStateDocument.id]
+      : undefined;
+    if (characterStateDocument && characterDraft) {
+      editorDrafts.value = {
+        ...editorDrafts.value,
+        [characterStateDocument.id]: {
+          ...characterDraft,
+          title: draftCharacterStateTitle(saved.title)
+        }
+      };
+    }
+    const savedDirectoryRevision = currentExpertDraftDirectoryRevision(
+      proposal.workspaceId
+    );
+    if (!savedDirectoryRevision) {
+      throw new Error("改名完成后无法读取最新正文目录版本。");
+    }
+    rememberAcceptedDraftSectionCreation(proposal, savedDirectoryRevision);
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "accepted",
+      proposedText: undefined,
+      statusMessage: automatic
+        ? `已自动批准并将章节「${target.previousTitle}」改名为「${target.title}」。`
+        : `已将章节「${target.previousTitle}」改名为「${target.title}」并保存到本机。`
+    });
+    if (!automatic) {
+      uiMessage.success(`已将章节改名为「${target.title}」`);
+    }
+  } catch (error: unknown) {
+    await loadCatalogSnapshot();
+    const conflict = isCatalogConflict(error);
+    const message =
+      error instanceof Error ? error.message : "修改章节名称失败。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: conflict ? "conflict" : "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+  } finally {
+    setAgentEditWorkspaceAccepting(proposal.workspaceId, false);
+  }
+}
+
+function conflictDependentDeletedSectionProposals(
+  conversation: AgentConversationController,
+  runId: string,
+  sectionId: string,
+  message: string,
+  exceptProposalId?: string
+): void {
+  const bodyId = catalogDraftBodyDocumentId(sectionId);
+  const stateId = catalogDraftCharacterStateDocumentId(sectionId);
+  for (const candidate of conversation.listEditProposals(runId)) {
+    if (exceptProposalId && candidate.id === exceptProposalId) continue;
+    if (
+      candidate.status !== "pending" &&
+      candidate.status !== "error" &&
+      candidate.status !== "accepting"
+    ) {
+      continue;
+    }
+    const targetsDeletedSection =
+      candidate.documentId === bodyId ||
+      candidate.documentId === stateId ||
+      candidate.draftSectionRenameTarget?.sectionId === sectionId ||
+      (candidate.draftSectionDeletionTarget?.sectionId === sectionId &&
+        candidate.id !== exceptProposalId);
+    if (!targetsDeletedSection) continue;
+    removeQueuedAgentEdit(conversation, runId, candidate.id);
+    conversation.updateEditProposal(runId, candidate.id, {
+      status: "conflict",
+      proposedText: undefined,
+      statusMessage: message
+    });
+  }
+}
+
+async function acceptDraftSectionDeletionProposal(
+  conversation: AgentConversationController,
+  request: AgentEditReviewRequest,
+  proposal: AgentEditProposal,
+  automatic: boolean,
+  reserved = false
+): Promise<void> {
+  if (
+    (proposal.status === "accepting" && !reserved) ||
+    proposal.status === "accepted" ||
+    proposal.status === "rejected" ||
+    proposal.status === "conflict"
+  ) {
+    return;
+  }
+  const target = proposal.draftSectionDeletionTarget;
+  if (!target) {
+    const message = "待审阅的章节删除缺少完整参数，请重新生成。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+    return;
+  }
+  if (!window.deepwrite) {
+    const message = "桌面文件服务当前不可用。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+    return;
+  }
+  const directory = catalogProjection.value?.draftDirectories.find(
+    (candidate) => candidate.workspaceId === proposal.workspaceId
+  );
+  const book = catalogBook(proposal.workspaceId);
+  if (!directory || !book) {
+    const message = "目标正文目录已不可用，无法删除章节。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  const section = directory.sections.find(
+    (candidate) => candidate.id === target.sectionId
+  );
+  if (!section) {
+    rememberAcceptedDraftSectionCreation(
+      proposal,
+      currentExpertDraftDirectoryRevision(proposal.workspaceId) ??
+        proposal.baseRevision
+    );
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "accepted",
+      proposedText: undefined,
+      statusMessage: `章节「${target.title}」已不存在，无需重复删除。`
+    });
+    conflictDependentDeletedSectionProposals(
+      conversation,
+      request.runId,
+      target.sectionId,
+      "目标章节已删除，相关正文变更无法落盘。",
+      request.proposalId
+    );
+    return;
+  }
+  if (section.title !== target.title) {
+    const message = `章节「${target.title}」的当前标题已变化，未应用本次删除。`;
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  if (directory.sections.length <= 1) {
+    const message = "正文至少需要保留一个章节，未删除。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  const currentDirectoryRevision = currentExpertDraftDirectoryRevision(
+    proposal.workspaceId
+  );
+  const expectedDirectoryRevision =
+    expectedDraftSectionCreationBaseRevision(proposal);
+  if (currentDirectoryRevision !== expectedDirectoryRevision) {
+    const message = "正文目录已发生变化，未删除章节，请基于最新目录重新生成。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  if (acceptingAgentEditWorkspaceIds.value.has(proposal.workspaceId)) {
+    const message = automatic
+      ? "检测到作品正在保存其他内容，实时自动删除已暂停，请稍后人工重试。"
+      : "同一作品正在保存其他修改，请稍候再接受";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: automatic ? "error" : "pending",
+      statusMessage: message
+    });
+    uiMessage.info(message);
+    return;
+  }
+
+  conversation.updateEditProposal(request.runId, request.proposalId, {
+    status: "accepting",
+    statusMessage: automatic
+      ? "正在自动批准并删除章节…"
+      : "正在校验目录版本并删除章节…"
+  });
+  setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
+  try {
+    const removedIndex = directory.sections.findIndex(
+      (candidate) => candidate.id === target.sectionId
+    );
+    const fallbackSections = directory.sections.filter(
+      (candidate) => candidate.id !== target.sectionId
+    );
+    const fallbackSection =
+      fallbackSections[Math.min(removedIndex, fallbackSections.length - 1)];
+    const deleted = await window.deepwrite.catalog.deleteDraftSection({
+      bookId: proposal.workspaceId,
+      sectionId: target.sectionId,
+      ...(book.projectRevision === undefined
+        ? {}
+        : { baseProjectRevision: book.projectRevision })
+    });
+    if (!deleted.deleted) {
+      throw new Error(`章节「${target.title}」已经不存在。`);
+    }
+    const nextDrafts = { ...editorDrafts.value };
+    delete nextDrafts[section.bodyDocumentId];
+    delete nextDrafts[section.characterStateDocumentId];
+    editorDrafts.value = nextDrafts;
+    const conversationKey = `${proposal.workspaceId}:expert_section_writer:${encodeURIComponent(target.sectionId)}`;
+    conversations.get(conversationKey)?.dispose();
+    conversations.delete(conversationKey);
+    applyCatalogSnapshot(await window.deepwrite.catalog.snapshot());
+    if (!automatic) {
+      selectedResourceId.value = directory.id;
+      activeCreationResourceId.value = directory.id;
+      if (fallbackSection) {
+        selectedExpertSectionIds.value = {
+          ...selectedExpertSectionIds.value,
+          [directory.id]: fallbackSection.id
+        };
+      }
+      selectedDraftFileKinds.value = {
+        ...selectedDraftFileKinds.value,
+        [directory.id]: "body"
+      };
+    }
+    const savedDirectoryRevision = currentExpertDraftDirectoryRevision(
+      proposal.workspaceId
+    );
+    if (!savedDirectoryRevision) {
+      throw new Error("删除完成后无法读取最新正文目录版本。");
+    }
+    rememberAcceptedDraftSectionCreation(proposal, savedDirectoryRevision);
+    conflictDependentDeletedSectionProposals(
+      conversation,
+      request.runId,
+      target.sectionId,
+      "目标章节已删除，相关正文变更无法落盘。",
+      request.proposalId
+    );
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "accepted",
+      proposedText: undefined,
+      statusMessage: automatic
+        ? `已自动批准并删除章节「${target.title}」及其正文与人物状态文件。`
+        : `已删除章节「${target.title}」及其正文与人物状态文件。`
+    });
+    if (!automatic) {
+      uiMessage.success(`已删除“${target.title}”及对应人物状态文件`);
+    }
+  } catch (error: unknown) {
+    await loadCatalogSnapshot();
+    const conflict = isCatalogConflict(error);
+    const message =
+      error instanceof Error ? error.message : "删除章节失败。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: conflict ? "conflict" : "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+  } finally {
+    setAgentEditWorkspaceAccepting(proposal.workspaceId, false);
+  }
+}
+
 function conflictDependentLongWorldbuildingProposals(
   conversation: AgentConversationController,
   proposal: AgentEditProposal,
@@ -10460,13 +11426,10 @@ async function acceptLongWorldbuildingFileProposal(
     const latest = await api.getWorkspaceIndex({
       bookId: target.bookId
     });
-    const currentFile = latest.workspaceIndex.worldbuilding
-      .flatMap((category) =>
-        category.format === "text"
-          ? [category.file]
-          : category.items.map(({ file }) => file)
-      )
-      .find(({ id }) => id === target.file.fileId);
+    const currentFile = findLongWorldbuildingFile(
+      latest.workspaceIndex.worldbuilding,
+      target.file.fileId
+    );
     if (currentFile?.revision === target.file.nextRevision) {
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
@@ -10650,14 +11613,20 @@ async function acceptLongCharacterFileProposal(
       }
     }
     const latest = await api.getWorkspaceIndex({ bookId: target.bookId });
-    const currentFiles = new Map(
-      latest.workspaceIndex.characterFiles.flatMap((entry) => [
+    const currentFiles = new Map([
+      ...(latest.workspaceIndex.characterOverview
+        ? [[
+            latest.workspaceIndex.characterOverview.id,
+            latest.workspaceIndex.characterOverview
+          ] as const]
+        : []),
+      ...latest.workspaceIndex.characterFiles.flatMap((entry) => [
         [entry.coreProfile.id, entry.coreProfile] as const,
         [entry.relationships.id, entry.relationships] as const,
         [entry.currentState.id, entry.currentState] as const,
         [entry.history.id, entry.history] as const
       ])
-    );
+    ]);
     if (
       target.files.every(
         (file) =>
@@ -10936,6 +11905,28 @@ async function applyAgentEdit(
 
   if (proposal.draftSectionCreationTarget) {
     await acceptDraftSectionCreationProposal(
+      conversation,
+      request,
+      proposal,
+      automatic,
+      reserved
+    );
+    return;
+  }
+
+  if (proposal.draftSectionRenameTarget) {
+    await acceptDraftSectionRenameProposal(
+      conversation,
+      request,
+      proposal,
+      automatic,
+      reserved
+    );
+    return;
+  }
+
+  if (proposal.draftSectionDeletionTarget) {
+    await acceptDraftSectionDeletionProposal(
       conversation,
       request,
       proposal,
@@ -11608,42 +12599,9 @@ async function testModel(model: ModelConfigInput): Promise<void> {
   }
 }
 
-function showWorkspaceAgentFeedback(
-  kind: "error" | "status",
-  message: string
-): void {
-  if (workspaceAgentFeedbackTimer !== undefined) {
-    window.clearTimeout(workspaceAgentFeedbackTimer);
-  }
-  workspaceAgentError.value = kind === "error" ? message : null;
-  workspaceAgentStatus.value = kind === "status" ? message : null;
-  workspaceAgentFeedbackTimer = window.setTimeout(() => {
-    workspaceAgentError.value = null;
-    workspaceAgentStatus.value = null;
-    workspaceAgentFeedbackTimer = undefined;
-  }, 3_600);
-}
-
-function showLongAgentFeedback(
-  kind: "error" | "status",
-  message: string
-): void {
-  if (longAgentFeedbackTimer !== undefined) {
-    window.clearTimeout(longAgentFeedbackTimer);
-  }
-  longAgentError.value = kind === "error" ? message : null;
-  longAgentStatus.value = kind === "status" ? message : null;
-  longAgentFeedbackTimer = window.setTimeout(() => {
-    longAgentError.value = null;
-    longAgentStatus.value = null;
-    longAgentFeedbackTimer = undefined;
-  }, 3_600);
-}
-
 async function loadShortAndScriptAgentSettings(): Promise<void> {
   if (!window.deepwrite || workspaceAgentLoading.value) return;
   workspaceAgentLoading.value = true;
-  workspaceAgentError.value = null;
   try {
     const results = await Promise.allSettled([
       window.deepwrite.workspaceAgents.list("short"),
@@ -11667,8 +12625,7 @@ async function loadShortAndScriptAgentSettings(): Promise<void> {
       result.status === "rejected" ? [result.reason] : []
     );
     if (failures.length) {
-      showWorkspaceAgentFeedback(
-        "error",
+      uiMessage.error(
         failures
           .map((error) =>
             error instanceof Error ? error.message : "加载创作空间智能体设置失败。"
@@ -11692,7 +12649,6 @@ async function loadLongAgentSettings(): Promise<boolean> {
     try {
       longAgentSettings.value = await api.longAgents.list();
       longAgentLoaded.value = true;
-      longAgentError.value = null;
       return true;
     } catch (error: unknown) {
       const message =
@@ -11701,7 +12657,7 @@ async function loadLongAgentSettings(): Promise<boolean> {
           : "加载长篇智能体设置失败。";
       longAgentLoaded.value = false;
       longAgentLoadError.value = message;
-      showLongAgentFeedback("error", message);
+      uiMessage.error(message);
       return false;
     } finally {
       longAgentLoading.value = false;
@@ -11745,13 +12701,11 @@ async function saveWorkspaceAgentSettings(
       ),
       saved
     ];
-    showWorkspaceAgentFeedback(
-      "status",
+    uiMessage.success(
       `${saved.workspaceType === "script" ? "剧本" : "短篇"}智能体提示词、欢迎快捷与读取范围已保存，下一轮对话立即生效。`
     );
   } catch (error: unknown) {
-    showWorkspaceAgentFeedback(
-      "error",
+    uiMessage.error(
       error instanceof Error ? error.message : "保存创作空间智能体设置失败。"
     );
   } finally {
@@ -11768,13 +12722,11 @@ async function saveLongAgentSettings(
     longAgentSettings.value = await window.deepwrite.longAgents.save(settings);
     longAgentLoaded.value = true;
     longAgentLoadError.value = null;
-    showLongAgentFeedback(
-      "status",
+    uiMessage.success(
       "长篇六个智能体的提示词、欢迎快捷与读取范围已保存，下一轮对话立即生效。"
     );
   } catch (error: unknown) {
-    showLongAgentFeedback(
-      "error",
+    uiMessage.error(
       error instanceof Error ? error.message : "保存长篇智能体设置失败。"
     );
   } finally {
@@ -12241,12 +13193,6 @@ onBeforeUnmount(() => {
   }
   persistEmergencyDraftRecovery();
   void flushEditorDraftRecovery(false);
-  if (workspaceAgentFeedbackTimer !== undefined) {
-    window.clearTimeout(workspaceAgentFeedbackTimer);
-  }
-  if (longAgentFeedbackTimer !== undefined) {
-    window.clearTimeout(longAgentFeedbackTimer);
-  }
   if (longCatalogRetryTimer !== undefined) {
     window.clearTimeout(longCatalogRetryTimer);
     longCatalogRetryTimer = undefined;
@@ -12271,12 +13217,9 @@ onBeforeUnmount(() => {
         :long-agent-settings="longAgentSettings"
         :workspace-agent-loading="workspaceAgentLoading"
         :workspace-agent-saving="workspaceAgentSaving"
-        :workspace-agent-error="workspaceAgentError"
-        :workspace-agent-status="workspaceAgentStatus"
         :long-agent-loading="longAgentLoading"
         :long-agent-saving="longAgentSaving"
-        :long-agent-error="longAgentLoadError ?? longAgentError"
-        :long-agent-status="longAgentStatus"
+        :long-agent-error="longAgentLoadError"
         :library-agent-settings="libraryAgentSettings"
         :library-agent-loading="libraryAgentLoading"
         :library-agent-saving="libraryAgentSaving"
@@ -12601,16 +13544,8 @@ onBeforeUnmount(() => {
             :selection="activeLongSelection"
             :workspace-index="activeLongWorkspaceIndex"
             :latest-commit="latestLongLedgerCommit"
-            :locked="
-              longProposalApprovalPending || longSendPreflightPending
-            "
-            :locked-reason="
-              longSendPreflightPending
-                ? '正在保存并准备发送，编辑暂时锁定'
-                : longProposalApprovalPending
-                  ? '正在应用长篇提案，编辑暂时锁定'
-                  : undefined
-            "
+            :locked="longEditorLocked"
+            :locked-reason="longEditorLockedReason"
             @saved="handleLongDocumentSaved"
             @context-change="handleLongFileContextChange"
             @collapse="rightCollapsed = true"
@@ -12775,6 +13710,13 @@ onBeforeUnmount(() => {
       @remove="removeBook"
       @delete="deleteBook"
       @update-bindings="updateBookBindings"
+    />
+    <PlotStructureDialog
+      :open="Boolean(plotStructureBookId)"
+      :book="plotStructureBook"
+      :pending="catalogMutationPending"
+      @close="closeBookDialog"
+      @mutation="mutatePlotStructure"
     />
     <ExportShortManuscriptDialog
       :open="Boolean(exportBookTarget)"

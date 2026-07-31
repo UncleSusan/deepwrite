@@ -178,6 +178,7 @@ function snapshot(): LongWorkspaceIndexSnapshot {
         }
       ],
       storyEvents: [],
+      storyPlots: [],
       eventConnections: [],
       narrativePlacements: [],
       foreshadowing: []

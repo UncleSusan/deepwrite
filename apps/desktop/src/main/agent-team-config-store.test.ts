@@ -24,7 +24,7 @@ function customizedInput(): AgentTeamSettingsInput {
     teams: DEFAULT_AGENT_TEAM_SETTINGS.teams.map((team) => ({
       parentAgentId: team.parentAgentId,
       subagents:
-        team.parentAgentId === "outline"
+        team.parentAgentId === "plot_design"
           ? [
               {
                 id: "outline_reviewer",
@@ -54,7 +54,7 @@ function customizedScriptInput(): ScriptAgentTeamSettingsInput {
     teams: DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS.teams.map((team) => ({
       parentAgentId: team.parentAgentId,
       subagents:
-        team.parentAgentId === "outline"
+        team.parentAgentId === "plot_design"
           ? [
               {
                 id: "script_outline_reviewer",
@@ -78,7 +78,7 @@ afterEach(async () => {
 });
 
 describe("AgentTeamConfigStore", () => {
-  it("returns cloned five-team defaults when no file exists", async () => {
+  it("returns cloned four-team defaults when no file exists", async () => {
     const settings = await new AgentTeamConfigStore(
       await makeTemporaryRoot()
     ).list();
@@ -88,6 +88,43 @@ describe("AgentTeamConfigStore", () => {
     expect(settings.teams).not.toBe(DEFAULT_AGENT_TEAM_SETTINGS.teams);
   });
 
+  it("drops the retired outline team from legacy files", async () => {
+    const root = await makeTemporaryRoot();
+    await mkdir(join(root, "config"));
+    await writeFile(
+      join(root, "config", "agent-teams.json"),
+      JSON.stringify({
+        version: 1,
+        workspaceType: "short",
+        teams: [
+          ...DEFAULT_AGENT_TEAM_SETTINGS.teams,
+          {
+            parentAgentId: "outline",
+            subagents: [
+              {
+                id: "legacy_outline_helper",
+                name: "旧大纲助手",
+                description: "旧配置",
+                systemPrompt: "不迁入作品。",
+                enabled: true,
+                modelMode: "inherit"
+              }
+            ]
+          }
+        ]
+      }),
+      "utf8"
+    );
+
+    const settings = await new AgentTeamConfigStore(root).list();
+    expect(settings.teams).toHaveLength(4);
+    expect(
+      settings.teams.some(({ parentAgentId }) =>
+        (parentAgentId as string) === "outline"
+      )
+    ).toBe(false);
+  });
+
   it("persists atomically and resolves only enabled definitions", async () => {
     const root = await makeTemporaryRoot();
     const store = new AgentTeamConfigStore(root);
@@ -95,7 +132,7 @@ describe("AgentTeamConfigStore", () => {
     const saved = await store.save(customizedInput());
 
     expect(await store.list()).toEqual(saved);
-    expect(await store.resolve("outline")).toEqual([
+    expect(await store.resolve("plot_design")).toEqual([
       expect.objectContaining({ id: "outline_reviewer", enabled: true })
     ]);
     const disk = JSON.parse(
@@ -112,7 +149,7 @@ describe("AgentTeamConfigStore", () => {
 
     expect(await store.list("short")).toEqual(shortSaved);
     expect(await store.list("script")).toEqual(scriptSaved);
-    expect(await store.resolve("script", "outline")).toEqual([
+    expect(await store.resolve("script", "plot_design")).toEqual([
       expect.objectContaining({
         id: "script_outline_reviewer",
         enabled: true

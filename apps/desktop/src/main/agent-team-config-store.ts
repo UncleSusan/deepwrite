@@ -135,11 +135,30 @@ export class AgentTeamConfigStore {
     ) {
       throw new Error("智能体团队配置版本无效，已停止加载以避免覆盖原文件。");
     }
+    const allowedAgentIds =
+      workspaceType === "script"
+        ? (SCRIPT_WORKSPACE_AGENT_IDS as readonly string[])
+        : (SHORT_WORKSPACE_AGENT_IDS as readonly string[]);
+    const normalizedRaw = {
+      ...(raw as Record<string, unknown>),
+      teams: Array.isArray((raw as Record<string, unknown>).teams)
+        ? ((raw as Record<string, unknown>).teams as unknown[]).filter(
+            (team) =>
+              team !== null &&
+              typeof team === "object" &&
+              typeof (team as Record<string, unknown>).parentAgentId ===
+                "string" &&
+              allowedAgentIds.includes(
+                (team as Record<string, unknown>).parentAgentId as string
+              )
+          )
+        : (raw as Record<string, unknown>).teams
+    };
     const parsed = (
       workspaceType === "script"
         ? ScriptAgentTeamSettingsInputSchema
         : AgentTeamSettingsInputSchema
-    ).safeParse(raw);
+    ).safeParse(normalizedRaw);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
       throw new Error(

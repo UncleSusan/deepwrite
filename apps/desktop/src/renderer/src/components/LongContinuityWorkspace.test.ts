@@ -72,6 +72,12 @@ describe("LongContinuityWorkspace", () => {
     expect(source).toContain('class="continuity-view-tabs"');
     expect(source).toContain("var(--surface-hover)");
     expect(source).toContain("var(--surface-selected)");
+    expect(source).toContain("border-bottom-color: var(--accent)");
+    expect(source).toContain('class="status-badge"');
+    expect(source).toContain('class="history-stats"');
+    expect(source).toContain("章节提交流水");
+    expect(source).toContain("scrollbar-gutter: stable");
+    expect(source).toContain("resetContentScroll");
   });
 
   it("uses the shared visual tokens and container-based compact layouts", () => {

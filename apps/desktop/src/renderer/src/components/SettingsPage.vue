@@ -65,12 +65,9 @@ defineProps<{
   longAgentSettings: LongAgentSettings | null;
   workspaceAgentLoading: boolean;
   workspaceAgentSaving: boolean;
-  workspaceAgentError: string | null;
-  workspaceAgentStatus: string | null;
   longAgentLoading: boolean;
   longAgentSaving: boolean;
   longAgentError: string | null;
-  longAgentStatus: string | null;
   learningImitationSettings: LearningImitationSettings | null;
   learningImitationLoading: boolean;
   learningImitationSaving: boolean;
@@ -363,12 +360,9 @@ async function importThemeFile(event: Event): Promise<void> {
           :long-settings="longAgentSettings"
           :loading="workspaceAgentLoading"
           :saving="workspaceAgentSaving"
-          :error-message="workspaceAgentError"
-          :status-message="workspaceAgentStatus"
           :long-loading="longAgentLoading"
           :long-saving="longAgentSaving"
           :long-error-message="longAgentError"
-          :long-status-message="longAgentStatus"
           :runtime-available="runtimeAvailable"
           @save="emit('saveWorkspaceAgents', $event)"
           @retry-long="emit('retryLongAgents')"

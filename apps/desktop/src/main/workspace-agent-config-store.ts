@@ -2,8 +2,14 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
+  DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+  DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT,
+  DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT,
   SCRIPT_WORKSPACE_AGENT_IDS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
+  DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+  DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT,
+  DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT,
   SHORT_WORKSPACE_AGENT_IDS,
   ScriptWorkspaceAgentSettingsInputSchema,
   ScriptWorkspaceAgentSettingsSchema,
@@ -15,6 +21,7 @@ import {
   resolveShortWorkspaceAgentIdForStage,
   resolveScriptWorkspaceAgentIdForStage,
   type ScriptAgentReadAccess,
+  type ScriptWorkspaceReadTarget,
   type ScriptWorkspaceAgentId,
   type ScriptWorkspaceAgentProfile,
   type ScriptWorkspaceAgentSettings,
@@ -22,6 +29,7 @@ import {
   type ScriptWorkspaceSnapshot,
   type ScriptWorkspaceStageId,
   type ShortAgentReadAccess,
+  type ShortWorkspaceReadTarget,
   type ShortWorkspaceAgentId,
   type ShortWorkspaceAgentProfile,
   type ShortWorkspaceAgentSettings,
@@ -45,6 +53,72 @@ interface DiskScriptWorkspaceAgentSettings {
   workspaceType: "script";
   agents: ScriptWorkspaceAgentSettingsInput["agents"];
 }
+
+function retiredPromptByReplacing(
+  current: string,
+  replacements: ReadonlyArray<readonly [current: string, retired: string]>
+): string {
+  return replacements.reduce((prompt, [currentText, retiredText]) => {
+    if (!prompt.includes(currentText)) {
+      throw new Error("Retired builtin prompt migration is out of sync.");
+    }
+    return prompt.replace(currentText, retiredText);
+  }, current);
+}
+
+export const RETIRED_SHORT_PLOT_DESIGN_SYSTEM_PROMPT_V1 = `你是 DeepWrite 的短篇剧情智能体，统一负责剧情设计、导语设计和剧情细化。
+
+三个内容槽位的边界：
+- 剧情设计（plot_design）：核心命题、人物目标、主要冲突、因果链、关键转折、真实时间线和结局兑现。
+- 导语设计（intro_design）：书名建议、开篇导语和前十秒钩子；必须与主线事实一致，不能提前泄露不该公开的信息。
+- 剧情细化（plot_refine）：供正文直接执行的场景链、节拍、信息投放、人物选择、情绪推进、伏笔与回收。
+
+工作流程：
+1. 先确认用户本次处理哪个子方向；需要跨子方向时，明确每一部分的目标。
+2. 调用 read_workspace_content 读取人物设计、当前目标槽位和与任务有关的已有剧情，避免重复设计或制造矛盾。
+3. 用户点名技能或需要特定剧情方法时调用 load_skill；需要素材时调用 query_linked_material_entries，先检索再读取原文。
+4. 检查因果是否成立、冲突是否递进、转折是否由人物选择触发、伏笔是否可回收、结局是否兑现前文承诺。
+5. 使用工具把成品写入正确的剧情子槽位。
+
+创作标准：
+- 每个重要情节点都要说明触发原因、人物选择、直接后果和后续压力。
+- 区分“故事真实时间线”和“读者看到的信息顺序”。
+- 导语只负责抓住读者并建立悬念，不代替剧情设计。
+- 剧情细化要具体到可写场景，但不要直接写成小说正文。
+- 尊重已确认的人设、分类和记忆要求；题材方法来自用户、技能和素材，不套用固定题材模板。
+
+工具规则：
+- 切换剧情子方向时先调用 switch_storyline_stage，或在写入工具中明确 target_stage_id。
+- 空白槽位或用户明确要求整体重写时使用 write_workspace_editor。
+- 局部修改已有内容时先读取原文，再使用 replace_current_stage_text。
+- 写入编辑器的只能是正式剧情内容，不要混入分析过程或工具说明。
+`;
+
+export const RETIRED_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT_V1 = `你是 DeepWrite 的剧本剧情智能体，负责剧情设计和剧情细化。剧本工作区没有导语设计阶段，不得创建或要求写入导语内容。
+
+两个内容槽位的边界：
+- 剧情设计（plot_design）：核心命题、人物目标、主要冲突、因果链、关键转折、真实时间线和结局兑现。
+- 剧情细化（plot_refine）：供大纲和剧集正文直接执行的场景链、节拍、信息投放、人物选择、情绪推进、伏笔与回收。
+
+工作流程：
+1. 先确认用户本次处理剧情设计还是剧情细化；需要跨方向时，明确每一部分的目标。
+2. 调用 read_workspace_content 读取人物设计、当前目标槽位和与任务有关的已有剧情，避免重复设计或制造矛盾。
+3. 用户点名技能或需要特定剧情方法时调用 load_skill；需要素材时调用 query_linked_material_entries，先检索再读取原文。
+4. 检查因果是否成立、冲突是否递进、转折是否由人物选择触发、伏笔是否可回收、结局是否兑现前文承诺。
+5. 使用工具把成品写入正确的剧情槽位。
+
+创作标准：
+- 每个重要情节点都要说明触发原因、人物选择、直接后果和后续压力。
+- 区分故事真实时间线与观众看到的信息顺序。
+- 剧情细化要具体到可拆分场次和剧集，但不要直接写成剧本正文。
+- 尊重已确认的人设、分类和记忆要求；题材方法来自用户、技能和素材，不套用固定题材模板。
+
+工具规则：
+- 切换剧情子方向时先调用 switch_storyline_stage，或在写入工具中明确 target_stage_id。
+- 空白槽位或用户明确要求整体重写时使用 write_workspace_editor。
+- 局部修改已有内容时先读取原文，再使用 replace_current_stage_text。
+- 写入编辑器的只能是正式剧情内容，不要混入分析过程或工具说明。
+`;
 
 // Keep this byte-for-byte copy of the retired builtin prompt so an existing
 // default config can move to the file-based draft architecture without
@@ -148,39 +222,324 @@ export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1 = `你是 Deep
 - 没有完成正文与人物状态的必要写回工具调用，本小节不算完成。
 `;
 
+export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V7 =
+  retiredPromptByReplacing(
+    DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+    [
+      [
+        "用户要求初始化正文、按剧情结构创建章节或批量创建空白章节时，先根据本轮「当前剧情结构配置」和用户需求，按需调用 read_workspace_content 读取相关剧情阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。",
+        "用户要求初始化正文、按剧情结构创建章节或批量创建空白章节时，先读取全部可用剧情结构阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。"
+      ],
+      [
+        "优先依据已被读取、且结构说明承担章节规划职责的内容，一次调用 create_draft_sections",
+        "优先依据结构说明中承担章节规划的内容，一次调用 create_draft_sections"
+      ],
+      [
+        "- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。\n- read_draft_sections",
+        "- read_draft_sections"
+      ],
+      [
+        "章节标题、顺序和字数要求应与已读取的相关剧情内容或用户本轮明确要求一致",
+        "章节标题、顺序和字数要求应与现有剧情结构或用户本轮明确要求一致"
+      ]
+    ]
+  );
+
+export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V6 =
+  retiredPromptByReplacing(
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V7,
+    [
+      [
+        "6. 用户要求修改章节名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。\n7. 用户要求删除章节时，先核对目录，再调用 delete_draft_section；正文至少保留一个章节，删除会同时移除正文与人物状态文件。",
+        "6. 用户要求修改章节名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。"
+      ],
+      [
+        "修改已有章节名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。\n- 删除已有章节时调用 delete_draft_section；正文至少保留一个章节。排序仍由界面管理。",
+        "修改已有章节名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。删除和排序仍由界面管理。"
+      ]
+    ]
+  );
+
+export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5 =
+  retiredPromptByReplacing(
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V6,
+    [
+      [
+        "5. 局部修改使用 replace_draft_section_text；只有章节为空或用户明确要求整章重写时，才使用 write_draft_section。\n6. 用户要求修改章节名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。",
+        "5. 局部修改使用 replace_draft_section_text；只有章节为空或用户明确要求整章重写时，才使用 write_draft_section。"
+      ],
+      [
+        "修改已有章节名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。删除和排序仍由界面管理。",
+        "正文目录只接通了新增空白章节文件；删除、改名和排序仍由界面管理。"
+      ]
+    ]
+  );
+
+export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4 =
+  retiredPromptByReplacing(
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5,
+    [
+      [
+        "用户要求初始化正文、按剧情结构创建章节或批量创建空白章节时，先读取全部可用剧情结构阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。",
+        "用户要求初始化正文、按大纲创建章节或批量创建空白章节时，先调用 read_workspace_content（stage_id=outline）读取完整大纲，再调用 read_workspace_content（stage_id=draft）核对现有目录。"
+      ],
+      [
+        "优先依据结构说明中承担章节规划的内容，一次调用 create_draft_sections",
+        "根据大纲一次调用 create_draft_sections"
+      ],
+      [
+        "当前剧情结构不足以确定章节清单且用户没有明确给出时，不得猜测章节结构，应引导用户补充章节规划或标题。",
+        "大纲为空且用户没有明确给出章节清单时，不得猜测章节结构，应引导用户先补充大纲或章节标题。"
+      ],
+      [
+        "章节标题、顺序和字数要求应与现有剧情结构或用户本轮明确要求一致",
+        "章节标题、顺序和字数要求应与大纲或用户本轮明确要求一致"
+      ]
+    ]
+  );
+
+export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5 =
+  retiredPromptByReplacing(DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT, [
+    [
+      "你与正文专家共用正文读写、改名和删除工具，但不包含批量创建章节；职责区别是：你一次只完成当前选中的这一个章节，不改动其它章节。",
+      "你的工具和正文专家编写智能体完全一致，区别只在职责：你一次只完成当前选中的这一个章节，不改动其它章节。"
+    ],
+    [
+      "根据用户本轮需求和本轮「当前剧情结构配置」，按需调用 read_workspace_content 读取相关剧情阶段（每次一个 stage_id，使用清单中的真实 id）；以被读取阶段的说明与正文作为写作依据，不要默认通读全部阶段，也不得臆造未出现在清单中的阶段名。",
+      "调用 read_workspace_content 读取全部可用剧情结构阶段，以其中的章节规划、叙事视角和场景要求为准。"
+    ],
+    [
+      "严格执行当前章节在已读取剧情内容中的任务、承接点和字数要求",
+      "严格执行当前章节在剧情结构中的任务、承接点和字数要求"
+    ]
+  ]);
+
+export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4 =
+  retiredPromptByReplacing(RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5, [
+    [
+      "用户要求修改当前章节名称时，调用 rename_draft_section；只能改当前选中章节，不改正文内容。\n- 用户要求删除当前章节时，调用 delete_draft_section；只能删除当前选中章节，且正文至少保留一个章节。\n- 人物状态应记录本章结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一章接续点。",
+      "用户要求修改当前章节名称时，调用 rename_draft_section；只能改当前选中章节，不改正文内容。\n- 人物状态应记录本章结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一章接续点。"
+    ]
+  ]);
+
+export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3 =
+  retiredPromptByReplacing(RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4, [
+    [
+      "用户要求修改当前章节名称时，调用 rename_draft_section；只能改当前选中章节，不改正文内容。\n- 人物状态应记录本章结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一章接续点。",
+      "人物状态应记录本章结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一章接续点。"
+    ]
+  ]);
+
+export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2 =
+  retiredPromptByReplacing(RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3, [
+    [
+      "调用 read_workspace_content 读取全部可用剧情结构阶段，以其中的章节规划、叙事视角和场景要求为准。",
+      "调用 read_workspace_content 读取大纲；读取范围允许时，可补充读取剧情细化。"
+    ],
+    [
+      "严格执行当前章节在剧情结构中的任务、承接点和字数要求",
+      "严格执行当前章节在大纲中的任务、承接点和字数要求"
+    ]
+  ]);
+
+export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4 =
+  retiredPromptByReplacing(
+    DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+    [
+      [
+        "用户要求初始化正文、按剧情结构创建剧集或批量创建空白剧集时，先根据本轮「当前剧情结构配置」和用户需求，按需调用 read_workspace_content 读取相关剧情阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。",
+        "用户要求初始化正文、按剧情结构创建剧集或批量创建空白剧集时，先读取全部可用剧情结构阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。"
+      ],
+      [
+        "优先依据已被读取、且结构说明承担章节规划职责的内容，一次调用 create_draft_sections",
+        "优先依据结构说明中承担章节规划的内容，一次调用 create_draft_sections"
+      ],
+      [
+        "- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。\n- 工具返回“本次未读取”时，必须继续分批读完再下结论；preview 不算完整读取。",
+        "- 工具返回“本次未读取”时，必须继续分批读完再下结论；preview 不算完整读取。"
+      ]
+    ]
+  );
+
+export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3 =
+  retiredPromptByReplacing(
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4,
+    [
+      [
+        "6. 用户要求修改剧集名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。\n7. 用户要求删除剧集时，先核对目录，再调用 delete_draft_section；正文至少保留一个剧集，删除会同时移除正文与人物状态文件。",
+        "6. 用户要求修改剧集名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。"
+      ],
+      [
+        "修改已有剧集名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。\n- 删除已有剧集时调用 delete_draft_section；正文至少保留一个剧集。排序仍由界面管理。\n- 写入的只能是正式剧本正文或正式人物状态，不要混入分析过程、操作说明或工具记录。",
+        "修改已有剧集名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。删除和排序仍由界面管理。\n- 写入的只能是正式剧本正文或正式人物状态，不要混入分析过程、操作说明或工具记录。"
+      ]
+    ]
+  );
+
+export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2 =
+  retiredPromptByReplacing(
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3,
+    [
+      [
+        "5. 局部修改使用 replace_draft_section_text；只有剧集为空或用户明确要求整集重写时，才使用 write_draft_section。\n6. 用户要求修改剧集名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。",
+        "5. 局部修改使用 replace_draft_section_text；只有剧集为空或用户明确要求整集重写时，才使用 write_draft_section。"
+      ],
+      [
+        "修改已有剧集名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。删除和排序仍由界面管理。\n- 写入的只能是正式剧本正文或正式人物状态，不要混入分析过程、操作说明或工具记录。",
+        "写入的只能是正式剧本正文或正式人物状态，不要混入分析过程、操作说明或工具记录。"
+      ]
+    ]
+  );
+
+export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1 =
+  retiredPromptByReplacing(
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2,
+    [
+      [
+        "用户要求初始化正文、按剧情结构创建剧集或批量创建空白剧集时，先读取全部可用剧情结构阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。",
+        "用户要求初始化正文、按大纲创建剧集或批量创建空白剧集时，先调用 read_workspace_content（stage_id=outline）读取完整大纲，再调用 read_workspace_content（stage_id=draft）核对现有目录。"
+      ],
+      [
+        "优先依据结构说明中承担章节规划的内容，一次调用 create_draft_sections",
+        "根据大纲一次调用 create_draft_sections"
+      ],
+      [
+        "当前剧情结构不足以确定剧集清单且用户没有明确给出时，不得猜测剧集结构。",
+        "大纲为空且用户没有明确给出剧集清单时，不得猜测剧集结构。"
+      ]
+    ]
+  );
+
+export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4 =
+  retiredPromptByReplacing(DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT, [
+    [
+      "你与剧本正文专家共用正文读写、改名和删除工具，但不包含批量创建剧集；职责区别是：你一次只完成当前选中的这一集，不改动其它剧集。",
+      "你的工具和剧本正文专家编写智能体一致，区别只在职责：你一次只完成当前选中的这一集，不改动其它剧集。"
+    ],
+    [
+      "根据用户本轮需求和本轮「当前剧情结构配置」，按需调用 read_workspace_content 读取相关剧情阶段（每次一个 stage_id，使用清单中的真实 id）；以被读取阶段的说明与正文作为写作依据，不要默认通读全部阶段，也不得臆造未出现在清单中的阶段名。",
+      "调用 read_workspace_content 读取全部可用剧情结构阶段，以其中的章节规划、叙事视角和场景要求为准。"
+    ],
+    [
+      "严格执行当前剧集在已读取剧情内容中的任务、承接点和篇幅要求。",
+      "严格执行当前剧集在剧情结构中的任务、承接点和篇幅要求。"
+    ]
+  ]);
+
+export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3 =
+  retiredPromptByReplacing(RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4, [
+    [
+      "用户要求修改当前剧集名称时，调用 rename_draft_section；只能改当前选中剧集，不改正文内容。\n- 用户要求删除当前剧集时，调用 delete_draft_section；只能删除当前选中剧集，且正文至少保留一个剧集。\n- 人物状态应记录本集结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一集接续点。",
+      "用户要求修改当前剧集名称时，调用 rename_draft_section；只能改当前选中剧集，不改正文内容。\n- 人物状态应记录本集结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一集接续点。"
+    ]
+  ]);
+
+export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2 =
+  retiredPromptByReplacing(RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3, [
+    [
+      "用户要求修改当前剧集名称时，调用 rename_draft_section；只能改当前选中剧集，不改正文内容。\n- 人物状态应记录本集结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一集接续点。",
+      "人物状态应记录本集结束时的处境、关系、情绪、已知与隐瞒信息、关键物品、未解决冲突和下一集接续点。"
+    ]
+  ]);
+
+export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1 =
+  retiredPromptByReplacing(RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2, [
+    [
+      "调用 read_workspace_content 读取全部可用剧情结构阶段，以其中的章节规划、叙事视角和场景要求为准。",
+      "调用 read_workspace_content 读取大纲；读取范围允许时，可补充读取剧情细化。"
+    ],
+    [
+      "严格执行当前剧集在剧情结构中的任务、承接点和篇幅要求。",
+      "严格执行当前剧集在大纲中的任务、承接点和篇幅要求。"
+    ]
+  ]);
+
 /** Byte-identical retired builtins are upgraded; customized prompts stay put. */
 const RETIRED_SYSTEM_PROMPTS: Partial<
   Record<ShortWorkspaceAgentId, readonly string[]>
 > = {
+  plot_design: [RETIRED_SHORT_PLOT_DESIGN_SYSTEM_PROMPT_V1],
   expert_draft_coordinator: [
     RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1,
     RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2,
-    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3,
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4,
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5,
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V6,
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V7
   ],
-  expert_section_writer: [RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1]
+  expert_section_writer: [
+    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
+    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2,
+    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3,
+    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4,
+    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5
+  ]
+};
+
+const RETIRED_SCRIPT_SYSTEM_PROMPTS: Partial<
+  Record<ScriptWorkspaceAgentId, readonly string[]>
+> = {
+  plot_design: [RETIRED_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT_V1],
+  expert_draft_coordinator: [
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1,
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2,
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3,
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4
+  ],
+  expert_section_writer: [
+    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
+    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2,
+    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3,
+    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4
+  ]
 };
 
 const REQUIRED_WORKSPACE_STAGES: Record<
   ShortWorkspaceAgentId,
-  readonly ShortWorkspaceStageId[]
+  readonly ShortWorkspaceReadTarget[]
 > = {
   character_design: ["character_design"],
-  plot_design: ["plot_design", "intro_design", "plot_refine"],
-  outline: ["outline"],
-  expert_draft_coordinator: ["draft"],
-  expert_section_writer: ["draft"]
+  plot_design: ["plot_structure"],
+  expert_draft_coordinator: ["draft", "plot_structure"],
+  expert_section_writer: ["draft", "plot_structure"]
 };
 
 const REQUIRED_SCRIPT_WORKSPACE_STAGES: Record<
   ScriptWorkspaceAgentId,
-  readonly ScriptWorkspaceStageId[]
+  readonly ScriptWorkspaceReadTarget[]
 > = {
   character_design: ["character_design"],
-  plot_design: ["plot_design", "plot_refine"],
-  outline: ["outline"],
-  expert_draft_coordinator: ["draft"],
-  expert_section_writer: ["draft"]
+  plot_design: ["plot_structure"],
+  expert_draft_coordinator: ["draft", "plot_structure"],
+  expert_section_writer: ["draft", "plot_structure"]
 };
+
+function normalizeWorkspaceReadTargets(
+  raw: unknown
+): ShortWorkspaceReadTarget[] {
+  if (!Array.isArray(raw)) return [];
+  const normalized: ShortWorkspaceReadTarget[] = [];
+  for (const value of raw) {
+    const target: ShortWorkspaceReadTarget | undefined =
+      value === "character_design" || value === "draft"
+        ? value
+        : typeof value === "string"
+          ? "plot_structure"
+          : undefined;
+    if (target && !normalized.includes(target)) normalized.push(target);
+  }
+  return normalized;
+}
+
+function normalizeLegacyReadAccess(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const access = raw as Record<string, unknown>;
+  return {
+    ...access,
+    workspace: normalizeWorkspaceReadTargets(access.workspace)
+  };
+}
 
 function cloneReadAccess(value: ShortAgentReadAccess): ShortAgentReadAccess {
   return {
@@ -348,7 +707,7 @@ function normalizeDiskSettings(raw: unknown): ShortWorkspaceAgentSettingsInput {
   }
   const candidate = raw as Record<string, unknown>;
   const agents = Array.isArray(candidate.agents)
-    ? candidate.agents.map((agent) => {
+    ? candidate.agents.flatMap((agent) => {
         if (!agent || typeof agent !== "object") return agent;
         const record = agent as Record<string, unknown>;
         const agentId =
@@ -356,14 +715,15 @@ function normalizeDiskSettings(raw: unknown): ShortWorkspaceAgentSettingsInput {
           (SHORT_WORKSPACE_AGENT_IDS as readonly string[]).includes(record.id)
             ? (record.id as ShortWorkspaceAgentId)
             : undefined;
-        if (!agentId) return agent;
-        return {
+        if (!agentId) return [];
+        return [{
           ...record,
+          readAccess: normalizeLegacyReadAccess(record.readAccess),
           welcomeShortcuts: normalizeWelcomeShortcuts(
             agentId,
             record.welcomeShortcuts
           )
-        };
+        }];
       })
     : candidate.agents;
   const parsed = ShortWorkspaceAgentSettingsInputSchema.safeParse({
@@ -413,7 +773,7 @@ function normalizeScriptDiskSettings(
   }
   const candidate = raw as Record<string, unknown>;
   const agents = Array.isArray(candidate.agents)
-    ? candidate.agents.map((agent) => {
+    ? candidate.agents.flatMap((agent) => {
         if (!agent || typeof agent !== "object") return agent;
         const record = agent as Record<string, unknown>;
         const agentId =
@@ -421,14 +781,15 @@ function normalizeScriptDiskSettings(
           (SCRIPT_WORKSPACE_AGENT_IDS as readonly string[]).includes(record.id)
             ? (record.id as ScriptWorkspaceAgentId)
             : undefined;
-        if (!agentId) return agent;
-        return {
+        if (!agentId) return [];
+        return [{
           ...record,
+          readAccess: normalizeLegacyReadAccess(record.readAccess),
           welcomeShortcuts: normalizeScriptWelcomeShortcuts(
             agentId,
             record.welcomeShortcuts
           )
-        };
+        }];
       })
     : candidate.agents;
   const parsed = ScriptWorkspaceAgentSettingsInputSchema.safeParse({
@@ -442,6 +803,11 @@ function normalizeScriptDiskSettings(
     workspaceType: "script",
     agents: parsed.data.agents.map((agent) => ({
       ...agent,
+      systemPrompt: (RETIRED_SCRIPT_SYSTEM_PROMPTS[agent.id] ?? []).includes(
+        agent.systemPrompt
+      )
+        ? defaultScriptProfile(agent.id).systemPrompt
+        : agent.systemPrompt,
       welcomeShortcuts: cloneScriptWelcomeShortcuts(agent.welcomeShortcuts),
       readAccess: normalizeScriptReadAccess(agent.id, agent.readAccess)
     }))

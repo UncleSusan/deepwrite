@@ -12,6 +12,7 @@ import {
 import { createId } from "@deepwrite/shared";
 import type { LongWorkspaceRendererApi } from "../types/longWorkspace";
 import { createKeyedSerialTaskQueue } from "../utils/keyedSerialTaskQueue";
+import { longWorldbuildingFiles } from "../utils/longWorldbuildingFiles";
 
 export type LongWorkspaceProposalEvent = Extract<
   SystemEventEnvelope,
@@ -312,18 +313,9 @@ export function useLongWorkspaceProposals(
         });
         const currentFiles = new Map(
           event.type === "long.worldbuilding_file_proposal"
-            ? latest.workspaceIndex.worldbuilding.flatMap((category) =>
-                category.format === "text"
-                  ? [[category.file.id, category.file] as const]
-                  : [
-                      ...(category.overview
-                        ? [[category.overview.id, category.overview] as const]
-                        : []),
-                      ...category.items.map(
-                        ({ file }) => [file.id, file] as const
-                      )
-                    ]
-              )
+            ? longWorldbuildingFiles(
+                latest.workspaceIndex.worldbuilding
+              ).map((file) => [file.id, file] as const)
             : latest.workspaceIndex.characterFiles.flatMap((entry) => [
                 [entry.coreProfile.id, entry.coreProfile] as const,
                 [entry.relationships.id, entry.relationships] as const,

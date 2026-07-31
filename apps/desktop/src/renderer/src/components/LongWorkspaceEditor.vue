@@ -11,6 +11,8 @@ import {
   LongFileRevisionSchema,
   LongLedgerCommitRecordSchema,
   createEmptyLongMarkdownFileReference,
+  longStoryPlotBodyFileId,
+  longStoryPlotFilePath,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId,
   type LongLedgerCommitRecord,
@@ -63,7 +65,10 @@ const emit = defineEmits<{
   ];
   rollback: [];
   selectLedgerCommit: [commitId: string];
-  selectCharacter: [characterId: LongCharacterId];
+  selectCharacter: [
+    characterId: LongCharacterId,
+    done?: (accepted: boolean) => void
+  ];
   selectPlotPoint: [plotPointId: LongArcId];
   selectChapterCard: [chapterCardId: LongChapterCardId];
   renameCharacter: [
@@ -97,7 +102,7 @@ const emit = defineEmits<{
   savePlotPointContent: [
     input: {
       plotPointId: LongArcId;
-      field: "summary" | "storyline";
+      field: "summary";
       content: string;
     },
     completion: (succeeded: boolean) => void
@@ -184,6 +189,17 @@ const staleRecoveryByKey = ref<Record<string, LongEditorRecoveryRecord>>({});
 const activeRole = ref<LongWorkspaceFileRole>("content");
 const activeWorldbuildingItemId = ref<string | null>(null);
 const pendingWorldbuildingItemId = ref<string | null>(null);
+const pendingWorldbuildingOverview = ref(false);
+const activeStoryPlotId = ref<string | null>(null);
+const pendingStoryPlotId = ref<string | null>(null);
+const pendingStoryPlotDeleteId = ref<string | null>(null);
+const storyPlotActionMenuId = ref<string | null>(null);
+let storyPlotSelectionRequest = 0;
+const pendingCharacterId = ref<string | null>(null);
+const pendingRole = ref<LongWorkspaceFileRole | null>(null);
+const heldSelectionFile = ref<LongWorkspaceSelectionFile | null>(null);
+let worldbuildingPrefetchRequest = 0;
+let selectionPrefetchRequest = 0;
 const activeBookLineVolumeId = ref<string | null>(null);
 const activeBookLineContentTab = ref<"outline" | "foreshadowing">(
   "outline"
@@ -193,9 +209,6 @@ const activePlotPointTab = ref<
 >("summary");
 const volumeOutlineDrafts = ref<Record<string, LongVolumeOutlineDraft>>({});
 const plotPointSummaryDrafts = ref<Record<string, LongVolumeOutlineDraft>>({});
-const plotPointStorylineDrafts = ref<
-  Record<string, LongVolumeOutlineDraft>
->({});
 const chapterCardContentDrafts = ref<
   Record<string, LongVolumeOutlineDraft>
 >({});
@@ -225,6 +238,7 @@ const searchAnchor = ref(0);
 const undoHistory = ref<LongEditorHistorySnapshot[]>([]);
 const redoHistory = ref<LongEditorHistorySnapshot[]>([]);
 const requestClockByFile = new Map<string, number>();
+const inflightDocumentLoads = new Map<string, Promise<void>>();
 const recoveryWriteTimers = new Map<
   string,
   ReturnType<typeof setTimeout>
@@ -262,6 +276,24 @@ const currentSelectionFile = computed<LongWorkspaceSelectionFile | undefined>(
         : selection.files.find(({ role }) => role === "overview") ??
             selection.files[0];
     }
+    if (
+      selection.plotPointId &&
+      activePlotPointTab.value === "storyline"
+    ) {
+      const item = selection.storyPlots?.find(
+        ({ id }) => id === activeStoryPlotId.value
+      );
+      return item
+        ? selection.files.find(({ file }) => file.id === item.file.id)
+        : undefined;
+    }
+    if (
+      selection.plotPointId &&
+      (activePlotPointTab.value === "summary" ||
+        activePlotPointTab.value === "foreshadowing")
+    ) {
+      return selection.files.find(({ role }) => role === "book-line");
+    }
     return (
       selection.files.find(({ role }) => role === activeRole.value) ??
       selection.files[0]
@@ -278,6 +310,32 @@ const currentState = computed<LongDocumentState | undefined>(() => {
   return selectedFile
     ? documentStates.value[stateKey(selectedFile.file.id)]
     : undefined;
+});
+const isDocumentSwitchPending = computed(() => {
+  const target = currentSelectionFile.value;
+  if (!target) return false;
+  const targetState = documentStates.value[stateKey(target.file.id)];
+  if (targetState?.loaded || Boolean(targetState?.content)) return false;
+  const held = heldSelectionFile.value;
+  if (!held || held.file.id === target.file.id) return false;
+  const heldState = documentStates.value[stateKey(held.file.id)];
+  return Boolean(heldState?.loaded || heldState?.content);
+});
+const displayDocumentState = computed<LongDocumentState | undefined>(() => {
+  if (isDocumentSwitchPending.value && heldSelectionFile.value) {
+    return documentStates.value[stateKey(heldSelectionFile.value.file.id)];
+  }
+  return currentState.value;
+});
+const showEditorLoading = computed(() => {
+  if (isDocumentSwitchPending.value) return false;
+  const state = currentState.value;
+  return Boolean(state?.loading && !state.loaded && !state.content);
+});
+const showEditorLoadError = computed(() => {
+  if (isDocumentSwitchPending.value) return false;
+  const state = currentState.value;
+  return Boolean(state?.loadError && !state.loaded && !state.content);
 });
 const currentIsContinuityWorkspace = computed(
   () =>
@@ -560,12 +618,10 @@ const currentVolumeOutlineDraft = computed(() => {
 });
 const currentPlotPointDraft = computed(() => {
   const plotPointId = currentPlotPoint.value?.id;
-  if (!plotPointId || activePlotPointTab.value === "foreshadowing") {
+  if (!plotPointId || activePlotPointTab.value !== "summary") {
     return undefined;
   }
-  return activePlotPointTab.value === "summary"
-    ? plotPointSummaryDrafts.value[plotPointId]
-    : plotPointStorylineDrafts.value[plotPointId];
+  return plotPointSummaryDrafts.value[plotPointId];
 });
 const currentChapterCardDraft = computed(() => {
   const chapterCardId = currentChapterCard.value?.id;
@@ -647,9 +703,35 @@ const currentIsStructuredText = computed(
   () =>
     currentIsVolumeOutline.value ||
     currentIsPlotPointSummary.value ||
-    currentIsPlotPointStoryline.value ||
     currentIsChapterCardContent.value
 );
+const currentStoryPlots = computed(
+  () => props.selection?.storyPlots ?? []
+);
+const currentStoryPlot = computed(
+  () =>
+    currentStoryPlots.value.find(
+      ({ id }) => id === activeStoryPlotId.value
+    ) ?? null
+);
+const pendingStoryPlotDelete = computed(
+  () =>
+    currentStoryPlots.value.find(
+      ({ id }) => id === pendingStoryPlotDeleteId.value
+    ) ?? null
+);
+const isDocumentContentBusy = computed(() => {
+  if (isDocumentSwitchPending.value) return true;
+  if (
+    currentIsStructuredText.value ||
+    currentIsForeshadowingView.value ||
+    currentIsContinuityWorkspace.value
+  ) {
+    return false;
+  }
+  const state = currentState.value;
+  return Boolean(state?.loading || (state && !state.loaded));
+});
 const currentReadOnly = computed(() => {
   const selectedFile = currentSelectionFile.value;
   return Boolean(
@@ -673,14 +755,8 @@ const currentDirty = computed(
       const summaryDraft = plotPointId
         ? plotPointSummaryDrafts.value[plotPointId]
         : undefined;
-      const storylineDraft = plotPointId
-        ? plotPointStorylineDrafts.value[plotPointId]
-        : undefined;
       return Boolean(
-        (summaryDraft &&
-          summaryDraft.content !== summaryDraft.savedContent) ||
-          (storylineDraft &&
-            storylineDraft.content !== storylineDraft.savedContent)
+        summaryDraft && summaryDraft.content !== summaryDraft.savedContent
       );
     }
     if (currentIsStructuredText.value) {
@@ -715,7 +791,10 @@ const showGenericFileTabs = computed(
   () =>
     Boolean(props.selection && props.selection.files.length > 1) &&
     !currentIsContinuityWorkspace.value &&
-    !currentIsWorldbuildingList.value
+    !currentIsWorldbuildingList.value &&
+    !currentIsPlotPointWorkspace.value &&
+    !currentIsBookLineWorkspace.value &&
+    !currentIsChapterCardWorkspace.value
 );
 const currentWorldbuildingListState = computed<{
   items: Array<{ id: string; title: string; content: string }>;
@@ -753,17 +832,14 @@ const currentVisibleContent = computed(() => {
   if (currentIsChapterCardContent.value) {
     return currentChapterCardDraft.value?.content ?? "";
   }
-  if (
-    currentIsPlotPointStoryline.value ||
-    currentIsPlotPointSummary.value
-  ) {
+  if (currentIsPlotPointSummary.value) {
     return currentPlotPointDraft.value?.content ?? "";
   }
   if (currentIsVolumeOutline.value) {
     return currentVolumeOutlineDraft.value?.content ?? "";
   }
-  if (currentIsWorldbuildingList.value) {
-    return currentState.value?.content ?? "";
+  if (isDocumentSwitchPending.value) {
+    return displayDocumentState.value?.content ?? "";
   }
   return currentState.value?.content ?? "";
 });
@@ -880,6 +956,9 @@ const canUseTextTools = computed(
       !currentIsWorldbuildingList.value ||
         currentWorldbuildingListState.value.error ||
         currentSelectionFile.value
+    ) &&
+    Boolean(
+      !currentIsPlotPointStoryline.value || currentStoryPlot.value
     )
 );
 const canUndo = computed(
@@ -992,9 +1071,6 @@ const hasUnsavedChanges = computed(() =>
     (draft) => draft.content !== draft.savedContent
   ) ||
   Object.values(plotPointSummaryDrafts.value).some(
-    (draft) => draft.content !== draft.savedContent
-  ) ||
-  Object.values(plotPointStorylineDrafts.value).some(
     (draft) => draft.content !== draft.savedContent
   ) ||
   Object.values(chapterCardContentDrafts.value).some(
@@ -1222,7 +1298,16 @@ function flushAllRecoveryRecords(): void {
 function updateCurrentContent(content: string): void {
   const state = currentState.value;
   const file = currentSelectionFile.value;
-  if (!state || !file || currentReadOnly.value || state.loading) return;
+  if (
+    !state ||
+    !file ||
+    currentReadOnly.value ||
+    state.loading ||
+    !state.loaded ||
+    isDocumentSwitchPending.value
+  ) {
+    return;
+  }
   const key = stateKey(file.file.id);
   replaceDocumentState(key, {
     ...state,
@@ -1280,6 +1365,7 @@ async function selectWorldbuildingItem(itemId: string): Promise<void> {
   const request = ++worldbuildingSelectionRequest;
   const bookId = props.bookId;
   const selectionKey = selection.key;
+  pendingWorldbuildingOverview.value = false;
   pendingWorldbuildingItemId.value = itemId;
   await loadWorkspaceDocument(selectedFile);
 
@@ -1292,7 +1378,7 @@ async function selectWorldbuildingItem(itemId: string): Promise<void> {
   }
   pendingWorldbuildingItemId.value = null;
   const state = documentStates.value[stateKey(selectedFile.file.id, bookId)];
-  if (state?.loaded) {
+  if (state?.loaded || Boolean(state?.content)) {
     activeWorldbuildingItemId.value = itemId;
   }
 }
@@ -1300,6 +1386,7 @@ async function selectWorldbuildingItem(itemId: string): Promise<void> {
 async function selectWorldbuildingOverview(): Promise<void> {
   if (
     activeWorldbuildingItemId.value === null &&
+    !pendingWorldbuildingOverview.value &&
     pendingWorldbuildingItemId.value === null
   ) {
     return;
@@ -1314,6 +1401,7 @@ async function selectWorldbuildingOverview(): Promise<void> {
   const bookId = props.bookId;
   const selectionKey = selection.key;
   pendingWorldbuildingItemId.value = null;
+  pendingWorldbuildingOverview.value = true;
   await loadWorkspaceDocument(selectedFile);
   if (
     request !== worldbuildingSelectionRequest ||
@@ -1322,8 +1410,9 @@ async function selectWorldbuildingOverview(): Promise<void> {
   ) {
     return;
   }
+  pendingWorldbuildingOverview.value = false;
   const state = documentStates.value[stateKey(selectedFile.file.id, bookId)];
-  if (state?.loaded) {
+  if (state?.loaded || Boolean(state?.content)) {
     activeWorldbuildingItemId.value = null;
   }
 }
@@ -1367,7 +1456,7 @@ function addWorldbuildingItem(): void {
       }
     }],
     () => {
-      activeWorldbuildingItemId.value = item.id;
+      void selectWorldbuildingItem(item.id);
     }
   );
 }
@@ -1406,23 +1495,16 @@ function updateVisibleContent(content: string): void {
   if (
     currentIsPlotPointWorkspace.value &&
     plotPoint &&
-    activePlotPointTab.value !== "foreshadowing"
+    activePlotPointTab.value === "summary"
   ) {
-    const drafts =
-      activePlotPointTab.value === "summary"
-        ? plotPointSummaryDrafts
-        : plotPointStorylineDrafts;
-    const persistedContent =
-      activePlotPointTab.value === "summary"
-        ? plotPoint.summary ?? ""
-        : plotPoint.outline;
-    const current = drafts.value[plotPoint.id] ?? {
+    const persistedContent = plotPoint.summary ?? "";
+    const current = plotPointSummaryDrafts.value[plotPoint.id] ?? {
       content: persistedContent,
       savedContent: persistedContent,
       saving: false
     };
-    drafts.value = {
-      ...drafts.value,
+    plotPointSummaryDrafts.value = {
+      ...plotPointSummaryDrafts.value,
       [plotPoint.id]: {
         ...current,
         content
@@ -1492,12 +1574,15 @@ async function selectBookLineContentTab(
 async function selectPlotPointTab(
   tab: "summary" | "storyline" | "foreshadowing"
 ): Promise<void> {
-  if (tab === "foreshadowing") {
+  if (tab === "foreshadowing" || tab === "storyline") {
     if (!(await saveAllChanges())) return;
     await nextTick();
   }
   activePlotPointTab.value = tab;
   resetEditorHistory();
+  if (tab === "storyline") {
+    await ensureActiveStoryPlotSelection();
+  }
 }
 
 function requestCreateVolume(): void {
@@ -1547,19 +1632,15 @@ async function saveVolumeOutline(volumeId: string): Promise<boolean> {
 
 async function savePlotPointContent(
   plotPointId: LongArcId,
-  field: "summary" | "storyline"
+  field: "summary" = "summary"
 ): Promise<boolean> {
-  const drafts =
-    field === "summary"
-      ? plotPointSummaryDrafts
-      : plotPointStorylineDrafts;
-  const draft = drafts.value[plotPointId];
+  const draft = plotPointSummaryDrafts.value[plotPointId];
   if (!draft || draft.saving || draft.content === draft.savedContent) {
     return Boolean(draft && !draft.saving);
   }
   const submittedContent = draft.content;
-  drafts.value = {
-    ...drafts.value,
+  plotPointSummaryDrafts.value = {
+    ...plotPointSummaryDrafts.value,
     [plotPointId]: { ...draft, saving: true }
   };
   return await new Promise<boolean>((resolve) => {
@@ -1567,10 +1648,10 @@ async function savePlotPointContent(
       "savePlotPointContent",
       { plotPointId, field, content: submittedContent },
       (succeeded) => {
-        const latest = drafts.value[plotPointId];
+        const latest = plotPointSummaryDrafts.value[plotPointId];
         if (latest) {
-          drafts.value = {
-            ...drafts.value,
+          plotPointSummaryDrafts.value = {
+            ...plotPointSummaryDrafts.value,
             [plotPointId]: {
               ...latest,
               ...(succeeded ? { savedContent: submittedContent } : {}),
@@ -1582,6 +1663,210 @@ async function savePlotPointContent(
       }
     );
   });
+}
+
+function emitStoryPlotMutation(
+  operations: LongWorkspaceOperation[],
+  onSuccess?: () => void
+): void {
+  const index = props.workspaceIndex;
+  if (!index || currentReadOnly.value) return;
+  emit(
+    "mutation",
+    {
+      baseRevision: index.revision,
+      updatedAt: new Date().toISOString(),
+      operations,
+      documentWrites: []
+    },
+    {
+      succeed() {
+        onSuccess?.();
+      },
+      fail() {},
+      appliedButRefreshFailed() {
+        onSuccess?.();
+      }
+    }
+  );
+}
+
+async function selectStoryPlot(storyPlotId: string): Promise<void> {
+  closeStoryPlotActionMenu();
+  if (
+    storyPlotId === activeStoryPlotId.value ||
+    storyPlotId === pendingStoryPlotId.value
+  ) {
+    return;
+  }
+  const selection = props.selection;
+  const item = selection?.storyPlots?.find(({ id }) => id === storyPlotId);
+  const selectedFile = item
+    ? selection?.files.find(({ file }) => file.id === item.file.id)
+    : undefined;
+  if (!selection || !item || !selectedFile) return;
+
+  const request = ++storyPlotSelectionRequest;
+  const bookId = props.bookId;
+  const selectionKey = selection.key;
+  pendingStoryPlotId.value = storyPlotId;
+  await loadWorkspaceDocument(selectedFile);
+  if (
+    request !== storyPlotSelectionRequest ||
+    props.bookId !== bookId ||
+    props.selection?.key !== selectionKey
+  ) {
+    return;
+  }
+  pendingStoryPlotId.value = null;
+  const state = documentStates.value[stateKey(selectedFile.file.id, bookId)];
+  if (state?.loaded || Boolean(state?.content)) {
+    activeStoryPlotId.value = storyPlotId;
+  }
+}
+
+async function ensureActiveStoryPlotSelection(): Promise<void> {
+  const plots = currentStoryPlots.value;
+  if (!plots.length) {
+    activeStoryPlotId.value = null;
+    pendingStoryPlotId.value = null;
+    return;
+  }
+  if (
+    activeStoryPlotId.value &&
+    plots.some(({ id }) => id === activeStoryPlotId.value)
+  ) {
+    const selected = plots.find(({ id }) => id === activeStoryPlotId.value);
+    const selectedFile = selected
+      ? props.selection?.files.find(
+          ({ file }) => file.id === selected.file.id
+        )
+      : undefined;
+    if (selectedFile) {
+      await loadWorkspaceDocument(selectedFile);
+    }
+    return;
+  }
+  await selectStoryPlot(plots[0]!.id);
+}
+
+function addStoryPlot(): void {
+  const plotPointId = currentPlotPoint.value?.id;
+  const plots = currentStoryPlots.value;
+  if (!plotPointId || currentReadOnly.value || plots.length >= 200_000) {
+    if (plots.length >= 200_000) {
+      uiMessage.warning("故事情节数量已达上限。");
+    }
+    return;
+  }
+  const usedTitles = new Set(plots.map(({ title }) => title));
+  let sequence = plots.length + 1;
+  let title = `故事情节 ${sequence}`;
+  while (usedTitles.has(title)) {
+    sequence += 1;
+    title = `故事情节 ${sequence}`;
+  }
+  const id = createId("storyplot");
+  const updatedAt = new Date().toISOString();
+  emitStoryPlotMutation(
+    [
+      {
+        type: "storyPlot.create",
+        storyPlot: {
+          id,
+          arcId: plotPointId,
+          title,
+          order: plots.length + 1,
+          file: createEmptyLongMarkdownFileReference(
+            longStoryPlotBodyFileId(id),
+            longStoryPlotFilePath(id),
+            updatedAt
+          )
+        }
+      }
+    ],
+    () => {
+      void selectStoryPlot(id);
+    }
+  );
+}
+
+function updateStoryPlotTitle(
+  storyPlotId: string,
+  event: Event
+): void {
+  const title = (event.target as HTMLInputElement).value.trim();
+  const current = currentStoryPlots.value.find(
+    ({ id }) => id === storyPlotId
+  );
+  if (!current || currentReadOnly.value) return;
+  if (!title) {
+    uiMessage.warning("故事情节名称不能为空。");
+    (event.target as HTMLInputElement).value = current.title;
+    return;
+  }
+  if (title === current.title) return;
+  emitStoryPlotMutation([
+    {
+      type: "storyPlot.update",
+      id: storyPlotId,
+      patch: { title }
+    }
+  ]);
+}
+
+function openStoryPlotDelete(storyPlotId: string): void {
+  pendingStoryPlotDeleteId.value = storyPlotId;
+}
+
+function cancelStoryPlotDelete(): void {
+  pendingStoryPlotDeleteId.value = null;
+}
+
+function confirmStoryPlotDelete(): void {
+  const storyPlotId = pendingStoryPlotDeleteId.value;
+  if (!storyPlotId) return;
+  pendingStoryPlotDeleteId.value = null;
+  emitStoryPlotMutation(
+    [
+      {
+        type: "storyPlot.delete",
+        id: storyPlotId,
+        cascade: true
+      }
+    ],
+    () => {
+      if (activeStoryPlotId.value === storyPlotId) {
+        activeStoryPlotId.value = null;
+        void ensureActiveStoryPlotSelection();
+      }
+    }
+  );
+}
+
+function reorderStoryPlot(
+  storyPlotId: string,
+  direction: "up" | "down"
+): void {
+  const plots = currentStoryPlots.value;
+  const index = plots.findIndex(({ id }) => id === storyPlotId);
+  if (index < 0) return;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= plots.length) return;
+  const orderedIds = plots.map(({ id }) => id);
+  [orderedIds[index], orderedIds[targetIndex]] = [
+    orderedIds[targetIndex]!,
+    orderedIds[index]!
+  ];
+  const arcId = currentPlotPoint.value?.id;
+  if (!arcId) return;
+  emitStoryPlotMutation([
+    {
+      type: "storyPlot.reorder",
+      arcId,
+      orderedIds
+    }
+  ]);
 }
 
 async function saveChapterCardContent(
@@ -1870,6 +2155,27 @@ function handleEditorKeydown(event: KeyboardEvent): void {
   }
 }
 
+function toggleStoryPlotActionMenu(storyPlotId: string): void {
+  storyPlotActionMenuId.value =
+    storyPlotActionMenuId.value === storyPlotId ? null : storyPlotId;
+}
+
+function closeStoryPlotActionMenu(): void {
+  storyPlotActionMenuId.value = null;
+}
+
+function runStoryPlotMenuAction(
+  storyPlotId: string,
+  action: "up" | "down" | "delete"
+): void {
+  closeStoryPlotActionMenu();
+  if (action === "delete") {
+    openStoryPlotDelete(storyPlotId);
+    return;
+  }
+  reorderStoryPlot(storyPlotId, action);
+}
+
 function handleWindowPointerDown(event: PointerEvent): void {
   const target = event.target;
   if (!(target instanceof Node)) return;
@@ -1878,6 +2184,13 @@ function handleWindowPointerDown(event: PointerEvent): void {
     !findPanelElement.value?.contains(target)
   ) {
     closeFindPanel();
+  }
+  if (
+    storyPlotActionMenuId.value &&
+    (!(target instanceof Element) ||
+      !target.closest(".long-story-plot-card-actions"))
+  ) {
+    closeStoryPlotActionMenu();
   }
 }
 
@@ -2075,9 +2388,14 @@ function confirmWorldbuildingItemDelete(): void {
       cascade: true
     }],
     () => {
-      activeWorldbuildingItemId.value =
-        nextItems[Math.min(targetIndex, nextItems.length - 1)]?.id ?? null;
       closeWorldbuildingItemDelete();
+      const nextId =
+        nextItems[Math.min(targetIndex, nextItems.length - 1)]?.id ?? null;
+      if (nextId) {
+        void selectWorldbuildingItem(nextId);
+        return;
+      }
+      void selectWorldbuildingOverview();
     }
   );
 }
@@ -2159,6 +2477,9 @@ function initializeLoadingState(
   file: LongWorkspaceFileReference
 ): void {
   const existing = documentStates.value[key];
+  const dirty = existing
+    ? existing.loaded && existing.content !== existing.savedContent
+    : false;
   replaceDocumentState(key, {
     bookId,
     file,
@@ -2168,10 +2489,9 @@ function initializeLoadingState(
     projectRevision: existing?.projectRevision ?? 0,
     loading: true,
     saving: false,
-    // Never expose a previous clean snapshot as editable after its revision
-    // changed. If the fresh read fails, keeping `loaded` false prevents stale
-    // text from being saved against the newer CAS revision.
-    loaded: false,
+    // Keep dirty drafts editable/saveable. Clean revision refreshes stay
+    // visible for UX but must not remain editable against the new CAS baseline.
+    loaded: dirty,
     loadError: null
   });
 }
@@ -2207,129 +2527,199 @@ async function loadWorkspaceDocument(
   if (
     !force &&
     existing?.loaded &&
+    !existing.loading &&
     (existing.file.revision === selectedFile.file.revision ||
       existing.content !== existing.savedContent)
   ) {
+    return;
+  }
+  const inflight = inflightDocumentLoads.get(key);
+  if (
+    !force &&
+    inflight &&
+    existing?.file.revision === selectedFile.file.revision
+  ) {
+    await inflight;
     return;
   }
   const ownRequest = ++requestClock;
   requestClockByFile.set(key, ownRequest);
   initializeLoadingState(key, bookId, selectedFile.file);
 
-  try {
-    let offset = 0;
-    const contentChunks: string[] = [];
-    let firstPage: LongReadDocumentResult | undefined;
-    while (true) {
-      const page = await api.readDocument({
-        bookId,
-        fileId: selectedFile.file.id,
-        offset,
-        maxCharacters: DOCUMENT_PAGE_CHARACTERS
-      });
-      if (requestClockByFile.get(key) !== ownRequest) return;
-      if (page.file.id !== selectedFile.file.id) {
-        throw new Error("长篇文档读取结果与所选文件不一致。");
+  let loadPromise: Promise<void> | null = null;
+  loadPromise = (async () => {
+    try {
+      let offset = 0;
+      const contentChunks: string[] = [];
+      let firstPage: LongReadDocumentResult | undefined;
+      while (true) {
+        const page = await api.readDocument({
+          bookId,
+          fileId: selectedFile.file.id,
+          offset,
+          maxCharacters: DOCUMENT_PAGE_CHARACTERS
+        });
+        if (requestClockByFile.get(key) !== ownRequest) return;
+        if (page.file.id !== selectedFile.file.id) {
+          throw new Error("长篇文档读取结果与所选文件不一致。");
+        }
+        if (firstPage) {
+          assertSameReadSnapshot(firstPage, page);
+        } else {
+          firstPage = page;
+        }
+        contentChunks.push(page.content);
+        if (page.nextOffset === null) break;
+        if (page.nextOffset <= offset) {
+          throw new Error("长篇文档分页游标无效。");
+        }
+        offset = page.nextOffset;
       }
-      if (firstPage) {
-        assertSameReadSnapshot(firstPage, page);
-      } else {
-        firstPage = page;
-      }
-      contentChunks.push(page.content);
-      if (page.nextOffset === null) break;
-      if (page.nextOffset <= offset) {
-        throw new Error("长篇文档分页游标无效。");
-      }
-      offset = page.nextOffset;
-    }
 
-    if (!firstPage || requestClockByFile.get(key) !== ownRequest) return;
-    const content = contentChunks.join("");
-    // `locked` is a transient write barrier (proposal approval / send
-    // preflight), not a property of the document. Recovery still needs to be
-    // discovered while that barrier is active so it is not silently skipped
-    // until a later remount.
-    const editable =
-      !selectedFile.readOnly && isEditableLongFile(firstPage.file);
-    const recovery = editable
-      ? readRecoveryRecord(bookId, firstPage.file.id)
-      : null;
-    const recoveryMatchesDisk =
-      recovery?.baseRevision === firstPage.file.revision;
-    const recoveredContent =
-      recoveryMatchesDisk && recovery.content !== content
-        ? recovery.content
-        : content;
-    const latestState = documentStates.value[key];
-    replaceDocumentState(key, {
-      bookId,
-      file: firstPage.file,
-      content: recoveredContent,
-      savedContent: content,
-      // Another document save can advance the shared CAS baseline while this
-      // file is being paged in. Never regress to the older read baseline.
-      workspaceRevision: Math.max(
-        firstPage.workspaceRevision,
-        latestState?.workspaceRevision ?? 0
-      ),
-      projectRevision: Math.max(
-        firstPage.projectRevision,
-        latestState?.projectRevision ?? 0
-      ),
-      loading: false,
-      saving: false,
-      loaded: true,
-      loadError: null
-    });
-    if (recovery?.content === content) {
-      clearRecoveryRecordForKey(key, bookId, firstPage.file.id);
-    } else if (recoveryMatchesDisk) {
-      removeStaleRecoveryState(key);
-      uiMessage.info(
-        `已恢复“${props.selection?.title ?? firstPage.file.path}”的本机未保存内容。`
-      );
-    } else if (recovery) {
-      staleRecoveryByKey.value = {
-        ...staleRecoveryByKey.value,
-        [key]: recovery
-      };
-      uiMessage.warning(
-        "检测到基于旧版本的长篇恢复副本：磁盘内容未被覆盖，副本已保留供你核对。"
-      );
-    } else {
-      removeStaleRecoveryState(key);
-    }
-    if (
-      props.bookId === bookId &&
-      currentSelectionFile.value?.file.id === firstPage.file.id
-    ) {
-      emit("contextChange", {
-        bookId,
-        fileId: firstPage.file.id,
-        fileRevision: firstPage.file.revision
-      });
-    }
-  } catch (error: unknown) {
-    const latest = documentStates.value[key];
-    if (requestClockByFile.get(key) === ownRequest && latest) {
-      const message =
-        error instanceof Error ? error.message : "读取长篇文件失败。";
+      if (!firstPage || requestClockByFile.get(key) !== ownRequest) return;
+      const content = contentChunks.join("");
+      // `locked` is a transient write barrier (proposal approval / send
+      // preflight), not a property of the document. Recovery still needs to be
+      // discovered while that barrier is active so it is not silently skipped
+      // until a later remount.
+      const editable =
+        !selectedFile.readOnly && isEditableLongFile(firstPage.file);
+      const recovery = editable
+        ? readRecoveryRecord(bookId, firstPage.file.id)
+        : null;
+      const recoveryMatchesDisk =
+        recovery?.baseRevision === firstPage.file.revision;
+      const recoveredContent =
+        recoveryMatchesDisk && recovery.content !== content
+          ? recovery.content
+          : content;
+      const latestState = documentStates.value[key];
       replaceDocumentState(key, {
-        ...latest,
+        bookId,
+        file: firstPage.file,
+        content: recoveredContent,
+        savedContent: content,
+        // Another document save can advance the shared CAS baseline while this
+        // file is being paged in. Never regress to the older read baseline.
+        workspaceRevision: Math.max(
+          firstPage.workspaceRevision,
+          latestState?.workspaceRevision ?? 0
+        ),
+        projectRevision: Math.max(
+          firstPage.projectRevision,
+          latestState?.projectRevision ?? 0
+        ),
         loading: false,
-        loaded: false,
-        loadError: message
+        saving: false,
+        loaded: true,
+        loadError: null
       });
-      uiMessage.error(message);
+      if (recovery?.content === content) {
+        clearRecoveryRecordForKey(key, bookId, firstPage.file.id);
+      } else if (recoveryMatchesDisk) {
+        removeStaleRecoveryState(key);
+        uiMessage.info(
+          `已恢复“${props.selection?.title ?? firstPage.file.path}”的本机未保存内容。`
+        );
+      } else if (recovery) {
+        staleRecoveryByKey.value = {
+          ...staleRecoveryByKey.value,
+          [key]: recovery
+        };
+        uiMessage.warning(
+          "检测到基于旧版本的长篇恢复副本：磁盘内容未被覆盖，副本已保留供你核对。"
+        );
+      } else {
+        removeStaleRecoveryState(key);
+      }
+      if (
+        props.bookId === bookId &&
+        currentSelectionFile.value?.file.id === firstPage.file.id
+      ) {
+        emit("contextChange", {
+          bookId,
+          fileId: firstPage.file.id,
+          fileRevision: firstPage.file.revision
+        });
+      }
+    } catch (error: unknown) {
+      const latest = documentStates.value[key];
+      if (requestClockByFile.get(key) === ownRequest && latest) {
+        const message =
+          error instanceof Error ? error.message : "读取长篇文件失败。";
+        replaceDocumentState(key, {
+          ...latest,
+          loading: false,
+          // Preserve any previously shown text, but never keep it editable after
+          // a failed refresh against a newer CAS baseline.
+          loaded: false,
+          loadError: message
+        });
+        uiMessage.error(message);
+      }
+    } finally {
+      if (inflightDocumentLoads.get(key) === loadPromise) {
+        inflightDocumentLoads.delete(key);
+      }
     }
-  }
+  })();
+  inflightDocumentLoads.set(key, loadPromise);
+  await loadPromise;
 }
 
 async function loadSelectedDocument(force = false): Promise<void> {
   const selectedFile = currentSelectionFile.value;
   if (!selectedFile) return;
   await loadWorkspaceDocument(selectedFile, force);
+}
+
+async function prefetchWorldbuildingSelectionFiles(): Promise<void> {
+  if (!currentIsWorldbuildingList.value) return;
+  const selection = props.selection;
+  if (!selection?.files.length) return;
+  const request = ++worldbuildingPrefetchRequest;
+  const bookId = props.bookId;
+  const selectionKey = selection.key;
+  const files = [...selection.files];
+  await Promise.all(
+    files.map(async (file) => {
+      if (
+        request !== worldbuildingPrefetchRequest ||
+        props.bookId !== bookId ||
+        props.selection?.key !== selectionKey
+      ) {
+        return;
+      }
+      await loadWorkspaceDocument(file);
+    })
+  );
+}
+
+async function prefetchActiveSelectionFiles(): Promise<void> {
+  // Worldbuilding list has its own prefetch. Avoid unbounded sibling character
+  // prefetches: only warm the files belonging to the active selection.
+  if (currentIsWorldbuildingList.value) return;
+  const selection = props.selection;
+  if (!selection?.files.length) return;
+  const request = ++selectionPrefetchRequest;
+  const bookId = props.bookId;
+  const selectionKey = selection.key;
+  const characterId = selection.characterId ?? null;
+  const files = [...selection.files];
+  await Promise.all(
+    files.map(async (file) => {
+      if (
+        request !== selectionPrefetchRequest ||
+        props.bookId !== bookId ||
+        props.selection?.key !== selectionKey ||
+        (characterId !== null &&
+          (props.selection?.characterId ?? null) !== characterId)
+      ) {
+        return;
+      }
+      await loadWorkspaceDocument(file);
+    })
+  );
 }
 
 function restoreStaleRecovery(): void {
@@ -2377,8 +2767,58 @@ async function copyStaleRecovery(): Promise<void> {
   }
 }
 
-function selectRole(role: LongWorkspaceFileRole): void {
-  activeRole.value = role;
+async function selectRole(role: LongWorkspaceFileRole): Promise<void> {
+  if (role === activeRole.value || role === pendingRole.value) return;
+  const selectedFile = props.selection?.files.find(
+    (file) => file.role === role
+  );
+  if (!selectedFile) {
+    activeRole.value = role;
+    return;
+  }
+  const bookId = props.bookId;
+  const selectionKey = props.selection?.key;
+  pendingRole.value = role;
+  await loadWorkspaceDocument(selectedFile);
+  if (
+    props.bookId !== bookId ||
+    props.selection?.key !== selectionKey ||
+    pendingRole.value !== role
+  ) {
+    return;
+  }
+  pendingRole.value = null;
+  const state = documentStates.value[stateKey(selectedFile.file.id, bookId)];
+  if (state?.loaded || Boolean(state?.content)) {
+    activeRole.value = role;
+  }
+}
+
+function requestSelectCharacter(characterId: LongCharacterId): void {
+  if (
+    props.locked ||
+    characterId === props.selection?.characterId ||
+    characterId === pendingCharacterId.value
+  ) {
+    return;
+  }
+  pendingCharacterId.value = characterId;
+  emit("selectCharacter", characterId, (accepted) => {
+    if (!accepted && pendingCharacterId.value === characterId) {
+      pendingCharacterId.value = null;
+    }
+  });
+}
+
+async function ensureDocumentsLoaded(
+  files: LongWorkspaceSelectionFile[]
+): Promise<boolean> {
+  if (!files.length) return true;
+  await Promise.all(files.map((file) => loadWorkspaceDocument(file)));
+  return files.every((file) => {
+    const state = documentStates.value[stateKey(file.file.id)];
+    return Boolean(state?.loaded || state?.content);
+  });
 }
 
 async function saveDocumentState(
@@ -2546,14 +2986,6 @@ async function saveAllChanges(): Promise<boolean> {
         !draft.saving && draft.content !== draft.savedContent
     )
     .map(([plotPointId]) => plotPointId as LongArcId);
-  const dirtyPlotPointStorylineIds = Object.entries(
-    plotPointStorylineDrafts.value
-  )
-    .filter(
-      ([, draft]) =>
-        !draft.saving && draft.content !== draft.savedContent
-    )
-    .map(([plotPointId]) => plotPointId as LongArcId);
   const dirtyChapterCardIds = Object.entries(
     chapterCardContentDrafts.value
   )
@@ -2566,7 +2998,6 @@ async function saveAllChanges(): Promise<boolean> {
     !dirtyKeys.length &&
     !dirtyVolumeIds.length &&
     !dirtyPlotPointSummaryIds.length &&
-    !dirtyPlotPointStorylineIds.length &&
     !dirtyChapterCardIds.length
   ) {
     return true;
@@ -2585,11 +3016,6 @@ async function saveAllChanges(): Promise<boolean> {
     }
     for (const plotPointId of dirtyPlotPointSummaryIds) {
       if (!(await savePlotPointContent(plotPointId, "summary"))) {
-        return false;
-      }
-    }
-    for (const plotPointId of dirtyPlotPointStorylineIds) {
-      if (!(await savePlotPointContent(plotPointId, "storyline"))) {
         return false;
       }
     }
@@ -2613,9 +3039,6 @@ async function saveAllChanges(): Promise<boolean> {
       !Object.values(plotPointSummaryDrafts.value).some(
         (draft) => draft.content !== draft.savedContent
       ) &&
-      !Object.values(plotPointStorylineDrafts.value).some(
-        (draft) => draft.content !== draft.savedContent
-      ) &&
       !Object.values(chapterCardContentDrafts.value).some(
         (draft) => draft.content !== draft.savedContent
       );
@@ -2625,7 +3048,6 @@ async function saveAllChanges(): Promise<boolean> {
       dirtyKeys.length +
       dirtyVolumeIds.length +
       dirtyPlotPointSummaryIds.length +
-      dirtyPlotPointStorylineIds.length +
       dirtyChapterCardIds.length;
     uiMessage.success(
       `离开前已自动保存 ${savedCount} 项长篇修改`
@@ -2676,10 +3098,6 @@ function synchronizeProjectRevisionsIfClean(
         (draft) =>
           !draft.saving && draft.content !== draft.savedContent
       ) ||
-      Object.values(plotPointStorylineDrafts.value).some(
-        (draft) =>
-          !draft.saving && draft.content !== draft.savedContent
-      ) ||
       Object.values(chapterCardContentDrafts.value).some(
         (draft) =>
           !draft.saving && draft.content !== draft.savedContent
@@ -2721,6 +3139,7 @@ function synchronizeProjectRevisionsIfClean(
 defineExpose({
   saveAllChanges,
   selectBookLineVolume,
+  ensureDocumentsLoaded,
   synchronizeProjectRevisions,
   synchronizeProjectRevisionsIfClean
 });
@@ -2743,11 +3162,11 @@ watch(
       volumeDraftBookId = props.bookId;
       volumeOutlineDrafts.value = {};
       plotPointSummaryDrafts.value = {};
-      plotPointStorylineDrafts.value = {};
       chapterCardContentDrafts.value = {};
       activeBookLineVolumeId.value = null;
       activeBookLineContentTab.value = "outline";
       activePlotPointTab.value = "summary";
+      activeStoryPlotId.value = null;
     }
     const volumes = props.workspaceIndex?.plot.volumes ?? [];
     const next: Record<string, LongVolumeOutlineDraft> = {};
@@ -2766,7 +3185,6 @@ watch(
     }
     volumeOutlineDrafts.value = next;
     const nextSummaries: Record<string, LongVolumeOutlineDraft> = {};
-    const nextStorylines: Record<string, LongVolumeOutlineDraft> = {};
     for (const plotPoint of props.workspaceIndex?.plot.arcs ?? []) {
       const existingSummary = plotPointSummaryDrafts.value[plotPoint.id];
       nextSummaries[plotPoint.id] =
@@ -2779,21 +3197,8 @@ watch(
               savedContent: plotPoint.summary ?? "",
               saving: false
             };
-      const existingStoryline =
-        plotPointStorylineDrafts.value[plotPoint.id];
-      nextStorylines[plotPoint.id] =
-        existingStoryline &&
-        (existingStoryline.saving ||
-          existingStoryline.content !== existingStoryline.savedContent)
-          ? existingStoryline
-          : {
-              content: plotPoint.outline,
-              savedContent: plotPoint.outline,
-              saving: false
-            };
     }
     plotPointSummaryDrafts.value = nextSummaries;
-    plotPointStorylineDrafts.value = nextStorylines;
     const nextChapterContents: Record<string, LongVolumeOutlineDraft> = {};
     for (const chapterCard of props.workspaceIndex?.plot.chapterCards ?? []) {
       const existing = chapterCardContentDrafts.value[chapterCard.id];
@@ -2832,6 +3237,22 @@ watch(
     activeRole.value = props.selection?.preferredRole ?? "content";
   },
   { immediate: true, flush: "sync" }
+);
+
+watch(
+  () =>
+    [
+      props.bookId,
+      props.selection?.key,
+      props.selection?.plotPointId,
+      activePlotPointTab.value,
+      (props.selection?.storyPlots ?? []).map(({ id }) => id).join("\0")
+    ] as const,
+  () => {
+    if (!currentIsPlotPointStoryline.value) return;
+    void ensureActiveStoryPlotSelection();
+  },
+  { flush: "post" }
 );
 
 watch(
@@ -2881,6 +3302,14 @@ watch(
 );
 
 watch(
+  () => props.bookId,
+  () => {
+    heldSelectionFile.value = null;
+  },
+  { flush: "sync" }
+);
+
+watch(
   [
     () => props.bookId,
     () => props.selection?.key
@@ -2888,6 +3317,37 @@ watch(
   () => {
     worldbuildingSelectionRequest += 1;
     pendingWorldbuildingItemId.value = null;
+    pendingWorldbuildingOverview.value = false;
+    pendingRole.value = null;
+  },
+  { flush: "sync" }
+);
+
+watch(
+  () => props.selection?.characterId ?? null,
+  (characterId) => {
+    if (
+      pendingCharacterId.value !== null &&
+      characterId === pendingCharacterId.value
+    ) {
+      pendingCharacterId.value = null;
+    }
+  },
+  { flush: "sync" }
+);
+
+watch(
+  () =>
+    props.selection?.characterTabs?.map(({ id }) => id).join("\u0000") ?? "",
+  () => {
+    if (
+      pendingCharacterId.value &&
+      !(props.selection?.characterTabs ?? []).some(
+        ({ id }) => id === pendingCharacterId.value
+      )
+    ) {
+      pendingCharacterId.value = null;
+    }
   },
   { flush: "sync" }
 );
@@ -2928,6 +3388,72 @@ watch(
     [
       props.bookId,
       currentSelectionFile.value?.file.id,
+      currentState.value?.loaded,
+      currentState.value?.content,
+      currentState.value?.loading
+    ] as const,
+  () => {
+    const target = currentSelectionFile.value;
+    if (!target) {
+      heldSelectionFile.value = null;
+      return;
+    }
+    const state = documentStates.value[stateKey(target.file.id)];
+    if (state?.loaded || Boolean(state?.content)) {
+      heldSelectionFile.value = target;
+      return;
+    }
+    const held = heldSelectionFile.value;
+    if (held) {
+      const heldState = documentStates.value[stateKey(held.file.id)];
+      if (heldState?.loaded || Boolean(heldState?.content)) {
+        return;
+      }
+    }
+    heldSelectionFile.value = target;
+  },
+  { immediate: true, flush: "sync" }
+);
+
+watch(
+  () =>
+    [
+      props.bookId,
+      props.selection?.key,
+      currentIsWorldbuildingList.value,
+      currentWorldbuildingItems.value.map(({ id }) => id).join("\u0000")
+    ] as const,
+  () => {
+    if (currentIsWorldbuildingList.value) {
+      selectionPrefetchRequest += 1;
+      void prefetchWorldbuildingSelectionFiles();
+      return;
+    }
+    worldbuildingPrefetchRequest += 1;
+  },
+  { immediate: true }
+);
+
+watch(
+  () =>
+    [
+      props.bookId,
+      props.selection?.key,
+      props.selection?.characterId ?? null,
+      props.selection?.files.map(({ file }) => file.id).join("\u0000") ?? ""
+    ] as const,
+  () => {
+    if (currentIsWorldbuildingList.value) return;
+    void prefetchActiveSelectionFiles();
+  },
+  { immediate: true }
+);
+
+watch(
+  () =>
+    [
+      props.bookId,
+      currentSelectionFile.value?.file.id,
       currentSelectionFile.value?.file.revision
     ] as const,
   () => {
@@ -2953,6 +3479,8 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   worldbuildingSelectionRequest += 1;
+  worldbuildingPrefetchRequest += 1;
+  selectionPrefetchRequest += 1;
   flushAllRecoveryRecords();
   for (const key of [...recoveryWriteTimers.keys()]) {
     cancelRecoveryWrite(key);
@@ -2960,6 +3488,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", handleBeforeUnload);
   window.removeEventListener("pointerdown", handleWindowPointerDown, true);
   requestClockByFile.clear();
+  inflightDocumentLoads.clear();
 });
 </script>
 
@@ -3014,7 +3543,7 @@ onBeforeUnmount(() => {
                     ? lockedReason ?? "编辑暂时锁定"
                     : currentSelectionFile?.readOnly
                       ? "只读记录"
-                      : currentState?.loading
+                      : isDocumentSwitchPending || currentState?.loading
                         ? "正在读取"
                         : currentSaving
                           ? "正在保存到本机"
@@ -3048,14 +3577,16 @@ onBeforeUnmount(() => {
             :key="character.id"
             class="section-tab"
             :class="{
-              'is-active': selection.characterId === character.id
+              'is-active': selection.characterId === character.id,
+              'is-loading': pendingCharacterId === character.id
             }"
             type="button"
             role="tab"
             :aria-selected="selection.characterId === character.id"
+            :aria-busy="pendingCharacterId === character.id"
             :title="character.label"
             :disabled="locked"
-            @click="emit('selectCharacter', character.id)"
+            @click="requestSelectCharacter(character.id)"
           >
             {{ character.label }}
           </button>
@@ -3244,11 +3775,13 @@ onBeforeUnmount(() => {
           <button
             class="section-tab"
             :class="{
-              'is-active': activeWorldbuildingItemId === null
+              'is-active': activeWorldbuildingItemId === null,
+              'is-loading': pendingWorldbuildingOverview
             }"
             type="button"
             role="tab"
             :aria-selected="activeWorldbuildingItemId === null"
+            :aria-busy="pendingWorldbuildingOverview"
             title="概览"
             @click="selectWorldbuildingOverview"
           >
@@ -3391,7 +3924,11 @@ onBeforeUnmount(() => {
             type="button"
             role="tab"
             :aria-selected="currentSelectionFile?.role === file.role"
-            :class="{ 'is-active': currentSelectionFile?.role === file.role }"
+            :class="{
+              'is-active': currentSelectionFile?.role === file.role,
+              'is-loading': pendingRole === file.role
+            }"
+            :aria-busy="pendingRole === file.role"
             :disabled="locked"
             @click="selectRole(file.role)"
           >
@@ -3402,6 +3939,7 @@ onBeforeUnmount(() => {
           v-if="
             !currentIsForeshadowingView &&
             !currentIsContinuityWorkspace &&
+            !currentIsPlotPointStoryline &&
             ((currentIsBookLineWorkspace && currentBookLineVolume) ||
               (currentIsPlotPointWorkspace && currentPlotPoint) ||
               (currentIsChapterCardWorkspace && currentChapterCard) ||
@@ -3410,7 +3948,11 @@ onBeforeUnmount(() => {
           class="long-toolbar-separator"
         />
         <div
-          v-if="!currentIsForeshadowingView && !currentIsContinuityWorkspace"
+          v-if="
+            !currentIsForeshadowingView &&
+            !currentIsContinuityWorkspace &&
+            !currentIsPlotPointStoryline
+          "
           class="long-editor-view-tabs"
           role="tablist"
           aria-label="文本视图"
@@ -3437,11 +3979,19 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <span
-          v-if="!currentIsForeshadowingView && !currentIsContinuityWorkspace"
+          v-if="
+            !currentIsForeshadowingView &&
+            !currentIsContinuityWorkspace &&
+            !currentIsPlotPointStoryline
+          "
           class="long-toolbar-separator"
         />
         <div
-          v-if="!currentIsForeshadowingView && !currentIsContinuityWorkspace"
+          v-if="
+            !currentIsForeshadowingView &&
+            !currentIsContinuityWorkspace &&
+            !currentIsPlotPointStoryline
+          "
           ref="editorToolsElement"
           class="long-editor-text-tools"
           role="group"
@@ -3664,21 +4214,426 @@ onBeforeUnmount(() => {
           :disabled="locked"
           @mutation="forwardForeshadowingMutation"
         />
+        <section
+          v-else-if="currentIsPlotPointStoryline"
+          class="long-story-plot-workspace"
+          :aria-label="`${currentPlotPoint?.title ?? '当前剧情点'} · 故事情节`"
+        >
+          <header class="long-story-plot-header">
+            <div class="long-story-plot-heading">
+              <h2>
+                {{ currentPlotPoint?.title ?? "当前剧情点" }} · 故事情节
+              </h2>
+            </div>
+            <div class="long-story-plot-header-actions">
+              <button
+                v-if="!currentReadOnly"
+                class="long-story-plot-add"
+                type="button"
+                :disabled="locked"
+                @click="addStoryPlot"
+              >
+                <AppIcon name="plus" :size="15" />
+                新增情节
+              </button>
+            </div>
+          </header>
+
+          <div class="long-story-plot-layout">
+            <aside class="long-story-plot-pane" aria-label="故事情节列表">
+              <header>
+                <div>
+                  <strong>当前剧情点涉及</strong>
+                  <span>{{ currentStoryPlots.length }}</span>
+                </div>
+              </header>
+              <div
+                v-if="currentStoryPlots.length"
+                class="long-story-plot-list"
+                role="list"
+              >
+                <article
+                  v-for="(plot, index) in currentStoryPlots"
+                  :key="plot.id"
+                  class="long-story-plot-card"
+                  :class="{
+                    'is-active': plot.id === activeStoryPlotId,
+                    'is-loading': pendingStoryPlotId === plot.id,
+                    'is-menu-open': storyPlotActionMenuId === plot.id
+                  }"
+                  role="listitem"
+                >
+                  <button
+                    class="long-story-plot-card-main"
+                    type="button"
+                    :aria-pressed="plot.id === activeStoryPlotId"
+                    :disabled="locked"
+                    @click="selectStoryPlot(plot.id)"
+                  >
+                    <span class="long-story-plot-card-order">
+                      {{ index + 1 }}
+                    </span>
+                    <span class="long-story-plot-card-title">{{
+                      plot.title
+                    }}</span>
+                  </button>
+                  <div
+                    v-if="!currentReadOnly"
+                    class="long-story-plot-card-actions"
+                    :class="{
+                      'is-menu-open': storyPlotActionMenuId === plot.id
+                    }"
+                  >
+                    <button
+                      class="long-story-plot-more-button"
+                      :class="{
+                        'is-active': storyPlotActionMenuId === plot.id
+                      }"
+                      type="button"
+                      :aria-label="`${plot.title}更多操作`"
+                      :aria-expanded="storyPlotActionMenuId === plot.id"
+                      aria-haspopup="menu"
+                      :disabled="locked"
+                      @click.stop="toggleStoryPlotActionMenu(plot.id)"
+                    >
+                      <AppIcon name="more" :size="16" />
+                    </button>
+                    <div
+                      v-if="storyPlotActionMenuId === plot.id"
+                      class="long-story-plot-action-menu"
+                      role="menu"
+                      @keydown.esc.stop="closeStoryPlotActionMenu"
+                    >
+                      <button
+                        class="long-story-plot-action-menu-item"
+                        type="button"
+                        role="menuitem"
+                        :disabled="index === 0"
+                        @click.stop="runStoryPlotMenuAction(plot.id, 'up')"
+                      >
+                        <AppIcon name="arrow-up" :size="14" />
+                        <span>上移</span>
+                      </button>
+                      <button
+                        class="long-story-plot-action-menu-item"
+                        type="button"
+                        role="menuitem"
+                        :disabled="
+                          index === currentStoryPlots.length - 1
+                        "
+                        @click.stop="
+                          runStoryPlotMenuAction(plot.id, 'down')
+                        "
+                      >
+                        <AppIcon
+                          class="long-story-plot-arrow-down"
+                          name="arrow-up"
+                          :size="14"
+                        />
+                        <span>下移</span>
+                      </button>
+                      <button
+                        class="long-story-plot-action-menu-item is-danger"
+                        type="button"
+                        role="menuitem"
+                        @click.stop="
+                          runStoryPlotMenuAction(plot.id, 'delete')
+                        "
+                      >
+                        <AppIcon name="trash" :size="14" />
+                        <span>删除</span>
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="long-story-plot-pane-empty">
+                <AppIcon name="sparkles" :size="22" />
+                <strong>当前范围还没有故事情节</strong>
+                <span>新增情节后会出现在这里，左侧可直接编写正文。</span>
+              </div>
+            </aside>
+
+            <main class="long-story-plot-detail" aria-label="故事情节正文">
+              <div
+                v-if="showEditorLoading"
+                class="long-editor-loading"
+              >
+                <span class="long-loading-dot" />
+                <span>正在读取文件内容…</span>
+              </div>
+              <div
+                v-else-if="showEditorLoadError"
+                class="long-editor-unavailable"
+                role="status"
+              >
+                <AppIcon name="file" :size="22" />
+                <strong>文件读取失败</strong>
+                <span>{{ currentState?.loadError }}</span>
+              </div>
+              <div
+                v-else-if="currentStoryPlot"
+                class="long-story-plot-writing-surface"
+                :class="{
+                  'is-readonly': currentReadOnly || isDocumentContentBusy
+                }"
+              >
+                <input
+                  :value="currentStoryPlot.title"
+                  class="long-story-plot-title-input"
+                  :readonly="
+                    currentReadOnly || locked || isDocumentContentBusy
+                  "
+                  maxlength="256"
+                  autocomplete="off"
+                  aria-label="故事情节名称"
+                  @change="
+                    updateStoryPlotTitle(currentStoryPlot.id, $event)
+                  "
+                />
+                <div class="long-story-plot-text-toolbar">
+                  <div
+                    class="long-editor-view-tabs"
+                    role="tablist"
+                    aria-label="文本视图"
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      :aria-selected="viewMode === 'edit'"
+                      :class="{ 'is-active': viewMode === 'edit' }"
+                      :disabled="!canUseTextTools"
+                      @click="viewMode = 'edit'"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      :aria-selected="viewMode === 'preview'"
+                      :class="{ 'is-active': viewMode === 'preview' }"
+                      :disabled="!canUseTextTools"
+                      @click="viewMode = 'preview'"
+                    >
+                      预览
+                    </button>
+                  </div>
+                  <span class="long-toolbar-separator" />
+                  <div
+                    ref="editorToolsElement"
+                    class="long-editor-text-tools"
+                    role="group"
+                    aria-label="文本操作"
+                  >
+                    <button
+                      class="long-format-button"
+                      type="button"
+                      aria-label="撤销"
+                      title="撤销（⌘/Ctrl+Z）"
+                      :disabled="!canUndo"
+                      @mousedown.prevent
+                      @click="undo"
+                    >
+                      <AppIcon name="undo" :size="16" />
+                    </button>
+                    <button
+                      class="long-format-button"
+                      type="button"
+                      aria-label="还原"
+                      title="还原（⌘/Ctrl+Shift+Z）"
+                      :disabled="!canRedo"
+                      @mousedown.prevent
+                      @click="redo"
+                    >
+                      <AppIcon name="redo" :size="16" />
+                    </button>
+                    <button
+                      class="long-format-button"
+                      :class="{
+                        'is-active':
+                          findPanelOpen && findPanelMode === 'find'
+                      }"
+                      type="button"
+                      aria-label="查找"
+                      title="查找（⌘/Ctrl+F）"
+                      :disabled="!canUseTextTools"
+                      :aria-pressed="
+                        findPanelOpen && findPanelMode === 'find'
+                      "
+                      @mousedown.prevent
+                      @click="toggleFindPanel('find')"
+                    >
+                      <AppIcon name="search" :size="16" />
+                    </button>
+                    <button
+                      class="long-format-button"
+                      :class="{
+                        'is-active':
+                          findPanelOpen && findPanelMode === 'replace'
+                      }"
+                      type="button"
+                      aria-label="替换"
+                      title="替换（⌘⌥F / Ctrl+H）"
+                      :disabled="!canUseTextTools"
+                      :aria-pressed="
+                        findPanelOpen && findPanelMode === 'replace'
+                      "
+                      @mousedown.prevent
+                      @click="toggleFindPanel('replace')"
+                    >
+                      <AppIcon name="replace" :size="16" />
+                    </button>
+
+                    <div
+                      v-if="findPanelOpen"
+                      ref="findPanelElement"
+                      class="long-editor-find-panel"
+                      role="dialog"
+                      :aria-label="
+                        findPanelMode === 'replace'
+                          ? '查找和替换'
+                          : '查找文字'
+                      "
+                      @keydown.esc.stop="closeFindPanel"
+                    >
+                      <div class="long-editor-find-row">
+                        <label class="long-editor-find-field">
+                          <AppIcon name="search" :size="14" />
+                          <input
+                            ref="findInput"
+                            v-model="searchQuery"
+                            type="text"
+                            aria-label="查找文字"
+                            placeholder="查找"
+                            @input="handleFindInput"
+                            @keydown.enter.prevent="
+                              findMatch($event.shiftKey ? -1 : 1)
+                            "
+                          />
+                          <span
+                            class="long-editor-find-count"
+                            aria-live="polite"
+                          >
+                            {{ searchResultLabel }}
+                          </span>
+                        </label>
+                        <button
+                          class="long-editor-find-icon-button is-previous"
+                          type="button"
+                          aria-label="查找上一个"
+                          title="查找上一个"
+                          @click="findMatch(-1)"
+                        >
+                          <AppIcon name="chevron" :size="14" />
+                        </button>
+                        <button
+                          class="long-editor-find-icon-button"
+                          type="button"
+                          aria-label="查找下一个"
+                          title="查找下一个"
+                          @click="findMatch(1)"
+                        >
+                          <AppIcon name="chevron" :size="14" />
+                        </button>
+                        <button
+                          class="long-editor-find-icon-button"
+                          type="button"
+                          aria-label="关闭查找"
+                          title="关闭"
+                          @click="closeFindPanel"
+                        >
+                          <AppIcon name="close" :size="14" />
+                        </button>
+                      </div>
+                      <div
+                        v-if="findPanelMode === 'replace'"
+                        class="long-editor-replace-row"
+                      >
+                        <label class="long-editor-find-field">
+                          <AppIcon name="replace" :size="14" />
+                          <input
+                            v-model="replacementText"
+                            type="text"
+                            aria-label="替换为"
+                            placeholder="替换为"
+                            :disabled="currentReadOnly"
+                            @keydown.enter.prevent="replaceCurrentMatch"
+                          />
+                        </label>
+                        <button
+                          class="long-editor-find-action"
+                          type="button"
+                          :disabled="currentReadOnly"
+                          @click="replaceCurrentMatch"
+                        >
+                          替换
+                        </button>
+                        <button
+                          class="long-editor-find-action"
+                          type="button"
+                          :disabled="currentReadOnly"
+                          @click="replaceAllMatches"
+                        >
+                          全部
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <textarea
+                  v-if="viewMode === 'edit'"
+                  ref="editorInput"
+                  :value="currentVisibleContent"
+                  class="long-document-editor long-story-plot-editor"
+                  :readonly="currentReadOnly || isDocumentContentBusy"
+                  :aria-label="`${currentStoryPlot.title}正文`"
+                  spellcheck="false"
+                  @beforeinput="handleEditorBeforeInput"
+                  @input="
+                    updateVisibleContent(
+                      ($event.target as HTMLTextAreaElement).value
+                    )
+                  "
+                  @keydown="handleEditorKeydown"
+                />
+                <article
+                  v-else
+                  class="long-document-preview long-story-plot-editor"
+                >
+                  <p
+                    v-for="(paragraph, index) in previewParagraphs"
+                    :key="index"
+                  >
+                    {{ paragraph }}
+                  </p>
+                  <p v-if="!previewParagraphs.length" class="is-empty">
+                    暂无故事情节正文
+                  </p>
+                </article>
+              </div>
+              <div v-else class="long-story-plot-detail-empty">
+                <AppIcon name="sparkles" :size="26" />
+                <strong>选择一条故事情节查看正文</strong>
+                <span>右侧列表管理情节条目，左侧文本框编写内容。</span>
+              </div>
+            </main>
+          </div>
+        </section>
         <div
-          v-else-if="currentState?.loading"
+          v-else-if="showEditorLoading"
           class="long-editor-loading"
         >
           <span class="long-loading-dot" />
           <span>正在读取文件内容…</span>
         </div>
         <div
-          v-else-if="currentState?.loadError"
+          v-else-if="showEditorLoadError"
           class="long-editor-unavailable"
           role="status"
         >
           <AppIcon name="file" :size="22" />
           <strong>文件读取失败</strong>
-          <span>{{ currentState.loadError }}</span>
+          <span>{{ currentState?.loadError }}</span>
           <button
             type="button"
             :disabled="workspaceSavePending"
@@ -3878,11 +4833,15 @@ onBeforeUnmount(() => {
         <div
           v-else-if="
             currentState?.loaded ||
+            Boolean(currentState?.content) ||
+            isDocumentSwitchPending ||
             currentIsWorldbuildingList ||
             (currentIsChapterCardWorkspace && currentChapterCard)
           "
           class="long-editor-writing-surface"
-          :class="{ 'is-readonly': currentReadOnly }"
+          :class="{
+            'is-readonly': currentReadOnly || isDocumentContentBusy
+          }"
         >
           <div
             v-if="
@@ -3938,7 +4897,7 @@ onBeforeUnmount(() => {
               "
               :value="currentWorldbuildingItem.title"
               class="long-document-title-input"
-              :readonly="currentReadOnly || locked"
+              :readonly="currentReadOnly || locked || isDocumentContentBusy"
               maxlength="256"
               autocomplete="off"
               aria-label="世界观条目名称"
@@ -3979,7 +4938,7 @@ onBeforeUnmount(() => {
               ref="editorInput"
               :value="currentVisibleContent"
               class="long-document-editor"
-              :readonly="currentReadOnly"
+              :readonly="currentReadOnly || isDocumentContentBusy"
               :aria-label="`${currentDocumentTitle}${currentDocumentFormat || '内容'}`"
               :maxlength="
                 currentIsStructuredText
@@ -4062,7 +5021,9 @@ onBeforeUnmount(() => {
           {{
             currentIsForeshadowingView
               ? `${workspaceIndex?.plot.foreshadowing.length ?? 0} 条伏笔线`
-              : `${characterCount.toLocaleString("zh-CN")} 字`
+              : currentIsPlotPointStoryline
+                ? `${currentStoryPlots.length} 条故事情节`
+                : `${characterCount.toLocaleString("zh-CN")} 字`
           }}
         </span>
         <span>
@@ -4071,6 +5032,14 @@ onBeforeUnmount(() => {
               ? locked
                 ? lockedReason ?? "编辑暂时锁定"
                 : "结构修改会直接保存到本机"
+              : currentIsPlotPointStoryline
+                ? locked
+                  ? lockedReason ?? "编辑暂时锁定"
+                  : currentDirty
+                    ? "本机文稿 · 有未保存修改"
+                    : currentStoryPlot
+                      ? "结构修改会直接保存到本机"
+                      : "选择情节后可编辑正文"
               : locked
               ? lockedReason ?? "编辑暂时锁定 · 防止版本冲突"
               : currentSaving
@@ -4092,7 +5061,7 @@ onBeforeUnmount(() => {
           :disabled="
             currentReadOnly ||
             !currentDirty ||
-            currentState?.loading ||
+            isDocumentContentBusy ||
             currentSaving ||
             workspaceSavePending
           "
@@ -4113,6 +5082,40 @@ onBeforeUnmount(() => {
     </div>
 
     <Teleport to="body">
+      <div
+        v-if="pendingStoryPlotDelete"
+        class="dialog-backdrop long-worldbuilding-delete-overlay"
+        @mousedown.self="cancelStoryPlotDelete"
+      >
+        <section
+          class="long-worldbuilding-delete-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="long-story-plot-delete-title"
+          aria-describedby="long-story-plot-delete-description"
+          tabindex="-1"
+        >
+          <span>删除故事情节</span>
+          <h3 id="long-story-plot-delete-title">
+            确认删除“{{ pendingStoryPlotDelete.title }}”？
+          </h3>
+          <p id="long-story-plot-delete-description">
+            保存后该情节及其正文文件将从本机删除。
+          </p>
+          <footer>
+            <button type="button" @click="cancelStoryPlotDelete">
+              取消
+            </button>
+            <button
+              class="is-danger"
+              type="button"
+              @click="confirmStoryPlotDelete"
+            >
+              确认删除
+            </button>
+          </footer>
+        </section>
+      </div>
       <div
         v-if="pendingWorldbuildingDeleteItem"
         class="dialog-backdrop long-worldbuilding-delete-overlay"
@@ -4664,7 +5667,7 @@ onBeforeUnmount(() => {
 .long-continuity-workspace-host {
   height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .long-editor-writing-surface.is-readonly {
@@ -5293,6 +6296,406 @@ onBeforeUnmount(() => {
   50% {
     opacity: 0.35;
     transform: scale(0.8);
+  }
+}
+
+.long-story-plot-workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface-main);
+  color: var(--text-primary);
+}
+
+.long-story-plot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--theme-line-soft);
+  background: var(--surface-raised);
+}
+
+.long-story-plot-heading {
+  min-width: 0;
+}
+
+.long-story-plot-heading h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 1.142857rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.long-story-plot-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.long-story-plot-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 31px;
+  gap: 5px;
+  padding: 6px 11px;
+  border: 1px solid var(--neutral-solid);
+  border-radius: 7px;
+  background: var(--neutral-solid);
+  color: var(--accent-contrast, #ffffff);
+  font-size: 0.75rem;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.long-story-plot-add:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.long-story-plot-add:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.long-story-plot-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 38%);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.long-story-plot-pane {
+  order: 2;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--theme-line-soft);
+  background: var(--surface-raised);
+}
+
+.long-story-plot-pane > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--theme-line-soft);
+}
+
+.long-story-plot-pane > header > div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.long-story-plot-pane > header strong {
+  font-size: 0.75rem;
+}
+
+.long-story-plot-pane > header span {
+  color: var(--text-tertiary);
+  font-size: 0.642857rem;
+}
+
+.long-story-plot-list {
+  min-height: 0;
+  padding: 7px;
+  overflow-y: auto;
+}
+
+.long-story-plot-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+}
+
+.long-story-plot-card + .long-story-plot-card {
+  margin-top: 4px;
+}
+
+.long-story-plot-card:hover,
+.long-story-plot-card.is-active {
+  border-color: var(--theme-line-soft);
+  background: var(--surface-hover);
+}
+
+.long-story-plot-card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--theme-line));
+  background: var(--surface-selected);
+}
+
+.long-story-plot-card-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  padding: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.long-story-plot-card-main:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.long-story-plot-card-order {
+  flex: 0 0 auto;
+  min-width: 0.9rem;
+  color: var(--text-tertiary);
+  font-size: 0.535714rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
+.long-story-plot-card-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.long-story-plot-card-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding-right: 5px;
+}
+
+.long-story-plot-card.is-menu-open,
+.long-story-plot-card-actions.is-menu-open {
+  z-index: 8;
+}
+
+.long-story-plot-more-button {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.long-story-plot-more-button:hover:not(:disabled),
+.long-story-plot-more-button.is-active {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.long-story-plot-more-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.long-story-plot-action-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 3px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 112px;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--theme-line);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--theme-foreground) 13%, transparent),
+    0 2px 6px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
+}
+
+.long-story-plot-action-menu-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 540;
+  text-align: left;
+  cursor: pointer;
+}
+
+.long-story-plot-action-menu-item:hover:not(:disabled),
+.long-story-plot-action-menu-item:focus-visible:not(:disabled) {
+  outline: none;
+  background: var(--surface-hover);
+}
+
+.long-story-plot-action-menu-item > svg {
+  color: var(--text-secondary);
+}
+
+.long-story-plot-action-menu-item:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.long-story-plot-action-menu-item.is-danger {
+  color: var(--danger);
+}
+
+.long-story-plot-action-menu-item.is-danger > svg {
+  color: var(--danger);
+}
+
+.long-story-plot-action-menu-item.is-danger:hover:not(:disabled),
+.long-story-plot-action-menu-item.is-danger:focus-visible:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.long-story-plot-arrow-down {
+  transform: rotate(180deg);
+}
+
+.long-story-plot-pane-empty,
+.long-story-plot-detail-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  min-height: 0;
+  gap: 6px;
+  padding: 24px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.long-story-plot-pane-empty strong,
+.long-story-plot-detail-empty strong {
+  color: var(--text-primary);
+  font-size: 0.785714rem;
+}
+
+.long-story-plot-pane-empty span,
+.long-story-plot-detail-empty span {
+  max-width: 18rem;
+  font-size: 0.678571rem;
+  line-height: 1.5;
+}
+
+.long-story-plot-detail-empty {
+  height: 100%;
+}
+
+.long-story-plot-detail {
+  order: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-main);
+}
+
+.long-story-plot-writing-surface {
+  --long-document-inline-padding: clamp(16px, 2vw, 20px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  padding: 14px 0 0;
+  overflow: hidden;
+  background: var(--surface-main);
+}
+
+.long-story-plot-writing-surface.is-readonly {
+  background: var(--surface-raised);
+}
+
+.long-story-plot-title-input {
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 0 var(--long-document-inline-padding);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 1.142857rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.long-story-plot-title-input[readonly] {
+  color: var(--text-primary);
+}
+
+.long-story-plot-title-input:focus-visible {
+  outline: 1px solid
+    color-mix(in srgb, var(--theme-foreground) 22%, transparent);
+}
+
+.long-story-plot-text-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  margin: 0 var(--long-document-inline-padding);
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--theme-line-soft);
+}
+
+.long-story-plot-text-toolbar .long-editor-find-panel {
+  right: auto;
+  left: 0;
+}
+
+.long-story-plot-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 12px var(--long-document-inline-padding) 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+@media (max-width: 56rem) {
+  .long-story-plot-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .long-story-plot-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(10rem, 34%);
+  }
+
+  .long-story-plot-pane {
+    border-left: none;
+    border-top: 1px solid var(--theme-line-soft);
   }
 }
 

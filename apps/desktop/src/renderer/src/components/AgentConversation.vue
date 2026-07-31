@@ -844,6 +844,8 @@ function workspaceToolLabel(name: string): string {
     read_draft_sections: "读取正文章节",
     write_draft_section: "写入正文章节",
     replace_draft_section_text: "替换正文章节文本",
+    rename_draft_section: "修改章节名称",
+    delete_draft_section: "删除章节",
     list_worldbuilding: "列出世界观",
     read_worldbuilding: "读取世界观",
     search_worldbuilding: "搜索世界观",
@@ -857,8 +859,11 @@ function workspaceToolLabel(name: string): string {
     write_worldbuilding_content: "写入世界观文件",
     replace_worldbuilding_text: "编辑世界观文件",
     list_characters: "列出人物",
+    read_character_overview: "读取人物概览",
     search_characters: "搜索人物",
     read_character: "读取人物",
+    write_character_overview: "写入人物概览",
+    edit_character_overview: "编辑人物概览",
     create_character: "创建人物",
     write_character_file: "写入人物文件",
     edit_character_file: "编辑人物文件",
@@ -1024,6 +1029,8 @@ const WRITE_TOOL_NAMES = new Set([
   "create_draft_sections",
   "write_draft_section",
   "replace_draft_section_text",
+  "rename_draft_section",
+  "delete_draft_section",
   "create_worldbuilding_file",
   "write_worldbuilding_file",
   "edit_worldbuilding_file",
@@ -1033,6 +1040,8 @@ const WRITE_TOOL_NAMES = new Set([
   "create_character",
   "write_character_file",
   "edit_character_file",
+  "write_character_overview",
+  "edit_character_overview",
   "create_plot_design",
   "write_plot_design",
   "edit_plot_design"
@@ -1051,9 +1060,12 @@ const DIRECT_WRITE_TOOL_NAMES = new Set([
   "write_workspace_editor",
   "create_draft_sections",
   "write_draft_section",
+  "rename_draft_section",
+  "delete_draft_section",
   "write_worldbuilding_file",
   "write_worldbuilding_content",
   "write_character_file",
+  "write_character_overview",
   "write_plot_design"
 ]);
 
@@ -1430,6 +1442,20 @@ function proposalStatusMessage(
     proposal.draftSectionCreationTarget
   ) {
     return "接受后将批量创建空白正文与人物状态文件并保存到本机。";
+  }
+  if (
+    !proposal.statusMessage &&
+    proposal.status === "pending" &&
+    proposal.draftSectionRenameTarget
+  ) {
+    return "接受后将修改章节名称并保存到本机；正文内容保持不变。";
+  }
+  if (
+    !proposal.statusMessage &&
+    proposal.status === "pending" &&
+    proposal.draftSectionDeletionTarget
+  ) {
+    return "接受后将永久删除该章节及其正文与人物状态文件。";
   }
   if (
     !proposal.statusMessage &&

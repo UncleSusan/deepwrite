@@ -121,15 +121,16 @@ describe("long-form renderer vertical slice", () => {
       );
     }
     expect(appSource).toContain(
-      "const characterChildren = LONG_CHARACTER_GROUP_OPTIONS.map"
+      "const characterGroupChildren = LONG_CHARACTER_GROUP_OPTIONS.map"
     );
+    expect(appSource).toContain('key: "character-overview"');
     expect(appSource).toContain("character.group === group.value");
     expect(appSource).toContain("longCharacterGroup: group.value");
     expect(appSource).toContain("label: options.label ?? selection.title");
     expect(appSource).toContain("label: group.label");
     const characterProjection = appSource.slice(
       appSource.indexOf(
-        "const characterChildren = LONG_CHARACTER_GROUP_OPTIONS.map"
+        "const characterGroupChildren = LONG_CHARACTER_GROUP_OPTIONS.map"
       ),
       appSource.indexOf("const bookLineSelection")
     );
@@ -313,10 +314,13 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(editorSource).toContain('v-if="currentIsCharacterGroup"');
     expect(editorSource).toContain(
-      "@click=\"emit('selectCharacter', character.id)\""
+      '@click="requestSelectCharacter(character.id)"'
     );
     expect(editorSource).toContain(
       "selection.characterId === character.id"
+    );
+    expect(editorSource).toContain(
+      "'is-loading': pendingCharacterId === character.id"
     );
     expect(editorSource).toContain(
       "selection.key.startsWith('character-group:')"
@@ -419,6 +423,24 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(editorSource).toContain("async function loadSelectedDocument");
     expect(editorSource).toContain("await loadWorkspaceDocument(selectedFile, force)");
+    expect(editorSource).toContain(
+      "async function prefetchActiveSelectionFiles"
+    );
+    expect(editorSource).toContain(
+      "Avoid unbounded sibling character"
+    );
+    expect(editorSource).toContain(
+      "async function ensureDocumentsLoaded"
+    );
+    expect(editorSource).toContain(
+      "async function selectRole(role: LongWorkspaceFileRole)"
+    );
+    expect(appSource).toContain(
+      "await longWorkspaceEditor.value?.ensureDocumentsLoaded([preferredFile])"
+    );
+    expect(appSource).toContain(
+      "activeLongSelection.value?.chapterCardId !== selection.chapterCardId"
+    );
   });
 
   it("reconciles structural drafts from the workspace revision without a deep synchronous watcher", () => {
@@ -468,6 +490,28 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(editorSource).toContain(
       "'is-loading': pendingWorldbuildingItemId === item.id"
+    );
+    expect(editorSource).toContain(
+      "'is-loading': pendingWorldbuildingOverview"
+    );
+    expect(editorSource).toContain("void selectWorldbuildingItem(item.id)");
+    expect(editorSource).toContain("void selectWorldbuildingItem(nextId)");
+  });
+
+  it("keeps the long editor surface stable while documents refresh or switch", () => {
+    expect(editorSource).toContain("const showEditorLoading = computed");
+    expect(editorSource).toContain(
+      "state?.loading && !state.loaded && !state.content"
+    );
+    expect(editorSource).toContain("const isDocumentSwitchPending = computed");
+    expect(editorSource).toContain("heldSelectionFile");
+    expect(editorSource).toContain(
+      "async function prefetchWorldbuildingSelectionFiles"
+    );
+    expect(editorSource).toContain("inflightDocumentLoads");
+    expect(editorSource).toContain("v-else-if=\"showEditorLoading\"");
+    expect(editorSource).toContain(
+      "currentReadOnly || isDocumentContentBusy"
     );
   });
 
@@ -781,11 +825,18 @@ describe("long-form renderer vertical slice", () => {
     ]) {
       expect(sendTargetSource).toContain(field);
     }
+    expect(appSource).toContain(':locked="longEditorLocked"');
     expect(appSource).toContain(
-      "longProposalApprovalPending || longSendPreflightPending"
+      "agentRunScopeHasWriteBarrier(scope)"
+    );
+    expect(appSource).toContain(
+      "conversation.hasPendingEditReview.value"
     );
     expect(appSource).toContain(
       "正在保存并准备发送，编辑暂时锁定"
+    );
+    expect(appSource).toContain(
+      "长篇智能体运行中 · 暂停编辑以防止版本冲突"
     );
     expect(editorSource).toContain("lockedReason?: string");
     expect(editorSource).toContain(':disabled="locked"');

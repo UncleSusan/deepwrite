@@ -8,11 +8,18 @@ import type {
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 
-const props = defineProps<{
-  snapshot: LongWorkspaceIndexSnapshot;
-  domain?: LongContinuityDomain;
-  subjectId?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    snapshot: LongWorkspaceIndexSnapshot;
+    domain?: LongContinuityDomain;
+    subjectId?: string;
+    /** 嵌在已有视图标题下时隐藏面板级标题，避免双标题叠层。 */
+    hideHeading?: boolean;
+  }>(),
+  {
+    hideHeading: false
+  }
+);
 
 const emit = defineEmits<{
   selectCommit: [commitId: string];
@@ -171,78 +178,82 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
     class="continuity-projection"
     aria-label="连续性账本来源映射"
   >
-    <header class="projection-heading">
-      <div>
-        <span class="projection-kicker">LEDGER PROJECTION</span>
-        <strong>连续性来源</strong>
+    <article class="projection-card">
+      <header v-if="!hideHeading" class="projection-heading">
+        <div>
+          <span class="projection-kicker">来源映射</span>
+          <strong>连续性来源</strong>
+        </div>
+        <span>{{ facts.length }} 项</span>
+      </header>
+
+      <div v-if="groupedFacts.length" class="projection-groups">
+        <article
+          v-for="group in groupedFacts"
+          :key="group.key"
+          class="projection-group"
+        >
+          <header>
+            <span class="projection-domain-icon">
+              <AppIcon :name="domainMeta[group.domain].icon" :size="15" />
+            </span>
+            <div>
+              <small>{{ domainMeta[group.domain].label }}</small>
+              <strong>{{ group.subjectLabel }}</strong>
+            </div>
+            <span>{{ group.facts.length }}</span>
+          </header>
+
+          <dl>
+            <div
+              v-for="fact in group.facts"
+              :key="fact.factId"
+              class="projection-fact"
+            >
+              <dt>{{ fact.field }}</dt>
+              <dd>
+                <p>{{ fact.value }}</p>
+                <div class="projection-source">
+                  <span>
+                    {{ chapterLabel(fact.sourceChapterCardId) }}
+                    ·
+                    {{ commitLabel(fact.sourceCommitId) }}
+                  </span>
+                  <button
+                    type="button"
+                    @click="emit('selectCommit', fact.sourceCommitId)"
+                  >
+                    查看入账记录
+                  </button>
+                </div>
+                <details class="projection-evidence">
+                  <summary>来源证据</summary>
+                  <p>{{ fact.evidence }}</p>
+                  <button type="button" @click="copyEvidence(fact)">
+                    <AppIcon name="copy" :size="13" />
+                    复制证据
+                  </button>
+                </details>
+              </dd>
+            </div>
+          </dl>
+        </article>
       </div>
-      <span class="projection-count">{{ facts.length }} 项当前事实</span>
-    </header>
 
-    <div v-if="groupedFacts.length" class="projection-groups">
-      <article
-        v-for="group in groupedFacts"
-        :key="group.key"
-        class="projection-group"
-      >
-        <header>
-          <span class="projection-domain-icon">
-            <AppIcon :name="domainMeta[group.domain].icon" :size="15" />
-          </span>
-          <div>
-            <small>{{ domainMeta[group.domain].label }}</small>
-            <strong>{{ group.subjectLabel }}</strong>
-          </div>
-          <span>{{ group.facts.length }}</span>
-        </header>
-
-        <dl>
-          <div
-            v-for="fact in group.facts"
-            :key="fact.factId"
-            class="projection-fact"
-          >
-            <dt>{{ fact.field }}</dt>
-            <dd>
-              <p>{{ fact.value }}</p>
-              <div class="projection-source">
-                <span>
-                  {{ chapterLabel(fact.sourceChapterCardId) }}
-                  ·
-                  {{ commitLabel(fact.sourceCommitId) }}
-                </span>
-                <button
-                  type="button"
-                  @click="emit('selectCommit', fact.sourceCommitId)"
-                >
-                  查看入账记录
-                </button>
-              </div>
-              <details class="projection-evidence">
-                <summary>来源证据</summary>
-                <p>{{ fact.evidence }}</p>
-                <button type="button" @click="copyEvidence(fact)">
-                  <AppIcon name="copy" :size="13" />
-                  复制证据
-                </button>
-              </details>
-            </dd>
-          </div>
-        </dl>
-      </article>
-    </div>
-
-    <div v-else class="projection-empty" role="status">
-      <span><AppIcon name="ledger" :size="22" /></span>
-      <strong>还没有已入账的当前事实</strong>
-      <p>
-        {{
-          subjectId || domain
-            ? "当前对象尚无连续性来源映射。完成相关章节核验后会显示在这里。"
-            : "完成第一章连续性核验后，人物、世界观与剧情的当前事实会显示在这里。"
-        }}
-      </p>
-    </div>
+      <div v-else class="projection-empty" role="status">
+        <span class="projection-empty-icon">
+          <AppIcon name="ledger" :size="18" />
+        </span>
+        <strong>还没有已入账的当前事实</strong>
+        <p>
+          {{
+            subjectId || domain
+              ? "当前对象尚无连续性来源映射。完成相关章节核验后会显示在这里。"
+              : "完成第一章连续性核验后，人物、世界观与剧情的当前事实会显示在这里。"
+          }}
+        </p>
+      </div>
+    </article>
   </section>
 </template>
 
@@ -251,8 +262,15 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
   container: continuity-projection / inline-size;
   display: grid;
   min-width: 0;
-  gap: 10px;
   color: var(--text-primary);
+}
+
+.projection-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 12px;
+  background: var(--surface-raised);
 }
 
 .projection-heading {
@@ -261,6 +279,9 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
   justify-content: space-between;
   min-width: 0;
   gap: 12px;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--theme-line-soft);
+  background: var(--surface-muted);
 }
 
 .projection-heading > div,
@@ -271,24 +292,20 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
 }
 
 .projection-kicker,
-.projection-group small,
-.projection-count {
+.projection-group small {
   color: var(--text-tertiary);
   font-size: 0.642857rem;
   letter-spacing: 0.04em;
 }
 
 .projection-heading strong {
-  font-size: 0.857143rem;
+  font-size: 0.785714rem;
 }
 
-.projection-count {
+.projection-heading > span {
   flex: 0 0 auto;
-  padding: 4px 8px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  letter-spacing: 0;
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
 }
 
 .projection-groups {
@@ -296,13 +313,15 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   min-width: 0;
   gap: 10px;
+  padding: 12px;
+  background: var(--surface-main);
 }
 
 .projection-group {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--theme-line-soft);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface-raised);
 }
 
@@ -326,7 +345,7 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -401,6 +420,12 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
   color: var(--text-primary);
 }
 
+.projection-source button:focus-visible,
+.projection-evidence button:focus-visible {
+  outline: 2px solid var(--theme-line);
+  outline-offset: 2px;
+}
+
 .projection-evidence {
   padding: 7px 9px;
   border: 1px solid var(--theme-line-soft);
@@ -432,26 +457,25 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
 .projection-empty {
   display: grid;
   place-items: center;
-  min-height: 150px;
-  gap: 7px;
-  padding: 24px;
-  border: 1px dashed var(--theme-line);
-  border-radius: 12px;
-  background: var(--surface-muted);
+  min-height: 168px;
+  gap: 8px;
+  padding: 28px 24px;
+  background: var(--surface-main);
   text-align: center;
 }
 
-.projection-empty > span {
+.projection-empty-icon {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--accent-soft);
   color: var(--accent);
 }
 
 .projection-empty strong {
+  color: var(--text-primary);
   font-size: 0.785714rem;
 }
 
@@ -485,7 +509,7 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
     grid-template-columns: 1fr;
   }
 
-  .projection-count {
+  .projection-heading > span {
     display: none;
   }
 }

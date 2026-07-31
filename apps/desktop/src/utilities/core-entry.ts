@@ -437,6 +437,15 @@ async function handleCatalogCommand(
         payload: BookSchema.parse(await catalogStore.updateBook(command.payload))
       };
     }
+    if (command.type === "catalog.mutatePlotStructure") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: BookSchema.parse(
+          await catalogStore.mutatePlotStructure(command.payload)
+        )
+      };
+    }
     if (command.type === "catalog.updateLibraryGroup") {
       return {
         status: "accepted",

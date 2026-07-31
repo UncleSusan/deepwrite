@@ -36,6 +36,11 @@ function page(
   };
 }
 
+const overview = file(
+  "file_characters:overview",
+  "long/characters/overview.md"
+);
+
 function selection(): LongWorkspaceSelection {
   const core = file(
     "file_character_lan:core-profile",
@@ -61,23 +66,26 @@ function selection(): LongWorkspaceSelection {
 }
 
 describe("long character agent context", () => {
-  it("captures a secondary document together with the core profile", async () => {
+  it("captures a secondary document with overview and core profile", async () => {
     const current = selection();
     const relationshipFile = current.files[1]!.file;
     const readDocument = vi.fn(
-      async (input: LongReadDocumentInput): Promise<LongReadDocumentResult> =>
-        page(
-          input,
-          input.fileId === relationshipFile.id
-            ? "与沈砚暂时合作。"
-            : "雾港巡夜人，害怕深水。"
-        )
+      async (input: LongReadDocumentInput): Promise<LongReadDocumentResult> => {
+        if (input.fileId === relationshipFile.id) {
+          return page(input, "与沈砚暂时合作。");
+        }
+        if (input.fileId === overview.id) {
+          return page(input, "- character_id=`character_lan` 林岚");
+        }
+        return page(input, "雾港巡夜人，害怕深水。");
+      }
     );
 
     const result = await buildLongCharacterFocusSnapshot({
       bookId: "longbook_focus",
       selection: current,
       activeFileId: relationshipFile.id,
+      characterOverviewFile: overview,
       readDocument
     });
 
@@ -89,10 +97,11 @@ describe("long character agent context", () => {
         title: "人物关系",
         text: { content: "与沈砚暂时合作。" }
       },
+      overview: { content: "- character_id=`character_lan` 林岚" },
       coreProfile: { content: "雾港巡夜人，害怕深水。" }
     });
     expect(readDocument.mock.calls.map(([input]) => input.maxCharacters)).toEqual(
-      expect.arrayContaining([12_000, 8_000])
+      expect.arrayContaining([4_000, 8_000, 8_000])
     );
   });
 
@@ -101,13 +110,16 @@ describe("long character agent context", () => {
     const coreFile = current.files[0]!.file;
     const readDocument = vi.fn(
       async (input: LongReadDocumentInput): Promise<LongReadDocumentResult> =>
-        page(input, "雾港巡夜人。")
+        input.fileId === overview.id
+          ? page(input, "概览正文")
+          : page(input, "雾港巡夜人。")
     );
 
     const result = await buildLongCharacterFocusSnapshot({
       bookId: "longbook_focus",
       selection: current,
       activeFileId: coreFile.id,
+      characterOverviewFile: overview,
       readDocument
     });
 
@@ -115,9 +127,40 @@ describe("long character agent context", () => {
       currentDocument: {
         kind: "core_profile",
         text: { content: "雾港巡夜人。" }
-      }
+      },
+      overview: { content: "概览正文" }
     });
     expect(result).not.toHaveProperty("coreProfile");
-    expect(readDocument).toHaveBeenCalledTimes(1);
+    expect(readDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it("captures the stage overview selection", async () => {
+    const overviewSelection: LongWorkspaceSelection = {
+      key: "character-overview",
+      root: "character_design",
+      title: "概览",
+      breadcrumbs: ["雾港", "人物设计", "概览"],
+      files: [{ role: "overview", label: "概览", file: overview }],
+      preferredRole: "overview"
+    };
+    const readDocument = vi.fn(
+      async (input: LongReadDocumentInput): Promise<LongReadDocumentResult> =>
+        page(input, "# 人物概览")
+    );
+
+    await expect(
+      buildLongCharacterFocusSnapshot({
+        bookId: "longbook_focus",
+        selection: overviewSelection,
+        activeFileId: overview.id,
+        readDocument
+      })
+    ).resolves.toEqual({
+      currentDocument: {
+        kind: "overview",
+        title: "概览",
+        text: { content: "# 人物概览" }
+      }
+    });
   });
 });

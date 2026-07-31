@@ -111,6 +111,19 @@ export interface AgentEditProposal {
     /** Directory revision observed after this creation was durably confirmed. */
     acceptedDirectoryRevision?: string;
   };
+  draftSectionRenameTarget?: {
+    sectionId: string;
+    previousTitle: string;
+    title: string;
+    /** Project revision captured when this rename was proposed. */
+    baseProjectRevision?: number;
+  };
+  draftSectionDeletionTarget?: {
+    sectionId: string;
+    title: string;
+    /** Project revision captured when this deletion was proposed. */
+    baseProjectRevision?: number;
+  };
   /** True when this file mutation targets a same-run provisional section. */
   provisionalExpertSection?: boolean;
 }
