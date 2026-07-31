@@ -80,6 +80,15 @@ describe("LearningImitationDialog", () => {
     expect(source).toContain("切换页面也不会中断");
   });
 
+  it("keeps the agent composer height stable when a learning task starts and stops", () => {
+    expect(source).toContain(
+      'class="learning-running-footer" :class="{ \'is-idle\': !isBusy }"'
+    );
+    expect(source).toContain(':disabled="!isBusy"');
+    expect(source).toContain(".learning-running-footer button:disabled { visibility: hidden; }");
+    expect(source).not.toContain('v-if="isBusy" class="learning-running-footer"');
+  });
+
   it("uses the standard neutral primary action for creating a new learning session", () => {
     expect(source).toContain('class="learning-primary-button is-confirm"');
     expect(source).not.toContain("learning-primary-button is-danger");

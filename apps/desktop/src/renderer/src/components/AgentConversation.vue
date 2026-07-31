@@ -9,12 +9,14 @@ import {
   type LibraryAgentDomain,
   type LibraryAgentSkill,
   type LongAgentId,
+  type LongWorkspaceIndexSnapshot,
   type ModelConfig,
   type ShortWorkspaceAgentId,
   type ThinkingLevel,
   type UserPromptAttachment
 } from "@deepwrite/contracts";
 import { resolveAgentWelcome } from "../data/agentWelcome";
+import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import type {
   AgentApprovalMode,
   AgentEditProposal,
@@ -38,6 +40,7 @@ import {
 } from "../utils/composerReferences";
 import { createEditorReferenceAttachment } from "../utils/editorTextReferences";
 import AppIcon from "./AppIcon.vue";
+import LongProposalReview from "./LongProposalReview.vue";
 import MessageMarkdown from "./MessageMarkdown.vue";
 import PopupSelect from "./PopupSelect.vue";
 import SubagentRunList from "./SubagentRunList.vue";
@@ -71,11 +74,15 @@ const props = withDefaults(
     availableSkills: ComposerReferenceOption[];
     availableMaterials: ComposerReferenceOption[];
     editorReferences: EditorTextReference[];
+    longProposalItems?: LongWorkspaceProposalItem[];
+    longWorkspaceIndex?: LongWorkspaceIndexSnapshot | null;
     leftCollapsed: boolean;
     rightCollapsed: boolean;
   }>(),
   {
-    allowLiveEditReview: false
+    allowLiveEditReview: false,
+    longProposalItems: () => [],
+    longWorkspaceIndex: null
   }
 );
 
@@ -100,6 +107,9 @@ const emit = defineEmits<{
     proposalId: string;
     decision: "accept" | "reject";
   }];
+  approveLongProposal: [eventId: string];
+  rejectLongProposal: [eventId: string];
+  retryLongProposalPreview: [eventId: string];
 }>();
 
 const scroller = ref<HTMLElement>();
@@ -845,7 +855,19 @@ function workspaceToolLabel(name: string): string {
     read_worldbuilding_content: "读取世界观文件",
     create_worldbuilding_items: "创建世界观文件",
     write_worldbuilding_content: "写入世界观文件",
-    replace_worldbuilding_text: "编辑世界观文件"
+    replace_worldbuilding_text: "编辑世界观文件",
+    list_characters: "列出人物",
+    search_characters: "搜索人物",
+    read_character: "读取人物",
+    create_character: "创建人物",
+    write_character_file: "写入人物文件",
+    edit_character_file: "编辑人物文件",
+    list_plot_design: "列出剧情设计",
+    search_plot_design: "搜索剧情设计",
+    read_plot_design: "读取剧情设计",
+    create_plot_design: "创建剧情设计",
+    write_plot_design: "写入剧情设计",
+    edit_plot_design: "编辑剧情设计"
   };
   return labels[name] ?? name;
 }
@@ -1007,14 +1029,22 @@ const WRITE_TOOL_NAMES = new Set([
   "edit_worldbuilding_file",
   "create_worldbuilding_items",
   "write_worldbuilding_content",
-  "replace_worldbuilding_text"
+  "replace_worldbuilding_text",
+  "create_character",
+  "write_character_file",
+  "edit_character_file",
+  "create_plot_design",
+  "write_plot_design",
+  "edit_plot_design"
 ]);
 
 const CREATE_FILE_TOOL_NAMES = new Set([
   "create_draft_sections",
   "create_worldbuilding_file",
   "create_worldbuilding_files",
-  "create_worldbuilding_items"
+  "create_worldbuilding_items",
+  "create_character",
+  "create_plot_design"
 ]);
 
 const DIRECT_WRITE_TOOL_NAMES = new Set([
@@ -1022,7 +1052,9 @@ const DIRECT_WRITE_TOOL_NAMES = new Set([
   "create_draft_sections",
   "write_draft_section",
   "write_worldbuilding_file",
-  "write_worldbuilding_content"
+  "write_worldbuilding_content",
+  "write_character_file",
+  "write_plot_design"
 ]);
 
 function isWriteTool(tool: AgentToolTrace): boolean {
@@ -1408,6 +1440,24 @@ function proposalStatusMessage(
       ? "接受后将创建一个空白世界观文件并保存到本机。"
       : "接受后将写入世界观文件并保存到本机。";
   }
+  if (
+    !proposal.statusMessage &&
+    proposal.status === "pending" &&
+    proposal.longCharacterTarget
+  ) {
+    return proposal.longCharacterTarget.files.every(
+      ({ operation }) => operation === "create"
+    )
+      ? "接受后将创建人物及其四份空白档案并保存到本机。"
+      : "接受后将写入人物档案并保存到本机。";
+  }
+  if (
+    !proposal.statusMessage &&
+    proposal.status === "pending" &&
+    proposal.longPlotDesignTarget
+  ) {
+    return "接受后将校验结构影响并保存剧情设计。";
+  }
   return proposal.statusMessage?.trim() || proposalStatusMessages[proposal.status];
 }
 
@@ -1424,6 +1474,15 @@ function reviewEditProposal(
     proposalId: proposal.id,
     decision
   });
+}
+
+function longProposalItemsForMessage(
+  message: ChatMessage
+): LongWorkspaceProposalItem[] {
+  if (!message.runId) return [];
+  return props.longProposalItems.filter(
+    (item) => item.event.payload.runId === message.runId
+  );
 }
 
 function diffLineMark(type: "context" | "addition" | "deletion"): string {
@@ -1538,8 +1597,8 @@ function copyMessageLabel(message: ChatMessage): string {
               <strong>还没有历史对话</strong>
               <span>发送消息后，对话会自动保存在这里。</span>
             </div>
-            <p v-if="responding" class="conversation-history-running-note">
-              当前回复完成或停止后，可切换到其他对话。
+            <p class="conversation-history-running-note">
+              {{ responding ? "当前回复完成或停止后，可切换到其他对话。" : "选择历史记录即可切换对话。" }}
             </p>
           </section>
         </div>
@@ -1968,6 +2027,15 @@ function copyMessageLabel(message: ChatMessage): string {
                   </footer>
                 </article>
               </section>
+              <LongProposalReview
+                v-if="message.role === 'assistant' && longProposalItemsForMessage(message).length"
+                embedded
+                :items="longProposalItemsForMessage(message)"
+                :workspace-index="longWorkspaceIndex"
+                @approve="emit('approveLongProposal', $event)"
+                @reject="emit('rejectLongProposal', $event)"
+                @retry-preview="emit('retryLongProposalPreview', $event)"
+              />
             </div>
             <div
               v-if="message.content && message.status !== 'streaming'"

@@ -82,6 +82,14 @@ const emit = defineEmits<{
   createPlotPoint: [];
   createChapterCard: [];
   createVolume: [];
+  deleteStructure: [
+    input: {
+      kind: "character" | "volume" | "plotPoint" | "chapterCard";
+      id: string;
+      title: string;
+    },
+    completion: (succeeded: boolean) => void
+  ];
   saveVolumeOutline: [
     input: { volumeId: string; outline: string },
     completion: (succeeded: boolean) => void
@@ -97,7 +105,6 @@ const emit = defineEmits<{
   saveChapterCardContent: [
     input: {
       chapterCardId: LongChapterCardId;
-      field: "outline" | "worldConstraints";
       content: string;
     },
       completion: (succeeded: boolean) => void
@@ -127,12 +134,29 @@ interface LongVolumeOutlineDraft {
   saving: boolean;
 }
 
+function mergeChapterCardContent(
+  outline: string,
+  worldConstraints: string
+): string {
+  if (!outline) return worldConstraints;
+  if (!worldConstraints) return outline;
+  return `${outline}\n\n${worldConstraints}`;
+}
+
 interface LongStructureTitleTarget {
   kind: "worldbuilding" | "volume" | "plotPoint" | "chapterCard";
   id: string;
   title: string;
   inputLabel: string;
   emptyMessage: string;
+}
+
+interface LongNavigationDeleteTarget {
+  kind: "character" | "volume" | "plotPoint" | "chapterCard";
+  id: string;
+  title: string;
+  label: string;
+  description: string;
 }
 
 const DOCUMENT_PAGE_CHARACTERS = 256 * 1024;
@@ -167,16 +191,12 @@ const activeBookLineContentTab = ref<"outline" | "foreshadowing">(
 const activePlotPointTab = ref<
   "summary" | "storyline" | "foreshadowing"
 >("summary");
-const activeChapterCardTab = ref<"outline" | "worldConstraints">("outline");
 const volumeOutlineDrafts = ref<Record<string, LongVolumeOutlineDraft>>({});
 const plotPointSummaryDrafts = ref<Record<string, LongVolumeOutlineDraft>>({});
 const plotPointStorylineDrafts = ref<
   Record<string, LongVolumeOutlineDraft>
 >({});
-const chapterCardOutlineDrafts = ref<
-  Record<string, LongVolumeOutlineDraft>
->({});
-const chapterCardWorldConstraintDrafts = ref<
+const chapterCardContentDrafts = ref<
   Record<string, LongVolumeOutlineDraft>
 >({});
 const pendingWorldbuildingDeleteId = ref<string | null>(null);
@@ -186,6 +206,10 @@ const structureTitleDraft = ref("");
 const structureTitleSaving = ref(false);
 const worldbuildingDeleteDialog = ref<HTMLElement>();
 const worldbuildingDeleteCancelButton = ref<HTMLButtonElement>();
+const navigationDeleteTarget = ref<LongNavigationDeleteTarget | null>(null);
+const navigationDeletePending = ref(false);
+const navigationDeleteDialog = ref<HTMLElement>();
+const navigationDeleteCancelButton = ref<HTMLButtonElement>();
 const workspaceSavePending = ref(false);
 const editorInput = ref<HTMLTextAreaElement>();
 const editorToolsElement = ref<HTMLElement>();
@@ -209,6 +233,7 @@ const recoveryWriteWarningKeys = new Set<string>();
 let requestClock = 0;
 let activeSavePromise: Promise<boolean> | null = null;
 let worldbuildingDeletePreviousFocus: HTMLElement | null = null;
+let navigationDeletePreviousFocus: HTMLElement | null = null;
 let volumeDraftBookId = "";
 let worldbuildingSelectionRequest = 0;
 const HISTORY_LIMIT = 120;
@@ -450,6 +475,81 @@ const currentChapterCard = computed(
       ({ id }) => id === props.selection?.chapterCardId
     ) ?? null
 );
+const currentNavigationDeleteTarget = computed<LongNavigationDeleteTarget | null>(
+  () => {
+    const index = props.workspaceIndex;
+    const selection = props.selection;
+    if (!index || !selection) return null;
+    if (currentIsCharacterGroup.value && selection.characterId) {
+      const character = index.characters.find(
+        ({ id }) => id === selection.characterId
+      );
+      if (!character) return null;
+      const chapterReferences = index.plot.chapterCards.filter((chapter) =>
+        chapter.characterIds.includes(character.id)
+      ).length;
+      const eventReferences = index.plot.storyEvents.filter((event) =>
+        event.characterIds.includes(character.id)
+      ).length;
+      const referenceCopy =
+        chapterReferences + eventReferences > 0
+          ? `，并从 ${chapterReferences} 张章卡、${eventReferences} 个故事事件中移除人物引用`
+          : "";
+      return {
+        kind: "character",
+        id: character.id,
+        title: character.name,
+        label: "人物",
+        description: `将永久删除该人物的核心档案、人物关系、当前状态和历史轨迹${referenceCopy}。`
+      };
+    }
+    if (currentIsBookLineWorkspace.value && currentBookLineVolume.value) {
+      const volume = currentBookLineVolume.value;
+      const plotPointCount = index.plot.arcs.filter(
+        ({ volumeId }) => volumeId === volume.id
+      ).length;
+      const chapterCount = index.plot.chapterCards.filter(
+        ({ volumeId }) => volumeId === volume.id
+      ).length;
+      return {
+        kind: "volume",
+        id: volume.id,
+        title: volume.title,
+        label: "分卷",
+        description: `将永久删除该分卷，以及其中 ${plotPointCount} 个剧情点、${chapterCount} 张章卡及对应正文文件和关联数据。`
+      };
+    }
+    if (currentIsPlotPointWorkspace.value && currentPlotPoint.value) {
+      const plotPoint = currentPlotPoint.value;
+      const chapterCount = index.plot.chapterCards.filter(
+        ({ primaryArcId }) => primaryArcId === plotPoint.id
+      ).length;
+      return {
+        kind: "plotPoint",
+        id: plotPoint.id,
+        title: plotPoint.title,
+        label: "剧情点",
+        description: `将永久删除该剧情点、相关事件和伏笔关联${
+          chapterCount > 0
+            ? `，并级联删除以它为主剧情点的 ${chapterCount} 张章卡及对应正文文件`
+            : ""
+        }。`
+      };
+    }
+    if (currentIsChapterCardWorkspace.value && currentChapterCard.value) {
+      const chapterCard = currentChapterCard.value;
+      return {
+        kind: "chapterCard",
+        id: chapterCard.id,
+        title: chapterCard.title,
+        label: "章卡",
+        description:
+          "将永久删除该章卡、章节正文、章末人物状态、下一章接续包，以及相关剧情落点和伏笔触点。"
+      };
+    }
+    return null;
+  }
+);
 const currentVolumeOutlineDraft = computed(() => {
   const volumeId =
     currentIsBookLineWorkspace.value &&
@@ -470,9 +570,7 @@ const currentPlotPointDraft = computed(() => {
 const currentChapterCardDraft = computed(() => {
   const chapterCardId = currentChapterCard.value?.id;
   if (!chapterCardId) return undefined;
-  return activeChapterCardTab.value === "outline"
-    ? chapterCardOutlineDrafts.value[chapterCardId]
-    : chapterCardWorldConstraintDrafts.value[chapterCardId];
+  return chapterCardContentDrafts.value[chapterCardId];
 });
 const currentChapterCardCommitted = computed(() => {
   const chapterCardId = currentChapterCard.value?.id;
@@ -540,25 +638,17 @@ const currentForeshadowingVolumeId = computed(
     return undefined;
   }
 );
-const currentIsChapterCardOutline = computed(
+const currentIsChapterCardContent = computed(
   () =>
     currentIsChapterCardWorkspace.value &&
-    currentChapterCard.value !== null &&
-    activeChapterCardTab.value === "outline"
-);
-const currentIsChapterCardWorldConstraints = computed(
-  () =>
-    currentIsChapterCardWorkspace.value &&
-    currentChapterCard.value !== null &&
-    activeChapterCardTab.value === "worldConstraints"
+    currentChapterCard.value !== null
 );
 const currentIsStructuredText = computed(
   () =>
     currentIsVolumeOutline.value ||
     currentIsPlotPointSummary.value ||
     currentIsPlotPointStoryline.value ||
-    currentIsChapterCardOutline.value ||
-    currentIsChapterCardWorldConstraints.value
+    currentIsChapterCardContent.value
 );
 const currentReadOnly = computed(() => {
   const selectedFile = currentSelectionFile.value;
@@ -660,10 +750,7 @@ const pendingWorldbuildingDeleteItem = computed(
     ) ?? null
 );
 const currentVisibleContent = computed(() => {
-  if (
-    currentIsChapterCardOutline.value ||
-    currentIsChapterCardWorldConstraints.value
-  ) {
+  if (currentIsChapterCardContent.value) {
     return currentChapterCardDraft.value?.content ?? "";
   }
   if (
@@ -700,11 +787,9 @@ const currentDocumentTitle = computed(
       : props.selection?.title ?? "")
 );
 const currentDocumentFormat = computed(() =>
-  currentIsChapterCardWorldConstraints.value
-    ? "世界约束"
-    : currentIsChapterCardOutline.value
-      ? "章节大纲"
-      : currentIsPlotPointStoryline.value
+  currentIsChapterCardContent.value
+    ? "章卡内容"
+    : currentIsPlotPointStoryline.value
         ? "故事情节"
         : currentIsPlotPointSummary.value
           ? "概要"
@@ -912,10 +997,7 @@ const hasUnsavedChanges = computed(() =>
   Object.values(plotPointStorylineDrafts.value).some(
     (draft) => draft.content !== draft.savedContent
   ) ||
-  Object.values(chapterCardOutlineDrafts.value).some(
-    (draft) => draft.content !== draft.savedContent
-  ) ||
-  Object.values(chapterCardWorldConstraintDrafts.value).some(
+  Object.values(chapterCardContentDrafts.value).some(
     (draft) => draft.content !== draft.savedContent
   )
 );
@@ -1302,21 +1384,17 @@ function updateWorldbuildingItemContent(
 function updateVisibleContent(content: string): void {
   const chapterCard = currentChapterCard.value;
   if (currentIsChapterCardWorkspace.value && chapterCard) {
-    const drafts =
-      activeChapterCardTab.value === "outline"
-        ? chapterCardOutlineDrafts
-        : chapterCardWorldConstraintDrafts;
-    const persistedContent =
-      activeChapterCardTab.value === "outline"
-        ? chapterCard.outline
-        : chapterCard.worldConstraints;
-    const current = drafts.value[chapterCard.id] ?? {
+    const persistedContent = mergeChapterCardContent(
+      chapterCard.outline,
+      chapterCard.worldConstraints
+    );
+    const current = chapterCardContentDrafts.value[chapterCard.id] ?? {
       content: persistedContent,
       savedContent: persistedContent,
       saving: false
     };
-    drafts.value = {
-      ...drafts.value,
+    chapterCardContentDrafts.value = {
+      ...chapterCardContentDrafts.value,
       [chapterCard.id]: {
         ...current,
         content
@@ -1422,13 +1500,6 @@ async function selectPlotPointTab(
   resetEditorHistory();
 }
 
-function selectChapterCardContentTab(
-  tab: "outline" | "worldConstraints"
-): void {
-  activeChapterCardTab.value = tab;
-  resetEditorHistory();
-}
-
 function requestCreateVolume(): void {
   if (!currentReadOnly.value) {
     emit("createVolume");
@@ -1514,31 +1585,26 @@ async function savePlotPointContent(
 }
 
 async function saveChapterCardContent(
-  chapterCardId: LongChapterCardId,
-  field: "outline" | "worldConstraints"
+  chapterCardId: LongChapterCardId
 ): Promise<boolean> {
-  const drafts =
-    field === "outline"
-      ? chapterCardOutlineDrafts
-      : chapterCardWorldConstraintDrafts;
-  const draft = drafts.value[chapterCardId];
+  const draft = chapterCardContentDrafts.value[chapterCardId];
   if (!draft || draft.saving || draft.content === draft.savedContent) {
     return Boolean(draft && !draft.saving);
   }
   const submittedContent = draft.content;
-  drafts.value = {
-    ...drafts.value,
+  chapterCardContentDrafts.value = {
+    ...chapterCardContentDrafts.value,
     [chapterCardId]: { ...draft, saving: true }
   };
   return await new Promise<boolean>((resolve) => {
     emit(
       "saveChapterCardContent",
-      { chapterCardId, field, content: submittedContent },
+      { chapterCardId, content: submittedContent },
       (succeeded) => {
-        const latest = drafts.value[chapterCardId];
+        const latest = chapterCardContentDrafts.value[chapterCardId];
         if (latest) {
-          drafts.value = {
-            ...drafts.value,
+          chapterCardContentDrafts.value = {
+            ...chapterCardContentDrafts.value,
             [chapterCardId]: {
               ...latest,
               ...(succeeded ? { savedContent: submittedContent } : {}),
@@ -2016,6 +2082,77 @@ function confirmWorldbuildingItemDelete(): void {
   );
 }
 
+function openNavigationDelete(): void {
+  const target = currentNavigationDeleteTarget.value;
+  if (!target || props.locked || currentReadOnly.value) return;
+  navigationDeletePreviousFocus =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+  navigationDeleteTarget.value = target;
+  void nextTick(() => {
+    navigationDeleteCancelButton.value?.focus({ preventScroll: true });
+  });
+}
+
+function closeNavigationDelete(): void {
+  if (navigationDeletePending.value) return;
+  navigationDeleteTarget.value = null;
+  const previousFocus = navigationDeletePreviousFocus;
+  navigationDeletePreviousFocus = null;
+  void nextTick(() => {
+    if (previousFocus?.isConnected) {
+      previousFocus.focus({ preventScroll: true });
+    }
+  });
+}
+
+function handleNavigationDeleteKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    event.stopPropagation();
+    closeNavigationDelete();
+    return;
+  }
+  if (event.key !== "Tab" || !navigationDeleteDialog.value) return;
+  const focusable = Array.from(
+    navigationDeleteDialog.value.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    )
+  );
+  if (!focusable.length) {
+    event.preventDefault();
+    navigationDeleteDialog.value.focus({ preventScroll: true });
+    return;
+  }
+  const first = focusable[0]!;
+  const last = focusable.at(-1)!;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus({ preventScroll: true });
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+  }
+}
+
+function confirmNavigationDelete(): void {
+  const target = navigationDeleteTarget.value;
+  if (!target || navigationDeletePending.value) return;
+  navigationDeletePending.value = true;
+  emit(
+    "deleteStructure",
+    {
+      kind: target.kind,
+      id: target.id,
+      title: target.title
+    },
+    (succeeded) => {
+      navigationDeletePending.value = false;
+      if (succeeded) closeNavigationDelete();
+    }
+  );
+}
+
 function initializeLoadingState(
   key: string,
   bookId: string,
@@ -2417,16 +2554,8 @@ async function saveAllChanges(): Promise<boolean> {
         !draft.saving && draft.content !== draft.savedContent
     )
     .map(([plotPointId]) => plotPointId as LongArcId);
-  const dirtyChapterOutlineIds = Object.entries(
-    chapterCardOutlineDrafts.value
-  )
-    .filter(
-      ([, draft]) =>
-        !draft.saving && draft.content !== draft.savedContent
-    )
-    .map(([chapterCardId]) => chapterCardId as LongChapterCardId);
-  const dirtyChapterWorldConstraintIds = Object.entries(
-    chapterCardWorldConstraintDrafts.value
+  const dirtyChapterCardIds = Object.entries(
+    chapterCardContentDrafts.value
   )
     .filter(
       ([, draft]) =>
@@ -2438,8 +2567,7 @@ async function saveAllChanges(): Promise<boolean> {
     !dirtyVolumeIds.length &&
     !dirtyPlotPointSummaryIds.length &&
     !dirtyPlotPointStorylineIds.length &&
-    !dirtyChapterOutlineIds.length &&
-    !dirtyChapterWorldConstraintIds.length
+    !dirtyChapterCardIds.length
   ) {
     return true;
   }
@@ -2465,18 +2593,8 @@ async function saveAllChanges(): Promise<boolean> {
         return false;
       }
     }
-    for (const chapterCardId of dirtyChapterOutlineIds) {
-      if (!(await saveChapterCardContent(chapterCardId, "outline"))) {
-        return false;
-      }
-    }
-    for (const chapterCardId of dirtyChapterWorldConstraintIds) {
-      if (
-        !(await saveChapterCardContent(
-          chapterCardId,
-          "worldConstraints"
-        ))
-      ) {
+    for (const chapterCardId of dirtyChapterCardIds) {
+      if (!(await saveChapterCardContent(chapterCardId))) {
         return false;
       }
     }
@@ -2498,10 +2616,7 @@ async function saveAllChanges(): Promise<boolean> {
       !Object.values(plotPointStorylineDrafts.value).some(
         (draft) => draft.content !== draft.savedContent
       ) &&
-      !Object.values(chapterCardOutlineDrafts.value).some(
-        (draft) => draft.content !== draft.savedContent
-      ) &&
-      !Object.values(chapterCardWorldConstraintDrafts.value).some(
+      !Object.values(chapterCardContentDrafts.value).some(
         (draft) => draft.content !== draft.savedContent
       );
   });
@@ -2511,8 +2626,7 @@ async function saveAllChanges(): Promise<boolean> {
       dirtyVolumeIds.length +
       dirtyPlotPointSummaryIds.length +
       dirtyPlotPointStorylineIds.length +
-      dirtyChapterOutlineIds.length +
-      dirtyChapterWorldConstraintIds.length;
+      dirtyChapterCardIds.length;
     uiMessage.success(
       `离开前已自动保存 ${savedCount} 项长篇修改`
     );
@@ -2566,11 +2680,7 @@ function synchronizeProjectRevisionsIfClean(
         (draft) =>
           !draft.saving && draft.content !== draft.savedContent
       ) ||
-      Object.values(chapterCardOutlineDrafts.value).some(
-        (draft) =>
-          !draft.saving && draft.content !== draft.savedContent
-      ) ||
-      Object.values(chapterCardWorldConstraintDrafts.value).some(
+      Object.values(chapterCardContentDrafts.value).some(
         (draft) =>
           !draft.saving && draft.content !== draft.savedContent
       ))
@@ -2634,12 +2744,10 @@ watch(
       volumeOutlineDrafts.value = {};
       plotPointSummaryDrafts.value = {};
       plotPointStorylineDrafts.value = {};
-      chapterCardOutlineDrafts.value = {};
-      chapterCardWorldConstraintDrafts.value = {};
+      chapterCardContentDrafts.value = {};
       activeBookLineVolumeId.value = null;
       activeBookLineContentTab.value = "outline";
       activePlotPointTab.value = "summary";
-      activeChapterCardTab.value = "outline";
     }
     const volumes = props.workspaceIndex?.plot.volumes ?? [];
     const next: Record<string, LongVolumeOutlineDraft> = {};
@@ -2686,41 +2794,20 @@ watch(
     }
     plotPointSummaryDrafts.value = nextSummaries;
     plotPointStorylineDrafts.value = nextStorylines;
-    const nextChapterOutlines: Record<string, LongVolumeOutlineDraft> = {};
-    const nextChapterWorldConstraints: Record<
-      string,
-      LongVolumeOutlineDraft
-    > = {};
+    const nextChapterContents: Record<string, LongVolumeOutlineDraft> = {};
     for (const chapterCard of props.workspaceIndex?.plot.chapterCards ?? []) {
-      const existingOutline =
-        chapterCardOutlineDrafts.value[chapterCard.id];
-      nextChapterOutlines[chapterCard.id] =
-        existingOutline &&
-        (existingOutline.saving ||
-          existingOutline.content !== existingOutline.savedContent)
-          ? existingOutline
-          : {
-              content: chapterCard.outline,
-              savedContent: chapterCard.outline,
-              saving: false
-            };
-      const existingWorldConstraints =
-        chapterCardWorldConstraintDrafts.value[chapterCard.id];
-      nextChapterWorldConstraints[chapterCard.id] =
-        existingWorldConstraints &&
-        (existingWorldConstraints.saving ||
-          existingWorldConstraints.content !==
-            existingWorldConstraints.savedContent)
-          ? existingWorldConstraints
-          : {
-              content: chapterCard.worldConstraints,
-              savedContent: chapterCard.worldConstraints,
-              saving: false
-            };
+      const existing = chapterCardContentDrafts.value[chapterCard.id];
+      const content = mergeChapterCardContent(
+        chapterCard.outline,
+        chapterCard.worldConstraints
+      );
+      nextChapterContents[chapterCard.id] =
+        existing &&
+        (existing.saving || existing.content !== existing.savedContent)
+          ? existing
+          : { content, savedContent: content, saving: false };
     }
-    chapterCardOutlineDrafts.value = nextChapterOutlines;
-    chapterCardWorldConstraintDrafts.value =
-      nextChapterWorldConstraints;
+    chapterCardContentDrafts.value = nextChapterContents;
     if (
       activeBookLineVolumeId.value &&
       !volumes.some(({ id }) => id === activeBookLineVolumeId.value)
@@ -2780,8 +2867,7 @@ watch(
       activeBookLineContentTab.value,
       props.selection?.plotPointId,
       activePlotPointTab.value,
-      props.selection?.chapterCardId,
-      activeChapterCardTab.value
+      props.selection?.chapterCardId
     ] as const,
   () => {
     viewMode.value = "edit";
@@ -2984,6 +3070,16 @@ onBeforeUnmount(() => {
         >
           <AppIcon name="plus" :size="15" />
         </button>
+        <button
+          class="long-worldbuilding-remove"
+          type="button"
+          aria-label="删除当前人物"
+          title="删除当前人物"
+          :disabled="locked || !currentNavigationDeleteTarget"
+          @click="openNavigationDelete"
+        >
+          <AppIcon name="minus" :size="15" />
+        </button>
       </nav>
 
       <nav
@@ -3027,6 +3123,19 @@ onBeforeUnmount(() => {
         >
           <AppIcon name="plus" :size="15" />
         </button>
+        <button
+          v-if="!currentReadOnly"
+          class="long-worldbuilding-remove"
+          type="button"
+          aria-label="删除当前分卷"
+          :title="
+            currentBookLineVolume ? '删除当前分卷' : '请先选择一个分卷'
+          "
+          :disabled="locked || !currentNavigationDeleteTarget"
+          @click="openNavigationDelete"
+        >
+          <AppIcon name="minus" :size="15" />
+        </button>
       </nav>
 
       <nav
@@ -3059,6 +3168,17 @@ onBeforeUnmount(() => {
           @click="emit('createPlotPoint')"
         >
           <AppIcon name="plus" :size="15" />
+        </button>
+        <button
+          v-if="!currentReadOnly"
+          class="long-worldbuilding-remove"
+          type="button"
+          aria-label="删除当前剧情点"
+          title="删除当前剧情点"
+          :disabled="locked || !currentNavigationDeleteTarget"
+          @click="openNavigationDelete"
+        >
+          <AppIcon name="minus" :size="15" />
         </button>
       </nav>
 
@@ -3094,6 +3214,24 @@ onBeforeUnmount(() => {
           @click="emit('createChapterCard')"
         >
           <AppIcon name="plus" :size="15" />
+        </button>
+        <button
+          class="long-worldbuilding-remove"
+          type="button"
+          aria-label="删除当前章卡"
+          :title="
+            currentChapterCardCommitted
+              ? '已提交章卡不能删除'
+              : '删除当前章卡'
+          "
+          :disabled="
+            locked ||
+            currentChapterCardCommitted ||
+            !currentNavigationDeleteTarget
+          "
+          @click="openNavigationDelete"
+        >
+          <AppIcon name="minus" :size="15" />
         </button>
       </nav>
 
@@ -3143,6 +3281,24 @@ onBeforeUnmount(() => {
           @click="addWorldbuildingItem"
         >
           <AppIcon name="plus" :size="15" />
+        </button>
+        <button
+          v-if="!currentReadOnly"
+          class="long-worldbuilding-remove"
+          type="button"
+          aria-label="删除当前世界观条目"
+          :title="
+            currentWorldbuildingItem
+              ? '删除当前世界观条目'
+              : '请先选择一个世界观条目'
+          "
+          :disabled="locked || !currentWorldbuildingItem"
+          @click="
+            currentWorldbuildingItem &&
+              openWorldbuildingItemDelete(currentWorldbuildingItem.id)
+          "
+        >
+          <AppIcon name="minus" :size="15" />
         </button>
       </nav>
 
@@ -3221,35 +3377,6 @@ onBeforeUnmount(() => {
             @click="selectPlotPointTab('foreshadowing')"
           >
             伏笔触点
-          </button>
-        </div>
-        <div
-          v-if="currentIsChapterCardWorkspace && currentChapterCard"
-          class="long-editor-file-tabs"
-          role="tablist"
-          :aria-label="`${currentChapterCard.title}内容`"
-        >
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="activeChapterCardTab === 'outline'"
-            :class="{ 'is-active': activeChapterCardTab === 'outline' }"
-            :disabled="locked"
-            @click="selectChapterCardContentTab('outline')"
-          >
-            章节大纲
-          </button>
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="activeChapterCardTab === 'worldConstraints'"
-            :class="{
-              'is-active': activeChapterCardTab === 'worldConstraints'
-            }"
-            :disabled="locked"
-            @click="selectChapterCardContentTab('worldConstraints')"
-          >
-            世界约束
           </button>
         </div>
         <div
@@ -3884,10 +4011,8 @@ onBeforeUnmount(() => {
                     ? "暂无故事情节"
                     : currentIsPlotPointSummary
                       ? "暂无概要"
-                      : currentIsChapterCardWorldConstraints
-                        ? "暂无世界约束"
-                        : currentIsChapterCardOutline
-                          ? "暂无章节大纲"
+                      : currentIsChapterCardContent
+                        ? "暂无章卡内容"
                       : currentIsVolumeOutline
                         ? "暂无卷纲"
                         : "暂无正文"
@@ -4024,6 +4149,48 @@ onBeforeUnmount(() => {
               @click="confirmWorldbuildingItemDelete"
             >
               确认删除
+            </button>
+          </footer>
+        </section>
+      </div>
+      <div
+        v-if="navigationDeleteTarget"
+        class="dialog-backdrop long-navigation-delete-overlay"
+        @mousedown.self="closeNavigationDelete"
+        @keydown="handleNavigationDeleteKeydown"
+      >
+        <section
+          ref="navigationDeleteDialog"
+          class="long-navigation-delete-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="long-navigation-delete-title"
+          aria-describedby="long-navigation-delete-description"
+          tabindex="-1"
+        >
+          <span>删除{{ navigationDeleteTarget.label }}</span>
+          <h3 id="long-navigation-delete-title">
+            确认删除“{{ navigationDeleteTarget.title }}”？
+          </h3>
+          <p id="long-navigation-delete-description">
+            {{ navigationDeleteTarget.description }}
+          </p>
+          <footer>
+            <button
+              ref="navigationDeleteCancelButton"
+              type="button"
+              :disabled="navigationDeletePending"
+              @click="closeNavigationDelete"
+            >
+              取消
+            </button>
+            <button
+              class="is-danger"
+              type="button"
+              :disabled="navigationDeletePending"
+              @click="confirmNavigationDelete"
+            >
+              {{ navigationDeletePending ? "删除中…" : "确认删除" }}
             </button>
           </footer>
         </section>
@@ -4189,7 +4356,8 @@ onBeforeUnmount(() => {
   cursor: progress;
 }
 
-.long-worldbuilding-add {
+.long-worldbuilding-add,
+.long-worldbuilding-remove {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
@@ -4202,12 +4370,22 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.long-worldbuilding-add:hover {
+.long-worldbuilding-remove {
+  margin-left: 2px;
+}
+
+.long-worldbuilding-add:hover,
+.long-worldbuilding-remove:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.long-worldbuilding-add:disabled {
+.long-worldbuilding-remove:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.long-worldbuilding-add:disabled,
+.long-worldbuilding-remove:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -4982,12 +5160,14 @@ onBeforeUnmount(() => {
   line-height: 1.65;
 }
 
-.long-worldbuilding-delete-overlay {
+.long-worldbuilding-delete-overlay,
+.long-navigation-delete-overlay {
   z-index: 2400;
   padding: 20px;
 }
 
-.long-worldbuilding-delete-dialog {
+.long-worldbuilding-delete-dialog,
+.long-navigation-delete-dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 20px;
   border: 1px solid var(--theme-line);
@@ -4998,31 +5178,36 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
 }
 
-.long-worldbuilding-delete-dialog > span {
+.long-worldbuilding-delete-dialog > span,
+.long-navigation-delete-dialog > span {
   color: var(--text-tertiary);
   font-size: 0.714286rem;
 }
 
-.long-worldbuilding-delete-dialog h3 {
+.long-worldbuilding-delete-dialog h3,
+.long-navigation-delete-dialog h3 {
   margin: 6px 0 0;
   font-size: 1.071429rem;
 }
 
-.long-worldbuilding-delete-dialog p {
+.long-worldbuilding-delete-dialog p,
+.long-navigation-delete-dialog p {
   margin: 12px 0 0;
   color: var(--text-secondary);
   font-size: 0.785714rem;
   line-height: 1.6;
 }
 
-.long-worldbuilding-delete-dialog footer {
+.long-worldbuilding-delete-dialog footer,
+.long-navigation-delete-dialog footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
 }
 
-.long-worldbuilding-delete-dialog button {
+.long-worldbuilding-delete-dialog button,
+.long-navigation-delete-dialog button {
   min-height: 32px;
   padding: 6px 11px;
   border: 1px solid var(--theme-line);
@@ -5032,12 +5217,14 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.long-worldbuilding-delete-dialog button:hover {
+.long-worldbuilding-delete-dialog button:hover,
+.long-navigation-delete-dialog button:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.long-worldbuilding-delete-dialog button.is-danger {
+.long-worldbuilding-delete-dialog button.is-danger,
+.long-navigation-delete-dialog button.is-danger {
   border-color: transparent;
   background: var(--danger);
   color: #ffffff;

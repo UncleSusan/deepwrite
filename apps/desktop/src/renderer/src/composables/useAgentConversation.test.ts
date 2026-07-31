@@ -12,6 +12,8 @@ import {
   createEmptyLongMarkdownFileReference,
   createShortWorkspaceContentRevision,
   createEnvelope,
+  longCharacterCoreProfileFileId,
+  longCharacterFilePath,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId,
   type DeepWriteApi,
@@ -929,6 +931,149 @@ describe("agent conversation controller", () => {
       },
       batch: {
         operations: [{ type: "worldbuildingItem.create" }],
+        documentWrites: []
+      }
+    });
+    restored.dispose();
+  });
+
+  it("persists long character targets for the standard approval card", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-long-character-proposal-test";
+    const file = createEmptyLongMarkdownFileReference(
+      longCharacterCoreProfileFileId("character_memory"),
+      longCharacterFilePath("character_memory", "core-profile.md"),
+      "2026-07-30T12:00:00.000Z"
+    );
+    const controller = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        workspaceId: "long:longbook_test",
+        stageId: "long-character",
+        documentId: file.id,
+        title: "林岚 / 核心档案",
+        baseRevision: file.revision,
+        proposedRevision: "v1:4:12345678",
+        proposedText: "新的核心档案",
+        longCharacterTarget: {
+          bookId: "longbook_test",
+          baseProjectRevision: 11,
+          batch: {
+            baseRevision: 7,
+            updatedAt: "2026-07-30T12:00:00.000Z",
+            operations: [],
+            documentWrites: [{
+              proposalId: "proposal_character_memory",
+              fileId: file.id,
+              content: "新的核心档案",
+              mode: "replace",
+              expectedRevision: file.revision,
+              nextRevision: "v1:4:12345678",
+              updatedAt: "2026-07-30T12:00:00.000Z",
+              reason: "更新人物核心档案"
+            }]
+          },
+          files: [{
+            characterId: "character_memory",
+            characterName: "林岚",
+            document: "core_profile",
+            fileId: file.id,
+            filePath: file.path,
+            title: "林岚 / 核心档案",
+            operation: "edit",
+            beforeText: "旧的核心档案",
+            afterText: "新的核心档案",
+            beforeRevision: file.revision,
+            nextRevision: "v1:4:12345678"
+          }]
+        }
+      })
+    );
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    expect(
+      restored.getEditProposal("run_edit_1", "proposal_1")
+        ?.longCharacterTarget
+    ).toMatchObject({
+      bookId: "longbook_test",
+      baseProjectRevision: 11,
+      files: [{
+        characterId: "character_memory",
+        document: "core_profile",
+        operation: "edit"
+      }]
+    });
+    restored.dispose();
+  });
+
+  it("persists long plot design targets for the standard approval card", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-long-plot-design-proposal-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        workspaceId: "long:longbook_test",
+        stageId: "long-plot-design",
+        documentId: "plot-design",
+        title: "剧情设计变更",
+        baseRevision: "long-plot:11:7",
+        proposedRevision: "long-plot:11:7:tool_edit_1",
+        proposedText: "创建第二卷",
+        longPlotDesignTarget: {
+          bookId: "longbook_test",
+          baseProjectRevision: 11,
+          appliedProjectRevision: 12,
+          batch: {
+            baseRevision: 7,
+            updatedAt: "2026-07-30T12:00:00.000Z",
+            operations: [{
+              type: "volume.create",
+              volume: {
+                id: "volume_second",
+                title: "第二卷",
+                order: 2,
+                summary: "主角进入北境"
+              }
+            }],
+            documentWrites: []
+          }
+        }
+      })
+    );
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    expect(
+      restored.getEditProposal("run_edit_1", "proposal_1")
+        ?.longPlotDesignTarget
+    ).toMatchObject({
+      bookId: "longbook_test",
+      baseProjectRevision: 11,
+      appliedProjectRevision: 12,
+      batch: {
+        operations: [{
+          type: "volume.create",
+          volume: { id: "volume_second", title: "第二卷" }
+        }],
         documentWrites: []
       }
     });

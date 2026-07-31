@@ -116,7 +116,6 @@ import LongWorkspaceEditor from "./components/LongWorkspaceEditor.vue";
 import LongBookBindingsDialog from "./components/LongBookBindingsDialog.vue";
 import LongBookRemovalDialog from "./components/LongBookRemovalDialog.vue";
 import LongMigrationReportDialog from "./components/LongMigrationReportDialog.vue";
-import LongProposalReview from "./components/LongProposalReview.vue";
 import LongRollbackDialog from "./components/LongRollbackDialog.vue";
 import LongStructureDialog from "./components/LongStructureDialog.vue";
 import RightEditorPane from "./components/RightEditorPane.vue";
@@ -203,6 +202,7 @@ import {
 import { buildLibraryAgentWorkspaceContext, buildLibraryEntryComposerReferences } from "./utils/libraryAgentContext";
 import { buildLibraryAgentSkillAttachments } from "./utils/libraryAgentSkillAttachments";
 import { buildLongWorldbuildingFocusSnapshot } from "./utils/longWorldbuildingAgentContext";
+import { buildLongCharacterFocusSnapshot } from "./utils/longCharacterAgentContext";
 import {
   captureWorkspaceDocumentBaselines,
   rebaseDraftsForMatchingDocuments,
@@ -1030,14 +1030,6 @@ function projectLongWorkspaceNavigation(
     ...(bookLineSelection
       ? [node(bookLineSelection, { icon: "file", badge: "故事线" })]
       : []),
-    ...(foreshadowingSelection
-      ? [
-          node(foreshadowingSelection, {
-            icon: "pin",
-            badge: String(book.navigation.counts.foreshadowingThreads)
-          })
-        ]
-      : []),
     node(
       {
         key: "root:plot-points",
@@ -1054,6 +1046,14 @@ function projectLongWorkspaceNavigation(
         children: plotPointVolumeChildren
       }
     ),
+    ...(foreshadowingSelection
+      ? [
+          node(foreshadowingSelection, {
+            icon: "pin",
+            badge: String(book.navigation.counts.foreshadowingThreads)
+          })
+        ]
+      : []),
     node(
       {
         key: "root:plot-chapter-cards",
@@ -3381,6 +3381,11 @@ const longConversationHistory = computed(
 const longCurrentSessionId = computed(
   () => activeLongConversation.value?.sessionId.value ?? ""
 );
+const activeLongConversationProposalItems = computed(() =>
+  activeLongProposalItems.value.filter(
+    (item) => item.event.payload.sessionId === longCurrentSessionId.value
+  )
+);
 const longApprovalMode = computed(
   () =>
     activeLongConversation.value?.approvalMode.value ??
@@ -3928,7 +3933,6 @@ async function saveLongPlotPointContent(
 async function saveLongChapterCardContent(
   input: {
     chapterCardId: LongChapterCardId;
-    field: "outline" | "worldConstraints";
     content: string;
   },
   completion: (succeeded: boolean) => void
@@ -3946,7 +3950,10 @@ async function saveLongChapterCardContent(
   try {
     batch = createLongStructureMutationBuilder(index).updateChapter(
       chapterCard.id,
-      { [input.field]: input.content }
+      {
+        outline: input.content,
+        worldConstraints: ""
+      }
     );
   } catch (error: unknown) {
     uiMessage.warning(
@@ -3964,9 +3971,7 @@ async function saveLongChapterCardContent(
     },
     {
       saveEditor: false,
-      successMessage: `已保存“${chapterCard.title}”的${
-        input.field === "outline" ? "章节大纲" : "世界约束"
-      }`
+      successMessage: `已保存“${chapterCard.title}”的章卡内容`
     }
   );
 }
@@ -5351,6 +5356,70 @@ async function applyLongStructureMutation(
   } finally {
     longBookActionPending.value = false;
   }
+}
+
+async function deleteLongNavigationStructure(
+  input: {
+    kind: "character" | "volume" | "plotPoint" | "chapterCard";
+    id: string;
+    title: string;
+  },
+  completion: (succeeded: boolean) => void
+): Promise<void> {
+  const index = activeLongWorkspaceIndex.value;
+  if (!index) {
+    uiMessage.warning("当前长篇结构尚未就绪。");
+    completion(false);
+    return;
+  }
+
+  const builder = createLongStructureMutationBuilder(index);
+  let batch: LongWorkspaceOperationBatch;
+  let label: string;
+  let title: string;
+  try {
+    if (input.kind === "character") {
+      const target = index.characters.find(({ id }) => id === input.id);
+      if (!target) throw new Error("该人物已不存在，请刷新后重试。");
+      batch = builder.deleteCharacter(target.id, true);
+      label = "人物";
+      title = target.name;
+    } else if (input.kind === "volume") {
+      const target = index.plot.volumes.find(({ id }) => id === input.id);
+      if (!target) throw new Error("该分卷已不存在，请刷新后重试。");
+      batch = builder.deleteVolume(target.id, true);
+      label = "分卷";
+      title = target.title;
+    } else if (input.kind === "plotPoint") {
+      const target = index.plot.arcs.find(({ id }) => id === input.id);
+      if (!target) throw new Error("该剧情点已不存在，请刷新后重试。");
+      batch = builder.deleteArc(target.id, true);
+      label = "剧情点";
+      title = target.title;
+    } else {
+      const target = index.plot.chapterCards.find(({ id }) => id === input.id);
+      if (!target) throw new Error("该章卡已不存在，请刷新后重试。");
+      batch = builder.deleteChapter(target.id, true);
+      label = "章卡";
+      title = target.title;
+    }
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : `无法删除“${input.title}”。`
+    );
+    completion(false);
+    return;
+  }
+
+  await applyLongStructureMutation(
+    batch,
+    {
+      succeed: () => completion(true),
+      fail: () => completion(false),
+      appliedButRefreshFailed: () => completion(true)
+    },
+    { successMessage: `已删除${label}“${title}”` }
+  );
 }
 
 async function createLongCharacter(
@@ -7549,6 +7618,38 @@ async function sendLongMessage(
         return;
       }
     }
+    if (
+      target.activeRoot === "character_design" &&
+      target.fileId
+    ) {
+      const api = resolveLongWorkspaceApi();
+      if (!api) {
+        uiMessage.warning("当前环境未连接长篇工作区。");
+        return;
+      }
+      try {
+        const characterFocus = await buildLongCharacterFocusSnapshot({
+          bookId: target.bookId,
+          selection: activeLongSelection.value,
+          activeFileId: target.fileId,
+          readDocument: (input) => api.readDocument(input)
+        });
+        if (!confirmLongMessageSendTarget(target)) return;
+        if (characterFocus) {
+          runtimeContext = {
+            ...baseRuntimeContext,
+            characterFocus
+          };
+        }
+      } catch (error: unknown) {
+        uiMessage.warning(
+          error instanceof Error
+            ? `当前人物阶段读取失败：${error.message}`
+            : "当前人物阶段读取失败，请重试。"
+        );
+        return;
+      }
+    }
     const libraryAttachments = activeLongLibraryAttachments.value;
     if (
       libraryAttachments &&
@@ -7844,6 +7945,14 @@ type LibraryEditorMutationEvent = Extract<
 type LongWorldbuildingFileMutationEvent = Extract<
   SystemEventEnvelope,
   { type: "long.worldbuilding_file_proposal" }
+>;
+type LongCharacterFileMutationEvent = Extract<
+  SystemEventEnvelope,
+  { type: "long.character_file_proposal" }
+>;
+type LongPlotDesignMutationEvent = Extract<
+  SystemEventEnvelope,
+  { type: "long.mutation_proposal" }
 >;
 
 interface AgentEditReviewRequest {
@@ -8326,8 +8435,24 @@ function autoApproveEditPriority(
   if (
     proposal.longWorldbuildingTarget?.file.operation === "create"
   ) return 0;
+  if (
+    proposal.longCharacterTarget?.files.every(
+      ({ operation }) => operation === "create"
+    )
+  ) return 0;
   if (proposal.longWorldbuildingTarget?.file.beforeRevision !== null) {
     return proposal.predecessorProposalId ? 1 : 2;
+  }
+  if (
+    proposal.longCharacterTarget &&
+    proposal.longCharacterTarget.files.some(
+      ({ beforeRevision }) => beforeRevision !== null
+    )
+  ) {
+    return proposal.predecessorProposalId ? 1 : 2;
+  }
+  if (proposal.longPlotDesignTarget) {
+    return 2;
   }
   if (proposal.provisionalExpertSection) return 1;
   return 2;
@@ -8453,6 +8578,8 @@ function canReviewAgentEditDuringRun(proposal: AgentEditProposal): boolean {
   return (
     Boolean(proposal.libraryTarget) ||
     Boolean(proposal.longWorldbuildingTarget) ||
+    Boolean(proposal.longCharacterTarget) ||
+    Boolean(proposal.longPlotDesignTarget) ||
     isShortOrScriptAgentEdit(proposal)
   );
 }
@@ -9251,6 +9378,101 @@ function longWorldbuildingBatchForFile(
   });
 }
 
+function longPlotDesignProposalText(
+  batch: LongWorkspaceOperationBatch
+): string {
+  return JSON.stringify(
+    {
+      structureOperations: batch.operations,
+      documentWrites: batch.documentWrites
+    },
+    null,
+    2
+  );
+}
+
+function stageLongPlotDesignEditProposal(
+  event: LongPlotDesignMutationEvent
+): void {
+  if (!rememberWorkspaceMutationEvent(event.id)) return;
+  const sourceConversation = longConversationForProposalEvent(event);
+  if (!sourceConversation) return;
+  const runApprovalMode =
+    sourceConversation.approvalModeForRun(
+      event.payload.sessionId,
+      event.payload.runId
+    ) ?? "request-approval";
+  const workspaceId = `long:${event.payload.bookId}`;
+  const laneId = agentEditProposalId(
+    event.payload.runId,
+    workspaceId,
+    "long-plot-design",
+    "plot-design"
+  );
+  const existing = latestProposalForLane(
+    sourceConversation,
+    event.payload.runId,
+    laneId
+  );
+  if (existing?.toolCallIds.includes(event.payload.toolCallId)) return;
+  const blockedMessage = blockedAgentEditLaneMessage(existing);
+  if (blockedMessage) {
+    sourceConversation.markToolConflict(
+      event.payload.runId,
+      event.payload.toolCallId,
+      blockedMessage
+    );
+    return;
+  }
+  const generation = existing ? (existing.generation ?? 1) + 1 : 1;
+  const proposalId = agentEditProposalGenerationId(laneId, generation);
+  const sourceRevision = `long-plot:${event.payload.baseProjectRevision}:${event.payload.batch.baseRevision}`;
+  const proposedRevision = `${sourceRevision}:${event.payload.toolCallId}`;
+  const proposalText = longPlotDesignProposalText(event.payload.batch);
+  const diff = buildAgentTextDiff("", proposalText);
+  const proposal: AgentEditProposal = {
+    id: proposalId,
+    laneId,
+    generation,
+    approvalMode: runApprovalMode,
+    sourceBaseRevision: sourceRevision,
+    ...(existing ? { predecessorProposalId: existing.id } : {}),
+    runId: event.payload.runId,
+    workspaceId,
+    stageId: "long-plot-design",
+    documentId: "plot-design",
+    title: "剧情设计变更",
+    summary: event.payload.summary,
+    status: "pending",
+    baseRevision: sourceRevision,
+    proposedRevision,
+    proposedText: proposalText,
+    toolCallIds: [event.payload.toolCallId],
+    additions: diff.additions,
+    deletions: diff.deletions,
+    hunks: diff.hunks,
+    ...(diff.truncated ? { truncated: true } : {}),
+    createdAt: event.timestamp,
+    updatedAt: event.timestamp,
+    longPlotDesignTarget: {
+      bookId: event.payload.bookId,
+      batch: LongWorkspaceOperationBatchSchema.parse(event.payload.batch),
+      baseProjectRevision: event.payload.baseProjectRevision
+    }
+  };
+  sourceConversation.upsertEditProposal(event.payload.runId, proposal);
+  if (runApprovalMode === "auto-approve") {
+    queueAgentEdit(
+      sourceConversation,
+      event.payload.sessionId,
+      event.payload.runId,
+      proposal.id,
+      true,
+      true
+    );
+  }
+}
+
 function stageLongWorldbuildingEditProposal(
   event: LongWorldbuildingFileMutationEvent
 ): void {
@@ -9375,6 +9597,215 @@ function stageLongWorldbuildingEditProposal(
       batch,
       baseProjectRevision: event.payload.baseProjectRevision,
       file
+    }
+  };
+  sourceConversation.upsertEditProposal(event.payload.runId, proposal);
+  if (!noChanges && runApprovalMode === "auto-approve") {
+    queueAgentEdit(
+      sourceConversation,
+      event.payload.sessionId,
+      event.payload.runId,
+      proposal.id,
+      true,
+      true
+    );
+  }
+}
+
+function longCharacterBatchForFiles(
+  event: LongCharacterFileMutationEvent
+): LongWorkspaceOperationBatch | undefined {
+  const files = event.payload.files;
+  if (!files.length) return undefined;
+  const isCreation = files.every(({ operation }) => operation === "create");
+  if (isCreation) {
+    const characterIds = new Set(files.map(({ characterId }) => characterId));
+    const documents = new Set(files.map(({ document }) => document));
+    const operation = event.payload.batch.operations.find(
+      (candidate) => candidate.type === "character.create"
+    );
+    if (
+      characterIds.size !== 1 ||
+      documents.size !== 4 ||
+      files.length !== 4 ||
+      event.payload.batch.operations.length !== 1 ||
+      event.payload.batch.documentWrites.length !== 0 ||
+      !operation ||
+      operation.character.id !== files[0]?.characterId ||
+      !files.every((file) => {
+        const operationFiles = operation.files;
+        const expected = {
+          core_profile: operationFiles.coreProfile,
+          relationships: operationFiles.relationships,
+          current_state: operationFiles.currentState,
+          history: operationFiles.history
+        }[file.document];
+        return expected.id === file.fileId;
+      })
+    ) {
+      return undefined;
+    }
+    return LongWorkspaceOperationBatchSchema.parse(event.payload.batch);
+  }
+  const file = files[0];
+  if (
+    files.length !== 1 ||
+    !file ||
+    file.operation === "create" ||
+    event.payload.batch.operations.length !== 0
+  ) {
+    return undefined;
+  }
+  const documentWrites = event.payload.batch.documentWrites.filter(
+    (write) => write.fileId === file.fileId
+  );
+  if (
+    documentWrites.length !== 1 ||
+    event.payload.batch.documentWrites.length !== 1
+  ) {
+    return undefined;
+  }
+  return LongWorkspaceOperationBatchSchema.parse({
+    ...event.payload.batch,
+    operations: [],
+    documentWrites
+  });
+}
+
+function stageLongCharacterEditProposal(
+  event: LongCharacterFileMutationEvent
+): void {
+  if (!rememberWorkspaceMutationEvent(event.id)) return;
+  const sourceConversation = longConversationForProposalEvent(event);
+  if (!sourceConversation) return;
+  const files = event.payload.files;
+  const batch = longCharacterBatchForFiles(event);
+  if (!files.length || !batch) {
+    const message =
+      "人物文件工具必须形成一名人物的完整创建变更，或一次只修改一份人物档案；本次结果未进入审批。";
+    sourceConversation.markToolConflict(
+      event.payload.runId,
+      event.payload.toolCallId,
+      message
+    );
+    uiMessage.warning(message);
+    return;
+  }
+  const isCreation = files.every(({ operation }) => operation === "create");
+  const primaryFile = files[0]!;
+  const runApprovalMode =
+    sourceConversation.approvalModeForRun(
+      event.payload.sessionId,
+      event.payload.runId
+    ) ?? "request-approval";
+  const workspaceId = `long:${event.payload.bookId}`;
+  const laneDocumentId = isCreation
+    ? `create:${primaryFile.characterId}`
+    : primaryFile.fileId;
+  const laneId = agentEditProposalId(
+    event.payload.runId,
+    workspaceId,
+    "long-character",
+    laneDocumentId
+  );
+  const existing = latestProposalForLane(
+    sourceConversation,
+    event.payload.runId,
+    laneId
+  );
+  if (existing?.toolCallIds.includes(event.payload.toolCallId)) return;
+  const blockedMessage = blockedAgentEditLaneMessage(existing);
+  if (blockedMessage) {
+    sourceConversation.markToolConflict(
+      event.payload.runId,
+      event.payload.toolCallId,
+      blockedMessage
+    );
+    return;
+  }
+  if (
+    !isCreation &&
+    existing &&
+    primaryFile.beforeRevision !== existing.proposedRevision
+  ) {
+    const message =
+      "人物档案的待审批版本链已经变化，本次变更未进入审批。";
+    sourceConversation.markToolConflict(
+      event.payload.runId,
+      event.payload.toolCallId,
+      message
+    );
+    uiMessage.warning(message);
+    return;
+  }
+  const creationPredecessor = isCreation
+    ? undefined
+    : sourceConversation
+        .listEditProposals(event.payload.runId)
+        .find(
+          (proposal) =>
+            proposal.longCharacterTarget?.files.some(
+              (file) =>
+                file.fileId === primaryFile.fileId &&
+                file.operation === "create" &&
+                file.nextRevision === primaryFile.beforeRevision
+            ) &&
+            proposal.status !== "rejected" &&
+            proposal.status !== "conflict"
+        );
+  const generation = existing
+    ? (existing.generation ?? 1) + 1
+    : 1;
+  const proposalId = agentEditProposalGenerationId(laneId, generation);
+  const predecessorProposalId = existing?.id ?? creationPredecessor?.id;
+  const beforeRevision = isCreation
+    ? `long-missing:${primaryFile.characterId}`
+    : primaryFile.beforeRevision ?? `long-missing:${primaryFile.fileId}`;
+  const proposedRevision = isCreation
+    ? `long-character-create:${files.map(({ nextRevision }) => nextRevision).join(":")}`
+    : primaryFile.nextRevision;
+  const diff = buildAgentTextDiff(
+    isCreation ? "" : primaryFile.beforeText,
+    isCreation ? "" : primaryFile.afterText
+  );
+  const noChanges =
+    !isCreation && primaryFile.beforeText === primaryFile.afterText;
+  const proposal: AgentEditProposal = {
+    id: proposalId,
+    laneId,
+    generation,
+    approvalMode: runApprovalMode,
+    sourceBaseRevision: beforeRevision,
+    ...(predecessorProposalId ? { predecessorProposalId } : {}),
+    runId: event.payload.runId,
+    workspaceId,
+    stageId: "long-character",
+    documentId: laneDocumentId,
+    title: isCreation
+      ? `${primaryFile.characterName} / 新建人物`
+      : primaryFile.title,
+    summary: event.payload.summary,
+    status: noChanges ? "accepted" : "pending",
+    baseRevision: beforeRevision,
+    proposedRevision,
+    ...(!noChanges && !isCreation
+      ? { proposedText: primaryFile.afterText }
+      : {}),
+    toolCallIds: [event.payload.toolCallId],
+    additions: diff.additions,
+    deletions: diff.deletions,
+    hunks: diff.hunks,
+    ...(diff.truncated ? { truncated: true } : {}),
+    ...(noChanges
+      ? { statusMessage: "文本没有实际变化，无需保存。" }
+      : {}),
+    createdAt: event.timestamp,
+    updatedAt: event.timestamp,
+    longCharacterTarget: {
+      bookId: event.payload.bookId,
+      batch,
+      baseProjectRevision: event.payload.baseProjectRevision,
+      files
     }
   };
   sourceConversation.upsertEditProposal(event.payload.runId, proposal);
@@ -9815,6 +10246,166 @@ function conflictDependentLongWorldbuildingProposals(
   }
 }
 
+function conflictDependentLongCharacterProposals(
+  conversation: AgentConversationController,
+  proposal: AgentEditProposal,
+  message: string
+): void {
+  const createdFileIds = new Set(
+    proposal.longCharacterTarget?.files
+      .filter(({ operation }) => operation === "create")
+      .map(({ fileId }) => fileId) ?? []
+  );
+  if (!createdFileIds.size) return;
+  for (const candidate of conversation.listEditProposals(proposal.runId)) {
+    if (
+      candidate.predecessorProposalId !== proposal.id ||
+      !candidate.longCharacterTarget?.files.some(({ fileId }) =>
+        createdFileIds.has(fileId)
+      ) ||
+      (candidate.status !== "pending" && candidate.status !== "error")
+    ) {
+      continue;
+    }
+    removeQueuedAgentEdit(conversation, candidate.runId, candidate.id);
+    conversation.updateEditProposal(candidate.runId, candidate.id, {
+      status: "conflict",
+      proposedText: undefined,
+      statusMessage: message
+    });
+  }
+}
+
+async function acceptLongPlotDesignProposal(
+  conversation: AgentConversationController,
+  request: AgentEditReviewRequest,
+  proposal: AgentEditProposal,
+  automatic: boolean
+): Promise<void> {
+  const target = proposal.longPlotDesignTarget;
+  const api = resolveLongWorkspaceApi();
+  if (!target || !api) {
+    const message = "长篇剧情设计服务当前不可用。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+    return;
+  }
+  if (acceptingAgentEditWorkspaceIds.value.has(proposal.workspaceId)) {
+    const message = automatic
+      ? "检测到本书正在保存其他内容，剧情设计实时自动落盘已暂停，请稍后重试。"
+      : "同一本书正在保存其他修改，请稍候再接受";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: automatic ? "error" : "pending",
+      statusMessage: message
+    });
+    uiMessage.info(message);
+    return;
+  }
+
+  conversation.updateEditProposal(request.runId, request.proposalId, {
+    status: "accepting",
+    statusMessage: automatic
+      ? "正在自动批准、校验影响并保存剧情设计…"
+      : "正在校验影响并保存剧情设计…"
+  });
+  setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
+  let applied = false;
+  try {
+    if (activeLongBookId.value === target.bookId) {
+      await nextTick();
+      if (!(await saveActiveLongEditorChanges())) {
+        throw new Error("当前长篇编辑内容尚未保存，未覆盖剧情设计。");
+      }
+    }
+    const latest = await api.getWorkspaceIndex({ bookId: target.bookId });
+    const predecessor = proposal.predecessorProposalId
+      ? conversation.getEditProposal(
+          request.runId,
+          proposal.predecessorProposalId
+        )
+      : undefined;
+    const predecessorProjectRevision =
+      predecessor?.status === "accepted"
+        ? predecessor.longPlotDesignTarget?.appliedProjectRevision
+        : undefined;
+    if (
+      latest.projectRevision !== target.baseProjectRevision &&
+      latest.projectRevision !== predecessorProjectRevision
+    ) {
+      const message =
+        "剧情设计已在审阅期间发生变化，未覆盖最新结构。请基于当前内容重新生成。";
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        status: "conflict",
+        statusMessage: message
+      });
+      uiMessage.warning(message);
+      return;
+    }
+    const batch = LongWorkspaceOperationBatchSchema.parse({
+      ...target.batch,
+      baseRevision: latest.workspaceIndex.revision
+    });
+    const preview = await api.previewOperations({
+      bookId: target.bookId,
+      batch
+    });
+    if (
+      preview.bookId !== target.bookId ||
+      preview.projectRevision !== latest.projectRevision
+    ) {
+      throw new Error(
+        "长篇项目已在审批期间更新，请基于最新剧情设计重新生成。"
+      );
+    }
+    const result = await api.applyOperations({
+      bookId: target.bookId,
+      batch: LongWorkspaceOperationBatchSchema.parse({
+        ...batch,
+        expectedImpact: preview.preview.impact
+      }),
+      baseProjectRevision: latest.projectRevision
+    });
+    applied = true;
+    longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
+    const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "accepted",
+      proposedText: undefined,
+      longPlotDesignTarget: {
+        ...target,
+        appliedProjectRevision: result.projectRevision
+      },
+      statusMessage: refreshed
+        ? `${automatic ? "已自动批准并" : "已接受并"}保存剧情设计。`
+        : "剧情设计已保存，但界面刷新失败；请手动刷新长篇工作区。"
+    });
+    if (!automatic) {
+      uiMessage.success("已接受并保存剧情设计");
+    }
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "保存剧情设计失败，当前结构保持不变。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: applied ? "accepted" : "error",
+      statusMessage: applied
+        ? `剧情设计已经保存，但刷新失败：${message}`
+        : message
+    });
+    if (applied) {
+      uiMessage.warning(`剧情设计已经保存，但刷新失败：${message}`);
+    } else {
+      uiMessage.error(message);
+    }
+  } finally {
+    setAgentEditWorkspaceAccepting(proposal.workspaceId, false);
+  }
+}
+
 async function acceptLongWorldbuildingFileProposal(
   conversation: AgentConversationController,
   request: AgentEditReviewRequest,
@@ -10007,6 +10598,184 @@ async function acceptLongWorldbuildingFileProposal(
   }
 }
 
+async function acceptLongCharacterFileProposal(
+  conversation: AgentConversationController,
+  request: AgentEditReviewRequest,
+  proposal: AgentEditProposal,
+  automatic: boolean
+): Promise<void> {
+  const target = proposal.longCharacterTarget;
+  const api = resolveLongWorkspaceApi();
+  if (!target || !api) {
+    const message = "长篇人物文件服务当前不可用。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+    return;
+  }
+  if (acceptingAgentEditWorkspaceIds.value.has(proposal.workspaceId)) {
+    const message = automatic
+      ? "检测到本书正在保存其他内容，实时自动落盘已暂停，请稍后重试。"
+      : "同一本书正在保存其他修改，请稍候再接受";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: automatic ? "error" : "pending",
+      statusMessage: message
+    });
+    uiMessage.info(message);
+    return;
+  }
+
+  const isCreation = target.files.every(
+    ({ operation }) => operation === "create"
+  );
+  conversation.updateEditProposal(request.runId, request.proposalId, {
+    status: "accepting",
+    statusMessage: isCreation
+      ? automatic
+        ? "正在自动批准并创建人物档案…"
+        : "正在校验目录版本并创建人物档案…"
+      : automatic
+        ? "正在自动批准、校验版本并保存人物档案…"
+        : "正在校验版本并保存人物档案…"
+  });
+  setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
+  let applied = false;
+  try {
+    if (activeLongBookId.value === target.bookId) {
+      await nextTick();
+      if (!(await saveActiveLongEditorChanges())) {
+        throw new Error("当前长篇编辑内容尚未保存，未覆盖人物档案。");
+      }
+    }
+    const latest = await api.getWorkspaceIndex({ bookId: target.bookId });
+    const currentFiles = new Map(
+      latest.workspaceIndex.characterFiles.flatMap((entry) => [
+        [entry.coreProfile.id, entry.coreProfile] as const,
+        [entry.relationships.id, entry.relationships] as const,
+        [entry.currentState.id, entry.currentState] as const,
+        [entry.history.id, entry.history] as const
+      ])
+    );
+    if (
+      target.files.every(
+        (file) =>
+          currentFiles.get(file.fileId)?.revision === file.nextRevision
+      )
+    ) {
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        status: "accepted",
+        proposedText: undefined,
+        statusMessage: "该人物档案变更已经存在于本地 Markdown 中。"
+      });
+      await refreshLongWritingSaveBarrier(target.bookId);
+      return;
+    }
+    if (isCreation) {
+      if (target.files.some((file) => currentFiles.has(file.fileId))) {
+        const message = "人物目录已存在同一人物的部分档案，未重复创建。";
+        conversation.updateEditProposal(request.runId, request.proposalId, {
+          status: "conflict",
+          statusMessage: message
+        });
+        uiMessage.warning(message);
+        return;
+      }
+    } else {
+      const changed = target.files.find((file) => {
+        const current = currentFiles.get(file.fileId);
+        return !current || current.revision !== file.beforeRevision;
+      });
+      if (changed) {
+        const message = "人物档案已在审阅期间发生变化，未覆盖最新内容。";
+        conversation.updateEditProposal(request.runId, request.proposalId, {
+          status: "conflict",
+          statusMessage: message
+        });
+        await refreshLongWritingSaveBarrier(target.bookId);
+        uiMessage.warning(message);
+        return;
+      }
+    }
+
+    const nextOrderByGroup = new Map<string, number>();
+    const batch = LongWorkspaceOperationBatchSchema.parse({
+      ...target.batch,
+      baseRevision: latest.workspaceIndex.revision,
+      operations: target.batch.operations.map((operation) => {
+        if (operation.type !== "character.create") return operation;
+        const group = operation.character.group;
+        const nextOrder =
+          (nextOrderByGroup.get(group) ??
+            latest.workspaceIndex.characters.filter(
+              (character) => character.group === group
+            ).length) + 1;
+        nextOrderByGroup.set(group, nextOrder);
+        return {
+          ...operation,
+          character: { ...operation.character, order: nextOrder }
+        };
+      })
+    });
+    const preview = await api.previewOperations({
+      bookId: target.bookId,
+      batch
+    });
+    if (
+      preview.bookId !== target.bookId ||
+      preview.projectRevision !== latest.projectRevision
+    ) {
+      throw new Error(
+        "长篇项目已在审批期间更新，请基于最新人物档案重新生成。"
+      );
+    }
+    const result = await api.applyOperations({
+      bookId: target.bookId,
+      batch: LongWorkspaceOperationBatchSchema.parse({
+        ...batch,
+        expectedImpact: preview.preview.impact
+      }),
+      baseProjectRevision: latest.projectRevision
+    });
+    applied = true;
+    longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
+    const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "accepted",
+      proposedText: undefined,
+      statusMessage: isCreation
+        ? automatic
+          ? "已自动批准并创建人物及四份空白档案。"
+          : "已创建人物及四份空白档案并保存到本地 Markdown。"
+        : refreshed
+          ? `${automatic ? "已自动批准并" : "已接受并"}保存到本地 Markdown。`
+          : "已保存到本地 Markdown，但界面刷新失败；请手动刷新长篇工作区。"
+    });
+    if (!automatic) {
+      uiMessage.success(isCreation ? "已创建人物档案" : "已接受并保存人物档案");
+    }
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "保存人物档案失败，原文件保持不变。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: applied ? "accepted" : "error",
+      statusMessage: applied
+        ? `人物档案已经保存，但刷新失败：${message}`
+        : message
+    });
+    if (applied) {
+      uiMessage.warning(`人物档案已经保存，但刷新失败：${message}`);
+    } else {
+      uiMessage.error(message);
+    }
+  } finally {
+    setAgentEditWorkspaceAccepting(proposal.workspaceId, false);
+  }
+}
+
 async function applyAgentEdit(
   conversation: AgentConversationController,
   request: AgentEditReviewRequest,
@@ -10044,7 +10813,9 @@ async function applyAgentEdit(
     conversation.updateEditProposal(request.runId, request.proposalId, {
       status: "rejected",
       proposedText: undefined,
-      statusMessage: "已拒绝，原文保持不变。"
+      statusMessage: proposal.longPlotDesignTarget
+        ? "已拒绝，剧情设计保持不变。"
+        : "已拒绝，原文保持不变。"
     });
     if (proposal.draftSectionCreationTarget) {
       conflictDependentProvisionalFileProposals(
@@ -10065,8 +10836,23 @@ async function applyAgentEdit(
         "空白世界观文件创建已被拒绝，相关正文写入无法落盘。"
       );
     }
+    if (
+      proposal.longCharacterTarget?.files.every(
+        ({ operation }) => operation === "create"
+      )
+    ) {
+      conflictDependentLongCharacterProposals(
+        conversation,
+        proposal,
+        "人物创建已被拒绝，相关人物档案写入无法落盘。"
+      );
+    }
     blockLaterAgentEditGenerations(conversation, proposal);
-    uiMessage.info("已拒绝智能体修改，原文未改变");
+    uiMessage.info(
+      proposal.longPlotDesignTarget
+        ? "已拒绝剧情设计变更，当前结构未改变"
+        : "已拒绝智能体修改，原文未改变"
+    );
     return;
   }
 
@@ -10120,6 +10906,26 @@ async function applyAgentEdit(
 
   if (proposal.longWorldbuildingTarget) {
     await acceptLongWorldbuildingFileProposal(
+      conversation,
+      request,
+      proposal,
+      automatic
+    );
+    return;
+  }
+
+  if (proposal.longCharacterTarget) {
+    await acceptLongCharacterFileProposal(
+      conversation,
+      request,
+      proposal,
+      automatic
+    );
+    return;
+  }
+
+  if (proposal.longPlotDesignTarget) {
+    await acceptLongPlotDesignProposal(
       conversation,
       request,
       proposal,
@@ -10515,6 +11321,33 @@ async function reviewAgentEdit(request: AgentEditReviewRequest): Promise<void> {
   await applyAgentEdit(conversation, request);
 }
 
+async function reviewLongAgentEdit(
+  request: AgentEditReviewRequest
+): Promise<void> {
+  const conversation = activeLongConversation.value;
+  if (!conversation) return;
+  const proposal = conversation.getEditProposal(
+    request.runId,
+    request.proposalId
+  );
+  if (
+    request.decision === "accept" &&
+    proposal &&
+    canReviewAgentEditDuringRun(proposal)
+  ) {
+    queueAgentEdit(
+      conversation,
+      conversation.sessionId.value,
+      request.runId,
+      request.proposalId,
+      false,
+      true
+    );
+    return;
+  }
+  await applyAgentEdit(conversation, request);
+}
+
 async function drainQueuedAgentEditsForWorkspace(
   workspaceId: string
 ): Promise<void> {
@@ -10637,8 +11470,15 @@ function handleSystemEvent(event: SystemEventEnvelope): void {
   learningImitation.handleEvent(event);
   subagentAuthoring.handleEvent(event);
   observeLongWritingAgentEvent(event);
-  if (event.type === "long.worldbuilding_file_proposal") {
+  if (
+    event.type === "long.mutation_proposal" &&
+    event.payload.agentId === "plot_design"
+  ) {
+    stageLongPlotDesignEditProposal(event);
+  } else if (event.type === "long.worldbuilding_file_proposal") {
     stageLongWorldbuildingEditProposal(event);
+  } else if (event.type === "long.character_file_proposal") {
+    stageLongCharacterEditProposal(event);
   } else {
     void longWorkspaceProposals.handleEvent(event);
   }
@@ -11622,6 +12462,7 @@ onBeforeUnmount(() => {
               :thinking-level="longThinkingLevel"
               :temperature="longTemperature"
               :approval-mode="longApprovalMode"
+              allow-live-edit-review
               :context-title="
                 activeLongSelection?.title ?? activeLongBookSummary.title
               "
@@ -11638,6 +12479,8 @@ onBeforeUnmount(() => {
               :available-skills="availableLongSkillReferences"
               :available-materials="availableLongMaterialReferences"
               :editor-references="[]"
+              :long-proposal-items="activeLongConversationProposalItems"
+              :long-workspace-index="activeLongWorkspaceIndex"
               :left-collapsed="leftCollapsed"
               :right-collapsed="rightCollapsed"
               @new-conversation="newLongConversation"
@@ -11651,24 +12494,20 @@ onBeforeUnmount(() => {
               @select-thinking="selectLongThinking"
               @select-temperature="selectLongTemperature"
               @select-approval="selectLongApprovalMode"
+              @review-edit="reviewLongAgentEdit"
+              @approve-long-proposal="approveLongProposal"
+              @reject-long-proposal="rejectLongProposal"
+              @retry-long-proposal-preview="retryLongProposalPreview"
             />
             <section
-              v-if="activeLongWorkspaceRefreshStatus"
-              class="long-workspace-refresh-status"
-              :class="{
-                'is-error': Boolean(activeLongWorkspaceRefreshStatus.error)
-              }"
+              v-if="activeLongWorkspaceRefreshStatus?.error"
+              class="long-workspace-refresh-status is-error"
               aria-live="polite"
             >
               <span>
-                {{
-                  activeLongWorkspaceRefreshStatus.pending
-                    ? "正在同步保存后的最新工作区索引…"
-                    : "最新工作区索引尚未同步，长篇智能体已暂停发送。"
-                }}
+                最新工作区索引尚未同步，长篇智能体已暂停发送。
               </span>
               <button
-                v-if="!activeLongWorkspaceRefreshStatus.pending"
                 type="button"
                 @click="retryActiveLongWorkspaceRefresh"
               >
@@ -11754,13 +12593,6 @@ onBeforeUnmount(() => {
                 完成
               </button>
             </section>
-            <LongProposalReview
-              :items="activeLongProposalItems"
-              :workspace-index="activeLongWorkspaceIndex"
-              @approve="approveLongProposal"
-              @reject="rejectLongProposal"
-              @retry-preview="retryLongProposalPreview"
-            />
           </div>
           <LongWorkspaceEditor
             v-show="!rightCollapsed"
@@ -11793,6 +12625,7 @@ onBeforeUnmount(() => {
             @create-plot-point="openLongPlotPointCreate"
             @create-chapter-card="openLongChapterCardCreate"
             @create-volume="openLongVolumeCreate"
+            @delete-structure="deleteLongNavigationStructure"
             @save-volume-outline="saveLongVolumeOutline"
             @save-plot-point-content="saveLongPlotPointContent"
             @save-chapter-card-content="saveLongChapterCardContent"

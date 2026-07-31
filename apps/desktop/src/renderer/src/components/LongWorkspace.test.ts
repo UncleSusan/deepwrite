@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import appSource from "../App.vue?raw";
+import agentConversationSource from "./AgentConversation.vue?raw";
 import bindingsSource from "./LongBookBindingsDialog.vue?raw";
 import chapterCardDialogSource from "./CreateLongChapterCardDialog.vue?raw";
 import characterDialogSource from "./CreateLongCharacterDialog.vue?raw";
@@ -21,6 +22,27 @@ import writingOrchestratorSource from "../composables/useLongWritingOrchestrator
 import agentRunPreferencesSource from "../utils/agentRunPreferences.ts?raw";
 
 describe("long-form renderer vertical slice", () => {
+  it("keeps create-book loading feedback inside the stable action footer", () => {
+    const actionsStart = dialogSource.indexOf(
+      '<div class="dialog-actions create-short-book-actions">'
+    );
+    const statusStart = dialogSource.indexOf(
+      'class="dialog-action-status"',
+      actionsStart
+    );
+    const cancelStart = dialogSource.indexOf(
+      'class="dialog-secondary-button"',
+      actionsStart
+    );
+
+    expect(actionsStart).toBeGreaterThan(-1);
+    expect(statusStart).toBeGreaterThan(actionsStart);
+    expect(statusStart).toBeLessThan(cancelStart);
+    expect(dialogSource).not.toContain(
+      '<p v-if="loading" class="create-short-stable-hint"'
+    );
+  });
+
   it("projects one foreshadowing data source into overview, volume, and plot-point views", () => {
     expect(appSource).toContain('key: "plot-design:foreshadowing"');
     expect(appSource).toContain(
@@ -118,6 +140,21 @@ describe("long-form renderer vertical slice", () => {
     expect(treeNodeSource).not.toContain("createLongCharacter");
     expect(editorSource).toContain("currentIsCharacterGroup");
     expect(editorSource).toContain('aria-label="新增人物"');
+    expect(editorSource).toContain('aria-label="删除当前人物"');
+    expect(editorSource).toContain('aria-label="删除当前分卷"');
+    expect(editorSource).toContain('aria-label="删除当前剧情点"');
+    expect(editorSource).toContain('aria-label="删除当前章卡"');
+    expect(editorSource).toContain('aria-label="删除当前世界观条目"');
+    expect(editorSource).toContain('<AppIcon name="minus" :size="15" />');
+    expect(editorSource).toContain('role="alertdialog"');
+    expect(editorSource).toContain('emit(\n    "deleteStructure"');
+    expect(appSource).toContain(
+      '@delete-structure="deleteLongNavigationStructure"'
+    );
+    expect(appSource).toContain("builder.deleteCharacter(target.id, true)");
+    expect(appSource).toContain("builder.deleteVolume(target.id, true)");
+    expect(appSource).toContain("builder.deleteArc(target.id, true)");
+    expect(appSource).toContain("builder.deleteChapter(target.id, true)");
     expect(editorSource).toContain("emit('createCharacter')");
     expect(editorSource).toContain("currentEmptyCollection");
     expect(editorSource).toContain("还没有${selection.title}");
@@ -158,6 +195,15 @@ describe("long-form renderer vertical slice", () => {
       appSource.indexOf("const plotChildren: ResourceTreeNode[]"),
       appSource.indexOf("const draftChildren")
     );
+    const plotPointsPosition = plotChildrenProjection.indexOf(
+      'key: "root:plot-points"'
+    );
+    const foreshadowingPosition = plotChildrenProjection.indexOf(
+      "node(foreshadowingSelection"
+    );
+    expect(plotPointsPosition).toBeGreaterThan(-1);
+    expect(foreshadowingPosition).toBeGreaterThan(-1);
+    expect(plotPointsPosition).toBeLessThan(foreshadowingPosition);
     expect(plotChildrenProjection).not.toContain('key: "root:plot-volumes"');
     expect(plotChildrenProjection).not.toContain(
       'key: `root:plot-arc:${arc.id}`'
@@ -202,9 +248,10 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain(
       '@save-plot-point-content="saveLongPlotPointContent"'
     );
-    expect(editorSource).toContain("activeChapterCardTab");
-    expect(editorSource).toContain("章节大纲");
-    expect(editorSource).toContain("世界约束");
+    expect(editorSource).toContain("章卡内容");
+    expect(editorSource).not.toContain("activeChapterCardTab");
+    expect(editorSource).not.toContain(">\n            章节大纲\n");
+    expect(editorSource).not.toContain(">\n            世界约束\n");
     expect(editorSource).toContain('"saveChapterCardContent"');
     expect(appSource).toContain(
       '@save-chapter-card-content="saveLongChapterCardContent"'
@@ -212,6 +259,7 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain(
       "createLongStructureMutationBuilder(index).updateChapter"
     );
+    expect(appSource).toContain('worldConstraints: ""');
     expect(appSource).toContain("<CreateLongVolumeDialog");
     expect(appSource).toContain("@submit=\"createLongVolume\"");
     expect(appSource).toContain("<CreateLongPlotPointDialog");
@@ -219,6 +267,8 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain("<CreateLongChapterCardDialog");
     expect(appSource).toContain("@submit=\"createLongChapterCard\"");
     expect(chapterCardDialogSource).toContain("新建章卡");
+    expect(chapterCardDialogSource).toContain("补充完整内容");
+    expect(chapterCardDialogSource).not.toContain("章节大纲和世界约束");
     expect(chapterCardDialogSource).not.toContain("LongStructureManager");
     expect(plotPointDialogSource).toContain("新建剧情点");
     expect(plotPointDialogSource).not.toContain("LongStructureManager");
@@ -523,7 +573,13 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain("activeLongReadableAttachments");
     expect(appSource).toContain("profile.readAccess.skillKinds");
     expect(appSource).toContain("profile.readAccess.materialKinds");
-    expect(appSource).toContain("<LongProposalReview");
+    expect(appSource).not.toContain("<LongProposalReview");
+    expect(agentConversationSource).toContain("<LongProposalReview");
+    expect(agentConversationSource).toContain("embedded");
+    expect(appSource).toContain(
+      ':long-proposal-items="activeLongConversationProposalItems"'
+    );
+    expect(appSource).toContain('@review-edit="reviewLongAgentEdit"');
     expect(proposalSource).toContain("long.mutation_proposal");
     expect(proposalSource).toContain("long.chapter_dispatch_proposal");
     expect(proposalSource).toContain("long.chapter_write_proposal");
@@ -678,6 +734,12 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain("longWorkspaceRefreshStatus.value = {");
     expect(appSource).toContain("retryActiveLongWorkspaceRefresh");
     expect(appSource).toContain("长篇智能体已暂停发送");
+    expect(appSource).toContain(
+      'v-if="activeLongWorkspaceRefreshStatus?.error"'
+    );
+    expect(appSource).not.toContain(
+      'activeLongWorkspaceRefreshStatus.pending\n                    ? "正在同步保存后的最新工作区索引…"'
+    );
     const sendLongMessageSource =
       appSource
         .split("async function sendLongMessage(")[1]
@@ -762,7 +824,7 @@ describe("long-form renderer vertical slice", () => {
         ?.split("function longWorkflowRuntimeContext")[0] ?? "";
     expect(readinessSource).toContain("saveActiveLongEditorChanges()");
     expect(readinessSource).toContain("refreshActiveLongWorkspace(bookId)");
-    expect(appSource).not.toContain(
+    expect(readinessSource).not.toContain(
       "replaceLongBookSummary(longBooks.value, result.summary)"
     );
   });

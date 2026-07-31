@@ -25,6 +25,7 @@ export type IconName =
   | "mic"
   | "message"
   | "model"
+  | "minus"
   | "more"
   | "panel-left"
   | "panel-right"

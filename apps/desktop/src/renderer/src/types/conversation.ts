@@ -1,6 +1,7 @@
 import type {
   AgentRuntimeRef,
   AgentUsage,
+  LongCharacterFileChange,
   LongWorkspaceOperationBatch,
   LongWorldbuildingFileChange,
   ShortWorkspaceStageId
@@ -43,7 +44,12 @@ export interface AgentEditProposal {
   decisionToken?: string;
   runId: string;
   workspaceId: string;
-  stageId: ShortWorkspaceStageId | "library" | "long-worldbuilding";
+  stageId:
+    | ShortWorkspaceStageId
+    | "library"
+    | "long-worldbuilding"
+    | "long-character"
+    | "long-plot-design";
   documentId: string;
   title: string;
   summary: string;
@@ -78,6 +84,18 @@ export interface AgentEditProposal {
     batch: LongWorkspaceOperationBatch;
     baseProjectRevision: number;
     file: LongWorldbuildingFileChange;
+  };
+  longCharacterTarget?: {
+    bookId: string;
+    batch: LongWorkspaceOperationBatch;
+    baseProjectRevision: number;
+    files: LongCharacterFileChange[];
+  };
+  longPlotDesignTarget?: {
+    bookId: string;
+    batch: LongWorkspaceOperationBatch;
+    baseProjectRevision: number;
+    appliedProjectRevision?: number;
   };
   draftSectionCreationTarget?: {
     sections: Array<{

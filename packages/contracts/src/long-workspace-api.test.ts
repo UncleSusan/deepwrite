@@ -185,6 +185,46 @@ describe("long workspace API contracts", () => {
     ).toThrow(/maximum character count/iu);
   });
 
+  it("bounds character focus and keeps it exclusive to the character-design agent", () => {
+    const focus = {
+      characterName: "林岚",
+      group: "protagonist",
+      currentDocument: {
+        kind: "relationships",
+        title: "人物关系",
+        text: { content: "与沈砚暂时合作。" }
+      },
+      coreProfile: { content: "雾港巡夜人。" }
+    };
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "character_design",
+          activeAgentId: "character_design",
+          activeFileId: "file_character_lan:relationships",
+          activeFileRevision: "v1:3:1234abcd",
+          characterFocus: focus
+        })
+      )
+    ).toMatchObject({ characterFocus: focus });
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({ characterFocus: focus })
+      )
+    ).toThrow(/character-design agent/iu);
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "character_design",
+          activeAgentId: "character_design",
+          activeFileId: "file_character_lan:relationships",
+          activeFileRevision: "v1:3:1234abcd",
+          characterFocus: { ...focus, coreProfile: undefined }
+        })
+      )
+    ).toThrow(/core profile/iu);
+  });
+
   it("applies bounded defaults to paged reads and searches", () => {
     expect(
       LongReadDocumentInputSchema.parse({

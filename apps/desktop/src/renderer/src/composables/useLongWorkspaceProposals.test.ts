@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   SystemEventEnvelopeSchema,
   createEnvelope,
+  longCharacterCoreProfileFileId,
+  longCharacterFilePath,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId,
   type LongWorkspaceOperationBatch,
@@ -187,6 +189,59 @@ function worldbuildingWriteEvent() {
   );
 }
 
+function characterWriteEvent() {
+  const fileId = longCharacterCoreProfileFileId("character_lan");
+  const filePath = longCharacterFilePath(
+    "character_lan",
+    "core-profile.md"
+  );
+  return systemEvent(
+    createEnvelope(
+      "long.character_file_proposal",
+      {
+        ...proposalBase,
+        agentId: "character_design" as const,
+        toolCallId: "tool_character_write",
+        summary: "写入林岚核心档案",
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:01.000Z",
+          operations: [],
+          documentWrites: [
+            {
+              proposalId: "proposal_character_lan_core",
+              fileId,
+              content: "雾港巡夜人。",
+              mode: "replace" as const,
+              expectedRevision: fileRevision,
+              nextRevision: "v1:6:12345678",
+              updatedAt: "2026-07-26T12:00:01.000Z",
+              reason: "写入林岚核心档案"
+            }
+          ]
+        },
+        baseProjectRevision: 11,
+        files: [
+          {
+            characterId: "character_lan",
+            characterName: "林岚",
+            document: "core_profile" as const,
+            fileId,
+            filePath,
+            title: "林岚 / 核心档案",
+            operation: "write" as const,
+            beforeText: "",
+            afterText: "雾港巡夜人。",
+            beforeRevision: fileRevision,
+            nextRevision: "v1:6:12345678"
+          }
+        ]
+      },
+      { id: "event_character_file", context: envelopeContext }
+    )
+  );
+}
+
 function chapterEvent() {
   return systemEvent(
     createEnvelope(
@@ -320,6 +375,38 @@ function harness(
             }
           ]
         }
+      ],
+      characterFiles: [
+        {
+          characterId: "character_lan",
+          coreProfile: {
+            id: longCharacterCoreProfileFileId("character_lan"),
+            path: longCharacterFilePath(
+              "character_lan",
+              "core-profile.md"
+            ),
+            revision: fileRevision,
+            updatedAt: "2026-07-26T11:00:00.000Z"
+          },
+          relationships: {
+            id: "file_character_lan:relationships",
+            path: "long/characters/character_lan/relationships.md",
+            revision: fileRevision,
+            updatedAt: "2026-07-26T11:00:00.000Z"
+          },
+          currentState: {
+            id: "file_character_lan:current-state",
+            path: "long/characters/character_lan/current-state.md",
+            revision: fileRevision,
+            updatedAt: "2026-07-26T11:00:00.000Z"
+          },
+          history: {
+            id: "file_character_lan:history",
+            path: "long/characters/character_lan/history.md",
+            revision: fileRevision,
+            updatedAt: "2026-07-26T11:00:00.000Z"
+          }
+        }
       ]
     },
     projectRevision: 13
@@ -368,6 +455,48 @@ function harness(
 }
 
 describe("long workspace proposal approval", () => {
+  it("previews and applies character file proposals through the same file path", async () => {
+    const test = harness();
+    test.previewOperations.mockImplementation(async ({ batch }) => ({
+      bookId: proposalBase.bookId,
+      preview: {
+        baseRevision: batch.baseRevision,
+        resultRevision: batch.baseRevision + 1,
+        impact: emptyImpact,
+        entityChanges: [],
+        fileIntents: [],
+        documentWrites: batch.documentWrites,
+        provisionalIdMap: {}
+      },
+      projectRevision: 13
+    }));
+
+    await test.controller.handleEvent(characterWriteEvent());
+
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        status: "ready",
+        event: { type: "long.character_file_proposal" }
+      }
+    ]);
+    await test.controller.approve("longbook_test", "event_character_file");
+    expect(test.applyOperations).toHaveBeenCalledWith({
+      bookId: "longbook_test",
+      batch: expect.objectContaining({
+        baseRevision: 9,
+        documentWrites: [
+          expect.objectContaining({
+            fileId: longCharacterCoreProfileFileId("character_lan")
+          })
+        ]
+      }),
+      baseProjectRevision: 13
+    });
+    expect(test.notifications.success).toHaveBeenCalledWith(
+      "人物文件变更已保存到本地 Markdown。"
+    );
+  });
+
   it("waits for an empty-file creation before previewing its separate write", async () => {
     const test = harness();
     test.previewOperations.mockImplementation(async ({ batch }) => ({

@@ -26,4 +26,25 @@ describe("BookResourceDialog binding editor", () => {
     expect(appSource).toContain("library.materialType === workspaceType");
     expect(dialogSource).toContain('props.book?.workspaceType === "script"');
   });
+
+  it("keeps the binding dialog footer steady while libraries load", () => {
+    const actionsStart = dialogSource.indexOf(
+      '<div class="dialog-actions" :class="{ \'create-short-book-actions\': bindingDomain }">'
+    );
+    const statusStart = dialogSource.indexOf(
+      'class="dialog-action-status"',
+      actionsStart
+    );
+    const cancelStart = dialogSource.indexOf(
+      'class="dialog-secondary-button"',
+      actionsStart
+    );
+
+    expect(actionsStart).toBeGreaterThan(-1);
+    expect(statusStart).toBeGreaterThan(actionsStart);
+    expect(statusStart).toBeLessThan(cancelStart);
+    expect(dialogSource).not.toContain(
+      '<p v-if="bindingDomain && loading" class="create-short-stable-hint"'
+    );
+  });
 });

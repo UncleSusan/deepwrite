@@ -34,6 +34,7 @@ import {
   type AgentWriteApprovalMode,
   type CommandResult,
   type LongAgentProfile,
+  type LongCharacterFileChange,
   type LongChapterReadiness,
   type LongCommitChapterInput,
   type LongReadDocumentResult,
@@ -91,6 +92,15 @@ export type LongAgentToolDetails =
       baseProjectRevision: number;
       summary: string;
       files: LongWorldbuildingFileChange[];
+    }
+  | {
+      kind: "long-character-file-proposal";
+      bookId: string;
+      agentId: LongAgentProfile["id"];
+      batch: LongWorkspaceOperationBatch;
+      baseProjectRevision: number;
+      summary: string;
+      files: LongCharacterFileChange[];
     }
   | {
       kind: "long-chapter-write-proposal";
@@ -190,6 +200,15 @@ const worldbuildingItemIdParameter = stableIdParameter("worlditem");
 const worldbuildingReadModeParameter = literalUnion([
   "preview",
   "full"
+] as const);
+const plotItemKindParameter = literalUnion([
+  "book_line",
+  "volume",
+  "arc",
+  "chapter",
+  "event",
+  "connection",
+  "placement"
 ] as const);
 const textParameter = Type.String({ maxLength: 200_000 });
 const shortTextParameter = Type.String({ maxLength: 4_000 });
@@ -406,6 +425,7 @@ const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     client_ref: clientReferenceParameter,
     volumeId: entityReferenceParameter("volume"),
     title: titleParameter,
+    summary: Type.Optional(textParameter),
     outline: Type.Optional(textParameter)
   }),
   strictObject({
@@ -836,6 +856,416 @@ const LONG_WORLDBUILDING_MUTATION_PARAMETERS = strictObject({
     }
   ),
   summary: Type.String({ minLength: 1, maxLength: 1_000 })
+});
+
+const LONG_CHARACTER_STRUCTURE_OPERATION_PARAMETER = Type.Union([
+  strictObject({
+    type: Type.Literal("character.update"),
+    id: entityReferenceParameter("character"),
+    patch: patchParameter({
+      name: Type.Optional(titleParameter),
+      aliases: Type.Optional(aliasesParameter)
+    })
+  }),
+  strictObject({
+    type: Type.Literal("character.delete"),
+    id: entityReferenceParameter("character"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("character.move"),
+    id: entityReferenceParameter("character"),
+    toGroup: characterGroupParameter,
+    beforeCharacterId: Type.Optional(
+      entityReferenceParameter("character")
+    )
+  }),
+  strictObject({
+    type: Type.Literal("character.reorder"),
+    group: characterGroupParameter,
+    orderedIds: Type.Array(entityReferenceParameter("character"), {
+      maxItems: 100_000,
+      uniqueItems: true
+    })
+  })
+]);
+
+const LONG_CHARACTER_MUTATION_PARAMETERS = strictObject({
+  operations: Type.Array(LONG_CHARACTER_STRUCTURE_OPERATION_PARAMETER, {
+    minItems: 1,
+    maxItems: 10_000
+  }),
+  summary: Type.String({ minLength: 1, maxLength: 1_000 })
+});
+
+const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
+  strictObject({
+    type: Type.Literal("volume.update"),
+    id: entityReferenceParameter("volume"),
+    patch: patchParameter({ title: Type.Optional(titleParameter) })
+  }),
+  strictObject({
+    type: Type.Literal("volume.delete"),
+    id: entityReferenceParameter("volume"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("volume.reorder"),
+    orderedIds: Type.Array(entityReferenceParameter("volume"), {
+      maxItems: 10_000,
+      uniqueItems: true
+    })
+  }),
+  strictObject({
+    type: Type.Literal("arc.update"),
+    id: entityReferenceParameter("arc"),
+    patch: patchParameter({ title: Type.Optional(titleParameter) })
+  }),
+  strictObject({
+    type: Type.Literal("arc.delete"),
+    id: entityReferenceParameter("arc"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("arc.move"),
+    id: entityReferenceParameter("arc"),
+    toVolumeId: entityReferenceParameter("volume"),
+    beforeArcId: Type.Optional(entityReferenceParameter("arc"))
+  }),
+  strictObject({
+    type: Type.Literal("arc.reorder"),
+    volumeId: entityReferenceParameter("volume"),
+    orderedIds: Type.Array(entityReferenceParameter("arc"), {
+      maxItems: 100_000,
+      uniqueItems: true
+    })
+  }),
+  strictObject({
+    type: Type.Literal("chapter.update"),
+    id: entityReferenceParameter("chapter"),
+    patch: patchParameter({ title: Type.Optional(titleParameter) })
+  }),
+  strictObject({
+    type: Type.Literal("chapter.delete"),
+    id: entityReferenceParameter("chapter"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("chapter.move"),
+    id: entityReferenceParameter("chapter"),
+    toVolumeId: entityReferenceParameter("volume"),
+    toPrimaryArcId: entityReferenceParameter("arc"),
+    beforeChapterCardId: Type.Optional(entityReferenceParameter("chapter"))
+  }),
+  strictObject({
+    type: Type.Literal("chapter.reorder"),
+    volumeId: entityReferenceParameter("volume"),
+    orderedIds: Type.Array(entityReferenceParameter("chapter"), {
+      maxItems: 100_000,
+      uniqueItems: true
+    })
+  }),
+  strictObject({
+    type: Type.Literal("event.update"),
+    id: entityReferenceParameter("event"),
+    patch: patchParameter({ title: Type.Optional(titleParameter) })
+  }),
+  strictObject({
+    type: Type.Literal("event.delete"),
+    id: entityReferenceParameter("event"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("event.reorder"),
+    orderedIds: Type.Array(entityReferenceParameter("event"), {
+      maxItems: 200_000,
+      uniqueItems: true
+    })
+  }),
+  strictObject({
+    type: Type.Literal("connection.update"),
+    id: entityReferenceParameter("connection"),
+    patch: patchParameter({
+      sourceEventId: Type.Optional(entityReferenceParameter("event")),
+      targetEventId: Type.Optional(entityReferenceParameter("event")),
+      connectionType: Type.Optional(connectionTypeParameter)
+    })
+  }),
+  strictObject({
+    type: Type.Literal("connection.delete"),
+    id: entityReferenceParameter("connection"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("placement.update"),
+    id: entityReferenceParameter("placement"),
+    patch: patchParameter({
+      eventId: Type.Optional(entityReferenceParameter("event")),
+      mode: Type.Optional(narrativeModeParameter),
+      disclosure: Type.Optional(disclosureParameter)
+    })
+  }),
+  strictObject({
+    type: Type.Literal("placement.delete"),
+    id: entityReferenceParameter("placement"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("placement.move"),
+    id: entityReferenceParameter("placement"),
+    toChapterCardId: entityReferenceParameter("chapter"),
+    beforePlacementId: Type.Optional(entityReferenceParameter("placement"))
+  }),
+  strictObject({
+    type: Type.Literal("placement.reorder"),
+    chapterCardId: entityReferenceParameter("chapter"),
+    orderedIds: Type.Array(entityReferenceParameter("placement"), {
+      maxItems: 400_000,
+      uniqueItems: true
+    })
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowing.create"),
+    client_ref: clientReferenceParameter,
+    title: titleParameter,
+    coreQuestion: Type.Optional(textParameter),
+    hiddenTruth: Type.Optional(foreshadowingHiddenTruthParameter),
+    plannedSpan: Type.Optional(foreshadowingSpanParameter),
+    truthEventId: Type.Optional(
+      Type.Union([entityReferenceParameter("event"), Type.Null()])
+    ),
+    expectedReaderEffect: Type.Optional(textParameter),
+    status: Type.Optional(Type.Literal("planned"))
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowing.update"),
+    id: entityReferenceParameter("foreshadow"),
+    patch: patchParameter({
+      title: Type.Optional(titleParameter),
+      coreQuestion: Type.Optional(textParameter),
+      hiddenTruth: Type.Optional(foreshadowingHiddenTruthParameter),
+      plannedSpan: Type.Optional(foreshadowingSpanParameter),
+      truthEventId: Type.Optional(
+        Type.Union([entityReferenceParameter("event"), Type.Null()])
+      ),
+      expectedReaderEffect: Type.Optional(textParameter),
+      status: Type.Optional(literalUnion(["planned", "abandoned"] as const))
+    })
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowing.delete"),
+    id: entityReferenceParameter("foreshadow"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowing.reorder"),
+    orderedIds: Type.Array(entityReferenceParameter("foreshadow"), {
+      maxItems: 100_000,
+      uniqueItems: true
+    })
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowingBeat.create"),
+    client_ref: clientReferenceParameter,
+    threadId: entityReferenceParameter("foreshadow"),
+    beatType: beatTypeParameter,
+    volumeId: Type.Optional(nullableEntityReferenceParameter("volume", "卷级计划锚点；传 null 可清空。")),
+    arcId: Type.Optional(nullableEntityReferenceParameter("arc", "剧情点计划锚点；传 null 可清空。")),
+    eventId: Type.Optional(Type.Union([entityReferenceParameter("event"), Type.Null()])),
+    placementId: Type.Optional(Type.Union([entityReferenceParameter("placement"), Type.Null()])),
+    chapterCardId: Type.Optional(Type.Union([entityReferenceParameter("chapter"), Type.Null()])),
+    plannedScope: Type.Optional(Type.String({ maxLength: 1_000 })),
+    note: Type.Optional(shortTextParameter)
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowingBeat.update"),
+    id: entityReferenceParameter("beat"),
+    patch: patchParameter({
+      beatType: Type.Optional(beatTypeParameter),
+      volumeId: Type.Optional(nullableEntityReferenceParameter("volume", "更新卷级计划锚点；传 null 可清空。")),
+      arcId: Type.Optional(nullableEntityReferenceParameter("arc", "更新剧情点计划锚点；传 null 可清空。")),
+      eventId: Type.Optional(Type.Union([entityReferenceParameter("event"), Type.Null()])),
+      placementId: Type.Optional(Type.Union([entityReferenceParameter("placement"), Type.Null()])),
+      chapterCardId: Type.Optional(Type.Union([entityReferenceParameter("chapter"), Type.Null()])),
+      plannedScope: Type.Optional(Type.String({ maxLength: 1_000 })),
+      note: Type.Optional(shortTextParameter)
+    })
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowingBeat.delete"),
+    id: entityReferenceParameter("beat"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowingBeat.move"),
+    id: entityReferenceParameter("beat"),
+    toThreadId: entityReferenceParameter("foreshadow"),
+    beforeBeatId: Type.Optional(entityReferenceParameter("beat"))
+  }),
+  strictObject({
+    type: Type.Literal("foreshadowingBeat.reorder"),
+    threadId: entityReferenceParameter("foreshadow"),
+    orderedIds: Type.Array(entityReferenceParameter("beat"), {
+      maxItems: 10_000,
+      uniqueItems: true
+    })
+  })
+]);
+
+const LONG_PLOT_MUTATION_PARAMETERS = strictObject({
+  operations: Type.Array(LONG_PLOT_STRUCTURE_OPERATION_PARAMETER, {
+    minItems: 1,
+    maxItems: 10_000
+  }),
+  summary: Type.String({ minLength: 1, maxLength: 1_000 })
+});
+
+const LONG_PLOT_CREATE_PARAMETERS = strictObject({
+  item: Type.Union([
+    strictObject({
+      kind: Type.Literal("volume"),
+      title: titleParameter,
+      summary: Type.Optional(textParameter)
+    }),
+    strictObject({
+      kind: Type.Literal("arc"),
+      volume_id: entityReferenceParameter("volume"),
+      title: titleParameter,
+      summary: Type.Optional(textParameter),
+      outline: Type.Optional(textParameter)
+    }),
+    strictObject({
+      kind: Type.Literal("chapter"),
+      volume_id: entityReferenceParameter("volume"),
+      primary_arc_id: entityReferenceParameter("arc"),
+      title: titleParameter,
+      outline: Type.Optional(textParameter),
+      world_constraints: Type.Optional(textParameter),
+      character_ids: Type.Optional(
+        Type.Array(entityReferenceParameter("character"), {
+          maxItems: 1_024,
+          uniqueItems: true
+        })
+      )
+    }),
+    strictObject({
+      kind: Type.Literal("event"),
+      title: titleParameter,
+      summary: Type.Optional(textParameter),
+      time_mode: storyTimeModeParameter,
+      time_label: Type.Optional(Type.String({ maxLength: 1_000 })),
+      time_value: Type.Optional(Type.String({ maxLength: 1_000 })),
+      location: Type.Optional(Type.String({ maxLength: 1_000 })),
+      arc_ids: Type.Optional(
+        Type.Array(entityReferenceParameter("arc"), {
+          maxItems: 1_024,
+          uniqueItems: true
+        })
+      ),
+      character_ids: Type.Optional(
+        Type.Array(entityReferenceParameter("character"), {
+          maxItems: 1_024,
+          uniqueItems: true
+        })
+      )
+    }),
+    strictObject({
+      kind: Type.Literal("connection"),
+      source_event_id: entityReferenceParameter("event"),
+      target_event_id: entityReferenceParameter("event"),
+      connection_type: connectionTypeParameter,
+      note: Type.Optional(shortTextParameter)
+    }),
+    strictObject({
+      kind: Type.Literal("placement"),
+      event_id: entityReferenceParameter("event"),
+      chapter_card_id: entityReferenceParameter("chapter"),
+      mode: narrativeModeParameter,
+      disclosure: disclosureParameter,
+      writing_prompt: Type.Optional(shortTextParameter)
+    })
+  ]),
+  summary: Type.Optional(Type.String({ minLength: 1, maxLength: 1_000 }))
+});
+
+const LONG_PLOT_ITEM_TARGET_PARAMETER = Type.Union([
+  strictObject({ kind: Type.Literal("book_line") }),
+  strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume") }),
+  strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc") }),
+  strictObject({ kind: Type.Literal("chapter"), chapter_card_id: stableIdParameter("chapter") }),
+  strictObject({ kind: Type.Literal("event"), event_id: stableIdParameter("event") }),
+  strictObject({ kind: Type.Literal("connection"), connection_id: stableIdParameter("connection") }),
+  strictObject({ kind: Type.Literal("placement"), placement_id: stableIdParameter("placement") })
+]);
+
+const LONG_PLOT_WRITE_PARAMETERS = strictObject({
+  item: Type.Union([
+    strictObject({ kind: Type.Literal("book_line"), text: Type.String({ minLength: 1, maxLength: 1_000_000 }) }),
+    strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume"), summary: textParameter }),
+    strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc"), summary: textParameter, outline: textParameter }),
+    strictObject({
+      kind: Type.Literal("chapter"),
+      chapter_card_id: stableIdParameter("chapter"),
+      outline: textParameter,
+      world_constraints: textParameter,
+      character_ids: Type.Array(entityReferenceParameter("character"), { maxItems: 1_024, uniqueItems: true })
+    }),
+    strictObject({
+      kind: Type.Literal("event"),
+      event_id: stableIdParameter("event"),
+      summary: textParameter,
+      time_mode: storyTimeModeParameter,
+      time_label: Type.String({ maxLength: 1_000 }),
+      time_value: Type.Optional(Type.String({ maxLength: 1_000 })),
+      location: Type.String({ maxLength: 1_000 }),
+      arc_ids: Type.Array(entityReferenceParameter("arc"), { maxItems: 1_024, uniqueItems: true }),
+      character_ids: Type.Array(entityReferenceParameter("character"), { maxItems: 1_024, uniqueItems: true })
+    }),
+    strictObject({ kind: Type.Literal("connection"), connection_id: stableIdParameter("connection"), note: shortTextParameter }),
+    strictObject({ kind: Type.Literal("placement"), placement_id: stableIdParameter("placement"), writing_prompt: shortTextParameter })
+  ]),
+  allow_overwrite_existing: Type.Optional(Type.Boolean()),
+  summary: Type.Optional(Type.String({ minLength: 1, maxLength: 1_000 }))
+});
+
+const LONG_PLOT_EDIT_PARAMETERS = strictObject({
+  item: Type.Union([
+    strictObject({
+      kind: Type.Literal("book_line"),
+      replacements: Type.Array(
+        strictObject({
+          original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
+          new_text: Type.String({ maxLength: 20_000 })
+        }),
+        { minItems: 1, maxItems: 20 }
+      )
+    }),
+    strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume"), patch: patchParameter({ summary: Type.Optional(textParameter) }) }),
+    strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc"), patch: patchParameter({ summary: Type.Optional(textParameter), outline: Type.Optional(textParameter) }) }),
+    strictObject({
+      kind: Type.Literal("chapter"), chapter_card_id: stableIdParameter("chapter"),
+      patch: patchParameter({
+        outline: Type.Optional(textParameter),
+        world_constraints: Type.Optional(textParameter),
+        character_ids: Type.Optional(Type.Array(entityReferenceParameter("character"), { maxItems: 1_024, uniqueItems: true }))
+      })
+    }),
+    strictObject({
+      kind: Type.Literal("event"), event_id: stableIdParameter("event"),
+      patch: patchParameter({
+        summary: Type.Optional(textParameter),
+        time_mode: Type.Optional(storyTimeModeParameter),
+        time_label: Type.Optional(Type.String({ maxLength: 1_000 })),
+        time_value: Type.Optional(Type.String({ maxLength: 1_000 })),
+        location: Type.Optional(Type.String({ maxLength: 1_000 })),
+        arc_ids: Type.Optional(Type.Array(entityReferenceParameter("arc"), { maxItems: 1_024, uniqueItems: true })),
+        character_ids: Type.Optional(Type.Array(entityReferenceParameter("character"), { maxItems: 1_024, uniqueItems: true }))
+      })
+    }),
+    strictObject({ kind: Type.Literal("connection"), connection_id: stableIdParameter("connection"), patch: patchParameter({ note: Type.Optional(shortTextParameter) }) }),
+    strictObject({ kind: Type.Literal("placement"), placement_id: stableIdParameter("placement"), patch: patchParameter({ writing_prompt: Type.Optional(shortTextParameter) }) })
+  ]),
+  summary: Type.Optional(Type.String({ minLength: 1, maxLength: 1_000 }))
 });
 
 function textResult(
@@ -1519,6 +1949,9 @@ function buildRuntimeOperations(input: {
               volumeId,
               title: operation.title,
               order: incrementCounter(arcOrders, volumeId),
+              ...(operation.summary === undefined
+                ? {}
+                : { summary: operation.summary }),
               outline: operation.outline ?? ""
             }
           };
@@ -2117,6 +2550,7 @@ export function isLongAgentToolDetails(
     kind === "none" ||
     kind === "long-mutation-proposal" ||
     kind === "long-worldbuilding-file-proposal" ||
+    kind === "long-character-file-proposal" ||
     kind === "long-chapter-write-proposal" ||
     kind === "long-ledger-commit-proposal" ||
     kind === "long-chapter-dispatch-proposal"
@@ -2264,6 +2698,8 @@ export function buildLongWorkspaceTools(
   const writableRoots = new Set(profile.writeAccess.workspaceRoots);
   const capabilities = new Set(profile.writeAccess.capabilities);
   const isWorldbuildingAgent = profile.id === "worldbuilding";
+  const isCharacterDesignAgent = profile.id === "character_design";
+  const isPlotDesignAgent = profile.id === "plot_design";
   const tools: AgentTool[] = [
     buildQueryLinkedMaterialEntriesTool(input),
     buildLoadSkillTool(input)
@@ -2417,6 +2853,160 @@ export function buildLongWorkspaceTools(
       projectRevision: number;
     }
   >();
+  const characterDocumentOverlay = new Map<
+    string,
+    {
+      characterId: string;
+      characterName: string;
+      characterGroup?:
+        | "protagonist"
+        | "major_supporting"
+        | "minor_supporting"
+        | "passerby";
+      aliases?: string[];
+      document:
+        | "core_profile"
+        | "relationships"
+        | "current_state"
+        | "history";
+      file: LongWorkspaceFileReference;
+      content: string;
+      pendingCreation: boolean;
+    }
+  >();
+  type PlotItemKind = Static<typeof plotItemKindParameter>;
+  const fullyReadPlotItems = new Map<
+    string,
+    {
+      serialized: string;
+      workspaceRevision: number;
+      projectRevision: number;
+    }
+  >();
+
+  const plotItemKey = (kind: PlotItemKind, id?: string) =>
+    kind === "book_line" ? kind : `${kind}:${id ?? ""}`;
+
+  const plotBusinessId = (
+    item: { kind: Exclude<PlotItemKind, "book_line"> } & Record<string, unknown>
+  ): string => {
+    const id =
+      item.kind === "volume"
+        ? item.volume_id
+        : item.kind === "arc"
+          ? item.arc_id
+          : item.kind === "chapter"
+            ? item.chapter_card_id
+            : item.kind === "event"
+              ? item.event_id
+              : item.kind === "connection"
+                ? item.connection_id
+                : item.placement_id;
+    if (typeof id !== "string") {
+      throw new Error(`Plot ${item.kind} target is missing its business id.`);
+    }
+    return id;
+  };
+
+  const resolvePlotItem = (
+    index: LongWorkspaceIndexSnapshot,
+    kind: Exclude<PlotItemKind, "book_line">,
+    id: string
+  ): Record<string, unknown> => {
+    const collection =
+      kind === "volume"
+        ? index.plot.volumes
+        : kind === "arc"
+          ? index.plot.arcs
+          : kind === "chapter"
+            ? index.plot.chapterCards
+            : kind === "event"
+              ? index.plot.storyEvents
+              : kind === "connection"
+                ? index.plot.eventConnections
+                : index.plot.narrativePlacements;
+    const item = collection.find((candidate) => candidate.id === id);
+    if (!item) {
+      throw new Error(`Plot ${kind} ${id} does not exist.`);
+    }
+    return item as unknown as Record<string, unknown>;
+  };
+
+  const toPlotBusinessItem = (
+    kind: Exclude<PlotItemKind, "book_line">,
+    item: Record<string, unknown>
+  ): Record<string, unknown> => {
+    if (kind === "volume") {
+      return {
+        kind,
+        volume_id: item.id,
+        title: item.title,
+        order: item.order,
+        summary: item.summary
+      };
+    }
+    if (kind === "arc") {
+      return {
+        kind,
+        arc_id: item.id,
+        volume_id: item.volumeId,
+        title: item.title,
+        order: item.order,
+        summary: item.summary ?? "",
+        outline: item.outline
+      };
+    }
+    if (kind === "chapter") {
+      return {
+        kind,
+        chapter_card_id: item.id,
+        volume_id: item.volumeId,
+        primary_arc_id: item.primaryArcId,
+        title: item.title,
+        narrative_order: item.narrativeOrder,
+        outline: item.outline,
+        world_constraints: item.worldConstraints,
+        character_ids: item.characterIds
+      };
+    }
+    if (kind === "event") {
+      return {
+        kind,
+        event_id: item.id,
+        title: item.title,
+        summary: item.summary,
+        time_mode: item.timeMode,
+        time_label: item.timeLabel,
+        ...(item.timeValue === undefined ? {} : { time_value: item.timeValue }),
+        story_order: item.storyOrder,
+        location: item.location,
+        arc_ids: item.arcIds,
+        character_ids: item.characterIds
+      };
+    }
+    if (kind === "connection") {
+      return {
+        kind,
+        connection_id: item.id,
+        source_event_id: item.sourceEventId,
+        target_event_id: item.targetEventId,
+        connection_type: item.type,
+        note: item.note
+      };
+    }
+    return {
+      kind,
+      placement_id: item.id,
+      event_id: item.eventId,
+      chapter_card_id: item.chapterCardId,
+      order_in_chapter: item.orderInChapter,
+      mode: item.mode,
+      disclosure: item.disclosure,
+      writing_prompt: item.writingPrompt,
+      status: item.status,
+      commit_id: item.commitId
+    };
+  };
 
   const resolveWorldbuildingTarget = (
     index: LongWorkspaceIndexSnapshot,
@@ -2576,11 +3166,30 @@ export function buildLongWorkspaceTools(
   ): {
     characterName: string;
     file: LongWorkspaceFileReference;
+    overlay?: {
+      content: string;
+      pendingCreation: boolean;
+    };
   } => {
     const character = index.characters.find(({ id }) => id === characterId);
     const files = index.characterFiles.find(
       (entry) => entry.characterId === characterId
     );
+    const pending = [...characterDocumentOverlay.values()].find(
+      (candidate) =>
+        candidate.characterId === characterId &&
+        candidate.document === document
+    );
+    if ((!character || !files) && pending) {
+      return {
+        characterName: pending.characterName,
+        file: pending.file,
+        overlay: {
+          content: pending.content,
+          pendingCreation: pending.pendingCreation
+        }
+      };
+    }
     if (!character || !files) {
       throw new Error(`Character ${characterId} does not exist.`);
     }
@@ -2590,9 +3199,19 @@ export function buildLongWorkspaceTools(
       current_state: files.currentState,
       history: files.history
     } as const;
+    const file = documents[document];
+    const overlay = characterDocumentOverlay.get(file.id);
     return {
       characterName: character.name,
-      file: documents[document]
+      file: overlay?.file ?? file,
+      ...(overlay
+        ? {
+            overlay: {
+              content: overlay.content,
+              pendingCreation: overlay.pendingCreation
+            }
+          }
+        : {})
     };
   };
 
@@ -2773,7 +3392,9 @@ export function buildLongWorkspaceTools(
   if (
     capabilities.has("query_structure") &&
     readableRoots.size > 0 &&
-    !isWorldbuildingAgent
+    !isWorldbuildingAgent &&
+    !isCharacterDesignAgent &&
+    !isPlotDesignAgent
   ) {
     tools.push(
       defineTool({
@@ -2957,7 +3578,7 @@ export function buildLongWorkspaceTools(
   }
 
   if (
-    isWorldbuildingAgent &&
+    (isWorldbuildingAgent || isCharacterDesignAgent || isPlotDesignAgent) &&
     capabilities.has("query_structure") &&
     readableRoots.has("worldbuilding")
   ) {
@@ -3658,55 +4279,274 @@ export function buildLongWorkspaceTools(
     );
   }
 
+  const CHARACTER_DOCUMENT_TITLES = {
+    core_profile: "核心档案",
+    relationships: "人物关系",
+    current_state: "当前状态",
+    history: "历史轨迹"
+  } as const;
+
+  const assertCharacterDocumentIsDirectlyWritable = (
+    index: LongWorkspaceIndexSnapshot,
+    document: keyof typeof CHARACTER_DOCUMENT_TITLES
+  ) => {
+    if (index.ledger.commits.length > 0 && document !== "core_profile") {
+      throw new Error(
+        "After the first continuity commit, relationships, current state, and history are ledger-owned; only the core profile remains directly writable."
+      );
+    }
+  };
+
   if (
+    (isCharacterDesignAgent || isPlotDesignAgent) &&
     capabilities.has("query_structure") &&
-    readableRoots.has("character_design") &&
-    capabilities.has("mutate_structure") &&
-    writableRoots.has("character_design")
+    readableRoots.has("character_design")
   ) {
     tools.push(
       defineTool({
-        name: "read_character_document",
-        label: "读取人物文档",
+        name: "list_characters",
+        label: "列出人物",
         description:
-          "按稳定 character_id 和文档角色完整读取一名人物的独立 Markdown 文件。完整读取会为后续覆盖或局部替换建立本轮读取凭据。",
-        parameters: Type.Object({
-          character_id: Type.String({ minLength: 3, maxLength: 160 }),
-          document: characterDocumentParameter
+          "列出人物业务索引，可按分组筛选。返回 character_id、姓名、分组和别名，不暴露文件与版本信息。",
+        parameters: strictObject({
+          group: Type.Optional(characterGroupParameter),
+          page: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+        }),
+        execute: async (_toolCallId, params, signal) => {
+          const { index } = await loadIndex(signal);
+          const pending = new Map<
+            string,
+            {
+              character_id: string;
+              name: string;
+              group: string;
+              aliases: string[];
+            }
+          >();
+          for (const candidate of characterDocumentOverlay.values()) {
+            if (
+              !candidate.pendingCreation ||
+              pending.has(candidate.characterId)
+            ) {
+              continue;
+            }
+            pending.set(candidate.characterId, {
+              character_id: candidate.characterId,
+              name: candidate.characterName,
+              group: candidate.characterGroup ?? "major_supporting",
+              aliases: candidate.aliases ?? []
+            });
+          }
+          const characters = [
+            ...index.characters.map((character) => ({
+              character_id: character.id,
+              name: character.name,
+              group: character.group,
+              aliases: character.aliases
+            })),
+            ...pending.values()
+          ].filter(
+            (character) =>
+              !params.group || character.group === params.group
+          );
+          const page = params.page ?? 1;
+          const limit = params.limit ?? 50;
+          const start = (page - 1) * limit;
+          const end = Math.min(start + limit, characters.length);
+          return textResult(JSON.stringify({
+            characters: characters.slice(start, end),
+            next_page: end < characters.length ? page + 1 : null
+          }));
+        }
+      }),
+      defineTool({
+        name: "search_characters",
+        label: "搜索人物",
+        description:
+          "搜索人物四类文档，返回可继续读取的 character_id、姓名、document 和少量上下文；不返回文件、路径或版本信息。",
+        parameters: strictObject({
+          query: Type.String({ minLength: 1, maxLength: 256 }),
+          group: Type.Optional(characterGroupParameter),
+          document: Type.Optional(characterDocumentParameter),
+          page: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+        }),
+        execute: async (_toolCallId, params, signal) => {
+          const { index } = await loadIndex(signal);
+          const page = params.page ?? 1;
+          const limit = params.limit ?? 20;
+          let cursor: string | undefined;
+          let result: LongSearchResult | undefined;
+          for (let currentPage = 1; currentPage <= page; currentPage += 1) {
+            if (currentPage > 1 && !cursor) break;
+            const command = LongSearchCommandEnvelopeSchema.parse(
+              createEnvelope(
+                "long.search",
+                {
+                  bookId: workspace.bookId,
+                  query: params.query,
+                  scope: "character_design",
+                  ...(cursor ? { cursor } : {}),
+                  limit,
+                  maxSnippetCharacters: 320
+                },
+                {
+                  id: `long-query-${input.runId}-character-search-${++querySequence}`,
+                  context: {
+                    sessionId: input.sessionId,
+                    runId: input.runId,
+                    resourceId: workspace.bookId
+                  }
+                }
+              )
+            );
+            const candidate = LongSearchResultSchema.parse(
+              await execute(command, signal)
+            );
+            if (
+              candidate.bookId !== workspace.bookId ||
+              candidate.scope !== "character_design" ||
+              candidate.hits.some((hit) => hit.root !== "character_design")
+            ) {
+              throw new Error(
+                "Core returned search results outside character design."
+              );
+            }
+            result = candidate;
+            cursor = candidate.nextCursor ?? undefined;
+          }
+          if (!result) {
+            return textResult(JSON.stringify({ hits: [], next_page: null }));
+          }
+          const targets = new Map<
+            string,
+            {
+              character_id: string;
+              name: string;
+              group: string;
+              document: keyof typeof CHARACTER_DOCUMENT_TITLES;
+            }
+          >();
+          for (const character of index.characters) {
+            const files = index.characterFiles.find(
+              ({ characterId }) => characterId === character.id
+            );
+            if (!files) continue;
+            targets.set(files.coreProfile.id, {
+              character_id: character.id,
+              name: character.name,
+              group: character.group,
+              document: "core_profile"
+            });
+            targets.set(files.relationships.id, {
+              character_id: character.id,
+              name: character.name,
+              group: character.group,
+              document: "relationships"
+            });
+            targets.set(files.currentState.id, {
+              character_id: character.id,
+              name: character.name,
+              group: character.group,
+              document: "current_state"
+            });
+            targets.set(files.history.id, {
+              character_id: character.id,
+              name: character.name,
+              group: character.group,
+              document: "history"
+            });
+          }
+          const hits = result.hits.flatMap((hit) => {
+            const target = targets.get(hit.fileId);
+            if (!target) {
+              throw new Error("Core returned an unknown character document.");
+            }
+            if (
+              (params.group && target.group !== params.group) ||
+              (params.document && target.document !== params.document)
+            ) return [];
+            return [
+              {
+                character_id: target.character_id,
+                name: target.name,
+                document: target.document,
+                snippet: hit.snippet
+              }
+            ];
+          });
+          return textResult(
+            JSON.stringify({
+              hits,
+              next_page:
+                result.nextCursor === null || page >= 100
+                  ? null
+                  : page + 1
+            })
+          );
+        }
+      }),
+      defineTool({
+        name: "read_character",
+        label: "读取人物",
+        description:
+          "按 character_id 和 document 读取人物内容。mode=preview 只返回摘录，mode=full 会建立本轮后续编辑所需的完整读取凭据。",
+        parameters: strictObject({
+          character_id: stableIdParameter("character"),
+          document: characterDocumentParameter,
+          mode: Type.Optional(worldbuildingReadModeParameter)
         }),
         execute: async (_toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
+          const mode = params.mode ?? "full";
           const target = resolveCharacterDocumentTarget(
             index,
             params.character_id,
             params.document
           );
-          const result = await readWholeCharacterDocument(
-            target.file,
-            index.revision,
-            projectRevision,
-            signal
-          );
-          fullyReadCharacterDocuments.set(target.file.id, {
-            content: result.content,
+          const result = target.overlay
+            ? { content: target.overlay.content, file: target.file }
+            : await readWholeCharacterDocument(
+                target.file,
+                index.revision,
+                projectRevision,
+                signal
+              );
+          characterDocumentOverlay.set(result.file.id, {
+            ...(characterDocumentOverlay.get(result.file.id) ?? {}),
+            characterId: params.character_id,
+            characterName: target.characterName,
+            document: params.document,
             file: result.file,
-            workspaceRevision: index.revision,
-            projectRevision
+            content: result.content,
+            pendingCreation: target.overlay?.pendingCreation ?? false
           });
+          if (mode === "full") {
+            fullyReadCharacterDocuments.set(result.file.id, {
+              content: result.content,
+              file: result.file,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
+          }
+          const previewLength = 240;
+          const visible =
+            mode === "preview" && result.content.length > previewLength * 2
+              ? `${result.content.slice(0, previewLength)}\n\n……（中间省略 ${result.content.length - previewLength * 2} 个字符）……\n\n${result.content.slice(-previewLength)}`
+              : result.content;
           return textResult(
-            JSON.stringify(
-              {
-                characterId: params.character_id,
-                characterName: target.characterName,
-                document: params.document,
-                file: result.file,
-                content: result.content,
-                workspaceRevision: index.revision,
-                projectRevision
-              },
-              null,
-              2
-            )
+            [
+              `【${target.characterName} / ${CHARACTER_DOCUMENT_TITLES[params.document]}】`,
+              mode === "preview"
+                ? "预览（不建立整体覆盖凭据）："
+                : "正文：",
+              "",
+              visible || "（正文为空）",
+              ...(target.overlay?.pendingCreation
+                ? ["", "（本人物为本轮待创建内容，尚未落盘。）"]
+                : [])
+            ].join("\n")
           );
         }
       })
@@ -3714,75 +4554,42 @@ export function buildLongWorkspaceTools(
   }
 
   if (
+    isCharacterDesignAgent &&
     capabilities.has("mutate_structure") &&
     writableRoots.has("character_design")
   ) {
     const proposalResult = (
       batch: LongWorkspaceOperationBatch,
       projectRevision: number,
-      summary: string
+      summary: string,
+      files: LongCharacterFileChange[]
     ) =>
-      textResult(longProposalResultSummary(
-        input,
-        "已形成人物文件变更提案，等待客户端审阅与冲突检查。"
-      ), {
-        kind: "long-mutation-proposal" as const,
-        bookId: workspace.bookId,
-        agentId: profile.id,
-        batch,
-        baseProjectRevision: projectRevision,
-        summary
-      });
-
-    const assertCharacterDocumentIsDirectlyWritable = (
-      index: LongWorkspaceIndexSnapshot,
-      document:
-        | "core_profile"
-        | "relationships"
-        | "current_state"
-        | "history"
-    ) => {
-      if (
-        index.ledger.commits.length > 0 &&
-        document !== "core_profile"
-      ) {
-        throw new Error(
-          "After the first continuity commit, relationships, current state, and history are ledger-owned; only the core profile remains directly writable."
-        );
-      }
-    };
+      textResult(
+        longProposalResultSummary(
+          input,
+          "已形成人物文件变更提案，等待客户端审阅与冲突检查。"
+        ),
+        {
+          kind: "long-character-file-proposal" as const,
+          bookId: workspace.bookId,
+          agentId: profile.id,
+          batch,
+          baseProjectRevision: projectRevision,
+          summary,
+          files
+        }
+      );
 
     tools.push(
       defineTool({
-        name: "create_characters",
+        name: "create_character",
         label: "创建人物",
         description:
-          "批量创建人物列表条目；每名人物获得稳定 character_id，以及核心档案、人物关系、当前状态和历史轨迹四份独立 Markdown 文件。可在同一次提案中提供初始内容。",
-        parameters: Type.Object({
-          characters: Type.Array(
-            Type.Object({
-              name: Type.String({ minLength: 1, maxLength: 256 }),
-              group: characterGroupParameter,
-              aliases: Type.Optional(aliasesParameter),
-              documents: Type.Optional(
-                Type.Object({
-                  core_profile: Type.Optional(
-                    Type.String({ maxLength: 1_000_000 })
-                  ),
-                  relationships: Type.Optional(
-                    Type.String({ maxLength: 1_000_000 })
-                  ),
-                  current_state: Type.Optional(
-                    Type.String({ maxLength: 1_000_000 })
-                  ),
-                  history: Type.Optional(
-                    Type.String({ maxLength: 1_000_000 })
-                  )
-                })
-              )
-            }),
-            { minItems: 1, maxItems: 100 }
-          ),
+          "创建一名人物及核心档案、人物关系、当前状态、历史轨迹四份空白 Markdown 文档，返回稳定 character_id。本工具不接受初始化正文；创建后分别使用 write_character_file。",
+        parameters: strictObject({
+          name: titleParameter,
+          group: characterGroupParameter,
+          aliases: Type.Optional(aliasesParameter),
           summary: Type.Optional(
             Type.String({ minLength: 1, maxLength: 1_000 })
           )
@@ -3790,161 +4597,143 @@ export function buildLongWorkspaceTools(
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
-          if (index.characters.length + params.characters.length > 100_000) {
+          const pendingCharacterIds = new Set(
+            [...characterDocumentOverlay.values()]
+              .filter(({ pendingCreation }) => pendingCreation)
+              .map(({ characterId }) => characterId)
+          );
+          const pendingInGroup = new Set(
+            [...characterDocumentOverlay.values()]
+              .filter(
+                (candidate) =>
+                  candidate.pendingCreation &&
+                  candidate.characterGroup === params.group
+              )
+              .map(({ characterId }) => characterId)
+          ).size;
+          if (index.characters.length + pendingCharacterIds.size >= 100_000) {
             throw new Error(
               "A long workspace supports at most 100,000 characters."
             );
           }
-          const timestamp = new Date().toISOString();
-          const nextOrders = new Map(
-            ([
-              "protagonist",
-              "major_supporting",
-              "minor_supporting",
-              "passerby"
-            ] as const).map((group) => [
-              group,
-              maxOrder(
-                index.characters
-                  .filter((character) => character.group === group)
-                  .map(({ order }) => order)
-              )
-            ])
-          );
-          const operations: LongWorkspaceOperation[] = [];
-          const documentWrites: LongWorkspaceOperationBatch["documentWrites"] =
-            [];
-          const created: Array<{ characterId: string; name: string }> = [];
-
-          params.characters.forEach((requested, characterIndex) => {
-            const characterId = `character_${stableHash(
-              `${workspace.bookId}:${input.runId}:${toolCallId}:${characterIndex}`
-            ).slice(0, 24)}`;
-            const order = (nextOrders.get(requested.group) ?? 0) + 1;
-            nextOrders.set(requested.group, order);
-            const emptyFiles = {
-              core_profile: createEmptyLongMarkdownFileReference(
-                longCharacterCoreProfileFileId(characterId),
-                longCharacterFilePath(characterId, "core-profile.md"),
-                timestamp
-              ),
-              relationships: createEmptyLongMarkdownFileReference(
-                longCharacterRelationshipsFileId(characterId),
-                longCharacterFilePath(characterId, "relationships.md"),
-                timestamp
-              ),
-              current_state: createEmptyLongMarkdownFileReference(
-                longCharacterCurrentStateFileId(characterId),
-                longCharacterFilePath(characterId, "current-state.md"),
-                timestamp
-              ),
-              history: createEmptyLongMarkdownFileReference(
-                longCharacterHistoryFileId(characterId),
-                longCharacterFilePath(characterId, "history.md"),
-                timestamp
-              )
-            };
-            const documents = requested.documents ?? {};
-            const files = Object.fromEntries(
-              Object.entries(emptyFiles).map(([document, emptyFile]) => {
-                const content =
-                  documents[
-                    document as keyof typeof documents
-                  ] ?? "";
-                return [
-                  document,
-                  content
-                    ? {
-                        ...emptyFile,
-                        revision: nextContentRevision(
-                          emptyFile.revision,
-                          content
-                        )
-                      }
-                    : emptyFile
-                ];
-              })
-            ) as typeof emptyFiles;
-
-            operations.push({
-              type: "character.create",
-              character: {
-                id: characterId,
-                name: requested.name.trim(),
-                group: requested.group,
-                order,
-                aliases: requested.aliases ?? []
-              },
-              files: {
-                characterId,
-                coreProfile: files.core_profile,
-                relationships: files.relationships,
-                currentState: files.current_state,
-                history: files.history
-              }
-            });
-
-            (Object.keys(files) as Array<keyof typeof files>).forEach(
-              (document, documentIndex) => {
-                const content = documents[document] ?? "";
-                if (!content) return;
-                documentWrites.push({
-                  proposalId: `proposal_${stableHash(
-                    `${workspace.bookId}:${input.runId}:${toolCallId}:content:${characterIndex}:${documentIndex}`
-                  ).slice(0, 24)}`,
-                  fileId: files[document].id,
-                  content,
-                  mode: "create",
-                  expectedRevision: null,
-                  nextRevision: files[document].revision,
-                  updatedAt: timestamp,
-                  reason: `初始化人物“${requested.name.trim()}”的${document}`
-                });
-              }
+          const name = params.name.trim();
+          if (
+            index.characters.some((character) => character.name === name) ||
+            [...characterDocumentOverlay.values()].some(
+              (candidate) =>
+                candidate.pendingCreation &&
+                candidate.characterName === name
+            )
+          ) {
+            throw new Error(
+              "A character with the same name already exists or is pending creation."
             );
-            created.push({
+          }
+          const timestamp = new Date().toISOString();
+          const characterId = `character_${stableHash(
+            `${workspace.bookId}:${input.runId}:${toolCallId}`
+          ).slice(0, 24)}`;
+          const files = {
+            core_profile: createEmptyLongMarkdownFileReference(
+              longCharacterCoreProfileFileId(characterId),
+              longCharacterFilePath(characterId, "core-profile.md"),
+              timestamp
+            ),
+            relationships: createEmptyLongMarkdownFileReference(
+              longCharacterRelationshipsFileId(characterId),
+              longCharacterFilePath(characterId, "relationships.md"),
+              timestamp
+            ),
+            current_state: createEmptyLongMarkdownFileReference(
+              longCharacterCurrentStateFileId(characterId),
+              longCharacterFilePath(characterId, "current-state.md"),
+              timestamp
+            ),
+            history: createEmptyLongMarkdownFileReference(
+              longCharacterHistoryFileId(characterId),
+              longCharacterFilePath(characterId, "history.md"),
+              timestamp
+            )
+          };
+          const operation: LongWorkspaceOperation = {
+            type: "character.create",
+            character: {
+              id: characterId,
+              name,
+              group: params.group,
+              order: maxOrder(
+                index.characters
+                  .filter(({ group }) => group === params.group)
+                  .map(({ order }) => order)
+              ) + pendingInGroup + 1,
+              aliases: params.aliases ?? []
+            },
+            files: {
               characterId,
-              name: requested.name.trim()
+              coreProfile: files.core_profile,
+              relationships: files.relationships,
+              currentState: files.current_state,
+              history: files.history
+            }
+          };
+          const changes = (Object.keys(files) as Array<keyof typeof files>).map(
+            (document): LongCharacterFileChange => ({
+              characterId,
+              characterName: name,
+              document,
+              fileId: files[document].id,
+              filePath: files[document].path,
+              title: `${name} / ${CHARACTER_DOCUMENT_TITLES[document]}`,
+              operation: "create",
+              beforeText: "",
+              afterText: "",
+              beforeRevision: null,
+              nextRevision: files[document].revision
+            })
+          );
+          for (const change of changes) {
+            characterDocumentOverlay.set(change.fileId, {
+              characterId,
+              characterName: name,
+              characterGroup: params.group,
+              aliases: params.aliases ?? [],
+              document: change.document,
+              file: files[change.document],
+              content: "",
+              pendingCreation: true
             });
-          });
-
-          const summary =
-            params.summary?.trim() ||
-            `创建 ${created.length} 名人物`;
+          }
           const batch = LongWorkspaceOperationBatchSchema.parse({
             baseRevision: index.revision,
             updatedAt: timestamp,
-            operations,
-            documentWrites
+            operations: [operation],
+            documentWrites: []
           });
+          const summary = params.summary?.trim() || `创建人物“${name}”`;
           return textResult(
             `${longProposalResultSummary(
               input,
-              "已形成人物创建提案，等待客户端审阅与冲突检查。"
-            )}\n${created
-              .map(
-                (character, characterIndex) =>
-                  `${characterIndex + 1}. ${character.name} → character_id=${character.characterId}`
-              )
-              .join("\n")}`,
+              "已形成一名人物及四份空白文档的创建提案，等待客户端审阅与冲突检查。"
+            )}\n${name} → character_id=${characterId}\n同一轮内可立即使用该 character_id 调用 write_character_file。`,
             {
-              kind: "long-mutation-proposal",
+              kind: "long-character-file-proposal",
               bookId: workspace.bookId,
               agentId: profile.id,
               batch,
               baseProjectRevision: projectRevision,
-              summary
+              summary,
+              files: changes
             }
           );
         }
       }),
       defineTool({
-        name: "write_character_document",
-        label: "写入人物文档",
+        name: "write_character_file",
+        label: "写入人物文件",
         description:
-          "覆盖一名人物的一份完整文档。空文件可直接写入；已有正文必须先完整读取并明确 allow_overwrite_existing=true。首次连续性提交后，仅核心档案仍允许直接写入。",
-        parameters: Type.Object({
-          character_id: Type.String({ minLength: 3, maxLength: 160 }),
+          "覆盖一名人物的一份完整文档。空文件可直接写入；已有正文必须先用 read_character mode=full 完整读取并明确 allow_overwrite_existing=true。局部修改应使用 edit_character_file。",
+        parameters: strictObject({
+          character_id: stableIdParameter("character"),
           document: characterDocumentParameter,
           text: Type.String({ minLength: 1, maxLength: 1_000_000 }),
           allow_overwrite_existing: Type.Optional(Type.Boolean()),
@@ -3961,24 +4750,23 @@ export function buildLongWorkspaceTools(
             params.character_id,
             params.document
           );
-          const live = await readWholeCharacterDocument(
-            target.file,
-            index.revision,
-            projectRevision,
-            signal
-          );
+          const live = target.overlay
+            ? { file: target.file, content: target.overlay.content }
+            : await readWholeCharacterDocument(
+                target.file,
+                index.revision,
+                projectRevision,
+                signal
+              );
           const evidence = fullyReadCharacterDocuments.get(target.file.id);
           if (live.content.trim() && !evidence) {
             return textResult(
-              "未写入：目标已有正文，请先调用 read_character_document 完整读取。"
+              "未写入：目标已有正文，请先调用 read_character（mode=full）完整读取。"
             );
           }
-          if (
-            live.content.trim() &&
-            params.allow_overwrite_existing !== true
-          ) {
+          if (live.content.trim() && params.allow_overwrite_existing !== true) {
             return textResult(
-              "未写入：目标已有正文；局部修改请使用 replace_character_text，整体重写需设置 allow_overwrite_existing=true。"
+              "未写入：目标已有正文；局部修改请使用 edit_character_file，整体重写需设置 allow_overwrite_existing=true。"
             );
           }
           if (
@@ -3987,14 +4775,16 @@ export function buildLongWorkspaceTools(
               evidence.workspaceRevision !== index.revision ||
               evidence.projectRevision !== projectRevision)
           ) {
-            throw new Error(
-              "Character document changed after it was read."
-            );
+            throw new Error("Character document changed after it was read.");
           }
           const timestamp = new Date().toISOString();
+          const nextRevision = nextContentRevision(
+            live.file.revision,
+            params.text
+          );
           const summary =
             params.summary?.trim() ||
-            `写入人物“${target.characterName}”的${params.document}`;
+            `写入人物“${target.characterName}”的${CHARACTER_DOCUMENT_TITLES[params.document]}`;
           const batch = LongWorkspaceOperationBatchSchema.parse({
             baseRevision: index.revision,
             updatedAt: timestamp,
@@ -4007,31 +4797,59 @@ export function buildLongWorkspaceTools(
               content: params.text,
               mode: "replace",
               expectedRevision: live.file.revision,
-              nextRevision: nextContentRevision(
-                live.file.revision,
-                params.text
-              ),
+              nextRevision,
               updatedAt: timestamp,
               reason: summary
             }]
           });
-          return proposalResult(batch, projectRevision, summary);
+          const nextFile = {
+            ...live.file,
+            revision: nextRevision,
+            updatedAt: timestamp
+          };
+          characterDocumentOverlay.set(live.file.id, {
+            ...(characterDocumentOverlay.get(live.file.id) ?? {}),
+            characterId: params.character_id,
+            characterName: target.characterName,
+            document: params.document,
+            file: nextFile,
+            content: params.text,
+            pendingCreation: target.overlay?.pendingCreation ?? false
+          });
+          fullyReadCharacterDocuments.set(live.file.id, {
+            content: params.text,
+            file: nextFile,
+            workspaceRevision: index.revision,
+            projectRevision
+          });
+          return proposalResult(batch, projectRevision, summary, [
+            {
+              characterId: params.character_id,
+              characterName: target.characterName,
+              document: params.document,
+              fileId: live.file.id,
+              filePath: live.file.path,
+              title: `${target.characterName} / ${CHARACTER_DOCUMENT_TITLES[params.document]}`,
+              operation: "write",
+              beforeText: live.content,
+              afterText: params.text,
+              beforeRevision: live.file.revision,
+              nextRevision
+            }
+          ]);
         }
       }),
       defineTool({
-        name: "replace_character_text",
-        label: "替换人物文本",
+        name: "edit_character_file",
+        label: "编辑人物文件",
         description:
-          "在已完整读取的一份人物文档中按原文片段精确替换。每个 original_text 必须唯一存在；首次连续性提交后，仅核心档案仍允许直接修改。",
-        parameters: Type.Object({
-          character_id: Type.String({ minLength: 3, maxLength: 160 }),
+          "在已用 read_character mode=full 完整读取的人物文档中按原文片段精确替换。每个 original_text 必须唯一存在。",
+        parameters: strictObject({
+          character_id: stableIdParameter("character"),
           document: characterDocumentParameter,
           replacements: Type.Array(
-            Type.Object({
-              original_text: Type.String({
-                minLength: 1,
-                maxLength: 2_400
-              }),
+            strictObject({
+              original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
               new_text: Type.String({ maxLength: 20_000 })
             }),
             { minItems: 1, maxItems: 20 }
@@ -4057,19 +4875,18 @@ export function buildLongWorkspaceTools(
             evidence.file.revision !== target.file.revision
           ) {
             return textResult(
-              "未替换：请先调用 read_character_document 完整读取目标文件。"
+              "未编辑：请先调用 read_character（mode=full）完整读取目标内容。"
             );
           }
           let content = evidence.content;
           for (const replacement of params.replacements) {
             const first = content.indexOf(replacement.original_text);
-            const second =
-              first < 0
-                ? -1
-                : content.indexOf(
-                    replacement.original_text,
-                    first + replacement.original_text.length
-                  );
+            const second = first < 0
+              ? -1
+              : content.indexOf(
+                  replacement.original_text,
+                  first + replacement.original_text.length
+                );
             if (first < 0 || second >= 0) {
               return textResult(
                 `未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`
@@ -4081,9 +4898,13 @@ export function buildLongWorkspaceTools(
               content.slice(first + replacement.original_text.length);
           }
           const timestamp = new Date().toISOString();
+          const nextRevision = nextContentRevision(
+            evidence.file.revision,
+            content
+          );
           const summary =
             params.summary?.trim() ||
-            `局部修改人物“${target.characterName}”的${params.document}`;
+            `局部修改人物“${target.characterName}”的${CHARACTER_DOCUMENT_TITLES[params.document]}`;
           const batch = LongWorkspaceOperationBatchSchema.parse({
             baseRevision: index.revision,
             updatedAt: timestamp,
@@ -4096,15 +4917,608 @@ export function buildLongWorkspaceTools(
               content,
               mode: "replace",
               expectedRevision: evidence.file.revision,
-              nextRevision: nextContentRevision(
-                evidence.file.revision,
-                content
-              ),
+              nextRevision,
               updatedAt: timestamp,
               reason: summary
             }]
           });
-          return proposalResult(batch, projectRevision, summary);
+          const nextFile = {
+            ...evidence.file,
+            revision: nextRevision,
+            updatedAt: timestamp
+          };
+          characterDocumentOverlay.set(evidence.file.id, {
+            ...(characterDocumentOverlay.get(evidence.file.id) ?? {}),
+            characterId: params.character_id,
+            characterName: target.characterName,
+            document: params.document,
+            file: nextFile,
+            content,
+            pendingCreation: target.overlay?.pendingCreation ?? false
+          });
+          fullyReadCharacterDocuments.set(evidence.file.id, {
+            content,
+            file: nextFile,
+            workspaceRevision: index.revision,
+            projectRevision
+          });
+          return proposalResult(batch, projectRevision, summary, [
+            {
+              characterId: params.character_id,
+              characterName: target.characterName,
+              document: params.document,
+              fileId: evidence.file.id,
+              filePath: evidence.file.path,
+              title: `${target.characterName} / ${CHARACTER_DOCUMENT_TITLES[params.document]}`,
+              operation: "edit",
+              beforeText: evidence.content,
+              afterText: content,
+              beforeRevision: evidence.file.revision,
+              nextRevision
+            }
+          ]);
+        }
+      })
+    );
+  }
+
+  if (
+    isPlotDesignAgent &&
+    capabilities.has("query_structure") &&
+    readableRoots.has("plot_design")
+  ) {
+    const plotCollections = (index: LongWorkspaceIndexSnapshot) => ({
+      volume: index.plot.volumes,
+      arc: index.plot.arcs,
+      chapter: index.plot.chapterCards,
+      event: index.plot.storyEvents,
+      connection: index.plot.eventConnections,
+      placement: index.plot.narrativePlacements
+    });
+
+    tools.push(
+      defineTool({
+        name: "list_plot_design",
+        label: "列出剧情设计",
+        description:
+          "列出全书故事线及剧情结构类型；指定 kind 时分页返回对应条目的业务 ID 与标题/关联摘要。伏笔不在本工具中，继续使用现有伏笔结构工具。",
+        parameters: strictObject({
+          kind: Type.Optional(plotItemKindParameter),
+          volume_id: Type.Optional(stableIdParameter("volume")),
+          chapter_card_id: Type.Optional(stableIdParameter("chapter")),
+          page: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+        }),
+        execute: async (_toolCallId, params, signal) => {
+          const { index } = await loadIndex(signal);
+          if (!params.kind) {
+            return textResult(JSON.stringify({
+              sections: [
+                { kind: "book_line", label: "全书故事线", count: 1 },
+                { kind: "volume", label: "分卷", count: index.plot.volumes.length },
+                { kind: "arc", label: "剧情点", count: index.plot.arcs.length },
+                { kind: "chapter", label: "章卡", count: index.plot.chapterCards.length },
+                { kind: "event", label: "故事事件", count: index.plot.storyEvents.length },
+                { kind: "connection", label: "事件连接", count: index.plot.eventConnections.length },
+                { kind: "placement", label: "叙事落点", count: index.plot.narrativePlacements.length }
+              ],
+              note: "伏笔线与伏笔触点沿用独立的现有工具设计。"
+            }));
+          }
+          if (params.kind === "book_line") {
+            return textResult(JSON.stringify({
+              items: [{ kind: "book_line", title: "全书故事线" }],
+              next_page: null
+            }));
+          }
+          const source = plotCollections(index)[params.kind]
+            .filter((item) => {
+              const value = item as unknown as Record<string, unknown>;
+              return (
+                (!params.volume_id || value.volumeId === params.volume_id) &&
+                (!params.chapter_card_id || value.chapterCardId === params.chapter_card_id)
+              );
+            })
+            .map((item) => {
+              const value = toPlotBusinessItem(
+                params.kind as Exclude<PlotItemKind, "book_line">,
+                item as unknown as Record<string, unknown>
+              );
+              return {
+                kind: params.kind,
+                ...(params.kind === "volume" ? { volume_id: item.id } : {}),
+                ...(params.kind === "arc" ? { arc_id: item.id } : {}),
+                ...(params.kind === "chapter" ? { chapter_card_id: item.id } : {}),
+                ...(params.kind === "event" ? { event_id: item.id } : {}),
+                ...(params.kind === "connection" ? { connection_id: item.id } : {}),
+                ...(params.kind === "placement" ? { placement_id: item.id } : {}),
+                ...(typeof value.title === "string" ? { title: value.title } : {}),
+                ...(value.volume_id ? { volume_id: value.volume_id } : {}),
+                ...(value.chapter_card_id ? { chapter_card_id: value.chapter_card_id } : {}),
+                ...(value.source_event_id ? { source_event_id: value.source_event_id } : {}),
+                ...(value.target_event_id ? { target_event_id: value.target_event_id } : {}),
+                ...(value.event_id ? { event_id: value.event_id } : {})
+              };
+            });
+          const page = params.page ?? 1;
+          const limit = params.limit ?? 50;
+          const start = (page - 1) * limit;
+          const end = Math.min(start + limit, source.length);
+          return textResult(JSON.stringify({
+            items: source.slice(start, end),
+            next_page: end < source.length ? page + 1 : null
+          }));
+        }
+      }),
+      defineTool({
+        name: "search_plot_design",
+        label: "搜索剧情设计",
+        description:
+          "搜索全书故事线及非伏笔剧情结构，返回可交给 read_plot_design 的业务目标和少量上下文。",
+        parameters: strictObject({
+          query: Type.String({ minLength: 1, maxLength: 256 }),
+          kind: Type.Optional(plotItemKindParameter),
+          page: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+        }),
+        execute: async (_toolCallId, params, signal) => {
+          const { index, projectRevision } = await loadIndex(signal);
+          const query = params.query.normalize("NFC").toLocaleLowerCase();
+          const candidates: Array<{
+            target: Record<string, unknown>;
+            searchable: string;
+          }> = [];
+          if (!params.kind || params.kind === "book_line") {
+            const bookLine = await readWholeWorldbuildingDocument(
+              index.bookLine,
+              index.revision,
+              projectRevision,
+              signal
+            );
+            candidates.push({
+              target: { kind: "book_line", title: "全书故事线" },
+              searchable: bookLine.content
+            });
+          }
+          for (const [kind, collection] of Object.entries(plotCollections(index)) as Array<[
+            Exclude<PlotItemKind, "book_line">,
+            Array<{ id: string }>
+          ]>) {
+            if (params.kind && params.kind !== kind) continue;
+            for (const item of collection) {
+              const business = toPlotBusinessItem(
+                kind,
+                item as unknown as Record<string, unknown>
+              );
+              candidates.push({
+                target: {
+                  kind,
+                  ...(kind === "volume" ? { volume_id: item.id } : {}),
+                  ...(kind === "arc" ? { arc_id: item.id } : {}),
+                  ...(kind === "chapter" ? { chapter_card_id: item.id } : {}),
+                  ...(kind === "event" ? { event_id: item.id } : {}),
+                  ...(kind === "connection" ? { connection_id: item.id } : {}),
+                  ...(kind === "placement" ? { placement_id: item.id } : {}),
+                  ...(business.title ? { title: business.title } : {})
+                },
+                searchable: JSON.stringify(business)
+              });
+            }
+          }
+          const hits = candidates.flatMap((candidate) => {
+            const normalized = candidate.searchable.normalize("NFC").toLocaleLowerCase();
+            const offset = normalized.indexOf(query);
+            if (offset < 0) return [];
+            const start = Math.max(0, offset - 120);
+            const end = Math.min(candidate.searchable.length, offset + params.query.length + 200);
+            return [{ ...candidate.target, snippet: candidate.searchable.slice(start, end) }];
+          });
+          const page = params.page ?? 1;
+          const limit = params.limit ?? 20;
+          const start = (page - 1) * limit;
+          const end = Math.min(start + limit, hits.length);
+          return textResult(JSON.stringify({
+            hits: hits.slice(start, end),
+            next_page: end < hits.length ? page + 1 : null
+          }));
+        }
+      }),
+      defineTool({
+        name: "read_plot_design",
+        label: "读取剧情设计",
+        description:
+          "按业务目标读取全书故事线或一个非伏笔剧情条目。mode=preview 只返回摘录；mode=full 会建立本轮 write_plot_design / edit_plot_design 所需的完整读取凭据。",
+        parameters: strictObject({
+          target: LONG_PLOT_ITEM_TARGET_PARAMETER,
+          mode: Type.Optional(worldbuildingReadModeParameter)
+        }),
+        execute: async (_toolCallId, params, signal) => {
+          const { index, projectRevision } = await loadIndex(signal);
+          const mode = params.mode ?? "full";
+          let serialized: string;
+          let key: string;
+          if (params.target.kind === "book_line") {
+            const result = await readWholeWorldbuildingDocument(
+              index.bookLine,
+              index.revision,
+              projectRevision,
+              signal
+            );
+            serialized = result.content;
+            key = plotItemKey("book_line");
+          } else {
+            const targetId = plotBusinessId(params.target);
+            const item = resolvePlotItem(index, params.target.kind, targetId);
+            serialized = JSON.stringify(
+              toPlotBusinessItem(params.target.kind, item),
+              null,
+              2
+            );
+            key = plotItemKey(params.target.kind, targetId);
+          }
+          if (mode === "full") {
+            fullyReadPlotItems.set(key, {
+              serialized,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
+          }
+          const previewLength = 320;
+          const visible =
+            mode === "preview" && serialized.length > previewLength * 2
+              ? `${serialized.slice(0, previewLength)}\n\n……（中间省略 ${serialized.length - previewLength * 2} 个字符）……\n\n${serialized.slice(-previewLength)}`
+              : serialized;
+          return textResult(
+            [
+              mode === "preview" ? "预览（不建立整体覆盖凭据）：" : "完整内容：",
+              "",
+              visible || "（内容为空）"
+            ].join("\n")
+          );
+        }
+      })
+    );
+  }
+
+  if (
+    isPlotDesignAgent &&
+    capabilities.has("mutate_structure") &&
+    writableRoots.has("plot_design")
+  ) {
+    const plotProposal = (
+      batch: LongWorkspaceOperationBatch,
+      projectRevision: number,
+      summary: string,
+      message = "已形成剧情设计变更提案，等待客户端审阅与冲突检查。"
+    ) =>
+      textResult(longProposalResultSummary(input, message), {
+        kind: "long-mutation-proposal",
+        bookId: workspace.bookId,
+        agentId: profile.id,
+        batch,
+        baseProjectRevision: projectRevision,
+        summary
+      });
+
+    const plotUpdateOperation = (
+      item: Exclude<Static<typeof LONG_PLOT_WRITE_PARAMETERS>["item"], { kind: "book_line" }> |
+        Exclude<Static<typeof LONG_PLOT_EDIT_PARAMETERS>["item"], { kind: "book_line" }>,
+      patch: Record<string, unknown>
+    ): LongWorkspaceOperation => {
+      const id = plotBusinessId(item);
+      if (item.kind === "volume") {
+        return { type: "volume.update", id, patch } as LongWorkspaceOperation;
+      }
+      if (item.kind === "arc") {
+        return { type: "arc.update", id, patch } as LongWorkspaceOperation;
+      }
+      if (item.kind === "chapter") {
+        return { type: "chapter.update", id, patch } as LongWorkspaceOperation;
+      }
+      if (item.kind === "event") {
+        return { type: "event.update", id, patch } as LongWorkspaceOperation;
+      }
+      if (item.kind === "connection") {
+        return { type: "connection.update", id, patch } as LongWorkspaceOperation;
+      }
+      return { type: "placement.update", id, patch } as LongWorkspaceOperation;
+    };
+
+    tools.push(
+      defineTool({
+        name: "create_plot_design",
+        label: "创建剧情设计",
+        description:
+          "一次创建一个非伏笔剧情条目并返回稳定业务 ID。创建参数直接包含该条目的初始完整内容；伏笔线和伏笔触点继续使用现有结构提案工具。",
+        parameters: LONG_PLOT_CREATE_PARAMETERS,
+        executionMode: "sequential",
+        execute: async (toolCallId, params, signal) => {
+          const { index, projectRevision } = await loadIndex(signal);
+          const item = params.item;
+          const operation =
+            item.kind === "volume"
+              ? { type: "volume.create" as const, title: item.title, summary: item.summary }
+              : item.kind === "arc"
+                ? { type: "arc.create" as const, volumeId: item.volume_id, title: item.title, summary: item.summary, outline: item.outline }
+                : item.kind === "chapter"
+                  ? {
+                      type: "chapter.create" as const,
+                      volumeId: item.volume_id,
+                      primaryArcId: item.primary_arc_id,
+                      title: item.title,
+                      outline: item.outline,
+                      worldConstraints: item.world_constraints,
+                      characterIds: item.character_ids
+                    }
+                  : item.kind === "event"
+                    ? {
+                        type: "event.create" as const,
+                        title: item.title,
+                        summary: item.summary,
+                        timeMode: item.time_mode,
+                        timeLabel: item.time_label,
+                        timeValue: item.time_value,
+                        location: item.location,
+                        arcIds: item.arc_ids,
+                        characterIds: item.character_ids
+                      }
+                    : item.kind === "connection"
+                      ? {
+                          type: "connection.create" as const,
+                          sourceEventId: item.source_event_id,
+                          targetEventId: item.target_event_id,
+                          connectionType: item.connection_type,
+                          note: item.note
+                        }
+                      : {
+                          type: "placement.create" as const,
+                          eventId: item.event_id,
+                          chapterCardId: item.chapter_card_id,
+                          mode: item.mode,
+                          disclosure: item.disclosure,
+                          writingPrompt: item.writing_prompt
+                        };
+          const built = buildRuntimeOperations({
+            rawOperations: [operation as LongMutationToolOperation],
+            index,
+            timestamp: new Date().toISOString(),
+            idSeed: `${workspace.bookId}:${input.runId}:${toolCallId}`
+          });
+          const timestamp = new Date().toISOString();
+          const batch = LongWorkspaceOperationBatchSchema.parse({
+            baseRevision: index.revision,
+            updatedAt: timestamp,
+            operations: built.operations,
+            documentWrites: []
+          });
+          const created = built.operations[0];
+          const createdId =
+            created && "volume" in created
+              ? created.volume.id
+              : created && "arc" in created
+                ? created.arc.id
+                : created && "chapterCard" in created
+                  ? created.chapterCard.id
+                  : created && "event" in created
+                    ? created.event.id
+                    : created && "connection" in created
+                      ? created.connection.id
+                      : created && "placement" in created
+                        ? created.placement.id
+                        : "";
+          const summary = params.summary?.trim() || `创建${item.kind}“${"title" in item ? item.title : createdId}”`;
+          const createdIdLabel =
+            item.kind === "volume"
+              ? "volume_id"
+              : item.kind === "arc"
+                ? "arc_id"
+                : item.kind === "chapter"
+                  ? "chapter_card_id"
+                  : item.kind === "event"
+                    ? "event_id"
+                    : item.kind === "connection"
+                      ? "connection_id"
+                      : "placement_id";
+          return textResult(
+            `${longProposalResultSummary(input, "已形成一个剧情设计条目创建提案，等待客户端审阅与冲突检查。")}\n${item.kind} → ${createdIdLabel}=${createdId}`,
+            {
+              kind: "long-mutation-proposal",
+              bookId: workspace.bookId,
+              agentId: profile.id,
+              batch,
+              baseProjectRevision: projectRevision,
+              summary
+            }
+          );
+        }
+      }),
+      defineTool({
+        name: "write_plot_design",
+        label: "写入剧情设计",
+        description:
+          "完整覆盖全书故事线或一个既有非伏笔剧情条目的内容字段。必须先用 read_plot_design mode=full 完整读取，并明确 allow_overwrite_existing=true；局部修改应使用 edit_plot_design。",
+        parameters: LONG_PLOT_WRITE_PARAMETERS,
+        executionMode: "sequential",
+        execute: async (toolCallId, params, signal) => {
+          const { index, projectRevision } = await loadIndex(signal);
+          const item = params.item;
+          const itemId = item.kind === "book_line" ? undefined : plotBusinessId(item);
+          const key = plotItemKey(item.kind, itemId);
+          const evidence = fullyReadPlotItems.get(key);
+          if (
+            !evidence ||
+            evidence.workspaceRevision !== index.revision ||
+            evidence.projectRevision !== projectRevision
+          ) {
+            return textResult("未写入：请先调用 read_plot_design（mode=full）完整读取目标内容。");
+          }
+          if (params.allow_overwrite_existing !== true) {
+            return textResult("未写入：完整覆盖需明确设置 allow_overwrite_existing=true；局部修改请使用 edit_plot_design。");
+          }
+          const timestamp = new Date().toISOString();
+          const summary = params.summary?.trim() || `完整写入剧情设计 ${key}`;
+          if (item.kind === "book_line") {
+            const live = await readWholeWorldbuildingDocument(
+              index.bookLine,
+              index.revision,
+              projectRevision,
+              signal
+            );
+            if (live.content !== evidence.serialized) {
+              throw new Error("Book line changed after it was read.");
+            }
+            const nextRevision = nextContentRevision(live.file.revision, item.text);
+            const batch = LongWorkspaceOperationBatchSchema.parse({
+              baseRevision: index.revision,
+              updatedAt: timestamp,
+              operations: [],
+              documentWrites: [{
+                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                fileId: live.file.id,
+                content: item.text,
+                mode: "replace",
+                expectedRevision: live.file.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }]
+            });
+            fullyReadPlotItems.set(key, { serialized: item.text, workspaceRevision: index.revision, projectRevision });
+            return plotProposal(batch, projectRevision, summary);
+          }
+          const current = JSON.stringify(
+            toPlotBusinessItem(item.kind, resolvePlotItem(index, item.kind, itemId!)),
+            null,
+            2
+          );
+          if (current !== evidence.serialized) {
+            throw new Error("Plot item changed after it was read.");
+          }
+          const patch =
+            item.kind === "volume"
+              ? { summary: item.summary }
+              : item.kind === "arc"
+                ? { summary: item.summary, outline: item.outline }
+                : item.kind === "chapter"
+                  ? { outline: item.outline, worldConstraints: item.world_constraints, characterIds: item.character_ids }
+                  : item.kind === "event"
+                    ? {
+                        summary: item.summary,
+                        timeMode: item.time_mode,
+                        timeLabel: item.time_label,
+                        ...(item.time_value === undefined ? {} : { timeValue: item.time_value }),
+                        location: item.location,
+                        arcIds: item.arc_ids,
+                        characterIds: item.character_ids
+                      }
+                    : item.kind === "connection"
+                      ? { note: item.note }
+                      : { writingPrompt: item.writing_prompt };
+          const batch = LongWorkspaceOperationBatchSchema.parse({
+            baseRevision: index.revision,
+            updatedAt: timestamp,
+            operations: [plotUpdateOperation(item, patch)],
+            documentWrites: []
+          });
+          return plotProposal(batch, projectRevision, summary);
+        }
+      }),
+      defineTool({
+        name: "edit_plot_design",
+        label: "编辑剧情设计",
+        description:
+          "在已用 read_plot_design mode=full 完整读取的目标上做局部修改。全书故事线按唯一原文片段替换；结构化剧情条目只更新明确给出的内容字段。",
+        parameters: LONG_PLOT_EDIT_PARAMETERS,
+        executionMode: "sequential",
+        execute: async (toolCallId, params, signal) => {
+          const { index, projectRevision } = await loadIndex(signal);
+          const item = params.item;
+          const itemId = item.kind === "book_line" ? undefined : plotBusinessId(item);
+          const key = plotItemKey(item.kind, itemId);
+          const evidence = fullyReadPlotItems.get(key);
+          if (
+            !evidence ||
+            evidence.workspaceRevision !== index.revision ||
+            evidence.projectRevision !== projectRevision
+          ) {
+            return textResult("未编辑：请先调用 read_plot_design（mode=full）完整读取目标内容。");
+          }
+          const timestamp = new Date().toISOString();
+          const summary = params.summary?.trim() || `局部修改剧情设计 ${key}`;
+          if (item.kind === "book_line") {
+            const live = await readWholeWorldbuildingDocument(
+              index.bookLine,
+              index.revision,
+              projectRevision,
+              signal
+            );
+            if (live.content !== evidence.serialized) {
+              throw new Error("Book line changed after it was read.");
+            }
+            let content = live.content;
+            for (const replacement of item.replacements) {
+              const first = content.indexOf(replacement.original_text);
+              const second = first < 0 ? -1 : content.indexOf(replacement.original_text, first + replacement.original_text.length);
+              if (first < 0 || second >= 0) {
+                return textResult(`未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`);
+              }
+              content = content.slice(0, first) + replacement.new_text + content.slice(first + replacement.original_text.length);
+            }
+            const nextRevision = nextContentRevision(live.file.revision, content);
+            const batch = LongWorkspaceOperationBatchSchema.parse({
+              baseRevision: index.revision,
+              updatedAt: timestamp,
+              operations: [],
+              documentWrites: [{
+                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                fileId: live.file.id,
+                content,
+                mode: "replace",
+                expectedRevision: live.file.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }]
+            });
+            fullyReadPlotItems.set(key, { serialized: content, workspaceRevision: index.revision, projectRevision });
+            return plotProposal(batch, projectRevision, summary);
+          }
+          const current = JSON.stringify(
+            toPlotBusinessItem(item.kind, resolvePlotItem(index, item.kind, itemId!)),
+            null,
+            2
+          );
+          if (current !== evidence.serialized) {
+            throw new Error("Plot item changed after it was read.");
+          }
+          const raw = item.patch as Record<string, unknown>;
+          const patch =
+            item.kind === "chapter"
+              ? {
+                  ...(raw.outline === undefined ? {} : { outline: raw.outline }),
+                  ...(raw.world_constraints === undefined ? {} : { worldConstraints: raw.world_constraints }),
+                  ...(raw.character_ids === undefined ? {} : { characterIds: raw.character_ids })
+                }
+              : item.kind === "event"
+                ? {
+                    ...(raw.summary === undefined ? {} : { summary: raw.summary }),
+                    ...(raw.time_mode === undefined ? {} : { timeMode: raw.time_mode }),
+                    ...(raw.time_label === undefined ? {} : { timeLabel: raw.time_label }),
+                    ...(raw.time_value === undefined ? {} : { timeValue: raw.time_value }),
+                    ...(raw.location === undefined ? {} : { location: raw.location }),
+                    ...(raw.arc_ids === undefined ? {} : { arcIds: raw.arc_ids }),
+                    ...(raw.character_ids === undefined ? {} : { characterIds: raw.character_ids })
+                  }
+                : item.kind === "placement"
+                  ? { writingPrompt: raw.writing_prompt }
+                  : raw;
+          const batch = LongWorkspaceOperationBatchSchema.parse({
+            baseRevision: index.revision,
+            updatedAt: timestamp,
+            operations: [plotUpdateOperation(item, patch)],
+            documentWrites: []
+          });
+          return plotProposal(batch, projectRevision, summary);
         }
       })
     );
@@ -4118,11 +5532,19 @@ export function buildLongWorkspaceTools(
         description:
           profile.id === "worldbuilding"
             ? "提交世界观分类，以及已有条目的重命名、删除和排序等结构变更。此工具不能创建条目，也不能写入正文；创建条目必须使用 create_worldbuilding_file，正文必须使用 write_worldbuilding_file 或 edit_worldbuilding_file。提案只进入审阅队列，不直接写磁盘。"
+            : profile.id === "character_design"
+              ? "提交人物重命名、别名、分组、删除和排序等结构变更。此工具不能创建人物，也不能写入人物正文；创建人物必须使用 create_character，正文必须使用 write_character_file 或 edit_character_file。提案只进入审阅队列，不直接写磁盘。"
+            : profile.id === "plot_design"
+              ? "提交既有分卷、剧情点、章卡、故事事件、事件连接和叙事落点的重命名、关联、移动、删除、排序，以及全部伏笔线/伏笔触点变更。非伏笔条目创建必须使用 create_plot_design，内容写入必须使用 write_plot_design 或 edit_plot_design。提案只进入审阅队列，不直接写磁盘。"
             : "按显式领域操作提交当前长篇的结构变更提案。伏笔线可分别填写 hiddenTruth 与 plannedSpan，伏笔触点可用 volumeId 或 arcId 设置卷级/剧情点计划锚点。运行时锁定项目版本、生成新实体与文件信息并计算文档内容修订；只能更新逻辑文档目标，不能传路径或文件修订。提案只进入审阅队列，不直接写磁盘。",
         parameters:
           profile.id === "worldbuilding"
             ? LONG_WORLDBUILDING_MUTATION_PARAMETERS
-            : LONG_MUTATION_PARAMETERS,
+            : profile.id === "character_design"
+              ? LONG_CHARACTER_MUTATION_PARAMETERS
+              : profile.id === "plot_design"
+                ? LONG_PLOT_MUTATION_PARAMETERS
+              : LONG_MUTATION_PARAMETERS,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           throwIfAborted(signal);

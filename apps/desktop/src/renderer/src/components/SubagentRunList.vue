@@ -37,14 +37,22 @@ const WRITE_TOOL_NAMES = new Set([
   "edit_worldbuilding_file",
   "create_worldbuilding_items",
   "write_worldbuilding_content",
-  "replace_worldbuilding_text"
+  "replace_worldbuilding_text",
+  "create_character",
+  "write_character_file",
+  "edit_character_file",
+  "create_plot_design",
+  "write_plot_design",
+  "edit_plot_design"
 ]);
 
 const CREATE_FILE_TOOL_NAMES = new Set([
   "create_draft_sections",
   "create_worldbuilding_file",
   "create_worldbuilding_files",
-  "create_worldbuilding_items"
+  "create_worldbuilding_items",
+  "create_character",
+  "create_plot_design"
 ]);
 
 const DIRECT_WRITE_TOOL_NAMES = new Set([
@@ -52,7 +60,9 @@ const DIRECT_WRITE_TOOL_NAMES = new Set([
   "create_draft_sections",
   "write_draft_section",
   "write_worldbuilding_file",
-  "write_worldbuilding_content"
+  "write_worldbuilding_content",
+  "write_character_file",
+  "write_plot_design"
 ]);
 
 const WORKSPACE_TOOL_LABELS: Record<string, string> = {
@@ -78,7 +88,19 @@ const WORKSPACE_TOOL_LABELS: Record<string, string> = {
   read_worldbuilding_content: "读取世界观文件",
   create_worldbuilding_items: "创建世界观文件",
   write_worldbuilding_content: "写入世界观文件",
-  replace_worldbuilding_text: "编辑世界观文件"
+  replace_worldbuilding_text: "编辑世界观文件",
+  list_characters: "列出人物",
+  search_characters: "搜索人物",
+  read_character: "读取人物",
+  create_character: "创建人物",
+  write_character_file: "写入人物文件",
+  edit_character_file: "编辑人物文件",
+  list_plot_design: "列出剧情设计",
+  search_plot_design: "搜索剧情设计",
+  read_plot_design: "读取剧情设计",
+  create_plot_design: "创建剧情设计",
+  write_plot_design: "写入剧情设计",
+  edit_plot_design: "编辑剧情设计"
 };
 
 type ToolKind = "read" | "command" | "write" | "web" | "other";

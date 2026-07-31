@@ -19,6 +19,7 @@ import {
   LongBookSchema,
   LongBookSummarySchema,
   LongAgentIdSchema,
+  LongCharacterGroupSchema,
   LongChapterCardIdSchema,
   LongFileIdSchema,
   LongFileRevisionSchema,
@@ -141,6 +142,105 @@ export type LongWorldbuildingFocusSnapshot = z.infer<
   typeof LongWorldbuildingFocusSnapshotSchema
 >;
 
+export const LONG_CHARACTER_FOCUS_MAX_CHARACTERS = 20_000;
+export const LONG_CHARACTER_CORE_FOCUS_MAX_CHARACTERS = 8_000;
+
+const LongCharacterFocusTextSnapshotSchema = z
+  .object({
+    content: z.string().max(LONG_CHARACTER_FOCUS_MAX_CHARACTERS * 2),
+    truncated: z.literal(true).optional(),
+    originalLength: z.number().int().nonnegative().optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const contentLength = Array.from(value.content).length;
+    if (contentLength > LONG_CHARACTER_FOCUS_MAX_CHARACTERS) {
+      context.addIssue({
+        code: "custom",
+        path: ["content"],
+        message: "Long character focus text exceeds the maximum character count."
+      });
+    }
+    if (
+      value.truncated === true &&
+      (value.originalLength === undefined ||
+        value.originalLength <= contentLength)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message:
+          "A truncated long character focus text must report its original length."
+      });
+    }
+    if (value.truncated !== true && value.originalLength !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message:
+          "An untruncated long character focus text must omit its original length."
+      });
+    }
+  });
+
+export const LongCharacterFocusSnapshotSchema = z
+  .object({
+    characterName: z.string().trim().min(1).max(256),
+    group: LongCharacterGroupSchema,
+    currentDocument: z
+      .object({
+        kind: z.enum([
+          "core_profile",
+          "relationships",
+          "current_state",
+          "history"
+        ]),
+        title: z.string().trim().min(1).max(256),
+        text: LongCharacterFocusTextSnapshotSchema
+      })
+      .strict(),
+    coreProfile: LongCharacterFocusTextSnapshotSchema.optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.currentDocument.kind !== "core_profile" &&
+      value.coreProfile === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["coreProfile"],
+        message:
+          "A focused secondary character document must include the core profile."
+      });
+    }
+    if (
+      value.currentDocument.kind === "core_profile" &&
+      value.coreProfile !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["coreProfile"],
+        message:
+          "A focused core profile must not duplicate the core profile snapshot."
+      });
+    }
+    const totalCharacters =
+      Array.from(value.currentDocument.text.content).length +
+      Array.from(value.coreProfile?.content ?? "").length;
+    if (totalCharacters > LONG_CHARACTER_FOCUS_MAX_CHARACTERS) {
+      context.addIssue({
+        code: "custom",
+        path: ["currentDocument", "text", "content"],
+        message:
+          "Combined long character focus text exceeds the maximum character count."
+      });
+    }
+  });
+export type LongCharacterFocusSnapshot = z.infer<
+  typeof LongCharacterFocusSnapshotSchema
+>;
+
 export const LongWorkspaceRuntimeContextSchema = z
   .object({
     bookId: LongBookIdSchema,
@@ -153,7 +253,8 @@ export const LongWorkspaceRuntimeContextSchema = z
     workspaceRevision: z.number().int().nonnegative(),
     projectRevision: z.number().int().nonnegative(),
     navigation: LongWorkspaceNavigationSnapshotSchema,
-    worldbuildingFocus: LongWorldbuildingFocusSnapshotSchema.optional()
+    worldbuildingFocus: LongWorldbuildingFocusSnapshotSchema.optional(),
+    characterFocus: LongCharacterFocusSnapshotSchema.optional()
   })
   .strict()
   .superRefine((value, context) => {
@@ -241,6 +342,29 @@ export const LongWorkspaceRuntimeContextSchema = z
         path: ["activeFileId"],
         message:
           "Long worldbuilding focus requires the active worldbuilding file."
+      });
+    }
+    if (
+      value.characterFocus !== undefined &&
+      (value.activeRoot !== "character_design" ||
+        value.activeAgentId !== "character_design")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["characterFocus"],
+        message:
+          "Long character focus may only be provided to the character-design agent."
+      });
+    }
+    if (
+      value.characterFocus !== undefined &&
+      value.activeFileId === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["activeFileId"],
+        message:
+          "Long character focus requires the active character file."
       });
     }
   });

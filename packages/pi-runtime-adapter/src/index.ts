@@ -363,6 +363,21 @@ export type AgentRuntimeEvent =
       };
     }
   | {
+      type: "long.character_file_proposal";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        bookId: string;
+        agentId: import("@deepwrite/contracts").LongAgentId;
+        batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
+        baseProjectRevision: number;
+        summary: string;
+        files: import("@deepwrite/contracts").LongCharacterFileChange[];
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
       type: "long.chapter_write_proposal";
       runId: string;
       sessionId: string;
@@ -1820,6 +1835,22 @@ export function toRuntimeEvents(
             runtime
           }
         });
+      } else if (details.kind === "long-character-file-proposal") {
+        events.push({
+          type: "long.character_file_proposal",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: {
+            toolCallId: event.toolCallId,
+            bookId: details.bookId,
+            agentId: details.agentId,
+            batch: details.batch,
+            baseProjectRevision: details.baseProjectRevision,
+            summary: details.summary,
+            files: details.files,
+            runtime
+          }
+        });
       } else if (details.kind === "long-chapter-write-proposal") {
         events.push({
           type: "long.chapter_write_proposal",
@@ -2031,6 +2062,7 @@ export function toSubagentRuntimeEvents(
       event.type === "workspace.stage_selection" ||
       event.type === "long.mutation_proposal" ||
       event.type === "long.worldbuilding_file_proposal" ||
+      event.type === "long.character_file_proposal" ||
       event.type === "long.chapter_dispatch_proposal" ||
       event.type === "long.chapter_write_proposal" ||
       event.type === "long.ledger_commit_proposal"
@@ -2196,7 +2228,8 @@ export function buildEffectiveSystemPrompt(
     return [
       basePrompt,
       "",
-      longProfile.id === "worldbuilding"
+      longProfile.id === "worldbuilding" ||
+      longProfile.id === "character_design"
         ? `【当前长篇智能体：${longProfile.label}】`
         : `【当前长篇智能体：${longProfile.label} / ${longProfile.id}】`,
       longProfile.systemPrompt.trim(),
@@ -2204,6 +2237,8 @@ export function buildEffectiveSystemPrompt(
       "【DeepWrite 长篇工具边界】",
       longProfile.id === "worldbuilding"
         ? "世界观只使用工具返回的 category_id 和 item_id 定位内容；工具会处理其余实现细节，不得索取、猜测或复述。未读取内容不得当成事实。"
+        : longProfile.id === "character_design"
+          ? "人物设计只使用工具返回的 character_id 和 document 定位内容；工具会处理其余实现细节，不得索取、猜测或复述。未读取内容不得当成事实。"
         : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
       writeBoundary,
       longProfile.id === "expert_section_writer"
@@ -2270,8 +2305,14 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const isWorldbuildingAgentRun = Boolean(
     longWorkspace && longProfile?.id === "worldbuilding"
   );
+  const isCharacterDesignAgentRun = Boolean(
+    longWorkspace && longProfile?.id === "character_design"
+  );
   const worldbuildingFocus = isWorldbuildingAgentRun
     ? longWorkspace?.worldbuildingFocus
+    : undefined;
+  const characterFocus = isCharacterDesignAgentRun
+    ? longWorkspace?.characterFocus
     : undefined;
   const learningContext = input.workspaceContext?.learningImitation;
   const readableSkills = writingProfile
@@ -2327,8 +2368,12 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       : "显式附加素材: 无";
   const lines = [
     "【本次智能体会话固定上下文】",
-    isWorldbuildingAgentRun ? "" : `sessionId: ${input.sessionId}`,
-    isWorldbuildingAgentRun ? "" : `runId: ${input.runId}`,
+    isWorldbuildingAgentRun || isCharacterDesignAgentRun
+      ? ""
+      : `sessionId: ${input.sessionId}`,
+    isWorldbuildingAgentRun || isCharacterDesignAgentRun
+      ? ""
+      : `runId: ${input.runId}`,
     writingWorkspace
       ? `${scriptWorkspace ? "剧本" : "短篇"}作品: 《${writingWorkspace.title}》`
       : "",
@@ -2350,16 +2395,29 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     worldbuildingFocus?.overview
       ? `当前分类概览${worldbuildingFocus.overview.truncated ? "（已截断）" : ""}:\n${worldbuildingFocus.overview.content || "未填写"}`
       : "",
-    longWorkspace && !isWorldbuildingAgentRun
+    characterFocus
+      ? `当前用户所处的人物阶段: 「${characterFocus.characterName}」 / ${characterFocus.currentDocument.title}`
+      : "",
+    characterFocus
+      ? `当前阶段信息${characterFocus.currentDocument.text.truncated ? "（已截断）" : ""}:\n${characterFocus.currentDocument.text.content || "未填写"}`
+      : "",
+    characterFocus?.coreProfile
+      ? `人物核心档案${characterFocus.coreProfile.truncated ? "（已截断）" : ""}:\n${characterFocus.coreProfile.content || "未填写"}`
+      : "",
+    longWorkspace && !isWorldbuildingAgentRun && !isCharacterDesignAgentRun
       ? `长篇项目: ${longWorkspace.bookId}；结构版本 ${longWorkspace.workspaceRevision}；项目版本 ${longWorkspace.projectRevision}`
       : "",
-    longWorkspace && !isWorldbuildingAgentRun
+    longWorkspace && !isWorldbuildingAgentRun && !isCharacterDesignAgentRun
       ? `当前根节点: ${longWorkspace.activeRoot}；当前智能体: ${longWorkspace.activeAgentId}`
       : "",
-    longWorkspace?.activeChapterCardId && !isWorldbuildingAgentRun
+    longWorkspace?.activeChapterCardId &&
+    !isWorldbuildingAgentRun &&
+    !isCharacterDesignAgentRun
       ? `当前章卡: ${longWorkspace.activeChapterCardId}`
       : "",
-    longWorkspace?.activeFileId && !isWorldbuildingAgentRun
+    longWorkspace?.activeFileId &&
+    !isWorldbuildingAgentRun &&
+    !isCharacterDesignAgentRun
       ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
       : "",
     writingWorkspace

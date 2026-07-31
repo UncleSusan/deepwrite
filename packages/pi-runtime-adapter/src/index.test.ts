@@ -355,6 +355,87 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(listPrompt).toContain("当前分类概览:\n各势力争夺港务权。");
   });
 
+  it("keeps character prompts on business ids and injects the focused document", () => {
+    const profile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "character_design"
+    )!;
+    const longWorkspace: LongWorkspaceRuntimeContext = {
+      bookId: "longbook_character_prompt",
+      title: "雾港长篇",
+      activeRoot: "character_design",
+      activeAgentId: profile.id,
+      activeFileId: "file_character_lan:relationships",
+      activeFileRevision: "v1:0:00000000",
+      workspaceRevision: 3,
+      projectRevision: 5,
+      characterFocus: {
+        characterName: "林岚",
+        group: "protagonist",
+        currentDocument: {
+          kind: "relationships",
+          title: "人物关系",
+          text: { content: "与沈砚暂时合作。" }
+        },
+        coreProfile: { content: "雾港巡夜人，害怕深水。" }
+      },
+      navigation: {
+        schemaVersion: 1,
+        revision: 3,
+        bookId: "longbook_character_prompt",
+        updatedAt: "2026-07-26T10:00:00.000Z",
+        counts: {
+          worldbuildingCategories: 0,
+          characters: 1,
+          volumes: 1,
+          arcs: 0,
+          chapterCards: 0,
+          storyEvents: 0,
+          foreshadowingThreads: 0,
+          committedChapters: 0
+        },
+        worldbuilding: [],
+        characters: [
+          {
+            id: "character_lan",
+            name: "林岚",
+            group: "protagonist",
+            order: 1
+          }
+        ],
+        volumes: [{ id: "volume_character_prompt", title: "第一卷", order: 1 }],
+        arcs: [],
+        chapterCards: [],
+        committedThroughChapterId: null
+      }
+    };
+    const input = {
+      runId: "run_character_prompt",
+      sessionId: "session_character_prompt",
+      prompt: "完善人物关系",
+      longAgentProfile: profile,
+      workspaceContext: { longWorkspace }
+    };
+
+    const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", input);
+    expect(systemPrompt).toContain("list_characters");
+    expect(systemPrompt).toContain("read_character");
+    expect(systemPrompt).not.toContain("fileId");
+    expect(systemPrompt).not.toContain("file_id");
+    expect(systemPrompt).not.toContain("bookId");
+
+    const userPrompt = buildRuntimeUserPrompt(input);
+    expect(userPrompt).toContain(
+      "当前用户所处的人物阶段: 「林岚」 / 人物关系"
+    );
+    expect(userPrompt).toContain("当前阶段信息:\n与沈砚暂时合作。");
+    expect(userPrompt).toContain("人物核心档案:\n雾港巡夜人，害怕深水。");
+    expect(userPrompt).not.toContain("当前根节点:");
+    expect(userPrompt).not.toContain("longbook_character_prompt");
+    expect(userPrompt).not.toContain("file_character_lan:relationships");
+    expect(userPrompt).not.toContain("session_character_prompt");
+    expect(userPrompt).not.toContain("run_character_prompt");
+  });
+
   it("lets configured long-form teams delegate with the same bounded tools", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"
@@ -424,7 +505,9 @@ describe("DeepWrite Pi runtime adapter", () => {
         "session_long_subagents:long:plot_design:longbook_subagents"
       )?.state.tools.map(({ name }) => name) ?? [];
     expect(names).toContain("spawn_subagent");
-    expect(names).toContain("get_long_workspace_index");
+    expect(names).toContain("list_plot_design");
+    expect(names).toContain("read_plot_design");
+    expect(names).not.toContain("get_long_workspace_index");
     expect(names).toContain("propose_long_mutation");
   });
 

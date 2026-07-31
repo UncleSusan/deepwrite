@@ -3,6 +3,7 @@ import type {
   AgentRuntimeRef,
   AgentUsage,
   DeepWriteApi,
+  LongCharacterFileChange,
   LongWorkspaceRuntimeContext,
   ModelConfig,
   ModelSettings,
@@ -13,6 +14,7 @@ import type {
 } from "@deepwrite/contracts";
 import {
   LibraryAgentWorkspaceSnapshotSchema,
+  LongCharacterFileChangeSchema,
   LongWorldbuildingFileChangeSchema,
   LongWorkspaceOperationBatchSchema,
   LongWorkspaceRuntimeContextSchema,
@@ -201,6 +203,29 @@ function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
             ),
             file: LongWorldbuildingFileChangeSchema.parse(
               proposal.longWorldbuildingTarget.file
+            )
+          }
+      }
+      : {}),
+    ...(proposal.longCharacterTarget
+      ? {
+          longCharacterTarget: {
+            ...proposal.longCharacterTarget,
+            batch: LongWorkspaceOperationBatchSchema.parse(
+              proposal.longCharacterTarget.batch
+            ),
+            files: proposal.longCharacterTarget.files.map((file) =>
+              LongCharacterFileChangeSchema.parse(file)
+            )
+          }
+        }
+      : {}),
+    ...(proposal.longPlotDesignTarget
+      ? {
+          longPlotDesignTarget: {
+            ...proposal.longPlotDesignTarget,
+            batch: LongWorkspaceOperationBatchSchema.parse(
+              proposal.longPlotDesignTarget.batch
             )
           }
         }
@@ -433,6 +458,63 @@ function parseStoredLongWorldbuildingTarget(
   };
 }
 
+function parseStoredLongCharacterTarget(
+  value: unknown
+): AgentEditProposal["longCharacterTarget"] | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.bookId !== "string" ||
+    !value.bookId.trim() ||
+    !nonnegativeInteger(value.baseProjectRevision) ||
+    !Array.isArray(value.files) ||
+    value.files.length < 1
+  ) {
+    return undefined;
+  }
+  const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
+  if (!batch.success) return undefined;
+  const files: LongCharacterFileChange[] = [];
+  for (const file of value.files) {
+    const parsed = LongCharacterFileChangeSchema.safeParse(file);
+    if (!parsed.success) return undefined;
+    files.push(parsed.data);
+  }
+  return {
+    bookId: value.bookId,
+    batch: batch.data,
+    baseProjectRevision: value.baseProjectRevision,
+    files
+  };
+}
+
+function parseStoredLongPlotDesignTarget(
+  value: unknown
+): AgentEditProposal["longPlotDesignTarget"] | undefined {
+  const appliedProjectRevision = isRecord(value)
+    ? value.appliedProjectRevision
+    : undefined;
+  if (
+    !isRecord(value) ||
+    typeof value.bookId !== "string" ||
+    !value.bookId.trim() ||
+    !nonnegativeInteger(value.baseProjectRevision) ||
+    (appliedProjectRevision !== undefined &&
+      !nonnegativeInteger(appliedProjectRevision))
+  ) {
+    return undefined;
+  }
+  const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
+  if (!batch.success) return undefined;
+  return {
+    bookId: value.bookId,
+    batch: batch.data,
+    baseProjectRevision: value.baseProjectRevision,
+    ...(appliedProjectRevision === undefined
+      ? {}
+      : { appliedProjectRevision })
+  };
+}
+
 function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined {
   if (
     !isRecord(value) ||
@@ -441,6 +523,8 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     typeof value.workspaceId !== "string" ||
     (value.stageId !== "library" &&
       value.stageId !== "long-worldbuilding" &&
+      value.stageId !== "long-character" &&
+      value.stageId !== "long-plot-design" &&
       !SHORT_WORKSPACE_STAGE_IDS.includes(
         value.stageId as (typeof SHORT_WORKSPACE_STAGE_IDS)[number]
       )) ||
@@ -483,13 +567,25 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
   const longWorldbuildingTarget = parseStoredLongWorldbuildingTarget(
     value.longWorldbuildingTarget
   );
+  const longCharacterTarget = parseStoredLongCharacterTarget(
+    value.longCharacterTarget
+  );
+  const longPlotDesignTarget = parseStoredLongPlotDesignTarget(
+    value.longPlotDesignTarget
+  );
   if (
     (value.stageId === "library" && !libraryTarget) ||
     (value.stageId !== "library" && value.libraryTarget !== undefined) ||
     (value.stageId === "long-worldbuilding" &&
       !longWorldbuildingTarget) ||
     (value.stageId !== "long-worldbuilding" &&
-      value.longWorldbuildingTarget !== undefined)
+      value.longWorldbuildingTarget !== undefined) ||
+    (value.stageId === "long-character" && !longCharacterTarget) ||
+    (value.stageId !== "long-character" &&
+      value.longCharacterTarget !== undefined) ||
+    (value.stageId === "long-plot-design" && !longPlotDesignTarget) ||
+    (value.stageId !== "long-plot-design" &&
+      value.longPlotDesignTarget !== undefined)
   ) {
     return undefined;
   }
@@ -546,6 +642,8 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     updatedAt: value.updatedAt,
     ...(libraryTarget ? { libraryTarget } : {}),
     ...(longWorldbuildingTarget ? { longWorldbuildingTarget } : {}),
+    ...(longCharacterTarget ? { longCharacterTarget } : {}),
+    ...(longPlotDesignTarget ? { longPlotDesignTarget } : {}),
     ...(draftSectionCreationTarget ? { draftSectionCreationTarget } : {}),
     ...(value.provisionalExpertSection
       ? { provisionalExpertSection: true }

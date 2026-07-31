@@ -271,6 +271,25 @@ function toEventEnvelope(
     );
   }
 
+  if (event.type === "long.character_file_proposal") {
+    return createEnvelope(
+      "long.character_file_proposal",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        toolCallId: event.payload.toolCallId,
+        bookId: event.payload.bookId,
+        agentId: event.payload.agentId,
+        batch: event.payload.batch,
+        baseProjectRevision: event.payload.baseProjectRevision,
+        summary: event.payload.summary,
+        files: event.payload.files,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
   if (event.type === "long.chapter_write_proposal") {
     return createEnvelope(
       "long.chapter_write_proposal",

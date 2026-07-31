@@ -8,10 +8,16 @@ import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceP
 import { buildAgentTextDiff } from "../utils/agentTextDiff";
 import AppIcon from "./AppIcon.vue";
 
-const props = defineProps<{
-  items: LongWorkspaceProposalItem[];
-  workspaceIndex?: LongWorkspaceIndexSnapshot | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    items: LongWorkspaceProposalItem[];
+    workspaceIndex?: LongWorkspaceIndexSnapshot | null;
+    embedded?: boolean;
+  }>(),
+  {
+    embedded: false
+  }
+);
 
 const emit = defineEmits<{
   approve: [eventId: string];
@@ -26,19 +32,26 @@ const completedCount = computed(
   () => props.items.filter(({ status }) => status === "accepted").length
 );
 
-const worldbuildingFileCards = computed(() => {
+const contentFileCards = computed(() => {
   const cards = new Map<
     string,
     Array<{
       file: Extract<
         LongWorkspaceProposalItem["event"],
-        { type: "long.worldbuilding_file_proposal" }
+        {
+          type:
+            | "long.worldbuilding_file_proposal"
+            | "long.character_file_proposal";
+        }
       >["payload"]["files"][number];
       diff: ReturnType<typeof buildAgentTextDiff>;
     }>
   >();
   for (const item of props.items) {
-    if (item.event.type !== "long.worldbuilding_file_proposal") continue;
+    if (
+      item.event.type !== "long.worldbuilding_file_proposal" &&
+      item.event.type !== "long.character_file_proposal"
+    ) continue;
     cards.set(
       item.event.id,
       item.event.payload.files.map((file) => ({
@@ -58,6 +71,10 @@ function proposalTitle(item: LongWorkspaceProposalItem): string {
       return item.event.payload.files.length === 1
         ? item.event.payload.files[0]!.title
         : `${item.event.payload.files.length} 个世界观文件`;
+    case "long.character_file_proposal":
+      return item.event.payload.files.length === 1
+        ? item.event.payload.files[0]!.title
+        : `${item.event.payload.files[0]?.characterName ?? "人物"}的 ${item.event.payload.files.length} 个文件`;
     case "long.chapter_dispatch_proposal":
       return "串行写作调度";
     case "long.chapter_write_proposal":
@@ -82,6 +99,7 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
     case "long.mutation_proposal":
       return "确认应用";
     case "long.worldbuilding_file_proposal":
+    case "long.character_file_proposal":
       return "确认写入并保存";
     case "long.chapter_dispatch_proposal":
       return "确认启动串行写作";
@@ -225,9 +243,10 @@ function entitySnapshotText(
   <section
     v-if="items.length"
     class="long-proposal-review"
+    :class="{ 'is-embedded': embedded }"
     aria-label="长篇待审批提案"
   >
-    <header>
+    <header v-if="!embedded">
       <div>
         <span>智能体写入</span>
         <strong v-if="pendingCount">{{ pendingCount }} 项处理中</strong>
@@ -250,6 +269,7 @@ function entitySnapshotText(
                 item.event.type === 'long.ledger_commit_proposal'
                   ? 'ledger'
                   : item.event.type === 'long.worldbuilding_file_proposal'
+                    || item.event.type === 'long.character_file_proposal'
                     ? 'file'
                   : item.event.type === 'long.chapter_write_proposal' ||
                       item.event.type === 'long.chapter_dispatch_proposal'
@@ -274,11 +294,14 @@ function entitySnapshotText(
         <p>{{ item.event.payload.summary }}</p>
 
         <div
-          v-if="item.event.type === 'long.worldbuilding_file_proposal'"
+          v-if="
+            item.event.type === 'long.worldbuilding_file_proposal' ||
+            item.event.type === 'long.character_file_proposal'
+          "
           class="worldbuilding-file-list"
         >
           <section
-            v-for="card in worldbuildingFileCards.get(item.event.id) ?? []"
+            v-for="card in contentFileCards.get(item.event.id) ?? []"
             :key="card.file.fileId"
             class="worldbuilding-file-card"
           >
@@ -357,7 +380,7 @@ function entitySnapshotText(
                     ? item.error || "文件变更未能保存，可重试或拒绝。"
                     : item.approvalMode === "auto-approve"
                       ? "已加入实时自动保存队列。"
-                      : "接受后将写入长篇世界观文件并保存到本机。"
+                      : "接受后将写入对应的长篇 Markdown 文件并保存到本机。"
             }}
           </p>
         </div>
@@ -810,7 +833,9 @@ function entitySnapshotText(
             v-if="
               (item.event.type === 'long.mutation_proposal' ||
                 item.event.type ===
-                  'long.worldbuilding_file_proposal') &&
+                  'long.worldbuilding_file_proposal' ||
+                item.event.type ===
+                  'long.character_file_proposal') &&
               item.status === 'error'
             "
             class="long-proposal-secondary"
@@ -827,7 +852,9 @@ function entitySnapshotText(
               item.status === 'submitting' ||
               ((item.event.type === 'long.mutation_proposal' ||
                 item.event.type ===
-                  'long.worldbuilding_file_proposal') &&
+                  'long.worldbuilding_file_proposal' ||
+                item.event.type ===
+                  'long.character_file_proposal') &&
                 (item.status !== 'ready' || !item.preview))
             "
             @click="emit('approve', item.event.id)"
@@ -849,6 +876,17 @@ function entitySnapshotText(
   border-top: 1px solid var(--theme-line);
   background: var(--surface-muted);
   color: var(--text-primary);
+}
+
+.long-proposal-review.is-embedded {
+  max-height: none;
+  border-top: 0;
+  background: transparent;
+}
+
+.long-proposal-review.is-embedded .long-proposal-list {
+  padding: 10px 0 0;
+  overflow: visible;
 }
 
 .long-proposal-review > header {
@@ -946,6 +984,9 @@ function entitySnapshotText(
 }
 
 .long-proposal-card[data-proposal-type="long.worldbuilding_file_proposal"]:has(
+    .long-proposal-status.is-accepted
+  ),
+.long-proposal-card[data-proposal-type="long.character_file_proposal"]:has(
     .long-proposal-status.is-accepted
   ) {
   border-color: color-mix(in srgb, var(--success) 45%, var(--theme-line-soft));

@@ -1,14 +1,18 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+// @ts-expect-error Loaded as source text by the Vitest-only virtual module.
+import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 
-const rendererStyles = readFileSync(
-  new URL("../styles.css", import.meta.url),
-  "utf8"
-);
-
 describe("AgentConversation edit proposal placement", () => {
+  it("places structured long proposals in the matching assistant turn", () => {
+    expect(conversationSource).toContain("longProposalItemsForMessage");
+    expect(conversationSource).toContain("<LongProposalReview");
+    expect(conversationSource).toContain("approveLongProposal");
+    expect(conversationSource).toContain("rejectLongProposal");
+    expect(conversationSource).toContain("retryLongProposalPreview");
+  });
+
   it("allows every explicitly enabled agent proposal to save while streaming", () => {
     expect(conversationSource).toContain("allowLiveEditReview?: boolean");
     expect(conversationSource).toContain("allowLiveEditReview: false");
@@ -20,6 +24,17 @@ describe("AgentConversation edit proposal placement", () => {
     );
     expect(conversationSource).toContain(
       "本项已生成，正在进入实时自动保存队列；智能体仍在继续。"
+    );
+    expect(conversationSource).toContain("proposal.longCharacterTarget");
+    expect(conversationSource).toContain(
+      "接受后将创建人物及其四份空白档案并保存到本机。"
+    );
+    expect(conversationSource).toContain(
+      "接受后将写入人物档案并保存到本机。"
+    );
+    expect(conversationSource).toContain("proposal.longPlotDesignTarget");
+    expect(conversationSource).toContain(
+      "接受后将校验结构影响并保存剧情设计。"
     );
     expect(conversationSource).toContain(
       "本项已生成，已加入实时自动保存队列。"
@@ -96,8 +111,8 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("keeps the composer focus treatment steady when the app regains focus", () => {
-    const surfaceStart = rendererStyles.indexOf(".composer-input-surface {");
-    const surfaceEnd = rendererStyles.indexOf("\n}", surfaceStart);
+    const surfaceStart = rendererStyles.indexOf(".composer-input-surface");
+    const surfaceEnd = rendererStyles.indexOf("}", surfaceStart);
     const surfaceStyles = rendererStyles.slice(surfaceStart, surfaceEnd);
 
     expect(surfaceStart).toBeGreaterThan(-1);

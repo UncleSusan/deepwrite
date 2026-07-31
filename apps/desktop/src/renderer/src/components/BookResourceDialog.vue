@@ -375,9 +375,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </div>
           </section>
 
-          <p v-if="bindingDomain && loading" class="create-short-stable-hint">正在加载素材库和技能库目录…</p>
-
           <div class="dialog-actions" :class="{ 'create-short-book-actions': bindingDomain }">
+            <span v-if="bindingDomain && loading" class="dialog-action-status" aria-live="polite">
+              正在加载素材库和技能库目录…
+            </span>
             <button class="dialog-secondary-button" type="button" :disabled="submitting" @click="requestClose">取消</button>
             <button class="dialog-primary-button" :class="{ 'is-danger': mode === 'delete' }" type="submit" :disabled="loading || submitting">
               {{ submitting ? (mode === "remove" || mode === "delete" ? "处理中…" : "保存中…") : mode === "delete" ? "确认删除" : mode === "remove" ? "确认移除" : mode === "rename" ? "保存名称" : "保存绑定" }}

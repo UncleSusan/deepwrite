@@ -54,9 +54,7 @@ describe("LongWorkspaceEditor continuity integration", () => {
 
   it("keeps continuity dashboards outside text editing and save controls", () => {
     expect(source).toContain("!currentIsContinuityWorkspace.value");
-    expect(source).toContain(
-      'v-if="selection.files.length > 1 && !currentIsContinuityWorkspace"'
-    );
+    expect(source).toContain('v-if="showGenericFileTabs"');
     expect(source).toContain(
       'v-if="!currentIsContinuityWorkspace" class="long-editor-footer"'
     );

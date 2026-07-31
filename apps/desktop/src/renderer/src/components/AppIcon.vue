@@ -22,6 +22,9 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 18 });
     <template v-else-if="name === 'plus'">
       <path d="M12 5v14M5 12h14" />
     </template>
+    <template v-else-if="name === 'minus'">
+      <path d="M5 12h14" />
+    </template>
     <template v-else-if="name === 'close'">
       <path d="m6 6 12 12M18 6 6 18" />
     </template>

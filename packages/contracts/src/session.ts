@@ -1016,6 +1016,80 @@ export type LongWorldbuildingFileProposalPayload = z.infer<
   typeof LongWorldbuildingFileProposalPayloadSchema
 >;
 
+export const LONG_CHARACTER_DOCUMENTS = [
+  "core_profile",
+  "relationships",
+  "current_state",
+  "history"
+] as const;
+export const LongCharacterDocumentSchema = z.enum(
+  LONG_CHARACTER_DOCUMENTS
+);
+export type LongCharacterDocument = z.infer<
+  typeof LongCharacterDocumentSchema
+>;
+
+export const LongCharacterFileChangeSchema = z
+  .object({
+    characterId: z.string().trim().min(3).max(160),
+    characterName: z.string().trim().min(1).max(256),
+    document: LongCharacterDocumentSchema,
+    fileId: LongFileIdSchema,
+    filePath: LongProjectRelativePathSchema,
+    title: z.string().trim().min(1).max(256),
+    operation: z.enum(["create", "write", "edit"]),
+    beforeText: z.string().max(1_000_000),
+    afterText: z.string().max(1_000_000),
+    beforeRevision: LongFileRevisionSchema.nullable(),
+    nextRevision: LongFileRevisionSchema
+  })
+  .strict();
+export type LongCharacterFileChange = z.infer<
+  typeof LongCharacterFileChangeSchema
+>;
+
+export const LongCharacterFileProposalPayloadSchema =
+  LongProposalBasePayloadSchema.extend({
+    batch: LongWorkspaceOperationBatchSchema,
+    baseProjectRevision: z.number().int().nonnegative(),
+    files: z.array(LongCharacterFileChangeSchema).min(1).max(100)
+  }).superRefine((value, context) => {
+    const fileIds = new Set(value.files.map(({ fileId }) => fileId));
+    if (fileIds.size !== value.files.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["files"],
+        message: "Character file proposals must target unique files."
+      });
+    }
+    const proposedFileIds = new Set(
+      value.batch.documentWrites.map(({ fileId }) => fileId)
+    );
+    for (const [index, file] of value.files.entries()) {
+      if (
+        file.operation !== "create" &&
+        !proposedFileIds.has(file.fileId)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["files", index, "fileId"],
+          message:
+            "Character write and edit changes must have a document write proposal."
+        });
+      }
+      if (file.operation === "create" && file.beforeRevision !== null) {
+        context.addIssue({
+          code: "custom",
+          path: ["files", index, "beforeRevision"],
+          message: "Created character files cannot have a prior revision."
+        });
+      }
+    }
+  });
+export type LongCharacterFileProposalPayload = z.infer<
+  typeof LongCharacterFileProposalPayloadSchema
+>;
+
 export const LongChapterWriteProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({
     input: LongWriteChapterInputSchema
@@ -1298,6 +1372,12 @@ export const LongWorldbuildingFileProposalEventEnvelopeSchema =
     payload: LongWorldbuildingFileProposalPayloadSchema
   }).superRefine(validateAgentEventContext);
 
+export const LongCharacterFileProposalEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.character_file_proposal"),
+    payload: LongCharacterFileProposalPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
 export const LongChapterWriteProposalEventEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.chapter_write_proposal"),
@@ -1406,6 +1486,10 @@ export type LongMutationProposalEventEnvelope = Envelope<
 export type LongWorldbuildingFileProposalEventEnvelope = Envelope<
   LongWorldbuildingFileProposalPayload,
   "long.worldbuilding_file_proposal"
+>;
+export type LongCharacterFileProposalEventEnvelope = Envelope<
+  LongCharacterFileProposalPayload,
+  "long.character_file_proposal"
 >;
 export type LongChapterWriteProposalEventEnvelope = Envelope<
   LongChapterWriteProposalPayload,

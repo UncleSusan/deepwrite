@@ -218,6 +218,7 @@ html[data-platform="darwin"] .desktop-shell {
 }
 
 .long-agent-column {
+  position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto auto auto;
   min-width: 0;
@@ -232,13 +233,21 @@ html[data-platform="darwin"] .desktop-shell {
 }
 
 .long-workspace-refresh-status {
+  position: absolute;
+  z-index: 24;
+  top: 62px;
+  left: 50%;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: min(760px, calc(100% - 36px));
   gap: 10px;
   padding: 9px 12px;
-  border-top: 1px solid var(--theme-line-soft);
-  background: var(--surface-muted);
+  transform: translateX(-50%);
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px var(--shadow-color);
   color: var(--text-secondary);
   font-size: 0.785714rem;
 }
@@ -4942,6 +4951,18 @@ html[data-theme="dark"] .document-editor:focus-visible {
   padding: 13px 22px 15px;
   border-top: 1px solid var(--theme-line-soft, #eeeeeb);
   background: var(--surface-raised, #ffffff);
+}
+
+.dialog-action-status {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 760px) {

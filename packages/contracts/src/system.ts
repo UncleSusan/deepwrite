@@ -19,6 +19,7 @@ import {
   LearningImitationResultUpdatedEventEnvelopeSchema,
   LongChapterDispatchProposalEventEnvelopeSchema,
   LongChapterWriteProposalEventEnvelopeSchema,
+  LongCharacterFileProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
   LongMutationProposalEventEnvelopeSchema,
   LongWorldbuildingFileProposalEventEnvelopeSchema,
@@ -44,6 +45,7 @@ import {
   type LearningImitationResultUpdatedEventEnvelope,
   type LongChapterDispatchProposalEventEnvelope,
   type LongChapterWriteProposalEventEnvelope,
+  type LongCharacterFileProposalEventEnvelope,
   type LongLedgerCommitProposalEventEnvelope,
   type LongMutationProposalEventEnvelope,
   type LongWorldbuildingFileProposalEventEnvelope,
@@ -339,6 +341,7 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   SubagentAuthoringDraftUpdatedEventEnvelopeSchema,
   LongMutationProposalEventEnvelopeSchema,
   LongWorldbuildingFileProposalEventEnvelopeSchema,
+  LongCharacterFileProposalEventEnvelopeSchema,
   LongChapterDispatchProposalEventEnvelopeSchema,
   LongChapterWriteProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
@@ -377,6 +380,7 @@ export type SystemEventEnvelope =
   | SubagentAuthoringDraftUpdatedEventEnvelope
   | LongMutationProposalEventEnvelope
   | LongWorldbuildingFileProposalEventEnvelope
+  | LongCharacterFileProposalEventEnvelope
   | LongChapterDispatchProposalEventEnvelope
   | LongChapterWriteProposalEventEnvelope
   | LongLedgerCommitProposalEventEnvelope

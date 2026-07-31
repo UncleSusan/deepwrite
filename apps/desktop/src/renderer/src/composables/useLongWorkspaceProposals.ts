@@ -19,6 +19,7 @@ export type LongWorkspaceProposalEvent = Extract<
     type:
       | "long.mutation_proposal"
       | "long.worldbuilding_file_proposal"
+      | "long.character_file_proposal"
       | "long.chapter_dispatch_proposal"
       | "long.chapter_write_proposal"
       | "long.ledger_commit_proposal";
@@ -34,6 +35,24 @@ export type LongWorldbuildingFileProposalEvent = Extract<
   LongWorkspaceProposalEvent,
   { type: "long.worldbuilding_file_proposal" }
 >;
+
+export type LongCharacterFileProposalEvent = Extract<
+  LongWorkspaceProposalEvent,
+  { type: "long.character_file_proposal" }
+>;
+
+type LongContentFileProposalEvent =
+  | LongWorldbuildingFileProposalEvent
+  | LongCharacterFileProposalEvent;
+
+function isContentFileProposal(
+  event: LongWorkspaceProposalEvent
+): event is LongContentFileProposalEvent {
+  return (
+    event.type === "long.worldbuilding_file_proposal" ||
+    event.type === "long.character_file_proposal"
+  );
+}
 
 export type LongWorkspaceProposalStatus =
   | "previewing"
@@ -111,6 +130,7 @@ export interface LongWorkspaceProposalController {
 const LONG_PROPOSAL_TYPES = new Set<SystemEventEnvelope["type"]>([
   "long.mutation_proposal",
   "long.worldbuilding_file_proposal",
+  "long.character_file_proposal",
   "long.chapter_dispatch_proposal",
   "long.chapter_write_proposal",
   "long.ledger_commit_proposal"
@@ -253,8 +273,7 @@ export function useLongWorkspaceProposals(
       .reverse()
       .find(
         (candidate) =>
-          candidate.event.type ===
-            "long.worldbuilding_file_proposal" &&
+          isContentFileProposal(candidate.event) &&
           candidate.event.payload.files.some(
             (file) =>
               file.fileId === fileId &&
@@ -269,7 +288,7 @@ export function useLongWorkspaceProposals(
   ): Promise<void> {
     if (
       item.event.type !== "long.mutation_proposal" &&
-      item.event.type !== "long.worldbuilding_file_proposal"
+      !isContentFileProposal(item.event)
     ) return;
     const { event } = item;
     const api = options.api();
@@ -287,33 +306,37 @@ export function useLongWorkspaceProposals(
     try {
       let effectiveBatch = event.payload.batch;
       let effectiveProjectRevision = event.payload.baseProjectRevision;
-      if (event.type === "long.worldbuilding_file_proposal") {
+      if (isContentFileProposal(event)) {
         const latest = await api.getWorkspaceIndex({
           bookId: event.payload.bookId
         });
         const currentFiles = new Map(
-          latest.workspaceIndex.worldbuilding.flatMap((category) =>
-            category.format === "text"
-              ? [[category.file.id, category.file] as const]
-              : [
-                  ...(category.overview
-                    ? [[
-                        category.overview.id,
-                        category.overview
-                      ] as const]
-                    : []),
-                  ...category.items.map(
-                    ({ file }) => [file.id, file] as const
-                  )
-                ]
-          )
+          event.type === "long.worldbuilding_file_proposal"
+            ? latest.workspaceIndex.worldbuilding.flatMap((category) =>
+                category.format === "text"
+                  ? [[category.file.id, category.file] as const]
+                  : [
+                      ...(category.overview
+                        ? [[category.overview.id, category.overview] as const]
+                        : []),
+                      ...category.items.map(
+                        ({ file }) => [file.id, file] as const
+                      )
+                    ]
+              )
+            : latest.workspaceIndex.characterFiles.flatMap((entry) => [
+                [entry.coreProfile.id, entry.coreProfile] as const,
+                [entry.relationships.id, entry.relationships] as const,
+                [entry.currentState.id, entry.currentState] as const,
+                [entry.history.id, entry.history] as const
+              ])
         );
         for (const file of event.payload.files) {
           const current = currentFiles.get(file.fileId);
           if (file.operation === "create") {
             if (current) {
               throw new Error(
-                `世界观文件已存在，无法重复创建：${file.filePath}`
+                `目标文件已存在，无法重复创建：${file.filePath}`
               );
             }
           } else if (
@@ -333,37 +356,48 @@ export function useLongWorkspaceProposals(
               return;
             }
             throw new Error(
-              `世界观文件已在提案后更新，未覆盖最新内容：${file.filePath}`
+              `目标文件已在提案后更新，未覆盖最新内容：${file.filePath}`
             );
           }
         }
         const nextOrderByCategory = new Map<string, number>();
+        const nextOrderByCharacterGroup = new Map<string, number>();
         effectiveBatch = {
           ...event.payload.batch,
           baseRevision: latest.workspaceIndex.revision,
           operations: event.payload.batch.operations.map((operation) => {
-            if (operation.type !== "worldbuildingItem.create") {
-              return operation;
-            }
-            const category = latest.workspaceIndex.worldbuilding.find(
-              ({ id }) => id === operation.categoryId
-            );
-            if (!category || category.format !== "list") {
-              throw new Error(
-                "世界观条目的目标分类已不存在或不再是列表型。"
+            if (operation.type === "worldbuildingItem.create") {
+              const category = latest.workspaceIndex.worldbuilding.find(
+                ({ id }) => id === operation.categoryId
               );
-            }
-            const nextOrder =
-              (nextOrderByCategory.get(category.id) ??
-                category.items.length) + 1;
-            nextOrderByCategory.set(category.id, nextOrder);
-            return {
-              ...operation,
-              item: {
-                ...operation.item,
-                order: nextOrder
+              if (!category || category.format !== "list") {
+                throw new Error(
+                  "世界观条目的目标分类已不存在或不再是列表型。"
+                );
               }
-            };
+              const nextOrder =
+                (nextOrderByCategory.get(category.id) ??
+                  category.items.length) + 1;
+              nextOrderByCategory.set(category.id, nextOrder);
+              return {
+                ...operation,
+                item: { ...operation.item, order: nextOrder }
+              };
+            }
+            if (operation.type === "character.create") {
+              const group = operation.character.group;
+              const currentCount = latest.workspaceIndex.characters.filter(
+                (character) => character.group === group
+              ).length;
+              const nextOrder =
+                (nextOrderByCharacterGroup.get(group) ?? currentCount) + 1;
+              nextOrderByCharacterGroup.set(group, nextOrder);
+              return {
+                ...operation,
+                character: { ...operation.character, order: nextOrder }
+              };
+            }
+            return operation;
           })
         };
         effectiveProjectRevision = latest.projectRevision;
@@ -438,7 +472,7 @@ export function useLongWorkspaceProposals(
       let prepared = false;
       if (
         previewFirst &&
-        current.event.type === "long.worldbuilding_file_proposal"
+        isContentFileProposal(current.event)
       ) {
         try {
           await options.prepareAutoApprove?.(event);
@@ -446,7 +480,7 @@ export function useLongWorkspaceProposals(
         } catch (error: unknown) {
           const message = errorMessage(
             error,
-            "世界观文件实时自动保存前检查失败。"
+            "长篇文件实时自动保存前检查失败。"
           );
           updateItem(event.payload.bookId, event.id, {
             status: "error",
@@ -459,7 +493,7 @@ export function useLongWorkspaceProposals(
       if (
         previewFirst &&
         (current.event.type === "long.mutation_proposal" ||
-          current.event.type === "long.worldbuilding_file_proposal")
+          isContentFileProposal(current.event))
       ) {
         await previewMutation(current);
         current = currentItem(event.payload.bookId, event.id);
@@ -499,7 +533,7 @@ export function useLongWorkspaceProposals(
       approvalMode,
       status:
         event.type === "long.mutation_proposal" ||
-        event.type === "long.worldbuilding_file_proposal"
+        isContentFileProposal(event)
           ? "previewing"
           : "ready"
     };
@@ -511,7 +545,7 @@ export function useLongWorkspaceProposals(
       await processAutomaticProposal(event, true);
     } else if (
       event.type === "long.mutation_proposal" ||
-      event.type === "long.worldbuilding_file_proposal"
+      isContentFileProposal(event)
     ) {
       await previewMutation(item);
     }
@@ -599,7 +633,7 @@ export function useLongWorkspaceProposals(
     }
     if (
       item.approvalMode === "auto-approve" &&
-      item.event.type === "long.worldbuilding_file_proposal"
+      isContentFileProposal(item.event)
     ) {
       await processAutomaticProposal(item.event, true);
       return;
@@ -625,7 +659,7 @@ export function useLongWorkspaceProposals(
     }
     if (
       (item.event.type === "long.mutation_proposal" ||
-        item.event.type === "long.worldbuilding_file_proposal") &&
+        isContentFileProposal(item.event)) &&
       (item.status !== "ready" || !item.preview)
     ) {
       options.notifications.warning("请先完成结构影响预览，再确认应用。");
@@ -633,12 +667,12 @@ export function useLongWorkspaceProposals(
     }
     const mutationPreview =
       item.event.type === "long.mutation_proposal" ||
-      item.event.type === "long.worldbuilding_file_proposal"
+      isContentFileProposal(item.event)
         ? item.preview
         : undefined;
     if (
       item.event.type !== "long.mutation_proposal" &&
-      item.event.type !== "long.worldbuilding_file_proposal" &&
+      !isContentFileProposal(item.event) &&
       item.status !== "ready" &&
       item.status !== "error"
     ) {
@@ -671,7 +705,7 @@ export function useLongWorkspaceProposals(
     try {
       if (
         item.event.type === "long.mutation_proposal" ||
-        item.event.type === "long.worldbuilding_file_proposal"
+        isContentFileProposal(item.event)
       ) {
         const effectiveBatch =
           item.effectiveBatch ?? item.event.payload.batch;
@@ -702,7 +736,7 @@ export function useLongWorkspaceProposals(
       return;
     }
 
-    if (item.event.type === "long.worldbuilding_file_proposal") {
+    if (isContentFileProposal(item.event)) {
       updateItem(bookId, eventId, {
         status: "accepted",
         clearError: true
@@ -715,6 +749,8 @@ export function useLongWorkspaceProposals(
         ? "长篇结构提案已应用。"
         : item.event.type === "long.worldbuilding_file_proposal"
           ? "世界观文件变更已保存到本地 Markdown。"
+        : item.event.type === "long.character_file_proposal"
+          ? "人物文件变更已保存到本地 Markdown。"
         : item.event.type === "long.chapter_write_proposal"
           ? "章节正文证据已写入；正在进入连续性结算。"
           : "章节连续性账本已提交。"
@@ -729,15 +765,14 @@ export function useLongWorkspaceProposals(
         )}`
       );
     }
-    if (item.event.type === "long.worldbuilding_file_proposal") {
+    if (isContentFileProposal(item.event)) {
       const appliedFileIds = new Set(
         item.event.payload.files.map(({ fileId }) => fileId)
       );
       for (const waiting of itemsForBook(bookId).filter(
         (candidate) =>
           candidate.status === "waiting" &&
-          candidate.event.type ===
-            "long.worldbuilding_file_proposal" &&
+          isContentFileProposal(candidate.event) &&
           candidate.event.payload.files.some(({ fileId }) =>
             appliedFileIds.has(fileId)
           )
@@ -760,15 +795,14 @@ export function useLongWorkspaceProposals(
       item.status === "submitting" ||
       item.status === "accepted"
     ) return false;
-    if (item.event.type === "long.worldbuilding_file_proposal") {
+    if (isContentFileProposal(item.event)) {
       const rejectedFileIds = new Set(
         item.event.payload.files.map(({ fileId }) => fileId)
       );
       for (const dependent of itemsForBook(bookId)) {
         if (
           dependent.status === "waiting" &&
-          dependent.event.type ===
-            "long.worldbuilding_file_proposal" &&
+          isContentFileProposal(dependent.event) &&
           dependent.event.payload.files.some(({ fileId }) =>
             rejectedFileIds.has(fileId)
           )
@@ -776,7 +810,7 @@ export function useLongWorkspaceProposals(
           updateItem(bookId, dependent.event.id, {
             status: "error",
             error:
-              "依赖的世界观文件创建或前序写入已被拒绝，本次变更未保存。"
+              "依赖的文件创建或前序写入已被拒绝，本次变更未保存。"
           });
         }
       }

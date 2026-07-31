@@ -56,6 +56,15 @@ const draftName = ref("");
 const draftDescription = ref("");
 const draftSystemPrompt = ref("");
 
+watch(
+  () => [props.open, props.error] as const,
+  ([open, error], previous) => {
+    if (open && error && (!previous || !previous[0] || previous[1] !== error)) {
+      uiMessage.error(error);
+    }
+  }
+);
+
 function skillStageForParent(
   parentAgentId: ShortWorkspaceAgentId
 ): SkillStageId {
@@ -312,16 +321,21 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 {{ generating ? "生成中…" : "生成子智能体草稿" }}
               </button>
               <button
-                v-if="generating"
                 type="button"
-                class="secondary-button"
+                class="secondary-button authoring-stop-button"
+                :class="{ 'is-placeholder': !generating }"
+                :disabled="!generating"
+                :aria-hidden="!generating"
                 @click="emit('stop')"
               >
                 停止
               </button>
             </div>
-            <p v-if="statusText" class="status-text">{{ statusText }}</p>
-            <p v-if="error" class="error-text">{{ error }}</p>
+            <div class="authoring-status-slot" aria-live="polite">
+              <p v-if="statusText && !error" class="status-text" :title="statusText">
+                {{ statusText }}
+              </p>
+            </div>
           </section>
 
           <section v-if="draft || draftName" class="authoring-section draft-section">
@@ -459,10 +473,24 @@ header p {
   line-height: 1.45;
 }
 
-.error-text {
-  margin: 0;
-  color: #c0392b;
-  font-size: 0.88rem;
+.authoring-stop-button.is-placeholder {
+  visibility: hidden;
+}
+
+.generate-row .primary-button {
+  min-width: 10.5rem;
+}
+
+.authoring-status-slot {
+  height: 2.65rem;
+  overflow: hidden;
+}
+
+.authoring-status-slot .status-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .show-all {

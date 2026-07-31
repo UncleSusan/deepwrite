@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import source from "./LongProposalReview.vue?raw";
 
-describe("LongProposalReview worldbuilding file cards", () => {
-  it("renders long worldbuilding proposals as concrete file diffs", () => {
+describe("LongProposalReview content file cards", () => {
+  it("supports inline rendering inside its originating conversation turn", () => {
+    expect(source).toContain("embedded?: boolean");
+    expect(source).toContain(":class=\"{ 'is-embedded': embedded }\"");
+    expect(source).toContain('<header v-if="!embedded">');
+    expect(source).toContain(".long-proposal-review.is-embedded");
+  });
+
+  it("renders long worldbuilding and character proposals as concrete file diffs", () => {
     expect(source).toContain("long.worldbuilding_file_proposal");
+    expect(source).toContain("long.character_file_proposal");
     expect(source).toContain("worldbuilding-file-card");
     expect(source).toContain("worldbuildingOperationLabel");
     expect(source).toContain("buildAgentTextDiff");
@@ -11,6 +19,7 @@ describe("LongProposalReview worldbuilding file cards", () => {
     expect(source).toContain("card.diff.additions");
     expect(source).toContain("card.diff.deletions");
     expect(source).toContain("已自动批准并保存到本地 Markdown。");
+    expect(source).toContain("对应的长篇 Markdown 文件");
     expect(source).toContain("等待前序文件");
     expect(source).toContain("正在等待前序文件创建或写入完成");
   });
@@ -21,6 +30,7 @@ describe("LongProposalReview worldbuilding file cards", () => {
     expect(source).toContain(
       'case "long.worldbuilding_file_proposal":'
     );
+    expect(source).toContain('case "long.character_file_proposal":');
     expect(source).toContain('return "确认写入并保存";');
   });
 });

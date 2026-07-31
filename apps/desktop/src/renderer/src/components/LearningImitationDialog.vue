@@ -1265,9 +1265,14 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
                 ></textarea>
                 <button type="button" :disabled="isBusy || !customPrompt.trim()" @click="sendCustomPrompt">发送</button>
               </div>
-              <div v-if="isBusy" class="learning-running-footer">
-                <span>任务会持续在后台执行，切换页面也不会中断。</span>
-                <button type="button" @click="stopLearning">停止</button>
+              <div class="learning-running-footer" :class="{ 'is-idle': !isBusy }">
+                <span>任务可在后台持续执行，切换页面也不会中断。</span>
+                <button
+                  type="button"
+                  :disabled="!isBusy"
+                  :aria-hidden="!isBusy"
+                  @click="stopLearning"
+                >停止</button>
               </div>
             </footer>
           </aside>
@@ -1575,6 +1580,8 @@ button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
 .learning-running-footer button { padding: 0 11px; border: 0; border-radius: 8px; color: var(--accent-contrast, #fff); background: var(--accent); font-size: 0.785714rem; cursor: pointer; }
 .learning-running-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; padding: 7px 8px; border-radius: 8px; color: var(--text-secondary); background: var(--accent-soft); font-size: 0.714286rem; }
 .learning-running-footer button { min-height: 24px; background: color-mix(in srgb, var(--accent) 82%, var(--text-primary)); }
+.learning-running-footer.is-idle { background: var(--surface-muted); color: var(--text-tertiary); }
+.learning-running-footer button:disabled { visibility: hidden; }
 
 .learning-confirm-backdrop { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: rgb(0 0 0 / 38%); backdrop-filter: blur(4px); }
 .learning-confirm-dialog { width: min(480px, calc(100vw - 44px)); padding: 20px; border: 1px solid var(--theme-line); border-radius: 17px; background: var(--surface-raised); box-shadow: 0 20px 60px rgb(0 0 0 / 30%); }

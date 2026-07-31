@@ -908,16 +908,35 @@ describe("independent long-form workspace contracts", () => {
     const characterProfile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "character_design"
     )!;
-    expect(characterProfile.systemPrompt).toContain(
-      "每名人物都有稳定 character_id"
+    expect(characterProfile.systemPrompt).toContain("character_id 唯一定位");
+    expect(characterProfile.systemPrompt).toContain("list_characters");
+    expect(characterProfile.systemPrompt).toContain("search_characters");
+    expect(characterProfile.systemPrompt).toContain("read_character");
+    expect(characterProfile.systemPrompt).toContain("list_worldbuilding");
+    expect(characterProfile.systemPrompt).toContain("search_worldbuilding");
+    expect(characterProfile.systemPrompt).toContain("read_worldbuilding");
+    expect(characterProfile.systemPrompt).toContain("世界观内容只读");
+    expect(characterProfile.systemPrompt).toContain("create_character");
+    expect(characterProfile.systemPrompt).toContain("write_character_file");
+    expect(characterProfile.systemPrompt).toContain("edit_character_file");
+    expect(characterProfile.systemPrompt).not.toContain(
+      "get_long_workspace_index"
     );
-    expect(characterProfile.systemPrompt).toContain("create_characters");
-    expect(characterProfile.systemPrompt).toContain(
-      "read_character_document"
-    );
-    expect(characterProfile.systemPrompt).toContain(
-      "replace_character_text"
-    );
+    expect(characterProfile.systemPrompt).not.toContain("fileId");
+    expect(characterProfile.systemPrompt).not.toContain("file_id");
+    expect(characterProfile.systemPrompt).not.toContain("bookId");
     expect(characterProfile.systemPrompt).toContain("连续性账本接管");
+    const plotProfile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "plot_design"
+    )!;
+    expect(plotProfile.systemPrompt).toContain("list_plot_design");
+    expect(plotProfile.systemPrompt).toContain("search_plot_design");
+    expect(plotProfile.systemPrompt).toContain("read_plot_design");
+    expect(plotProfile.systemPrompt).toContain("create_plot_design");
+    expect(plotProfile.systemPrompt).toContain("write_plot_design");
+    expect(plotProfile.systemPrompt).toContain("edit_plot_design");
+    expect(plotProfile.systemPrompt).toContain("伏笔线与伏笔触点继续完全使用");
+    expect(plotProfile.systemPrompt).not.toContain("get_long_workspace_index");
+    expect(plotProfile.systemPrompt).not.toContain("fileId");
   });
 });

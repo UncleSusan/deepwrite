@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   LongChapterWriteProposalEventEnvelopeSchema,
+  LongCharacterFileProposalEventEnvelopeSchema,
   LongChapterDispatchProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
   LongMutationProposalEventEnvelopeSchema,
   LongWorldbuildingFileProposalEventEnvelopeSchema,
   SystemEventEnvelopeSchema,
   createEnvelope,
+  longCharacterCoreProfileFileId,
+  longCharacterFilePath,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId
 } from "./index";
@@ -157,6 +160,50 @@ describe("long proposal event contracts", () => {
       },
       { id: "event-long-dispatch", context }
     );
+    const characterFile = createEnvelope(
+      "long.character_file_proposal",
+      {
+        ...common,
+        agentId: "character_design" as const,
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:00.000Z",
+          operations: [],
+          documentWrites: [
+            {
+              proposalId: "proposal_character_core",
+              fileId: longCharacterCoreProfileFileId("character_lan"),
+              content: "雾港巡夜人。",
+              mode: "replace" as const,
+              expectedRevision: revision,
+              nextRevision: "v1:6:12345678",
+              updatedAt: "2026-07-26T12:00:00.000Z",
+              reason: "写入核心档案"
+            }
+          ]
+        },
+        baseProjectRevision: 11,
+        files: [
+          {
+            characterId: "character_lan",
+            characterName: "林岚",
+            document: "core_profile" as const,
+            fileId: longCharacterCoreProfileFileId("character_lan"),
+            filePath: longCharacterFilePath(
+              "character_lan",
+              "core-profile.md"
+            ),
+            title: "林岚 / 核心档案",
+            operation: "write" as const,
+            beforeText: "",
+            afterText: "雾港巡夜人。",
+            beforeRevision: revision,
+            nextRevision: "v1:6:12345678"
+          }
+        ]
+      },
+      { id: "event-long-character-file", context }
+    );
     const ledger = createEnvelope(
       "long.ledger_commit_proposal",
       {
@@ -200,6 +247,19 @@ describe("long proposal event contracts", () => {
         }
       ]
     });
+    expect(
+      LongCharacterFileProposalEventEnvelopeSchema.parse(characterFile)
+        .payload
+    ).toMatchObject({
+      agentId: "character_design",
+      files: [
+        {
+          characterId: "character_lan",
+          document: "core_profile",
+          operation: "write"
+        }
+      ]
+    });
     expect(LongChapterWriteProposalEventEnvelopeSchema.parse(chapter).payload.input)
       .toMatchObject({
         chapterCardId: "chapter_one",
@@ -225,11 +285,19 @@ describe("long proposal event contracts", () => {
         chapterCardId: "chapter_one",
         fileUpdates: []
       });
-    expect([mutation, worldbuildingFile, dispatch, chapter, ledger].map(
+    expect([
+      mutation,
+      worldbuildingFile,
+      characterFile,
+      dispatch,
+      chapter,
+      ledger
+    ].map(
       (event) => SystemEventEnvelopeSchema.parse(event).type
     )).toEqual([
       "long.mutation_proposal",
       "long.worldbuilding_file_proposal",
+      "long.character_file_proposal",
       "long.chapter_dispatch_proposal",
       "long.chapter_write_proposal",
       "long.ledger_commit_proposal"

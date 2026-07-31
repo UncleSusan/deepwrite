@@ -619,9 +619,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </div>
           </section>
 
-          <p v-if="loading" class="create-short-stable-hint">正在加载素材库和技能库目录…</p>
-
           <div class="dialog-actions create-short-book-actions">
+            <span v-if="loading" class="dialog-action-status" aria-live="polite">
+              正在加载素材库和技能库目录…
+            </span>
             <button class="dialog-secondary-button" type="button" :disabled="submitting" @click="requestClose">
               取消
             </button>

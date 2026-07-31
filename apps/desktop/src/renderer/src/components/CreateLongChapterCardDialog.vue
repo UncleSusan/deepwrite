@@ -183,7 +183,7 @@ onBeforeUnmount(() =>
                 @update:model-value="selectArc"
               />
             </label>
-            <p>创建后可在章卡中继续补充章节大纲和世界约束。</p>
+            <p>创建后可在章卡中继续补充完整内容。</p>
           </fieldset>
 
           <footer>

@@ -476,16 +476,43 @@ describe("long workspace agent tools", () => {
     expect(characterNames).toEqual([
       "query_linked_material_entries",
       "load_skill",
-      "get_long_workspace_index",
-      "read_long_document",
-      "search_long_workspace",
       "get_long_chapter_readiness",
-      "read_character_document",
-      "create_characters",
-      "write_character_document",
-      "replace_character_text",
+      "list_worldbuilding",
+      "search_worldbuilding",
+      "read_worldbuilding",
+      "list_characters",
+      "search_characters",
+      "read_character",
+      "create_character",
+      "write_character_file",
+      "edit_character_file",
       "propose_long_mutation"
     ]);
+    expect(characterNames).not.toEqual(
+      expect.arrayContaining([
+        "get_long_workspace_index",
+        "read_long_document",
+        "search_long_workspace",
+        "create_worldbuilding_file",
+        "write_worldbuilding_file",
+        "edit_worldbuilding_file"
+      ])
+    );
+    const characterMutationSchema = JSON.stringify(
+      toolByName(
+        buildLongWorkspaceTools({
+          workspace: workspace("character_design", "character_design"),
+          profile: profile("character_design"),
+          sessionId: "session-character-schema",
+          runId: "run-character-schema"
+        }),
+        "propose_long_mutation"
+      ).parameters
+    );
+    expect(characterMutationSchema).toContain('"character.update"');
+    expect(characterMutationSchema).not.toContain('"character.create"');
+    expect(characterMutationSchema).not.toContain('"worldbuilding.create"');
+    expect(characterMutationSchema).not.toContain('"document_updates"');
     expect(writerNames).toEqual([
       "query_linked_material_entries",
       "load_skill",
@@ -524,13 +551,41 @@ describe("long workspace agent tools", () => {
     expect(plotNames).toEqual([
       "query_linked_material_entries",
       "load_skill",
-      "get_long_workspace_index",
-      "read_long_document",
-      "search_long_workspace",
       "get_long_chapter_readiness",
+      "list_worldbuilding",
+      "search_worldbuilding",
+      "read_worldbuilding",
+      "list_characters",
+      "search_characters",
+      "read_character",
+      "list_plot_design",
+      "search_plot_design",
+      "read_plot_design",
+      "create_plot_design",
+      "write_plot_design",
+      "edit_plot_design",
       "propose_long_mutation",
       "propose_long_chapter_dispatch"
     ]);
+    const plotTools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-plot-schema",
+      runId: "run-plot-schema"
+    });
+    const plotMutationSchema = JSON.stringify(
+      toolByName(plotTools, "propose_long_mutation").parameters
+    );
+    expect(plotMutationSchema).toContain('"foreshadowing.create"');
+    expect(plotMutationSchema).toContain('"foreshadowingBeat.create"');
+    expect(plotMutationSchema).toContain('"volume.update"');
+    expect(plotMutationSchema).not.toContain('"volume.create"');
+    expect(plotMutationSchema).not.toContain('"arc.create"');
+    expect(plotMutationSchema).not.toContain('"chapter.create"');
+    expect(plotMutationSchema).not.toContain('"event.create"');
+    expect(plotMutationSchema).not.toContain('"connection.create"');
+    expect(plotMutationSchema).not.toContain('"placement.create"');
+    expect(plotMutationSchema).not.toContain('"document_updates"');
     expect(
       [...worldNames, ...characterNames, ...writerNames, ...ledgerNames]
     ).not.toContain("write_workspace_editor");
@@ -591,6 +646,92 @@ describe("long workspace agent tools", () => {
     expect(skill.content[0]).toMatchObject({
       type: "text",
       text: expect.stringContaining("先检查规则是否自洽")
+    });
+  });
+
+  it("uses business-level plot tools for non-foreshadowing content", async () => {
+    const index = fixtureIndex();
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(index);
+      }
+      throw new Error(`Unexpected command: ${command.type}`);
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-plot-business-tools",
+      runId: "run-plot-business-tools",
+      executor
+    });
+
+    const listed = await toolByName(tools, "list_plot_design").execute(
+      "list-arcs",
+      { kind: "arc", volume_id: "volume_one" }
+    );
+    const listedText = listed.content
+      .filter((item) => item.type === "text")
+      .map((item) => item.text)
+      .join("\n");
+    expect(listedText).toContain('"arc_id":"arc_one"');
+    expect(listedText).not.toContain("fileId");
+
+    await toolByName(tools, "read_plot_design").execute("read-arc", {
+      target: { kind: "arc", arc_id: "arc_one" },
+      mode: "full"
+    });
+    const edit = await toolByName(tools, "edit_plot_design").execute(
+      "edit-arc",
+      {
+        item: {
+          kind: "arc",
+          arc_id: "arc_one",
+          patch: { outline: "更新后的剧情点故事情节" }
+        },
+        summary: "细化剧情点"
+      }
+    );
+    expect(edit.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      summary: "细化剧情点",
+      batch: {
+        operations: [
+          {
+            type: "arc.update",
+            id: "arc_one",
+            patch: { outline: "更新后的剧情点故事情节" }
+          }
+        ]
+      }
+    });
+
+    const create = await toolByName(tools, "create_plot_design").execute(
+      "create-arc",
+      {
+        item: {
+          kind: "arc",
+          volume_id: "volume_one",
+          title: "新的剧情点",
+          summary: "概要",
+          outline: "故事情节"
+        }
+      }
+    );
+    expect(create.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [
+          {
+            type: "arc.create",
+            arc: {
+              id: expect.stringMatching(/^arc_[0-9a-f]{24}$/u),
+              volumeId: "volume_one",
+              title: "新的剧情点",
+              outline: "故事情节"
+            }
+          }
+        ]
+      }
     });
   });
 
@@ -1393,14 +1534,18 @@ describe("long workspace agent tools", () => {
       executor
     });
     const controller = new AbortController();
-    await toolByName(tools, "read_long_document").execute(
+    await toolByName(tools, "read_character").execute(
       "read-character",
-      { file_id: characterFile.id },
+      {
+        character_id: "character_alice",
+        document: "core_profile",
+        mode: "full"
+      },
       controller.signal
     );
-    await toolByName(tools, "search_long_workspace").execute(
+    await toolByName(tools, "search_characters").execute(
       "search-character",
-      { query: "人物", scope: "character_design" },
+      { query: "人物" },
       controller.signal
     );
 
@@ -1419,25 +1564,12 @@ describe("long workspace agent tools", () => {
     ).toBe(true);
     expect(seenSignals.every((signal) => signal === controller.signal)).toBe(true);
 
-    const draftFileId = fixtureIndex().chapters[0]!.body.id;
-    await expect(
-      toolByName(tools, "read_long_document").execute("read-draft", {
-        file_id: draftFileId
-      })
-    ).rejects.toThrow(/outside this agent's read roots/u);
-    await expect(
-      toolByName(tools, "search_long_workspace").execute("search-draft", {
-        query: "正文",
-        scope: "draft"
-      } as never)
-    ).rejects.toThrow(/not authorized/u);
-
     const aborted = new AbortController();
     aborted.abort();
     await expect(
-      toolByName(tools, "search_long_workspace").execute(
+      toolByName(tools, "search_characters").execute(
         "search-aborted",
-        { query: "人物", scope: "character_design" },
+        { query: "人物" },
         aborted.signal
       )
     ).rejects.toMatchObject({ name: "AbortError" });
@@ -1478,14 +1610,18 @@ describe("long workspace agent tools", () => {
         runId: "run-concurrent-query",
         executor
       });
-      const readTool = toolByName(tools, "read_long_document");
+      const readTool = toolByName(tools, "read_character");
 
       await Promise.all([
         readTool.execute("read-character-one", {
-          file_id: characterFile.id
+          character_id: "character_alice",
+          document: "core_profile",
+          mode: "full"
         }),
         readTool.execute("read-character-two", {
-          file_id: characterFile.id
+          character_id: "character_alice",
+          document: "core_profile",
+          mode: "full"
         })
       ]);
 
@@ -1863,7 +1999,7 @@ describe("long workspace agent tools", () => {
     });
   });
 
-  it("creates character list entries with four independent files and optional initial content", async () => {
+  it("creates one empty character and then writes its independent files", async () => {
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
       if (command.type === "long.getWorkspaceIndex") {
         return indexResult();
@@ -1880,21 +2016,15 @@ describe("long workspace agent tools", () => {
 
     const proposal = await toolByName(
       tools,
-      "create_characters"
-    ).execute("create-characters", {
-      characters: [{
-        name: "沈砚",
-        group: "major_supporting",
-        aliases: ["阿砚"],
-        documents: {
-          core_profile: "沈砚是负责追查旧案的年轻捕快。",
-          relationships: "与林岚互不信任，但目标暂时一致。"
-        }
-      }]
+      "create_character"
+    ).execute("create-character", {
+      name: "沈砚",
+      group: "major_supporting",
+      aliases: ["阿砚"]
     });
 
     expect(proposal.details).toMatchObject({
-      kind: "long-mutation-proposal",
+      kind: "long-character-file-proposal",
       batch: {
         operations: [{
           type: "character.create",
@@ -1927,23 +2057,46 @@ describe("long workspace agent tools", () => {
             }
           }
         }],
-        documentWrites: [
-          {
-            mode: "create",
-            expectedRevision: null,
-            content: "沈砚是负责追查旧案的年轻捕快。"
-          },
-          {
-            mode: "create",
-            expectedRevision: null,
-            content: "与林岚互不信任，但目标暂时一致。"
-          }
-        ]
-      }
+        documentWrites: []
+      },
+      files: expect.arrayContaining([
+        expect.objectContaining({
+          document: "core_profile",
+          operation: "create",
+          beforeRevision: null
+        }),
+        expect.objectContaining({
+          document: "relationships",
+          operation: "create",
+          beforeRevision: null
+        })
+      ])
     });
     expect(proposal.content[0]).toMatchObject({
       type: "text",
       text: expect.stringContaining("character_id=character_")
+    });
+    if (proposal.details?.kind !== "long-character-file-proposal") {
+      throw new Error("Expected a character file proposal.");
+    }
+    const characterId = proposal.details.files[0]!.characterId;
+    const write = await toolByName(tools, "write_character_file").execute(
+      "write-created-character",
+      {
+        character_id: characterId,
+        document: "core_profile",
+        text: "沈砚是负责追查旧案的年轻捕快。"
+      }
+    );
+    expect(write.details).toMatchObject({
+      kind: "long-character-file-proposal",
+      files: [{
+        characterId,
+        document: "core_profile",
+        operation: "write",
+        beforeText: "",
+        afterText: "沈砚是负责追查旧案的年轻捕快。"
+      }]
     });
   });
 
@@ -1982,7 +2135,7 @@ describe("long workspace agent tools", () => {
 
     const beforeRead = await toolByName(
       tools,
-      "replace_character_text"
+      "edit_character_file"
     ).execute("replace-before-read", {
       character_id: "character_alice",
       document: "core_profile",
@@ -1993,19 +2146,20 @@ describe("long workspace agent tools", () => {
     });
     expect(beforeRead.content[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("请先调用 read_character_document")
+      text: expect.stringContaining("请先调用 read_character")
     });
 
-    await toolByName(tools, "read_character_document").execute(
+    await toolByName(tools, "read_character").execute(
       "read-character",
       {
         character_id: "character_alice",
-        document: "core_profile"
+        document: "core_profile",
+        mode: "full"
       }
     );
     const proposal = await toolByName(
       tools,
-      "replace_character_text"
+      "edit_character_file"
     ).execute("replace-after-read", {
       character_id: "character_alice",
       document: "core_profile",
@@ -2015,7 +2169,7 @@ describe("long workspace agent tools", () => {
       }]
     });
     expect(proposal.details).toMatchObject({
-      kind: "long-mutation-proposal",
+      kind: "long-character-file-proposal",
       batch: {
         operations: [],
         documentWrites: [{
@@ -2048,7 +2202,7 @@ describe("long workspace agent tools", () => {
     });
 
     await expect(
-      toolByName(tools, "write_character_document").execute(
+      toolByName(tools, "write_character_file").execute(
         "write-ledger-owned-state",
         {
           character_id: "character_alice",
