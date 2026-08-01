@@ -81,6 +81,7 @@ describe("script workspace contracts", () => {
   it("uses the same default dynamic plot structure as short stories", () => {
     expect(SCRIPT_WORKSPACE_STAGE_IDS).toEqual([
       "character_design",
+      "worldbuilding",
       "plot_design",
       "intro_design",
       "plot_refine",
@@ -129,7 +130,7 @@ describe("script workspace contracts", () => {
     const snapshot = ScriptWorkspaceSnapshotSchema.parse(
       scriptWorkspaceSnapshot()
     );
-    expect(snapshot.stages).toHaveLength(6);
+    expect(snapshot.stages).toHaveLength(SCRIPT_WORKSPACE_TEXT_STAGE_IDS.length);
     expect(CreativeWorkspaceSnapshotSchema.parse(snapshot).id).toBe("script_1");
 
     for (const profile of DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES) {

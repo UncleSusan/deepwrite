@@ -77,6 +77,7 @@ import type {
   ShortBook,
   Book,
   ImportLegacyLibraryResult,
+  MutateCharacterStructureInput,
   MutatePlotStructureInput,
   UnregisterCatalogProjectInput,
   UnregisterCatalogProjectResult,
@@ -139,6 +140,7 @@ export interface DeepWriteApi {
       domain: CatalogLibraryProjectDomain
     ): Promise<ImportLegacyLibraryResult | null>;
     updateBook(input: UpdateBookInput): Promise<Book>;
+    mutateCharacterStructure(input: MutateCharacterStructureInput): Promise<Book>;
     mutatePlotStructure(input: MutatePlotStructureInput): Promise<Book>;
     updateLibraryGroup(input: UpdateLibraryGroupInput): Promise<CatalogLibraryGroup>;
     deleteBook(bookId: string): Promise<DeleteBookResult>;

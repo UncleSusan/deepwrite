@@ -249,6 +249,7 @@ describe("catalog workspace projection", () => {
       "正文"
     ]);
     expect(book?.children?.[1]?.children?.map((node) => node.label)).toEqual([
+      "世界观",
       "剧情设计",
       "导语设计",
       "剧情细化",
@@ -344,6 +345,7 @@ describe("catalog workspace projection", () => {
       workspaceType: "script"
     });
     expect(book.children?.[1]?.children?.map((node) => node.label)).toEqual([
+      "世界观",
       "剧情设计",
       "导语设计",
       "剧情细化",
@@ -361,6 +363,61 @@ describe("catalog workspace projection", () => {
     expect(body).toMatchObject({
       workspaceType: "script",
       eyebrow: "剧本 · 剧集正文"
+    });
+  });
+
+  it("projects list-style characters as an overview followed by ordered files", () => {
+    const source = fixture();
+    const book = source.books[0]!;
+    book.characterStructure = {
+      format: "list",
+      items: [
+        { id: "character-suyao", title: "苏遥", order: 2 },
+        { id: "character-linmo", title: "林默", order: 1 }
+      ]
+    };
+    book.documents.push(
+      {
+        id: "character-suyao",
+        title: "苏遥",
+        content: "苏遥保管底片。",
+        createdAt: NOW,
+        updatedAt: NOW
+      },
+      {
+        id: "character-linmo",
+        title: "林默",
+        content: "林默是守夜人。",
+        createdAt: NOW,
+        updatedAt: NOW
+      }
+    );
+
+    const projection = projectCatalogWorkspace(source);
+    const characterNode = projection.resourceSections[0]?.nodes[0]?.children?.[0];
+    expect(characterNode).toMatchObject({
+      label: "人物",
+      selectableBranch: true,
+      characterDirectory: true,
+      shortAgentId: "character_design"
+    });
+    expect(characterNode?.children?.map(({ label }) => label)).toEqual([
+      "概览",
+      "林默",
+      "苏遥"
+    ]);
+    expect(characterNode?.children?.[1]).toMatchObject({
+      characterItemId: "character-linmo"
+    });
+    expect(
+      projection.workspaceDocuments.find(
+        ({ catalogDocumentId }) => catalogDocumentId === "character-linmo"
+      )
+    ).toMatchObject({
+      stageId: "character_design",
+      characterFileKind: "item",
+      characterItemId: "character-linmo",
+      characterItemOrder: 1
     });
   });
 

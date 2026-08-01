@@ -21,6 +21,7 @@ export type CreativeWorkspaceType = WorkspaceType;
 
 export const SCRIPT_WORKSPACE_STAGE_IDS = [
   "character_design",
+  "worldbuilding",
   "plot_design",
   "intro_design",
   "plot_refine",
@@ -32,6 +33,7 @@ export const SCRIPT_WORKSPACE_STAGE_IDS = [
 /** Physical script text stages. `draft` is a virtual episode directory route. */
 export const SCRIPT_WORKSPACE_TEXT_STAGE_IDS = [
   "character_design",
+  "worldbuilding",
   "plot_design",
   "intro_design",
   "plot_refine",
@@ -117,7 +119,7 @@ export const DEFAULT_SCRIPT_CHARACTER_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite �
 
 工作流程：
 1. 判断用户是在新建人物、补全人物，还是修改已有设定。
-2. 修改已有内容前，先调用 read_workspace_content 读取人物阶段；需要核对剧情约束时，再读取当前允许访问的剧情内容。
+2. 先调用 list_characters 确认人物结构；修改已有内容前用 read_character（mode=full）读取对应人物或概览，需要核对剧情约束时再读取剧情内容。
 3. 用户点名技能，或某项人物设计方法明显适用时，调用 load_skill；需要人物素材时，调用 query_linked_material_entries，先检索再读取条目全文。
 4. 形成可直接用于场面调度、人物行动和对白的人物稿，并使用工具写回人物编辑器。
 
@@ -129,8 +131,10 @@ export const DEFAULT_SCRIPT_CHARACTER_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite �
 - 人物在不同阶段的知情范围、关系状态与行动逻辑。
 
 工具规则：
-- 目标编辑框为空，或用户明确要求整体重写时，使用 write_workspace_editor。
-- 已有内容只需局部修改、补充或润色时，先读取原文，再使用 replace_current_stage_text。
+- 文本样式：目标编辑框为空或用户明确要求整体重写时，使用 write_workspace_editor；局部修改先读取原文，再使用 replace_current_stage_text。
+- 条目样式：只用 create/write/edit/rename/move/delete_character_*，按稳定 item_id 管理独立人物文件；不得猜测路径，也不得写入正文目录。
+- 条目样式的概览只维护人物一览与索引（姓名、定位、一句话摘要）；完整人物卡写入对应条目文件，不要把多人设定或剧情原文整段塞进概览。
+- 用户要求“学习”剧情时，从剧情中提炼身份、动机、关系与弧光写入人物设定；不要照抄剧情/大纲/正文原文。
 - 写入编辑器的只能是正式人物设定，不要写分析过程、操作说明或聊天回复。
 - 不要凭空推翻已经确认的剧情事实；发现冲突时先指出冲突并给出最小改动方案。
 `;
@@ -167,6 +171,7 @@ export const DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 Dee
 - 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。
 - 工具返回“本次未读取”时，必须继续分批读完再下结论；preview 不算完整读取。
 - 改动会影响后续连续性时，一并读取相关剧集的 character_state，并在修改正文后同步更新受影响的人物状态。
+- 涉及具体人物设定时，先调用 list_characters 确认人物结构：文本样式可读整份人物设计；条目样式下，概览只是姓名与一句话索引，必须对本集/本次修订涉及的人物用 read_character 并指定 item_id 读取对应人物卡。不得只读概览或只调用 read_workspace_content（stage_id=character_design）就开始编写或修订。
 - 当前剧情结构不足以确定剧集清单且用户没有明确给出时，不得猜测剧集结构。
 - 批量初始化必须在一次 create_draft_sections 调用中提交全部待创建剧集，不得拆成多次单集调用。
 - 初始化只新增空白剧集文件，不删除、不改名、不排序、不覆盖已有剧集。
@@ -189,6 +194,11 @@ export const DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWr
 3. 调用 read_draft_sections（mode=full）读取当前剧集，以及紧邻的前 2 到 3 个已有正文的剧集；读取紧邻上一集时，include 必须包含 character_state。
 4. 只有用户明确要求跨集呼应或必须核对前文伏笔时，才扩大读取范围，并优先用 mode=preview 扫描。
 5. 用户点名技能或写作方法时调用 load_skill；确需参考剧本素材时，调用 query_linked_material_entries 检索并读取相关条目。
+
+人物设定：
+- 编写或修订前先调用 list_characters 确认人物结构。
+- 文本样式：可用 read_character 或 read_workspace_content（stage_id=character_design）读取整份人物设计。
+- 条目样式：概览只维护姓名、定位与一句话摘要，不是完整人设。对本集出场或影响情节的人物，必须用 read_character 并指定 item_id 读取对应人物卡；不得只读概览或只读 character_design 阶段概览就开始编写。
 
 写作标准：
 - 严格执行当前剧集在已读取剧情内容中的任务、承接点和篇幅要求。
@@ -330,6 +340,24 @@ export type ScriptWorkspaceStageSnapshot = z.infer<
   typeof ScriptWorkspaceStageSnapshotSchema
 >;
 
+const ScriptCharacterItemSnapshotSchema = z.object({
+  id: z.string().trim().min(1).max(512),
+  title: z.string().trim().min(1).max(256),
+  order: z.number().int().positive(),
+  content: z.string().max(SCRIPT_WORKSPACE_FILE_MAX_CHARACTERS),
+  revision: z.string().regex(/^v1:\d+:[0-9a-f]{8}$/),
+  truncated: z.boolean().optional(),
+  originalLength: z.number().int().nonnegative().optional()
+});
+
+const ScriptCharacterStructureSnapshotSchema = z.discriminatedUnion("format", [
+  z.object({ format: z.literal("text") }),
+  z.object({
+    format: z.literal("list"),
+    items: z.array(ScriptCharacterItemSnapshotSchema).max(4_096)
+  })
+]);
+
 const ScriptExpertDraftFileSnapshotSchema = z.object({
   documentId: z.string().trim().min(1).max(4_096),
   title: z.string().trim().min(1).max(256),
@@ -402,6 +430,9 @@ export const ScriptWorkspaceSnapshotSchema = z
     activeAgentId: ScriptWorkspaceAgentIdSchema.optional(),
     activeSectionId: z.string().trim().min(1).max(120).optional(),
     plotStages: CreativePlotStagesSchema,
+    characterStructure: ScriptCharacterStructureSnapshotSchema.default({
+      format: "text"
+    }),
     expertDraft: ScriptExpertDraftDirectorySnapshotSchema,
     stages: z.array(ScriptWorkspaceStageSnapshotSchema).min(2).max(33)
   })

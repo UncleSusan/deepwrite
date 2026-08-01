@@ -14,6 +14,7 @@ import type {
 } from "@deepwrite/contracts";
 import {
   LibraryAgentWorkspaceSnapshotSchema,
+  CharacterStructureMutationSchema,
   LongCharacterFileChangeSchema,
   LongWorldbuildingFileChangeSchema,
   LongWorkspaceOperationBatchSchema,
@@ -248,6 +249,14 @@ function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
       ? {
           draftSectionDeletionTarget: {
             ...proposal.draftSectionDeletionTarget
+          }
+        }
+      : {}),
+    ...(proposal.characterStructureTarget
+      ? {
+          characterStructureTarget: {
+            ...proposal.characterStructureTarget,
+            mutation: { ...proposal.characterStructureTarget.mutation }
           }
         }
       : {}),
@@ -504,6 +513,26 @@ function parseStoredDraftSectionDeletionTarget(
   };
 }
 
+function parseStoredCharacterStructureTarget(
+  value: unknown
+): AgentEditProposal["characterStructureTarget"] | undefined {
+  if (!isRecord(value)) return undefined;
+  const mutation = CharacterStructureMutationSchema.safeParse(value.mutation);
+  if (!mutation.success) return undefined;
+  if (
+    value.baseProjectRevision !== undefined &&
+    !nonnegativeInteger(value.baseProjectRevision)
+  ) {
+    return undefined;
+  }
+  return {
+    mutation: mutation.data,
+    ...(value.baseProjectRevision === undefined
+      ? {}
+      : { baseProjectRevision: value.baseProjectRevision })
+  };
+}
+
 function parseStoredLongWorldbuildingTarget(
   value: unknown
 ): AgentEditProposal["longWorldbuildingTarget"] | undefined {
@@ -622,6 +651,8 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
       typeof value.decisionToken !== "string") ||
     (value.provisionalExpertSection !== undefined &&
       typeof value.provisionalExpertSection !== "boolean") ||
+    (value.provisionalCharacterItemId !== undefined &&
+      typeof value.provisionalCharacterItemId !== "string") ||
     !validDate(value.createdAt) ||
     !validDate(value.updatedAt)
   ) {
@@ -680,6 +711,15 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
   ) {
     return undefined;
   }
+  const characterStructureTarget = parseStoredCharacterStructureTarget(
+    value.characterStructureTarget
+  );
+  if (
+    value.characterStructureTarget !== undefined &&
+    !characterStructureTarget
+  ) {
+    return undefined;
+  }
   const hunks = value.hunks
     .map(parseStoredTextDiffHunk)
     .filter((hunk): hunk is AgentTextDiffHunk => hunk !== undefined);
@@ -729,8 +769,12 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     ...(draftSectionCreationTarget ? { draftSectionCreationTarget } : {}),
     ...(draftSectionRenameTarget ? { draftSectionRenameTarget } : {}),
     ...(draftSectionDeletionTarget ? { draftSectionDeletionTarget } : {}),
+    ...(characterStructureTarget ? { characterStructureTarget } : {}),
     ...(value.provisionalExpertSection
       ? { provisionalExpertSection: true }
+      : {}),
+    ...(typeof value.provisionalCharacterItemId === "string"
+      ? { provisionalCharacterItemId: value.provisionalCharacterItemId }
       : {})
   };
 }
@@ -2909,7 +2953,10 @@ export function useAgentConversation(
       const stages = textStageIds.map((stageId) => {
         const document = liveStages.find(
           (candidate) =>
-            candidate.stageId === stageId && candidate.draftFileKind === undefined
+            candidate.stageId === stageId &&
+            candidate.draftFileKind === undefined &&
+            (stageId !== "character_design" ||
+              candidate.characterFileKind !== "item")
         );
         if (!document) return undefined;
         const originalLength = document.content.length;
@@ -2927,6 +2974,42 @@ export function useAgentConversation(
       const completeStages = stages.filter(
         (stage): stage is NonNullable<typeof stage> => stage !== undefined
       );
+      const characterItemDocuments = liveStages
+        .filter(
+          (document) =>
+            document.stageId === "character_design" &&
+            document.characterFileKind === "item" &&
+            document.characterItemId
+        )
+        .sort(
+          (left, right) =>
+            (left.characterItemOrder ?? 0) - (right.characterItemOrder ?? 0)
+        );
+      const characterStructure = characterItemDocuments.length > 0 ||
+        liveStages.some(
+          (document) =>
+            document.stageId === "character_design" &&
+            document.characterFileKind === "overview" &&
+            document.path.length > 2
+        )
+        ? {
+            format: "list" as const,
+            items: characterItemDocuments.map((document, index) => {
+              const originalLength = document.content.length;
+              const content = document.content.slice(0, 20_000);
+              return {
+                id: document.characterItemId!,
+                title: document.title,
+                order: document.characterItemOrder ?? index + 1,
+                content,
+                revision: createShortWorkspaceContentRevision(document.content),
+                ...(originalLength > content.length
+                  ? { truncated: true as const, originalLength }
+                  : {})
+              };
+            })
+          }
+        : { format: "text" as const };
       const draftSections = new Map<
         string,
         {
@@ -3007,6 +3090,7 @@ export function useAgentConversation(
           categories: [...(activeDocument.workspaceCategories ?? [])],
           activeStageId: activeDocument.stageId,
           plotStages,
+          characterStructure,
           ...(activeDocument.shortAgentId
             ? { activeAgentId: activeDocument.shortAgentId }
             : {}),

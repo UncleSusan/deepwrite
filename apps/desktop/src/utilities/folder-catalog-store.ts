@@ -22,6 +22,8 @@ import {
 import {
   BookProjectManifestSchema,
   BookSchema,
+  BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID,
+  CATALOG_PROJECT_MAX_CONTENT_ITEMS,
   CatalogDraftSectionSchema,
   CreateDraftSectionsInputSchema,
   CreateDraftSectionsResultSchema,
@@ -38,6 +40,7 @@ import {
   CurrentBookProjectManifestSchema,
   DeleteDraftSectionInputSchema,
   LegacyBookProjectManifestSchema,
+  MutateCharacterStructureInputSchema,
   MutatePlotStructureInputSchema,
   SaveDocumentInputSchema,
   MaterialGroupProjectManifestSchema,
@@ -52,6 +55,7 @@ import {
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
   createCatalogDraftDirectory,
+  createDefaultBookCharacterStructure,
   BookPlotStagesSchema,
   CreativePlotStagesSchema,
   DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS,
@@ -90,6 +94,7 @@ import {
   type MaterialLibraryGroup,
   type MaterialEntry,
   type MaterialStageId,
+  type MutateCharacterStructureInput,
   type MutatePlotStructureInput,
   type SaveLibraryEntryInput,
   type SaveDocumentInput,
@@ -102,7 +107,8 @@ import {
   type SkillStageId,
   type UpdateBookInput,
   type UpdateLibraryGroupInput,
-  type V2BookProjectManifest
+  type V2BookProjectManifest,
+  type V3BookProjectManifest
 } from "@deepwrite/contracts";
 import type { ImportedLegacyBook } from "./legacy-book-import";
 import type { ImportedLegacyLibrary } from "./legacy-library-import";
@@ -494,6 +500,7 @@ export class FolderCatalogStore {
         linkedSkillIdsByKind: linkedSkillIdsFromInput(
           input.linkedSkillIdsByKind
         ),
+        characterStructure: createDefaultBookCharacterStructure(),
         plotStages: createDefaultBookPlotStages(),
         documents: DEFAULT_SHORT_DOCUMENTS.map(([id, title]) => ({
           id,
@@ -540,6 +547,7 @@ export class FolderCatalogStore {
         linkedSkillIdsByKind: linkedSkillIdsFromInput(
           input.linkedSkillIdsByKind
         ),
+        characterStructure: createDefaultBookCharacterStructure(),
         plotStages: createDefaultBookPlotStages(),
         documents: DEFAULT_SCRIPT_DOCUMENTS.map(([id, title]) => ({
           id,
@@ -1148,6 +1156,286 @@ export class FolderCatalogStore {
     });
   }
 
+  async mutateCharacterStructure(
+    rawInput: MutateCharacterStructureInput
+  ): Promise<Book> {
+    const input = MutateCharacterStructureInputSchema.parse(rawInput);
+    return await this.mutate(async () => {
+      const registry = await this.ensureRegistry();
+      const registration = findRegistration(registry, input.bookId, "book");
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        input.bookId
+      );
+      if (!input.force) {
+        assertBaseRevision(input.baseProjectRevision, manifest.revision);
+      }
+      const now = this.now();
+      const mutation = input.mutation;
+      const overviewIndex = manifest.documents.findIndex(
+        ({ id }) => id === "character_design"
+      );
+      if (overviewIndex < 0) {
+        throw new Error("人物结构缺少人物概览文件。");
+      }
+      const overview = manifest.documents[overviewIndex]!;
+      const overviewPath = await secureExistingProjectPath(
+        projectDirectory,
+        overview.path,
+        false
+      );
+
+      if (mutation.type === "setFormat") {
+        if (mutation.format === manifest.characterStructure.format) {
+          return (await this.readProject(projectDirectory, "book", input.bookId))
+            .resource as Book;
+        }
+        if (mutation.format === "list") {
+          const original = await readRequiredUtf8File(
+            overviewPath,
+            this.maxMarkdownBytes,
+            "character design"
+          );
+          const documents = manifest.documents.map((document) => ({ ...document }));
+          documents[overviewIndex] = {
+            ...documents[overviewIndex]!,
+            title: "概览",
+            updatedAt: now
+          };
+          const items = [];
+          let createdPath: string | undefined;
+          if (original.trim()) {
+            if (manifestContentItems(manifest).length >= CATALOG_PROJECT_MAX_CONTENT_ITEMS) {
+              throw new Error("作品文件数量已达上限，无法转换为人物条目样式。");
+            }
+            const itemId = createCatalogId("character");
+            const relativePath = await uniqueRelativeMarkdownPath(
+              projectDirectory,
+              "characters",
+              itemId,
+              new Set(
+                manifestContentItems(manifest).map(({ path }) =>
+                  portableContentPathKey(path)
+                )
+              )
+            );
+            createdPath = relativePath;
+            documents.push({
+              id: itemId,
+              title: "人物设定",
+              path: relativePath,
+              createdAt: now,
+              updatedAt: now
+            });
+            items.push({ id: itemId, title: "人物设定", order: 1 });
+          }
+          const next = FolderCurrentBookProjectManifestSchema.parse({
+            ...manifest,
+            revision: manifest.revision + 1,
+            characterStructure: { format: "list", items },
+            documents,
+            updatedAt: now
+          });
+          try {
+            if (createdPath) {
+              await atomicWriteText(
+                await secureWritableProjectPath(projectDirectory, createdPath),
+                original
+              );
+            }
+            await commitProjectMarkdownUpdate(
+              overviewPath,
+              "",
+              original,
+              join(projectDirectory, MANIFEST_FILE),
+              next,
+              this.maxMarkdownBytes,
+              this.maxManifestBytes
+            );
+          } catch (error) {
+            if (createdPath) {
+              await unlink(
+                await secureWritableProjectPath(projectDirectory, createdPath)
+              ).catch(() => undefined);
+            }
+            throw error;
+          }
+        } else {
+          if (manifest.characterStructure.format !== "list") {
+            throw new Error("当前人物结构不是条目样式。");
+          }
+          const overviewContent = await readRequiredUtf8File(
+            overviewPath,
+            this.maxMarkdownBytes,
+            "character overview"
+          );
+          const orderedItems = [...manifest.characterStructure.items].sort(
+            (left, right) => left.order - right.order
+          );
+          const sections: string[] = [];
+          if (overviewContent.trim()) {
+            sections.push(`# 概览\n\n${overviewContent.trim()}`);
+          }
+          const itemDocuments = orderedItems.map((item) => {
+            const document = manifest.documents.find(({ id }) => id === item.id);
+            if (!document) throw new Error(`人物条目 ${item.id} 缺少文件。`);
+            return { item, document };
+          });
+          for (const { item, document } of itemDocuments) {
+            const content = await readProjectMarkdown(
+              projectDirectory,
+              document.path,
+              this.maxMarkdownBytes
+            );
+            sections.push(`# ${item.title}\n\n${content.trim()}`.trim());
+          }
+          const merged = sections.join("\n\n").trim();
+          const removedIds = new Set(orderedItems.map(({ id }) => id));
+          const textDocuments = manifest.documents
+            .filter(({ id }) => !removedIds.has(id))
+            .map((document) =>
+              document.id === BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID
+                ? { ...document, title: "人物设计", updatedAt: now }
+                : document
+            );
+          const next = FolderCurrentBookProjectManifestSchema.parse({
+            ...manifest,
+            revision: manifest.revision + 1,
+            characterStructure: createDefaultBookCharacterStructure(),
+            documents: textDocuments,
+            updatedAt: now
+          });
+          await commitProjectMarkdownUpdate(
+            overviewPath,
+            merged,
+            overviewContent,
+            join(projectDirectory, MANIFEST_FILE),
+            next,
+            this.maxMarkdownBytes,
+            this.maxManifestBytes
+          );
+          for (const { document } of itemDocuments) {
+            await unlink(
+              await secureExistingProjectPath(projectDirectory, document.path, false)
+            ).catch(() => undefined);
+          }
+        }
+      } else {
+        if (manifest.characterStructure.format !== "list") {
+          throw new Error("人物条目操作仅适用于条目样式。");
+        }
+        const items = [...manifest.characterStructure.items]
+          .sort((left, right) => left.order - right.order)
+          .map((item) => ({ ...item }));
+        const documents = manifest.documents.map((document) => ({ ...document }));
+        if (mutation.type === "createItem") {
+          const title = mutation.title.trim();
+          if (items.some((item) => item.title.toLocaleLowerCase() === title.toLocaleLowerCase())) {
+            throw new Error(`人物条目“${title}”已存在。`);
+          }
+          if (manifestContentItems(manifest).length >= CATALOG_PROJECT_MAX_CONTENT_ITEMS) {
+            throw new Error("作品文件数量已达上限，无法新建人物条目。");
+          }
+          const itemId = mutation.itemId ?? createCatalogId("character");
+          if (documents.some(({ id }) => id === itemId)) {
+            throw new Error("人物条目标识已存在。");
+          }
+          const path = await uniqueRelativeMarkdownPath(
+            projectDirectory,
+            "characters",
+            itemId,
+            new Set(
+              manifestContentItems(manifest).map(({ path: value }) =>
+                portableContentPathKey(value)
+              )
+            )
+          );
+          items.push({ id: itemId, title, order: items.length + 1 });
+          documents.push({ id: itemId, title, path, createdAt: now, updatedAt: now });
+          const next = FolderCurrentBookProjectManifestSchema.parse({
+            ...manifest,
+            revision: manifest.revision + 1,
+            characterStructure: { format: "list", items },
+            documents,
+            updatedAt: now
+          });
+          await commitProjectMarkdownUpdate(
+            await secureWritableProjectPath(projectDirectory, path),
+            "",
+            undefined,
+            join(projectDirectory, MANIFEST_FILE),
+            next,
+            this.maxMarkdownBytes,
+            this.maxManifestBytes
+          );
+        } else {
+          const index = items.findIndex(({ id }) => id === mutation.itemId);
+          if (index < 0) throw new Error("人物条目已删除或不存在。");
+          let deletedPath: string | undefined;
+          if (mutation.type === "updateItem") {
+            const title = mutation.title.trim();
+            if (
+              items.some(
+                (item, itemIndex) =>
+                  itemIndex !== index &&
+                  item.title.toLocaleLowerCase() === title.toLocaleLowerCase()
+              )
+            ) {
+              throw new Error(`人物条目“${title}”已存在。`);
+            }
+            items[index] = { ...items[index]!, title };
+            const documentIndex = documents.findIndex(({ id }) => id === mutation.itemId);
+            if (documentIndex < 0) throw new Error("人物条目文件不存在。");
+            documents[documentIndex] = {
+              ...documents[documentIndex]!,
+              title,
+              updatedAt: now
+            };
+          } else if (mutation.type === "moveItem") {
+            const target = mutation.direction === "up" ? index - 1 : index + 1;
+            if (target < 0 || target >= items.length) {
+              throw new Error("人物条目已经位于列表边界。");
+            }
+            [items[index], items[target]] = [items[target]!, items[index]!];
+          } else {
+            const documentIndex = documents.findIndex(({ id }) => id === mutation.itemId);
+            if (documentIndex < 0) throw new Error("人物条目文件不存在。");
+            deletedPath = documents[documentIndex]!.path;
+            documents.splice(documentIndex, 1);
+            items.splice(index, 1);
+          }
+          const normalizedItems = items.map((item, itemIndex) => ({
+            ...item,
+            order: itemIndex + 1
+          }));
+          const next = FolderCurrentBookProjectManifestSchema.parse({
+            ...manifest,
+            revision: manifest.revision + 1,
+            characterStructure: { format: "list", items: normalizedItems },
+            documents,
+            updatedAt: now
+          });
+          await atomicWriteJson(
+            join(projectDirectory, MANIFEST_FILE),
+            next,
+            this.maxManifestBytes
+          );
+          if (deletedPath) {
+            await unlink(
+              await secureExistingProjectPath(projectDirectory, deletedPath, false)
+            ).catch(() => undefined);
+          }
+        }
+      }
+      await this.bumpRegistry(registry, now);
+      return (await this.readProject(projectDirectory, "book", input.bookId))
+        .resource as Book;
+    });
+  }
+
   private async applyGlobalPlotStageCreate(
     registry: FolderCatalogRegistry,
     definition: CreativePlotStage,
@@ -1467,6 +1755,7 @@ export class FolderCatalogStore {
       );
       const documents = [...manifest.documents];
       const plotStages = manifest.plotStages.map((stage) => ({ ...stage }));
+      const characterStructure = structuredClone(manifest.characterStructure);
       const draft = structuredClone(manifest.draft);
       const draftTarget =
         regularDocumentIndex < 0
@@ -1504,6 +1793,38 @@ export class FolderCatalogStore {
           if (input.title.trim() !== plotStages[plotStageIndex]!.title) {
             throw new Error("请在剧情结构管理中修改阶段名称；名称修改会全局生效。");
           }
+        }
+        const characterItemIndex =
+          characterStructure.format === "list"
+            ? characterStructure.items.findIndex(({ id }) => id === existing.id)
+            : -1;
+        if (
+          existing.id === "character_design" &&
+          characterStructure.format === "list" &&
+          input.title !== undefined &&
+          input.title.trim() !== existing.title
+        ) {
+          throw new Error("概览名称固定，不能修改。");
+        }
+        if (
+          characterItemIndex >= 0 &&
+          input.title !== undefined &&
+          characterStructure.format === "list"
+        ) {
+          const title = input.title.trim();
+          if (
+            characterStructure.items.some(
+              (item, index) =>
+                index !== characterItemIndex &&
+                item.title.toLocaleLowerCase() === title.toLocaleLowerCase()
+            )
+          ) {
+            throw new Error(`人物条目“${title}”已存在。`);
+          }
+          characterStructure.items[characterItemIndex] = {
+            ...characterStructure.items[characterItemIndex]!,
+            title
+          };
         }
         currentContent = await readProjectMarkdown(
           projectDirectory,
@@ -1601,6 +1922,7 @@ export class FolderCatalogStore {
       const next = FolderCurrentBookProjectManifestSchema.parse({
         ...manifest,
         revision: manifest.revision + 1,
+        characterStructure,
         plotStages,
         documents,
         draft,
@@ -2689,8 +3011,18 @@ export class FolderCatalogStore {
       assertManifestUniqueness(manifest);
       await assertManifestContentFilesUnique(root, manifest);
     }
-    if (manifest.kind === "deepwrite.book" && manifest.schemaVersion === 2) {
+    else if (manifest.kind === "deepwrite.book" && manifest.schemaVersion === 2) {
       manifest = await migrateV2BookProject(
+        root,
+        manifest,
+        text,
+        this.maxManifestBytes
+      );
+      assertManifestUniqueness(manifest);
+      await assertManifestContentFilesUnique(root, manifest);
+    }
+    else if (manifest.kind === "deepwrite.book" && manifest.schemaVersion === 3) {
+      manifest = await migrateV3BookProject(
         root,
         manifest,
         text,
@@ -2719,8 +3051,8 @@ export class FolderCatalogStore {
       "deepwrite.book",
       expectedResourceId
     );
-    if (manifest.schemaVersion !== 3) {
-      throw new Error("书籍项目未完成剧情结构迁移。");
+    if (manifest.schemaVersion !== 4) {
+      throw new Error("书籍项目未完成人物结构迁移。");
     }
     return manifest;
   }
@@ -3041,6 +3373,7 @@ export class FolderCatalogStore {
 
 const DEFAULT_SHORT_DOCUMENTS = [
   ["character_design", "人物设计"],
+  ["worldbuilding", "世界观"],
   ["plot_design", "剧情设计"],
   ["intro_design", "导语设计"],
   ["plot_refine", "剧情细化"],
@@ -3050,6 +3383,7 @@ const DEFAULT_SHORT_DOCUMENTS = [
 
 const DEFAULT_SCRIPT_DOCUMENTS = [
   ["character_design", "人物设计"],
+  ["worldbuilding", "世界观"],
   ["plot_design", "剧情设计"],
   ["intro_design", "导语设计"],
   ["plot_refine", "剧情细化"],
@@ -3847,9 +4181,18 @@ async function migrateLegacyBookProject(
       updatedAt: manifest.updatedAt
     });
   }
+  await appendMissingCharacterOverviewDocument({
+    projectDirectory,
+    documents,
+    usedPaths,
+    pendingFiles,
+    createdAt: manifest.createdAt,
+    updatedAt: manifest.updatedAt
+  });
   const next = FolderCurrentBookProjectManifestSchema.parse({
     ...manifest,
-    schemaVersion: 3,
+    schemaVersion: 4,
+    characterStructure: createDefaultBookCharacterStructure(),
     plotStages,
     documents,
     draft: {
@@ -3904,7 +4247,13 @@ async function migrateV2BookProject(
   const plotStages = createDefaultBookPlotStages({ allEnabled: true });
   const documents = manifest.documents.map((document) => ({ ...document }));
   const usedPaths = new Set(
-    manifestContentItems(manifest).map(({ path }) => portableContentPathKey(path))
+    [
+      ...manifest.documents,
+      ...manifest.draft.sections.flatMap((section) => [
+        section.body,
+        section.characterState
+      ])
+    ].map(({ path }) => portableContentPathKey(path))
   );
   const pendingFiles: Array<{ path: string; content: string }> = [];
 
@@ -3934,9 +4283,19 @@ async function migrateV2BookProject(
     });
   }
 
+  await appendMissingCharacterOverviewDocument({
+    projectDirectory,
+    documents,
+    usedPaths,
+    pendingFiles,
+    createdAt: manifest.createdAt,
+    updatedAt: manifest.updatedAt
+  });
+
   const next = FolderCurrentBookProjectManifestSchema.parse({
     ...manifest,
-    schemaVersion: 3,
+    schemaVersion: 4,
+    characterStructure: createDefaultBookCharacterStructure(),
     plotStages,
     documents
   });
@@ -3961,6 +4320,84 @@ async function migrateV2BookProject(
     maxManifestBytes
   );
   return next;
+}
+
+async function migrateV3BookProject(
+  projectDirectory: string,
+  manifest: V3BookProjectManifest,
+  originalManifestText: string,
+  maxManifestBytes: number
+): Promise<FolderCurrentBookProjectManifest> {
+  const documents = manifest.documents.map((document) => ({ ...document }));
+  const usedPaths = new Set(
+    manifestContentItems(manifest).map(({ path }) => portableContentPathKey(path))
+  );
+  const pendingFiles: Array<{ path: string; content: string }> = [];
+  await appendMissingCharacterOverviewDocument({
+    projectDirectory,
+    documents,
+    usedPaths,
+    pendingFiles,
+    createdAt: manifest.createdAt,
+    updatedAt: manifest.updatedAt
+  });
+  const next = FolderCurrentBookProjectManifestSchema.parse({
+    ...manifest,
+    schemaVersion: 4,
+    characterStructure: createDefaultBookCharacterStructure(),
+    documents
+  });
+  assertJsonByteLength(next, maxManifestBytes);
+  for (const file of pendingFiles) {
+    const target = await secureWritableProjectPath(projectDirectory, file.path);
+    await atomicWriteText(target, file.content);
+  }
+  const currentManifestText = await readRequiredUtf8File(
+    join(projectDirectory, MANIFEST_FILE),
+    maxManifestBytes,
+    "project manifest"
+  );
+  if (currentManifestText !== originalManifestText) {
+    throw new Error("书籍在人物结构迁移期间被外部修改，已中止迁移。");
+  }
+  await atomicWriteJson(
+    join(projectDirectory, MANIFEST_FILE),
+    next,
+    maxManifestBytes
+  );
+  return next;
+}
+
+async function appendMissingCharacterOverviewDocument(input: {
+  projectDirectory: string;
+  documents: BookProjectDocumentManifest[];
+  usedPaths: Set<string>;
+  pendingFiles: Array<{ path: string; content: string }>;
+  createdAt: string;
+  updatedAt: string;
+}): Promise<void> {
+  if (
+    input.documents.some(
+      ({ id }) => id === BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID
+    )
+  ) {
+    return;
+  }
+  const path = await uniqueRelativeMarkdownPath(
+    input.projectDirectory,
+    "stages",
+    BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID,
+    input.usedPaths
+  );
+  input.usedPaths.add(portableContentPathKey(path));
+  input.pendingFiles.push({ path, content: "" });
+  input.documents.push({
+    id: BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID,
+    title: "人物设计",
+    path,
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt
+  });
 }
 
 export function assertLegacyBookMigrationSourcesUnchanged(input: {
@@ -4074,13 +4511,14 @@ async function writeResourceContents(
       }
       return FolderCurrentBookProjectManifestSchema.parse({
         ...common,
-        schemaVersion: 3,
+        schemaVersion: 4,
         kind: kindForDomain(domain),
         bookType: book.bookType,
         genre: book.genre,
         status: book.status,
         linkedMaterialIdsByKind: book.linkedMaterialIdsByKind,
         linkedSkillIdsByKind: book.linkedSkillIdsByKind,
+        characterStructure: book.characterStructure,
         plotStages: book.plotStages,
         documents,
         draft: {
@@ -4203,7 +4641,7 @@ async function hydrateResource(
 ): Promise<FolderCatalogResource> {
   switch (manifest.kind) {
     case "deepwrite.book": {
-      if (manifest.schemaVersion !== 3) {
+      if (manifest.schemaVersion !== 4) {
         throw new Error("书籍项目未完成正文目录迁移。");
       }
       const draftFiles = manifest.draft.sections.flatMap((section) => [
@@ -4225,6 +4663,7 @@ async function hydrateResource(
         status: manifest.status,
         linkedMaterialIdsByKind: manifest.linkedMaterialIdsByKind,
         linkedSkillIdsByKind: manifest.linkedSkillIdsByKind,
+        characterStructure: manifest.characterStructure,
         plotStages: manifest.plotStages,
         projectRevision: manifest.revision,
         documents: manifest.documents.map((document, index) => ({
@@ -4672,6 +5111,7 @@ async function commitProjectMarkdownUpdate(
   // fails. A different on-disk value means an external editor won the race;
   // leave that value intact and surface a conflict instead of overwriting it.
   assertJsonByteLength(manifest, maxManifestBytes);
+  assertTextByteLength(nextContent, maxMarkdownBytes, "Markdown content");
   await atomicWriteText(target, nextContent);
   try {
     const observed = await readRequiredUtf8File(

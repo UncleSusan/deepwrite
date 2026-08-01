@@ -16,9 +16,21 @@ describe("PlotStructureDialog", () => {
   });
 
   it("is available from the short and script book action menu", () => {
-    expect(treeSource).toContain("剧情结构管理");
-    expect(treeSource).toContain("openBookAction('manage-plot-structure')");
+    expect(treeSource).toContain("结构管理");
+    expect(treeSource).toContain("openBookAction('manage-structure')");
     expect(treeSource).toContain("hasBookAction");
+  });
+
+  it("switches between character and plot management with PopupSelect", () => {
+    expect(source).toContain("人物结构管理");
+    expect(source).toContain("剧情结构管理");
+    expect(source).toContain("<PopupSelect");
+    expect(source).toContain(':menu-z-index="2300"');
+    expect(source).toContain("条目样式");
+    expect(source).toContain("文本样式");
+    expect(source).toContain('type: "setFormat"');
+    expect(source).toContain("转换预览");
+    expect(source).toContain("orderedCharacterItems");
   });
 
   it("locks builtin stages and hard-deletes custom stages globally", () => {

@@ -505,6 +505,7 @@ describe("WorkspaceAgentConfigStore", () => {
       activeStageId: "draft" as const,
       activeAgentId: "expert_section_writer" as const,
       activeSectionId: "section-1",
+      characterStructure: { format: "text" as const },
       plotStages: createDefaultCreativePlotStages(),
       expertDraft: {
         id: "draft" as const,

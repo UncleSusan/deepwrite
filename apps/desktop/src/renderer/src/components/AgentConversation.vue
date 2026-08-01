@@ -866,7 +866,11 @@ function workspaceToolLabel(name: string): string {
     edit_character_overview: "编辑人物概览",
     create_character: "创建人物",
     write_character_file: "写入人物文件",
+    create_character_file: "创建人物文件",
     edit_character_file: "编辑人物文件",
+    rename_character_item: "修改人物名称",
+    move_character_item: "移动人物条目",
+    delete_character_file: "删除人物文件",
     list_plot_design: "列出剧情设计",
     search_plot_design: "搜索剧情设计",
     read_plot_design: "读取剧情设计",
@@ -1038,8 +1042,12 @@ const WRITE_TOOL_NAMES = new Set([
   "write_worldbuilding_content",
   "replace_worldbuilding_text",
   "create_character",
+  "create_character_file",
   "write_character_file",
   "edit_character_file",
+  "rename_character_item",
+  "move_character_item",
+  "delete_character_file",
   "write_character_overview",
   "edit_character_overview",
   "create_plot_design",
@@ -1053,6 +1061,7 @@ const CREATE_FILE_TOOL_NAMES = new Set([
   "create_worldbuilding_files",
   "create_worldbuilding_items",
   "create_character",
+  "create_character_file",
   "create_plot_design"
 ]);
 

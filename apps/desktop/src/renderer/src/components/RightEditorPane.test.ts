@@ -14,12 +14,16 @@ describe("RightEditorPane expert draft navigation", () => {
     const editorStart = source.indexOf('class="editor-document"', tabsStart);
 
     expect(tabsStart).toBeGreaterThan(-1);
-    expect(source).toContain(':aria-label="`正文${draftUnitLabel}`"');
+    expect(source).toContain(':aria-label="resolvedSectionTabsLabel"');
+    expect(source).toContain('props.sectionTabsLabel ?? `正文${draftUnitLabel.value}`');
     expect(source).toContain('props.document.workspaceType === "script" ? "剧集" : "小节"');
     expect(source).toContain("emit('selectSection', section.id)");
     expect(source).toContain('v-if="canCreateSection"');
-    expect(source).toContain('aria-label="在正文末尾新建小节"');
+    expect(source).toContain(':aria-label="resolvedCreateSectionLabel"');
     expect(source).toContain("emit('createSection')");
+    expect(source).toContain('v-if="showDeleteSection"');
+    expect(source).toContain('class="section-tabs-remove"');
+    expect(source).toContain("emit('deleteSection')");
     expect(editorStart).toBeGreaterThan(tabsStart);
   });
 
@@ -27,12 +31,34 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(appSource).toContain("async function addExpertSectionFromEditor()");
     expect(appSource).toContain('directory.workspaceType !== "short"');
     expect(appSource).toContain("await addExpertSection(draftNode)");
+    expect(appSource).toContain('@create-section="createEditorSection"');
     expect(appSource).toContain(
-      '@create-section="addExpertSectionFromEditor"'
+      'activeDocument.value.workspaceType === "short"'
     );
-    expect(appSource).toContain(
-      "activeDocument.workspaceType === 'short'"
-    );
+  });
+
+  it("routes the short-story tab remove button through the existing sidebar deletion flow", () => {
+    expect(appSource).toContain("const editorShowsExpertSectionTabs = computed");
+    expect(appSource).toContain("const showEditorDeleteSection = computed");
+    expect(appSource).toContain('return "删除当前小节"');
+    expect(appSource).toContain("(directory?.sections.length ?? 0) > 1");
+    expect(appSource).toContain("function removeExpertSectionFromEditor()");
+    expect(appSource).toContain("requestRemoveExpertSection(sectionNode)");
+    expect(appSource).toContain(':show-delete-section="showEditorDeleteSection"');
+    expect(appSource).toContain('@delete-section="deleteEditorSection"');
+  });
+
+  it("reuses section tabs for list-style short character items with add and remove controls", () => {
+    expect(appSource).toContain("const activeCharacterItemTabs = computed");
+    expect(appSource).toContain('book.characterStructure.format !== "list"');
+    expect(appSource).toContain('title: "概览"');
+    expect(appSource).toContain('? "人物条目"');
+    expect(appSource).toContain('? "新建人物条目"');
+    expect(appSource).toContain('return "删除当前人物条目"');
+    expect(appSource).toContain(':show-delete-section="showEditorDeleteSection"');
+    expect(appSource).toContain("function addCharacterItemFromEditor()");
+    expect(appSource).toContain("function deleteCharacterItemFromEditor()");
+    expect(appSource).toContain('@delete-section="deleteEditorSection"');
   });
 
   it("offers one insert action only after right-clicking a selected editor range", () => {

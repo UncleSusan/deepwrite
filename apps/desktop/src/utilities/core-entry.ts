@@ -446,6 +446,15 @@ async function handleCatalogCommand(
         )
       };
     }
+    if (command.type === "catalog.mutateCharacterStructure") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: BookSchema.parse(
+          await catalogStore.mutateCharacterStructure(command.payload)
+        )
+      };
+    }
     if (command.type === "catalog.updateLibraryGroup") {
       return {
         status: "accepted",

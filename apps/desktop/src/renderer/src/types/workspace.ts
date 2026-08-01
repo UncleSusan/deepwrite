@@ -111,7 +111,7 @@ export interface LongBookResourceNodeActionPayload {
 }
 
 export type BookResourceDialogMode =
-  | "manage-plot-structure"
+  | "manage-structure"
   | "rename"
   | "remove"
   | "delete"
@@ -130,6 +130,10 @@ export interface ResourceTreeNode {
   shortAgentId?: ShortWorkspaceAgentId;
   /** Identifies the expert-draft section selected by this navigation node. */
   expertSectionId?: string;
+  /** Identifies a short/script character item represented by this node. */
+  characterItemId?: string;
+  /** Marks the selectable character directory in list mode. */
+  characterDirectory?: boolean;
   /** Identifies the virtual draft directory represented by this navigation node. */
   draftDirectoryId?: string;
   /** The paired character-state editor document for a draft section node. */
@@ -196,6 +200,9 @@ export interface WorkspaceDocument {
   plotStageOrder?: number;
   shortAgentId?: ShortWorkspaceAgentId;
   expertSectionId?: string;
+  characterItemId?: string;
+  characterItemOrder?: number;
+  characterFileKind?: "overview" | "item";
   expertSectionOrder?: number;
   expertWordCountRequirement?: string;
   draftDirectoryId?: string;

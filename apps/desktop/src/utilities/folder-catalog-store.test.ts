@@ -248,10 +248,10 @@ describe("FolderCatalogStore", () => {
       };
     };
     expect(bookManifest).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       kind: "deepwrite.book"
     });
-    expect(bookManifest.documents).toHaveLength(5);
+    expect(bookManifest.documents).toHaveLength(7);
     expect(bookManifest.draft.sections).toHaveLength(2);
     await Promise.all(
       bookManifest.draft.sections.map(async (section, index) => {
@@ -382,7 +382,7 @@ describe("FolderCatalogStore", () => {
     expect(second.projectDirectory).toMatch(/\/雨夜-来信-2$/u);
     expect(first.resource.id).toMatch(/^book-[0-9a-f]{8}$/);
     expect(second.resource.id).toMatch(/^book-[0-9a-f]{8}$/);
-    expect(first.resource.documents).toHaveLength(6);
+    expect(first.resource.documents).toHaveLength(7);
     expect(first.resource.draft.sections).toHaveLength(2);
 
     const emptyRevision = createShortWorkspaceContentRevision("");
@@ -573,7 +573,193 @@ describe("FolderCatalogStore", () => {
     );
   });
 
-  it("migrates v2 short and script manifests to the same five plot stages without changing existing content or revisions", async () => {
+  it("preserves character text through list CRUD and both format conversions", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-character-structure-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock()
+    });
+    const opened = await store.createShortBook(
+      { title: "人物结构测试", genre: "悬疑" },
+      join(root, "books")
+    );
+    expect(opened.resource.characterStructure).toEqual({ format: "text" });
+
+    await store.saveDocument({
+      bookId: opened.resource.id,
+      documentId: "character_design",
+      content: "林默是守夜人。",
+      baseRevision: createShortWorkspaceContentRevision(""),
+      baseProjectRevision: 0
+    });
+    const listed = await store.mutateCharacterStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 1,
+      mutation: { type: "setFormat", format: "list" }
+    });
+    expect(listed.characterStructure).toMatchObject({
+      format: "list",
+      items: [{ title: "人物设定", order: 1 }]
+    });
+    const firstItem =
+      listed.characterStructure.format === "list"
+        ? listed.characterStructure.items[0]!
+        : undefined;
+    expect(firstItem).toBeDefined();
+    expect(listed.documents.find(({ id }) => id === firstItem!.id)?.content).toBe(
+      "林默是守夜人。"
+    );
+    expect(
+      listed.documents.find(({ id }) => id === "character_design")
+    ).toMatchObject({
+      title: "概览",
+      content: ""
+    });
+
+    const created = await store.mutateCharacterStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 2,
+      mutation: {
+        type: "createItem",
+        itemId: "character-fixed-id",
+        title: "苏遥"
+      }
+    });
+    expect(created.characterStructure).toMatchObject({
+      format: "list",
+      items: [
+        { id: firstItem!.id, order: 1 },
+        { id: "character-fixed-id", title: "苏遥", order: 2 }
+      ]
+    });
+    await store.saveDocument({
+      bookId: opened.resource.id,
+      documentId: "character-fixed-id",
+      content: "苏遥保管底片。",
+      baseRevision: createShortWorkspaceContentRevision(""),
+      baseProjectRevision: 3
+    });
+    const renamed = await store.mutateCharacterStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 4,
+      mutation: {
+        type: "updateItem",
+        itemId: "character-fixed-id",
+        title: "苏遥（摄影师）"
+      }
+    });
+    expect(
+      renamed.documents.find(({ id }) => id === "character-fixed-id")?.title
+    ).toBe("苏遥（摄影师）");
+    const moved = await store.mutateCharacterStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 5,
+      mutation: {
+        type: "moveItem",
+        itemId: "character-fixed-id",
+        direction: "up"
+      }
+    });
+    expect(
+      moved.characterStructure.format === "list"
+        ? moved.characterStructure.items.map(({ id }) => id)
+        : []
+    ).toEqual(["character-fixed-id", firstItem!.id]);
+
+    const merged = await store.mutateCharacterStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 6,
+      mutation: { type: "setFormat", format: "text" }
+    });
+    expect(merged.characterStructure).toEqual({ format: "text" });
+    const mergedText = merged.documents.find(
+      ({ id }) => id === "character_design"
+    )?.content;
+    expect(mergedText).toContain("# 苏遥（摄影师）\n\n苏遥保管底片。");
+    expect(mergedText).toContain("# 人物设定\n\n林默是守夜人。");
+    expect(
+      merged.documents.some(({ id }) => id === "character-fixed-id")
+    ).toBe(false);
+    await expect(
+      store.mutateCharacterStructure({
+        bookId: opened.resource.id,
+        baseProjectRevision: 6,
+        mutation: { type: "setFormat", format: "list" }
+      })
+    ).rejects.toBeInstanceOf(FolderCatalogConflictError);
+
+    const relisted = await store.mutateCharacterStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 7,
+      mutation: { type: "setFormat", format: "list" }
+    });
+    expect(
+      relisted.characterStructure.format === "list"
+        ? relisted.characterStructure.items.map(({ title }) => title)
+        : []
+    ).toEqual(["人物设定"]);
+  });
+
+  it("keeps list character files intact when merged text exceeds the limit", async () => {
+    const root = await makeTemporaryRoot("deepwrite-character-rollback-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      maxMarkdownBytes: 24,
+      now: tickingClock()
+    });
+    const opened = await store.createShortBook(
+      { title: "人物回滚测试", genre: "悬疑" },
+      join(root, "books")
+    );
+    await store.saveDocument({
+      bookId: opened.resource.id,
+      documentId: "character_design",
+      content: "alpha",
+      baseRevision: createShortWorkspaceContentRevision(""),
+      baseProjectRevision: 0
+    });
+    const listed = await store.mutateCharacterStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 1,
+      mutation: { type: "setFormat", format: "list" }
+    });
+    const firstId =
+      listed.characterStructure.format === "list"
+        ? listed.characterStructure.items[0]!.id
+        : "";
+    await store.mutateCharacterStructure({
+      bookId: opened.resource.id,
+      baseProjectRevision: 2,
+      mutation: { type: "createItem", itemId: "character-beta", title: "B" }
+    });
+    await store.saveDocument({
+      bookId: opened.resource.id,
+      documentId: "character-beta",
+      content: "beta",
+      baseRevision: createShortWorkspaceContentRevision(""),
+      baseProjectRevision: 3
+    });
+
+    await expect(
+      store.mutateCharacterStructure({
+        bookId: opened.resource.id,
+        baseProjectRevision: 4,
+        mutation: { type: "setFormat", format: "text" }
+      })
+    ).rejects.toThrow(/byte limit|大小|上限/u);
+    const unchanged = (await store.snapshot()).books.find(
+      ({ id }) => id === opened.resource.id
+    )!;
+    expect(unchanged.characterStructure.format).toBe("list");
+    expect(unchanged.documents.find(({ id }) => id === firstId)?.content).toBe(
+      "alpha"
+    );
+    expect(
+      unchanged.documents.find(({ id }) => id === "character-beta")?.content
+    ).toBe("beta");
+  });
+
+  it("migrates v2 short and script manifests to the shared default plot stages without changing existing content or revisions", async () => {
     const root = await makeTemporaryRoot("deepwrite-folder-v2-plot-migration-");
     const userDataPath = join(root, "user-data");
     const store = new FolderCatalogStore({
@@ -621,6 +807,7 @@ describe("FolderCatalogStore", () => {
       }
       const {
         plotStages: _plotStages,
+        characterStructure: _characterStructure,
         ...withoutPlotStages
       } = current;
       await writeJson(manifestPath, {
@@ -635,9 +822,11 @@ describe("FolderCatalogStore", () => {
       now: tickingClock()
     });
     const snapshot = await restarted.snapshot();
+    expect(snapshot.books).toHaveLength(2);
     for (const book of snapshot.books) {
       expect(book.projectRevision).toBe(1);
       expect(book.plotStages.map(({ id }) => id)).toEqual([
+        "worldbuilding",
         "plot_design",
         "intro_design",
         "plot_refine",
@@ -650,6 +839,9 @@ describe("FolderCatalogStore", () => {
       expect(
         book.documents.find(({ id }) => id === "narrative_perspective")?.content
       ).toBe("");
+      expect(
+        book.documents.find(({ id }) => id === "worldbuilding")?.content
+      ).toBe("");
       expect(book.draft.sections.length).toBeGreaterThan(0);
       const migratedManifest = JSON.parse(
         await readFile(
@@ -661,11 +853,66 @@ describe("FolderCatalogStore", () => {
           "utf8"
         )
       ) as { schemaVersion: number; revision: number };
-      expect(migratedManifest).toMatchObject({ schemaVersion: 3, revision: 1 });
+      expect(migratedManifest).toMatchObject({ schemaVersion: 4, revision: 1 });
     }
   });
 
-  it("creates screenplay projects with the shared five-part plot structure and numbered episodes", async () => {
+  it("migrates early v3 books whose plot stages predate the enabled flag", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-v3-enabled-migration-");
+    const userDataPath = join(root, "user-data");
+    const store = new FolderCatalogStore({ userDataPath, now: tickingClock() });
+    const opened = await store.createShortBook(
+      { title: "旧版 v3 书籍", genre: "悬疑" },
+      join(root, "books")
+    );
+    const manifestPath = join(opened.projectDirectory, "deepwrite.json");
+    const current = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      characterStructure: unknown;
+      plotStages: Array<{
+        id: string;
+        title: string;
+        description: string;
+        enabled?: boolean;
+      }>;
+      [key: string]: unknown;
+    };
+    const { characterStructure: _characterStructure, ...withoutCharacters } =
+      current;
+    await writeJson(manifestPath, {
+      ...withoutCharacters,
+      schemaVersion: 3,
+      plotStages: current.plotStages.map(({ enabled: _enabled, ...stage }) => stage)
+    });
+
+    const restarted = new FolderCatalogStore({
+      userDataPath,
+      now: tickingClock()
+    });
+    const snapshot = await restarted.snapshot();
+    expect(snapshot.projectDiagnostics ?? []).toEqual([]);
+    expect(snapshot.books).toMatchObject([
+      {
+        id: opened.resource.id,
+        characterStructure: { format: "text" },
+        plotStages: [
+          { id: "worldbuilding", enabled: true },
+          { id: "plot_design", enabled: true },
+          { id: "intro_design", enabled: true },
+          { id: "plot_refine", enabled: true },
+          { id: "narrative_perspective", enabled: true },
+          { id: "outline", enabled: true }
+        ]
+      }
+    ]);
+    expect(
+      JSON.parse(await readFile(manifestPath, "utf8"))
+    ).toMatchObject({
+      schemaVersion: 4,
+      characterStructure: { format: "text" }
+    });
+  });
+
+  it("creates screenplay projects with the shared default plot structure and numbered episodes", async () => {
     const root = await makeTemporaryRoot("deepwrite-folder-script-create-");
     const store = new FolderCatalogStore({
       userDataPath: join(root, "user-data"),
@@ -680,6 +927,7 @@ describe("FolderCatalogStore", () => {
       bookType: "script",
       documents: [
         { id: "character_design", title: "人物设计" },
+        { id: "worldbuilding", title: "世界观" },
         { id: "plot_design", title: "剧情设计" },
         { id: "intro_design", title: "导语设计" },
         { id: "plot_refine", title: "剧情细化" },
@@ -690,6 +938,9 @@ describe("FolderCatalogStore", () => {
         sections: [{ id: "episode-1", title: "第一集" }]
       }
     });
+    expect(
+      created.resource.plotStages.find(({ id }) => id === "worldbuilding")
+    ).toMatchObject({ enabled: false });
     expect(
       created.resource.documents.some(({ id }) => id === "intro_design")
     ).toBe(true);
@@ -725,6 +976,7 @@ describe("FolderCatalogStore", () => {
     expect(manifest.bookType).toBe("script");
     expect(manifest.documents.map(({ id }) => id)).toEqual([
       "character_design",
+      "worldbuilding",
       "plot_design",
       "intro_design",
       "plot_refine",
@@ -1244,7 +1496,7 @@ describe("FolderCatalogStore", () => {
     expect(imported.projectDirectory).toBe(
       join(await realpath(parentDirectory), "旧版雨夜来信")
     );
-    expect(imported.resource.documents).toHaveLength(7);
+    expect(imported.resource.documents).toHaveLength(8);
     expect(
       imported.resource.draft.sections.find(({ id }) => id === "section-1")
         ?.body.content
@@ -1263,7 +1515,7 @@ describe("FolderCatalogStore", () => {
         }>;
       };
     };
-    expect(manifest.schemaVersion).toBe(3);
+    expect(manifest.schemaVersion).toBe(4);
     expect(manifest.kind).toBe("deepwrite.book");
     expect(manifest.documents.some(({ id }) => id === "draft")).toBe(false);
     const firstSection = manifest.draft.sections.find(({ id }) => id === "section-1")!;
@@ -2456,7 +2708,7 @@ describe("FolderCatalogStore", () => {
     expect(
       opened.resource.documents.find(({ id }) => id === "notes")
     ).toMatchObject({ id: "notes", content: "同名普通文档" });
-    expect(opened.resource.plotStages).toHaveLength(5);
+    expect(opened.resource.plotStages).toHaveLength(6);
     const openedSection = opened.resource.draft.sections.find(
       ({ id }) => id === "section-1"
     );
@@ -2484,7 +2736,7 @@ describe("FolderCatalogStore", () => {
         }>;
       };
     };
-    expect(migratedManifest).toMatchObject({ schemaVersion: 3, revision: 4 });
+    expect(migratedManifest).toMatchObject({ schemaVersion: 4, revision: 4 });
     const migratedSection = migratedManifest.draft.sections.find(
       ({ id }) => id === "section-1"
     )!;

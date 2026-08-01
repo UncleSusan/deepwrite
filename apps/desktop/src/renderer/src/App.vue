@@ -55,6 +55,7 @@ import type {
   ModelSettingsInput,
   ModelUsageDashboard,
   ModelUsageQueryInput,
+  CharacterStructureMutation,
   PlotStructureMutation,
   ShortManuscriptExportFormat,
   ShortWorkspaceAgentId,
@@ -108,6 +109,7 @@ import CreateLongPlotPointDialog from "./components/CreateLongPlotPointDialog.vu
 import CreateLongVolumeDialog from "./components/CreateLongVolumeDialog.vue";
 import DeleteExpertSectionDialog from "./components/DeleteExpertSectionDialog.vue";
 import ExportShortManuscriptDialog from "./components/ExportShortManuscriptDialog.vue";
+import CharacterItemDialog from "./components/CharacterItemDialog.vue";
 import LibraryProjectDialog from "./components/LibraryProjectDialog.vue";
 import LibraryGroupDialog from "./components/LibraryGroupDialog.vue";
 import LibraryRemovalDialog from "./components/LibraryRemovalDialog.vue";
@@ -469,6 +471,12 @@ const subagentAuthoring = useSubagentAuthoring({
 const bookDialogMode = ref<BookResourceDialogMode | null>(null);
 const activeBook = ref<ResourceTreeNode | null>(null);
 const plotStructureBookId = ref<string | null>(null);
+const characterItemDialog = ref<{
+  mode: "create" | "rename" | "delete";
+  bookId: string;
+  itemId?: string;
+  title: string;
+} | null>(null);
 const catalogSnapshot = ref<CatalogSnapshot | null>(null);
 const catalogLoading = ref(false);
 const catalogMutationPending = ref(false);
@@ -3327,6 +3335,101 @@ const activeExpertSectionTabs = computed(() => {
   }));
 });
 const activeExpertSectionId = computed(() => activeDocument.value.expertSectionId);
+const activeCharacterItemTabs = computed(() => {
+  const document = activeDocument.value;
+  if (
+    document.domain !== "creation" ||
+    document.stageId !== "character_design" ||
+    (document.workspaceType !== "short" && document.workspaceType !== "script") ||
+    !document.workspaceId
+  ) {
+    return [] as { id: string; title: string }[];
+  }
+  const book = catalogBook(document.workspaceId);
+  if (!book || book.characterStructure.format !== "list") {
+    return [] as { id: string; title: string }[];
+  }
+  const overview = documents.value.find(
+    (candidate) =>
+      candidate.workspaceId === book.id &&
+      candidate.stageId === "character_design" &&
+      candidate.characterFileKind === "overview"
+  );
+  const items = documents.value
+    .filter(
+      (candidate) =>
+        candidate.workspaceId === book.id &&
+        candidate.stageId === "character_design" &&
+        candidate.characterFileKind === "item"
+    )
+    .sort(
+      (left, right) =>
+        (left.characterItemOrder ?? 0) - (right.characterItemOrder ?? 0)
+    );
+  return [
+    ...(overview ? [{ id: overview.id, title: "概览" }] : []),
+    ...items.map((item) => ({ id: item.id, title: item.title }))
+  ];
+});
+const activeEditorSectionTabs = computed(() =>
+  activeCharacterItemTabs.value.length
+    ? activeCharacterItemTabs.value
+    : activeExpertSectionTabs.value
+);
+const activeEditorSectionId = computed(() =>
+  activeCharacterItemTabs.value.length
+    ? activeDocument.value.id
+    : activeExpertSectionId.value
+);
+const editorShowsCharacterItemTabs = computed(
+  () => activeCharacterItemTabs.value.length > 0
+);
+const editorShowsExpertSectionTabs = computed(
+  () =>
+    !editorShowsCharacterItemTabs.value &&
+    activeExpertSectionTabs.value.length > 0 &&
+    activeDocument.value.workspaceType === "short" &&
+    activeDocument.value.stageId === "draft"
+);
+const showEditorDeleteSection = computed(
+  () =>
+    editorShowsCharacterItemTabs.value || editorShowsExpertSectionTabs.value
+);
+const canCreateEditorSection = computed(() => {
+  if (editorShowsCharacterItemTabs.value) {
+    return (
+      activeDocument.value.workspaceType === "short" ||
+      activeDocument.value.workspaceType === "script"
+    );
+  }
+  return editorShowsExpertSectionTabs.value;
+});
+const canDeleteEditorSection = computed(() => {
+  if (editorShowsCharacterItemTabs.value) {
+    return (
+      activeDocument.value.characterFileKind === "item" &&
+      Boolean(activeDocument.value.characterItemId)
+    );
+  }
+  if (editorShowsExpertSectionTabs.value) {
+    const directory = draftDirectoryForResourceId(selectedResourceId.value);
+    return (directory?.sections.length ?? 0) > 1;
+  }
+  return false;
+});
+const editorSectionTabsLabel = computed(() =>
+  editorShowsCharacterItemTabs.value
+    ? "人物条目"
+    : undefined
+);
+const editorCreateSectionLabel = computed(() =>
+  editorShowsCharacterItemTabs.value ? "新建人物条目" : undefined
+);
+const editorDeleteSectionLabel = computed(() => {
+  if (editorShowsCharacterItemTabs.value) return "删除当前人物条目";
+  if (editorShowsExpertSectionTabs.value) return "删除当前小节";
+  return undefined;
+});
 const activePromptDocument = computed<WorkspaceDocument>(() => {
   return (
     promptDocumentForResourceId(activeCreationResourceId.value) ??
@@ -4333,7 +4436,7 @@ async function preparePlotStructureMutation(bookId: string): Promise<boolean> {
       false
     );
     if (!saved) {
-      uiMessage.warning("存在无法安全保存的草稿，剧情结构未变更。");
+      uiMessage.warning("存在无法安全保存的草稿，结构未变更。");
       return false;
     }
   }
@@ -4344,10 +4447,10 @@ async function openBookDialog(
   mode: BookResourceDialogMode,
   book: ResourceTreeNode
 ): Promise<void> {
-  if (mode === "manage-plot-structure") {
+  if (mode === "manage-structure") {
     if (!(await preparePlotStructureMutation(book.id))) return;
     if (catalogBook(book.id)?.projectRevision === undefined) {
-      uiMessage.error("当前作品缺少项目版本，无法安全管理剧情结构。");
+      uiMessage.error("当前作品缺少项目版本，无法安全管理结构。");
       return;
     }
     activeBook.value = book;
@@ -4357,6 +4460,213 @@ async function openBookDialog(
   }
   activeBook.value = book;
   bookDialogMode.value = mode;
+}
+
+async function mutateCharacterStructure(
+  mutation: CharacterStructureMutation,
+  completion: PlotStructureMutationCompletion,
+  bookIdOverride?: string
+): Promise<void> {
+  if (!window.deepwrite || catalogMutationPending.value) {
+    completion.fail();
+    return;
+  }
+  const bookId = bookIdOverride ?? plotStructureBookId.value;
+  const book = bookId ? catalogBook(bookId) : undefined;
+  if (!bookId || !book || !(await preparePlotStructureMutation(bookId))) {
+    completion.fail();
+    return;
+  }
+  if (book.projectRevision === undefined) {
+    completion.fail();
+    uiMessage.error("当前作品缺少项目版本，无法安全变更人物结构。");
+    return;
+  }
+  catalogMutationPending.value = true;
+  try {
+    await window.deepwrite.catalog.mutateCharacterStructure({
+      bookId,
+      baseProjectRevision: book.projectRevision,
+      mutation
+    });
+    applyCatalogSnapshot(await window.deepwrite.catalog.snapshot());
+    completion.succeed();
+    uiMessage.success(
+      mutation.type === "setFormat"
+        ? mutation.format === "list"
+          ? "人物结构已转换为条目样式"
+          : "人物结构已转换为文本样式"
+        : mutation.type === "createItem"
+          ? "人物条目已创建"
+          : mutation.type === "updateItem"
+            ? "人物条目名称已更新"
+            : mutation.type === "moveItem"
+              ? "人物条目顺序已更新"
+              : "人物条目已删除"
+    );
+  } catch (error) {
+    completion.fail();
+    uiMessage.error(error instanceof Error ? error.message : "人物结构变更失败。");
+  } finally {
+    catalogMutationPending.value = false;
+  }
+}
+
+function characterBookIdForNode(node: ResourceTreeNode): string | undefined {
+  return documentForResourceId(node.id)?.workspaceId;
+}
+
+function requestCreateCharacterItem(node: ResourceTreeNode): void {
+  const bookId = characterBookIdForNode(node);
+  if (!bookId) {
+    uiMessage.warning("无法确定人物条目所属作品。");
+    return;
+  }
+  characterItemDialog.value = { mode: "create", bookId, title: "" };
+}
+
+function findCharacterDirectoryNode(
+  resourceId: string
+): ResourceTreeNode | undefined {
+  const visit = (
+    nodes: readonly ResourceTreeNode[],
+    parent?: ResourceTreeNode
+  ): ResourceTreeNode | undefined => {
+    for (const node of nodes) {
+      if (node.id === resourceId) {
+        if (node.characterDirectory) return node;
+        if (parent?.characterDirectory) return parent;
+        return undefined;
+      }
+      const nested = visit(node.children ?? [], node);
+      if (nested) return nested;
+    }
+    return undefined;
+  };
+  return visit(resourceTreeSections.value.flatMap((section) => section.nodes));
+}
+
+function selectCharacterItemTab(documentId: string): void {
+  if (!activeCharacterItemTabs.value.some((tab) => tab.id === documentId)) {
+    uiMessage.warning("该人物条目已不存在，列表已刷新");
+    return;
+  }
+  const resourceId = resourceIdForDocumentId(documentId) ?? documentId;
+  selectedResourceId.value = resourceId;
+  activeCreationResourceId.value = resourceId;
+}
+
+function addCharacterItemFromEditor(): void {
+  const directory =
+    findCharacterDirectoryNode(selectedResourceId.value) ??
+    (activeDocument.value.workspaceId
+      ? findCharacterDirectoryNode(
+          resourceIdForDocumentId(activeDocument.value.id) ??
+            activeDocument.value.id
+        )
+      : undefined);
+  if (!directory) {
+    uiMessage.warning("无法确定人物目录，暂时不能新建人物条目。");
+    return;
+  }
+  requestCreateCharacterItem(directory);
+}
+
+function deleteCharacterItemFromEditor(): void {
+  const document = activeDocument.value;
+  if (
+    document.characterFileKind !== "item" ||
+    !document.characterItemId ||
+    !document.workspaceId
+  ) {
+    uiMessage.warning("请先选择一个人物条目。");
+    return;
+  }
+  characterItemDialog.value = {
+    mode: "delete",
+    bookId: document.workspaceId,
+    itemId: document.characterItemId,
+    title: document.title
+  };
+}
+
+function selectEditorSection(sectionId: string): void {
+  if (editorShowsCharacterItemTabs.value) {
+    selectCharacterItemTab(sectionId);
+    return;
+  }
+  selectExpertSection(sectionId);
+}
+
+function createEditorSection(): void {
+  if (editorShowsCharacterItemTabs.value) {
+    addCharacterItemFromEditor();
+    return;
+  }
+  void addExpertSectionFromEditor();
+}
+
+function deleteEditorSection(): void {
+  if (editorShowsCharacterItemTabs.value) {
+    deleteCharacterItemFromEditor();
+    return;
+  }
+  removeExpertSectionFromEditor();
+}
+
+function handleCharacterItemAction(
+  action: "rename" | "move-up" | "move-down" | "delete",
+  node: ResourceTreeNode
+): void {
+  const bookId = characterBookIdForNode(node);
+  const itemId = node.characterItemId;
+  if (!bookId || !itemId) {
+    uiMessage.warning("无法确定人物条目。");
+    return;
+  }
+  if (action === "move-up" || action === "move-down") {
+    void mutateCharacterStructure(
+      {
+        type: "moveItem",
+        itemId,
+        direction: action === "move-up" ? "up" : "down"
+      },
+      { succeed: () => undefined, fail: () => undefined },
+      bookId
+    );
+    return;
+  }
+  characterItemDialog.value = {
+    mode: action,
+    bookId,
+    itemId,
+    title: node.label
+  };
+}
+
+function closeCharacterItemDialog(): void {
+  if (!catalogMutationPending.value) characterItemDialog.value = null;
+}
+
+function submitCharacterItemDialog(title: string): void {
+  const target = characterItemDialog.value;
+  if (!target) return;
+  const mutation: CharacterStructureMutation =
+    target.mode === "create"
+      ? { type: "createItem", title }
+      : target.mode === "rename"
+        ? { type: "updateItem", itemId: target.itemId!, title }
+        : { type: "deleteItem", itemId: target.itemId! };
+  void mutateCharacterStructure(
+    mutation,
+    {
+      succeed: () => {
+        characterItemDialog.value = null;
+      },
+      fail: () => undefined
+    },
+    target.bookId
+  );
 }
 
 function closeBookDialog(): void {
@@ -6732,6 +7042,25 @@ async function addExpertSectionFromEditor(): Promise<void> {
   await addExpertSection(draftNode);
 }
 
+function removeExpertSectionFromEditor(): void {
+  const directory = draftDirectoryForResourceId(selectedResourceId.value);
+  if (!directory || directory.workspaceType !== "short") return;
+  const sectionId = activeExpertSectionId.value;
+  if (!sectionId) {
+    uiMessage.warning("请先选择一个小节");
+    return;
+  }
+  const draftNode = resourceNode(directory.id);
+  const sectionNode = draftNode?.children?.find(
+    (child) => child.expertSectionId === sectionId
+  );
+  if (!sectionNode) {
+    uiMessage.warning("该小节已经不存在，列表已刷新");
+    return;
+  }
+  requestRemoveExpertSection(sectionNode);
+}
+
 function requestRemoveExpertSection(node: ResourceTreeNode): void {
   if (!node.expertSectionId) return;
   const directory = draftDirectoryForResourceId(node.id);
@@ -8546,6 +8875,23 @@ function findPendingDraftSectionCreationForProvisional(
   );
 }
 
+function findPendingCharacterCreationForProvisional(
+  conversation: AgentConversationController,
+  runId: string,
+  itemId: string
+): AgentEditProposal | undefined {
+  return conversation.listEditProposals(runId).find((proposal) => {
+    const mutation = proposal.characterStructureTarget?.mutation;
+    return Boolean(
+      mutation?.type === "createItem" &&
+        mutation.itemId === itemId &&
+        (proposal.status === "pending" ||
+          proposal.status === "accepting" ||
+          proposal.status === "error")
+    );
+  });
+}
+
 function remapProvisionalExpertSectionFileProposals(
   conversation: AgentConversationController,
   runId: string,
@@ -8703,6 +9049,7 @@ function autoApproveEditPriority(
   const proposal = conversation.getEditProposal(runId, proposalId);
   if (!proposal) return 2;
   if (proposal.draftSectionCreationTarget) return 0;
+  if (proposal.characterStructureTarget?.mutation.type === "createItem") return 0;
   if (
     proposal.longWorldbuildingTarget?.file.operation === "create"
   ) return 0;
@@ -8726,6 +9073,7 @@ function autoApproveEditPriority(
     return 2;
   }
   if (proposal.provisionalExpertSection) return 1;
+  if (proposal.provisionalCharacterItemId) return 1;
   return 2;
 }
 
@@ -8915,6 +9263,7 @@ function queueAgentEdit(
   ) {
     return;
   }
+
   const key = agentEditQueueKey(sessionId, runId, proposalId);
   const existingQueued = queuedAgentEdits.get(key);
   if (
@@ -8980,6 +9329,85 @@ function queueAgentEdit(
   }
 }
 
+async function acceptCharacterStructureProposal(
+  conversation: AgentConversationController,
+  request: AgentEditReviewRequest,
+  proposal: AgentEditProposal,
+  automatic: boolean,
+  reserved = false
+): Promise<void> {
+  if (
+    (proposal.status === "accepting" && !reserved) ||
+    proposal.status === "accepted" ||
+    proposal.status === "rejected" ||
+    proposal.status === "conflict"
+  ) return;
+  const target = proposal.characterStructureTarget;
+  const book = catalogBook(proposal.workspaceId);
+  if (!target || !book || book.projectRevision === undefined || !window.deepwrite) {
+    const message = "人物结构目标已不可用，无法应用本次变更。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  const hasAcceptedSameRunPredecessor = conversation
+    .listEditProposals(request.runId)
+    .some(
+      (candidate) =>
+        candidate.id !== proposal.id &&
+        candidate.workspaceId === proposal.workspaceId &&
+        candidate.status === "accepted" &&
+        candidate.createdAt <= proposal.createdAt
+    );
+  if (
+    target.baseProjectRevision !== undefined &&
+    book.projectRevision !== target.baseProjectRevision &&
+    !hasAcceptedSameRunPredecessor
+  ) {
+    const message = "人物结构版本已变化，未接受本次智能体修改。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "conflict",
+      statusMessage: message
+    });
+    uiMessage.warning(message);
+    return;
+  }
+  conversation.updateEditProposal(request.runId, request.proposalId, {
+    status: "accepting",
+    statusMessage: automatic ? "正在自动保存人物结构…" : "正在保存人物结构…"
+  });
+  setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
+  try {
+    await window.deepwrite.catalog.mutateCharacterStructure({
+      bookId: proposal.workspaceId,
+      baseProjectRevision: book.projectRevision,
+      mutation: target.mutation
+    });
+    applyCatalogSnapshot(await window.deepwrite.catalog.snapshot());
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "accepted",
+      proposedText: undefined,
+      statusMessage: automatic
+        ? "已自动批准并保存人物结构变更。"
+        : "人物结构变更已保存到本地。"
+    });
+    if (!automatic) uiMessage.success("人物结构变更已保存");
+  } catch (error) {
+    await loadCatalogSnapshot();
+    const message = error instanceof Error ? error.message : "人物结构变更保存失败。";
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: isCatalogConflict(error) ? "conflict" : "error",
+      statusMessage: message
+    });
+    uiMessage.error(message);
+  } finally {
+    setAgentEditWorkspaceAccepting(proposal.workspaceId, false);
+  }
+}
+
 function resumeRecoveredAutomaticAgentEdits(
   conversationsToScan: readonly AgentConversationController[] =
     allConversations()
@@ -9024,6 +9452,96 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     ) ?? "request-approval";
 
   const mutationTarget = event.payload.mutationTarget;
+  if (mutationTarget?.kind === "character-structure") {
+    const book = catalogBook(event.payload.workspaceId);
+    if (!book || book.characterStructure.format !== "list") {
+      const message = "人物结构已变化，本次条目操作未进入审阅。";
+      sourceConversation.markToolConflict(event.payload.runId, event.payload.toolCallId, message);
+      uiMessage.warning(message);
+      return;
+    }
+    const source = mutationTarget.mutation;
+    const mutation: CharacterStructureMutation =
+      source.type === "createItem"
+        ? { type: "createItem", title: source.title, itemId: source.provisionalItemId }
+        : source.type === "updateItem"
+          ? { type: "updateItem", itemId: source.itemId, title: source.title }
+          : source.type === "moveItem"
+            ? { type: "moveItem", itemId: source.itemId, direction: source.direction }
+            : { type: "deleteItem", itemId: source.itemId };
+    const documentId = `character-structure:${event.payload.toolCallId}`;
+    const proposalId = agentEditProposalId(
+      event.payload.runId,
+      event.payload.workspaceId,
+      "character_design",
+      documentId
+    );
+    if (sourceConversation.getEditProposal(event.payload.runId, proposalId)) return;
+    const beforeText =
+      source.type === "deleteItem"
+        ? source.deletedText
+        : source.type === "updateItem"
+          ? source.previousTitle
+          : "";
+    const afterText =
+      source.type === "deleteItem"
+        ? ""
+        : source.type === "updateItem"
+          ? source.title
+          : source.type === "createItem"
+            ? source.title
+            : event.payload.text;
+    const diff = buildAgentTextDiff(beforeText, afterText);
+    const proposal: AgentEditProposal = {
+      id: proposalId,
+      laneId: proposalId,
+      generation: 1,
+      approvalMode: runApprovalMode,
+      sourceBaseRevision: event.payload.baseRevision,
+      runId: event.payload.runId,
+      workspaceId: event.payload.workspaceId,
+      stageId: "character_design",
+      documentId,
+      title:
+        source.type === "createItem"
+          ? `创建人物条目：${source.title}`
+          : source.type === "updateItem"
+            ? `修改人物名称：${source.previousTitle} → ${source.title}`
+            : source.type === "moveItem"
+              ? `${source.direction === "up" ? "上移" : "下移"}人物条目：${source.title}`
+              : `删除人物条目：${source.title}`,
+      summary: event.payload.summary,
+      status: "pending",
+      baseRevision: event.payload.baseRevision,
+      proposedRevision: createShortWorkspaceContentRevision(afterText),
+      proposedText: afterText,
+      toolCallIds: [event.payload.toolCallId],
+      additions: diff.additions,
+      deletions: diff.deletions,
+      hunks: diff.hunks,
+      ...(diff.truncated ? { truncated: true } : {}),
+      createdAt: event.timestamp,
+      updatedAt: event.timestamp,
+      characterStructureTarget: {
+        mutation,
+        ...(book.projectRevision === undefined
+          ? {}
+          : { baseProjectRevision: book.projectRevision })
+      }
+    };
+    sourceConversation.upsertEditProposal(event.payload.runId, proposal);
+    if (runApprovalMode === "auto-approve") {
+      queueAgentEdit(
+        sourceConversation,
+        event.payload.sessionId,
+        event.payload.runId,
+        proposalId,
+        true,
+        true
+      );
+    }
+    return;
+  }
   if (mutationTarget?.kind === "expert-draft-section-creation") {
     const directory = catalogProjection.value?.draftDirectories.find(
       (candidate) => candidate.workspaceId === event.payload.workspaceId
@@ -9361,11 +9879,17 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
   }
 
   const expectedDraftFileKind =
-    mutationTarget?.fileKind === "characterState"
+    mutationTarget?.kind === "expert-draft-file" && mutationTarget.fileKind === "characterState"
       ? "character-state"
-      : mutationTarget?.fileKind;
+      : mutationTarget?.kind === "expert-draft-file"
+        ? mutationTarget.fileKind
+        : undefined;
   const target = liveWorkspaceDocuments.value.find((document) =>
-    mutationTarget
+    mutationTarget?.kind === "character-file"
+      ? document.catalogDocumentId === mutationTarget.documentId &&
+        document.workspaceId === event.payload.workspaceId &&
+        document.stageId === "character_design"
+      : mutationTarget?.kind === "expert-draft-file"
       ? document.id === mutationTarget.documentId &&
         document.workspaceId === event.payload.workspaceId &&
         document.stageId === "draft" &&
@@ -9693,6 +10217,137 @@ function stageAgentEditProposal(event: WorkspaceEditorMutationEvent): void {
     };
     sourceConversation.upsertEditProposal(event.payload.runId, proposal);
     if (!noChanges && runApprovalMode === "auto-approve") {
+      queueAgentEdit(
+        sourceConversation,
+        event.payload.sessionId,
+        event.payload.runId,
+        proposal.id,
+        true,
+        true
+      );
+    }
+    return;
+  }
+
+  if (
+    (!target || target.readOnly) &&
+    mutationTarget?.kind === "character-file" &&
+    mutationTarget.itemId
+  ) {
+    const creation = findPendingCharacterCreationForProvisional(
+      sourceConversation,
+      event.payload.runId,
+      mutationTarget.itemId
+    );
+    const creationMutation = creation?.characterStructureTarget?.mutation;
+    if (!creation || creationMutation?.type !== "createItem") {
+      const message = "目标人物条目尚未创建或已失效，本次智能体变更未进入审阅。";
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        message
+      );
+      uiMessage.warning(message);
+      return;
+    }
+    const futureDocumentId = [
+      "catalog",
+      "book-document",
+      encodeURIComponent(event.payload.workspaceId),
+      encodeURIComponent(mutationTarget.itemId)
+    ].join(":");
+    const laneId = agentEditProposalId(
+      event.payload.runId,
+      event.payload.workspaceId,
+      event.payload.stageId,
+      futureDocumentId
+    );
+    const existing = latestProposalForLane(
+      sourceConversation,
+      event.payload.runId,
+      laneId
+    );
+    if (existing?.toolCallIds.includes(event.payload.toolCallId)) return;
+    const blockedMessage = blockedAgentEditLaneMessage(existing);
+    if (blockedMessage) {
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        blockedMessage
+      );
+      return;
+    }
+    const baseText = existing?.proposedText ?? "";
+    if (
+      event.payload.baseRevision !==
+      expectedMutationBaseRevision(existing, baseText)
+    ) {
+      const message = "待创建人物条目的文稿版本已变化，本次智能体变更未进入审阅。";
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        message
+      );
+      uiMessage.warning(message);
+      return;
+    }
+    const resolvedMutation = resolveAgentEditorMutationText(
+      baseText,
+      event.payload
+    );
+    if ("error" in resolvedMutation) {
+      sourceConversation.markToolConflict(
+        event.payload.runId,
+        event.payload.toolCallId,
+        resolvedMutation.error
+      );
+      uiMessage.warning(resolvedMutation.error);
+      return;
+    }
+    const proposedText = resolvedMutation.text;
+    const proposedRevision = createShortWorkspaceContentRevision(proposedText);
+    const diff = buildAgentTextDiff(baseText, proposedText);
+    const identity = resolveAgentEditProposalGeneration(laneId, existing);
+    const proposal: AgentEditProposal = {
+      id: identity.id,
+      laneId,
+      generation: identity.generation,
+      approvalMode: runApprovalMode,
+      sourceBaseRevision: event.payload.baseRevision,
+      ...(identity.predecessorProposalId
+        ? { predecessorProposalId: identity.predecessorProposalId }
+        : {}),
+      runId: event.payload.runId,
+      workspaceId: event.payload.workspaceId,
+      stageId: event.payload.stageId,
+      documentId: futureDocumentId,
+      title: creationMutation.title,
+      summary: event.payload.summary,
+      status: "pending",
+      baseRevision: identity.coalescesExisting
+        ? existing!.baseRevision
+        : existing?.proposedRevision ?? event.payload.baseRevision,
+      proposedRevision,
+      proposedText,
+      toolCallIds: [
+        ...new Set([
+          ...(identity.coalescesExisting ? existing?.toolCallIds ?? [] : []),
+          event.payload.toolCallId
+        ])
+      ],
+      additions: diff.additions,
+      deletions: diff.deletions,
+      hunks: diff.hunks,
+      ...(diff.truncated ? { truncated: true } : {}),
+      createdAt:
+        identity.coalescesExisting && existing
+          ? existing.createdAt
+          : event.timestamp,
+      updatedAt: event.timestamp,
+      provisionalCharacterItemId: mutationTarget.itemId
+    };
+    sourceConversation.upsertEditProposal(event.payload.runId, proposal);
+    if (runApprovalMode === "auto-approve") {
       queueAgentEdit(
         sourceConversation,
         event.payload.sessionId,
@@ -11903,6 +12558,17 @@ async function applyAgentEdit(
     return;
   }
 
+  if (proposal.characterStructureTarget) {
+    await acceptCharacterStructureProposal(
+      conversation,
+      request,
+      proposal,
+      automatic,
+      reserved
+    );
+    return;
+  }
+
   if (proposal.draftSectionCreationTarget) {
     await acceptDraftSectionCreationProposal(
       conversation,
@@ -12012,6 +12678,51 @@ async function applyAgentEdit(
     if (proposal.provisionalExpertSection) {
       const message =
         "目标空白章节尚未落盘，无法写入正文。请先接受章节创建，或重新生成。";
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        status: "conflict",
+        statusMessage: message
+      });
+      uiMessage.warning(message);
+      return;
+    }
+  }
+
+  if (proposal.provisionalCharacterItemId) {
+    const creation = findPendingCharacterCreationForProvisional(
+      conversation,
+      request.runId,
+      proposal.provisionalCharacterItemId
+    );
+    if (creation?.status === "error" || creation?.status === "accepting") {
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        status: "pending",
+        statusMessage:
+          creation.status === "error"
+            ? "人物条目创建结果尚未确认，正文内容已保留；请先重试创建操作。"
+            : "正在等待关联人物条目创建完成…"
+      });
+      return;
+    }
+    if (creation) {
+      await acceptCharacterStructureProposal(
+        conversation,
+        {
+          runId: request.runId,
+          proposalId: creation.id,
+          decision: "accept"
+        },
+        creation,
+        automatic
+      );
+    }
+    const createdTarget = liveWorkspaceDocuments.value.find(
+      (document) =>
+        document.workspaceId === proposal.workspaceId &&
+        document.catalogDocumentId === proposal.provisionalCharacterItemId
+    );
+    if (!createdTarget) {
+      const message =
+        "目标人物条目尚未落盘，无法写入正文。请先接受人物条目创建，或重新生成。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "conflict",
         statusMessage: message
@@ -13272,6 +13983,8 @@ onBeforeUnmount(() => {
         @long-book-action="handleLongBookAction"
         @create-expert-section="addExpertSection"
         @remove-expert-section="requestRemoveExpertSection"
+        @create-character-item="requestCreateCharacterItem"
+        @character-item-action="handleCharacterItemAction"
       />
 
       <main
@@ -13651,18 +14364,21 @@ onBeforeUnmount(() => {
         :saving="editorSaving"
         :auto-save-enabled="editorAutoSaveEnabled"
         :bound-to-current-book="activeLibraryBoundToBook"
-        :section-tabs="activeExpertSectionTabs"
-        :active-section-id="activeExpertSectionId"
-        :can-create-section="
-          activeDocument.workspaceType === 'short' &&
-          activeDocument.stageId === 'draft'
-        "
+        :section-tabs="activeEditorSectionTabs"
+        :active-section-id="activeEditorSectionId"
+        :section-tabs-label="editorSectionTabsLabel"
+        :can-create-section="canCreateEditorSection"
+        :create-section-label="editorCreateSectionLabel"
+        :show-delete-section="showEditorDeleteSection"
+        :can-delete-section="canDeleteEditorSection"
+        :delete-section-label="editorDeleteSectionLabel"
         @collapse="rightCollapsed = true"
         @save="applyDocument"
         @live-change="handleLiveDocumentChange"
         @insert-selection="insertEditorSelectionReference"
-        @select-section="selectExpertSection"
-        @create-section="addExpertSectionFromEditor"
+        @select-section="selectEditorSection"
+        @create-section="createEditorSection"
+        @delete-section="deleteEditorSection"
         @select-draft-file="selectDraftFile"
       />
 
@@ -13717,6 +14433,15 @@ onBeforeUnmount(() => {
       :pending="catalogMutationPending"
       @close="closeBookDialog"
       @mutation="mutatePlotStructure"
+      @character-mutation="mutateCharacterStructure"
+    />
+    <CharacterItemDialog
+      :open="Boolean(characterItemDialog)"
+      :mode="characterItemDialog?.mode ?? 'create'"
+      :title="characterItemDialog?.title ?? ''"
+      :pending="catalogMutationPending"
+      @close="closeCharacterItemDialog"
+      @submit="submitCharacterItemDialog"
     />
     <ExportShortManuscriptDialog
       :open="Boolean(exportBookTarget)"

@@ -237,6 +237,9 @@ function createDeferredApi(): {
       mutatePlotStructure: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
+      mutateCharacterStructure: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
       createDraftSection: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
@@ -3140,7 +3143,7 @@ describe("agent conversation controller", () => {
     controller.dispose();
   });
 
-  it("builds five text stages plus the physical expert-draft directory", async () => {
+  it("builds the default text stages plus the physical expert-draft directory", async () => {
     for (const [index, activeStageId] of SHORT_WORKSPACE_STAGE_IDS.entries()) {
       const deferred = createDeferredApi();
       const controller = useAgentConversation({

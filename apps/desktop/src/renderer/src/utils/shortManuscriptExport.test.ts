@@ -22,6 +22,7 @@ function fixtureBook(): ShortBook {
     status: "editing",
     linkedMaterialIdsByKind: { character: [], gimmick: [], plot: [], draft: [], other: [] },
     linkedSkillIdsByKind: { general: [], plot: [], style: [], other: [] },
+    characterStructure: { format: "text" },
     plotStages: createDefaultBookPlotStages({ allEnabled: true }),
     documents: [],
     draft,

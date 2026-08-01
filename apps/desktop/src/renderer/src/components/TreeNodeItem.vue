@@ -33,6 +33,8 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
+  createCharacterItem: [node: ResourceTreeNode];
+  characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
 }>();
 
 const open = ref(
@@ -87,6 +89,14 @@ const isExpertDraftSection = computed(
     props.node.shortAgentId === "expert_section_writer" &&
     Boolean(props.node.expertSectionId)
 );
+const isCharacterDirectory = computed(
+  () => props.resourceDomain === "creation" && props.node.characterDirectory === true
+);
+const isCharacterItem = computed(
+  () =>
+    props.resourceDomain === "creation" &&
+    Boolean(props.node.characterItemId)
+);
 const hasActionMenu = computed(
   () =>
     Boolean(props.pinnable) ||
@@ -94,12 +104,14 @@ const hasActionMenu = computed(
     hasGroupAction.value ||
     hasBookAction.value ||
     hasLongBookAction.value ||
-    isExpertDraftSection.value
+    isExpertDraftSection.value ||
+    isCharacterItem.value
 );
 const hasNodeAction = computed(
   () =>
     hasActionMenu.value ||
-    isExpertDraftParent.value
+    isExpertDraftParent.value ||
+    isCharacterDirectory.value
 );
 const draftUnitLabel = computed(() =>
   props.node.workspaceType === "script" ? "剧集" : "小节"
@@ -203,6 +215,17 @@ function removeExpertSection(): void {
   emit("removeExpertSection", props.node);
 }
 
+function createCharacterItem(): void {
+  emit("select", props.node);
+  emit("createCharacterItem", props.node);
+}
+
+function characterItemAction(action: "rename" | "move-up" | "move-down" | "delete"): void {
+  actionMenuOpen.value = false;
+  emit("select", props.node);
+  emit("characterItemAction", action, props.node);
+}
+
 function handleDocumentPointerDown(event: PointerEvent): void {
   if (!actionArea.value?.contains(event.target as Node)) {
     actionMenuOpen.value = false;
@@ -284,15 +307,15 @@ onBeforeUnmount(() => {
     </button>
 
     <div
-      v-if="isExpertDraftParent"
+      v-if="isExpertDraftParent || isCharacterDirectory"
       class="tree-node-action-area"
     >
       <button
         class="tree-node-action"
         type="button"
-        :aria-label="`在${node.label}末尾新建${draftUnitLabel}`"
-        :title="`新建${draftUnitLabel}`"
-        @click.stop="createExpertSection"
+        :aria-label="isCharacterDirectory ? '新建人物条目' : `在${node.label}末尾新建${draftUnitLabel}`"
+        :title="isCharacterDirectory ? '新建人物条目' : `新建${draftUnitLabel}`"
+        @click.stop="isCharacterDirectory ? createCharacterItem() : createExpertSection()"
       >
         <AppIcon name="plus" :size="16" />
       </button>
@@ -336,6 +359,20 @@ onBeforeUnmount(() => {
           >
             <AppIcon name="trash" :size="16" />
             <span>删除{{ draftUnitLabel }}</span>
+          </button>
+        </template>
+        <template v-else-if="isCharacterItem">
+          <button class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="characterItemAction('rename')">
+            <AppIcon name="edit" :size="16" /><span>修改名称</span>
+          </button>
+          <button class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="characterItemAction('move-up')">
+            <span>↑</span><span>上移</span>
+          </button>
+          <button class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="characterItemAction('move-down')">
+            <span>↓</span><span>下移</span>
+          </button>
+          <button class="tree-node-action-menu-item is-danger" type="button" role="menuitem" @click.stop="characterItemAction('delete')">
+            <AppIcon name="trash" :size="16" /><span>删除人物条目</span>
           </button>
         </template>
         <template v-else-if="hasLongBookAction">
@@ -401,10 +438,10 @@ onBeforeUnmount(() => {
             class="tree-node-action-menu-item"
             type="button"
             role="menuitem"
-            @click.stop="openBookAction('manage-plot-structure')"
+            @click.stop="openBookAction('manage-structure')"
           >
             <AppIcon name="settings" :size="16" />
-            <span>剧情结构管理</span>
+            <span>结构管理</span>
           </button>
           <button
             class="tree-node-action-menu-item"
@@ -576,6 +613,8 @@ onBeforeUnmount(() => {
         @resource-node-action="emit('resourceNodeAction', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @remove-expert-section="emit('removeExpertSection', $event)"
+        @create-character-item="emit('createCharacterItem', $event)"
+        @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
       />
     </ul>
   </li>

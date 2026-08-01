@@ -222,9 +222,20 @@ export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1 = `你是 Deep
 - 没有完成正文与人物状态的必要写回工具调用，本小节不算完成。
 `;
 
-export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V7 =
+export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V8 =
   retiredPromptByReplacing(
     DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+    [
+      [
+        "- 改动会影响后续章节连贯性时，用 include 一并读取相关章节的 character_state，并在修改正文后同步更新受影响章节的人物状态。\n- 涉及具体人物设定时，先调用 list_characters 确认人物结构：文本样式可读整份人物设计；条目样式下，概览只是姓名与一句话索引，必须对本章/本次修订涉及的人物用 read_character 并指定 item_id 读取对应人物卡。不得只读概览或只调用 read_workspace_content（stage_id=character_design）就开始编写或修订。\n",
+        "- 改动会影响后续章节连贯性时，用 include 一并读取相关章节的 character_state，并在修改正文后同步更新受影响章节的人物状态。\n"
+      ]
+    ]
+  );
+
+export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V7 =
+  retiredPromptByReplacing(
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V8,
     [
       [
         "用户要求初始化正文、按剧情结构创建章节或批量创建空白章节时，先根据本轮「当前剧情结构配置」和用户需求，按需调用 read_workspace_content 读取相关剧情阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。",
@@ -298,8 +309,16 @@ export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4 =
     ]
   );
 
-export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5 =
+export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V6 =
   retiredPromptByReplacing(DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT, [
+    [
+      "5. 用户点名技能或文风方法时调用 load_skill；确需参考正文素材时，调用 query_linked_material_entries 检索并读取相关条目。\n\n人物设定：\n- 编写或修订前先调用 list_characters 确认人物结构。\n- 文本样式：可用 read_character 或 read_workspace_content（stage_id=character_design）读取整份人物设计。\n- 条目样式：概览只维护姓名、定位与一句话摘要，不是完整人设。对本节出场或影响情节的人物，必须用 read_character 并指定 item_id 读取对应人物卡；不得只读概览或只读 character_design 阶段概览就开始编写。\n\n写作标准：",
+      "5. 用户点名技能或文风方法时调用 load_skill；确需参考正文素材时，调用 query_linked_material_entries 检索并读取相关条目。\n\n写作标准："
+    ]
+  ]);
+
+export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5 =
+  retiredPromptByReplacing(RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V6, [
     [
       "你与正文专家共用正文读写、改名和删除工具，但不包含批量创建章节；职责区别是：你一次只完成当前选中的这一个章节，不改动其它章节。",
       "你的工具和正文专家编写智能体完全一致，区别只在职责：你一次只完成当前选中的这一个章节，不改动其它章节。"
@@ -342,9 +361,20 @@ export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2 =
     ]
   ]);
 
-export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4 =
+export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5 =
   retiredPromptByReplacing(
     DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+    [
+      [
+        "- 改动会影响后续连续性时，一并读取相关剧集的 character_state，并在修改正文后同步更新受影响的人物状态。\n- 涉及具体人物设定时，先调用 list_characters 确认人物结构：文本样式可读整份人物设计；条目样式下，概览只是姓名与一句话索引，必须对本集/本次修订涉及的人物用 read_character 并指定 item_id 读取对应人物卡。不得只读概览或只调用 read_workspace_content（stage_id=character_design）就开始编写或修订。\n",
+        "- 改动会影响后续连续性时，一并读取相关剧集的 character_state，并在修改正文后同步更新受影响的人物状态。\n"
+      ]
+    ]
+  );
+
+export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4 =
+  retiredPromptByReplacing(
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5,
     [
       [
         "用户要求初始化正文、按剧情结构创建剧集或批量创建空白剧集时，先根据本轮「当前剧情结构配置」和用户需求，按需调用 read_workspace_content 读取相关剧情阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。",
@@ -410,8 +440,16 @@ export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1 =
     ]
   );
 
-export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4 =
+export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5 =
   retiredPromptByReplacing(DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT, [
+    [
+      "5. 用户点名技能或写作方法时调用 load_skill；确需参考剧本素材时，调用 query_linked_material_entries 检索并读取相关条目。\n\n人物设定：\n- 编写或修订前先调用 list_characters 确认人物结构。\n- 文本样式：可用 read_character 或 read_workspace_content（stage_id=character_design）读取整份人物设计。\n- 条目样式：概览只维护姓名、定位与一句话摘要，不是完整人设。对本集出场或影响情节的人物，必须用 read_character 并指定 item_id 读取对应人物卡；不得只读概览或只读 character_design 阶段概览就开始编写。\n\n写作标准：",
+      "5. 用户点名技能或写作方法时调用 load_skill；确需参考剧本素材时，调用 query_linked_material_entries 检索并读取相关条目。\n\n写作标准："
+    ]
+  ]);
+
+export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4 =
+  retiredPromptByReplacing(RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5, [
     [
       "你与剧本正文专家共用正文读写、改名和删除工具，但不包含批量创建剧集；职责区别是：你一次只完成当前选中的这一集，不改动其它剧集。",
       "你的工具和剧本正文专家编写智能体一致，区别只在职责：你一次只完成当前选中的这一集，不改动其它剧集。"
@@ -466,14 +504,16 @@ const RETIRED_SYSTEM_PROMPTS: Partial<
     RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4,
     RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5,
     RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V6,
-    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V7
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V7,
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V8
   ],
   expert_section_writer: [
     RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
     RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2,
     RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3,
     RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4,
-    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5
+    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5,
+    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V6
   ]
 };
 
@@ -485,13 +525,15 @@ const RETIRED_SCRIPT_SYSTEM_PROMPTS: Partial<
     RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1,
     RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2,
     RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3,
-    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4,
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5
   ],
   expert_section_writer: [
     RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
     RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2,
     RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3,
-    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4
+    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4,
+    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5
   ]
 };
 

@@ -3,10 +3,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import {
   isBuiltinCreativePlotStageId,
   type Book,
+  type BookCharacterFormat,
+  type CharacterStructureMutation,
   type PlotStructureMutation
 } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
+import PopupSelect, { type PopupSelectValue } from "./PopupSelect.vue";
 
 export interface PlotStructureMutationCompletion {
   succeed(): void;
@@ -28,6 +31,10 @@ const emit = defineEmits<{
     mutation: PlotStructureMutation,
     completion: PlotStructureMutationCompletion
   ];
+  characterMutation: [
+    mutation: CharacterStructureMutation,
+    completion: PlotStructureMutationCompletion
+  ];
 }>();
 
 const dialogElement = ref<HTMLElement | null>(null);
@@ -37,6 +44,8 @@ const formMode = ref<"create" | "edit">("create");
 const editingStageId = ref<string | null>(null);
 const deletingStageId = ref<string | null>(null);
 const localPending = ref(false);
+const activeStructureTab = ref<"character" | "plot">("character");
+const requestedCharacterFormat = ref<BookCharacterFormat | null>(null);
 const form = reactive({ title: "", description: "" });
 let previousFocus: HTMLElement | null = null;
 
@@ -51,6 +60,21 @@ const deletingDocument = computed(() =>
 const deletingHasContent = computed(
   () => Boolean(deletingDocument.value?.content.trim())
 );
+const characterOverview = computed(() =>
+  props.book?.documents.find(({ id }) => id === "character_design")
+);
+const orderedCharacterItems = computed(() =>
+  props.book?.characterStructure.format === "list"
+    ? [...props.book.characterStructure.items].sort(
+        (left, right) => left.order - right.order
+      )
+    : []
+);
+const characterTextPreview = computed(() => {
+  const text = characterOverview.value?.content.trim() ?? "";
+  if (!text) return "（当前人物文本为空，将转换为空条目列表）";
+  return text.length > 500 ? `${text.slice(0, 500)}\n……` : text;
+});
 
 function resetPanels(): void {
   formOpen.value = false;
@@ -58,6 +82,7 @@ function resetPanels(): void {
   deletingStageId.value = null;
   form.title = "";
   form.description = "";
+  requestedCharacterFormat.value = null;
 }
 
 function close(): void {
@@ -98,6 +123,27 @@ function beginMutation(mutation: PlotStructureMutation): void {
     succeed: () => {
       localPending.value = false;
       resetPanels();
+    },
+    fail: () => {
+      localPending.value = false;
+    }
+  });
+}
+
+function selectCharacterFormat(value: PopupSelectValue): void {
+  if ((value !== "text" && value !== "list") || locked.value) return;
+  if (value === props.book?.characterStructure.format) return;
+  requestedCharacterFormat.value = value;
+}
+
+function confirmCharacterFormat(): void {
+  const format = requestedCharacterFormat.value;
+  if (!format || locked.value) return;
+  localPending.value = true;
+  emit("characterMutation", { type: "setFormat", format }, {
+    succeed: () => {
+      localPending.value = false;
+      requestedCharacterFormat.value = null;
     },
     fail: () => {
       localPending.value = false;
@@ -258,14 +304,66 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <header class="plot-structure-dialog-header">
           <div>
             <span>{{ book.bookType === "script" ? "剧本" : "短篇" }}设置</span>
-            <strong id="plot-structure-title">{{ book.title }} · 剧情结构管理</strong>
+            <strong id="plot-structure-title">{{ book.title }} · 结构管理</strong>
           </div>
-          <button ref="closeButton" type="button" aria-label="关闭剧情结构管理" :disabled="locked" @click="close">
+          <button ref="closeButton" type="button" aria-label="关闭结构管理" :disabled="locked" @click="close">
             <AppIcon name="close" :size="16" />
           </button>
         </header>
 
-        <section class="plot-structure-manager" aria-label="剧情结构管理">
+        <section class="plot-structure-manager" aria-label="结构管理">
+          <div class="structure-main-tabs" role="tablist" aria-label="结构管理类型">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="activeStructureTab === 'character'"
+              @click="activeStructureTab = 'character'"
+            >
+              人物结构管理
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="activeStructureTab === 'plot'"
+              @click="activeStructureTab = 'plot'"
+            >
+              剧情结构管理
+            </button>
+          </div>
+
+          <template v-if="activeStructureTab === 'character'">
+            <header class="manager-header">
+              <div>
+                <p class="manager-eyebrow">CHARACTER STRUCTURE</p>
+                <h2>人物结构管理</h2>
+                <p>选择人物使用单篇连续文本，或使用概览与独立人物条目。</p>
+              </div>
+            </header>
+            <div class="structure-panel-content character-structure-panel">
+              <label class="form-field">
+                <span>人物样式</span>
+                <PopupSelect
+                  :model-value="book.characterStructure.format"
+                  :options="[
+                    { value: 'list', label: '条目样式' },
+                    { value: 'text', label: '文本样式' }
+                  ]"
+                  accessible-label="人物结构样式"
+                  :disabled="locked"
+                  :menu-z-index="2300"
+                  @update:model-value="selectCharacterFormat"
+                />
+                <small v-if="book.characterStructure.format === 'list'">
+                  人物在资源树中显示为概览与独立条目，可分别编辑和交给智能体管理。
+                </small>
+                <small v-else>
+                  人物继续使用当前单一 Markdown 文本编辑方式。
+                </small>
+              </label>
+            </div>
+          </template>
+
+          <template v-else>
           <header class="manager-header">
             <div>
               <p class="manager-eyebrow">CREATIVE PLOT STRUCTURE</p>
@@ -374,7 +472,56 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               新建阶段会对全部短篇与剧本生效；启用状态仅绑定当前作品。改名全局同步，不会改变稳定 ID 与文件路径。
             </p>
           </div>
+          </template>
         </section>
+      </section>
+    </div>
+
+    <div
+      v-if="open && book && requestedCharacterFormat"
+      class="dialog-backdrop structure-modal-overlay"
+      @mousedown.self="requestedCharacterFormat = null"
+      @keydown.esc.stop="requestedCharacterFormat = null"
+    >
+      <section class="structure-modal" role="alertdialog" aria-modal="true" aria-labelledby="character-format-title">
+        <header class="modal-header">
+          <div>
+            <span>CONVERT</span>
+            <h3 id="character-format-title">转换人物结构样式</h3>
+          </div>
+        </header>
+        <fieldset class="modal-body" :disabled="locked">
+          <p class="delete-copy">
+            <template v-if="requestedCharacterFormat === 'list'">
+              当前人物文本会完整迁移到一个“人物设定”条目，概览初始化为空。
+            </template>
+            <template v-else>
+              概览与全部人物条目会按当前顺序合并为一个 Markdown 文本；条目文件将在合并成功后移除。
+            </template>
+          </p>
+          <div class="character-conversion-preview">
+            <strong>转换预览</strong>
+            <template v-if="requestedCharacterFormat === 'list'">
+              <span>{{ characterOverview?.content.trim() ? "人物设定 · 1 个条目" : "概览 · 空条目列表" }}</span>
+              <pre>{{ characterTextPreview }}</pre>
+            </template>
+            <template v-else>
+              <span>
+                概览{{ characterOverview?.content.trim() ? "（有内容）" : "（为空）" }}，其后合并 {{ orderedCharacterItems.length }} 个人物条目
+              </span>
+              <ol v-if="orderedCharacterItems.length">
+                <li v-for="item in orderedCharacterItems" :key="item.id">{{ item.title }}</li>
+              </ol>
+              <span v-else>当前没有人物条目。</span>
+            </template>
+          </div>
+        </fieldset>
+        <footer class="modal-actions">
+          <button type="button" :disabled="locked" @click="requestedCharacterFormat = null">取消</button>
+          <button class="primary-button" type="button" :disabled="locked" @click="confirmCharacterFormat">
+            {{ locked ? "转换中…" : "确认转换" }}
+          </button>
+        </footer>
       </section>
     </div>
 
@@ -600,6 +747,35 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
   display: grid;
   min-width: 0;
   gap: 0.85rem;
+}
+
+.structure-main-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding: 0.25rem;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 0.75rem;
+  background: var(--surface-muted);
+}
+
+.structure-main-tabs button {
+  background: transparent;
+}
+
+.structure-main-tabs button[aria-selected="true"] {
+  border-color: var(--theme-line);
+  background: var(--surface-raised);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.character-structure-panel {
+  max-width: 34rem;
+  padding: 1rem;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 0.75rem;
+  background: var(--surface-raised);
 }
 
 .manager-toolbar,
@@ -895,6 +1071,41 @@ button:disabled {
   margin: 0;
   color: var(--text-secondary);
   line-height: 1.55;
+}
+
+.character-conversion-preview {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 0.65rem;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.character-conversion-preview strong {
+  color: var(--text-primary);
+}
+
+.character-conversion-preview pre {
+  max-height: 10rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.55rem;
+  border-radius: 0.45rem;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.character-conversion-preview ol {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1.25rem;
 }
 
 .cascade-option {

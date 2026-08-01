@@ -3647,7 +3647,8 @@ html[data-platform="darwin"] .editor-header {
   background: var(--accent, #7c5c3e);
 }
 
-.section-tabs-add {
+.section-tabs-add,
+.section-tabs-remove {
   display: grid;
   place-items: center;
   align-self: center;
@@ -3661,11 +3662,28 @@ html[data-platform="darwin"] .editor-header {
   cursor: pointer;
 }
 
+.section-tabs-remove {
+  margin-left: 2px;
+}
+
 .section-tabs-add:hover,
-.section-tabs-add:focus-visible {
+.section-tabs-add:focus-visible,
+.section-tabs-remove:hover:not(:disabled),
+.section-tabs-remove:focus-visible:not(:disabled) {
   outline: none;
   background: var(--theme-line);
   color: var(--text-primary);
+}
+
+.section-tabs-remove:hover:not(:disabled),
+.section-tabs-remove:focus-visible:not(:disabled) {
+  color: var(--danger);
+}
+
+.section-tabs-add:disabled,
+.section-tabs-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .save-state {

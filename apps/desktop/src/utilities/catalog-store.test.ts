@@ -516,7 +516,7 @@ describe("CatalogStore", () => {
       linkedMaterialIdsByKind: { character: ["material-character"] },
       linkedSkillIdsByKind: { general: ["skill-general"] }
     });
-    expect(book.documents).toHaveLength(6);
+    expect(book.documents).toHaveLength(7);
     expect(book.draft.sections).toHaveLength(2);
     expect(book.linkedMaterialIdsByKind.character).toEqual(["material-character"]);
 
@@ -654,6 +654,7 @@ describe("CatalogStore", () => {
     expect(script.bookType).toBe("script");
     expect(script.documents.map(({ id }) => id)).toEqual([
       "character_design",
+      "worldbuilding",
       "plot_design",
       "intro_design",
       "plot_refine",

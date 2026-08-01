@@ -55,7 +55,8 @@ import {
   buildShortWorkspaceTools,
   createScriptWorkspaceToolSharedState,
   createShortWorkspaceToolSharedState,
-  isShortWorkspaceToolDetails
+  isShortWorkspaceToolDetails,
+  type ShortWorkspaceToolDetails
 } from "./short-agent-tools";
 import {
   buildSpawnSubagentTool,
@@ -325,6 +326,13 @@ export type AgentRuntimeEvent =
           kind: "expert-draft-section-deletion";
           sectionId: string;
           title: string;
+        } | {
+          kind: "character-file";
+          documentId: string;
+          itemId?: string;
+        } | {
+          kind: "character-structure";
+          mutation: Extract<ShortWorkspaceToolDetails, { kind: "workspace-character-structure-mutation" }>["mutation"];
         };
         baseRevision: string;
         summary: string;
@@ -1688,12 +1696,23 @@ export function toRuntimeEvents(
     if (isShortWorkspaceToolDetails(details)) {
       if (
         details.kind === "workspace-editor-mutation" ||
+        details.kind === "workspace-character-file-mutation" ||
+        details.kind === "workspace-character-structure-mutation" ||
         details.kind === "workspace-expert-draft-file-mutation" ||
         details.kind === "workspace-expert-draft-section-creation" ||
         details.kind === "workspace-expert-draft-section-rename" ||
         details.kind === "workspace-expert-draft-section-deletion"
       ) {
         const text =
+          details.kind === "workspace-character-structure-mutation"
+            ? details.mutation.type === "deleteItem"
+              ? details.mutation.deletedText
+              : details.mutation.type === "updateItem"
+                ? `${details.mutation.previousTitle} → ${details.mutation.title}`
+                : details.mutation.type === "moveItem"
+                  ? `${details.mutation.title}：${details.mutation.direction === "up" ? "上移" : "下移"}`
+                  : `创建：${details.mutation.title}`
+            :
           details.kind === "workspace-expert-draft-section-creation"
             ? details.sections
                 .map(
@@ -1724,6 +1743,21 @@ export function toRuntimeEvents(
                     fileKind: details.fileKind
                   }
                 }
+              : details.kind === "workspace-character-file-mutation"
+                ? {
+                    mutationTarget: {
+                      kind: "character-file" as const,
+                      documentId: details.documentId,
+                      ...(details.itemId ? { itemId: details.itemId } : {})
+                    }
+                  }
+              : details.kind === "workspace-character-structure-mutation"
+                ? {
+                    mutationTarget: {
+                      kind: "character-structure" as const,
+                      mutation: details.mutation
+                    }
+                  }
               : details.kind === "workspace-expert-draft-section-creation"
                 ? {
                     mutationTarget: {
@@ -2335,7 +2369,15 @@ export function buildEffectiveSystemPrompt(
       ? `当前已接通正文目录索引、批量创建空白${draftUnit}文件、修改${draftUnit}名称、删除${draftUnit}、全部/单${scriptWorkspace ? "集" : "章"}正文读取及按${draftUnit}正文文件写入与替换；排序和后台${scriptWorkspace ? "分集" : "分节"}写手调度尚未接通，不得声称已经执行。`
       : profile.id === "expert_section_writer"
         ? `当前${scriptWorkspace ? "分集" : "分节"}写手只允许修改运行上下文锁定的${draftUnit}；可改名或删除当前${draftUnit}，正文与人物状态工具分别按 documentId 提交到两个独立文件，由客户端生成独立的待审阅变更。`
-        : ""
+        : "",
+    (writingWorkspace?.characterStructure?.format ?? "text") === "list"
+      ? profile.id === "character_design"
+        ? "当前人物结构为条目样式：概览只写人物一览/索引，完整人物卡写入 create_character_file 创建的独立条目；从剧情学习时只提炼人设，不得照抄剧情或正文原文，也不得把人物写入正文目录。"
+        : profile.id === "expert_draft_coordinator" ||
+            profile.id === "expert_section_writer"
+          ? "当前人物结构为条目样式：概览只是姓名与一句话索引；编写或修订前必须用 list_characters 定位相关人物，并用 read_character（指定 item_id）读取对应人物卡，不得只读概览或 read_workspace_content（character_design）就开始写正文。"
+          : ""
+      : ""
   ].filter(Boolean).join("\n");
 }
 

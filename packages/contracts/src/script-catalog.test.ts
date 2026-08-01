@@ -71,7 +71,7 @@ function shortBook() {
 function scriptManifest() {
   const plotStages = createDefaultCreativePlotStages();
   return {
-    schemaVersion: 3 as const,
+    schemaVersion: 4 as const,
     revision: 0,
     kind: "deepwrite.book" as const,
     id: "script_1",
@@ -83,14 +83,24 @@ function scriptManifest() {
     status: "editing" as const,
     linkedMaterialIdsByKind,
     linkedSkillIdsByKind,
+    characterStructure: { format: "text" as const },
     plotStages,
-    documents: plotStages.map((stage) => ({
-      id: stage.id,
-      title: stage.title,
-      path: `documents/${stage.id}.md`,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    })),
+    documents: [
+      {
+        id: "character_design",
+        title: "人物设计",
+        path: "documents/character_design.md",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      ...plotStages.map((stage) => ({
+        id: stage.id,
+        title: stage.title,
+        path: `documents/${stage.id}.md`,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }))
+    ],
     draft: {
       id: "draft" as const,
       title: "正文",

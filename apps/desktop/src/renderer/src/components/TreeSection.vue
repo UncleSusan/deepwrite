@@ -30,6 +30,8 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
+  createCharacterItem: [node: ResourceTreeNode];
+  characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
 }>();
 
 const collapsed = ref(false);
@@ -188,6 +190,8 @@ onBeforeUnmount(() => {
         @resource-node-action="emit('resourceNodeAction', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @remove-expert-section="emit('removeExpertSection', $event)"
+        @create-character-item="emit('createCharacterItem', $event)"
+        @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
       />
     </ul>
   </section>

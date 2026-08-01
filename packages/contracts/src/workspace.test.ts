@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SHORT_AGENT_READ_ACCESS,
+  DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+  DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT,
   DEFAULT_SHORT_WORKSPACE_AGENT_SYSTEM_PROMPTS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
@@ -89,6 +91,7 @@ describe("short workspace contracts", () => {
   it("maps the default dynamic stages to four workspace agents", () => {
     expect(SHORT_WORKSPACE_STAGE_IDS).toEqual([
       "character_design",
+      "worldbuilding",
       "plot_design",
       "intro_design",
       "plot_refine",
@@ -105,6 +108,7 @@ describe("short workspace contracts", () => {
       )
     ).toEqual({
       character_design: "character_design",
+      worldbuilding: "plot_design",
       plot_design: "plot_design",
       intro_design: "plot_design",
       plot_refine: "plot_design",
@@ -151,11 +155,26 @@ describe("short workspace contracts", () => {
         )
       )
     ).toEqual({
-      character_design: "d758185c",
+      character_design: "798a9694",
       plot_design: "fcd5f710",
-      expert_draft_coordinator: "bff26c0a",
-      expert_section_writer: "f7bc517f"
+      expert_draft_coordinator: "343b357d",
+      expert_section_writer: "39db896f"
     });
+  });
+
+  it("biases draft agents to read list-mode character items before writing", () => {
+    expect(DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT).toContain(
+      "list_characters"
+    );
+    expect(DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT).toContain(
+      "指定 item_id 读取对应人物卡"
+    );
+    expect(DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT).toContain(
+      "list_characters"
+    );
+    expect(DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT).toContain(
+      "不得只读概览或只读 character_design 阶段概览就开始编写"
+    );
   });
 
   it("keeps the reference project's default read ranges", () => {
@@ -187,7 +206,7 @@ describe("short workspace contracts", () => {
     const snapshot = workspaceSnapshot();
 
     const parsed = ShortWorkspaceSnapshotSchema.parse(snapshot);
-    expect(parsed.stages).toHaveLength(6);
+    expect(parsed.stages).toHaveLength(SHORT_WORKSPACE_TEXT_STAGE_IDS.length);
     expect(parsed.stages.map((stage) => stage.stageId)).toEqual(
       SHORT_WORKSPACE_TEXT_STAGE_IDS
     );

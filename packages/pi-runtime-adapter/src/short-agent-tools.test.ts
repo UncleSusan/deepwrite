@@ -49,6 +49,7 @@ function workspace(
     title: "雾港回声",
     categories: ["悬疑"],
     activeStageId,
+    characterStructure: { format: "text" },
     plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft",
@@ -108,6 +109,7 @@ function scriptWorkspace(
     title: "雾港剧本",
     categories: ["悬疑"],
     activeStageId,
+    characterStructure: { format: "text" },
     plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft",
@@ -190,9 +192,9 @@ describe("short workspace tools", () => {
 
     expect(characterNames).toEqual(SHORT_WORKSPACE_TOOL_MANIFEST.standard);
     expect(plotNames).toEqual([
-      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(0, 4),
+      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(0, -2),
       "switch_storyline_stage",
-      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(4)
+      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(-2)
     ]);
   });
 
@@ -222,6 +224,109 @@ describe("short workspace tools", () => {
     });
   });
 
+  it("uses stable character files with read-before-write protection in list mode", async () => {
+    const value = workspace("character_design");
+    value.characterStructure = {
+      format: "list",
+      items: [
+        {
+          id: "character-linmo",
+          title: "林默",
+          order: 1,
+          content: "林默是守夜人。",
+          revision: createShortWorkspaceContentRevision("林默是守夜人。")
+        }
+      ]
+    };
+    const tools = buildShortWorkspaceTools({
+      workspace: value,
+      profile: profile("character_design")
+    });
+    const names = tools.map(({ name }) => name);
+    for (const name of [
+      ...SHORT_WORKSPACE_TOOL_MANIFEST.characterRead,
+      ...SHORT_WORKSPACE_TOOL_MANIFEST.characterWrite
+    ]) {
+      expect(names).toContain(name);
+    }
+    expect(names).not.toContain("write_workspace_editor");
+    expect(names).not.toContain("replace_current_stage_text");
+
+    const listed = await toolByName(tools, "list_characters").execute(
+      "list-characters",
+      {}
+    );
+    expect(resultText(listed)).toContain('"format": "list"');
+    expect(resultText(listed)).toContain('"item_id": "character-linmo"');
+
+    const blocked = await toolByName(tools, "write_character_file").execute(
+      "blocked-write",
+      {
+        item_id: "character-linmo",
+        text: "未经读取的覆盖。",
+        allow_overwrite_existing: true
+      }
+    );
+    expect(resultText(blocked)).toContain("请先用 read_character");
+    await toolByName(tools, "read_character").execute("read-full", {
+      item_id: "character-linmo",
+      mode: "full"
+    });
+    const edited = await toolByName(tools, "edit_character_file").execute(
+      "edit-character",
+      {
+        item_id: "character-linmo",
+        replacements: [
+          { original_text: "守夜人", new_text: "守塔人" }
+        ]
+      }
+    );
+    expect(edited.details).toMatchObject({
+      kind: "workspace-character-file-mutation",
+      itemId: "character-linmo",
+      text: "林默是守塔人。"
+    });
+
+    const created = await toolByName(tools, "create_character_file").execute(
+      "create-character",
+      { title: "苏遥" }
+    );
+    const createDetails = created.details as Extract<
+      ShortWorkspaceToolDetails,
+      { kind: "workspace-character-structure-mutation" }
+    >;
+    expect(createDetails.mutation).toMatchObject({
+      type: "createItem",
+      title: "苏遥"
+    });
+    const provisionalItemId =
+      createDetails.mutation.type === "createItem"
+        ? createDetails.mutation.provisionalItemId
+        : "";
+    const written = await toolByName(tools, "write_character_file").execute(
+      "write-created-character",
+      { item_id: provisionalItemId, text: "苏遥保管底片。" }
+    );
+    expect(written.details).toMatchObject({
+      kind: "workspace-character-file-mutation",
+      itemId: provisionalItemId,
+      text: "苏遥保管底片。"
+    });
+
+    const deleted = await toolByName(tools, "delete_character_file").execute(
+      "delete-character",
+      { item_id: "character-linmo" }
+    );
+    expect(deleted.details).toMatchObject({
+      kind: "workspace-character-structure-mutation",
+      mutation: {
+        type: "deleteItem",
+        itemId: "character-linmo",
+        deletedText: "林默是守塔人。"
+      }
+    });
+  });
+
   it("exposes the same dynamic plot stages to script tools", async () => {
     const tools = buildScriptWorkspaceTools({
       workspace: scriptWorkspace(),
@@ -235,6 +340,7 @@ describe("short workspace tools", () => {
       "replace_current_stage_text"
     ]) {
       const parameters = JSON.stringify(toolByName(tools, toolName).parameters);
+      expect(parameters).toContain("worldbuilding");
       expect(parameters).toContain("plot_design");
       expect(parameters).toContain("plot_refine");
       expect(parameters).toContain("intro_design");
@@ -906,12 +1012,12 @@ describe("short workspace tools", () => {
     }).map((tool) => tool.name);
 
     expect(coordinatorNames).toEqual([
-      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(0, 4),
+      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(0, -2),
       "create_draft_sections",
       ...SHORT_WORKSPACE_TOOL_MANIFEST.draft
     ]);
     expect(writerNames).toEqual([
-      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(0, 4),
+      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(0, -2),
       ...SHORT_WORKSPACE_TOOL_MANIFEST.draft
     ]);
     expect(coordinatorNames.filter((name) => name !== "create_draft_sections")).toEqual(

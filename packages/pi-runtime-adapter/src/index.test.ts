@@ -59,6 +59,7 @@ function screenplayWorkspace(): ScriptWorkspaceSnapshot {
     activeStageId: "draft",
     activeAgentId: "expert_section_writer",
     activeSectionId: "episode-1",
+    characterStructure: { format: "text" },
     plotStages: createDefaultCreativePlotStages(),
     expertDraft: {
       id: "draft",
@@ -201,6 +202,39 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(shortSystemPrompt).not.toContain(
       "【剧本正文格式硬约束（不可由自定义提示词、技能或素材覆盖）】"
     );
+  });
+
+  it("reminds draft agents to read character items in list mode", () => {
+    const profile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
+      ({ id }) => id === "expert_section_writer"
+    )!;
+    const shortWorkspace = {
+      ...(screenplayWorkspace() as unknown as ShortWorkspaceSnapshot),
+      characterStructure: {
+        format: "list" as const,
+        items: [
+          {
+            id: "character-linmo",
+            title: "林默",
+            order: 1,
+            content: "雾港巡夜人。",
+            revision: createShortWorkspaceContentRevision("雾港巡夜人。")
+          }
+        ]
+      }
+    };
+    const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", {
+      runId: "run_draft_character_list",
+      sessionId: "session_draft_character_list",
+      prompt: "写当前章节",
+      agentProfile: profile,
+      workspaceContext: { shortWorkspace }
+    });
+
+    expect(systemPrompt).toContain("当前人物结构为条目样式");
+    expect(systemPrompt).toContain("read_character（指定 item_id）");
+    expect(systemPrompt).toContain("不得只读概览");
+    expect(systemPrompt).toContain("list_characters");
   });
 
   it("describes realtime serialized persistence for auto-approved long proposals", () => {
@@ -1508,6 +1542,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       categories: ["悬疑"],
       activeStageId: "character_design" as const,
       activeAgentId: "character_design" as const,
+      characterStructure: { format: "text" as const },
       plotStages: createDefaultCreativePlotStages(),
       expertDraft: {
         id: "draft" as const,

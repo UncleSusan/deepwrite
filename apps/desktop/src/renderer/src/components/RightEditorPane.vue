@@ -25,7 +25,12 @@ const props = defineProps<{
   boundToCurrentBook?: boolean;
   sectionTabs?: readonly { id: string; title: string }[];
   activeSectionId?: string | undefined;
+  sectionTabsLabel?: string;
   canCreateSection?: boolean;
+  createSectionLabel?: string;
+  showDeleteSection?: boolean;
+  canDeleteSection?: boolean;
+  deleteSectionLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -35,6 +40,7 @@ const emit = defineEmits<{
   insertSelection: [reference: EditorTextReference];
   selectSection: [sectionId: string];
   createSection: [];
+  deleteSection: [];
   selectDraftFile: [fileKind: "body" | "character-state"];
 }>();
 
@@ -137,6 +143,15 @@ const searchResultLabel = computed(() => {
 });
 const draftUnitLabel = computed(() =>
   props.document.workspaceType === "script" ? "剧集" : "小节"
+);
+const resolvedSectionTabsLabel = computed(
+  () => props.sectionTabsLabel ?? `正文${draftUnitLabel.value}`
+);
+const resolvedCreateSectionLabel = computed(
+  () => props.createSectionLabel ?? "在正文末尾新建小节"
+);
+const resolvedDeleteSectionLabel = computed(
+  () => props.deleteSectionLabel ?? "删除当前条目"
 );
 const persistedDocument = computed(() =>
   Boolean(
@@ -538,7 +553,7 @@ onBeforeUnmount(() => {
     <nav
       v-if="showSectionTabs"
       class="section-tabs-bar"
-      :aria-label="`正文${draftUnitLabel}`"
+      :aria-label="resolvedSectionTabsLabel"
     >
       <div class="section-tabs-scroll" role="tablist">
         <button
@@ -559,11 +574,23 @@ onBeforeUnmount(() => {
         v-if="canCreateSection"
         class="section-tabs-add"
         type="button"
-        aria-label="在正文末尾新建小节"
-        title="新建小节"
+        :aria-label="resolvedCreateSectionLabel"
+        :title="resolvedCreateSectionLabel"
+        :disabled="locked"
         @click="emit('createSection')"
       >
         <AppIcon name="plus" :size="16" />
+      </button>
+      <button
+        v-if="showDeleteSection"
+        class="section-tabs-remove"
+        type="button"
+        :aria-label="resolvedDeleteSectionLabel"
+        :title="resolvedDeleteSectionLabel"
+        :disabled="locked || !canDeleteSection"
+        @click="emit('deleteSection')"
+      >
+        <AppIcon name="minus" :size="16" />
       </button>
     </nav>
 

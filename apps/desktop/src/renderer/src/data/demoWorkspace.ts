@@ -18,6 +18,7 @@ export const resourceSections: ResourceTreeSection[] = [
             label: "剧情",
             icon: "sparkles",
             children: [
+              { id: "short-mist:worldbuilding", label: "世界观", icon: "file" },
               { id: "short-mist:plot_design", label: "剧情设计", icon: "file" },
               { id: "short-mist:intro_design", label: "导语设计", icon: "file" },
               { id: "short-mist:plot_refine", label: "剧情细化", icon: "file" },
@@ -149,6 +150,21 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     format: "设定",
     content:
       "林默，29 岁，灯塔临时记录员。习惯把重要信息抄写两遍，对七年前姐姐的失踪保持沉默。核心欲望是确认姐姐的下落，恐惧是发现自己曾亲手参与掩盖真相。\n\n苏遥，27 岁，地方报纸摄影记者。熟悉港区旧建筑，随身携带一台无法正常显影的胶片相机。她知道旧港地下通道入口，却没有告诉林默自己见过名单上的第十八个名字。"
+  },
+  {
+    id: "short-mist:worldbuilding",
+    domain: "creation",
+    workspaceId: "short-mist",
+    workspaceType: "short",
+    workspaceTitle: "雾港回声",
+    workspaceCategories: ["悬疑"],
+    stageId: "worldbuilding",
+    title: "世界观",
+    eyebrow: "短篇 · 剧情",
+    path: ["雾港回声", "剧情", "世界观"],
+    format: "设定",
+    content:
+      "雾港是一座靠潮汐与汽笛运转的港口城市。每七天出现一次灰潮：海雾吞没灯塔以外的街区，被点名者会从所有人的记忆中被抹去。灯塔名义上预警灰潮，实际维护一份提前七分钟写好的失踪名单。"
   },
   {
     id: "short-mist:plot_design",

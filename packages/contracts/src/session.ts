@@ -906,6 +906,20 @@ export const WorkspaceEditorMutationTargetSchema = z.discriminatedUnion("kind", 
     kind: z.literal("expert-draft-section-deletion"),
     sectionId: z.string().trim().min(1).max(120),
     title: z.string().trim().min(1).max(240)
+  }),
+  z.object({
+    kind: z.literal("character-file"),
+    documentId: z.string().trim().min(1).max(4_096),
+    itemId: z.string().trim().min(1).max(512).optional()
+  }),
+  z.object({
+    kind: z.literal("character-structure"),
+    mutation: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("createItem"), title: z.string().trim().min(1).max(256), provisionalItemId: z.string().trim().min(1).max(512) }),
+      z.object({ type: z.literal("updateItem"), itemId: z.string().trim().min(1).max(512), previousTitle: z.string().trim().min(1).max(256), title: z.string().trim().min(1).max(256) }),
+      z.object({ type: z.literal("moveItem"), itemId: z.string().trim().min(1).max(512), direction: z.enum(["up", "down"]), title: z.string().trim().min(1).max(256) }),
+      z.object({ type: z.literal("deleteItem"), itemId: z.string().trim().min(1).max(512), title: z.string().trim().min(1).max(256), deletedText: z.string().max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS) })
+    ])
   })
 ]);
 export type WorkspaceEditorMutationTarget = z.infer<
@@ -926,7 +940,11 @@ export const WorkspaceEditorMutationPayloadSchema = z
     runtime: AgentRuntimeRefSchema
   })
   .superRefine((value, context) => {
-    if (value.mutationTarget !== undefined && value.stageId !== "draft") {
+    if (
+      value.mutationTarget !== undefined &&
+      value.mutationTarget.kind.startsWith("expert-draft") &&
+      value.stageId !== "draft"
+    ) {
       context.addIssue({
         code: "custom",
         path: ["mutationTarget"],
@@ -939,6 +957,16 @@ export const WorkspaceEditorMutationPayloadSchema = z
         path: ["mutationTarget"],
         message:
           "Draft mutations must target a physical file, section creation, section rename, or section deletion."
+      });
+    }
+    if (
+      value.mutationTarget?.kind.startsWith("character-") &&
+      value.stageId !== "character_design"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["mutationTarget"],
+        message: "Character mutations must target character_design."
       });
     }
   });

@@ -14,8 +14,16 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain("emit(\"createExpertSection\", props.node)");
     expect(source).toContain("emit(\"removeExpertSection\", props.node)");
     expect(source).toContain('props.node.workspaceType === "script" ? "剧集" : "小节"');
-    expect(source).toContain(":title=\"`新建${draftUnitLabel}`\"");
+    expect(source).toContain("isCharacterDirectory ? '新建人物条目' : `新建${draftUnitLabel}`");
     expect(source).toContain("<span>删除{{ draftUnitLabel }}</span>");
+  });
+
+  it("provides character item creation and ordered item actions", () => {
+    expect(source).toContain("createCharacterItem");
+    expect(source).toContain("characterItemAction('rename')");
+    expect(source).toContain("characterItemAction('move-up')");
+    expect(source).toContain("characterItemAction('move-down')");
+    expect(source).toContain("characterItemAction('delete')");
   });
 
   it("keeps long character creation out of the resource tree", () => {

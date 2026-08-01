@@ -198,4 +198,45 @@ describe("agent edit review", () => {
       error: "正文文件修改只能应用到正文目录。"
     });
   });
+
+  it("accepts character-file targets on the character_design stage", () => {
+    const resolved = resolveAgentEditorMutationText("", {
+      stageId: "character_design",
+      text: "# 人物一览\n\n| 序号 | 人物 |\n| --- | --- |\n| 1 | 沈知微 |",
+      mutationTarget: {
+        kind: "character-file",
+        documentId: "character_design"
+      }
+    });
+    expect(resolved).toEqual({
+      text: "# 人物一览\n\n| 序号 | 人物 |\n| --- | --- |\n| 1 | 沈知微 |"
+    });
+  });
+
+  it("accepts provisional character entry writes on character_design", () => {
+    const resolved = resolveAgentEditorMutationText("", {
+      stageId: "character_design",
+      text: "沈知微是穿越恶毒继姐。",
+      mutationTarget: {
+        kind: "character-file",
+        documentId: "character_tmp_1",
+        itemId: "character_tmp_1"
+      }
+    });
+    expect(resolved).toEqual({ text: "沈知微是穿越恶毒继姐。" });
+  });
+
+  it("refuses character-file targets outside character_design", () => {
+    const resolved = resolveAgentEditorMutationText("旧设定", {
+      stageId: "draft",
+      text: "新设定",
+      mutationTarget: {
+        kind: "character-file",
+        documentId: "character_design"
+      }
+    });
+    expect(resolved).toEqual({
+      error: "人物文件修改只能应用到人物设计阶段。"
+    });
+  });
 });

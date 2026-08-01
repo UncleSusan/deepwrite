@@ -20,6 +20,7 @@ import {
   MATERIAL_STAGE_IDS,
   MaterialLibraryKindSchema,
   MaterialStageIdSchema,
+  MutateCharacterStructureInputSchema,
   MutatePlotStructureInputSchema,
   SaveDocumentInputSchema,
   SKILL_KINDS,
@@ -30,6 +31,7 @@ import {
   SkillStageIdSchema,
   UpdateBookInputSchema,
   createDefaultBookPlotStages,
+  createDefaultBookCharacterStructure,
   createDefaultCreativePlotStages,
   isBuiltinCreativePlotStageId,
   createCatalogDraftDirectory,
@@ -50,6 +52,7 @@ import {
   type MaterialLibrary,
   type MaterialLibraryGroup,
   type MaterialStageId,
+  type MutateCharacterStructureInput,
   type MutatePlotStructureInput,
   type SaveDocumentInput,
   type ScriptBook,
@@ -104,6 +107,7 @@ const SKILL_STAGE_SOURCES: Record<SkillStageId, readonly string[]> = {
 
 const DEFAULT_SHORT_DOCUMENTS = [
   ["character_design", "人物设计"],
+  ["worldbuilding", "世界观"],
   ["plot_design", "剧情设计"],
   ["intro_design", "导语设计"],
   ["plot_refine", "剧情细化"],
@@ -113,6 +117,7 @@ const DEFAULT_SHORT_DOCUMENTS = [
 
 const DEFAULT_SCRIPT_DOCUMENTS = [
   ["character_design", "人物设计"],
+  ["worldbuilding", "世界观"],
   ["plot_design", "剧情设计"],
   ["intro_design", "导语设计"],
   ["plot_refine", "剧情细化"],
@@ -1304,6 +1309,7 @@ export class CatalogStore {
         input.linkedMaterialIdsByKind
       ),
       linkedSkillIdsByKind: normalizeLinkedSkillIds(input.linkedSkillIdsByKind),
+      characterStructure: createDefaultBookCharacterStructure(),
       plotStages: createDefaultBookPlotStages(),
       documents: createDefaultDocuments("short", now),
       draft: createCatalogDraftDirectory(now),
@@ -1337,6 +1343,7 @@ export class CatalogStore {
         input.linkedMaterialIdsByKind
       ),
       linkedSkillIdsByKind: normalizeLinkedSkillIds(input.linkedSkillIdsByKind),
+      characterStructure: createDefaultBookCharacterStructure(),
       plotStages: createDefaultBookPlotStages(),
       documents: createDefaultDocuments("script", now),
       draft: createScriptCatalogDraftDirectory(now),
@@ -1547,6 +1554,118 @@ export class CatalogStore {
     });
     return BookSchema.parse(
       structuredClone(next.books.find((book) => book.id === input.bookId)!)
+    );
+  }
+
+  async mutateCharacterStructure(
+    rawInput: MutateCharacterStructureInput
+  ): Promise<Book> {
+    const input = MutateCharacterStructureInputSchema.parse(rawInput);
+    const next = await this.commit((draft) => {
+      const book = draft.books.find(({ id }) => id === input.bookId);
+      if (!book) throw new Error("书籍不存在或已被删除。");
+      const now = this.now();
+      const overview = book.documents.find(({ id }) => id === "character_design");
+      if (!overview) throw new Error("人物结构缺少人物概览文件。");
+      const mutation = input.mutation;
+      if (mutation.type === "setFormat") {
+        if (book.characterStructure.format === mutation.format) return false;
+        if (mutation.format === "list") {
+          const items = [];
+          if (overview.content.trim()) {
+            const id = createCatalogId("character");
+            book.documents.push({
+              id,
+              title: "人物设定",
+              content: overview.content,
+              createdAt: now,
+              updatedAt: now
+            });
+            items.push({ id, title: "人物设定", order: 1 });
+            overview.content = "";
+            overview.updatedAt = now;
+          }
+          overview.title = "概览";
+          overview.updatedAt = now;
+          book.characterStructure = { format: "list", items };
+        } else {
+          if (book.characterStructure.format !== "list") return false;
+          const sections: string[] = [];
+          if (overview.content.trim()) {
+            sections.push(`# 概览\n\n${overview.content.trim()}`);
+          }
+          for (const item of [...book.characterStructure.items].sort(
+            (left, right) => left.order - right.order
+          )) {
+            const document = book.documents.find(({ id }) => id === item.id);
+            if (!document) throw new Error(`人物条目 ${item.id} 缺少文件。`);
+            sections.push(`# ${item.title}\n\n${document.content.trim()}`.trim());
+          }
+          const ids = new Set(book.characterStructure.items.map(({ id }) => id));
+          book.documents = book.documents.filter(({ id }) => !ids.has(id));
+          overview.content = sections.join("\n\n").trim();
+          overview.title = "人物设计";
+          overview.updatedAt = now;
+          book.characterStructure = createDefaultBookCharacterStructure();
+        }
+      } else {
+        if (book.characterStructure.format !== "list") {
+          throw new Error("人物条目操作仅适用于条目样式。");
+        }
+        const items = [...book.characterStructure.items]
+          .sort((left, right) => left.order - right.order)
+          .map((item) => ({ ...item }));
+        if (mutation.type === "createItem") {
+          if (
+            items.some(
+              ({ title }) =>
+                title.toLocaleLowerCase() === mutation.title.toLocaleLowerCase()
+            )
+          ) {
+            throw new Error(`人物条目“${mutation.title}”已存在。`);
+          }
+          const id = mutation.itemId ?? createCatalogId("character");
+          if (book.documents.some((document) => document.id === id)) {
+            throw new Error("人物条目标识已存在。");
+          }
+          items.push({ id, title: mutation.title, order: items.length + 1 });
+          book.documents.push({
+            id,
+            title: mutation.title,
+            content: "",
+            createdAt: now,
+            updatedAt: now
+          });
+        } else {
+          const index = items.findIndex(({ id }) => id === mutation.itemId);
+          if (index < 0) throw new Error("人物条目已删除或不存在。");
+          if (mutation.type === "updateItem") {
+            items[index] = { ...items[index]!, title: mutation.title };
+            const document = book.documents.find(({ id }) => id === mutation.itemId);
+            if (!document) throw new Error("人物条目文件不存在。");
+            document.title = mutation.title;
+            document.updatedAt = now;
+          } else if (mutation.type === "moveItem") {
+            const target = mutation.direction === "up" ? index - 1 : index + 1;
+            if (target < 0 || target >= items.length) {
+              throw new Error("人物条目已经位于列表边界。");
+            }
+            [items[index], items[target]] = [items[target]!, items[index]!];
+          } else {
+            items.splice(index, 1);
+            book.documents = book.documents.filter(({ id }) => id !== mutation.itemId);
+          }
+        }
+        book.characterStructure = {
+          format: "list",
+          items: items.map((item, index) => ({ ...item, order: index + 1 }))
+        };
+      }
+      book.updatedAt = now;
+      return true;
+    });
+    return BookSchema.parse(
+      structuredClone(next.books.find(({ id }) => id === input.bookId)!)
     );
   }
 

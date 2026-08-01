@@ -115,8 +115,14 @@ export function resolveAgentEditorMutationText(
 ): { text: string } | { error: string } {
   const target = mutation.mutationTarget;
   if (!target) return { text: mutation.text };
-  if (mutation.stageId !== "draft") {
+  if (target.kind.startsWith("expert-draft") && mutation.stageId !== "draft") {
     return { error: "正文文件修改只能应用到正文目录。" };
+  }
+  if (
+    target.kind.startsWith("character-") &&
+    mutation.stageId !== "character_design"
+  ) {
+    return { error: "人物文件修改只能应用到人物设计阶段。" };
   }
   return { text: mutation.text };
 }

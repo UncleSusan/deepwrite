@@ -171,6 +171,12 @@ export const BookPlotStagesSchema = z
 
 export const DEFAULT_CREATIVE_PLOT_STAGES = [
   {
+    id: "worldbuilding",
+    title: "世界观",
+    description:
+      "建立故事发生的世界背景、规则体系、地理时空、势力组织、科技或超自然设定，以及会影响人物选择与冲突推进的关键背景约束。只写服务于情节的设定，避免百科式堆砌；与已确认人物、剧情事实保持一致。"
+  },
+  {
     id: "plot_design",
     title: "剧情设计",
     description:
@@ -336,6 +342,65 @@ export const CatalogDocumentSchema = z.object({
   updatedAt: TimestampSchema
 });
 export type CatalogDocument = z.infer<typeof CatalogDocumentSchema>;
+
+export const BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID = "character_design" as const;
+export const BOOK_CHARACTER_OVERVIEW_TITLE = "概览" as const;
+const LEGACY_BOOK_CHARACTER_OVERVIEW_TITLE = "人物概览" as const;
+
+export const BookCharacterFormatSchema = z.enum(["text", "list"]);
+export type BookCharacterFormat = z.infer<typeof BookCharacterFormatSchema>;
+
+export const BookCharacterItemSchema = z
+  .object({
+    id: CatalogIdSchema.refine(
+      (value) => value !== BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID && value !== "draft",
+      { message: "Character item ids cannot use reserved document ids." }
+    ),
+    title: CatalogTitleSchema,
+    order: z.number().int().positive()
+  })
+  .strict();
+export type BookCharacterItem = z.infer<typeof BookCharacterItemSchema>;
+
+export const BookCharacterStructureSchema = z.discriminatedUnion("format", [
+  z.object({ format: z.literal("text") }).strict(),
+  z
+    .object({
+      format: z.literal("list"),
+      items: z.array(BookCharacterItemSchema).max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
+    })
+    .strict()
+    .superRefine((structure, context) => {
+      if (!uniqueIds(structure.items.map(({ id }) => id))) {
+        context.addIssue({
+          code: "custom",
+          path: ["items"],
+          message: "Character items cannot contain duplicate ids."
+        });
+      }
+      if (!uniqueIds(structure.items.map(({ order }) => String(order)))) {
+        context.addIssue({
+          code: "custom",
+          path: ["items"],
+          message: "Character items cannot contain duplicate order values."
+        });
+      }
+      if (!uniqueIds(structure.items.map(({ title }) => title.toLocaleLowerCase()))) {
+        context.addIssue({
+          code: "custom",
+          path: ["items"],
+          message: "Character items cannot contain duplicate titles."
+        });
+      }
+    })
+]);
+export type BookCharacterStructure = z.infer<
+  typeof BookCharacterStructureSchema
+>;
+
+export function createDefaultBookCharacterStructure(): BookCharacterStructure {
+  return { format: "text" };
+}
 
 export function catalogDraftBodyDocumentId(sectionId: string): string {
   return `draft-section:${sectionId}:body`;
@@ -578,6 +643,7 @@ export const CurrentShortBookSchema = z.object({
   status: z.enum(["editing", "completed"]),
   linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
   linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
+  characterStructure: BookCharacterStructureSchema,
   plotStages: BookPlotStagesSchema,
   documents: z.array(CatalogDocumentSchema),
   draft: CatalogDraftDirectorySchema,
@@ -587,9 +653,13 @@ export const CurrentShortBookSchema = z.object({
 });
 const LegacyShortBookSchema = CurrentShortBookSchema.omit({
   draft: true,
-  plotStages: true
+  plotStages: true,
+  characterStructure: true
 });
-const V2ShortBookSchema = CurrentShortBookSchema.omit({ plotStages: true });
+const V2ShortBookSchema = CurrentShortBookSchema.omit({
+  plotStages: true,
+  characterStructure: true
+});
 
 export const CurrentScriptBookSchema = z.object({
   id: CatalogIdSchema,
@@ -599,6 +669,7 @@ export const CurrentScriptBookSchema = z.object({
   status: z.enum(["editing", "completed"]),
   linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
   linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
+  characterStructure: BookCharacterStructureSchema,
   plotStages: BookPlotStagesSchema,
   documents: z.array(CatalogDocumentSchema),
   draft: CatalogDraftDirectorySchema,
@@ -606,7 +677,10 @@ export const CurrentScriptBookSchema = z.object({
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema
 });
-const V2ScriptBookSchema = CurrentScriptBookSchema.omit({ plotStages: true });
+const V2ScriptBookSchema = CurrentScriptBookSchema.omit({
+  plotStages: true,
+  characterStructure: true
+});
 
 function migrateLegacyShortBook(value: unknown): unknown {
   const legacy = LegacyShortBookSchema.safeParse(value);
@@ -692,10 +766,119 @@ function migrateBookPlotStageEnabled(value: unknown): unknown {
   };
 }
 
-function migrateBook(value: unknown): unknown {
-  return migrateBookPlotStageEnabled(
-    migrateMissingPlotStages(migrateLegacyShortBook(value))
+function migrateMissingCharacterStructure(value: unknown): unknown {
+  if (!value || typeof value !== "object" || "characterStructure" in value) {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  const documents = Array.isArray(record.documents) ? record.documents : [];
+  const hasOverview = documents.some(
+    (document) =>
+      document &&
+      typeof document === "object" &&
+      (document as { id?: unknown }).id === BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID
   );
+  return {
+    ...record,
+    characterStructure: createDefaultBookCharacterStructure(),
+    documents: hasOverview
+      ? documents
+      : [
+          ...documents,
+          {
+            id: BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID,
+            title: "人物设计",
+            content: "",
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt
+          }
+        ]
+  };
+}
+
+function migrateLegacyCharacterOverviewTitle(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const characterStructure = record.characterStructure;
+  if (
+    !characterStructure ||
+    typeof characterStructure !== "object" ||
+    (characterStructure as { format?: unknown }).format !== "list"
+  ) {
+    return value;
+  }
+  if (!Array.isArray(record.documents)) return value;
+  let changed = false;
+  const documents = record.documents.map((document) => {
+    if (
+      !document ||
+      typeof document !== "object" ||
+      (document as { id?: unknown }).id !== BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID ||
+      (document as { title?: unknown }).title !== LEGACY_BOOK_CHARACTER_OVERVIEW_TITLE
+    ) {
+      return document;
+    }
+    changed = true;
+    return {
+      ...document,
+      title: BOOK_CHARACTER_OVERVIEW_TITLE
+    };
+  });
+  return changed ? { ...record, documents } : value;
+}
+
+function migrateBook(value: unknown): unknown {
+  return migrateLegacyCharacterOverviewTitle(
+    migrateMissingCharacterStructure(
+      migrateBookPlotStageEnabled(
+        migrateMissingPlotStages(migrateLegacyShortBook(value))
+      )
+    )
+  );
+}
+
+function validateCharacterStructureDocuments(
+  book: {
+    characterStructure: BookCharacterStructure;
+    documents: ReadonlyArray<{ id: string; title: string }>;
+  },
+  context: z.core.$RefinementCtx<unknown>
+): void {
+  const overview = book.documents.find(
+    ({ id }) => id === BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID
+  );
+  if (!overview) {
+    context.addIssue({
+      code: "custom",
+      path: ["characterStructure"],
+      message: "Character structure must reference the character overview document."
+    });
+    return;
+  }
+  if (book.characterStructure.format !== "list") return;
+  if (overview.title !== BOOK_CHARACTER_OVERVIEW_TITLE) {
+    context.addIssue({
+      code: "custom",
+      path: ["documents"],
+      message: "List character structure must use the fixed overview title."
+    });
+  }
+  for (const [index, item] of book.characterStructure.items.entries()) {
+    const document = book.documents.find(({ id }) => id === item.id);
+    if (!document) {
+      context.addIssue({
+        code: "custom",
+        path: ["characterStructure", "items", index, "id"],
+        message: `Character item ${item.id} must reference a book document.`
+      });
+    } else if (document.title !== item.title) {
+      context.addIssue({
+        code: "custom",
+        path: ["characterStructure", "items", index, "title"],
+        message: `Character item ${item.id} title must match its document title.`
+      });
+    }
+  }
 }
 
 function validatePlotStageDocuments(
@@ -750,17 +933,19 @@ export const ShortBookSchema = z
   .preprocess(migrateBook, CurrentShortBookSchema)
   .superRefine((book, context) => {
     validateUniqueBookDocumentIds(book, context);
+    validateCharacterStructureDocuments(book, context);
     validatePlotStageDocuments(book, context);
   });
 export type ShortBook = z.infer<typeof ShortBookSchema>;
 
 export const ScriptBookSchema = z
   .preprocess(
-    (value) => migrateBookPlotStageEnabled(migrateMissingPlotStages(value)),
+    (value) => migrateBook(value),
     CurrentScriptBookSchema
   )
   .superRefine((book, context) => {
     validateUniqueBookDocumentIds(book, context);
+    validateCharacterStructureDocuments(book, context);
     validatePlotStageDocuments(book, context);
   });
 export type ScriptBook = z.infer<typeof ScriptBookSchema>;
@@ -775,6 +960,7 @@ export const BookSchema = z
   .preprocess(migrateBook, CurrentBookSchema)
   .superRefine((book, context) => {
     validateUniqueBookDocumentIds(book, context);
+    validateCharacterStructureDocuments(book, context);
     validatePlotStageDocuments(book, context);
   });
 export type Book = z.infer<typeof BookSchema>;
@@ -1068,9 +1254,46 @@ export const V2BookProjectManifestSchema = z
   .superRefine(validateUniqueBookManifestFiles);
 export type V2BookProjectManifest = z.infer<typeof V2BookProjectManifestSchema>;
 
-const CurrentBookProjectManifestSharedShape = {
+const V3BookProjectManifestSharedShape = {
   ...V2BookProjectManifestSharedShape,
   schemaVersion: z.literal(3),
+  plotStages: BookPlotStagesSchema
+} as const;
+
+const V3ShortBookProjectManifestObjectSchema = z
+  .object({
+    ...V3BookProjectManifestSharedShape,
+    bookType: z.literal("short"),
+    genre: ShortBookGenreSchema
+  })
+  .strict();
+
+const V3ScriptBookProjectManifestObjectSchema = z
+  .object({
+    ...V3BookProjectManifestSharedShape,
+    bookType: z.literal("script"),
+    genre: ScriptBookGenreSchema
+  })
+  .strict();
+
+export const V3BookProjectManifestSchema = z
+  .preprocess(
+    migrateBookPlotStageEnabled,
+    z.discriminatedUnion("bookType", [
+      V3ShortBookProjectManifestObjectSchema,
+      V3ScriptBookProjectManifestObjectSchema
+    ])
+  )
+  .superRefine((manifest, context) => {
+    validateUniqueBookManifestFiles(manifest, context);
+    validatePlotStageManifestFiles(manifest, context);
+  });
+export type V3BookProjectManifest = z.infer<typeof V3BookProjectManifestSchema>;
+
+const CurrentBookProjectManifestSharedShape = {
+  ...V2BookProjectManifestSharedShape,
+  schemaVersion: z.literal(4),
+  characterStructure: BookCharacterStructureSchema,
   plotStages: BookPlotStagesSchema
 } as const;
 
@@ -1147,8 +1370,18 @@ function validatePlotStageManifestFiles(
   validatePlotStageDocuments(manifest, context);
 }
 
+function validateCharacterStructureManifestFiles(
+  manifest: {
+    characterStructure: BookCharacterStructure;
+    documents: ReadonlyArray<{ id: string; title: string }>;
+  },
+  context: z.core.$RefinementCtx<unknown>
+): void {
+  validateCharacterStructureDocuments(manifest, context);
+}
+
 function preprocessBookProjectManifestPlotStages(value: unknown): unknown {
-  return migrateBookPlotStageEnabled(value);
+  return migrateLegacyCharacterOverviewTitle(migrateBookPlotStageEnabled(value));
 }
 
 export const CurrentShortBookProjectManifestSchema = z
@@ -1158,6 +1391,7 @@ export const CurrentShortBookProjectManifestSchema = z
   )
   .superRefine((manifest, context) => {
     validateUniqueBookManifestFiles(manifest, context);
+    validateCharacterStructureManifestFiles(manifest, context);
     validatePlotStageManifestFiles(manifest, context);
   });
 export type CurrentShortBookProjectManifest = z.infer<
@@ -1171,6 +1405,7 @@ export const ScriptBookProjectManifestSchema = z
   )
   .superRefine((manifest, context) => {
     validateUniqueBookManifestFiles(manifest, context);
+    validateCharacterStructureManifestFiles(manifest, context);
     validatePlotStageManifestFiles(manifest, context);
   });
 export const CurrentScriptBookProjectManifestSchema =
@@ -1190,6 +1425,7 @@ export const CurrentBookProjectManifestSchema = z
   )
   .superRefine((manifest, context) => {
     validateUniqueBookManifestFiles(manifest, context);
+    validateCharacterStructureManifestFiles(manifest, context);
     validatePlotStageManifestFiles(manifest, context);
   });
 export type CurrentBookProjectManifest = z.infer<
@@ -1198,6 +1434,7 @@ export type CurrentBookProjectManifest = z.infer<
 
 export const BookProjectManifestSchema = z.union([
   CurrentBookProjectManifestSchema,
+  V3BookProjectManifestSchema,
   V2BookProjectManifestSchema,
   LegacyBookProjectManifestSchema
 ]);
@@ -1261,6 +1498,7 @@ export type SkillGroupProjectManifest = z.infer<
 
 export const CatalogProjectManifestSchema = z.union([
   CurrentBookProjectManifestSchema,
+  V3BookProjectManifestSchema,
   V2BookProjectManifestSchema,
   LegacyBookProjectManifestSchema,
   MaterialLibraryProjectManifestSchema,
@@ -1580,6 +1818,47 @@ export const MutatePlotStructureInputSchema = z
   .strict();
 export type MutatePlotStructureInput = z.infer<
   typeof MutatePlotStructureInputSchema
+>;
+
+export const CharacterStructureMutationSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("setFormat"), format: BookCharacterFormatSchema }).strict(),
+  z
+    .object({
+      type: z.literal("createItem"),
+      title: CatalogTitleSchema,
+      itemId: CatalogIdSchema.optional()
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("updateItem"),
+      itemId: CatalogIdSchema,
+      title: CatalogTitleSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("moveItem"),
+      itemId: CatalogIdSchema,
+      direction: z.enum(["up", "down"])
+    })
+    .strict(),
+  z.object({ type: z.literal("deleteItem"), itemId: CatalogIdSchema }).strict()
+]);
+export type CharacterStructureMutation = z.infer<
+  typeof CharacterStructureMutationSchema
+>;
+
+export const MutateCharacterStructureInputSchema = z
+  .object({
+    bookId: CatalogIdSchema,
+    baseProjectRevision: z.number().int().nonnegative(),
+    force: z.boolean().optional(),
+    mutation: CharacterStructureMutationSchema
+  })
+  .strict();
+export type MutateCharacterStructureInput = z.infer<
+  typeof MutateCharacterStructureInputSchema
 >;
 
 export const DeleteBookInputSchema = z.object({
@@ -2050,6 +2329,12 @@ export const CatalogMutatePlotStructureCommandEnvelopeSchema =
     payload: MutatePlotStructureInputSchema
   });
 
+export const CatalogMutateCharacterStructureCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.mutateCharacterStructure"),
+    payload: MutateCharacterStructureInputSchema
+  });
+
 export const CatalogUpdateLibraryGroupCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("catalog.updateLibraryGroup"),
@@ -2134,6 +2419,7 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogImportLegacyLibraryAtPathCommandEnvelopeSchema,
   CatalogUpdateBookCommandEnvelopeSchema,
   CatalogMutatePlotStructureCommandEnvelopeSchema,
+  CatalogMutateCharacterStructureCommandEnvelopeSchema,
   CatalogUpdateLibraryGroupCommandEnvelopeSchema,
   CatalogDeleteBookCommandEnvelopeSchema,
   CatalogSaveDocumentCommandEnvelopeSchema,

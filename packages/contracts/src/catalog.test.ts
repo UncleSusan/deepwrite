@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOOK_CHARACTER_OVERVIEW_TITLE,
   BookProjectDraftSectionManifestSchema,
   CatalogDocumentSchema,
+  CurrentBookProjectManifestSchema,
   CatalogDraftSectionSchema,
   CatalogDraftRecoverySchema,
   CatalogProjectManifestSchema,
@@ -63,9 +65,20 @@ describe("catalog contracts", () => {
       }).success
     ).toBe(false);
     const newBookStages = createDefaultBookPlotStages();
+    expect(newBookStages.map(({ id }) => id)).toEqual([
+      "worldbuilding",
+      "plot_design",
+      "intro_design",
+      "plot_refine",
+      "narrative_perspective",
+      "outline"
+    ]);
     expect(
       newBookStages.filter((stage) => stage.enabled).map(({ id }) => id)
     ).toEqual(["plot_design", "intro_design", "plot_refine"]);
+    expect(
+      newBookStages.find((stage) => stage.id === "worldbuilding")?.enabled
+    ).toBe(false);
     expect(BookPlotStagesSchema.parse(newBookStages)).toEqual(newBookStages);
     expect(
       BookPlotStagesSchema.safeParse(
@@ -404,6 +417,7 @@ describe("catalog contracts", () => {
       "material-1"
     ]);
     expect(snapshot.books[0]?.plotStages.map(({ id }) => id)).toEqual([
+      "worldbuilding",
       "plot_design",
       "intro_design",
       "plot_refine",
@@ -411,11 +425,13 @@ describe("catalog contracts", () => {
       "outline"
     ]);
     expect(snapshot.books[0]?.documents.map(({ id }) => id)).toEqual([
+      "worldbuilding",
       "plot_design",
       "intro_design",
       "plot_refine",
       "narrative_perspective",
-      "outline"
+      "outline",
+      "character_design"
     ]);
     expect(
       snapshot.books[0]?.draft.sections.find((section) => section.body.content)?.body
@@ -951,5 +967,84 @@ describe("catalog contracts", () => {
         }
       })
     ).toThrow();
+  });
+
+  it("migrates legacy list character overview title to 概览", () => {
+    const plotStages = createDefaultBookPlotStages();
+    const parsed = CurrentBookProjectManifestSchema.parse({
+      schemaVersion: 4,
+      revision: 1,
+      kind: "deepwrite.book",
+      id: "book-overview-title",
+      title: "概览标题迁移",
+      bookType: "short",
+      genre: "悬疑",
+      status: "editing",
+      characterStructure: { format: "list", items: [] },
+      plotStages,
+      linkedMaterialIdsByKind: {
+        character: [],
+        gimmick: [],
+        plot: [],
+        draft: [],
+        other: []
+      },
+      linkedSkillIdsByKind: {
+        general: [],
+        plot: [],
+        style: [],
+        other: []
+      },
+      documents: [
+        {
+          id: "character_design",
+          title: "人物概览",
+          path: "stages/character_design.md",
+          createdAt: now,
+          updatedAt: now
+        },
+        ...plotStages.map((stage) => ({
+          id: stage.id,
+          title: stage.title,
+          path: `stages/${stage.id}.md`,
+          createdAt: now,
+          updatedAt: now
+        }))
+      ],
+      draft: {
+        id: "draft",
+        title: "正文编写",
+        sections: [
+          {
+            id: "section-1",
+            title: "第一节",
+            wordCountRequirement: "1200字",
+            body: {
+              id: "draft-section:section-1:body",
+              title: "第一节",
+              path: "stages/draft/section-1.body.md",
+              createdAt: now,
+              updatedAt: now
+            },
+            characterState: {
+              id: "draft-section:section-1:character-state",
+              title: "第一节 · 人物状态",
+              path: "stages/draft/section-1.state.md",
+              createdAt: now,
+              updatedAt: now
+            },
+            createdAt: now,
+            updatedAt: now
+          }
+        ],
+        createdAt: now,
+        updatedAt: now
+      },
+      createdAt: now,
+      updatedAt: now
+    });
+    expect(
+      parsed.documents.find(({ id }) => id === "character_design")?.title
+    ).toBe(BOOK_CHARACTER_OVERVIEW_TITLE);
   });
 });

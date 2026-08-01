@@ -1,6 +1,7 @@
 import type {
   AgentRuntimeRef,
   AgentUsage,
+  CharacterStructureMutation,
   LongCharacterFileChange,
   LongWorkspaceOperationBatch,
   LongWorldbuildingFileChange,
@@ -124,8 +125,14 @@ export interface AgentEditProposal {
     /** Project revision captured when this deletion was proposed. */
     baseProjectRevision?: number;
   };
+  characterStructureTarget?: {
+    mutation: CharacterStructureMutation;
+    baseProjectRevision?: number;
+  };
   /** True when this file mutation targets a same-run provisional section. */
   provisionalExpertSection?: boolean;
+  /** Stable item id for a same-run character create-then-write proposal. */
+  provisionalCharacterItemId?: string;
 }
 
 export interface ChatToolActivity {
