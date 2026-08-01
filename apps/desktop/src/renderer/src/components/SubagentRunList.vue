@@ -104,7 +104,6 @@ const WORKSPACE_TOOL_LABELS: Record<string, string> = {
   write_worldbuilding_content: "写入世界观文件",
   replace_worldbuilding_text: "编辑世界观文件",
   list_characters: "列出人物",
-  read_character_overview: "读取人物概览",
   search_characters: "搜索人物",
   read_character: "读取人物",
   create_character: "创建人物",

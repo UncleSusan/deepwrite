@@ -19,11 +19,13 @@ import {
   LongBookSchema,
   LongBookSummarySchema,
   LongAgentIdSchema,
+  LongArcIdSchema,
   LongCharacterGroupSchema,
   LongChapterCardIdSchema,
   LongFileIdSchema,
   LongFileRevisionSchema,
   LongProjectRelativePathSchema,
+  LongVolumeIdSchema,
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
   LongWorkspaceNavigationSnapshotSchema,
@@ -288,6 +290,83 @@ export type LongCharacterFocusSnapshot = z.infer<
   typeof LongCharacterFocusSnapshotSchema
 >;
 
+export const LONG_PLOT_FOCUS_SECTIONS = [
+  "book_line",
+  "plot_point",
+  "chapter_card",
+  "foreshadowing"
+] as const;
+export const LongPlotFocusSnapshotSchema = z
+  .object({
+    section: z.enum(LONG_PLOT_FOCUS_SECTIONS),
+    volumeId: LongVolumeIdSchema.optional(),
+    volumeTitle: z.string().trim().min(1).max(256).optional(),
+    arcId: LongArcIdSchema.optional(),
+    arcTitle: z.string().trim().min(1).max(256).optional(),
+    chapterCardId: LongChapterCardIdSchema.optional(),
+    chapterCardTitle: z.string().trim().min(1).max(256).optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (Boolean(value.volumeId) !== Boolean(value.volumeTitle)) {
+      context.addIssue({
+        code: "custom",
+        path: ["volumeTitle"],
+        message: "Long plot focus volume id and title must be provided together."
+      });
+    }
+    if (Boolean(value.arcId) !== Boolean(value.arcTitle)) {
+      context.addIssue({
+        code: "custom",
+        path: ["arcTitle"],
+        message: "Long plot focus arc id and title must be provided together."
+      });
+    }
+    if (Boolean(value.chapterCardId) !== Boolean(value.chapterCardTitle)) {
+      context.addIssue({
+        code: "custom",
+        path: ["chapterCardTitle"],
+        message:
+          "Long plot focus chapter card id and title must be provided together."
+      });
+    }
+    if (
+      (value.section === "plot_point" || value.section === "chapter_card") &&
+      value.volumeId === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["volumeId"],
+        message: "A volume-scoped long plot focus must name its volume."
+      });
+    }
+    if (value.section !== "plot_point" && value.arcId !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["arcId"],
+        message: "Only a plot-point long plot focus may name an arc."
+      });
+    }
+    if (value.section !== "chapter_card" && value.chapterCardId !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["chapterCardId"],
+        message: "Only a chapter-card long plot focus may name a chapter card."
+      });
+    }
+    if (
+      (value.section === "book_line" || value.section === "foreshadowing") &&
+      value.volumeId !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["volumeId"],
+        message: "A book-scoped long plot focus must not name a volume."
+      });
+    }
+  });
+export type LongPlotFocusSnapshot = z.infer<typeof LongPlotFocusSnapshotSchema>;
+
 export const LongWorkspaceRuntimeContextSchema = z
   .object({
     bookId: LongBookIdSchema,
@@ -301,7 +380,8 @@ export const LongWorkspaceRuntimeContextSchema = z
     projectRevision: z.number().int().nonnegative(),
     navigation: LongWorkspaceNavigationSnapshotSchema,
     worldbuildingFocus: LongWorldbuildingFocusSnapshotSchema.optional(),
-    characterFocus: LongCharacterFocusSnapshotSchema.optional()
+    characterFocus: LongCharacterFocusSnapshotSchema.optional(),
+    plotFocus: LongPlotFocusSnapshotSchema.optional()
   })
   .strict()
   .superRefine((value, context) => {
@@ -413,6 +493,71 @@ export const LongWorkspaceRuntimeContextSchema = z
         message:
           "Long character focus requires the active character file."
       });
+    }
+    if (
+      value.plotFocus !== undefined &&
+      (value.activeRoot !== "plot_design" ||
+        value.activeAgentId !== "plot_design")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["plotFocus"],
+        message:
+          "Long plot focus may only be provided to the plot-design agent."
+      });
+    }
+    if (
+      value.plotFocus?.volumeId !== undefined &&
+      !value.navigation.volumes.some(
+        ({ id }) => id === value.plotFocus!.volumeId
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["plotFocus", "volumeId"],
+        message:
+          "Long plot focus volume must exist in the navigation snapshot."
+      });
+    }
+    if (value.plotFocus?.arcId !== undefined) {
+      const focusedArc = value.navigation.arcs.find(
+        ({ id }) => id === value.plotFocus!.arcId
+      );
+      if (!focusedArc) {
+        context.addIssue({
+          code: "custom",
+          path: ["plotFocus", "arcId"],
+          message:
+            "Long plot focus arc must exist in the navigation snapshot."
+        });
+      } else if (focusedArc.volumeId !== value.plotFocus.volumeId) {
+        context.addIssue({
+          code: "custom",
+          path: ["plotFocus", "arcId"],
+          message:
+            "Long plot focus arc must belong to the focused volume."
+        });
+      }
+    }
+    if (value.plotFocus?.chapterCardId !== undefined) {
+      const focusedChapterCard = value.navigation.chapterCards.find(
+        ({ id }) => id === value.plotFocus!.chapterCardId
+      );
+      if (!focusedChapterCard) {
+        context.addIssue({
+          code: "custom",
+          path: ["plotFocus", "chapterCardId"],
+          message:
+            "Long plot focus chapter card must exist in the navigation snapshot."
+        });
+      } else if (focusedChapterCard.volumeId !== value.plotFocus.volumeId) {
+        context.addIssue({
+          code: "custom",
+          path: ["plotFocus", "chapterCardId"],
+          message:
+            "Long plot focus chapter card must belong to the focused volume."
+        });
+      }
     }
   });
 export type LongWorkspaceRuntimeContext = z.infer<

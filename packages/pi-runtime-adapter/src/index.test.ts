@@ -480,6 +480,136 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(userPrompt).not.toContain("run_character_prompt");
   });
 
+  it("injects plot structure navigation and the current plot position for plot-design runs", () => {
+    const profile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "plot_design"
+    )!;
+    const navigation = {
+      schemaVersion: 1 as const,
+      revision: 3,
+      bookId: "longbook_plot_prompt",
+      updatedAt: "2026-07-26T10:00:00.000Z",
+      counts: {
+        worldbuildingCategories: 0,
+        characters: 0,
+        volumes: 2,
+        arcs: 3,
+        chapterCards: 1,
+        storyEvents: 0,
+        storyPlots: 2,
+        foreshadowingThreads: 1,
+        committedChapters: 0
+      },
+      worldbuilding: [],
+      characters: [],
+      volumes: [
+        { id: "volume_plot_a", title: "起势", order: 1 },
+        { id: "volume_plot_b", title: "转折", order: 2 }
+      ],
+      arcs: [
+        { id: "arc_plot_main", volumeId: "volume_plot_a", title: "主线", order: 1 },
+        { id: "arc_plot_hidden", volumeId: "volume_plot_a", title: "暗线", order: 2 },
+        { id: "arc_plot_turn", volumeId: "volume_plot_b", title: "反击", order: 1 }
+      ],
+      chapterCards: [
+        {
+          id: "chapter_plot_one",
+          volumeId: "volume_plot_a",
+          primaryArcId: "arc_plot_main",
+          title: "第一章",
+          narrativeOrder: 1
+        }
+      ],
+      committedThroughChapterId: null
+    };
+    const longWorkspace: LongWorkspaceRuntimeContext = {
+      bookId: "longbook_plot_prompt",
+      title: "雾港长篇",
+      activeRoot: "plot_design",
+      activeAgentId: profile.id,
+      workspaceRevision: 3,
+      projectRevision: 5,
+      navigation,
+      plotFocus: {
+        section: "plot_point",
+        volumeId: "volume_plot_a",
+        volumeTitle: "起势",
+        arcId: "arc_plot_main",
+        arcTitle: "主线"
+      }
+    };
+    const input = {
+      runId: "run_plot_prompt",
+      sessionId: "session_plot_prompt",
+      prompt: "梳理这一卷的节奏",
+      longAgentProfile: profile,
+      workspaceContext: { longWorkspace }
+    };
+
+    const userPrompt = buildRuntimeUserPrompt(input);
+    expect(userPrompt).toContain(
+      "全书共 2 卷、3 个剧情点、1 张章卡、2 条故事情节、0 个故事事件、1 条伏笔线"
+    );
+    expect(userPrompt).toContain(
+      "- 第 1 卷「起势」(volume_plot_a): 「主线」(arc_plot_main)、「暗线」(arc_plot_hidden)"
+    );
+    expect(userPrompt).toContain(
+      "- 第 2 卷「转折」(volume_plot_b): 「反击」(arc_plot_turn)"
+    );
+    expect(userPrompt).toContain(
+      "当前剧情工作区: 剧情点「主线」(arc_plot_main)，所属分卷「起势」(volume_plot_a)"
+    );
+
+    const chapterCardPrompt = buildRuntimeUserPrompt({
+      ...input,
+      workspaceContext: {
+        longWorkspace: {
+          ...longWorkspace,
+          activeChapterCardId: "chapter_plot_one",
+          plotFocus: {
+            section: "chapter_card",
+            volumeId: "volume_plot_a",
+            volumeTitle: "起势",
+            chapterCardId: "chapter_plot_one",
+            chapterCardTitle: "第一章"
+          }
+        }
+      }
+    });
+    expect(chapterCardPrompt).toContain(
+      "当前剧情工作区: 章卡「第一章」(chapter_plot_one)，所属分卷「起势」(volume_plot_a)"
+    );
+
+    const bookLinePrompt = buildRuntimeUserPrompt({
+      ...input,
+      workspaceContext: {
+        longWorkspace: {
+          ...longWorkspace,
+          plotFocus: { section: "book_line" }
+        }
+      }
+    });
+    expect(bookLinePrompt).toContain("当前剧情工作区: 全书故事线");
+
+    const draftProfile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "draft"
+    )!;
+    const draftPrompt = buildRuntimeUserPrompt({
+      ...input,
+      longAgentProfile: draftProfile,
+      workspaceContext: {
+        longWorkspace: {
+          ...longWorkspace,
+          activeRoot: "draft",
+          activeAgentId: "draft",
+          plotFocus: undefined
+        }
+      }
+    });
+    expect(draftPrompt).not.toContain("长篇结构导航");
+    expect(draftPrompt).not.toContain("当前剧情工作区");
+  });
+
   it("lets configured long-form teams delegate with the same bounded tools", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"

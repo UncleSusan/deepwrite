@@ -62,7 +62,7 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(editorSource).toContain('if (tab === "foreshadowing")');
     expect(editorSource).toContain(
-      "if (!(await saveAllChanges())) return;"
+      "if (!props.locked && !(await saveAllChanges())) return;"
     );
     expect(editorSource).toContain(
       "if (currentIsPlotPointForeshadowing.value)"
@@ -994,6 +994,9 @@ describe("long-form renderer vertical slice", () => {
   it("applies manual structure changes directly after an internal impact check", () => {
     expect(appSource).toContain("<LongStructureDialog");
     expect(appSource).toContain("async function handleLongStructureMutation(");
+    expect(appSource).toContain("async function handleLongWorldbuildingSync(");
+    expect(appSource).toContain("buildLongWorldbuildingSyncBatch");
+    expect(appSource).toContain('@sync-worldbuilding="handleLongWorldbuildingSync"');
     expect(appSource).toContain("const preview = await api.previewOperations({");
     expect(appSource).toContain(
       "const applyResult = await api.applyOperations({"
@@ -1007,6 +1010,7 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(structureSource).toContain("builder.createWorldbuilding");
     expect(structureSource).toContain("builder.updateWorldbuilding");
+    expect(structureSource).toContain("加载其他书籍世界观");
     expect(structureSource).not.toContain("<LongPlotStructureManager");
     expect(structureSource).toContain('@click="openCreate"');
     expect(structureSource).toContain('@click="openEdit(row)"');

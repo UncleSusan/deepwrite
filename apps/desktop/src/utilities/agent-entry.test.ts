@@ -145,36 +145,12 @@ describe("Agent Utility prompt forwarding", () => {
                   revision:
                     createShortWorkspaceContentRevision(characterContent)
                 },
-                {
-                  stageId: "plot_design",
-                  title: "剧情设计",
+                ...plotStages.map((stage) => ({
+                  stageId: stage.id,
+                  title: stage.title,
                   content: "",
                   revision: emptyRevision
-                },
-                {
-                  stageId: "intro_design",
-                  title: "导语设计",
-                  content: "",
-                  revision: emptyRevision
-                },
-                {
-                  stageId: "plot_refine",
-                  title: "剧情细化",
-                  content: "",
-                  revision: emptyRevision
-                },
-                {
-                  stageId: "narrative_perspective",
-                  title: "叙事视角",
-                  content: "",
-                  revision: emptyRevision
-                },
-                {
-                  stageId: "outline",
-                  title: "大纲",
-                  content: "",
-                  revision: emptyRevision
-                }
+                }))
               ]
             }
           }

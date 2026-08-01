@@ -1564,7 +1564,8 @@ async function selectBookLineContentTab(
   tab: "outline" | "foreshadowing"
 ): Promise<void> {
   if (tab === "foreshadowing") {
-    if (!(await saveAllChanges())) return;
+    // 锁定期间编辑器只读、不会产生脏数据，跳过保存以避免与智能体写入冲突
+    if (!props.locked && !(await saveAllChanges())) return;
     await nextTick();
   }
   activeBookLineContentTab.value = tab;
@@ -1575,7 +1576,8 @@ async function selectPlotPointTab(
   tab: "summary" | "storyline" | "foreshadowing"
 ): Promise<void> {
   if (tab === "foreshadowing" || tab === "storyline") {
-    if (!(await saveAllChanges())) return;
+    // 同上：锁定时允许只读切换，不再触发保存
+    if (!props.locked && !(await saveAllChanges())) return;
     await nextTick();
   }
   activePlotPointTab.value = tab;
@@ -2796,7 +2798,6 @@ async function selectRole(role: LongWorkspaceFileRole): Promise<void> {
 
 function requestSelectCharacter(characterId: LongCharacterId): void {
   if (
-    props.locked ||
     characterId === props.selection?.characterId ||
     characterId === pendingCharacterId.value
   ) {
@@ -3585,7 +3586,6 @@ onBeforeUnmount(() => {
             :aria-selected="selection.characterId === character.id"
             :aria-busy="pendingCharacterId === character.id"
             :title="character.label"
-            :disabled="locked"
             @click="requestSelectCharacter(character.id)"
           >
             {{ character.label }}
@@ -3730,7 +3730,6 @@ onBeforeUnmount(() => {
             role="tab"
             :aria-selected="selection.chapterCardId === chapterCard.id"
             :title="chapterCard.label"
-            :disabled="locked"
             @click="emit('selectChapterCard', chapterCard.id)"
           >
             {{ chapterCard.label }}
@@ -3852,7 +3851,6 @@ onBeforeUnmount(() => {
             :class="{
               'is-active': activeBookLineContentTab === 'outline'
             }"
-            :disabled="locked"
             @click="selectBookLineContentTab('outline')"
           >
             卷纲
@@ -3867,7 +3865,6 @@ onBeforeUnmount(() => {
               'is-active':
                 activeBookLineContentTab === 'foreshadowing'
             }"
-            :disabled="locked"
             @click="selectBookLineContentTab('foreshadowing')"
           >
             本卷伏笔
@@ -3884,7 +3881,6 @@ onBeforeUnmount(() => {
             role="tab"
             :aria-selected="activePlotPointTab === 'summary'"
             :class="{ 'is-active': activePlotPointTab === 'summary' }"
-            :disabled="locked"
             @click="selectPlotPointTab('summary')"
           >
             概要
@@ -3894,7 +3890,6 @@ onBeforeUnmount(() => {
             role="tab"
             :aria-selected="activePlotPointTab === 'storyline'"
             :class="{ 'is-active': activePlotPointTab === 'storyline' }"
-            :disabled="locked"
             @click="selectPlotPointTab('storyline')"
           >
             故事情节
@@ -3906,7 +3901,6 @@ onBeforeUnmount(() => {
             :class="{
               'is-active': activePlotPointTab === 'foreshadowing'
             }"
-            :disabled="locked"
             @click="selectPlotPointTab('foreshadowing')"
           >
             伏笔触点
@@ -3929,7 +3923,6 @@ onBeforeUnmount(() => {
               'is-loading': pendingRole === file.role
             }"
             :aria-busy="pendingRole === file.role"
-            :disabled="locked"
             @click="selectRole(file.role)"
           >
             {{ file.label }}
@@ -4267,7 +4260,6 @@ onBeforeUnmount(() => {
                     class="long-story-plot-card-main"
                     type="button"
                     :aria-pressed="plot.id === activeStoryPlotId"
-                    :disabled="locked"
                     @click="selectStoryPlot(plot.id)"
                   >
                     <span class="long-story-plot-card-order">

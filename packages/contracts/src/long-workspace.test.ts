@@ -909,7 +909,6 @@ describe("independent long-form workspace contracts", () => {
       ({ id }) => id === "character_design"
     )!;
     expect(characterProfile.systemPrompt).toContain("character_id 唯一定位");
-    expect(characterProfile.systemPrompt).toContain("read_character_overview");
     expect(characterProfile.systemPrompt).toContain("list_characters");
     expect(characterProfile.systemPrompt).toContain("search_characters");
     expect(characterProfile.systemPrompt).toContain("read_character");

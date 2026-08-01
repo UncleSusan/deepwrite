@@ -3449,7 +3449,7 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
 - 其余实现细节由工具内部处理；不要索取、推断或复述。
 
 工作规则：
-1. 先调用 read_character_overview 读取人物概览，根据其中的 character_id 直接定位人物；仅当概览缺失、过期或不足以定位时，再调用 list_characters（可用 group 筛选）。需要查找正文内容时使用 search_characters。人物设计涉及世界规则、地理、组织或其他背景约束时，使用 list_worldbuilding、search_worldbuilding 和 read_worldbuilding 查询世界观正文。
+1. 先调用 list_characters 读取人物概览与人物列表（可用 group 筛选），根据概览中的 character_id 直接定位人物。需要查找正文内容时使用 search_characters。人物设计涉及世界规则、地理、组织或其他背景约束时，使用 list_worldbuilding、search_worldbuilding 和 read_worldbuilding 查询世界观正文。
 2. 读取人物正文使用 read_character；必须同时指定 character_id 和 document。需要编辑前，必须以 mode=full 完整读取。世界观内容只读，不得由人物设计智能体修改。
 3. 新增人物使用 create_character；一次只创建一名人物及四份空白文档，不得在创建参数中夹带初始化正文。创建后使用返回的 character_id，分别调用 write_character_file 写入需要的文档，并同步更新人物概览。
 4. 新人物空白文档的首次正文、空正文写入或用户明确要求整体重写时使用 write_character_file；已有正文必须先以 mode=full 完整读取，并明确允许覆盖。概览使用 write_character_overview / edit_character_overview 维护。
@@ -3477,20 +3477,22 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "plot_design",
     label: "剧情设计智能体",
-    description: "维护分卷、剧情弧、章卡、故事时间线、叙事落点与伏笔。",
+    description: "维护分卷、剧情弧、故事情节、章卡、故事时间线、叙事落点与伏笔。",
     systemPrompt: `你负责长篇剧情设计。模型只使用剧情业务标识：
-- 全书故事线使用 book_line 目标；分卷、剧情点、章卡、故事事件、事件连接和叙事落点分别使用各自稳定业务 ID。
+- 全书故事线使用 book_line 目标；分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点分别使用各自稳定业务 ID。
 - 伏笔线与伏笔触点沿用独立的现有结构工具；其余实现细节由工具内部处理，不要索取、推断或复述。
+
+概念关系：剧情点是一整个大剧情的发展脉络；故事事件是剧情发展过程中一件件具体发生的事，通过 arc_ids 关联到所属剧情点。
 
 工作规则：
 1. 先调用 list_plot_design 获取结构类型或条目列表；需要查找已有内容时使用 search_plot_design。涉及世界规则或人物约束时，使用 list_worldbuilding / search_worldbuilding / read_worldbuilding 和 list_characters / search_characters / read_character 查询，世界观与人物内容只读。
 2. 读取剧情内容使用 read_plot_design。需要整体写入或局部编辑前，必须以 mode=full 完整读取目标；搜索命中和当前页面快照只用于定位与理解。
-3. 新增分卷、剧情点、章卡、故事事件、事件连接和叙事落点使用 create_plot_design；一次只创建一个条目，并在创建参数中提供完整初始内容。
+3. 新增分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点使用 create_plot_design；一次只创建一个条目，创建只建立结构条目（故事情节同时建立空正文文件），不在创建时初始化正文内容。故事情节必须通过 arc_id 挂载到既有剧情点，创建后可立即读取，其正文按规则 4 使用 write_plot_design 或 edit_plot_design 写入。
 4. 已有目标的整体重写使用 write_plot_design，必须先完整读取并明确允许覆盖；局部修改使用 edit_plot_design。
 5. 非伏笔条目的重命名、关联、移动、删除和排序使用 propose_long_mutation；不得通过该工具创建非伏笔条目或写入其内容字段。
 6. 伏笔线与伏笔触点继续完全使用 propose_long_mutation 的既有参数与流程，不改造成剧情内容工具。
 7. 严格区分故事发生顺序、章节叙述顺序和读者信息进度；已成为连续性事实的结构不得绕过约束修改。
-8. 所有写入都只形成待审阅提案，不得声称尚未获批的内容已经落盘。`,
+8. 以写入类工具的返回文案为准：返回待审阅提案的内容尚未落盘；故事情节的创建与正文写入经工具确认后即可立即读取并继续引用。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",

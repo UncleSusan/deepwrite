@@ -15,6 +15,7 @@ import {
   isLongMigrationEvidenceCategoryId,
   type LongStructureMutationCompletion
 } from "../types/longWorkspace";
+import type { LongWorldbuildingSyncBookOption } from "../utils/longWorldbuildingSync";
 import PopupSelect, {
   type PopupSelectOption,
   type PopupSelectValue
@@ -38,10 +39,14 @@ interface StructureDraft {
 const props = withDefaults(
   defineProps<{
     snapshot: LongWorkspaceIndexSnapshot;
+    currentBookId?: string | null | undefined;
+    syncBookOptions?: readonly LongWorldbuildingSyncBookOption[] | undefined;
     disabled?: boolean;
     previewError?: string | null;
   }>(),
   {
+    currentBookId: null,
+    syncBookOptions: () => [],
     disabled: false,
     previewError: null
   }
@@ -52,8 +57,11 @@ const emit = defineEmits<{
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
   ];
+  syncWorldbuilding: [
+    payload: { sourceBookId: string; sourceTitle: string },
+    completion: LongStructureMutationCompletion
+  ];
 }>();
-
 const formatOptions: readonly PopupSelectOption[] = [
   { value: "list", label: "条目列表" },
   { value: "text", label: "连续文本" }
@@ -81,7 +89,9 @@ const formOpen = ref(false);
 const formMode = ref<"create" | "edit">("create");
 const pendingDelete = ref<ManagerRow | null>(null);
 const cascadeDelete = ref(false);
-type MutationSurface = "form" | "delete" | "background";
+const syncOpen = ref(false);
+const selectedSyncBookId = ref<string>("");
+type MutationSurface = "form" | "delete" | "sync" | "background";
 const pendingMutation = ref<{
   id: number;
   surface: MutationSurface;
@@ -89,6 +99,23 @@ const pendingMutation = ref<{
 let mutationClock = 0;
 const mutationLocked = computed(
   () => props.disabled || pendingMutation.value !== null
+);
+
+const syncBookSelectOptions = computed<PopupSelectOption[]>(() =>
+  props.syncBookOptions
+    .filter((book) => book.id !== props.currentBookId)
+    .map((book) => ({
+      value: book.id,
+      label:
+        book.categoryCount > 0
+          ? `${book.title}（${book.categoryCount} 个分类）`
+          : book.title
+    }))
+);
+
+const selectedSyncBook = computed(() =>
+  props.syncBookOptions.find((book) => book.id === selectedSyncBookId.value) ??
+  null
 );
 
 function emptyDraft(): StructureDraft {
@@ -129,6 +156,7 @@ function setPanel(panel: StructurePanel): void {
   if (panel === activePanel.value || mutationLocked.value) return;
   closeForm();
   closeDelete();
+  closeSync();
   activePanel.value = panel;
 }
 
@@ -183,7 +211,55 @@ function finishMutation(
   } else if (pending.surface === "delete") {
     pendingDelete.value = null;
     cascadeDelete.value = false;
+  } else if (pending.surface === "sync") {
+    syncOpen.value = false;
+    selectedSyncBookId.value = "";
   }
+}
+
+function openSync(): void {
+  if (mutationLocked.value) return;
+  if (!syncBookSelectOptions.value.length) {
+    uiMessage.warning("当前没有其他可同步的长篇书籍。");
+    return;
+  }
+  selectedSyncBookId.value = String(syncBookSelectOptions.value[0]?.value ?? "");
+  syncOpen.value = true;
+}
+
+function closeSync(): void {
+  if (mutationLocked.value) return;
+  syncOpen.value = false;
+  selectedSyncBookId.value = "";
+}
+
+function setSyncBook(value: PopupSelectValue): void {
+  selectedSyncBookId.value = typeof value === "string" ? value : "";
+}
+
+function confirmSync(): void {
+  if (mutationLocked.value) return;
+  const source = selectedSyncBook.value;
+  if (!source) {
+    uiMessage.warning("请选择要同步的长篇书籍。");
+    return;
+  }
+  if (source.categoryCount <= 0) {
+    uiMessage.warning("所选长篇没有可同步的世界观分类。");
+    return;
+  }
+  const requestId = ++mutationClock;
+  pendingMutation.value = { id: requestId, surface: "sync" };
+  emit(
+    "syncWorldbuilding",
+    { sourceBookId: source.id, sourceTitle: source.title },
+    {
+      succeed: () => finishMutation(requestId, "succeeded"),
+      fail: () => finishMutation(requestId, "failed"),
+      appliedButRefreshFailed: () =>
+        finishMutation(requestId, "applied-refresh-failed")
+    }
+  );
 }
 
 function emitMutation(
@@ -328,14 +404,23 @@ function confirmDelete(): void {
             世界观分类
           </button>
         </div>
-        <button
-          class="primary-button"
-          type="button"
-          :disabled="mutationLocked"
-          @click="openCreate"
-        >
-          新建世界观分类
-        </button>
+        <div class="toolbar-actions">
+          <button
+            type="button"
+            :disabled="mutationLocked"
+            @click="openSync"
+          >
+            加载其他书籍世界观
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="mutationLocked"
+            @click="openCreate"
+          >
+            新建世界观分类
+          </button>
+        </div>
       </header>
 
       <div v-if="rows.length === 0" class="manager-empty">
@@ -487,6 +572,81 @@ function confirmDelete(): void {
               </button>
             </footer>
           </form>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="syncOpen"
+        class="dialog-backdrop structure-modal-overlay"
+        @mousedown.self="closeSync"
+        @keydown.esc.stop="closeSync"
+      >
+        <section
+          class="structure-modal sync-modal"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="long-structure-sync-title"
+          aria-describedby="long-structure-sync-description"
+        >
+          <header class="modal-header">
+            <div>
+              <span>SYNC</span>
+              <h3 id="long-structure-sync-title">加载其他书籍世界观</h3>
+            </div>
+            <button
+              class="close-button"
+              type="button"
+              aria-label="关闭"
+              :disabled="mutationLocked"
+              @click="closeSync"
+            >
+              ×
+            </button>
+          </header>
+          <fieldset class="modal-body" :disabled="mutationLocked">
+            <p id="long-structure-sync-description" class="sync-copy">
+              同步其他长篇书籍世界观，会把对方的<strong>全部世界观数据</strong>覆盖到当前书籍，
+              <strong>包括分类结构与各分类正文</strong>。当前书籍中的可编辑世界观会被替换；
+              迁移证据只读分类会保留。此操作不可撤销。
+            </p>
+            <label class="form-field">
+              <span>选择来源长篇</span>
+              <PopupSelect
+                :model-value="selectedSyncBookId"
+                :options="syncBookSelectOptions"
+                accessible-label="选择要同步世界观的长篇书籍"
+                :menu-z-index="2300"
+                @update:model-value="setSyncBook"
+              />
+            </label>
+            <p v-if="selectedSyncBook" class="sync-summary">
+              将同步「{{ selectedSyncBook.title }}」的
+              {{ selectedSyncBook.categoryCount }} 个世界观分类及其全部内容。
+            </p>
+          </fieldset>
+          <footer class="modal-actions">
+            <button
+              type="button"
+              :disabled="mutationLocked"
+              @click="closeSync"
+            >
+              取消
+            </button>
+            <button
+              class="danger-button"
+              type="button"
+              :disabled="mutationLocked || !selectedSyncBookId"
+              @click="confirmSync"
+            >
+              {{
+                pendingMutation?.surface === "sync"
+                  ? "同步中…"
+                  : "确认同步全部数据"
+              }}
+            </button>
+          </footer>
         </section>
       </div>
     </Teleport>
@@ -654,6 +814,7 @@ function confirmDelete(): void {
 }
 
 .manager-toolbar,
+.toolbar-actions,
 .row-actions,
 .modal-actions {
   display: flex;
@@ -663,6 +824,12 @@ function confirmDelete(): void {
 
 .manager-toolbar {
   justify-content: space-between;
+}
+
+.toolbar-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .section-tabs {
@@ -890,14 +1057,29 @@ button:disabled {
   background: var(--surface-muted);
 }
 
-.delete-modal {
+.delete-modal,
+.sync-modal {
   width: min(31rem, 100%);
 }
 
-.delete-copy {
+.delete-copy,
+.sync-copy,
+.sync-summary {
   margin: 0;
   color: var(--text-secondary);
   line-height: 1.55;
+}
+
+.sync-copy strong {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.sync-summary {
+  padding: 0.75rem;
+  border: 1px solid var(--theme-line);
+  border-radius: 0.65rem;
+  background: var(--surface-muted);
 }
 
 .cascade-option {
@@ -950,8 +1132,17 @@ button:disabled {
     align-items: stretch;
   }
 
+  .manager-toolbar .toolbar-actions,
   .manager-toolbar .primary-button {
     flex: 0 0 auto;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+  }
+
+  .toolbar-actions button {
+    flex: 1 1 auto;
   }
 
   .manager-header,

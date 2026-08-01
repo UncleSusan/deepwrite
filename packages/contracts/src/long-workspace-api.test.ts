@@ -227,6 +227,86 @@ describe("long workspace API contracts", () => {
     ).toThrow(/core profile/iu);
   });
 
+  it("keeps plot focus exclusive to the plot-design agent and consistent with navigation", () => {
+    const focus = {
+      section: "plot_point",
+      volumeId: "volume_api",
+      volumeTitle: "第一卷",
+      arcId: "arc_api",
+      arcTitle: "主线"
+    };
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: focus
+        })
+      )
+    ).toMatchObject({ plotFocus: focus });
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({ plotFocus: focus })
+      )
+    ).toThrow(/plot-design agent/iu);
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: { ...focus, arcId: "arc_missing" }
+        })
+      )
+    ).toThrow(/exist.*navigation/iu);
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: { section: "book_line", volumeId: "volume_api", volumeTitle: "第一卷" }
+        })
+      )
+    ).toThrow(/must not name a volume/iu);
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: {
+            section: "chapter_card",
+            chapterCardId: "chapter_api",
+            chapterCardTitle: "第一章"
+          }
+        })
+      )
+    ).toThrow(/must name its volume/iu);
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          activeChapterCardId: "chapter_api",
+          plotFocus: {
+            section: "chapter_card",
+            volumeId: "volume_api",
+            volumeTitle: "第一卷",
+            chapterCardId: "chapter_api",
+            chapterCardTitle: "第一章"
+          }
+        })
+      ).plotFocus
+    ).toMatchObject({ section: "chapter_card", chapterCardId: "chapter_api" });
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: { section: "plot_point", volumeId: "volume_api", volumeTitle: "第一卷", chapterCardId: "chapter_api", chapterCardTitle: "第一章" }
+        })
+      )
+    ).toThrow(/Only a chapter-card/iu);
+  });
+
   it("applies bounded defaults to paged reads and searches", () => {
     expect(
       LongReadDocumentInputSchema.parse({

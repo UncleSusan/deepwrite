@@ -41,6 +41,8 @@ import {
   type LearningImitationAgentProfile,
   type LibraryAgentProfile,
   type LongAgentProfile,
+  type LongPlotFocusSnapshot,
+  type LongWorkspaceRuntimeContext,
   type ScriptWorkspaceAgentProfile,
   type ShortAgentSubagentDefinition,
   type ShortWorkspaceAgentProfile,
@@ -2381,6 +2383,55 @@ export function buildEffectiveSystemPrompt(
   ].filter(Boolean).join("\n");
 }
 
+const LONG_PLOT_NAVIGATION_ARC_LIMIT_PER_VOLUME = 50;
+
+function renderLongPlotNavigation(
+  navigation: LongWorkspaceRuntimeContext["navigation"]
+): string {
+  const counts = navigation.counts;
+  const header =
+    `全书共 ${counts.volumes} 卷、${counts.arcs} 个剧情点、` +
+    `${counts.chapterCards} 张章卡、${counts.storyPlots} 条故事情节、` +
+    `${counts.storyEvents} 个故事事件、${counts.foreshadowingThreads} 条伏笔线`;
+  const volumes = [...navigation.volumes].sort(
+    (left, right) => left.order - right.order || left.id.localeCompare(right.id)
+  );
+  const lines = volumes.map((volume) => {
+    const arcs = navigation.arcs
+      .filter((arc) => arc.volumeId === volume.id)
+      .sort(
+        (left, right) =>
+          left.order - right.order || left.id.localeCompare(right.id)
+      );
+    const visible = arcs.slice(0, LONG_PLOT_NAVIGATION_ARC_LIMIT_PER_VOLUME);
+    const listing = visible.length
+      ? visible.map((arc) => `「${arc.title}」(${arc.id})`).join("、")
+      : "暂无剧情点";
+    const overflow = arcs.length - visible.length;
+    return `- 第 ${volume.order} 卷「${volume.title}」(${volume.id}): ${listing}${
+      overflow > 0 ? `；另有 ${overflow} 个剧情点未列出` : ""
+    }`;
+  });
+  return `${header}\n${lines.join("\n")}`;
+}
+
+function renderLongPlotFocus(focus: LongPlotFocusSnapshot): string {
+  switch (focus.section) {
+    case "book_line":
+      return "全书故事线";
+    case "foreshadowing":
+      return "伏笔总览";
+    case "plot_point":
+      return focus.arcId
+        ? `剧情点「${focus.arcTitle}」(${focus.arcId})，所属分卷「${focus.volumeTitle}」(${focus.volumeId})`
+        : `分卷「${focus.volumeTitle}」(${focus.volumeId}) 的剧情点列表，尚未选中具体剧情点`;
+    case "chapter_card":
+      return focus.chapterCardId
+        ? `章卡「${focus.chapterCardTitle}」(${focus.chapterCardId})，所属分卷「${focus.volumeTitle}」(${focus.volumeId})`
+        : `分卷「${focus.volumeTitle}」(${focus.volumeId}) 的章卡列表，尚无章卡`;
+  }
+}
+
 /** @internal Exported for prompt-boundary regression tests. */
 export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const active = input.workspaceContext?.activeResource;
@@ -2405,6 +2456,12 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const isCharacterDesignAgentRun = Boolean(
     longWorkspace && longProfile?.id === "character_design"
   );
+  const isPlotDesignAgentRun = Boolean(
+    longWorkspace && longProfile?.id === "plot_design"
+  );
+  const plotFocus = isPlotDesignAgentRun
+    ? longWorkspace?.plotFocus
+    : undefined;
   const worldbuildingFocus = isWorldbuildingAgentRun
     ? longWorkspace?.worldbuildingFocus
     : undefined;
@@ -2524,6 +2581,10 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     !isCharacterDesignAgentRun
       ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
       : "",
+    isPlotDesignAgentRun
+      ? `长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）:\n${renderLongPlotNavigation(longWorkspace!.navigation)}`
+      : "",
+    plotFocus ? `当前剧情工作区: ${renderLongPlotFocus(plotFocus)}` : "",
     writingWorkspace
       ? `作品分类: ${writingWorkspace.categories.join("、") || "未分类"}`
       : "",

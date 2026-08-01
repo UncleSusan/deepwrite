@@ -25,12 +25,12 @@ const props = defineProps<{
   boundToCurrentBook?: boolean;
   sectionTabs?: readonly { id: string; title: string }[];
   activeSectionId?: string | undefined;
-  sectionTabsLabel?: string;
+  sectionTabsLabel?: string | undefined;
   canCreateSection?: boolean;
-  createSectionLabel?: string;
+  createSectionLabel?: string | undefined;
   showDeleteSection?: boolean;
   canDeleteSection?: boolean;
-  deleteSectionLabel?: string;
+  deleteSectionLabel?: string | undefined;
 }>();
 
 const emit = defineEmits<{

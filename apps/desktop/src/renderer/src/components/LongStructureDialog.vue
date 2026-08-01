@@ -17,6 +17,12 @@ import LongStructureManager from "./LongStructureManager.vue";
 const props = defineProps<{
   open: boolean;
   bookTitle: string;
+  bookId?: string | null;
+  syncBookOptions?: ReadonlyArray<{
+    id: string;
+    title: string;
+    categoryCount: number;
+  }>;
   snapshot: LongWorkspaceIndexSnapshot | null;
   pending?: boolean;
 }>();
@@ -25,6 +31,10 @@ const emit = defineEmits<{
   close: [];
   mutation: [
     batch: LongWorkspaceOperationBatch,
+    completion: LongStructureMutationCompletion
+  ];
+  syncWorldbuilding: [
+    payload: { sourceBookId: string; sourceTitle: string },
     completion: LongStructureMutationCompletion
   ];
 }>();
@@ -42,6 +52,13 @@ function forwardMutation(
   completion: LongStructureMutationCompletion
 ): void {
   emit("mutation", batch, completion);
+}
+
+function forwardSyncWorldbuilding(
+  payload: { sourceBookId: string; sourceTitle: string },
+  completion: LongStructureMutationCompletion
+): void {
+  emit("syncWorldbuilding", payload, completion);
 }
 
 function focusableElements(): HTMLElement[] {
@@ -146,8 +163,11 @@ onBeforeUnmount(() =>
         <LongStructureManager
           v-if="snapshot"
           :snapshot="snapshot"
+          :current-book-id="bookId"
+          :sync-book-options="syncBookOptions"
           :disabled="pending"
           @mutation="forwardMutation"
+          @sync-worldbuilding="forwardSyncWorldbuilding"
         />
       </section>
     </div>

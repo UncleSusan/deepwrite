@@ -185,6 +185,7 @@ import {
   longBookResourceId,
   nextWritableLongChapterId,
   reconcileLongWorkspaceSelection,
+  isLongMigrationEvidenceCategoryId,
   replaceLongBookSummary,
   resolveLongWorkspaceApi,
   type LongStructureMutationCompletion,
@@ -202,6 +203,12 @@ import {
   type BookResourcePreferences
 } from "./utils/bookResourcePreferences";
 import {
+  buildLongWorldbuildingSyncBatch,
+  filterSyncableWorldbuildingCategories,
+  loadSourceWorldbuildingContents,
+  type LongWorldbuildingSyncBookOption
+} from "./utils/longWorldbuildingSync";
+import {
   buildLibraryAttachments,
   type LibraryAttachmentBuildResult
 } from "./utils/libraryAttachments";
@@ -209,6 +216,7 @@ import { buildLibraryAgentWorkspaceContext, buildLibraryEntryComposerReferences 
 import { buildLibraryAgentSkillAttachments } from "./utils/libraryAgentSkillAttachments";
 import { buildLongWorldbuildingFocusSnapshot } from "./utils/longWorldbuildingAgentContext";
 import { buildLongCharacterFocusSnapshot } from "./utils/longCharacterAgentContext";
+import { buildLongPlotFocusSnapshot } from "./utils/longPlotAgentContext";
 import {
   captureWorkspaceDocumentBaselines,
   rebaseDraftsForMatchingDocuments,
@@ -1344,6 +1352,17 @@ const resourceTreeSections = computed(() =>
 const activeLongBookSummary = computed(
   () =>
     longBooks.value.find((book) => book.id === activeLongBookId.value) ?? null
+);
+const longWorldbuildingSyncBookOptions = computed<
+  LongWorldbuildingSyncBookOption[]
+>(() =>
+  longBooks.value.map((book) => ({
+    id: book.id,
+    title: book.title,
+    categoryCount: book.navigation.worldbuilding.filter(
+      (category) => !isLongMigrationEvidenceCategoryId(category.id)
+    ).length
+  }))
 );
 const activeLongWorkspaceRefreshStatus = computed(() => {
   const status = longWorkspaceRefreshStatus.value;
@@ -5823,6 +5842,69 @@ async function handleLongStructureMutation(
   await applyLongStructureMutation(batch, completion);
 }
 
+async function handleLongWorldbuildingSync(
+  payload: { sourceBookId: string; sourceTitle: string },
+  completion: LongStructureMutationCompletion
+): Promise<void> {
+  const api = resolveLongWorkspaceApi();
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (!api || !summary || !index) {
+    uiMessage.warning("当前长篇结构尚未就绪。");
+    completion.fail("当前长篇结构尚未就绪。");
+    return;
+  }
+  if (payload.sourceBookId === summary.id) {
+    uiMessage.warning("不能从当前长篇同步到自身。");
+    completion.fail("不能从当前长篇同步到自身。");
+    return;
+  }
+  try {
+    if (!(await saveActiveLongEditorChanges())) {
+      completion.fail("当前长篇修改尚未保存。");
+      return;
+    }
+    if (!(await refreshActiveLongWorkspace(summary.id))) {
+      throw new Error("无法同步最新长篇结构，本次修改未保存。");
+    }
+    const latestIndex = activeLongWorkspaceIndex.value;
+    if (!latestIndex || activeLongBookId.value !== summary.id) {
+      throw new Error("活动长篇已切换，本次世界观同步未保存。");
+    }
+    const source = await api.getWorkspaceIndex({
+      bookId: payload.sourceBookId
+    });
+    if (source.bookId !== payload.sourceBookId) {
+      throw new Error("来源长篇工作区读取结果不一致。");
+    }
+    const sourceCategories = filterSyncableWorldbuildingCategories(
+      source.workspaceIndex.worldbuilding
+    );
+    if (sourceCategories.length === 0) {
+      throw new Error("所选长篇没有可同步的世界观分类。");
+    }
+    const contents = await loadSourceWorldbuildingContents(
+      (input) => api.readDocument(input),
+      payload.sourceBookId,
+      sourceCategories
+    );
+    const plan = await buildLongWorldbuildingSyncBatch({
+      target: latestIndex,
+      source: source.workspaceIndex,
+      contents
+    });
+    await applyLongStructureMutation(plan.batch, completion, {
+      saveEditor: false,
+      successMessage: `已从「${payload.sourceTitle}」同步世界观（${plan.createdCategoryCount} 个分类）`
+    });
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "同步世界观失败。";
+    completion.fail(message);
+    uiMessage.error(message);
+  }
+}
+
 async function applyLongStructureMutation(
   batch: LongWorkspaceOperationBatch,
   completion: LongStructureMutationCompletion,
@@ -8248,6 +8330,18 @@ async function sendLongMessage(
             : "当前人物阶段读取失败，请重试。"
         );
         return;
+      }
+    }
+    if (target.activeRoot === "plot_design") {
+      const plotFocus = buildLongPlotFocusSnapshot({
+        selection: activeLongSelection.value,
+        navigation: baseRuntimeContext.navigation
+      });
+      if (plotFocus) {
+        runtimeContext = {
+          ...baseRuntimeContext,
+          plotFocus
+        };
       }
     }
     const libraryAttachments = activeLongLibraryAttachments.value;
@@ -14489,10 +14583,13 @@ onBeforeUnmount(() => {
     <LongStructureDialog
       :open="longStructureDialogOpen"
       :book-title="activeLongBookSummary?.title ?? ''"
+      :book-id="activeLongBookId"
+      :sync-book-options="longWorldbuildingSyncBookOptions"
       :snapshot="activeLongWorkspaceIndex"
       :pending="longBookActionPending"
       @close="longStructureDialogOpen = false"
       @mutation="handleLongStructureMutation"
+      @sync-worldbuilding="handleLongWorldbuildingSync"
     />
     <CreateLongCharacterDialog
       :open="Boolean(longCharacterCreate)"

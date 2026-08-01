@@ -17,6 +17,8 @@ import {
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
+  longStoryPlotBodyFileId,
+  longStoryPlotFilePath,
   longWorldbuildingFileId,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId,
@@ -301,6 +303,59 @@ function fixtureWorldbuildingIndex(): LongWorkspaceIndexSnapshot {
   });
 }
 
+const STORY_PLOT_BODY = "城门外初遇追兵，埋下北上线索。";
+
+function fixtureStoryPlotIndex(): LongWorkspaceIndexSnapshot {
+  const index = fixtureIndex();
+  return LongWorkspaceIndexSnapshotSchema.parse({
+    ...index,
+    plot: {
+      ...index.plot,
+      storyPlots: [
+        {
+          id: "storyplot_one",
+          arcId: "arc_one",
+          title: "城门初遇",
+          order: 1,
+          file: file(
+            longStoryPlotBodyFileId("storyplot_one"),
+            longStoryPlotFilePath("storyplot_one")
+          )
+        }
+      ]
+    }
+  });
+}
+
+function storyPlotExecutor(index: LongWorkspaceIndexSnapshot) {
+  return vi.fn<LongCommandExecutor>(async (command) => {
+    if (command.type === "long.getWorkspaceIndex") {
+      return indexResult(index);
+    }
+    if (command.type === "long.readDocument") {
+      const storyPlot = index.plot.storyPlots[0]!;
+      if (command.payload.fileId !== storyPlot.file.id) {
+        throw new Error("Unexpected story plot file.");
+      }
+      return {
+        status: "accepted" as const,
+        requestId: command.id,
+        payload: {
+          bookId: index.bookId,
+          file: storyPlot.file,
+          content: STORY_PLOT_BODY,
+          offset: command.payload.offset,
+          totalCharacters: Array.from(STORY_PLOT_BODY).length,
+          nextOffset: null,
+          workspaceRevision: index.revision,
+          projectRevision: 11
+        }
+      };
+    }
+    throw new Error(`Unexpected command: ${command.type}`);
+  });
+}
+
 function resultText(result: { content: readonly unknown[] }): string {
   const block = result.content[0];
   if (
@@ -488,7 +543,6 @@ describe("long workspace agent tools", () => {
       "search_worldbuilding",
       "read_worldbuilding",
       "list_characters",
-      "read_character_overview",
       "search_characters",
       "read_character",
       "create_character",
@@ -566,7 +620,6 @@ describe("long workspace agent tools", () => {
       "search_worldbuilding",
       "read_worldbuilding",
       "list_characters",
-      "read_character_overview",
       "search_characters",
       "read_character",
       "list_plot_design",
@@ -590,6 +643,10 @@ describe("long workspace agent tools", () => {
     expect(plotMutationSchema).toContain('"foreshadowing.create"');
     expect(plotMutationSchema).toContain('"foreshadowingBeat.create"');
     expect(plotMutationSchema).toContain('"volume.update"');
+    expect(plotMutationSchema).toContain('"storyPlot.update"');
+    expect(plotMutationSchema).toContain('"storyPlot.delete"');
+    expect(plotMutationSchema).toContain('"storyPlot.reorder"');
+    expect(plotMutationSchema).not.toContain('"storyPlot.create"');
     expect(plotMutationSchema).not.toContain('"volume.create"');
     expect(plotMutationSchema).not.toContain('"arc.create"');
     expect(plotMutationSchema).not.toContain('"chapter.create"');
@@ -742,6 +799,336 @@ describe("long workspace agent tools", () => {
             }
           }
         ]
+      }
+    });
+  });
+
+  it("lists, reads, writes and edits story plots attached to a plot point", async () => {
+    const index = fixtureStoryPlotIndex();
+    const executor = storyPlotExecutor(index);
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-story-plot-tools",
+      runId: "run-story-plot-tools",
+      executor
+    });
+
+    const listed = await toolByName(tools, "list_plot_design").execute(
+      "list-story-plots",
+      { kind: "story_plot", arc_id: "arc_one" }
+    );
+    const listedText = listed.content
+      .filter((item) => item.type === "text")
+      .map((item) => item.text)
+      .join("\n");
+    expect(listedText).toContain('"story_plot_id":"storyplot_one"');
+    expect(listedText).toContain('"arc_id":"arc_one"');
+    expect(listedText).not.toContain("fileId");
+
+    const premature = await toolByName(tools, "write_plot_design").execute(
+      "write-without-read",
+      {
+        item: {
+          kind: "story_plot",
+          story_plot_id: "storyplot_one",
+          text: "未读先写"
+        },
+        allow_overwrite_existing: true
+      }
+    );
+    expect(resultText(premature)).toContain(
+      "未写入：请先调用 read_plot_design"
+    );
+
+    const read = await toolByName(tools, "read_plot_design").execute(
+      "read-story-plot",
+      {
+        target: { kind: "story_plot", story_plot_id: "storyplot_one" },
+        mode: "full"
+      }
+    );
+    const readText = resultText(read);
+    expect(readText).toContain('"story_plot_id": "storyplot_one"');
+    expect(readText).toContain(STORY_PLOT_BODY);
+
+    const unconfirmed = await toolByName(tools, "write_plot_design").execute(
+      "write-without-confirm",
+      {
+        item: {
+          kind: "story_plot",
+          story_plot_id: "storyplot_one",
+          text: "覆盖"
+        }
+      }
+    );
+    expect(resultText(unconfirmed)).toContain("allow_overwrite_existing=true");
+
+    const nextBody = "城门内重逢，线索兑现。";
+    const write = await toolByName(tools, "write_plot_design").execute(
+      "write-story-plot",
+      {
+        item: {
+          kind: "story_plot",
+          story_plot_id: "storyplot_one",
+          text: nextBody
+        },
+        allow_overwrite_existing: true,
+        summary: "重写故事情节正文"
+      }
+    );
+    expect(write.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      summary: "重写故事情节正文",
+      batch: {
+        operations: [],
+        documentWrites: [
+          {
+            fileId: longStoryPlotBodyFileId("storyplot_one"),
+            content: nextBody,
+            mode: "replace",
+            expectedRevision: REVISION
+          }
+        ]
+      }
+    });
+    const writeText = resultText(write);
+    expect(writeText).toContain("已写入故事情节");
+    expect(writeText).not.toContain("提案");
+    expect(writeText).not.toContain("审批");
+
+    const reread = await toolByName(tools, "read_plot_design").execute(
+      "reread-after-write",
+      {
+        target: { kind: "story_plot", story_plot_id: "storyplot_one" },
+        mode: "full"
+      }
+    );
+    expect(resultText(reread)).toContain(nextBody);
+
+    const editTools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-story-plot-edit",
+      runId: "run-story-plot-edit",
+      executor
+    });
+    await toolByName(editTools, "read_plot_design").execute("read-for-edit", {
+      target: { kind: "story_plot", story_plot_id: "storyplot_one" },
+      mode: "full"
+    });
+    const ambiguous = await toolByName(editTools, "edit_plot_design").execute(
+      "edit-ambiguous",
+      {
+        item: {
+          kind: "story_plot",
+          story_plot_id: "storyplot_one",
+          replacements: [{ original_text: "城中旧宅", new_text: "伏笔" }]
+        }
+      }
+    );
+    expect(resultText(ambiguous)).toContain("未替换：原文片段必须唯一存在");
+
+    const edit = await toolByName(editTools, "edit_plot_design").execute(
+      "edit-story-plot",
+      {
+        item: {
+          kind: "story_plot",
+          story_plot_id: "storyplot_one",
+          replacements: [
+            { original_text: "埋下北上线索", new_text: "北上线索改为南归" }
+          ]
+        },
+        summary: "局部修改故事情节"
+      }
+    );
+    expect(edit.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      summary: "局部修改故事情节",
+      batch: {
+        operations: [],
+        documentWrites: [
+          {
+            fileId: longStoryPlotBodyFileId("storyplot_one"),
+            content: "城门外初遇追兵，北上线索改为南归。",
+            mode: "replace",
+            expectedRevision: REVISION
+          }
+        ]
+      }
+    });
+  });
+
+  it("creates story plots under a plot point and proposes story plot structure changes", async () => {
+    const index = fixtureStoryPlotIndex();
+    const executor = storyPlotExecutor(index);
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-story-plot-create",
+      runId: "run-story-plot-create",
+      executor
+    });
+
+    const create = await toolByName(tools, "create_plot_design").execute(
+      "create-story-plot",
+      {
+        item: {
+          kind: "story_plot",
+          arc_id: "arc_one",
+          title: "新的故事情节"
+        },
+        summary: "创建故事情节"
+      }
+    );
+    const createDetails = create.details;
+    if (!createDetails || createDetails.kind !== "long-mutation-proposal") {
+      throw new Error("Expected a mutation proposal.");
+    }
+    const createOperation = createDetails.batch.operations[0];
+    if (!createOperation || createOperation.type !== "storyPlot.create") {
+      throw new Error("Expected a storyPlot.create operation.");
+    }
+    expect(createOperation.storyPlot).toMatchObject({
+      id: expect.stringMatching(/^storyplot_[0-9a-f]{24}$/u),
+      arcId: "arc_one",
+      title: "新的故事情节",
+      order: 2,
+      file: {
+        id: longStoryPlotBodyFileId(createOperation.storyPlot.id),
+        path: longStoryPlotFilePath(createOperation.storyPlot.id)
+      }
+    });
+    expect(createDetails.batch.documentWrites).toHaveLength(0);
+
+    const createdStoryPlotId = createOperation.storyPlot.id;
+    const createText = resultText(create);
+    expect(createText).toContain("已创建故事情节");
+    expect(createText).toContain(createdStoryPlotId);
+    expect(createText).not.toContain("提案");
+    expect(createText).not.toContain("审批");
+
+    const secondCreate = await toolByName(tools, "create_plot_design").execute(
+      "create-second-story-plot",
+      {
+        item: {
+          kind: "story_plot",
+          arc_id: "arc_one",
+          title: "第二个故事情节"
+        },
+        summary: "创建第二个故事情节"
+      }
+    );
+    const secondDetails = secondCreate.details;
+    if (!secondDetails || secondDetails.kind !== "long-mutation-proposal") {
+      throw new Error("Expected a mutation proposal.");
+    }
+    const secondOperation = secondDetails.batch.operations[0];
+    if (!secondOperation || secondOperation.type !== "storyPlot.create") {
+      throw new Error("Expected a storyPlot.create operation.");
+    }
+    // 同一轮内第二个创建必须基于待落盘的第一个故事情节继续递增 order，
+    // 否则落盘校验会因 order 不连续而失败。
+    expect(secondOperation.storyPlot.order).toBe(3);
+    expect(secondDetails.batch.documentWrites).toHaveLength(0);
+
+    const pendingRead = await toolByName(tools, "read_plot_design").execute(
+      "read-pending-story-plot",
+      {
+        target: { kind: "story_plot", story_plot_id: createdStoryPlotId },
+        mode: "full"
+      }
+    );
+    expect(resultText(pendingRead)).toContain(createdStoryPlotId);
+    expect(resultText(pendingRead)).toContain("（内容为空）");
+
+    const pendingList = await toolByName(tools, "list_plot_design").execute(
+      "list-with-pending",
+      { kind: "story_plot", arc_id: "arc_one" }
+    );
+    const pendingListText = resultText(pendingList);
+    expect(pendingListText).toContain('"story_plot_id":"storyplot_one"');
+    expect(pendingListText).toContain(createdStoryPlotId);
+
+    const pendingSearch = await toolByName(
+      tools,
+      "search_plot_design"
+    ).execute("search-pending", { query: "新的故事情节", kind: "story_plot" });
+    expect(resultText(pendingSearch)).toContain(createdStoryPlotId);
+
+    const pendingWrite = await toolByName(tools, "write_plot_design").execute(
+      "write-pending-story-plot",
+      {
+        item: {
+          kind: "story_plot",
+          story_plot_id: createdStoryPlotId,
+          text: "落盘前重写的正文。"
+        },
+        allow_overwrite_existing: true,
+        summary: "重写待审故事情节"
+      }
+    );
+    expect(resultText(pendingWrite)).toContain("已写入故事情节");
+    expect(pendingWrite.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [],
+        documentWrites: [
+          {
+            fileId: createOperation.storyPlot.file.id,
+            content: "落盘前重写的正文。",
+            mode: "replace"
+          }
+        ]
+      }
+    });
+
+    const rereadPending = await toolByName(tools, "read_plot_design").execute(
+      "reread-pending-story-plot",
+      {
+        target: { kind: "story_plot", story_plot_id: createdStoryPlotId },
+        mode: "full"
+      }
+    );
+    expect(resultText(rereadPending)).toContain("落盘前重写的正文。");
+
+    const mutation = await toolByName(tools, "propose_long_mutation").execute(
+      "story-plot-structure",
+      {
+        operations: [
+          {
+            type: "storyPlot.update",
+            id: "storyplot_one",
+            patch: { title: "城门初遇（改）" }
+          },
+          {
+            type: "storyPlot.reorder",
+            arcId: "arc_one",
+            orderedIds: ["storyplot_one"]
+          },
+          { type: "storyPlot.delete", id: "storyplot_one", cascade: true }
+        ],
+        summary: "调整故事情节结构"
+      }
+    );
+    expect(mutation.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      summary: "调整故事情节结构",
+      batch: {
+        operations: [
+          {
+            type: "storyPlot.update",
+            id: "storyplot_one",
+            patch: { title: "城门初遇（改）" }
+          },
+          {
+            type: "storyPlot.reorder",
+            arcId: "arc_one",
+            orderedIds: ["storyplot_one"]
+          },
+          { type: "storyPlot.delete", id: "storyplot_one", cascade: true }
+        ],
+        documentWrites: []
       }
     });
   });

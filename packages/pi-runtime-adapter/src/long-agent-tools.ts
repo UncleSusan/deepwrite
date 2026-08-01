@@ -15,6 +15,7 @@ import {
   LongWorkspaceOperationBatchSchema,
   LongWriteChapterInputSchema,
   LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+  EMPTY_LONG_MARKDOWN_REVISION,
   createEmptyLongMarkdownFileReference,
   createEnvelope,
   longChapterBodyFileId,
@@ -26,6 +27,8 @@ import {
   longCharacterFilePath,
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
+  longStoryPlotBodyFileId,
+  longStoryPlotFilePath,
   longWorldbuildingContentPath,
   longWorldbuildingFileId,
   longWorldbuildingItemContentPath,
@@ -206,6 +209,7 @@ const plotItemKindParameter = literalUnion([
   "book_line",
   "volume",
   "arc",
+  "story_plot",
   "chapter",
   "event",
   "connection",
@@ -565,6 +569,33 @@ const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     type: Type.Literal("event.reorder"),
     orderedIds: Type.Array(entityReferenceParameter("event"), {
       maxItems: 400_000,
+      uniqueItems: true
+    })
+  }),
+
+  strictObject({
+    type: Type.Literal("storyPlot.create"),
+    client_ref: clientReferenceParameter,
+    arcId: entityReferenceParameter("arc"),
+    title: titleParameter
+  }),
+  strictObject({
+    type: Type.Literal("storyPlot.update"),
+    id: entityReferenceParameter("storyplot"),
+    patch: patchParameter({
+      title: Type.Optional(titleParameter)
+    })
+  }),
+  strictObject({
+    type: Type.Literal("storyPlot.delete"),
+    id: entityReferenceParameter("storyplot"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("storyPlot.reorder"),
+    arcId: entityReferenceParameter("arc"),
+    orderedIds: Type.Array(entityReferenceParameter("storyplot"), {
+      maxItems: 100_000,
       uniqueItems: true
     })
   }),
@@ -984,6 +1015,24 @@ const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
+    type: Type.Literal("storyPlot.update"),
+    id: entityReferenceParameter("storyplot"),
+    patch: patchParameter({ title: Type.Optional(titleParameter) })
+  }),
+  strictObject({
+    type: Type.Literal("storyPlot.delete"),
+    id: entityReferenceParameter("storyplot"),
+    cascade: Type.Boolean()
+  }),
+  strictObject({
+    type: Type.Literal("storyPlot.reorder"),
+    arcId: entityReferenceParameter("arc"),
+    orderedIds: Type.Array(entityReferenceParameter("storyplot"), {
+      maxItems: 100_000,
+      uniqueItems: true
+    })
+  }),
+  strictObject({
     type: Type.Literal("connection.update"),
     id: entityReferenceParameter("connection"),
     patch: patchParameter({
@@ -1136,6 +1185,11 @@ const LONG_PLOT_CREATE_PARAMETERS = strictObject({
       outline: Type.Optional(textParameter)
     }),
     strictObject({
+      kind: Type.Literal("story_plot"),
+      arc_id: entityReferenceParameter("arc"),
+      title: titleParameter
+    }),
+    strictObject({
       kind: Type.Literal("chapter"),
       volume_id: entityReferenceParameter("volume"),
       primary_arc_id: entityReferenceParameter("arc"),
@@ -1193,6 +1247,7 @@ const LONG_PLOT_ITEM_TARGET_PARAMETER = Type.Union([
   strictObject({ kind: Type.Literal("book_line") }),
   strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume") }),
   strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc") }),
+  strictObject({ kind: Type.Literal("story_plot"), story_plot_id: stableIdParameter("storyplot") }),
   strictObject({ kind: Type.Literal("chapter"), chapter_card_id: stableIdParameter("chapter") }),
   strictObject({ kind: Type.Literal("event"), event_id: stableIdParameter("event") }),
   strictObject({ kind: Type.Literal("connection"), connection_id: stableIdParameter("connection") }),
@@ -1204,6 +1259,7 @@ const LONG_PLOT_WRITE_PARAMETERS = strictObject({
     strictObject({ kind: Type.Literal("book_line"), text: Type.String({ minLength: 1, maxLength: 1_000_000 }) }),
     strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume"), summary: textParameter }),
     strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc"), summary: textParameter, outline: textParameter }),
+    strictObject({ kind: Type.Literal("story_plot"), story_plot_id: stableIdParameter("storyplot"), text: Type.String({ minLength: 1, maxLength: 1_000_000 }) }),
     strictObject({
       kind: Type.Literal("chapter"),
       chapter_card_id: stableIdParameter("chapter"),
@@ -1243,6 +1299,17 @@ const LONG_PLOT_EDIT_PARAMETERS = strictObject({
     }),
     strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume"), patch: patchParameter({ summary: Type.Optional(textParameter) }) }),
     strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc"), patch: patchParameter({ summary: Type.Optional(textParameter), outline: Type.Optional(textParameter) }) }),
+    strictObject({
+      kind: Type.Literal("story_plot"),
+      story_plot_id: stableIdParameter("storyplot"),
+      replacements: Type.Array(
+        strictObject({
+          original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
+          new_text: Type.String({ maxLength: 20_000 })
+        }),
+        { minItems: 1, maxItems: 20 }
+      )
+    }),
     strictObject({
       kind: Type.Literal("chapter"), chapter_card_id: stableIdParameter("chapter"),
       patch: patchParameter({
@@ -1460,7 +1527,7 @@ function filePathBelongsToRoot(
   const prefixes: Record<LongWorkspaceRoot, readonly string[]> = {
     worldbuilding: ["long/worldbuilding/"],
     character_design: ["long/characters/"],
-    plot_design: ["long/plot/"],
+    plot_design: ["long/plot/", "long/story-plots/"],
     draft: ["long/chapters/"],
     continuity_ledger: ["long/ledger/"]
   };
@@ -1483,6 +1550,9 @@ function fileRootMap(
     { root: LongWorkspaceRoot; file: LongWorkspaceFileReference }
   >();
   addFile(map, "plot_design", index.bookLine);
+  for (const storyPlot of index.plot.storyPlots) {
+    addFile(map, "plot_design", storyPlot.file);
+  }
   for (const category of index.worldbuilding) {
     if (category.format === "text") {
       addFile(map, "worldbuilding", category.file);
@@ -1531,6 +1601,9 @@ function collectOperationFiles(
   if (operation.type === "worldbuildingItem.create") {
     return [operation.item.file];
   }
+  if (operation.type === "storyPlot.create") {
+    return [operation.storyPlot.file];
+  }
   if (operation.type === "character.create") {
     return [
       operation.files.coreProfile,
@@ -1564,6 +1637,7 @@ const CREATE_OPERATION_PREFIX = {
   "arc.create": "arc",
   "chapter.create": "chapter",
   "event.create": "event",
+  "storyPlot.create": "storyplot",
   "connection.create": "connection",
   "placement.create": "placement",
   "foreshadowing.create": "foreshadow",
@@ -1583,6 +1657,7 @@ function allEntityIds(index: LongWorkspaceIndexSnapshot): Set<string> {
     ...index.plot.arcs.map(({ id }) => id),
     ...index.plot.chapterCards.map(({ id }) => id),
     ...index.plot.storyEvents.map(({ id }) => id),
+    ...index.plot.storyPlots.map(({ id }) => id),
     ...index.plot.eventConnections.map(({ id }) => id),
     ...index.plot.narrativePlacements.map(({ id }) => id),
     ...index.plot.foreshadowing.flatMap((thread) => [
@@ -1732,6 +1807,13 @@ function buildRuntimeOperations(input: {
   let storyOrder = maxOrder(
     input.index.plot.storyEvents.map(({ storyOrder: order }) => order)
   );
+  const storyPlotOrders = new Map<string, number>();
+  for (const storyPlot of input.index.plot.storyPlots) {
+    storyPlotOrders.set(
+      storyPlot.arcId,
+      Math.max(storyPlotOrders.get(storyPlot.arcId) ?? 0, storyPlot.order)
+    );
+  }
   const placementOrders = new Map<string, number>();
   for (const placement of input.index.plot.narrativePlacements) {
     placementOrders.set(
@@ -2111,6 +2193,37 @@ function buildRuntimeOperations(input: {
           return {
             type: operation.type,
             orderedIds: refs(operation.orderedIds, "event")
+          };
+
+        case "storyPlot.create": {
+          const id = generatedId!;
+          const arcId = ref(operation.arcId, "arc");
+          return {
+            type: operation.type,
+            storyPlot: {
+              id,
+              arcId,
+              title: operation.title,
+              order: incrementCounter(storyPlotOrders, arcId),
+              file: createEmptyLongMarkdownFileReference(
+                longStoryPlotBodyFileId(id),
+                longStoryPlotFilePath(id),
+                input.timestamp
+              )
+            }
+          };
+        }
+        case "storyPlot.update":
+        case "storyPlot.delete":
+          return {
+            ...operation,
+            id: ref(operation.id, "storyplot")
+          } as LongWorkspaceOperation;
+        case "storyPlot.reorder":
+          return {
+            type: operation.type,
+            arcId: ref(operation.arcId, "arc"),
+            orderedIds: refs(operation.orderedIds, "storyplot")
           };
 
         case "connection.create":
@@ -2889,6 +3002,18 @@ export function buildLongWorkspaceTools(
     }
   >();
 
+  const storyPlotOverlay = new Map<
+    string,
+    {
+      arcId: string;
+      title: string;
+      order: number;
+      file: LongWorkspaceFileReference;
+      content: string;
+      pendingCreation: boolean;
+    }
+  >();
+
   const plotItemKey = (kind: PlotItemKind, id?: string) =>
     kind === "book_line" ? kind : `${kind}:${id ?? ""}`;
 
@@ -2900,13 +3025,15 @@ export function buildLongWorkspaceTools(
         ? item.volume_id
         : item.kind === "arc"
           ? item.arc_id
-          : item.kind === "chapter"
-            ? item.chapter_card_id
-            : item.kind === "event"
-              ? item.event_id
-              : item.kind === "connection"
-                ? item.connection_id
-                : item.placement_id;
+          : item.kind === "story_plot"
+            ? item.story_plot_id
+            : item.kind === "chapter"
+              ? item.chapter_card_id
+              : item.kind === "event"
+                ? item.event_id
+                : item.kind === "connection"
+                  ? item.connection_id
+                  : item.placement_id;
     if (typeof id !== "string") {
       throw new Error(`Plot ${item.kind} target is missing its business id.`);
     }
@@ -2923,13 +3050,15 @@ export function buildLongWorkspaceTools(
         ? index.plot.volumes
         : kind === "arc"
           ? index.plot.arcs
-          : kind === "chapter"
-            ? index.plot.chapterCards
-            : kind === "event"
-              ? index.plot.storyEvents
-              : kind === "connection"
-                ? index.plot.eventConnections
-                : index.plot.narrativePlacements;
+          : kind === "story_plot"
+            ? index.plot.storyPlots
+            : kind === "chapter"
+              ? index.plot.chapterCards
+              : kind === "event"
+                ? index.plot.storyEvents
+                : kind === "connection"
+                  ? index.plot.eventConnections
+                  : index.plot.narrativePlacements;
     const item = collection.find((candidate) => candidate.id === id);
     if (!item) {
       throw new Error(`Plot ${kind} ${id} does not exist.`);
@@ -2959,6 +3088,15 @@ export function buildLongWorkspaceTools(
         order: item.order,
         summary: item.summary ?? "",
         outline: item.outline
+      };
+    }
+    if (kind === "story_plot") {
+      return {
+        kind,
+        story_plot_id: item.id,
+        arc_id: item.arcId,
+        title: item.title,
+        order: item.order
       };
     }
     if (kind === "chapter") {
@@ -4338,7 +4476,7 @@ export function buildLongWorkspaceTools(
         name: "list_characters",
         label: "列出人物",
         description:
-          "列出人物业务索引，可按分组筛选，并自动附带人物设计阶段手动维护的概览内容。优先使用 read_character_overview；仅当概览不足时再调用本工具。返回 character_id、姓名、分组和别名，不暴露文件与版本信息。",
+          "列出人物业务索引，可按分组筛选，并自动附带人物设计阶段手动维护的概览完整内容，同时建立本轮 write_character_overview / edit_character_overview 所需的完整读取凭据。优先用概览中的 character_id 定位人物。返回 character_id、姓名、分组和别名，不暴露文件与版本信息。",
         parameters: strictObject({
           group: Type.Optional(characterGroupParameter),
           page: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
@@ -4389,6 +4527,12 @@ export function buildLongWorkspaceTools(
             );
             if (cached) {
               overview = cached.content;
+              fullyReadCharacterDocuments.set(cached.file.id, {
+                content: cached.content,
+                file: cached.file,
+                workspaceRevision: index.revision,
+                projectRevision
+              });
             } else {
               const result = await readWholeCharacterDocument(
                 index.characterOverview,
@@ -4405,6 +4549,12 @@ export function buildLongWorkspaceTools(
                 content: result.content,
                 pendingCreation: false
               });
+              fullyReadCharacterDocuments.set(result.file.id, {
+                content: result.content,
+                file: result.file,
+                workspaceRevision: index.revision,
+                projectRevision
+              });
             }
           }
           const page = params.page ?? 1;
@@ -4416,59 +4566,6 @@ export function buildLongWorkspaceTools(
             characters: characters.slice(start, end),
             next_page: end < characters.length ? page + 1 : null
           }));
-        }
-      }),
-      defineTool({
-        name: "read_character_overview",
-        label: "读取人物概览",
-        description:
-          "读取人物设计阶段概览。概览应统计全部人物的 character_id、姓名、分组、别名与一句话定位；优先用它定位人物，再调用 read_character。mode=preview 只返回摘录，mode=full 会建立本轮后续编辑所需的完整读取凭据。",
-        parameters: strictObject({
-          mode: Type.Optional(worldbuildingReadModeParameter)
-        }),
-        execute: async (_toolCallId, params, signal) => {
-          const { index, projectRevision } = await loadIndex(signal);
-          const mode = params.mode ?? "full";
-          const target = resolveCharacterOverviewTarget(index);
-          const result = target.overlay
-            ? { content: target.overlay.content, file: target.file }
-            : await readWholeCharacterDocument(
-                target.file,
-                index.revision,
-                projectRevision,
-                signal
-              );
-          characterDocumentOverlay.set(result.file.id, {
-            characterId: LONG_CHARACTER_OVERVIEW_CHANGE_ID,
-            characterName: "人物概览",
-            document: "overview",
-            file: result.file,
-            content: result.content,
-            pendingCreation: target.overlay?.pendingCreation ?? false
-          });
-          if (mode === "full") {
-            fullyReadCharacterDocuments.set(result.file.id, {
-              content: result.content,
-              file: result.file,
-              workspaceRevision: index.revision,
-              projectRevision
-            });
-          }
-          const previewLength = 240;
-          const visible =
-            mode === "preview" && result.content.length > previewLength * 2
-              ? `${result.content.slice(0, previewLength)}\n\n……（中间省略 ${result.content.length - previewLength * 2} 个字符）……\n\n${result.content.slice(-previewLength)}`
-              : result.content;
-          return textResult(
-            [
-              "【人物概览】",
-              mode === "preview"
-                ? "预览（不建立整体覆盖凭据）："
-                : "正文：",
-              "",
-              visible || "（概览为空）"
-            ].join("\n")
-          );
         }
       }),
       defineTool({
@@ -5075,7 +5172,7 @@ export function buildLongWorkspaceTools(
         name: "write_character_overview",
         label: "写入人物概览",
         description:
-          "覆盖人物设计阶段概览。空文件可直接写入；已有正文必须先用 read_character_overview mode=full 完整读取并明确 allow_overwrite_existing=true。局部修改应使用 edit_character_overview。概览应持续同步全部人物的 character_id、姓名、分组、别名与一句话定位。",
+          "覆盖人物设计阶段概览。空文件可直接写入；已有正文必须先用 list_characters 完整读取概览并明确 allow_overwrite_existing=true。局部修改应使用 edit_character_overview。概览应持续同步全部人物的 character_id、姓名、分组、别名与一句话定位。",
         parameters: strictObject({
           text: Type.String({ minLength: 1, maxLength: 1_000_000 }),
           allow_overwrite_existing: Type.Optional(Type.Boolean()),
@@ -5098,7 +5195,7 @@ export function buildLongWorkspaceTools(
           const evidence = fullyReadCharacterDocuments.get(target.file.id);
           if (live.content.trim() && !evidence) {
             return textResult(
-              "未写入：目标已有正文，请先调用 read_character_overview（mode=full）完整读取。"
+              "未写入：目标已有正文，请先调用 list_characters 完整读取概览。"
             );
           }
           if (live.content.trim() && params.allow_overwrite_existing !== true) {
@@ -5177,7 +5274,7 @@ export function buildLongWorkspaceTools(
         name: "edit_character_overview",
         label: "编辑人物概览",
         description:
-          "在已用 read_character_overview mode=full 完整读取的人物概览中按原文片段精确替换。每个 original_text 必须唯一存在。创建、重命名、改组或删除人物后应同步更新概览。",
+          "在已用 list_characters 完整读取的人物概览中按原文片段精确替换。每个 original_text 必须唯一存在。创建、重命名、改组或删除人物后应同步更新概览。",
         parameters: strictObject({
           replacements: Type.Array(
             strictObject({
@@ -5202,7 +5299,7 @@ export function buildLongWorkspaceTools(
             evidence.file.revision !== target.file.revision
           ) {
             return textResult(
-              "未编辑：请先调用 read_character_overview（mode=full）完整读取目标内容。"
+              "未编辑：请先调用 list_characters 完整读取概览内容。"
             );
           }
           let content = evidence.content;
@@ -5294,6 +5391,7 @@ export function buildLongWorkspaceTools(
     const plotCollections = (index: LongWorkspaceIndexSnapshot) => ({
       volume: index.plot.volumes,
       arc: index.plot.arcs,
+      story_plot: index.plot.storyPlots,
       chapter: index.plot.chapterCards,
       event: index.plot.storyEvents,
       connection: index.plot.eventConnections,
@@ -5309,6 +5407,7 @@ export function buildLongWorkspaceTools(
         parameters: strictObject({
           kind: Type.Optional(plotItemKindParameter),
           volume_id: Type.Optional(stableIdParameter("volume")),
+          arc_id: Type.Optional(stableIdParameter("arc")),
           chapter_card_id: Type.Optional(stableIdParameter("chapter")),
           page: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
@@ -5316,11 +5415,17 @@ export function buildLongWorkspaceTools(
         execute: async (_toolCallId, params, signal) => {
           const { index } = await loadIndex(signal);
           if (!params.kind) {
+            const pendingStoryPlotCount = [...storyPlotOverlay.entries()].filter(
+              ([id, entry]) =>
+                entry.pendingCreation &&
+                !index.plot.storyPlots.some((storyPlot) => storyPlot.id === id)
+            ).length;
             return textResult(JSON.stringify({
               sections: [
                 { kind: "book_line", label: "全书故事线", count: 1 },
                 { kind: "volume", label: "分卷", count: index.plot.volumes.length },
                 { kind: "arc", label: "剧情点", count: index.plot.arcs.length },
+                { kind: "story_plot", label: "故事情节", count: index.plot.storyPlots.length + pendingStoryPlotCount },
                 { kind: "chapter", label: "章卡", count: index.plot.chapterCards.length },
                 { kind: "event", label: "故事事件", count: index.plot.storyEvents.length },
                 { kind: "connection", label: "事件连接", count: index.plot.eventConnections.length },
@@ -5340,6 +5445,7 @@ export function buildLongWorkspaceTools(
               const value = item as unknown as Record<string, unknown>;
               return (
                 (!params.volume_id || value.volumeId === params.volume_id) &&
+                (!params.arc_id || value.arcId === params.arc_id) &&
                 (!params.chapter_card_id || value.chapterCardId === params.chapter_card_id)
               );
             })
@@ -5352,25 +5458,45 @@ export function buildLongWorkspaceTools(
                 kind: params.kind,
                 ...(params.kind === "volume" ? { volume_id: item.id } : {}),
                 ...(params.kind === "arc" ? { arc_id: item.id } : {}),
+                ...(params.kind === "story_plot" ? { story_plot_id: item.id } : {}),
                 ...(params.kind === "chapter" ? { chapter_card_id: item.id } : {}),
                 ...(params.kind === "event" ? { event_id: item.id } : {}),
                 ...(params.kind === "connection" ? { connection_id: item.id } : {}),
                 ...(params.kind === "placement" ? { placement_id: item.id } : {}),
                 ...(typeof value.title === "string" ? { title: value.title } : {}),
                 ...(value.volume_id ? { volume_id: value.volume_id } : {}),
+                ...(value.arc_id && params.kind !== "arc" ? { arc_id: value.arc_id } : {}),
                 ...(value.chapter_card_id ? { chapter_card_id: value.chapter_card_id } : {}),
                 ...(value.source_event_id ? { source_event_id: value.source_event_id } : {}),
                 ...(value.target_event_id ? { target_event_id: value.target_event_id } : {}),
                 ...(value.event_id ? { event_id: value.event_id } : {})
               };
             });
+          const pendingStoryPlots =
+            params.kind === "story_plot"
+              ? [...storyPlotOverlay.entries()]
+                  .filter(
+                    ([id, entry]) =>
+                      entry.pendingCreation &&
+                      !index.plot.storyPlots.some((storyPlot) => storyPlot.id === id) &&
+                      (!params.arc_id || entry.arcId === params.arc_id)
+                  )
+                  .map(([id, entry]) => ({
+                    kind: params.kind as "story_plot",
+                    story_plot_id: id,
+                    title: entry.title,
+                    arc_id: entry.arcId,
+                    order: entry.order
+                  }))
+              : [];
+          const items = [...source, ...pendingStoryPlots];
           const page = params.page ?? 1;
           const limit = params.limit ?? 50;
           const start = (page - 1) * limit;
-          const end = Math.min(start + limit, source.length);
+          const end = Math.min(start + limit, items.length);
           return textResult(JSON.stringify({
-            items: source.slice(start, end),
-            next_page: end < source.length ? page + 1 : null
+            items: items.slice(start, end),
+            next_page: end < items.length ? page + 1 : null
           }));
         }
       }),
@@ -5419,6 +5545,7 @@ export function buildLongWorkspaceTools(
                   kind,
                   ...(kind === "volume" ? { volume_id: item.id } : {}),
                   ...(kind === "arc" ? { arc_id: item.id } : {}),
+                  ...(kind === "story_plot" ? { story_plot_id: item.id } : {}),
                   ...(kind === "chapter" ? { chapter_card_id: item.id } : {}),
                   ...(kind === "event" ? { event_id: item.id } : {}),
                   ...(kind === "connection" ? { connection_id: item.id } : {}),
@@ -5426,6 +5553,29 @@ export function buildLongWorkspaceTools(
                   ...(business.title ? { title: business.title } : {})
                 },
                 searchable: JSON.stringify(business)
+              });
+            }
+          }
+          if (!params.kind || params.kind === "story_plot") {
+            for (const [id, entry] of storyPlotOverlay) {
+              if (!entry.pendingCreation) continue;
+              if (index.plot.storyPlots.some((storyPlot) => storyPlot.id === id)) {
+                continue;
+              }
+              candidates.push({
+                target: {
+                  kind: "story_plot",
+                  story_plot_id: id,
+                  arc_id: entry.arcId,
+                  title: entry.title
+                },
+                searchable: JSON.stringify({
+                  kind: "story_plot",
+                  story_plot_id: id,
+                  arc_id: entry.arcId,
+                  title: entry.title,
+                  order: entry.order
+                })
               });
             }
           }
@@ -5461,6 +5611,7 @@ export function buildLongWorkspaceTools(
           const mode = params.mode ?? "full";
           let serialized: string;
           let key: string;
+          let display: string | undefined;
           if (params.target.kind === "book_line") {
             const result = await readWholeWorldbuildingDocument(
               index.bookLine,
@@ -5470,6 +5621,37 @@ export function buildLongWorkspaceTools(
             );
             serialized = result.content;
             key = plotItemKey("book_line");
+          } else if (params.target.kind === "story_plot") {
+            const targetId = plotBusinessId(params.target);
+            const overlayEntry = storyPlotOverlay.get(targetId);
+            let meta: Record<string, unknown>;
+            if (overlayEntry) {
+              meta = {
+                kind: "story_plot",
+                story_plot_id: targetId,
+                arc_id: overlayEntry.arcId,
+                title: overlayEntry.title,
+                order: overlayEntry.order
+              };
+              serialized = overlayEntry.content;
+            } else {
+              const item = resolvePlotItem(index, "story_plot", targetId);
+              const result = await readWholeWorldbuildingDocument(
+                item.file as LongWorkspaceFileReference,
+                index.revision,
+                projectRevision,
+                signal
+              );
+              meta = toPlotBusinessItem("story_plot", item);
+              serialized = result.content;
+            }
+            key = plotItemKey("story_plot", targetId);
+            display = [
+              JSON.stringify(meta, null, 2),
+              "",
+              "正文：",
+              serialized || "（内容为空）"
+            ].join("\n");
           } else {
             const targetId = plotBusinessId(params.target);
             const item = resolvePlotItem(index, params.target.kind, targetId);
@@ -5488,10 +5670,11 @@ export function buildLongWorkspaceTools(
             });
           }
           const previewLength = 320;
+          const visibleSource = display ?? serialized;
           const visible =
-            mode === "preview" && serialized.length > previewLength * 2
-              ? `${serialized.slice(0, previewLength)}\n\n……（中间省略 ${serialized.length - previewLength * 2} 个字符）……\n\n${serialized.slice(-previewLength)}`
-              : serialized;
+            mode === "preview" && visibleSource.length > previewLength * 2
+              ? `${visibleSource.slice(0, previewLength)}\n\n……（中间省略 ${visibleSource.length - previewLength * 2} 个字符）……\n\n${visibleSource.slice(-previewLength)}`
+              : visibleSource;
           return textResult(
             [
               mode === "preview" ? "预览（不建立整体覆盖凭据）：" : "完整内容：",
@@ -5513,9 +5696,10 @@ export function buildLongWorkspaceTools(
       batch: LongWorkspaceOperationBatch,
       projectRevision: number,
       summary: string,
-      message = "已形成剧情设计变更提案，等待客户端审阅与冲突检查。"
+      message = "已形成剧情设计变更提案，等待客户端审阅与冲突检查。",
+      plain = false
     ) =>
-      textResult(longProposalResultSummary(input, message), {
+      textResult(plain ? message : longProposalResultSummary(input, message), {
         kind: "long-mutation-proposal",
         bookId: workspace.bookId,
         agentId: profile.id,
@@ -5525,8 +5709,8 @@ export function buildLongWorkspaceTools(
       });
 
     const plotUpdateOperation = (
-      item: Exclude<Static<typeof LONG_PLOT_WRITE_PARAMETERS>["item"], { kind: "book_line" }> |
-        Exclude<Static<typeof LONG_PLOT_EDIT_PARAMETERS>["item"], { kind: "book_line" }>,
+      item: Exclude<Static<typeof LONG_PLOT_WRITE_PARAMETERS>["item"], { kind: "book_line" } | { kind: "story_plot" }> |
+        Exclude<Static<typeof LONG_PLOT_EDIT_PARAMETERS>["item"], { kind: "book_line" } | { kind: "story_plot" }>,
       patch: Record<string, unknown>
     ): LongWorkspaceOperation => {
       const id = plotBusinessId(item);
@@ -5553,18 +5737,49 @@ export function buildLongWorkspaceTools(
         name: "create_plot_design",
         label: "创建剧情设计",
         description:
-          "一次创建一个非伏笔剧情条目并返回稳定业务 ID。创建参数直接包含该条目的初始完整内容；伏笔线和伏笔触点继续使用现有结构提案工具。",
+          "一次创建一个非伏笔剧情条目并返回稳定业务 ID。创建只建立结构条目（故事情节同时建立空正文文件），不在创建时初始化内容；故事情节必须通过 arc_id 挂载到既有剧情点，创建后可立即读取，正文使用 write_plot_design 或 edit_plot_design 写入。伏笔线和伏笔触点继续使用现有结构提案工具。",
         parameters: LONG_PLOT_CREATE_PARAMETERS,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
           const item = params.item;
+          // loadIndex 在同一轮内复用缓存快照，本轮已创建但尚未落盘的故事情节只存在于
+          // storyPlotOverlay；构建创建操作时必须一并计入，否则同一剧情点下的
+          // order 会被重复分配，落盘校验将因 order 不连续而失败。
+          const pendingStoryPlots = [...storyPlotOverlay.entries()]
+            .filter(
+              ([id, entry]) =>
+                entry.pendingCreation &&
+                !index.plot.storyPlots.some((storyPlot) => storyPlot.id === id)
+            )
+            .map(([id, entry]) => ({
+              id,
+              arcId: entry.arcId,
+              title: entry.title,
+              order: entry.order,
+              file: entry.file
+            }));
+          const buildIndex =
+            pendingStoryPlots.length > 0
+              ? {
+                  ...index,
+                  plot: {
+                    ...index.plot,
+                    storyPlots: [
+                      ...index.plot.storyPlots,
+                      ...pendingStoryPlots
+                    ]
+                  }
+                }
+              : index;
           const operation =
             item.kind === "volume"
               ? { type: "volume.create" as const, title: item.title, summary: item.summary }
               : item.kind === "arc"
                 ? { type: "arc.create" as const, volumeId: item.volume_id, title: item.title, summary: item.summary, outline: item.outline }
-                : item.kind === "chapter"
+                : item.kind === "story_plot"
+                  ? { type: "storyPlot.create" as const, arcId: item.arc_id, title: item.title }
+                  : item.kind === "chapter"
                   ? {
                       type: "chapter.create" as const,
                       volumeId: item.volume_id,
@@ -5604,39 +5819,57 @@ export function buildLongWorkspaceTools(
                         };
           const built = buildRuntimeOperations({
             rawOperations: [operation as LongMutationToolOperation],
-            index,
+            index: buildIndex,
             timestamp: new Date().toISOString(),
             idSeed: `${workspace.bookId}:${input.runId}:${toolCallId}`
           });
           const timestamp = new Date().toISOString();
-          const batch = LongWorkspaceOperationBatchSchema.parse({
-            baseRevision: index.revision,
-            updatedAt: timestamp,
-            operations: built.operations,
-            documentWrites: []
-          });
           const created = built.operations[0];
           const createdId =
             created && "volume" in created
               ? created.volume.id
               : created && "arc" in created
                 ? created.arc.id
-                : created && "chapterCard" in created
-                  ? created.chapterCard.id
-                  : created && "event" in created
-                    ? created.event.id
-                    : created && "connection" in created
-                      ? created.connection.id
-                      : created && "placement" in created
-                        ? created.placement.id
-                        : "";
+                : created && "storyPlot" in created
+                  ? created.storyPlot.id
+                  : created && "chapterCard" in created
+                    ? created.chapterCard.id
+                    : created && "event" in created
+                      ? created.event.id
+                      : created && "connection" in created
+                        ? created.connection.id
+                        : created && "placement" in created
+                          ? created.placement.id
+                          : "";
           const summary = params.summary?.trim() || `创建${item.kind}“${"title" in item ? item.title : createdId}”`;
+          const batch = LongWorkspaceOperationBatchSchema.parse({
+            baseRevision: index.revision,
+            updatedAt: timestamp,
+            operations: built.operations,
+            documentWrites: []
+          });
+          if (
+            item.kind === "story_plot" &&
+            created &&
+            created.type === "storyPlot.create"
+          ) {
+            storyPlotOverlay.set(createdId, {
+              arcId: created.storyPlot.arcId,
+              title: created.storyPlot.title,
+              order: created.storyPlot.order,
+              file: created.storyPlot.file,
+              content: "",
+              pendingCreation: true
+            });
+          }
           const createdIdLabel =
             item.kind === "volume"
               ? "volume_id"
               : item.kind === "arc"
                 ? "arc_id"
-                : item.kind === "chapter"
+                : item.kind === "story_plot"
+                  ? "story_plot_id"
+                  : item.kind === "chapter"
                   ? "chapter_card_id"
                   : item.kind === "event"
                     ? "event_id"
@@ -5644,7 +5877,9 @@ export function buildLongWorkspaceTools(
                       ? "connection_id"
                       : "placement_id";
           return textResult(
-            `${longProposalResultSummary(input, "已形成一个剧情设计条目创建提案，等待客户端审阅与冲突检查。")}\n${item.kind} → ${createdIdLabel}=${createdId}`,
+            item.kind === "story_plot"
+              ? `已创建故事情节“${item.title}”，story_plot_id=${createdId}。可立即继续读取或写入其正文。`
+              : `${longProposalResultSummary(input, "已形成一个剧情设计条目创建提案，等待客户端审阅与冲突检查。")}\n${item.kind} → ${createdIdLabel}=${createdId}`,
             {
               kind: "long-mutation-proposal",
               bookId: workspace.bookId,
@@ -5709,6 +5944,63 @@ export function buildLongWorkspaceTools(
             });
             fullyReadPlotItems.set(key, { serialized: item.text, workspaceRevision: index.revision, projectRevision });
             return plotProposal(batch, projectRevision, summary);
+          }
+          if (item.kind === "story_plot") {
+            const overlayEntry = storyPlotOverlay.get(itemId!);
+            let meta: { arcId: string; title: string; order: number };
+            let liveFile: LongWorkspaceFileReference;
+            let liveContent: string;
+            if (overlayEntry) {
+              meta = {
+                arcId: overlayEntry.arcId,
+                title: overlayEntry.title,
+                order: overlayEntry.order
+              };
+              liveFile = overlayEntry.file;
+              liveContent = overlayEntry.content;
+            } else {
+              const storyPlot = resolvePlotItem(index, "story_plot", itemId!);
+              const result = await readWholeWorldbuildingDocument(
+                storyPlot.file as LongWorkspaceFileReference,
+                index.revision,
+                projectRevision,
+                signal
+              );
+              meta = {
+                arcId: storyPlot.arcId as string,
+                title: storyPlot.title as string,
+                order: storyPlot.order as number
+              };
+              liveFile = result.file;
+              liveContent = result.content;
+            }
+            if (liveContent !== evidence.serialized) {
+              throw new Error("Story plot changed after it was read.");
+            }
+            const nextRevision = nextContentRevision(liveFile.revision, item.text);
+            const batch = LongWorkspaceOperationBatchSchema.parse({
+              baseRevision: index.revision,
+              updatedAt: timestamp,
+              operations: [],
+              documentWrites: [{
+                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                fileId: liveFile.id,
+                content: item.text,
+                mode: "replace",
+                expectedRevision: liveFile.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }]
+            });
+            storyPlotOverlay.set(itemId!, {
+              ...meta,
+              file: { ...liveFile, revision: nextRevision, updatedAt: timestamp },
+              content: item.text,
+              pendingCreation: overlayEntry?.pendingCreation ?? false
+            });
+            fullyReadPlotItems.set(key, { serialized: item.text, workspaceRevision: index.revision, projectRevision });
+            return plotProposal(batch, projectRevision, summary, `已写入故事情节“${meta.title}”正文。`, true);
           }
           const current = JSON.stringify(
             toPlotBusinessItem(item.kind, resolvePlotItem(index, item.kind, itemId!)),
@@ -5807,6 +6099,72 @@ export function buildLongWorkspaceTools(
             fullyReadPlotItems.set(key, { serialized: content, workspaceRevision: index.revision, projectRevision });
             return plotProposal(batch, projectRevision, summary);
           }
+          if (item.kind === "story_plot") {
+            const overlayEntry = storyPlotOverlay.get(itemId!);
+            let meta: { arcId: string; title: string; order: number };
+            let liveFile: LongWorkspaceFileReference;
+            let liveContent: string;
+            if (overlayEntry) {
+              meta = {
+                arcId: overlayEntry.arcId,
+                title: overlayEntry.title,
+                order: overlayEntry.order
+              };
+              liveFile = overlayEntry.file;
+              liveContent = overlayEntry.content;
+            } else {
+              const storyPlot = resolvePlotItem(index, "story_plot", itemId!);
+              const result = await readWholeWorldbuildingDocument(
+                storyPlot.file as LongWorkspaceFileReference,
+                index.revision,
+                projectRevision,
+                signal
+              );
+              meta = {
+                arcId: storyPlot.arcId as string,
+                title: storyPlot.title as string,
+                order: storyPlot.order as number
+              };
+              liveFile = result.file;
+              liveContent = result.content;
+            }
+            if (liveContent !== evidence.serialized) {
+              throw new Error("Story plot changed after it was read.");
+            }
+            let content = liveContent;
+            for (const replacement of item.replacements) {
+              const first = content.indexOf(replacement.original_text);
+              const second = first < 0 ? -1 : content.indexOf(replacement.original_text, first + replacement.original_text.length);
+              if (first < 0 || second >= 0) {
+                return textResult(`未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`);
+              }
+              content = content.slice(0, first) + replacement.new_text + content.slice(first + replacement.original_text.length);
+            }
+            const nextRevision = nextContentRevision(liveFile.revision, content);
+            const batch = LongWorkspaceOperationBatchSchema.parse({
+              baseRevision: index.revision,
+              updatedAt: timestamp,
+              operations: [],
+              documentWrites: [{
+                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                fileId: liveFile.id,
+                content,
+                mode: "replace",
+                expectedRevision: liveFile.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }]
+            });
+            storyPlotOverlay.set(itemId!, {
+              ...meta,
+              file: { ...liveFile, revision: nextRevision, updatedAt: timestamp },
+              content,
+              pendingCreation: overlayEntry?.pendingCreation ?? false
+            });
+            fullyReadPlotItems.set(key, { serialized: content, workspaceRevision: index.revision, projectRevision });
+            return plotProposal(batch, projectRevision, summary, `已局部修改故事情节“${meta.title}”正文。`, true);
+          }
           const current = JSON.stringify(
             toPlotBusinessItem(item.kind, resolvePlotItem(index, item.kind, itemId!)),
             null,
@@ -5859,7 +6217,7 @@ export function buildLongWorkspaceTools(
             : profile.id === "character_design"
               ? "提交人物重命名、别名、分组、删除和排序等结构变更。此工具不能创建人物，也不能写入人物正文；创建人物必须使用 create_character，正文必须使用 write_character_file 或 edit_character_file。提案只进入审阅队列，不直接写磁盘。"
             : profile.id === "plot_design"
-              ? "提交既有分卷、剧情点、章卡、故事事件、事件连接和叙事落点的重命名、关联、移动、删除、排序，以及全部伏笔线/伏笔触点变更。非伏笔条目创建必须使用 create_plot_design，内容写入必须使用 write_plot_design 或 edit_plot_design。提案只进入审阅队列，不直接写磁盘。"
+              ? "提交既有分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点的重命名、关联、移动、删除、排序，以及全部伏笔线/伏笔触点变更。非伏笔条目创建必须使用 create_plot_design，内容写入必须使用 write_plot_design 或 edit_plot_design。提案只进入审阅队列，不直接写磁盘。"
             : "按显式领域操作提交当前长篇的结构变更提案。伏笔线可分别填写 hiddenTruth 与 plannedSpan，伏笔触点可用 volumeId 或 arcId 设置卷级/剧情点计划锚点。运行时锁定项目版本、生成新实体与文件信息并计算文档内容修订；只能更新逻辑文档目标，不能传路径或文件修订。提案只进入审阅队列，不直接写磁盘。",
         parameters:
           profile.id === "worldbuilding"

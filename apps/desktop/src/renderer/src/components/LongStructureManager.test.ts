@@ -11,6 +11,10 @@ describe("LongStructureManager", () => {
     expect(source).toContain("builder.reorderWorldbuilding");
     expect(source).toContain("builder.deleteWorldbuilding");
     expect(source).toContain("新建世界观分类");
+    expect(source).toContain("加载其他书籍世界观");
+    expect(source).toContain("同步其他长篇书籍世界观");
+    expect(source).toContain("包括分类结构与各分类正文");
+    expect(source).toContain('"syncWorldbuilding"');
     expect(source).not.toContain("builder.createVolume");
     expect(source).not.toContain("builder.createArc");
     expect(source).not.toContain("builder.createChapter");
@@ -57,7 +61,7 @@ describe("LongStructureManager", () => {
 
   it("uses shared themed controls and compact teleported dialogs", () => {
     expect(source).toContain("<PopupSelect");
-    expect(source.match(/<Teleport to="body">/gu)).toHaveLength(2);
+    expect(source.match(/<Teleport to="body">/gu)).toHaveLength(3);
     expect(source).toContain(":menu-z-index=\"2300\"");
     for (const themeToken of [
       "--surface-main",
@@ -80,5 +84,8 @@ describe("LongStructureManager", () => {
     expect(source).toContain("uiMessage.warning");
     expect(source).toContain('@keydown.esc.stop="closeForm"');
     expect(source).toContain('@keydown.esc.stop="closeDelete"');
+    expect(source).toContain('@keydown.esc.stop="closeSync"');
+    expect(source).toContain("danger-button");
+    expect(source).toContain("确认同步全部数据");
   });
 });
