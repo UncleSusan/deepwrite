@@ -37,8 +37,25 @@ describe("App agent realtime auto persistence", () => {
     expect(eligibility).toContain(
       "Boolean(proposal.longPlotDesignTarget)"
     );
+    expect(eligibility).toContain("Boolean(proposal.longDraftTarget)");
     expect(eligibility).toContain("isShortOrScriptAgentEdit(proposal)");
     expect(eligibility).not.toContain('proposal.stageId === "draft"');
+  });
+
+  it("routes long chapter drafts into the standard conversation approval flow", () => {
+    expect(source).toContain(
+      '} else if (event.type === "long.chapter_write_proposal")'
+    );
+    expect(source).toContain("stageLongDraftEditProposal(event)");
+    expect(source).toContain('stageId: "long-draft"');
+    expect(source).toContain("async function acceptLongDraftProposal");
+    expect(source).toContain("await acceptLongDraftProposal(");
+    const acceptance = source
+      .split("async function acceptLongDraftProposal(")[1]
+      ?.split("async function applyAgentEdit(")[0] ?? "";
+    expect(acceptance).toContain("await api.previewOperations(");
+    expect(acceptance).toContain("await api.applyOperations(");
+    expect(acceptance).not.toContain("api.writeChapter(");
   });
 
   it("routes long worldbuilding files into the standard conversation approval flow", () => {

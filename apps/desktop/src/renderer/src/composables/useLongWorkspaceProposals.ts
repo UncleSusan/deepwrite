@@ -1,5 +1,6 @@
 import { ref, type Ref } from "vue";
 import {
+  LongCommitChapterInputSchema,
   LongMutationProposalEventEnvelopeSchema,
   LongWorkspaceOperationBatchSchema,
   createEnvelope,
@@ -21,8 +22,8 @@ export type LongWorkspaceProposalEvent = Extract<
       | "long.mutation_proposal"
       | "long.worldbuilding_file_proposal"
       | "long.character_file_proposal"
+      | "long.continuity_file_proposal"
       | "long.chapter_dispatch_proposal"
-      | "long.chapter_write_proposal"
       | "long.ledger_commit_proposal";
   }
 >;
@@ -42,16 +43,23 @@ export type LongCharacterFileProposalEvent = Extract<
   { type: "long.character_file_proposal" }
 >;
 
+export type LongContinuityFileProposalEvent = Extract<
+  LongWorkspaceProposalEvent,
+  { type: "long.continuity_file_proposal" }
+>;
+
 type LongContentFileProposalEvent =
   | LongWorldbuildingFileProposalEvent
-  | LongCharacterFileProposalEvent;
+  | LongCharacterFileProposalEvent
+  | LongContinuityFileProposalEvent;
 
 function isContentFileProposal(
   event: LongWorkspaceProposalEvent
 ): event is LongContentFileProposalEvent {
   return (
     event.type === "long.worldbuilding_file_proposal" ||
-    event.type === "long.character_file_proposal"
+    event.type === "long.character_file_proposal" ||
+    event.type === "long.continuity_file_proposal"
   );
 }
 
@@ -132,8 +140,8 @@ const LONG_PROPOSAL_TYPES = new Set<SystemEventEnvelope["type"]>([
   "long.mutation_proposal",
   "long.worldbuilding_file_proposal",
   "long.character_file_proposal",
+  "long.continuity_file_proposal",
   "long.chapter_dispatch_proposal",
-  "long.chapter_write_proposal",
   "long.ledger_commit_proposal"
 ]);
 
@@ -316,12 +324,37 @@ export function useLongWorkspaceProposals(
             ? longWorldbuildingFiles(
                 latest.workspaceIndex.worldbuilding
               ).map((file) => [file.id, file] as const)
-            : latest.workspaceIndex.characterFiles.flatMap((entry) => [
-                [entry.coreProfile.id, entry.coreProfile] as const,
-                [entry.relationships.id, entry.relationships] as const,
-                [entry.currentState.id, entry.currentState] as const,
-                [entry.history.id, entry.history] as const
-              ])
+            : event.type === "long.character_file_proposal"
+              ? latest.workspaceIndex.characterFiles.flatMap((entry) => [
+                  [entry.coreProfile.id, entry.coreProfile] as const,
+                  [entry.relationships.id, entry.relationships] as const,
+                  [entry.currentState.id, entry.currentState] as const,
+                  [entry.history.id, entry.history] as const
+                ])
+              : latest.workspaceIndex.chapters.flatMap((chapter) => [
+                  [
+                    chapter.characterState.id,
+                    chapter.characterState
+                  ] as const,
+                  [chapter.handoff.id, chapter.handoff] as const,
+                  [
+                    chapter.foreshadowingChanges.id,
+                    chapter.foreshadowingChanges
+                  ] as const,
+                  ...(chapter.worldReveals
+                    ? ([[
+                        chapter.worldReveals.id,
+                        chapter.worldReveals
+                      ]] as const)
+                    : []),
+                  ...chapter.characterContinuity.flatMap((continuity) => [
+                    [
+                      continuity.currentState.id,
+                      continuity.currentState
+                    ] as const,
+                    [continuity.history.id, continuity.history] as const
+                  ])
+                ])
         );
         for (const file of event.payload.files) {
           const current = currentFiles.get(file.fileId);
@@ -712,10 +745,61 @@ export function useLongWorkspaceProposals(
           }),
           baseProjectRevision: effectiveProjectRevision
         });
-      } else if (item.event.type === "long.chapter_write_proposal") {
-        await api.writeChapter(item.event.payload.input);
+      } else if (item.event.type === "long.ledger_commit_proposal") {
+        const parsedInput = LongCommitChapterInputSchema.parse(
+          item.event.payload.input
+        );
+        if (parsedInput.mode === "text_files") {
+          const latest = await api.getWorkspaceIndex({ bookId });
+          const chapter = latest.workspaceIndex.chapters.find(
+            ({ chapterCardId }) =>
+              chapterCardId === parsedInput.chapterCardId
+          );
+          if (!chapter || chapter.commitId !== null) {
+            throw new Error("待提交章节已不存在或已经完成连续性提交。");
+          }
+          if (chapter.body.revision !== parsedInput.chapterFileRevisions.body) {
+            throw new Error("章节正文已更新，请重新生成连续性提交。");
+          }
+          const currentContinuityFiles = [
+            chapter.characterState,
+            chapter.handoff,
+            chapter.foreshadowingChanges,
+            ...(chapter.worldReveals ? [chapter.worldReveals] : []),
+            ...chapter.characterContinuity.flatMap((continuity) => [
+              continuity.currentState,
+              continuity.history
+            ])
+          ];
+          const proposedRevisions = new Map(
+            parsedInput.continuityFileRevisions.map(
+              ({ fileId, revision }) => [fileId, revision] as const
+            )
+          );
+          if (
+            proposedRevisions.size !== currentContinuityFiles.length ||
+            currentContinuityFiles.some(
+              ({ id, revision }) => proposedRevisions.get(id) !== revision
+            )
+          ) {
+            throw new Error(
+              "本章连续性文件尚未全部保存，或已在提案后更新；请先处理文件卡片再重试提交。"
+            );
+          }
+          await api.commitChapter(
+            LongCommitChapterInputSchema.parse({
+              ...parsedInput,
+              baseWorkspaceRevision: latest.workspaceIndex.revision,
+              baseProjectRevision: latest.projectRevision
+            })
+          );
+        } else {
+          await api.commitChapter(parsedInput);
+        }
       } else {
-        await api.commitChapter(item.event.payload.input);
+        throw new Error(
+          "章节正文必须通过会话 diff 审批卡保存，不能进入旧长篇提案队列。"
+        );
       }
     } catch (error: unknown) {
       updateItem(bookId, eventId, {
@@ -743,9 +827,9 @@ export function useLongWorkspaceProposals(
           ? "世界观文件变更已保存到本地 Markdown。"
         : item.event.type === "long.character_file_proposal"
           ? "人物文件变更已保存到本地 Markdown。"
-        : item.event.type === "long.chapter_write_proposal"
-          ? "章节正文证据已写入；正在进入连续性结算。"
-          : "章节连续性账本已提交。"
+        : item.event.type === "long.continuity_file_proposal"
+          ? "本章连续性记录已保存到本地 Markdown。"
+        : "章节连续性账本已提交。"
     );
     try {
       await options.onApplied?.(item.event);

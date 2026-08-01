@@ -43,7 +43,8 @@ const contentFileCards = computed(() => {
         {
           type:
             | "long.worldbuilding_file_proposal"
-            | "long.character_file_proposal";
+            | "long.character_file_proposal"
+            | "long.continuity_file_proposal";
         }
       >["payload"]["files"][number];
       diff: ReturnType<typeof buildAgentTextDiff>;
@@ -52,7 +53,8 @@ const contentFileCards = computed(() => {
   for (const item of props.items) {
     if (
       item.event.type !== "long.worldbuilding_file_proposal" &&
-      item.event.type !== "long.character_file_proposal"
+      item.event.type !== "long.character_file_proposal" &&
+      item.event.type !== "long.continuity_file_proposal"
     ) continue;
     cards.set(
       item.event.id,
@@ -77,10 +79,12 @@ function proposalTitle(item: LongWorkspaceProposalItem): string {
       return item.event.payload.files.length === 1
         ? item.event.payload.files[0]!.title
         : `${item.event.payload.files[0]?.characterName ?? "人物"}的 ${item.event.payload.files.length} 个文件`;
+    case "long.continuity_file_proposal":
+      return item.event.payload.files.length === 1
+        ? item.event.payload.files[0]!.title
+        : `${item.event.payload.files.length} 个连续性文件`;
     case "long.chapter_dispatch_proposal":
       return "串行写作调度";
-    case "long.chapter_write_proposal":
-      return "章节写入";
     case "long.ledger_commit_proposal":
       return "连续性提交";
   }
@@ -102,11 +106,10 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
       return "确认应用";
     case "long.worldbuilding_file_proposal":
     case "long.character_file_proposal":
+    case "long.continuity_file_proposal":
       return "确认写入并保存";
     case "long.chapter_dispatch_proposal":
       return "确认启动串行写作";
-    case "long.chapter_write_proposal":
-      return "确认写入";
     case "long.ledger_commit_proposal":
       return "确认提交";
   }
@@ -173,9 +176,20 @@ const workspaceFilePaths = computed(() => {
   for (const chapter of index.chapters) {
     entries.push(
       [chapter.body.id, chapter.body.path],
+      [chapter.card.id, chapter.card.path],
       [chapter.characterState.id, chapter.characterState.path],
-      [chapter.handoff.id, chapter.handoff.path]
+      [chapter.handoff.id, chapter.handoff.path],
+      [chapter.foreshadowingChanges.id, chapter.foreshadowingChanges.path]
     );
+    if (chapter.worldReveals) {
+      entries.push([chapter.worldReveals.id, chapter.worldReveals.path]);
+    }
+    for (const continuity of chapter.characterContinuity) {
+      entries.push(
+        [continuity.currentState.id, continuity.currentState.path],
+        [continuity.history.id, continuity.history.path]
+      );
+    }
   }
   for (const commit of index.ledger.commits) {
     entries.push([commit.recordFile.id, commit.recordFile.path]);
@@ -229,6 +243,42 @@ function entitySnapshotText(
 ): string {
   return value === null ? "（不存在）" : JSON.stringify(value, null, 2);
 }
+
+function ledgerCommitStats(
+  item: LongWorkspaceProposalItem
+): Array<{ label: string; value: number }> {
+  if (item.event.type !== "long.ledger_commit_proposal") return [];
+  const input = item.event.payload.input;
+  return input.mode === "text_files"
+    ? [
+        { label: "正文版本", value: 1 },
+        { label: "连续性文件", value: input.continuityFileRevisions.length }
+      ]
+    : [
+        { label: "事实变化", value: input.factMutations.length },
+        { label: "知识变化", value: input.knowledgeMutations.length },
+        { label: "开放事项", value: input.openLoopMutations.length }
+      ];
+}
+
+function ledgerCommitFiles(
+  item: LongWorkspaceProposalItem
+): Array<{ fileId: string; revision: string }> {
+  if (
+    item.event.type !== "long.ledger_commit_proposal" ||
+    item.event.payload.input.mode !== "text_files"
+  ) {
+    return [];
+  }
+  return item.event.payload.input.continuityFileRevisions;
+}
+
+function isTextFilesLedgerCommit(item: LongWorkspaceProposalItem): boolean {
+  return (
+    item.event.type === "long.ledger_commit_proposal" &&
+    item.event.payload.input.mode === "text_files"
+  );
+}
 </script>
 
 <template>
@@ -262,9 +312,9 @@ function entitySnapshotText(
                   ? 'ledger'
                   : item.event.type === 'long.worldbuilding_file_proposal'
                     || item.event.type === 'long.character_file_proposal'
+                    || item.event.type === 'long.continuity_file_proposal'
                     ? 'file'
-                  : item.event.type === 'long.chapter_write_proposal' ||
-                      item.event.type === 'long.chapter_dispatch_proposal'
+                  : item.event.type === 'long.chapter_dispatch_proposal'
                     ? 'edit'
                     : 'wand'
               "
@@ -288,7 +338,8 @@ function entitySnapshotText(
         <div
           v-if="
             item.event.type === 'long.worldbuilding_file_proposal' ||
-            item.event.type === 'long.character_file_proposal'
+            item.event.type === 'long.character_file_proposal' ||
+            item.event.type === 'long.continuity_file_proposal'
           "
           class="worldbuilding-file-list"
         >
@@ -369,7 +420,7 @@ function entitySnapshotText(
                 : item.status === "submitting"
                   ? "正在校验版本、应用变更并保存……"
                   : item.status === "error"
-                    ? item.error || "文件变更未能保存，可重试或拒绝。"
+                    ? "文件变更未能保存，可重试或拒绝。"
                     : item.approvalMode === "auto-approve"
                       ? "已加入实时自动保存队列。"
                       : "接受后将写入对应的长篇 Markdown 文件并保存到本机。"
@@ -555,62 +606,22 @@ function entitySnapshotText(
         </details>
 
         <div
-          v-else-if="item.event.type === 'long.chapter_write_proposal'"
-          class="long-proposal-impact"
-        >
-          <span>
-            <strong>{{ item.event.payload.input.body.content.length }}</strong>
-            正文字符
-          </span>
-          <span><strong>账本生成</strong> 章末状态与接续包</span>
-        </div>
-        <details
-          v-if="item.event.type === 'long.chapter_write_proposal'"
-          class="long-proposal-details"
-        >
-          <summary>审阅章节正文证据</summary>
-          <div class="long-proposal-detail-group long-proposal-write-list">
-            <details class="long-proposal-content">
-              <summary>
-                正文 · {{ item.event.payload.input.body.baseRevision }} →
-                提交后计算
-              </summary>
-              <textarea
-                readonly
-                spellcheck="false"
-                aria-label="章节正文拟写内容"
-                :value="item.event.payload.input.body.content"
-              />
-            </details>
-          </div>
-        </details>
-
-        <div
           v-else-if="item.event.type === 'long.ledger_commit_proposal'"
           class="long-proposal-impact"
         >
-          <span>
-            <strong>{{ item.event.payload.input.factMutations.length }}</strong>
-            事实变化
-          </span>
-          <span>
-            <strong>
-              {{ item.event.payload.input.knowledgeMutations.length }}
-            </strong>
-            知识变化
-          </span>
-          <span>
-            <strong>
-              {{ item.event.payload.input.openLoopMutations.length }}
-            </strong>
-            开放事项
+          <span
+            v-for="stat in ledgerCommitStats(item)"
+            :key="stat.label"
+          >
+            <strong>{{ stat.value }}</strong>
+            {{ stat.label }}
           </span>
         </div>
         <details
           v-if="item.event.type === 'long.ledger_commit_proposal'"
           class="long-proposal-details"
         >
-          <summary>查看连续性决策</summary>
+          <summary>查看提交内容</summary>
           <div class="long-proposal-detail-group">
             <strong>提交说明</strong>
             <span>
@@ -621,190 +632,29 @@ function entitySnapshotText(
             </span>
           </div>
           <div class="long-proposal-detail-group">
-            <strong>核验的章节文件版本</strong>
+            <strong>正文版本</strong>
             <code>
               正文 ·
               {{ item.event.payload.input.chapterFileRevisions.body }}
             </code>
-            <code>
-              人物状态 ·
-              {{
-                item.event.payload.input.chapterFileRevisions.characterState
-              }}
+          </div>
+          <div
+            v-if="isTextFilesLedgerCommit(item)"
+            class="long-proposal-detail-group"
+          >
+            <strong>本章留存文件</strong>
+            <code
+              v-for="file in ledgerCommitFiles(item)"
+              :key="file.fileId"
+            >
+              {{ proposalFilePath(item, file.fileId) }} · {{ file.revision }}
             </code>
-            <code>
-              Handoff ·
-              {{ item.event.payload.input.chapterFileRevisions.handoff }}
-            </code>
           </div>
-          <div class="long-proposal-detail-group">
-            <strong>本章六类连续性摘要</strong>
-            <span>
-              时间线：{{ item.event.payload.input.chapterSummary.timeline }}
-            </span>
-            <span>
-              人物状态：{{
-                item.event.payload.input.chapterSummary.characterStates
-              }}
-            </span>
-            <span>
-              势力状态：{{
-                item.event.payload.input.chapterSummary.factionStates
-              }}
-            </span>
-            <span>
-              境界状态：{{
-                item.event.payload.input.chapterSummary.realmStates
-              }}
-            </span>
-            <span>
-              伏笔状态：{{
-                item.event.payload.input.chapterSummary.foreshadowingStates
-              }}
-            </span>
-            <span>
-              连续性备注：{{
-                item.event.payload.input.chapterSummary.continuityNotes
-              }}
-            </span>
-          </div>
-          <div class="long-proposal-detail-group">
-            <strong>六域核验覆盖</strong>
-            <span>
-              人物 · {{ item.event.payload.input.coverage.character.status }} ·
-              {{ item.event.payload.input.coverage.character.note }}
-            </span>
-            <span>
-              剧情 · {{ item.event.payload.input.coverage.plot.status }} ·
-              {{ item.event.payload.input.coverage.plot.note }}
-            </span>
-            <span>
-              伏笔 ·
-              {{ item.event.payload.input.coverage.foreshadowing.status }} ·
-              {{ item.event.payload.input.coverage.foreshadowing.note }}
-            </span>
-            <span>
-              世界 · {{ item.event.payload.input.coverage.world.status }} ·
-              {{ item.event.payload.input.coverage.world.note }}
-            </span>
-            <span>
-              知识 · {{ item.event.payload.input.coverage.knowledge.status }} ·
-              {{ item.event.payload.input.coverage.knowledge.note }}
-            </span>
-            <span>
-              开放事项 ·
-              {{ item.event.payload.input.coverage.openLoops.status }} ·
-              {{ item.event.payload.input.coverage.openLoops.note }}
-            </span>
-          </div>
-          <div
-            v-if="item.event.payload.input.factMutations.length"
-            class="long-proposal-detail-group"
-          >
-            <strong>结构化事实变化</strong>
-            <code
-              v-for="fact in item.event.payload.input.factMutations"
-              :key="fact.factId"
-            >{{ fact.domain }} · {{ fact.subjectId }} · {{ fact.field }} → {{ fact.value }} · {{ fact.evidence }}</code>
-          </div>
-          <div
-            v-if="item.event.payload.input.knowledgeMutations.length"
-            class="long-proposal-detail-group"
-          >
-            <strong>揭露与知识边界</strong>
-            <code
-              v-for="knowledge in item.event.payload.input
-                .knowledgeMutations"
-              :key="`${knowledge.factId}:${knowledge.audienceType}:${knowledge.audienceId ?? 'reader'}`"
-            >{{ knowledge.factId }} · {{ knowledge.audienceType }} {{ knowledge.audienceId ?? "读者" }} → {{ knowledge.level }} · {{ knowledge.evidence }}</code>
-          </div>
-          <div
-            v-if="item.event.payload.input.openLoopMutations.length"
-            class="long-proposal-detail-group"
-          >
-            <strong>开放事项</strong>
-            <code
-              v-for="loop in item.event.payload.input.openLoopMutations"
-              :key="loop.loopId"
-            >{{ loop.kind }} · {{ loop.status }} · {{ loop.detail }} · {{ loop.evidence }}</code>
-          </div>
-          <div class="long-proposal-detail-group">
-            <strong>入账后生成</strong>
-            <span>
-              章末状态：{{
-                item.event.payload.input.chapterOutputs.characterState
-              }}
-            </span>
-            <span>
-              下一章接续：{{
-                item.event.payload.input.chapterOutputs.handoff.summary
-              }}
-            </span>
-            <span
-              v-for="carry in item.event.payload.input.chapterOutputs.handoff
-                .mustCarry"
-              :key="`carry:${carry}`"
-            >
-              必须延续 · {{ carry }}
-            </span>
-            <span
-              v-for="constraint in item.event.payload.input.chapterOutputs
-                .handoff.nextChapterConstraints"
-              :key="`constraint:${constraint}`"
-            >
-              下一章约束 · {{ constraint }}
-            </span>
-          </div>
-          <div class="long-proposal-detail-group">
-            <strong>叙事落点</strong>
-            <code
-              v-for="(decision, id) in item.event.payload.input
-                .placementDecisions"
-              :key="id"
-            >{{ id }} → {{ decision.status }} · {{ decision.note }}</code>
-          </div>
-          <div class="long-proposal-detail-group">
-            <strong>伏笔节拍</strong>
-            <code
-              v-for="(decision, id) in item.event.payload.input
-                .foreshadowingBeatDecisions"
-              :key="id"
-            >{{ id }} → {{ decision.status }} · {{ decision.note }}</code>
-          </div>
-          <div
-            v-if="item.event.payload.input.fileUpdates.length"
-            class="long-proposal-detail-group long-proposal-write-list"
-          >
-            <strong>连续性资料更新</strong>
-            <details
-              v-for="update in item.event.payload.input.fileUpdates"
-              :key="update.fileId"
-              class="long-proposal-content"
-            >
-              <summary>
-                {{ proposalFilePath(item, update.fileId) }} ·
-                {{
-                  update.mode === "append"
-                    ? "审计追加"
-                    : "完整替换"
-                }}
-                ·
-                {{ update.baseRevision }} → 提交后计算 ·
-                {{ update.content.length }} 字符
-              </summary>
-              <textarea
-                readonly
-                spellcheck="false"
-                :aria-label="`${proposalFilePath(item, update.fileId)}连续性拟写内容`"
-                :value="update.content"
-              />
-            </details>
+          <div v-else class="long-proposal-detail-group">
+            <strong>旧版连续性记录</strong>
+            <span>此项目仍使用旧版结构化提交；提交后可在章节记录中查看文本结果。</span>
           </div>
         </details>
-
-        <p v-if="item.error" class="long-proposal-error">
-          {{ item.error }}
-        </p>
 
         <footer
           v-if="
@@ -827,7 +677,9 @@ function entitySnapshotText(
                 item.event.type ===
                   'long.worldbuilding_file_proposal' ||
                 item.event.type ===
-                  'long.character_file_proposal') &&
+                  'long.character_file_proposal' ||
+                item.event.type ===
+                  'long.continuity_file_proposal') &&
               item.status === 'error'
             "
             class="long-proposal-secondary"
@@ -846,7 +698,9 @@ function entitySnapshotText(
                 item.event.type ===
                   'long.worldbuilding_file_proposal' ||
                 item.event.type ===
-                  'long.character_file_proposal') &&
+                  'long.character_file_proposal' ||
+                item.event.type ===
+                  'long.continuity_file_proposal') &&
                 (item.status !== 'ready' || !item.preview))
             "
             @click="emit('approve', item.event.id)"
@@ -965,8 +819,7 @@ function entitySnapshotText(
   font-size: 0.607143rem;
 }
 
-.long-proposal-status.is-error,
-.long-proposal-error {
+.long-proposal-status.is-error {
   color: var(--danger);
 }
 
@@ -979,6 +832,9 @@ function entitySnapshotText(
     .long-proposal-status.is-accepted
   ),
 .long-proposal-card[data-proposal-type="long.character_file_proposal"]:has(
+    .long-proposal-status.is-accepted
+  ),
+.long-proposal-card[data-proposal-type="long.continuity_file_proposal"]:has(
     .long-proposal-status.is-accepted
   ) {
   border-color: color-mix(in srgb, var(--success) 45%, var(--theme-line-soft));

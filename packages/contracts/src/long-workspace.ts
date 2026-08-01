@@ -235,6 +235,10 @@ export function longChapterBodyFileId(chapterCardId: string): string {
   return `file_${chapterCardId}:body`;
 }
 
+export function longChapterCardFileId(chapterCardId: string): string {
+  return `file_${chapterCardId}:card`;
+}
+
 export function longChapterCharacterStateFileId(
   chapterCardId: string
 ): string {
@@ -243,6 +247,32 @@ export function longChapterCharacterStateFileId(
 
 export function longChapterHandoffFileId(chapterCardId: string): string {
   return `file_${chapterCardId}:handoff`;
+}
+
+export function longChapterForeshadowingChangesFileId(
+  chapterCardId: string
+): string {
+  return `file_${chapterCardId}:continuity:foreshadowing-changes`;
+}
+
+export function longChapterWorldRevealsFileId(
+  chapterCardId: string
+): string {
+  return `file_${chapterCardId}:continuity:world-reveals`;
+}
+
+export function longChapterCharacterCurrentStateFileId(
+  chapterCardId: string,
+  characterId: string
+): string {
+  return `file_${chapterCardId}:continuity:character:${characterId}:current-state`;
+}
+
+export function longChapterCharacterHistoryFileId(
+  chapterCardId: string,
+  characterId: string
+): string {
+  return `file_${chapterCardId}:continuity:character:${characterId}:history`;
 }
 
 export function longLedgerCommitFileId(commitId: string): string {
@@ -282,9 +312,24 @@ export function longCharacterFilePath(
 
 export function longChapterFilePath(
   chapterCardId: string,
-  filename: "body.md" | "character-state.md" | "handoff.md"
+  filename: "body.md" | "card.md" | "character-state.md" | "handoff.md"
 ): string {
   return `long/chapters/${chapterCardId}/${filename}`;
+}
+
+export function longChapterContinuityFilePath(
+  chapterCardId: string,
+  filename: "foreshadowing-changes.md" | "world-reveals.md"
+): string {
+  return `long/continuity/chapters/${chapterCardId}/${filename}`;
+}
+
+export function longChapterCharacterContinuityFilePath(
+  chapterCardId: string,
+  characterId: string,
+  filename: "current-state.md" | "history.md"
+): string {
+  return `long/continuity/chapters/${chapterCardId}/characters/${characterId}/${filename}`;
 }
 
 export function longStoryPlotFilePath(
@@ -570,16 +615,20 @@ const UniqueArcReferenceListSchema = z
     });
   });
 
+/**
+ * A chapter card under a volume. The card owns one Markdown body file
+ * (`card.md` in the chapter directory) that holds the chapter plan text;
+ * content is written through the plot-design write/edit tools, mirroring the
+ * story-plot pattern. Legacy structured fields (outline / worldConstraints /
+ * characterIds) were removed and are migrated into the card file at load time.
+ */
 export const LongChapterCardSchema = z
   .object({
     id: LongChapterCardIdSchema,
     volumeId: LongVolumeIdSchema,
     primaryArcId: LongArcIdSchema,
     title: LongTitleSchema,
-    narrativeOrder: z.number().int().positive(),
-    outline: LongTextSchema,
-    worldConstraints: LongTextSchema,
-    characterIds: UniqueCharacterReferenceListSchema
+    narrativeOrder: z.number().int().positive()
   })
   .strict();
 export type LongChapterCard = z.infer<typeof LongChapterCardSchema>;
@@ -893,23 +942,57 @@ export const LongPlotIndexSchema = z
   .strict();
 export type LongPlotIndex = z.infer<typeof LongPlotIndexSchema>;
 
-export const LongChapterFileIndexEntrySchema = z
+export const LongChapterCharacterContinuityFileIndexEntrySchema = z
+  .object({
+    characterId: LongCharacterIdSchema,
+    currentState: LongMarkdownFileReferenceSchema,
+    history: LongMarkdownFileReferenceSchema
+  })
+  .strict();
+export type LongChapterCharacterContinuityFileIndexEntry = z.infer<
+  typeof LongChapterCharacterContinuityFileIndexEntrySchema
+>;
+
+const LongChapterFileIndexEntryObjectSchema = z
   .object({
     chapterCardId: LongChapterCardIdSchema,
     body: LongMarkdownFileReferenceSchema,
+    card: LongMarkdownFileReferenceSchema,
     characterState: LongMarkdownFileReferenceSchema,
     handoff: LongMarkdownFileReferenceSchema,
+    foreshadowingChanges: LongMarkdownFileReferenceSchema.optional(),
+    worldReveals: LongMarkdownFileReferenceSchema.nullable().default(null),
+    characterContinuity: z
+      .array(LongChapterCharacterContinuityFileIndexEntrySchema)
+      .max(100_000)
+      .default([]),
     commitId: LongLedgerCommitIdSchema.nullable()
   })
-  .strict()
+  .strict();
+
+export const LongChapterFileIndexEntrySchema =
+  LongChapterFileIndexEntryObjectSchema.transform((entry) => ({
+    ...entry,
+    foreshadowingChanges:
+      entry.foreshadowingChanges ??
+      createEmptyLongMarkdownFileReference(
+        longChapterForeshadowingChangesFileId(entry.chapterCardId),
+        longChapterContinuityFilePath(
+          entry.chapterCardId,
+          "foreshadowing-changes.md"
+        ),
+        entry.body.updatedAt
+      )
+  }))
   .superRefine((entry, context) => {
-    const files = [entry.body, entry.characterState, entry.handoff];
+    const files = [entry.body, entry.card, entry.characterState, entry.handoff];
     const expectedIds = [
       longChapterBodyFileId(entry.chapterCardId),
+      longChapterCardFileId(entry.chapterCardId),
       longChapterCharacterStateFileId(entry.chapterCardId),
       longChapterHandoffFileId(entry.chapterCardId)
     ];
-    const fields = ["body", "characterState", "handoff"] as const;
+    const fields = ["body", "card", "characterState", "handoff"] as const;
     files.forEach((file, index) => {
       if (file.id !== expectedIds[index]) {
         context.addIssue({
@@ -917,6 +1000,123 @@ export const LongChapterFileIndexEntrySchema = z
           path: [fields[index]!, "id"],
           message:
             "Chapter file id must match its stable chapter-card id and role."
+        });
+      }
+    });
+
+    if (
+      entry.foreshadowingChanges.id !==
+      longChapterForeshadowingChangesFileId(entry.chapterCardId)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["foreshadowingChanges", "id"],
+        message:
+          "Foreshadowing changes file id must match its stable chapter-card id."
+      });
+    }
+    if (
+      entry.foreshadowingChanges.path !==
+      longChapterContinuityFilePath(
+        entry.chapterCardId,
+        "foreshadowing-changes.md"
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["foreshadowingChanges", "path"],
+        message:
+          "Foreshadowing changes must use the chapter continuity path."
+      });
+    }
+    if (entry.worldReveals) {
+      if (
+        entry.worldReveals.id !==
+        longChapterWorldRevealsFileId(entry.chapterCardId)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["worldReveals", "id"],
+          message:
+            "World reveals file id must match its stable chapter-card id."
+        });
+      }
+      if (
+        entry.worldReveals.path !==
+        longChapterContinuityFilePath(
+          entry.chapterCardId,
+          "world-reveals.md"
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["worldReveals", "path"],
+          message: "World reveals must use the chapter continuity path."
+        });
+      }
+    }
+
+    const characterIds = new Set<string>();
+    entry.characterContinuity.forEach((character, index) => {
+      if (characterIds.has(character.characterId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["characterContinuity", index, "characterId"],
+          message:
+            "Chapter character continuity entries must have unique character ids."
+        });
+      }
+      characterIds.add(character.characterId);
+      const expectedCurrentStateId =
+        longChapterCharacterCurrentStateFileId(
+          entry.chapterCardId,
+          character.characterId
+        );
+      const expectedHistoryId = longChapterCharacterHistoryFileId(
+        entry.chapterCardId,
+        character.characterId
+      );
+      const expectedCurrentStatePath =
+        longChapterCharacterContinuityFilePath(
+          entry.chapterCardId,
+          character.characterId,
+          "current-state.md"
+        );
+      const expectedHistoryPath =
+        longChapterCharacterContinuityFilePath(
+          entry.chapterCardId,
+          character.characterId,
+          "history.md"
+        );
+      if (character.currentState.id !== expectedCurrentStateId) {
+        context.addIssue({
+          code: "custom",
+          path: ["characterContinuity", index, "currentState", "id"],
+          message:
+            "Character current-state file id must match its chapter and character ids."
+        });
+      }
+      if (character.currentState.path !== expectedCurrentStatePath) {
+        context.addIssue({
+          code: "custom",
+          path: ["characterContinuity", index, "currentState", "path"],
+          message:
+            "Character current-state must use the chapter continuity path."
+        });
+      }
+      if (character.history.id !== expectedHistoryId) {
+        context.addIssue({
+          code: "custom",
+          path: ["characterContinuity", index, "history", "id"],
+          message:
+            "Character history file id must match its chapter and character ids."
+        });
+      }
+      if (character.history.path !== expectedHistoryPath) {
+        context.addIssue({
+          code: "custom",
+          path: ["characterContinuity", index, "history", "path"],
+          message: "Character history must use the chapter continuity path."
         });
       }
     });
@@ -1311,6 +1511,7 @@ export const EMPTY_LONG_CONTINUITY_PROJECTION: LongContinuityProjection = {
 export const LongLedgerCommitIndexEntrySchema = z
   .object({
     id: LongLedgerCommitIdSchema,
+    mode: z.enum(["structured", "text_files"]).default("structured"),
     sequence: z.number().int().positive(),
     chapterCardId: LongChapterCardIdSchema,
     committedAt: LongTimestampSchema,
@@ -1683,21 +1884,6 @@ function validateLongWorkspaceIndexSnapshot(
         "Chapter card and primary arc must belong to the same volume."
       );
     }
-    card.characterIds.forEach((characterId, characterIndex) => {
-      if (!characterIds.has(characterId)) {
-        addIssue(
-          context,
-          [
-            "plot",
-            "chapterCards",
-            index,
-            "characterIds",
-            characterIndex
-          ],
-          "Chapter card must reference an existing character."
-        );
-      }
-    });
   });
   for (const [volumeId, entries] of groupOrderedEntries(
     chapterCards,
@@ -2231,6 +2417,21 @@ function validateLongWorkspaceIndexSnapshot(
         "Chapter file index must reference an existing chapter card."
       );
     }
+    chapter.characterContinuity.forEach((character, characterIndex) => {
+      if (!characterIds.has(character.characterId)) {
+        addIssue(
+          context,
+          [
+            "chapters",
+            index,
+            "characterContinuity",
+            characterIndex,
+            "characterId"
+          ],
+          "Chapter character continuity must reference an existing character."
+        );
+      }
+    });
   });
   for (const chapterCard of chapterCards) {
     if (!chapterFilesById.has(chapterCard.id)) {
@@ -2296,8 +2497,25 @@ function validateLongWorkspaceIndexSnapshot(
     ...snapshot.chapters.flatMap((entry, index) =>
       [
         ["body", entry.body],
+        ["card", entry.card],
         ["characterState", entry.characterState],
-        ["handoff", entry.handoff]
+        ["handoff", entry.handoff],
+        ["foreshadowingChanges", entry.foreshadowingChanges],
+        ...(entry.worldReveals
+          ? [["worldReveals", entry.worldReveals]]
+          : []),
+        ...entry.characterContinuity.flatMap(
+          (character, characterIndex) => [
+            [
+              `characterContinuity.${characterIndex}.currentState`,
+              character.currentState
+            ],
+            [
+              `characterContinuity.${characterIndex}.history`,
+              character.history
+            ]
+          ]
+        )
       ].map(([field, file]) => ({
         file: file as LongWorkspaceFileReference,
         path: ["chapters", index, field as string] as ValidationPath
@@ -3386,7 +3604,7 @@ const LONG_DEFAULT_SHORTCUTS = {
   character_design: ["完善当前人物", "检查人物关系", "推演人物状态"],
   plot_design: ["完善剧情结构", "检查时间线", "梳理伏笔落点"],
   draft: ["规划下一章", "检查章卡顺序", "准备单章写作"],
-  expert_section_writer: ["写当前章", "续写当前章", "检查本章连续性"],
+  expert_section_writer: ["写当前章", "续写当前章", "检查本章正文"],
   continuity_ledger: ["提交当前章", "检查连续性", "查看未闭合伏笔"]
 } as const satisfies Record<
   LongAgentId,
@@ -3455,7 +3673,7 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
 4. 新人物空白文档的首次正文、空正文写入或用户明确要求整体重写时使用 write_character_file；已有正文必须先以 mode=full 完整读取，并明确允许覆盖。概览使用 write_character_overview / edit_character_overview 维护。
 5. 局部修改必须先以 mode=full 完整读取，再使用 edit_character_file 做唯一原文片段替换。
 6. 人物重命名、别名、分组、删除和排序使用 propose_long_mutation；人物创建不得使用该工具，必须使用 create_character。结构变更后必须同步更新人物概览。不得把多名人物拼接到同一人物文档中。
-7. 核心档案表达稳定身份与设计意图；首次连续性提交后，人物关系、当前状态和历史轨迹由连续性账本接管，人物设计智能体只能直接修改核心档案与人物概览。
+7. 核心档案与人物关系表达稳定设计；人物“当前状态”和“历史轨迹”由人物阶段映射最近一章已经提交的连续性 Markdown，不在人物设计阶段重复维护。
 8. 搜索命中和当前页面快照只用于定位与理解；修改前仍须完整读取目标文档。
 9. 所有写入都只形成待审阅提案，不得声称尚未获批的内容已经落盘。`,
     readAccess: {
@@ -3487,12 +3705,12 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
 工作规则：
 1. 先调用 list_plot_design 获取结构类型或条目列表；需要查找已有内容时使用 search_plot_design。涉及世界规则或人物约束时，使用 list_worldbuilding / search_worldbuilding / read_worldbuilding 和 list_characters / search_characters / read_character 查询，世界观与人物内容只读。
 2. 读取剧情内容使用 read_plot_design。需要整体写入或局部编辑前，必须以 mode=full 完整读取目标；搜索命中和当前页面快照只用于定位与理解。
-3. 新增分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点使用 create_plot_design；一次只创建一个条目，创建只建立结构条目（故事情节同时建立空正文文件），不在创建时初始化正文内容。故事情节必须通过 arc_id 挂载到既有剧情点，创建后可立即读取，其正文按规则 4 使用 write_plot_design 或 edit_plot_design 写入。
-4. 已有目标的整体重写使用 write_plot_design，必须先完整读取并明确允许覆盖；局部修改使用 edit_plot_design。
+3. 新增分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点使用 create_plot_design；除叙事落点可一次批量创建多个外，一次只创建一个条目，创建只建立结构条目（故事情节与章卡同时建立空正文文件），不在创建时初始化正文内容。故事情节必须通过 arc_id 挂载到既有剧情点，章卡必须通过 volume_id 与 primary_arc_id 绑定既有分卷与主剧情点；两者创建后可立即读取，其正文按规则 4 使用 write_plot_design 或 edit_plot_design 一次性写入或局部修改。
+4. 已有目标的整体重写使用 write_plot_design，必须先完整读取并明确允许覆盖；本轮刚创建的空白故事情节或章卡可直接使用 write_plot_design 一次性写入全文，无需再次读取或确认覆盖。局部修改使用 edit_plot_design。故事情节与章卡的正文都是整篇文本：write 一次性写入全文，edit 只做唯一片段替换，不要分多次写入。
 5. 非伏笔条目的重命名、关联、移动、删除和排序使用 propose_long_mutation；不得通过该工具创建非伏笔条目或写入其内容字段。
 6. 伏笔线与伏笔触点继续完全使用 propose_long_mutation 的既有参数与流程，不改造成剧情内容工具。
 7. 严格区分故事发生顺序、章节叙述顺序和读者信息进度；已成为连续性事实的结构不得绕过约束修改。
-8. 以写入类工具的返回文案为准：返回待审阅提案的内容尚未落盘；故事情节的创建与正文写入经工具确认后即可立即读取并继续引用。`,
+8. 以写入类工具的返回文案为准：返回待审阅提案的内容尚未落盘；故事情节与章卡的创建与正文写入经工具确认后即可立即读取并继续引用。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -3516,9 +3734,15 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "draft",
     label: "正文统筹智能体",
-    description: "按分卷、剧情弧和章卡顺序调度单章写作。",
-    systemPrompt:
-      "你负责长篇正文统筹。只能按未提交章卡的连续顺序，提议启动单章、当前主弧连续章节或当前卷写作；不得调度整本。获批后客户端必须逐章启动独立写手、逐章人工审批写入与连续性提交，不能并行或跳章。",
+    description: "按分卷、剧情点和章卡顺序统筹正文，并调度连续章节写作。",
+    systemPrompt: `你负责长篇正文统筹。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
+
+工作规则：
+1. 使用 list_worldbuilding / search_worldbuilding / read_worldbuilding、list_characters / search_characters / read_character、list_plot_design / search_plot_design / read_plot_design 查询写作依据；不要使用底层工作区索引或通用文档读取。
+2. 使用 list_chapters、search_chapters 和 read_chapter 查询正文目录与既有正文。
+3. 需要批量推进时，只能按未提交章卡的连续顺序，使用 propose_long_chapter_dispatch 提议启动单章、当前剧情点连续章节或当前卷；不得调度整本、并行或跳章。
+4. 正文、世界观、人物和剧情的搜索命中都只用于定位；需要准确引用时必须使用相应 read 工具完整读取。
+5. 调度提案只启动后续单章写作，不代表正文已经创建、写入、编辑或获批。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -3541,9 +3765,16 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "expert_section_writer",
     label: "单章写作智能体",
-    description: "根据一张章卡完成可供连续性核验的正文证据。",
-    systemPrompt:
-      "你是长篇单章写手。每次只处理当前章卡，只负责写出可供核验的正文证据；必须依据查询到的设定与已提交连续性，不得自行确定章末状态、接续包或宣称提交账本。",
+    description: "按一张章卡创建、写入或局部编辑正文，并交由用户审阅。",
+    systemPrompt: `你是长篇单章写手。每次只处理运行时锁定的当前章卡，模型只使用业务 ID，不索取或复述文件路径、file_id 与 revision。
+
+工作规则：
+1. 使用世界观、人物和剧情各自的 list / search / read 工具查询写作依据；使用 list_chapters、search_chapters、read_chapter 查询正文，不使用底层工作区索引或通用文档读取。
+2. 每张章卡对应一个独立的 Markdown 正文文件，章节结构及空白正文文件由剧情设计的 create_plot_design 创建，创建时不得初始化正文。当前章正文为空时使用 write_chapter_draft 首次写入；已有正文的整体重写必须先 read_chapter mode=full，并使用 write_chapter_draft 且明确允许覆盖；局部修改必须先完整读取，再使用 edit_chapter_draft 做唯一原文片段替换。每次工具调用只能提交运行时锁定的当前章；content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明或参数。
+3. 搜索命中和当前页面快照只用于定位与理解，写入或编辑前必须通过 read_chapter mode=full 建立完整读取依据。
+4. 所有正文创建、写入和编辑都形成与世界观、人物、剧情相同的会话 diff 审批卡；不得声称尚未获批的正文已经保存。
+5. 本智能体唯一的写作产物是当前章小说正文。不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。
+6. 正文获批保存后，由连续性账本智能体读取正文并独立生成章末人物状态、交接文档、下一章接续包与连续性提交；不得替连续性账本提前完成或宣称已完成这些工作。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -3563,9 +3794,16 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "continuity_ledger",
     label: "连续性账本智能体",
-    description: "核验正文并生成章末状态、接续包和结构化全域投影。",
-    systemPrompt:
-      "你负责长篇连续性账本。只处理正文已经写完的下一章，以正文为证据核对人物、关系、世界、剧情、伏笔与知识边界，生成章末人物状态、下一章接续包和结构化全域投影后形成提交提案；不得跳章提交。",
+    description: "按章留存人物轨迹、世界揭露、伏笔变化、章末状态和接续包。",
+    systemPrompt: `你负责长篇连续性留存。只处理正文已经写完的连续下一章，不得跳章提交。
+
+工作规则：
+1. 使用 list_continuity_files 查看待处理章节与已有按章记录，再用 read_continuity_file 按章节、文档角色和人物读取正文证据或现有文件；不得使用底层索引、file_id 或通用文档读取。
+2. 以本章正文为事实证据，并参考上一章章末状态、接续包和相关设计资料。只记录文本结果，不创建结构化事实、知识边界、开放环、覆盖率、摘要域或叙事决策。
+3. 每章必须写入三个既有文件：章末状态、下一章接续包、伏笔变化。没有伏笔变化时也要明确写“本章无变化”及简短依据，不能留空。
+4. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。不要为未涉及的人物制造记录。
+5. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON、ID 清单或内部审计结构。
+6. 文件提案获批保存后，最后单独调用 propose_continuity_commit，只提交本章正文与连续性文件的 revision。未获用户批准前不得声称文件已保存或章节已经提交。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -3578,7 +3816,7 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
       skillKinds: ["general", "plot", "style", "other"]
     },
     writeAccess: {
-      workspaceRoots: ["character_design", "plot_design", "continuity_ledger"],
+      workspaceRoots: ["continuity_ledger"],
       capabilities: ["query_structure", "commit_ledger"]
     }
   })

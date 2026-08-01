@@ -10,7 +10,10 @@ import {
   LongWorkspaceIndexSnapshotSchema,
   deriveLongForeshadowingStatusFromCommittedBeats,
   longChapterBodyFileId,
+  longChapterCardFileId,
   longChapterCharacterStateFileId,
+  longChapterContinuityFilePath,
+  longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
   longCharacterCurrentStateFileId,
@@ -2000,6 +2003,9 @@ export function createWriteClawLongImportPlan(
       left.sourceIndex - right.sourceIndex
   );
   const narrativeOrderByVolume = new Map<string, number>();
+  const characterNameById = new Map(
+    characters.map((character) => [character.id, character.name])
+  );
   const chapterCards: LongWorkspaceIndexSnapshot["plot"]["chapterCards"] = [];
   const chapterFiles: LongWorkspaceIndexSnapshot["chapters"] = [];
   const committedChapterRows: Array<{
@@ -2016,13 +2022,32 @@ export function createWriteClawLongImportPlan(
       (narrativeOrderByVolume.get(row.volumeId) ?? 0) + 1;
     narrativeOrderByVolume.set(row.volumeId, narrativeOrder);
     const rawChapter = record(rawChapters[row.stageId]);
-    const characterIds = uniqueMappedReferences(
+    const characterNames = uniqueMappedReferences(
       row.raw.characters,
       "character",
       ids,
       warnings,
       `long_workspace.json.plot.chapter_cards[${row.sourceIndex}].characters`
-    );
+    )
+      .map((characterId) => characterNameById.get(characterId) ?? characterId)
+      .join("、");
+    const cardContent = [
+      clipped(
+        row.raw.outline,
+        MAX_INDEX_TEXT,
+        warnings,
+        `章节 ${narrativeOrder} 大纲`
+      ).trim(),
+      clipped(
+        row.raw.world_constraints,
+        MAX_INDEX_TEXT,
+        warnings,
+        `章节 ${narrativeOrder} 世界约束`
+      ).trim(),
+      characterNames ? `出场人物：${characterNames}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     chapterCards.push({
       id: row.id,
       volumeId: row.volumeId,
@@ -2033,20 +2058,7 @@ export function createWriteClawLongImportPlan(
         warnings,
         `章节 ${narrativeOrder} 标题`
       ),
-      narrativeOrder,
-      outline: clipped(
-        row.raw.outline,
-        MAX_INDEX_TEXT,
-        warnings,
-        `章节 ${narrativeOrder} 大纲`
-      ),
-      worldConstraints: clipped(
-        row.raw.world_constraints,
-        MAX_INDEX_TEXT,
-        warnings,
-        `章节 ${narrativeOrder} 世界约束`
-      ),
-      characterIds
+      narrativeOrder
     });
     const legacyStages = record(source.book?.stages);
     const body = clippedTextDocument(
@@ -2094,6 +2106,11 @@ export function createWriteClawLongImportPlan(
         chapterPath(row.id, "body.md"),
         body
       ),
+      card: documents.add(
+        longChapterCardFileId(row.id),
+        chapterPath(row.id, "card.md"),
+        cardContent
+      ),
       characterState: documents.add(
         longChapterCharacterStateFileId(row.id),
         chapterPath(row.id, "character-state.md"),
@@ -2104,6 +2121,16 @@ export function createWriteClawLongImportPlan(
         chapterPath(row.id, "handoff.md"),
         handoff
       ),
+      foreshadowingChanges: documents.add(
+        longChapterForeshadowingChangesFileId(row.id),
+        longChapterContinuityFilePath(
+          row.id,
+          "foreshadowing-changes.md"
+        ),
+        ""
+      ),
+      worldReveals: null,
+      characterContinuity: [],
       commitId: null
     });
     currentChapterIdByLegacyStage.set(row.stageId, row.id);
@@ -2788,6 +2815,7 @@ export function createWriteClawLongImportPlan(
       chapterFile.commitId = commitId;
       legacyCommits.push({
         id: commitId,
+        mode: "structured",
         sequence,
         chapterCardId: committedRow.chapterCardId,
         committedAt,

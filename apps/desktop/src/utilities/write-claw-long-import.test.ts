@@ -408,6 +408,14 @@ describe("Write Claw long-form import", () => {
       const chapterState = plan.documents.find(
         ({ fileId }) => fileId === plan.index.chapters[0]!.characterState.id
       )!;
+      const foreshadowingChanges = plan.documents.find(
+        ({ fileId }) =>
+          fileId === plan.index.chapters[0]!.foreshadowingChanges.id
+      )!;
+      expect(foreshadowingChanges).toMatchObject({
+        path: plan.index.chapters[0]!.foreshadowingChanges.path,
+        content: ""
+      });
       expect(chapterState.content).toContain("旧版状态账本（待重新提交）");
       expect(chapterState.content).toContain("林舟于海岸醒来");
       expect(chapterState.content).toContain("旧版叙事落点执行判定");

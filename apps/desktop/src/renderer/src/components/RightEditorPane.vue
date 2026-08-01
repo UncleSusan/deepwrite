@@ -12,6 +12,7 @@ import {
 } from "../utils/editorTextReferences";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
+import MarkdownContent from "./MarkdownContent.vue";
 
 const props = defineProps<{
   document: WorkspaceDocument;
@@ -115,7 +116,6 @@ watch(
 );
 
 const characterCount = computed(() => content.value.replace(/\s/g, "").length);
-const paragraphs = computed(() => content.value.split(/\n{2,}/).filter(Boolean));
 const showSectionTabs = computed(() => Boolean(props.sectionTabs?.length));
 const showDraftFileTabs = computed(() => Boolean(props.document.draftFileKind));
 const editorReadOnly = computed(() => props.document.readOnly || props.locked);
@@ -811,7 +811,8 @@ onBeforeUnmount(() => {
         @scroll="closeSelectionAction"
       />
       <article v-else class="document-preview">
-        <p v-for="(paragraph, index) in paragraphs" :key="index">{{ paragraph }}</p>
+        <MarkdownContent v-if="content.trim()" :content="content" />
+        <p v-else class="document-preview-empty">暂无内容</p>
       </article>
     </div>
 

@@ -10,6 +10,7 @@ import {
   createLongChapterCardVolumeSelection,
   createLongChapterSelection,
   createLongContinuitySelection,
+  latestCommittedTextFilesChapter,
   longBookIdFromResourceId,
   longBookResourceId,
   reconcileLongWorkspaceSelection
@@ -99,12 +100,22 @@ function fixture(commitId: string | null): {
       ]
     },
     ledger: {
-      commits: commitId ? [{ id: commitId }] : []
+      commits: commitId
+        ? [
+            {
+              id: commitId,
+              mode: "structured",
+              sequence: 1,
+              chapterCardId: "chapter_one"
+            }
+          ]
+        : []
     },
     chapters: [
       {
         chapterCardId: "chapter_one",
         body: file("file_chapter_body", "long/chapters/chapter_one/body.md"),
+        card: file("file_chapter_card", "long/chapters/chapter_one/card.md"),
         characterState: file(
           "file_chapter_state",
           "long/chapters/chapter_one/character-state.md"
@@ -113,6 +124,12 @@ function fixture(commitId: string | null): {
           "file_chapter_handoff",
           "long/chapters/chapter_one/handoff.md"
         ),
+        foreshadowingChanges: file(
+          "file_chapter_foreshadowing",
+          "long/chapters/chapter_one/continuity/foreshadowing-changes.md"
+        ),
+        worldReveals: null,
+        characterContinuity: [],
         commitId
       }
     ]
@@ -392,7 +409,7 @@ describe("long workspace chapter navigation", () => {
     expect(selection?.description).toContain("单章写手只写正文");
   });
 
-  it("gives the continuity agent the chapter id with a read-only triplet", () => {
+  it("gives the continuity agent one read-only Markdown group for the chapter", () => {
     const { summary, workspaceIndex } = fixture(null);
     const selection = createLongContinuitySelection(
       summary,
@@ -408,6 +425,7 @@ describe("long workspace chapter navigation", () => {
     });
     expect(selection?.files.map(({ role }) => role)).toEqual([
       "body",
+      "foreshadowing-changes",
       "character-state",
       "handoff"
     ]);
@@ -424,7 +442,7 @@ describe("long workspace chapter navigation", () => {
     });
   });
 
-  it("locks all committed chapter files and no longer offers re-commit", () => {
+  it("locks committed draft files while keeping their chapter record visible", () => {
     const { summary, workspaceIndex } = fixture("commit_one");
     const chapter = createLongChapterSelection(
       summary,
@@ -440,7 +458,10 @@ describe("long workspace chapter navigation", () => {
         workspaceIndex,
         "chapter_one"
       )
-    ).toBeUndefined();
+    ).toMatchObject({
+      key: "continuity:chapter_one",
+      continuityView: "history"
+    });
   });
 
   it("offers continuity review only for the next chapter in the commit prefix", () => {
@@ -459,6 +480,7 @@ describe("long workspace chapter navigation", () => {
     workspaceIndex.chapters.push({
       chapterCardId: "chapter_two",
       body: file("file_chapter_two_body", "chapters/chapter-two/body.md"),
+      card: file("file_chapter_two_card", "chapters/chapter-two/card.md"),
       characterState: file(
         "file_chapter_two_state",
         "chapters/chapter-two/character-state.md"
@@ -467,6 +489,12 @@ describe("long workspace chapter navigation", () => {
         "file_chapter_two_handoff",
         "chapters/chapter-two/handoff.md"
       ),
+      foreshadowingChanges: file(
+        "file_chapter_two_foreshadowing",
+        "chapters/chapter-two/continuity/foreshadowing-changes.md"
+      ),
+      worldReveals: null,
+      characterContinuity: [],
       commitId: null
     });
 
@@ -481,6 +509,8 @@ describe("long workspace chapter navigation", () => {
     workspaceIndex.chapters[0]!.commitId = "commit_one";
     workspaceIndex.ledger.commits.push({
       id: "commit_one",
+      mode: "structured",
+      sequence: 1,
       chapterCardId: "chapter_one"
     } as (typeof workspaceIndex.ledger.commits)[number]);
     expect(
@@ -493,5 +523,143 @@ describe("long workspace chapter navigation", () => {
       key: "continuity:chapter_two",
       chapterCardId: "chapter_two"
     });
+  });
+
+  it("maps all per-chapter continuity text files without exposing commit JSON", () => {
+    const { summary, workspaceIndex } = fixture("commit_one");
+    workspaceIndex.ledger.commits[0]!.mode = "text_files";
+    workspaceIndex.chapters[0]!.worldReveals = file(
+      "file_chapter_world",
+      "long/chapters/chapter_one/continuity/world-reveals.md"
+    );
+    workspaceIndex.chapters[0]!.characterContinuity = [
+      {
+        characterId: "character_lead",
+        currentState: file(
+          "file_chapter_character_state",
+          "long/chapters/chapter_one/continuity/characters/character_lead/current-state.md"
+        ),
+        history: file(
+          "file_chapter_character_history",
+          "long/chapters/chapter_one/continuity/characters/character_lead/history.md"
+        )
+      }
+    ];
+    summary.navigation.characters = [
+      {
+        id: "character_lead",
+        name: "沈文佳",
+        group: "protagonist",
+        order: 1
+      }
+    ] as typeof summary.navigation.characters;
+
+    const selection = createLongContinuitySelection(
+      summary,
+      workspaceIndex,
+      "chapter_one"
+    );
+
+    expect(selection?.files.map(({ label }) => label)).toEqual([
+      "正文证据",
+      "沈文佳 · 当前状态",
+      "沈文佳 · 历史轨迹",
+      "世界观揭露",
+      "伏笔变化",
+      "章末状态",
+      "接续包"
+    ]);
+    expect(selection?.files.every(({ readOnly }) => readOnly)).toBe(true);
+    expect(selection?.files.some(({ role }) => role === "ledger-record")).toBe(
+      false
+    );
+  });
+
+  it("maps character state and history from the newest matching text-files chapter", () => {
+    const { summary, workspaceIndex } = fixture("commit_one");
+    summary.navigation.characters = [
+      {
+        id: "character_lead",
+        name: "沈文佳",
+        group: "protagonist",
+        order: 1
+      }
+    ] as typeof summary.navigation.characters;
+    const designFiles = {
+      characterId: "character_lead",
+      coreProfile: file("core", "long/characters/character_lead/core-profile.md"),
+      relationships: file(
+        "relationships",
+        "long/characters/character_lead/relationships.md"
+      ),
+      currentState: file(
+        "design-state",
+        "long/characters/character_lead/current-state.md"
+      ),
+      history: file("design-history", "long/characters/character_lead/history.md")
+    };
+    workspaceIndex.characterFiles = [
+      designFiles
+    ] as typeof workspaceIndex.characterFiles;
+    const mappedState = file(
+      "chapter-state",
+      "long/chapters/chapter_one/continuity/characters/character_lead/current-state.md"
+    );
+    const mappedHistory = file(
+      "chapter-history",
+      "long/chapters/chapter_one/continuity/characters/character_lead/history.md"
+    );
+    workspaceIndex.ledger.commits[0]!.mode = "text_files";
+    workspaceIndex.chapters[0]!.characterContinuity = [
+      {
+        characterId: "character_lead",
+        currentState: mappedState,
+        history: mappedHistory
+      }
+    ];
+
+    expect(latestCommittedTextFilesChapter(workspaceIndex)?.chapterCardId).toBe(
+      "chapter_one"
+    );
+    const selection = createLongCharacterGroupSelection(
+      summary,
+      workspaceIndex,
+      "protagonist",
+      "character_lead"
+    );
+    expect(selection.files.find(({ role }) => role === "current-state")?.file).toBe(
+      mappedState
+    );
+    expect(selection.files.find(({ role }) => role === "history")?.file).toBe(
+      mappedHistory
+    );
+    expect(
+      selection.files.find(({ role }) => role === "relationships")?.readOnly
+    ).toBeUndefined();
+  });
+
+  it("maps the foreshadowing workspace to the newest committed chapter file", () => {
+    const { summary, workspaceIndex } = fixture("commit_one");
+    workspaceIndex.ledger.commits[0]!.mode = "text_files";
+    const selection = reconcileLongWorkspaceSelection(
+      summary,
+      workspaceIndex,
+      {
+        key: "plot-design:foreshadowing",
+        root: "plot_design",
+        title: "伏笔总览",
+        breadcrumbs: [],
+        files: [],
+        preferredRole: "book-line"
+      }
+    );
+    expect(selection?.files).toEqual([
+      {
+        role: "foreshadowing-changes",
+        label: "最新伏笔变化",
+        file: workspaceIndex.chapters[0]!.foreshadowingChanges,
+        readOnly: true
+      }
+    ]);
   });
 });

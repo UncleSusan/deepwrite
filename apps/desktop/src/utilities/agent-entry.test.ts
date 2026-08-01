@@ -9,6 +9,8 @@ import {
   createDefaultCreativePlotStages,
   createExpertDraftDirectoryRevision,
   createShortWorkspaceContentRevision,
+  longChapterBodyFileId,
+  longChapterFilePath,
   type CommandResult,
   type SystemEventEnvelope
 } from "@deepwrite/contracts";
@@ -506,20 +508,32 @@ describe("Agent Utility prompt forwarding", () => {
         payload: {
           ...payloadBase,
           agentId: "expert_section_writer",
-          input: {
-            bookId: "longbook_proposals",
+          batch: {
+            baseRevision: 2,
+            updatedAt: "2026-07-26T12:00:00.000Z",
+            operations: [],
+            documentWrites: [{
+              proposalId: "proposal_chapter_one",
+              fileId: longChapterBodyFileId("chapter_one"),
+              content: "正文",
+              mode: "replace",
+              expectedRevision: "v1:0:00000000",
+              nextRevision: "v1:2:00000000",
+              updatedAt: "2026-07-26T12:00:00.000Z",
+              reason: "完成第一章"
+            }]
+          },
+          baseProjectRevision: 3,
+          file: {
             chapterCardId: "chapter_one",
-            body: { content: "正文", baseRevision: "v1:0:00000000" },
-            characterState: {
-              content: "",
-              baseRevision: "v1:0:00000000"
-            },
-            handoff: {
-              content: "",
-              baseRevision: "v1:0:00000000"
-            },
-            baseWorkspaceRevision: 2,
-            baseProjectRevision: 3
+            chapterTitle: "第一章",
+            fileId: longChapterBodyFileId("chapter_one"),
+            filePath: longChapterFilePath("chapter_one", "body.md"),
+            operation: "create",
+            beforeText: "",
+            afterText: "正文",
+            beforeRevision: "v1:0:00000000",
+            nextRevision: "v1:2:00000000"
           }
         }
       },
@@ -530,6 +544,7 @@ describe("Agent Utility prompt forwarding", () => {
           ...payloadBase,
           agentId: "continuity_ledger",
           input: {
+            mode: "structured",
             bookId: "longbook_proposals",
             chapterCardId: "chapter_one",
             chapterFileRevisions: {

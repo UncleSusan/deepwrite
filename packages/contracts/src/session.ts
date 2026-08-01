@@ -26,16 +26,14 @@ import {
   LongAgentProfileSchema,
   LongBookIdSchema,
   LongChapterCardIdSchema,
+  LongCharacterIdSchema,
   LongFileIdSchema,
   LongFileRevisionSchema,
   LongProjectRelativePathSchema,
   resolveLongAgentIdForRoot
 } from "./long-workspace";
 import { LongWorkspaceRuntimeContextSchema } from "./long-workspace-api";
-import {
-  LongCommitChapterInputSchema,
-  LongWriteChapterInputSchema
-} from "./long-ledger";
+import { LongCommitChapterInputSchema } from "./long-ledger";
 import { LongWorkspaceOperationBatchSchema } from "./long-workspace-operations";
 import { ShortAgentSubagentDefinitionsSchema } from "./agent-team";
 import {
@@ -1165,15 +1163,159 @@ export type LongCharacterFileProposalPayload = z.infer<
   typeof LongCharacterFileProposalPayloadSchema
 >;
 
-export const LongChapterWriteProposalPayloadSchema =
-  LongProposalBasePayloadSchema.extend({
-    input: LongWriteChapterInputSchema
-  }).superRefine((value, context) => {
-    if (value.input.bookId !== value.bookId) {
+export const LONG_CONTINUITY_FILE_ROLES = [
+  "foreshadowing_changes",
+  "world_reveals",
+  "character_current_state",
+  "character_history",
+  "chapter_end_state",
+  "handoff"
+] as const;
+export const LongContinuityFileRoleSchema = z.enum(
+  LONG_CONTINUITY_FILE_ROLES
+);
+export type LongContinuityFileRole = z.infer<
+  typeof LongContinuityFileRoleSchema
+>;
+
+export const LongContinuityFileChangeSchema = z
+  .object({
+    chapterCardId: LongChapterCardIdSchema,
+    role: LongContinuityFileRoleSchema,
+    characterId: LongCharacterIdSchema.nullable().default(null),
+    fileId: LongFileIdSchema,
+    filePath: LongProjectRelativePathSchema,
+    title: z.string().trim().min(1).max(256),
+    operation: z.enum(["create", "write", "edit"]),
+    beforeText: z.string().max(1_000_000),
+    afterText: z.string().max(1_000_000),
+    beforeRevision: LongFileRevisionSchema.nullable(),
+    nextRevision: LongFileRevisionSchema
+  })
+  .strict()
+  .superRefine((file, context) => {
+    const isCharacterRole =
+      file.role === "character_current_state" ||
+      file.role === "character_history";
+    if (isCharacterRole !== (file.characterId !== null)) {
       context.addIssue({
         code: "custom",
-        path: ["input", "bookId"],
-        message: "Chapter proposal input must belong to the proposal book."
+        path: ["characterId"],
+        message:
+          "Only character continuity roles may carry a character id."
+      });
+    }
+    if ((file.operation === "create") !== (file.beforeRevision === null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["beforeRevision"],
+        message:
+          "Created continuity files require a null prior revision; writes and edits require one."
+      });
+    }
+  });
+export type LongContinuityFileChange = z.infer<
+  typeof LongContinuityFileChangeSchema
+>;
+
+export const LongContinuityFileProposalPayloadSchema =
+  LongProposalBasePayloadSchema.extend({
+    batch: LongWorkspaceOperationBatchSchema,
+    baseProjectRevision: z.number().int().nonnegative(),
+    files: z.array(LongContinuityFileChangeSchema).min(1).max(1_024)
+  }).superRefine((value, context) => {
+    if (value.agentId !== "continuity_ledger") {
+      context.addIssue({
+        code: "custom",
+        path: ["agentId"],
+        message:
+          "Continuity file proposals must be authored by the continuity ledger agent."
+      });
+    }
+    const fileIds = new Set(value.files.map(({ fileId }) => fileId));
+    if (fileIds.size !== value.files.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["files"],
+        message: "Continuity file proposals must target unique files."
+      });
+    }
+    if (value.batch.documentWrites.length !== value.files.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["batch", "documentWrites"],
+        message:
+          "Continuity file proposals require exactly one document write per file change."
+      });
+    }
+    for (const [index, file] of value.files.entries()) {
+      const write = value.batch.documentWrites.find(
+        ({ fileId }) => fileId === file.fileId
+      );
+      const modeMatches =
+        file.operation === "create"
+          ? write?.mode === "create" && write.expectedRevision === null
+          : write?.mode !== "create" &&
+            write?.expectedRevision === file.beforeRevision;
+      if (
+        !write ||
+        !modeMatches ||
+        write.content !== file.afterText ||
+        write.nextRevision !== file.nextRevision
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["files", index, "fileId"],
+          message:
+            "Each continuity file change must match its document write and revisions."
+        });
+      }
+    }
+  });
+export type LongContinuityFileProposalPayload = z.infer<
+  typeof LongContinuityFileProposalPayloadSchema
+>;
+
+export const LongChapterBodyChangeSchema = z
+  .object({
+    chapterCardId: LongChapterCardIdSchema,
+    chapterTitle: z.string().trim().min(1).max(256),
+    fileId: LongFileIdSchema,
+    filePath: LongProjectRelativePathSchema,
+    operation: z.enum(["create", "write", "edit"]),
+    beforeText: z.string().max(10_000_000),
+    afterText: z.string().max(10_000_000),
+    beforeRevision: LongFileRevisionSchema,
+    nextRevision: LongFileRevisionSchema
+  })
+  .strict();
+export type LongChapterBodyChange = z.infer<
+  typeof LongChapterBodyChangeSchema
+>;
+
+export const LongChapterWriteProposalPayloadSchema =
+  LongProposalBasePayloadSchema.extend({
+    batch: LongWorkspaceOperationBatchSchema,
+    baseProjectRevision: z.number().int().nonnegative(),
+    file: LongChapterBodyChangeSchema
+  }).superRefine((value, context) => {
+    const documentWrite = value.batch.documentWrites.find(
+      ({ fileId }) => fileId === value.file.fileId
+    );
+    if (
+      value.batch.operations.length !== 0 ||
+      value.batch.documentWrites.length !== 1 ||
+      !documentWrite ||
+      documentWrite.mode !== "replace" ||
+      documentWrite.expectedRevision !== value.file.beforeRevision ||
+      documentWrite.nextRevision !== value.file.nextRevision ||
+      documentWrite.content !== value.file.afterText
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["batch", "documentWrites"],
+        message:
+          "Chapter proposals must contain exactly one matching body document write."
       });
     }
   });
@@ -1453,6 +1595,12 @@ export const LongCharacterFileProposalEventEnvelopeSchema =
     payload: LongCharacterFileProposalPayloadSchema
   }).superRefine(validateAgentEventContext);
 
+export const LongContinuityFileProposalEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.continuity_file_proposal"),
+    payload: LongContinuityFileProposalPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
 export const LongChapterWriteProposalEventEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.chapter_write_proposal"),
@@ -1565,6 +1713,10 @@ export type LongWorldbuildingFileProposalEventEnvelope = Envelope<
 export type LongCharacterFileProposalEventEnvelope = Envelope<
   LongCharacterFileProposalPayload,
   "long.character_file_proposal"
+>;
+export type LongContinuityFileProposalEventEnvelope = Envelope<
+  LongContinuityFileProposalPayload,
+  "long.continuity_file_proposal"
 >;
 export type LongChapterWriteProposalEventEnvelope = Envelope<
   LongChapterWriteProposalPayload,

@@ -4,6 +4,7 @@ import {
   LongArcSchema,
   LongChapterCardIdSchema,
   LongChapterCardSchema,
+  LongChapterCharacterContinuityFileIndexEntrySchema,
   LongChapterFileIndexEntrySchema,
   LongCharacterFileIndexEntrySchema,
   LongCharacterGroupSchema,
@@ -17,6 +18,7 @@ import {
   LongForeshadowingBeatSchema,
   LongForeshadowingIdSchema,
   LongForeshadowingSchema,
+  LongMarkdownFileReferenceSchema,
   LongNarrativePlacementIdSchema,
   LongNarrativePlacementSchema,
   LongProjectRelativePathSchema,
@@ -122,13 +124,7 @@ const ArcUpdatePatchSchema = nonEmptyPatch({
   outline: OperationTextSchema.optional()
 });
 const ChapterCardUpdatePatchSchema = nonEmptyPatch({
-  title: OperationTitleSchema.optional(),
-  outline: OperationTextSchema.optional(),
-  worldConstraints: OperationTextSchema.optional(),
-  characterIds: uniqueIdArray(
-    LongCharacterIdSchema,
-    "chapter character reference"
-  ).optional()
+  title: OperationTitleSchema.optional()
 });
 const StoryEventUpdatePatchSchema = nonEmptyPatch({
   title: OperationTitleSchema.optional(),
@@ -421,6 +417,24 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
         LongChapterCardIdSchema,
         "chapter reorder id"
       )
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("chapterContinuity.worldReveals.create"),
+      chapterCardId: LongChapterCardIdSchema,
+      file: LongMarkdownFileReferenceSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("chapterContinuity.character.create"),
+      chapterCardId: LongChapterCardIdSchema,
+      characterId: LongCharacterIdSchema,
+      currentState:
+        LongChapterCharacterContinuityFileIndexEntrySchema.shape.currentState,
+      history:
+        LongChapterCharacterContinuityFileIndexEntrySchema.shape.history
     })
     .strict(),
 
@@ -1011,8 +1025,15 @@ function allWorkspaceFiles(
     ]),
     ...workspace.chapters.flatMap((entry) => [
       entry.body,
+      entry.card,
       entry.characterState,
-      entry.handoff
+      entry.handoff,
+      entry.foreshadowingChanges,
+      ...(entry.worldReveals ? [entry.worldReveals] : []),
+      ...entry.characterContinuity.flatMap((character) => [
+        character.currentState,
+        character.history
+      ])
     ]),
     ...workspace.plot.storyPlots.map(({ file }) => file),
     ...workspace.ledger.commits.map(({ recordFile }) => recordFile)
@@ -1958,11 +1979,22 @@ function deleteChapter(
   if (fileIndex < 0) {
     operationError(
       "invalid_result",
-      `Chapter ${chapterCardId} is missing its three-file index.`
+      `Chapter ${chapterCardId} is missing its file index.`
     );
   }
   const files = state.draft.chapters[fileIndex]!;
-  [files.body, files.characterState, files.handoff].forEach((file) =>
+  [
+    files.body,
+    files.card,
+    files.characterState,
+    files.handoff,
+    files.foreshadowingChanges,
+    ...(files.worldReveals ? [files.worldReveals] : []),
+    ...files.characterContinuity.flatMap((character) => [
+      character.currentState,
+      character.history
+    ])
+  ].forEach((file) =>
     addFileDeleteIntent(
       state,
       file,
@@ -2220,15 +2252,10 @@ function deleteCharacter(
     "Character"
   );
   const character = state.draft.characters[characterIndex]!;
-  const chapterRefs = state.draft.plot.chapterCards
-    .filter((chapter) => chapter.characterIds.includes(characterId))
-    .map(({ id }) => id);
   const eventRefs = state.draft.plot.storyEvents
     .filter((event) => event.characterIds.includes(characterId))
     .map(({ id }) => id);
-  const committed = committedChapterIds(state.draft);
   if (
-    chapterRefs.some((chapterId) => committed.has(chapterId)) ||
     eventRefs.some((eventId) =>
       eventParticipatesInCommittedFacts(state.draft, eventId)
     )
@@ -2238,18 +2265,7 @@ function deleteCharacter(
       `Cannot delete character ${characterId}; a committed chapter references it.`
     );
   }
-  requireCascade(
-    cascade,
-    [...chapterRefs, ...eventRefs],
-    `Character ${characterId}`
-  );
-  state.draft.plot.chapterCards.forEach((chapter) => {
-    if (!chapter.characterIds.includes(characterId)) return;
-    chapter.characterIds = chapter.characterIds.filter(
-      (candidate) => candidate !== characterId
-    );
-    markUpdated(state, chapter.id);
-  });
+  requireCascade(cascade, eventRefs, `Character ${characterId}`);
   state.draft.plot.storyEvents.forEach((event) => {
     if (!event.characterIds.includes(characterId)) return;
     event.characterIds = event.characterIds.filter(
@@ -2960,8 +2976,17 @@ function applyLongWorkspaceOperation(
       }
       const files = [
         operation.files.body,
+        operation.files.card,
         operation.files.characterState,
-        operation.files.handoff
+        operation.files.handoff,
+        operation.files.foreshadowingChanges,
+        ...(operation.files.worldReveals
+          ? [operation.files.worldReveals]
+          : []),
+        ...operation.files.characterContinuity.flatMap((character) => [
+          character.currentState,
+          character.history
+        ])
       ];
       ensureFilesAvailable(state, files);
       workspace.plot.chapterCards.push(
@@ -3087,6 +3112,84 @@ function applyLongWorkspaceOperation(
           value.narrativeOrder = order;
         },
         state
+      );
+      break;
+    }
+    case "chapterContinuity.worldReveals.create": {
+      assertChapterIsMutable(
+        workspace,
+        operation.chapterCardId,
+        "create world-reveals continuity for"
+      );
+      const chapterFiles = workspace.chapters[
+        findEntityIndex(
+          workspace.chapters.map((entry) => ({
+            ...entry,
+            id: entry.chapterCardId
+          })),
+          operation.chapterCardId,
+          "Chapter file index"
+        )
+      ]!;
+      if (chapterFiles.worldReveals) {
+        operationError(
+          "already_exists",
+          `Chapter ${operation.chapterCardId} already has a world-reveals file.`
+        );
+      }
+      ensureFilesAvailable(state, [operation.file]);
+      chapterFiles.worldReveals = structuredClone(operation.file);
+      addFileCreateIntent(
+        state,
+        operation.file,
+        `Create world reveals for chapter ${operation.chapterCardId}`
+      );
+      break;
+    }
+    case "chapterContinuity.character.create": {
+      assertChapterIsMutable(
+        workspace,
+        operation.chapterCardId,
+        "create character continuity for"
+      );
+      findEntityIndex(
+        workspace.characters,
+        operation.characterId,
+        "Character"
+      );
+      const chapterFiles = workspace.chapters[
+        findEntityIndex(
+          workspace.chapters.map((entry) => ({
+            ...entry,
+            id: entry.chapterCardId
+          })),
+          operation.chapterCardId,
+          "Chapter file index"
+        )
+      ]!;
+      if (
+        chapterFiles.characterContinuity.some(
+          ({ characterId }) => characterId === operation.characterId
+        )
+      ) {
+        operationError(
+          "already_exists",
+          `Chapter ${operation.chapterCardId} already tracks character ${operation.characterId}.`
+        );
+      }
+      const files = [operation.currentState, operation.history];
+      ensureFilesAvailable(state, files);
+      chapterFiles.characterContinuity.push({
+        characterId: operation.characterId,
+        currentState: structuredClone(operation.currentState),
+        history: structuredClone(operation.history)
+      });
+      files.forEach((file) =>
+        addFileCreateIntent(
+          state,
+          file,
+          `Create character continuity for ${operation.characterId} in chapter ${operation.chapterCardId}`
+        )
       );
       break;
     }

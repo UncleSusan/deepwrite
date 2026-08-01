@@ -1,13 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
-  LongChapterReadiness
+  LongChapterReadiness,
+  SystemEventEnvelope
 } from "@deepwrite/contracts";
-import type { LongWorkspaceProposalEvent } from "./useLongWorkspaceProposals";
 import {
   canApproveLongWritingProposal,
   useLongWritingOrchestrator,
   type LongWritingRunGuard
 } from "./useLongWritingOrchestrator";
+
+type LongWritingWorkflowEvent = Extract<
+  SystemEventEnvelope,
+  {
+    type:
+      | "long.chapter_dispatch_proposal"
+      | "long.chapter_write_proposal"
+      | "long.ledger_commit_proposal";
+  }
+>;
 
 function readiness(
   chapterCardId: string,
@@ -27,7 +37,7 @@ function readiness(
 }
 
 function dispatchEvent(): Extract<
-  LongWorkspaceProposalEvent,
+  LongWritingWorkflowEvent,
   { type: "long.chapter_dispatch_proposal" }
 > {
   return {
@@ -67,20 +77,28 @@ function dispatchEvent(): Extract<
 }
 
 function appliedEvent(
-  type: "long.chapter_write_proposal" | "long.ledger_commit_proposal",
   chapterCardId: string
-): LongWorkspaceProposalEvent {
+): Extract<
+  LongWritingWorkflowEvent,
+  { type: "long.ledger_commit_proposal" }
+> {
   return {
-    type,
+    type: "long.ledger_commit_proposal",
     payload: {
       bookId: "longbook_test",
       input: { chapterCardId }
     }
-  } as LongWorkspaceProposalEvent;
+  } as Extract<
+    LongWritingWorkflowEvent,
+    { type: "long.ledger_commit_proposal" }
+  >;
 }
 
 function approvalProposal(
-  type: "long.chapter_write_proposal" | "long.ledger_commit_proposal",
+  type:
+    | "long.chapter_write_proposal"
+    | "long.continuity_file_proposal"
+    | "long.ledger_commit_proposal",
   overrides: {
     bookId?: string;
     chapterCardId?: string;
@@ -88,7 +106,7 @@ function approvalProposal(
     sessionId?: string;
     runId?: string;
   } = {}
-): LongWorkspaceProposalEvent {
+): SystemEventEnvelope {
   return {
     type,
     payload: {
@@ -100,11 +118,28 @@ function approvalProposal(
           : "continuity_ledger"),
       sessionId: overrides.sessionId ?? "session-current",
       runId: overrides.runId ?? "run-current",
-      input: {
-        chapterCardId: overrides.chapterCardId ?? "chapter_one"
-      }
+      ...(type === "long.chapter_write_proposal"
+        ? {
+            file: {
+              chapterCardId: overrides.chapterCardId ?? "chapter_one"
+            }
+          }
+        : type === "long.continuity_file_proposal"
+          ? {
+              files: [
+                {
+                  chapterCardId:
+                    overrides.chapterCardId ?? "chapter_one"
+                }
+              ]
+            }
+          : {
+            input: {
+              chapterCardId: overrides.chapterCardId ?? "chapter_one"
+            }
+          })
     }
-  } as LongWorkspaceProposalEvent;
+  } as SystemEventEnvelope;
 }
 
 function harness() {
@@ -161,9 +196,7 @@ describe("useLongWritingOrchestrator", () => {
       "chapter_one",
       readiness("chapter_one", "ready_to_commit")
     );
-    await test.controller.handleApplied(
-      appliedEvent("long.chapter_write_proposal", "chapter_one")
-    );
+    await test.controller.handleChapterSaved("longbook_test", "chapter_one");
     expect(test.saveBarrier).toHaveBeenCalledTimes(1);
     expect(test.startLedger).toHaveBeenLastCalledWith(
       "longbook_test",
@@ -172,7 +205,7 @@ describe("useLongWritingOrchestrator", () => {
     );
 
     await test.controller.handleApplied(
-      appliedEvent("long.ledger_commit_proposal", "chapter_one")
+      appliedEvent("chapter_one")
     );
     expect(test.controller.state.value.currentIndex).toBe(1);
     expect(test.startWriter).toHaveBeenCalledTimes(1);
@@ -183,7 +216,7 @@ describe("useLongWritingOrchestrator", () => {
     );
 
     await test.controller.handleApplied(
-      appliedEvent("long.ledger_commit_proposal", "chapter_two")
+      appliedEvent("chapter_two")
     );
     expect(test.controller.state.value.phase).toBe("complete");
     expect(test.notifications.success).toHaveBeenCalledWith(
@@ -212,9 +245,7 @@ describe("useLongWritingOrchestrator", () => {
       "chapter_one",
       readiness("chapter_one", "ready_to_commit")
     );
-    await test.controller.handleApplied(
-      appliedEvent("long.chapter_write_proposal", "chapter_one")
-    );
+    await test.controller.handleChapterSaved("longbook_test", "chapter_one");
     expect(test.controller.state.value.phase).toBe(
       "awaiting_ledger_approval"
     );
@@ -248,7 +279,7 @@ describe("useLongWritingOrchestrator", () => {
     });
 
     const firstLedgerApplied = test.controller.handleApplied(
-      appliedEvent("long.ledger_commit_proposal", "chapter_one")
+      appliedEvent("chapter_one")
     );
     await vi.waitFor(() => {
       expect(test.controller.state.value.currentIndex).toBe(1);
@@ -275,9 +306,7 @@ describe("useLongWritingOrchestrator", () => {
     );
     test.saveBarrier.mockResolvedValueOnce(false);
 
-    await test.controller.handleApplied(
-      appliedEvent("long.chapter_write_proposal", "chapter_one")
-    );
+    await test.controller.handleChapterSaved("longbook_test", "chapter_one");
     expect(test.controller.state.value).toMatchObject({
       currentIndex: 0,
       phase: "error",
@@ -307,9 +336,7 @@ describe("useLongWritingOrchestrator", () => {
     );
 
     expect(
-      await test.controller.handleApplied(
-        appliedEvent("long.chapter_write_proposal", "chapter_one")
-      )
+      await test.controller.handleChapterSaved("longbook_test", "chapter_one")
     ).toBe(true);
 
     expect(test.controller.state.value).toMatchObject({
@@ -326,9 +353,7 @@ describe("useLongWritingOrchestrator", () => {
     await test.controller.startDispatch(dispatchEvent());
 
     expect(
-      await test.controller.handleApplied(
-        appliedEvent("long.chapter_write_proposal", "chapter_two")
-      )
+      await test.controller.handleChapterSaved("longbook_test", "chapter_two")
     ).toBe(false);
     expect(test.saveBarrier).not.toHaveBeenCalled();
     expect(test.controller.state.value.currentIndex).toBe(0);
@@ -338,9 +363,7 @@ describe("useLongWritingOrchestrator", () => {
     const test = harness();
     await test.controller.startDispatch(dispatchEvent());
     expect(
-      test.controller.handleRejected(
-        appliedEvent("long.chapter_write_proposal", "chapter_one")
-      )
+      test.controller.handleChapterRejected("longbook_test", "chapter_one")
     ).toBe(true);
     expect(test.controller.state.value).toMatchObject({
       currentIndex: 0,
@@ -371,9 +394,7 @@ describe("useLongWritingOrchestrator", () => {
     const test = harness();
     await test.controller.startDispatch(dispatchEvent());
     expect(
-      test.controller.handleRejected(
-        appliedEvent("long.chapter_write_proposal", "chapter_one")
-      )
+      test.controller.handleChapterRejected("longbook_test", "chapter_one")
     ).toBe(true);
     expect(test.controller.active.value).toBe(true);
 
@@ -386,9 +407,7 @@ describe("useLongWritingOrchestrator", () => {
       currentIndex: 0
     });
     expect(
-      await test.controller.handleApplied(
-        appliedEvent("long.chapter_write_proposal", "chapter_one")
-      )
+      await test.controller.handleChapterSaved("longbook_test", "chapter_one")
     ).toBe(false);
     await test.controller.retry();
     expect(test.startLedger).not.toHaveBeenCalled();
@@ -468,7 +487,7 @@ describe("useLongWritingOrchestrator", () => {
       sessionId: "session-current",
       runId: "run-current"
     };
-    const permits = (event: LongWorkspaceProposalEvent) =>
+    const permits = (event: SystemEventEnvelope) =>
       canApproveLongWritingProposal({
         active: test.controller.active.value,
         state: test.controller.state.value,
@@ -524,9 +543,7 @@ describe("useLongWritingOrchestrator", () => {
       "chapter_one",
       readiness("chapter_one", "ready_to_commit")
     );
-    await test.controller.handleApplied(
-      appliedEvent("long.chapter_write_proposal", "chapter_one")
-    );
+    await test.controller.handleChapterSaved("longbook_test", "chapter_one");
     expect(
       canApproveLongWritingProposal({
         active: test.controller.active.value,
@@ -539,5 +556,31 @@ describe("useLongWritingOrchestrator", () => {
         event: approvalProposal("long.ledger_commit_proposal")
       })
     ).toBe(true);
+    expect(
+      canApproveLongWritingProposal({
+        active: test.controller.active.value,
+        state: test.controller.state.value,
+        currentChapter: test.controller.currentChapter.value,
+        expectation: {
+          ...writerExpectation,
+          agentId: "continuity_ledger"
+        },
+        event: approvalProposal("long.continuity_file_proposal")
+      })
+    ).toBe(true);
+    expect(
+      canApproveLongWritingProposal({
+        active: test.controller.active.value,
+        state: test.controller.state.value,
+        currentChapter: test.controller.currentChapter.value,
+        expectation: {
+          ...writerExpectation,
+          agentId: "continuity_ledger"
+        },
+        event: approvalProposal("long.continuity_file_proposal", {
+          chapterCardId: "chapter_two"
+        })
+      })
+    ).toBe(false);
   });
 });

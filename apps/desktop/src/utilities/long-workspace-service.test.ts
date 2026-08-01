@@ -1,7 +1,9 @@
 import {
   mkdtemp,
+  readFile,
   realpath,
-  rm
+  unlink,
+  writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +18,7 @@ import {
 import {
   LongWorkspaceService
 } from "./long-workspace-service";
+import { createLongFileRevision } from "./long-project-store";
 
 describe("LongWorkspaceService", () => {
   it("updates long bindings independently from the short/script Catalog", async () => {
@@ -100,6 +103,123 @@ describe("LongWorkspaceService", () => {
     ).toMatchObject({
       fileId: chapter.body.id,
       root: "draft"
+    });
+  });
+
+  it("reads, writes and searches a chapter-card file through the workspace service", async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "deepwrite-long-card-service-"))
+    );
+    const service = new LongWorkspaceService({
+      userDataPath: join(root, "user-data"),
+      now: () => "2026-07-26T10:00:00.000Z"
+    });
+    const created = await service.create(root, {
+      title: "章卡服务",
+      genre: "悬疑"
+    });
+    const chapter = created.book.workspaceIndex.chapters[0]!;
+    const initial = await service.readDocument({
+      bookId: created.book.id,
+      fileId: chapter.card.id,
+      offset: 0,
+      maxCharacters: 100
+    });
+
+    await service.writeDocument({
+      bookId: created.book.id,
+      fileId: chapter.card.id,
+      content: "雨夜来信揭开失踪案的第一条线索。",
+      baseRevision: initial.file.revision,
+      baseWorkspaceRevision: initial.workspaceRevision,
+      baseProjectRevision: initial.projectRevision
+    });
+
+    await expect(
+      service.readDocument({
+        bookId: created.book.id,
+        fileId: chapter.card.id,
+        offset: 0,
+        maxCharacters: 100
+      })
+    ).resolves.toMatchObject({
+      file: expect.objectContaining({ id: chapter.card.id }),
+      content: "雨夜来信揭开失踪案的第一条线索。"
+    });
+    await expect(
+      service.search({
+        bookId: created.book.id,
+        query: "失踪案",
+        scope: "plot_design",
+        limit: 20,
+        maxSnippetCharacters: 100
+      })
+    ).resolves.toMatchObject({
+      hits: [expect.objectContaining({ fileId: chapter.card.id })]
+    });
+  });
+
+  it("automatically converts a legacy structured chapter card when the book is opened", async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "deepwrite-long-card-open-migration-"))
+    );
+    const userDataPath = join(root, "user-data");
+    const service = new LongWorkspaceService({
+      userDataPath,
+      now: () => "2026-07-26T10:00:00.000Z"
+    });
+    const created = await service.create(root, {
+      title: "旧章卡自动迁移",
+      genre: "悬疑"
+    });
+    const projectDirectory = join(root, created.book.id);
+    const indexPath = join(projectDirectory, "long", "index.json");
+    const manifestPath = join(projectDirectory, "deepwrite.json");
+    const rawIndex = JSON.parse(await readFile(indexPath, "utf8")) as {
+      plot: { chapterCards: Array<Record<string, unknown>> };
+      chapters: Array<Record<string, unknown>>;
+    };
+    const legacyCard = rawIndex.plot.chapterCards[0]!;
+    const chapterFiles = rawIndex.chapters[0]!;
+    const cardFile = chapterFiles.card as {
+      id: string;
+      path: string;
+    };
+    legacyCard.outline = "旧版章节规划会在打开时转换";
+    legacyCard.worldConstraints = "旧版世界约束会保留下来";
+    legacyCard.characterIds = [];
+    delete chapterFiles.card;
+    await unlink(join(projectDirectory, cardFile.path));
+    const indexContent = `${JSON.stringify(rawIndex, null, 2)}\n`;
+    await writeFile(indexPath, indexContent, "utf8");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      workspaceIndexFile: { revision: string };
+    };
+    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8"
+    );
+
+    const restarted = new LongWorkspaceService({
+      userDataPath,
+      now: () => "2026-07-26T11:00:00.000Z"
+    });
+    const opened = await restarted.open({ bookId: created.book.id });
+    const migratedChapter = opened.book.workspaceIndex.chapters[0]!;
+    expect(opened.book.workspaceIndex.plot.chapterCards[0]).not.toHaveProperty(
+      "outline"
+    );
+    await expect(
+      restarted.readDocument({
+        bookId: created.book.id,
+        fileId: migratedChapter.card.id,
+        offset: 0,
+        maxCharacters: 1_000
+      })
+    ).resolves.toMatchObject({
+      content: expect.stringContaining("旧版章节规划会在打开时转换")
     });
   });
 

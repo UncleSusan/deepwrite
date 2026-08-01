@@ -72,6 +72,44 @@ const RETIRED_PLOT_DESIGN_SYSTEM_PROMPTS: readonly string[] = [
   "你负责长篇剧情结构。严格区分故事发生顺序、章节叙述顺序和读者信息进度；所有修改先形成带影响预览的结构提案。"
 ];
 
+const RETIRED_EXPERT_SECTION_WRITER_SYSTEM_PROMPTS: readonly string[] = [
+  "你是长篇单章写手。每次只处理当前章卡，只负责写出可供核验的正文证据；必须依据查询到的设定与已提交连续性，不得自行确定章末状态、接续包或宣称提交账本。",
+  `你是长篇单章写手。每次只处理运行时锁定的当前章卡，模型只使用业务 ID，不索取或复述文件路径、file_id 与 revision。
+
+工作规则：
+1. 使用世界观、人物和剧情各自的 list / search / read 工具查询写作依据；使用 list_chapters、search_chapters、read_chapter 查询正文，不使用底层工作区索引或通用文档读取。
+2. 每张章卡对应一个独立的 Markdown 正文文件，章节结构及空白正文文件由剧情设计的 create_plot_design 创建，创建时不得初始化正文。当前章正文为空时使用 write_chapter_draft 首次写入；已有正文的整体重写必须先 read_chapter mode=full，并使用 write_chapter_draft 且明确允许覆盖；局部修改必须先完整读取，再使用 edit_chapter_draft 做唯一原文片段替换。每次工具调用只能提交运行时锁定的当前章；content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明或参数。
+3. 搜索命中和当前页面快照只用于定位与理解，写入或编辑前必须通过 read_chapter mode=full 建立完整读取依据。
+4. 所有正文创建、写入和编辑都形成与世界观、人物、剧情相同的会话 diff 审批卡；不得声称尚未获批的正文已经保存。
+5. 只负责正文；章末人物状态、下一章接续包和连续性事实由账本智能体核验生成，不得自行写入或宣称已提交。`
+];
+
+const RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPTS: readonly string[] = [
+  `你负责长篇连续性账本。只处理正文已经写完的连续下一章，不得跳章提交。
+
+工作规则：
+1. 世界观、人物、剧情、正文和既有连续性账本分别使用各阶段的 list / search / read 工具查询；先看列表与概览，再按业务 ID 读取核验所需的具体内容。不得使用底层工作区索引、file_id 或通用文档读取。
+2. 以本章正文为唯一事实证据，结合上一章章末状态与接续包，逐域核对人物、关系、世界、剧情、伏笔、知识边界和开放环。
+3. 使用同组的 set_long_ledger_* 工具逐项暂存核验结果或变更；每次调用只处理一个事实、知识边界、开放环、人物文件、核验域、摘要章节、叙事落点或伏笔触点。
+4. 新事实和新开放环省略 ID，由工具生成并返回稳定 fact_id / loop_id；后续知识边界、开放环和接续包必须使用工具返回的 ID，不得传 null 或自行猜测。
+5. 六个 coverage 域和六个 chapter summary 章节必须分别逐项设置；叙事落点与伏笔触点也必须逐项判定。
+6. 逐项准备完毕后，最后单独调用 propose_long_ledger_commit，生成本章唯一的一张原子提交提案。暂存和最终提案都不直接写磁盘，不得声称尚未获批的账本已经提交。`
+];
+
+const RETIRED_EXPERT_SECTION_WRITER_SHORTCUTS = [
+  "写当前章",
+  "续写当前章",
+  "检查本章连续性"
+] as const;
+
+function usesRetiredExpertSectionWriterShortcuts(
+  shortcuts: readonly string[]
+): boolean {
+  return RETIRED_EXPERT_SECTION_WRITER_SHORTCUTS.every(
+    (shortcut, index) => shortcuts[index] === shortcut
+  );
+}
+
 function cloneReadAccess(access: LongAgentReadAccess): LongAgentReadAccess {
   return {
     workspaceRoots: [...access.workspaceRoots],
@@ -170,22 +208,41 @@ function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
   }
   return {
     workspaceType: "long",
-    agents: parsed.data.agents.map((agent) => ({
-      ...cloneInputAgent(agent),
-      systemPrompt:
-        agent.id === "worldbuilding" &&
-        RETIRED_WORLDBUILDING_SYSTEM_PROMPTS.includes(agent.systemPrompt)
-          ? getDefaultLongAgentProfile(agent.id).systemPrompt
-          : agent.id === "character_design" &&
-              RETIRED_CHARACTER_DESIGN_SYSTEM_PROMPTS.includes(
-                agent.systemPrompt
-              )
-            ? getDefaultLongAgentProfile(agent.id).systemPrompt
-          : agent.id === "plot_design" &&
-              RETIRED_PLOT_DESIGN_SYSTEM_PROMPTS.includes(agent.systemPrompt)
-            ? getDefaultLongAgentProfile(agent.id).systemPrompt
-          : agent.systemPrompt
-    }))
+    agents: parsed.data.agents.map((agent) => {
+      const cloned = cloneInputAgent(agent);
+      const builtin = getDefaultLongAgentProfile(agent.id);
+      if (
+        (agent.id === "worldbuilding" &&
+          RETIRED_WORLDBUILDING_SYSTEM_PROMPTS.includes(agent.systemPrompt)) ||
+        (agent.id === "character_design" &&
+          RETIRED_CHARACTER_DESIGN_SYSTEM_PROMPTS.includes(
+            agent.systemPrompt
+          )) ||
+        (agent.id === "plot_design" &&
+          RETIRED_PLOT_DESIGN_SYSTEM_PROMPTS.includes(agent.systemPrompt)) ||
+        (agent.id === "expert_section_writer" &&
+          RETIRED_EXPERT_SECTION_WRITER_SYSTEM_PROMPTS.includes(
+            agent.systemPrompt
+          )) ||
+        (agent.id === "continuity_ledger" &&
+          RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPTS.includes(
+            agent.systemPrompt
+          ))
+      ) {
+        cloned.systemPrompt = builtin.systemPrompt;
+      }
+      if (
+        agent.id === "expert_section_writer" &&
+        usesRetiredExpertSectionWriterShortcuts(agent.welcomeShortcuts)
+      ) {
+        cloned.welcomeShortcuts = [
+          builtin.welcomeShortcuts[0],
+          builtin.welcomeShortcuts[1],
+          builtin.welcomeShortcuts[2]
+        ];
+      }
+      return cloned;
+    })
   };
 }
 

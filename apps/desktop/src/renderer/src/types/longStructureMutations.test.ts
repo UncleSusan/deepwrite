@@ -5,6 +5,7 @@ import {
   LongWorkspaceIndexSnapshotSchema,
   previewLongWorkspaceOperations,
   longChapterBodyFileId,
+  longChapterCardFileId,
   longChapterCharacterStateFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
@@ -56,6 +57,10 @@ function chapterFiles(chapterCardId: string) {
     body: file(
       longChapterBodyFileId(chapterCardId),
       `long/chapters/${chapterCardId}/body.md`
+    ),
+    card: file(
+      longChapterCardFileId(chapterCardId),
+      `long/chapters/${chapterCardId}/card.md`
     ),
     characterState: file(
       longChapterCharacterStateFileId(chapterCardId),
@@ -161,20 +166,14 @@ function snapshot(): LongWorkspaceIndexSnapshot {
           volumeId: "volume_one",
           primaryArcId: "arc_letter",
           title: "雨夜来信",
-          narrativeOrder: 1,
-          outline: "",
-          worldConstraints: "",
-          characterIds: ["character_alice"]
+          narrativeOrder: 1
         },
         {
           id: "chapter_two",
           volumeId: "volume_one",
           primaryArcId: "arc_clock",
           title: "旧钟楼",
-          narrativeOrder: 2,
-          outline: "",
-          worldConstraints: "",
-          characterIds: ["character_alice", "character_bob"]
+          narrativeOrder: 2
         }
       ],
       storyEvents: [],
@@ -425,8 +424,7 @@ describe("long structure mutation builder", () => {
     const chapterBatch = builder().createChapter({
       title: "追入雨幕",
       volumeId: "volume_one",
-      primaryArcId: "arc_letter",
-      characterIds: ["character_alice", "character_alice", "character_bob"]
+      primaryArcId: "arc_letter"
     });
     expect(chapterBatch.operations).toEqual([
       {
@@ -436,16 +434,19 @@ describe("long structure mutation builder", () => {
           volumeId: "volume_one",
           primaryArcId: "arc_letter",
           title: "追入雨幕",
-          narrativeOrder: 3,
-          outline: "",
-          worldConstraints: "",
-          characterIds: ["character_alice", "character_bob"]
+          narrativeOrder: 3
         },
         files: {
           chapterCardId: "chapter_generated",
           body: {
             id: "file_chapter_generated:body",
             path: "long/chapters/chapter_generated/body.md",
+            revision: EMPTY_LONG_MARKDOWN_REVISION,
+            updatedAt: later
+          },
+          card: {
+            id: "file_chapter_generated:card",
+            path: "long/chapters/chapter_generated/card.md",
             revision: EMPTY_LONG_MARKDOWN_REVISION,
             updatedAt: later
           },

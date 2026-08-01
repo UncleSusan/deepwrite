@@ -1861,6 +1861,52 @@ describe("DeepWrite Pi runtime adapter", () => {
         }
       },
       {
+        toolName: "write_continuity_file",
+        eventType: "long.continuity_file_proposal",
+        details: {
+          kind: "long-continuity-file-proposal",
+          bookId: "longbook-child",
+          agentId: "continuity_ledger",
+          batch: {
+            baseRevision: 3,
+            updatedAt: "2026-07-26T12:00:00.000Z",
+            operations: [],
+            documentWrites: [
+              {
+                proposalId: "proposal_continuity_foreshadowing",
+                fileId:
+                  "file_chapter_one:continuity:foreshadowing-changes",
+                content: "蜡封伏笔已种下。",
+                mode: "replace",
+                expectedRevision: "v1:0:00000000",
+                nextRevision: "v1:8:12345678",
+                updatedAt: "2026-07-26T12:00:00.000Z",
+                reason: "记录伏笔变化"
+              }
+            ]
+          },
+          baseProjectRevision: 5,
+          summary: "记录伏笔变化",
+          files: [
+            {
+              chapterCardId: "chapter_one",
+              role: "foreshadowing_changes",
+              characterId: null,
+              fileId:
+                "file_chapter_one:continuity:foreshadowing-changes",
+              filePath:
+                "long/continuity/chapters/chapter_one/foreshadowing-changes.md",
+              title: "第一章 / 伏笔变化",
+              operation: "edit",
+              beforeText: "无变化。",
+              afterText: "蜡封伏笔已种下。",
+              beforeRevision: "v1:0:00000000",
+              nextRevision: "v1:8:12345678"
+            }
+          ]
+        }
+      },
+      {
         toolName: "propose_long_chapter_dispatch",
         eventType: "long.chapter_dispatch_proposal",
         details: {
@@ -1890,20 +1936,32 @@ describe("DeepWrite Pi runtime adapter", () => {
           kind: "long-chapter-write-proposal",
           bookId: "longbook-child",
           agentId: "expert_section_writer",
-          input: {
-            bookId: "longbook-child",
+          batch: {
+            baseRevision: 3,
+            updatedAt: "2026-07-26T12:00:00.000Z",
+            operations: [],
+            documentWrites: [{
+              proposalId: "proposal_chapter_one",
+              fileId: "file_chapter_one:body",
+              content: "正文",
+              mode: "replace",
+              expectedRevision: "v1:0:00000000",
+              nextRevision: "v1:2:00000000",
+              updatedAt: "2026-07-26T12:00:00.000Z",
+              reason: "写入第一章"
+            }]
+          },
+          baseProjectRevision: 5,
+          file: {
             chapterCardId: "chapter_one",
-            body: { content: "正文", baseRevision: "v1:0:00000000" },
-            characterState: {
-              content: "",
-              baseRevision: "v1:0:00000000"
-            },
-            handoff: {
-              content: "",
-              baseRevision: "v1:0:00000000"
-            },
-            baseWorkspaceRevision: 3,
-            baseProjectRevision: 5
+            chapterTitle: "第一章",
+            fileId: "file_chapter_one:body",
+            filePath: "long/chapters/chapter_one/body.md",
+            operation: "create",
+            beforeText: "",
+            afterText: "正文",
+            beforeRevision: "v1:0:00000000",
+            nextRevision: "v1:2:00000000"
           },
           summary: "写入第一章"
         }

@@ -292,6 +292,26 @@ describe("AgentConversation edit proposal placement", () => {
     expect(conversationSource).toContain(
       "writeToolText(item.tool).length.toLocaleString('zh-CN')"
     );
+    expect(conversationSource).toContain('"write_chapter_draft"');
+    expect(conversationSource).toContain('"edit_chapter_draft"');
+    expect(conversationSource).toContain(
+      'if (typeof args.content === "string") return args.content'
+    );
+    expect(conversationSource).toContain(
+      'streamedStringField(source, "content")'
+    );
+    expect(conversationSource).toContain("待审阅文本生成中");
+    expect(conversationSource).toContain("当前章正文待审核");
+    expect(conversationSource).toContain(
+      "接受后将把当前章正文保存到该章节独立的 Markdown 文件。"
+    );
+    expect(subagentSource).toContain(
+      'if (typeof args.content === "string") return args.content'
+    );
+    expect(subagentSource).toContain(
+      'streamedStringField(source, "content")'
+    );
+    expect(subagentSource).toContain("当前章正文待审核");
     expect(conversationSource).toContain('return "正在创建文件"');
   });
 

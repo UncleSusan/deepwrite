@@ -10,6 +10,7 @@ import {
   LongWorkspaceIndexSnapshotSchema,
   createLongWorkspaceNavigationSnapshot,
   longChapterBodyFileId,
+  longChapterCardFileId,
   longChapterCharacterStateFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
@@ -41,94 +42,6 @@ import { toRuntimeEvents } from "./index";
 
 const NOW = "2026-07-26T12:00:00.000Z";
 const REVISION = "v1:0:00000000";
-const CHAPTER_SUMMARY = {
-  timeline: "第一天完成。",
-  character_states: "人物状态已核对。",
-  faction_states: "势力状态无变化。",
-  realm_states: "境界状态无变化。",
-  foreshadowing_states: "伏笔状态已核对。",
-  continuity_notes: "下一章沿用当前连续性。"
-};
-const CONTINUITY_FACT_ID = "fact_alice_location";
-const CONTINUITY_LOOP_ID = "loop_alice_return";
-
-function emptyLedgerV3Parameters() {
-  return {
-    coverage: {
-      character: { status: "unchanged" as const, note: "人物状态已核验。" },
-      plot: { status: "unchanged" as const, note: "剧情推进已核验。" },
-      foreshadowing: { status: "unchanged" as const, note: "伏笔状态已核验。" },
-      world: { status: "unchanged" as const, note: "世界规则已核验。" },
-      knowledge: { status: "unchanged" as const, note: "知识边界已核验。" },
-      open_loops: { status: "unchanged" as const, note: "开放环已核验。" }
-    },
-    fact_mutations: [],
-    knowledge_mutations: [],
-    open_loop_mutations: [],
-    chapter_outputs: {
-      character_state: "林岚的章末状态未发生变化。",
-      handoff: {
-        summary: "下一章沿用当前连续性。",
-        must_carry: [],
-        next_chapter_constraints: [],
-        open_loops: []
-      }
-    }
-  };
-}
-
-function completeLedgerV3Parameters(characterId: string) {
-  return {
-    coverage: {
-      character: { status: "changed" as const, note: "林岚抵达北门。" },
-      plot: { status: "changed" as const, note: "第一章推进到北门会合。" },
-      foreshadowing: { status: "unchanged" as const, note: "本章未触发旧伏笔。" },
-      world: { status: "unchanged" as const, note: "本章未揭露新世界规则。" },
-      knowledge: { status: "changed" as const, note: "读者已知林岚抵达北门。" },
-      open_loops: { status: "changed" as const, note: "林岚能否安全返回仍待解决。" }
-    },
-    fact_mutations: [
-      {
-        fact_id: CONTINUITY_FACT_ID,
-        domain: "character" as const,
-        subject_id: characterId,
-        field: "location",
-        value: "北门",
-        evidence: "正文写明林岚在日落前抵达北门。"
-      }
-    ],
-    knowledge_mutations: [
-      {
-        fact_id: CONTINUITY_FACT_ID,
-        audience_type: "reader" as const,
-        audience_id: null,
-        level: "knows" as const,
-        evidence: "正文直接呈现林岚抵达北门。"
-      }
-    ],
-    open_loop_mutations: [
-      {
-        loop_id: CONTINUITY_LOOP_ID,
-        kind: "character" as const,
-        status: "open" as const,
-        detail: "林岚能否在追兵封锁前安全返回。",
-        subject_id: characterId,
-        fact_id: CONTINUITY_FACT_ID,
-        evidence: "章末出现追兵封锁北门。"
-      }
-    ],
-    chapter_outputs: {
-      character_state: "林岚已抵达北门，体力下降，并暴露在追兵视野中。",
-      handoff: {
-        summary: "下一章从林岚被困北门继续。",
-        must_carry: ["林岚位于北门。"],
-        next_chapter_constraints: ["追兵已经封锁北门。"],
-        open_loops: [CONTINUITY_LOOP_ID]
-      }
-    }
-  };
-}
-
 function file(id: string, path: string) {
   return { id, path, revision: REVISION, updatedAt: NOW };
 }
@@ -211,10 +124,7 @@ function fixtureIndex(): LongWorkspaceIndexSnapshot {
           volumeId: "volume_one",
           primaryArcId: "arc_one",
           title: "第一章",
-          narrativeOrder: 1,
-          outline: "",
-          worldConstraints: "",
-          characterIds: ["character_alice"]
+          narrativeOrder: 1
         }
       ],
       storyEvents: [],
@@ -229,6 +139,10 @@ function fixtureIndex(): LongWorkspaceIndexSnapshot {
         body: file(
           longChapterBodyFileId("chapter_one"),
           "long/chapters/one/body.md"
+        ),
+        card: file(
+          longChapterCardFileId("chapter_one"),
+          "long/chapters/one/card.md"
         ),
         characterState: file(
           longChapterCharacterStateFileId("chapter_one"),
@@ -384,9 +298,10 @@ function committedFixtureIndex(): LongWorkspaceIndexSnapshot {
   index.chapters[0]!.commitId = "commit_one";
   index.ledger.committedThroughChapterId = "chapter_one";
   index.ledger.commits = [
-    {
-      id: "commit_one",
-      sequence: 1,
+      {
+        id: "commit_one",
+        mode: "structured",
+        sequence: 1,
       chapterCardId: "chapter_one",
       committedAt: NOW,
       reversible: true,
@@ -580,37 +495,81 @@ describe("long workspace agent tools", () => {
     expect(writerNames).toEqual([
       "query_linked_material_entries",
       "load_skill",
-      "get_long_workspace_index",
-      "read_long_document",
-      "search_long_workspace",
       "get_long_chapter_readiness",
-      "propose_long_chapter_write"
+      "list_worldbuilding",
+      "search_worldbuilding",
+      "read_worldbuilding",
+      "list_characters",
+      "search_characters",
+      "read_character",
+      "list_plot_design",
+      "search_plot_design",
+      "read_plot_design",
+      "list_chapters",
+      "search_chapters",
+      "read_chapter",
+      "write_chapter_draft",
+      "edit_chapter_draft"
     ]);
     expect(ledgerNames).toEqual([
       "query_linked_material_entries",
       "load_skill",
-      "get_long_workspace_index",
-      "read_long_document",
-      "search_long_workspace",
       "get_long_chapter_readiness",
-      "propose_long_ledger_commit"
+      "list_worldbuilding",
+      "search_worldbuilding",
+      "read_worldbuilding",
+      "list_characters",
+      "search_characters",
+      "read_character",
+      "list_plot_design",
+      "search_plot_design",
+      "read_plot_design",
+      "list_chapters",
+      "search_chapters",
+      "read_chapter",
+      "list_continuity_files",
+      "read_continuity_file",
+      "create_continuity_file",
+      "write_continuity_file",
+      "edit_continuity_file",
+      "propose_continuity_commit"
     ]);
     expect(ledgerReadOnlyNames).toEqual([
       "query_linked_material_entries",
       "load_skill",
-      "get_long_workspace_index",
-      "read_long_document",
-      "search_long_workspace",
-      "get_long_chapter_readiness"
+      "get_long_chapter_readiness",
+      "list_worldbuilding",
+      "search_worldbuilding",
+      "read_worldbuilding",
+      "list_characters",
+      "search_characters",
+      "read_character",
+      "list_plot_design",
+      "search_plot_design",
+      "read_plot_design",
+      "list_chapters",
+      "search_chapters",
+      "read_chapter",
+      "list_continuity_files",
+      "read_continuity_file"
     ]);
     expect(draftNames).toEqual([
       "query_linked_material_entries",
       "load_skill",
-      "get_long_workspace_index",
-      "read_long_document",
-      "search_long_workspace",
       "get_long_chapter_readiness",
-      "propose_long_chapter_dispatch"
+      "list_worldbuilding",
+      "search_worldbuilding",
+      "read_worldbuilding",
+      "list_characters",
+      "search_characters",
+      "read_character",
+      "list_plot_design",
+      "search_plot_design",
+      "read_plot_design",
+      "propose_long_chapter_dispatch",
+      "list_chapters",
+      "search_chapters",
+      "read_chapter"
     ]);
     expect(plotNames).toEqual([
       "query_linked_material_entries",
@@ -657,11 +616,9 @@ describe("long workspace agent tools", () => {
     expect(
       [...worldNames, ...characterNames, ...writerNames, ...ledgerNames]
     ).not.toContain("write_workspace_editor");
-    expect(forgedDraftNames).not.toContain(
-      "propose_long_chapter_write"
-    );
+    expect(forgedDraftNames).not.toContain("write_chapter_draft");
     expect(rootlessLedgerNames).not.toContain(
-      "propose_long_ledger_commit"
+      "propose_continuity_commit"
     );
   });
 
@@ -953,6 +910,111 @@ describe("long workspace agent tools", () => {
             content: "城门外初遇追兵，北上线索改为南归。",
             mode: "replace",
             expectedRevision: REVISION
+          }
+        ]
+      }
+    });
+  });
+
+  it("creates a chapter card and writes its complete text once without an extra read", async () => {
+    const index = fixtureIndex();
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(index);
+      }
+      throw new Error(`Unexpected command: ${command.type}`);
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-chapter-card-tools",
+      runId: "run-chapter-card-tools",
+      executor
+    });
+
+    const create = await toolByName(tools, "create_plot_design").execute(
+      "create-chapter-card",
+      {
+        item: {
+          kind: "chapter",
+          volume_id: "volume_one",
+          primary_arc_id: "arc_one",
+          title: "第二章"
+        },
+        summary: "创建第二章章卡"
+      }
+    );
+    const createDetails = create.details;
+    if (!createDetails || createDetails.kind !== "long-mutation-proposal") {
+      throw new Error("Expected a chapter-card creation proposal.");
+    }
+    const createOperation = createDetails.batch.operations[0];
+    if (!createOperation || createOperation.type !== "chapter.create") {
+      throw new Error("Expected a chapter.create operation.");
+    }
+    const chapterCardId = createOperation.chapterCard.id;
+    expect(createOperation.chapterCard).toMatchObject({
+      volumeId: "volume_one",
+      primaryArcId: "arc_one",
+      title: "第二章",
+      narrativeOrder: 2
+    });
+    expect(createDetails.batch.documentWrites).toHaveLength(0);
+    expect(resultText(create)).toContain("无需再次读取");
+
+    const initialText = "本章从北门追逐开始，结尾揭示内应身份。";
+    const write = await toolByName(tools, "write_plot_design").execute(
+      "write-new-chapter-card",
+      {
+        item: {
+          kind: "chapter",
+          chapter_card_id: chapterCardId,
+          text: initialText
+        },
+        summary: "一次性写入第二章章卡"
+      }
+    );
+    expect(write.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [],
+        documentWrites: [
+          {
+            fileId: createOperation.files.card.id,
+            content: initialText,
+            mode: "replace",
+            expectedRevision: createOperation.files.card.revision
+          }
+        ]
+      }
+    });
+    expect(resultText(write)).toContain("已写入章卡");
+
+    const edit = await toolByName(tools, "edit_plot_design").execute(
+      "edit-new-chapter-card",
+      {
+        item: {
+          kind: "chapter",
+          chapter_card_id: chapterCardId,
+          replacements: [
+            {
+              original_text: "结尾揭示内应身份",
+              new_text: "结尾只留下内应线索"
+            }
+          ]
+        },
+        summary: "调整第二章结尾"
+      }
+    );
+    expect(edit.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [],
+        documentWrites: [
+          {
+            fileId: createOperation.files.card.id,
+            content: "本章从北门追逐开始，结尾只留下内应线索。",
+            mode: "replace"
           }
         ]
       }
@@ -3112,9 +3174,9 @@ describe("long workspace agent tools", () => {
             ...requested,
             revision: liveRevisions.get(requested.id)!
           },
-          content: "x",
+          content: requested.id === chapter.body.id ? "" : "x",
           offset: 0,
-          totalCharacters: 1,
+          totalCharacters: requested.id === chapter.body.id ? 0 : 1,
           nextOffset: null,
           workspaceRevision: latest.revision,
           projectRevision: 11
@@ -3130,43 +3192,43 @@ describe("long workspace agent tools", () => {
       executor
     });
     const writeInput = {
-      body: { content: "正文" },
+      content: "正文",
       summary: "完成第一章"
     };
     const result = await toolByName(
       tools,
-      "propose_long_chapter_write"
+      "write_chapter_draft"
     ).execute("chapter-write", writeInput);
 
-    expect(executor).toHaveBeenCalledTimes(4);
+    expect(executor).toHaveBeenCalledTimes(2);
     expect(executor.mock.calls[0]?.[0].type).toBe("long.getWorkspaceIndex");
     expect(result.details).toMatchObject({
       kind: "long-chapter-write-proposal",
       bookId: "longbook_tools",
-      input: {
-        bookId: "longbook_tools",
+      batch: {
+        baseRevision: 7,
+        operations: [],
+        documentWrites: [{
+          fileId: longChapterBodyFileId("chapter_one"),
+          content: "正文",
+          mode: "replace",
+          expectedRevision: "v1:7:44444444"
+        }]
+      },
+      baseProjectRevision: 11,
+      file: {
         chapterCardId: "chapter_one",
-        body: { content: "正文", baseRevision: "v1:7:44444444" },
-        characterState: {
-          content: "",
-          baseRevision: "v1:8:55555555"
-        },
-        handoff: {
-          content: "",
-          baseRevision: "v1:9:66666666"
-        },
-        baseWorkspaceRevision: 7,
-        baseProjectRevision: 11
+        operation: "write",
+        beforeText: "",
+        afterText: "正文",
+        beforeRevision: "v1:7:44444444"
       }
     });
     expect(result.content[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("正文证据提案")
+      text: expect.stringContaining("正文写入提案")
     });
-    expect(result.content[0]).toMatchObject({
-      text: expect.stringContaining("连续性入账时生成")
-    });
-    const tool = toolByName(tools, "propose_long_chapter_write");
+    const tool = toolByName(tools, "write_chapter_draft");
     const parameters = JSON.stringify(tool.parameters);
     expect(parameters).not.toMatch(
       /bookId|book_id|chapter_card_id|character_state|handoff|path|revision/u
@@ -3174,42 +3236,28 @@ describe("long workspace agent tools", () => {
     expect(Check(tool.parameters, writeInput)).toBe(true);
     expect(
       Check(tool.parameters, {
-        body: { content: "正文", base_revision: REVISION },
+        content: "正文",
+        base_revision: REVISION,
         summary: "旧参数"
       })
     ).toBe(false);
     await expect(
       tool.execute("chapter-write-empty", {
         ...writeInput,
-        body: { content: "   " }
+        content: "   "
       })
-    ).rejects.toThrow(/non-empty body/u);
+    ).rejects.toThrow(/non-empty/u);
     await expect(
       tool.execute("chapter-write-empty-summary", {
         ...writeInput,
         summary: "   "
       })
-    ).rejects.toThrow(/summary must contain non-whitespace text/u);
+    ).rejects.toThrow(/non-empty/u);
   });
 
-  it("forms a complete v3 ledger proposal and rejects invalid continuity references", async () => {
+  it("requires a full read and explicit permission before overwriting non-empty chapter text", async () => {
     const latest = fixtureIndex();
-    latest.characterFiles[0]!.currentState.revision = "v1:9:44444444";
-    latest.characterFiles[0]!.history.revision = "v1:11:66666666";
     const chapter = latest.chapters[0]!;
-    const liveRevisions = new Map([
-      [chapter.body.id, "v1:4:11111111"],
-      [chapter.characterState.id, "v1:5:22222222"],
-      [chapter.handoff.id, "v1:6:33333333"],
-      [
-        latest.characterFiles[0]!.currentState.id,
-        "v1:10:55555555"
-      ],
-      [
-        latest.characterFiles[0]!.history.id,
-        "v1:12:77777777"
-      ]
-    ]);
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
       if (command.type === "long.getWorkspaceIndex") {
         return indexResult(latest);
@@ -3217,25 +3265,15 @@ describe("long workspace agent tools", () => {
       if (command.type !== "long.readDocument") {
         throw new Error(`Unexpected command: ${command.type}`);
       }
-      const requested = [
-        chapter.body,
-        chapter.characterState,
-        chapter.handoff,
-        latest.characterFiles[0]!.currentState,
-        latest.characterFiles[0]!.history
-      ].find(({ id }) => id === command.payload.fileId)!;
       return {
         status: "accepted",
         requestId: command.id,
         payload: {
           bookId: latest.bookId,
-          file: {
-            ...requested,
-            revision: liveRevisions.get(requested.id)!
-          },
-          content: "x",
+          file: chapter.body,
+          content: "旧正文",
           offset: 0,
-          totalCharacters: 1,
+          totalCharacters: 3,
           nextOffset: null,
           workspaceRevision: latest.revision,
           projectRevision: 11
@@ -3243,393 +3281,230 @@ describe("long workspace agent tools", () => {
       };
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("continuity_ledger", "continuity_ledger", "chapter_one"),
-      profile: profile("continuity_ledger"),
-      sessionId: "session-ledger",
-      runId: "run-ledger",
+      workspace: workspace("expert_section_writer", "draft", "chapter_one"),
+      profile: profile("expert_section_writer"),
+      sessionId: "session-existing-chapter",
+      runId: "run-existing-chapter",
       executor
     });
-    const currentState = latest.characterFiles[0]!.currentState.id;
-    const history = latest.characterFiles[0]!.history.id;
-    const characterId = latest.characterFiles[0]!.characterId;
-    const completeParameters = completeLedgerV3Parameters(characterId);
-    const result = await toolByName(
-      tools,
-      "propose_long_ledger_commit"
-    ).execute("ledger-commit", {
-      ...completeParameters,
-      placement_decisions: {},
-      foreshadowing_beat_decisions: {},
-      file_updates: [
-        {
-          character_id: characterId,
-          document: "current_state",
-          content: "第一章后的状态",
-          mode: "replace"
-        },
-        {
-          character_id: characterId,
-          document: "history",
-          content: "第一章：林岚抵达北门。",
-          mode: "append"
-        }
-      ],
-      chapter_summary: CHAPTER_SUMMARY,
-      summary: "核对并提交第一章连续性"
-    });
+    const write = toolByName(tools, "write_chapter_draft");
+    const input = {
+      content: "新正文",
+      summary: "重写第一章"
+    };
 
-    expect(executor).toHaveBeenCalledTimes(6);
-    expect(executor.mock.calls[0]?.[0].type).toBe("long.getWorkspaceIndex");
+    expect(resultText(await write.execute("without-confirmation", input))).toContain(
+      "allow_overwrite_existing=true"
+    );
     expect(
-      executor.mock.calls.slice(1).map(([command]) => command.type)
-    ).toEqual([
-      "long.readDocument",
-      "long.readDocument",
-      "long.readDocument",
-      "long.readDocument",
-      "long.readDocument"
-    ]);
+      resultText(
+        await write.execute("without-full-read", {
+          ...input,
+          allow_overwrite_existing: true
+        })
+      )
+    ).toContain("read_chapter（mode=full）");
+
+    await toolByName(tools, "read_chapter").execute("full-read", {
+      mode: "full"
+    });
+    const result = await write.execute("confirmed-overwrite", {
+      ...input,
+      allow_overwrite_existing: true
+    });
     expect(result.details).toMatchObject({
-      kind: "long-ledger-commit-proposal",
-      bookId: "longbook_tools",
-      input: {
-        bookId: "longbook_tools",
-        chapterCardId: "chapter_one",
-        chapterFileRevisions: {
-          body: "v1:4:11111111",
-          characterState: "v1:5:22222222",
-          handoff: "v1:6:33333333"
-        },
-        fileUpdates: [
-          {
-            fileId: currentState,
-            content: "第一章后的状态",
-            baseRevision: "v1:10:55555555",
-            mode: "replace"
-          },
-          {
-            fileId: history,
-            content: "第一章：林岚抵达北门。",
-            baseRevision: "v1:12:77777777",
-            mode: "append"
-          }
-        ],
-        coverage: {
-          character: completeParameters.coverage.character,
-          plot: completeParameters.coverage.plot,
-          foreshadowing: completeParameters.coverage.foreshadowing,
-          world: completeParameters.coverage.world,
-          knowledge: completeParameters.coverage.knowledge,
-          openLoops: completeParameters.coverage.open_loops
-        },
-        factMutations: [
-          {
-            factId: CONTINUITY_FACT_ID,
-            domain: "character",
-            subjectId: characterId,
-            field: "location",
-            value: "北门",
-            evidence: "正文写明林岚在日落前抵达北门。"
-          }
-        ],
-        knowledgeMutations: [
-          {
-            factId: CONTINUITY_FACT_ID,
-            audienceType: "reader",
-            audienceId: null,
-            level: "knows",
-            evidence: "正文直接呈现林岚抵达北门。"
-          }
-        ],
-        openLoopMutations: [
-          {
-            loopId: CONTINUITY_LOOP_ID,
-            kind: "character",
-            status: "open",
-            detail: "林岚能否在追兵封锁前安全返回。",
-            subjectId: characterId,
-            factId: CONTINUITY_FACT_ID,
-            evidence: "章末出现追兵封锁北门。"
-          }
-        ],
-        chapterOutputs: {
-          characterState: completeParameters.chapter_outputs.character_state,
-          handoff: {
-            summary: completeParameters.chapter_outputs.handoff.summary,
-            mustCarry: completeParameters.chapter_outputs.handoff.must_carry,
-            nextChapterConstraints:
-              completeParameters.chapter_outputs.handoff.next_chapter_constraints,
-            openLoops: completeParameters.chapter_outputs.handoff.open_loops
-          }
-        },
-        baseWorkspaceRevision: 7,
-        baseProjectRevision: 11,
-        commitMessage: "核对并提交第一章连续性",
-        chapterSummary: {
-          timeline: CHAPTER_SUMMARY.timeline,
-          characterStates: CHAPTER_SUMMARY.character_states,
-          factionStates: CHAPTER_SUMMARY.faction_states,
-          realmStates: CHAPTER_SUMMARY.realm_states,
-          foreshadowingStates: CHAPTER_SUMMARY.foreshadowing_states,
-          continuityNotes: CHAPTER_SUMMARY.continuity_notes
-        }
+      kind: "long-chapter-write-proposal",
+      file: {
+        operation: "write",
+        beforeText: "旧正文",
+        afterText: "新正文"
       }
     });
+  });
 
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-unknown-knowledge-fact",
-        {
-          ...emptyLedgerV3Parameters(),
-          knowledge_mutations: [
-            {
-              fact_id: "fact_missing",
-              audience_type: "reader",
-              audience_id: null,
-              level: "knows",
-              evidence: "错误引用测试。"
-            }
-          ],
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "拒绝未知知识事实"
+  it("creates, writes, edits, and commits chapter continuity text files", async () => {
+    const latest = fixtureIndex();
+    const chapter = latest.chapters[0]!;
+    const fileContents = new Map([
+      [chapter.body.id, "第一章正文。"],
+      [chapter.characterState.id, "章末状态：林岚抵达北门。"],
+      [chapter.handoff.id, "接续包：追兵即将封锁北门。"],
+      [chapter.foreshadowingChanges.id, "无变化。"]
+    ]);
+    const indexedFiles = [
+      chapter.body,
+      chapter.characterState,
+      chapter.handoff,
+      chapter.foreshadowingChanges
+    ];
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(latest);
+      }
+      if (command.type !== "long.readDocument") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      const requested = indexedFiles.find(
+        ({ id }) => id === command.payload.fileId
+      );
+      if (!requested) {
+        throw new Error(`Unknown test file: ${command.payload.fileId}`);
+      }
+      const content = fileContents.get(requested.id) ?? "";
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: latest.bookId,
+          file: requested,
+          content,
+          offset: 0,
+          totalCharacters: content.length,
+          nextOffset: null,
+          workspaceRevision: latest.revision,
+          projectRevision: 11
         }
-      )
-    ).rejects.toThrow(/existing or newly proposed continuity fact/u);
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-unknown-handoff-loop",
-        {
-          ...emptyLedgerV3Parameters(),
-          chapter_outputs: {
-            character_state: "章末状态已核验。",
-            handoff: {
-              summary: "下一章接续。",
-              must_carry: [],
-              next_chapter_constraints: [],
-              open_loops: ["loop_missing"]
-            }
-          },
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "拒绝未知开放环"
-        }
-      )
-    ).rejects.toThrow(/handoff references must resolve/u);
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-unknown-world-subject",
-        {
-          ...emptyLedgerV3Parameters(),
-          fact_mutations: [
-            {
-              fact_id: "fact_missing_world_rule",
-              domain: "world",
-              subject_id: "world_missing",
-              field: "rule",
-              value: "不存在的世界规则。",
-              evidence: "错误引用测试。"
-            }
-          ],
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "拒绝孤立世界事实"
-        }
-      )
-    ).rejects.toThrow(/existing worldbuilding category/u);
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-unmaterialized-relationship",
-        {
-          ...emptyLedgerV3Parameters(),
-          fact_mutations: [
-            {
-              fact_id: "fact_alice_relationship",
-              domain: "relationship",
-              subject_id: characterId,
-              field: "trust",
-              value: "不再信任同伴。",
-              evidence: "正文中林岚拒绝向同伴交出信物。"
-            }
-          ],
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "拒绝未映射的人物关系事实"
-        }
-      )
-    ).rejects.toThrow(/both relationships and history/u);
+      };
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace(
+        "continuity_ledger",
+        "continuity_ledger",
+        "chapter_one"
+      ),
+      profile: profile("continuity_ledger"),
+      sessionId: "session-continuity-files",
+      runId: "run-continuity-files",
+      executor
+    });
 
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute("ledger-bad", {
-        ...emptyLedgerV3Parameters(),
-        file_updates: [
-          {
-            character_id: characterId,
-            document: "current_state",
-            content: "错误追加",
-            mode: "append"
-          }
+    const list = await toolByName(tools, "list_continuity_files").execute(
+      "list-continuity",
+      { chapter_card_id: "chapter_one" }
+    );
+    expect(resultText(list)).toContain("foreshadowing_changes");
+    expect(resultText(list)).toContain("not_created");
+
+    await toolByName(tools, "read_continuity_file").execute(
+      "read-foreshadowing",
+      {
+        target: { document: "foreshadowing_changes" },
+        mode: "full"
+      }
+    );
+    const edit = await toolByName(
+      tools,
+      "edit_continuity_file"
+    ).execute("edit-foreshadowing", {
+      target: { document: "foreshadowing_changes" },
+      replacements: [
+        { original_text: "无变化。", new_text: "蜡封伏笔已种下。" }
+      ]
+    });
+    expect(edit.details).toMatchObject({
+      kind: "long-continuity-file-proposal",
+      files: [
+        {
+          role: "foreshadowing_changes",
+          operation: "edit",
+          beforeText: "无变化。",
+          afterText: "蜡封伏笔已种下。"
+        }
+      ]
+    });
+
+    const characterId = latest.characters[0]!.id;
+    const createCharacter = await toolByName(
+      tools,
+      "create_continuity_file"
+    ).execute("create-character-continuity", {
+      target: { document: "character", character_id: characterId }
+    });
+    expect(createCharacter.details).toMatchObject({
+      kind: "long-continuity-file-proposal",
+      batch: {
+        operations: [
+          { type: "chapterContinuity.character.create", characterId }
         ],
-        chapter_summary: CHAPTER_SUMMARY,
-        summary: "越权"
-      })
-    ).rejects.toThrow(/outside the agent's write roots/u);
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-unknown-character",
-        {
-          ...emptyLedgerV3Parameters(),
-          file_updates: [
-            {
-              character_id: "character_missing",
-              document: "relationships",
-              content: "未知人物",
-              mode: "replace"
-            }
-          ],
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "未知人物"
-        }
-      )
-    ).rejects.toThrow(/unknown character/u);
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-empty-summary",
-        {
-          ...emptyLedgerV3Parameters(),
-          chapter_summary: {
-            ...CHAPTER_SUMMARY,
-            continuity_notes: "   "
-          },
-          summary: "摘要缺失"
-        }
-      )
-    ).rejects.toThrow(/all six non-empty/u);
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-duplicate-update",
-        {
-          ...emptyLedgerV3Parameters(),
-          file_updates: [
-            {
-              character_id: characterId,
-              document: "current_state",
-              content: "状态一",
-              mode: "replace"
-            },
-            {
-              character_id: characterId,
-              document: "current_state",
-              content: "状态二",
-              mode: "replace"
-            }
-          ],
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "重复更新"
-        }
-      )
-    ).rejects.toThrow(/same character document twice/u);
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-empty-update",
-        {
-          ...emptyLedgerV3Parameters(),
-          file_updates: [
-            {
-              character_id: characterId,
-              document: "current_state",
-              content: "   ",
-              mode: "replace"
-            }
-          ],
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "空更新"
-        }
-      )
-    ).rejects.toThrow(/non-empty content/u);
-    await expect(
-      toolByName(tools, "propose_long_ledger_commit").execute(
-        "ledger-empty-proposal-summary",
-        {
-          ...emptyLedgerV3Parameters(),
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "   "
-        }
-      )
-    ).rejects.toThrow(/summary must contain non-whitespace text/u);
-    expect(
-      executor.mock.calls.every(
-        ([command]) =>
-          command.type === "long.getWorkspaceIndex" ||
-          command.type === "long.readDocument"
-      )
-    ).toBe(true);
-    const tool = toolByName(tools, "propose_long_ledger_commit");
-    expect(JSON.stringify(tool.parameters)).not.toMatch(/file_id|revision/u);
-    const requiredV3Keys = [
-      "coverage",
-      "fact_mutations",
-      "knowledge_mutations",
-      "open_loop_mutations",
-      "chapter_outputs"
-    ] as const;
-    for (const key of requiredV3Keys) {
-      const missingRequired = structuredClone({
-        ...emptyLedgerV3Parameters(),
-        chapter_summary: CHAPTER_SUMMARY,
-        summary: "缺少 v3 必填参数"
-      }) as Record<string, unknown>;
-      delete missingRequired[key];
-      expect(Check(tool.parameters, missingRequired)).toBe(false);
+        documentWrites: [
+          { mode: "create", expectedRevision: null },
+          { mode: "create", expectedRevision: null }
+        ]
+      },
+      files: [
+        { role: "character_current_state", operation: "create" },
+        { role: "character_history", operation: "create" }
+      ]
+    });
+
+    for (const [document, text] of [
+      ["character_current_state", "当前状态：林岚抵达北门。"],
+      ["character_history", "第一章：林岚在追兵前抵达北门。"]
+    ] as const) {
+      const write = await toolByName(
+        tools,
+        "write_continuity_file"
+      ).execute(`write-${document}`, {
+        target: { document, character_id: characterId },
+        text
+      });
+      expect(write.details).toMatchObject({
+        kind: "long-continuity-file-proposal",
+        files: [{ role: document, operation: "write", afterText: text }]
+      });
     }
-    expect(
-      Check(tool.parameters, {
-        ...emptyLedgerV3Parameters(),
-        file_updates: [
-          {
-            character_id: characterId,
-            document: "current_state",
-            content: "有效参数",
-            mode: "replace"
-          }
-        ],
-        chapter_summary: CHAPTER_SUMMARY,
-        summary: "有效参数"
-      })
-    ).toBe(true);
-    expect(
-      Check(tool.parameters, {
-        ...emptyLedgerV3Parameters(),
-        file_updates: [
-          {
-            character_id: characterId,
-            document: "current_state",
-            file_id: currentState,
-            content: "旧参数",
-            mode: "replace"
-          }
-        ],
-        chapter_summary: CHAPTER_SUMMARY,
-        summary: "旧参数"
-      })
-    ).toBe(false);
-    expect(
-      Check(tool.parameters, {
-        ...emptyLedgerV3Parameters(),
-        file_updates: [
-          {
-            character_id: characterId,
-            document: "current_state",
-            content: "旧参数",
-            base_revision: REVISION,
-            mode: "replace"
-          }
-        ],
-        chapter_summary: CHAPTER_SUMMARY,
-        summary: "旧参数"
-      })
-    ).toBe(false);
+
+    await toolByName(tools, "create_continuity_file").execute(
+      "create-world-reveals",
+      { target: { document: "world_reveals" } }
+    );
+    await toolByName(tools, "write_continuity_file").execute(
+      "write-world-reveals",
+      {
+        target: { document: "world_reveals" },
+        text: "本章揭露北门蜡封可感知灵力。"
+      }
+    );
+
+    const commitTool = toolByName(tools, "propose_continuity_commit");
+    const commit = await commitTool.execute("commit-continuity", {
+      summary: "留存第一章连续性记录"
+    });
+    expect(commit.details).toMatchObject({
+      kind: "long-ledger-commit-proposal",
+      input: {
+        mode: "text_files",
+        bookId: "longbook_tools",
+        chapterCardId: "chapter_one",
+        chapterFileRevisions: { body: chapter.body.revision },
+        commitMessage: "留存第一章连续性记录",
+        baseWorkspaceRevision: 7,
+        baseProjectRevision: 11
+      }
+    });
+    if (
+      !commit.details ||
+      commit.details.kind !== "long-ledger-commit-proposal" ||
+      commit.details.input.mode !== "text_files"
+    ) {
+      throw new Error("Expected a text-file continuity commit proposal.");
+    }
+    expect(commit.details.input.continuityFileRevisions).toHaveLength(6);
+    expect(JSON.stringify(commitTool.parameters)).not.toMatch(
+      /file_id|revision|fact_mutations|open_loop/u
+    );
+    expect(tools.map(({ name }) => name)).not.toEqual(
+      expect.arrayContaining([
+        "set_long_ledger_fact_mutation",
+        "propose_long_ledger_commit"
+      ])
+    );
+
   });
 
   it("rejects chapter mutations against stale, mismatched, or committed workspace context", async () => {
     const writeInput = {
-      body: { content: "正文" },
+      content: "正文",
       summary: "完成第一章"
     };
     const staleWorkspace = workspace(
@@ -3646,7 +3521,7 @@ describe("long workspace agent tools", () => {
       executor: vi.fn<LongCommandExecutor>(async () => indexResult())
     });
     await expect(
-      toolByName(staleTools, "propose_long_chapter_write").execute(
+      toolByName(staleTools, "write_chapter_draft").execute(
         "stale-chapter",
         writeInput
       )
@@ -3666,7 +3541,7 @@ describe("long workspace agent tools", () => {
       executor: vi.fn<LongCommandExecutor>(async () => indexResult())
     });
     await expect(
-      toolByName(mismatchedTools, "propose_long_chapter_write").execute(
+      toolByName(mismatchedTools, "write_chapter_draft").execute(
         "mismatched-chapter",
         writeInput
       )
@@ -3688,7 +3563,7 @@ describe("long workspace agent tools", () => {
       )
     });
     await expect(
-      toolByName(otherBookTools, "propose_long_chapter_write").execute(
+      toolByName(otherBookTools, "write_chapter_draft").execute(
         "other-book",
         writeInput
       )
@@ -3712,12 +3587,11 @@ describe("long workspace agent tools", () => {
       )
     });
     await expect(
-      toolByName(committedTools, "propose_long_ledger_commit").execute(
+      toolByName(committedTools, "write_continuity_file").execute(
         "committed-chapter",
         {
-          ...emptyLedgerV3Parameters(),
-          chapter_summary: CHAPTER_SUMMARY,
-          summary: "重复提交"
+          target: { document: "foreshadowing_changes" },
+          text: "重复提交"
         }
       )
     ).rejects.toThrow(/already committed/u);

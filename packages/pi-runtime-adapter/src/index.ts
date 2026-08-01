@@ -397,6 +397,21 @@ export type AgentRuntimeEvent =
       };
     }
   | {
+      type: "long.continuity_file_proposal";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        bookId: string;
+        agentId: import("@deepwrite/contracts").LongAgentId;
+        batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
+        baseProjectRevision: number;
+        summary: string;
+        files: import("@deepwrite/contracts").LongContinuityFileChange[];
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
       type: "long.chapter_write_proposal";
       runId: string;
       sessionId: string;
@@ -404,7 +419,9 @@ export type AgentRuntimeEvent =
         toolCallId: string;
         bookId: string;
         agentId: import("@deepwrite/contracts").LongAgentId;
-        input: import("@deepwrite/contracts").LongWriteChapterInput;
+        batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
+        baseProjectRevision: number;
+        file: import("@deepwrite/contracts").LongChapterBodyChange;
         summary: string;
         runtime: AgentRuntimeRef;
       };
@@ -1919,6 +1936,22 @@ export function toRuntimeEvents(
             runtime
           }
         });
+      } else if (details.kind === "long-continuity-file-proposal") {
+        events.push({
+          type: "long.continuity_file_proposal",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: {
+            toolCallId: event.toolCallId,
+            bookId: details.bookId,
+            agentId: details.agentId,
+            batch: details.batch,
+            baseProjectRevision: details.baseProjectRevision,
+            summary: details.summary,
+            files: details.files,
+            runtime
+          }
+        });
       } else if (details.kind === "long-chapter-write-proposal") {
         events.push({
           type: "long.chapter_write_proposal",
@@ -1928,7 +1961,9 @@ export function toRuntimeEvents(
             toolCallId: event.toolCallId,
             bookId: details.bookId,
             agentId: details.agentId,
-            input: details.input,
+            batch: details.batch,
+            baseProjectRevision: details.baseProjectRevision,
+            file: details.file,
             summary: details.summary,
             runtime
           }
@@ -2131,6 +2166,7 @@ export function toSubagentRuntimeEvents(
       event.type === "long.mutation_proposal" ||
       event.type === "long.worldbuilding_file_proposal" ||
       event.type === "long.character_file_proposal" ||
+      event.type === "long.continuity_file_proposal" ||
       event.type === "long.chapter_dispatch_proposal" ||
       event.type === "long.chapter_write_proposal" ||
       event.type === "long.ledger_commit_proposal"
@@ -2320,13 +2356,15 @@ export function buildEffectiveSystemPrompt(
         ? "世界观只使用工具返回的 category_id 和 item_id 定位内容；工具会处理其余实现细节，不得索取、猜测或复述。未读取内容不得当成事实。"
         : longProfile.id === "character_design"
           ? "人物设计只使用工具返回的 character_id 和 document 定位内容；工具会处理其余实现细节，不得索取、猜测或复述。未读取内容不得当成事实。"
+        : longProfile.id === "continuity_ledger"
+          ? "连续性账本只使用世界观、人物、剧情和正文各阶段的 list / search / read 工具及其业务 ID；不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
         : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
       writeBoundary,
       longProfile.id === "expert_section_writer"
         ? "单章写作必须同时形成正文、人物状态和 handoff 三个文件的同批提案；一次只处理上下文锁定的章卡。"
         : "",
       longProfile.id === "continuity_ledger"
-        ? "账本只能提交尚未提交的连续下一章；提交与最后一次撤销都必须由客户端事务执行。"
+        ? "连续性阶段只以按章文本文件留存变化：章末状态、接续包、伏笔变化，以及按需创建的世界观揭露和人物当前状态/历史轨迹。先 list/read，再 create/write/edit，全部文件完成后调用 propose_continuity_commit；不得调用旧式 set_long_ledger_* 工作流。最终提交与撤销由客户端事务执行。"
         : ""
     ]
       .filter(Boolean)

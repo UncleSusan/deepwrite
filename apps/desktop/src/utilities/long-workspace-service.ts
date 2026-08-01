@@ -600,6 +600,7 @@ function allWorkspaceFiles(
     ]),
     ...index.chapters.flatMap((entry) => [
       entry.body,
+      entry.card,
       entry.characterState,
       entry.handoff
     ]),
@@ -698,6 +699,11 @@ function searchFiles(
           file: entry.body,
           root: "draft" as const,
           title: `${title} · 正文`
+        },
+        {
+          file: entry.card,
+          root: "plot_design" as const,
+          title: `${title} · 章卡`
         },
         {
           file: entry.characterState,

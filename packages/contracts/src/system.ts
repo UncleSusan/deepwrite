@@ -20,6 +20,7 @@ import {
   LongChapterDispatchProposalEventEnvelopeSchema,
   LongChapterWriteProposalEventEnvelopeSchema,
   LongCharacterFileProposalEventEnvelopeSchema,
+  LongContinuityFileProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
   LongMutationProposalEventEnvelopeSchema,
   LongWorldbuildingFileProposalEventEnvelopeSchema,
@@ -46,6 +47,7 @@ import {
   type LongChapterDispatchProposalEventEnvelope,
   type LongChapterWriteProposalEventEnvelope,
   type LongCharacterFileProposalEventEnvelope,
+  type LongContinuityFileProposalEventEnvelope,
   type LongLedgerCommitProposalEventEnvelope,
   type LongMutationProposalEventEnvelope,
   type LongWorldbuildingFileProposalEventEnvelope,
@@ -346,6 +348,7 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   LongMutationProposalEventEnvelopeSchema,
   LongWorldbuildingFileProposalEventEnvelopeSchema,
   LongCharacterFileProposalEventEnvelopeSchema,
+  LongContinuityFileProposalEventEnvelopeSchema,
   LongChapterDispatchProposalEventEnvelopeSchema,
   LongChapterWriteProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
@@ -385,6 +388,7 @@ export type SystemEventEnvelope =
   | LongMutationProposalEventEnvelope
   | LongWorldbuildingFileProposalEventEnvelope
   | LongCharacterFileProposalEventEnvelope
+  | LongContinuityFileProposalEventEnvelope
   | LongChapterDispatchProposalEventEnvelope
   | LongChapterWriteProposalEventEnvelope
   | LongLedgerCommitProposalEventEnvelope

@@ -41,8 +41,8 @@ import {
   type LongWorkspaceSelectionFile
 } from "../types/longWorkspace";
 import AppIcon from "./AppIcon.vue";
-import LongContinuityWorkspace from "./LongContinuityWorkspace.vue";
 import LongForeshadowingWorkspace from "./LongForeshadowingWorkspace.vue";
+import MarkdownContent from "./MarkdownContent.vue";
 
 const props = defineProps<{
   bookId: string;
@@ -107,13 +107,6 @@ const emit = defineEmits<{
     },
     completion: (succeeded: boolean) => void
   ];
-  saveChapterCardContent: [
-    input: {
-      chapterCardId: LongChapterCardId;
-      content: string;
-    },
-      completion: (succeeded: boolean) => void
-    ];
   mutation: [
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
@@ -137,15 +130,6 @@ interface LongVolumeOutlineDraft {
   content: string;
   savedContent: string;
   saving: boolean;
-}
-
-function mergeChapterCardContent(
-  outline: string,
-  worldConstraints: string
-): string {
-  if (!outline) return worldConstraints;
-  if (!worldConstraints) return outline;
-  return `${outline}\n\n${worldConstraints}`;
 }
 
 interface LongStructureTitleTarget {
@@ -187,6 +171,7 @@ interface LongEditorRecoveryRecord {
 const documentStates = ref<Record<string, LongDocumentState>>({});
 const staleRecoveryByKey = ref<Record<string, LongEditorRecoveryRecord>>({});
 const activeRole = ref<LongWorkspaceFileRole>("content");
+const activeFileId = ref<string | null>(null);
 const activeWorldbuildingItemId = ref<string | null>(null);
 const pendingWorldbuildingItemId = ref<string | null>(null);
 const pendingWorldbuildingOverview = ref(false);
@@ -197,6 +182,7 @@ const storyPlotActionMenuId = ref<string | null>(null);
 let storyPlotSelectionRequest = 0;
 const pendingCharacterId = ref<string | null>(null);
 const pendingRole = ref<LongWorkspaceFileRole | null>(null);
+const pendingFileId = ref<string | null>(null);
 const heldSelectionFile = ref<LongWorkspaceSelectionFile | null>(null);
 let worldbuildingPrefetchRequest = 0;
 let selectionPrefetchRequest = 0;
@@ -209,9 +195,6 @@ const activePlotPointTab = ref<
 >("summary");
 const volumeOutlineDrafts = ref<Record<string, LongVolumeOutlineDraft>>({});
 const plotPointSummaryDrafts = ref<Record<string, LongVolumeOutlineDraft>>({});
-const chapterCardContentDrafts = ref<
-  Record<string, LongVolumeOutlineDraft>
->({});
 const pendingWorldbuildingDeleteId = ref<string | null>(null);
 const characterNameDraft = ref("");
 const characterNameSaving = ref(false);
@@ -295,6 +278,7 @@ const currentSelectionFile = computed<LongWorkspaceSelectionFile | undefined>(
       return selection.files.find(({ role }) => role === "book-line");
     }
     return (
+      selection.files.find(({ file }) => file.id === activeFileId.value) ??
       selection.files.find(({ role }) => role === activeRole.value) ??
       selection.files[0]
     );
@@ -337,16 +321,6 @@ const showEditorLoadError = computed(() => {
   const state = currentState.value;
   return Boolean(state?.loadError && !state.loaded && !state.content);
 });
-const currentIsContinuityWorkspace = computed(
-  () =>
-    props.selection?.root === "continuity_ledger" &&
-    currentSelectionFile.value?.role !== "ledger-record"
-);
-const currentContinuityWorkspaceChapterProps = computed(() =>
-  props.selection?.chapterCardId
-    ? { activeChapterId: props.selection.chapterCardId }
-    : {}
-);
 const currentIsBookLineWorkspace = computed(
   () =>
     props.selection?.key === "plot-design:book-line" &&
@@ -543,15 +517,12 @@ const currentNavigationDeleteTarget = computed<LongNavigationDeleteTarget | null
         ({ id }) => id === selection.characterId
       );
       if (!character) return null;
-      const chapterReferences = index.plot.chapterCards.filter((chapter) =>
-        chapter.characterIds.includes(character.id)
-      ).length;
       const eventReferences = index.plot.storyEvents.filter((event) =>
         event.characterIds.includes(character.id)
       ).length;
       const referenceCopy =
-        chapterReferences + eventReferences > 0
-          ? `，并从 ${chapterReferences} 张章卡、${eventReferences} 个故事事件中移除人物引用`
+        eventReferences > 0
+          ? `，并从 ${eventReferences} 个故事事件中移除人物引用`
           : "";
       return {
         kind: "character",
@@ -623,11 +594,6 @@ const currentPlotPointDraft = computed(() => {
   }
   return plotPointSummaryDrafts.value[plotPointId];
 });
-const currentChapterCardDraft = computed(() => {
-  const chapterCardId = currentChapterCard.value?.id;
-  if (!chapterCardId) return undefined;
-  return chapterCardContentDrafts.value[chapterCardId];
-});
 const currentChapterCardCommitted = computed(() => {
   const chapterCardId = currentChapterCard.value?.id;
   return Boolean(
@@ -670,16 +636,13 @@ const currentIsPlotPointForeshadowing = computed(
 );
 const currentIsForeshadowingView = computed(
   () =>
-    currentIsForeshadowingWorkspace.value ||
     currentIsVolumeForeshadowing.value ||
     currentIsPlotPointForeshadowing.value
 );
 const currentForeshadowingMode = computed<
   "overview" | "volume" | "plotPoint"
 >(() =>
-  currentIsForeshadowingWorkspace.value
-    ? "overview"
-    : currentIsVolumeForeshadowing.value
+    currentIsVolumeForeshadowing.value
       ? "volume"
       : "plotPoint"
 );
@@ -700,10 +663,7 @@ const currentIsChapterCardContent = computed(
     currentChapterCard.value !== null
 );
 const currentIsStructuredText = computed(
-  () =>
-    currentIsVolumeOutline.value ||
-    currentIsPlotPointSummary.value ||
-    currentIsChapterCardContent.value
+  () => currentIsVolumeOutline.value || currentIsPlotPointSummary.value
 );
 const currentStoryPlots = computed(
   () => props.selection?.storyPlots ?? []
@@ -724,8 +684,7 @@ const isDocumentContentBusy = computed(() => {
   if (isDocumentSwitchPending.value) return true;
   if (
     currentIsStructuredText.value ||
-    currentIsForeshadowingView.value ||
-    currentIsContinuityWorkspace.value
+    currentIsForeshadowingView.value
   ) {
     return false;
   }
@@ -761,7 +720,6 @@ const currentDirty = computed(
     }
     if (currentIsStructuredText.value) {
       const draft =
-        currentChapterCardDraft.value ??
         currentPlotPointDraft.value ??
         currentVolumeOutlineDraft.value;
       return Boolean(draft && draft.content !== draft.savedContent);
@@ -790,7 +748,6 @@ const currentIsWorldbuildingList = computed(
 const showGenericFileTabs = computed(
   () =>
     Boolean(props.selection && props.selection.files.length > 1) &&
-    !currentIsContinuityWorkspace.value &&
     !currentIsWorldbuildingList.value &&
     !currentIsPlotPointWorkspace.value &&
     !currentIsBookLineWorkspace.value &&
@@ -829,9 +786,6 @@ const pendingWorldbuildingDeleteItem = computed(
     ) ?? null
 );
 const currentVisibleContent = computed(() => {
-  if (currentIsChapterCardContent.value) {
-    return currentChapterCardDraft.value?.content ?? "";
-  }
   if (currentIsPlotPointSummary.value) {
     return currentPlotPointDraft.value?.content ?? "";
   }
@@ -880,15 +834,11 @@ const currentSaving = computed(
     characterNameSaving.value ||
     structureTitleSaving.value ||
     Boolean(
-      currentChapterCardDraft.value?.saving ??
-        currentPlotPointDraft.value?.saving ??
+      currentPlotPointDraft.value?.saving ??
         currentVolumeOutlineDraft.value?.saving ??
         currentState.value?.saving ??
         false
     )
-);
-const previewParagraphs = computed(() =>
-  currentVisibleContent.value.split(/\n{2,}/u).filter(Boolean)
 );
 const searchMatches = computed<LongEditorSearchMatch[]>(() => {
   const content = currentVisibleContent.value;
@@ -948,7 +898,6 @@ const currentLedgerRecord = computed<LongLedgerCommitRecord | null>(() => {
 const canUseTextTools = computed(
   () =>
     !currentIsForeshadowingView.value &&
-    !currentIsContinuityWorkspace.value &&
     (Boolean(currentState.value?.loaded) ||
       currentIsStructuredText.value) &&
     !currentLedgerRecord.value &&
@@ -1071,9 +1020,6 @@ const hasUnsavedChanges = computed(() =>
     (draft) => draft.content !== draft.savedContent
   ) ||
   Object.values(plotPointSummaryDrafts.value).some(
-    (draft) => draft.content !== draft.savedContent
-  ) ||
-  Object.values(chapterCardContentDrafts.value).some(
     (draft) => draft.content !== draft.savedContent
   )
 );
@@ -1471,26 +1417,6 @@ function updateWorldbuildingItemContent(
 }
 
 function updateVisibleContent(content: string): void {
-  const chapterCard = currentChapterCard.value;
-  if (currentIsChapterCardWorkspace.value && chapterCard) {
-    const persistedContent = mergeChapterCardContent(
-      chapterCard.outline,
-      chapterCard.worldConstraints
-    );
-    const current = chapterCardContentDrafts.value[chapterCard.id] ?? {
-      content: persistedContent,
-      savedContent: persistedContent,
-      saving: false
-    };
-    chapterCardContentDrafts.value = {
-      ...chapterCardContentDrafts.value,
-      [chapterCard.id]: {
-        ...current,
-        content
-      }
-    };
-    return;
-  }
   const plotPoint = currentPlotPoint.value;
   if (
     currentIsPlotPointWorkspace.value &&
@@ -1869,40 +1795,6 @@ function reorderStoryPlot(
       orderedIds
     }
   ]);
-}
-
-async function saveChapterCardContent(
-  chapterCardId: LongChapterCardId
-): Promise<boolean> {
-  const draft = chapterCardContentDrafts.value[chapterCardId];
-  if (!draft || draft.saving || draft.content === draft.savedContent) {
-    return Boolean(draft && !draft.saving);
-  }
-  const submittedContent = draft.content;
-  chapterCardContentDrafts.value = {
-    ...chapterCardContentDrafts.value,
-    [chapterCardId]: { ...draft, saving: true }
-  };
-  return await new Promise<boolean>((resolve) => {
-    emit(
-      "saveChapterCardContent",
-      { chapterCardId, content: submittedContent },
-      (succeeded) => {
-        const latest = chapterCardContentDrafts.value[chapterCardId];
-        if (latest) {
-          chapterCardContentDrafts.value = {
-            ...chapterCardContentDrafts.value,
-            [chapterCardId]: {
-              ...latest,
-              ...(succeeded ? { savedContent: submittedContent } : {}),
-              saving: false
-            }
-          };
-        }
-        resolve(succeeded);
-      }
-    );
-  });
 }
 
 function getEditorSnapshot(): LongEditorHistorySnapshot {
@@ -2776,23 +2668,37 @@ async function selectRole(role: LongWorkspaceFileRole): Promise<void> {
   );
   if (!selectedFile) {
     activeRole.value = role;
+    activeFileId.value = null;
     return;
   }
+  await selectWorkspaceFile(selectedFile.file.id);
+}
+
+async function selectWorkspaceFile(fileId: string): Promise<void> {
+  if (fileId === activeFileId.value || fileId === pendingFileId.value) return;
+  const selectedFile = props.selection?.files.find(
+    ({ file }) => file.id === fileId
+  );
+  if (!selectedFile) return;
   const bookId = props.bookId;
   const selectionKey = props.selection?.key;
-  pendingRole.value = role;
+  pendingRole.value = selectedFile.role;
+  pendingFileId.value = fileId;
   await loadWorkspaceDocument(selectedFile);
   if (
     props.bookId !== bookId ||
     props.selection?.key !== selectionKey ||
-    pendingRole.value !== role
+    pendingFileId.value !== fileId
   ) {
     return;
   }
   pendingRole.value = null;
+  pendingFileId.value = null;
   const state = documentStates.value[stateKey(selectedFile.file.id, bookId)];
   if (state?.loaded || Boolean(state?.content)) {
-    activeRole.value = role;
+    activeRole.value = selectedFile.role;
+    activeFileId.value = fileId;
+    viewMode.value = selectedFile.readOnly ? "preview" : "edit";
   }
 }
 
@@ -2987,19 +2893,10 @@ async function saveAllChanges(): Promise<boolean> {
         !draft.saving && draft.content !== draft.savedContent
     )
     .map(([plotPointId]) => plotPointId as LongArcId);
-  const dirtyChapterCardIds = Object.entries(
-    chapterCardContentDrafts.value
-  )
-    .filter(
-      ([, draft]) =>
-        !draft.saving && draft.content !== draft.savedContent
-    )
-    .map(([chapterCardId]) => chapterCardId as LongChapterCardId);
   if (
     !dirtyKeys.length &&
     !dirtyVolumeIds.length &&
-    !dirtyPlotPointSummaryIds.length &&
-    !dirtyChapterCardIds.length
+    !dirtyPlotPointSummaryIds.length
   ) {
     return true;
   }
@@ -3020,11 +2917,6 @@ async function saveAllChanges(): Promise<boolean> {
         return false;
       }
     }
-    for (const chapterCardId of dirtyChapterCardIds) {
-      if (!(await saveChapterCardContent(chapterCardId))) {
-        return false;
-      }
-    }
     // Editing remains available during an asynchronous save. A keystroke
     // after a file's submitted snapshot must keep navigation blocked instead
     // of being mistaken for part of the successful write.
@@ -3039,17 +2931,13 @@ async function saveAllChanges(): Promise<boolean> {
       ) &&
       !Object.values(plotPointSummaryDrafts.value).some(
         (draft) => draft.content !== draft.savedContent
-      ) &&
-      !Object.values(chapterCardContentDrafts.value).some(
-        (draft) => draft.content !== draft.savedContent
       );
   });
   if (saved) {
     const savedCount =
       dirtyKeys.length +
       dirtyVolumeIds.length +
-      dirtyPlotPointSummaryIds.length +
-      dirtyChapterCardIds.length;
+      dirtyPlotPointSummaryIds.length;
     uiMessage.success(
       `离开前已自动保存 ${savedCount} 项长篇修改`
     );
@@ -3096,10 +2984,6 @@ function synchronizeProjectRevisionsIfClean(
         !draft.saving && draft.content !== draft.savedContent
     ) ||
       Object.values(plotPointSummaryDrafts.value).some(
-        (draft) =>
-          !draft.saving && draft.content !== draft.savedContent
-      ) ||
-      Object.values(chapterCardContentDrafts.value).some(
         (draft) =>
           !draft.saving && draft.content !== draft.savedContent
       ))
@@ -3163,7 +3047,6 @@ watch(
       volumeDraftBookId = props.bookId;
       volumeOutlineDrafts.value = {};
       plotPointSummaryDrafts.value = {};
-      chapterCardContentDrafts.value = {};
       activeBookLineVolumeId.value = null;
       activeBookLineContentTab.value = "outline";
       activePlotPointTab.value = "summary";
@@ -3200,20 +3083,6 @@ watch(
             };
     }
     plotPointSummaryDrafts.value = nextSummaries;
-    const nextChapterContents: Record<string, LongVolumeOutlineDraft> = {};
-    for (const chapterCard of props.workspaceIndex?.plot.chapterCards ?? []) {
-      const existing = chapterCardContentDrafts.value[chapterCard.id];
-      const content = mergeChapterCardContent(
-        chapterCard.outline,
-        chapterCard.worldConstraints
-      );
-      nextChapterContents[chapterCard.id] =
-        existing &&
-        (existing.saving || existing.content !== existing.savedContent)
-          ? existing
-          : { content, savedContent: content, saving: false };
-    }
-    chapterCardContentDrafts.value = nextChapterContents;
     if (
       activeBookLineVolumeId.value &&
       !volumes.some(({ id }) => id === activeBookLineVolumeId.value)
@@ -3235,7 +3104,13 @@ watch(
       props.selection?.preferredRole
     ] as const,
   () => {
-    activeRole.value = props.selection?.preferredRole ?? "content";
+    const preferredRole = props.selection?.preferredRole ?? "content";
+    activeRole.value = preferredRole;
+    activeFileId.value =
+      props.selection?.files.find(({ role }) => role === preferredRole)?.file
+        .id ??
+      props.selection?.files[0]?.file.id ??
+      null;
   },
   { immediate: true, flush: "sync" }
 );
@@ -3292,7 +3167,7 @@ watch(
       props.selection?.chapterCardId
     ] as const,
   () => {
-    viewMode.value = "edit";
+    viewMode.value = currentSelectionFile.value?.readOnly ? "preview" : "edit";
     closeFindPanel();
     searchQuery.value = "";
     replacementText.value = "";
@@ -3320,6 +3195,7 @@ watch(
     pendingWorldbuildingItemId.value = null;
     pendingWorldbuildingOverview.value = false;
     pendingRole.value = null;
+    pendingFileId.value = null;
   },
   { flush: "sync" }
 );
@@ -3914,16 +3790,16 @@ onBeforeUnmount(() => {
         >
           <button
             v-for="file in selection.files"
-            :key="file.role"
+            :key="file.file.id"
             type="button"
             role="tab"
-            :aria-selected="currentSelectionFile?.role === file.role"
+            :aria-selected="currentSelectionFile?.file.id === file.file.id"
             :class="{
-              'is-active': currentSelectionFile?.role === file.role,
-              'is-loading': pendingRole === file.role
+              'is-active': currentSelectionFile?.file.id === file.file.id,
+              'is-loading': pendingFileId === file.file.id
             }"
-            :aria-busy="pendingRole === file.role"
-            @click="selectRole(file.role)"
+            :aria-busy="pendingFileId === file.file.id"
+            @click="selectWorkspaceFile(file.file.id)"
           >
             {{ file.label }}
           </button>
@@ -3931,7 +3807,6 @@ onBeforeUnmount(() => {
         <span
           v-if="
             !currentIsForeshadowingView &&
-            !currentIsContinuityWorkspace &&
             !currentIsPlotPointStoryline &&
             ((currentIsBookLineWorkspace && currentBookLineVolume) ||
               (currentIsPlotPointWorkspace && currentPlotPoint) ||
@@ -3943,7 +3818,6 @@ onBeforeUnmount(() => {
         <div
           v-if="
             !currentIsForeshadowingView &&
-            !currentIsContinuityWorkspace &&
             !currentIsPlotPointStoryline
           "
           class="long-editor-view-tabs"
@@ -3955,7 +3829,7 @@ onBeforeUnmount(() => {
             role="tab"
             :aria-selected="viewMode === 'edit'"
             :class="{ 'is-active': viewMode === 'edit' }"
-            :disabled="!canUseTextTools"
+            :disabled="!canUseTextTools || currentReadOnly"
             @click="viewMode = 'edit'"
           >
             编辑
@@ -3974,7 +3848,6 @@ onBeforeUnmount(() => {
         <span
           v-if="
             !currentIsForeshadowingView &&
-            !currentIsContinuityWorkspace &&
             !currentIsPlotPointStoryline
           "
           class="long-toolbar-separator"
@@ -3982,7 +3855,6 @@ onBeforeUnmount(() => {
         <div
           v-if="
             !currentIsForeshadowingView &&
-            !currentIsContinuityWorkspace &&
             !currentIsPlotPointStoryline
           "
           ref="editorToolsElement"
@@ -4188,18 +4060,8 @@ onBeforeUnmount(() => {
             </div>
           </details>
         </aside>
-        <LongContinuityWorkspace
-          v-if="currentIsContinuityWorkspace && workspaceIndex"
-          class="long-continuity-workspace-host"
-          :book-id="bookId"
-          :snapshot="workspaceIndex"
-          :view="selection.continuityView ?? 'inbox'"
-          :evidence-content="currentVisibleContent"
-          v-bind="currentContinuityWorkspaceChapterProps"
-          @select-commit="emit('selectLedgerCommit', $event)"
-        />
         <LongForeshadowingWorkspace
-          v-else-if="currentIsForeshadowingView && workspaceIndex"
+          v-if="currentIsForeshadowingView && workspaceIndex"
           :snapshot="workspaceIndex"
           :mode="currentForeshadowingMode"
           :volume-id="currentForeshadowingVolumeId"
@@ -4592,13 +4454,11 @@ onBeforeUnmount(() => {
                   v-else
                   class="long-document-preview long-story-plot-editor"
                 >
-                  <p
-                    v-for="(paragraph, index) in previewParagraphs"
-                    :key="index"
-                  >
-                    {{ paragraph }}
-                  </p>
-                  <p v-if="!previewParagraphs.length" class="is-empty">
+                  <MarkdownContent
+                    v-if="currentVisibleContent.trim()"
+                    :content="currentVisibleContent"
+                  />
+                  <p v-else class="is-empty">
                     暂无故事情节正文
                   </p>
                 </article>
@@ -4926,7 +4786,7 @@ onBeforeUnmount(() => {
               {{ currentDocumentTitle }}
             </h1>
             <textarea
-              v-if="viewMode === 'edit'"
+              v-if="viewMode === 'edit' && !currentReadOnly"
               ref="editorInput"
               :value="currentVisibleContent"
               class="long-document-editor"
@@ -4950,13 +4810,11 @@ onBeforeUnmount(() => {
               @keydown="handleEditorKeydown"
             />
             <article v-else class="long-document-preview">
-              <p
-                v-for="(paragraph, index) in previewParagraphs"
-                :key="index"
-              >
-                {{ paragraph }}
-              </p>
-              <p v-if="!previewParagraphs.length" class="is-empty">
+              <MarkdownContent
+                v-if="currentVisibleContent.trim()"
+                :content="currentVisibleContent"
+              />
+              <p v-else class="is-empty">
                 {{
                   currentIsPlotPointStoryline
                     ? "暂无故事情节"
@@ -5008,7 +4866,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <footer v-if="!currentIsContinuityWorkspace" class="long-editor-footer">
+      <footer class="long-editor-footer">
         <span>
           {{
             currentIsForeshadowingView
@@ -5755,11 +5613,11 @@ onBeforeUnmount(() => {
   font-size: 1.07143rem;
   line-height: 1.95;
   letter-spacing: 0.025em;
-  white-space: pre-wrap;
 }
 
 .long-document-editor {
   resize: none;
+  white-space: pre-wrap;
 }
 
 .long-document-title-input:focus-visible,
@@ -5777,8 +5635,8 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
 }
 
-.long-document-preview p + p {
-  margin-top: 1.15em;
+.long-document-preview :deep(.markdown-content) {
+  white-space: normal;
 }
 
 .long-document-preview .is-empty {

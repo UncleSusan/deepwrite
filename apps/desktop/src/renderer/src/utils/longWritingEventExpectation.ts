@@ -23,15 +23,16 @@ export function matchesLongWritingProposalExpectation(
 ): boolean {
   if (
     event.payload.bookId !== expectation.bookId ||
-    event.payload.agentId !== expectation.agentId ||
-    event.payload.input.chapterCardId !== expectation.chapterCardId
+    event.payload.agentId !== expectation.agentId
   ) {
     return false;
   }
   return (
     (event.type === "long.chapter_write_proposal" &&
-      expectation.agentId === "expert_section_writer") ||
+      expectation.agentId === "expert_section_writer" &&
+      event.payload.file.chapterCardId === expectation.chapterCardId) ||
     (event.type === "long.ledger_commit_proposal" &&
-      expectation.agentId === "continuity_ledger")
+      expectation.agentId === "continuity_ledger" &&
+      event.payload.input.chapterCardId === expectation.chapterCardId)
   );
 }

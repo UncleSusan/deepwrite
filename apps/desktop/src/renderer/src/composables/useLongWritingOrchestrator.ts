@@ -1,9 +1,19 @@
 import { computed, ref, type ComputedRef, type Ref } from "vue";
 import type {
   LongChapterReadiness,
-  LongWritingScope
+  LongWritingScope,
+  SystemEventEnvelope
 } from "@deepwrite/contracts";
-import type { LongWorkspaceProposalEvent } from "./useLongWorkspaceProposals";
+
+type LongWritingWorkflowEvent = Extract<
+  SystemEventEnvelope,
+  {
+    type:
+      | "long.chapter_dispatch_proposal"
+      | "long.chapter_write_proposal"
+      | "long.ledger_commit_proposal";
+  }
+>;
 
 export type LongWritingWorkflowPhase =
   | "idle"
@@ -42,10 +52,17 @@ export function canApproveLongWritingProposal(input: {
   state: LongWritingWorkflowState;
   currentChapter: LongChapterReadiness | null;
   expectation: LongWritingApprovalExpectation | null;
-  event: LongWorkspaceProposalEvent;
+  event: SystemEventEnvelope;
 }): boolean {
   if (!input.active) return true;
   const { state, currentChapter: chapter, expectation, event } = input;
+  if (
+    event.type !== "long.chapter_write_proposal" &&
+    event.type !== "long.continuity_file_proposal" &&
+    event.type !== "long.ledger_commit_proposal"
+  ) {
+    return false;
+  }
   if (
     !chapter ||
     !expectation ||
@@ -63,11 +80,16 @@ export function canApproveLongWritingProposal(input: {
     (state.phase === "awaiting_writer_approval" &&
       expectation.agentId === "expert_section_writer" &&
       event.type === "long.chapter_write_proposal" &&
-      event.payload.input.chapterCardId === chapter.chapterCardId) ||
+      event.payload.file.chapterCardId === chapter.chapterCardId) ||
     (state.phase === "awaiting_ledger_approval" &&
       expectation.agentId === "continuity_ledger" &&
-      event.type === "long.ledger_commit_proposal" &&
-      event.payload.input.chapterCardId === chapter.chapterCardId)
+      ((event.type === "long.continuity_file_proposal" &&
+        event.payload.files.every(
+          ({ chapterCardId }) =>
+            chapterCardId === chapter.chapterCardId
+        )) ||
+        (event.type === "long.ledger_commit_proposal" &&
+          event.payload.input.chapterCardId === chapter.chapterCardId)))
   );
 }
 
@@ -106,12 +128,14 @@ export interface LongWritingOrchestrator {
   currentChapter: ComputedRef<LongChapterReadiness | null>;
   startDispatch(
     event: Extract<
-      LongWorkspaceProposalEvent,
+      LongWritingWorkflowEvent,
       { type: "long.chapter_dispatch_proposal" }
     >
   ): Promise<void>;
-  handleApplied(event: LongWorkspaceProposalEvent): Promise<boolean>;
-  handleRejected(event: LongWorkspaceProposalEvent): boolean;
+  handleApplied(event: LongWritingWorkflowEvent): Promise<boolean>;
+  handleChapterSaved(bookId: string, chapterCardId: string): Promise<boolean>;
+  handleChapterRejected(bookId: string, chapterCardId: string): boolean;
+  handleRejected(event: LongWritingWorkflowEvent): boolean;
   handleRunFailure(
     agentId: "expert_section_writer" | "continuity_ledger",
     error: string
@@ -294,7 +318,7 @@ export function useLongWritingOrchestrator(
 
   async function startDispatch(
     event: Extract<
-      LongWorkspaceProposalEvent,
+      LongWritingWorkflowEvent,
       { type: "long.chapter_dispatch_proposal" }
     >
   ): Promise<void> {
@@ -324,7 +348,7 @@ export function useLongWritingOrchestrator(
   }
 
   async function handleApplied(
-    event: LongWorkspaceProposalEvent
+    event: LongWritingWorkflowEvent
   ): Promise<boolean> {
     const bookId = state.value.bookId;
     const chapter = currentChapter.value;
@@ -336,16 +360,6 @@ export function useLongWritingOrchestrator(
       return false;
     }
     const runEpoch = epoch;
-    if (event.type === "long.chapter_write_proposal") {
-      if (
-        state.value.phase !== "awaiting_writer_approval" ||
-        event.payload.input.chapterCardId !== chapter.chapterCardId
-      ) {
-        return false;
-      }
-      await passWriteBarrier(runEpoch);
-      return true;
-    }
     if (event.type === "long.ledger_commit_proposal") {
       if (
         state.value.phase !== "awaiting_ledger_approval" ||
@@ -357,6 +371,45 @@ export function useLongWritingOrchestrator(
       return true;
     }
     return false;
+  }
+
+  async function handleChapterSaved(
+    bookId: string,
+    chapterCardId: string
+  ): Promise<boolean> {
+    const chapter = currentChapter.value;
+    if (
+      !chapter ||
+      state.value.bookId !== bookId ||
+      state.value.phase !== "awaiting_writer_approval" ||
+      chapter.chapterCardId !== chapterCardId
+    ) {
+      return false;
+    }
+    await passWriteBarrier(epoch);
+    return true;
+  }
+
+  function handleChapterRejected(
+    bookId: string,
+    chapterCardId: string
+  ): boolean {
+    const chapter = currentChapter.value;
+    if (
+      !chapter ||
+      state.value.bookId !== bookId ||
+      state.value.phase !== "awaiting_writer_approval" ||
+      chapter.chapterCardId !== chapterCardId
+    ) {
+      return false;
+    }
+    fail(
+      new Error(
+        `已拒绝“${chapter.title}”的正文写入；可修改要求后重试当前章，计划不会跳章。`
+      ),
+      "check"
+    );
+    return true;
   }
 
   async function retry(): Promise<void> {
@@ -378,26 +431,13 @@ export function useLongWritingOrchestrator(
     await checkAndStart(runEpoch);
   }
 
-  function handleRejected(event: LongWorkspaceProposalEvent): boolean {
+  function handleRejected(event: LongWritingWorkflowEvent): boolean {
     const chapter = currentChapter.value;
     if (
       !chapter ||
       state.value.bookId !== event.payload.bookId
     ) {
       return false;
-    }
-    if (
-      event.type === "long.chapter_write_proposal" &&
-      state.value.phase === "awaiting_writer_approval" &&
-      event.payload.input.chapterCardId === chapter.chapterCardId
-    ) {
-      fail(
-        new Error(
-          `已拒绝“${chapter.title}”的正文写入；可修改要求后重试当前章，计划不会跳章。`
-        ),
-        "check"
-      );
-      return true;
     }
     if (
       event.type === "long.ledger_commit_proposal" &&
@@ -459,6 +499,8 @@ export function useLongWritingOrchestrator(
     currentChapter,
     startDispatch,
     handleApplied,
+    handleChapterSaved,
+    handleChapterRejected,
     handleRejected,
     handleRunFailure,
     retry,

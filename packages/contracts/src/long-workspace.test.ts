@@ -19,6 +19,9 @@ import {
   createLongBookSummary,
   createLongWorkspaceNavigationSnapshot,
   longChapterBodyFileId,
+  longChapterCardFileId,
+  longChapterContinuityFilePath,
+  longChapterForeshadowingChangesFileId,
   longChapterCharacterStateFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
@@ -43,6 +46,10 @@ function chapterFiles(chapterCardId: string, order: number) {
     body: file(
       longChapterBodyFileId(chapterCardId),
       `long/chapters/${order}/body.md`
+    ),
+    card: file(
+      longChapterCardFileId(chapterCardId),
+      `long/chapters/${order}/card.md`
     ),
     characterState: file(
       longChapterCharacterStateFileId(chapterCardId),
@@ -130,20 +137,14 @@ function workspaceIndex() {
           volumeId: "volume_one",
           primaryArcId: "arc_letter",
           title: "雨夜来信",
-          narrativeOrder: 1,
-          outline: "林岚收到来信。",
-          worldConstraints: "来信不能被普通火焰烧毁。",
-          characterIds: ["character_alice"]
+          narrativeOrder: 1
         },
         {
           id: "chapter_two",
           volumeId: "volume_one",
           primaryArcId: "arc_letter",
           title: "旧钟楼",
-          narrativeOrder: 2,
-          outline: "林岚前往旧钟楼。",
-          worldConstraints: "",
-          characterIds: ["character_alice"]
+          narrativeOrder: 2
         }
       ],
       storyEvents: [
@@ -338,6 +339,15 @@ describe("independent long-form workspace contracts", () => {
       openLoops: [],
       latestHandoff: null
     });
+    expect(book.workspaceIndex.chapters[0]?.foreshadowingChanges).toMatchObject({
+      id: longChapterForeshadowingChangesFileId("chapter_one"),
+      path: longChapterContinuityFilePath(
+        "chapter_one",
+        "foreshadowing-changes.md"
+      )
+    });
+    expect(book.workspaceIndex.chapters[0]?.worldReveals).toBeNull();
+    expect(book.workspaceIndex.chapters[0]?.characterContinuity).toEqual([]);
     expect(navigation.chapterCards[0]).toEqual({
       id: "chapter_one",
       volumeId: "volume_one",
@@ -458,6 +468,7 @@ describe("independent long-form workspace contracts", () => {
     });
     const parsedCommitted =
       LongWorkspaceIndexSnapshotSchema.parse(committed);
+    expect(parsedCommitted.ledger.commits[0]?.mode).toBe("structured");
 
     const orphanSubject = structuredClone(parsedCommitted);
     orphanSubject.ledger.projection.facts[0]!.subjectId =
@@ -529,7 +540,7 @@ describe("independent long-form workspace contracts", () => {
     ).toBe(false);
 
     const duplicateReferences = workspaceIndex();
-    duplicateReferences.plot.chapterCards[0]!.characterIds = [
+    duplicateReferences.plot.storyEvents[0]!.characterIds = [
       "character_alice",
       "character_alice"
     ];
@@ -927,7 +938,9 @@ describe("independent long-form workspace contracts", () => {
     expect(characterProfile.systemPrompt).not.toContain("fileId");
     expect(characterProfile.systemPrompt).not.toContain("file_id");
     expect(characterProfile.systemPrompt).not.toContain("bookId");
-    expect(characterProfile.systemPrompt).toContain("连续性账本接管");
+    expect(characterProfile.systemPrompt).toContain(
+      "映射最近一章已经提交的连续性 Markdown"
+    );
     const plotProfile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"
     )!;
@@ -940,5 +953,45 @@ describe("independent long-form workspace contracts", () => {
     expect(plotProfile.systemPrompt).toContain("伏笔线与伏笔触点继续完全使用");
     expect(plotProfile.systemPrompt).not.toContain("get_long_workspace_index");
     expect(plotProfile.systemPrompt).not.toContain("fileId");
+    const writerProfile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "expert_section_writer"
+    )!;
+    expect(writerProfile.systemPrompt).toContain(
+      "每张章卡对应一个独立的 Markdown 正文文件"
+    );
+    expect(writerProfile.systemPrompt).toContain(
+      "每次工具调用只能提交运行时锁定的当前章"
+    );
+    expect(writerProfile.systemPrompt).toContain(
+      "content 只放完整小说正文"
+    );
+    expect(writerProfile.systemPrompt).toContain("会话 diff 审批卡");
+    expect(writerProfile.systemPrompt).toContain(
+      "本智能体唯一的写作产物是当前章小说正文"
+    );
+    expect(writerProfile.systemPrompt).toContain(
+      "不得编写、草拟、补全或修改章末人物状态、交接文档"
+    );
+    expect(writerProfile.systemPrompt).toContain(
+      "由连续性账本智能体读取正文并独立生成"
+    );
+    expect(writerProfile.welcomeShortcuts).toEqual([
+      "写当前章",
+      "续写当前章",
+      "检查本章正文"
+    ]);
+    const continuityProfile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "continuity_ledger"
+    )!;
+    expect(continuityProfile.systemPrompt).toContain("list_continuity_files");
+    expect(continuityProfile.systemPrompt).toContain("read_continuity_file");
+    expect(continuityProfile.systemPrompt).toContain("create_continuity_file");
+    expect(continuityProfile.systemPrompt).toContain("write_continuity_file");
+    expect(continuityProfile.systemPrompt).toContain("edit_continuity_file");
+    expect(continuityProfile.systemPrompt).toContain("propose_continuity_commit");
+    expect(continuityProfile.systemPrompt).not.toContain("set_long_ledger_");
+    expect(continuityProfile.systemPrompt).not.toContain(
+      "propose_long_ledger_commit"
+    );
   });
 });

@@ -1051,7 +1051,9 @@ const WRITE_TOOL_NAMES = new Set([
   "edit_character_overview",
   "create_plot_design",
   "write_plot_design",
-  "edit_plot_design"
+  "edit_plot_design",
+  "write_chapter_draft",
+  "edit_chapter_draft"
 ]);
 
 const CREATE_FILE_TOOL_NAMES = new Set([
@@ -1074,7 +1076,8 @@ const DIRECT_WRITE_TOOL_NAMES = new Set([
   "write_worldbuilding_content",
   "write_character_file",
   "write_character_overview",
-  "write_plot_design"
+  "write_plot_design",
+  "write_chapter_draft"
 ]);
 
 function isWriteTool(tool: AgentToolTrace): boolean {
@@ -1129,6 +1132,18 @@ function toolIcon(tool: AgentToolTrace): IconName {
 
 function toolLabel(tool: AgentToolTrace): string {
   const displayName = workspaceToolLabel(tool.name);
+  if (tool.name === "write_chapter_draft") {
+    if (tool.status === "error") return "正文审核生成失败";
+    if (tool.status === "completed") return "当前章正文待审核";
+    if (tool.status === "running") return "正在生成正文审核";
+    return "正在生成当前章正文";
+  }
+  if (tool.name === "edit_chapter_draft") {
+    if (tool.status === "error") return "正文修改审核生成失败";
+    if (tool.status === "completed") return "当前章正文修改待审核";
+    if (tool.status === "running") return "正在生成正文修改审核";
+    return "正在生成当前章正文修改";
+  }
   if (CREATE_FILE_TOOL_NAMES.has(tool.name)) {
     if (tool.status === "error") return "创建文件失败";
     if (tool.status === "completed") return "文件创建变更已生成";
@@ -1179,7 +1194,11 @@ function compactTrace(value: string): string {
 function toolDetail(tool: AgentToolTrace): string | undefined {
   if (tool.status === "preparing") {
     const length = writeToolText(tool).length;
-    return length > 0 ? `已生成 ${length.toLocaleString("zh-CN")} 字符` : "参数生成中";
+    return length > 0
+      ? `已生成 ${length.toLocaleString("zh-CN")} 字符`
+      : isWriteTool(tool)
+        ? "待审阅文本生成中"
+        : "参数生成中";
   }
   if (isWriteTool(tool) && tool.status === "running") {
     return `正在提交${writeActionLabel(writeToolAction(tool))}内容`;
@@ -1265,6 +1284,7 @@ function writeToolText(tool: AgentToolTrace): string {
   if (tool.args && typeof tool.args === "object") {
     const args = tool.args as Record<string, unknown>;
     if (typeof args.text === "string") return args.text;
+    if (typeof args.content === "string") return args.content;
     if (Array.isArray(args.replacements)) {
       return args.replacements
         .flatMap((replacement) =>
@@ -1293,9 +1313,16 @@ function writeToolText(tool: AgentToolTrace): string {
   const source = tool.argumentsText ?? "";
   return (
     streamedStringField(source, "text") ||
+    streamedStringField(source, "content") ||
     streamedStringField(source, "body") ||
     streamedStringField(source, "new_text")
   );
+}
+
+function writeToolContentLabel(tool: AgentToolTrace): string {
+  return tool.name === "write_chapter_draft" || tool.name === "edit_chapter_draft"
+    ? "待审阅正文"
+    : "写入内容";
 }
 
 function writeToolTarget(tool: AgentToolTrace): string | undefined {
@@ -1491,6 +1518,13 @@ function proposalStatusMessage(
     proposal.longPlotDesignTarget
   ) {
     return "接受后将校验结构影响并保存剧情设计。";
+  }
+  if (
+    !proposal.statusMessage &&
+    proposal.status === "pending" &&
+    proposal.longDraftTarget
+  ) {
+    return "接受后将把当前章正文保存到该章节独立的 Markdown 文件。";
   }
   return proposal.statusMessage?.trim() || proposalStatusMessages[proposal.status];
 }
@@ -1751,7 +1785,7 @@ function copyMessageLabel(message: ChatMessage): string {
                   <div class="processing-live-body tool-detail">
                     <div v-if="isWriteTool(item.tool)" class="write-tool-detail">
                       <div class="write-tool-output-heading">
-                        <span>写入内容</span>
+                        <span>{{ writeToolContentLabel(item.tool) }}</span>
                         <small v-if="writeToolTarget(item.tool)">{{ writeToolTarget(item.tool) }}</small>
                         <small>{{ writeToolText(item.tool).length.toLocaleString('zh-CN') }} 字符</small>
                       </div>
@@ -1862,7 +1896,7 @@ function copyMessageLabel(message: ChatMessage): string {
                     <div class="processing-live-body tool-detail">
                       <div v-if="isWriteTool(item.tool)" class="write-tool-detail">
                         <div class="write-tool-output-heading">
-                          <span>写入内容</span>
+                          <span>{{ writeToolContentLabel(item.tool) }}</span>
                           <small v-if="writeToolTarget(item.tool)">{{ writeToolTarget(item.tool) }}</small>
                           <small>{{ writeToolText(item.tool).length.toLocaleString('zh-CN') }} 字符</small>
                         </div>

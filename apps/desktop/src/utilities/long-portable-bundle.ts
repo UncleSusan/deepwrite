@@ -5,6 +5,8 @@ import {
   LongProjectManifestSchema,
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
+  longChapterContinuityFilePath,
+  longChapterForeshadowingChangesFileId,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId,
   longWorldbuildingOverviewContentPath,
@@ -287,8 +289,17 @@ function indexedFiles(
     ]),
     ...index.chapters.flatMap((entry) => [
       { reference: entry.body, kind: "markdown" as const },
+      { reference: entry.card, kind: "markdown" as const },
       { reference: entry.characterState, kind: "markdown" as const },
-      { reference: entry.handoff, kind: "markdown" as const }
+      { reference: entry.handoff, kind: "markdown" as const },
+      { reference: entry.foreshadowingChanges, kind: "markdown" as const },
+      ...(entry.worldReveals
+        ? [{ reference: entry.worldReveals, kind: "markdown" as const }]
+        : []),
+      ...entry.characterContinuity.flatMap((continuity) => [
+        { reference: continuity.currentState, kind: "markdown" as const },
+        { reference: continuity.history, kind: "markdown" as const }
+      ])
     ]),
     ...index.plot.storyPlots.map((entry) => ({
       reference: entry.file,
@@ -377,6 +388,8 @@ export function assertLongLedgerRecordMatchesIndex(
     record.committedThroughChapterId !== entry.chapterCardId ||
     record.previousCommittedThroughChapterId !==
       (previous?.chapterCardId ?? null) ||
+    entry.mode !==
+      (record.schemaVersion === 4 ? "text_files" : "structured") ||
     chapter?.commitId !== entry.id ||
     !sameIdSet(
       entry.placementIds,
@@ -504,6 +517,44 @@ export function assertLongLedgerRecordChain(
     }
     previousRecord = record;
     orderedRecords.push(record);
+    if (record.schemaVersion === 4) {
+      const chapter = index.chapters.find(
+        ({ chapterCardId }) => chapterCardId === record.chapterCardId
+      );
+      if (!chapter) {
+        throw new Error(
+          `v4 连续性账本引用了不存在的章节：${record.chapterCardId}。`
+        );
+      }
+      const expectedFiles = [
+        chapter.characterState,
+        chapter.handoff,
+        chapter.foreshadowingChanges,
+        ...(chapter.worldReveals ? [chapter.worldReveals] : []),
+        ...chapter.characterContinuity.flatMap((continuity) => [
+          continuity.currentState,
+          continuity.history
+        ])
+      ];
+      const auditedById = new Map(
+        record.continuityFiles.map((file) => [file.fileId, file])
+      );
+      if (
+        auditedById.size !== expectedFiles.length ||
+        expectedFiles.some((reference) => {
+          const audited = auditedById.get(reference.id);
+          return (
+            !audited ||
+            audited.path !== reference.path ||
+            audited.revision !== reference.revision
+          );
+        })
+      ) {
+        throw new Error(
+          `v4 连续性账本的文件清单与章节索引不一致：${record.id}。`
+        );
+      }
+    }
     if (record.schemaVersion === 3) {
       const changedFileIds = new Set(
         record.fileChanges.map(({ fileId }) => fileId)
@@ -901,6 +952,76 @@ function normalizeLegacyPortableWorldbuilding(
     : { index: rawIndex, files };
 }
 
+function normalizeLegacyPortableChapterContinuity(
+  rawIndex: unknown,
+  rawFiles: unknown
+): { index: unknown; files: unknown[] } {
+  if (
+    !isRecord(rawIndex) ||
+    !Array.isArray(rawIndex.chapters) ||
+    !Array.isArray(rawFiles)
+  ) {
+    return {
+      index: rawIndex,
+      files: Array.isArray(rawFiles) ? rawFiles : []
+    };
+  }
+  let migrated = false;
+  const files = [...rawFiles];
+  const chapters = rawIndex.chapters.map((rawChapter) => {
+    if (
+      !isRecord(rawChapter) ||
+      typeof rawChapter.chapterCardId !== "string" ||
+      isRecord(rawChapter.foreshadowingChanges)
+    ) {
+      return rawChapter;
+    }
+    migrated = true;
+    const body = isRecord(rawChapter.body) ? rawChapter.body : {};
+    const chapterCardId = rawChapter.chapterCardId;
+    const id = longChapterForeshadowingChangesFileId(chapterCardId);
+    const path = longChapterContinuityFilePath(
+      chapterCardId,
+      "foreshadowing-changes.md"
+    );
+    const existing = files.find(
+      (rawFile) => isRecord(rawFile) && rawFile.id === id
+    );
+    const content =
+      isRecord(existing) && typeof existing.content === "string"
+        ? existing.content
+        : "";
+    const revision = contentRevision(content);
+    if (!existing) {
+      files.push({
+        id,
+        path,
+        kind: "markdown",
+        revision,
+        sha256: sha256(content),
+        content
+      });
+    }
+    return {
+      ...rawChapter,
+      foreshadowingChanges: {
+        id,
+        path,
+        revision,
+        updatedAt:
+          typeof body.updatedAt === "string"
+            ? body.updatedAt
+            : "1970-01-01T00:00:00.000Z"
+      },
+      worldReveals: rawChapter.worldReveals ?? null,
+      characterContinuity: rawChapter.characterContinuity ?? []
+    };
+  });
+  return migrated
+    ? { index: { ...rawIndex, chapters }, files }
+    : { index: rawIndex, files };
+}
+
 export function parseLongPortableExportBundle(
   raw: unknown
 ): LongPortableExportBundle {
@@ -926,9 +1047,13 @@ export function parseLongPortableExportBundle(
     indexEntry.value,
     bundle.files
   );
+  const normalizedContinuity = normalizeLegacyPortableChapterContinuity(
+    normalizedWorldbuilding.index,
+    normalizedWorldbuilding.files
+  );
   let manifest = LongProjectManifestSchema.parse(manifestEntry.value);
   const index = LongWorkspaceIndexSnapshotSchema.parse(
-    normalizedWorldbuilding.index
+    normalizedContinuity.index
   );
   if (
     manifest.id !== index.bookId ||
@@ -964,7 +1089,7 @@ export function parseLongPortableExportBundle(
     expected.map((entry) => [entry.reference.id, entry])
   );
   if (
-    normalizedWorldbuilding.files.length !== expected.length
+    normalizedContinuity.files.length !== expected.length
   ) {
     throw new Error("长篇可移植包没有完整包含索引中的全部文档。");
   }
@@ -972,7 +1097,7 @@ export function parseLongPortableExportBundle(
   const seenIds = new Set<string>();
   const seenPaths = new Set<string>();
   const ledgerRecords: LongLedgerCommitRecord[] = [];
-  const files = normalizedWorldbuilding.files.map((rawFile) => {
+  const files = normalizedContinuity.files.map((rawFile) => {
     const file = recordOrThrow(rawFile, "文件条目");
     if (
       typeof file.id !== "string" ||

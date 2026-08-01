@@ -2,107 +2,18 @@ import { describe, expect, it } from "vitest";
 import source from "./LongContinuityWorkspace.vue?raw";
 
 describe("LongContinuityWorkspace", () => {
-  it("provides the five continuity-ledger views from one projection", () => {
-    for (const view of [
-      '"inbox"',
-      '"snapshot"',
-      '"execution"',
-      '"knowledge"',
-      '"history"'
-    ]) {
-      expect(source).toContain(view);
-    }
-    for (const label of [
-      "待核验入账",
-      "当前事实快照",
-      "剧情与伏笔",
-      "信息揭露与知识",
-      "章节流水与接续"
-    ]) {
-      expect(source).toContain(label);
-    }
-    expect(source).toContain("projection.value.facts");
-    expect(source).toContain("projection.value.knowledge");
-    expect(source).toContain("projection.value.openLoops");
-    expect(source).toContain("projection.value.latestHandoff");
-    expect(source).toContain("projection.value.throughCommitId");
-    expect(source).toContain("factById");
-    expect(source).toContain("audienceType");
-    expect(source).toContain("knowledgeLevelLabel");
+  it("is only a text-preview compatibility shell", () => {
+    expect(source).toContain("Compatibility-only shell");
+    expect(source).toContain("<MarkdownContent");
+    expect(source).toContain("连续性章节文本预览");
+    expect(source).not.toContain("continuity-view-tabs");
+    expect(source).not.toContain("LongContinuityProjectionPanel");
+    expect(source).not.toContain("JSON.parse");
   });
 
-  it("accepts chapter evidence and a full record without becoming an editor", () => {
-    for (const prop of [
-      "bookId: string",
-      "snapshot: LongWorkspaceIndexSnapshot",
-      "view?: LongContinuityWorkspaceView",
-      "activeChapterId?: string",
-      "evidenceContent?: string | null",
-      "currentRecord?: LongLedgerCommitRecord | null"
-    ]) {
-      expect(source).toContain(prop);
-    }
-    expect(source).toContain("正文是唯一事实证据");
-    expect(source).toContain("人物当前状态与历史");
-    expect(source).toContain("知识揭露与下一章接续");
-    const evidenceStart = source.indexOf("const evidenceRows = computed");
-    const evidenceEnd = source.indexOf("const evidenceReady", evidenceStart);
-    const evidenceProjection = source.slice(evidenceStart, evidenceEnd);
-    expect(evidenceProjection).toContain('id: "body"');
-    expect(evidenceProjection).not.toContain('id: "characterState"');
-    expect(evidenceProjection).not.toContain('id: "handoff"');
-    expect(source).toContain("currentRecord.fileChanges");
-    expect(source).not.toContain("<textarea");
-    expect(source).not.toContain('contenteditable="true"');
-  });
-
-  it("keeps current state traceable to chapter commits and forwards navigation", () => {
-    expect(source).toContain("selectCommit: [commitId: string]");
-    expect(source).toContain('emit("selectCommit", commitId)');
-    expect(source).toContain("chapterLabel(commit.chapterCardId)");
-    expect(source).toContain("commit.placementIds.length");
-    expect(source).toContain("commit.foreshadowingBeatIds.length");
-    expect(source).toContain("<LongContinuityProjectionPanel");
-  });
-
-  it("uses themed button tabs instead of native selects or layout-shifting feedback", () => {
-    expect(source).not.toContain("<select");
-    expect(source).not.toContain('class="error');
-    expect(source).not.toContain('class="warning');
-    expect(source).toContain('class="continuity-view-tabs"');
-    expect(source).toContain("var(--surface-hover)");
-    expect(source).toContain("var(--surface-selected)");
-    expect(source).toContain("border-bottom-color: var(--accent)");
-    expect(source).toContain('class="status-badge"');
-    expect(source).toContain('class="history-stats"');
-    expect(source).toContain("章节提交流水");
-    expect(source).toContain("scrollbar-gutter: stable");
-    expect(source).toContain("resetContentScroll");
-  });
-
-  it("uses the shared visual tokens and container-based compact layouts", () => {
-    for (const token of [
-      "--surface-main",
-      "--surface-raised",
-      "--surface-muted",
-      "--surface-hover",
-      "--surface-selected",
-      "--theme-line",
-      "--theme-line-soft",
-      "--text-primary",
-      "--text-secondary",
-      "--text-tertiary",
-      "--accent",
-      "--accent-soft"
-    ]) {
-      expect(source).toContain(`var(${token})`);
-    }
-    expect(source).toContain("container: continuity-workspace / inline-size");
-    expect(source).toContain(
-      "@container continuity-workspace (max-width: 52rem)"
-    );
-    expect(source).toContain(
-      "@container continuity-workspace (max-width: 34rem)"
-    );
+  it("uses the shared surface and text tokens", () => {
+    expect(source).toContain("var(--surface-main)");
+    expect(source).toContain("var(--text-primary)");
+    expect(source).toContain("var(--text-tertiary)");
   });
 });

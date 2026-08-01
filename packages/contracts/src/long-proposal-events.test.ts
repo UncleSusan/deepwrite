@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LongChapterWriteProposalEventEnvelopeSchema,
   LongCharacterFileProposalEventEnvelopeSchema,
+  LongContinuityFileProposalEventEnvelopeSchema,
   LongChapterDispatchProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
   LongMutationProposalEventEnvelopeSchema,
@@ -10,6 +11,10 @@ import {
   createEnvelope,
   longCharacterCoreProfileFileId,
   longCharacterFilePath,
+  longChapterBodyFileId,
+  longChapterContinuityFilePath,
+  longChapterFilePath,
+  longChapterForeshadowingChangesFileId,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId
 } from "./index";
@@ -47,6 +52,71 @@ const ledgerAudit = {
 };
 
 describe("long proposal event contracts", () => {
+  it("preserves typed continuity text-file changes in the system event union", () => {
+    const fileId = longChapterForeshadowingChangesFileId("chapter_one");
+    const nextRevision = "v1:6:12345678";
+    const proposal = createEnvelope(
+      "long.continuity_file_proposal",
+      {
+        ...common,
+        agentId: "continuity_ledger" as const,
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:00.000Z",
+          operations: [],
+          documentWrites: [
+            {
+              proposalId: "proposal_continuity_foreshadowing",
+              fileId,
+              content: "蜡封伏笔已种下。",
+              mode: "replace" as const,
+              expectedRevision: revision,
+              nextRevision,
+              updatedAt: "2026-07-26T12:00:00.000Z",
+              reason: "记录本章伏笔变化"
+            }
+          ]
+        },
+        baseProjectRevision: 11,
+        files: [
+          {
+            chapterCardId: "chapter_one",
+            role: "foreshadowing_changes" as const,
+            characterId: null,
+            fileId,
+            filePath: longChapterContinuityFilePath(
+              "chapter_one",
+              "foreshadowing-changes.md"
+            ),
+            title: "第一章 / 伏笔变化",
+            operation: "edit" as const,
+            beforeText: "",
+            afterText: "蜡封伏笔已种下。",
+            beforeRevision: revision,
+            nextRevision
+          }
+        ]
+      },
+      { id: "event-long-continuity-file", context }
+    );
+
+    expect(
+      LongContinuityFileProposalEventEnvelopeSchema.parse(proposal).payload
+    ).toMatchObject({
+      agentId: "continuity_ledger",
+      files: [
+        {
+          role: "foreshadowing_changes",
+          beforeText: "",
+          afterText: "蜡封伏笔已种下。"
+        }
+      ]
+    });
+    expect(SystemEventEnvelopeSchema.parse(proposal).type).toBe(
+      "long.continuity_file_proposal"
+    );
+  });
+
   it("accepts independent mutation, chapter-write and ledger-commit events", () => {
     const mutation = createEnvelope(
       "long.mutation_proposal",
@@ -73,14 +143,32 @@ describe("long proposal event contracts", () => {
       {
         ...common,
         agentId: "expert_section_writer" as const,
-        input: {
-          bookId: common.bookId,
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:00.000Z",
+          operations: [],
+          documentWrites: [{
+            proposalId: "proposal_chapter_one",
+            fileId: longChapterBodyFileId("chapter_one"),
+            content: "正文",
+            mode: "replace" as const,
+            expectedRevision: revision,
+            nextRevision: "v1:6:12345678",
+            updatedAt: "2026-07-26T12:00:00.000Z",
+            reason: "完成第一章"
+          }]
+        },
+        baseProjectRevision: 11,
+        file: {
           chapterCardId: "chapter_one",
-          body: { content: "正文", baseRevision: revision },
-          characterState: { content: "人物状态", baseRevision: revision },
-          handoff: { content: "下一章交接", baseRevision: revision },
-          baseWorkspaceRevision: 7,
-          baseProjectRevision: 11
+          chapterTitle: "第一章",
+          fileId: longChapterBodyFileId("chapter_one"),
+          filePath: longChapterFilePath("chapter_one", "body.md"),
+          operation: "create" as const,
+          beforeText: "",
+          afterText: "正文",
+          beforeRevision: revision,
+          nextRevision: "v1:6:12345678"
         }
       },
       { id: "event-long-chapter", context }
@@ -223,6 +311,17 @@ describe("long proposal event contracts", () => {
           ...ledgerAudit,
           baseWorkspaceRevision: 7,
           baseProjectRevision: 11
+        },
+        file: {
+          chapterCardId: "chapter_one",
+          chapterTitle: "第一章",
+          fileId: longChapterBodyFileId("chapter_one"),
+          filePath: longChapterFilePath("chapter_one", "body.md"),
+          operation: "create" as const,
+          beforeText: "",
+          afterText: "",
+          beforeRevision: revision,
+          nextRevision: revision
         }
       },
       { id: "event-long-ledger", context }
@@ -260,10 +359,15 @@ describe("long proposal event contracts", () => {
         }
       ]
     });
-    expect(LongChapterWriteProposalEventEnvelopeSchema.parse(chapter).payload.input)
+    expect(LongChapterWriteProposalEventEnvelopeSchema.parse(chapter).payload)
       .toMatchObject({
-        chapterCardId: "chapter_one",
-        body: { content: "正文" }
+        file: {
+          chapterCardId: "chapter_one",
+          afterText: "正文"
+        },
+        batch: {
+          documentWrites: [{ content: "正文" }]
+        }
       });
     expect(
       LongChapterDispatchProposalEventEnvelopeSchema.parse(dispatch).payload
@@ -304,27 +408,45 @@ describe("long proposal event contracts", () => {
     ]);
   });
 
-  it("rejects context mismatch and nested inputs for another book", () => {
+  it("rejects context mismatch and a mismatched chapter document write", () => {
     const chapter = createEnvelope(
       "long.chapter_write_proposal",
       {
         ...common,
         agentId: "expert_section_writer" as const,
-        input: {
-          bookId: "longbook_other",
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:00.000Z",
+          operations: [],
+          documentWrites: [{
+            proposalId: "proposal_chapter_mismatch",
+            fileId: longChapterBodyFileId("chapter_one"),
+            content: "不匹配的正文",
+            mode: "replace" as const,
+            expectedRevision: revision,
+            nextRevision: revision,
+            updatedAt: "2026-07-26T12:00:00.000Z",
+            reason: "错误正文"
+          }]
+        },
+        baseProjectRevision: 11,
+        file: {
           chapterCardId: "chapter_one",
-          body: { content: "", baseRevision: revision },
-          characterState: { content: "", baseRevision: revision },
-          handoff: { content: "", baseRevision: revision },
-          baseWorkspaceRevision: 7,
-          baseProjectRevision: 11
+          chapterTitle: "第一章",
+          fileId: longChapterBodyFileId("chapter_one"),
+          filePath: longChapterFilePath("chapter_one", "body.md"),
+          operation: "create" as const,
+          beforeText: "",
+          afterText: "",
+          beforeRevision: revision,
+          nextRevision: revision
         }
       },
       { id: "event-long-chapter-other", context }
     );
     expect(() =>
       LongChapterWriteProposalEventEnvelopeSchema.parse(chapter)
-    ).toThrow(/proposal book/u);
+    ).toThrow(/matching body document write/u);
 
     const ledger = createEnvelope(
       "long.ledger_commit_proposal",

@@ -2,8 +2,11 @@ import {
   LongWorkspaceOperationBatchSchema,
   createEmptyLongMarkdownFileReference,
   longChapterBodyFileId,
+  longChapterCardFileId,
   longChapterCharacterStateFileId,
+  longChapterContinuityFilePath,
   longChapterFilePath,
+  longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
   longCharacterCurrentStateFileId,
@@ -127,16 +130,10 @@ export interface CreateLongChapterInput {
   volumeId: string;
   primaryArcId: string;
   title: string;
-  outline?: string;
-  worldConstraints?: string;
-  characterIds?: string[];
 }
 
 export interface UpdateLongChapterInput {
   title?: string;
-  outline?: string;
-  worldConstraints?: string;
-  characterIds?: string[];
   volumeId?: string;
   primaryArcId?: string;
 }
@@ -1044,9 +1041,6 @@ export function createLongStructureMutationBuilder(
       if (primaryArc.volumeId !== input.volumeId) {
         throw new Error("Primary arc must belong to the selected volume.");
       }
-      for (const characterId of input.characterIds ?? []) {
-        assertPresent(character(characterId), "Chapter character");
-      }
       const updatedAt = now();
       const id = createId("chapter");
       const operation: OperationOf<"chapter.create"> = {
@@ -1059,16 +1053,18 @@ export function createLongStructureMutationBuilder(
           narrativeOrder:
             snapshot.plot.chapterCards.filter(
               (candidate) => candidate.volumeId === input.volumeId
-            ).length + 1,
-          outline: input.outline ?? "",
-          worldConstraints: input.worldConstraints ?? "",
-          characterIds: normalizedList(input.characterIds)
+            ).length + 1
         },
         files: {
           chapterCardId: id,
           body: createEmptyLongMarkdownFileReference(
             longChapterBodyFileId(id),
             longChapterFilePath(id, "body.md"),
+            updatedAt
+          ),
+          card: createEmptyLongMarkdownFileReference(
+            longChapterCardFileId(id),
+            longChapterFilePath(id, "card.md"),
             updatedAt
           ),
           characterState: createEmptyLongMarkdownFileReference(
@@ -1081,6 +1077,16 @@ export function createLongStructureMutationBuilder(
             longChapterFilePath(id, "handoff.md"),
             updatedAt
           ),
+          foreshadowingChanges: createEmptyLongMarkdownFileReference(
+            longChapterForeshadowingChangesFileId(id),
+            longChapterContinuityFilePath(
+              id,
+              "foreshadowing-changes.md"
+            ),
+            updatedAt
+          ),
+          worldReveals: null,
+          characterContinuity: [],
           commitId: null
         }
       };
@@ -1098,18 +1104,8 @@ export function createLongStructureMutationBuilder(
       if (targetArc.volumeId !== targetVolumeId) {
         throw new Error("Target primary arc must belong to the target volume.");
       }
-      for (const characterId of input.characterIds ?? []) {
-        assertPresent(character(characterId), "Chapter character");
-      }
       const patch: Partial<OperationOf<"chapter.update">["patch"]> = {
-        ...(input.title !== undefined ? { title: input.title.trim() } : {}),
-        ...(input.outline !== undefined ? { outline: input.outline } : {}),
-        ...(input.worldConstraints !== undefined
-          ? { worldConstraints: input.worldConstraints }
-          : {}),
-        ...(input.characterIds !== undefined
-          ? { characterIds: normalizedList(input.characterIds) }
-          : {})
+        ...(input.title !== undefined ? { title: input.title.trim() } : {})
       };
       const moved =
         targetVolumeId !== current.volumeId ||

@@ -87,4 +87,10 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).not.toContain('aria-label="斜体"');
     expect(source).not.toContain('aria-label="引用"');
   });
+
+  it("renders creation, skill, and material document previews through Markdown", () => {
+    expect(source).toContain('import MarkdownContent from "./MarkdownContent.vue"');
+    expect(source).toContain('<MarkdownContent v-if="content.trim()" :content="content" />');
+    expect(source).not.toContain('v-for="(paragraph, index) in paragraphs"');
+  });
 });

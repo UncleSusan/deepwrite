@@ -23,7 +23,7 @@ function chapterWriteProposal(
       runId: "run-1",
       bookId: patch.bookId ?? "book-1",
       agentId: patch.agentId ?? "expert_section_writer",
-      input: {
+      file: {
         chapterCardId: patch.chapterCardId ?? "chapter-1"
       }
     }

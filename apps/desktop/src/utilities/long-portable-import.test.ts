@@ -237,6 +237,26 @@ function rehashLedgerMutation(
   bundle.manifest.sha256 = sha256(serializeJson(bundle.manifest.value));
 }
 
+function portableTextFileCommitFixture(): LongPortableExportBundle {
+  const bundle = portableImportFixture();
+  const chapter = bundle.index.value.chapters[0]!;
+  bundle.index.value.ledger.commits[0]!.mode = "text_files";
+  rehashLedgerMutation(bundle, (record) => {
+    record.schemaVersion = 4;
+    record.commitMessage = "留存第一章连续性文本";
+    record.continuityFiles = [
+      chapter.characterState,
+      chapter.handoff,
+      chapter.foreshadowingChanges
+    ].map(({ id, path, revision: fileRevision }) => ({
+      fileId: id,
+      path,
+      revision: fileRevision
+    }));
+  });
+  return bundle;
+}
+
 describe("long portable import parser", () => {
   it("accepts a complete bundle with a cross-validated ledger record", () => {
     const parsed = parseLongPortableExportBundle(portableImportFixture());
@@ -244,6 +264,34 @@ describe("long portable import parser", () => {
     expect(parsed.index.value.ledger.commits).toHaveLength(1);
     expect(parsed.files.some(({ kind }) => kind === "ledger-record")).toBe(
       true
+    );
+  });
+
+  it("accepts a lightweight v4 text-file commit and rejects an audited revision mismatch", () => {
+    const parsed = parseLongPortableExportBundle(
+      portableTextFileCommitFixture()
+    );
+    expect(parsed.index.value.ledger.commits[0]).toMatchObject({
+      mode: "text_files",
+      chapterCardId: parsed.index.value.chapters[0]!.chapterCardId
+    });
+    const parsedRecord = JSON.parse(
+      parsed.files.find(({ kind }) => kind === "ledger-record")!.content
+    ) as { schemaVersion: number; fileChanges: unknown[] };
+    expect(parsedRecord).toMatchObject({
+      schemaVersion: 4,
+      fileChanges: []
+    });
+
+    const mismatched = portableTextFileCommitFixture();
+    rehashLedgerMutation(mismatched, (record) => {
+      const continuityFiles = record.continuityFiles as Array<
+        Record<string, unknown>
+      >;
+      continuityFiles[0]!.revision = revision("不匹配的连续性文件");
+    });
+    expect(() => parseLongPortableExportBundle(mismatched)).toThrow(
+      /v4 连续性账本的文件清单与章节索引不一致/u
     );
   });
 

@@ -2872,56 +2872,56 @@ html[data-theme="dark"] :where(
   justify-content: flex-end;
 }
 
-.message-markdown > :first-child {
+.markdown-content > :first-child {
   margin-top: 0;
 }
 
-.message-markdown > :last-child {
+.markdown-content > :last-child {
   margin-bottom: 0;
 }
 
-.message-markdown p {
+.markdown-content p {
   margin: 0 0 14px;
 }
 
-.message-markdown h1,
-.message-markdown h2,
-.message-markdown h3,
-.message-markdown h4,
-.message-markdown h5,
-.message-markdown h6 {
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
   margin: 22px 0 10px;
   color: var(--text-primary);
   line-height: 1.35;
 }
 
-.message-markdown h1 {
+.markdown-content h1 {
   font-size: 1.42857rem;
 }
 
-.message-markdown h2 {
+.markdown-content h2 {
   font-size: 1.28571rem;
 }
 
-.message-markdown h3,
-.message-markdown h4,
-.message-markdown h5,
-.message-markdown h6 {
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
   font-size: 1.07143rem;
 }
 
-.message-markdown ul,
-.message-markdown ol {
+.markdown-content ul,
+.markdown-content ol {
   margin: 8px 0 14px;
   padding-left: 24px;
 }
 
-.message-markdown li {
+.markdown-content li {
   margin: 5px 0;
   padding-left: 2px;
 }
 
-.message-markdown code {
+.markdown-content code {
   padding: 2px 6px;
   border-radius: 7px;
   background: var(--surface-hover);
@@ -2930,7 +2930,7 @@ html[data-theme="dark"] :where(
   font-size: var(--code-font-size);
 }
 
-.message-markdown pre {
+.markdown-content pre {
   overflow: auto;
   margin: 12px 0 16px;
   padding: 14px 15px;
@@ -2939,20 +2939,20 @@ html[data-theme="dark"] :where(
   line-height: 1.55;
 }
 
-.message-markdown pre code {
+.markdown-content pre code {
   padding: 0;
   background: transparent;
   white-space: pre;
 }
 
-.message-markdown blockquote {
+.markdown-content blockquote {
   margin: 12px 0 16px;
   padding-left: 14px;
   border-left: 3px solid var(--theme-line);
   color: var(--text-secondary);
 }
 
-.message-markdown .markdown-table-wrap {
+.markdown-content .markdown-table-wrap {
   max-width: 100%;
   margin: 12px 0 16px;
   overflow-x: auto;
@@ -2960,7 +2960,7 @@ html[data-theme="dark"] :where(
   border-radius: 10px;
 }
 
-.message-markdown table {
+.markdown-content table {
   width: 100%;
   min-width: max-content;
   border-collapse: collapse;
@@ -2968,8 +2968,8 @@ html[data-theme="dark"] :where(
   line-height: 1.55;
 }
 
-.message-markdown th,
-.message-markdown td {
+.markdown-content th,
+.markdown-content td {
   padding: 9px 12px;
   border-right: 1px solid var(--theme-line-soft, #e2e2de);
   border-bottom: 1px solid var(--theme-line-soft, #e2e2de);
@@ -2977,41 +2977,41 @@ html[data-theme="dark"] :where(
   vertical-align: top;
 }
 
-.message-markdown th {
+.markdown-content th {
   background: var(--surface-muted, #f4f4f2);
   color: var(--text-primary, #1f2124);
   font-weight: 600;
 }
 
-.message-markdown tr:last-child td {
+.markdown-content tr:last-child td {
   border-bottom: 0;
 }
 
-.message-markdown :is(th, td):last-child {
+.markdown-content :is(th, td):last-child {
   border-right: 0;
 }
 
-.message-markdown :is(th, td).align-center {
+.markdown-content :is(th, td).align-center {
   text-align: center;
 }
 
-.message-markdown :is(th, td).align-right {
+.markdown-content :is(th, td).align-right {
   text-align: right;
 }
 
-.message-markdown hr {
+.markdown-content hr {
   height: 1px;
   margin: 20px 0;
   border: 0;
   background: var(--theme-line-soft, #e2e2de);
 }
 
-.message-markdown a {
+.markdown-content a {
   color: var(--accent);
   text-decoration: none;
 }
 
-.message-markdown a:hover {
+.markdown-content a:hover {
   text-decoration: underline;
 }
 
@@ -4020,8 +4020,12 @@ html[data-theme="dark"] .document-editor:focus-visible {
   color: var(--accent, #419d8c);
 }
 
-.document-preview p + p {
-  margin-top: 1.15em;
+.document-preview .markdown-content {
+  white-space: normal;
+}
+
+.document-preview-empty {
+  color: var(--text-tertiary);
 }
 
 .editor-footer {

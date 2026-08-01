@@ -3,6 +3,7 @@ import type {
   AgentUsage,
   CharacterStructureMutation,
   LongCharacterFileChange,
+  LongChapterBodyChange,
   LongWorkspaceOperationBatch,
   LongWorldbuildingFileChange,
   ShortWorkspaceStageId
@@ -50,7 +51,8 @@ export interface AgentEditProposal {
     | "library"
     | "long-worldbuilding"
     | "long-character"
-    | "long-plot-design";
+    | "long-plot-design"
+    | "long-draft";
   documentId: string;
   title: string;
   summary: string;
@@ -97,6 +99,13 @@ export interface AgentEditProposal {
     batch: LongWorkspaceOperationBatch;
     baseProjectRevision: number;
     appliedProjectRevision?: number;
+  };
+  longDraftTarget?: {
+    bookId: string;
+    batch: LongWorkspaceOperationBatch;
+    baseProjectRevision: number;
+    appliedProjectRevision?: number;
+    file: LongChapterBodyChange;
   };
   draftSectionCreationTarget?: {
     sections: Array<{

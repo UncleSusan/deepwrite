@@ -253,14 +253,12 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).not.toContain("activeChapterCardTab");
     expect(editorSource).not.toContain(">\n            章节大纲\n");
     expect(editorSource).not.toContain(">\n            世界约束\n");
-    expect(editorSource).toContain('"saveChapterCardContent"');
+    expect(editorSource).toContain("currentIsChapterCardContent");
+    expect(editorSource).toContain("saveDocumentState(stateKey(selectedFile.file.id)");
     expect(appSource).toContain(
-      '@save-chapter-card-content="saveLongChapterCardContent"'
+      "createLongStructureMutationBuilder(index).createChapter"
     );
-    expect(appSource).toContain(
-      "createLongStructureMutationBuilder(index).updateChapter"
-    );
-    expect(appSource).toContain('worldConstraints: ""');
+    expect(appSource).not.toContain('worldConstraints: ""');
     expect(appSource).toContain("<CreateLongVolumeDialog");
     expect(appSource).toContain("@submit=\"createLongVolume\"");
     expect(appSource).toContain("<CreateLongPlotPointDialog");
@@ -626,7 +624,8 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain('@review-edit="reviewLongAgentEdit"');
     expect(proposalSource).toContain("long.mutation_proposal");
     expect(proposalSource).toContain("long.chapter_dispatch_proposal");
-    expect(proposalSource).toContain("long.chapter_write_proposal");
+    expect(proposalSource).not.toContain("long.chapter_write_proposal");
+    expect(appSource).toContain("stageLongDraftEditProposal(event)");
     expect(proposalSource).toContain("long.ledger_commit_proposal");
     expect(proposalSource).toContain("查看具体影响");
     expect(proposalSource).toContain("删除实体");
@@ -634,8 +633,9 @@ describe("long-form renderer vertical slice", () => {
     expect(proposalSource).toContain("entitySnapshotText(change.before)");
     expect(proposalSource).toContain("entitySnapshotText(change.after)");
     expect(proposalSource).not.toContain(".slice(0, 80)");
-    expect(proposalSource).toContain("本章六类连续性摘要");
-    expect(proposalSource).toContain("decision.note");
+    expect(proposalSource).toContain("long.continuity_file_proposal");
+    expect(proposalSource).toContain("本章留存文件");
+    expect(proposalSource).not.toContain("本章六类连续性摘要");
     expect(proposalSource).toContain("item.approvalMode === \"auto-approve\"");
     expect(proposalSource).toContain("自动保存中");
     expect(appSource).toContain("approvalModeForEvent: longProposalApprovalMode");
@@ -918,7 +918,8 @@ describe("long-form renderer vertical slice", () => {
   it("provides a continuity review entry without replacing chapter authoring", () => {
     expect(appSource).toContain("createLongChapterSelection");
     expect(appSource).toContain("createLongContinuitySelection");
-    expect(longWorkspaceTypeSource).toContain("连续性核对");
+    expect(appSource).toContain('title: "待处理章节"');
+    expect(longWorkspaceTypeSource).toContain("本章对应的 Markdown 状态文件");
     expect(longWorkspaceTypeSource).toContain(
       'root: "continuity_ledger"'
     );

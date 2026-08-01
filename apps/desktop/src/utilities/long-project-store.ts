@@ -43,8 +43,15 @@ import {
   createLongBookSummary,
   deriveLongForeshadowingStatusFromCommittedBeats,
   longChapterBodyFileId,
+  longChapterCardFileId,
+  longChapterCharacterContinuityFilePath,
+  longChapterCharacterCurrentStateFileId,
+  longChapterCharacterHistoryFileId,
   longChapterCharacterStateFileId,
+  longChapterContinuityFilePath,
+  longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
+  longChapterWorldRevealsFileId,
   longCharacterCoreProfileFileId,
   longCharacterCurrentStateFileId,
   longCharacterHistoryFileId,
@@ -77,6 +84,7 @@ import {
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperationBatch,
   type LongWorkspaceOperationResult,
+  type LongTextFilesCommitChapterInput,
   type LongWriteChapterInput,
   type LongWriteChapterResult
 } from "@deepwrite/contracts";
@@ -274,19 +282,27 @@ export type StoreWriteLongChapterInput = Omit<
   LongWriteChapterInput,
   "bookId"
 >;
-type StoreCommitTypedContinuityFields = Pick<
+type LongStructuredCommitChapterInput = Extract<
   LongCommitChapterInput,
+  { mode: "structured" }
+>;
+type StoreCommitTypedContinuityFields = Pick<
+  LongStructuredCommitChapterInput,
   | "coverage"
   | "factMutations"
   | "knowledgeMutations"
   | "openLoopMutations"
   | "chapterOutputs"
 >;
-export type StoreCommitLongChapterInput = Omit<
-  LongCommitChapterInput,
-  "bookId" | keyof StoreCommitTypedContinuityFields
-> &
-  Partial<StoreCommitTypedContinuityFields>;
+export type StoreCommitLongChapterInput =
+  | (Omit<
+      LongStructuredCommitChapterInput,
+      "bookId" | "mode" | keyof StoreCommitTypedContinuityFields
+    > &
+      Partial<StoreCommitTypedContinuityFields> & {
+        mode?: "structured";
+      })
+  | Omit<LongTextFilesCommitChapterInput, "bookId">;
 export type StoreRollbackLastCommitInput = Omit<
   LongRollbackLastCommitInput,
   "bookId"
@@ -424,7 +440,10 @@ export class LongProjectStore {
     parentDirectory: string,
     input: CreateLongBookInput
   ): Promise<CreatedLongBook> {
-    const parent = await secureDirectory(parentDirectory, "长篇项目父目录");
+    const parent = await ensureSecureDirectory(
+      parentDirectory,
+      "长篇项目父目录"
+    );
     return await this.runExclusive(parent, async () => {
       const bookId = LongBookIdSchema.parse(input.id ?? createId("longbook"));
       const projectDirectory = join(parent, bookId);
@@ -465,7 +484,10 @@ export class LongProjectStore {
     sourcePath: string,
     options: ImportWriteClawLongBookOptions = {}
   ): Promise<ImportedWriteClawLongBook> {
-    const parent = await secureDirectory(parentDirectory, "长篇项目父目录");
+    const parent = await ensureSecureDirectory(
+      parentDirectory,
+      "长篇项目父目录"
+    );
     return await this.runExclusive(parent, async () => {
       const plan = await readWriteClawLongImportPlan(sourcePath, {
         ...options,
@@ -530,7 +552,10 @@ export class LongProjectStore {
     parentDirectory: string,
     sourcePath: string
   ): Promise<ImportedPortableLongBook> {
-    const parent = await secureDirectory(parentDirectory, "长篇项目父目录");
+    const parent = await ensureSecureDirectory(
+      parentDirectory,
+      "长篇项目父目录"
+    );
     return await this.runExclusive(parent, async () => {
       const source = await readPortableBundleSource(sourcePath);
       const bundle = parseLongPortableExportBundle(source);
@@ -1438,16 +1463,6 @@ export class LongProjectStore {
         ...rawInput,
         bookId: loaded.manifest.id
       });
-      const usesTypedContinuity =
-        input.factMutations.length > 0 ||
-        input.knowledgeMutations.length > 0 ||
-        input.openLoopMutations.length > 0 ||
-        input.chapterOutputs.characterState.trim().length > 0 ||
-        input.chapterOutputs.handoff.summary.trim().length > 0 ||
-        Object.values(input.coverage).some(
-          ({ status, note }) =>
-            status !== "not_applicable" || note.trim().length > 0
-        );
       assertProjectRevisions(
         loaded,
         input.baseWorkspaceRevision,
@@ -1468,6 +1483,24 @@ export class LongProjectStore {
       if (!chapterEntry || chapterEntry.commitId !== null) {
         throw new Error("当前长篇章卡不存在或已经提交。");
       }
+      if (input.mode === "text_files") {
+        return await this.commitTextFilesChapter(
+          loaded,
+          input,
+          chapterEntry,
+          existingPinnedChecks
+        );
+      }
+      const usesTypedContinuity =
+        input.factMutations.length > 0 ||
+        input.knowledgeMutations.length > 0 ||
+        input.openLoopMutations.length > 0 ||
+        input.chapterOutputs.characterState.trim().length > 0 ||
+        input.chapterOutputs.handoff.summary.trim().length > 0 ||
+        Object.values(input.coverage).some(
+          ({ status, note }) =>
+            status !== "not_applicable" || note.trim().length > 0
+        );
       const chapterFiles = await Promise.all(
         [
           chapterEntry.body,
@@ -1660,8 +1693,15 @@ export class LongProjectStore {
       const chapterFileIds = new Set(
         loaded.index.chapters.flatMap((chapter) => [
           chapter.body.id,
+          chapter.card.id,
           chapter.characterState.id,
-          chapter.handoff.id
+          chapter.handoff.id,
+          chapter.foreshadowingChanges.id,
+          ...(chapter.worldReveals ? [chapter.worldReveals.id] : []),
+          ...chapter.characterContinuity.flatMap((entry) => [
+            entry.currentState.id,
+            entry.history.id
+          ])
         ])
       );
       const continuityFileRoles = new Map<
@@ -1874,6 +1914,7 @@ export class LongProjectStore {
       loaded.index.ledger.projection = continuityUpdate.projection;
       loaded.index.ledger.commits.push({
         id: commitId,
+        mode: "structured",
         sequence: record.sequence,
         chapterCardId: input.chapterCardId,
         committedAt: timestamp,
@@ -1945,6 +1986,204 @@ export class LongProjectStore {
         projectRevision: next.manifest.revision
       };
     });
+  }
+
+  private async commitTextFilesChapter(
+    loaded: LoadedLongProject,
+    input: LongTextFilesCommitChapterInput,
+    chapterEntry: LongWorkspaceIndexSnapshot["chapters"][number],
+    existingPinnedChecks: readonly ProjectTransactionFileOperation[]
+  ): Promise<LongCommitChapterResult> {
+    const body = await loadIndexedFile(loaded, chapterEntry.body.id);
+    if (
+      !longRevisionsMatchContent(
+        input.chapterFileRevisions.body,
+        body.disk.revision,
+        body.disk.bytes
+      )
+    ) {
+      throw new LongProjectConflictError(
+        "file",
+        input.chapterFileRevisions.body,
+        body.disk.revision
+      );
+    }
+    if (!body.disk.content.trim()) {
+      throw new Error("提交章节前必须完成章节正文。");
+    }
+
+    const continuityReferences = [
+      chapterEntry.characterState,
+      chapterEntry.handoff,
+      chapterEntry.foreshadowingChanges,
+      ...(chapterEntry.worldReveals ? [chapterEntry.worldReveals] : []),
+      ...chapterEntry.characterContinuity.flatMap((entry) => [
+        entry.currentState,
+        entry.history
+      ])
+    ];
+    const expectedRevisionByFileId = new Map(
+      input.continuityFileRevisions.map(({ fileId, revision }) => [
+        fileId,
+        revision
+      ])
+    );
+    if (
+      expectedRevisionByFileId.size !== continuityReferences.length ||
+      continuityReferences.some(
+        ({ id }) => !expectedRevisionByFileId.has(id)
+      )
+    ) {
+      throw new Error(
+        "连续性提交必须精确引用本章的章末状态、接续包、伏笔变化以及已创建的世界观和人物记录文件。"
+      );
+    }
+    const continuityFiles = await Promise.all(
+      continuityReferences.map(
+        async (reference) => await loadIndexedFile(loaded, reference.id)
+      )
+    );
+    for (const file of continuityFiles) {
+      const expectedRevision = expectedRevisionByFileId.get(
+        file.reference.id
+      )!;
+      if (
+        !longRevisionsMatchContent(
+          expectedRevision,
+          file.disk.revision,
+          file.disk.bytes
+        )
+      ) {
+        throw new LongProjectConflictError(
+          "file",
+          expectedRevision,
+          file.disk.revision
+        );
+      }
+      if (!file.disk.content.trim()) {
+        throw new Error(
+          `连续性文件尚未写入内容：${file.reference.path}`
+        );
+      }
+    }
+
+    const commitId = createId("commit");
+    const timestamp = this.timestamp();
+    const record = LongLedgerCommitRecordSchema.parse({
+      schemaVersion: 4,
+      id: commitId,
+      bookId: loaded.manifest.id,
+      sequence: loaded.index.ledger.commits.length + 1,
+      chapterCardId: input.chapterCardId,
+      committedAt: timestamp,
+      commitMessage: input.commitMessage,
+      reversible: true,
+      sourceWorkspaceRevision: loaded.index.revision,
+      committedWorkspaceRevision: loaded.index.revision + 1,
+      sourceProjectRevision: loaded.manifest.revision,
+      committedProjectRevision: loaded.manifest.revision + 1,
+      previousCommittedThroughChapterId:
+        loaded.index.ledger.committedThroughChapterId,
+      committedThroughChapterId: input.chapterCardId,
+      previousChapterCommitId: chapterEntry.commitId,
+      placementChanges: [],
+      foreshadowingBeatChanges: [],
+      fileChanges: [],
+      continuityFiles: continuityFiles.map((file) => ({
+        fileId: file.reference.id,
+        path: file.reference.path,
+        revision: file.disk.revision
+      }))
+    });
+    const recordContent = serializeJson(record);
+    const recordReference: LongWorkspaceFileReference = {
+      id: longLedgerCommitFileId(commitId),
+      path: ledgerPath(commitId),
+      revision: createLongFileRevision(recordContent),
+      updatedAt: timestamp
+    };
+
+    chapterEntry.commitId = commitId;
+    loaded.index.ledger.committedThroughChapterId = input.chapterCardId;
+    loaded.index.ledger.commits.push({
+      id: commitId,
+      mode: "text_files",
+      sequence: record.sequence,
+      chapterCardId: input.chapterCardId,
+      committedAt: timestamp,
+      reversible: true,
+      sourceRevision: loaded.index.revision,
+      placementIds: [],
+      foreshadowingBeatIds: [],
+      recordFile: recordReference
+    });
+
+    const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+      ...loaded.index,
+      revision: loaded.index.revision + 1,
+      updatedAt: timestamp
+    });
+    const indexContent = serializeJson(nextIndex);
+    const nextManifest = LongProjectManifestSchema.parse({
+      ...loaded.manifest,
+      revision: loaded.manifest.revision + 1,
+      updatedAt: timestamp,
+      workspaceIndexFile: {
+        ...loaded.manifest.workspaceIndexFile,
+        revision: createLongFileRevision(indexContent),
+        updatedAt: timestamp
+      }
+    });
+    const newlyPinnedChecks: ProjectTransactionFileOperation[] = [
+      body,
+      ...continuityFiles
+    ].map((file) => ({
+      action: "check",
+      path: file.reference.path,
+      expectedSha256: file.disk.sha256
+    }));
+    try {
+      await commitLongProjectTransaction({
+        projectRoot: loaded.projectDirectory,
+        operations: [
+          ...mergeIntegrityChecks(
+            [...existingPinnedChecks, ...newlyPinnedChecks],
+            new Set([recordReference.path])
+          ),
+          {
+            path: recordReference.path,
+            content: recordContent,
+            expectedSha256: null
+          },
+          {
+            path: LONG_WORKSPACE_INDEX_PATH,
+            content: indexContent,
+            expectedSha256: loaded.indexDisk.sha256
+          },
+          {
+            path: MANIFEST_PATH,
+            content: serializeJson(nextManifest),
+            expectedSha256: loaded.manifestDisk.sha256
+          }
+        ],
+        maxFileBytes: MAX_LEDGER_RECORD_BYTES
+      });
+    } catch (error: unknown) {
+      if (error instanceof ProjectTransactionConflictError) {
+        throw new LongProjectConflictError(
+          "transaction",
+          error.expectedSha256 ?? "missing",
+          error.actualSha256 ?? "missing"
+        );
+      }
+      throw error;
+    }
+    const next = await this.loadProject(loaded.projectDirectory);
+    return {
+      record,
+      workspaceRevision: next.index.revision,
+      projectRevision: next.manifest.revision
+    };
   }
 
   async rollbackLastCommit(
@@ -2040,8 +2279,15 @@ export class LongProjectStore {
       const newlyUnpinnedChecks: ProjectTransactionFileOperation[] = [];
       for (const reference of [
         chapterEntry.body,
+        chapterEntry.card,
         chapterEntry.characterState,
-        chapterEntry.handoff
+        chapterEntry.handoff,
+        chapterEntry.foreshadowingChanges,
+        ...(chapterEntry.worldReveals ? [chapterEntry.worldReveals] : []),
+        ...chapterEntry.characterContinuity.flatMap((entry) => [
+          entry.currentState,
+          entry.history
+        ])
       ]) {
         const file = await loadIndexedFile(loaded, reference.id);
         newlyUnpinnedChecks.push({
@@ -2050,7 +2296,12 @@ export class LongProjectStore {
           expectedSha256: file.disk.sha256
         });
       }
-      if (loaded.index.ledger.commits.length === 1) {
+      if (
+        lastCommit.mode === "structured" &&
+        !loaded.index.ledger.commits
+          .slice(0, -1)
+          .some(({ mode }) => mode === "structured")
+      ) {
         const changedFileIds = new Set(
           record.fileChanges.map(({ fileId }) => fileId)
         );
@@ -2323,6 +2574,10 @@ export class LongProjectStore {
       longChapterBodyFileId(chapterId),
       chapterPath(chapterId, "body.md")
     );
+    const chapterCard = file(
+      longChapterCardFileId(chapterId),
+      chapterPath(chapterId, "card.md")
+    );
     const chapterState = file(
       longChapterCharacterStateFileId(chapterId),
       chapterPath(chapterId, "character-state.md")
@@ -2330,6 +2585,13 @@ export class LongProjectStore {
     const chapterHandoff = file(
       longChapterHandoffFileId(chapterId),
       chapterPath(chapterId, "handoff.md")
+    );
+    const chapterForeshadowingChanges = file(
+      longChapterForeshadowingChangesFileId(chapterId),
+      longChapterContinuityFilePath(
+        chapterId,
+        "foreshadowing-changes.md"
+      )
     );
 
     const index = LongWorkspaceIndexSnapshotSchema.parse({
@@ -2364,10 +2626,7 @@ export class LongProjectStore {
             volumeId,
             primaryArcId: arcId,
             title: "第一章",
-            narrativeOrder: 1,
-            outline: "",
-            worldConstraints: "",
-            characterIds: []
+            narrativeOrder: 1
           }
         ],
         storyEvents: [],
@@ -2380,8 +2639,12 @@ export class LongProjectStore {
         {
           chapterCardId: chapterId,
           body: chapterBody,
+          card: chapterCard,
           characterState: chapterState,
           handoff: chapterHandoff,
+          foreshadowingChanges: chapterForeshadowingChanges,
+          worldReveals: null,
+          characterContinuity: [],
           commitId: null
         }
       ],
@@ -2430,13 +2693,17 @@ export class LongProjectStore {
           content: "",
           expectedSha256: null as null
         },
-        ...[chapterBody.path, chapterState.path, chapterHandoff.path].map(
-          (path) => ({
+        ...[
+          chapterBody.path,
+          chapterCard.path,
+          chapterState.path,
+          chapterHandoff.path,
+          chapterForeshadowingChanges.path
+        ].map((path) => ({
             path,
             content: "",
             expectedSha256: null as null
-          })
-        ),
+          })),
         {
           path: LONG_WORKSPACE_INDEX_PATH,
           content: indexContent,
@@ -2511,6 +2778,28 @@ export class LongProjectStore {
     }
     if (
       await migrateLegacyArcOutlineToStoryPlots({
+        projectDirectory,
+        manifest,
+        manifestDisk,
+        indexDisk,
+        rawIndex
+      })
+    ) {
+      return await this.loadProject(projectDirectory);
+    }
+    if (
+      await migrateLegacyChapterCardContent({
+        projectDirectory,
+        manifest,
+        manifestDisk,
+        indexDisk,
+        rawIndex
+      })
+    ) {
+      return await this.loadProject(projectDirectory);
+    }
+    if (
+      await migrateLegacyChapterContinuityFiles({
         projectDirectory,
         manifest,
         manifestDisk,
@@ -2713,13 +3002,22 @@ async function assertPinnedSetIntegrity(
     if (chapter.commitId === null) continue;
     for (const reference of [
       chapter.body,
+      chapter.card,
       chapter.characterState,
-      chapter.handoff
+      chapter.handoff,
+      chapter.foreshadowingChanges,
+      ...(chapter.worldReveals ? [chapter.worldReveals] : []),
+      ...chapter.characterContinuity.flatMap((entry) => [
+        entry.currentState,
+        entry.history
+      ])
     ]) {
       addCheck(await loadIndexedFile(loaded, reference.id));
     }
   }
-  if (loaded.index.ledger.commits.length > 0) {
+  if (
+    loaded.index.ledger.commits.some(({ mode }) => mode === "structured")
+  ) {
     for (const entry of loaded.index.characterFiles) {
       for (const reference of [
         entry.relationships,
@@ -2760,8 +3058,15 @@ function assertMutableChapterDocument(
     (chapter) =>
       chapter.commitId !== null &&
       (chapter.body.id === fileId ||
+        chapter.card.id === fileId ||
         chapter.characterState.id === fileId ||
-        chapter.handoff.id === fileId)
+        chapter.handoff.id === fileId ||
+        chapter.foreshadowingChanges.id === fileId ||
+        chapter.worldReveals?.id === fileId ||
+        chapter.characterContinuity.some(
+          (entry) =>
+            entry.currentState.id === fileId || entry.history.id === fileId
+        ))
   );
   if (committedChapter) {
     throw new Error(
@@ -2786,20 +3091,9 @@ function assertDirectlyMutableDocument(
   ) {
     throw new Error("只读迁移证据不能修改。");
   }
-  if (
-    index.chapters.some(
-      (chapter) =>
-        chapter.characterState.id === fileId ||
-        chapter.handoff.id === fileId
-    )
-  ) {
-    throw new Error(
-      "章末角色状态和下一章接续包由连续性账本生成，不能直接编辑。"
-    );
-  }
   assertMutableChapterDocument(index, fileId);
   if (
-    index.ledger.commits.length > 0 &&
+    index.ledger.commits.some(({ mode }) => mode === "structured") &&
     index.characterFiles.some(
       (entry) =>
         entry.relationships.id === fileId ||
@@ -2808,7 +3102,7 @@ function assertDirectlyMutableDocument(
     )
   ) {
     throw new Error(
-      "首次连续性提交后，人物关系、当前状态和历史轨迹只能通过连续性账本更新；核心档案仍可直接编辑。"
+      "旧版结构化连续性提交仍在使用，人物关系、当前状态和历史轨迹需由旧版连续性账本更新。"
     );
   }
 }
@@ -2833,7 +3127,7 @@ function continuityKnowledgeKey(
 
 function assertLongContinuityMutationAuthority(
   index: LongWorkspaceIndexSnapshot,
-  input: LongCommitChapterInput
+  input: LongStructuredCommitChapterInput
 ): void {
   const characterIds = new Set(
     index.characters.map(({ id }) => id)
@@ -2904,9 +3198,9 @@ function materializeLongContinuityProjection(input: {
   projection: LongContinuityProjection;
   commitId: string;
   chapterCardId: string;
-  factMutations: LongCommitChapterInput["factMutations"];
-  knowledgeMutations: LongCommitChapterInput["knowledgeMutations"];
-  openLoopMutations: LongCommitChapterInput["openLoopMutations"];
+  factMutations: LongStructuredCommitChapterInput["factMutations"];
+  knowledgeMutations: LongStructuredCommitChapterInput["knowledgeMutations"];
+  openLoopMutations: LongStructuredCommitChapterInput["openLoopMutations"];
   handoff: LongContinuityHandoff;
 }): {
   projection: LongContinuityProjection;
@@ -3340,6 +3634,11 @@ function indexedFileSlots(
         kind: "markdown" as const
       },
       {
+        reference: entry.card,
+        expectedPath: chapterPath(entry.chapterCardId, "card.md"),
+        kind: "markdown" as const
+      },
+      {
         reference: entry.characterState,
         expectedPath: chapterPath(
           entry.chapterCardId,
@@ -3351,7 +3650,45 @@ function indexedFileSlots(
         reference: entry.handoff,
         expectedPath: chapterPath(entry.chapterCardId, "handoff.md"),
         kind: "markdown" as const
-      }
+      },
+      {
+        reference: entry.foreshadowingChanges,
+        expectedPath: longChapterContinuityFilePath(
+          entry.chapterCardId,
+          "foreshadowing-changes.md"
+        ),
+        kind: "markdown" as const
+      },
+      ...(entry.worldReveals
+        ? [{
+            reference: entry.worldReveals,
+            expectedPath: longChapterContinuityFilePath(
+              entry.chapterCardId,
+              "world-reveals.md"
+            ),
+            kind: "markdown" as const
+          }]
+        : []),
+      ...entry.characterContinuity.flatMap((continuity) => [
+        {
+          reference: continuity.currentState,
+          expectedPath: longChapterCharacterContinuityFilePath(
+            entry.chapterCardId,
+            continuity.characterId,
+            "current-state.md"
+          ),
+          kind: "markdown" as const
+        },
+        {
+          reference: continuity.history,
+          expectedPath: longChapterCharacterContinuityFilePath(
+            entry.chapterCardId,
+            continuity.characterId,
+            "history.md"
+          ),
+          kind: "markdown" as const
+        }
+      ])
     ]),
     ...index.plot.storyPlots.map((entry) => ({
       reference: entry.file,
@@ -3570,14 +3907,21 @@ function isPinnedMarkdownFile(
       (chapter) =>
         chapter.commitId !== null &&
         (chapter.body.id === fileId ||
+          chapter.card.id === fileId ||
           chapter.characterState.id === fileId ||
-          chapter.handoff.id === fileId)
+          chapter.handoff.id === fileId ||
+          chapter.foreshadowingChanges.id === fileId ||
+          chapter.worldReveals?.id === fileId ||
+          chapter.characterContinuity.some(
+            (entry) =>
+              entry.currentState.id === fileId || entry.history.id === fileId
+          ))
     )
   ) {
     return true;
   }
   return (
-    index.ledger.commits.length > 0 &&
+    index.ledger.commits.some(({ mode }) => mode === "structured") &&
     index.characterFiles.some(
       (entry) =>
         entry.relationships.id === fileId ||
@@ -4138,6 +4482,352 @@ async function migrateLegacyArcOutlineToStoryPlots(input: {
         content: entry.content,
         expectedSha256: null as string | null
       })),
+      {
+        path: LONG_WORKSPACE_INDEX_PATH,
+        content: indexContent,
+        expectedSha256: input.indexDisk.sha256
+      },
+      {
+        path: MANIFEST_PATH,
+        content: serializeJson(nextManifest),
+        expectedSha256: input.manifestDisk.sha256
+      }
+    ],
+    maxFileBytes: MAX_LEDGER_RECORD_BYTES
+  });
+  return true;
+}
+
+/**
+ * Moves legacy chapter-card structured fields (outline / worldConstraints /
+ * characterIds) into per-chapter `card.md` files and backfills the card file
+ * index entry. The legacy fields are removed from the index afterwards; chapter-card
+ * content editing uses the card file, mirroring the story-plot pattern.
+ */
+async function migrateLegacyChapterCardContent(input: {
+  projectDirectory: string;
+  manifest: LongProjectManifest;
+  manifestDisk: SecureTextFile;
+  indexDisk: SecureTextFile;
+  rawIndex: unknown;
+}): Promise<boolean> {
+  const rawIndex = unknownRecord(input.rawIndex);
+  const plot = unknownRecord(rawIndex?.plot);
+  if (!rawIndex || !plot || !Array.isArray(plot.chapterCards)) return false;
+  const chapters = Array.isArray(rawIndex.chapters) ? rawIndex.chapters : null;
+  if (!chapters) return false;
+
+  const characterNames = new Map<string, string>();
+  if (Array.isArray(rawIndex.characters)) {
+    for (const rawCharacter of rawIndex.characters) {
+      const character = unknownRecord(rawCharacter);
+      if (
+        character &&
+        typeof character.id === "string" &&
+        typeof character.name === "string"
+      ) {
+        characterNames.set(character.id, character.name);
+      }
+    }
+  }
+
+  const updatedAt =
+    typeof rawIndex.updatedAt === "string"
+      ? rawIndex.updatedAt
+      : input.manifest.updatedAt;
+
+  let changed = false;
+  const nextChapterCards: unknown[] = [];
+  const cardWrites: Array<{
+    chapterCardId: string;
+    file: {
+      id: string;
+      path: string;
+      revision: LongFileRevision;
+      updatedAt: string;
+    };
+    content: string;
+    expectedSha256: string | null;
+  }> = [];
+
+  for (const rawCard of plot.chapterCards) {
+    const card = unknownRecord(rawCard);
+    if (!card || typeof card.id !== "string") {
+      nextChapterCards.push(rawCard);
+      continue;
+    }
+    const hasLegacyFields =
+      "outline" in card || "worldConstraints" in card || "characterIds" in card;
+    const fileEntry = chapters.find((entry) => {
+      const candidate = unknownRecord(entry);
+      return candidate?.chapterCardId === card.id;
+    });
+    const fileEntryRecord = unknownRecord(fileEntry);
+    const cardFileRecord = unknownRecord(fileEntryRecord?.card);
+    const hasCardFile = cardFileRecord !== null;
+    const cardFile = hasCardFile
+      ? LongWorkspaceFileReferenceSchema.parse(cardFileRecord)
+      : undefined;
+    let existingCardFile: SecureTextFile | null | undefined;
+    if (cardFile) {
+      try {
+        existingCardFile = await readSecureTextFile(
+          input.projectDirectory,
+          cardFile.path,
+          MAX_LEDGER_RECORD_BYTES
+        );
+      } catch (error: unknown) {
+        if (!isNodeError(error, "ENOENT")) throw error;
+        existingCardFile = null;
+      }
+    }
+    if (!hasLegacyFields && cardFile && existingCardFile) {
+      nextChapterCards.push(rawCard);
+      continue;
+    }
+    changed = true;
+    const outline = typeof card.outline === "string" ? card.outline : "";
+    const worldConstraints =
+      typeof card.worldConstraints === "string" ? card.worldConstraints : "";
+    const characterIds = Array.isArray(card.characterIds)
+      ? card.characterIds.filter(
+          (value): value is string => typeof value === "string"
+        )
+      : [];
+    const characterLine = characterIds
+      .map((id) => characterNames.get(id) ?? id)
+      .join("、");
+    const content = [
+      outline.trim() ? `## 章节规划\n\n${outline.trim()}` : "",
+      worldConstraints.trim()
+        ? `## 世界约束\n\n${worldConstraints.trim()}`
+        : "",
+      characterLine ? `## 出场人物\n\n${characterLine}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const {
+      outline: _outline,
+      worldConstraints: _worldConstraints,
+      characterIds: _characterIds,
+      ...strippedCard
+    } = card;
+    nextChapterCards.push(strippedCard);
+    if (!hasCardFile) {
+      cardWrites.push({
+        chapterCardId: card.id,
+        file: {
+          id: longChapterCardFileId(card.id),
+          path: chapterPath(card.id, "card.md"),
+          revision: createLongFileRevision(content),
+          updatedAt
+        },
+        content,
+        expectedSha256: null
+      });
+    } else if (cardFile && existingCardFile === null) {
+      if (!content && !longRevisionMatchesBytes(cardFile.revision, "")) {
+        throw new Error(
+          `章卡文件缺失且索引显示其中已有内容，无法自动恢复：${cardFile.id}`
+        );
+      }
+      cardWrites.push({
+        chapterCardId: card.id,
+        file: {
+          ...cardFile,
+          revision: createLongFileRevision(content),
+          updatedAt
+        },
+        content,
+        expectedSha256: null
+      });
+    } else if (cardFile && existingCardFile && hasLegacyFields && content) {
+      const nextContent = existingCardFile.content.includes(content)
+        ? existingCardFile.content
+        : existingCardFile.content.trim()
+          ? `${existingCardFile.content.trimEnd()}\n\n## 旧版章卡补充\n\n${content}\n`
+          : content;
+      if (nextContent !== existingCardFile.content) {
+        cardWrites.push({
+          chapterCardId: card.id,
+          file: {
+            ...cardFile,
+            revision: createLongFileRevision(nextContent),
+            updatedAt
+          },
+          content: nextContent,
+          expectedSha256: existingCardFile.sha256
+        });
+      }
+    }
+  }
+
+  if (!changed) return false;
+
+  const cardWriteByChapterId = new Map(
+    cardWrites.map((entry) => [entry.chapterCardId, entry])
+  );
+  const nextChapters = chapters.map((entry) => {
+    const candidate = unknownRecord(entry);
+    const write = candidate?.chapterCardId
+      ? cardWriteByChapterId.get(candidate.chapterCardId as string)
+      : undefined;
+    return write ? { ...candidate, card: write.file } : entry;
+  });
+
+  // card.md may already exist on disk from an interrupted earlier migration
+  // while the index entry was never recorded. Prefer the on-disk content in
+  // that case instead of clobbering it with reconstructed text.
+  const finalCardWrites: typeof cardWrites = [];
+  for (const write of cardWrites) {
+    if (write.expectedSha256 !== null) {
+      finalCardWrites.push(write);
+      continue;
+    }
+    try {
+      const existing = await readSecureTextFile(
+        input.projectDirectory,
+        write.file.path,
+        MAX_LEDGER_RECORD_BYTES
+      );
+      write.file.revision = createLongFileRevision(existing.content);
+      continue;
+    } catch (error: unknown) {
+      if (!isNodeError(error, "ENOENT")) throw error;
+      // File does not exist yet; create it below.
+    }
+    finalCardWrites.push(write);
+  }
+
+  const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    plot: {
+      ...plot,
+      chapterCards: nextChapterCards
+    },
+    chapters: nextChapters
+  });
+  const indexContent = serializeJson(nextIndex);
+  const nextManifest = LongProjectManifestSchema.parse({
+    ...input.manifest,
+    workspaceIndexFile: {
+      ...input.manifest.workspaceIndexFile,
+      revision: createLongFileRevision(indexContent)
+    }
+  });
+  await commitLongProjectTransaction({
+    projectRoot: input.projectDirectory,
+    operations: [
+      ...finalCardWrites.map((entry) => ({
+        path: entry.file.path,
+        content: entry.content,
+        expectedSha256: entry.expectedSha256
+      })),
+      {
+        path: LONG_WORKSPACE_INDEX_PATH,
+        content: indexContent,
+        expectedSha256: input.indexDisk.sha256
+      },
+      {
+        path: MANIFEST_PATH,
+        content: serializeJson(nextManifest),
+        expectedSha256: input.manifestDisk.sha256
+      }
+    ],
+    maxFileBytes: MAX_LEDGER_RECORD_BYTES
+  });
+  return true;
+}
+
+/**
+ * Backfills the one continuity document that every chapter owns. Optional
+ * world-reveal and per-character documents remain absent until the
+ * continuity stage explicitly creates them.
+ */
+async function migrateLegacyChapterContinuityFiles(input: {
+  projectDirectory: string;
+  manifest: LongProjectManifest;
+  manifestDisk: SecureTextFile;
+  indexDisk: SecureTextFile;
+  rawIndex: unknown;
+}): Promise<boolean> {
+  const rawIndex = unknownRecord(input.rawIndex);
+  if (!rawIndex || !Array.isArray(rawIndex.chapters)) return false;
+
+  let changed = false;
+  const fileOperations: ProjectTransactionFileOperation[] = [];
+  const chapters: unknown[] = [];
+  for (const rawChapter of rawIndex.chapters) {
+    const chapter = unknownRecord(rawChapter);
+    if (!chapter || typeof chapter.chapterCardId !== "string") {
+      chapters.push(rawChapter);
+      continue;
+    }
+    if (unknownRecord(chapter.foreshadowingChanges)) {
+      chapters.push(rawChapter);
+      continue;
+    }
+
+    changed = true;
+    const chapterCardId = chapter.chapterCardId;
+    const path = longChapterContinuityFilePath(
+      chapterCardId,
+      "foreshadowing-changes.md"
+    );
+    let content = "";
+    let exists = false;
+    try {
+      const disk = await readSecureTextFile(
+        input.projectDirectory,
+        path,
+        MAX_DOCUMENT_BYTES
+      );
+      content = disk.content;
+      exists = true;
+    } catch (error: unknown) {
+      if (!isNodeError(error, "ENOENT")) throw error;
+    }
+    if (!exists) {
+      fileOperations.push({
+        path,
+        content,
+        expectedSha256: null
+      });
+    }
+    chapters.push({
+      ...chapter,
+      foreshadowingChanges: {
+        id: longChapterForeshadowingChangesFileId(chapterCardId),
+        path,
+        revision: createLongFileRevision(content),
+        updatedAt:
+          typeof chapter.body === "object" && chapter.body !== null
+            ? (unknownRecord(chapter.body)?.updatedAt ??
+                input.manifest.updatedAt)
+            : input.manifest.updatedAt
+      },
+      worldReveals: chapter.worldReveals ?? null,
+      characterContinuity: chapter.characterContinuity ?? []
+    });
+  }
+  if (!changed) return false;
+
+  const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    chapters
+  });
+  const indexContent = serializeJson(nextIndex);
+  const nextManifest = LongProjectManifestSchema.parse({
+    ...input.manifest,
+    workspaceIndexFile: {
+      ...input.manifest.workspaceIndexFile,
+      revision: createLongFileRevision(indexContent)
+    }
+  });
+  await commitLongProjectTransaction({
+    projectRoot: input.projectDirectory,
+    operations: [
+      ...fileOperations,
       {
         path: LONG_WORKSPACE_INDEX_PATH,
         content: indexContent,
@@ -4795,6 +5485,15 @@ async function secureDirectory(path: string, label: string): Promise<string> {
     throw new Error(`${label}必须是真实目录。`);
   }
   return await realpath(resolved);
+}
+
+async function ensureSecureDirectory(
+  path: string,
+  label: string
+): Promise<string> {
+  const resolved = resolve(path);
+  await mkdir(resolved, { recursive: true, mode: 0o700 });
+  return await secureDirectory(resolved, label);
 }
 
 async function requireMissing(path: string, message: string): Promise<void> {

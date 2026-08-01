@@ -139,6 +139,55 @@ export type LongLedgerFileChange = z.infer<
   typeof LongLedgerFileChangeSchema
 >;
 
+/**
+ * Lightweight v4 audit metadata for a chapter continuity file. Text is kept
+ * in the Markdown file itself and is intentionally not copied into the
+ * ledger JSON record.
+ */
+export const LongLedgerContinuityFileAuditSchema = z
+  .object({
+    fileId: LongFileIdSchema,
+    path: LongProjectRelativePathSchema,
+    revision: LongFileRevisionSchema
+  })
+  .strict();
+export type LongLedgerContinuityFileAudit = z.infer<
+  typeof LongLedgerContinuityFileAuditSchema
+>;
+
+export const LongLedgerContinuityFilesAuditSchema = z
+  .array(LongLedgerContinuityFileAuditSchema)
+  .max(100_000)
+  .superRefine((files, context) => {
+    const fileIds = new Set<string>();
+    const paths = new Set<string>();
+    files.forEach((file, index) => {
+      if (fileIds.has(file.fileId)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "fileId"],
+          message: "A continuity audit cannot contain the same file twice."
+        });
+      }
+      fileIds.add(file.fileId);
+      const portablePath = file.path
+        .normalize("NFC")
+        .toLocaleLowerCase("en-US");
+      if (paths.has(portablePath)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "path"],
+          message:
+            "A continuity audit cannot contain duplicate portable file paths."
+        });
+      }
+      paths.add(portablePath);
+    });
+  });
+export type LongLedgerContinuityFilesAudit = z.infer<
+  typeof LongLedgerContinuityFilesAuditSchema
+>;
+
 export const LongLedgerCoverageStatusSchema = z.enum([
   "changed",
   "unchanged",
@@ -387,7 +436,8 @@ export const LongLedgerCommitRecordSchema = z
     schemaVersion: z.union([
       z.literal(1),
       z.literal(2),
-      z.literal(3)
+      z.literal(3),
+      z.literal(4)
     ]),
     id: LongLedgerCommitIdSchema,
     bookId: LongBookIdSchema,
@@ -422,6 +472,7 @@ export const LongLedgerCommitRecordSchema = z
       .max(100_000)
       .default([]),
     fileChanges: z.array(LongLedgerFileChangeSchema).max(1_024),
+    continuityFiles: LongLedgerContinuityFilesAuditSchema.default([]),
     coverage: LongLedgerCoverageSchema.default(
       EMPTY_LONG_LEDGER_COVERAGE
     ),
@@ -451,6 +502,8 @@ export const LongLedgerCommitRecordSchema = z
           message: "A current ledger record requires a non-empty commit message."
         });
       }
+    }
+    if (record.schemaVersion === 2 || record.schemaVersion === 3) {
       for (const key of Object.keys(
         record.chapterSummary
       ) as Array<keyof LongChapterSummary>) {
@@ -485,6 +538,24 @@ export const LongLedgerCommitRecordSchema = z
               "A current ledger beat decision requires an evidence note."
           });
         }
+      }
+    }
+    if (record.schemaVersion === 4) {
+      if (record.continuityFiles.length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["continuityFiles"],
+          message:
+            "A v4 ledger record requires at least one continuity file revision."
+        });
+      }
+      if (record.fileChanges.length !== 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["fileChanges"],
+          message:
+            "A v4 ledger record stores lightweight file revisions instead of copied text."
+        });
       }
     }
     if (record.schemaVersion === 3) {
@@ -753,8 +824,50 @@ export type LongChapterFileRevisionSnapshot = z.infer<
   typeof LongChapterFileRevisionSnapshotSchema
 >;
 
-export const LongCommitChapterInputSchema = z
+export const LongTextChapterFileRevisionSnapshotSchema = z
   .object({
+    body: LongFileRevisionSchema
+  })
+  .strict();
+export type LongTextChapterFileRevisionSnapshot = z.infer<
+  typeof LongTextChapterFileRevisionSnapshotSchema
+>;
+
+export const LongContinuityFileRevisionSchema = z
+  .object({
+    fileId: LongFileIdSchema,
+    revision: LongFileRevisionSchema
+  })
+  .strict();
+export type LongContinuityFileRevision = z.infer<
+  typeof LongContinuityFileRevisionSchema
+>;
+
+export const LongContinuityFileRevisionsSchema = z
+  .array(LongContinuityFileRevisionSchema)
+  .min(1)
+  .max(100_000)
+  .superRefine((files, context) => {
+    const fileIds = new Set<string>();
+    files.forEach((file, index) => {
+      if (fileIds.has(file.fileId)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "fileId"],
+          message:
+            "A text-file commit cannot include the same continuity file twice."
+        });
+      }
+      fileIds.add(file.fileId);
+    });
+  });
+export type LongContinuityFileRevisions = z.infer<
+  typeof LongContinuityFileRevisionsSchema
+>;
+
+const LongStructuredCommitChapterInputSchema = z
+  .object({
+    mode: z.literal("structured").default("structured"),
     bookId: LongBookIdSchema,
     chapterCardId: LongChapterCardIdSchema,
     chapterFileRevisions: LongChapterFileRevisionSnapshotSchema,
@@ -846,6 +959,27 @@ export const LongCommitChapterInputSchema = z
       });
     }
   });
+
+export const LongTextFilesCommitChapterInputSchema = z
+  .object({
+    mode: z.literal("text_files"),
+    bookId: LongBookIdSchema,
+    chapterCardId: LongChapterCardIdSchema,
+    chapterFileRevisions: LongTextChapterFileRevisionSnapshotSchema,
+    continuityFileRevisions: LongContinuityFileRevisionsSchema,
+    commitMessage: RequiredLedgerCommitMessageSchema,
+    baseWorkspaceRevision: LedgerRevisionSchema,
+    baseProjectRevision: LedgerRevisionSchema
+  })
+  .strict();
+export type LongTextFilesCommitChapterInput = z.infer<
+  typeof LongTextFilesCommitChapterInputSchema
+>;
+
+export const LongCommitChapterInputSchema = z.union([
+  LongStructuredCommitChapterInputSchema,
+  LongTextFilesCommitChapterInputSchema
+]);
 export type LongCommitChapterInput = z.infer<
   typeof LongCommitChapterInputSchema
 >;

@@ -6,7 +6,13 @@ import {
   LongWorkspaceOperationError,
   applyLongWorkspaceOperations,
   longChapterBodyFileId,
+  longChapterCardFileId,
+  longChapterCharacterContinuityFilePath,
+  longChapterCharacterCurrentStateFileId,
+  longChapterCharacterHistoryFileId,
   longChapterCharacterStateFileId,
+  longChapterContinuityFilePath,
+  longChapterWorldRevealsFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
   longCharacterCurrentStateFileId,
@@ -60,6 +66,10 @@ function chapterFiles(chapterCardId: string, slug: string) {
     body: file(
       longChapterBodyFileId(chapterCardId),
       `long/chapters/${slug}/body.md`
+    ),
+    card: file(
+      longChapterCardFileId(chapterCardId),
+      `long/chapters/${slug}/card.md`
     ),
     characterState: file(
       longChapterCharacterStateFileId(chapterCardId),
@@ -115,20 +125,14 @@ function workspace(): LongWorkspaceIndexSnapshot {
           volumeId: "volume_one",
           primaryArcId: "arc_letter",
           title: "雨夜来信",
-          narrativeOrder: 1,
-          outline: "",
-          worldConstraints: "",
-          characterIds: ["character_alice"]
+          narrativeOrder: 1
         },
         {
           id: "chapter_two",
           volumeId: "volume_one",
           primaryArcId: "arc_letter",
           title: "旧钟楼",
-          narrativeOrder: 2,
-          outline: "",
-          worldConstraints: "",
-          characterIds: ["character_alice"]
+          narrativeOrder: 2
         }
       ],
       storyEvents: [
@@ -165,6 +169,7 @@ function committedWorkspace(): LongWorkspaceIndexSnapshot {
   value.ledger.committedThroughChapterId = "chapter_one";
   value.ledger.commits.push({
     id: "commit_first",
+    mode: "structured",
     sequence: 1,
     chapterCardId: "chapter_one",
     committedAt: now,
@@ -446,7 +451,12 @@ function createBatch() {
       value.updatedAt = later;
     });
   const newChapterFiles = chapterFiles("chapter_three", "three");
-  [newChapterFiles.body, newChapterFiles.characterState, newChapterFiles.handoff].forEach(
+  [
+    newChapterFiles.body,
+    newChapterFiles.card,
+    newChapterFiles.characterState,
+    newChapterFiles.handoff
+  ].forEach(
     (value) => {
       value.updatedAt = later;
     }
@@ -508,10 +518,7 @@ function createBatch() {
           volumeId: "volume_two",
           primaryArcId: "arc_tower",
           title: "钟声",
-          narrativeOrder: 99,
-          outline: "",
-          worldConstraints: "",
-          characterIds: ["character_bob"]
+          narrativeOrder: 99
         },
         files: newChapterFiles
       },
@@ -629,7 +636,7 @@ describe("long workspace operation engine", () => {
       )?.orderInChapter
     ).toBe(1);
     expect(result.fileIntents.filter(({ action }) => action === "create")).toHaveLength(
-      8
+      10
     );
     expect(result.documentWrites[0]?.content).toContain("魔法规则");
     expect(result.entityChanges).toHaveLength(
@@ -716,6 +723,78 @@ describe("long workspace operation engine", () => {
     );
   });
 
+  it("creates optional chapter continuity files and deletes them with the chapter", () => {
+    const source = workspace();
+    const currentState = file(
+      longChapterCharacterCurrentStateFileId(
+        "chapter_one",
+        "character_alice"
+      ),
+      longChapterCharacterContinuityFilePath(
+        "chapter_one",
+        "character_alice",
+        "current-state.md"
+      ),
+      later
+    );
+    const history = file(
+      longChapterCharacterHistoryFileId(
+        "chapter_one",
+        "character_alice"
+      ),
+      longChapterCharacterContinuityFilePath(
+        "chapter_one",
+        "character_alice",
+        "history.md"
+      ),
+      later
+    );
+    const worldReveals = file(
+      longChapterWorldRevealsFileId("chapter_one"),
+      longChapterContinuityFilePath("chapter_one", "world-reveals.md"),
+      later
+    );
+    const created = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "chapterContinuity.worldReveals.create",
+          chapterCardId: "chapter_one",
+          file: worldReveals
+        },
+        {
+          type: "chapterContinuity.character.create",
+          chapterCardId: "chapter_one",
+          characterId: "character_alice",
+          currentState,
+          history
+        }
+      ]
+    });
+    expect(created.fileIntents).toHaveLength(3);
+    expect(created.snapshot.chapters[0]).toMatchObject({
+      worldReveals: { id: worldReveals.id },
+      characterContinuity: [
+        {
+          characterId: "character_alice",
+          currentState: { id: currentState.id },
+          history: { id: history.id }
+        }
+      ]
+    });
+
+    const deleted = applyLongWorkspaceOperations(created.snapshot, {
+      baseRevision: created.resultRevision,
+      updatedAt: later,
+      operations: [
+        { type: "chapter.delete", id: "chapter_one", cascade: false }
+      ]
+    });
+    expect(deleted.fileIntents.filter(({ action }) => action === "delete"))
+      .toHaveLength(8);
+  });
+
   it("rejects deleting referenced entities unless cascade is explicit", () => {
     const source = workspace();
     expectOperationError(
@@ -790,7 +869,7 @@ describe("long workspace operation engine", () => {
       "chapter_two"
     ]);
     expect(preview.impact.updatedEntityIds).toContain("event_letter");
-    expect(preview.impact.deletedFileIds).toHaveLength(6);
+    expect(preview.impact.deletedFileIds).toHaveLength(10);
     expect(
       preview.entityChanges.find(({ id }) => id === "arc_letter")
     ).toMatchObject({

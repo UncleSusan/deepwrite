@@ -36,6 +36,16 @@ function editableDefaults(): LongAgentSettingsInput {
   };
 }
 
+const RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPT = `你负责长篇连续性账本。只处理正文已经写完的连续下一章，不得跳章提交。
+
+工作规则：
+1. 世界观、人物、剧情、正文和既有连续性账本分别使用各阶段的 list / search / read 工具查询；先看列表与概览，再按业务 ID 读取核验所需的具体内容。不得使用底层工作区索引、file_id 或通用文档读取。
+2. 以本章正文为唯一事实证据，结合上一章章末状态与接续包，逐域核对人物、关系、世界、剧情、伏笔、知识边界和开放环。
+3. 使用同组的 set_long_ledger_* 工具逐项暂存核验结果或变更；每次调用只处理一个事实、知识边界、开放环、人物文件、核验域、摘要章节、叙事落点或伏笔触点。
+4. 新事实和新开放环省略 ID，由工具生成并返回稳定 fact_id / loop_id；后续知识边界、开放环和接续包必须使用工具返回的 ID，不得传 null 或自行猜测。
+5. 六个 coverage 域和六个 chapter summary 章节必须分别逐项设置；叙事落点与伏笔触点也必须逐项判定。
+6. 逐项准备完毕后，最后单独调用 propose_long_ledger_commit，生成本章唯一的一张原子提交提案。暂存和最终提案都不直接写磁盘，不得声称尚未获批的账本已经提交。`;
+
 describe("LongAgentConfigStore", () => {
   it("returns six independent defaults without creating a file", async () => {
     const { store } = await createStore();
@@ -178,6 +188,79 @@ describe("LongAgentConfigStore", () => {
       (await store.list()).agents.find(({ id }) => id === "plot_design")!
         .systemPrompt
     ).toBe("自定义剧情提示词");
+  });
+
+  it("upgrades the retired chapter-writer role without replacing customization", async () => {
+    const { store } = await createStore();
+    const input = editableDefaults();
+    const writer = input.agents.find(
+      ({ id }) => id === "expert_section_writer"
+    )!;
+    writer.systemPrompt =
+      "你是长篇单章写手。每次只处理当前章卡，只负责写出可供核验的正文证据；必须依据查询到的设定与已提交连续性，不得自行确定章末状态、接续包或宣称提交账本。";
+    writer.welcomeShortcuts = [
+      "写当前章",
+      "续写当前章",
+      "检查本章连续性"
+    ];
+    await store.save(input);
+
+    const upgraded = (await store.list()).agents.find(
+      ({ id }) => id === "expert_section_writer"
+    )!;
+    expect(upgraded.systemPrompt).toContain(
+      "本智能体唯一的写作产物是当前章小说正文"
+    );
+    expect(upgraded.systemPrompt).toContain(
+      "不得编写、草拟、补全或修改章末人物状态、交接文档"
+    );
+    expect(upgraded.welcomeShortcuts).toEqual([
+      "写当前章",
+      "续写当前章",
+      "检查本章正文"
+    ]);
+
+    writer.systemPrompt = "自定义单章提示词";
+    writer.welcomeShortcuts = ["自定义一", "自定义二", "自定义三"];
+    await store.save(input);
+    const customized = (await store.list()).agents.find(
+      ({ id }) => id === "expert_section_writer"
+    )!;
+    expect(customized.systemPrompt).toBe("自定义单章提示词");
+    expect(customized.welcomeShortcuts).toEqual([
+      "自定义一",
+      "自定义二",
+      "自定义三"
+    ]);
+  });
+
+  it("upgrades only the byte-identical retired continuity-ledger builtin", async () => {
+    const { store } = await createStore();
+    const input = editableDefaults();
+    const continuity = input.agents.find(
+      ({ id }) => id === "continuity_ledger"
+    )!;
+    continuity.systemPrompt = RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPT;
+    await store.save(input);
+
+    const upgraded = (await store.list()).agents.find(
+      ({ id }) => id === "continuity_ledger"
+    )!;
+    expect(upgraded.systemPrompt).toBe(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
+        ({ id }) => id === "continuity_ledger"
+      )!.systemPrompt
+    );
+
+    const customizedPrompt =
+      `${RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPT}\n\n` +
+      "自定义补充：保留本地核验步骤。";
+    continuity.systemPrompt = customizedPrompt;
+    await store.save(input);
+    expect(
+      (await store.list()).agents.find(({ id }) => id === "continuity_ledger")!
+        .systemPrompt
+    ).toBe(customizedPrompt);
   });
 
   it("does not silently overwrite a malformed settings file", async () => {

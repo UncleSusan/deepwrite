@@ -108,6 +108,7 @@ describe("long ledger contracts", () => {
         openLoops: []
       }
     });
+    expect(parsed.continuityFiles).toEqual([]);
   });
 
   it("round-trips commit message, six summaries, evidence and thread status", () => {
@@ -142,6 +143,10 @@ describe("long ledger contracts", () => {
       baseWorkspaceRevision: 3,
       baseProjectRevision: 7
     });
+    if (input.mode !== "structured") {
+      throw new Error("Expected legacy structured commit input.");
+    }
+    expect(input.mode).toBe("structured");
     expect(input.chapterSummary).toEqual(chapterSummary);
 
     const parsed = LongLedgerCommitRecordSchema.parse({
@@ -176,6 +181,74 @@ describe("long ledger contracts", () => {
         }
       ]
     });
+  });
+
+  it("accepts revision-only text-file commits and rejects duplicate files", () => {
+    const input = {
+      mode: "text_files" as const,
+      bookId: "longbook_alpha",
+      chapterCardId: "chapter_one",
+      chapterFileRevisions: { body: "v1:0:00000000" },
+      continuityFileRevisions: [
+        {
+          fileId: "file_chapter_one:character-state",
+          revision: "v1:1:1234abcd"
+        },
+        {
+          fileId: "file_chapter_one:continuity:foreshadowing-changes",
+          revision: "v1:2:2345bcde"
+        }
+      ],
+      commitMessage: "提交第一章连续性文本文件",
+      baseWorkspaceRevision: 3,
+      baseProjectRevision: 7
+    };
+    const parsed = LongCommitChapterInputSchema.parse(input);
+    expect(parsed).toMatchObject({
+      mode: "text_files",
+      chapterFileRevisions: { body: "v1:0:00000000" },
+      continuityFileRevisions: input.continuityFileRevisions
+    });
+    expect(parsed).not.toHaveProperty("chapterSummary");
+    expect(
+      LongCommitChapterInputSchema.safeParse({
+        ...input,
+        continuityFileRevisions: [
+          input.continuityFileRevisions[0],
+          input.continuityFileRevisions[0]
+        ]
+      }).success
+    ).toBe(false);
+  });
+
+  it("stores v4 continuity revisions without copied file text", () => {
+    const continuityFiles = [
+      {
+        fileId: "file_chapter_one:continuity:foreshadowing-changes",
+        path: "long/continuity/chapters/chapter_one/foreshadowing-changes.md",
+        revision: "v1:2:2345bcde"
+      }
+    ];
+    const parsed = LongLedgerCommitRecordSchema.parse({
+      ...record,
+      schemaVersion: 4,
+      commitMessage: "提交第一章连续性文本文件",
+      fileChanges: [],
+      continuityFiles
+    });
+    expect(parsed.schemaVersion).toBe(4);
+    expect(parsed.continuityFiles).toEqual(continuityFiles);
+    expect(parsed.fileChanges).toEqual([]);
+    expect(parsed.chapterSummary.timeline).toBe("");
+
+    expect(
+      LongLedgerCommitRecordSchema.safeParse({
+        ...record,
+        schemaVersion: 4,
+        commitMessage: "错误地复制正文",
+        continuityFiles
+      }).success
+    ).toBe(false);
   });
 
   it("round-trips v3 projection changes, coverage and chapter outputs", () => {

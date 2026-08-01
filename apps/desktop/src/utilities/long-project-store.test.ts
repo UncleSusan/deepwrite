@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   symlink,
   unlink,
@@ -19,10 +20,18 @@ import {
   LONG_CHARACTER_OVERVIEW_PATH,
   LONG_WORKSPACE_INDEX_PATH,
   longChapterBodyFileId,
+  longChapterCardFileId,
+  longChapterCharacterContinuityFilePath,
+  longChapterCharacterCurrentStateFileId,
+  longChapterCharacterHistoryFileId,
   longChapterCharacterStateFileId,
+  longChapterContinuityFilePath,
+  longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
+  longChapterWorldRevealsFileId,
   longCharacterCoreProfileFileId,
   longCharacterCurrentStateFileId,
+  longCharacterFilePath,
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   createEmptyLongMarkdownFileReference,
@@ -74,6 +83,7 @@ function firstChapterFiles(
   const chapter = book.workspaceIndex.chapters[0]!;
   return {
     body: chapter.body,
+    card: chapter.card,
     characterState: chapter.characterState,
     handoff: chapter.handoff
   };
@@ -88,6 +98,23 @@ afterEach(async () => {
 });
 
 describe("LongProjectStore", () => {
+  it("creates a missing nested parent directory for a new long book", async () => {
+    const root = await temporaryParent();
+    const parent = join(root, "小说", "Deepwrite", "books");
+
+    const created = await store().createBook(parent, {
+      id: "longbook_missing-parent",
+      title: "首次创建长篇",
+      genre: "悬疑"
+    });
+
+    expect(created.projectDirectory).toBe(
+      join(await realpath(parent), "longbook_missing-parent")
+    );
+    expect((await lstat(parent)).isDirectory()).toBe(true);
+    expect((await lstat(created.projectDirectory)).isDirectory()).toBe(true);
+  });
+
   it("uses a full SHA-256 v2 revision with UTF-8 byte length", () => {
     expect(createLongFileRevision("正文")).toMatch(
       /^v2:6:[0-9a-f]{64}$/u
@@ -213,6 +240,102 @@ describe("LongProjectStore", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("preserves an existing chapter-card file while migrating legacy structured fields", async () => {
+    const { projectStore, created } = await createFixture(
+      "legacy-chapter-card-content"
+    );
+    const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
+    const manifestPath = join(created.projectDirectory, "deepwrite.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as {
+      plot: { chapterCards: Array<Record<string, unknown>> };
+      chapters: Array<{ card: { id: string; path: string; revision: string } }>;
+    };
+    const chapterCard = index.plot.chapterCards[0]!;
+    const cardFile = index.chapters[0]!.card;
+    const existingContent = "## 已有章卡内容\n\n保留这段人工编辑。";
+    await writeFile(
+      join(created.projectDirectory, cardFile.path),
+      existingContent,
+      "utf8"
+    );
+    cardFile.revision = createLongFileRevision(existingContent);
+    chapterCard.outline = "旧版章节规划";
+    chapterCard.worldConstraints = "旧版世界约束";
+    chapterCard.characterIds = [];
+    const indexContent = `${JSON.stringify(index, null, 2)}\n`;
+    await writeFile(indexPath, indexContent, "utf8");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      workspaceIndexFile: { revision: string };
+    };
+    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8"
+    );
+
+    const opened = await projectStore.openBook(created.projectDirectory);
+    const migratedCard = opened.book.workspaceIndex.plot.chapterCards[0]!;
+    expect(migratedCard).not.toHaveProperty("outline");
+    expect(migratedCard).not.toHaveProperty("worldConstraints");
+    expect(migratedCard).not.toHaveProperty("characterIds");
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: cardFile.id
+      })
+    ).resolves.toMatchObject({
+      content: expect.stringContaining(existingContent)
+    });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: cardFile.id
+      })
+    ).resolves.toMatchObject({
+      content: expect.stringContaining("旧版章节规划")
+    });
+  });
+
+  it("recreates a missing chapter-card file from legacy structured content", async () => {
+    const { created } = await createFixture("missing-legacy-chapter-card");
+    const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
+    const manifestPath = join(created.projectDirectory, "deepwrite.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as {
+      plot: { chapterCards: Array<Record<string, unknown>> };
+      chapters: Array<{ card: { id: string; path: string } }>;
+    };
+    const chapterCard = index.plot.chapterCards[0]!;
+    const cardFile = index.chapters[0]!.card;
+    chapterCard.outline = "重启后应恢复的章节规划";
+    chapterCard.worldConstraints = "重启后应恢复的世界约束";
+    chapterCard.characterIds = [];
+    await unlink(join(created.projectDirectory, cardFile.path));
+    const indexContent = `${JSON.stringify(index, null, 2)}\n`;
+    await writeFile(indexPath, indexContent, "utf8");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      workspaceIndexFile: { revision: string };
+    };
+    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8"
+    );
+
+    const restartedStore = store();
+    const reopened = await restartedStore.openBook(created.projectDirectory);
+    const recoveredCard = reopened.book.workspaceIndex.chapters[0]!.card;
+    await expect(
+      restartedStore.readDocument(created.projectDirectory, {
+        fileId: recoveredCard.id
+      })
+    ).resolves.toMatchObject({
+      content: expect.stringContaining("重启后应恢复的章节规划")
+    });
+    await expect(
+      lstat(join(created.projectDirectory, recoveredCard.path))
+    ).resolves.toBeDefined();
+  });
+
   it("repairs missing overview files for existing list worldbuilding categories", async () => {
     const { projectStore, created } = await createFixture(
       "missing-worldbuilding-overview"
@@ -310,6 +433,17 @@ describe("LongProjectStore", () => {
     expect(created.book.workspaceIndex.plot.arcs).toHaveLength(1);
     expect(created.book.workspaceIndex.plot.chapterCards).toHaveLength(1);
     expect(created.book.workspaceIndex.chapters).toHaveLength(1);
+    expect(
+      created.book.workspaceIndex.chapters[0]!.foreshadowingChanges
+    ).toMatchObject({
+      id: longChapterForeshadowingChangesFileId(
+        created.book.workspaceIndex.chapters[0]!.chapterCardId
+      ),
+      path: longChapterContinuityFilePath(
+        created.book.workspaceIndex.chapters[0]!.chapterCardId,
+        "foreshadowing-changes.md"
+      )
+    });
     expect(created.summary.navigation.counts).toMatchObject({
       worldbuildingCategories: 7,
       volumes: 1,
@@ -319,7 +453,8 @@ describe("LongProjectStore", () => {
 
     const files = [
       created.book.workspaceIndex.bookLine,
-      ...Object.values(firstChapterFiles(created.book))
+      ...Object.values(firstChapterFiles(created.book)),
+      created.book.workspaceIndex.chapters[0]!.foreshadowingChanges
     ];
     for (const file of files) {
       await expect(
@@ -340,6 +475,365 @@ describe("LongProjectStore", () => {
     await expect(
       lstat(join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH))
     ).resolves.toMatchObject({ isFile: expect.any(Function) });
+  });
+
+  it("persists chapter-card text across a complete store restart", async () => {
+    const { created } = await createFixture("chapter-card-restart");
+    const card = firstChapterFiles(created.book).card;
+    const content = "## 第一章\n\n这是重启后仍需读取的章卡内容。";
+    const initialStore = store();
+    await initialStore.writeDocument(created.projectDirectory, {
+      fileId: card.id,
+      content,
+      expectedFileRevision: card.revision,
+      expectedWorkspaceRevision: 0,
+      expectedProjectRevision: 0
+    });
+
+    const restartedStore = store();
+    const reopened = await restartedStore.openBook(created.projectDirectory);
+    const reopenedCard = firstChapterFiles(reopened.book).card;
+    await expect(
+      restartedStore.readDocument(created.projectDirectory, {
+        fileId: reopenedCard.id
+      })
+    ).resolves.toMatchObject({ content });
+  });
+
+  it("commits chapter continuity as lightweight per-chapter text files and leaves them editable after rollback", async () => {
+    const { projectStore, created } = await createFixture(
+      "text-file-continuity"
+    );
+    const chapterCardId =
+      created.book.workspaceIndex.plot.chapterCards[0]!.id;
+    const emptyRevision = createLongFileRevision("");
+    const characterId = "character_linlan";
+    const characterFiles = {
+      characterId,
+      coreProfile: createEmptyLongMarkdownFileReference(
+        longCharacterCoreProfileFileId(characterId),
+        longCharacterFilePath(characterId, "core-profile.md"),
+        FIXED_NOW
+      ),
+      relationships: createEmptyLongMarkdownFileReference(
+        longCharacterRelationshipsFileId(characterId),
+        longCharacterFilePath(characterId, "relationships.md"),
+        FIXED_NOW
+      ),
+      currentState: createEmptyLongMarkdownFileReference(
+        longCharacterCurrentStateFileId(characterId),
+        longCharacterFilePath(characterId, "current-state.md"),
+        FIXED_NOW
+      ),
+      history: createEmptyLongMarkdownFileReference(
+        longCharacterHistoryFileId(characterId),
+        longCharacterFilePath(characterId, "history.md"),
+        FIXED_NOW
+      )
+    };
+    const worldReveals = createEmptyLongMarkdownFileReference(
+      longChapterWorldRevealsFileId(chapterCardId),
+      longChapterContinuityFilePath(chapterCardId, "world-reveals.md"),
+      FIXED_NOW
+    );
+    const characterCurrentState =
+      createEmptyLongMarkdownFileReference(
+        longChapterCharacterCurrentStateFileId(
+          chapterCardId,
+          characterId
+        ),
+        longChapterCharacterContinuityFilePath(
+          chapterCardId,
+          characterId,
+          "current-state.md"
+        ),
+        FIXED_NOW
+      );
+    const characterHistory = createEmptyLongMarkdownFileReference(
+      longChapterCharacterHistoryFileId(chapterCardId, characterId),
+      longChapterCharacterContinuityFilePath(
+        chapterCardId,
+        characterId,
+        "history.md"
+      ),
+      FIXED_NOW
+    );
+
+    const withContinuityFiles =
+      await projectStore.applyWorkspaceOperations(
+        created.projectDirectory,
+        {
+          batch: {
+            baseRevision: 0,
+            updatedAt: FIXED_NOW,
+            operations: [
+              {
+                type: "character.create",
+                character: {
+                  id: characterId,
+                  name: "林岚",
+                  group: "protagonist",
+                  order: 1,
+                  aliases: []
+                },
+                files: characterFiles
+              },
+              {
+                type: "chapterContinuity.worldReveals.create",
+                chapterCardId,
+                file: worldReveals
+              },
+              {
+                type: "chapterContinuity.character.create",
+                chapterCardId,
+                characterId,
+                currentState: characterCurrentState,
+                history: characterHistory
+              }
+            ],
+            documentWrites: []
+          },
+          expectedProjectRevision: 0
+        }
+      );
+    const createdChapter =
+      withContinuityFiles.book.workspaceIndex.chapters[0]!;
+    expect(createdChapter.worldReveals).toEqual(worldReveals);
+    expect(createdChapter.characterContinuity).toEqual([
+      {
+        characterId,
+        currentState: characterCurrentState,
+        history: characterHistory
+      }
+    ]);
+    for (const reference of [
+      worldReveals,
+      characterCurrentState,
+      characterHistory
+    ]) {
+      await expect(
+        projectStore.readDocument(created.projectDirectory, {
+          fileId: reference.id
+        })
+      ).resolves.toMatchObject({ content: "", revision: emptyRevision });
+    }
+
+    const chapterContinuity = createdChapter.characterContinuity[0]!;
+    const textDocuments = [
+      {
+        reference: createdChapter.body,
+        content: "雨夜里，林岚收到一封带有旧王朝印记的信。"
+      },
+      {
+        reference: createdChapter.characterState,
+        content: "林岚持有旧信，决定追查寄信人。"
+      },
+      {
+        reference: createdChapter.handoff,
+        content: "下一章从信封上的旧邮戳继续追查。"
+      },
+      {
+        reference: createdChapter.foreshadowingChanges,
+        content: "寄信人身份伏笔已种下，等待后续揭露。"
+      },
+      {
+        reference: createdChapter.worldReveals!,
+        content: "旧王朝曾使用带月纹的官方火漆。"
+      },
+      {
+        reference: chapterContinuity.currentState,
+        content: "林岚：警觉；持有旧信；目标是确认寄信人。"
+      },
+      {
+        reference: chapterContinuity.history,
+        content: "第一章：收到旧信并开始调查。"
+      }
+    ];
+    const written = await projectStore.applyWorkspaceOperations(
+      created.projectDirectory,
+      {
+        batch: {
+          baseRevision: 1,
+          updatedAt: FIXED_NOW,
+          operations: [],
+          documentWrites: textDocuments.map(
+            ({ reference, content }, index) => ({
+              proposalId: `proposal_continuity_${index}`,
+              fileId: reference.id,
+              mode: "replace" as const,
+              expectedRevision: reference.revision,
+              nextRevision: createLongFileRevision(content),
+              updatedAt: FIXED_NOW,
+              content,
+              reason: "记录第一章连续性"
+            })
+          )
+        },
+        expectedProjectRevision: 1
+      }
+    );
+    const writtenChapter = written.book.workspaceIndex.chapters[0]!;
+    const writtenCharacterContinuity =
+      writtenChapter.characterContinuity[0]!;
+    const continuityReferences = [
+      writtenChapter.characterState,
+      writtenChapter.handoff,
+      writtenChapter.foreshadowingChanges,
+      writtenChapter.worldReveals!,
+      writtenCharacterContinuity.currentState,
+      writtenCharacterContinuity.history
+    ];
+    const continuityFileRevisions = continuityReferences.map(
+      ({ id, revision }) => ({ fileId: id, revision })
+    );
+    const commitInput = {
+      mode: "text_files" as const,
+      chapterCardId,
+      chapterFileRevisions: {
+        body: writtenChapter.body.revision
+      },
+      continuityFileRevisions,
+      commitMessage: "留存第一章连续性文本",
+      baseWorkspaceRevision: 2,
+      baseProjectRevision: 2
+    };
+
+    await expect(
+      projectStore.commitChapter(created.projectDirectory, {
+        ...commitInput,
+        continuityFileRevisions: continuityFileRevisions.slice(0, -1)
+      })
+    ).rejects.toThrow(/必须精确引用/u);
+    await expect(
+      projectStore.commitChapter(created.projectDirectory, {
+        ...commitInput,
+        continuityFileRevisions: continuityFileRevisions.map(
+          (entry, index) =>
+            index === 0
+              ? {
+                  ...entry,
+                  revision: createLongFileRevision("过期的章末状态")
+                }
+              : entry
+        )
+      })
+    ).rejects.toMatchObject({ scope: "file" });
+
+    const projectionBefore = structuredClone(
+      written.book.workspaceIndex.ledger.projection
+    );
+    const globalCharacterFilesBefore =
+      written.book.workspaceIndex.characterFiles[0]!;
+    const committed = await projectStore.commitChapter(
+      created.projectDirectory,
+      commitInput
+    );
+    expect(committed.record).toMatchObject({
+      schemaVersion: 4,
+      sequence: 1,
+      chapterCardId,
+      commitMessage: "留存第一章连续性文本",
+      placementChanges: [],
+      foreshadowingBeatChanges: [],
+      fileChanges: [],
+      continuityFiles: continuityReferences.map(({ id, path, revision }) => ({
+        fileId: id,
+        path,
+        revision
+      }))
+    });
+    const afterCommit = await projectStore.openBook(
+      created.projectDirectory
+    );
+    expect(afterCommit.book.workspaceIndex.ledger.projection).toEqual(
+      projectionBefore
+    );
+    expect(afterCommit.book.workspaceIndex.characterFiles[0]).toEqual(
+      globalCharacterFilesBefore
+    );
+    for (const reference of Object.values(globalCharacterFilesBefore).filter(
+      (value): value is typeof globalCharacterFilesBefore.coreProfile =>
+        typeof value === "object"
+    )) {
+      await expect(
+        projectStore.readDocument(created.projectDirectory, {
+          fileId: reference.id
+        })
+      ).resolves.toMatchObject({ content: "", revision: emptyRevision });
+    }
+    const commitEntry =
+      afterCommit.book.workspaceIndex.ledger.commits[0]!;
+    expect(commitEntry.mode).toBe("text_files");
+    const rawRecord = await readFile(
+      join(created.projectDirectory, commitEntry.recordFile.path),
+      "utf8"
+    );
+    expect(rawRecord).not.toContain("收到旧信并开始调查");
+    expect(rawRecord).not.toContain("旧王朝曾使用");
+
+    const committedChapter =
+      afterCommit.book.workspaceIndex.chapters[0]!;
+    for (const reference of [
+      committedChapter.body,
+      committedChapter.card,
+      committedChapter.characterState,
+      committedChapter.handoff,
+      committedChapter.foreshadowingChanges,
+      committedChapter.worldReveals!,
+      ...committedChapter.characterContinuity.flatMap((entry) => [
+        entry.currentState,
+        entry.history
+      ])
+    ]) {
+      await expect(
+        projectStore.writeDocument(created.projectDirectory, {
+          fileId: reference.id,
+          content: "提交后不应允许覆盖",
+          expectedFileRevision: reference.revision,
+          expectedWorkspaceRevision: 3,
+          expectedProjectRevision: 3
+        })
+      ).rejects.toThrow(/已提交章节/u);
+    }
+
+    const rolledBack = await projectStore.rollbackLastCommit(
+      created.projectDirectory,
+      {
+        expectedCommitId: committed.record.id,
+        baseWorkspaceRevision: 3,
+        baseProjectRevision: 3
+      }
+    );
+    expect(rolledBack).toMatchObject({
+      rolledBackCommitId: committed.record.id,
+      committedThroughChapterId: null,
+      workspaceRevision: 4,
+      projectRevision: 4
+    });
+    const afterRollback = await projectStore.openBook(
+      created.projectDirectory
+    );
+    expect(afterRollback.book.workspaceIndex.ledger.commits).toEqual([]);
+    expect(afterRollback.book.workspaceIndex.chapters[0]!.commitId).toBeNull();
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: writtenCharacterContinuity.history.id
+      })
+    ).resolves.toMatchObject({
+      content: "第一章：收到旧信并开始调查。"
+    });
+    await expect(
+      projectStore.writeDocument(created.projectDirectory, {
+        fileId: writtenCharacterContinuity.currentState.id,
+        content: "回滚后可继续修订人物当前状态。",
+        expectedFileRevision: writtenCharacterContinuity.currentState.revision,
+        expectedWorkspaceRevision: 4,
+        expectedProjectRevision: 4
+      })
+    ).resolves.toMatchObject({
+      workspaceRevision: 5,
+      projectRevision: 5
+    });
   });
 
   it("updates only long-book bindings with project-revision CAS", async () => {
@@ -485,7 +979,7 @@ describe("LongProjectStore", () => {
                 type: "chapter.update",
                 id:
                   created.book.workspaceIndex.plot.chapterCards[0]!.id,
-                patch: { outline: "验证越界 append 不落盘" }
+                patch: { title: "验证越界 append 不落盘" }
               }
             ],
             documentWrites: [
@@ -1260,14 +1754,10 @@ describe("LongProjectStore", () => {
       projectRevision: 2
     });
     await expect(
-      projectStore.writeDocument(created.projectDirectory, {
-        fileId: files.characterState.id,
-        content: "不应直接维护章末状态",
-        expectedFileRevision: written.characterStateRevision,
-        expectedWorkspaceRevision: 2,
-        expectedProjectRevision: 2
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: files.characterState.id
       })
-    ).rejects.toThrow(/由连续性账本生成/u);
+    ).resolves.toMatchObject({ content: "" });
 
     const bookLine = created.book.workspaceIndex.bookLine;
     const commitInput: Parameters<LongProjectStore["commitChapter"]>[1] = {
@@ -1833,6 +2323,12 @@ describe("LongProjectStore", () => {
         revision: emptyRevision,
         updatedAt: FIXED_NOW
       },
+      card: {
+        id: longChapterCardFileId(secondChapterId),
+        path: `long/chapters/${secondChapterStorage}/card.md`,
+        revision: emptyRevision,
+        updatedAt: FIXED_NOW
+      },
       characterState: {
         id: longChapterCharacterStateFileId(secondChapterId),
         path: `long/chapters/${secondChapterStorage}/character-state.md`,
@@ -1845,6 +2341,17 @@ describe("LongProjectStore", () => {
         revision: emptyRevision,
         updatedAt: FIXED_NOW
       },
+      foreshadowingChanges: {
+        id: longChapterForeshadowingChangesFileId(secondChapterId),
+        path: longChapterContinuityFilePath(
+          secondChapterId,
+          "foreshadowing-changes.md"
+        ),
+        revision: emptyRevision,
+        updatedAt: FIXED_NOW
+      },
+      worldReveals: null,
+      characterContinuity: [],
       commitId: null
     };
     const characterId = "character_guard";
@@ -1904,10 +2411,7 @@ describe("LongProjectStore", () => {
                 volumeId: volume.id,
                 primaryArcId: arc.id,
                 title: "第二章",
-                narrativeOrder: 2,
-                outline: "",
-                worldConstraints: "",
-                characterIds: [characterId]
+                narrativeOrder: 2
               },
               files: secondChapterFiles
             }

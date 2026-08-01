@@ -1,64 +1,45 @@
 import { describe, expect, it } from "vitest";
+import appSource from "../App.vue?raw";
+import selectionSource from "../types/longWorkspace.ts?raw";
 import source from "./LongWorkspaceEditor.vue?raw";
 
-describe("LongWorkspaceEditor continuity integration", () => {
-  it("renders the continuity workspace for ledger views without replacing record details", () => {
-    expect(source).toContain(
+describe("LongWorkspaceEditor continuity text-file integration", () => {
+  it("uses the ordinary read-only Markdown preview instead of a continuity dashboard", () => {
+    expect(source).not.toContain(
       'import LongContinuityWorkspace from "./LongContinuityWorkspace.vue"'
     );
+    expect(source).not.toContain("<LongContinuityWorkspace");
+    expect(source).toContain("<MarkdownContent");
     expect(source).toContain(
-      'props.selection?.root === "continuity_ledger"'
+      `v-if="viewMode === 'edit' && !currentReadOnly"`
     );
-    expect(source).toContain(
-      'currentSelectionFile.value?.role !== "ledger-record"'
-    );
-    expect(source).toContain("<LongContinuityWorkspace");
-    expect(source).toContain(":book-id=\"bookId\"");
-    expect(source).toContain(":snapshot=\"workspaceIndex\"");
-    expect(source).toContain(
-      ":view=\"selection.continuityView ?? 'inbox'\""
-    );
-    expect(source).toContain(":evidence-content=\"currentVisibleContent\"");
-    expect(source).toContain("currentContinuityWorkspaceChapterProps");
-
-    const recordStart = source.indexOf(
-      'class="long-ledger-record"'
-    );
-    expect(recordStart).toBeGreaterThan(-1);
-    expect(source.slice(recordStart)).toContain(
-      "currentLedgerRecord.placementChanges"
-    );
-    expect(source.slice(recordStart)).toContain(
-      "currentLedgerRecord.foreshadowingBeatChanges"
-    );
-    expect(source.slice(recordStart)).toContain("查看原始审计记录");
+    expect(source).toContain('class="long-document-preview"');
   });
 
-  it("keeps ledger projections out of character, world, plot, and foreshadowing editors", () => {
-    expect(source).not.toContain(
-      'import LongContinuityProjectionPanel from "./LongContinuityProjectionPanel.vue"'
-    );
-    expect(source).not.toContain("<LongContinuityProjectionPanel");
-    expect(source).not.toContain("currentContinuityProjectionDomain");
-    expect(source).not.toContain("currentContinuityProjectionSubjectProps");
-    expect(source).not.toContain("long-continuity-projection-slot");
-    expect(source).toContain("<LongForeshadowingWorkspace");
-  });
-
-  it("forwards commit navigation through one editor event", () => {
-    expect(source).toContain("selectLedgerCommit: [commitId: string]");
-    expect(
-      source.match(/@select-commit="emit\('selectLedgerCommit', \$event\)"/gu)
-    ).toHaveLength(1);
-  });
-
-  it("keeps continuity dashboards outside text editing and save controls", () => {
-    expect(source).toContain("!currentIsContinuityWorkspace.value");
-    expect(source).toContain('v-if="showGenericFileTabs"');
+  it("selects tabs by file id so several character records can share one role", () => {
+    expect(source).toContain("const activeFileId = ref<string | null>(null)");
+    expect(source).toContain(':key="file.file.id"');
     expect(source).toContain(
-      'v-if="!currentIsContinuityWorkspace" class="long-editor-footer"'
+      ':aria-selected="currentSelectionFile?.file.id === file.file.id"'
     );
-    expect(source).toContain(".long-continuity-workspace-host");
-    expect(source).not.toContain(".long-continuity-projection-slot");
+    expect(source).toContain('@click="selectWorkspaceFile(file.file.id)"');
+  });
+
+  it("lists only pending chapters and chapter records in the continuity tree", () => {
+    expect(appSource).toContain('title: "待处理章节"');
+    expect(appSource).toContain('title: "章节记录"');
+    expect(appSource).not.toContain('key: "continuity-view:snapshot"');
+    expect(appSource).not.toContain('key: "continuity-view:execution"');
+    expect(appSource).not.toContain('key: "continuity-view:knowledge"');
+  });
+
+  it("maps ledger navigation to chapter Markdown and never selects record JSON", () => {
+    const ledgerStart = selectionSource.indexOf(
+      'if (selection.key.startsWith("ledger:"))'
+    );
+    const ledgerSelection = selectionSource.slice(ledgerStart);
+    expect(ledgerStart).toBeGreaterThan(-1);
+    expect(ledgerSelection).toContain("createLongContinuitySelection(");
+    expect(ledgerSelection).not.toContain("file: commit.recordFile");
   });
 });
