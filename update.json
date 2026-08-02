@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "channel": "stable",
+  "version": "1.1.2",
+  "title": "DeepWrite 1.1.2",
+  "publishedAt": "2026-08-02T00:00:00+08:00",
+  "releaseNotes": [
+    "当前版本已接入测试版自动更新能力"
+  ],
+  "mandatory": false,
+  "minimumSupportedVersion": "1.0.0",
+  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.1.2",
+  "feedUrl": "https://github.com/swjybky/deepwrite/releases/latest/download"
+}
