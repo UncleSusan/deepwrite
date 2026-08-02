@@ -202,6 +202,20 @@ describe("long import store integration", () => {
     expect(imported.book.workspaceIndex.chapters[0]!.commitId).toBe(
       imported.book.workspaceIndex.ledger.commits[0]!.id
     );
+    const migratedContinuityChapter =
+      imported.book.workspaceIndex.chapters[0]!;
+    expect(imported.book.workspaceIndex.ledger.commits[0]!.mode).toBe(
+      "structured"
+    );
+    expect(migratedContinuityChapter.characterContinuity).toEqual([]);
+    expect(migratedContinuityChapter.worldReveals).toBeNull();
+    await expect(
+      store.readDocument(imported.projectDirectory, {
+        fileId: migratedContinuityChapter.foreshadowingChanges.id
+      })
+    ).resolves.toMatchObject({
+      content: expect.stringContaining("旧版 structured 连续性提交")
+    });
     expect(imported.book.linkedMaterialIdsByKind.plot).toEqual([
       "material-long-legacy"
     ]);

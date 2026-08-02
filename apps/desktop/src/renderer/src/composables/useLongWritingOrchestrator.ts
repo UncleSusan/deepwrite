@@ -11,6 +11,18 @@ type LongWritingWorkflowEvent = Extract<
     type:
       | "long.chapter_dispatch_proposal"
       | "long.chapter_write_proposal"
+      | "long.continuity_file_proposal"
+      | "long.mutation_proposal"
+      | "long.ledger_commit_proposal";
+  }
+>;
+
+type LongContinuityStageProposalEvent = Extract<
+  SystemEventEnvelope,
+  {
+    type:
+      | "long.continuity_file_proposal"
+      | "long.mutation_proposal"
       | "long.ledger_commit_proposal";
   }
 >;
@@ -47,6 +59,38 @@ export interface LongWritingApprovalExpectation {
   runId?: string;
 }
 
+function isContinuityStageProposalForChapter(
+  event: SystemEventEnvelope,
+  chapterCardId: string
+): event is LongContinuityStageProposalEvent {
+  if (
+    event.type !== "long.continuity_file_proposal" &&
+    event.type !== "long.ledger_commit_proposal" &&
+    event.type !== "long.mutation_proposal"
+  ) {
+    return false;
+  }
+  if (event.payload.agentId !== "continuity_ledger") return false;
+  if (event.type === "long.continuity_file_proposal") {
+    return event.payload.files.every(
+      (file) => file.chapterCardId === chapterCardId
+    );
+  }
+  if (event.type === "long.ledger_commit_proposal") {
+    return event.payload.input.chapterCardId === chapterCardId;
+  }
+  return (
+    event.payload.batch.documentWrites.length === 0 &&
+    event.payload.batch.operations.length > 0 &&
+    event.payload.batch.operations.every(
+      (operation) =>
+        (operation.type === "chapterContinuity.worldReveals.delete" ||
+          operation.type === "chapterContinuity.character.delete") &&
+        operation.chapterCardId === chapterCardId
+    )
+  );
+}
+
 export function canApproveLongWritingProposal(input: {
   active: boolean;
   state: LongWritingWorkflowState;
@@ -59,6 +103,7 @@ export function canApproveLongWritingProposal(input: {
   if (
     event.type !== "long.chapter_write_proposal" &&
     event.type !== "long.continuity_file_proposal" &&
+    event.type !== "long.mutation_proposal" &&
     event.type !== "long.ledger_commit_proposal"
   ) {
     return false;
@@ -83,13 +128,7 @@ export function canApproveLongWritingProposal(input: {
       event.payload.file.chapterCardId === chapter.chapterCardId) ||
     (state.phase === "awaiting_ledger_approval" &&
       expectation.agentId === "continuity_ledger" &&
-      ((event.type === "long.continuity_file_proposal" &&
-        event.payload.files.every(
-          ({ chapterCardId }) =>
-            chapterCardId === chapter.chapterCardId
-        )) ||
-        (event.type === "long.ledger_commit_proposal" &&
-          event.payload.input.chapterCardId === chapter.chapterCardId)))
+      isContinuityStageProposalForChapter(event, chapter.chapterCardId))
   );
 }
 
@@ -135,7 +174,7 @@ export interface LongWritingOrchestrator {
   handleApplied(event: LongWritingWorkflowEvent): Promise<boolean>;
   handleChapterSaved(bookId: string, chapterCardId: string): Promise<boolean>;
   handleChapterRejected(bookId: string, chapterCardId: string): boolean;
-  handleRejected(event: LongWritingWorkflowEvent): boolean;
+  handleRejected(event: SystemEventEnvelope): boolean;
   handleRunFailure(
     agentId: "expert_section_writer" | "continuity_ledger",
     error: string
@@ -294,7 +333,7 @@ export function useLongWritingOrchestrator(
     try {
       if (!(await options.saveBarrier(bookId))) {
         throw new Error(
-          "连续性提交已写入，但工作区刷新屏障尚未完成；请重试，编排不会跳过本章。"
+          "连续性文件已归档，但工作区刷新屏障尚未完成；请重试，编排不会跳过本章。"
         );
       }
       if (runEpoch !== epoch) return;
@@ -431,22 +470,24 @@ export function useLongWritingOrchestrator(
     await checkAndStart(runEpoch);
   }
 
-  function handleRejected(event: LongWritingWorkflowEvent): boolean {
+  function handleRejected(event: SystemEventEnvelope): boolean {
     const chapter = currentChapter.value;
     if (
       !chapter ||
+      !isContinuityStageProposalForChapter(
+        event,
+        chapter.chapterCardId
+      ) ||
       state.value.bookId !== event.payload.bookId
     ) {
       return false;
     }
     if (
-      event.type === "long.ledger_commit_proposal" &&
-      state.value.phase === "awaiting_ledger_approval" &&
-      event.payload.input.chapterCardId === chapter.chapterCardId
+      state.value.phase === "awaiting_ledger_approval"
     ) {
       fail(
         new Error(
-          `已拒绝“${chapter.title}”的连续性提交；可重试当前章核对，计划不会推进。`
+          `已拒绝“${chapter.title}”的连续性变更；可重试当前章核对，计划不会推进。`
         ),
         "after_write"
       );

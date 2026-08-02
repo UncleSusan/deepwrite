@@ -35,14 +35,17 @@ const props = defineProps<{
   modelSettings: ModelSettings | null;
   modelLoading: boolean;
   modelSaving: boolean;
+  freeModelsRefreshing: boolean;
   modelError: string | null;
   modelTestMessage: string | null;
   testingModelId: string | null;
+  modelAlertMessages: readonly string[];
   workspaceDirectoryPath: string | null;
   workspaceDirectoryLoading: boolean;
 }>();
 const emit = defineEmits<{
   saveModels: [settings: ModelSettingsInput];
+  refreshFreeModels: [];
   testModel: [model: ModelConfigInput];
   chooseWorkspaceDirectory: [];
 }>();
@@ -172,13 +175,53 @@ watch(
     if (active && mode === "models") {
       resetModelDraft(props.modelSettings);
     }
-  }
+  },
+  { immediate: true }
 );
 
 watch(
   () => [props.modelSettings, props.modelSaving] as const,
   ([settings, saving]) => {
     if (props.active && props.mode === "models" && !saving) {
+      const editor = modelEditor.value;
+      if (editor?.managedBy === "deepwrite-free" && settings) {
+        draftModels.value = draftModels.value.map((model) => {
+          if (model.managedBy !== "deepwrite-free") {
+            return model;
+          }
+          const refreshed = settings.models.find((candidate) => candidate.id === model.id);
+          return refreshed
+            ? {
+                ...refreshed,
+                thinkingLevelOptions: cloneThinkingLevelOptions(
+                  refreshed.thinkingLevelOptions
+                ),
+                temperatureOptions: cloneTemperatureOptions(refreshed.temperatureOptions),
+                customThinkingLevel: findCustomThinkingLevel(
+                  refreshed.thinkingLevelOptions
+                )
+              }
+            : model;
+        });
+        const refreshedEditor =
+          settings.deepwriteFreeModels?.find((candidate) => candidate.id === editor.id) ??
+          settings.deepwriteFreeModels?.find(
+            (candidate) => candidate.id === settings.deepwriteFreeDefaultModelId
+          ) ??
+          settings.deepwriteFreeModels?.[0];
+        if (refreshedEditor) {
+          modelEditor.value = {
+            ...refreshedEditor,
+            apiKey: "",
+            clearApiKey: false,
+            customThinkingLevel: findCustomThinkingLevel(
+              refreshedEditor.thinkingLevelOptions
+            ),
+            ...(editor.originalId ? { originalId: editor.originalId } : {})
+          };
+        }
+        return;
+      }
       resetModelDraft(settings);
     }
   }
@@ -222,6 +265,9 @@ function createModel(): void {
 }
 
 function editModel(model: DraftModel): void {
+  if (model.managedBy === "deepwrite-official") {
+    return;
+  }
   modelEditor.value = {
     ...model,
     thinkingLevelOptions: cloneThinkingLevelOptions(model.thinkingLevelOptions),
@@ -468,6 +514,10 @@ function toModelInput(model: DraftModel): ModelConfigInput {
     label: model.label.trim(),
     provider: model.provider.trim().toLowerCase(),
     modelId: model.modelId.trim(),
+    ...(model.requestModelId ? { requestModelId: model.requestModelId } : {}),
+    ...(model.supportsDeveloperRole !== undefined
+      ? { supportsDeveloperRole: model.supportsDeveloperRole }
+      : {}),
     api: model.api,
     baseUrl: model.baseUrl.trim(),
     reasoning: model.reasoning,
@@ -489,6 +539,12 @@ function testDraftModel(model: DraftModel): void {
 }
 
 function removeModel(modelId: string): void {
+  if (
+    draftModels.value.find((model) => model.id === modelId)?.managedBy ===
+    "deepwrite-official"
+  ) {
+    return;
+  }
   draftModels.value = draftModels.value.filter((model) => model.id !== modelId);
   if (draftDefaultModelId.value === modelId) {
     draftDefaultModelId.value = draftModels.value[0]?.id ?? "";
@@ -560,9 +616,19 @@ function discardModelChanges(): void {
 
         <div v-else-if="mode === 'models'" class="dialog-content model-config-content">
           <div ref="modelConfigScrollArea" class="model-config-scroll-area">
-            <p class="dialog-description">
-              配置会同时用于连接测试与实际对话。API Key 仅由 Main 进程通过系统安全存储加密保存，Renderer 不会读回明文。
-            </p>
+            <div
+              v-if="modelAlertMessages.length > 0"
+              class="dialog-description model-price-notice"
+              role="note"
+              aria-label="模型公告"
+            >
+              <p
+                v-for="(message, index) in modelAlertMessages"
+                :key="`${index}:${message}`"
+              >
+                {{ message }}
+              </p>
+            </div>
 
             <div v-if="modelLoading" class="dialog-note">正在读取模型配置…</div>
             <template v-else>
@@ -731,6 +797,15 @@ function discardModelChanges(): void {
                 </div>
                 <div class="dialog-actions">
                   <button
+                    v-if="isDeepWriteFreeEditor"
+                    class="dialog-secondary-button"
+                    type="button"
+                    :disabled="freeModelsRefreshing || testingModelId !== null"
+                    @click="emit('refreshFreeModels')"
+                  >
+                    {{ freeModelsRefreshing ? "刷新中…" : "刷新免费模型" }}
+                  </button>
+                  <button
                     class="dialog-secondary-button"
                     type="button"
                     :disabled="testingModelId !== null"
@@ -752,7 +827,7 @@ function discardModelChanges(): void {
               <span class="model-logo">{{ row.model.label.slice(0, 1).toUpperCase() }}</span>
               <div>
                 <strong>{{ row.model.label }}</strong>
-                <small>{{ row.model.managedBy === "deepwrite-free" ? "DeepWrite 免费模型" : row.model.provider }} · {{ row.model.modelId }} · {{ row.model.api }}</small>
+                <small>{{ row.model.managedBy === "deepwrite-official" ? "DeepWrite 官方模型" : row.model.managedBy === "deepwrite-free" ? "DeepWrite 免费模型" : row.model.provider }} · {{ row.model.modelId }} · {{ row.model.api }}</small>
                 <small>
                   {{ row.model.reasoning ? `思考：${row.model.thinkingLevelOptions.map(thinkingLabel).join(" / ")}（默认 ${thinkingLabel(row.model.defaultThinkingLevel)}）` : `温度：${row.model.temperatureOptions.join(" / ")}` }} ·
                   {{ row.model.hasApiKey || row.model.apiKey ? "密钥已配置" : "未配置密钥" }}
@@ -766,7 +841,7 @@ function discardModelChanges(): void {
                 >
                   {{ draftDefaultModelId === row.model.id ? "默认" : "设为默认" }}
                 </button>
-                <button type="button" @click="editModel(row.model)">编辑</button>
+                <button v-if="row.model.managedBy !== 'deepwrite-official'" type="button" @click="editModel(row.model)">编辑</button>
                 <button
                   type="button"
                   :disabled="testingModelId !== null"
@@ -775,7 +850,7 @@ function discardModelChanges(): void {
                 >
                   {{ testingModelId === row.model.id ? "测试中…" : "测试连接" }}
                 </button>
-                <button class="is-danger" type="button" @click="removeModel(row.model.id)">删除</button>
+                <button v-if="row.model.managedBy !== 'deepwrite-official'" class="is-danger" type="button" @click="removeModel(row.model.id)">删除</button>
               </div>
               </article>
               </template>

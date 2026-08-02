@@ -10,6 +10,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createEmptyLongMarkdownFileReference,
+  longChapterCharacterContinuityFilePath,
+  longChapterCharacterCurrentStateFileId,
+  longChapterCharacterHistoryFileId,
+  longChapterContinuityFilePath,
+  longChapterWorldRevealsFileId,
+  longCharacterCoreProfileFileId,
+  longCharacterCurrentStateFileId,
+  longCharacterFilePath,
+  longCharacterHistoryFileId,
+  longCharacterRelationshipsFileId,
   longStoryPlotBodyFileId,
   longStoryPlotFilePath,
   longWorldbuildingContentPath,
@@ -104,6 +114,183 @@ describe("LongWorkspaceService", () => {
       fileId: chapter.body.id,
       root: "draft"
     });
+  });
+
+  it("reads, writes and searches every per-chapter continuity Markdown file", async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "deepwrite-long-continuity-service-"))
+    );
+    const service = new LongWorkspaceService({
+      userDataPath: join(root, "user-data"),
+      now: () => "2026-08-02T09:00:00.000Z"
+    });
+    const created = await service.create(root, {
+      title: "连续性文件服务",
+      genre: "悬疑"
+    });
+    const chapter = created.book.workspaceIndex.chapters[0]!;
+    const characterId = "character_continuity_service";
+    const updatedAt = "2026-08-02T09:01:00.000Z";
+    const characterFiles = {
+      characterId,
+      coreProfile: createEmptyLongMarkdownFileReference(
+        longCharacterCoreProfileFileId(characterId),
+        longCharacterFilePath(characterId, "core-profile.md"),
+        updatedAt
+      ),
+      relationships: createEmptyLongMarkdownFileReference(
+        longCharacterRelationshipsFileId(characterId),
+        longCharacterFilePath(characterId, "relationships.md"),
+        updatedAt
+      ),
+      currentState: createEmptyLongMarkdownFileReference(
+        longCharacterCurrentStateFileId(characterId),
+        longCharacterFilePath(characterId, "current-state.md"),
+        updatedAt
+      ),
+      history: createEmptyLongMarkdownFileReference(
+        longCharacterHistoryFileId(characterId),
+        longCharacterFilePath(characterId, "history.md"),
+        updatedAt
+      )
+    };
+    const worldReveals = createEmptyLongMarkdownFileReference(
+      longChapterWorldRevealsFileId(chapter.chapterCardId),
+      longChapterContinuityFilePath(
+        chapter.chapterCardId,
+        "world-reveals.md"
+      ),
+      updatedAt
+    );
+    const currentState = createEmptyLongMarkdownFileReference(
+      longChapterCharacterCurrentStateFileId(
+        chapter.chapterCardId,
+        characterId
+      ),
+      longChapterCharacterContinuityFilePath(
+        chapter.chapterCardId,
+        characterId,
+        "current-state.md"
+      ),
+      updatedAt
+    );
+    const history = createEmptyLongMarkdownFileReference(
+      longChapterCharacterHistoryFileId(
+        chapter.chapterCardId,
+        characterId
+      ),
+      longChapterCharacterContinuityFilePath(
+        chapter.chapterCardId,
+        characterId,
+        "history.md"
+      ),
+      updatedAt
+    );
+    await service.applyOperations({
+      bookId: created.book.id,
+      baseProjectRevision: created.summary.projectRevision,
+      batch: {
+        baseRevision: created.book.workspaceIndex.revision,
+        updatedAt,
+        operations: [
+          {
+            type: "character.create",
+            character: {
+              id: characterId,
+              name: "沈砚",
+              group: "protagonist",
+              order: 1,
+              aliases: []
+            },
+            files: characterFiles
+          },
+          {
+            type: "chapterContinuity.worldReveals.create",
+            chapterCardId: chapter.chapterCardId,
+            file: worldReveals
+          },
+          {
+            type: "chapterContinuity.character.create",
+            chapterCardId: chapter.chapterCardId,
+            characterId,
+            currentState,
+            history
+          }
+        ],
+        documentWrites: []
+      }
+    });
+
+    const continuityFiles = [
+      chapter.foreshadowingChanges,
+      worldReveals,
+      currentState,
+      history
+    ];
+    for (const file of continuityFiles) {
+      await expect(
+        service.readDocument({
+          bookId: created.book.id,
+          fileId: file.id,
+          offset: 0,
+          maxCharacters: 100
+        })
+      ).resolves.toMatchObject({
+        file: expect.objectContaining({ id: file.id }),
+        content: ""
+      });
+    }
+
+    const contents = new Map([
+      [chapter.foreshadowingChanges.id, "铜铃伏笔在章末首次出现。"],
+      [worldReveals.id, "城门只会在月蚀之夜显形。"],
+      [currentState.id, "沈砚已经取得铜铃。"],
+      [history.id, "第一章：沈砚取得铜铃。"]
+    ]);
+    for (const file of continuityFiles) {
+      const before = await service.readDocument({
+        bookId: created.book.id,
+        fileId: file.id,
+        offset: 0,
+        maxCharacters: 100
+      });
+      await service.writeDocument({
+        bookId: created.book.id,
+        fileId: file.id,
+        content: contents.get(file.id)!,
+        baseRevision: before.file.revision,
+        baseWorkspaceRevision: before.workspaceRevision,
+        baseProjectRevision: before.projectRevision
+      });
+    }
+
+    for (const [fileId, query] of [
+      [chapter.foreshadowingChanges.id, "铜铃伏笔"],
+      [worldReveals.id, "月蚀之夜"],
+      [currentState.id, "已经取得"],
+      [history.id, "第一章"]
+    ] as const) {
+      await expect(
+        service.search({
+          bookId: created.book.id,
+          query,
+          scope: "continuity_ledger",
+          limit: 20,
+          maxSnippetCharacters: 100
+        })
+      ).resolves.toMatchObject({
+        hits: [expect.objectContaining({ fileId, root: "continuity_ledger" })]
+      });
+    }
+    await expect(
+      service.search({
+        bookId: created.book.id,
+        query: "铜铃伏笔",
+        scope: "draft",
+        limit: 20,
+        maxSnippetCharacters: 100
+      })
+    ).resolves.toMatchObject({ hits: [] });
   });
 
   it("reads, writes and searches a chapter-card file through the workspace service", async () => {

@@ -67,7 +67,11 @@ import {
 } from "./learning-imitation";
 import {
   AgentModelTestCommandEnvelopeSchema,
+  ModelsClearOfficialTokenCommandEnvelopeSchema,
   ModelsListCommandEnvelopeSchema,
+  ModelsRefreshFreeCommandEnvelopeSchema,
+  ModelsRefreshOfficialCommandEnvelopeSchema,
+  ModelsSaveOfficialTokenCommandEnvelopeSchema,
   ModelsSaveCommandEnvelopeSchema,
   ModelsTestCommandEnvelopeSchema
 } from "./models";
@@ -248,6 +252,10 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   SessionPromptCommandEnvelopeSchema,
   SessionAbortCommandEnvelopeSchema,
   ModelsListCommandEnvelopeSchema,
+  ModelsRefreshFreeCommandEnvelopeSchema,
+  ModelsRefreshOfficialCommandEnvelopeSchema,
+  ModelsSaveOfficialTokenCommandEnvelopeSchema,
+  ModelsClearOfficialTokenCommandEnvelopeSchema,
   ModelsSaveCommandEnvelopeSchema,
   ModelsTestCommandEnvelopeSchema,
   ModelUsageQueryCommandEnvelopeSchema,

@@ -29,6 +29,11 @@ export interface DeepWriteFreeModelCatalog {
   manifestAvailable: boolean;
   defaultModelId: string;
   models: ModelConfigInput[];
+  /**
+   * Only used by the Main process to transfer freshly fetched credentials into
+   * the encrypted local secret store. Never expose this catalog to Renderer.
+   */
+  apiKeys: Record<string, string>;
 }
 
 type RemoteConfigFetcher = (
@@ -50,7 +55,8 @@ const EMPTY_CATALOG: DeepWriteFreeModelCatalog = {
   message: "DeepWrite 免费模型配置暂时不可用，请稍后重试。",
   manifestAvailable: false,
   defaultModelId: "",
-  models: []
+  models: [],
+  apiKeys: {}
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -90,15 +96,26 @@ function versionIsOlder(current: string, minimum: string): boolean {
   return false;
 }
 
-function parseRemoteModel(raw: unknown): { model: ModelConfigInput; sort: number } {
+function parseRemoteModel(raw: unknown): {
+  model: ModelConfigInput;
+  apiKey?: string;
+  sort: number;
+} {
   if (!isRecord(raw)) {
     throw new Error("远程免费模型列表中存在无效项目。");
   }
-  if ("apiKey" in raw || "clearApiKey" in raw) {
-    throw new Error("远程免费模型配置不得包含 API Key。 ");
+  if ("clearApiKey" in raw) {
+    throw new Error("远程免费模型配置不得包含 clearApiKey 字段。 ");
+  }
+  const { apiKey: rawApiKey, clearApiKey: _clearApiKey, ...modelInput } = raw;
+  if (
+    rawApiKey !== undefined &&
+    (typeof rawApiKey !== "string" || !rawApiKey.trim() || rawApiKey.length > 16_000)
+  ) {
+    throw new Error("远程免费模型配置的 apiKey 字段无效。");
   }
   const parsed = ModelConfigInputSchema.safeParse({
-    ...raw,
+    ...modelInput,
     managedBy: DEEPWRITE_FREE_MODEL_SOURCE
   });
   if (!parsed.success) {
@@ -129,6 +146,7 @@ function parseRemoteModel(raw: unknown): { model: ModelConfigInput; sort: number
       baseUrl: OPENROUTER_BASE_URL,
       managedBy: DEEPWRITE_FREE_MODEL_SOURCE
     },
+    ...(typeof rawApiKey === "string" ? { apiKey: rawApiKey.trim() } : {}),
     sort
   };
 }
@@ -159,18 +177,19 @@ export function parseDeepWriteFreeModelManifest(
       message: `当前版本过低，请升级到 DeepWrite ${minimumVersion} 或更高版本。`,
       manifestAvailable: true,
       defaultModelId: "",
-      models: []
+      models: [],
+      apiKeys: {}
     };
   }
 
   if (!Array.isArray(raw.models) || raw.models.length > 50) {
     throw new Error("远程免费模型列表无效或数量超过限制。");
   }
-  const parsedModels = raw.models
+  const parsedRemoteModels = raw.models
     .filter((model) => !isRecord(model) || model.enabled !== false)
     .map(parseRemoteModel)
     .sort((left, right) => left.sort - right.sort)
-    .map(({ model }) => model);
+  const parsedModels = parsedRemoteModels.map(({ model }) => model);
   const uniqueIds = new Set(parsedModels.map((model) => model.id));
   if (uniqueIds.size !== parsedModels.length) {
     throw new Error("远程免费模型 ID 不能重复。");
@@ -190,7 +209,31 @@ export function parseDeepWriteFreeModelManifest(
     message,
     manifestAvailable: true,
     defaultModelId,
-    models: enabled ? parsedModels : []
+    models: enabled ? parsedModels : [],
+    apiKeys: enabled
+      ? Object.fromEntries(
+          parsedRemoteModels.flatMap(({ model, apiKey }) =>
+            apiKey ? [[model.id, apiKey]] : []
+          )
+        )
+      : {}
+  };
+}
+
+/** Keep remote credentials out of the JSON cache; they belong in safeStorage. */
+function withoutApiKeys(manifest: unknown): unknown {
+  if (!isRecord(manifest) || !Array.isArray(manifest.models)) {
+    return manifest;
+  }
+  return {
+    ...manifest,
+    models: manifest.models.map((model) => {
+      if (!isRecord(model)) {
+        return model;
+      }
+      const { apiKey: _apiKey, clearApiKey: _clearApiKey, ...identity } = model;
+      return identity;
+    })
   };
 }
 
@@ -202,10 +245,6 @@ async function atomicWriteJson(path: string, value: unknown): Promise<void> {
     mode: 0o600
   });
   await rename(temporary, path);
-}
-
-export function getDeepWriteFreeOpenRouterApiKey(): string {
-  return process.env.DEEPWRITE_FREE_OPENROUTER_API_KEY?.trim() ?? "";
 }
 
 export class DeepWriteFreeModelCatalogStore {
@@ -245,7 +284,13 @@ export class DeepWriteFreeModelCatalogStore {
     return structuredClone(this.catalog);
   }
 
-  private async refresh(force: boolean): Promise<void> {
+  async refreshCatalog(): Promise<DeepWriteFreeModelCatalog> {
+    await this.cacheLoad;
+    await this.refresh(true, true);
+    return structuredClone(this.catalog);
+  }
+
+  private async refresh(force: boolean, reportFailure = false): Promise<void> {
     if (this.refreshPromise) {
       await this.refreshPromise;
       return;
@@ -255,7 +300,7 @@ export class DeepWriteFreeModelCatalogStore {
       return;
     }
     this.lastAttemptAt = now;
-    const operation = this.fetchAndCache(now);
+    const operation = this.fetchAndCache(now, reportFailure);
     this.refreshPromise = operation;
     try {
       await operation;
@@ -264,7 +309,7 @@ export class DeepWriteFreeModelCatalogStore {
     }
   }
 
-  private async fetchAndCache(now: number): Promise<void> {
+  private async fetchAndCache(now: number, reportFailure: boolean): Promise<void> {
     try {
       const response = await this.fetcher(this.configUrl, {
         method: "GET",
@@ -285,16 +330,20 @@ export class DeepWriteFreeModelCatalogStore {
       const cache: RemoteModelConfigCache = {
         version: 1,
         fetchedAt: new Date(now).toISOString(),
-        manifest
+        manifest: withoutApiKeys(manifest)
       };
       try {
         await atomicWriteJson(this.cachePath, cache);
       } catch {
         // The validated in-memory catalog remains usable if only cache persistence fails.
       }
-    } catch {
+    } catch (error: unknown) {
       if (!this.catalog.manifestAvailable) {
         this.catalog = structuredClone(EMPTY_CATALOG);
+      }
+      if (reportFailure) {
+        const reason = error instanceof Error ? error.message : "未知错误";
+        throw new Error(`刷新免费模型配置失败：${reason}`);
       }
     }
   }

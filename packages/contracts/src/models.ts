@@ -74,18 +74,28 @@ export const ModelApiSchema = z.enum([
 ]);
 export type ModelApi = z.infer<typeof ModelApiSchema>;
 
+export const ModelManagedBySchema = z.enum([
+  "deepwrite-free",
+  "deepwrite-official"
+]);
+export type ModelManagedBy = z.infer<typeof ModelManagedBySchema>;
+
 const ModelIdentitySchema = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(120),
   provider: z.string().trim().min(1).max(120),
   modelId: z.string().trim().min(1).max(240),
+  /** Optional provider-side routing id when it differs from the public model id. */
+  requestModelId: z.string().trim().min(1).max(240).optional(),
+  /** Whether an OpenAI-compatible endpoint accepts the newer developer message role. */
+  supportsDeveloperRole: z.boolean().optional(),
   api: ModelApiSchema,
   baseUrl: z.union([z.literal(""), z.url().max(2_000)]),
   reasoning: z.boolean(),
   defaultThinkingLevel: ThinkingLevelSchema,
   thinkingLevelOptions: ThinkingLevelOptionsSchema,
   temperatureOptions: TemperatureOptionsSchema,
-  managedBy: z.literal("deepwrite-free").optional()
+  managedBy: ModelManagedBySchema.optional()
 }).superRefine((value, context) => {
   if (!value.reasoning && value.defaultThinkingLevel !== "off") {
     context.addIssue({
@@ -118,11 +128,14 @@ export const ModelConfigInputSchema = ModelIdentitySchema.and(z.object({
 export type ModelConfigInput = z.infer<typeof ModelConfigInputSchema>;
 
 export const ModelSettingsSchema = z.object({
-  models: z.array(ModelConfigSchema).max(50),
+  models: z.array(ModelConfigSchema).max(100),
   defaultModelId: z.string().max(120),
   deepwriteFreeModels: z.array(ModelConfigSchema).max(50).optional(),
   deepwriteFreeDefaultModelId: z.string().max(120).optional(),
-  deepwriteFreeMessage: z.string().max(500).optional()
+  deepwriteFreeMessage: z.string().max(500).optional(),
+  deepwriteOfficialModels: z.array(ModelConfigSchema).max(50).optional(),
+  deepwriteOfficialTokenConfigured: z.boolean().optional(),
+  deepwriteOfficialQuotaTokens: z.number().int().positive().optional()
 }).superRefine((value, context) => {
   if (
     value.defaultModelId &&
@@ -138,7 +151,7 @@ export const ModelSettingsSchema = z.object({
 export type ModelSettings = z.infer<typeof ModelSettingsSchema>;
 
 export const ModelSettingsInputSchema = z.object({
-  models: z.array(ModelConfigInputSchema).max(50),
+  models: z.array(ModelConfigInputSchema).max(100),
   defaultModelId: z.string().max(120)
 }).superRefine((value, context) => {
   const ids = new Set<string>();
@@ -194,6 +207,28 @@ export type ModelConnectionTestResult = z.infer<typeof ModelConnectionTestResult
 
 export const ModelsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("models.list"),
+  payload: z.object({})
+});
+
+export const ModelsRefreshFreeCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("models.refreshFree"),
+  payload: z.object({})
+});
+
+export const ModelsRefreshOfficialCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("models.refreshOfficial"),
+  payload: z.object({})
+});
+
+export const ModelsSaveOfficialTokenCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("models.saveOfficialToken"),
+  payload: z.object({
+    apiKey: z.string().trim().min(1).max(16_000)
+  })
+});
+
+export const ModelsClearOfficialTokenCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("models.clearOfficialToken"),
   payload: z.object({})
 });
 

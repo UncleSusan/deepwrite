@@ -1963,6 +1963,15 @@ function copyMessageLabel(message: ChatMessage): string {
               :message="message"
               :now="clock"
             />
+            <LongProposalReview
+              v-if="message.role === 'assistant' && longProposalItemsForMessage(message).length"
+              embedded
+              :items="longProposalItemsForMessage(message)"
+              :workspace-index="longWorkspaceIndex"
+              @approve="emit('approveLongProposal', $event)"
+              @reject="emit('rejectLongProposal', $event)"
+              @retry-preview="emit('retryLongProposalPreview', $event)"
+            />
             <div class="message-content">
               <div
                 v-if="message.role === 'user'"
@@ -2095,15 +2104,6 @@ function copyMessageLabel(message: ChatMessage): string {
                   </footer>
                 </article>
               </section>
-              <LongProposalReview
-                v-if="message.role === 'assistant' && longProposalItemsForMessage(message).length"
-                embedded
-                :items="longProposalItemsForMessage(message)"
-                :workspace-index="longWorkspaceIndex"
-                @approve="emit('approveLongProposal', $event)"
-                @reject="emit('rejectLongProposal', $event)"
-                @retry-preview="emit('retryLongProposalPreview', $event)"
-              />
             </div>
             <div
               v-if="message.content && message.status !== 'streaming'"

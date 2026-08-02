@@ -784,6 +784,66 @@ describe("long workspace operation engine", () => {
       ]
     });
 
+    const characterDeleteBatch = {
+      baseRevision: created.resultRevision,
+      updatedAt: later,
+      operations: [
+        { type: "character.delete", id: "character_alice", cascade: true }
+      ]
+    } satisfies Parameters<typeof previewLongWorkspaceOperations>[1];
+    const characterDeletePreview = previewLongWorkspaceOperations(
+      created.snapshot,
+      characterDeleteBatch
+    );
+    const deletedCharacter = applyLongWorkspaceOperations(created.snapshot, {
+      ...characterDeleteBatch,
+      expectedImpact: characterDeletePreview.impact
+    });
+    expect(deletedCharacter.snapshot.chapters[0]!.characterContinuity).toEqual(
+      []
+    );
+    expect(
+      deletedCharacter.fileIntents.filter(
+        ({ action, file }) =>
+          action === "delete" &&
+          (file.id === currentState.id || file.id === history.id)
+      )
+    ).toHaveLength(2);
+
+    const committed = structuredClone(created.snapshot);
+    committed.chapters[0]!.commitId = "commit_existing";
+    committed.ledger.committedThroughChapterId = "chapter_one";
+    committed.ledger.commits.push({
+      id: "commit_existing",
+      mode: "structured",
+      sequence: 1,
+      chapterCardId: "chapter_one",
+      committedAt: later,
+      reversible: true,
+      sourceRevision: committed.revision,
+      placementIds: [],
+      foreshadowingBeatIds: [],
+      recordFile: file(
+        longLedgerCommitFileId("commit_existing"),
+        "long/ledger/commit-existing.json"
+      )
+    });
+    expectOperationError(
+      () =>
+        applyLongWorkspaceOperations(committed, {
+          baseRevision: created.resultRevision,
+          updatedAt: later,
+          operations: [
+            {
+              type: "character.delete",
+              id: "character_alice",
+              cascade: true
+            }
+          ]
+        }),
+      "committed_prefix_protected"
+    );
+
     const deleted = applyLongWorkspaceOperations(created.snapshot, {
       baseRevision: created.resultRevision,
       updatedAt: later,
@@ -793,6 +853,148 @@ describe("long workspace operation engine", () => {
     });
     expect(deleted.fileIntents.filter(({ action }) => action === "delete"))
       .toHaveLength(8);
+  });
+
+  it("deletes only optional continuity files from uncommitted chapters", () => {
+    const source = workspace();
+    const currentState = file(
+      longChapterCharacterCurrentStateFileId(
+        "chapter_one",
+        "character_alice"
+      ),
+      longChapterCharacterContinuityFilePath(
+        "chapter_one",
+        "character_alice",
+        "current-state.md"
+      ),
+      later
+    );
+    const history = file(
+      longChapterCharacterHistoryFileId(
+        "chapter_one",
+        "character_alice"
+      ),
+      longChapterCharacterContinuityFilePath(
+        "chapter_one",
+        "character_alice",
+        "history.md"
+      ),
+      later
+    );
+    const worldReveals = file(
+      longChapterWorldRevealsFileId("chapter_one"),
+      longChapterContinuityFilePath(
+        "chapter_one",
+        "world-reveals.md"
+      ),
+      later
+    );
+    const created = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "chapterContinuity.worldReveals.create",
+          chapterCardId: "chapter_one",
+          file: worldReveals
+        },
+        {
+          type: "chapterContinuity.character.create",
+          chapterCardId: "chapter_one",
+          characterId: "character_alice",
+          currentState,
+          history
+        }
+      ]
+    });
+
+    const deleted = applyLongWorkspaceOperations(created.snapshot, {
+      baseRevision: created.resultRevision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "chapterContinuity.worldReveals.delete",
+          chapterCardId: "chapter_one"
+        },
+        {
+          type: "chapterContinuity.character.delete",
+          chapterCardId: "chapter_one",
+          characterId: "character_alice"
+        }
+      ]
+    });
+    expect(deleted.snapshot.chapters[0]).toMatchObject({
+      worldReveals: null,
+      characterContinuity: []
+    });
+    const deleteIntents = deleted.fileIntents.map(
+      ({ action, file: target }) => [action, target.id]
+    );
+    expect(deleteIntents).toHaveLength(3);
+    expect(deleteIntents).toEqual(
+      expect.arrayContaining([
+        ["delete", worldReveals.id],
+        ["delete", currentState.id],
+        ["delete", history.id]
+      ])
+    );
+
+    const committed = structuredClone(created.snapshot);
+    committed.chapters[0]!.commitId = "commit_existing";
+    committed.ledger.committedThroughChapterId = "chapter_one";
+    committed.ledger.commits.push({
+      id: "commit_existing",
+      mode: "text_files",
+      sequence: 1,
+      chapterCardId: "chapter_one",
+      committedAt: later,
+      reversible: true,
+      sourceRevision: committed.revision,
+      placementIds: [],
+      foreshadowingBeatIds: [],
+      recordFile: file(
+        longLedgerCommitFileId("commit_existing"),
+        "long/ledger/commit-existing.json"
+      )
+    });
+    for (const operation of [
+      {
+        type: "chapterContinuity.worldReveals.delete" as const,
+        chapterCardId: "chapter_one"
+      },
+      {
+        type: "chapterContinuity.character.delete" as const,
+        chapterCardId: "chapter_one",
+        characterId: "character_alice"
+      }
+    ]) {
+      expectOperationError(
+        () =>
+          applyLongWorkspaceOperations(committed, {
+            baseRevision: committed.revision,
+            updatedAt: later,
+            operations: [operation]
+          }),
+        "committed_prefix_protected"
+      );
+    }
+
+    for (const forbiddenType of [
+      "chapterContinuity.body.delete",
+      "chapterContinuity.chapterEndState.delete",
+      "chapterContinuity.handoff.delete",
+      "chapterContinuity.foreshadowingChanges.delete"
+    ]) {
+      expect(
+        LongWorkspaceOperationBatchSchema.safeParse({
+          baseRevision: source.revision,
+          updatedAt: later,
+          operations: [
+            { type: forbiddenType, chapterCardId: "chapter_one" }
+          ]
+        }).success
+      ).toBe(false);
+    }
   });
 
   it("rejects deleting referenced entities unless cascade is explicit", () => {

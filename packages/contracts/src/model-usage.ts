@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { EnvelopeBaseSchema } from "./envelope";
 import { AgentUsageSchema } from "./session";
+import { ModelManagedBySchema } from "./models";
 
 export const MODEL_USAGE_MODULES = [
   "short-writing",
@@ -35,7 +36,7 @@ export const ModelUsageModelSnapshotSchema = z.object({
   provider: z.string().trim().min(1).max(120),
   modelId: z.string().trim().min(1).max(240),
   api: z.string().trim().min(1).max(120).optional(),
-  managedBy: z.literal("deepwrite-free").optional()
+  managedBy: ModelManagedBySchema.optional()
 });
 export type ModelUsageModelSnapshot = z.infer<typeof ModelUsageModelSnapshotSchema>;
 
@@ -54,6 +55,7 @@ export const ModelUsageQueryInputSchema = z.object({
   startAt: z.string().datetime().optional(),
   endAt: z.string().datetime().optional(),
   modelConfigIds: z.array(z.string().trim().min(1).max(120)).max(100).optional(),
+  managedBy: ModelManagedBySchema.optional(),
   modules: z.array(ModelUsageModuleSchema).max(MODEL_USAGE_MODULES.length).optional()
 }).superRefine((value, context) => {
   if (value.startAt && value.endAt && Date.parse(value.startAt) > Date.parse(value.endAt)) {

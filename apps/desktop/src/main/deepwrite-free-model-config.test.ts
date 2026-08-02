@@ -72,6 +72,48 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     expect(requests).toBe(2);
   });
 
+  it("supports a user-forced refresh before the daily interval expires", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-forced-"));
+    temporaryRoots.push(root);
+    let modelId = "vendor/writer-v1:free";
+    let requests = 0;
+    const store = new DeepWriteFreeModelCatalogStore(root, {
+      appVersion: "1.0.0",
+      fetcher: async () => {
+        requests += 1;
+        return new Response(JSON.stringify(manifest(modelId)));
+      }
+    });
+
+    await store.initialize();
+    modelId = "vendor/writer-v2:free";
+    const refreshed = await store.refreshCatalog();
+
+    expect(refreshed.models[0]?.modelId).toBe("vendor/writer-v2:free");
+    expect(requests).toBe(2);
+  });
+
+  it("reports a forced refresh failure while retaining the last valid catalog", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-failed-refresh-"));
+    temporaryRoots.push(root);
+    let online = true;
+    const store = new DeepWriteFreeModelCatalogStore(root, {
+      appVersion: "1.0.0",
+      fetcher: async () => {
+        if (!online) {
+          throw new Error("offline");
+        }
+        return new Response(JSON.stringify(manifest("vendor/cached:free")));
+      }
+    });
+
+    await store.initialize();
+    online = false;
+
+    await expect(store.refreshCatalog()).rejects.toThrow(/offline/u);
+    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/cached:free");
+  });
+
   it("keeps the last validated cache when a later startup cannot reach Gitee", async () => {
     const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-cache-"));
     temporaryRoots.push(root);
@@ -92,7 +134,7 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     expect((await offline.getCatalog()).models[0]?.modelId).toBe("vendor/cached:free");
   });
 
-  it("rejects redirected endpoints, embedded keys, and paid model ids", () => {
+  it("accepts a remote key without exposing it in the catalog models", () => {
     const redirected = manifest();
     (redirected.models as Array<Record<string, unknown>>)[0]!.baseUrl =
       "https://example.invalid/v1";
@@ -102,12 +144,29 @@ describe("DeepWriteFreeModelCatalogStore", () => {
 
     const withKey = manifest();
     (withKey.models as Array<Record<string, unknown>>)[0]!.apiKey = "remote-secret";
-    expect(() => parseDeepWriteFreeModelManifest(withKey, "1.0.0")).toThrow(
-      /不得包含 API Key/u
-    );
+    const catalog = parseDeepWriteFreeModelManifest(withKey, "1.0.0");
+    expect(catalog.apiKeys).toEqual({ "deepwrite-free-writing": "remote-secret" });
+    expect(catalog.models[0]).not.toHaveProperty("apiKey");
 
     expect(() =>
       parseDeepWriteFreeModelManifest(manifest("vendor/paid-model"), "1.0.0")
     ).toThrow(/免费模型 ID/u);
+  });
+
+  it("does not write remote keys into the manifest cache", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-secret-cache-"));
+    temporaryRoots.push(root);
+    const remoteManifest = manifest();
+    (remoteManifest.models as Array<Record<string, unknown>>)[0]!.apiKey = "remote-secret";
+    const store = new DeepWriteFreeModelCatalogStore(root, {
+      appVersion: "1.0.0",
+      fetcher: async () => new Response(JSON.stringify(remoteManifest))
+    });
+
+    await store.initialize();
+    const cache = await import("node:fs/promises").then(({ readFile }) =>
+      readFile(join(root, "config", "deepwrite-free-models-cache.json"), "utf8")
+    );
+    expect(cache).not.toContain("remote-secret");
   });
 });

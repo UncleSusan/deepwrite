@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type {
-  LongBookSummary,
-  LongWorkspaceFileReference,
-  LongWorkspaceIndexSnapshot
+import {
+  EMPTY_LONG_MARKDOWN_REVISION,
+  type LongBookSummary,
+  type LongWorkspaceFileReference,
+  type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import {
   createLongCharacterGroupSelection,
@@ -10,7 +11,7 @@ import {
   createLongChapterCardVolumeSelection,
   createLongChapterSelection,
   createLongContinuitySelection,
-  latestCommittedTextFilesChapter,
+  latestCommittedContinuityChapter,
   longBookIdFromResourceId,
   longBookResourceId,
   reconcileLongWorkspaceSelection
@@ -23,7 +24,7 @@ function file(
   return {
     id,
     path,
-    revision: "v1:0:00000000",
+    revision: EMPTY_LONG_MARKDOWN_REVISION,
     updatedAt: "2026-07-26T12:00:00.000Z"
   } as unknown as LongWorkspaceFileReference;
 }
@@ -618,7 +619,7 @@ describe("long workspace chapter navigation", () => {
       }
     ];
 
-    expect(latestCommittedTextFilesChapter(workspaceIndex)?.chapterCardId).toBe(
+    expect(latestCommittedContinuityChapter(workspaceIndex)?.chapterCardId).toBe(
       "chapter_one"
     );
     const selection = createLongCharacterGroupSelection(
@@ -636,6 +637,23 @@ describe("long workspace chapter navigation", () => {
     expect(
       selection.files.find(({ role }) => role === "relationships")?.readOnly
     ).toBeUndefined();
+
+    const textCommit = workspaceIndex.ledger.commits[0]!;
+    textCommit.sequence = 2;
+    workspaceIndex.ledger.commits.push({
+      ...textCommit,
+      id: "commit_legacy",
+      mode: "structured",
+      sequence: 1
+    });
+    expect(
+      createLongCharacterGroupSelection(
+        summary,
+        workspaceIndex,
+        "protagonist",
+        "character_lead"
+      ).files.find(({ role }) => role === "relationships")?.readOnly
+    ).toBe(true);
   });
 
   it("maps the foreshadowing workspace to the newest committed chapter file", () => {
@@ -658,6 +676,50 @@ describe("long workspace chapter navigation", () => {
         role: "foreshadowing-changes",
         label: "最新伏笔变化",
         file: workspaceIndex.chapters[0]!.foreshadowingChanges,
+        readOnly: true
+      }
+    ]);
+  });
+
+  it("maps a legacy structured chapter only after its Markdown projection exists", () => {
+    const { workspaceIndex } = fixture("commit_one");
+    expect(latestCommittedContinuityChapter(workspaceIndex)).toBeUndefined();
+
+    workspaceIndex.chapters[0]!.foreshadowingChanges.revision =
+      "v2:1:0000000000000000000000000000000000000000000000000000000000000000" as LongWorkspaceFileReference["revision"];
+
+    expect(
+      latestCommittedContinuityChapter(workspaceIndex)?.chapterCardId
+    ).toBe("chapter_one");
+  });
+
+  it("maps the worldbuilding stage to the newest committed reveal file", () => {
+    const { summary, workspaceIndex } = fixture("commit_one");
+    workspaceIndex.ledger.commits[0]!.mode = "text_files";
+    const reveal = file(
+      "chapter-world-reveal",
+      "long/continuity/chapters/chapter_one/world-reveals.md"
+    );
+    workspaceIndex.chapters[0]!.worldReveals = reveal;
+
+    const selection = reconcileLongWorkspaceSelection(
+      summary,
+      workspaceIndex,
+      {
+        key: "worldbuilding:reveals",
+        root: "worldbuilding",
+        title: "世界观揭露",
+        breadcrumbs: [],
+        files: [],
+        preferredRole: "world-reveals"
+      }
+    );
+
+    expect(selection?.files).toEqual([
+      {
+        role: "world-reveals",
+        label: "世界观揭露",
+        file: reveal,
         readOnly: true
       }
     ]);

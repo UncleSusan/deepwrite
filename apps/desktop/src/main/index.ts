@@ -25,6 +25,10 @@ import {
   CatalogLibraryEntrySchema,
   CatalogOpenProjectResultSchema,
   AppearanceSettingsSnapshotSchema,
+  APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL,
+  APP_ALERT_GET_CHANNEL,
+  AppAlertDesktopRevisionSchema,
+  AppAlertSnapshotSchema,
   CatalogSnapshotSchema,
   CommandEnvelopeSchema,
   DeleteCatalogProjectResultSchema,
@@ -34,6 +38,11 @@ import {
   GeneralSettingsSnapshotSchema,
   IPC_COMMAND_CHANNEL,
   IPC_EVENT_CHANNEL,
+  UPDATE_CHECK_CHANNEL,
+  UPDATE_DOWNLOAD_CHANNEL,
+  UPDATE_GET_STATE_CHANNEL,
+  UPDATE_INSTALL_CHANNEL,
+  UPDATE_STATE_EVENT_CHANNEL,
   LearningImitationSettingsSchema,
   LibraryAgentSettingsSchema,
   LongApplyOperationsResultSchema,
@@ -72,12 +81,14 @@ import {
   type AgentProviderRuntimeConfig,
   type AgentRuntimeRef,
   type AppearanceSettings,
+  type AppAlertSnapshot,
   type CommandResult,
   type GeneralSettings,
   type ModelUsageModelSnapshot,
   type ModelUsageModule,
   type SessionPromptCommandPayload,
   type SystemEventEnvelope,
+  type UpdateState,
   type UtilityWorkerName
 } from "@deepwrite/contracts";
 import { createId, nowIso } from "@deepwrite/shared";
@@ -89,6 +100,7 @@ import { AppearanceConfigStore } from "./appearance-config-store";
 import { AgentTeamConfigStore } from "./agent-team-config-store";
 import { GeneralSettingsStore } from "./general-settings-store";
 import { ModelConfigStore } from "./model-config-store";
+import { assertDeepWriteOfficialQuotaAvailable } from "./deepwrite-official-model-quota";
 import {
   createModelUsageRevisionId,
   ModelUsageStore
@@ -114,6 +126,8 @@ import {
 } from "./internal-command-authorizer";
 import { WorkspaceAgentConfigStore } from "./workspace-agent-config-store";
 import { WorkspaceDirectoryStore } from "./workspace-directory-store";
+import { UpdateService } from "./update-service";
+import { AppAlertStore } from "./app-alert-store";
 
 interface ActiveRun extends MainInternalCommandActiveRun {
   correlationId: string;
@@ -149,6 +163,9 @@ let workspaceDirectoryStore: WorkspaceDirectoryStore | undefined;
 let quitting = false;
 let shutdownComplete = false;
 let menuBarTray: Tray | undefined;
+let updateService: UpdateService | undefined;
+let appAlertStore: AppAlertStore | undefined;
+let updateInstallRequested = false;
 const RENDERER_DRAFT_FLUSH_GRACE_MS = 500;
 
 function broadcastEvent(event: SystemEventEnvelope): void {
@@ -810,6 +827,53 @@ function configureCatalogEnvironment(): string {
 }
 
 function registerIpc(): void {
+  const requireUpdateService = (event: Electron.IpcMainInvokeEvent): UpdateService => {
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      event.sender !== mainWindow.webContents
+    ) {
+      throw new Error("IPC update request sender is not the active DeepWrite window.");
+    }
+    if (!updateService) throw new Error("更新服务尚未初始化。");
+    return updateService;
+  };
+  ipcMain.handle(UPDATE_GET_STATE_CHANNEL, (event): UpdateState =>
+    requireUpdateService(event).getState()
+  );
+  ipcMain.handle(UPDATE_CHECK_CHANNEL, (event): Promise<UpdateState> =>
+    requireUpdateService(event).check()
+  );
+  ipcMain.handle(UPDATE_DOWNLOAD_CHANNEL, (event): Promise<UpdateState> =>
+    requireUpdateService(event).download()
+  );
+  ipcMain.handle(UPDATE_INSTALL_CHANNEL, (event): void => {
+    requireUpdateService(event).install();
+  });
+  const requireAppAlertStore = (
+    event: Electron.IpcMainInvokeEvent
+  ): AppAlertStore => {
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      event.sender !== mainWindow.webContents
+    ) {
+      throw new Error("IPC app alert request sender is not the active DeepWrite window.");
+    }
+    if (!appAlertStore) throw new Error("提醒服务尚未初始化。");
+    return appAlertStore;
+  };
+  ipcMain.handle(APP_ALERT_GET_CHANNEL, async (event): Promise<AppAlertSnapshot> =>
+    AppAlertSnapshotSchema.parse(await requireAppAlertStore(event).getSnapshot())
+  );
+  ipcMain.handle(
+    APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL,
+    async (event, rawRevision: unknown): Promise<void> => {
+      const revision = AppAlertDesktopRevisionSchema.parse(rawRevision);
+      await requireAppAlertStore(event).acknowledgeDesktop(revision);
+    }
+  );
+
   ipcMain.handle(
     IPC_COMMAND_CHANNEL,
     async (event, rawCommand: unknown): Promise<CommandResult> => {
@@ -1684,6 +1748,104 @@ function registerIpc(): void {
         }
       }
 
+
+      if (command.type === "models.refreshFree") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: ModelSettingsSchema.parse(
+              await requireModelConfigStore().refreshFreeModels()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.refresh_free_failed",
+              message: error instanceof Error ? error.message : "刷新免费模型配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.refreshOfficial") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().refreshOfficialModels()
+          );
+          await requireModelUsageStore().syncConfiguredModels(settings.models);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.refresh_official_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "刷新官方模型配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.saveOfficialToken") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().saveOfficialToken(command.payload.apiKey)
+          );
+          await requireModelUsageStore().syncConfiguredModels(settings.models);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.save_official_token_failed",
+              message: error instanceof Error ? error.message : "保存官方令牌失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.clearOfficialToken") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().clearOfficialToken()
+          );
+          await requireModelUsageStore().syncConfiguredModels(settings.models);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.clear_official_token_failed",
+              message: error instanceof Error ? error.message : "移除官方令牌失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
       if (command.type === "modelUsage.query") {
         try {
           return {
@@ -1741,6 +1903,10 @@ function registerIpc(): void {
         try {
           const runtimeConfig = await requireModelConfigStore().resolveDraft(
             command.payload.model
+          );
+          await assertDeepWriteOfficialQuotaAvailable(
+            requireModelUsageStore(),
+            [runtimeConfig]
           );
           const internalCommand = CommandEnvelopeSchema.parse(
             createEnvelope(
@@ -2273,6 +2439,10 @@ function registerIpc(): void {
               subagentRuntimeConfigs[definition.modelId] = resolved;
             }
           }
+          await assertDeepWriteOfficialQuotaAvailable(
+            requireModelUsageStore(),
+            [runtimeConfig, ...Object.values(subagentRuntimeConfigs)]
+          );
           const libraryAgentProfile = libraryWorkspace
             ? await requireLibraryAgentConfigStore().resolve(
                 libraryWorkspace.domain
@@ -2538,6 +2708,16 @@ if (!hasSingleInstanceLock) {
     syncGeneralSettings(
       (await generalSettingsStore.list()).settings
     );
+    updateService = new UpdateService(() => {
+      updateInstallRequested = true;
+      app.quit();
+    });
+    appAlertStore = new AppAlertStore(userDataPath);
+    updateService.subscribe((state) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(UPDATE_STATE_EVENT_CHANNEL, state);
+      }
+    });
     registerIpc();
     supervisor.startAll();
     mainWindow = createMainWindow();
@@ -2583,7 +2763,11 @@ app.on("before-quit", (event) => {
           );
         }
         shutdownComplete = true;
-        app.quit();
+        if (updateInstallRequested) {
+          updateService?.quitAndInstall();
+        } else {
+          app.quit();
+        }
       }
     })();
   }, RENDERER_DRAFT_FLUSH_GRACE_MS);

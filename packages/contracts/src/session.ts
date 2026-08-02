@@ -1240,6 +1240,85 @@ export const LongContinuityFileProposalPayloadSchema =
         message: "Continuity file proposals must target unique files."
       });
     }
+    const createdTargets = new Map<
+      string,
+      {
+        chapterCardId: string;
+        role: LongContinuityFileRole;
+        characterId: string | null;
+        filePath: string;
+        revision: string;
+      }
+    >();
+    const addCreatedTarget = (
+      target: {
+        chapterCardId: string;
+        role: LongContinuityFileRole;
+        characterId: string | null;
+        fileId: string;
+        filePath: string;
+        revision: string;
+      },
+      operationIndex: number
+    ): void => {
+      if (createdTargets.has(target.fileId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["batch", "operations", operationIndex],
+          message:
+            "Continuity file proposals cannot create the same file twice."
+        });
+        return;
+      }
+      createdTargets.set(target.fileId, target);
+    };
+    value.batch.operations.forEach((operation, operationIndex) => {
+      if (operation.type === "chapterContinuity.worldReveals.create") {
+        addCreatedTarget(
+          {
+            chapterCardId: operation.chapterCardId,
+            role: "world_reveals",
+            characterId: null,
+            fileId: operation.file.id,
+            filePath: operation.file.path,
+            revision: operation.file.revision
+          },
+          operationIndex
+        );
+        return;
+      }
+      if (operation.type === "chapterContinuity.character.create") {
+        addCreatedTarget(
+          {
+            chapterCardId: operation.chapterCardId,
+            role: "character_current_state",
+            characterId: operation.characterId,
+            fileId: operation.currentState.id,
+            filePath: operation.currentState.path,
+            revision: operation.currentState.revision
+          },
+          operationIndex
+        );
+        addCreatedTarget(
+          {
+            chapterCardId: operation.chapterCardId,
+            role: "character_history",
+            characterId: operation.characterId,
+            fileId: operation.history.id,
+            filePath: operation.history.path,
+            revision: operation.history.revision
+          },
+          operationIndex
+        );
+        return;
+      }
+      context.addIssue({
+        code: "custom",
+        path: ["batch", "operations", operationIndex, "type"],
+        message:
+          "Continuity file proposals may only create chapter continuity files."
+      });
+    });
     if (value.batch.documentWrites.length !== value.files.length) {
       context.addIssue({
         code: "custom",
@@ -1257,6 +1336,7 @@ export const LongContinuityFileProposalPayloadSchema =
           ? write?.mode === "create" && write.expectedRevision === null
           : write?.mode !== "create" &&
             write?.expectedRevision === file.beforeRevision;
+      const createdTarget = createdTargets.get(file.fileId);
       if (
         !write ||
         !modeMatches ||
@@ -1268,6 +1348,41 @@ export const LongContinuityFileProposalPayloadSchema =
           path: ["files", index, "fileId"],
           message:
             "Each continuity file change must match its document write and revisions."
+        });
+      }
+      if (file.operation === "create") {
+        if (
+          !createdTarget ||
+          createdTarget.chapterCardId !== file.chapterCardId ||
+          createdTarget.role !== file.role ||
+          createdTarget.characterId !== file.characterId ||
+          createdTarget.filePath !== file.filePath ||
+          createdTarget.revision !== file.nextRevision ||
+          file.beforeText !== ""
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["files", index],
+            message:
+              "Created continuity file metadata must match its chapter operation and start empty."
+          });
+        }
+      } else if (createdTarget) {
+        context.addIssue({
+          code: "custom",
+          path: ["files", index, "operation"],
+          message:
+            "A newly created continuity file must be displayed as a create operation."
+        });
+      }
+    }
+    for (const fileId of createdTargets.keys()) {
+      if (!fileIds.has(fileId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["batch", "operations"],
+          message:
+            "Every created continuity file must have a matching displayed file change."
         });
       }
     }

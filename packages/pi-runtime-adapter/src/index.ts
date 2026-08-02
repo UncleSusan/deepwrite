@@ -1423,9 +1423,10 @@ function resolveOpenAICompletionsCompat(
   if (config.api !== "openai-completions") {
     return undefined;
   }
-  if (builtin?.api === "openai-completions" && builtin.compat) {
-    return builtin.compat;
-  }
+
+  const compat: NonNullable<Model<"openai-completions">["compat"]> = {
+    ...(builtin?.api === "openai-completions" ? builtin.compat : {})
+  };
 
   const provider = config.provider.toLowerCase();
   const baseUrl = config.baseUrl.toLowerCase();
@@ -1434,16 +1435,18 @@ function resolveOpenAICompletionsCompat(
     provider === "dashscope" ||
     (baseUrl.includes("dashscope") && baseUrl.includes("aliyuncs.com"))
   ) {
-    return { thinkingFormat: "qwen" };
-  }
-  if (
+    compat.thinkingFormat = "qwen";
+  } else if (
     provider === "zai" ||
     provider === "zhipu" ||
     baseUrl.includes("bigmodel.cn")
   ) {
-    return { thinkingFormat: "zai" };
+    compat.thinkingFormat = "zai";
   }
-  return undefined;
+  if (config.supportsDeveloperRole !== undefined) {
+    compat.supportsDeveloperRole = config.supportsDeveloperRole;
+  }
+  return Object.keys(compat).length > 0 ? compat : undefined;
 }
 
 function toPiThinkingLevel(level: ConfiguredThinkingLevel): PiThinkingLevel {
@@ -1482,6 +1485,7 @@ export function buildProviderRuntime(
     builtin.thinkingLevelMap?.off === null
       ? undefined
       : temperature;
+  const requestModelId = config.requestModelId ?? config.modelId;
 
   const thinkingLevelMap: ThinkingLevelMap = {
     ...(builtin?.thinkingLevelMap ?? {})
@@ -1497,7 +1501,7 @@ export function buildProviderRuntime(
   }
   const model = {
     ...(builtin?.api === config.api ? builtin : {}),
-    id: config.modelId,
+    id: requestModelId,
     name: config.label,
     api: config.api,
     provider: config.provider,
@@ -2361,10 +2365,10 @@ export function buildEffectiveSystemPrompt(
         : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
       writeBoundary,
       longProfile.id === "expert_section_writer"
-        ? "单章写作必须同时形成正文、人物状态和 handoff 三个文件的同批提案；一次只处理上下文锁定的章卡。"
+        ? "单章写作只允许为上下文锁定的当前章形成小说正文提案；不得生成或修改人物状态、handoff、接续包及其它连续性文件，这些内容由连续性账本智能体在正文获批后独立处理。"
         : "",
       longProfile.id === "continuity_ledger"
-        ? "连续性阶段只以按章文本文件留存变化：章末状态、接续包、伏笔变化，以及按需创建的世界观揭露和人物当前状态/历史轨迹。先 list/read，再 create/write/edit，全部文件完成后调用 propose_continuity_commit；不得调用旧式 set_long_ledger_* 工作流。最终提交与撤销由客户端事务执行。"
+        ? "连续性阶段只以按章文本文件留存变化：章末状态、接续包、伏笔变化，以及按需创建的世界观揭露和人物当前状态/历史轨迹。先 list/read，再 create/write/edit；仅当可选文件误创建或不再适用时使用 delete_continuity_file。全部文件完成后调用 propose_continuity_commit 登记内部归档；客户端会在文件卡全部获批后自动执行，不产生第二次审批。不得调用旧式 set_long_ledger_* 工作流。"
         : ""
     ]
       .filter(Boolean)

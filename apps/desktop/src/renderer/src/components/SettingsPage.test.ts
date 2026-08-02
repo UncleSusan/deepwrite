@@ -64,6 +64,10 @@ describe("SettingsPage", () => {
 
     expect(usageIndex).toBeGreaterThan(-1);
     expect(officialModelsIndex).toBeGreaterThan(usageIndex);
+    expect(source).toContain("<OfficialModelsPanel");
+    expect(source).toContain("emit('saveOfficialToken', $event)");
+    expect(source).toContain('if (id === "official-models")');
+    expect(source).toContain('emit("loadOfficialModels")');
   });
 
   it("lets users replace a font-size value and previews valid input immediately", () => {

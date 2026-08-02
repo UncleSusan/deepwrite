@@ -583,6 +583,9 @@ describe("long-form renderer vertical slice", () => {
       "index\n      ? reconcileLongWorkspaceSelection(book, index, selection)\n      : selection"
     );
     expect(appSource).toContain("[...book.navigation.worldbuilding]");
+    expect(appSource.indexOf("[...book.navigation.worldbuilding]")).toBeLessThan(
+      appSource.indexOf("...(worldRevealSelection")
+    );
     expect(appSource).toContain("selectableBranch: true");
     expect(appSource).toContain('badge: "长篇"');
     expect(appSource).not.toContain("badge: `长篇 · ${book.genre}`");
@@ -626,7 +629,10 @@ describe("long-form renderer vertical slice", () => {
     expect(proposalSource).toContain("long.chapter_dispatch_proposal");
     expect(proposalSource).not.toContain("long.chapter_write_proposal");
     expect(appSource).toContain("stageLongDraftEditProposal(event)");
-    expect(proposalSource).toContain("long.ledger_commit_proposal");
+    expect(proposalSource).not.toContain("long.ledger_commit_proposal");
+    expect(appSource).toContain(
+      "canFinalizeContinuity: canApproveLongProposalDuringActivePlan"
+    );
     expect(proposalSource).toContain("查看具体影响");
     expect(proposalSource).toContain("删除实体");
     expect(proposalSource).toContain("实体完整前后快照");
@@ -634,15 +640,27 @@ describe("long-form renderer vertical slice", () => {
     expect(proposalSource).toContain("entitySnapshotText(change.after)");
     expect(proposalSource).not.toContain(".slice(0, 80)");
     expect(proposalSource).toContain("long.continuity_file_proposal");
-    expect(proposalSource).toContain("本章留存文件");
+    expect(proposalSource).not.toContain("查看提交内容");
     expect(proposalSource).not.toContain("本章六类连续性摘要");
     expect(proposalSource).toContain("item.approvalMode === \"auto-approve\"");
     expect(proposalSource).toContain("自动保存中");
     expect(appSource).toContain("approvalModeForEvent: longProposalApprovalMode");
     expect(appSource).toContain("prepareAutoApprove: prepareAutomaticLongProposal");
-    expect(editorSource).toContain("LongLedgerCommitRecordSchema");
-    expect(editorSource).toContain("本章连续性摘要");
-    expect(editorSource).toContain("伏笔线状态推导");
+    expect(appSource).toContain("longAgentRunApprovalMode(");
+    expect(appSource).toContain(
+      'event.payload.agentId === "continuity_ledger"'
+    );
+    expect(appSource).toContain('return "request-approval";');
+    expect(appSource).toContain(
+      "longWritingOrchestrator.handleRejected(event)"
+    );
+    expect(appSource).toContain(
+      "longWorkspaceProposals.quarantineSession("
+    );
+    expect(editorSource).not.toContain("LongLedgerCommitRecordSchema");
+    expect(editorSource).not.toContain("本章连续性摘要");
+    expect(editorSource).not.toContain("伏笔线状态推导");
+    expect(editorSource).not.toContain("查看原始审计记录");
     expect(proposalSource).not.toContain("workspace.editor_mutation");
   });
 

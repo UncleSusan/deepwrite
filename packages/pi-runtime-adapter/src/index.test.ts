@@ -287,6 +287,67 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(prompt).not.toContain("本轮完成后");
   });
 
+  it("keeps the long chapter-writer runtime boundary limited to novel body", () => {
+    const profile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "expert_section_writer"
+    )!;
+    const longWorkspace: LongWorkspaceRuntimeContext = {
+      bookId: "longbook_writer_prompt",
+      title: "雾港长篇",
+      activeRoot: "draft",
+      activeAgentId: profile.id,
+      activeChapterCardId: "chapter_writer_prompt",
+      workspaceRevision: 3,
+      projectRevision: 5,
+      navigation: {
+        schemaVersion: 1,
+        revision: 3,
+        bookId: "longbook_writer_prompt",
+        updatedAt: "2026-08-02T10:00:00.000Z",
+        counts: {
+          worldbuildingCategories: 0,
+          characters: 0,
+          volumes: 1,
+          arcs: 1,
+          chapterCards: 1,
+          storyEvents: 0,
+          storyPlots: 0,
+          foreshadowingThreads: 0,
+          committedChapters: 0
+        },
+        worldbuilding: [],
+        characters: [],
+        volumes: [{ id: "volume_writer_prompt", title: "第一卷", order: 1 }],
+        arcs: [{
+          id: "arc_writer_prompt",
+          volumeId: "volume_writer_prompt",
+          title: "主线",
+          order: 1
+        }],
+        chapterCards: [{
+          id: "chapter_writer_prompt",
+          volumeId: "volume_writer_prompt",
+          primaryArcId: "arc_writer_prompt",
+          title: "第一章",
+          narrativeOrder: 1
+        }],
+        committedThroughChapterId: null
+      }
+    };
+
+    const prompt = buildEffectiveSystemPrompt("DeepWrite base", {
+      runId: "run_writer_prompt",
+      sessionId: "session_writer_prompt",
+      prompt: "写第一章",
+      longAgentProfile: profile,
+      workspaceContext: { longWorkspace }
+    });
+
+    expect(prompt).toContain("只允许为上下文锁定的当前章形成小说正文提案");
+    expect(prompt).toContain("不得生成或修改人物状态、handoff、接续包");
+    expect(prompt).not.toContain("必须同时形成正文、人物状态和 handoff");
+  });
+
   it("keeps worldbuilding prompts on business ids and hides file controls", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "worldbuilding"
@@ -719,6 +780,60 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(
       buildProviderRuntime(knownNonReasoningConfig, 0.6, "off").model.reasoning
     ).toBe(false);
+  });
+
+  it("uses a provider routing id without replacing the public model id", async () => {
+    const config: AgentProviderRuntimeConfig = {
+      id: "routed-model",
+      label: "Routed model",
+      provider: "custom",
+      modelId: "public-model-id",
+      requestModelId: "provider-route-id",
+      api: "openai-completions",
+      baseUrl: "https://example.test/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: ["minimal", "low", "medium", "high", "xhigh", "max"],
+      temperatureOptions: [0.1, 0.7, 1],
+      apiKey: "test-only"
+    };
+
+    const runtime = buildProviderRuntime(config, 0.7, "off");
+    expect(runtime.model.id).toBe("provider-route-id");
+    expect(new PiAgentRuntimeAdapter().describe(config)).toMatchObject({
+      model: "public-model-id",
+      configId: config.id
+    });
+    await expect(captureDisabledThinkingPayload(config)).resolves.toMatchObject({
+      model: "provider-route-id"
+    });
+  });
+
+  it("uses the system role when an official-compatible endpoint disables developer messages", async () => {
+    const config: AgentProviderRuntimeConfig = {
+      id: "deepwrite-deepseek-v4-flash",
+      label: "Official DeepSeek Flash",
+      provider: "deepseek-official",
+      modelId: "deepseek-v4-flash-202605",
+      api: "openai-completions",
+      baseUrl: "https://tokenhub.tencentmaas.com/v1",
+      reasoning: true,
+      supportsDeveloperRole: false,
+      defaultThinkingLevel: "high",
+      thinkingLevelOptions: ["low", "high", "max"],
+      temperatureOptions: [0.7, 1, 1.5],
+      managedBy: "deepwrite-official",
+      apiKey: "test-only"
+    };
+
+    const payload = await captureDisabledThinkingPayload(config);
+    expect(payload.messages).toEqual([
+      expect.objectContaining({ role: "system" }),
+      expect.objectContaining({ role: "user" })
+    ]);
+    expect(buildProviderRuntime(config).model.compat).toMatchObject({
+      supportsDeveloperRole: false
+    });
   });
 
   it("serializes disabled thinking for supported provider protocols", async () => {

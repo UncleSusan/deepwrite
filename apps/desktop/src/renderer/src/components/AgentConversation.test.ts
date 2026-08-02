@@ -13,6 +13,23 @@ describe("AgentConversation edit proposal placement", () => {
     expect(conversationSource).toContain("retryLongProposalPreview");
   });
 
+  it("renders long file approvals before the still-streaming response", () => {
+    const messageBodyStart = conversationSource.indexOf(
+      '<div class="message-body">'
+    );
+    const proposalStart = conversationSource.indexOf(
+      "<LongProposalReview",
+      messageBodyStart
+    );
+    const responseStart = conversationSource.indexOf(
+      'v-else-if="visibleResponse(message)"',
+      messageBodyStart
+    );
+
+    expect(proposalStart).toBeGreaterThan(messageBodyStart);
+    expect(responseStart).toBeGreaterThan(proposalStart);
+  });
+
   it("allows every explicitly enabled agent proposal to save while streaming", () => {
     expect(conversationSource).toContain("allowLiveEditReview?: boolean");
     expect(conversationSource).toContain("allowLiveEditReview: false");

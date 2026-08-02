@@ -1,5 +1,6 @@
 import {
   LongWorkspaceOperationBatchSchema,
+  LongWorkspaceIndexSnapshotSchema,
   createEmptyLongMarkdownFileReference,
   longChapterBodyFileId,
   longChapterCardFileId,
@@ -59,7 +60,8 @@ export interface UpdateLongWorldbuildingInput {
 function longStructureFingerprint(
   snapshot: LongWorkspaceIndexSnapshot
 ): string {
-  return JSON.stringify(snapshot, (key, value) =>
+  const normalized = LongWorkspaceIndexSnapshotSchema.parse(snapshot);
+  return JSON.stringify(normalized, (key, value) =>
     key === "revision" || key === "updatedAt" ? undefined : value
   );
 }

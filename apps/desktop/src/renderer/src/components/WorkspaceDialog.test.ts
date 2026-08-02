@@ -5,6 +5,8 @@ describe("WorkspaceDialog DeepWrite free models", () => {
   it("offers the managed provider and a remote model selector without a key field", () => {
     expect(source).toContain('{ value: "deepwrite-free", label: "DeepWrite 免费模型" }');
     expect(source).toContain('accessible-label="选择 DeepWrite 免费模型"');
+    expect(source).toContain('emit(\'refreshFreeModels\')');
+    expect(source).toContain('"刷新免费模型"');
     expect(source).toContain('v-if="!isDeepWriteFreeEditor" class="is-wide"');
     expect(source).toContain("运行环境提供密钥，无需在此填写");
   });
@@ -35,5 +37,30 @@ describe("WorkspaceDialog provider presets", () => {
     expect(source).toContain('provider === "kimi-coding"');
     expect(source).toContain('editor.api = "openai-completions"');
     expect(source).toContain('editor.baseUrl = "https://api.kimi.com/coding/v1"');
+  });
+});
+
+describe("WorkspaceDialog official models", () => {
+  it("keeps official models selectable but hides edit and delete actions", () => {
+    expect(source).toContain("DeepWrite 官方模型");
+    expect(source).toContain("row.model.managedBy !== 'deepwrite-official'");
+    expect(source).toContain('requestModelId: model.requestModelId');
+    expect(source).toContain('supportsDeveloperRole: model.supportsDeveloperRole');
+  });
+
+  it("shows the official model price notice in place of the configuration note", () => {
+    expect(source).toContain('class="dialog-description model-price-notice"');
+    expect(source).toContain('v-for="(message, index) in modelAlertMessages"');
+    expect(source).toContain("{{ message }}");
+    expect(source).not.toContain("官方模型已经上线！直连厂商！");
+    expect(source).not.toContain("配置会同时用于连接测试与实际对话");
+  });
+});
+
+describe("WorkspaceDialog model draft lifecycle", () => {
+  it("hydrates saved models when the dialog mounts already active", () => {
+    expect(source).toMatch(
+      /watch\(\s*\(\) => \[props\.mode, props\.active\] as const,[\s\S]*?\{ immediate: true \}\s*\);/
+    );
   });
 });

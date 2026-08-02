@@ -216,11 +216,13 @@ function modelStatusLabel(status: "current" | "historical" | "faux"): string {
 }
 
 function modelProviderLabel(model: ModelUsageDashboard["models"][number]["model"]): string {
-  return model.managedBy === "deepwrite-free" ? "DeepWrite 官方" : model.provider;
+  if (model.managedBy === "deepwrite-official") return "DeepWrite 官方";
+  if (model.managedBy === "deepwrite-free") return "DeepWrite 免费";
+  return model.provider;
 }
 
 function modelBadgeLabel(model: ModelUsageDashboard["models"][number]["model"]): string {
-  const source = model.managedBy === "deepwrite-free" ? "D" : model.provider.trim().slice(0, 1);
+  const source = model.managedBy ? "D" : model.provider.trim().slice(0, 1);
   return source.toLocaleUpperCase() || "M";
 }
 

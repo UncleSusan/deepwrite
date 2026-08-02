@@ -7,6 +7,8 @@ import {
   longChapterBodyFileId,
   longChapterCardFileId,
   longChapterCharacterStateFileId,
+  longChapterContinuityFilePath,
+  longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
   longCharacterCurrentStateFileId,
@@ -462,6 +464,19 @@ describe("long structure mutation builder", () => {
             revision: EMPTY_LONG_MARKDOWN_REVISION,
             updatedAt: later
           },
+          foreshadowingChanges: {
+            id: longChapterForeshadowingChangesFileId(
+              "chapter_generated"
+            ),
+            path: longChapterContinuityFilePath(
+              "chapter_generated",
+              "foreshadowing-changes.md"
+            ),
+            revision: EMPTY_LONG_MARKDOWN_REVISION,
+            updatedAt: later
+          },
+          worldReveals: null,
+          characterContinuity: [],
           commitId: null
         }
       }

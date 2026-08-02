@@ -1,4 +1,5 @@
 export * from "./appearance";
+export * from "./app-alert";
 export * from "./agent-team";
 export * from "./catalog";
 export * from "./envelope";
@@ -22,5 +23,6 @@ export * from "./short-manuscript-export";
 export * from "./subagent-authoring";
 export * from "./system";
 export * from "./utility";
+export * from "./update";
 export * from "./workspace";
 export * from "./workspace-directory";

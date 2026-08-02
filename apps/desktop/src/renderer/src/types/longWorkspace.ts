@@ -1,16 +1,17 @@
-import type {
-  DeepWriteApi,
-  LongArcId,
-  LongBookSummary,
-  LongChapterCardId,
-  LongCharacterGroup,
-  LongCharacterId,
-  LongFileId,
-  LongWorkspaceIndexSnapshot,
-  LongWorkspaceFileReference,
-  LongWorkspaceRoot,
-  LongVolumeId,
-  LongWorldbuildingFormat
+import {
+  EMPTY_LONG_MARKDOWN_REVISION,
+  type DeepWriteApi,
+  type LongArcId,
+  type LongBookSummary,
+  type LongChapterCardId,
+  type LongCharacterGroup,
+  type LongCharacterId,
+  type LongFileId,
+  type LongWorkspaceIndexSnapshot,
+  type LongWorkspaceFileReference,
+  type LongWorkspaceRoot,
+  type LongVolumeId,
+  type LongWorldbuildingFormat
 } from "@deepwrite/contracts";
 
 export type LongWorkspaceFileRole =
@@ -202,40 +203,46 @@ function orderedLongLedgerCommits(
 }
 
 /**
- * Resolves the newest chapter whose continuity outputs are persisted as
- * Markdown files. Legacy structured commits deliberately stay out of these
- * mappings because their JSON projection is only an internal compatibility
- * record.
+ * Resolves the newest committed chapter whose continuity outputs are
+ * available as Markdown. Current text-file commits qualify directly; a
+ * legacy structured commit qualifies only after the store has projected its
+ * audit record into a non-empty per-chapter foreshadowing file.
  */
-export function latestCommittedTextFilesChapter(
+export function latestCommittedContinuityChapter(
   workspaceIndex: LongWorkspaceIndexSnapshot,
   predicate: (chapter: LongChapterFileEntry) => boolean = () => true
 ): LongChapterFileEntry | undefined {
   for (const commit of orderedLongLedgerCommits(workspaceIndex)) {
-    if (commit.mode !== "text_files") continue;
     const chapter = workspaceIndex.chapters.find(
       (entry) =>
         entry.commitId === commit.id ||
         (entry.chapterCardId === commit.chapterCardId &&
           entry.commitId !== null)
     );
-    if (chapter && predicate(chapter)) return chapter;
+    const hasMarkdownProjection =
+      commit.mode === "text_files" ||
+      chapter?.foreshadowingChanges.revision !==
+        EMPTY_LONG_MARKDOWN_REVISION;
+    if (chapter && hasMarkdownProjection && predicate(chapter)) {
+      return chapter;
+    }
   }
   return undefined;
 }
 
-function latestLedgerCommitUsesLegacyStructure(
+function hasLegacyStructuredCommit(
   workspaceIndex: LongWorkspaceIndexSnapshot
 ): boolean {
-  const latest = orderedLongLedgerCommits(workspaceIndex)[0];
-  return Boolean(latest && latest.mode !== "text_files");
+  return workspaceIndex.ledger.commits.some(
+    ({ mode }) => mode !== "text_files"
+  );
 }
 
 function characterDesignSelectionFiles(
   workspaceIndex: LongWorkspaceIndexSnapshot,
   entry: LongWorkspaceIndexSnapshot["characterFiles"][number]
 ): LongWorkspaceSelectionFile[] {
-  const mappedChapter = latestCommittedTextFilesChapter(
+  const mappedChapter = latestCommittedContinuityChapter(
     workspaceIndex,
     (chapter) =>
       (chapter.characterContinuity ?? []).some(
@@ -245,7 +252,7 @@ function characterDesignSelectionFiles(
   const mappedContinuity = mappedChapter?.characterContinuity.find(
     ({ characterId }) => characterId === entry.characterId
   );
-  const legacyLocked = latestLedgerCommitUsesLegacyStructure(workspaceIndex);
+  const legacyLocked = hasLegacyStructuredCommit(workspaceIndex);
   return [
     {
       role: "core-profile",
@@ -344,14 +351,14 @@ export function createLongCharacterGroupSelection(
       description: `${character.name}的人物档案索引尚未就绪。`
     };
   }
-  const latestMappedChapter = latestCommittedTextFilesChapter(
+  const latestMappedChapter = latestCommittedContinuityChapter(
     workspaceIndex,
     (chapter) =>
       (chapter.characterContinuity ?? []).some(
         ({ characterId }) => characterId === character.id
       )
   );
-  const legacyLocked = latestLedgerCommitUsesLegacyStructure(workspaceIndex);
+  const legacyLocked = hasLegacyStructuredCommit(workspaceIndex);
   return {
     ...baseSelection,
     characterId: character.id,
@@ -753,7 +760,7 @@ export function reconcileLongWorkspaceSelection(
     };
   }
   if (selection.key === "plot-design:foreshadowing") {
-    const mappedChapter = latestCommittedTextFilesChapter(workspaceIndex);
+    const mappedChapter = latestCommittedContinuityChapter(workspaceIndex);
     return {
       ...selection,
       title: "伏笔总览",
@@ -795,6 +802,31 @@ export function reconcileLongWorkspaceSelection(
       volumeId,
       selection.chapterCardId
     );
+  }
+  if (selection.key === "worldbuilding:reveals") {
+    const mappedChapter = latestCommittedContinuityChapter(
+      workspaceIndex,
+      (chapter) => chapter.worldReveals !== null
+    );
+    return {
+      ...selection,
+      title: "世界观揭露",
+      breadcrumbs: [summary.title, "世界观", "世界观揭露"],
+      files: mappedChapter?.worldReveals
+        ? [
+            {
+              role: "world-reveals",
+              label: "世界观揭露",
+              file: mappedChapter.worldReveals,
+              readOnly: true
+            }
+          ]
+        : [],
+      preferredRole: "world-reveals",
+      description: mappedChapter
+        ? "只读映射最近一次包含世界观揭露的已提交章节记录。"
+        : "尚无已提交的按章世界观揭露记录。"
+    };
   }
   if (selection.key.startsWith("worldbuilding:")) {
     const category = workspaceIndex.worldbuilding.find(
@@ -875,7 +907,7 @@ export function reconcileLongWorkspaceSelection(
       (candidate) => candidate.characterId === characterId
     );
     if (!character || !entry) return undefined;
-    const latestMappedChapter = latestCommittedTextFilesChapter(
+    const latestMappedChapter = latestCommittedContinuityChapter(
       workspaceIndex,
       (chapter) =>
         (chapter.characterContinuity ?? []).some(
@@ -883,7 +915,7 @@ export function reconcileLongWorkspaceSelection(
             mappedCharacterId === character.id
         )
     );
-    const legacyLocked = latestLedgerCommitUsesLegacyStructure(workspaceIndex);
+    const legacyLocked = hasLegacyStructuredCommit(workspaceIndex);
     const groupLabel = longCharacterGroupLabel(character.group);
     return {
       ...selection,

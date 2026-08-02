@@ -602,7 +602,13 @@ function allWorkspaceFiles(
       entry.body,
       entry.card,
       entry.characterState,
-      entry.handoff
+      entry.handoff,
+      entry.foreshadowingChanges,
+      ...(entry.worldReveals ? [entry.worldReveals] : []),
+      ...entry.characterContinuity.flatMap((continuity) => [
+        continuity.currentState,
+        continuity.history
+      ])
     ]),
     ...index.plot.storyPlots.map(({ file }) => file),
     ...index.ledger.commits.map(({ recordFile }) => recordFile)
@@ -714,7 +720,38 @@ function searchFiles(
           file: entry.handoff,
           root: "draft" as const,
           title: `${title} · 交接`
-        }
+        },
+        {
+          file: entry.foreshadowingChanges,
+          root: "continuity_ledger" as const,
+          title: `${title} · 伏笔变化`
+        },
+        ...(entry.worldReveals
+          ? [
+              {
+                file: entry.worldReveals,
+                root: "continuity_ledger" as const,
+                title: `${title} · 世界观揭露`
+              }
+            ]
+          : []),
+        ...entry.characterContinuity.flatMap((continuity) => {
+          const characterTitle =
+            characterById.get(continuity.characterId)?.name ??
+            continuity.characterId;
+          return [
+            {
+              file: continuity.currentState,
+              root: "continuity_ledger" as const,
+              title: `${title} · ${characterTitle} · 当前状态`
+            },
+            {
+              file: continuity.history,
+              root: "continuity_ledger" as const,
+              title: `${title} · ${characterTitle} · 历史轨迹`
+            }
+          ];
+        })
       ];
     }),
     ...index.plot.storyPlots.map((entry) => ({

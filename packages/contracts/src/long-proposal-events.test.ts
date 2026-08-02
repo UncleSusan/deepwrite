@@ -117,6 +117,65 @@ describe("long proposal event contracts", () => {
     );
   });
 
+  it("rejects unrelated structure operations hidden in continuity file proposals", () => {
+    const fileId = longChapterForeshadowingChangesFileId("chapter_one");
+    const nextRevision = "v1:6:12345678";
+    const proposal = createEnvelope(
+      "long.continuity_file_proposal",
+      {
+        ...common,
+        agentId: "continuity_ledger" as const,
+        batch: {
+          baseRevision: 7,
+          updatedAt: "2026-07-26T12:00:00.000Z",
+          operations: [
+            {
+              type: "worldbuilding.update" as const,
+              id: "world_rules",
+              patch: { title: "审批卡未展示的结构变更" }
+            }
+          ],
+          documentWrites: [
+            {
+              proposalId: "proposal_continuity_hidden_operation",
+              fileId,
+              content: "蜡封伏笔已种下。",
+              mode: "replace" as const,
+              expectedRevision: revision,
+              nextRevision,
+              updatedAt: "2026-07-26T12:00:00.000Z",
+              reason: "记录本章伏笔变化"
+            }
+          ]
+        },
+        baseProjectRevision: 11,
+        files: [
+          {
+            chapterCardId: "chapter_one",
+            role: "foreshadowing_changes" as const,
+            characterId: null,
+            fileId,
+            filePath: longChapterContinuityFilePath(
+              "chapter_one",
+              "foreshadowing-changes.md"
+            ),
+            title: "第一章 / 伏笔变化",
+            operation: "edit" as const,
+            beforeText: "",
+            afterText: "蜡封伏笔已种下。",
+            beforeRevision: revision,
+            nextRevision
+          }
+        ]
+      },
+      { id: "event-long-continuity-hidden-operation", context }
+    );
+
+    expect(() =>
+      LongContinuityFileProposalEventEnvelopeSchema.parse(proposal)
+    ).toThrow(/only create chapter continuity files/u);
+  });
+
   it("accepts independent mutation, chapter-write and ledger-commit events", () => {
     const mutation = createEnvelope(
       "long.mutation_proposal",

@@ -4121,6 +4121,17 @@ html[data-theme="dark"] .document-editor:focus-visible {
   letter-spacing: -0.02em;
 }
 
+.dialog-description.model-price-notice {
+  display: grid;
+  gap: 5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dialog-description.model-price-notice p {
+  margin: 0;
+}
+
 .workspace-settings-panel .dialog-content {
   flex: 1 1 auto;
   padding: 24px 26px 28px;
@@ -4417,6 +4428,146 @@ html[data-theme="dark"] .document-editor:focus-visible {
   letter-spacing: 0.01em;
   text-align: right;
   user-select: all;
+}
+
+.update-dialog {
+  width: min(500px, calc(100vw - 48px));
+}
+
+.update-dialog-content {
+  display: grid;
+  gap: 13px;
+}
+
+.update-version-summary {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 13px 15px;
+  border: 1px solid var(--theme-line);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.update-version-summary > div {
+  display: grid;
+  gap: 3px;
+}
+
+.update-version-summary span {
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+}
+
+.update-version-summary strong {
+  color: var(--text-primary);
+  font-family: var(--code-font);
+  font-size: 0.928571rem;
+}
+
+.update-version-summary .update-required-badge {
+  margin-left: auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.714286rem;
+  font-weight: 650;
+}
+
+.update-checking {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 84px;
+  color: var(--text-secondary);
+  font-size: 0.857143rem;
+}
+
+.update-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--theme-line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: update-spinner-rotate 0.8s linear infinite;
+}
+
+@keyframes update-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.update-release-copy {
+  display: grid;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.update-release-copy > strong {
+  font-size: 0.928571rem;
+  font-weight: 650;
+}
+
+.update-release-copy ul {
+  display: grid;
+  gap: 5px;
+  max-height: 170px;
+  margin: 0;
+  padding-left: 19px;
+  overflow-y: auto;
+  color: var(--text-secondary);
+  font-size: 0.821429rem;
+  line-height: 1.55;
+}
+
+.update-progress {
+  display: grid;
+  gap: 7px;
+}
+
+.update-progress-heading {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+}
+
+.update-progress-heading strong {
+  color: var(--text-primary);
+}
+
+.update-progress-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-hover);
+}
+
+.update-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.update-progress small {
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+}
+
+.update-status-message {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+  line-height: 1.5;
 }
 
 .book-resource-dialog {

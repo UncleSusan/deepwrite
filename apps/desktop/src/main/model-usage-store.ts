@@ -430,12 +430,16 @@ async function atomicWriteJson(path: string, value: unknown): Promise<void> {
 }
 
 export function createModelUsageRevisionId(
-  model: Pick<ModelConfig, "provider" | "modelId" | "api" | "baseUrl">
+  model: Pick<
+    ModelConfig,
+    "provider" | "modelId" | "requestModelId" | "api" | "baseUrl"
+  >
 ): string {
   const source = [
     "deepwrite-model-usage-revision-v2",
     model.provider.trim().toLowerCase(),
     model.modelId.trim(),
+    model.requestModelId?.trim() ?? "",
     model.api.trim(),
     normalizeEndpointIdentity(model.baseUrl)
   ].join("\u0000");
@@ -538,6 +542,7 @@ export class ModelUsageStore {
         this.readLedger()
       ]);
       const modelConfigIds = input.modelConfigIds ? new Set(input.modelConfigIds) : undefined;
+      const managedBy = input.managedBy;
       const modules = input.modules ? new Set(input.modules) : undefined;
       const startAt = input.startAt ? toTimestamp(input.startAt) : undefined;
       const endAt = input.endAt ? toTimestamp(input.endAt) : undefined;
@@ -556,6 +561,7 @@ export class ModelUsageStore {
         };
         if (
           (modelConfigIds && !modelConfigIds.has(row.model.configId)) ||
+          (managedBy && row.model.managedBy !== managedBy) ||
           (modules && !modules.has(row.module)) ||
           !contributionOverlapsRange(contribution, startAt, endAt)
         ) {
@@ -570,6 +576,7 @@ export class ModelUsageStore {
           (startAt !== undefined && occurredAt < startAt) ||
           (endAt !== undefined && occurredAt > endAt) ||
           (modelConfigIds && !modelConfigIds.has(record.model.configId)) ||
+          (managedBy && record.model.managedBy !== managedBy) ||
           (modules && !modules.has(record.module))
         ) {
           continue;
@@ -624,6 +631,7 @@ export class ModelUsageStore {
       if (!modules) {
         for (const model of Object.values(registry.models)) {
           if (modelConfigIds && !modelConfigIds.has(model.configId)) continue;
+          if (managedBy && model.managedBy !== managedBy) continue;
           const key = registryKey(model);
           if (!modelSummaries.has(key)) {
             modelSummaries.set(key, { model, totals: emptyTotals() });
@@ -691,6 +699,16 @@ export class ModelUsageStore {
 
       const recentCalls = ledger.recentRecords
         .slice()
+        .filter((record) => {
+          const occurredAt = toTimestamp(record.occurredAt);
+          return !(
+            (startAt !== undefined && occurredAt < startAt) ||
+            (endAt !== undefined && occurredAt > endAt) ||
+            (modelConfigIds && !modelConfigIds.has(record.model.configId)) ||
+            (managedBy && record.model.managedBy !== managedBy) ||
+            (modules && !modules.has(record.module))
+          );
+        })
         .sort((left, right) => compareRecords(right, left))
         .slice(0, RECENT_CALL_DISPLAY_LIMIT)
         .map(({ id: _id, ...call }) => call);

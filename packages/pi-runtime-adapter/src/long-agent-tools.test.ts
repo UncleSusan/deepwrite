@@ -530,6 +530,7 @@ describe("long workspace agent tools", () => {
       "list_continuity_files",
       "read_continuity_file",
       "create_continuity_file",
+      "delete_continuity_file",
       "write_continuity_file",
       "edit_continuity_file",
       "propose_continuity_commit"
@@ -3500,6 +3501,215 @@ describe("long workspace agent tools", () => {
       ])
     );
 
+    const deleteTool = toolByName(tools, "delete_continuity_file");
+    const deleteWorld = await deleteTool.execute(
+      "delete-world-reveals",
+      { target: { document: "world_reveals" } }
+    );
+    expect(deleteWorld.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [
+          {
+            type: "chapterContinuity.worldReveals.delete",
+            chapterCardId: "chapter_one"
+          }
+        ],
+        documentWrites: []
+      }
+    });
+    const deleteCharacter = await deleteTool.execute(
+      "delete-character-continuity",
+      {
+        target: {
+          document: "character",
+          character_id: characterId
+        }
+      }
+    );
+    expect(deleteCharacter.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [
+          {
+            type: "chapterContinuity.character.delete",
+            chapterCardId: "chapter_one",
+            characterId
+          }
+        ],
+        documentWrites: []
+      }
+    });
+    expect(JSON.stringify(deleteTool.parameters)).not.toMatch(
+      /body|chapter_end_state|handoff|foreshadowing_changes/u
+    );
+    expect(deleteTool.description).toMatch(/误创建|不再适用/u);
+    const commitAfterOptionalDeletes = await commitTool.execute(
+      "commit-after-optional-deletes",
+      { summary: "删除误建文件后留存第一章连续性记录" }
+    );
+    if (
+      !commitAfterOptionalDeletes.details ||
+      commitAfterOptionalDeletes.details.kind !==
+        "long-ledger-commit-proposal" ||
+      commitAfterOptionalDeletes.details.input.mode !== "text_files"
+    ) {
+      throw new Error("Expected a text-file continuity commit proposal.");
+    }
+    expect(
+      commitAfterOptionalDeletes.details.input.continuityFileRevisions
+    ).toHaveLength(3);
+
+  });
+
+  it("registers continuity finalization after unrelated file approvals advance global revisions", async () => {
+    const latest = fixtureIndex();
+    const chapter = latest.chapters[0]!;
+    const fileContents = new Map([
+      [chapter.body.id, "第一章正文。"],
+      [chapter.characterState.id, "章末状态：林岚抵达北门。"],
+      [chapter.handoff.id, "接续包：追兵即将封锁北门。"],
+      [chapter.foreshadowingChanges.id, "本章无变化。"]
+    ]);
+    const indexedFiles = [
+      chapter.body,
+      chapter.characterState,
+      chapter.handoff,
+      chapter.foreshadowingChanges
+    ];
+    let liveWorkspaceRevision = latest.revision;
+    let liveProjectRevision = 11;
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(latest);
+      }
+      if (command.type !== "long.readDocument") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      const requested = indexedFiles.find(
+        ({ id }) => id === command.payload.fileId
+      );
+      if (!requested) {
+        throw new Error(`Unknown test file: ${command.payload.fileId}`);
+      }
+      const content = fileContents.get(requested.id) ?? "";
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: latest.bookId,
+          file: requested,
+          content,
+          offset: 0,
+          totalCharacters: content.length,
+          nextOffset: null,
+          workspaceRevision: liveWorkspaceRevision,
+          projectRevision: liveProjectRevision
+        }
+      };
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace(
+        "continuity_ledger",
+        "continuity_ledger",
+        "chapter_one"
+      ),
+      profile: profile("continuity_ledger"),
+      sessionId: "session-continuity-rebased-read",
+      runId: "run-continuity-rebased-read",
+      executor
+    });
+
+    await toolByName(tools, "read_chapter").execute("read-body", {
+      mode: "full"
+    });
+    liveWorkspaceRevision += 3;
+    liveProjectRevision += 3;
+
+    const commit = await toolByName(
+      tools,
+      "propose_continuity_commit"
+    ).execute("commit-after-file-approvals", {
+      summary: "连续性文件获批后归档第一章"
+    });
+
+    expect(commit.details).toMatchObject({
+      kind: "long-ledger-commit-proposal",
+      input: {
+        chapterFileRevisions: { body: chapter.body.revision },
+        baseWorkspaceRevision: latest.revision,
+        baseProjectRevision: 11
+      }
+    });
+  });
+
+  it("still rejects continuity finalization when the chapter file itself changed", async () => {
+    const latest = fixtureIndex();
+    const chapter = latest.chapters[0]!;
+    const changedBody = {
+      ...chapter.body,
+      revision: `v2:15:${"a".repeat(64)}`
+    };
+    let bodyChanged = false;
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(latest);
+      }
+      if (command.type !== "long.readDocument") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      const isBody = command.payload.fileId === chapter.body.id;
+      const content = isBody
+        ? bodyChanged
+          ? "正文已在外部更新。"
+          : "初始正文。"
+        : "已有连续性内容。";
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: latest.bookId,
+          file: isBody
+            ? bodyChanged
+              ? changedBody
+              : chapter.body
+            : [
+                chapter.characterState,
+                chapter.handoff,
+                chapter.foreshadowingChanges
+              ].find(({ id }) => id === command.payload.fileId)!,
+          content,
+          offset: 0,
+          totalCharacters: content.length,
+          nextOffset: null,
+          workspaceRevision: latest.revision + 1,
+          projectRevision: 12
+        }
+      };
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace(
+        "continuity_ledger",
+        "continuity_ledger",
+        "chapter_one"
+      ),
+      profile: profile("continuity_ledger"),
+      sessionId: "session-continuity-changed-body",
+      runId: "run-continuity-changed-body",
+      executor
+    });
+
+    await toolByName(tools, "read_chapter").execute("read-initial-body", {
+      mode: "full"
+    });
+    bodyChanged = true;
+
+    await expect(
+      toolByName(tools, "propose_continuity_commit").execute(
+        "commit-changed-body",
+        { summary: "不应归档已变化的正文" }
+      )
+    ).rejects.toThrow(/changed after continuity analysis/u);
   });
 
   it("rejects chapter mutations against stale, mismatched, or committed workspace context", async () => {
@@ -3593,6 +3803,12 @@ describe("long workspace agent tools", () => {
           target: { document: "foreshadowing_changes" },
           text: "重复提交"
         }
+      )
+    ).rejects.toThrow(/already committed/u);
+    await expect(
+      toolByName(committedTools, "delete_continuity_file").execute(
+        "delete-from-committed-chapter",
+        { target: { document: "world_reveals" } }
       )
     ).rejects.toThrow(/already committed/u);
   });

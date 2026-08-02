@@ -34,6 +34,12 @@ import {
   ImportLegacyLibraryResultSchema,
   IPC_COMMAND_CHANNEL,
   IPC_EVENT_CHANNEL,
+  UPDATE_CHECK_CHANNEL,
+  UPDATE_DOWNLOAD_CHANNEL,
+  UPDATE_GET_STATE_CHANNEL,
+  UPDATE_INSTALL_CHANNEL,
+  UPDATE_STATE_EVENT_CHANNEL,
+  UpdateStateSchema,
   LearningImitationSettingsInputSchema,
   LearningImitationSettingsSchema,
   LearningImitationStageIdSchema,
@@ -96,6 +102,10 @@ import {
   WorkspaceDirectorySettingsSchema,
   AppearanceSettingsSchema,
   AppearanceSettingsSnapshotSchema,
+  APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL,
+  APP_ALERT_GET_CHANNEL,
+  AppAlertDesktopRevisionSchema,
+  AppAlertSnapshotSchema,
   UpdateBookInputSchema,
   UpdateLibraryGroupInputSchema,
   WorkspaceAgentSettingsInputSchema,
@@ -204,6 +214,7 @@ import {
   type UnregisterCatalogProjectResult,
   type UpdateBookInput,
   type UpdateLibraryGroupInput,
+  type UpdateState,
   type WorkspaceDirectorySettings,
   type WorkspaceAgentSettings,
   type WorkspaceAgentSettingsInput,
@@ -211,7 +222,8 @@ import {
   type WorkspaceAgentTeamSettingsInput,
   type WorkspaceType,
   type AppearanceSettings,
-  type AppearanceSettingsSnapshot
+  type AppearanceSettingsSnapshot,
+  type AppAlertSnapshot
 } from "@deepwrite/contracts";
 
 import { createId } from "@deepwrite/shared";
@@ -248,6 +260,33 @@ async function getHealth(): Promise<SystemHealthPayload> {
       createEnvelope("system.health", {}, { id, correlationId: id })
     )
   );
+}
+
+async function getUpdateState(): Promise<UpdateState> {
+  return UpdateStateSchema.parse(await ipcRenderer.invoke(UPDATE_GET_STATE_CHANNEL));
+}
+
+async function checkForUpdates(): Promise<UpdateState> {
+  return UpdateStateSchema.parse(await ipcRenderer.invoke(UPDATE_CHECK_CHANNEL));
+}
+
+async function downloadUpdate(): Promise<UpdateState> {
+  return UpdateStateSchema.parse(await ipcRenderer.invoke(UPDATE_DOWNLOAD_CHANNEL));
+}
+
+async function installUpdate(): Promise<void> {
+  await ipcRenderer.invoke(UPDATE_INSTALL_CHANNEL);
+}
+
+async function getAppAlerts(): Promise<AppAlertSnapshot> {
+  return AppAlertSnapshotSchema.parse(
+    await ipcRenderer.invoke(APP_ALERT_GET_CHANNEL)
+  );
+}
+
+async function acknowledgeDesktopAlert(rawRevision: string): Promise<void> {
+  const revision = AppAlertDesktopRevisionSchema.parse(rawRevision);
+  await ipcRenderer.invoke(APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL, revision);
 }
 
 async function getCatalogSnapshot(): Promise<CatalogSnapshot> {
@@ -906,6 +945,46 @@ async function listModels(): Promise<ModelSettings> {
   );
 }
 
+async function refreshFreeModels(): Promise<ModelSettings> {
+  const id = browserId("cmd_models_refresh_free");
+  return ModelSettingsSchema.parse(
+    await invokeCommand<ModelSettings>(
+      createEnvelope("models.refreshFree", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function refreshOfficialModels(): Promise<ModelSettings> {
+  const id = browserId("cmd_models_refresh_official");
+  return ModelSettingsSchema.parse(
+    await invokeCommand<ModelSettings>(
+      createEnvelope("models.refreshOfficial", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function saveOfficialModelToken(rawApiKey: string): Promise<ModelSettings> {
+  const apiKey = rawApiKey.trim();
+  if (!apiKey || apiKey.length > 16_000) {
+    throw new Error("请输入有效的官方令牌。");
+  }
+  const id = browserId("cmd_models_save_official_token");
+  return ModelSettingsSchema.parse(
+    await invokeCommand<ModelSettings>(
+      createEnvelope("models.saveOfficialToken", { apiKey }, { id, correlationId: id })
+    )
+  );
+}
+
+async function clearOfficialModelToken(): Promise<ModelSettings> {
+  const id = browserId("cmd_models_clear_official_token");
+  return ModelSettingsSchema.parse(
+    await invokeCommand<ModelSettings>(
+      createEnvelope("models.clearOfficialToken", {}, { id, correlationId: id })
+    )
+  );
+}
+
 async function saveModels(rawSettings: ModelSettingsInput): Promise<ModelSettings> {
   const settings = ModelSettingsInputSchema.parse(rawSettings);
   const id = browserId("cmd_models_save");
@@ -1296,6 +1375,28 @@ const api: DeepWriteApi = {
   system: {
     health: getHealth
   },
+  updates: {
+    getState: getUpdateState,
+    check: checkForUpdates,
+    download: downloadUpdate,
+    install: installUpdate,
+    subscribe(listener: (state: UpdateState) => void): () => void {
+      const handler = (_event: Electron.IpcRendererEvent, rawState: unknown): void => {
+        const parsed = UpdateStateSchema.safeParse(rawState);
+        if (!parsed.success) {
+          console.warn("DeepWrite discarded an invalid update state event.");
+          return;
+        }
+        listener(parsed.data);
+      };
+      ipcRenderer.on(UPDATE_STATE_EVENT_CHANNEL, handler);
+      return () => ipcRenderer.removeListener(UPDATE_STATE_EVENT_CHANNEL, handler);
+    }
+  },
+  appAlerts: {
+    get: getAppAlerts,
+    acknowledgeDesktop: acknowledgeDesktopAlert
+  },
   catalog: {
     snapshot: getCatalogSnapshot,
     loadDraftRecovery,
@@ -1347,6 +1448,10 @@ const api: DeepWriteApi = {
   },
   models: {
     list: listModels,
+    refreshFree: refreshFreeModels,
+    refreshOfficial: refreshOfficialModels,
+    saveOfficialToken: saveOfficialModelToken,
+    clearOfficialToken: clearOfficialModelToken,
     save: saveModels,
     test: testModel
   },

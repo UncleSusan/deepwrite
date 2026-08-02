@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type {
+  LongContinuityFileChange,
+  LongContinuityFileRole,
   LongWorkspaceEntityChange,
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
@@ -34,19 +36,35 @@ const completedCount = computed(
   () => props.items.filter(({ status }) => status === "accepted").length
 );
 
+type LongContentFileChange = Extract<
+  LongWorkspaceProposalItem["event"],
+  {
+    type:
+      | "long.worldbuilding_file_proposal"
+      | "long.character_file_proposal"
+      | "long.continuity_file_proposal";
+  }
+>["payload"]["files"][number];
+
+function isContentFileProposalItem(
+  item: LongWorkspaceProposalItem
+): boolean {
+  return (
+    item.event.type === "long.worldbuilding_file_proposal" ||
+    item.event.type === "long.character_file_proposal" ||
+    item.event.type === "long.continuity_file_proposal"
+  );
+}
+
+const hasContentFileItems = computed(() =>
+  props.items.some(isContentFileProposalItem)
+);
+
 const contentFileCards = computed(() => {
   const cards = new Map<
     string,
     Array<{
-      file: Extract<
-        LongWorkspaceProposalItem["event"],
-        {
-          type:
-            | "long.worldbuilding_file_proposal"
-            | "long.character_file_proposal"
-            | "long.continuity_file_proposal";
-        }
-      >["payload"]["files"][number];
+      file: LongContentFileChange;
       diff: ReturnType<typeof buildAgentTextDiff>;
     }>
   >();
@@ -67,6 +85,123 @@ const contentFileCards = computed(() => {
   return cards;
 });
 
+const continuityRoleLabels: Record<LongContinuityFileRole, string> = {
+  foreshadowing_changes: "伏笔变化",
+  world_reveals: "世界观揭露",
+  character_current_state: "人物当前状态",
+  character_history: "人物历史轨迹",
+  chapter_end_state: "章末状态",
+  handoff: "接续包"
+};
+
+function trustedContinuityIdentity(fileId: string): {
+  chapterCardId: string;
+  role: LongContinuityFileRole;
+  characterId: string | null;
+} | null {
+  const index = props.workspaceIndex;
+  if (!index) return null;
+  for (const chapter of index.chapters) {
+    if (chapter.characterState.id === fileId) {
+      return {
+        chapterCardId: chapter.chapterCardId,
+        role: "chapter_end_state",
+        characterId: null
+      };
+    }
+    if (chapter.handoff.id === fileId) {
+      return {
+        chapterCardId: chapter.chapterCardId,
+        role: "handoff",
+        characterId: null
+      };
+    }
+    if (chapter.foreshadowingChanges.id === fileId) {
+      return {
+        chapterCardId: chapter.chapterCardId,
+        role: "foreshadowing_changes",
+        characterId: null
+      };
+    }
+    if (chapter.worldReveals?.id === fileId) {
+      return {
+        chapterCardId: chapter.chapterCardId,
+        role: "world_reveals",
+        characterId: null
+      };
+    }
+    for (const continuity of chapter.characterContinuity) {
+      if (continuity.currentState.id === fileId) {
+        return {
+          chapterCardId: chapter.chapterCardId,
+          role: "character_current_state",
+          characterId: continuity.characterId
+        };
+      }
+      if (continuity.history.id === fileId) {
+        return {
+          chapterCardId: chapter.chapterCardId,
+          role: "character_history",
+          characterId: continuity.characterId
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function continuityFileTitle(
+  item: LongWorkspaceProposalItem,
+  file: LongContinuityFileChange
+): string {
+  const index = props.workspaceIndex;
+  const identity = trustedContinuityIdentity(file.fileId);
+  const trusted =
+    identity ??
+    (item.preview
+      ? {
+          chapterCardId: file.chapterCardId,
+          role: file.role,
+          characterId: file.characterId
+        }
+      : null);
+  if (!index || !trusted) return "连续性文件（待校验）";
+  const chapter = index.plot.chapterCards.find(
+    ({ id }) => id === trusted.chapterCardId
+  );
+  const character =
+    trusted.characterId === null
+      ? null
+      : index.characters.find(({ id }) => id === trusted.characterId);
+  if (!chapter || (trusted.characterId !== null && !character)) {
+    return "连续性文件（待校验）";
+  }
+  return `${chapter.title} / ${
+    character ? `${character.name} / ` : ""
+  }${continuityRoleLabels[trusted.role]}`;
+}
+
+function contentFileTitle(
+  item: LongWorkspaceProposalItem,
+  file: LongContentFileChange
+): string {
+  return item.event.type === "long.continuity_file_proposal"
+    ? continuityFileTitle(item, file as LongContinuityFileChange)
+    : file.title;
+}
+
+function canDisplayContentFileDiff(
+  item: LongWorkspaceProposalItem
+): boolean {
+  return (
+    item.event.type !== "long.continuity_file_proposal" ||
+    (Boolean(item.preview) &&
+      (item.status === "ready" ||
+        item.status === "submitting" ||
+        item.status === "accepted"))
+  );
+}
+
 function proposalTitle(item: LongWorkspaceProposalItem): string {
   switch (item.event.type) {
     case "long.mutation_proposal":
@@ -81,12 +216,10 @@ function proposalTitle(item: LongWorkspaceProposalItem): string {
         : `${item.event.payload.files[0]?.characterName ?? "人物"}的 ${item.event.payload.files.length} 个文件`;
     case "long.continuity_file_proposal":
       return item.event.payload.files.length === 1
-        ? item.event.payload.files[0]!.title
+        ? contentFileTitle(item, item.event.payload.files[0]!)
         : `${item.event.payload.files.length} 个连续性文件`;
     case "long.chapter_dispatch_proposal":
       return "串行写作调度";
-    case "long.ledger_commit_proposal":
-      return "连续性提交";
   }
 }
 
@@ -110,8 +243,6 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
       return "确认写入并保存";
     case "long.chapter_dispatch_proposal":
       return "确认启动串行写作";
-    case "long.ledger_commit_proposal":
-      return "确认提交";
   }
 }
 
@@ -138,12 +269,95 @@ function proposalStatusText(item: LongWorkspaceProposalItem): string {
     : "等待确认";
 }
 
-function worldbuildingOperationLabel(
-  operation: "create" | "write" | "edit"
+function contentProposalVisualStatus(
+  item: LongWorkspaceProposalItem
+): "pending" | "accepting" | "accepted" | "error" {
+  if (item.status === "accepted") return "accepted";
+  if (item.status === "error") return "error";
+  if (item.status === "previewing" || item.status === "submitting") {
+    return "accepting";
+  }
+  return "pending";
+}
+
+function contentProposalStatusLabel(
+  item: LongWorkspaceProposalItem
 ): string {
-  if (operation === "create") return "创建文件";
-  if (operation === "write") return "写入文件";
-  return "编辑文件";
+  if (item.status === "accepted") return "已接受";
+  if (item.status === "error") return "应用失败";
+  if (item.status === "waiting") return "等待前序文件";
+  if (item.status === "previewing") return "正在校验";
+  if (item.status === "submitting") return "正在应用";
+  return item.approvalMode === "auto-approve"
+    ? "待自动保存"
+    : "待审阅";
+}
+
+function contentProposalDiffStats(
+  item: LongWorkspaceProposalItem
+): { additions: number; deletions: number; hunks: number } {
+  return (contentFileCards.value.get(item.event.id) ?? []).reduce(
+    (total, card) => ({
+      additions: total.additions + card.diff.additions,
+      deletions: total.deletions + card.diff.deletions,
+      hunks: total.hunks + card.diff.hunks.length
+    }),
+    { additions: 0, deletions: 0, hunks: 0 }
+  );
+}
+
+function contentProposalStatusMessage(
+  item: LongWorkspaceProposalItem
+): string {
+  if (item.status === "accepted") {
+    return item.approvalMode === "auto-approve"
+      ? "已自动批准并保存到本地 Markdown。"
+      : "变更已应用并保存到本机。";
+  }
+  if (item.status === "error") {
+    return item.error ?? "变更未能应用，可重试接受并保存或拒绝。";
+  }
+  if (item.status === "waiting") {
+    return "正在等待前序文件创建或写入完成，随后继续校验。";
+  }
+  if (item.status === "previewing") {
+    return "正在校验文件身份、原文与最新版本……";
+  }
+  if (item.status === "submitting") {
+    return "正在校验版本、应用变更并保存……";
+  }
+  return item.approvalMode === "auto-approve"
+    ? "已加入实时自动保存队列。"
+    : "接受后将应用到对应 Markdown 并自动保存到本机。";
+}
+
+function showContentProposalActions(
+  item: LongWorkspaceProposalItem
+): boolean {
+  return (
+    item.status !== "accepted" &&
+    (item.approvalMode !== "auto-approve" || item.status === "error")
+  );
+}
+
+function contentProposalAcceptDisabled(
+  item: LongWorkspaceProposalItem
+): boolean {
+  return (
+    item.status === "previewing" ||
+    item.status === "submitting" ||
+    item.status === "waiting" ||
+    (item.status === "ready" && !item.preview)
+  );
+}
+
+function contentProposalAcceptLabel(
+  item: LongWorkspaceProposalItem
+): string {
+  if (item.status === "submitting") return "保存中…";
+  return item.status === "error"
+    ? "重试接受并保存"
+    : "接受并保存";
 }
 
 function diffLineMark(type: "context" | "addition" | "deletion"): string {
@@ -201,12 +415,10 @@ function proposalFilePath(
   item: LongWorkspaceProposalItem,
   fileId: string
 ): string {
-  if (item.event.type === "long.mutation_proposal") {
-    const created = item.preview?.fileIntents.find(
-      ({ file }) => file.id === fileId
-    );
-    if (created) return created.file.path;
-  }
+  const previewed = item.preview?.fileIntents.find(
+    ({ file }) => file.id === fileId
+  );
+  if (previewed) return previewed.file.path;
   return workspaceFilePaths.value.get(fileId) ?? fileId;
 }
 
@@ -244,48 +456,16 @@ function entitySnapshotText(
   return value === null ? "（不存在）" : JSON.stringify(value, null, 2);
 }
 
-function ledgerCommitStats(
-  item: LongWorkspaceProposalItem
-): Array<{ label: string; value: number }> {
-  if (item.event.type !== "long.ledger_commit_proposal") return [];
-  const input = item.event.payload.input;
-  return input.mode === "text_files"
-    ? [
-        { label: "正文版本", value: 1 },
-        { label: "连续性文件", value: input.continuityFileRevisions.length }
-      ]
-    : [
-        { label: "事实变化", value: input.factMutations.length },
-        { label: "知识变化", value: input.knowledgeMutations.length },
-        { label: "开放事项", value: input.openLoopMutations.length }
-      ];
-}
-
-function ledgerCommitFiles(
-  item: LongWorkspaceProposalItem
-): Array<{ fileId: string; revision: string }> {
-  if (
-    item.event.type !== "long.ledger_commit_proposal" ||
-    item.event.payload.input.mode !== "text_files"
-  ) {
-    return [];
-  }
-  return item.event.payload.input.continuityFileRevisions;
-}
-
-function isTextFilesLedgerCommit(item: LongWorkspaceProposalItem): boolean {
-  return (
-    item.event.type === "long.ledger_commit_proposal" &&
-    item.event.payload.input.mode === "text_files"
-  );
-}
 </script>
 
 <template>
   <section
     v-if="items.length"
     class="long-proposal-review"
-    :class="{ 'is-embedded': embedded }"
+    :class="{
+      'is-embedded': embedded,
+      'has-content-file-items': hasContentFileItems
+    }"
     aria-label="长篇待审批提案"
   >
     <header v-if="!embedded">
@@ -301,19 +481,28 @@ function isTextFilesLedgerCommit(item: LongWorkspaceProposalItem): boolean {
       <article
         v-for="item in items"
         :key="item.event.id"
-        class="long-proposal-card"
+        :class="
+          isContentFileProposalItem(item)
+            ? [
+                'edit-proposal-card',
+                `is-${contentProposalVisualStatus(item)}`
+              ]
+            : 'long-proposal-card'
+        "
         :data-proposal-type="item.event.type"
+        :aria-busy="item.status === 'submitting'"
       >
-        <div class="long-proposal-heading">
+        <div
+          v-if="!isContentFileProposalItem(item)"
+          class="long-proposal-heading"
+        >
           <span class="long-proposal-icon">
             <AppIcon
               :name="
-                item.event.type === 'long.ledger_commit_proposal'
-                  ? 'ledger'
-                  : item.event.type === 'long.worldbuilding_file_proposal'
-                    || item.event.type === 'long.character_file_proposal'
-                    || item.event.type === 'long.continuity_file_proposal'
-                    ? 'file'
+                item.event.type === 'long.worldbuilding_file_proposal'
+                  || item.event.type === 'long.character_file_proposal'
+                  || item.event.type === 'long.continuity_file_proposal'
+                  ? 'file'
                   : item.event.type === 'long.chapter_dispatch_proposal'
                     ? 'edit'
                     : 'wand'
@@ -333,100 +522,138 @@ function isTextFilesLedgerCommit(item: LongWorkspaceProposalItem): boolean {
           </span>
         </div>
 
-        <p>{{ item.event.payload.summary }}</p>
+        <p v-if="!isContentFileProposalItem(item)">
+          {{ item.event.payload.summary }}
+        </p>
 
-        <div
-          v-if="
-            item.event.type === 'long.worldbuilding_file_proposal' ||
-            item.event.type === 'long.character_file_proposal' ||
-            item.event.type === 'long.continuity_file_proposal'
-          "
-          class="worldbuilding-file-list"
-        >
-          <section
-            v-for="card in contentFileCards.get(item.event.id) ?? []"
-            :key="card.file.fileId"
-            class="worldbuilding-file-card"
-          >
-            <header>
-              <span class="worldbuilding-file-card-icon" aria-hidden="true">
-                <AppIcon name="file" :size="16" />
-              </span>
-              <div>
-                <strong>{{ card.file.title }}</strong>
-                <small>
-                  {{ worldbuildingOperationLabel(card.file.operation) }} ·
-                  {{ card.file.filePath }}
-                </small>
+        <template v-if="isContentFileProposalItem(item)">
+          <header class="edit-proposal-header">
+            <span class="edit-proposal-icon" aria-hidden="true">
+              <AppIcon name="file" :size="17" />
+            </span>
+            <div class="edit-proposal-heading">
+              <div class="edit-proposal-title-row">
+                <strong>{{ proposalTitle(item) }}</strong>
+                <span
+                  class="edit-proposal-status"
+                  :class="`is-${contentProposalVisualStatus(item)}`"
+                >
+                  {{ contentProposalStatusLabel(item) }}
+                </span>
               </div>
-              <div
-                class="worldbuilding-file-stats"
-                :aria-label="`增加 ${card.diff.additions} 行，删除 ${card.diff.deletions} 行`"
-              >
-                <span class="is-addition">+{{ card.diff.additions }}</span>
-                <span class="is-deletion">−{{ card.diff.deletions }}</span>
-              </div>
-            </header>
-            <details
-              v-if="card.diff.hunks.length"
-              class="worldbuilding-file-diff"
+              <p>{{ item.event.payload.summary }}</p>
+            </div>
+            <div
+              v-if="canDisplayContentFileDiff(item)"
+              class="edit-proposal-stats"
+              :aria-label="`增加 ${contentProposalDiffStats(item).additions} 行，删除 ${contentProposalDiffStats(item).deletions} 行`"
             >
-              <summary>
-                <span>查看差异</span>
-                <small>{{ card.diff.hunks.length }} 个变更块</small>
-                <AppIcon name="chevron" :size="13" />
-              </summary>
-              <div class="worldbuilding-diff-content">
+              <span class="is-addition">
+                +{{ contentProposalDiffStats(item).additions }}
+              </span>
+              <span class="is-deletion">
+                −{{ contentProposalDiffStats(item).deletions }}
+              </span>
+            </div>
+          </header>
+
+          <details
+            v-if="
+              canDisplayContentFileDiff(item) &&
+              contentProposalDiffStats(item).hunks
+            "
+            class="edit-proposal-diff"
+          >
+            <summary>
+              <span>查看差异</span>
+              <small>
+                {{ contentProposalDiffStats(item).hunks }} 个变更块
+              </small>
+              <AppIcon name="chevron" :size="13" />
+            </summary>
+            <div class="edit-diff-content">
+              <section
+                v-for="card in contentFileCards.get(item.event.id) ?? []"
+                :key="card.file.fileId"
+                class="long-edit-diff-file"
+              >
+                <div
+                  v-if="
+                    (contentFileCards.get(item.event.id)?.length ?? 0) > 1
+                  "
+                  class="long-edit-diff-file-label"
+                >
+                  {{ contentFileTitle(item, card.file) }}
+                </div>
                 <div
                   v-for="(hunk, hunkIndex) in card.diff.hunks"
                   :key="`${card.file.fileId}:hunk:${hunkIndex}`"
-                  class="worldbuilding-diff-hunk"
+                  class="edit-diff-hunk"
                 >
-                  <div class="worldbuilding-diff-hunk-header">
+                  <div class="edit-diff-hunk-header">
                     @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
                   </div>
                   <div
                     v-for="(line, lineIndex) in hunk.lines"
                     :key="`${card.file.fileId}:${hunkIndex}:${lineIndex}`"
-                    class="worldbuilding-diff-line"
+                    class="edit-diff-line"
                     :class="`is-${line.type}`"
                   >
-                    <span>{{ line.oldLineNumber ?? "" }}</span>
-                    <span>{{ line.newLineNumber ?? "" }}</span>
-                    <span aria-hidden="true">{{ diffLineMark(line.type) }}</span>
+                    <span class="edit-diff-line-number">
+                      {{ line.oldLineNumber ?? "" }}
+                    </span>
+                    <span class="edit-diff-line-number">
+                      {{ line.newLineNumber ?? "" }}
+                    </span>
+                    <span class="edit-diff-line-mark" aria-hidden="true">
+                      {{ diffLineMark(line.type) }}
+                    </span>
                     <code>{{ line.text }}</code>
                   </div>
                 </div>
-                <p
-                  v-if="card.diff.truncated"
-                  class="worldbuilding-diff-truncated"
-                >
+                <p v-if="card.diff.truncated" class="edit-diff-truncated">
                   差异较大，仅显示部分变更；行数统计包含完整提案。
                 </p>
-              </div>
-            </details>
-            <p v-else class="worldbuilding-file-empty">
-              已创建空白 Markdown 文件，没有正文行级差异。
-            </p>
-          </section>
-          <p class="worldbuilding-file-status-message">
-            {{
-              item.status === "accepted"
-                ? item.approvalMode === "auto-approve"
-                  ? "已自动批准并保存到本地 Markdown。"
-                  : "已接受并保存到本地 Markdown。"
-                : item.status === "waiting"
-                  ? "正在等待前序文件创建或写入完成，随后继续检查并保存。"
-                : item.status === "submitting"
-                  ? "正在校验版本、应用变更并保存……"
-                  : item.status === "error"
-                    ? "文件变更未能保存，可重试或拒绝。"
-                    : item.approvalMode === "auto-approve"
-                      ? "已加入实时自动保存队列。"
-                      : "接受后将写入对应的长篇 Markdown 文件并保存到本机。"
-            }}
+              </section>
+            </div>
+          </details>
+          <p
+            v-else-if="!canDisplayContentFileDiff(item)"
+            class="edit-proposal-empty"
+          >
+            文件身份和原文尚未通过校验，暂不显示差异。
           </p>
-        </div>
+          <p v-else class="edit-proposal-empty">
+            已创建空白 Markdown 文件，没有正文行级差异。
+          </p>
+
+          <footer class="edit-proposal-footer">
+            <span class="edit-proposal-message">
+              {{ contentProposalStatusMessage(item) }}
+            </span>
+            <div
+              v-if="showContentProposalActions(item)"
+              class="edit-proposal-actions"
+            >
+              <button
+                class="edit-review-button is-reject"
+                type="button"
+                :disabled="item.status === 'submitting'"
+                @click="emit('reject', item.event.id)"
+              >
+                拒绝
+              </button>
+              <button
+                class="edit-review-button is-accept"
+                type="button"
+                :disabled="contentProposalAcceptDisabled(item)"
+                @click="emit('approve', item.event.id)"
+              >
+                {{ contentProposalAcceptLabel(item) }}
+              </button>
+            </div>
+          </footer>
+        </template>
 
         <div
           v-if="
@@ -605,59 +832,9 @@ function isTextFilesLedgerCommit(item: LongWorkspaceProposalItem): boolean {
           </div>
         </details>
 
-        <div
-          v-else-if="item.event.type === 'long.ledger_commit_proposal'"
-          class="long-proposal-impact"
-        >
-          <span
-            v-for="stat in ledgerCommitStats(item)"
-            :key="stat.label"
-          >
-            <strong>{{ stat.value }}</strong>
-            {{ stat.label }}
-          </span>
-        </div>
-        <details
-          v-if="item.event.type === 'long.ledger_commit_proposal'"
-          class="long-proposal-details"
-        >
-          <summary>查看提交内容</summary>
-          <div class="long-proposal-detail-group">
-            <strong>提交说明</strong>
-            <span>
-              {{
-                item.event.payload.input.commitMessage ||
-                item.event.payload.summary
-              }}
-            </span>
-          </div>
-          <div class="long-proposal-detail-group">
-            <strong>正文版本</strong>
-            <code>
-              正文 ·
-              {{ item.event.payload.input.chapterFileRevisions.body }}
-            </code>
-          </div>
-          <div
-            v-if="isTextFilesLedgerCommit(item)"
-            class="long-proposal-detail-group"
-          >
-            <strong>本章留存文件</strong>
-            <code
-              v-for="file in ledgerCommitFiles(item)"
-              :key="file.fileId"
-            >
-              {{ proposalFilePath(item, file.fileId) }} · {{ file.revision }}
-            </code>
-          </div>
-          <div v-else class="long-proposal-detail-group">
-            <strong>旧版连续性记录</strong>
-            <span>此项目仍使用旧版结构化提交；提交后可在章节记录中查看文本结果。</span>
-          </div>
-        </details>
-
         <footer
           v-if="
+            !isContentFileProposalItem(item) &&
             item.status !== 'accepted' &&
             (item.approvalMode !== 'auto-approve' ||
               item.status === 'error')
@@ -733,6 +910,12 @@ function isTextFilesLedgerCommit(item: LongWorkspaceProposalItem): boolean {
 .long-proposal-review.is-embedded .long-proposal-list {
   padding: 10px 0 0;
   overflow: visible;
+}
+
+.long-proposal-review.is-embedded.has-content-file-items .long-proposal-list {
+  gap: 12px;
+  padding: 0;
+  margin: 14px 0 20px;
 }
 
 .long-proposal-review > header {
@@ -826,18 +1009,6 @@ function isTextFilesLedgerCommit(item: LongWorkspaceProposalItem): boolean {
 .long-proposal-status.is-accepted {
   background: color-mix(in srgb, var(--success) 13%, transparent);
   color: var(--success);
-}
-
-.long-proposal-card[data-proposal-type="long.worldbuilding_file_proposal"]:has(
-    .long-proposal-status.is-accepted
-  ),
-.long-proposal-card[data-proposal-type="long.character_file_proposal"]:has(
-    .long-proposal-status.is-accepted
-  ),
-.long-proposal-card[data-proposal-type="long.continuity_file_proposal"]:has(
-    .long-proposal-status.is-accepted
-  ) {
-  border-color: color-mix(in srgb, var(--success) 45%, var(--theme-line-soft));
 }
 
 .long-proposal-card > p {
@@ -1006,166 +1177,17 @@ function isTextFilesLedgerCommit(item: LongWorkspaceProposalItem): boolean {
   color: var(--danger);
 }
 
-.worldbuilding-file-list {
-  display: grid;
-  gap: 7px;
+.long-edit-diff-file + .long-edit-diff-file {
+  border-top: 1px solid var(--theme-line-soft);
 }
 
-.worldbuilding-file-card {
-  overflow: hidden;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 8px;
-  background: var(--surface-main);
-}
-
-.worldbuilding-file-card > header {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-}
-
-.worldbuilding-file-card-icon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+.long-edit-diff-file-label {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--theme-line-soft);
   background: var(--surface-muted);
   color: var(--text-secondary);
-}
-
-.worldbuilding-file-card > header > div:nth-child(2) {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.worldbuilding-file-card > header strong {
-  color: var(--text-primary);
   font-size: 0.75rem;
-}
-
-.worldbuilding-file-card > header small {
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-size: 0.607143rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.worldbuilding-file-stats {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 0.75rem;
-  font-weight: 650;
-}
-
-.worldbuilding-file-stats .is-addition {
-  color: var(--success);
-}
-
-.worldbuilding-file-stats .is-deletion {
-  color: var(--danger);
-}
-
-.worldbuilding-file-diff {
-  border-top: 1px solid var(--theme-line-soft);
-  background: var(--surface-raised);
-}
-
-.worldbuilding-file-diff > summary {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 9px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.642857rem;
-}
-
-.worldbuilding-file-diff > summary small {
-  color: var(--text-tertiary);
-}
-
-.worldbuilding-file-diff > summary svg {
-  margin-left: auto;
-  transition: transform 0.16s ease;
-}
-
-.worldbuilding-file-diff[open] > summary svg {
-  transform: rotate(180deg);
-}
-
-.worldbuilding-diff-content {
-  max-height: 260px;
-  overflow: auto;
-  border-top: 1px solid var(--theme-line-soft);
-  background: var(--surface-muted);
-  font-family: var(--code-font);
-  font-size: var(--code-font-size);
-}
-
-.worldbuilding-diff-hunk + .worldbuilding-diff-hunk {
-  border-top: 1px solid var(--theme-line-soft);
-}
-
-.worldbuilding-diff-hunk-header {
-  padding: 4px 8px;
-  background: var(--surface-selected);
-  color: var(--text-tertiary);
-}
-
-.worldbuilding-diff-line {
-  display: grid;
-  grid-template-columns: 36px 36px 18px minmax(0, 1fr);
-  min-height: 21px;
-}
-
-.worldbuilding-diff-line > span {
-  padding: 2px 5px;
-  color: var(--text-tertiary);
-  text-align: right;
-  user-select: none;
-}
-
-.worldbuilding-diff-line code {
-  padding: 2px 7px;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-}
-
-.worldbuilding-diff-line.is-addition {
-  background: color-mix(in srgb, var(--success) 10%, transparent);
-}
-
-.worldbuilding-diff-line.is-deletion {
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-}
-
-.worldbuilding-diff-line.is-addition > span:nth-child(3) {
-  color: var(--success);
-}
-
-.worldbuilding-diff-line.is-deletion > span:nth-child(3) {
-  color: var(--danger);
-}
-
-.worldbuilding-diff-truncated,
-.worldbuilding-file-empty,
-.worldbuilding-file-status-message {
-  padding: 7px 9px;
-  color: var(--text-tertiary);
-  font-size: 0.642857rem;
-  line-height: 1.5;
-}
-
-.worldbuilding-file-status-message {
-  border-top: 1px solid var(--theme-line-soft);
-  background: var(--surface-raised);
+  font-weight: 600;
 }
 
 .long-proposal-card footer {

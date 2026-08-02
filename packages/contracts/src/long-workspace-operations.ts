@@ -428,6 +428,12 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("chapterContinuity.worldReveals.delete"),
+      chapterCardId: LongChapterCardIdSchema
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("chapterContinuity.character.create"),
       chapterCardId: LongChapterCardIdSchema,
       characterId: LongCharacterIdSchema,
@@ -435,6 +441,13 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
         LongChapterCharacterContinuityFileIndexEntrySchema.shape.currentState,
       history:
         LongChapterCharacterContinuityFileIndexEntrySchema.shape.history
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("chapterContinuity.character.delete"),
+      chapterCardId: LongChapterCardIdSchema,
+      characterId: LongCharacterIdSchema
     })
     .strict(),
 
@@ -1114,7 +1127,13 @@ function assertChapterIsMutable(
   chapterCardId: string,
   action: string
 ): void {
-  if (committedChapterIds(workspace).has(chapterCardId)) {
+  const chapterFiles = workspace.chapters.find(
+    (chapter) => chapter.chapterCardId === chapterCardId
+  );
+  if (
+    committedChapterIds(workspace).has(chapterCardId) ||
+    (chapterFiles !== undefined && chapterFiles.commitId !== null)
+  ) {
     operationError(
       "committed_prefix_protected",
       `Cannot ${action} committed chapter ${chapterCardId}.`
@@ -2255,17 +2274,30 @@ function deleteCharacter(
   const eventRefs = state.draft.plot.storyEvents
     .filter((event) => event.characterIds.includes(characterId))
     .map(({ id }) => id);
+  const continuityRefs = state.draft.chapters.flatMap((chapter) =>
+    chapter.characterContinuity
+      .filter((entry) => entry.characterId === characterId)
+      .map((entry) => ({ chapter, entry }))
+  );
   if (
     eventRefs.some((eventId) =>
       eventParticipatesInCommittedFacts(state.draft, eventId)
-    )
+    ) ||
+    continuityRefs.some(({ chapter }) => chapter.commitId !== null)
   ) {
     operationError(
       "committed_prefix_protected",
       `Cannot delete character ${characterId}; a committed chapter references it.`
     );
   }
-  requireCascade(cascade, eventRefs, `Character ${characterId}`);
+  requireCascade(
+    cascade,
+    [
+      ...eventRefs,
+      ...continuityRefs.map(({ chapter }) => chapter.chapterCardId)
+    ],
+    `Character ${characterId}`
+  );
   state.draft.plot.storyEvents.forEach((event) => {
     if (!event.characterIds.includes(characterId)) return;
     event.characterIds = event.characterIds.filter(
@@ -2273,6 +2305,19 @@ function deleteCharacter(
     );
     markUpdated(state, event.id);
   });
+  for (const { chapter, entry } of continuityRefs) {
+    [entry.currentState, entry.history].forEach((file) =>
+      addFileDeleteIntent(
+        state,
+        file,
+        `Delete uncommitted chapter continuity for character ${characterId}`
+      )
+    );
+    chapter.characterContinuity = chapter.characterContinuity.filter(
+      (candidate) => candidate.characterId !== characterId
+    );
+    markUpdated(state, chapter.chapterCardId);
+  }
 
   const fileIndex = state.draft.characterFiles.findIndex(
     (entry) => entry.characterId === characterId
@@ -3146,6 +3191,36 @@ function applyLongWorkspaceOperation(
       );
       break;
     }
+    case "chapterContinuity.worldReveals.delete": {
+      assertChapterIsMutable(
+        workspace,
+        operation.chapterCardId,
+        "delete world-reveals continuity from"
+      );
+      const chapterFiles = workspace.chapters[
+        findEntityIndex(
+          workspace.chapters.map((entry) => ({
+            ...entry,
+            id: entry.chapterCardId
+          })),
+          operation.chapterCardId,
+          "Chapter file index"
+        )
+      ]!;
+      if (!chapterFiles.worldReveals) {
+        operationError(
+          "not_found",
+          `Chapter ${operation.chapterCardId} does not have a world-reveals file.`
+        );
+      }
+      addFileDeleteIntent(
+        state,
+        chapterFiles.worldReveals,
+        `Delete world reveals from chapter ${operation.chapterCardId}`
+      );
+      chapterFiles.worldReveals = null;
+      break;
+    }
     case "chapterContinuity.character.create": {
       assertChapterIsMutable(
         workspace,
@@ -3189,6 +3264,44 @@ function applyLongWorkspaceOperation(
           state,
           file,
           `Create character continuity for ${operation.characterId} in chapter ${operation.chapterCardId}`
+        )
+      );
+      break;
+    }
+    case "chapterContinuity.character.delete": {
+      assertChapterIsMutable(
+        workspace,
+        operation.chapterCardId,
+        "delete character continuity from"
+      );
+      const chapterFiles = workspace.chapters[
+        findEntityIndex(
+          workspace.chapters.map((entry) => ({
+            ...entry,
+            id: entry.chapterCardId
+          })),
+          operation.chapterCardId,
+          "Chapter file index"
+        )
+      ]!;
+      const continuityIndex = chapterFiles.characterContinuity.findIndex(
+        ({ characterId }) => characterId === operation.characterId
+      );
+      if (continuityIndex < 0) {
+        operationError(
+          "not_found",
+          `Chapter ${operation.chapterCardId} does not track character ${operation.characterId}.`
+        );
+      }
+      const [continuity] = chapterFiles.characterContinuity.splice(
+        continuityIndex,
+        1
+      );
+      [continuity!.currentState, continuity!.history].forEach((file) =>
+        addFileDeleteIntent(
+          state,
+          file,
+          `Delete character continuity for ${operation.characterId} from chapter ${operation.chapterCardId}`
         )
       );
       break;

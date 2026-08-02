@@ -1,9 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelConfigInput } from "@deepwrite/contracts";
 import type { DeepWriteFreeModelCatalog } from "./deepwrite-free-model-config";
+import type { DeepWriteOfficialModelCatalog } from "./deepwrite-official-model-config";
 
 vi.mock("electron", () => ({
   safeStorage: {
@@ -32,6 +33,66 @@ function managedModel(modelId: string): ModelConfigInput {
   };
 }
 
+function emptyCatalog(): DeepWriteFreeModelCatalog {
+  return {
+    revision: "",
+    enabled: false,
+    message: "",
+    manifestAvailable: false,
+    defaultModelId: "",
+    models: [],
+    apiKeys: {}
+  };
+}
+
+function customModel(): ModelConfigInput {
+  return {
+    id: "custom-writer",
+    label: "自定义写作模型",
+    provider: "custom",
+    modelId: "writer-v1",
+    api: "openai-completions",
+    baseUrl: "https://example.test/v1",
+    reasoning: false,
+    defaultThinkingLevel: "off",
+    thinkingLevelOptions: ["minimal", "low", "medium", "high", "xhigh", "max"],
+    temperatureOptions: [0.1, 0.7, 1]
+  };
+}
+
+function officialModel(
+  overrides: Partial<ModelConfigInput> = {}
+): ModelConfigInput {
+  return {
+    id: "deepwrite-deepseek-v4-flash",
+    label: "官方模型-DeepSeekFlash正式版本",
+    provider: "deepseek-official",
+    modelId: "deepseek-v4-flash-202605",
+    api: "openai-completions",
+    baseUrl: "https://tokenhub.tencentmaas.com/v1",
+    reasoning: true,
+    supportsDeveloperRole: false,
+    defaultThinkingLevel: "high",
+    thinkingLevelOptions: ["low", "high", "max"],
+    temperatureOptions: [0.7, 1, 1.5],
+    managedBy: "deepwrite-official",
+    ...overrides
+  };
+}
+
+function officialCatalog(
+  models: ModelConfigInput[] = [officialModel()]
+): DeepWriteOfficialModelCatalog {
+  return {
+    revision: "remote-v1",
+    enabled: true,
+    message: "",
+    manifestAvailable: true,
+    defaultModelId: models[0]?.id ?? "",
+    models
+  };
+}
+
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(
@@ -39,9 +100,139 @@ afterEach(async () => {
   );
 });
 
+describe("ModelConfigStore official models", () => {
+  it("encrypts one official token, injects immutable models first, and removes them with the token", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-official-model-store-"));
+    temporaryRoots.push(root);
+    const freeModelCatalog = {
+      initialize: async () => undefined,
+      getCatalog: async () => emptyCatalog()
+    };
+    const remoteOfficialCatalog = officialCatalog();
+    const officialModelCatalog = {
+      initialize: async () => undefined,
+      getCatalog: async () => structuredClone(remoteOfficialCatalog),
+      refreshCatalog: async () => structuredClone(remoteOfficialCatalog)
+    };
+    const store = new ModelConfigStore(root, {
+      freeModelCatalog,
+      officialModelCatalog
+    });
+    await store.save({
+      models: [customModel()],
+      defaultModelId: "custom-writer"
+    });
+
+    const saved = await store.saveOfficialToken("sk-official-test-only");
+    expect(saved.deepwriteOfficialTokenConfigured).toBe(true);
+    expect(saved.deepwriteOfficialQuotaTokens).toBe(10_000_000);
+    expect(saved.models.map((model) => model.id)).toEqual([
+      "deepwrite-deepseek-v4-flash",
+      "custom-writer"
+    ]);
+    expect(saved.defaultModelId).toBe("custom-writer");
+    expect(saved.models[0]).toMatchObject({
+      label: "官方模型-DeepSeekFlash正式版本",
+      modelId: "deepseek-v4-flash-202605",
+      baseUrl: "https://tokenhub.tencentmaas.com/v1",
+      supportsDeveloperRole: false,
+      hasApiKey: true,
+      managedBy: "deepwrite-official"
+    });
+
+    const resolved = await store.resolve(
+      "deepwrite-deepseek-v4-flash"
+    );
+    expect(resolved).toMatchObject({
+      modelId: "deepseek-v4-flash-202605",
+      supportsDeveloperRole: false,
+      apiKey: "sk-official-test-only"
+    });
+    const resaved = await store.save({
+      models: [
+        customModel(),
+        {
+          ...saved.models[0]!,
+          label: "不应保存的名称",
+          baseUrl: "https://invalid.example.test/v1"
+        }
+      ],
+      defaultModelId: "deepwrite-deepseek-v4-flash"
+    });
+    expect(resaved.models[0]).toMatchObject({
+      label: "官方模型-DeepSeekFlash正式版本",
+      baseUrl: "https://tokenhub.tencentmaas.com/v1"
+    });
+    expect(resaved.defaultModelId).toBe(
+      "deepwrite-deepseek-v4-flash"
+    );
+    const secrets = await readFile(
+      join(root, "config", "model-secrets.json"),
+      "utf8"
+    );
+    expect(secrets).not.toContain("sk-official-test-only");
+
+    const cleared = await store.clearOfficialToken();
+    expect(cleared.deepwriteOfficialTokenConfigured).toBe(false);
+    expect(cleared.models.map((model) => model.id)).toEqual(["custom-writer"]);
+    expect(cleared.defaultModelId).toBe("custom-writer");
+    expect(cleared.deepwriteOfficialModels?.[0]).toMatchObject({
+      modelId: "deepseek-v4-flash-202605",
+      hasApiKey: false
+    });
+  });
+
+  it("replaces the read-only official entries when the refreshed remote catalog changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-official-refresh-store-"));
+    temporaryRoots.push(root);
+    const remoteOfficialCatalog = officialCatalog();
+    let refreshCount = 0;
+    const store = new ModelConfigStore(root, {
+      freeModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => emptyCatalog()
+      },
+      officialModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => structuredClone(remoteOfficialCatalog),
+        refreshCatalog: async () => {
+          refreshCount += 1;
+          return structuredClone(remoteOfficialCatalog);
+        }
+      }
+    });
+    await store.saveOfficialToken("sk-official-refresh-test");
+    await store.save({
+      models: [officialModel(), customModel()],
+      defaultModelId: "deepwrite-deepseek-v4-flash"
+    });
+
+    remoteOfficialCatalog.revision = "remote-v2";
+    remoteOfficialCatalog.models = [
+      officialModel({
+        id: "deepwrite-deepseek-v4-flash-next",
+        label: "远程更新后的官方模型",
+        modelId: "deepseek-v4-flash-next"
+      })
+    ];
+    remoteOfficialCatalog.defaultModelId =
+      "deepwrite-deepseek-v4-flash-next";
+
+    const refreshed = await store.refreshOfficialModels();
+    expect(refreshCount).toBe(1);
+    expect(refreshed.models.map((model) => model.id)).toEqual([
+      "deepwrite-deepseek-v4-flash-next",
+      "custom-writer"
+    ]);
+    expect(refreshed.models[0]?.label).toBe("远程更新后的官方模型");
+    expect(refreshed.defaultModelId).toBe(
+      "deepwrite-deepseek-v4-flash-next"
+    );
+  });
+});
+
 describe("ModelConfigStore managed free models", () => {
-  it("keeps the configured key in Main and resolves saved models through the latest catalog", async () => {
-    vi.stubEnv("DEEPWRITE_FREE_OPENROUTER_API_KEY", "sk-or-v1-test-only");
+  it("stores a remotely configured key locally and resolves through the latest catalog", async () => {
     const root = await mkdtemp(join(tmpdir(), "deepwrite-model-store-"));
     temporaryRoots.push(root);
     const catalog: DeepWriteFreeModelCatalog = {
@@ -50,7 +241,8 @@ describe("ModelConfigStore managed free models", () => {
       message: "",
       manifestAvailable: true,
       defaultModelId: "deepwrite-free-writing",
-      models: [managedModel("vendor/writer-v1:free")]
+      models: [managedModel("vendor/writer-v1:free")],
+      apiKeys: { "deepwrite-free-writing": "sk-or-v1-test-only" }
     };
     const freeModelCatalog = {
       initialize: async () => undefined,
@@ -78,6 +270,8 @@ describe("ModelConfigStore managed free models", () => {
       baseUrl: "https://openrouter.ai/api/v1"
     });
     expect(resolved?.apiKey).toMatch(/^sk-or-v1-/u);
+    const secrets = await readFile(join(root, "config", "model-secrets.json"), "utf8");
+    expect(secrets).not.toContain("sk-or-v1-test-only");
 
     const listed = await store.list();
     expect(listed.models[0]?.modelId).toBe("vendor/writer-v2:free");
@@ -96,7 +290,8 @@ describe("ModelConfigStore managed free models", () => {
         message: "",
         manifestAvailable: false,
         defaultModelId: "",
-        models: []
+        models: [],
+        apiKeys: {}
       })
     };
     const store = new ModelConfigStore(root, { freeModelCatalog });

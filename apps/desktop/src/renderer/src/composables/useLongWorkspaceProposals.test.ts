@@ -445,25 +445,36 @@ function harness(
   const previewOperations = vi.fn(async (_input: {
     bookId: string;
     batch: LongWorkspaceOperationBatch;
-  }) => ({
-    bookId: proposalBase.bookId,
-    preview: {
-      baseRevision: 7,
-      resultRevision: 8,
-      impact: emptyImpact,
-      entityChanges: [],
-      fileIntents: [],
-      documentWrites:
-        [] as LongWorkspaceOperationBatch["documentWrites"],
-      provisionalIdMap: {}
-    },
-    projectRevision: 11
-  }));
-  const applyOperations = vi.fn(async () => undefined);
+  }) => {
+    structuredClone(_input);
+    return {
+      bookId: proposalBase.bookId,
+      preview: {
+        baseRevision: 7,
+        resultRevision: 8,
+        impact: emptyImpact,
+        entityChanges: [],
+        fileIntents: [],
+        documentWrites:
+          [] as LongWorkspaceOperationBatch["documentWrites"],
+        provisionalIdMap: {}
+      },
+      projectRevision: 11
+    };
+  });
+  const applyOperations = vi.fn(async (input: unknown) => {
+    structuredClone(input);
+    return undefined;
+  });
   const getWorkspaceIndex = vi.fn(async () => ({
     bookId: proposalBase.bookId,
     workspaceIndex: {
+      bookId: proposalBase.bookId,
       revision: 9,
+      characters: [{ id: "character_lan", name: "林岚" }],
+      plot: {
+        chapterCards: [{ id: "chapter_one", title: "第一章" }]
+      },
       worldbuilding: [
         {
           id: "world_rules",
@@ -568,12 +579,44 @@ function harness(
     },
     projectRevision: 13
   }));
+  const readDocument = vi.fn(
+    async ({ bookId, fileId, offset = 0 }: {
+      bookId: string;
+      fileId: string;
+      offset?: number;
+    }) => {
+      const expectedFileId =
+        longChapterForeshadowingChangesFileId("chapter_one");
+      if (bookId !== proposalBase.bookId || fileId !== expectedFileId) {
+        throw new Error("测试未配置该文档。");
+      }
+      return {
+        bookId,
+        file: {
+          id: expectedFileId,
+          path: longChapterContinuityFilePath(
+            "chapter_one",
+            "foreshadowing-changes.md"
+          ),
+          revision: fileRevision,
+          updatedAt: "2026-07-26T11:00:00.000Z"
+        },
+        content: "",
+        offset,
+        totalCharacters: 0,
+        nextOffset: null,
+        workspaceRevision: 9,
+        projectRevision: 13
+      };
+    }
+  );
   const writeChapter = vi.fn(async () => undefined);
   const commitChapter = vi.fn(async (input: unknown) => {
     structuredClone(input);
   });
   const api = {
     getWorkspaceIndex,
+    readDocument,
     previewOperations,
     applyOperations,
     writeChapter,
@@ -601,6 +644,7 @@ function harness(
   return {
     controller,
     getWorkspaceIndex,
+    readDocument,
     previewOperations,
     applyOperations,
     writeChapter,
@@ -701,14 +745,206 @@ describe("long workspace proposal approval", () => {
     );
   });
 
+  it("revalidates each manual file approval after earlier cards advance the project revision", async () => {
+    const test = harness();
+    const baseSnapshot = await test.getWorkspaceIndex();
+    const baseDocument = await test.readDocument({
+      bookId: proposalBase.bookId,
+      fileId: longChapterForeshadowingChangesFileId("chapter_one"),
+      offset: 0
+    });
+    let liveWorkspaceRevision = 9;
+    let liveProjectRevision = 13;
+
+    test.getWorkspaceIndex.mockImplementation(async () => ({
+      ...structuredClone(baseSnapshot),
+      workspaceIndex: {
+        ...structuredClone(baseSnapshot.workspaceIndex),
+        revision: liveWorkspaceRevision
+      },
+      projectRevision: liveProjectRevision
+    }));
+    test.readDocument.mockImplementation(async ({ offset = 0 }) => ({
+      ...structuredClone(baseDocument),
+      offset,
+      workspaceRevision: liveWorkspaceRevision,
+      projectRevision: liveProjectRevision
+    }));
+    test.previewOperations.mockImplementation(async ({ batch }) => {
+      expect(batch.baseRevision).toBe(liveWorkspaceRevision);
+      return {
+        bookId: proposalBase.bookId,
+        preview: {
+          baseRevision: batch.baseRevision,
+          resultRevision: batch.baseRevision + 1,
+          impact: emptyImpact,
+          entityChanges: [],
+          fileIntents: [],
+          documentWrites: batch.documentWrites,
+          provisionalIdMap: {}
+        },
+        projectRevision: liveProjectRevision
+      };
+    });
+    test.applyOperations.mockImplementation(async (...args: unknown[]) => {
+      const input = args[0] as {
+        batch: LongWorkspaceOperationBatch;
+        baseProjectRevision: number;
+      };
+      if (
+        input.batch.baseRevision !== liveWorkspaceRevision ||
+        input.baseProjectRevision !== liveProjectRevision
+      ) {
+        throw new Error("审批仍在使用已过期的全局 revision。");
+      }
+      liveWorkspaceRevision += 1;
+      liveProjectRevision += 1;
+      return undefined;
+    });
+
+    await test.controller.handleEvent(characterWriteEvent());
+    await test.controller.handleEvent(continuityWriteEvent());
+    expect(test.controller.itemsForBook(proposalBase.bookId)).toMatchObject([
+      { status: "ready" },
+      { status: "ready" }
+    ]);
+
+    await Promise.all([
+      test.controller.approve(
+        proposalBase.bookId,
+        "event_character_file"
+      ),
+      test.controller.approve(
+        proposalBase.bookId,
+        "event_continuity_file"
+      )
+    ]);
+
+    expect(test.applyOperations).toHaveBeenCalledTimes(2);
+    expect(test.applyOperations).toHaveBeenLastCalledWith({
+      bookId: proposalBase.bookId,
+      batch: expect.objectContaining({ baseRevision: 10 }),
+      baseProjectRevision: 14
+    });
+    expect(test.notifications.error).not.toHaveBeenCalled();
+    expect(test.controller.itemsForBook(proposalBase.bookId)).toMatchObject([
+      { status: "accepted" },
+      { status: "accepted" }
+    ]);
+  });
+
+  it("clears a previously trusted continuity diff when retry validation fails", async () => {
+    const test = harness();
+    test.previewOperations.mockImplementation(async ({ batch }) => ({
+      bookId: proposalBase.bookId,
+      preview: {
+        baseRevision: batch.baseRevision,
+        resultRevision: batch.baseRevision + 1,
+        impact: emptyImpact,
+        entityChanges: [],
+        fileIntents: [],
+        documentWrites: batch.documentWrites,
+        provisionalIdMap: {}
+      },
+      projectRevision: 13
+    }));
+    await test.controller.handleEvent(continuityWriteEvent());
+    expect(test.controller.itemsForBook("longbook_test")[0]).toMatchObject({
+      status: "ready",
+      preview: expect.any(Object)
+    });
+
+    const changedContent = "文件已在磁盘发生变化。";
+    test.readDocument.mockResolvedValueOnce({
+      bookId: proposalBase.bookId,
+      file: {
+        id: longChapterForeshadowingChangesFileId("chapter_one"),
+        path: longChapterContinuityFilePath(
+          "chapter_one",
+          "foreshadowing-changes.md"
+        ),
+        revision: fileRevision,
+        updatedAt: "2026-07-26T11:00:00.000Z"
+      },
+      content: changedContent,
+      offset: 0,
+      totalCharacters: Array.from(changedContent).length,
+      nextOffset: null,
+      workspaceRevision: 9,
+      projectRevision: 13
+    });
+
+    await test.controller.retryPreview(
+      "longbook_test",
+      "event_continuity_file"
+    );
+
+    const item = test.controller.itemsForBook("longbook_test")[0]!;
+    expect(item).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("原始内容与实际文件不一致")
+    });
+    expect(item).not.toHaveProperty("preview");
+    expect(item).not.toHaveProperty("effectiveBatch");
+  });
+
+  it.each([
+    {
+      label: "伪造路径",
+      suffix: "path",
+      patch: {
+        filePath:
+          "long/chapters/chapter_two/continuity/foreshadowing-changes.md"
+      },
+      error: "文件路径",
+      readCount: 0
+    },
+    {
+      label: "伪造原文",
+      suffix: "before",
+      patch: { beforeText: "这是伪造的文件原文。" },
+      error: "原始内容与实际文件不一致",
+      readCount: 1
+    }
+  ])(
+    "fails closed before previewing continuity proposals with $label",
+    async ({ suffix, patch, error, readCount }) => {
+      const test = harness();
+      const original = continuityWriteEvent();
+      if (original.type !== "long.continuity_file_proposal") {
+        throw new Error("测试提案类型不正确。");
+      }
+      const forged = systemEvent({
+        ...original,
+        id: `event_continuity_forged_${suffix}`,
+        payload: {
+          ...original.payload,
+          toolCallId: `tool_continuity_forged_${suffix}`,
+          files: original.payload.files.map((file) => ({
+            ...file,
+            ...patch
+          }))
+        }
+      });
+
+      await test.controller.handleEvent(forged);
+
+      expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+        {
+          status: "error",
+          error: expect.stringContaining(error)
+        }
+      ]);
+      expect(test.readDocument).toHaveBeenCalledTimes(readCount);
+      expect(test.previewOperations).not.toHaveBeenCalled();
+      expect(test.applyOperations).not.toHaveBeenCalled();
+    }
+  );
+
   it("rebases lightweight continuity commits after their file proposals", async () => {
     const test = harness();
 
     await test.controller.handleEvent(textFilesLedgerEvent());
-    await test.controller.approve(
-      "longbook_test",
-      "event_text_files_ledger"
-    );
 
     expect(test.commitChapter).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -724,6 +960,7 @@ describe("long workspace proposal approval", () => {
       })
     );
     expect(test.notifications.error).not.toHaveBeenCalled();
+    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
   });
 
   it("waits for an empty-file creation before previewing its separate write", async () => {
@@ -1021,19 +1258,16 @@ describe("long workspace proposal approval", () => {
     expect(test.previewOperations).not.toHaveBeenCalled();
   });
 
-  it("isolates rejected events and never turns rejection into a write", async () => {
+  it("keeps internal continuity finalization out of the review queue", async () => {
     const ignored = harness(false);
     expect(await ignored.controller.handleEvent(ledgerEvent())).toBe(false);
     expect(ignored.controller.itemsForBook("longbook_test")).toEqual([]);
 
     const test = harness();
     await test.controller.handleEvent(ledgerEvent());
-    test.controller.reject("longbook_test", "event_ledger");
 
-    expect(test.commitChapter).not.toHaveBeenCalled();
-    expect(test.onRejected).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "long.ledger_commit_proposal" })
-    );
+    expect(test.commitChapter).toHaveBeenCalledTimes(1);
+    expect(test.onRejected).not.toHaveBeenCalled();
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
   });
 
@@ -1048,15 +1282,13 @@ describe("long workspace proposal approval", () => {
     expect(await test.controller.handleEvent(original)).toBe(true);
     expect(await test.controller.handleEvent(replay)).toBe(false);
 
-    expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
-    expect(test.controller.itemsForBook("longbook_test")[0]?.event.id).toBe(
-      "event_ledger"
-    );
+    expect(test.commitChapter).toHaveBeenCalledTimes(1);
+    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
   });
 
   it("quarantines a removed book and rejects late proposal events", async () => {
     const test = harness();
-    await test.controller.handleEvent(ledgerEvent());
+    await test.controller.handleEvent(mutationEvent());
     expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
 
     test.controller.discardBook("longbook_test");
@@ -1071,7 +1303,7 @@ describe("long workspace proposal approval", () => {
 
   it("quarantines a canceled session, removes queued proposals, and rejects late ones", async () => {
     const test = harness();
-    await test.controller.handleEvent(ledgerEvent());
+    await test.controller.handleEvent(dispatchEvent());
     expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
 
     test.controller.quarantineSession(
@@ -1079,23 +1311,21 @@ describe("long workspace proposal approval", () => {
       envelopeContext.sessionId
     );
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
-    await test.controller.approve("longbook_test", "event_ledger");
-    expect(test.commitChapter).not.toHaveBeenCalled();
-
-    expect(await test.controller.handleEvent(ledgerEvent())).toBe(false);
+    expect(await test.controller.handleEvent(dispatchEvent())).toBe(false);
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
 
-    const originalLedgerEvent = ledgerEvent();
+    const originalDispatchEvent = dispatchEvent();
     const otherSessionEvent = systemEvent({
-      ...originalLedgerEvent,
-      id: "event_ledger_other_session",
+      ...originalDispatchEvent,
+      id: "event_dispatch_other_session",
       context: {
-        ...originalLedgerEvent.context,
+        ...originalDispatchEvent.context,
         sessionId: "session_long_other"
       },
       payload: {
-        ...originalLedgerEvent.payload,
-        sessionId: "session_long_other"
+        ...originalDispatchEvent.payload,
+        sessionId: "session_long_other",
+        toolCallId: "tool_dispatch_other_session"
       }
     });
     expect(
@@ -1130,12 +1360,10 @@ describe("long workspace proposal approval", () => {
     });
   });
 
-  it("routes chapter drafts away from this queue and keeps ledger approval on its dedicated API", async () => {
+  it("routes chapter drafts away and finalizes continuity on its dedicated API", async () => {
     const test = harness();
     expect(await test.controller.handleEvent(chapterEvent())).toBe(false);
     await test.controller.handleEvent(ledgerEvent());
-
-    await test.controller.approve("longbook_test", "event_ledger");
 
     expect(test.writeChapter).not.toHaveBeenCalled();
     expect(test.commitChapter).toHaveBeenCalledWith(
@@ -1145,38 +1373,41 @@ describe("long workspace proposal approval", () => {
     expect(test.notifications.error).not.toHaveBeenCalled();
   });
 
-  it("does not let rejection race an in-flight durable approval", async () => {
+  it("waits for file approval before running hidden continuity finalization", async () => {
     const test = harness();
-    let releaseWrite!: () => void;
-    test.commitChapter.mockImplementationOnce(
-      () =>
-        new Promise<undefined>((resolve) => {
-          releaseWrite = () => resolve(undefined);
-        })
-    );
+    test.previewOperations.mockImplementation(async ({ batch }) => ({
+      bookId: proposalBase.bookId,
+      preview: {
+        baseRevision: batch.baseRevision,
+        resultRevision: batch.baseRevision + 1,
+        impact: emptyImpact,
+        entityChanges: [],
+        fileIntents: [],
+        documentWrites: batch.documentWrites,
+        provisionalIdMap: {}
+      },
+      projectRevision: 13
+    }));
+    await test.controller.handleEvent(continuityWriteEvent());
     await test.controller.handleEvent(ledgerEvent());
 
-    const approval = test.controller.approve(
-      "longbook_test",
-      "event_ledger"
-    );
-    await vi.waitFor(() => {
-      expect(
-        test.controller.itemsForBook("longbook_test")[0]?.status
-      ).toBe("submitting");
-    });
-
-    expect(
-      test.controller.reject("longbook_test", "event_ledger")
-    ).toBe(false);
-    expect(test.onRejected).not.toHaveBeenCalled();
+    expect(test.commitChapter).not.toHaveBeenCalled();
     expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
 
-    releaseWrite();
-    await approval;
+    await test.controller.approve(
+      "longbook_test",
+      "event_continuity_file"
+    );
 
-    expect(test.onApplied).toHaveBeenCalledTimes(1);
-    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.notifications.error).not.toHaveBeenCalled();
+    expect(test.commitChapter).toHaveBeenCalledTimes(1);
+    expect(test.onApplied).toHaveBeenCalledTimes(2);
+    expect(test.onApplied).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "long.ledger_commit_proposal" })
+    );
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      { status: "accepted" }
+    ]);
   });
 
   it("does not turn a post-write refresh failure into a retryable write", async () => {
@@ -1184,19 +1415,17 @@ describe("long workspace proposal approval", () => {
     test.onApplied.mockRejectedValueOnce(new Error("刷新超时"));
     await test.controller.handleEvent(ledgerEvent());
 
-    await test.controller.approve("longbook_test", "event_ledger");
-
     expect(test.commitChapter).toHaveBeenCalledTimes(1);
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
     expect(test.notifications.success).toHaveBeenCalledWith(
-      "章节连续性账本已提交。"
+      "本章连续性文件已完成归档。"
     );
     expect(test.notifications.warning).toHaveBeenCalledWith(
-      "长篇提案已经写入，但后续刷新失败：刷新超时"
+      "连续性文件已经归档，但后续刷新失败：刷新超时"
     );
     expect(test.notifications.error).not.toHaveBeenCalled();
 
-    await test.controller.approve("longbook_test", "event_ledger");
+    await test.controller.handleEvent(ledgerEvent());
     expect(test.commitChapter).toHaveBeenCalledTimes(1);
   });
 

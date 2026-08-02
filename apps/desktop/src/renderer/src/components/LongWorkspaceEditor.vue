@@ -9,15 +9,12 @@ import {
 } from "vue";
 import {
   LongFileRevisionSchema,
-  LongLedgerCommitRecordSchema,
   createEmptyLongMarkdownFileReference,
   longStoryPlotBodyFileId,
   longStoryPlotFilePath,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId,
-  type LongLedgerCommitRecord,
   type LongLedgerCommitIndexEntry,
-  type LongContinuityDomain,
   type LongArcId,
   type LongChapterCardId,
   type LongCharacterId,
@@ -64,7 +61,6 @@ const emit = defineEmits<{
     } | null
   ];
   rollback: [];
-  selectLedgerCommit: [commitId: string];
   selectCharacter: [
     characterId: LongCharacterId,
     done?: (accepted: boolean) => void
@@ -879,28 +875,11 @@ const documentEyebrow = computed(() => {
 const characterCount = computed(
   () => currentVisibleContent.value.replace(/\s/gu, "").length
 );
-const currentLedgerRecord = computed<LongLedgerCommitRecord | null>(() => {
-  if (
-    currentSelectionFile.value?.role !== "ledger-record" ||
-    !currentState.value?.loaded
-  ) {
-    return null;
-  }
-  try {
-    const parsed = LongLedgerCommitRecordSchema.safeParse(
-      JSON.parse(currentState.value.content)
-    );
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-});
 const canUseTextTools = computed(
   () =>
     !currentIsForeshadowingView.value &&
     (Boolean(currentState.value?.loaded) ||
       currentIsStructuredText.value) &&
-    !currentLedgerRecord.value &&
     Boolean(
       !currentIsWorldbuildingList.value ||
         currentWorldbuildingListState.value.error ||
@@ -922,96 +901,6 @@ const canRedo = computed(
     !currentReadOnly.value &&
     redoHistory.value.length > 0
 );
-const currentLedgerSummaryRows = computed(() => {
-  const summary = currentLedgerRecord.value?.chapterSummary;
-  return summary
-    ? [
-        ["时间线", summary.timeline],
-        ["人物状态", summary.characterStates],
-        ["势力状态", summary.factionStates],
-        ["境界状态", summary.realmStates],
-        ["伏笔状态", summary.foreshadowingStates],
-        ["连续性备注", summary.continuityNotes]
-      ]
-    : [];
-});
-const currentLedgerCoverageRows = computed<
-  ReadonlyArray<
-    readonly [
-      string,
-      LongLedgerCommitRecord["coverage"]["character"]
-    ]
-  >
->(() => {
-  const coverage = currentLedgerRecord.value?.coverage;
-  return coverage
-    ? [
-        ["人物状态", coverage.character],
-        ["剧情推进", coverage.plot],
-        ["伏笔变化", coverage.foreshadowing],
-        ["世界观揭露", coverage.world],
-        ["知识变化", coverage.knowledge],
-        ["开放事项", coverage.openLoops]
-      ]
-    : [];
-});
-
-function ledgerCoverageStatusLabel(
-  status: LongLedgerCommitRecord["coverage"]["character"]["status"]
-): string {
-  return {
-    changed: "有变化",
-    unchanged: "已核验，无变化",
-    not_applicable: "本章不适用"
-  }[status];
-}
-
-function ledgerFactDomainLabel(domain: LongContinuityDomain): string {
-  return {
-    character: "人物",
-    relationship: "人物关系",
-    world: "世界观",
-    plot: "剧情",
-    foreshadowing: "伏笔"
-  }[domain];
-}
-
-function ledgerKnowledgeAudienceLabel(
-  knowledge: LongLedgerCommitRecord["knowledgeChanges"][number]["after"]
-): string {
-  if (knowledge.audienceType === "reader") return "读者";
-  if (knowledge.audienceType === "character" && knowledge.audienceId) {
-    return (
-      props.workspaceIndex?.characters.find(
-        ({ id }) => id === knowledge.audienceId
-      )?.name ?? knowledge.audienceId
-    );
-  }
-  return knowledge.audienceId ?? "未命名势力";
-}
-
-function ledgerKnowledgeLevelLabel(
-  level: LongLedgerCommitRecord["knowledgeChanges"][number]["after"]["level"]
-): string {
-  return {
-    unknown: "未知",
-    suspects: "有所怀疑",
-    believes: "相信",
-    knows: "已知晓",
-    misled: "被误导"
-  }[level];
-}
-
-function ledgerOpenLoopStatusLabel(
-  status: LongLedgerCommitRecord["openLoopChanges"][number]["after"]["status"]
-): string {
-  return {
-    open: "新开",
-    progressing: "推进中",
-    resolved: "已闭合",
-    abandoned: "已放弃"
-  }[status];
-}
 const hasUnsavedChanges = computed(() =>
   Object.values(documentStates.value).some(
     (state) => state.loaded && state.content !== state.savedContent
@@ -4494,194 +4383,6 @@ onBeforeUnmount(() => {
             重新读取
           </button>
         </div>
-        <article
-          v-else-if="
-            currentReadOnly &&
-            currentState?.loaded &&
-            currentLedgerRecord
-          "
-          class="long-ledger-record"
-        >
-          <header>
-            <small>
-              提交 #{{ currentLedgerRecord.sequence }} ·
-              {{ currentLedgerRecord.committedAt }}
-            </small>
-            <h3>
-              {{
-                currentLedgerRecord.commitMessage ||
-                "旧版账本记录（未保存提交说明）"
-              }}
-            </h3>
-          </header>
-          <section>
-            <h4>本章连续性摘要</h4>
-            <dl>
-              <template
-                v-for="([label, value], index) in currentLedgerSummaryRows"
-                :key="`${label}-${index}`"
-              >
-                <dt>{{ label }}</dt>
-                <dd>{{ value || "旧版记录未保存此项摘要" }}</dd>
-              </template>
-            </dl>
-          </section>
-          <section v-if="currentLedgerRecord.schemaVersion === 3">
-            <h4>六域核验</h4>
-            <dl>
-              <template
-                v-for="([label, item], index) in currentLedgerCoverageRows"
-                :key="`${label}-${index}`"
-              >
-                <dt>
-                  {{ label }} ·
-                  {{ ledgerCoverageStatusLabel(item.status) }}
-                </dt>
-                <dd>{{ item.note }}</dd>
-              </template>
-            </dl>
-          </section>
-          <section
-            v-if="
-              currentLedgerRecord.schemaVersion === 3 &&
-              currentLedgerRecord.factChanges.length
-            "
-          >
-            <h4>当前事实变更</h4>
-            <p
-              v-for="change in currentLedgerRecord.factChanges"
-              :key="change.after.factId"
-            >
-              <code>
-                {{ ledgerFactDomainLabel(change.after.domain) }} ·
-                {{ change.after.subjectId }} · {{ change.after.field }}
-              </code>
-              <span>
-                <small v-if="change.before">
-                  原状态：{{ change.before.value }}
-                </small>
-                <strong>{{ change.after.value }}</strong>
-                <small>证据：{{ change.after.evidence }}</small>
-              </span>
-            </p>
-          </section>
-          <section
-            v-if="
-              currentLedgerRecord.schemaVersion === 3 &&
-              currentLedgerRecord.knowledgeChanges.length
-            "
-          >
-            <h4>信息揭露与知识变化</h4>
-            <p
-              v-for="change in currentLedgerRecord.knowledgeChanges"
-              :key="`${change.after.factId}:${change.after.audienceType}:${change.after.audienceId ?? 'reader'}`"
-            >
-              <code>
-                {{ ledgerKnowledgeAudienceLabel(change.after) }} ·
-                {{ change.after.factId }}
-              </code>
-              <span>
-                <strong>
-                  {{ ledgerKnowledgeLevelLabel(change.after.level) }}
-                </strong>
-                <small>证据：{{ change.after.evidence }}</small>
-              </span>
-            </p>
-          </section>
-          <section
-            v-if="
-              currentLedgerRecord.schemaVersion === 3 &&
-              currentLedgerRecord.openLoopChanges.length
-            "
-          >
-            <h4>开放事项变化</h4>
-            <p
-              v-for="change in currentLedgerRecord.openLoopChanges"
-              :key="change.after.loopId"
-            >
-              <code>
-                {{ change.after.loopId }} ·
-                {{ ledgerOpenLoopStatusLabel(change.after.status) }}
-              </code>
-              <span>
-                <strong>{{ change.after.detail }}</strong>
-                <small>证据：{{ change.after.evidence }}</small>
-              </span>
-            </p>
-          </section>
-          <section v-if="currentLedgerRecord.schemaVersion === 3">
-            <h4>账本生成的章末输出</h4>
-            <div class="long-ledger-output">
-              <article>
-                <strong>正文人物状态</strong>
-                <p>{{ currentLedgerRecord.chapterOutputs.characterState }}</p>
-              </article>
-              <article>
-                <strong>下一章接续包</strong>
-                <p>
-                  {{ currentLedgerRecord.chapterOutputs.handoff.summary }}
-                </p>
-                <dl>
-                  <dt>必须延续</dt>
-                  <dd>
-                    {{
-                      currentLedgerRecord.chapterOutputs.handoff.mustCarry
-                        .join("\n") || "无"
-                    }}
-                  </dd>
-                  <dt>下一章约束</dt>
-                  <dd>
-                    {{
-                      currentLedgerRecord.chapterOutputs.handoff
-                        .nextChapterConstraints.join("\n") || "无"
-                    }}
-                  </dd>
-                  <dt>关联开放事项</dt>
-                  <dd>
-                    {{
-                      currentLedgerRecord.chapterOutputs.handoff.openLoops
-                        .join("\n") || "无"
-                    }}
-                  </dd>
-                </dl>
-              </article>
-            </div>
-          </section>
-          <section>
-            <h4>执行证据</h4>
-            <p
-              v-for="change in currentLedgerRecord.placementChanges"
-              :key="change.placementId"
-            >
-              <code>{{ change.placementId }}</code>
-              <span>{{ change.after.status }} · {{ change.note || "旧版记录无证据说明" }}</span>
-            </p>
-            <p
-              v-for="change in currentLedgerRecord.foreshadowingBeatChanges"
-              :key="change.beatId"
-            >
-              <code>{{ change.beatId }}</code>
-              <span>{{ change.after.status }} · {{ change.note || "旧版记录无证据说明" }}</span>
-            </p>
-          </section>
-          <section
-            v-if="currentLedgerRecord.foreshadowingThreadChanges.length"
-          >
-            <h4>伏笔线状态推导</h4>
-            <p
-              v-for="change in currentLedgerRecord
-                .foreshadowingThreadChanges"
-              :key="change.foreshadowingId"
-            >
-              <code>{{ change.foreshadowingId }}</code>
-              <span>{{ change.before }} → {{ change.after }}</span>
-            </p>
-          </section>
-          <details>
-            <summary>查看原始审计记录</summary>
-            <pre class="long-editor-readonly">{{ currentState.content }}</pre>
-          </details>
-        </article>
         <div
           v-else-if="
             currentState?.loaded ||
@@ -5783,127 +5484,6 @@ onBeforeUnmount(() => {
   font-size: var(--code-font-size);
   line-height: 1.75;
   white-space: pre-wrap;
-}
-
-.long-ledger-record {
-  height: 100%;
-  padding: clamp(20px, 3vw, 38px) clamp(24px, 5vw, 70px);
-  overflow: auto;
-  color: var(--text-primary);
-}
-
-.long-ledger-record > header,
-.long-ledger-record > section,
-.long-ledger-record > details {
-  max-width: 860px;
-  margin: 0 auto 18px;
-  padding: 16px 18px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 12px;
-  background: var(--surface-raised);
-}
-
-.long-ledger-record small,
-.long-ledger-record dt {
-  color: var(--text-tertiary);
-}
-
-.long-ledger-record h3 {
-  margin-top: 5px;
-  font-size: 1.071429rem;
-}
-
-.long-ledger-record h4 {
-  margin-bottom: 10px;
-  font-size: 0.785714rem;
-}
-
-.long-ledger-record dl {
-  display: grid;
-  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
-  gap: 8px 14px;
-  margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.65;
-}
-
-.long-ledger-record dd {
-  min-width: 0;
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.long-ledger-record section > p {
-  display: grid;
-  grid-template-columns: minmax(140px, 0.4fr) minmax(0, 1fr);
-  gap: 10px;
-  margin-top: 8px;
-  font-size: 0.714286rem;
-  line-height: 1.55;
-}
-
-.long-ledger-record section > p > span,
-.long-ledger-output,
-.long-ledger-output article {
-  display: grid;
-  min-width: 0;
-  gap: 6px;
-}
-
-.long-ledger-record section > p small,
-.long-ledger-output p {
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-}
-
-.long-ledger-output {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-}
-
-.long-ledger-output article {
-  align-content: start;
-  padding: 12px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 10px;
-  background: var(--surface-muted);
-}
-
-.long-ledger-output article > strong {
-  font-size: 0.75rem;
-}
-
-.long-ledger-output p {
-  margin: 0;
-  font-size: 0.714286rem;
-  line-height: 1.6;
-}
-
-.long-ledger-output dl {
-  grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
-  padding-top: 8px;
-  border-top: 1px solid var(--theme-line-soft);
-}
-
-.long-ledger-record code {
-  overflow-wrap: anywhere;
-  color: var(--text-secondary);
-}
-
-.long-ledger-record details {
-  padding: 0;
-}
-
-.long-ledger-record summary {
-  padding: 13px 16px;
-  color: var(--text-secondary);
-  font-size: 0.714286rem;
-  cursor: pointer;
-}
-
-.long-ledger-record details .long-editor-readonly {
-  height: auto;
-  max-height: 420px;
-  border-top: 1px solid var(--theme-line-soft);
 }
 
 .long-editor-loading,

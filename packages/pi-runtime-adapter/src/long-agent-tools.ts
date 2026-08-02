@@ -3075,6 +3075,13 @@ export function buildLongWorkspaceTools(
       projectRevision: number;
     }
   >();
+  const readChapterBodySnapshots = new Map<
+    string,
+    {
+      content: string;
+      file: LongWorkspaceFileReference;
+    }
+  >();
   const chapterBodyOverlay = new Map<
     string,
     {
@@ -3106,6 +3113,7 @@ export function buildLongWorkspaceTools(
       pendingCreation: boolean;
     }
   >();
+  const pendingDeletedContinuityKeys = new Set<string>();
 
   const storyPlotOverlay = new Map<
     string,
@@ -6918,6 +6926,9 @@ export function buildLongWorkspaceTools(
     let offset = 0;
     let content = "";
     let authoritativeFile = file;
+    let readWorkspaceRevision: number | null = null;
+    let readProjectRevision: number | null = null;
+    let readFileRevision: string | null = null;
     while (true) {
       const command = LongReadDocumentCommandEnvelopeSchema.parse(
         createEnvelope(
@@ -6946,11 +6957,20 @@ export function buildLongWorkspaceTools(
         result.file.id !== file.id ||
         result.file.path !== file.path ||
         result.offset !== offset ||
-        result.workspaceRevision !== expectedWorkspaceRevision ||
-        result.projectRevision !== expectedProjectRevision
+        result.workspaceRevision < expectedWorkspaceRevision ||
+        result.projectRevision < expectedProjectRevision ||
+        (readFileRevision !== null &&
+          result.file.revision !== readFileRevision) ||
+        (readWorkspaceRevision !== null &&
+          result.workspaceRevision !== readWorkspaceRevision) ||
+        (readProjectRevision !== null &&
+          result.projectRevision !== readProjectRevision)
       ) {
         throw new Error("Core returned a different chapter body.");
       }
+      readWorkspaceRevision ??= result.workspaceRevision;
+      readProjectRevision ??= result.projectRevision;
+      readFileRevision ??= result.file.revision;
       authoritativeFile = result.file;
       content += result.content;
       if (result.nextOffset === null) {
@@ -7020,6 +7040,15 @@ export function buildLongWorkspaceTools(
     if (characterRole !== (characterId !== null)) {
       throw new Error(
         "Character continuity documents require exactly one character_id."
+      );
+    }
+    if (
+      pendingDeletedContinuityKeys.has(
+        continuityOverlayKey(chapterCardId, role, characterId)
+      )
+    ) {
+      throw new Error(
+        `${CONTINUITY_DOCUMENT_TITLES[role]} is pending deletion for this chapter.`
       );
     }
     const overlay = findContinuityOverlay(
@@ -7273,6 +7302,9 @@ export function buildLongWorkspaceTools(
               workspaceRevision: index.revision,
               projectRevision
             });
+          }
+          if (document === "body") {
+            readChapterBodySnapshots.set(file.id, { content, file });
           }
           const previewLimit = 32_768;
           return textResult(
@@ -7559,26 +7591,33 @@ export function buildLongWorkspaceTools(
               file: LongWorkspaceFileReference | null,
               characterId: string | null = null
             ) => {
+              const pendingDeletion = pendingDeletedContinuityKeys.has(
+                continuityOverlayKey(card.id, role, characterId)
+              );
               const overlay = findContinuityOverlay(
                 card.id,
                 role,
                 characterId
               );
-              const visibleFile = overlay?.file ?? file;
+              const visibleFile = pendingDeletion
+                ? null
+                : overlay?.file ?? file;
               return {
                 document: role,
                 ...(characterId ? { character_id: characterId } : {}),
                 exists: visibleFile !== null,
                 status:
-                  visibleFile === null
-                    ? "not_created"
-                    : overlay
-                      ? overlay.content.trim()
-                        ? "written"
-                        : "empty"
-                      : visibleFile.revision === EMPTY_LONG_MARKDOWN_REVISION
-                        ? "empty"
-                        : "written"
+                  pendingDeletion
+                    ? "pending_deletion"
+                    : visibleFile === null
+                      ? "not_created"
+                      : overlay
+                        ? overlay.content.trim()
+                          ? "written"
+                          : "empty"
+                        : visibleFile.revision === EMPTY_LONG_MARKDOWN_REVISION
+                          ? "empty"
+                          : "written"
               };
             };
             const characterIds = new Set(
@@ -7752,7 +7791,7 @@ export function buildLongWorkspaceTools(
         name: "create_continuity_file",
         label: "创建连续性文件",
         description:
-          "为当前章创建可选世界观揭露文件，或为一名涉及人物同时创建当前状态与历史轨迹两份空白文件。章末状态、接续包和伏笔变化随章卡自动存在，无需创建。创建后再用 write_continuity_file 写入文本。",
+          "为当前章创建可选世界观揭露文件，或为一名涉及人物同时创建当前状态与历史轨迹两份空白文件。人物历史轨迹应读取上一份已提交记录并累积到本章。章末状态、接续包和伏笔变化随章卡自动存在，无需创建。创建后再用 write_continuity_file 写入文本。",
         parameters: strictObject({
           target: continuityCreateTargetParameter,
           summary: Type.Optional(
@@ -7951,6 +7990,115 @@ export function buildLongWorkspaceTools(
             projectRevision,
             summary,
             changes
+          );
+        }
+      }),
+      defineTool({
+        name: "delete_continuity_file",
+        label: "删除可选连续性文件",
+        description:
+          "仅用于误创建或已不再适用的可选文件：删除当前未提交章节的世界观揭露，或按人物成对删除当前状态与历史轨迹。不能删除正文、章末状态、接续包或伏笔变化，也不能删除已提交章节中的任何文件。",
+        parameters: strictObject({
+          target: continuityCreateTargetParameter,
+          summary: Type.Optional(
+            Type.String({ minLength: 1, maxLength: 1_000 })
+          )
+        }),
+        executionMode: "sequential",
+        execute: async (_toolCallId, params, signal) => {
+          const {
+            index,
+            projectRevision,
+            activeChapterCardId
+          } = await loadActiveChapterMutationContext(signal);
+          let operation: LongWorkspaceOperation;
+          let summary: string;
+          const deletedKeys: string[] = [];
+          if (params.target.document === "world_reveals") {
+            const target = resolveContinuityFileTarget(
+              index,
+              activeChapterCardId,
+              "world_reveals",
+              null
+            );
+            operation = {
+              type: "chapterContinuity.worldReveals.delete",
+              chapterCardId: activeChapterCardId
+            };
+            summary =
+              params.summary?.trim() ||
+              `删除《${target.chapterTitle}》误创建或不再适用的世界观揭露文件`;
+            deletedKeys.push(
+              continuityOverlayKey(
+                activeChapterCardId,
+                "world_reveals",
+                null
+              )
+            );
+          } else {
+            if (!("character_id" in params.target)) {
+              throw new Error(
+                "Character continuity deletion requires character_id."
+              );
+            }
+            const characterId = params.target.character_id;
+            const currentState = resolveContinuityFileTarget(
+              index,
+              activeChapterCardId,
+              "character_current_state",
+              characterId
+            );
+            resolveContinuityFileTarget(
+              index,
+              activeChapterCardId,
+              "character_history",
+              characterId
+            );
+            operation = {
+              type: "chapterContinuity.character.delete",
+              chapterCardId: activeChapterCardId,
+              characterId
+            };
+            summary =
+              params.summary?.trim() ||
+              `成对删除《${currentState.chapterTitle}》中${
+                currentState.characterName ?? characterId
+              }误创建或不再适用的当前状态与历史轨迹`;
+            deletedKeys.push(
+              continuityOverlayKey(
+                activeChapterCardId,
+                "character_current_state",
+                characterId
+              ),
+              continuityOverlayKey(
+                activeChapterCardId,
+                "character_history",
+                characterId
+              )
+            );
+          }
+          const batch = LongWorkspaceOperationBatchSchema.parse({
+            baseRevision: index.revision,
+            updatedAt: new Date().toISOString(),
+            operations: [operation],
+            documentWrites: []
+          });
+          deletedKeys.forEach((key) =>
+            pendingDeletedContinuityKeys.add(key)
+          );
+          return textResult(
+            longProposalResultSummary(
+              input,
+              "已形成可选连续性文件删除提案，等待客户端审阅与冲突检查。"
+            ),
+            {
+              kind: "long-mutation-proposal",
+              bookId: workspace.bookId,
+              agentId: profile.id,
+              batch,
+              baseProjectRevision: projectRevision,
+              summary
+            }
           );
         }
       }),
@@ -8245,9 +8393,9 @@ export function buildLongWorkspaceTools(
       }),
       defineTool({
         name: "propose_continuity_commit",
-        label: "提议提交连续性记录",
+        label: "完成连续性归档",
         description:
-          "在当前连续下一章的正文、章末状态、接续包、伏笔变化，以及所有已创建的世界观揭露和人物连续性文件都已写好后，形成只锁定这些文本版本的最终提交提案。",
+          "在当前连续下一章的正文与全部连续性文件写好后登记归档请求。客户端会等待所有文件卡获批保存，再自动锁定这些文本版本；不会产生额外审批卡。",
         parameters: strictObject({
           summary: Type.String({ minLength: 1, maxLength: 1_000 })
         }),
@@ -8270,6 +8418,9 @@ export function buildLongWorkspaceTools(
             throw new Error("Continuity commit summary must be non-empty.");
           }
           const bodyOverlay = chapterBodyOverlay.get(chapter.body.id);
+          const previouslyReadBody = readChapterBodySnapshots.get(
+            chapter.body.id
+          );
           const body = bodyOverlay
             ? { content: bodyOverlay.content, file: bodyOverlay.file }
             : await readWholeChapterBody(
@@ -8278,6 +8429,15 @@ export function buildLongWorkspaceTools(
                 projectRevision,
                 signal
               );
+          if (
+            previouslyReadBody &&
+            (previouslyReadBody.file.revision !== body.file.revision ||
+              previouslyReadBody.content !== body.content)
+          ) {
+            throw new Error(
+              "The chapter body changed after continuity analysis started."
+            );
+          }
 
           const targets: Array<{
             role: LongContinuityFileRole;
@@ -8288,22 +8448,46 @@ export function buildLongWorkspaceTools(
             { role: "foreshadowing_changes", characterId: null }
           ];
           if (
-            chapter.worldReveals ||
-            findContinuityOverlay(
-              activeChapterCardId,
-              "world_reveals",
-              null
-            )
+            !pendingDeletedContinuityKeys.has(
+              continuityOverlayKey(
+                activeChapterCardId,
+                "world_reveals",
+                null
+              )
+            ) &&
+            (chapter.worldReveals ||
+              findContinuityOverlay(
+                activeChapterCardId,
+                "world_reveals",
+                null
+              ))
           ) {
             targets.push({ role: "world_reveals", characterId: null });
           }
           const characterIds = new Set(
-            chapter.characterContinuity.map(({ characterId }) => characterId)
+            chapter.characterContinuity.flatMap(({ characterId }) =>
+              pendingDeletedContinuityKeys.has(
+                continuityOverlayKey(
+                  activeChapterCardId,
+                  "character_current_state",
+                  characterId
+                )
+              )
+                ? []
+                : [characterId]
+            )
           );
           for (const overlay of continuityDocumentOverlay.values()) {
             if (
               overlay.chapterCardId === activeChapterCardId &&
-              overlay.characterId !== null
+              overlay.characterId !== null &&
+              !pendingDeletedContinuityKeys.has(
+                continuityOverlayKey(
+                  activeChapterCardId,
+                  "character_current_state",
+                  overlay.characterId
+                )
+              )
             ) {
               characterIds.add(overlay.characterId);
             }
@@ -8355,7 +8539,7 @@ export function buildLongWorkspaceTools(
           ];
           if (missing.length > 0) {
             return textResult(
-              `未形成提交提案：以下文本尚为空：${missing.join("、")}。无伏笔变化时也请明确写入“无变化”。`
+              `未登记归档：以下文本尚为空：${missing.join("、")}。无伏笔变化时也请明确写入“无变化”。`
             );
           }
 
@@ -8375,7 +8559,7 @@ export function buildLongWorkspaceTools(
           return textResult(
             longProposalResultSummary(
               input,
-              `已形成《${expectedChapter.title}》连续性文本提交提案（${continuityFiles.length} 份连续性文件），等待客户端审阅。`
+              `仅已登记《${expectedChapter.title}》连续性归档请求（${continuityFiles.length} 份连续性文件），当前尚未归档。客户端将在文件卡全部获批后尝试自动归档；只有客户端明确显示“本章连续性文件已完成归档”后，才能宣称归档成功。`
             ),
             {
               kind: "long-ledger-commit-proposal",

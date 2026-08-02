@@ -127,6 +127,7 @@ import PlotStructureDialog, {
 import RightEditorPane from "./components/RightEditorPane.vue";
 import SaveConflictDialog from "./components/SaveConflictDialog.vue";
 import SettingsPage from "./components/SettingsPage.vue";
+import StartupAlertDialog from "./components/StartupAlertDialog.vue";
 import WorkspaceDialog from "./components/WorkspaceDialog.vue";
 import {
   useAgentConversation,
@@ -302,7 +303,7 @@ const LONG_WORKSPACE_ROOT_LABELS = {
 } as const;
 const LONG_WORKSPACE_ROOT_DESCRIPTIONS: Record<LongWorkspaceRoot, string> = {
   worldbuilding: "维护世界规则、势力、地理、历史、术语、境界与物品。",
-  character_design: "维护人物核心档案、关系、当前状态与历史轨迹。",
+  character_design: "维护人物核心档案与关系，查看最新状态和历史轨迹。",
   plot_design: "维护全书故事线、分卷、剧情点与章节卡。",
   draft: "按分卷和章卡顺序编辑正文。",
   continuity_ledger:
@@ -675,14 +676,24 @@ const activePrimaryFeature = computed<
 const modelSettings = ref<ModelSettings | null>(null);
 const modelLoading = ref(false);
 const modelSaving = ref(false);
+const freeModelsRefreshing = ref(false);
 const modelError = ref<string | null>(null);
 const modelTestMessage = ref<string | null>(null);
 const testingModelId = ref<string | null>(null);
+const modelAlertMessages = ref<string[]>([
+  "官方模型已经上线！直连厂商！软件整体用量越多，折扣会越大！"
+]);
+const startupAlertMessages = ref<string[]>([]);
+const startupAlertRevision = ref("");
 const modelUsageDashboard = ref<ModelUsageDashboard | null>(null);
 const modelUsageLoading = ref(false);
 const modelUsageError = ref<string | null>(null);
 const modelUsageQuery = ref<ModelUsageQueryInput>({});
 let modelUsageRequestSequence = 0;
+const officialModelUsageDashboard = ref<ModelUsageDashboard | null>(null);
+const officialModelsLoading = ref(false);
+const officialModelsSaving = ref(false);
+let officialModelsRequestSequence = 0;
 const workspaceAgentSettings = ref<WorkspaceAgentSettings[]>([
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS
@@ -782,11 +793,19 @@ const longWorkspaceProposals = useLongWorkspaceProposals({
   acceptsEvent: acceptsLongProposalEvent,
   approvalModeForEvent: longProposalApprovalMode,
   prepareAutoApprove: prepareAutomaticLongProposal,
+  canFinalizeContinuity: canApproveLongProposalDuringActivePlan,
+  onContinuityFinalizationFailed: (event, message) => {
+    if (!canApproveLongProposalDuringActivePlan(event)) return false;
+    return longWritingOrchestrator.handleRunFailure(
+      "continuity_ledger",
+      `文件已保存，但自动归档失败：${message}`
+    );
+  },
   onApplied: handleLongProposalApplied,
   onDispatchApproved: handleLongChapterDispatchApproved,
   onRejected: (event) => {
     if (!canApproveLongProposalDuringActivePlan(event)) return;
-    if (event.type === "long.ledger_commit_proposal") {
+    if (event.payload.agentId === "continuity_ledger") {
       longWritingOrchestrator.handleRejected(event);
     }
   },
@@ -879,28 +898,49 @@ function projectLongWorkspaceNavigation(
   // the selection against the complete index when a user selects an item.
   // This keeps the first render consistent with short/script books without
   // loading every long project's file references or document contents.
-  const worldChildren = [...book.navigation.worldbuilding]
-    .sort((left, right) => left.order - right.order)
-    .flatMap((category) => {
-      const selection = reconcile({
-        key: `worldbuilding:${category.id}`,
-        root: "worldbuilding",
-        title: category.title,
-        breadcrumbs: [book.title, "世界观", category.title],
-        files: [],
-        preferredRole: "content",
-        description:
-          category.format === "list" ? "列表型世界设定。" : "文本型世界设定。"
-      });
-      return selection
-        ? [
-            node(selection, {
-              icon: "file",
-              badge: category.format === "list" ? "列表" : "文本"
-            })
-          ]
-        : [];
-    });
+  const worldRevealSelection = reconcile({
+    key: "worldbuilding:reveals",
+    root: "worldbuilding",
+    title: "世界观揭露",
+    breadcrumbs: [book.title, "世界观", "世界观揭露"],
+    files: [],
+    preferredRole: "world-reveals",
+    description: "映射最近一次已提交章节记录中的世界观揭露。"
+  });
+  const worldChildren = [
+    ...[...book.navigation.worldbuilding]
+      .sort((left, right) => left.order - right.order)
+      .flatMap((category) => {
+        const selection = reconcile({
+          key: `worldbuilding:${category.id}`,
+          root: "worldbuilding",
+          title: category.title,
+          breadcrumbs: [book.title, "世界观", category.title],
+          files: [],
+          preferredRole: "content",
+          description:
+            category.format === "list"
+              ? "列表型世界设定。"
+              : "文本型世界设定。"
+        });
+        return selection
+          ? [
+              node(selection, {
+                icon: "file",
+                badge: category.format === "list" ? "列表" : "文本"
+              })
+            ]
+          : [];
+      }),
+    ...(worldRevealSelection
+      ? [
+          node(worldRevealSelection, {
+            icon: "file",
+            label: "世界观揭露"
+          })
+        ]
+      : [])
+  ];
 
   const characterOverviewSelection = reconcile({
     key: "character-overview",
@@ -2256,24 +2296,6 @@ async function selectLongChapterCardTab(
   }
 }
 
-async function selectLongLedgerCommit(commitId: string): Promise<void> {
-  const summary = activeLongBookSummary.value;
-  const index = activeLongWorkspaceIndex.value;
-  if (!summary || !index) return;
-  const selection = reconcileLongWorkspaceSelection(summary, index, {
-    key: `ledger:${commitId}`,
-    root: "continuity_ledger",
-    continuityView: "history",
-    title: "连续性提交",
-    breadcrumbs: [summary.title, "连续性账本", "章节流水与接续"],
-    files: [],
-    preferredRole: "ledger-record"
-  });
-  if (selection) {
-    await selectLongWorkspaceFile(selection);
-  }
-}
-
 async function openLongChapterCardCreate(): Promise<void> {
   const volumeId = activeLongSelection.value?.chapterCardVolumeId;
   const bookId = activeLongBookId.value;
@@ -2709,10 +2731,22 @@ function longConversationForProposalEvent(
 function longProposalApprovalMode(
   event: LongWorkspaceProposalEvent
 ): AgentRunSettings["approvalMode"] | undefined {
+  if (event.payload.agentId === "continuity_ledger") {
+    return "request-approval";
+  }
   return longConversationForProposalEvent(event)?.approvalModeForRun(
     event.payload.sessionId,
     event.payload.runId
   );
+}
+
+function longAgentRunApprovalMode(
+  agentId: LongAgentProfile["id"],
+  fallback: AgentRunSettings["approvalMode"]
+): AgentRunSettings["approvalMode"] {
+  return agentId === "continuity_ledger"
+    ? "request-approval"
+    : fallback;
 }
 
 function observeLongWritingAgentEvent(
@@ -2981,7 +3015,12 @@ async function startFreshLongAgentRun(input: {
     proposalSeen: false
   };
   longWritingAgentRunExpectation = runExpectation;
-  conversation.selectApprovalMode(generalSettings.value.permissionMode);
+  conversation.selectApprovalMode(
+    longAgentRunApprovalMode(
+      input.agentId,
+      generalSettings.value.permissionMode
+    )
+  );
   conversation.draft.value = input.prompt;
   if (!guard.isCurrent()) {
     if (longWritingAgentRunExpectation === runExpectation) {
@@ -3097,8 +3136,8 @@ async function startFreshLongContinuityLedger(
         `核对串行写作计划中的《${readiness.title}》。章节正文证据已完整保存。` +
         "请以正文为证据，参考上一章章末状态、接续包以及相关人物、世界和伏笔设计。" +
         "使用 list_continuity_files 与 read_continuity_file 核验内容；按需用 create_continuity_file 创建本章世界观揭露或人物记录，再用 write_continuity_file / edit_continuity_file 写入 Markdown。" +
-        "本章必须留存章末状态、下一章接续包和伏笔变化；只为实际涉及的人物记录当前状态与历史轨迹，只在正文确有新揭露时创建世界观揭露。" +
-        "各文件提案获批保存后，再单独调用 propose_continuity_commit 提交本章文件 revision。" +
+        "本章必须留存章末状态、下一章接续包和伏笔变化；只为实际涉及的人物记录章末当前状态，并在上一份已提交人物记录上累积追加截至本章的完整历史轨迹；只在正文确有新揭露时创建世界观揭露。" +
+        "完成全部文件后调用 propose_continuity_commit 触发客户端内部版本归档；用户只审批文件变更，不再审批归档动作。" +
         "不要生成结构化事实投影、覆盖率、六域摘要或 JSON，不要使用底层索引和 file_id，也不要替用户批准提案。"
     },
     guard
@@ -3800,6 +3839,22 @@ watch(longConversationError, (message) => {
     uiMessage.error(message);
   }
 });
+watch(
+  () => learningImitation.error.value,
+  (message) => {
+    if (message) {
+      uiMessage.error(message);
+    }
+  }
+);
+watch(
+  () => subagentAuthoring.error.value,
+  (message) => {
+    if (message) {
+      uiMessage.error(message);
+    }
+  }
+);
 
 const LEFT_PANE_MIN = 220;
 const LEFT_PANE_MAX = 480;
@@ -8297,7 +8352,12 @@ async function sendLongMessage(
           : `${first.message}（另有 ${libraryAttachments.diagnostics.length - 1} 项长篇资源提示）`
       );
     }
-    target.conversation.selectApprovalMode(generalSettings.value.permissionMode);
+    target.conversation.selectApprovalMode(
+      longAgentRunApprovalMode(
+        target.agentId,
+        generalSettings.value.permissionMode
+      )
+    );
     await target.conversation.sendLongMessage(
       runtimeContext,
       activeLongReadableAttachments.value,
@@ -8486,7 +8546,21 @@ async function approveLongProposal(eventId: string): Promise<void> {
 function rejectLongProposal(eventId: string): void {
   const bookId = activeLongBookId.value;
   if (!bookId) return;
+  const item = longWorkspaceProposals
+    .itemsForBook(bookId)
+    .find(({ event }) => event.id === eventId);
+  const quarantineContinuitySession = Boolean(
+    item &&
+      item.event.payload.agentId === "continuity_ledger" &&
+      canApproveLongProposalDuringActivePlan(item.event)
+  );
   if (longWorkspaceProposals.reject(bookId, eventId)) {
+    if (quarantineContinuitySession && item) {
+      longWorkspaceProposals.quarantineSession(
+        bookId,
+        item.event.payload.sessionId
+      );
+    }
     uiMessage.info("已拒绝该长篇提案，未写入任何文件。");
   }
 }
@@ -8513,6 +8587,9 @@ async function openSettings(): Promise<void> {
   }
   currentView.value = "settings";
   if (window.deepwrite) {
+    if (!modelSettings.value) {
+      void loadModelSettings();
+    }
     void loadWorkspaceAgentSettings();
     void loadLibraryAgentSettings();
     void loadLearningImitationSettings();
@@ -13553,17 +13630,43 @@ async function loadModelSettings(): Promise<void> {
   modelError.value = null;
   try {
     const settings = await window.deepwrite.models.list();
-    modelSettings.value = settings;
-    learningImitation.setConfiguredModels(
-      settings.models,
-      settings.defaultModelId
-    );
-    applyModelSettingsToConversations(settings);
+    applyLoadedModelSettings(settings);
   } catch (error: unknown) {
     modelError.value = error instanceof Error ? error.message : "加载模型配置失败。";
   } finally {
     modelLoading.value = false;
   }
+}
+
+async function loadAppAlerts(): Promise<void> {
+  const api = window.deepwrite?.appAlerts;
+  if (!api) return;
+  try {
+    const snapshot = await api.get();
+    modelAlertMessages.value = [...snapshot.modelMessages];
+    if (snapshot.shouldShowDesktop) {
+      startupAlertMessages.value = [...snapshot.desktopMessages];
+      startupAlertRevision.value = snapshot.desktopRevision;
+    }
+  } catch (error: unknown) {
+    console.warn(
+      "DeepWrite app alerts could not be loaded:",
+      error instanceof Error ? error.message : "unknown error"
+    );
+  }
+}
+
+function closeStartupAlert(): void {
+  const revision = startupAlertRevision.value;
+  startupAlertMessages.value = [];
+  startupAlertRevision.value = "";
+  if (!revision || !window.deepwrite?.appAlerts) return;
+  void window.deepwrite.appAlerts.acknowledgeDesktop(revision).catch((error: unknown) => {
+    console.warn(
+      "DeepWrite desktop alert acknowledgement could not be saved:",
+      error instanceof Error ? error.message : "unknown error"
+    );
+  });
 }
 
 async function loadModelUsage(input: ModelUsageQueryInput = modelUsageQuery.value): Promise<void> {
@@ -13573,6 +13676,7 @@ async function loadModelUsage(input: ModelUsageQueryInput = modelUsageQuery.valu
     ...(input.startAt ? { startAt: input.startAt } : {}),
     ...(input.endAt ? { endAt: input.endAt } : {}),
     ...(input.modelConfigIds?.length ? { modelConfigIds: [...input.modelConfigIds] } : {}),
+    ...(input.managedBy ? { managedBy: input.managedBy } : {}),
     ...(input.modules?.length ? { modules: [...input.modules] } : {})
   } satisfies ModelUsageQueryInput;
   const requestSequence = ++modelUsageRequestSequence;
@@ -13595,6 +13699,76 @@ async function loadModelUsage(input: ModelUsageQueryInput = modelUsageQuery.valu
   }
 }
 
+function applyLoadedModelSettings(settings: ModelSettings): void {
+  modelSettings.value = settings;
+  learningImitation.setConfiguredModels(settings.models, settings.defaultModelId);
+  applyModelSettingsToConversations(settings);
+}
+
+async function queryOfficialModelUsage(settings: ModelSettings): Promise<ModelUsageDashboard> {
+  const api = window.deepwrite?.modelUsage;
+  if (!api) {
+    throw new Error("当前环境未提供模型用量接口。");
+  }
+  return api.query({ managedBy: "deepwrite-official" });
+}
+
+async function loadOfficialModels(): Promise<void> {
+  if (!window.deepwrite) return;
+  const requestSequence = ++officialModelsRequestSequence;
+  officialModelsLoading.value = true;
+  try {
+    const settings = await window.deepwrite.models.refreshOfficial();
+    const dashboard = await queryOfficialModelUsage(settings);
+    if (requestSequence !== officialModelsRequestSequence) return;
+    applyLoadedModelSettings(settings);
+    officialModelUsageDashboard.value = dashboard;
+  } catch (error: unknown) {
+    if (requestSequence !== officialModelsRequestSequence) return;
+    uiMessage.error(
+      error instanceof Error ? error.message : "加载官方模型失败。"
+    );
+  } finally {
+    if (requestSequence === officialModelsRequestSequence) {
+      officialModelsLoading.value = false;
+    }
+  }
+}
+
+async function saveOfficialToken(apiKey: string): Promise<void> {
+  if (!window.deepwrite || officialModelsSaving.value) return;
+  officialModelsSaving.value = true;
+  try {
+    const settings = await window.deepwrite.models.saveOfficialToken(apiKey);
+    applyLoadedModelSettings(settings);
+    officialModelUsageDashboard.value = await queryOfficialModelUsage(settings);
+    uiMessage.success("官方令牌已安全保存，官方模型现在可以直接使用。");
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error ? error.message : "保存官方令牌失败。"
+    );
+  } finally {
+    officialModelsSaving.value = false;
+  }
+}
+
+async function clearOfficialToken(): Promise<void> {
+  if (!window.deepwrite || officialModelsSaving.value) return;
+  officialModelsSaving.value = true;
+  try {
+    const settings = await window.deepwrite.models.clearOfficialToken();
+    applyLoadedModelSettings(settings);
+    officialModelUsageDashboard.value = await queryOfficialModelUsage(settings);
+    uiMessage.info("官方令牌已移除，历史用量仍保留在本机账本中。");
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error ? error.message : "移除官方令牌失败。"
+    );
+  } finally {
+    officialModelsSaving.value = false;
+  }
+}
+
 watch(workspaceMainView, (view) => {
   if (view === "models") {
     void loadModelSettings();
@@ -13610,14 +13784,30 @@ async function saveModelSettings(settings: ModelSettingsInput): Promise<void> {
   modelTestMessage.value = null;
   try {
     const saved = await window.deepwrite.models.save(settings);
-    modelSettings.value = saved;
-    learningImitation.setConfiguredModels(saved.models, saved.defaultModelId);
-    applyModelSettingsToConversations(saved);
+    applyLoadedModelSettings(saved);
     modelTestMessage.value = "模型配置已保存，并已同步到后续对话。";
   } catch (error: unknown) {
     modelError.value = error instanceof Error ? error.message : "保存模型配置失败。";
   } finally {
     modelSaving.value = false;
+  }
+}
+
+async function refreshFreeModels(): Promise<void> {
+  if (!window.deepwrite || freeModelsRefreshing.value) {
+    return;
+  }
+  freeModelsRefreshing.value = true;
+  modelError.value = null;
+  modelTestMessage.value = null;
+  try {
+    const settings = await window.deepwrite.models.refreshFree();
+    applyLoadedModelSettings(settings);
+    modelTestMessage.value = "免费模型配置已刷新。";
+  } catch (error: unknown) {
+    modelError.value = error instanceof Error ? error.message : "刷新免费模型配置失败。";
+  } finally {
+    freeModelsRefreshing.value = false;
   }
 }
 
@@ -13633,6 +13823,7 @@ async function testModel(model: ModelConfigInput): Promise<void> {
     modelTestMessage.value = result.message;
   } catch (error: unknown) {
     modelError.value = error instanceof Error ? error.message : "模型连接测试失败。";
+    uiMessage.error(modelError.value);
   } finally {
     testingModelId.value = null;
   }
@@ -14166,6 +14357,7 @@ async function refreshLongWorkspaceOnWindowFocus(
 
 function refreshCatalogOnWindowFocus(): void {
   if (!window.deepwrite) return;
+  void loadAppAlerts();
   void loadCatalogSnapshot();
   const bookId = activeLongBookId.value;
   if (bookId) {
@@ -14199,6 +14391,7 @@ onMounted(async () => {
     return;
   }
 
+  void loadAppAlerts();
   removeSystemListener = window.deepwrite.events.subscribe(handleSystemEvent);
   await Promise.all([
     loadCatalogSnapshot(),
@@ -14267,6 +14460,10 @@ onBeforeUnmount(() => {
         :learning-imitation-saving="learningImitationSaving"
         :model-usage-dashboard="modelUsageDashboard"
         :model-usage-loading="modelUsageLoading"
+        :model-settings="modelSettings"
+        :official-model-usage-dashboard="officialModelUsageDashboard"
+        :official-models-loading="officialModelsLoading"
+        :official-models-saving="officialModelsSaving"
         :runtime-available="hasDesktopRuntime"
         @back="closeSettings"
         @update-permission-mode="updatePermissionMode"
@@ -14281,6 +14478,9 @@ onBeforeUnmount(() => {
         @save-learning-imitation="saveLearningImitationSettings"
         @reset-learning-imitation="resetLearningImitationSettings"
         @load-model-usage="loadModelUsage"
+        @load-official-models="loadOfficialModels"
+        @save-official-token="saveOfficialToken"
+        @clear-official-token="clearOfficialToken"
       />
 
     <div
@@ -14375,12 +14575,15 @@ onBeforeUnmount(() => {
           :model-settings="modelSettings"
           :model-loading="modelLoading"
           :model-saving="modelSaving"
+          :free-models-refreshing="freeModelsRefreshing"
           :model-error="modelError"
           :model-test-message="modelTestMessage"
           :testing-model-id="testingModelId"
+          :model-alert-messages="modelAlertMessages"
           :workspace-directory-path="workspaceDirectoryPath"
           :workspace-directory-loading="workspaceDirectoryLoading"
           @save-models="saveModelSettings"
+          @refresh-free-models="refreshFreeModels"
           @test-model="testModel"
           @choose-workspace-directory="chooseWorkspaceDirectory"
         />
@@ -14538,7 +14741,7 @@ onBeforeUnmount(() => {
                     ? "等待你审阅本章正文写入提案"
                     : longWritingOrchestrator.state.value.phase ===
                         "awaiting_ledger_approval"
-                      ? "等待你审阅本章事实结算与投影提案"
+                      ? "等待你审阅本章连续性文件；全部通过后自动归档"
                       : longWritingOrchestrator.state.value.phase ===
                           "complete"
                         ? "本次计划已完成"
@@ -14594,7 +14797,6 @@ onBeforeUnmount(() => {
             @select-character="selectLongCharacterTab"
             @select-plot-point="selectLongPlotPointTab"
             @select-chapter-card="selectLongChapterCardTab"
-            @select-ledger-commit="selectLongLedgerCommit"
             @rename-character="renameLongCharacter"
             @rename-structure-title="renameLongStructureTitle"
             @create-character="openLongCharacterCreate"
@@ -14937,6 +15139,11 @@ onBeforeUnmount(() => {
       :workspace-type="pendingExpertSectionDeletion?.workspaceType"
       @close="pendingExpertSectionDeletion = null"
       @confirm="confirmRemoveExpertSection"
+    />
+    <StartupAlertDialog
+      :open="startupAlertMessages.length > 0"
+      :messages="startupAlertMessages"
+      @close="closeStartupAlert"
     />
   </NConfigProvider>
 </template>

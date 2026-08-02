@@ -142,6 +142,39 @@ function approvalProposal(
   } as SystemEventEnvelope;
 }
 
+function continuityMutationProposal(
+  overrides: {
+    bookId?: string;
+    chapterCardId?: string;
+    sessionId?: string;
+    runId?: string;
+    operation?: Record<string, unknown>;
+    documentWrites?: Array<Record<string, unknown>>;
+  } = {}
+): SystemEventEnvelope {
+  const chapterCardId = overrides.chapterCardId ?? "chapter_one";
+  return {
+    type: "long.mutation_proposal",
+    payload: {
+      bookId: overrides.bookId ?? "longbook_test",
+      agentId: "continuity_ledger",
+      sessionId: overrides.sessionId ?? "session-current",
+      runId: overrides.runId ?? "run-current",
+      batch: {
+        baseRevision: 1,
+        updatedAt: "2026-07-26T12:00:00.000Z",
+        operations: [
+          overrides.operation ?? {
+            type: "chapterContinuity.worldReveals.delete",
+            chapterCardId
+          }
+        ],
+        documentWrites: overrides.documentWrites ?? []
+      }
+    }
+  } as SystemEventEnvelope;
+}
+
 function harness() {
   const live = new Map<string, LongChapterReadiness>([
     ["chapter_one", readiness("chapter_one", "partial")],
@@ -582,5 +615,97 @@ describe("useLongWritingOrchestrator", () => {
         })
       })
     ).toBe(false);
+    expect(
+      canApproveLongWritingProposal({
+        active: test.controller.active.value,
+        state: test.controller.state.value,
+        currentChapter: test.controller.currentChapter.value,
+        expectation: {
+          ...writerExpectation,
+          agentId: "continuity_ledger"
+        },
+        event: continuityMutationProposal()
+      })
+    ).toBe(true);
+    expect(
+      canApproveLongWritingProposal({
+        active: test.controller.active.value,
+        state: test.controller.state.value,
+        currentChapter: test.controller.currentChapter.value,
+        expectation: {
+          ...writerExpectation,
+          agentId: "continuity_ledger"
+        },
+        event: continuityMutationProposal({
+          chapterCardId: "chapter_two"
+        })
+      })
+    ).toBe(false);
+    expect(
+      canApproveLongWritingProposal({
+        active: test.controller.active.value,
+        state: test.controller.state.value,
+        currentChapter: test.controller.currentChapter.value,
+        expectation: {
+          ...writerExpectation,
+          agentId: "continuity_ledger"
+        },
+        event: continuityMutationProposal({
+          operation: {
+            type: "volume.delete",
+            volumeId: "volume_one"
+          }
+        })
+      })
+    ).toBe(false);
+    expect(
+      canApproveLongWritingProposal({
+        active: test.controller.active.value,
+        state: test.controller.state.value,
+        currentChapter: test.controller.currentChapter.value,
+        expectation: {
+          ...writerExpectation,
+          agentId: "continuity_ledger"
+        },
+        event: continuityMutationProposal({
+          documentWrites: [{ fileId: "file_unexpected" }]
+        })
+      })
+    ).toBe(false);
+  });
+
+  it("stops on a rejected continuity proposal and retries the same chapter", async () => {
+    const test = harness();
+    test.live.set(
+      "chapter_one",
+      readiness("chapter_one", "ready_to_commit")
+    );
+    await test.controller.startDispatch(dispatchEvent());
+
+    expect(test.controller.state.value.phase).toBe(
+      "awaiting_ledger_approval"
+    );
+    expect(
+      test.controller.handleRejected(
+        approvalProposal("long.continuity_file_proposal")
+      )
+    ).toBe(true);
+    expect(test.controller.state.value).toMatchObject({
+      currentIndex: 0,
+      phase: "error",
+      retryPoint: "after_write"
+    });
+    expect(test.controller.state.value.error).toContain(
+      "连续性变更"
+    );
+    expect(test.notifications.error).toHaveBeenCalledWith(
+      expect.stringContaining("计划不会推进")
+    );
+
+    await test.controller.retry();
+    expect(test.controller.state.value.phase).toBe(
+      "awaiting_ledger_approval"
+    );
+    expect(test.startLedger).toHaveBeenCalledTimes(2);
   });
 });

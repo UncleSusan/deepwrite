@@ -13,8 +13,15 @@ files:
 asar: true
 beforeBuild: ./scripts/electron-builder-before-build.cjs
 
+publish:
+  provider: generic
+  url: https://github.com/swjybky/deepwrite/releases/latest/download
+  channel: latest
+
 mac:
-  target: dmg
+  target:
+    - dmg
+    - zip
   icon: build/icon.png
   category: public.app-category.productivity
   identity: "-"

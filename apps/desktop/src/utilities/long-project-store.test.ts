@@ -506,6 +506,7 @@ describe("LongProjectStore", () => {
     );
     const chapterCardId =
       created.book.workspaceIndex.plot.chapterCards[0]!.id;
+    const arcId = created.book.workspaceIndex.plot.arcs[0]!.id;
     const emptyRevision = createLongFileRevision("");
     const characterId = "character_linlan";
     const characterFiles = {
@@ -577,6 +578,59 @@ describe("LongProjectStore", () => {
                   aliases: []
                 },
                 files: characterFiles
+              },
+              {
+                type: "event.create",
+                event: {
+                  id: "event_text_continuity",
+                  title: "收到旧信",
+                  summary: "林岚在雨夜收到无法烧毁的信。",
+                  timeMode: "sequence",
+                  timeLabel: "第一天",
+                  storyOrder: 1,
+                  location: "林岚家",
+                  arcIds: [arcId],
+                  characterIds: [characterId]
+                }
+              },
+              {
+                type: "placement.create",
+                placement: {
+                  id: "placement_text_continuity",
+                  eventId: "event_text_continuity",
+                  chapterCardId,
+                  orderInChapter: 1,
+                  mode: "scene",
+                  disclosure: "hint",
+                  writingPrompt: "在雨夜呈现来信。",
+                  status: "planned",
+                  commitId: null
+                }
+              },
+              {
+                type: "foreshadowing.create",
+                thread: {
+                  id: "foreshadow_text_continuity",
+                  title: "寄信人身份",
+                  coreQuestion: "谁寄出了旧信？",
+                  truthEventId: "event_text_continuity",
+                  expectedReaderEffect: "产生怀疑。",
+                  status: "planned",
+                  beats: [
+                    {
+                      id: "beat_text_continuity",
+                      type: "plant",
+                      order: 1,
+                      eventId: "event_text_continuity",
+                      placementId: "placement_text_continuity",
+                      chapterCardId,
+                      plannedScope: "",
+                      note: "首次出现。",
+                      status: "planned",
+                      commitId: null
+                    }
+                  ]
+                }
               },
               {
                 type: "chapterContinuity.worldReveals.create",
@@ -733,8 +787,35 @@ describe("LongProjectStore", () => {
       sequence: 1,
       chapterCardId,
       commitMessage: "留存第一章连续性文本",
-      placementChanges: [],
-      foreshadowingBeatChanges: [],
+      placementChanges: [
+        {
+          placementId: "placement_text_continuity",
+          before: { status: "planned", commitId: null },
+          after: {
+            status: "committed",
+            commitId: committed.record.id
+          },
+          note: ""
+        }
+      ],
+      foreshadowingBeatChanges: [
+        {
+          beatId: "beat_text_continuity",
+          before: { status: "planned", commitId: null },
+          after: {
+            status: "committed",
+            commitId: committed.record.id
+          },
+          note: ""
+        }
+      ],
+      foreshadowingThreadChanges: [
+        {
+          foreshadowingId: "foreshadow_text_continuity",
+          before: "planned",
+          after: "open"
+        }
+      ],
       fileChanges: [],
       continuityFiles: continuityReferences.map(({ id, path, revision }) => ({
         fileId: id,
@@ -773,6 +854,20 @@ describe("LongProjectStore", () => {
 
     const committedChapter =
       afterCommit.book.workspaceIndex.chapters[0]!;
+    expect(
+      afterCommit.book.workspaceIndex.plot.narrativePlacements[0]
+    ).toMatchObject({
+      id: "placement_text_continuity",
+      status: "committed",
+      commitId: committed.record.id
+    });
+    expect(
+      afterCommit.book.workspaceIndex.plot.foreshadowing[0]!.beats[0]
+    ).toMatchObject({
+      id: "beat_text_continuity",
+      status: "committed",
+      commitId: committed.record.id
+    });
     for (const reference of [
       committedChapter.body,
       committedChapter.card,
@@ -815,6 +910,20 @@ describe("LongProjectStore", () => {
     );
     expect(afterRollback.book.workspaceIndex.ledger.commits).toEqual([]);
     expect(afterRollback.book.workspaceIndex.chapters[0]!.commitId).toBeNull();
+    expect(
+      afterRollback.book.workspaceIndex.plot.narrativePlacements[0]
+    ).toMatchObject({
+      id: "placement_text_continuity",
+      status: "planned",
+      commitId: null
+    });
+    expect(
+      afterRollback.book.workspaceIndex.plot.foreshadowing[0]!.beats[0]
+    ).toMatchObject({
+      id: "beat_text_continuity",
+      status: "planned",
+      commitId: null
+    });
     await expect(
       projectStore.readDocument(created.projectDirectory, {
         fileId: writtenCharacterContinuity.history.id
@@ -1961,9 +2070,40 @@ describe("LongProjectStore", () => {
       created.projectDirectory
     );
     expect(afterCommit.book.workspaceIndex.ledger.commits).toHaveLength(1);
+    expect(afterCommit.book.workspaceIndex.ledger.commits[0]!.mode).toBe(
+      "structured"
+    );
     expect(afterCommit.book.workspaceIndex.chapters[0]!.commitId).toBe(
       committed.record.id
     );
+    const migratedContinuityChapter =
+      afterCommit.book.workspaceIndex.chapters[0]!;
+    expect(migratedContinuityChapter.worldReveals).toBeNull();
+    expect(migratedContinuityChapter.characterContinuity).toEqual([
+      expect.objectContaining({ characterId: "character_alice" })
+    ]);
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: migratedContinuityChapter.foreshadowingChanges.id
+      })
+    ).resolves.toMatchObject({
+      content: expect.stringContaining("beat_letter: planned → committed")
+    });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId:
+          migratedContinuityChapter.characterContinuity[0]!.currentState.id
+      })
+    ).resolves.toMatchObject({
+      content: "林岚已收到旧信并开始追查寄信人。"
+    });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: migratedContinuityChapter.characterContinuity[0]!.history.id
+      })
+    ).resolves.toMatchObject({
+      content: expect.stringContaining("收到旧信，决定调查寄信人")
+    });
     expect(
       afterCommit.book.workspaceIndex.plot.foreshadowing[0]!.status
     ).toBe("open");

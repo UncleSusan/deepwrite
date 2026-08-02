@@ -121,10 +121,23 @@ import type {
   LongAgentTeamSettingsInput
 } from "./long-agent-team";
 import type { LongAgentId } from "./long-workspace";
+import type { UpdateState } from "./update";
+import type { AppAlertSnapshot } from "./app-alert";
 
 export interface DeepWriteApi {
   system: {
     health(): Promise<SystemHealthPayload>;
+  };
+  updates: {
+    getState(): Promise<UpdateState>;
+    check(): Promise<UpdateState>;
+    download(): Promise<UpdateState>;
+    install(): Promise<void>;
+    subscribe(listener: (state: UpdateState) => void): () => void;
+  };
+  appAlerts: {
+    get(): Promise<AppAlertSnapshot>;
+    acknowledgeDesktop(revision: string): Promise<void>;
   };
   catalog: {
     snapshot(): Promise<CatalogSnapshot>;
@@ -205,6 +218,10 @@ export interface DeepWriteApi {
   };
   models: {
     list(): Promise<ModelSettings>;
+    refreshFree(): Promise<ModelSettings>;
+    refreshOfficial(): Promise<ModelSettings>;
+    saveOfficialToken(apiKey: string): Promise<ModelSettings>;
+    clearOfficialToken(): Promise<ModelSettings>;
     save(settings: ModelSettingsInput): Promise<ModelSettings>;
     test(model: ModelConfigInput): Promise<ModelConnectionTestResult>;
   };

@@ -11,6 +11,7 @@ import type {
   LibraryAgentSettingsInput,
   LongAgentSettings,
   LongAgentSettingsInput,
+  ModelSettings,
   ModelUsageDashboard,
   ModelUsageQueryInput,
   WorkspaceAgentSettings,
@@ -31,6 +32,7 @@ import AppIcon from "./AppIcon.vue";
 import LearningImitationSettingsPanel from "./LearningImitationSettingsPanel.vue";
 import LibraryAgentSettingsPanel from "./LibraryAgentSettingsPanel.vue";
 import ModelUsagePanel from "./ModelUsagePanel.vue";
+import OfficialModelsPanel from "./OfficialModelsPanel.vue";
 import PopupSelect from "./PopupSelect.vue";
 import ShortAgentSettingsPanel from "./ShortAgentSettingsPanel.vue";
 
@@ -73,6 +75,10 @@ defineProps<{
   learningImitationSaving: boolean;
   modelUsageDashboard: ModelUsageDashboard | null;
   modelUsageLoading: boolean;
+  modelSettings: ModelSettings | null;
+  officialModelUsageDashboard: ModelUsageDashboard | null;
+  officialModelsLoading: boolean;
+  officialModelsSaving: boolean;
   libraryAgentSettings: LibraryAgentSettings | null;
   libraryAgentLoading: boolean;
   libraryAgentSaving: boolean;
@@ -93,6 +99,9 @@ const emit = defineEmits<{
   saveLibraryAgents: [settings: LibraryAgentSettingsInput];
   resetLibraryAgent: [domain: LibraryAgentDomain];
   loadModelUsage: [input?: ModelUsageQueryInput];
+  loadOfficialModels: [];
+  saveOfficialToken: [apiKey: string];
+  clearOfficialToken: [];
 }>();
 const appearance = useAppearance();
 const activeCategory = ref("general");
@@ -190,6 +199,9 @@ async function selectCategory(id: string): Promise<void> {
   if (id === "appearance" && !appearanceReady.value) {
     await appearance.whenReady();
     appearanceReady.value = true;
+  }
+  if (id === "official-models") {
+    emit("loadOfficialModels");
   }
   activeCategory.value = id;
 }
@@ -406,6 +418,17 @@ async function importThemeFile(event: Event): Promise<void> {
           :dashboard="modelUsageDashboard"
           :loading="modelUsageLoading"
           @query="emit('loadModelUsage', $event)"
+        />
+
+        <OfficialModelsPanel
+          v-else-if="activeCategory === 'official-models'"
+          :settings="modelSettings"
+          :dashboard="officialModelUsageDashboard"
+          :loading="officialModelsLoading"
+          :saving="officialModelsSaving"
+          @load="emit('loadOfficialModels')"
+          @save-token="emit('saveOfficialToken', $event)"
+          @clear-token="emit('clearOfficialToken')"
         />
 
         <section v-else-if="activeCategory === 'general'" class="settings-group">

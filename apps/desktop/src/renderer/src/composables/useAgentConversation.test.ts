@@ -219,6 +219,39 @@ function createDeferredApi(): {
         return { status: "ok", checkedAt: new Date().toISOString(), workers: [] };
       }
     },
+    updates: {
+      async getState() {
+        return {
+          status: "idle",
+          currentVersion: "1.0.0",
+          releaseNotes: [],
+          mandatory: false,
+          canDownload: false,
+          canInstall: false
+        };
+      },
+      async check() {
+        return this.getState();
+      },
+      async download() {
+        return this.getState();
+      },
+      async install() {},
+      subscribe() {
+        return () => undefined;
+      }
+    },
+    appAlerts: {
+      async get() {
+        return {
+          desktopMessages: [],
+          modelMessages: ["模型公告"],
+          desktopRevision: "0".repeat(64),
+          shouldShowDesktop: false
+        };
+      },
+      async acknowledgeDesktop() {}
+    },
     catalog: {
       loadDraftRecovery: vi.fn(async () => ({})),
       saveDraftRecovery: vi.fn(async () => undefined),
@@ -345,6 +378,18 @@ function createDeferredApi(): {
     },
     models: {
       async list() {
+        return { models: [], defaultModelId: "" };
+      },
+      async refreshFree() {
+        return { models: [], defaultModelId: "" };
+      },
+      async refreshOfficial() {
+        return { models: [], defaultModelId: "" };
+      },
+      async saveOfficialToken() {
+        return { models: [], defaultModelId: "" };
+      },
+      async clearOfficialToken() {
         return { models: [], defaultModelId: "" };
       },
       async save(settings) {

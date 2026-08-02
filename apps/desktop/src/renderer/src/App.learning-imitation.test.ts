@@ -21,4 +21,10 @@ describe("App learning-imitation integration", () => {
     expect(source).toContain(':imitation-running="learningImitationRunning"');
     expect(source).toContain("learningImitation.dispose();");
   });
+
+  it("surfaces rejected learning and subagent calls as floating messages", () => {
+    expect(source).toContain("() => learningImitation.error.value");
+    expect(source).toContain("() => subagentAuthoring.error.value");
+    expect(source).toContain("uiMessage.error(message)");
+  });
 });

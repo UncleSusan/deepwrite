@@ -77,6 +77,7 @@ async function buildMac(target, version) {
       `--config.electronVersion=${version}`,
       "--mac",
       "dmg",
+      "zip",
       ...architectures,
       "--publish",
       "never"
