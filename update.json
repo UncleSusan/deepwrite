@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "enabled": true,
   "channel": "stable",
-  "version": "1.1.9",
-  "title": "DeepWrite 1.1.9",
-  "publishedAt": "2026-08-08T12:16:30+08:00",
+  "version": "1.2.0",
+  "title": "DeepWrite 1.2.0",
+  "publishedAt": "2026-08-08T12:27:25+08:00",
   "releaseNotes": [
     "新增长篇正文导出、续写 TXT 导入和旧版长篇资料选择性同步",
     "新增普通项目与长篇项目复制，完善资料整理能力",
@@ -13,6 +13,6 @@
   ],
   "mandatory": false,
   "minimumSupportedVersion": "1.0.0",
-  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.1.9",
+  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.2.0",
   "feedUrl": "https://github.com/swjybky/deepwrite/releases/latest/download"
 }
