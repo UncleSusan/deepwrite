@@ -2,17 +2,15 @@
   "schemaVersion": 1,
   "enabled": true,
   "channel": "stable",
-  "version": "1.2.0",
-  "title": "DeepWrite 1.2.0",
-  "publishedAt": "2026-08-08T12:27:25+08:00",
+  "version": "1.2.1",
+  "title": "DeepWrite 1.2.1",
+  "publishedAt": "2026-08-08T13:48:13+08:00",
   "releaseNotes": [
-    "新增长篇正文导出、续写 TXT 导入和旧版长篇资料选择性同步",
-    "新增普通项目与长篇项目复制，完善资料整理能力",
-    "记住模型、思考级别和不同写作阶段的编辑器宽度",
-    "优化流式输出、超长内容渲染、三栏布局和主题适配"
+    "提高长篇提案队列验证的事件顺序稳定性",
+    "提高大规模长篇文件搜索验证的稳定性"
   ],
   "mandatory": false,
   "minimumSupportedVersion": "1.0.0",
-  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.2.0",
+  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.2.1",
   "feedUrl": "https://github.com/swjybky/deepwrite/releases/latest/download"
 }
