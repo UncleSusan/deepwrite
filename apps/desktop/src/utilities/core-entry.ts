@@ -13,13 +13,20 @@ import {
   DeleteCatalogProjectResultSchema,
   DeleteBookResultSchema,
   DeleteDraftSectionResultSchema,
+  MoveDraftSectionResultSchema,
+  DuplicateCatalogProjectResultSchema,
   RemoveLibraryEntryResultSchema,
+  MoveLibraryEntryResultSchema,
   ScriptBookSchema,
   ShortBookSchema,
   LongApplyOperationsResultSchema,
+  LongApplyLegacySyncResultSchema,
   LongCommitChapterResultSchema,
   LongImportPortableResultSchema,
-  LongImportWriteClawResultSchema,
+  LongImportContinuationResultSchema,
+  LongWorkspaceOperationError,
+  LongPreviewContinuationImportAtPathResultSchema,
+  LongPreviewLegacySyncAtPathResultSchema,
   LongListBooksResultSchema,
   LongOpenBookResultSchema,
   LongPreviewOperationsResultSchema,
@@ -40,7 +47,6 @@ import {
   FolderCatalogConflictError,
   FolderCatalogStore
 } from "./folder-catalog-store";
-import { readLegacyBookArchive } from "./legacy-book-import";
 import { readLegacyLibraryArchive } from "./legacy-library-import";
 import { bootUtility } from "./runtime";
 import { LongProjectConflictError } from "./long-project-store";
@@ -137,20 +143,60 @@ async function handleCatalogCommand(
         )
       };
     }
-    if (command.type === "long.importWriteClawAtPath") {
-      const imported = await longWorkspaceService.importWriteClawBook(
-        command.payload.parentDirectory,
-        command.payload.sourcePath
+    if (command.type === "long.duplicateBook") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongOpenBookResultSchema.parse(
+          await longWorkspaceService.duplicateBook(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.previewLegacySyncAtPath") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongPreviewLegacySyncAtPathResultSchema.parse(
+          await longWorkspaceService.previewLegacySync(
+            command.payload.sourcePath
+          )
+        )
+      };
+    }
+    if (command.type === "long.applyLegacySyncAtPath") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongApplyLegacySyncResultSchema.parse(
+          await longWorkspaceService.applyLegacySync(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.previewContinuationImportAtPath") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongPreviewContinuationImportAtPathResultSchema.parse(
+          await longWorkspaceService.previewContinuationImport(
+            command.payload.sourcePath
+          )
+        )
+      };
+    }
+    if (command.type === "long.importContinuationAtPath") {
+      const imported = await longWorkspaceService.importContinuationBook(
+        command.payload
       );
       return {
         status: "accepted",
         requestId: command.id,
-        payload: LongImportWriteClawResultSchema.parse({
+        payload: LongImportContinuationResultSchema.parse({
           book: imported.book,
           summary: imported.summary,
-          sourceKind: imported.sourceKind,
-          legacySchemaVersion: imported.legacySchemaVersion,
-          committedChapterPolicy: imported.committedChapterPolicy,
+          importedVolumeCount: imported.importedVolumeCount,
+          importedChapterCount: imported.importedChapterCount,
+          checkpointCount: imported.checkpointCount,
+          pendingChapterCardId: imported.pendingChapterCardId,
           warnings: imported.warnings
         })
       };
@@ -187,6 +233,15 @@ async function handleCatalogCommand(
         requestId: command.id,
         payload: LongOpenBookResultSchema.parse(
           await longWorkspaceService.open(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.rename") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongOpenBookResultSchema.parse(
+          await longWorkspaceService.renameBook(command.payload)
         )
       };
     }
@@ -361,17 +416,6 @@ async function handleCatalogCommand(
         payload: ScriptBookSchema.parse(created.resource)
       };
     }
-    if (command.type === "catalog.importLegacyBookAtPath") {
-      const imported = await catalogStore.importLegacyBook(
-        await readLegacyBookArchive(command.payload.archivePath),
-        command.payload.parentDirectory
-      );
-      return {
-        status: "accepted",
-        requestId: command.id,
-        payload: ShortBookSchema.parse(imported.resource)
-      };
-    }
     if (command.type === "catalog.importLegacyLibraryAtPath") {
       const imported = await catalogStore.importLegacyLibrary(
         await readLegacyLibraryArchive(
@@ -509,6 +553,15 @@ async function handleCatalogCommand(
         )
       };
     }
+    if (command.type === "catalog.moveDraftSection") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: MoveDraftSectionResultSchema.parse(
+          await catalogStore.moveDraftSection(command.payload)
+        )
+      };
+    }
     if (command.type === "catalog.saveLibraryEntry") {
       return {
         status: "accepted",
@@ -524,6 +577,24 @@ async function handleCatalogCommand(
         requestId: command.id,
         payload: CatalogLibraryEntrySchema.parse(
           await catalogStore.createLibraryEntry(command.payload)
+        )
+      };
+    }
+    if (command.type === "catalog.updateLibrary") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: CatalogLibrarySchema.parse(
+          await catalogStore.updateLibrary(command.payload)
+        )
+      };
+    }
+    if (command.type === "catalog.moveLibraryEntry") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: MoveLibraryEntryResultSchema.parse(
+          await catalogStore.moveLibraryEntry(command.payload)
         )
       };
     }
@@ -554,6 +625,15 @@ async function handleCatalogCommand(
         )
       };
     }
+    if (command.type === "catalog.duplicateProject") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: DuplicateCatalogProjectResultSchema.parse(
+          await catalogStore.duplicateProject(command.payload)
+        )
+      };
+    }
     return {
       status: "rejected",
       requestId: command.id,
@@ -563,6 +643,20 @@ async function handleCatalogCommand(
       }
     };
   } catch (error: unknown) {
+    if (error instanceof LongWorkspaceOperationError) {
+      return {
+        status: "rejected",
+        requestId: command.id,
+        error: {
+          code: `long.operation.${error.code}`,
+          message: error.message,
+          details: {
+            kind: error.name,
+            operationCode: error.code
+          }
+        }
+      };
+    }
     if (error instanceof LongProjectConflictError) {
       return {
         status: "rejected",

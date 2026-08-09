@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import type {
   BookResourceDialogMode,
   CatalogResourceNodeActionPayload,
+  CatalogLibraryEntryDragPayload,
   DialogMode,
   IconName,
   LongBookResourceNodeActionPayload,
@@ -45,8 +46,10 @@ const emit = defineEmits<{
   longBookAction: [payload: LongBookResourceNodeActionPayload];
   resourceAction: [payload: ResourceSectionActionPayload];
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
+  moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
+  expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
   createCharacterItem: [node: ResourceTreeNode];
   characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
 }>();
@@ -85,6 +88,7 @@ let unsubscribeUpdates: (() => void) | undefined;
 
 const updateChecking = computed(() => updateState.value.status === "checking");
 const updateDownloading = computed(() => updateState.value.status === "downloading");
+const updateInstalling = computed(() => updateState.value.status === "installing");
 const updateProgressLabel = computed(() =>
   `${Math.round(updateState.value.percent ?? 0)}%`
 );
@@ -132,9 +136,8 @@ async function openUpdateDialog(): Promise<void> {
   }
   try {
     updateState.value = await window.deepwrite.updates.getState();
-    if (!["downloading", "downloaded"].includes(updateState.value.status)) {
+    if (!["downloading", "downloaded", "installing"].includes(updateState.value.status)) {
       updateState.value = await window.deepwrite.updates.check();
-      showUpdateError(updateState.value);
     }
   } catch (error: unknown) {
     uiMessage.error(error instanceof Error ? error.message : "检查更新失败");
@@ -144,7 +147,6 @@ async function openUpdateDialog(): Promise<void> {
 async function checkUpdate(): Promise<void> {
   try {
     updateState.value = await window.deepwrite!.updates.check();
-    showUpdateError(updateState.value);
   } catch (error: unknown) {
     uiMessage.error(error instanceof Error ? error.message : "检查更新失败");
   }
@@ -153,7 +155,6 @@ async function checkUpdate(): Promise<void> {
 async function downloadUpdate(): Promise<void> {
   try {
     updateState.value = await window.deepwrite!.updates.download();
-    showUpdateError(updateState.value);
   } catch (error: unknown) {
     uiMessage.error(error instanceof Error ? error.message : "下载更新失败");
   }
@@ -163,11 +164,14 @@ async function installUpdate(): Promise<void> {
   try {
     await window.deepwrite!.updates.install();
   } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "启动更新安装失败");
+    if (updateState.value.status !== "error") {
+      uiMessage.error(error instanceof Error ? error.message : "启动更新安装失败");
+    }
   }
 }
 
 function closeProfileDialog(): void {
+  if (updateInstalling.value) return;
   profileDialog.value = null;
 }
 
@@ -223,6 +227,7 @@ onMounted(() => {
   document.addEventListener("keydown", handleDocumentKeydown);
   unsubscribeUpdates = window.deepwrite?.updates?.subscribe((state) => {
     updateState.value = state;
+    showUpdateError(state);
   });
 });
 
@@ -295,9 +300,6 @@ const moreFeatures: Array<{
   description: string;
   icon: IconName;
 }> = [
-  { id: "history", label: "版本历史", description: "查看文稿修改记录", icon: "history" },
-  { id: "search", label: "全局检索", description: "搜索创作空间内容", icon: "search" },
-  { id: "transfer", label: "导入与导出", description: "迁移旧项目和文稿", icon: "archive" },
   { id: "runtime", label: "运行设置", description: "智能体与工具边界", icon: "model" }
 ];
 
@@ -424,6 +426,7 @@ watch(
             type="button"
             :data-feature-id="feature.id"
             :title="feature.description"
+            @click="openSettings"
           >
             <span class="more-feature-icon"><AppIcon :name="feature.icon" :size="15" /></span>
             <span class="more-feature-copy">
@@ -458,8 +461,10 @@ watch(
               @export-book="emit('exportBook', $event)"
               @long-book-action="emit('longBookAction', $event)"
               @resource-node-action="emit('resourceNodeAction', $event)"
+              @move-library-entry="emit('moveLibraryEntry', $event)"
               @create-expert-section="emit('createExpertSection', $event)"
               @remove-expert-section="emit('removeExpertSection', $event)"
+              @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
               @create-character-item="emit('createCharacterItem', $event)"
               @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
             />
@@ -480,8 +485,10 @@ watch(
           @long-book-action="emit('longBookAction', $event)"
           @resource-action="emit('resourceAction', $event)"
           @resource-node-action="emit('resourceNodeAction', $event)"
+          @move-library-entry="emit('moveLibraryEntry', $event)"
           @create-expert-section="emit('createExpertSection', $event)"
           @remove-expert-section="emit('removeExpertSection', $event)"
+          @expert-section-action="(action: 'move-up' | 'move-down', sectionNode: ResourceTreeNode) => emit('expertSectionAction', action, sectionNode)"
           @create-character-item="emit('createCharacterItem', $event)"
           @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
         />
@@ -651,6 +658,7 @@ watch(
             class="dialog-close"
             type="button"
             aria-label="关闭"
+            :disabled="updateInstalling"
             @click="closeProfileDialog"
           >
             ×
@@ -673,6 +681,11 @@ watch(
           <div v-if="updateChecking" class="update-checking" aria-live="polite">
             <span class="update-spinner" aria-hidden="true" />
             <span>正在检查更新…</span>
+          </div>
+
+          <div v-else-if="updateInstalling" class="update-checking" aria-live="assertive">
+            <span class="update-spinner" aria-hidden="true" />
+            <span>正在安全退出并准备安装…</span>
           </div>
 
           <template v-else>
@@ -728,10 +741,18 @@ watch(
               type="button"
               @click="installUpdate"
             >
-              重启并安装
+              {{ updateState.status === "error" ? "重试安装" : "重启并安装" }}
             </button>
             <button
-              v-else-if="!updateChecking && !updateDownloading"
+              v-else-if="updateInstalling"
+              class="dialog-primary-button"
+              type="button"
+              disabled
+            >
+              正在安装…
+            </button>
+            <button
+              v-else-if="!updateChecking && !updateDownloading && !updateInstalling"
               class="dialog-primary-button"
               type="button"
               @click="closeProfileDialog"

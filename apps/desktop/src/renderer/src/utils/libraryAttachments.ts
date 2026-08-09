@@ -27,7 +27,6 @@ export type LibraryAttachmentDiagnosticCode =
   | "book-not-found"
   | "library-not-found"
   | "library-kind-mismatch"
-  | "library-type-mismatch"
   | "duplicate-library-binding"
   | "content-truncated"
   | "capacity-exceeded";
@@ -184,23 +183,6 @@ function collectMaterialCandidates(
         });
         continue;
       }
-      if (library.materialType !== book.bookType) {
-        diagnostics.push({
-          code: "library-type-mismatch",
-          domain: "material",
-          message: `素材库“${library.title}”不适用于当前${
-            book.bookType === "script"
-              ? "剧本"
-              : book.bookType === "long"
-                ? "长篇"
-                : "短篇"
-          }。`,
-          bookId: book.id,
-          libraryId,
-          actualKind: library.materialType
-        });
-        continue;
-      }
       if (library.materialKind !== "mixed" && library.materialKind !== selectedKind) {
         diagnostics.push({
           code: "library-kind-mismatch",
@@ -268,23 +250,6 @@ function collectSkillCandidates(
           bookId: book.id,
           libraryId,
           expectedKind: selectedKind
-        });
-        continue;
-      }
-      if (library.skillType !== book.bookType) {
-        diagnostics.push({
-          code: "library-type-mismatch",
-          domain: "skill",
-          message: `技能库“${library.title}”不适用于当前${
-            book.bookType === "script"
-              ? "剧本"
-              : book.bookType === "long"
-                ? "长篇"
-                : "短篇"
-          }。`,
-          bookId: book.id,
-          libraryId,
-          actualKind: library.skillType
         });
         continue;
       }

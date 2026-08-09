@@ -3,7 +3,8 @@ import { computed, ref, watch } from "vue";
 import type {
   ModelSettings,
   ModelUsageDashboard,
-  ModelUsageTotals
+  ModelUsageTotals,
+  OfficialModelBalance
 } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
@@ -11,6 +12,7 @@ import AppIcon from "./AppIcon.vue";
 const props = defineProps<{
   settings: ModelSettings | null;
   dashboard: ModelUsageDashboard | null;
+  balance: OfficialModelBalance | null;
   loading: boolean;
   saving: boolean;
 }>();
@@ -19,6 +21,7 @@ const emit = defineEmits<{
   load: [];
   saveToken: [apiKey: string];
   clearToken: [];
+  setModelEnabled: [payload: { modelId: string; enabled: boolean }];
 }>();
 
 const tokenEditorOpen = ref(false);
@@ -29,17 +32,17 @@ const tokenConfigured = computed(
 const officialModels = computed(
   () => props.settings?.deepwriteOfficialModels ?? []
 );
-const quotaTokens = computed(
-  () => props.settings?.deepwriteOfficialQuotaTokens ?? 10_000_000
+const enabledModelIds = computed(
+  () => new Set(props.settings?.deepwriteOfficialEnabledModelIds ?? officialModels.value.map((model) => model.id))
 );
+const enabledModelCount = computed(() => enabledModelIds.value.size);
 const totalUsed = computed(() => props.dashboard?.totals.totalTokens ?? 0);
-const remainingTokens = computed(() =>
-  Math.max(0, quotaTokens.value - totalUsed.value)
-);
-const quotaExhausted = computed(() => remainingTokens.value === 0);
-const usagePercentage = computed(() =>
-  Math.min(100, (totalUsed.value / Math.max(1, quotaTokens.value)) * 100)
-);
+const currentKeyUsagePercentage = computed(() => {
+  const granted = props.balance?.currentKeyGrantedYuan;
+  const used = props.balance?.currentKeyUsedYuan;
+  if (granted === undefined || used === undefined || granted <= 0) return null;
+  return Math.min(100, Math.max(0, (used / granted) * 100));
+});
 
 const EMPTY_TOTALS: ModelUsageTotals = {
   inputTokens: 0,
@@ -86,17 +89,32 @@ function formatTokens(value: number): string {
   );
 }
 
-function formatCompactTokens(value: number): string {
-  if (value >= 10_000) {
-    return `${new Intl.NumberFormat("zh-CN", {
-      maximumFractionDigits: value >= 1_000_000 ? 1 : 0
-    }).format(value / 10_000)} 万`;
-  }
-  return formatTokens(value);
+function formatYuan(value: number): string {
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: "CNY",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
 }
 
 function cacheTokens(totals: ModelUsageTotals): number {
   return totals.cacheReadTokens + totals.cacheWriteTokens;
+}
+
+function isModelAvailable(status: 0 | 1 | undefined): boolean {
+  return status !== 1;
+}
+
+function formatDiscount(discount: number | undefined): string {
+  if (discount === undefined) return "--";
+  if (discount === 1) return "原价";
+  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(discount * 10)} 折`;
+}
+
+function formatPrice(value: number | undefined): string {
+  if (value === undefined) return "--";
+  return `¥${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 4 }).format(value)}`;
 }
 
 </script>
@@ -111,10 +129,22 @@ function cacheTokens(totals: ModelUsageTotals): number {
         <h2 id="official-models-title">官方模型与令牌</h2>
         <p>官方模型来源于国内模型厂商直连，随着软件整体调用量越多，价格会逐渐降低，目前和官方价格一致。</p>
       </div>
-      <button class="official-refresh-button" type="button" :disabled="loading" @click="emit('load')">
-        <AppIcon name="history" :size="15" />
-        {{ loading ? "刷新中…" : "刷新" }}
-      </button>
+      <div class="official-models-header-actions">
+        <a
+          class="official-shop-button"
+          href="https://pay.ldxp.cn/shop/UKGFTY58"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="在浏览器中打开官方模型店铺"
+        >
+          <AppIcon name="globe" :size="15" />
+          店铺
+        </a>
+        <button class="official-refresh-button" type="button" :disabled="loading" @click="emit('load')">
+          <AppIcon name="history" :size="15" />
+          {{ loading ? "刷新中…" : "刷新" }}
+        </button>
+      </div>
     </header>
 
     <section class="official-token-card" :class="{ 'is-configured': tokenConfigured }">
@@ -124,7 +154,7 @@ function cacheTokens(totals: ModelUsageTotals): number {
           <strong>{{ tokenConfigured ? "官方令牌已添加" : "添加你的官方令牌" }}</strong>
           <small>
             {{ tokenConfigured
-              ? `已启用 ${officialModels.length} 个官方模型，令牌明文不会回传到页面。`
+              ? `已启用 ${enabledModelCount} 个官方模型，令牌明文不会回传到页面。`
               : "添加后，官方模型会自动出现在模型配置列表最上方。" }}
           </small>
         </div>
@@ -167,21 +197,42 @@ function cacheTokens(totals: ModelUsageTotals): number {
       </div>
     </section>
 
-    <section class="official-quota-card" aria-label="官方模型额度">
-      <div class="official-quota-heading">
+    <section class="official-quota-card" aria-label="官方模型用量与消费">
+      <div class="official-quota-heading official-usage-summary">
         <div>
-          <span>默认额度</span>
-          <strong>{{ formatCompactTokens(quotaTokens) }} Token</strong>
+          <span>本机累计使用 Token</span>
+          <strong>{{ formatTokens(totalUsed) }}</strong>
         </div>
         <div class="official-quota-remaining">
-          <span>剩余</span>
-          <strong>{{ formatTokens(remainingTokens) }}</strong>
+          <span>当前 Key 费用使用</span>
+          <strong>
+            {{ balance?.currentKeyUnlimited
+              ? "无限额度"
+              : balance?.currentKeyUsedYuan === undefined || balance?.currentKeyGrantedYuan === undefined
+                ? "--"
+                : `${formatYuan(balance.currentKeyUsedYuan)} / ${formatYuan(balance.currentKeyGrantedYuan)}` }}
+          </strong>
         </div>
       </div>
-      <div class="official-quota-track" role="progressbar" :aria-valuenow="usagePercentage" aria-valuemin="0" aria-valuemax="100">
-        <span :style="{ width: `${usagePercentage}%` }" />
+      <div
+        v-if="currentKeyUsagePercentage !== null"
+        class="official-cost-track"
+        role="progressbar"
+        aria-label="当前 Key 费用使用进度"
+        :aria-valuenow="currentKeyUsagePercentage"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <span :style="{ width: `${currentKeyUsagePercentage}%` }" />
       </div>
-      <small>本机累计已消耗 {{ formatTokens(totalUsed) }} Token；用量来自本地账本。</small>
+      <div class="official-balance-details">
+        <span>本机 Token 来自本地账本</span>
+        <span v-if="balance?.currentKeyUnlimited">当前 Key 为无限额度</span>
+        <span v-else-if="balance?.currentKeyRemainingYuan !== undefined">
+          当前 Key 剩余 {{ formatYuan(balance.currentKeyRemainingYuan) }}
+        </span>
+        <span v-else>当前 Key 费用信息暂不可用</span>
+      </div>
     </section>
 
     <section class="official-model-list-card" aria-labelledby="official-model-list-title">
@@ -203,6 +254,9 @@ function cacheTokens(totals: ModelUsageTotals): number {
               <th scope="col">输入</th>
               <th scope="col">输出</th>
               <th scope="col">缓存</th>
+              <th scope="col">折扣</th>
+              <th scope="col">价格</th>
+              <th scope="col">启用</th>
               <th scope="col">状态</th>
             </tr>
           </thead>
@@ -219,17 +273,37 @@ function cacheTokens(totals: ModelUsageTotals): number {
                 <strong>{{ formatTokens(cacheTokens(row.totals)) }}</strong>
                 <small>读 {{ formatTokens(row.totals.cacheReadTokens) }} · 写 {{ formatTokens(row.totals.cacheWriteTokens) }}</small>
               </td>
+              <td>{{ formatDiscount(row.model.discount) }}</td>
+              <td class="official-model-price">
+                <span>输入 {{ formatPrice(row.model.input) }}</span>
+                <span>输出 {{ formatPrice(row.model.output) }}</span>
+                <span>缓存 {{ formatPrice(row.model.cache) }}</span>
+                <small>元 / 百万 Token</small>
+              </td>
+              <td>
+                <button
+                  class="official-model-toggle"
+                  type="button"
+                  role="switch"
+                  :aria-checked="enabledModelIds.has(row.model.id)"
+                  :aria-label="`${row.model.label}启用状态`"
+                  :disabled="saving || !isModelAvailable(row.model.status)"
+                  @click="emit('setModelEnabled', { modelId: row.model.id, enabled: !enabledModelIds.has(row.model.id) })"
+                >
+                  <span />
+                </button>
+              </td>
               <td>
                 <span
                   class="official-model-status"
-                  :class="{ 'is-enabled': tokenConfigured && !quotaExhausted }"
+                  :class="{ 'is-enabled': tokenConfigured && isModelAvailable(row.model.status), 'is-unavailable': !isModelAvailable(row.model.status) }"
                 >
-                  {{ !tokenConfigured ? "待添加令牌" : quotaExhausted ? "额度耗尽" : "可用" }}
+                  {{ !isModelAvailable(row.model.status) ? "不可用" : !tokenConfigured ? "待添加令牌" : "可用" }}
                 </span>
               </td>
             </tr>
             <tr v-if="!modelRows.length">
-              <td colspan="6" class="official-model-state">暂无可用的官方模型。</td>
+              <td colspan="9" class="official-model-state">暂无官方模型。</td>
             </tr>
           </tbody>
         </table>
@@ -244,7 +318,11 @@ function cacheTokens(totals: ModelUsageTotals): number {
 .official-models-header h2 { margin: 6px 0 8px; font-size: 1.5rem; }
 .official-models-header p { max-width: 720px; margin: 0; color: var(--text-secondary); line-height: 1.65; }
 .official-models-kicker { display: inline-flex; align-items: center; gap: 7px; color: var(--accent); font-size: .857143rem; font-weight: 650; }
-.official-refresh-button, .official-token-actions button, .official-token-form-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 13px; border: 1px solid var(--theme-line); border-radius: 10px; background: var(--surface-raised); color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; }
+.official-models-header-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+.official-shop-button, .official-refresh-button, .official-token-actions button, .official-token-form-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 13px; border: 1px solid var(--theme-line); border-radius: 10px; background: var(--surface-raised); color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; }
+.official-shop-button { border-color: color-mix(in srgb, var(--text-primary) 88%, transparent); background: var(--text-primary); color: var(--surface-main); text-decoration: none; }
+.official-shop-button:hover { opacity: .9; }
+.official-shop-button:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
 button:disabled { cursor: wait; opacity: .58; }
 .official-token-card, .official-quota-card, .official-model-list-card { border: 1px solid var(--theme-line-soft); border-radius: 16px; background: var(--surface-raised); box-shadow: 0 1px 3px color-mix(in srgb, var(--theme-foreground) 4%, transparent); }
 .official-token-card { padding: 18px; }
@@ -255,6 +333,7 @@ button:disabled { cursor: wait; opacity: .58; }
 .official-token-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
 .official-token-badge, .official-model-status { padding: 4px 9px; border-radius: 999px; background: var(--surface-muted); color: var(--text-tertiary); font-size: .785714rem; font-weight: 650; white-space: nowrap; }
 .official-token-card.is-configured .official-token-badge, .official-model-status.is-enabled { background: var(--accent-soft); color: var(--accent); }
+.official-model-status.is-unavailable { background: color-mix(in srgb, var(--danger) 12%, var(--surface-muted)); color: var(--danger); }
 .official-token-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 15px; }
 .official-token-actions .is-primary, .official-token-form-actions .is-primary { border-color: color-mix(in srgb, var(--text-primary) 88%, transparent); background: var(--text-primary); color: var(--surface-main); }
 .official-token-actions .is-remove { color: var(--text-secondary); }
@@ -269,14 +348,15 @@ button:disabled { cursor: wait; opacity: .58; }
 .official-quota-heading span, .official-model-list-card > header span { color: var(--text-tertiary); font-size: .821429rem; font-weight: 600; }
 .official-quota-heading strong { font-size: 1.285714rem; }
 .official-quota-remaining { text-align: right; }
-.official-quota-track { height: 7px; margin: 15px 0 9px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
-.official-quota-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
-.official-quota-card > small { color: var(--text-secondary); }
+.official-usage-summary { align-items: end; }
+.official-cost-track { height: 7px; margin-top: 15px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
+.official-cost-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
+.official-balance-details { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--theme-line-soft); color: var(--text-secondary); font-size: .821429rem; }
 .official-model-list-card { overflow: hidden; }
 .official-model-list-card > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; border-bottom: 1px solid var(--theme-line-soft); }
 .official-model-list-card h3 { margin: 3px 0 0; font-size: 1.071429rem; }
 .official-model-table-wrap { overflow-x: auto; }
-.official-model-table { width: 100%; min-width: 720px; border-collapse: collapse; }
+.official-model-table { width: 100%; min-width: 980px; border-collapse: collapse; }
 .official-model-table th, .official-model-table td { padding: 13px 16px; border-bottom: 1px solid var(--theme-line-soft); text-align: left; vertical-align: middle; }
 .official-model-table tr:last-child td { border-bottom: 0; }
 .official-model-table th { background: var(--surface-muted); color: var(--text-tertiary); font-size: .785714rem; font-weight: 650; }
@@ -286,10 +366,17 @@ button:disabled { cursor: wait; opacity: .58; }
 .official-model-table td strong, .official-model-table td small { display: block; }
 .official-model-table td:first-child strong { color: var(--text-primary); font-size: .928571rem; }
 .official-model-table td small { margin-top: 4px; color: var(--text-tertiary); font-size: .75rem; }
+.official-model-price span { display: block; white-space: nowrap; }
+.official-model-toggle { position: relative; width: 38px; height: 22px; padding: 0; border: 1px solid var(--theme-line); border-radius: 999px; background: var(--surface-muted); cursor: pointer; transition: background .16s ease, border-color .16s ease; }
+.official-model-toggle span { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-tertiary); transition: transform .16s ease, background .16s ease; }
+.official-model-toggle[aria-checked="true"] { border-color: var(--accent); background: var(--accent); }
+.official-model-toggle[aria-checked="true"] span { background: var(--surface-main); transform: translateX(16px); }
+.official-model-toggle:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
 .official-model-state { padding: 28px; color: var(--text-tertiary); text-align: center; }
 
 @media (max-width: 900px) {
   .official-models-header { flex-direction: column; }
+  .official-models-header-actions { align-self: flex-end; }
   .official-token-form { grid-template-columns: 1fr; }
   .official-token-form-actions { justify-content: flex-end; }
 }

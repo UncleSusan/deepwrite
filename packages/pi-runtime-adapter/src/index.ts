@@ -89,6 +89,7 @@ import {
   isLongAgentToolDetails,
   type LongCommandExecutor
 } from "./long-agent-tools";
+import { findDeepWriteRuntimeModel } from "./runtime-model-catalog";
 
 export {
   buildLongWorkspaceTools,
@@ -483,6 +484,19 @@ export type AgentRuntimeEvent =
             entryId: string;
             documentId: string;
             stageId: string;
+            title: string;
+            text: string;
+            baseRevision: string;
+            baseProjectRevision?: number;
+            summary: string;
+            runtime: AgentRuntimeRef;
+          }
+        | {
+            toolCallId: string;
+            operation: "edit-overview";
+            domain: "material" | "skill";
+            libraryId: string;
+            documentId: string;
             title: string;
             text: string;
             baseRevision: string;
@@ -1243,13 +1257,18 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     if (!settled) {
       scheduleIdleTimeout();
       // Preserve the first request wrapper as the stable prefix for later turns.
-      // Tools and the system prompt are still refreshed before every run.
+      // Plot-design turns also receive their latest navigation focus; tools and
+      // the system prompt are still refreshed before every run.
       const persistInitialRuntimeContext = agent.state.messages.length === 0;
+      const runtimeUserContent = persistInitialRuntimeContext
+        ? buildRuntimeUserMessageContent(input)
+        : input.longAgentProfile?.id === "plot_design" &&
+            input.workspaceContext?.longWorkspace
+          ? buildLongPlotTurnUserMessageContent(input)
+          : buildRawUserMessage(input).content;
       const runtimeUserMessage: UserMessage = {
         role: "user",
-        content: persistInitialRuntimeContext
-          ? buildRuntimeUserMessageContent(input)
-          : buildRawUserMessage(input).content,
+        content: runtimeUserContent,
         timestamp: Date.now()
       };
       void runAgentWithTurnRetries({
@@ -1391,6 +1410,66 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
   }
 }
 
+const OLLAMA_GRAMMAR_REPETITION_THRESHOLD = 2_000;
+
+function isSchemaRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * llama.cpp-based Ollama runners can fail to compile their tool-call grammar
+ * when a string nested inside an object/array carries a maxLength >= 2000.
+ * This clone is used only for the provider request. Agent-side validation keeps
+ * the original TypeBox schema and therefore retains DeepWrite's real limits.
+ *
+ * @internal Exported for provider-compatibility regression tests.
+ */
+export function sanitizeOllamaToolSchema(
+  value: unknown,
+  propertyDepth = 0
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeOllamaToolSchema(item, propertyDepth));
+  }
+  if (!isSchemaRecord(value)) return value;
+
+  const removeMaxLength =
+    value.type === "string" &&
+    propertyDepth > 1 &&
+    typeof value.maxLength === "number" &&
+    value.maxLength >= OLLAMA_GRAMMAR_REPETITION_THRESHOLD;
+  const output: Record<string, unknown> = {};
+
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "maxLength" && removeMaxLength) continue;
+    if (key === "properties" && isSchemaRecord(child)) {
+      output[key] = Object.fromEntries(
+        Object.entries(child).map(([propertyName, propertySchema]) => [
+          propertyName,
+          sanitizeOllamaToolSchema(propertySchema, propertyDepth + 1)
+        ])
+      );
+      continue;
+    }
+    output[key] = sanitizeOllamaToolSchema(
+      child,
+      key === "items" ? propertyDepth + 1 : propertyDepth
+    );
+  }
+  return output;
+}
+
+function withOllamaCompatibleToolSchemas(context: Context): Context {
+  if (!context.tools?.length) return context;
+  return {
+    ...context,
+    tools: context.tools.map((tool) => ({
+      ...tool,
+      parameters: sanitizeOllamaToolSchema(tool.parameters) as typeof tool.parameters
+    }))
+  };
+}
+
 function providerStreams(api: AgentProviderRuntimeConfig["api"]): ProviderStreams {
   if (api === "openai-completions") {
     return openAICompletionsApi();
@@ -1408,12 +1487,13 @@ function findBuiltinModel(config: AgentProviderRuntimeConfig): Model<Api> | unde
   const provider = getBuiltinProviders().find(
     (candidate) => candidate.toLowerCase() === config.provider.toLowerCase()
   );
-  if (!provider) {
-    return undefined;
+  if (provider) {
+    const model = getBuiltinModels(provider).find(
+      (candidate) => candidate.id.toLowerCase() === config.modelId.toLowerCase()
+    ) as Model<Api> | undefined;
+    if (model) return model;
   }
-  return getBuiltinModels(provider).find(
-    (candidate) => candidate.id.toLowerCase() === config.modelId.toLowerCase()
-  ) as Model<Api> | undefined;
+  return findDeepWriteRuntimeModel(config.modelId);
 }
 
 function resolveOpenAICompletionsCompat(
@@ -1526,21 +1606,30 @@ export function buildProviderRuntime(
     ...(compat ? { compat } : {})
   } as Model<Api>;
   const streams = providerStreams(config.api);
+  const isOllamaProvider = config.provider.trim().toLowerCase() === "ollama";
   const streamFn = (
     requestModel: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions
-  ) => streams.streamSimple(requestModel, context, {
-    ...options,
-    ...(effectiveTemperature !== undefined
-      ? { temperature: effectiveTemperature }
-      : {}),
-    ...(config.apiKey
-      ? { apiKey: config.apiKey }
-      : options?.apiKey
-        ? { apiKey: options.apiKey }
-        : {})
-  });
+  ) => streams.streamSimple(
+    requestModel,
+    isOllamaProvider
+      ? withOllamaCompatibleToolSchemas(context)
+      : context,
+    {
+      ...options,
+      ...(effectiveTemperature !== undefined
+        ? { temperature: effectiveTemperature }
+        : {}),
+      ...(config.apiKey
+        ? { apiKey: config.apiKey }
+        : isOllamaProvider
+          ? { apiKey: "ollama" }
+          : options?.apiKey
+            ? { apiKey: options.apiKey }
+            : {})
+    }
+  );
   return { model, streamFn: streamFn as StreamFn };
 }
 
@@ -1829,13 +1918,30 @@ export function toRuntimeEvents(
       }
     } else if (
       isLibraryAgentToolDetails(details) &&
-      details.kind === "library-entry-mutation"
+      (details.kind === "library-entry-mutation" ||
+        details.kind === "library-overview-mutation")
     ) {
       events.push({
         type: "library.editor_mutation",
         runId: input.runId,
         sessionId: input.sessionId,
-        payload: details.operation === "create"
+        payload: details.kind === "library-overview-mutation"
+          ? {
+              toolCallId: event.toolCallId,
+              operation: details.operation,
+              domain: details.domain,
+              libraryId: details.libraryId,
+              documentId: details.documentId,
+              title: details.title,
+              text: details.text,
+              baseRevision: details.baseRevision,
+              ...(details.baseProjectRevision === undefined
+                ? {}
+                : { baseProjectRevision: details.baseProjectRevision }),
+              summary: details.summary,
+              runtime
+            }
+          : details.operation === "create"
           ? {
               toolCallId: event.toolCallId,
               operation: details.operation,
@@ -2279,6 +2385,29 @@ function renderCreativePlotStructure(
     .join("\n");
 }
 
+function renderActiveDraftSectionContext(
+  workspace:
+    | NonNullable<WorkspaceRuntimeContext["shortWorkspace"]>
+    | NonNullable<WorkspaceRuntimeContext["scriptWorkspace"]>,
+  workspaceKind: "短篇" | "剧本"
+): string | undefined {
+  if (!workspace.activeSectionId) return undefined;
+  const index = workspace.expertDraft.sections.findIndex(
+    (section) => section.id === workspace.activeSectionId
+  );
+  if (index < 0) return undefined;
+  const section = workspace.expertDraft.sections[index]!;
+  const unitLabel = workspaceKind === "剧本" ? "剧集" : "小节";
+  return [
+    `【当前用户正在操作的${unitLabel}】`,
+    `标题：${section.title}`,
+    `section_id：${section.id}`,
+    `目录位置：第 ${index + 1} / ${workspace.expertDraft.sections.length} ${workspaceKind === "剧本" ? "集" : "节"}`,
+    `字数要求：${section.wordCountRequirement || "未设置"}`,
+    `本轮用户界面焦点已锁定到该${unitLabel}；只处理当前${unitLabel}的请求默认作用于此 section_id，整篇或跨${unitLabel}任务仍可显式指定其它 section_id。`
+  ].join("\n");
+}
+
 /** @internal Exported for workspace-type prompt regression tests. */
 export function buildEffectiveSystemPrompt(
   basePrompt: string,
@@ -2321,8 +2450,8 @@ export function buildEffectiveSystemPrompt(
   if (libraryProfile && libraryWorkspace) {
     const writeBoundary =
       input.writeApprovalMode === "auto-approve"
-        ? "写入工具只提交资料库条目变更；提案生成后客户端会立即加入后台串行队列、自动批准并尝试保存。智能体可以继续当前回复，但在审批卡确认成功前不得声称已经保存成功。"
-        : "写入工具提交待用户审阅的资料库条目变更；用户接受后客户端才会保存到本地 Markdown，当前回复不得提前声称已经保存。";
+        ? "写入工具只提交资料库条目或库介绍变更；提案生成后客户端会立即加入后台串行队列、自动批准并尝试保存。智能体可以继续当前回复，但在审批卡确认成功前不得声称已经保存成功。"
+        : "写入工具提交待用户审阅的资料库条目或库介绍变更；用户接受后客户端才会保存到本地文件，当前回复不得提前声称已经保存。";
     return [
       basePrompt,
       "",
@@ -2336,7 +2465,7 @@ export function buildEffectiveSystemPrompt(
       libraryWorkspace.readOnly
         ? "当前资料库只读，本轮不会装配任何创建或编辑工具。"
         : writeBoundary,
-      "库介绍当前只读；删除条目、修改分组、绑定书籍和写入其它资料库均未接通。"
+      "当前库介绍可通过本轮列出的介绍编辑工具修改；删除条目、修改分组、绑定书籍和写入其它资料库均未接通。"
     ].join("\n");
   }
   const longWorkspace = input.workspaceContext?.longWorkspace;
@@ -2357,18 +2486,21 @@ export function buildEffectiveSystemPrompt(
       "",
       "【DeepWrite 长篇工具边界】",
       longProfile.id === "worldbuilding"
-        ? "世界观只使用工具返回的 category_id 和 item_id 定位内容；工具会处理其余实现细节，不得索取、猜测或复述。未读取内容不得当成事实。"
+        ? "世界观只使用本次固定上下文或工具返回的 category_id 和 item_id 定位内容；固定上下文目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_worldbuilding。目录标注存在省略项、需要获取其它分页或需要核验本轮结构变更时再调用列表工具。工具会处理其余实现细节，不得索取、猜测或复述。未读取正文不得当成事实。"
         : longProfile.id === "character_design"
           ? "人物设计只使用工具返回的 character_id 和 document 定位内容；工具会处理其余实现细节，不得索取、猜测或复述。未读取内容不得当成事实。"
         : longProfile.id === "continuity_ledger"
           ? "连续性账本只使用世界观、人物、剧情和正文各阶段的 list / search / read 工具及其业务 ID；不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
         : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
       writeBoundary,
+      longProfile.id === "plot_design"
+        ? "连续性记录只提供按章参考，不锁定章卡、故事情节或伏笔结构。允许创建、删除、移动和重排已有记录的章卡；删除章卡时客户端会在危险确认后级联清理该章正文、连续性文件和记录索引。章卡必须指定所属分卷，剧情点关联可为 null；非空时必须与章卡属于同一分卷。调用 create_plot_design 或 propose_long_mutation 前必须核对二者；跨卷移动章卡时可改绑目标卷内剧情点或解除关联。移动或删除剧情点只解除章卡的弱关联，不移动或删除章卡。同一次运行形成多个有效提案时，客户端会按先后依赖等待前序提案处理，并基于最新工作区重新预览；不得把待审提案说成已经落盘。故事情节或章卡的纯正文写入也会按文件修订等待前序创建或写入完成。工具返回未形成提案时，必须向用户解释约束，不得要求审批不存在的卡片。"
+        : "",
       longProfile.id === "expert_section_writer"
         ? "单章写作只允许为上下文锁定的当前章形成小说正文提案；不得生成或修改人物状态、handoff、接续包及其它连续性文件，这些内容由连续性账本智能体在正文获批后独立处理。"
         : "",
       longProfile.id === "continuity_ledger"
-        ? "连续性阶段只以按章文本文件留存变化：章末状态、接续包、伏笔变化，以及按需创建的世界观揭露和人物当前状态/历史轨迹。先 list/read，再 create/write/edit；仅当可选文件误创建或不再适用时使用 delete_continuity_file。全部文件完成后调用 propose_continuity_commit 登记内部归档；客户端会在文件卡全部获批后自动执行，不产生第二次审批。不得调用旧式 set_long_ledger_* 工作流。"
+        ? "连续性阶段以按章文本文件留存章末状态、接续包，以及按需创建的世界观揭露和人物当前状态/历史轨迹。伏笔总览是唯一设计源：只核验 list_continuity_files 返回的本章既有伏笔触点，以 foreshadowing_id、beat_id、committed/missed 和正文证据登记变化；没有候选时不得写伏笔变化或‘本章无变化’，也不得自行新增伏笔。先 list/read，再 create/write/edit；仅当可选文件误创建或不再适用时使用 delete_continuity_file。全部文件完成后调用 propose_continuity_commit 登记内部归档；客户端会在文件卡全部获批后自动执行，不产生第二次审批。不得调用旧式 set_long_ledger_* 工作流。"
         : ""
     ]
       .filter(Boolean)
@@ -2381,6 +2513,9 @@ export function buildEffectiveSystemPrompt(
   if (!profile) return basePrompt;
   const workspaceKind = scriptWorkspace ? "剧本" : "短篇";
   const draftUnit = scriptWorkspace ? "剧集" : "章节";
+  const activeDraftSectionContext = writingWorkspace
+    ? renderActiveDraftSectionContext(writingWorkspace, workspaceKind)
+    : undefined;
   const writeBoundary =
     input.writeApprovalMode === "auto-approve"
       ? "写入工具只提交文本变更；提案生成后客户端会立即加入后台串行队列、自动批准并尝试保存到本地 Markdown。智能体可以继续当前回复，但在审批卡确认成功前不得声称已经保存成功。"
@@ -2390,6 +2525,7 @@ export function buildEffectiveSystemPrompt(
     "",
     `【当前${workspaceKind}智能体：${profile.label} / ${profile.id}】`,
     profile.systemPrompt.trim(),
+    activeDraftSectionContext ? `\n${activeDraftSectionContext}` : "",
     ...(writingWorkspace
       ? [
           "",
@@ -2410,15 +2546,12 @@ export function buildEffectiveSystemPrompt(
     "只使用本轮实际提供的工具；没有出现在工具列表中的能力尚未接通，不得声称已经执行。",
     writeBoundary,
     profile.id === "expert_draft_coordinator"
-      ? `当前已接通正文目录索引、批量创建空白${draftUnit}文件、修改${draftUnit}名称、删除${draftUnit}、全部/单${scriptWorkspace ? "集" : "章"}正文读取及按${draftUnit}正文文件写入与替换；排序和后台${scriptWorkspace ? "分集" : "分节"}写手调度尚未接通，不得声称已经执行。`
-      : profile.id === "expert_section_writer"
-        ? `当前${scriptWorkspace ? "分集" : "分节"}写手只允许修改运行上下文锁定的${draftUnit}；可改名或删除当前${draftUnit}，正文与人物状态工具分别按 documentId 提交到两个独立文件，由客户端生成独立的待审阅变更。`
-        : "",
+      ? `当前已接通正文目录索引、批量创建空白${draftUnit}文件、修改${draftUnit}名称、删除${draftUnit}、全部/单${scriptWorkspace ? "集" : "章"}正文读取及按${draftUnit}正文文件写入与替换；${activeDraftSectionContext ? `当前界面所选${draftUnit}可作为省略 section_id 时的默认目标，同时保留跨${draftUnit}统一创作和修订能力；` : `当前未从界面锁定具体${draftUnit}，写入时必须显式指定 section_id；`}排序尚未接通，不得声称已经执行。`
+      : "",
     (writingWorkspace?.characterStructure?.format ?? "text") === "list"
       ? profile.id === "character_design"
         ? "当前人物结构为条目样式：概览只写人物一览/索引，完整人物卡写入 create_character_file 创建的独立条目；从剧情学习时只提炼人设，不得照抄剧情或正文原文，也不得把人物写入正文目录。"
-        : profile.id === "expert_draft_coordinator" ||
-            profile.id === "expert_section_writer"
+        : profile.id === "expert_draft_coordinator"
           ? "当前人物结构为条目样式：概览只是姓名与一句话索引；编写或修订前必须用 list_characters 定位相关人物，并用 read_character（指定 item_id）读取对应人物卡，不得只读概览或 read_workspace_content（character_design）就开始写正文。"
           : ""
       : ""
@@ -2426,6 +2559,7 @@ export function buildEffectiveSystemPrompt(
 }
 
 const LONG_PLOT_NAVIGATION_ARC_LIMIT_PER_VOLUME = 50;
+const LONG_PLOT_NAVIGATION_COMMITTED_CHAPTER_LIMIT = 50;
 
 function renderLongPlotNavigation(
   navigation: LongWorkspaceRuntimeContext["navigation"]
@@ -2438,6 +2572,46 @@ function renderLongPlotNavigation(
   const volumes = [...navigation.volumes].sort(
     (left, right) => left.order - right.order || left.id.localeCompare(right.id)
   );
+  const volumeOrder = new Map(
+    volumes.map((volume) => [volume.id, volume.order])
+  );
+  const orderedChapters = [...navigation.chapterCards].sort(
+    (left, right) =>
+      (volumeOrder.get(left.volumeId) ?? Number.MAX_SAFE_INTEGER) -
+        (volumeOrder.get(right.volumeId) ?? Number.MAX_SAFE_INTEGER) ||
+      left.narrativeOrder - right.narrativeOrder ||
+      left.id.localeCompare(right.id)
+  );
+  const recordedChapters = orderedChapters.filter((chapter) =>
+    chapter.bodyStatus === "written"
+  );
+  const committedThrough = navigation.committedThroughChapterId
+    ? navigation.chapterCards.find(
+        (chapter) => chapter.id === navigation.committedThroughChapterId
+      )
+    : undefined;
+  const visibleRecordedChapters = recordedChapters.slice(
+    0,
+    LONG_PLOT_NAVIGATION_COMMITTED_CHAPTER_LIMIT
+  );
+  const recordedOverflow =
+    recordedChapters.length - visibleRecordedChapters.length;
+  const committedStatus = counts.committedChapters
+    ? [
+        `连续性记录：${counts.committedChapters} 章；最高连续记录位置为${
+          committedThrough
+            ? `「${committedThrough.title}」(${committedThrough.id})`
+            : `章卡 ${navigation.committedThroughChapterId ?? "未知"}`
+        }。记录只作参考，不锁定正文或结构。`,
+        `已有正文章卡（由早到晚）：${visibleRecordedChapters
+          .map((chapter) => `「${chapter.title}」(${chapter.id})`)
+          .join("、")}${
+          recordedOverflow > 0
+            ? `；另有 ${recordedOverflow} 张已有正文章卡未列出`
+            : ""
+        }`
+      ].join("\n")
+    : "连续性记录：0 章。记录不会限制正文写作或结构调整。";
   const lines = volumes.map((volume) => {
     const arcs = navigation.arcs
       .filter((arc) => arc.volumeId === volume.id)
@@ -2454,7 +2628,7 @@ function renderLongPlotNavigation(
       overflow > 0 ? `；另有 ${overflow} 个剧情点未列出` : ""
     }`;
   });
-  return `${header}\n${lines.join("\n")}`;
+  return `${header}\n${committedStatus}\n${lines.join("\n")}`;
 }
 
 function renderLongPlotFocus(focus: LongPlotFocusSnapshot): string {
@@ -2472,6 +2646,57 @@ function renderLongPlotFocus(focus: LongPlotFocusSnapshot): string {
         ? `章卡「${focus.chapterCardTitle}」(${focus.chapterCardId})，所属分卷「${focus.volumeTitle}」(${focus.volumeId})`
         : `分卷「${focus.volumeTitle}」(${focus.volumeId}) 的章卡列表，尚无章卡`;
   }
+}
+
+function renderLongWorldbuildingDirectory(
+  directory: NonNullable<
+    LongWorkspaceRuntimeContext["worldbuildingDirectory"]
+  >
+): string {
+  const lines = directory.categories.flatMap((category) => {
+    if (category.format === "text") {
+      return [
+        `- ${category.title}（category_id=${category.categoryId}；类型=文本）`
+      ];
+    }
+    const header = `- ${category.title}（category_id=${category.categoryId}；类型=条目列表；共 ${category.itemCount} 项）`;
+    const items = category.items.length
+      ? category.items.map(
+          (item) =>
+            `  - ${item.title}（item_id=${item.itemId}；顺序=${item.order}）`
+        )
+      : ["  - 暂无条目"];
+    if (category.omittedItemCount > 0) {
+      items.push(
+        `  - 另有 ${category.omittedItemCount} 项未进入固定上下文，需要时调用 list_worldbuilding 分页查询。`
+      );
+    }
+    return [header, ...items];
+  });
+  if (directory.omittedCategoryCount > 0) {
+    lines.push(
+      `- 另有 ${directory.omittedCategoryCount} 个分类未进入固定上下文，需要时调用 list_worldbuilding 分页查询。`
+    );
+  }
+  return lines.length ? lines.join("\n") : "- 暂无世界观分类";
+}
+
+function renderLongCharacterTypeDirectory(
+  navigation: LongWorkspaceRuntimeContext["navigation"]
+): string {
+  const types = [...navigation.characterTypes].sort(
+    (left, right) => left.order - right.order || left.id.localeCompare(right.id)
+  );
+  return types.length
+    ? types
+        .map((characterType) => {
+          const count = navigation.characters.filter(
+            ({ group }) => group === characterType.id
+          ).length;
+          return `- ${characterType.title}（type_id=${characterType.id}；${count} 人）`;
+        })
+        .join("\n")
+    : "- 暂无人物类型";
 }
 
 /** @internal Exported for prompt-boundary regression tests. */
@@ -2574,6 +2799,16 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       ? `${scriptWorkspace ? "剧本" : "短篇"}作品: 《${writingWorkspace.title}》`
       : "",
     longWorkspace ? `长篇作品: 《${longWorkspace.title}》` : "",
+    isWorldbuildingAgentRun && longWorkspace?.worldbuildingDirectory
+      ? `【世界观条目列表（发送时快照）】\n${renderLongWorldbuildingDirectory(
+          longWorkspace.worldbuildingDirectory
+        )}`
+      : "",
+    isCharacterDesignAgentRun && longWorkspace
+      ? `【人物类型目录（发送时快照）】\n${renderLongCharacterTypeDirectory(
+          longWorkspace.navigation
+        )}\n创建、筛选或移动人物时只能使用目录中的 type_id；人物类型目录只能由用户在结构管理中维护。`
+      : "",
     worldbuildingFocus
       ? `当前用户所处的世界观阶段: ${
           worldbuildingFocus.format === "list"
@@ -2595,7 +2830,11 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       ? `当前用户所处的人物阶段: ${
           characterFocus.currentDocument.kind === "overview"
             ? "人物概览"
-            : `「${characterFocus.characterName}」 / ${characterFocus.currentDocument.title}`
+            : `「${characterFocus.characterName}」 / ${characterFocus.currentDocument.title}${
+                characterFocus.group
+                  ? `（人物类型 type_id=${characterFocus.group}）`
+                  : ""
+              }`
         }`
       : "",
     characterFocus
@@ -2639,7 +2878,11 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
           .join(" → ")}`
       : "",
     writingWorkspace?.activeSectionId
-      ? `当前${scriptWorkspace ? "剧集" : "小节"}: ${writingWorkspace.activeSectionId}`
+      ? `当前用户正在操作的${scriptWorkspace ? "剧集" : "小节"}: ${
+          writingWorkspace.expertDraft.sections.find(
+            (section) => section.id === writingWorkspace.activeSectionId
+          )?.title ?? "未知标题"
+        }（section_id=${writingWorkspace.activeSectionId}）`
       : "",
     writingWorkspace?.expertDraft.sections.length
       ? `正文目录${scriptWorkspace ? "剧集" : "小节"}（由早到晚）: ${writingWorkspace.expertDraft.sections
@@ -2661,7 +2904,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       ? `学习阶段: ${learningContext.stageId}；样本文档: ${learningContext.documents.length} 篇`
       : "",
     libraryContext
-      ? `当前资料库: 《${libraryContext.title}》 (${libraryContext.domain} / ${libraryContext.libraryType} / ${libraryContext.kind})`
+      ? `当前资料库: 《${libraryContext.title}》 (${libraryContext.domain} / ${libraryContext.kind}；短篇、剧本、长篇共用)`
       : "",
     libraryContext
       ? `资料库状态: ${libraryContext.readOnly ? "只读" : "可写"}${libraryContext.projectRevision === undefined ? "" : `；项目版本 ${libraryContext.projectRevision}`}`
@@ -2738,6 +2981,36 @@ function buildRawUserText(input: AgentRunInput): string {
   return lines.filter((line) => line !== "").join("\n");
 }
 
+function buildLongPlotTurnUserPrompt(input: AgentRunInput): string {
+  const longWorkspace = input.workspaceContext?.longWorkspace;
+  if (!longWorkspace || input.longAgentProfile?.id !== "plot_design") {
+    return buildRawUserText(input);
+  }
+  const plotFocus = longWorkspace.plotFocus;
+  const lines = [
+    "【本轮剧情工作区上下文】",
+    `长篇作品: 《${longWorkspace.title}》 (${longWorkspace.bookId})`,
+    `结构版本 ${longWorkspace.workspaceRevision}；项目版本 ${longWorkspace.projectRevision}`,
+    `当前根节点: ${longWorkspace.activeRoot}；当前智能体: ${longWorkspace.activeAgentId}`,
+    longWorkspace.activeChapterCardId
+      ? `当前章卡: ${longWorkspace.activeChapterCardId}`
+      : "",
+    longWorkspace.activeFileId
+      ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
+      : "",
+    `长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）:\n${renderLongPlotNavigation(
+      longWorkspace.navigation
+    )}`,
+    plotFocus
+      ? `当前剧情工作区: ${renderLongPlotFocus(plotFocus)}`
+      : "当前剧情工作区: 剧情设计根节点（未定位具体页面）",
+    "",
+    "【用户消息与上传附件】",
+    buildRawUserText(input)
+  ];
+  return lines.filter((line) => line !== "").join("\n");
+}
+
 function imageContentBlocks(input: AgentRunInput): Array<{
   type: "image";
   data: string;
@@ -2755,6 +3028,14 @@ function buildRuntimeUserMessageContent(input: AgentRunInput): UserMessage["cont
   return images.length
     ? [{ type: "text", text: buildRuntimeUserPrompt(input) }, ...images]
     : buildRuntimeUserPrompt(input);
+}
+
+function buildLongPlotTurnUserMessageContent(
+  input: AgentRunInput
+): UserMessage["content"] {
+  const text = buildLongPlotTurnUserPrompt(input);
+  const images = imageContentBlocks(input);
+  return images.length ? [{ type: "text", text }, ...images] : text;
 }
 
 /** @internal Exported for prompt-content regression tests. */

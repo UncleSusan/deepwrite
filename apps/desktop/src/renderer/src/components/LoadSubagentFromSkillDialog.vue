@@ -7,8 +7,8 @@ import {
   type SkillStageId,
   type SubagentAuthoringDraft,
   type SubagentAuthoringOutputMode,
+  type SubagentAuthoringParentAgentId,
   type SubagentAuthoringRuntimeContext,
-  type ShortWorkspaceAgentId
 } from "@deepwrite/contracts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { uiMessage } from "../ui-feedback";
@@ -26,7 +26,7 @@ export interface SubagentAuthoringSkillOption {
 
 const props = defineProps<{
   open: boolean;
-  parentAgentId: ShortWorkspaceAgentId;
+  parentAgentId: SubagentAuthoringParentAgentId;
   parentAgentLabel: string;
   existingSubagentNames: readonly string[];
   skills: readonly SkillLibrary[];
@@ -66,10 +66,19 @@ watch(
 );
 
 function skillStageForParent(
-  parentAgentId: ShortWorkspaceAgentId
-): SkillStageId {
-  if (parentAgentId === "expert_draft_coordinator") return "draft";
-  return parentAgentId as SkillStageId;
+  parentAgentId: SubagentAuthoringParentAgentId
+): SkillStageId | null {
+  if (parentAgentId === "expert_draft_coordinator" || parentAgentId === "draft") {
+    return "draft";
+  }
+  if (
+    parentAgentId === "character_design" ||
+    parentAgentId === "plot_design" ||
+    parentAgentId === "expert_section_writer"
+  ) {
+    return parentAgentId;
+  }
+  return null;
 }
 
 const skillOptions = computed<SubagentAuthoringSkillOption[]>(() => {
@@ -78,7 +87,9 @@ const skillOptions = computed<SubagentAuthoringSkillOption[]>(() => {
   for (const library of props.skills) {
     for (const entry of library.entries) {
       if (!entry.body.trim()) continue;
-      if (!showAllStages.value && entry.stageId !== preferredStage) continue;
+      if (preferredStage && !showAllStages.value && entry.stageId !== preferredStage) {
+        continue;
+      }
       options.push({
         id: `skill:${library.id}:${entry.id}`,
         libraryId: library.id,
@@ -183,7 +194,7 @@ watch(
   (open) => {
     if (!open) return;
     selectedSkillIds.value = [];
-    showAllStages.value = false;
+    showAllStages.value = skillStageForParent(props.parentAgentId) === null;
     outputMode.value = "handoff";
     modelId.value =
       (props.preferredModelId &&

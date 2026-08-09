@@ -109,12 +109,10 @@ const selectedSkillIds = reactive<Record<SkillKind, string>>({
 });
 const titleInput = ref<HTMLInputElement | null>(null);
 
-const workspaceMaterials = computed(() =>
-  props.materials.filter((material) => material.materialType === workspaceType.value)
-);
-const workspaceSkills = computed(() =>
-  props.skills.filter((skill) => skill.skillType === workspaceType.value)
-);
+// Library type is retained in persisted manifests for backwards compatibility,
+// but short stories, scripts, and long-form books all bind from one shared pool.
+const workspaceMaterials = computed(() => props.materials);
+const workspaceSkills = computed(() => props.skills);
 const materialById = computed(
   () => new Map(workspaceMaterials.value.map((material) => [material.id, material] as const))
 );

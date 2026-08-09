@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, type BigIntStats } from "node:fs";
 import {
   lstat,
   mkdir,
@@ -23,6 +23,7 @@ import {
   LONG_BOOK_LINE_FILE_ID,
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
+  DEFAULT_LONG_CHARACTER_TYPES,
   LONG_WORKSPACE_INDEX_FILE_ID,
   LONG_WORKSPACE_INDEX_PATH,
   LongBookIdSchema,
@@ -93,6 +94,7 @@ import {
   ProjectTransactionConflictError,
   commitProjectTransaction,
   projectTransactionContentSha256,
+  projectTransactionFileIdentity,
   recoverProjectTransaction,
   type CommitProjectTransactionInput,
   type ProjectTransactionFileOperation
@@ -108,6 +110,11 @@ import {
   type CreateWriteClawLongImportPlanOptions,
   type WriteClawLongImportPlan
 } from "./write-claw-long-import";
+import {
+  createContinuationImportPlan,
+  previewContinuationImportSource,
+  type ContinuationImportPlan
+} from "./long-continuation-import";
 
 const MANIFEST_PATH = "deepwrite.json";
 const BOOK_LINE_PATH = "long/plot/book-line.md";
@@ -189,6 +196,21 @@ export interface ImportedPortableLongBook extends CreatedLongBook {
   exportedAt: string;
 }
 
+export interface ImportContinuationLongBookInput {
+  sourcePath: string;
+  expectedFingerprint: string;
+  title: string;
+  genre: string;
+}
+
+export interface ImportedContinuationLongBook extends CreatedLongBook {
+  importedVolumeCount: number;
+  importedChapterCount: number;
+  checkpointCount: number;
+  pendingChapterCardId: string;
+  warnings: string[];
+}
+
 export interface OpenedLongBook {
   book: LongBook;
   summary: LongBookSummary;
@@ -198,6 +220,11 @@ export interface UpdateLongBookBindingsInput {
   expectedProjectRevision: number;
   linkedMaterialIdsByKind: LongProjectManifest["linkedMaterialIdsByKind"];
   linkedSkillIdsByKind: LongProjectManifest["linkedSkillIdsByKind"];
+}
+
+export interface RenameLongBookInput {
+  expectedProjectRevision: number;
+  title: string;
 }
 
 export interface ReadLongDocumentInput {
@@ -391,6 +418,26 @@ interface InitialProjectFiles {
   }>;
 }
 
+function replaceExactIdentity<T>(value: T, sourceId: string, targetId: string): T {
+  if (typeof value === "string") {
+    return (value === sourceId ? targetId : value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      replaceExactIdentity(item, sourceId, targetId)
+    ) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        replaceExactIdentity(item, sourceId, targetId)
+      ])
+    ) as T;
+  }
+  return value;
+}
+
 async function commitLongProjectTransaction(
   input: CommitProjectTransactionInput
 ) {
@@ -479,6 +526,165 @@ export class LongProjectStore {
     });
   }
 
+  async duplicateBook(
+    parentDirectory: string,
+    sourceProjectDirectory: string,
+    title: string
+  ): Promise<CreatedLongBook> {
+    const parent = await ensureSecureDirectory(
+      parentDirectory,
+      "长篇项目父目录"
+    );
+    const sourceDirectory = await secureDirectory(
+      sourceProjectDirectory,
+      "长篇项目目录"
+    );
+    return await this.runExclusive(parent, async () => {
+      const source = await this.loadProject(sourceDirectory);
+      const now = this.timestamp();
+      const bookId = LongBookIdSchema.parse(createId("longbook"));
+      const projectDirectory = join(parent, bookId);
+      await requireMissing(projectDirectory, "长篇项目目录已存在。");
+      const stagingDirectory = join(
+        parent,
+        `.${bookId}.staging-${randomHex8()}`
+      );
+      await requireMissing(stagingDirectory, "长篇项目暂存目录已存在。");
+      await mkdir(stagingDirectory, { mode: 0o700 });
+
+      try {
+        const index = LongWorkspaceIndexSnapshotSchema.parse(
+          replaceExactIdentity(
+            structuredClone(source.index),
+            source.book.id,
+            bookId
+          )
+        );
+        index.updatedAt = now;
+        const operations: Array<{
+          path: string;
+          content: string;
+          expectedSha256: null;
+        }> = [];
+        const records: LongLedgerCommitRecord[] = [];
+
+        for (const slot of indexedFileSlots(source.index)) {
+          const disk = await readSecureTextFile(
+            source.projectDirectory,
+            slot.reference.path,
+            slot.kind === "json"
+              ? MAX_LEDGER_RECORD_BYTES
+              : MAX_DOCUMENT_BYTES
+          );
+          if (slot.kind === "json") {
+            const sourceRecord = LongLedgerCommitRecordSchema.parse(
+              parseJson(disk.content, `长篇账本 ${slot.reference.id}`)
+            );
+            const record = LongLedgerCommitRecordSchema.parse({
+              ...replaceExactIdentity(
+                structuredClone(sourceRecord),
+                source.book.id,
+                bookId
+              ),
+              reversible: false
+            });
+            const content = serializeJson(record);
+            const entry = index.ledger.commits.find(
+              (candidate) => candidate.id === record.id
+            );
+            if (!entry) {
+              throw new Error(`长篇副本缺少账本索引：${record.id}。`);
+            }
+            entry.reversible = false;
+            entry.recordFile = LongWorkspaceFileReferenceSchema.parse({
+              ...entry.recordFile,
+              revision: createLongFileRevision(content),
+              updatedAt: now
+            });
+            records.push(record);
+            operations.push({
+              path: entry.recordFile.path,
+              content,
+              expectedSha256: null
+            });
+          } else {
+            operations.push({
+              path: slot.reference.path,
+              content: disk.content,
+              expectedSha256: null
+            });
+          }
+        }
+
+        const validatedIndex = LongWorkspaceIndexSnapshotSchema.parse(index);
+        for (const record of records) {
+          const entry = validatedIndex.ledger.commits.find(
+            (candidate) => candidate.id === record.id
+          );
+          if (!entry) throw new Error(`长篇副本缺少账本索引：${record.id}。`);
+          const content = operations.find(
+            (operation) => operation.path === entry.recordFile.path
+          )?.content;
+          assertLongLedgerRecordMatchesIndex(
+            validatedIndex,
+            entry,
+            record,
+            content
+          );
+        }
+        assertLongLedgerRecordChain(validatedIndex, records);
+
+        const indexContent = serializeJson(validatedIndex);
+        const manifest = LongProjectManifestSchema.parse({
+          ...replaceExactIdentity(
+            structuredClone(source.manifest),
+            source.book.id,
+            bookId
+          ),
+          id: bookId,
+          title,
+          createdAt: now,
+          updatedAt: now,
+          workspaceIndexFile: {
+            ...source.manifest.workspaceIndexFile,
+            revision: createLongFileRevision(indexContent),
+            updatedAt: now
+          }
+        });
+        operations.push(
+          {
+            path: LONG_WORKSPACE_INDEX_PATH,
+            content: indexContent,
+            expectedSha256: null
+          },
+          {
+            path: MANIFEST_PATH,
+            content: serializeJson(manifest),
+            expectedSha256: null
+          }
+        );
+
+        await commitLongProjectTransaction({
+          projectRoot: stagingDirectory,
+          operations,
+          maxFileBytes: MAX_LEDGER_RECORD_BYTES
+        });
+        await this.loadProject(stagingDirectory);
+        await requireMissing(projectDirectory, "长篇项目目录已存在。");
+        await rename(stagingDirectory, projectDirectory);
+        const loaded = await this.loadProject(projectDirectory);
+        return {
+          projectDirectory: loaded.projectDirectory,
+          book: loaded.book,
+          summary: loaded.summary
+        };
+      } catch (error: unknown) {
+        await rm(stagingDirectory, { recursive: true, force: true });
+        throw error;
+      }
+    });
+  }
+
   async importWriteClawBook(
     parentDirectory: string,
     sourcePath: string,
@@ -548,6 +754,33 @@ export class LongProjectStore {
     });
   }
 
+  async previewContinuationImport(sourcePath: string) {
+    return await previewContinuationImportSource(sourcePath);
+  }
+
+  async importContinuationBook(
+    parentDirectory: string,
+    input: ImportContinuationLongBookInput
+  ): Promise<ImportedContinuationLongBook> {
+    const parent = await ensureSecureDirectory(
+      parentDirectory,
+      "长篇项目父目录"
+    );
+    return await this.runExclusive(parent, async () => {
+      const plan = await createContinuationImportPlan(
+        {
+          parentDirectory: parent,
+          sourcePath: input.sourcePath,
+          expectedFingerprint: input.expectedFingerprint,
+          title: input.title,
+          genre: input.genre
+        },
+        this.timestamp()
+      );
+      return await this.commitContinuationImportPlan(parent, plan);
+    });
+  }
+
   async importPortableBundle(
     parentDirectory: string,
     sourcePath: string
@@ -612,6 +845,62 @@ export class LongProjectStore {
     });
   }
 
+  private async commitContinuationImportPlan(
+    parentDirectory: string,
+    plan: ContinuationImportPlan
+  ): Promise<ImportedContinuationLongBook> {
+    const manifest = LongProjectManifestSchema.parse(plan.manifest);
+    const index = LongWorkspaceIndexSnapshotSchema.parse(plan.index);
+    const projectDirectory = join(parentDirectory, manifest.id);
+    await requireMissing(projectDirectory, "长篇项目目录已存在。");
+    const stagingDirectory = join(
+      parentDirectory,
+      `.${manifest.id}.staging-${randomHex8()}`
+    );
+    await requireMissing(stagingDirectory, "长篇项目暂存目录已存在。");
+    await mkdir(stagingDirectory, { mode: 0o700 });
+    try {
+      await commitLongProjectTransaction({
+        projectRoot: stagingDirectory,
+        operations: [
+          ...plan.documents.map((document) => ({
+            path: document.path,
+            content: document.content,
+            expectedSha256: null as null
+          })),
+          {
+            path: LONG_WORKSPACE_INDEX_PATH,
+            content: serializeJson(index),
+            expectedSha256: null
+          },
+          {
+            path: MANIFEST_PATH,
+            content: serializeJson(manifest),
+            expectedSha256: null
+          }
+        ],
+        maxFileBytes: MAX_LEDGER_RECORD_BYTES
+      });
+      await this.loadProject(stagingDirectory);
+      await requireMissing(projectDirectory, "长篇项目目录已存在。");
+      await rename(stagingDirectory, projectDirectory);
+      const loaded = await this.loadProject(projectDirectory);
+      return {
+        projectDirectory: loaded.projectDirectory,
+        book: loaded.book,
+        summary: loaded.summary,
+        importedVolumeCount: plan.importedVolumeCount,
+        importedChapterCount: plan.importedChapterCount,
+        checkpointCount: plan.checkpointCount,
+        pendingChapterCardId: plan.pendingChapterCardId,
+        warnings: [...plan.warnings]
+      };
+    } catch (error: unknown) {
+      await rm(stagingDirectory, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
   async openBook(projectDirectory: string): Promise<OpenedLongBook> {
     const canonical = await secureDirectory(projectDirectory, "长篇项目目录");
     return await this.runExclusive(canonical, async () => {
@@ -670,6 +959,70 @@ export class LongProjectStore {
         revision: loaded.manifest.revision + 1,
         linkedMaterialIdsByKind: input.linkedMaterialIdsByKind,
         linkedSkillIdsByKind: input.linkedSkillIdsByKind,
+        updatedAt: timestamp,
+        workspaceIndexFile: {
+          ...loaded.manifest.workspaceIndexFile,
+          revision: createLongFileRevision(indexContent),
+          updatedAt: timestamp
+        }
+      });
+      try {
+        await commitLongProjectTransaction({
+          projectRoot: loaded.projectDirectory,
+          operations: [
+            {
+              path: LONG_WORKSPACE_INDEX_PATH,
+              content: indexContent,
+              expectedSha256: loaded.indexDisk.sha256
+            },
+            {
+              path: MANIFEST_PATH,
+              content: serializeJson(nextManifest),
+              expectedSha256: loaded.manifestDisk.sha256
+            }
+          ],
+          maxFileBytes: MAX_LEDGER_RECORD_BYTES
+        });
+      } catch (error: unknown) {
+        if (error instanceof ProjectTransactionConflictError) {
+          throw new LongProjectConflictError(
+            "transaction",
+            error.expectedSha256 ?? "missing",
+            error.actualSha256 ?? "missing"
+          );
+        }
+        throw error;
+      }
+      const next = await this.loadProject(loaded.projectDirectory);
+      return { book: next.book, summary: next.summary };
+    });
+  }
+
+  async renameBook(
+    projectDirectory: string,
+    input: RenameLongBookInput
+  ): Promise<OpenedLongBook> {
+    const canonical = await secureDirectory(projectDirectory, "长篇项目目录");
+    return await this.runExclusive(canonical, async () => {
+      const loaded = await this.loadProject(canonical);
+      if (input.expectedProjectRevision !== loaded.manifest.revision) {
+        throw new LongProjectConflictError(
+          "project",
+          input.expectedProjectRevision,
+          loaded.manifest.revision
+        );
+      }
+      const timestamp = this.timestamp();
+      const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+        ...loaded.index,
+        revision: loaded.index.revision + 1,
+        updatedAt: timestamp
+      });
+      const indexContent = serializeJson(nextIndex);
+      const nextManifest = LongProjectManifestSchema.parse({
+        ...loaded.manifest,
+        title: input.title,
+        revision: loaded.manifest.revision + 1,
         updatedAt: timestamp,
         workspaceIndexFile: {
           ...loaded.manifest.workspaceIndexFile,
@@ -992,6 +1345,7 @@ export class LongProjectStore {
       const nextFileRevision = createLongFileRevision(nextBytes);
       file.reference.revision = nextFileRevision;
       file.reference.updatedAt = timestamp;
+      updateChapterBodyStatus(loaded.index, file.reference.id, input.content);
 
       const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
         ...loaded.index,
@@ -1183,6 +1537,7 @@ export class LongProjectStore {
         intent.file.updatedAt = nextIndex.updatedAt;
         nextFile.revision = actualRevision;
         nextFile.updatedAt = nextIndex.updatedAt;
+        updateChapterBodyStatus(nextIndex, nextFile.id, content);
         fileOperations.push({
           path: intent.file.path,
           content,
@@ -1244,6 +1599,7 @@ export class LongProjectStore {
             `长篇索引未包含文档提案的实际 revision：${proposal.fileId}`
           );
         }
+        updateChapterBodyStatus(nextIndex, nextFile.id, content);
         fileOperations.push({
           path: current.reference.path,
           content,
@@ -1330,18 +1686,19 @@ export class LongProjectStore {
           loaded.index.revision
         );
       }
-      const orderedChapters = orderedChapterCards(loaded.index);
-      const nextChapter =
-        orderedChapters[loaded.index.ledger.commits.length];
-      if (!nextChapter || nextChapter.id !== input.chapterCardId) {
-        throw new Error("长篇正文必须按尚未提交的连续下一章串行写作。");
-      }
       const entry = loaded.index.chapters.find(
         (candidate) =>
           candidate.chapterCardId === input.chapterCardId
       );
-      if (!entry || entry.commitId !== null) {
-        throw new Error("当前长篇章卡不存在或已经提交。");
+      if (!entry) {
+        throw new Error("当前长篇章卡不存在。");
+      }
+      const nextChapter = firstEmptyChapter(loaded.index);
+      if (
+        entry.bodyStatus === "empty" &&
+        (!nextChapter || nextChapter.id !== input.chapterCardId)
+      ) {
+        throw new Error("长篇首次写作不能跨过前面的空白章节。");
       }
       const [bodyFile, characterStateFile, handoffFile] = await Promise.all([
         loadIndexedFile(loaded, entry.body.id),
@@ -1384,6 +1741,7 @@ export class LongProjectStore {
         );
         write.file.reference.updatedAt = timestamp;
       }
+      entry.bodyStatus = input.body.content.trim() ? "written" : "empty";
       const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
         ...loaded.index,
         revision: loaded.index.revision + 1,
@@ -1471,17 +1829,14 @@ export class LongProjectStore {
       const existingPinnedChecks =
         await assertPinnedSetIntegrity(loaded);
 
-      const orderedChapters = orderedChapterCards(loaded.index);
-      const nextChapter =
-        orderedChapters[loaded.index.ledger.commits.length];
-      if (!nextChapter || nextChapter.id !== input.chapterCardId) {
-        throw new Error("长篇连续性提交必须覆盖尚未提交的连续下一章。");
-      }
       const chapterEntry = loaded.index.chapters.find(
         ({ chapterCardId }) => chapterCardId === input.chapterCardId
       );
       if (!chapterEntry || chapterEntry.commitId !== null) {
-        throw new Error("当前长篇章卡不存在或已经提交。");
+        throw new Error("当前长篇章卡不存在或已经有连续性记录。");
+      }
+      if (chapterEntry.bodyStatus !== "written") {
+        throw new Error("只有正文已经完成的章节才能创建连续性记录。");
       }
       if (input.mode === "text_files") {
         return await this.commitTextFilesChapter(
@@ -1576,6 +1931,11 @@ export class LongProjectStore {
           );
         })
       );
+      const foreshadowingIdByBeatId = new Map(
+        loaded.index.plot.foreshadowing.flatMap((thread) =>
+          thread.beats.map((beat) => [beat.id, thread.id] as const)
+        )
+      );
       assertExactDecisionIds(
         "伏笔节拍",
         beats.map(({ id }) => id),
@@ -1653,7 +2013,9 @@ export class LongProjectStore {
       const foreshadowingBeatChanges: LongLedgerCommitRecord["foreshadowingBeatChanges"] =
         beats.map((beat) => {
           const decision = input.foreshadowingBeatDecisions[beat.id]!;
+          const foreshadowingId = foreshadowingIdByBeatId.get(beat.id)!;
           const change = {
+            foreshadowingId,
             beatId: beat.id,
             before: {
               status: beat.status,
@@ -1869,7 +2231,8 @@ export class LongProjectStore {
         schemaVersion: usesTypedContinuity ? 3 : 2,
         id: commitId,
         bookId: loaded.manifest.id,
-        sequence: loaded.index.ledger.commits.length + 1,
+        sequence:
+          (loaded.index.ledger.commits.at(-1)?.sequence ?? 0) + 1,
         chapterCardId: input.chapterCardId,
         committedAt: timestamp,
         commitMessage: input.commitMessage,
@@ -1881,7 +2244,10 @@ export class LongProjectStore {
         committedProjectRevision: loaded.manifest.revision + 1,
         previousCommittedThroughChapterId:
           loaded.index.ledger.committedThroughChapterId,
-        committedThroughChapterId: input.chapterCardId,
+        committedThroughChapterId: contiguousRecordedThrough(
+          loaded.index,
+          input.chapterCardId
+        ),
         previousChapterCommitId: chapterEntry.commitId,
         placementChanges,
         foreshadowingBeatChanges,
@@ -1910,7 +2276,7 @@ export class LongProjectStore {
       };
       chapterEntry.commitId = commitId;
       loaded.index.ledger.committedThroughChapterId =
-        input.chapterCardId;
+        record.committedThroughChapterId;
       loaded.index.ledger.projection = continuityUpdate.projection;
       loaded.index.ledger.commits.push({
         id: commitId,
@@ -2012,10 +2378,42 @@ export class LongProjectStore {
       throw new Error("提交章节前必须完成章节正文。");
     }
 
+    const placements = loaded.index.plot.narrativePlacements.filter(
+      ({ chapterCardId }) => chapterCardId === input.chapterCardId
+    );
+    const placementById = new Map(
+      loaded.index.plot.narrativePlacements.map((placement) => [
+        placement.id,
+        placement
+      ])
+    );
+    const beats = loaded.index.plot.foreshadowing.flatMap((thread) =>
+      thread.beats.filter((beat) => {
+        const placement =
+          beat.placementId === null
+            ? undefined
+            : placementById.get(beat.placementId);
+        return (
+          (beat.chapterCardId ?? placement?.chapterCardId ?? null) ===
+          input.chapterCardId
+        );
+      })
+    );
+    const foreshadowingIdByBeatId = new Map(
+      loaded.index.plot.foreshadowing.flatMap((thread) =>
+        thread.beats.map((beat) => [beat.id, thread.id] as const)
+      )
+    );
+    assertExactDecisionIds(
+      "伏笔触点",
+      beats.map(({ id }) => id),
+      Object.keys(input.foreshadowingBeatDecisions)
+    );
+
     const continuityReferences = [
       chapterEntry.characterState,
       chapterEntry.handoff,
-      chapterEntry.foreshadowingChanges,
+      ...(beats.length > 0 ? [chapterEntry.foreshadowingChanges] : []),
       ...(chapterEntry.worldReveals ? [chapterEntry.worldReveals] : []),
       ...chapterEntry.characterContinuity.flatMap((entry) => [
         entry.currentState,
@@ -2035,7 +2433,9 @@ export class LongProjectStore {
       )
     ) {
       throw new Error(
-        "连续性提交必须精确引用本章的章末状态、接续包、伏笔变化以及已创建的世界观和人物记录文件。"
+        `连续性提交必须精确引用本章的章末状态、接续包${
+          beats.length > 0 ? "、既有伏笔触点变化" : ""
+        }以及已创建的世界观和人物记录文件。`
       );
     }
     const continuityFiles = await Promise.all(
@@ -2069,15 +2469,8 @@ export class LongProjectStore {
 
     const commitId = createId("commit");
     const timestamp = this.timestamp();
-    // Text-file continuity deliberately does not ask the agent to manufacture
-    // a second set of structured decisions. The workspace still requires all
-    // execution anchors in a committed chapter to be finalized and indexed by
-    // that chapter commit, so finalize those bookkeeping fields here as part
-    // of the same atomic transaction. This also gives rollback the exact
-    // before/after values it needs.
-    const placements = loaded.index.plot.narrativePlacements.filter(
-      ({ chapterCardId }) => chapterCardId === input.chapterCardId
-    );
+    // 叙事落点仍随章节归档；伏笔触点则必须由连续性智能体依据正文
+    // 逐项给出 committed / missed 和证据，不能再按章节挂载关系自动判定。
     const placementChanges: LongLedgerCommitRecord["placementChanges"] =
       placements.map((placement) => {
         const change = {
@@ -2096,37 +2489,22 @@ export class LongProjectStore {
         placement.commitId = commitId;
         return change;
       });
-    const placementById = new Map(
-      loaded.index.plot.narrativePlacements.map((placement) => [
-        placement.id,
-        placement
-      ])
-    );
-    const beats = loaded.index.plot.foreshadowing.flatMap((thread) =>
-      thread.beats.filter((beat) => {
-        const placement =
-          beat.placementId === null
-            ? undefined
-            : placementById.get(beat.placementId);
-        return (
-          (beat.chapterCardId ?? placement?.chapterCardId ?? null) ===
-          input.chapterCardId
-        );
-      })
-    );
     const foreshadowingBeatChanges: LongLedgerCommitRecord["foreshadowingBeatChanges"] =
       beats.map((beat) => {
+        const decision = input.foreshadowingBeatDecisions[beat.id]!;
+        const foreshadowingId = foreshadowingIdByBeatId.get(beat.id)!;
         const change = {
+          foreshadowingId,
           beatId: beat.id,
           before: {
             status: beat.status,
             commitId: beat.commitId
           },
           after: {
-            status: "committed" as const,
+            status: decision.status,
             commitId
           },
-          note: ""
+          note: decision.note
         };
         beat.status = change.after.status;
         beat.commitId = commitId;
@@ -2152,7 +2530,8 @@ export class LongProjectStore {
       schemaVersion: 4,
       id: commitId,
       bookId: loaded.manifest.id,
-      sequence: loaded.index.ledger.commits.length + 1,
+      sequence:
+        (loaded.index.ledger.commits.at(-1)?.sequence ?? 0) + 1,
       chapterCardId: input.chapterCardId,
       committedAt: timestamp,
       commitMessage: input.commitMessage,
@@ -2163,7 +2542,10 @@ export class LongProjectStore {
       committedProjectRevision: loaded.manifest.revision + 1,
       previousCommittedThroughChapterId:
         loaded.index.ledger.committedThroughChapterId,
-      committedThroughChapterId: input.chapterCardId,
+      committedThroughChapterId: contiguousRecordedThrough(
+        loaded.index,
+        input.chapterCardId
+      ),
       previousChapterCommitId: chapterEntry.commitId,
       placementChanges,
       foreshadowingBeatChanges,
@@ -2184,7 +2566,8 @@ export class LongProjectStore {
     };
 
     chapterEntry.commitId = commitId;
-    loaded.index.ledger.committedThroughChapterId = input.chapterCardId;
+    loaded.index.ledger.committedThroughChapterId =
+      record.committedThroughChapterId;
     loaded.index.ledger.commits.push({
       id: commitId,
       mode: "text_files",
@@ -2680,11 +3063,17 @@ export class LongProjectStore {
       bookId,
       updatedAt: timestamp,
       bookLine: file(LONG_BOOK_LINE_FILE_ID, BOOK_LINE_PATH),
+      featureSettings: {
+        worldbuildingItemLayout: "right-list",
+        characterAndContinuityItemLayout: "right-list",
+        plotItemLayout: "right-list"
+      },
       worldbuilding,
       characterOverview: file(
         LONG_CHARACTER_OVERVIEW_FILE_ID,
         LONG_CHARACTER_OVERVIEW_PATH
       ),
+      characterTypes: structuredClone(DEFAULT_LONG_CHARACTER_TYPES),
       characters: [],
       characterFiles: [],
       plot: {
@@ -2695,7 +3084,7 @@ export class LongProjectStore {
           {
             id: arcId,
             volumeId,
-            title: "第一剧情弧线",
+            title: "第一剧情点",
             order: 1,
             outline: ""
           }
@@ -2834,6 +3223,28 @@ export class LongProjectStore {
       throw new Error("长篇 manifest 中的索引 revision 与实际文件不一致。");
     }
     const rawIndex = parseJson(indexDisk.content, "长篇工作区索引");
+    if (
+      await migrateLegacyCharacterTypes({
+        projectDirectory,
+        manifest,
+        manifestDisk,
+        indexDisk,
+        rawIndex
+      })
+    ) {
+      return await this.loadProject(projectDirectory);
+    }
+    if (
+      await migrateLegacyChapterBodyStatus({
+        projectDirectory,
+        manifest,
+        manifestDisk,
+        indexDisk,
+        rawIndex
+      })
+    ) {
+      return await this.loadProject(projectDirectory);
+    }
     if (
       await migrateLegacyWorldbuildingStorage({
         projectDirectory,
@@ -3034,6 +3445,40 @@ function orderedChapterCards(index: LongWorkspaceIndexSnapshot) {
   );
 }
 
+function firstEmptyChapter(index: LongWorkspaceIndexSnapshot) {
+  return orderedChapterCards(index).find((chapter) =>
+    index.chapters.some(
+      (entry) =>
+        entry.chapterCardId === chapter.id && entry.bodyStatus === "empty"
+    )
+  );
+}
+
+function contiguousRecordedThrough(
+  index: LongWorkspaceIndexSnapshot,
+  additionalChapterId?: string
+): string | null {
+  const recorded = new Set(
+    index.ledger.commits.map(({ chapterCardId }) => chapterCardId)
+  );
+  if (additionalChapterId) recorded.add(additionalChapterId);
+  let through: string | null = null;
+  for (const chapter of orderedChapterCards(index)) {
+    if (!recorded.has(chapter.id)) break;
+    through = chapter.id;
+  }
+  return through;
+}
+
+function updateChapterBodyStatus(
+  index: LongWorkspaceIndexSnapshot,
+  fileId: string,
+  content: string
+): void {
+  const chapter = index.chapters.find(({ body }) => body.id === fileId);
+  if (chapter) chapter.bodyStatus = content.trim() ? "written" : "empty";
+}
+
 function assertProjectRevisions(
   loaded: LoadedLongProject,
   expectedWorkspaceRevision: number,
@@ -3160,8 +3605,14 @@ function assertMutableChapterDocument(
         ))
   );
   if (committedChapter) {
+    if (
+      committedChapter.body.id === fileId ||
+      committedChapter.card.id === fileId
+    ) {
+      return;
+    }
     throw new Error(
-      "已提交章节的正文、角色状态和交接摘要不可直接编辑；请先回滚最后一次连续性提交。"
+      "已提交章节仅正文和章卡支持精修；连续性资料不可直接编辑，请先回滚最后一次连续性提交。"
     );
   }
 }
@@ -3183,19 +3634,6 @@ function assertDirectlyMutableDocument(
     throw new Error("只读迁移证据不能修改。");
   }
   assertMutableChapterDocument(index, fileId);
-  if (
-    index.ledger.commits.some(({ mode }) => mode === "structured") &&
-    index.characterFiles.some(
-      (entry) =>
-        entry.relationships.id === fileId ||
-        entry.currentState.id === fileId ||
-        entry.history.id === fileId
-    )
-  ) {
-    throw new Error(
-      "旧版结构化连续性提交仍在使用，人物关系、当前状态和历史轨迹需由旧版连续性账本更新。"
-    );
-  }
 }
 
 function continuityFactKey(
@@ -5596,6 +6034,108 @@ async function migrateLegacyWorldbuildingStorage(input: {
   return true;
 }
 
+async function migrateLegacyChapterBodyStatus(input: {
+  projectDirectory: string;
+  manifest: LongProjectManifest;
+  manifestDisk: SecureTextFile;
+  indexDisk: SecureTextFile;
+  rawIndex: unknown;
+}): Promise<boolean> {
+  const rawIndex = unknownRecord(input.rawIndex);
+  if (!rawIndex || !Array.isArray(rawIndex.chapters)) return false;
+  const rawChapters = rawIndex.chapters.map(unknownRecord);
+  if (
+    rawChapters.every(
+      (chapter) => chapter?.bodyStatus === "empty" || chapter?.bodyStatus === "written"
+    )
+  ) {
+    return false;
+  }
+  const parsed = LongWorkspaceIndexSnapshotSchema.parse(rawIndex);
+  for (const chapter of parsed.chapters) {
+    const disk = await readSecureTextFile(
+      input.projectDirectory,
+      chapter.body.path,
+      MAX_DOCUMENT_BYTES
+    );
+    if (
+      !longRevisionsMatchContent(
+        chapter.body.revision,
+        disk.revision,
+        disk.bytes
+      )
+    ) {
+      throw new Error(`章节正文 revision 与实际文件不一致：${chapter.chapterCardId}。`);
+    }
+    chapter.bodyStatus = disk.content.trim() ? "written" : "empty";
+  }
+  const indexContent = serializeJson(parsed);
+  const nextManifest = LongProjectManifestSchema.parse({
+    ...input.manifest,
+    workspaceIndexFile: {
+      ...input.manifest.workspaceIndexFile,
+      revision: createLongFileRevision(indexContent)
+    }
+  });
+  await commitLongProjectTransaction({
+    projectRoot: input.projectDirectory,
+    operations: [
+      {
+        path: LONG_WORKSPACE_INDEX_PATH,
+        content: indexContent,
+        expectedSha256: input.indexDisk.sha256
+      },
+      {
+        path: MANIFEST_PATH,
+        content: serializeJson(nextManifest),
+        expectedSha256: input.manifestDisk.sha256
+      }
+    ],
+    maxFileBytes: MAX_LEDGER_RECORD_BYTES
+  });
+  return true;
+}
+
+async function migrateLegacyCharacterTypes(input: {
+  projectDirectory: string;
+  manifest: LongProjectManifest;
+  manifestDisk: SecureTextFile;
+  indexDisk: SecureTextFile;
+  rawIndex: unknown;
+}): Promise<boolean> {
+  const rawIndex = unknownRecord(input.rawIndex);
+  if (!rawIndex || rawIndex.characterTypes !== undefined) return false;
+  const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    characterTypes: structuredClone(DEFAULT_LONG_CHARACTER_TYPES)
+  });
+  const indexContent = serializeJson(nextIndex);
+  const nextManifest = LongProjectManifestSchema.parse({
+    ...input.manifest,
+    workspaceIndexFile: {
+      ...input.manifest.workspaceIndexFile,
+      revision: createLongFileRevision(indexContent)
+    }
+  });
+  await commitLongProjectTransaction({
+    projectRoot: input.projectDirectory,
+    operations: [
+      {
+        path: LONG_WORKSPACE_INDEX_PATH,
+        content: indexContent,
+        expectedSha256: input.indexDisk.sha256
+      },
+      {
+        path: MANIFEST_PATH,
+        content: serializeJson(nextManifest),
+        expectedSha256: input.manifestDisk.sha256
+      }
+    ],
+    maxFileBytes: MAX_LEDGER_RECORD_BYTES
+  });
+  return true;
+}
+
 async function migrateLegacyCharacterOverviewStorage(input: {
   projectDirectory: string;
   manifest: LongProjectManifest;
@@ -5912,7 +6452,7 @@ async function readSecureTextFile(
     sha256: projectTransactionContentSha256(bytes),
     revision: createLongFileRevision(bytes),
     updatedAt: info.mtime.toISOString(),
-    identity: `${info.dev}:${info.ino}`,
+    identity: projectTransactionFileIdentity(info),
     size: Number(info.size),
     mtimeMs: Number(info.mtimeMs),
     ctimeMs: Number(info.ctimeMs)
@@ -5942,13 +6482,17 @@ async function secureTextFileMetadataMatches(
     throw error;
   }
   try {
-    const info = await handle.stat();
-    if (!info.isFile() || info.nlink > 1 || info.size > maxBytes) {
+    const info = await handle.stat({ bigint: true });
+    if (
+      !info.isFile() ||
+      info.nlink !== 1n ||
+      info.size > BigInt(maxBytes)
+    ) {
       return false;
     }
     const canonical = await realpath(target);
     assertContained(projectDirectory, canonical);
-    const pathInfo = await lstat(target);
+    const pathInfo = await lstat(target, { bigint: true });
     if (
       pathInfo.isSymbolicLink() ||
       pathInfo.dev !== info.dev ||
@@ -5957,7 +6501,7 @@ async function secureTextFileMetadataMatches(
       return false;
     }
     return (
-      `${info.dev}:${info.ino}` === cached.identity &&
+      projectTransactionFileIdentity(info) === cached.identity &&
       Number(info.size) === cached.size &&
       Number(info.mtimeMs) === cached.mtimeMs &&
       Number(info.ctimeMs) === cached.ctimeMs
@@ -5974,7 +6518,7 @@ async function readNoFollowFile(
   containingRoot?: string
 ): Promise<{
   bytes: Buffer;
-  info: Awaited<ReturnType<typeof lstat>>;
+  info: BigIntStats;
 }> {
   let handle: Awaited<ReturnType<typeof open>>;
   try {
@@ -5993,16 +6537,16 @@ async function readNoFollowFile(
     throw error;
   }
   try {
-    const info = await handle.stat();
-    if (!info.isFile() || info.nlink > 1) {
+    const info = await handle.stat({ bigint: true });
+    if (!info.isFile() || info.nlink !== 1n) {
       throw new Error(`${label}必须是无硬链接的普通文件。`);
     }
-    if (info.size > maxBytes) {
+    if (info.size > BigInt(maxBytes)) {
       throw new Error(`${label}超过大小限制。`);
     }
     const canonical = await realpath(path);
     if (containingRoot) assertContained(containingRoot, canonical);
-    const pathInfo = await lstat(path);
+    const pathInfo = await lstat(path, { bigint: true });
     if (
       pathInfo.isSymbolicLink() ||
       pathInfo.dev !== info.dev ||
@@ -6011,11 +6555,12 @@ async function readNoFollowFile(
       throw new Error(`${label}在读取期间发生替换。`);
     }
     const bytes = await handle.readFile();
-    const after = await handle.stat();
+    const after = await handle.stat({ bigint: true });
     if (
       after.dev !== info.dev ||
       after.ino !== info.ino ||
-      after.size !== bytes.byteLength ||
+      after.nlink !== 1n ||
+      after.size !== BigInt(bytes.byteLength) ||
       bytes.byteLength > maxBytes
     ) {
       throw new Error(`${label}在读取期间发生变化。`);

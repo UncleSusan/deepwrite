@@ -1,11 +1,13 @@
 import {
   EMPTY_LONG_MARKDOWN_REVISION,
+  DEFAULT_LONG_CHARACTER_TYPES,
   type DeepWriteApi,
   type LongArcId,
   type LongBookSummary,
   type LongChapterCardId,
   type LongCharacterGroup,
   type LongCharacterId,
+  type LongCharacterType,
   type LongFileId,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceFileReference,
@@ -37,19 +39,12 @@ export type LongContinuityView =
   | "knowledge"
   | "history";
 
-export const LONG_CHARACTER_GROUP_OPTIONS: ReadonlyArray<{
-  value: LongCharacterGroup;
-  label: string;
-}> = [
-  { value: "protagonist", label: "主角" },
-  { value: "major_supporting", label: "主要配角" },
-  { value: "minor_supporting", label: "次要配角" },
-  { value: "passerby", label: "路人" }
-];
-
-export function longCharacterGroupLabel(group: LongCharacterGroup): string {
+export function longCharacterGroupLabel(
+  group: LongCharacterGroup,
+  characterTypes: readonly LongCharacterType[] = DEFAULT_LONG_CHARACTER_TYPES
+): string {
   return (
-    LONG_CHARACTER_GROUP_OPTIONS.find(({ value }) => value === group)?.label ??
+    characterTypes.find(({ id }) => id === group)?.title ??
     group
   );
 }
@@ -183,24 +178,17 @@ export function nextWritableLongChapterId(
       left.narrativeOrder - right.narrativeOrder ||
       left.id.localeCompare(right.id)
   );
-  const candidate = ordered[workspaceIndex.ledger.commits.length];
-  if (!candidate) return null;
-  const entry = workspaceIndex.chapters.find(
-    ({ chapterCardId }) => chapterCardId === candidate.id
+  return (
+    ordered.find((candidate) =>
+      workspaceIndex.chapters.some(
+        ({ chapterCardId, bodyStatus }) =>
+          chapterCardId === candidate.id && bodyStatus === "empty"
+      )
+    )?.id ?? null
   );
-  return entry?.commitId === null ? candidate.id : null;
 }
 
 type LongChapterFileEntry = LongWorkspaceIndexSnapshot["chapters"][number];
-
-function orderedLongLedgerCommits(
-  workspaceIndex: LongWorkspaceIndexSnapshot
-) {
-  return [...workspaceIndex.ledger.commits].sort(
-    (left, right) =>
-      right.sequence - left.sequence || right.id.localeCompare(left.id)
-  );
-}
 
 /**
  * Resolves the newest committed chapter whose continuity outputs are
@@ -212,7 +200,28 @@ export function latestCommittedContinuityChapter(
   workspaceIndex: LongWorkspaceIndexSnapshot,
   predicate: (chapter: LongChapterFileEntry) => boolean = () => true
 ): LongChapterFileEntry | undefined {
-  for (const commit of orderedLongLedgerCommits(workspaceIndex)) {
+  const volumeOrder = new Map(
+    workspaceIndex.plot.volumes.map(({ id, order }) => [id, order])
+  );
+  const chapterOrder = new Map(
+    [...workspaceIndex.plot.chapterCards]
+      .sort(
+        (left, right) =>
+          (volumeOrder.get(left.volumeId) ?? Number.MAX_SAFE_INTEGER) -
+            (volumeOrder.get(right.volumeId) ?? Number.MAX_SAFE_INTEGER) ||
+          left.narrativeOrder - right.narrativeOrder ||
+          left.id.localeCompare(right.id)
+      )
+      .map(({ id }, order) => [id, order])
+  );
+  const commits = [...workspaceIndex.ledger.commits].sort(
+    (left, right) =>
+      (chapterOrder.get(right.chapterCardId) ?? -1) -
+        (chapterOrder.get(left.chapterCardId) ?? -1) ||
+      right.sequence - left.sequence ||
+      right.id.localeCompare(left.id)
+  );
+  for (const commit of commits) {
     const chapter = workspaceIndex.chapters.find(
       (entry) =>
         entry.commitId === commit.id ||
@@ -230,29 +239,10 @@ export function latestCommittedContinuityChapter(
   return undefined;
 }
 
-function hasLegacyStructuredCommit(
-  workspaceIndex: LongWorkspaceIndexSnapshot
-): boolean {
-  return workspaceIndex.ledger.commits.some(
-    ({ mode }) => mode !== "text_files"
-  );
-}
-
 function characterDesignSelectionFiles(
   workspaceIndex: LongWorkspaceIndexSnapshot,
   entry: LongWorkspaceIndexSnapshot["characterFiles"][number]
 ): LongWorkspaceSelectionFile[] {
-  const mappedChapter = latestCommittedContinuityChapter(
-    workspaceIndex,
-    (chapter) =>
-      (chapter.characterContinuity ?? []).some(
-        ({ characterId }) => characterId === entry.characterId
-      )
-  );
-  const mappedContinuity = mappedChapter?.characterContinuity.find(
-    ({ characterId }) => characterId === entry.characterId
-  );
-  const legacyLocked = hasLegacyStructuredCommit(workspaceIndex);
   return [
     {
       role: "core-profile",
@@ -262,20 +252,17 @@ function characterDesignSelectionFiles(
     {
       role: "relationships",
       label: "人物关系",
-      file: entry.relationships,
-      ...(legacyLocked ? { readOnly: true } : {})
+      file: entry.relationships
     },
     {
       role: "current-state",
       label: "当前状态",
-      file: mappedContinuity?.currentState ?? entry.currentState,
-      ...(mappedContinuity || legacyLocked ? { readOnly: true } : {})
+      file: entry.currentState
     },
     {
       role: "history",
       label: "历史轨迹",
-      file: mappedContinuity?.history ?? entry.history,
-      ...(mappedContinuity || legacyLocked ? { readOnly: true } : {})
+      file: entry.history
     }
   ];
 }
@@ -309,7 +296,10 @@ export function createLongCharacterGroupSelection(
   group: LongCharacterGroup,
   preferredCharacterId?: LongCharacterId
 ): LongWorkspaceSelection {
-  const groupLabel = longCharacterGroupLabel(group);
+  const groupLabel = longCharacterGroupLabel(
+    group,
+    workspaceIndex.characterTypes
+  );
   const characters = summary.navigation.characters
     .filter((character) => character.group === group)
     .sort(
@@ -358,7 +348,6 @@ export function createLongCharacterGroupSelection(
         ({ characterId }) => characterId === character.id
       )
   );
-  const legacyLocked = hasLegacyStructuredCommit(workspaceIndex);
   return {
     ...baseSelection,
     characterId: character.id,
@@ -371,10 +360,8 @@ export function createLongCharacterGroupSelection(
     ],
     files: characterDesignSelectionFiles(workspaceIndex, entry),
     description: latestMappedChapter
-      ? "当前状态与历史轨迹映射最近一次包含该人物的章节记录；核心档案与人物关系仍是设计文件。"
-      : legacyLocked
-        ? "旧版结构化连续性提交仍锁定人物关系、当前状态与历史轨迹；核心档案可编辑。"
-        : "尚无该人物的按章连续性记录；当前显示人物设计文件。"
+      ? "人物设计文件可继续编辑；按章连续性记录仅作为只读参考。"
+      : "尚无该人物的按章连续性记录；当前显示可编辑的人物设计文件。"
   };
 }
 
@@ -538,13 +525,12 @@ export function createLongChapterCardVolumeSelection(
       {
         role: "card",
         label: "章卡内容",
-        file: entry.card,
-        ...(committed ? { readOnly: true } : {})
+        file: entry.card
       }
     ],
     preferredRole: "card",
     description: committed
-      ? `${volume.title} · ${chapterCard.title}；章卡已提交并锁定。`
+      ? `${volume.title} · ${chapterCard.title}；已有连续性记录，章卡仍可自由修改。`
       : `${volume.title} · ${chapterCard.title}`
   };
 }
@@ -581,8 +567,7 @@ export function createLongChapterSelection(
       {
         role: "body",
         label: "正文",
-        file: entry.body,
-        ...(committed ? { readOnly: true } : {})
+        file: entry.body
       },
       {
         role: "character-state",
@@ -599,10 +584,12 @@ export function createLongChapterSelection(
     ],
     preferredRole: "body",
     description: committed
-      ? "本章已提交并锁定；如需修改，请先回滚最后一次连续性提交。"
-      : nextWritable === chapter.id
-        ? "这是连续下一章；单章写手只写正文，章末状态和接续包将在连续性入账时生成。"
-        : "本章尚未提交，但不是连续下一章；可手工编辑，自动写作需先完成前文章节。"
+      ? "本章已有连续性记录；记录仅供参考，正文仍可继续修改。"
+      : entry.bodyStatus === "written"
+        ? "本章正文已完成，可继续修改或按需补充连续性记录。"
+        : nextWritable === chapter.id
+          ? "这是连续下一张空白章卡，可启动单章写作。"
+          : "本章仍为空白；自动写作需先完成前面的空白章节。"
   };
 }
 
@@ -629,7 +616,11 @@ export function createLongContinuitySelection(
     return undefined;
   }
   const committed = entry.commitId !== null;
-  if (!committed && nextWritableLongChapterId(workspaceIndex) !== chapterCardId) {
+  const commit = committed
+    ? workspaceIndex.ledger.commits.find(({ id }) => id === entry.commitId)
+    : undefined;
+  const importCheckpoint = commit?.mode === "import_checkpoint";
+  if (!committed && entry.bodyStatus !== "written") {
     return undefined;
   }
   const characterNameById = new Map(
@@ -679,8 +670,9 @@ export function createLongContinuitySelection(
         file: entry.body,
         readOnly: true
       },
-      ...characterContinuityFiles,
+      ...(importCheckpoint ? [] : characterContinuityFiles),
       ...(entry.worldReveals
+        && !importCheckpoint
         ? [
             {
               role: "world-reveals" as const,
@@ -690,33 +682,42 @@ export function createLongContinuitySelection(
             }
           ]
         : []),
-      ...(entry.foreshadowingChanges
-        ? [
+      ...(
+        !importCheckpoint && entry.foreshadowingChanges.revision !==
+        EMPTY_LONG_MARKDOWN_REVISION
+          ? [
+              {
+                role: "foreshadowing-changes" as const,
+                label: "伏笔变化",
+                file: entry.foreshadowingChanges,
+                readOnly: true
+              }
+            ]
+          : []
+      ),
+      ...(importCheckpoint
+        ? []
+        : [
             {
-              role: "foreshadowing-changes" as const,
-              label: "伏笔变化",
-              file: entry.foreshadowingChanges,
+              role: "character-state" as const,
+              label: "章末状态",
+              file: entry.characterState,
+              readOnly: true
+            },
+            {
+              role: "handoff" as const,
+              label: "接续包",
+              file: entry.handoff,
               readOnly: true
             }
-          ]
-        : []),
-      {
-        role: "character-state",
-        label: "章末状态",
-        file: entry.characterState,
-        readOnly: true
-      },
-      {
-        role: "handoff",
-        label: "接续包",
-        file: entry.handoff,
-        readOnly: true
-      }
+          ])
     ],
     preferredRole: "body",
-    description: committed
-      ? "按章保留正文证据、人物状态与历史、世界观揭露、伏笔变化、章末状态和接续包。"
-      : "待处理章节；连续性阶段只生成并留存本章对应的 Markdown 状态文件。"
+    description: importCheckpoint
+      ? "续写导入检查点仅表示历史正文已封存，不代表已经生成连续性事实、章末状态或接续包。"
+      : committed
+      ? "按章保留正文证据、人物状态与历史、世界观揭露、既有伏笔触点变化、章末状态和接续包。"
+      : "待处理章节；伏笔只核验总览中已关联本章的既有触点，没有候选时不生成伏笔记录。"
   };
 }
 
@@ -760,25 +761,13 @@ export function reconcileLongWorkspaceSelection(
     };
   }
   if (selection.key === "plot-design:foreshadowing") {
-    const mappedChapter = latestCommittedContinuityChapter(workspaceIndex);
     return {
       ...selection,
       title: "伏笔总览",
       breadcrumbs: [summary.title, "剧情设计", "伏笔总览"],
-      files: mappedChapter
-        ? [
-            {
-              role: "foreshadowing-changes",
-              label: "最新伏笔变化",
-              file: mappedChapter.foreshadowingChanges,
-              readOnly: true
-            }
-          ]
-        : [],
-      preferredRole: "foreshadowing-changes",
-      description: mappedChapter
-        ? "只读映射最近一次已提交章节记录中的伏笔变化。"
-        : "尚无已提交的按章伏笔变化记录。"
+      files: [],
+      preferredRole: "book-line",
+      description: "维护全书伏笔线及其埋设、推进、揭示与回收触点。"
     };
   }
   if (selection.key.startsWith("plot-design:plot-points:")) {
@@ -887,14 +876,14 @@ export function reconcileLongWorkspaceSelection(
   }
   if (selection.key.startsWith("character-group:")) {
     const groupId = selection.key.slice("character-group:".length);
-    const group = LONG_CHARACTER_GROUP_OPTIONS.find(
-      ({ value }) => value === groupId
+    const group = workspaceIndex.characterTypes.find(
+      ({ id }) => id === groupId
     );
     if (!group) return undefined;
     return createLongCharacterGroupSelection(
       summary,
       workspaceIndex,
-      group.value,
+      group.id,
       selection.characterId
     );
   }
@@ -915,8 +904,10 @@ export function reconcileLongWorkspaceSelection(
             mappedCharacterId === character.id
         )
     );
-    const legacyLocked = hasLegacyStructuredCommit(workspaceIndex);
-    const groupLabel = longCharacterGroupLabel(character.group);
+    const groupLabel = longCharacterGroupLabel(
+      character.group,
+      workspaceIndex.characterTypes
+    );
     return {
       ...selection,
       title: character.name,
@@ -928,10 +919,8 @@ export function reconcileLongWorkspaceSelection(
       ],
       files: characterDesignSelectionFiles(workspaceIndex, entry),
       description: latestMappedChapter
-        ? "当前状态与历史轨迹映射最近一次包含该人物的章节记录；核心档案与人物关系仍是设计文件。"
-        : legacyLocked
-          ? "旧版结构化连续性提交仍锁定人物关系、当前状态与历史轨迹；核心档案可编辑。"
-          : "尚无该人物的按章连续性记录；当前显示人物设计文件。"
+        ? "人物设计文件可继续编辑；按章连续性记录仅作为只读参考。"
+        : "尚无该人物的按章连续性记录；当前显示可编辑的人物设计文件。"
     };
   }
   if (selection.key.startsWith("ledger:")) {

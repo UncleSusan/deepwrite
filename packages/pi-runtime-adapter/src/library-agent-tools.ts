@@ -2,6 +2,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 import {
   LIBRARY_AGENT_ENTRY_MAX_CHARACTERS,
+  LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS,
   MATERIAL_STAGE_IDS,
   SKILL_STAGE_IDS,
   createShortWorkspaceContentRevision,
@@ -22,6 +23,18 @@ type LibraryDomain = LibraryAgentDomain;
 
 export type LibraryAgentToolDetails =
   | { kind: "none" }
+  | {
+      kind: "library-overview-mutation";
+      operation: "edit-overview";
+      domain: LibraryDomain;
+      libraryId: string;
+      documentId: string;
+      title: string;
+      text: string;
+      baseRevision: string;
+      baseProjectRevision?: number;
+      summary: string;
+    }
   | {
       kind: "library-entry-mutation";
       operation: "create";
@@ -63,7 +76,8 @@ export const LIBRARY_AGENT_TOOL_MANIFEST = {
     "search_material_entries",
     "load_skill",
     "create_material_entry",
-    "edit_material_entry"
+    "edit_material_entry",
+    "edit_material_library_overview"
   ],
   skill: [
     "list_skill_entries",
@@ -71,7 +85,8 @@ export const LIBRARY_AGENT_TOOL_MANIFEST = {
     "search_skill_entries",
     "load_skill",
     "create_skill_entry",
-    "edit_skill_entry"
+    "edit_skill_entry",
+    "edit_skill_library_overview"
   ]
 } as const;
 
@@ -110,6 +125,11 @@ interface LibraryWorkspaceShape {
   isReadOnly?: boolean;
   projectRevision?: number;
   baseProjectRevision?: number;
+  overview?: string;
+  overviewDocumentId?: string;
+  overviewRevision?: string;
+  overviewTruncated?: boolean;
+  overviewOriginalLength?: number;
   omittedEntryCount?: number;
   allowedStageIds?: readonly string[];
   stageIds?: readonly string[];
@@ -139,6 +159,14 @@ interface MutableLibraryEntry {
   sourceLibraryId: string;
   sourceLibraryTitle: string;
   isCurrentLibrary: boolean;
+}
+
+interface MutableLibraryOverview {
+  documentId: string;
+  content: string;
+  revision: string;
+  truncated: boolean;
+  originalLength?: number;
 }
 
 const MATERIAL_STAGE_LABELS: Record<string, string> = {
@@ -439,6 +467,26 @@ function mutableEntries(
   });
 }
 
+function mutableOverview(
+  workspace: LibraryAgentWorkspaceSnapshot
+): MutableLibraryOverview {
+  const value = workspaceShape(workspace);
+  const content = String(value.overview ?? "");
+  return {
+    documentId:
+      String(value.overviewDocumentId ?? "").trim() ||
+      `library:${workspaceDomain(workspace)}:${libraryId(workspace)}:overview`,
+    content,
+    revision:
+      String(value.overviewRevision ?? "").trim() ||
+      createShortWorkspaceContentRevision(content),
+    truncated: value.overviewTruncated === true,
+    ...(value.overviewOriginalLength === undefined
+      ? {}
+      : { originalLength: value.overviewOriginalLength })
+  };
+}
+
 function formatEntryChoice(domain: LibraryDomain, entry: MutableLibraryEntry): string {
   const libraryPart = entry.isCurrentLibrary
     ? ""
@@ -566,6 +614,31 @@ function mutationResult(
         entryId: entry.entryId,
         documentId: entry.documentId
       });
+}
+
+function overviewMutationResult(
+  input: BuildLibraryAgentToolsInput,
+  domain: LibraryDomain,
+  overview: MutableLibraryOverview,
+  baseRevision: string,
+  summary: string
+): AgentToolResult<LibraryAgentToolDetails> {
+  const finalizedSummary = approvalSummary(summary, input.writeApprovalMode);
+  const projectRevision = libraryProjectRevision(input.workspace);
+  return textResult(finalizedSummary, {
+    kind: "library-overview-mutation",
+    operation: "edit-overview",
+    domain,
+    libraryId: libraryId(input.workspace),
+    documentId: overview.documentId,
+    title: `${libraryTitle(input.workspace)} · ${domain === "skill" ? "库说明" : "库介绍"}`,
+    text: overview.content,
+    baseRevision,
+    ...(projectRevision === undefined
+      ? {}
+      : { baseProjectRevision: projectRevision }),
+    summary: finalizedSummary
+  });
 }
 
 function buildListTool(
@@ -1034,6 +1107,128 @@ function buildEditTool(
   });
 }
 
+function buildEditOverviewTool(
+  input: BuildLibraryAgentToolsInput,
+  domain: LibraryDomain,
+  overview: MutableLibraryOverview
+): AgentTool {
+  const noun = domain === "material" ? "素材库介绍" : "技能库说明";
+  return defineTool({
+    name: "edit_" + domain + "_library_overview",
+    label: "编辑" + noun,
+    description:
+      "编辑当前" +
+      noun +
+      "。局部修改用 replace_fragments，追加用 append，明确整篇覆盖才用 replace；只提交待审阅变更。",
+    parameters: Type.Object({
+      mode: Type.Union([
+        Type.Literal("replace_fragments"),
+        Type.Literal("append"),
+        Type.Literal("replace")
+      ]),
+      body: Type.Optional(
+        Type.String({ maxLength: LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS })
+      ),
+      allow_overwrite_existing: Type.Optional(Type.Boolean()),
+      replacements: Type.Optional(
+        Type.Array(
+          Type.Object({
+            original_text: Type.String({
+              minLength: 1,
+              maxLength: MAX_ORIGINAL_FRAGMENT_CHARACTERS
+            }),
+            new_text: Type.String({ maxLength: MAX_NEW_FRAGMENT_CHARACTERS })
+          }),
+          { minItems: 1, maxItems: MAX_REPLACEMENTS }
+        )
+      )
+    }),
+    execute: async (_toolCallId, params) => {
+      if (overview.truncated) {
+        const lengthDetail =
+          overview.originalLength === undefined
+            ? ""
+            : "（原文 " +
+              overview.originalLength.toLocaleString("zh-CN") +
+              " 字）";
+        return textResult(
+          "未修改：当前" +
+            noun +
+            "超过本轮安全快照上限" +
+            lengthDetail +
+            "，无法在看不到完整原文时写入。"
+        );
+      }
+
+      const baseRevision = overview.revision;
+      const previousContent = overview.content;
+      const mode = String(params.mode) as
+        | "replace_fragments"
+        | "append"
+        | "replace";
+      let nextContent = previousContent;
+      let changeDescription = "更新";
+      if (mode === "replace_fragments") {
+        const replacements = (params.replacements ?? []) as TextReplacement[];
+        const result = replaceFragments(previousContent, replacements);
+        if (result.error || result.text === undefined) {
+          return textResult("未修改：" + (result.error ?? "未知错误"));
+        }
+        nextContent = result.text;
+        changeDescription = result.count + " 处局部替换";
+      } else if (params.body !== undefined) {
+        const body = String(params.body).trim();
+        if (mode === "append") {
+          if (!body) return textResult("未修改：append 模式的 body 不能为空。");
+          const separator = previousContent.length === 0
+            ? ""
+            : previousContent.endsWith("\n")
+              ? "\n"
+              : "\n\n";
+          nextContent = previousContent + separator + body;
+          changeDescription = "正文追加";
+        } else {
+          if (
+            previousContent.trim() &&
+            params.allow_overwrite_existing !== true
+          ) {
+            return textResult(
+              "未覆盖：库介绍已有正文。只有用户明确要求覆盖全文时，才可设置 allow_overwrite_existing=true；普通修改请使用 replace_fragments。"
+            );
+          }
+          nextContent = body;
+          changeDescription = "全文覆盖";
+        }
+      } else {
+        return textResult("未修改：" + mode + " 模式需要提供 body。");
+      }
+
+      if (nextContent === previousContent) {
+        return textResult("库介绍没有实际变化，无需提交修改。");
+      }
+      if (nextContent.length > LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS) {
+        return textResult(
+          "未修改：变更后正文共 " +
+            nextContent.length.toLocaleString("zh-CN") +
+            " 个字符，超过库介绍上限 " +
+            LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS.toLocaleString("zh-CN") +
+            "。"
+        );
+      }
+      overview.content = nextContent;
+      overview.revision = createShortWorkspaceContentRevision(nextContent);
+      return overviewMutationResult(
+        input,
+        domain,
+        overview,
+        baseRevision,
+        "已生成" + noun + "的" + changeDescription + "变更，等待用户审阅。"
+      );
+    },
+    executionMode: "sequential"
+  });
+}
+
 function buildLoadSkillTool(input: BuildLibraryAgentToolsInput): AgentTool {
   const configuredNames = new Set(input.profile.readAccess.skills.map((skill) => skill.name));
   return defineTool({
@@ -1069,6 +1264,7 @@ export function buildLibraryAgentTools(
   }
   const libraries = readableLibraries(input.workspace);
   const entries = mutableEntries(input.workspace, readOnly);
+  const overview = mutableOverview(input.workspace);
   const readStages = [
     ...new Set(
       [
@@ -1089,12 +1285,17 @@ export function buildLibraryAgentTools(
     : [
         ...readTools,
         buildCreateTool(input, domain, entries, writeStages, accessedEntryIds),
-        buildEditTool(input, domain, entries, readStages, accessedEntryIds)
+        buildEditTool(input, domain, entries, readStages, accessedEntryIds),
+        buildEditOverviewTool(input, domain, overview)
       ];
 }
 
 export function isLibraryAgentToolDetails(value: unknown): value is LibraryAgentToolDetails {
   if (!value || typeof value !== "object" || !("kind" in value)) return false;
   const kind = (value as { kind?: unknown }).kind;
-  return kind === "none" || kind === "library-entry-mutation";
+  return (
+    kind === "none" ||
+    kind === "library-entry-mutation" ||
+    kind === "library-overview-mutation"
+  );
 }

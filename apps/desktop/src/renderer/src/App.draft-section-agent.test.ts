@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import source from "./App.vue?raw";
 
 describe("App agent chapter-file creation", () => {
+  it("keeps shared draft conversations out of per-section cleanup", () => {
+    expect(source).toContain("function legacyDraftSectionConversationKeys(");
+    expect(source).toContain(
+      "`${workspaceId}:expert_draft_coordinator:${suffix}`"
+    );
+    expect(source).toContain(
+      "`${workspaceId}:expert_section_writer:${suffix}`"
+    );
+    expect(source).toContain(
+      "for (const key of legacyDraftSectionConversationKeys(bookId, sectionId))"
+    );
+    expect(source).not.toContain("function draftSectionConversationKeys(");
+  });
+
   it("stages one structural proposal and atomically persists its chapters", () => {
     expect(source).toContain(
       'mutationTarget?.kind === "expert-draft-section-creation"'

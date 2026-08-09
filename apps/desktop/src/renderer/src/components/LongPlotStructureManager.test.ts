@@ -121,14 +121,11 @@ describe("LongPlotStructureManager", () => {
     expect(source).toContain('@keydown.esc.stop="closeDelete"');
   });
 
-  it("locks a foreshadowing truth event once any beat is committed", () => {
-    expect(source).toContain("const hasCommittedBeat = thread.beats.some(");
-    expect(source).toContain(
-      "if (hasCommittedBeat && thread.truthEventId)"
-    );
-    expect(source).toContain("ids.add(thread.truthEventId)");
-    expect(source).toContain("editLocked: committedEventIds.value.has(event.id)");
-    expect(source).toContain("deleteLocked: committedEventIds.value.has(event.id)");
+  it("does not lock plot entities after continuity recording", () => {
+    expect(source).toContain("editLocked: false");
+    expect(source).toContain("deleteLocked: false");
+    expect(source).toContain("reorderLocked: false");
+    expect(source).not.toContain("committedEventIds");
   });
 
   it("uses direct tabs to switch narrative structure types", () => {

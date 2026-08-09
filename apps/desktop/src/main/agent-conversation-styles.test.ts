@@ -21,4 +21,18 @@ describe("AgentConversation diff styles", () => {
     expect(codeRule).toMatch(/white-space:\s*pre-wrap/);
     expect(codeRule).toMatch(/overflow-wrap:\s*anywhere/);
   });
+
+  it("keeps first-entry long-workspace layout changes out of transitions", () => {
+    const transitionSuppressionRule = cssRule(
+      ".desktop-shell.is-pane-transition-suppressed"
+    );
+    const editorLoadingRule = cssRule(
+      ".long-workspace-editor-loading-state"
+    );
+
+    expect(transitionSuppressionRule).toMatch(/transition:\s*none/);
+    expect(editorLoadingRule).toMatch(/grid-column:\s*2/);
+    expect(editorLoadingRule).toMatch(/min-width:\s*0/);
+    expect(editorLoadingRule).toMatch(/min-height:\s*0/);
+  });
 });

@@ -7,6 +7,10 @@ describe("App remote alerts", () => {
     expect(source).toContain("await api.get()");
     expect(source).toContain("官方模型已经上线！直连厂商！软件整体用量越多，折扣会越大！");
     expect(source).toContain(':model-alert-messages="modelAlertMessages"');
+    expect(source).toContain('@open-official-models="openOfficialModelsSettings"');
+    expect(source).toContain('void openSettings("official-models")');
+    expect(source).toContain('if (initialCategory === "official-models")');
+    expect(source).toContain("void loadOfficialModels();");
   });
 
   it("shows unseen desktop content and acknowledges it when dismissed", () => {

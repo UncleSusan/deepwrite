@@ -140,7 +140,9 @@ interface WritingWorkspaceSnapshot {
   id: ShortWorkspaceSnapshot["id"];
   title: ShortWorkspaceSnapshot["title"];
   activeStageId: ShortWorkspaceStageId;
-  activeAgentId?: ShortWorkspaceSnapshot["activeAgentId"];
+  activeAgentId?:
+    | ShortWorkspaceSnapshot["activeAgentId"]
+    | ScriptWorkspaceSnapshot["activeAgentId"];
   activeSectionId?: ShortWorkspaceSnapshot["activeSectionId"];
   expertDraft: ShortWorkspaceSnapshot["expertDraft"];
   plotStages: ShortWorkspaceSnapshot["plotStages"];
@@ -149,8 +151,10 @@ interface WritingWorkspaceSnapshot {
 }
 
 interface WritingWorkspaceAgentProfile {
-  id: ShortWorkspaceAgentProfile["id"];
-  readAccess: ShortWorkspaceAgentProfile["readAccess"];
+  id: ShortWorkspaceAgentProfile["id"] | ScriptWorkspaceAgentProfile["id"];
+  readAccess:
+    | ShortWorkspaceAgentProfile["readAccess"]
+    | ScriptWorkspaceAgentProfile["readAccess"];
 }
 
 interface BuildWritingWorkspaceToolsInput {
@@ -194,12 +198,10 @@ export interface ShortWorkspaceToolSharedState {
 export type ScriptWorkspaceToolSharedState = ShortWorkspaceToolSharedState;
 
 /**
- * Draft tools are deliberately identical for the coordinator and the section
- * writer. Scope differences belong in the system prompt, except for the one
- * hard rule enforced here: a section writer may only write its active section.
+ * Every creative agent can inspect draft sections. Draft mutations remain
+ * exclusive to the unified draft coordinator.
  */
 const SHORT_WORKSPACE_DRAFT_TOOLS = [
-  "read_draft_sections",
   "write_draft_section",
   "replace_draft_section_text",
   "rename_draft_section",
@@ -215,6 +217,7 @@ export const SHORT_WORKSPACE_TOOL_MANIFEST = {
     "list_characters",
     "search_characters",
     "read_character",
+    "read_draft_sections",
     "write_workspace_editor",
     "replace_current_stage_text"
   ],
@@ -240,6 +243,81 @@ export const SHORT_WORKSPACE_TOOL_MANIFEST = {
 const DRAFT_FULL_READ_CHARACTER_BUDGET = 60_000;
 const DRAFT_FULL_READ_MAX_SECTIONS = 20;
 const DRAFT_PREVIEW_EXCERPT_CHARACTERS = 200;
+const SHORT_DOCUMENT_PAGE_DEFAULT_CHARACTERS = 32_768;
+const SHORT_DOCUMENT_PAGE_MAX_CHARACTERS = 256 * 1024;
+
+interface ShortDocumentPage {
+  content: string;
+  offset: number;
+  returnedCharacters: number;
+  totalCharacters: number;
+  nextOffset: number | null;
+}
+
+interface ShortDocumentReadCoverage {
+  contiguousEnd: number;
+  totalCharacters: number;
+}
+
+function readShortDocumentPage(
+  content: string,
+  requestedOffset: number,
+  requestedMaximum: number
+): ShortDocumentPage {
+  const offset = Math.max(0, Math.trunc(requestedOffset));
+  const maximum = Math.min(
+    SHORT_DOCUMENT_PAGE_MAX_CHARACTERS,
+    Math.max(1, Math.trunc(requestedMaximum))
+  );
+  const page: string[] = [];
+  let totalCharacters = 0;
+  let returnedCharacters = 0;
+  for (const character of content) {
+    if (
+      totalCharacters >= offset &&
+      returnedCharacters < maximum
+    ) {
+      page.push(character);
+      returnedCharacters += 1;
+    }
+    totalCharacters += 1;
+  }
+  const boundedOffset = Math.min(offset, totalCharacters);
+  const endOffset = boundedOffset + returnedCharacters;
+  return {
+    content: page.join(""),
+    offset: boundedOffset,
+    returnedCharacters,
+    totalCharacters,
+    nextOffset: endOffset < totalCharacters ? endOffset : null
+  };
+}
+
+function recordShortDocumentPage(
+  coverage: Map<string, ShortDocumentReadCoverage>,
+  documentId: string,
+  page: ShortDocumentPage
+): boolean {
+  const previous = coverage.get(documentId);
+  const contiguousEnd =
+    page.offset <= (previous?.contiguousEnd ?? 0)
+      ? Math.max(previous?.contiguousEnd ?? 0, page.offset + page.returnedCharacters)
+      : previous?.contiguousEnd ?? 0;
+  coverage.set(documentId, {
+    contiguousEnd,
+    totalCharacters: page.totalCharacters
+  });
+  return contiguousEnd >= page.totalCharacters;
+}
+
+function renderShortDocumentPageMetadata(page: ShortDocumentPage): string {
+  return [
+    `offset: ${page.offset}`,
+    `本页字符数: ${page.returnedCharacters}`,
+    `总字符数: ${page.totalCharacters}`,
+    `next_offset: ${page.nextOffset ?? "null"}`
+  ].join("\n");
+}
 
 type DraftFileKind = "body" | "characterState";
 
@@ -384,22 +462,8 @@ function storylineStageIds(
 function readableStageIds(
   input: BuildWritingWorkspaceToolsInput
 ): ShortWorkspaceStageId[] {
-  const available = new Set(
-    input.workspace.stages.map(({ stageId }) => stageId)
-  );
-  available.add("draft");
-  const targets: ShortWorkspaceStageId[] = [];
-  for (const scope of input.profile.readAccess.workspace) {
-    const stageIds =
-      scope === "plot_structure"
-        ? storylineStageIds(input)
-        : ([scope] as ShortWorkspaceStageId[]);
-    for (const stageId of stageIds) {
-      if (available.has(stageId) && !targets.includes(stageId)) {
-        targets.push(stageId);
-      }
-    }
-  }
+  const targets = input.workspace.stages.map(({ stageId }) => stageId);
+  if (!targets.includes("draft")) targets.push("draft");
   return targets;
 }
 
@@ -461,10 +525,19 @@ function buildReadWorkspaceContentTool(
   return defineTool({
     name: "read_workspace_content",
     label: "读取工作区内容",
-    description: `读取当前${workspaceKindLabel(input)}某一阶段的实时快照。仅允许：${allowed
+    description: `分页读取当前${workspaceKindLabel(input)}某一阶段的实时内容。仅允许：${allowed
       .map((stageId) => `${stageLabel(input, stageId)}(${stageId})`)
-      .join("、")}。每次只读取一个阶段。`,
-    parameters: Type.Object({ stage_id: literalUnion(allowed) }),
+      .join("、")}。每次只读取一个阶段；根据 next_offset 继续调用可读完整个文件。draft 只返回目录，章节原文使用 read_draft_sections。`,
+    parameters: Type.Object({
+      stage_id: literalUnion(allowed),
+      offset: Type.Optional(Type.Integer({ minimum: 0 })),
+      max_characters: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          maximum: SHORT_DOCUMENT_PAGE_MAX_CHARACTERS
+        })
+      )
+    }),
     execute: async (_toolCallId, params) => {
       const stageId = String(params.stage_id) as ShortWorkspaceStageId;
       if (!allowed.includes(stageId)) {
@@ -508,12 +581,20 @@ function buildReadWorkspaceContentTool(
         );
       }
       const storedBody = stageBodies.get(stageId) ?? "";
-      const snapshot = input.workspace.stages.find((stage) => stage.stageId === stageId);
-      const truncationNote = snapshot?.truncated
-        ? `\n注意：本轮只提供前 ${storedBody.length.toLocaleString("zh-CN")} 个字符，原文共 ${snapshot.originalLength?.toLocaleString("zh-CN") ?? "更多"} 个字符。`
-        : "";
+      const requestedOffset = Number(params.offset ?? 0);
+      const page = readShortDocumentPage(
+        storedBody,
+        requestedOffset,
+        Number(params.max_characters ?? SHORT_DOCUMENT_PAGE_DEFAULT_CHARACTERS)
+      );
+      if (requestedOffset > page.totalCharacters) {
+        return textResult(
+          `未读取：offset ${requestedOffset} 超过「${stageLabel(input, stageId)}」总字符数 ${page.totalCharacters}。`
+        );
+      }
       return textResult(
-        `${workspaceTitleLabel(input)}：《${input.workspace.title}》\n【${stageLabel(input, stageId)}】（${stageId}）\n本轮可读字数：${storedBody.replace(/\s/g, "").length}${truncationNote}\n\n${storedBody || "该阶段当前文本为空。"}`
+        `${workspaceTitleLabel(input)}：《${input.workspace.title}》\n【${stageLabel(input, stageId)}】（${stageId}）\n` +
+        `${renderShortDocumentPageMetadata(page)}\n\n${page.content || "该阶段当前文本为空。"}`
       );
     }
   });
@@ -598,10 +679,8 @@ function buildCharacterTools(
   stageRevisions: Map<ShortWorkspaceStageId, string>,
   sharedState: ShortWorkspaceToolSharedState
 ): AgentTool[] {
-  if (!input.profile.readAccess.workspace.includes("character_design")) {
-    return [];
-  }
   const fullyRead = new Map<string, string>();
+  const readCoverage = new Map<string, ShortDocumentReadCoverage>();
   // Older persisted session fixtures can reach the runtime without passing
   // through the latest snapshot parser. Treat an absent structure as the
   // backwards-compatible text format here as well.
@@ -727,20 +806,48 @@ function buildCharacterTools(
     defineTool({
       name: "read_character",
       label: "读取人物",
-      description: "读取人物文本。条目样式省略 item_id 读取概览，指定 item_id 读取条目；mode=full 建立后续编辑凭据。",
+      description:
+        "读取人物文本。条目样式省略 item_id 读取概览，指定 item_id 读取条目；" +
+        "mode=preview 返回首尾摘要，mode=full 分页返回正文。按 next_offset 连续读完所有页后才建立编辑凭据。",
       parameters: Type.Object({
         item_id: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-        mode: Type.Optional(Type.Union([Type.Literal("preview"), Type.Literal("full")]))
+        mode: Type.Optional(Type.Union([Type.Literal("preview"), Type.Literal("full")])),
+        offset: Type.Optional(Type.Integer({ minimum: 0 })),
+        max_characters: Type.Optional(
+          Type.Integer({
+            minimum: 1,
+            maximum: SHORT_DOCUMENT_PAGE_MAX_CHARACTERS
+          })
+        )
       }),
       execute: async (_id, params) => {
         const target = resolveTarget(params.item_id ? String(params.item_id) : undefined);
         const mode = params.mode ?? "full";
-        if (mode === "full") fullyRead.set(target.documentId, target.content);
-        const visible =
-          mode === "preview" && target.content.length > 480
-            ? `${target.content.slice(0, 240)}\n\n……\n\n${target.content.slice(-240)}`
-            : target.content;
-        return textResult(`【${target.title}】\n\n${visible || "（正文为空）"}`);
+        if (mode === "preview") {
+          const visible =
+            target.content.length > 480
+              ? `${target.content.slice(0, 240)}\n\n……\n\n${target.content.slice(-240)}`
+              : target.content;
+          return textResult(`【${target.title}】\n\n${visible || "（正文为空）"}`);
+        }
+        const requestedOffset = Number(params.offset ?? 0);
+        const page = readShortDocumentPage(
+          target.content,
+          requestedOffset,
+          Number(params.max_characters ?? SHORT_DOCUMENT_PAGE_DEFAULT_CHARACTERS)
+        );
+        if (requestedOffset > page.totalCharacters) {
+          return textResult(
+            `未读取：offset ${requestedOffset} 超过「${target.title}」总字符数 ${page.totalCharacters}。`
+          );
+        }
+        if (recordShortDocumentPage(readCoverage, target.documentId, page)) {
+          fullyRead.set(target.documentId, target.content);
+        }
+        return textResult(
+          `【${target.title}】\n${renderShortDocumentPageMetadata(page)}\n\n` +
+          `${page.content || "（正文为空）"}`
+        );
       }
     })
   ];
@@ -1212,9 +1319,7 @@ function buildReplaceStageTextTool(
 function activeExpertSectionId(
   input: BuildWritingWorkspaceToolsInput
 ): string | undefined {
-  return input.workspace.activeAgentId === "expert_section_writer"
-    ? input.workspace.activeSectionId
-    : undefined;
+  return input.workspace.activeSectionId;
 }
 
 /**
@@ -1672,27 +1777,30 @@ function renderDraftSectionFull(
   section: ExpertDraftSectionSnapshot,
   index: number,
   fields: readonly DraftFileKind[],
+  readCoverage: Map<string, ShortDocumentReadCoverage>,
   characterLimitPerFile?: number
 ): { text: string; fullyReadDocumentIds: string[] } {
   const fullyReadDocumentIds: string[] = [];
   const blocks = fields.map((field) => {
     const file = section[field];
-    const truncated =
-      characterLimitPerFile !== undefined &&
-      file.content.length > characterLimitPerFile;
-    if (!truncated) fullyReadDocumentIds.push(file.documentId);
-    const content = truncated
-      ? file.content.slice(0, characterLimitPerFile)
-      : file.content;
+    const page = readShortDocumentPage(
+      file.content,
+      0,
+      characterLimitPerFile ?? SHORT_DOCUMENT_PAGE_MAX_CHARACTERS
+    );
+    if (recordShortDocumentPage(readCoverage, file.documentId, page)) {
+      fullyReadDocumentIds.push(file.documentId);
+    }
     return [
       `${draftFileLabel(field)}文件: ${file.title}（${file.documentId}）`,
       `${draftFileLabel(field)}版本: ${file.revision}`,
+      renderShortDocumentPageMetadata(page),
       "",
-      content || `（${draftFileLabel(field)}为空）`,
-      ...(truncated
+      page.content || `（${draftFileLabel(field)}为空）`,
+      ...(page.nextOffset !== null
         ? [
             "",
-            `（该${draftFileLabel(field)}共 ${fileSizeLabel(file.content)}，本次只返回了开头部分；未完整读取的文件不能整体覆盖。）`
+            `（该${draftFileLabel(field)}尚未读完；请仅指定该 section_id 和 include=["${field === "body" ? "body" : "character_state"}"]，并用 offset=${page.nextOffset} 继续分页读取。未完整读取的文件不能整体覆盖。）`
           ]
         : [])
     ].join("\n");
@@ -1709,10 +1817,29 @@ function renderDraftSectionFull(
   };
 }
 
+function renderDraftDocumentPage(
+  section: ExpertDraftSectionSnapshot,
+  field: DraftFileKind,
+  page: ShortDocumentPage
+): string {
+  const file = section[field];
+  return [
+    `===== ${section.title} =====`,
+    `section_id: ${section.id}`,
+    `字数要求: ${section.wordCountRequirement || "未设置"}`,
+    `${draftFileLabel(field)}文件: ${file.title}（${file.documentId}）`,
+    `${draftFileLabel(field)}版本: ${file.revision}`,
+    renderShortDocumentPageMetadata(page),
+    "",
+    page.content || `（${draftFileLabel(field)}为空）`
+  ].join("\n");
+}
+
 function buildReadDraftSectionsTool(
   input: BuildWritingWorkspaceToolsInput,
   expertSections: ExpertSectionMap,
-  readExpertFileIds: Set<string>
+  readExpertFileIds: Set<string>,
+  readCoverage: Map<string, ShortDocumentReadCoverage>
 ): AgentTool {
   return defineTool({
     name: "read_draft_sections",
@@ -1721,7 +1848,8 @@ function buildReadDraftSectionsTool(
     description:
       `按 section_id 批量读取${draftContentUnitLabel(input)}文件，按目录顺序返回。` +
       "mode=preview 只返回标题、字数和首尾摘录，用于整篇扫描定位；" +
-      `mode=full 返回完整原文，单次最多 ${DRAFT_FULL_READ_MAX_SECTIONS} ${draftUnitCounter(input)}且合计不超过 ${DRAFT_FULL_READ_CHARACTER_BUDGET.toLocaleString("zh-CN")} 个字符，超出的${draftUnitLabel(input)}需要再次调用分批读取。` +
+      `mode=full 的批量读取单次最多 ${DRAFT_FULL_READ_MAX_SECTIONS} ${draftUnitCounter(input)}且合计不超过 ${DRAFT_FULL_READ_CHARACTER_BUDGET.toLocaleString("zh-CN")} 个字符。` +
+      "单个超长文件请只指定一个 section_id 和一种 include，并根据 next_offset 使用 offset、max_characters 连续分页读取。" +
       `只有被 mode=full 完整读取的文件才获得整${draftUnitCounter(input)}覆盖权限。`,
     parameters: Type.Object({
       section_ids: Type.Array(Type.String({ minLength: 1, maxLength: 120 }), {
@@ -1734,7 +1862,14 @@ function buildReadDraftSectionsTool(
           maxItems: DRAFT_FILE_PARAMETER_VALUES.length
         })
       ),
-      mode: Type.Optional(literalUnion(["full", "preview"] as const))
+      mode: Type.Optional(literalUnion(["full", "preview"] as const)),
+      offset: Type.Optional(Type.Integer({ minimum: 0 })),
+      max_characters: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          maximum: SHORT_DOCUMENT_PAGE_MAX_CHARACTERS
+        })
+      )
     }),
     execute: async (_toolCallId, params) => {
       const requested = (params.section_ids as string[])
@@ -1792,8 +1927,41 @@ function buildReadDraftSectionsTool(
         );
       }
 
+      const explicitPagination =
+        params.offset !== undefined || params.max_characters !== undefined;
+      if (explicitPagination) {
+        if (requested.length !== 1 || fields.length !== 1) {
+          return textResult(
+            "未读取：分页读取必须只指定一个 section_id，并且 include 只能包含 body 或 character_state 其中一种。"
+          );
+        }
+        const section = targets[0]!;
+        const field = fields[0]!;
+        const file = section[field];
+        const requestedOffset = Number(params.offset ?? 0);
+        const page = readShortDocumentPage(
+          file.content,
+          requestedOffset,
+          Number(params.max_characters ?? SHORT_DOCUMENT_PAGE_DEFAULT_CHARACTERS)
+        );
+        if (requestedOffset > page.totalCharacters) {
+          return textResult(
+            `未读取：offset ${requestedOffset} 超过「${section.title}」${draftFileLabel(field)}总字符数 ${page.totalCharacters}。`
+          );
+        }
+        if (recordShortDocumentPage(readCoverage, file.documentId, page)) {
+          readExpertFileIds.add(file.documentId);
+        }
+        return textResult(
+          [...header, renderDraftDocumentPage(section, field, page), ...missingNote].join(
+            "\n"
+          )
+        );
+      }
+
       const rendered: string[] = [];
       let usedCharacters = 0;
+      let fullyReadFiles = 0;
       let cutoffIndex = targets.length;
       for (const [index, section] of targets.entries()) {
         const cost = fields.reduce(
@@ -1814,12 +1982,14 @@ function buildReadDraftSectionsTool(
           section,
           index,
           fields,
+          readCoverage,
           oversizedAlone
             ? Math.floor(DRAFT_FULL_READ_CHARACTER_BUDGET / fields.length)
             : undefined
         );
         block.fullyReadDocumentIds.forEach((documentId) => {
           readExpertFileIds.add(documentId);
+          fullyReadFiles += 1;
         });
         rendered.push(block.text);
         usedCharacters += cost;
@@ -1836,7 +2006,7 @@ function buildReadDraftSectionsTool(
       return textResult(
         [
           ...header,
-          `已完整读取 ${rendered.length} ${draftUnitCounter(input)}的${fields.map(draftFileLabel).join("和")}，合计约 ${usedCharacters.toLocaleString("zh-CN")} 字符。`,
+          `本次返回 ${rendered.length} ${draftUnitCounter(input)}的${fields.map(draftFileLabel).join("和")}；已完整读取 ${fullyReadFiles} 个文件。批量内容成本约 ${usedCharacters.toLocaleString("zh-CN")} 字符。`,
           "",
           rendered.join("\n\n"),
           ...skippedNote,
@@ -1848,9 +2018,9 @@ function buildReadDraftSectionsTool(
 }
 
 /**
- * Resolves the write target shared by both draft agents. The section writer is
- * pinned to its active section because the Renderer diff/accept flow is bound
- * to the section the user selected.
+ * Resolves the write target shared by both draft agents. The short draft
+ * coordinator may receive an active section as its default target while still
+ * retaining cross-section authority.
  */
 function resolveDraftWriteTarget(
   input: BuildWritingWorkspaceToolsInput,
@@ -1864,20 +2034,6 @@ function resolveDraftWriteTarget(
     return {
       error: `未修改：当前没有选中${draftUnitLabel(input)}，请在参数中给出 section_id。`
     };
-  }
-  if (input.profile.id === "expert_section_writer") {
-    if (!active) {
-      return {
-        error: `未修改：当前没有选中可写的${draftUnitLabel(input)}。`
-      };
-    }
-    if (sectionId !== active) {
-      return {
-        error:
-          `未修改：${input.workspaceType === "script" ? "分集" : "分节"}写手只能修改当前${draftUnitLabel(input)}（${active}），不能写入 ${sectionId}。` +
-          `跨${draftUnitLabel(input)}修改请交给正文专家编写智能体。`
-      };
-    }
   }
   if (!expertSections.has(sectionId)) {
     return {
@@ -2012,33 +2168,37 @@ function buildWritingWorkspaceTools(
   // This is intentionally agent-local. A child reading a file must never grant
   // its parent permission to overwrite that file (or vice versa).
   const readExpertFileIds = new Set<string>();
+  const readExpertFileCoverage = new Map<
+    string,
+    ShortDocumentReadCoverage
+  >();
   let activeStageId = toolInput.workspace.activeStageId;
   const readTools = [
     buildReadWorkspaceContentTool(toolInput, stageBodies),
     buildSearchWorkspaceTextTool(toolInput, stageBodies, expertSections),
     buildQueryLinkedMaterialEntriesTool(toolInput),
     buildLoadSkillTool(toolInput),
-    ...buildCharacterTools(toolInput, stageBodies, stageRevisions, sharedState)
+    ...buildCharacterTools(toolInput, stageBodies, stageRevisions, sharedState),
+    buildReadDraftSectionsTool(
+      toolInput,
+      expertSections,
+      readExpertFileIds,
+      readExpertFileCoverage
+    )
   ];
 
-  if (
-    toolInput.profile.id === "expert_draft_coordinator" ||
-    toolInput.profile.id === "expert_section_writer"
-  ) {
+  if (toolInput.profile.id === "expert_draft_coordinator") {
     const draftTools = [
-      buildReadDraftSectionsTool(toolInput, expertSections, readExpertFileIds),
       buildWriteDraftSectionTool(toolInput, expertSections, readExpertFileIds),
       buildReplaceDraftSectionTextTool(toolInput, expertSections, readExpertFileIds),
       buildRenameExpertDraftSectionTool(toolInput, expertSections, sharedState),
       buildDeleteExpertDraftSectionTool(toolInput, expertSections, sharedState)
     ];
-    return toolInput.profile.id === "expert_draft_coordinator"
-      ? [
-          ...readTools,
-          buildCreateExpertDraftSectionsTool(toolInput, sharedState),
-          ...draftTools
-        ]
-      : [...readTools, ...draftTools];
+    return [
+      ...readTools,
+      buildCreateExpertDraftSectionsTool(toolInput, sharedState),
+      ...draftTools
+    ];
   }
 
   const tools = [...readTools];

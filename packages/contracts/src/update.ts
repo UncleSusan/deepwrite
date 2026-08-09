@@ -34,6 +34,7 @@ export const UpdateStatusSchema = z.enum([
   "not-available",
   "downloading",
   "downloaded",
+  "installing",
   "error",
   "unsupported"
 ]);

@@ -909,6 +909,7 @@ describe("Write Claw long-form import", () => {
     workspace.plot.story_events[0]!.character_ids.push(
       "character-reference-does-not-exist"
     );
+    workspace.plot.chapter_cards[0]!.arc_id = "arc-does-not-exist";
     workspace.plot.narrative_placements.push({
       id: "dangling-placement-search-marker",
       event_id: "event-does-not-exist",
@@ -968,6 +969,8 @@ describe("Write Claw long-form import", () => {
       "character-reference-does-not-exist"
     );
     expect(searchableEvidence).toContain("unresolved-reference");
+    expect(plan.index.plot.chapterCards[0]!.primaryArcId).toBeNull();
+    expect(plan.warnings.join("\n")).toContain("已移除该关联");
     expect(searchableEvidence).toContain('"action": "merge"');
     expect(searchableEvidence).toContain('"action": "drop"');
     expect(searchableEvidence).toContain(

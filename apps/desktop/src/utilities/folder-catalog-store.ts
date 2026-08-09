@@ -34,19 +34,27 @@ import {
   CatalogSnapshotSchema,
   CreateDraftSectionInputSchema,
   CreateLibraryInputSchema,
+  UpdateLibraryInputSchema,
   CreateLibraryGroupInputSchema,
   CreateScriptBookInputSchema,
   CreateShortBookInputSchema,
   CurrentBookProjectManifestSchema,
   DeleteDraftSectionInputSchema,
+  MoveDraftSectionInputSchema,
+  DuplicateCatalogProjectInputSchema,
   LegacyBookProjectManifestSchema,
   MutateCharacterStructureInputSchema,
   MutatePlotStructureInputSchema,
   SaveDocumentInputSchema,
   MaterialGroupProjectManifestSchema,
+  MaterialLibraryGroupSchema,
+  MaterialLibrarySchema,
   MaterialLibraryProjectManifestSchema,
   SaveLibraryEntryInputSchema,
+  MoveLibraryEntryInputSchema,
   SkillGroupProjectManifestSchema,
+  SkillLibraryGroupSchema,
+  SkillLibrarySchema,
   SkillLibraryProjectManifestSchema,
   ShortBookSchema,
   ScriptBookSchema,
@@ -78,6 +86,7 @@ import {
   type CatalogDraftRecovery,
   type CatalogSnapshot,
   type CreateLibraryInput,
+  type UpdateLibraryInput,
   type CreateLibraryGroupInput,
   type CreateScriptBookInput,
   type CreateShortBookInput,
@@ -88,6 +97,10 @@ import {
   type CurrentBookProjectManifest,
   type DeleteDraftSectionInput,
   type DeleteDraftSectionResult,
+  type MoveDraftSectionInput,
+  type MoveDraftSectionResult,
+  type DuplicateCatalogProjectInput,
+  type DuplicateCatalogProjectResult,
   type LegacyBookProjectManifest,
   type MaterialLibraryProjectManifest,
   type MaterialLibrary,
@@ -97,6 +110,8 @@ import {
   type MutateCharacterStructureInput,
   type MutatePlotStructureInput,
   type SaveLibraryEntryInput,
+  type MoveLibraryEntryInput,
+  type MoveLibraryEntryResult,
   type SaveDocumentInput,
   type ScriptBook,
   type ShortBook,
@@ -112,6 +127,8 @@ import {
 } from "@deepwrite/contracts";
 import type { ImportedLegacyBook } from "./legacy-book-import";
 import type { ImportedLegacyLibrary } from "./legacy-library-import";
+import { nextCopyTitle } from "./copy-title";
+import { projectTransactionFileIdentity } from "./project-transaction";
 
 const MANIFEST_FILE = "deepwrite.json";
 const REGISTRY_FILE = "catalog-registry.json";
@@ -283,6 +300,12 @@ export interface DeleteFolderCatalogProjectResult {
   projectId: string;
   domain: "book" | FolderCatalogLibraryDomain;
   deleted: boolean;
+}
+
+interface DuplicateProjectWritePlan {
+  domain: FolderCatalogProjectDomain;
+  parentDirectory: string;
+  resource: FolderCatalogResource;
 }
 
 export type SaveFolderDocumentInput = SaveDocumentInput;
@@ -668,6 +691,45 @@ export class FolderCatalogStore {
         projectDirectory,
         projectDomain
       )) as OpenFolderCatalogProjectResult<MaterialLibrary | SkillLibrary>;
+    });
+  }
+
+  async updateLibrary(rawInput: UpdateLibraryInput): Promise<MaterialLibrary | SkillLibrary> {
+    const input = UpdateLibraryInputSchema.parse(rawInput);
+    return await this.mutate(async () => {
+      const registry = await this.ensureRegistry();
+      const projectDirectory = await secureProjectRoot(
+        findRegistration(registry, input.libraryId, libraryProjectDomain(input.domain))
+          .projectDirectory
+      );
+      const manifest = await this.readManifest(
+        projectDirectory,
+        input.domain === "material" ? "deepwrite.material-library" : "deepwrite.skill-library",
+        input.libraryId
+      );
+      if (!input.force) assertBaseRevision(input.baseProjectRevision, manifest.revision);
+      if (manifest.kind === "deepwrite.skill-library" && manifest.isBuiltin) {
+        throw new Error("内置技能库不能修改。");
+      }
+      const now = this.now();
+      const next = manifest.kind === "deepwrite.material-library"
+        ? MaterialLibraryProjectManifestSchema.parse({
+            ...manifest,
+            title: input.title ?? manifest.title,
+            overview: input.overview ?? manifest.overview,
+            revision: manifest.revision + 1,
+            updatedAt: now
+          })
+        : SkillLibraryProjectManifestSchema.parse({
+            ...manifest,
+            title: input.title ?? manifest.title,
+            overview: input.overview ?? manifest.overview,
+            revision: manifest.revision + 1,
+            updatedAt: now
+          });
+      await atomicWriteJson(join(projectDirectory, MANIFEST_FILE), next, this.maxManifestBytes);
+      await this.bumpRegistry(registry, now);
+      return (await this.readProject(projectDirectory, libraryProjectDomain(input.domain))).resource as MaterialLibrary | SkillLibrary;
     });
   }
 
@@ -1720,6 +1782,7 @@ export class FolderCatalogStore {
       const next = {
         ...manifest,
         revision: manifest.revision + 1,
+        title: input.title ?? manifest.title,
         members: { ...input.members },
         updatedAt: now
       };
@@ -2334,6 +2397,67 @@ export class FolderCatalogStore {
     });
   }
 
+  async moveDraftSection(
+    rawInput: MoveDraftSectionInput
+  ): Promise<MoveDraftSectionResult> {
+    const input = MoveDraftSectionInputSchema.parse(rawInput);
+    return await this.mutate(async () => {
+      const registry = await this.ensureRegistry();
+      const registration = findRegistration(registry, input.bookId, "book");
+      const projectDirectory = await secureProjectRoot(registration.projectDirectory);
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        input.bookId
+      );
+      if (!input.force) {
+        assertBaseRevision(input.baseProjectRevision, manifest.revision);
+      }
+      const sections = [...manifest.draft.sections];
+      const sectionIndex = sections.findIndex(({ id }) => id === input.sectionId);
+      if (sectionIndex < 0) {
+        throw new Error("该正文小节已删除或不存在。");
+      }
+      const targetIndex = input.direction === "up" ? sectionIndex - 1 : sectionIndex + 1;
+      if (targetIndex < 0 || targetIndex >= sections.length) {
+        return {
+          bookId: input.bookId,
+          sectionId: input.sectionId,
+          direction: input.direction,
+          moved: false,
+          projectRevision: manifest.revision
+        };
+      }
+      [sections[sectionIndex], sections[targetIndex]] = [
+        sections[targetIndex]!,
+        sections[sectionIndex]!
+      ];
+      const now = this.now();
+      const next = FolderCurrentBookProjectManifestSchema.parse({
+        ...manifest,
+        revision: manifest.revision + 1,
+        updatedAt: now,
+        draft: {
+          ...manifest.draft,
+          sections,
+          updatedAt: now
+        }
+      });
+      await atomicWriteJson(
+        join(projectDirectory, MANIFEST_FILE),
+        next,
+        this.maxManifestBytes
+      );
+      await this.bumpRegistry(registry, now);
+      return {
+        bookId: input.bookId,
+        sectionId: input.sectionId,
+        direction: input.direction,
+        moved: true,
+        projectRevision: next.revision
+      };
+    });
+  }
+
   async saveLibraryEntry(
     rawInput: SaveLibraryEntryInput
   ): Promise<MaterialEntry | SkillEntry> {
@@ -2587,6 +2711,111 @@ export class FolderCatalogStore {
     });
   }
 
+  async moveLibraryEntry(
+    rawInput: MoveLibraryEntryInput
+  ): Promise<MoveLibraryEntryResult> {
+    const input = MoveLibraryEntryInputSchema.parse(rawInput);
+    return await this.mutate(async () => {
+      const registry = await this.ensureRegistry();
+      const sourceDirectory = await secureProjectRoot(
+        findRegistration(registry, input.sourceLibraryId, libraryProjectDomain(input.domain)).projectDirectory
+      );
+      const sourceManifest = await this.readManifest(
+        sourceDirectory,
+        input.domain === "material" ? "deepwrite.material-library" : "deepwrite.skill-library",
+        input.sourceLibraryId
+      );
+      const entryIndex = sourceManifest.entries.findIndex(({ id }) => id === input.entryId);
+      if (entryIndex < 0) throw new Error("要移动的资料库条目不存在。");
+      if (sourceManifest.kind === "deepwrite.skill-library" && sourceManifest.isBuiltin) {
+        throw new Error("内置技能库条目不能移动。");
+      }
+      if (!input.force) assertBaseRevision(input.sourceBaseProjectRevision, sourceManifest.revision);
+
+      const sourceEntry = sourceManifest.entries[entryIndex]!;
+      const now = this.now();
+      if (input.sourceLibraryId === input.targetLibraryId) {
+        const remaining = sourceManifest.entries.filter(({ id }) => id !== input.entryId);
+        const beforeIndex = input.beforeEntryId
+          ? remaining.findIndex(({ id }) => id === input.beforeEntryId)
+          : -1;
+        remaining.splice(beforeIndex < 0 ? remaining.length : beforeIndex, 0, sourceEntry);
+        const next = sourceManifest.kind === "deepwrite.material-library"
+          ? MaterialLibraryProjectManifestSchema.parse({ ...sourceManifest, revision: sourceManifest.revision + 1, updatedAt: now, entries: remaining })
+          : SkillLibraryProjectManifestSchema.parse({ ...sourceManifest, revision: sourceManifest.revision + 1, updatedAt: now, entries: remaining });
+        await atomicWriteJson(join(sourceDirectory, MANIFEST_FILE), next, this.maxManifestBytes);
+        await this.bumpRegistry(registry, now);
+        return { domain: input.domain, sourceLibraryId: input.sourceLibraryId, targetLibraryId: input.targetLibraryId, entryId: input.entryId };
+      }
+
+      const targetDirectory = await secureProjectRoot(
+        findRegistration(registry, input.targetLibraryId, libraryProjectDomain(input.domain)).projectDirectory
+      );
+      const targetManifest = await this.readManifest(
+        targetDirectory,
+        input.domain === "material" ? "deepwrite.material-library" : "deepwrite.skill-library",
+        input.targetLibraryId
+      );
+      if (!input.force) assertBaseRevision(input.targetBaseProjectRevision, targetManifest.revision);
+      if (targetManifest.kind === "deepwrite.skill-library" && targetManifest.isBuiltin) {
+        throw new Error("内置技能库为只读内容，不能移入条目。");
+      }
+      if (
+        (sourceManifest.kind === "deepwrite.material-library" &&
+          targetManifest.kind === "deepwrite.material-library" &&
+          sourceManifest.materialType !== targetManifest.materialType) ||
+        (sourceManifest.kind === "deepwrite.skill-library" &&
+          targetManifest.kind === "deepwrite.skill-library" &&
+          sourceManifest.skillType !== targetManifest.skillType)
+      ) {
+        throw new Error("不同创作类型的资料库条目不能直接移动。");
+      }
+      let targetStageId: MaterialStageId | undefined;
+      if (sourceManifest.kind === "deepwrite.material-library" && targetManifest.kind === "deepwrite.material-library") {
+        const materialEntry = sourceEntry as MaterialLibraryProjectManifest["entries"][number];
+        const allowed: Record<string, readonly string[]> = {
+          character: ["character"], gimmick: ["gimmick"], plot: ["pacing", "intro", "plot_refine"], draft: ["draft_excerpt"], other: ["other"], mixed: [materialEntry.stageId]
+        };
+        const selectedTargetStage = input.targetStageId ?? materialEntry.stageId;
+        targetStageId = selectedTargetStage;
+        if (sourceManifest.materialKind !== targetManifest.materialKind && input.targetStageId === undefined) {
+          throw new Error("移动到不同素材分类时，请选择目标内容阶段。");
+        }
+        if (!(allowed[targetManifest.materialKind] ?? []).includes(selectedTargetStage)) {
+          throw new Error("目标素材库分类不支持该素材条目的内容阶段。");
+        }
+      } else if (input.targetStageId !== undefined) {
+        throw new Error("只有素材条目可以调整内容阶段。");
+      }
+      if (targetManifest.entries.some(({ id }) => id === sourceEntry.id)) {
+        throw new Error("目标资料库已存在同 ID 条目，无法移动。");
+      }
+      const sourceContent = await readProjectMarkdown(sourceDirectory, sourceEntry.path, this.maxMarkdownBytes);
+      const targetPath = await uniqueRelativeMarkdownPath(
+        targetDirectory, "entries", sourceEntry.id,
+        new Set(targetManifest.entries.map((entry) => portableContentPathKey(entry.path)))
+      );
+      const targetFile = await secureWritableProjectPath(targetDirectory, targetPath);
+      const movedEntry = { ...sourceEntry, path: targetPath, updatedAt: now, ...(targetStageId === undefined ? {} : { stageId: targetStageId }) };
+      const targetEntries = [...targetManifest.entries];
+      const beforeIndex = input.beforeEntryId ? targetEntries.findIndex(({ id }) => id === input.beforeEntryId) : -1;
+      targetEntries.splice(beforeIndex < 0 ? targetEntries.length : beforeIndex, 0, movedEntry);
+      const nextTarget = targetManifest.kind === "deepwrite.material-library"
+        ? MaterialLibraryProjectManifestSchema.parse({ ...targetManifest, revision: targetManifest.revision + 1, updatedAt: now, entries: targetEntries })
+        : SkillLibraryProjectManifestSchema.parse({ ...targetManifest, revision: targetManifest.revision + 1, updatedAt: now, entries: targetEntries });
+      const nextSourceEntries = sourceManifest.entries.filter(({ id }) => id !== input.entryId);
+      const nextSource = sourceManifest.kind === "deepwrite.material-library"
+        ? MaterialLibraryProjectManifestSchema.parse({ ...sourceManifest, revision: sourceManifest.revision + 1, updatedAt: now, entries: nextSourceEntries })
+        : SkillLibraryProjectManifestSchema.parse({ ...sourceManifest, revision: sourceManifest.revision + 1, updatedAt: now, entries: nextSourceEntries });
+      await commitProjectMarkdownUpdate(targetFile, sourceContent, undefined, join(targetDirectory, MANIFEST_FILE), nextTarget, this.maxMarkdownBytes, this.maxManifestBytes);
+      await atomicWriteJson(join(sourceDirectory, MANIFEST_FILE), nextSource, this.maxManifestBytes);
+      const sourceFile = await secureExistingProjectPath(sourceDirectory, sourceEntry.path, true);
+      await unlinkOptional(sourceFile);
+      await this.bumpRegistry(registry, now);
+      return { domain: input.domain, sourceLibraryId: input.sourceLibraryId, targetLibraryId: input.targetLibraryId, entryId: input.entryId };
+    });
+  }
+
   async removeLibraryEntry(
     rawInput: RemoveFolderLibraryEntryInput
   ): Promise<RemoveFolderLibraryEntryResult> {
@@ -2752,6 +2981,214 @@ export class FolderCatalogStore {
 
       await removeEmptyOrPartialProject(stagedDeletion);
       return { projectId, domain, deleted: true };
+    });
+  }
+
+  async duplicateProject(
+    rawInput: DuplicateCatalogProjectInput
+  ): Promise<DuplicateCatalogProjectResult> {
+    const input = DuplicateCatalogProjectInputSchema.parse(rawInput);
+    return await this.mutate(async () => {
+      const registry = await this.ensureRegistry();
+      const snapshot = await this.aggregateSnapshot(registry);
+      const now = this.now();
+      const plans: DuplicateProjectWritePlan[] = [];
+      const copiedMemberLibraryIds: string[] = [];
+      const materialTitles = snapshot.materials.map(({ title }) => title);
+      const skillTitles = snapshot.skills.map(({ title }) => title);
+      let primaryResource: FolderCatalogResource;
+
+      if (input.domain === "book") {
+        const source = snapshot.books.find(({ id }) => id === input.projectId);
+        if (!source) throw new Error("未找到要复制的创作空间。");
+        const registration = findRegistration(registry, source.id, "book");
+        const title = nextCopyTitle(
+          source.title,
+          snapshot.books.map((book) => book.title)
+        );
+        primaryResource = duplicateBookResource(source, title, now);
+        plans.push({
+          domain: "book",
+          parentDirectory: dirname(registration.projectDirectory),
+          resource: primaryResource
+        });
+      } else if (input.domain === "material" || input.domain === "skill") {
+        const registryDomain = libraryProjectDomain(input.domain);
+        const libraries =
+          input.domain === "material" ? snapshot.materials : snapshot.skills;
+        const source = libraries.find(({ id }) => id === input.projectId);
+        if (!source) throw new Error("未找到要复制的资料库。");
+        const registration = findRegistration(
+          registry,
+          source.id,
+          registryDomain
+        );
+        const titlePool =
+          input.domain === "material" ? materialTitles : skillTitles;
+        const title = nextCopyTitle(source.title, titlePool);
+        primaryResource = duplicateLibraryResource(source, title, now);
+        plans.push({
+          domain: registryDomain,
+          parentDirectory:
+            input.domain === "skill" && "isBuiltin" in source && source.isBuiltin
+              ? this.defaultProjectParents["skill-library"]
+              : dirname(registration.projectDirectory),
+          resource: primaryResource
+        });
+      } else if (input.domain === "material-group") {
+        const source = snapshot.materialGroups.find(
+          ({ id }) => id === input.projectId
+        );
+        if (!source) throw new Error("未找到要复制的素材分组。");
+        const sourceGroupRegistration = findRegistration(
+          registry,
+          source.id,
+          "material-group"
+        );
+        const copiedBySourceId = new Map<string, MaterialLibrary>();
+        const members: MaterialLibraryGroup["members"] = {};
+        for (const [kind, libraryId] of Object.entries(source.members)) {
+          if (!libraryId) continue;
+          let copied = copiedBySourceId.get(libraryId);
+          if (!copied) {
+            const library = snapshot.materials.find(({ id }) => id === libraryId);
+            if (!library) {
+              throw new Error(`素材分组成员不存在或不可读取：${libraryId}`);
+            }
+            const registration = findRegistration(
+              registry,
+              library.id,
+              "material-library"
+            );
+            const title = nextCopyTitle(library.title, materialTitles);
+            materialTitles.push(title);
+            copied = duplicateLibraryResource(library, title, now);
+            copiedBySourceId.set(libraryId, copied);
+            copiedMemberLibraryIds.push(copied.id);
+            plans.push({
+              domain: "material-library",
+              parentDirectory: dirname(registration.projectDirectory),
+              resource: copied
+            });
+          }
+          members[kind as keyof MaterialLibraryGroup["members"]] = copied.id;
+        }
+        const title = nextCopyTitle(
+          source.title,
+          snapshot.materialGroups.map((group) => group.title)
+        );
+        primaryResource = MaterialLibraryGroupSchema.parse({
+          id: createCatalogId("material-group"),
+          title,
+          members,
+          createdAt: now,
+          updatedAt: now
+        });
+        plans.push({
+          domain: "material-group",
+          parentDirectory: dirname(sourceGroupRegistration.projectDirectory),
+          resource: primaryResource
+        });
+      } else {
+        const source = snapshot.skillGroups.find(
+          ({ id }) => id === input.projectId
+        );
+        if (!source) throw new Error("未找到要复制的技能分组。");
+        const sourceGroupRegistration = findRegistration(
+          registry,
+          source.id,
+          "skill-group"
+        );
+        const copiedBySourceId = new Map<string, SkillLibrary>();
+        const members: SkillLibraryGroup["members"] = {};
+        for (const [kind, libraryId] of Object.entries(source.members)) {
+          if (!libraryId) continue;
+          let copied = copiedBySourceId.get(libraryId);
+          if (!copied) {
+            const library = snapshot.skills.find(({ id }) => id === libraryId);
+            if (!library) {
+              throw new Error(`技能分组成员不存在或不可读取：${libraryId}`);
+            }
+            const registration = findRegistration(
+              registry,
+              library.id,
+              "skill-library"
+            );
+            const title = nextCopyTitle(library.title, skillTitles);
+            skillTitles.push(title);
+            copied = duplicateLibraryResource(library, title, now);
+            copiedBySourceId.set(libraryId, copied);
+            copiedMemberLibraryIds.push(copied.id);
+            plans.push({
+              domain: "skill-library",
+              parentDirectory: library.isBuiltin
+                ? this.defaultProjectParents["skill-library"]
+                : dirname(registration.projectDirectory),
+              resource: copied
+            });
+          }
+          members[kind as keyof SkillLibraryGroup["members"]] = copied.id;
+        }
+        const title = nextCopyTitle(
+          source.title,
+          snapshot.skillGroups.map((group) => group.title)
+        );
+        primaryResource = SkillLibraryGroupSchema.parse({
+          id: createCatalogId("skill-group"),
+          title,
+          members,
+          createdAt: now,
+          updatedAt: now
+        });
+        plans.push({
+          domain: "skill-group",
+          parentDirectory: dirname(sourceGroupRegistration.projectDirectory),
+          resource: primaryResource
+        });
+      }
+
+      const createdProjectDirectories: string[] = [];
+      const registrations: RegistryProject[] = [];
+      try {
+        for (const plan of plans) {
+          const projectDirectory = await this.writeNewResourceProject(
+            plan.domain,
+            plan.parentDirectory,
+            plan.resource
+          );
+          createdProjectDirectories.push(projectDirectory);
+          registrations.push({
+            id: plan.resource.id,
+            domain: plan.domain,
+            projectDirectory,
+            registeredAt: now
+          });
+        }
+        await this.writeRegistry({
+          ...registry,
+          revision: registry.revision + 1,
+          updatedAt: now,
+          projects: [...registry.projects, ...registrations]
+        });
+      } catch (error: unknown) {
+        try {
+          await cleanupNewProjectDirectories(createdProjectDirectories);
+        } catch (cleanupError: unknown) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "复制项目失败，且无法完整清理未注册副本。"
+          );
+        }
+        throw error;
+      }
+
+      return {
+        sourceProjectId: input.projectId,
+        projectId: primaryResource.id,
+        domain: input.domain,
+        title: primaryResource.title,
+        copiedMemberLibraryIds
+      };
     });
   }
 
@@ -3371,6 +3808,61 @@ export class FolderCatalogStore {
   }
 }
 
+function duplicateBookResource(
+  source: Book,
+  title: string,
+  now: string
+): Book {
+  const { projectRevision: _projectRevision, ...copyable } = source;
+  return BookSchema.parse({
+    ...structuredClone(copyable),
+    id: createCatalogId("book"),
+    title,
+    createdAt: now,
+    updatedAt: now
+  });
+}
+
+function duplicateLibraryResource(
+  source: MaterialLibrary,
+  title: string,
+  now: string
+): MaterialLibrary;
+function duplicateLibraryResource(
+  source: SkillLibrary,
+  title: string,
+  now: string
+): SkillLibrary;
+function duplicateLibraryResource(
+  source: MaterialLibrary | SkillLibrary,
+  title: string,
+  now: string
+): MaterialLibrary | SkillLibrary;
+function duplicateLibraryResource(
+  source: MaterialLibrary | SkillLibrary,
+  title: string,
+  now: string
+): MaterialLibrary | SkillLibrary {
+  const { projectRevision: _projectRevision, ...copyable } = source;
+  if ("materialType" in copyable) {
+    return MaterialLibrarySchema.parse({
+      ...structuredClone(copyable),
+      id: createCatalogId("material"),
+      title,
+      createdAt: now,
+      updatedAt: now
+    });
+  }
+  return SkillLibrarySchema.parse({
+    ...structuredClone(copyable),
+    id: createCatalogId("skill"),
+    title,
+    isBuiltin: false,
+    createdAt: now,
+    updatedAt: now
+  });
+}
+
 const DEFAULT_SHORT_DOCUMENTS = [
   ["character_design", "人物设计"],
   ["worldbuilding", "世界观"],
@@ -3907,8 +4399,8 @@ async function assertManifestContentFilesUnique(
       item.path,
       true
     );
-    const info = await stat(actualPath);
-    const identity = `${info.dev}:${info.ino}`;
+    const info = await stat(actualPath, { bigint: true });
+    const identity = projectTransactionFileIdentity(info);
     if (identities.has(identity)) {
       throw new Error(
         "Project manifest content paths must resolve to distinct files."
@@ -3952,11 +4444,6 @@ function assertBookLibraryReferences(
       if (!material) {
         throw new Error(`书籍「${book.title}」关联了不存在的素材库：${materialId}`);
       }
-      if (material.materialType !== book.bookType) {
-        throw new Error(
-          `${bookTypeLabel(book.bookType)}书籍不能关联${material.materialType}素材库：${material.title}`
-        );
-      }
       if (material.materialKind !== "mixed" && material.materialKind !== kind) {
         throw new Error(`素材库「${material.title}」不能关联到 ${kind} 分类。`);
       }
@@ -3968,20 +4455,11 @@ function assertBookLibraryReferences(
       if (!skill) {
         throw new Error(`书籍「${book.title}」绑定了不存在的技能库：${skillId}`);
       }
-      if (skill.skillType !== book.bookType) {
-        throw new Error(
-          `${bookTypeLabel(book.bookType)}书籍不能绑定${skill.skillType}技能库：${skill.title}`
-        );
-      }
       if (skill.skillKind !== kind) {
         throw new Error(`技能库「${skill.title}」不能绑定到 ${kind} 分类。`);
       }
     }
   }
-}
-
-function bookTypeLabel(bookType: Book["bookType"]): string {
-  return bookType === "script" ? "剧本" : "短篇";
 }
 
 function assertBaseRevision(

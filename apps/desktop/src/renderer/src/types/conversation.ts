@@ -75,10 +75,10 @@ export interface AgentEditProposal {
   createdAt: string;
   updatedAt: string;
   libraryTarget?: {
-    operation: "create" | "edit";
+    operation: "create" | "edit" | "edit-overview";
     domain: "material" | "skill";
     libraryId: string;
-    stageId: string;
+    stageId?: string;
     baseProjectRevision?: number;
     entryId?: string;
   };

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,18 +12,27 @@ const temporaryRoots: string[] = [];
 
 function manifest(label = "官方模型-DeepSeekFlash正式版本"): unknown {
   return {
+    balance: {
+      url: "https://www.moxing.pro/v1/balance",
+      key: "itk-mxai-test-integration-token"
+    },
     models: [
       {
         id: "deepwrite-deepseek-v4-flash",
         label,
         modelId: "deepseek-v4-flash-202605",
         api: "openai-completions",
-        baseUrl: "https://tokenhub.tencentmaas.com/v1",
+        baseUrl: "https://www.moxing.pro/v1",
         reasoning: true,
         defaultThinkingLevel: "high",
         supportsDeveloperRole: false,
         thinkingLevelOptions: ["low", "high", "max"],
-        temperatureOptions: [0.7, 1, 1.5]
+        temperatureOptions: [0.7, 1, 1.5],
+        input: 1,
+        output: 2,
+        cache: 0.02,
+        discount: 0.65,
+        status: 0
       }
     ]
   };
@@ -50,16 +59,132 @@ describe("DeepWrite official remote model manifest", () => {
         label: "官方模型-DeepSeekFlash正式版本",
         provider: "deepseek-official",
         modelId: "deepseek-v4-flash-202605",
-        baseUrl: "https://tokenhub.tencentmaas.com/v1",
+        baseUrl: "https://www.moxing.pro/v1",
         reasoning: true,
         defaultThinkingLevel: "high",
         supportsDeveloperRole: false,
         thinkingLevelOptions: ["low", "high", "max"],
         temperatureOptions: [0.7, 1, 1.5],
+        input: 1,
+        output: 2,
+        cache: 0.02,
+        discount: 0.65,
+        status: 0,
         managedBy: "deepwrite-official"
       })
     ]);
     expect(catalog.models[0]).not.toHaveProperty("requestModelId");
+    expect(catalog.balance).toEqual({
+      url: "https://www.moxing.pro/v1/account/balance",
+      key: "itk-mxai-test-integration-token"
+    });
+  });
+
+  it("queries account balance with the integration token and returns aggregate consumption", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-official-balance-"));
+    temporaryRoots.push(root);
+    const fetcher = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.includes("account/balance")) {
+        expect(input).toContain("include_keys=true");
+        expect(new Headers(init?.headers).get("Authorization")).toBe(
+          "Bearer itk-mxai-test-integration-token"
+        );
+        return new Response(JSON.stringify({
+          code: 200,
+          success: true,
+          message: "",
+          data: {
+            queried_at: "2026-07-06T18:04:00+08:00",
+            account_balance: 800000,
+            account_balance_yuan: 80,
+            key_quota_remaining: 400000,
+            key_quota_remaining_yuan: 40,
+            quota_per_unit: 10000,
+            keys: [
+              {
+                key_suffix: "a1b2",
+                unlimited: false,
+                granted_quota: 500000,
+                granted_yuan: 50,
+                remain_quota: 400000,
+                remain_yuan: 40,
+                used_quota: 100000,
+                used_yuan: 10
+              },
+              { used_quota: 50000, used_yuan: 5 }
+            ]
+          }
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify(manifest()), { status: 200 });
+    });
+    const store = new DeepWriteOfficialModelCatalogStore(root, { fetcher });
+    await store.initialize();
+    const cachedConfig = await readFile(
+      join(root, "config", "deepwrite-official-models-cache.json"),
+      "utf8"
+    );
+    expect(cachedConfig).not.toContain("itk-mxai-test-integration-token");
+
+    await expect(store.queryBalance("a1b2")).resolves.toEqual({
+      queriedAt: "2026-07-06T18:04:00+08:00",
+      accountBalance: 800000,
+      accountBalanceYuan: 80,
+      keyQuotaRemaining: 400000,
+      keyQuotaRemainingYuan: 40,
+      currentKeyRemaining: 400000,
+      currentKeyRemainingYuan: 40,
+      currentKeyGranted: 500000,
+      currentKeyGrantedYuan: 50,
+      currentKeyUsed: 100000,
+      currentKeyUsedYuan: 10,
+      currentKeyUnlimited: false,
+      usedQuota: 150000,
+      usedYuan: 15,
+      quotaPerUnit: 10000
+    });
+  });
+
+  it("keeps unavailable models in the display catalog while excluding them from defaults", () => {
+    const payload = {
+      models: [
+        {
+          id: "deepwrite-deepseek-v4-flash",
+          label: "可用模型",
+          modelId: "deepseek-v4-flash",
+          api: "openai-completions",
+          baseUrl: "https://www.moxing.pro/v1",
+          reasoning: true,
+          defaultThinkingLevel: "high",
+          supportsDeveloperRole: false,
+          thinkingLevelOptions: ["low", "high", "max"],
+          temperatureOptions: [0.7, 1, 1.5],
+          status: 0
+        },
+        {
+          id: "deepwrite-qwen3.8-max-preview",
+          label: "不可用模型",
+          modelId: "qwen3.8-max-preview",
+          api: "openai-completions",
+          baseUrl: "https://www.moxing.pro/v1",
+          reasoning: true,
+          defaultThinkingLevel: "high",
+          supportsDeveloperRole: false,
+          thinkingLevelOptions: ["low", "high", "max"],
+          temperatureOptions: [0.7, 1, 1.5],
+          status: 1
+        }
+      ]
+    };
+
+    const catalog = parseDeepWriteOfficialModelManifest(payload);
+    expect(catalog.models).toHaveLength(2);
+    expect(catalog.models[0]?.id).toBe("deepwrite-deepseek-v4-flash");
+    expect(catalog.models[1]).toMatchObject({
+      id: "deepwrite-qwen3.8-max-preview",
+      status: 1
+    });
+    expect(catalog.defaultModelId).toBe("deepwrite-deepseek-v4-flash");
   });
 
   it("refuses manifests that could redirect the saved official token", () => {

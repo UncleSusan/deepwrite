@@ -10,6 +10,7 @@ export * from "./library-agent";
 export * from "./long-agent-settings";
 export * from "./long-agent-team";
 export * from "./long-ledger";
+export * from "./long-manuscript-export";
 export * from "./long-workspace";
 export * from "./long-workspace-api";
 export * from "./long-worldbuilding-markdown";

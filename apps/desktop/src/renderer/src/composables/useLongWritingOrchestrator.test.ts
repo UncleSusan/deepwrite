@@ -5,19 +5,8 @@ import type {
 } from "@deepwrite/contracts";
 import {
   canApproveLongWritingProposal,
-  useLongWritingOrchestrator,
-  type LongWritingRunGuard
+  useLongWritingOrchestrator
 } from "./useLongWritingOrchestrator";
-
-type LongWritingWorkflowEvent = Extract<
-  SystemEventEnvelope,
-  {
-    type:
-      | "long.chapter_dispatch_proposal"
-      | "long.chapter_write_proposal"
-      | "long.ledger_commit_proposal";
-  }
->;
 
 function readiness(
   chapterCardId: string,
@@ -28,157 +17,57 @@ function readiness(
     title: chapterCardId === "chapter_one" ? "第一章" : "第二章",
     status,
     missingFiles:
-      status === "empty"
-        ? ["body", "character_state", "handoff"]
-        : status === "partial"
-          ? ["handoff"]
-          : []
+      status === "empty" ? ["body"] : status === "partial" ? ["handoff"] : []
   };
 }
 
-function dispatchEvent(): Extract<
-  LongWritingWorkflowEvent,
-  { type: "long.chapter_dispatch_proposal" }
-> {
+function dispatchEvent() {
   return {
-    protocolVersion: 1,
-    id: "event-dispatch",
     type: "long.chapter_dispatch_proposal",
-    timestamp: "2026-07-26T12:00:00.000Z",
-    context: {
-      correlationId: "correlation-dispatch",
-      sessionId: "session-dispatch",
-      runId: "run-dispatch",
-      resourceId: "longbook_test"
-    },
     payload: {
-      sessionId: "session-dispatch",
-      runId: "run-dispatch",
-      toolCallId: "tool-dispatch",
       bookId: "longbook_test",
-      agentId: "draft",
       scope: "arc",
-      chapterCardId: "chapter_one",
-      title: "第一章",
       chapters: [
-        readiness("chapter_one", "partial"),
-        readiness("chapter_two", "ready_to_commit")
-      ],
-      workspaceRevision: 1,
-      projectRevision: 1,
-      summary: "写当前主弧",
-      runtime: {
-        provider: "deepwrite",
-        model: "test",
-        mode: "local-faux"
-      }
-    }
-  };
-}
-
-function appliedEvent(
-  chapterCardId: string
-): Extract<
-  LongWritingWorkflowEvent,
-  { type: "long.ledger_commit_proposal" }
-> {
-  return {
-    type: "long.ledger_commit_proposal",
-    payload: {
-      bookId: "longbook_test",
-      input: { chapterCardId }
+        readiness("chapter_one", "empty"),
+        readiness("chapter_two", "empty")
+      ]
     }
   } as Extract<
-    LongWritingWorkflowEvent,
-    { type: "long.ledger_commit_proposal" }
+    SystemEventEnvelope,
+    { type: "long.chapter_dispatch_proposal" }
   >;
 }
 
-function approvalProposal(
-  type:
-    | "long.chapter_write_proposal"
-    | "long.continuity_file_proposal"
-    | "long.ledger_commit_proposal",
-  overrides: {
-    bookId?: string;
-    chapterCardId?: string;
-    agentId?: "expert_section_writer" | "continuity_ledger";
-    sessionId?: string;
-    runId?: string;
-  } = {}
-): SystemEventEnvelope {
+function writerProposal(chapterCardId = "chapter_one") {
   return {
-    type,
+    type: "long.chapter_write_proposal",
     payload: {
-      bookId: overrides.bookId ?? "longbook_test",
-      agentId:
-        overrides.agentId ??
-        (type === "long.chapter_write_proposal"
-          ? "expert_section_writer"
-          : "continuity_ledger"),
-      sessionId: overrides.sessionId ?? "session-current",
-      runId: overrides.runId ?? "run-current",
-      ...(type === "long.chapter_write_proposal"
-        ? {
-            file: {
-              chapterCardId: overrides.chapterCardId ?? "chapter_one"
-            }
-          }
-        : type === "long.continuity_file_proposal"
-          ? {
-              files: [
-                {
-                  chapterCardId:
-                    overrides.chapterCardId ?? "chapter_one"
-                }
-              ]
-            }
-          : {
-            input: {
-              chapterCardId: overrides.chapterCardId ?? "chapter_one"
-            }
-          })
+      bookId: "longbook_test",
+      agentId: "expert_section_writer",
+      sessionId: "session-current",
+      runId: "run-current",
+      file: { chapterCardId }
     }
   } as SystemEventEnvelope;
 }
 
-function continuityMutationProposal(
-  overrides: {
-    bookId?: string;
-    chapterCardId?: string;
-    sessionId?: string;
-    runId?: string;
-    operation?: Record<string, unknown>;
-    documentWrites?: Array<Record<string, unknown>>;
-  } = {}
-): SystemEventEnvelope {
-  const chapterCardId = overrides.chapterCardId ?? "chapter_one";
+function ledgerProposal() {
   return {
-    type: "long.mutation_proposal",
+    type: "long.ledger_commit_proposal",
     payload: {
-      bookId: overrides.bookId ?? "longbook_test",
+      bookId: "longbook_test",
       agentId: "continuity_ledger",
-      sessionId: overrides.sessionId ?? "session-current",
-      runId: overrides.runId ?? "run-current",
-      batch: {
-        baseRevision: 1,
-        updatedAt: "2026-07-26T12:00:00.000Z",
-        operations: [
-          overrides.operation ?? {
-            type: "chapterContinuity.worldReveals.delete",
-            chapterCardId
-          }
-        ],
-        documentWrites: overrides.documentWrites ?? []
-      }
+      sessionId: "session-current",
+      runId: "run-current",
+      input: { chapterCardId: "chapter_one" }
     }
   } as SystemEventEnvelope;
 }
 
 function harness() {
   const live = new Map<string, LongChapterReadiness>([
-    ["chapter_one", readiness("chapter_one", "partial")],
-    ["chapter_two", readiness("chapter_two", "ready_to_commit")]
+    ["chapter_one", readiness("chapter_one", "empty")],
+    ["chapter_two", readiness("chapter_two", "empty")]
   ]);
   const startWriter = vi.fn();
   const startLedger = vi.fn();
@@ -210,502 +99,110 @@ function harness() {
 }
 
 describe("useLongWritingOrchestrator", () => {
-  it("fills a partial triplet, waits for approval barriers, then serially advances", async () => {
+  it("advances immediately after saved body text without starting continuity", async () => {
     const test = harness();
     await test.controller.startDispatch(dispatchEvent());
-
-    expect(test.startWriter).toHaveBeenCalledTimes(1);
     expect(test.startWriter).toHaveBeenCalledWith(
-      "longbook_test",
-      expect.objectContaining({
-        chapterCardId: "chapter_one",
-        missingFiles: ["handoff"]
-      }),
-      expect.objectContaining({ isCurrent: expect.any(Function) })
-    );
-    expect(test.startLedger).not.toHaveBeenCalled();
-
-    test.live.set(
-      "chapter_one",
-      readiness("chapter_one", "ready_to_commit")
-    );
-    await test.controller.handleChapterSaved("longbook_test", "chapter_one");
-    expect(test.saveBarrier).toHaveBeenCalledTimes(1);
-    expect(test.startLedger).toHaveBeenLastCalledWith(
       "longbook_test",
       expect.objectContaining({ chapterCardId: "chapter_one" }),
       expect.objectContaining({ isCurrent: expect.any(Function) })
     );
 
-    await test.controller.handleApplied(
-      appliedEvent("chapter_one")
-    );
+    test.live.set("chapter_one", readiness("chapter_one", "ready_to_commit"));
+    await test.controller.handleChapterSaved("longbook_test", "chapter_one");
     expect(test.controller.state.value.currentIndex).toBe(1);
-    expect(test.startWriter).toHaveBeenCalledTimes(1);
-    expect(test.startLedger).toHaveBeenLastCalledWith(
+    expect(test.startWriter).toHaveBeenLastCalledWith(
       "longbook_test",
       expect.objectContaining({ chapterCardId: "chapter_two" }),
-      expect.objectContaining({ isCurrent: expect.any(Function) })
+      expect.anything()
     );
+    expect(test.startLedger).not.toHaveBeenCalled();
 
-    await test.controller.handleApplied(
-      appliedEvent("chapter_two")
-    );
+    test.live.set("chapter_two", readiness("chapter_two", "ready_to_commit"));
+    await test.controller.handleChapterSaved("longbook_test", "chapter_two");
     expect(test.controller.state.value.phase).toBe("complete");
-    expect(test.notifications.success).toHaveBeenCalledWith(
-      "本次长篇串行写作计划已全部完成。"
-    );
+    expect(test.notifications.success).toHaveBeenCalledOnce();
+    expect(test.startLedger).not.toHaveBeenCalled();
   });
 
-  it("accepts a realtime write proposal before the writer response finishes", async () => {
+  it("skips a chapter whose body is already complete and never opens ledger approval", async () => {
     const test = harness();
-    let rejectWriter!: (error: Error) => void;
-    test.startWriter.mockImplementationOnce(
-      () =>
-        new Promise<void>((_resolve, reject) => {
-          rejectWriter = reject;
-        })
+    test.live.set("chapter_one", readiness("chapter_one", "ready_to_commit"));
+    await test.controller.startDispatch(dispatchEvent());
+    expect(test.controller.state.value.currentIndex).toBe(1);
+    expect(test.startWriter).toHaveBeenCalledOnce();
+    expect(test.startWriter).toHaveBeenCalledWith(
+      "longbook_test",
+      expect.objectContaining({ chapterCardId: "chapter_two" }),
+      expect.anything()
     );
-
-    const dispatch = test.controller.startDispatch(dispatchEvent());
-    await vi.waitFor(() => {
-      expect(test.controller.state.value.phase).toBe(
-        "awaiting_writer_approval"
-      );
-    });
-
-    test.live.set(
-      "chapter_one",
-      readiness("chapter_one", "ready_to_commit")
-    );
-    await test.controller.handleChapterSaved("longbook_test", "chapter_one");
-    expect(test.controller.state.value.phase).toBe(
-      "awaiting_ledger_approval"
-    );
-
-    rejectWriter(new Error("提案落盘后的迟到回复错误"));
-    await dispatch;
-
-    expect(test.controller.state.value.phase).toBe(
-      "awaiting_ledger_approval"
-    );
-    expect(test.notifications.error).not.toHaveBeenCalled();
+    expect(test.startLedger).not.toHaveBeenCalled();
   });
 
-  it("ignores a prior chapter's late agent error after the next chapter starts", async () => {
-    const test = harness();
-    let rejectFirstLedger!: (error: Error) => void;
-    test.startLedger.mockImplementationOnce(
-      () =>
-        new Promise<void>((_resolve, reject) => {
-          rejectFirstLedger = reject;
-        })
-    );
-    test.live.set(
-      "chapter_one",
-      readiness("chapter_one", "ready_to_commit")
-    );
-
-    const dispatch = test.controller.startDispatch(dispatchEvent());
-    await vi.waitFor(() => {
-      expect(test.startLedger).toHaveBeenCalledTimes(1);
-    });
-
-    const firstLedgerApplied = test.controller.handleApplied(
-      appliedEvent("chapter_one")
-    );
-    await vi.waitFor(() => {
-      expect(test.controller.state.value.currentIndex).toBe(1);
-      expect(test.startLedger).toHaveBeenCalledTimes(2);
-    });
-
-    rejectFirstLedger(new Error("上一章账本回复迟到失败"));
-    await Promise.all([dispatch, firstLedgerApplied]);
-
-    expect(test.controller.state.value).toMatchObject({
-      currentIndex: 1,
-      phase: "awaiting_ledger_approval",
-      error: null
-    });
-    expect(test.notifications.error).not.toHaveBeenCalled();
-  });
-
-  it("stops on a failed save barrier and retries the same chapter without skipping", async () => {
+  it("retries the body save barrier without advancing early", async () => {
     const test = harness();
     await test.controller.startDispatch(dispatchEvent());
-    test.live.set(
-      "chapter_one",
-      readiness("chapter_one", "ready_to_commit")
-    );
+    test.live.set("chapter_one", readiness("chapter_one", "ready_to_commit"));
     test.saveBarrier.mockResolvedValueOnce(false);
-
     await test.controller.handleChapterSaved("longbook_test", "chapter_one");
     expect(test.controller.state.value).toMatchObject({
       currentIndex: 0,
       phase: "error",
       retryPoint: "after_write"
     });
-    expect(test.startLedger).not.toHaveBeenCalled();
 
     test.saveBarrier.mockResolvedValueOnce(true);
     await test.controller.retry();
-    expect(test.controller.state.value).toMatchObject({
-      currentIndex: 0,
-      phase: "awaiting_ledger_approval"
-    });
-    expect(test.startLedger).toHaveBeenCalledWith(
-      "longbook_test",
-      expect.objectContaining({ chapterCardId: "chapter_one" }),
-      expect.objectContaining({ isCurrent: expect.any(Function) })
-    );
-  });
-
-  it("refuses to start the ledger when the post-write check returns another chapter", async () => {
-    const test = harness();
-    await test.controller.startDispatch(dispatchEvent());
-    test.live.set(
-      "chapter_one",
-      readiness("chapter_two", "ready_to_commit")
-    );
-
-    expect(
-      await test.controller.handleChapterSaved("longbook_test", "chapter_one")
-    ).toBe(true);
-
-    expect(test.controller.state.value).toMatchObject({
-      currentIndex: 0,
-      phase: "error",
-      retryPoint: "after_write",
-      error: "章节正文保存检查返回了错误的章卡。"
-    });
+    expect(test.controller.state.value.currentIndex).toBe(1);
     expect(test.startLedger).not.toHaveBeenCalled();
   });
 
-  it("does not advance when a different chapter proposal is approved", async () => {
+  it("ignores continuity events because records are outside writing plans", async () => {
     const test = harness();
     await test.controller.startDispatch(dispatchEvent());
-
+    expect(await test.controller.handleApplied(ledgerProposal() as never)).toBe(
+      false
+    );
+    expect(test.controller.handleRejected(ledgerProposal())).toBe(false);
     expect(
-      await test.controller.handleChapterSaved("longbook_test", "chapter_two")
+      test.controller.handleRunFailure("continuity_ledger", "记录失败")
     ).toBe(false);
-    expect(test.saveBarrier).not.toHaveBeenCalled();
-    expect(test.controller.state.value.currentIndex).toBe(0);
   });
 
-  it("turns a rejected current proposal into a retryable same-chapter stop", async () => {
-    const test = harness();
-    await test.controller.startDispatch(dispatchEvent());
-    expect(
-      test.controller.handleChapterRejected("longbook_test", "chapter_one")
-    ).toBe(true);
-    expect(test.controller.state.value).toMatchObject({
+  it("permits only the current writer proposal while a plan is active", () => {
+    const state = {
+      bookId: "longbook_test",
+      scope: "chapter" as const,
+      chapters: [readiness("chapter_one", "empty")],
       currentIndex: 0,
-      phase: "error",
-      retryPoint: "check"
-    });
-    expect(test.startLedger).not.toHaveBeenCalled();
-  });
-
-  it("turns an asynchronous writer failure into a retry without advancing", async () => {
-    const test = harness();
-    await test.controller.startDispatch(dispatchEvent());
-    expect(
-      test.controller.handleRunFailure(
-        "expert_section_writer",
-        "模型连接中断"
-      )
-    ).toBe(true);
-    expect(test.controller.state.value).toMatchObject({
-      currentIndex: 0,
-      phase: "error",
-      retryPoint: "check"
-    });
-    expect(test.startLedger).not.toHaveBeenCalled();
-  });
-
-  it("cancels an error state and ignores late proposal progress", async () => {
-    const test = harness();
-    await test.controller.startDispatch(dispatchEvent());
-    expect(
-      test.controller.handleChapterRejected("longbook_test", "chapter_one")
-    ).toBe(true);
-    expect(test.controller.active.value).toBe(true);
-
-    test.controller.cancel();
-
-    expect(test.controller.active.value).toBe(false);
-    expect(test.controller.state.value).toMatchObject({
-      bookId: null,
-      phase: "idle",
-      currentIndex: 0
-    });
-    expect(
-      await test.controller.handleChapterSaved("longbook_test", "chapter_one")
-    ).toBe(false);
-    await test.controller.retry();
-    expect(test.startLedger).not.toHaveBeenCalled();
-  });
-
-  it("invalidates a writer start that is still waiting on asynchronous preflight", async () => {
-    const test = harness();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let acceptedStarts = 0;
-    test.startWriter.mockImplementation(
-      async (
-        _bookId: string,
-        _readiness: LongChapterReadiness,
-        guard: LongWritingRunGuard
-      ) => {
-        await gate;
-        if (guard.isCurrent()) acceptedStarts += 1;
-      }
-    );
-
-    const dispatch = test.controller.startDispatch(dispatchEvent());
-    await vi.waitFor(() => {
-      expect(test.startWriter).toHaveBeenCalledTimes(1);
-    });
-    test.controller.cancel();
-    release();
-    await dispatch;
-
-    expect(acceptedStarts).toBe(0);
-    expect(test.controller.state.value.phase).toBe("idle");
-  });
-
-  it("invalidates a ledger start that is still waiting on asynchronous preflight", async () => {
-    const test = harness();
-    test.live.set(
-      "chapter_one",
-      readiness("chapter_one", "ready_to_commit")
-    );
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let acceptedStarts = 0;
-    test.startLedger.mockImplementation(
-      async (
-        _bookId: string,
-        _readiness: LongChapterReadiness,
-        guard: LongWritingRunGuard
-      ) => {
-        await gate;
-        if (guard.isCurrent()) acceptedStarts += 1;
-      }
-    );
-
-    const dispatch = test.controller.startDispatch(dispatchEvent());
-    await vi.waitFor(() => {
-      expect(test.startLedger).toHaveBeenCalledTimes(1);
-    });
-    test.controller.cancel();
-    release();
-    await dispatch;
-
-    expect(acceptedStarts).toBe(0);
-    expect(test.controller.state.value.phase).toBe("idle");
-  });
-
-  it("only permits the exact current plan session, run, phase, agent, and chapter", async () => {
-    const test = harness();
-    await test.controller.startDispatch(dispatchEvent());
-    const writerExpectation = {
+      phase: "awaiting_writer_approval" as const,
+      error: null,
+      retryPoint: null
+    };
+    const expectation = {
       bookId: "longbook_test",
       chapterCardId: "chapter_one",
       agentId: "expert_section_writer" as const,
       sessionId: "session-current",
       runId: "run-current"
     };
-    const permits = (event: SystemEventEnvelope) =>
-      canApproveLongWritingProposal({
-        active: test.controller.active.value,
-        state: test.controller.state.value,
-        currentChapter: test.controller.currentChapter.value,
-        expectation: writerExpectation,
-        event
-      });
-
-    expect(permits(approvalProposal("long.chapter_write_proposal"))).toBe(
-      true
-    );
-    expect(
-      permits(
-        approvalProposal("long.chapter_write_proposal", {
-          bookId: "longbook_other"
-        })
-      )
-    ).toBe(false);
-    expect(
-      permits(
-        approvalProposal("long.chapter_write_proposal", {
-          sessionId: "session-old"
-        })
-      )
-    ).toBe(false);
-    expect(
-      permits(
-        approvalProposal("long.chapter_write_proposal", {
-          runId: "run-old"
-        })
-      )
-    ).toBe(false);
-    expect(
-      permits(
-        approvalProposal("long.chapter_write_proposal", {
-          agentId: "continuity_ledger"
-        })
-      )
-    ).toBe(false);
-    expect(
-      permits(
-        approvalProposal("long.chapter_write_proposal", {
-          chapterCardId: "chapter_two"
-        })
-      )
-    ).toBe(false);
-    expect(permits(approvalProposal("long.ledger_commit_proposal"))).toBe(
-      false
-    );
-    expect(permits(dispatchEvent())).toBe(false);
-
-    test.live.set(
-      "chapter_one",
-      readiness("chapter_one", "ready_to_commit")
-    );
-    await test.controller.handleChapterSaved("longbook_test", "chapter_one");
     expect(
       canApproveLongWritingProposal({
-        active: test.controller.active.value,
-        state: test.controller.state.value,
-        currentChapter: test.controller.currentChapter.value,
-        expectation: {
-          ...writerExpectation,
-          agentId: "continuity_ledger"
-        },
-        event: approvalProposal("long.ledger_commit_proposal")
+        active: true,
+        state,
+        currentChapter: state.chapters[0]!,
+        expectation,
+        event: writerProposal()
       })
     ).toBe(true);
     expect(
       canApproveLongWritingProposal({
-        active: test.controller.active.value,
-        state: test.controller.state.value,
-        currentChapter: test.controller.currentChapter.value,
-        expectation: {
-          ...writerExpectation,
-          agentId: "continuity_ledger"
-        },
-        event: approvalProposal("long.continuity_file_proposal")
-      })
-    ).toBe(true);
-    expect(
-      canApproveLongWritingProposal({
-        active: test.controller.active.value,
-        state: test.controller.state.value,
-        currentChapter: test.controller.currentChapter.value,
-        expectation: {
-          ...writerExpectation,
-          agentId: "continuity_ledger"
-        },
-        event: approvalProposal("long.continuity_file_proposal", {
-          chapterCardId: "chapter_two"
-        })
+        active: true,
+        state,
+        currentChapter: state.chapters[0]!,
+        expectation,
+        event: ledgerProposal()
       })
     ).toBe(false);
-    expect(
-      canApproveLongWritingProposal({
-        active: test.controller.active.value,
-        state: test.controller.state.value,
-        currentChapter: test.controller.currentChapter.value,
-        expectation: {
-          ...writerExpectation,
-          agentId: "continuity_ledger"
-        },
-        event: continuityMutationProposal()
-      })
-    ).toBe(true);
-    expect(
-      canApproveLongWritingProposal({
-        active: test.controller.active.value,
-        state: test.controller.state.value,
-        currentChapter: test.controller.currentChapter.value,
-        expectation: {
-          ...writerExpectation,
-          agentId: "continuity_ledger"
-        },
-        event: continuityMutationProposal({
-          chapterCardId: "chapter_two"
-        })
-      })
-    ).toBe(false);
-    expect(
-      canApproveLongWritingProposal({
-        active: test.controller.active.value,
-        state: test.controller.state.value,
-        currentChapter: test.controller.currentChapter.value,
-        expectation: {
-          ...writerExpectation,
-          agentId: "continuity_ledger"
-        },
-        event: continuityMutationProposal({
-          operation: {
-            type: "volume.delete",
-            volumeId: "volume_one"
-          }
-        })
-      })
-    ).toBe(false);
-    expect(
-      canApproveLongWritingProposal({
-        active: test.controller.active.value,
-        state: test.controller.state.value,
-        currentChapter: test.controller.currentChapter.value,
-        expectation: {
-          ...writerExpectation,
-          agentId: "continuity_ledger"
-        },
-        event: continuityMutationProposal({
-          documentWrites: [{ fileId: "file_unexpected" }]
-        })
-      })
-    ).toBe(false);
-  });
-
-  it("stops on a rejected continuity proposal and retries the same chapter", async () => {
-    const test = harness();
-    test.live.set(
-      "chapter_one",
-      readiness("chapter_one", "ready_to_commit")
-    );
-    await test.controller.startDispatch(dispatchEvent());
-
-    expect(test.controller.state.value.phase).toBe(
-      "awaiting_ledger_approval"
-    );
-    expect(
-      test.controller.handleRejected(
-        approvalProposal("long.continuity_file_proposal")
-      )
-    ).toBe(true);
-    expect(test.controller.state.value).toMatchObject({
-      currentIndex: 0,
-      phase: "error",
-      retryPoint: "after_write"
-    });
-    expect(test.controller.state.value.error).toContain(
-      "连续性变更"
-    );
-    expect(test.notifications.error).toHaveBeenCalledWith(
-      expect.stringContaining("计划不会推进")
-    );
-
-    await test.controller.retry();
-    expect(test.controller.state.value.phase).toBe(
-      "awaiting_ledger_approval"
-    );
-    expect(test.startLedger).toHaveBeenCalledTimes(2);
   });
 });

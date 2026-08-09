@@ -41,4 +41,21 @@ describe("LeftSidebar account controls", () => {
     expect(source).toContain("'is-active'");
     expect(source).toContain("'page'");
   });
+
+  it("only keeps runtime settings in more features and opens the settings page", () => {
+    expect(source).toContain('{ id: "runtime", label: "运行设置"');
+    expect(source).not.toContain('{ id: "history", label: "版本历史"');
+    expect(source).not.toContain('{ id: "search", label: "全局检索"');
+    expect(source).not.toContain('{ id: "transfer", label: "导入与导出"');
+    expect(source).toContain('@click="openSettings"');
+  });
+
+  it("shows and locks the update dialog while macOS hands off to the installer", () => {
+    expect(source).toContain(
+      'const updateInstalling = computed(() => updateState.value.status === "installing")'
+    );
+    expect(source).toContain("正在安全退出并准备安装…");
+    expect(source).toContain(':disabled="updateInstalling"');
+    expect(source).toContain("正在安装…");
+  });
 });

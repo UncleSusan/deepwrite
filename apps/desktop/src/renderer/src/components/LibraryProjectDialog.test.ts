@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 import source from "./LibraryProjectDialog.vue?raw";
 
 describe("LibraryProjectDialog create-library form", () => {
-  it("selects and submits the material or skill classification", () => {
+  it("submits the material or skill classification into the shared library pool", () => {
     expect(source).toContain("materialKind: libraryKind.value");
     expect(source).toContain("skillKind: libraryKind.value");
-    expect(source).toContain("libraryType: libraryType.value");
-    expect(source).toContain("适用创作类型");
-    expect(source).toContain('{ value: "long", label: "长篇" }');
-    expect(source).toContain("ref<LibraryType>");
+    expect(source).not.toContain("libraryType: libraryType.value");
+    expect(source).not.toContain("适用创作类型");
+    expect(source).toContain("此资料库由短篇、剧本和长篇共用");
     expect(source).toContain("通用技能库");
     expect(source).not.toContain('{ value: "mixed", label: "综合素材库" }');
   });
@@ -32,9 +31,8 @@ describe("LibraryProjectDialog create-entry form", () => {
     expect(source).not.toContain('{ value: "character_design", label: "人物设计" }');
   });
 
-  it("removes the intro stage from script material libraries", () => {
-    expect(source).toContain(
-      'effectiveLibraryType.value === "script" && value === "intro"'
-    );
+  it("keeps all material stages available because libraries are shared", () => {
+    expect(source).not.toContain("effectiveLibraryType");
+    expect(source).toContain('{ value: "intro", label: "导语设计" }');
   });
 });

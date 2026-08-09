@@ -97,8 +97,48 @@ export const ActiveResourceSnapshotSchema = z.object({
       message: "A truncated resource must report an originalLength larger than content."
     });
   }
+  if (value.truncated !== true && value.originalLength !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["originalLength"],
+      message: "An untruncated resource must omit originalLength."
+    });
+  }
 });
 export type ActiveResourceSnapshot = z.infer<typeof ActiveResourceSnapshotSchema>;
+
+interface ComparableTextSnapshot {
+  content: string;
+  truncated?: boolean | undefined;
+  originalLength?: number | undefined;
+}
+
+function matchesActiveResourceContent(
+  candidate: string | ComparableTextSnapshot,
+  active: ActiveResourceSnapshot
+): boolean {
+  const snapshot = typeof candidate === "string"
+    ? { content: candidate }
+    : candidate;
+  const candidateLength = snapshot.truncated === true
+    ? snapshot.originalLength
+    : snapshot.content.length;
+  const activeLength = active.truncated === true
+    ? active.originalLength
+    : active.content.length;
+  if (
+    candidateLength === undefined ||
+    activeLength === undefined ||
+    candidateLength !== activeLength
+  ) {
+    return false;
+  }
+  const sharedLength = Math.min(snapshot.content.length, active.content.length);
+  return (
+    (sharedLength > 0 || candidateLength === 0) &&
+    snapshot.content.slice(0, sharedLength) === active.content.slice(0, sharedLength)
+  );
+}
 
 export const ATTACHED_CONTEXT_MAX_ITEMS = 64;
 export const ATTACHED_CONTEXT_MAX_CONTENT_LENGTH = 20_000;
@@ -169,13 +209,37 @@ export const WorkspaceRuntimeContextSchema = z.object({
       const activeEntry = value.libraryWorkspace.entries.find(
         (entry) => entry.id === value.libraryWorkspace?.activeEntryId
       );
-      if (!activeEntry || activeEntry.documentId !== value.activeResource.id) {
+      if (
+        !activeEntry ||
+        activeEntry.documentId !== value.activeResource.id ||
+        !matchesActiveResourceContent(activeEntry, value.activeResource)
+      ) {
         context.addIssue({
           code: "custom",
           path: ["libraryWorkspace", "activeEntryId"],
-          message: "The active library entry must match the active resource."
+          message: "The active library entry must match the live active resource snapshot."
         });
       }
+    } else if (
+      value.libraryWorkspace.overviewDocumentId !== value.activeResource.id ||
+      !matchesActiveResourceContent(
+        {
+          content: value.libraryWorkspace.overview,
+          ...(value.libraryWorkspace.overviewTruncated === undefined
+            ? {}
+            : { truncated: value.libraryWorkspace.overviewTruncated }),
+          ...(value.libraryWorkspace.overviewOriginalLength === undefined
+            ? {}
+            : { originalLength: value.libraryWorkspace.overviewOriginalLength })
+        },
+        value.activeResource
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["libraryWorkspace", "overviewDocumentId"],
+        message: "The active library overview must match the live active resource snapshot."
+      });
     }
   }
   const active = value.activeResource;
@@ -209,25 +273,26 @@ export const WorkspaceRuntimeContextSchema = z.object({
     if (!workspace) continue;
     const matchesActiveStage = workspace.activeStageId === "draft"
       ? (
-          workspace.activeAgentId !== "expert_section_writer" &&
+          workspace.activeSectionId === undefined &&
           active.id === workspace.expertDraft.id &&
           active.content === ""
         ) || workspace.expertDraft.sections
           .filter(
             (section) =>
-              workspace.activeAgentId !== "expert_section_writer" ||
+              workspace.activeSectionId === undefined ||
               section.id === workspace.activeSectionId
           )
           .some((section) =>
             [section.body, section.characterState].some(
               (file) =>
-                file.documentId === active.id && file.content === active.content
+                file.documentId === active.id &&
+                matchesActiveResourceContent(file, active)
             )
           )
       : workspace.stages.some(
           (stage) =>
             stage.stageId === workspace.activeStageId &&
-            stage.content === active.content
+            matchesActiveResourceContent(stage, active)
         );
     if (!matchesActiveStage) {
       context.addIssue({
@@ -267,6 +332,13 @@ export const PromptTextAttachmentSchema = PromptAttachmentBaseSchema.extend({
       code: "custom",
       path: ["originalLength"],
       message: "A truncated text attachment must report its original length."
+    });
+  }
+  if (value.truncated !== true && value.originalLength !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["originalLength"],
+      message: "An untruncated text attachment must omit originalLength."
     });
   }
 });
@@ -1556,7 +1628,6 @@ const LibraryEditorMutationBaseSchema = z.object({
   toolCallId: z.string().min(1),
   domain: z.enum(["material", "skill"]),
   libraryId: z.string().trim().min(1).max(512),
-  stageId: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(256),
   text: z.string().max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS),
   baseRevision: z.string().regex(/^v1:\d+:[0-9a-f]{8}$/),
@@ -1568,15 +1639,22 @@ const LibraryEditorMutationBaseSchema = z.object({
 export const LibraryEditorMutationPayloadSchema = z
   .discriminatedUnion("operation", [
     LibraryEditorMutationBaseSchema.extend({
-      operation: z.literal("create")
+      operation: z.literal("create"),
+      stageId: z.string().trim().min(1).max(120)
     }),
     LibraryEditorMutationBaseSchema.extend({
       operation: z.literal("edit"),
+      stageId: z.string().trim().min(1).max(120),
       entryId: z.string().trim().min(1).max(512),
+      documentId: z.string().trim().min(1).max(4_096)
+    }),
+    LibraryEditorMutationBaseSchema.extend({
+      operation: z.literal("edit-overview"),
       documentId: z.string().trim().min(1).max(4_096)
     })
   ])
   .superRefine((value, context) => {
+    if (value.operation === "edit-overview") return;
     const validStage =
       value.domain === "material"
         ? MaterialStageIdSchema.safeParse(value.stageId).success

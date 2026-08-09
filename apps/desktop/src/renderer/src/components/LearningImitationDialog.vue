@@ -280,7 +280,7 @@ function materialTargetOptions(
     ...materialCandidates(kind).map((library) => ({
       value: library.id,
       label: library.title,
-      description: library.materialType
+      description: MATERIAL_KIND_LABELS[kind]
     }))
   ];
 }
@@ -311,7 +311,7 @@ function skillTargetOptions(kind: LearningSkillKind): PopupSelectOption[] {
     ...skillCandidates(kind).map((library) => ({
       value: library.id,
       label: library.title,
-      description: library.skillType
+      description: SKILL_KIND_LABELS[kind]
     }))
   ];
 }

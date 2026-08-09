@@ -2,17 +2,27 @@ import { describe, expect, it } from "vitest";
 import source from "./TreeNodeItem.vue?raw";
 
 describe("TreeNodeItem actions", () => {
-  it("collapses a selectable branch without selecting the whole branch", () => {
-    expect(source).toContain("const opening = !open.value;");
-    expect(source).toContain("open.value = opening;");
-    expect(source).toContain("if (opening && props.node.selectableBranch)");
+  it("uses the shared neutral badge style for every workspace type", () => {
+    expect(source).toContain('class="tree-badge"');
+    expect(source).not.toContain("'is-script': node.workspaceType === 'script'");
   });
 
-  it("places add on the draft parent and delete in each section menu", () => {
+  it("selects a selectable branch immediately whether it opens or collapses", () => {
+    expect(source).toContain("open.value = !open.value;");
+    expect(source).toContain("if (props.node.selectableBranch)");
+    expect(source).not.toContain("opening && props.node.selectableBranch");
+  });
+
+  it("places add on the draft parent and ordering plus delete in each section menu", () => {
     expect(source).toContain('props.node.shortAgentId === "expert_draft_coordinator"');
-    expect(source).toContain('props.node.shortAgentId === "expert_section_writer"');
+    expect(source).toContain("!props.node.expertSectionId");
+    expect(source).toContain("Boolean(props.node.expertSectionId)");
     expect(source).toContain("emit(\"createExpertSection\", props.node)");
     expect(source).toContain("emit(\"removeExpertSection\", props.node)");
+    expect(source).toContain("expertSectionAction('move-up')");
+    expect(source).toContain("expertSectionAction('move-down')");
+    expect(source).toContain(":disabled=\"expertSectionMoveUpDisabled\"");
+    expect(source).toContain(":disabled=\"expertSectionMoveDownDisabled\"");
     expect(source).toContain('props.node.workspaceType === "script" ? "剧集" : "小节"');
     expect(source).toContain("isCharacterDirectory ? '新建人物条目' : `新建${draftUnitLabel}`");
     expect(source).toContain("<span>删除{{ draftUnitLabel }}</span>");
@@ -39,6 +49,17 @@ describe("TreeNodeItem actions", () => {
     );
   });
 
+  it("opens the action menu upward when the sidebar has more room above", () => {
+    expect(source).toContain('area.closest<HTMLElement>(".sidebar-scroll")');
+    expect(source).toContain(
+      "menuHeight > availableBelow && availableAbove > availableBelow"
+    );
+    expect(source).toContain(":class=\"{ 'opens-upward': actionMenuOpensUpward }\"");
+    expect(source).toMatch(
+      /\.tree-node-action-menu\.opens-upward\s*\{\s*top:\s*auto;\s*bottom:\s*calc\(100% \+ 3px\);\s*\}/
+    );
+  });
+
   it("opens the manuscript export dialog below material binding without an inline format list", () => {
     expect(source).toContain("<span>导出正文</span>");
     expect(source).not.toContain("['docx', 'txt', 'epub'] as const");
@@ -58,6 +79,14 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain("<span>删除条目文件</span>");
   });
 
+  it("offers library and entry rename plus same-domain drag and drop", () => {
+    expect(source).toContain("rename-library");
+    expect(source).toContain("rename-entry");
+    expect(source).toContain("application/x-deepwrite-library-entry-");
+    expect(source).toContain("moveLibraryEntry");
+    expect(source).toContain("beforeEntryId");
+  });
+
   it("uses an independent action event for long-book nodes", () => {
     expect(source).toContain(
       'props.node.catalogNodeType === "long-book"'
@@ -66,7 +95,10 @@ describe("TreeNodeItem actions", () => {
       'node: node as LongBookResourceNodeActionPayload["node"]'
     );
     for (const action of [
+      "sync-legacy",
       "manage-structure",
+      "rename",
+      "duplicate",
       "bind-skill",
       "bind-material",
       "unregister",
@@ -83,6 +115,14 @@ describe("TreeNodeItem actions", () => {
     expect(longActionFunction).not.toContain('emit("bookAction"');
   });
 
+  it("offers direct project duplication for books, libraries and groups", () => {
+    expect(source).toContain("openBookAction('duplicate')");
+    expect(source).toContain("activateLongBookAction('duplicate')");
+    expect(source).toContain("activateResourceNodeAction('duplicate-library')");
+    expect(source).toContain("activateResourceNodeAction('duplicate-group')");
+    expect(source).toContain('v-if="!node.unavailable"');
+  });
+
   it("keeps reversible catalog actions neutral and marks disk deletion dangerous", () => {
     const longMenu = source.slice(
       source.indexOf(
@@ -92,7 +132,11 @@ describe("TreeNodeItem actions", () => {
         '<template v-else-if="hasBookAction">'
       )
     );
-    expect(longMenu).toContain("<span>世界观与功能设置</span>");
+    expect(longMenu).toContain("<span>结构管理</span>");
+    expect(longMenu).toContain("<span>同步旧版本</span>");
+    expect(longMenu.indexOf("<span>同步旧版本</span>")).toBeGreaterThan(
+      longMenu.indexOf("<span>导出</span>")
+    );
     expect(longMenu).toContain("<span>技能库绑定</span>");
     expect(longMenu).toContain("<span>素材库绑定</span>");
     expect(longMenu).not.toContain("导出可迁移项目");

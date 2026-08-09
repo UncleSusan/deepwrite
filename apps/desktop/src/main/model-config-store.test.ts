@@ -125,7 +125,6 @@ describe("ModelConfigStore official models", () => {
 
     const saved = await store.saveOfficialToken("sk-official-test-only");
     expect(saved.deepwriteOfficialTokenConfigured).toBe(true);
-    expect(saved.deepwriteOfficialQuotaTokens).toBe(10_000_000);
     expect(saved.models.map((model) => model.id)).toEqual([
       "deepwrite-deepseek-v4-flash",
       "custom-writer"
@@ -228,6 +227,74 @@ describe("ModelConfigStore official models", () => {
     expect(refreshed.defaultModelId).toBe(
       "deepwrite-deepseek-v4-flash-next"
     );
+  });
+
+  it("persists per-model enablement and exposes only enabled official models in model settings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-official-enabled-store-"));
+    temporaryRoots.push(root);
+    const first = officialModel();
+    const second = officialModel({
+      id: "deepwrite-second-official",
+      label: "第二个官方模型",
+      modelId: "second-official"
+    });
+    const unavailable = officialModel({
+      id: "deepwrite-unavailable-official",
+      label: "暂不可用官方模型",
+      modelId: "unavailable-official",
+      status: 1
+    });
+    const store = new ModelConfigStore(root, {
+      freeModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => emptyCatalog()
+      },
+      officialModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => officialCatalog([first, second, unavailable])
+      }
+    });
+
+    const initial = await store.saveOfficialToken("sk-official-enabled-test");
+    expect(initial.deepwriteOfficialModels?.map((model) => model.id)).toEqual([
+      first.id,
+      second.id,
+      unavailable.id
+    ]);
+    expect(initial.deepwriteOfficialEnabledModelIds).toEqual([first.id, second.id]);
+    expect(initial.models.map((model) => model.id)).toEqual([first.id, second.id]);
+    await expect(
+      store.setOfficialModelEnabled(unavailable.id, true)
+    ).rejects.toThrow(/当前不可用/u);
+    const disabled = await store.setOfficialModelEnabled(first.id, false);
+    expect(disabled.deepwriteOfficialEnabledModelIds).toEqual([second.id]);
+    expect(disabled.models.map((model) => model.id)).toEqual([second.id]);
+
+    await store.save({
+      models: disabled.models,
+      defaultModelId: second.id
+    });
+
+    const reloaded = await store.list();
+    expect(reloaded.models.map((model) => model.id)).toEqual([second.id]);
+    expect(reloaded.defaultModelId).toBe(second.id);
+
+    const restartedStore = new ModelConfigStore(root, {
+      freeModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => emptyCatalog()
+      },
+      officialModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => officialCatalog([first, second, unavailable])
+      }
+    });
+    const afterRestart = await restartedStore.list();
+    expect(afterRestart.defaultModelId).toBe(second.id);
+    expect(afterRestart.models.map((model) => model.id)).toEqual([second.id]);
+
+    const enabled = await store.setOfficialModelEnabled(first.id, true);
+    expect(enabled.models.map((model) => model.id)).toEqual([first.id, second.id]);
   });
 });
 

@@ -6,6 +6,7 @@ import {
   SHORT_AGENT_SUBAGENT_MAX_COUNT,
   SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_SYSTEM_PROMPT_MAX_LENGTH,
+  SCRIPT_WORKSPACE_AGENT_IDS,
   SHORT_WORKSPACE_AGENT_IDS,
   type WorkspaceAgentTeamSettings,
   type WorkspaceAgentTeamSettingsInput,
@@ -15,7 +16,7 @@ import {
   type LongAgentTeamSettingsInput,
   type ShortAgentSubagentDefinition,
   type ShortAgentSubagentModelMode,
-  type ShortWorkspaceAgentId,
+  type WorkspaceAgentId,
   type SkillLibrary,
   type SubagentAuthoringDraft,
   type SubagentAuthoringRuntimeContext,
@@ -29,7 +30,7 @@ import LongAgentTeamSettingsPanel from "./LongAgentTeamSettingsPanel.vue";
 import PopupSelect, { type PopupSelectOption } from "./PopupSelect.vue";
 
 interface ParentAgentMeta {
-  id: ShortWorkspaceAgentId;
+  id: WorkspaceAgentId;
   label: string;
   description: string;
 }
@@ -82,17 +83,13 @@ const PARENT_AGENTS = [
     id: "expert_draft_coordinator",
     label: "正文",
     description: "为正文总控配置审阅、润色和一致性检查助手。"
-  },
-  {
-    id: "expert_section_writer",
-    label: "分节",
-    description: "为分节写手配置场景、对白和细节等专项助手。"
   }
 ] as const satisfies readonly ParentAgentMeta[];
 
-const activeParentAgentId = ref<ShortWorkspaceAgentId>(PARENT_AGENTS[0].id);
+const activeParentAgentId = ref<WorkspaceAgentId>(PARENT_AGENTS[0].id);
 const activeWorkspaceType = ref<"short" | "script" | "long">("short");
-const draftTeams = ref<WorkspaceAgentTeamSettingsInput["teams"]>([]);
+type EditableTeam = WorkspaceAgentTeamSettingsInput["teams"][number];
+const draftTeams = ref<EditableTeam[]>([]);
 const editingSubagentId = ref<string | null>(null);
 let generatedIdSequence = 0;
 
@@ -108,12 +105,9 @@ const activeParentMeta = computed(
     PARENT_AGENTS.find((agent) => agent.id === activeParentAgentId.value) ??
     PARENT_AGENTS[0]
 );
-const activeParentDisplayLabel = computed(() =>
-  activeWorkspaceType.value === "script" &&
-  activeParentAgentId.value === "expert_section_writer"
-    ? "分集"
-    : activeParentMeta.value.label
-);
+const activeParentDisplayLabel = computed(() => activeParentMeta.value.label);
+
+const visibleParentAgents = computed(() => PARENT_AGENTS);
 
 const activeSettings = computed(() =>
   activeWorkspaceType.value === "long"
@@ -123,11 +117,7 @@ const activeSettings = computed(() =>
       )
 );
 
-const activeSkills = computed(() =>
-  (props.skills ?? []).filter(
-    (skill) => skill.skillType === activeWorkspaceType.value
-  )
-);
+const activeSkills = computed(() => props.skills ?? []);
 
 const activeTeam = computed(() =>
   draftTeams.value.find(
@@ -236,12 +226,20 @@ watch(
           }))
         }))
       : [];
+    if (
+      settings &&
+      !settings.teams.some(
+        (team) => team.parentAgentId === activeParentAgentId.value
+      )
+    ) {
+      activeParentAgentId.value = PARENT_AGENTS[0].id;
+    }
     editingSubagentId.value = null;
   },
   { immediate: true, deep: true }
 );
 
-function selectParentAgent(parentAgentId: ShortWorkspaceAgentId): void {
+function selectParentAgent(parentAgentId: WorkspaceAgentId): void {
   activeParentAgentId.value = parentAgentId;
   editingSubagentId.value = null;
 }
@@ -447,7 +445,11 @@ function validationMessage(
 function saveSettings(): void {
   if (formDisabled.value || activeWorkspaceType.value === "long") return;
   const workspaceType = activeWorkspaceType.value;
-  const teams: WorkspaceAgentTeamSettingsInput["teams"] = SHORT_WORKSPACE_AGENT_IDS.map(
+  const parentAgentIds =
+    workspaceType === "script"
+      ? SCRIPT_WORKSPACE_AGENT_IDS
+      : SHORT_WORKSPACE_AGENT_IDS;
+  const teams = parentAgentIds.map(
     (parentAgentId) => {
       const team = draftTeams.value.find(
         (candidate) => candidate.parentAgentId === parentAgentId
@@ -547,12 +549,21 @@ function saveSettings(): void {
       v-if="activeWorkspaceType === 'long'"
       :settings="longSettings"
       :models="models"
+      :skills="activeSkills"
+      :preferred-model-id="preferredModelId ?? null"
       :loading="longLoading"
       :saving="longSaving"
       :load-error="longLoadError ?? null"
       :runtime-available="runtimeAvailable"
+      :authoring-generating="Boolean(authoringGenerating)"
+      :authoring-draft="authoringDraft ?? null"
+      :authoring-status-text="authoringStatusText ?? null"
+      :authoring-error="authoringError ?? null"
       @retry="emit('retry')"
       @save="emit('saveLong', $event)"
+      @authoring-generate="emit('authoringGenerate', $event)"
+      @authoring-stop="emit('authoringStop')"
+      @authoring-reset="emit('authoringReset')"
     />
     <div v-else-if="loading" class="panel-state" aria-live="polite">
       正在加载智能体团队设置…
@@ -580,7 +591,7 @@ function saveSettings(): void {
     <div v-else class="team-layout">
       <nav class="parent-agent-tabs" :aria-label="`${activeWorkspaceType === 'script' ? '剧本' : '短篇'}主智能体`">
         <button
-          v-for="agent in PARENT_AGENTS"
+          v-for="agent in visibleParentAgents"
           :key="agent.id"
           type="button"
           class="parent-agent-tab"
@@ -588,7 +599,7 @@ function saveSettings(): void {
           :aria-current="activeParentAgentId === agent.id ? 'page' : undefined"
           @click="selectParentAgent(agent.id)"
         >
-          {{ activeWorkspaceType === "script" && agent.id === "expert_section_writer" ? "分集" : agent.label }}
+          {{ agent.label }}
           <span>{{ draftTeams.find((team) => team.parentAgentId === agent.id)?.subagents.length ?? 0 }}</span>
         </button>
       </nav>

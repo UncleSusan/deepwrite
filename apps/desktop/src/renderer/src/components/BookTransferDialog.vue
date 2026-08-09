@@ -6,8 +6,7 @@ export type BookTransferDialogMode = "open" | "import";
 export type BookTransferAction =
   | "open-book"
   | "open-long-book"
-  | "migrate-write-claw-long-book"
-  | "import-legacy-book";
+  | "import-continuation-long-book";
 
 const props = defineProps<{
   mode: BookTransferDialogMode | null;
@@ -37,16 +36,10 @@ const options = computed(() =>
       ]
     : [
         {
-          action: "migrate-write-claw-long-book" as const,
-          icon: "archive" as const,
-          title: "旧版本长篇",
-          description: "导入旧版本长篇，源文件保持不变"
-        },
-        {
-          action: "import-legacy-book" as const,
-          icon: "archive" as const,
-          title: "旧版本短篇/剧本",
-          description: "导入旧版本短篇或剧本并转换为当前文件结构"
+          action: "import-continuation-long-book" as const,
+          icon: "edit" as const,
+          title: "续写导入（TXT 章节）",
+          description: "从章节文件夹新建长篇，并封存除最后一章外的历史正文"
         }
       ]
 );

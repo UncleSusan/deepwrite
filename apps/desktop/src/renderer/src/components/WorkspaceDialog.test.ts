@@ -38,6 +38,26 @@ describe("WorkspaceDialog provider presets", () => {
     expect(source).toContain('editor.api = "openai-completions"');
     expect(source).toContain('editor.baseUrl = "https://api.kimi.com/coding/v1"');
   });
+
+  it("offers Ollama with its local OpenAI-compatible endpoint", () => {
+    expect(source).toContain('{ value: "ollama", label: "Ollama" }');
+    expect(source).toContain('provider === "ollama"');
+    expect(source).toContain('editor.api = "openai-completions"');
+    expect(source).toContain('editor.baseUrl = "http://127.0.0.1:11434/v1"');
+  });
+
+  it.each([
+    ["dashscope", "阿里云百炼", "https://dashscope.aliyuncs.com/compatible-mode/v1"],
+    ["zhipu", "智谱 GLM", "https://open.bigmodel.cn/api/paas/v4"],
+    ["moonshot", "Kimi 开放平台", "https://api.moonshot.cn/v1"]
+  ])(
+    "offers the %s OpenAI-compatible provider preset",
+    (provider, label, baseUrl) => {
+      expect(source).toContain(`{ value: "${provider}", label: "${label}" }`);
+      expect(source).toContain(`provider === "${provider}"`);
+      expect(source).toContain(`editor.baseUrl = "${baseUrl}"`);
+    }
+  );
 });
 
 describe("WorkspaceDialog official models", () => {
@@ -52,15 +72,37 @@ describe("WorkspaceDialog official models", () => {
     expect(source).toContain('class="dialog-description model-price-notice"');
     expect(source).toContain('v-for="(message, index) in modelAlertMessages"');
     expect(source).toContain("{{ message }}");
+    expect(source).toContain("@click=\"emit('openOfficialModels')\"");
+    expect(source).toContain('title="前往设置官方模型"');
     expect(source).not.toContain("官方模型已经上线！直连厂商！");
     expect(source).not.toContain("配置会同时用于连接测试与实际对话");
   });
 });
 
 describe("WorkspaceDialog model draft lifecycle", () => {
+  it("persists a newly selected default model immediately", () => {
+    const start = source.indexOf("function setDefaultModel(");
+    const end = source.indexOf("function submitModelSettings(", start);
+    const body = source.slice(start, end);
+    expect(body).toContain("draftDefaultModelId.value = modelId;");
+    expect(body).toContain("submitModelSettings();");
+    expect(source).toContain(':disabled="modelSaving || Boolean(modelEditor)"');
+  });
+
   it("hydrates saved models when the dialog mounts already active", () => {
     expect(source).toMatch(
       /watch\(\s*\(\) => \[props\.mode, props\.active\] as const,[\s\S]*?\{ immediate: true \}\s*\);/
     );
+  });
+
+  it("filters managed models and free-provider options in custom scope", () => {
+    expect(source).toContain('props.modelScope === "all" || !model.managedBy');
+    expect(source).toContain('option.value !== "deepwrite-free"');
+    expect(source).toContain('modelScope === "custom" ? "尚未配置自定义模型"');
+  });
+
+  it("merges custom drafts with hidden managed models before saving", () => {
+    expect(source).toContain("mergeCustomModelSettings(");
+    expect(source).toContain("(props.modelSettings?.models ?? []).map(toModelInput)");
   });
 });

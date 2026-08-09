@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
+  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
   LibraryTypeSchema,
   MaterialLibraryKindSchema,
   MaterialStageIdSchema,
@@ -15,8 +17,10 @@ export const LibraryAgentDomainSchema = z.enum(LIBRARY_AGENT_DOMAINS);
 export type LibraryAgentDomain = z.infer<typeof LibraryAgentDomainSchema>;
 
 export const LIBRARY_AGENT_MAX_ENTRIES = 128;
-export const LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS = 12_000;
-export const LIBRARY_AGENT_ENTRY_MAX_CHARACTERS = 80_000;
+export const LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS =
+  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS;
+export const LIBRARY_AGENT_ENTRY_MAX_CHARACTERS =
+  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS;
 export const LIBRARY_AGENT_TOTAL_SNAPSHOT_MAX_CHARACTERS = 320_000;
 
 const LibraryAgentSystemPromptSchema = z
@@ -85,8 +89,8 @@ export const DEFAULT_SKILL_LIBRARY_AGENT_SKILLS = [
 步骤：
 1. 调用 list_skill_entries 了解当前库已有条目与结构。
 2. 归纳本库用途、适用场景、不适用边界和条目组织方式。
-3. 若库介绍为空或明显过时，整理一版完整库介绍草案；若已有内容，只补充缺失部分或提出修订建议。
-4. 正文只写库介绍本身，不要混入分析过程或操作记录。`
+3. 若库介绍为空或明显过时，整理一版完整库介绍；若已有内容，只补充缺失部分。
+4. 调用 edit_skill_library_overview 提交正式修改；正文只写库介绍本身，不要混入分析过程或操作记录。`
   },
   {
     id: "create-skill",
@@ -124,8 +128,8 @@ export const DEFAULT_MATERIAL_LIBRARY_AGENT_SKILLS = [
 步骤：
 1. 调用 list_material_entries 了解当前库已有条目与栏目。
 2. 归纳本库用途、适用场景、不适用边界和条目组织方式。
-3. 若库介绍为空或明显过时，整理一版完整库介绍草案；若已有内容，只补充缺失部分或提出修订建议。
-4. 正文只写库介绍本身，不要混入分析过程或操作记录。`
+3. 若库介绍为空或明显过时，整理一版完整库介绍；若已有内容，只补充缺失部分。
+4. 调用 edit_material_library_overview 提交正式修改；正文只写库介绍本身，不要混入分析过程或操作记录。`
   },
   {
     id: "create-material",
@@ -166,30 +170,30 @@ export const DEFAULT_LIBRARY_AGENT_READ_ACCESS: Record<
   }
 };
 
-export const DEFAULT_MATERIAL_LIBRARY_AGENT_SYSTEM_PROMPT = `你是 DeepWrite 的短篇素材库管理智能体。你写入时只管理当前运行上下文指定的一个素材库，不得修改书籍正文、技能库，也不得写入其它素材库。
+export const DEFAULT_MATERIAL_LIBRARY_AGENT_SYSTEM_PROMPT = `你是 DeepWrite 的共享素材库管理智能体。素材库可供短篇、剧本和长篇共同绑定；你写入时只管理当前运行上下文指定的一个素材库，不得修改书籍正文、技能库，也不得写入其它素材库。
 
 工作目标：
 - 把素材整理为可检索、可复用、边界清晰的条目，而不是把聊天分析直接堆进素材正文。
 - 当前库可能属于人物、卖点、剧情、正文片段或其他分类；新增条目必须使用当前库允许的栏目。
 - 若当前库属于某个素材分组，list_material_entries / read_material_entry / search_material_entries 也可读取同分组其它成员库中的素材，可用 library_id 限定范围；这些同组条目只读。
-- 库介绍只作为只读索引与使用边界；当前工具不修改库介绍。
+- 库介绍是当前库的用途、边界和索引说明；需要修改时调用 edit_material_library_overview。
 
 工作流程：
 1. 先调用 list_material_entries 了解当前库（以及同分组可读库）的条目和栏目。
 2. 修改已有条目前，调用 read_material_entry 读取完整可用快照；不知道目标时先调用 search_material_entries。
 3. 用户点名技能，或需要整理 / 创建 / 初始化库介绍等方法时，调用 load_skill 按需加载可用技能。
-4. 新增独立素材时调用 create_material_entry；修改已有素材时调用 edit_material_entry。创建与编辑只作用于当前库。
+4. 新增独立素材时调用 create_material_entry；修改已有素材时调用 edit_material_entry；修改库介绍时调用 edit_material_library_overview。所有写入只作用于当前库。
 5. 已有正文优先使用 replace_fragments 做局部、唯一原文替换；追加内容使用 append。
 6. 只有条目为空或用户明确要求全文重写时，才使用 replace，并显式设置 allow_overwrite_existing=true。
 
 安全规则：
 - 搜索结果只是定位片段，重要事实必须继续读取目标条目核对。
-- 截断条目、只读条目和同分组其它库条目不得写入；应提示用户先在界面打开目标条目或切换到对应可写素材库。
-- 写入工具只提交待审阅变更。用户接受后客户端才会保存到本地 Markdown；当前回复不得提前声称保存成功。
+- 截断库介绍、截断条目、只读条目和同分组其它库条目不得写入；应提示用户先在界面打开目标内容或切换到对应可写素材库。
+- 写入工具只提交待审阅变更。用户接受后客户端才会保存到本地资料库文件；当前回复不得提前声称保存成功。
 - 工具正文只能包含正式素材内容，不要混入分析过程、操作说明或工具记录。
 `;
 
-export const DEFAULT_SKILL_LIBRARY_AGENT_SYSTEM_PROMPT = `你是 DeepWrite 的短篇技能库管理智能体。你写入时只管理当前运行上下文指定的一个技能库，不得修改书籍正文、素材库，也不得写入其它技能库。
+export const DEFAULT_SKILL_LIBRARY_AGENT_SYSTEM_PROMPT = `你是 DeepWrite 的共享技能库管理智能体。技能库可供短篇、剧本和长篇共同绑定；你写入时只管理当前运行上下文指定的一个技能库，不得修改书籍正文、素材库，也不得写入其它技能库。
 
 技能库用于沉淀可重复执行的写作方法、检查清单、模板和协作流程，不用于保存某一篇小说的一次性人物、情节或正文。
 
@@ -197,7 +201,7 @@ export const DEFAULT_SKILL_LIBRARY_AGENT_SYSTEM_PROMPT = `你是 DeepWrite 的�
 1. 先调用 list_skill_entries 了解当前库（以及同分组可读库）的条目和适用阶段。
 2. 修改已有技能前，调用 read_skill_entry 读取完整可用快照；不知道目标时先调用 search_skill_entries。
 3. 用户点名技能，或需要整理技能、创建技能、初始化库介绍等方法时，调用 load_skill 按需加载可用技能。
-4. 新增可复用方法时调用 create_skill_entry；修改已有方法时调用 edit_skill_entry。创建与编辑只作用于当前库。
+4. 新增可复用方法时调用 create_skill_entry；修改已有方法时调用 edit_skill_entry；修改库说明时调用 edit_skill_library_overview。所有写入只作用于当前库。
 5. 已有正文优先使用 replace_fragments 做局部、唯一原文替换；追加内容使用 append。
 6. 只有条目为空或用户明确要求全文重写时，才使用 replace，并显式设置 allow_overwrite_existing=true。
 7. 若当前库属于某个技能分组，list_skill_entries / read_skill_entry / search_skill_entries 也可读取同分组其它成员库中的技能，可用 library_id 限定范围；这些同组条目只读。
@@ -205,12 +209,12 @@ export const DEFAULT_SKILL_LIBRARY_AGENT_SYSTEM_PROMPT = `你是 DeepWrite 的�
 技能质量要求：
 - 写清适用场景、输入条件、执行步骤、检查标准和不适用边界。
 - 协调型技能负责规划、拆分和验收；分节写作技能负责具体写作动作，不要混淆职责。
-- 库说明只作为只读索引；当前工具不修改库说明。
+- 库说明是当前技能库的用途、边界和索引；需要修改时调用 edit_skill_library_overview。
 
 安全规则：
 - 搜索结果只是定位片段，重要规则必须继续读取目标条目核对。
-- 官方技能库、截断条目、只读条目和同分组其它库条目不得写入。
-- 写入工具只提交待审阅变更。用户接受后客户端才会保存到本地 Markdown；当前回复不得提前声称保存成功。
+- 官方技能库、截断库说明、截断条目、只读条目和同分组其它库条目不得写入。
+- 写入工具只提交待审阅变更。用户接受后客户端才会保存到本地资料库文件；当前回复不得提前声称保存成功。
 - 工具正文只能包含正式技能内容，不要混入分析过程、操作说明或工具记录。
 `;
 
@@ -227,7 +231,7 @@ export const DEFAULT_LIBRARY_AGENT_PROFILES: readonly LibraryAgentProfile[] = [
   {
     domain: "material",
     label: "素材库管理智能体",
-    description: "读取、搜索、新建和安全编辑当前素材库中的短篇素材条目。",
+    description: "读取、搜索、新建和安全编辑当前共享素材库中的素材条目。",
     systemPrompt: DEFAULT_MATERIAL_LIBRARY_AGENT_SYSTEM_PROMPT,
     readAccess: {
       skills: [...DEFAULT_LIBRARY_AGENT_READ_ACCESS.material.skills]
@@ -331,6 +335,13 @@ const LibraryAgentEntrySnapshotBaseSchema = z
         message: "A truncated library entry must report its original length."
       });
     }
+    if (value.truncated !== true && value.originalLength !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message: "An untruncated library entry must omit originalLength."
+      });
+    }
     if (
       (value.sourceLibraryId !== undefined) !==
       (value.sourceLibraryTitle !== undefined)
@@ -374,7 +385,9 @@ const LibraryAgentWorkspaceBaseSchema = z.object({
   libraryId: z.string().trim().min(1).max(512),
   title: z.string().trim().min(1).max(256),
   libraryType: LibraryTypeSchema,
+  overviewDocumentId: z.string().trim().min(1).max(4_096),
   overview: z.string().max(LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS),
+  overviewRevision: z.string().regex(/^v1:\d+:[0-9a-f]{8}$/),
   overviewTruncated: z.boolean().optional(),
   overviewOriginalLength: z
     .number()
@@ -423,6 +436,16 @@ export const LibraryAgentWorkspaceSnapshotSchema = z
         code: "custom",
         path: ["overviewOriginalLength"],
         message: "A truncated library overview must report its original length."
+      });
+    }
+    if (
+      value.overviewTruncated !== true &&
+      value.overviewOriginalLength !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["overviewOriginalLength"],
+        message: "An untruncated library overview must omit its original length."
       });
     }
     if ((value.groupId !== undefined) !== (value.groupTitle !== undefined)) {

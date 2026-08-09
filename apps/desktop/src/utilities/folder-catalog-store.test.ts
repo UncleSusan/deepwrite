@@ -989,7 +989,7 @@ describe("FolderCatalogStore", () => {
     ]);
   });
 
-  it("persists library types and rejects cross-type book bindings", async () => {
+  it("persists legacy library types while allowing shared cross-type bindings", async () => {
     const root = await makeTemporaryRoot("deepwrite-folder-library-type-");
     const store = new FolderCatalogStore({
       userDataPath: join(root, "user-data"),
@@ -1030,36 +1030,39 @@ describe("FolderCatalogStore", () => {
       parentDirectory
     );
     expect(correctlyBound.resource.bookType).toBe("script");
-    await expect(
-      store.updateBook({
-        bookId: correctlyBound.resource.id,
-        linkedMaterialIdsByKind: { plot: [shortMaterial.resource.id] },
-        baseProjectRevision: 0
-      })
-    ).rejects.toThrow(/剧本书籍不能关联short素材库/u);
+    const crossTypeUpdate = await store.updateBook({
+      bookId: correctlyBound.resource.id,
+      linkedMaterialIdsByKind: { plot: [shortMaterial.resource.id] },
+      baseProjectRevision: 0
+    });
+    expect(crossTypeUpdate.linkedMaterialIdsByKind.plot).toEqual([
+      shortMaterial.resource.id
+    ]);
     expect(
       await store.getProjectRevision(correctlyBound.resource.id, "book")
-    ).toBe(0);
-    await expect(
-      store.createScriptBook(
-        {
-          title: "错误绑定短篇素材",
-          genre: "其他",
-          linkedMaterialIdsByKind: { plot: [shortMaterial.resource.id] }
-        },
-        parentDirectory
-      )
-    ).rejects.toThrow(/剧本书籍不能关联short素材库/u);
-    await expect(
-      store.createShortBook(
-        {
-          title: "错误绑定剧本素材",
-          genre: "其他",
-          linkedMaterialIdsByKind: { plot: [scriptMaterial.resource.id] }
-        },
-        parentDirectory
-      )
-    ).rejects.toThrow(/短篇书籍不能关联script素材库/u);
+    ).toBe(1);
+    const scriptWithShortMaterial = await store.createScriptBook(
+      {
+        title: "剧本绑定短篇来源素材",
+        genre: "其他",
+        linkedMaterialIdsByKind: { plot: [shortMaterial.resource.id] }
+      },
+      parentDirectory
+    );
+    const shortWithScriptMaterial = await store.createShortBook(
+      {
+        title: "短篇绑定剧本来源素材",
+        genre: "其他",
+        linkedMaterialIdsByKind: { plot: [scriptMaterial.resource.id] }
+      },
+      parentDirectory
+    );
+    expect(scriptWithShortMaterial.resource.linkedMaterialIdsByKind.plot).toEqual([
+      shortMaterial.resource.id
+    ]);
+    expect(shortWithScriptMaterial.resource.linkedMaterialIdsByKind.plot).toEqual([
+      scriptMaterial.resource.id
+    ]);
   });
 
   it("saves draft body and character-state files independently while guarding title metadata", async () => {
@@ -1237,6 +1240,70 @@ describe("FolderCatalogStore", () => {
     await expect(
       access(join(opened.projectDirectory, mappedSection.characterState.path))
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("moves the complete draft section entry and preserves its paired files", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-move-draft-section-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data"),
+      now: tickingClock()
+    });
+    const opened = await store.createScriptBook(
+      { title: "剧集排序", genre: "其他" },
+      join(root, "books")
+    );
+    const firstSection = opened.resource.draft.sections[0]!;
+    const secondSection = await store.createDraftSection({
+      bookId: opened.resource.id,
+      afterSectionId: firstSection.id,
+      title: "第二集",
+      baseProjectRevision: 0
+    });
+    await store.saveDocument({
+      bookId: opened.resource.id,
+      documentId: secondSection.body.id,
+      content: "第二集正文",
+      baseProjectRevision: 1
+    });
+    await store.saveDocument({
+      bookId: opened.resource.id,
+      documentId: secondSection.characterState.id,
+      content: "第二集人物状态",
+      baseProjectRevision: 1
+    });
+
+    await expect(
+      store.moveDraftSection({
+        bookId: opened.resource.id,
+        sectionId: secondSection.id,
+        direction: "up",
+        baseProjectRevision: 3
+      })
+    ).resolves.toMatchObject({
+      sectionId: secondSection.id,
+      direction: "up",
+      moved: true,
+      projectRevision: 4
+    });
+
+    const snapshot = await store.snapshot();
+    expect(snapshot.books[0]?.draft.sections.map(({ id }) => id)).toEqual([
+      secondSection.id,
+      firstSection.id
+    ]);
+    expect(snapshot.books[0]?.draft.sections[0]).toMatchObject({
+      id: secondSection.id,
+      body: { content: "第二集正文" },
+      characterState: { content: "第二集人物状态" }
+    });
+    await expect(
+      store.moveDraftSection({
+        bookId: opened.resource.id,
+        sectionId: secondSection.id,
+        direction: "up",
+        baseProjectRevision: 4
+      })
+    ).resolves.toMatchObject({ moved: false, projectRevision: 4 });
   });
 
   it("creates a draft section batch in one revision and replays it idempotently", async () => {
@@ -2099,11 +2166,13 @@ describe("FolderCatalogStore", () => {
     const updatedMaterialGroup = await store.updateLibraryGroup({
       domain: "material",
       groupId: materialGroup.resource.id,
+      title: "已重命名素材组",
       members: { plot: replacementMaterial.resource.id },
       baseProjectRevision: 0
     });
     expect(updatedMaterialGroup).toMatchObject({
       id: materialGroup.resource.id,
+      title: "已重命名素材组",
       members: { plot: replacementMaterial.resource.id },
       projectRevision: 1
     });
@@ -2873,5 +2942,80 @@ describe("FolderCatalogStore", () => {
     await expect(limitedStore.openBookProject(projectDirectory, false)).rejects.toThrow(
       /16 byte limit/u
     );
+  });
+
+  it("renames libraries and persistently reorders or moves library entries", async () => {
+    const root = await makeTemporaryRoot("deepwrite-library-move-");
+    const store = new FolderCatalogStore({ userDataPath: join(root, "user-data"), now: tickingClock() });
+    const source = await store.createLibrary({ domain: "material", name: "人物素材", materialKind: "character" });
+    const target = await store.createLibrary({ domain: "material", name: "剧情素材", materialKind: "plot" });
+    const moving = await store.createLibraryEntry({
+      domain: "material", libraryId: source.resource.id, title: "主角", content: "主角设定", stageId: "character"
+    });
+    const existing = await store.createLibraryEntry({
+      domain: "material", libraryId: target.resource.id, title: "已有剧情", content: "已有内容", stageId: "pacing"
+    });
+
+    await expect(store.moveLibraryEntry({
+      domain: "material", sourceLibraryId: source.resource.id, targetLibraryId: target.resource.id,
+      entryId: moving.id, beforeEntryId: existing.id,
+      sourceBaseProjectRevision: 0, targetBaseProjectRevision: 1, targetStageId: "plot_refine"
+    })).rejects.toBeInstanceOf(FolderCatalogConflictError);
+
+    await store.moveLibraryEntry({
+      domain: "material", sourceLibraryId: source.resource.id, targetLibraryId: target.resource.id,
+      entryId: moving.id, beforeEntryId: existing.id,
+      sourceBaseProjectRevision: 1, targetBaseProjectRevision: 1, targetStageId: "plot_refine"
+    });
+    let snapshot = await store.snapshot();
+    expect(snapshot.materials.find(({ id }) => id === source.resource.id)?.entries).toEqual([]);
+    expect(snapshot.materials.find(({ id }) => id === target.resource.id)?.entries.map(({ id }) => id)).toEqual([moving.id, existing.id]);
+    expect(snapshot.materials.find(({ id }) => id === target.resource.id)?.entries[0]).toMatchObject({ stageId: "plot_refine", body: "主角设定" });
+
+    await store.moveLibraryEntry({
+      domain: "material", sourceLibraryId: target.resource.id, targetLibraryId: target.resource.id,
+      entryId: existing.id, beforeEntryId: moving.id, sourceBaseProjectRevision: 2
+    });
+    await store.updateLibrary({
+      domain: "material",
+      libraryId: target.resource.id,
+      title: "剧情灵感",
+      overview: "用于沉淀剧情灵感。",
+      baseProjectRevision: 3
+    });
+    await store.updateLibrary({
+      domain: "material",
+      libraryId: target.resource.id,
+      overview: "用于沉淀可复用的剧情灵感。",
+      baseProjectRevision: 4
+    });
+    snapshot = await store.snapshot();
+    const renamed = snapshot.materials.find(({ id }) => id === target.resource.id)!;
+    expect(renamed.title).toBe("剧情灵感");
+    expect(renamed.overview).toBe("用于沉淀可复用的剧情灵感。");
+    expect(renamed.projectRevision).toBe(5);
+    expect(renamed.entries.map(({ id }) => id)).toEqual([existing.id, moving.id]);
+    expect(renamed.entries[1]).toMatchObject({ body: "主角设定", stageId: "plot_refine" });
+
+    await expect(
+      store.updateLibrary({
+        domain: "material",
+        libraryId: target.resource.id,
+        overview: "过期版本不应覆盖",
+        baseProjectRevision: 4
+      })
+    ).rejects.toBeInstanceOf(FolderCatalogConflictError);
+    const forced = await store.updateLibrary({
+      domain: "material",
+      libraryId: target.resource.id,
+      overview: "确认强制覆盖后的介绍",
+      baseProjectRevision: 4,
+      force: true
+    });
+    expect(forced).toMatchObject({
+      title: "剧情灵感",
+      overview: "确认强制覆盖后的介绍",
+      projectRevision: 6
+    });
   });
 });

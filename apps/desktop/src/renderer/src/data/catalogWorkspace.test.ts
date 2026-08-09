@@ -285,7 +285,7 @@ describe("catalog workspace projection", () => {
     expect(draftNode?.children?.[1]).toMatchObject({
       targetDocumentId: expect.any(String),
       characterStateDocumentId: expect.any(String),
-      shortAgentId: "expert_section_writer",
+      shortAgentId: "expert_draft_coordinator",
       expertSectionId: "section-1"
     });
     expect(draftNode?.children?.[1]?.targetDocumentId).not.toBe(
@@ -355,14 +355,19 @@ describe("catalog workspace projection", () => {
     ]);
     expect(flattenNodes([book]).some((node) => node.label === "导语设计")).toBe(true);
     expect(draft.children).toMatchObject([
-      { label: "第一集", workspaceType: "script" }
+      {
+        label: "第一集",
+        workspaceType: "script",
+        shortAgentId: "expert_draft_coordinator"
+      }
     ]);
     const body = projection.workspaceDocuments.find(
       (document) => document.expertSectionId === "episode-1" && document.draftFileKind === "body"
     );
     expect(body).toMatchObject({
       workspaceType: "script",
-      eyebrow: "剧本 · 剧集正文"
+      eyebrow: "剧本 · 剧集正文",
+      shortAgentId: "expert_draft_coordinator"
     });
   });
 
@@ -477,7 +482,7 @@ describe("catalog workspace projection", () => {
         expect.objectContaining({
           targetDocumentId: expect.any(String),
           characterStateDocumentId: expect.any(String),
-          shortAgentId: "expert_section_writer",
+          shortAgentId: "expert_draft_coordinator",
           expertSectionId: expect.any(String)
         })
       ])
@@ -512,7 +517,7 @@ describe("catalog workspace projection", () => {
     expect(draftNode.children).toMatchObject([
       {
         label: "导语",
-        shortAgentId: "expert_section_writer",
+        shortAgentId: "expert_draft_coordinator",
         expertSectionId: "intro"
       }
     ]);
@@ -580,6 +585,17 @@ describe("catalog workspace projection", () => {
     expect(
       entryDocuments.find((document) => document.catalogEntryId === "material-pacing")?.path
     ).toContain("家庭");
+    const materialOverview = projection.workspaceDocuments.find(
+        (document) =>
+          document.domain === "material" &&
+          document.libraryId === "material-plot" &&
+          document.catalogLibraryField === "overview"
+      );
+    expect(materialOverview).toMatchObject({
+      content: "剧情素材说明",
+      catalogLibraryField: "overview"
+    });
+    expect(materialOverview?.readOnly).toBeUndefined();
   });
 
   it("shows skill groups directly and moves their libraries out of kind categories", () => {
@@ -636,6 +652,29 @@ describe("catalog workspace projection", () => {
       stageCategoryId: "character_design",
       content: "人物技能正文"
     });
+    const skillOverview = projection.workspaceDocuments.find(
+        (document) =>
+          document.domain === "skill" &&
+          document.libraryId === "skill-general" &&
+          document.catalogLibraryField === "overview"
+      );
+    expect(skillOverview).toMatchObject({
+      content: "技能说明",
+      catalogLibraryField: "overview"
+    });
+    expect(skillOverview?.readOnly).toBeUndefined();
+  });
+
+  it("keeps builtin skill-library overviews read-only", () => {
+    const source = fixture();
+    source.skills[0] = { ...source.skills[0]!, isBuiltin: true };
+    const overview = projectCatalogWorkspace(source).workspaceDocuments.find(
+      (document) =>
+        document.domain === "skill" &&
+        document.libraryId === "skill-general" &&
+        document.catalogLibraryField === "overview"
+    );
+    expect(overview?.readOnly).toBe(true);
   });
 
   it("generates collision-free editor ids across books and libraries", () => {

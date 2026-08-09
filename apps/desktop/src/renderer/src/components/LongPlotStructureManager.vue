@@ -311,25 +311,6 @@ const threadOptions = computed<PopupSelectOption[]>(() =>
   }))
 );
 
-const committedEventIds = computed(() => {
-  const ids = new Set<string>();
-  for (const placement of props.snapshot.plot.narrativePlacements) {
-    if (placement.commitId) ids.add(placement.eventId);
-  }
-  for (const thread of props.snapshot.plot.foreshadowing) {
-    const hasCommittedBeat = thread.beats.some(
-      ({ commitId }) => commitId !== null
-    );
-    if (hasCommittedBeat && thread.truthEventId) {
-      ids.add(thread.truthEventId);
-    }
-    for (const beat of thread.beats) {
-      if (beat.commitId && beat.eventId) ids.add(beat.eventId);
-    }
-  }
-  return ids;
-});
-
 const rows = computed<PlotRow[]>(() => {
   switch (activeSection.value) {
     case "event":
@@ -339,12 +320,12 @@ const rows = computed<PlotRow[]>(() => {
           id: event.id,
           title: `${event.storyOrder}. ${event.title}`,
           scopeId: "story",
-          editLocked: committedEventIds.value.has(event.id),
-          deleteLocked: committedEventIds.value.has(event.id),
+          editLocked: false,
+          deleteLocked: false,
           // Story order is a dense sequence. Moving any sibling across a committed
           // event would also rewrite that committed event's order, so the whole
           // sequence becomes immutable once it contains an audited fact.
-          reorderLocked: committedEventIds.value.size > 0,
+          reorderLocked: false,
           details: [
             `时间：${timeModeLabels[event.timeMode]} · ${
               event.timeLabel || "未填写显示时间"
@@ -364,17 +345,14 @@ const rows = computed<PlotRow[]>(() => {
         }));
     case "connection":
       return props.snapshot.plot.eventConnections.map((connection) => {
-        const locked =
-          committedEventIds.value.has(connection.sourceEventId) ||
-          committedEventIds.value.has(connection.targetEventId);
         return {
           id: connection.id,
           title: `${eventTitle(connection.sourceEventId)} → ${eventTitle(
             connection.targetEventId
           )}`,
           scopeId: "connections",
-          editLocked: locked,
-          deleteLocked: locked,
+          editLocked: false,
+          deleteLocked: false,
           details: [
             `关系：${connectionTypeLabels[connection.type]}`,
             `备注：${connection.note || "未填写"}`
@@ -389,22 +367,15 @@ const rows = computed<PlotRow[]>(() => {
             left.orderInChapter - right.orderInChapter
         )
         .map((placement) => {
-          const committed = placement.commitId !== null;
-          const groupLocked =
-            props.snapshot.plot.narrativePlacements.some(
-              (candidate) =>
-                candidate.chapterCardId === placement.chapterCardId &&
-                candidate.commitId !== null
-            );
           return {
             id: placement.id,
             title: `${chapterTitle(placement.chapterCardId)} · ${
               placement.orderInChapter
             }. ${eventTitle(placement.eventId)}`,
             scopeId: placement.chapterCardId,
-            editLocked: committed,
-            deleteLocked: committed,
-            reorderLocked: groupLocked,
+            editLocked: false,
+            deleteLocked: false,
+            reorderLocked: false,
             details: [
               `呈现：${narrativeModeLabels[placement.mode]} · ${
                 disclosureLabels[placement.disclosure]
@@ -418,13 +389,12 @@ const rows = computed<PlotRow[]>(() => {
         });
     case "foreshadowing":
       return props.snapshot.plot.foreshadowing.map((thread) => {
-        const locked = thread.beats.some((beat) => beat.commitId !== null);
         return {
           id: thread.id,
           title: thread.title,
           scopeId: "foreshadowing",
-          editLocked: locked,
-          deleteLocked: locked,
+          editLocked: false,
+          deleteLocked: false,
           details: [
             `状态：${foreshadowingStatusLabels[thread.status]} · 真相事件：${
               thread.truthEventId
@@ -442,19 +412,15 @@ const rows = computed<PlotRow[]>(() => {
         [...thread.beats]
           .sort((left, right) => left.order - right.order)
           .map((beat) => {
-            const committed = beat.commitId !== null;
-            const groupLocked = thread.beats.some(
-              (candidate) => candidate.commitId !== null
-            );
             return {
               id: beat.id,
               title: `${thread.title} · ${beat.order}. ${
                 beatTypeLabels[beat.type]
               }`,
               scopeId: thread.id,
-              editLocked: committed,
-              deleteLocked: committed,
-              reorderLocked: groupLocked,
+              editLocked: false,
+              deleteLocked: false,
+              reorderLocked: false,
               details: [
                 `事件：${
                   beat.eventId ? eventTitle(beat.eventId) : "未关联"

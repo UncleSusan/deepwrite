@@ -30,6 +30,13 @@ import {
 import { createId } from "@deepwrite/shared";
 import { uiMessage } from "../ui-feedback";
 import {
+  LONG_EDITOR_LIST_MAX_WIDTH,
+  LONG_EDITOR_LIST_MIN_WIDTH,
+  loadLongEditorPanePreferences,
+  saveLongEditorPanePreferences
+} from "../utils/longEditorPanePreferences";
+import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
+import {
   isEditableLongFile,
   resolveLongWorkspaceApi,
   type LongStructureMutationCompletion,
@@ -150,6 +157,12 @@ const RECOVERY_WRITE_DEBOUNCE_MS = 300;
 const RECOVERY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const RECOVERY_MAX_RECORD_CHARACTERS = 4 * 1024 * 1024;
 const RECOVERY_CLOCK_SKEW_MS = 5 * 60 * 1000;
+const LONG_EDITOR_DIVIDER_WIDTH = 7;
+const LONG_EDITOR_DEFAULT_LIST_RATIO = 0.38;
+const LONG_EDITOR_ENTRY_CONTENT_MIN_WIDTH = 240;
+const LONG_EDITOR_STORY_DETAIL_MIN_WIDTH = 320;
+
+type LongEditorResizablePane = "entry-list" | "story-plot-list";
 
 interface LongEditorRecoveryRecord {
   schemaVersion: 1;
@@ -175,6 +188,25 @@ const activeStoryPlotId = ref<string | null>(null);
 const pendingStoryPlotId = ref<string | null>(null);
 const pendingStoryPlotDeleteId = ref<string | null>(null);
 const storyPlotActionMenuId = ref<string | null>(null);
+const chapterCardActionMenuId = ref<string | null>(null);
+const longEditorDocumentElement = ref<HTMLElement | null>(null);
+const storyPlotLayoutElement = ref<HTMLElement | null>(null);
+const longEditorPanePreferences = loadLongEditorPanePreferences(
+  window.localStorage
+);
+const preferredEntryListWidth = ref(
+  longEditorPanePreferences.entryListWidth
+);
+const preferredStoryPlotListWidth = ref(
+  longEditorPanePreferences.storyPlotListWidth
+);
+const entryListWidth = ref<number>();
+const storyPlotListWidth = ref<number>();
+const entryListMaxWidth = ref(LONG_EDITOR_LIST_MAX_WIDTH);
+const storyPlotListMaxWidth = ref(LONG_EDITOR_LIST_MAX_WIDTH);
+const resizingLongEditorPane = ref<LongEditorResizablePane | null>(null);
+let entryListResizeObserver: ResizeObserver | undefined;
+let storyPlotListResizeObserver: ResizeObserver | undefined;
 let storyPlotSelectionRequest = 0;
 const pendingCharacterId = ref<string | null>(null);
 const pendingRole = ref<LongWorkspaceFileRole | null>(null);
@@ -466,15 +498,6 @@ const currentStructureTitleTarget = computed<LongStructureTitleTarget | null>(
 const currentStructureTitleReadOnly = computed(() => {
   const target = currentStructureTitleTarget.value;
   if (!target) return true;
-  if (
-    target.kind === "chapterCard" &&
-    props.workspaceIndex?.chapters.some(
-      ({ chapterCardId, commitId }) =>
-        chapterCardId === target.id && commitId !== null
-    )
-  ) {
-    return true;
-  }
   return Boolean(
     props.locked || currentReadOnly.value || structureTitleSaving.value
   );
@@ -546,19 +569,13 @@ const currentNavigationDeleteTarget = computed<LongNavigationDeleteTarget | null
     }
     if (currentIsPlotPointWorkspace.value && currentPlotPoint.value) {
       const plotPoint = currentPlotPoint.value;
-      const chapterCount = index.plot.chapterCards.filter(
-        ({ primaryArcId }) => primaryArcId === plotPoint.id
-      ).length;
       return {
         kind: "plotPoint",
         id: plotPoint.id,
         title: plotPoint.title,
         label: "剧情点",
-        description: `将永久删除该剧情点、相关事件和伏笔关联${
-          chapterCount > 0
-            ? `，并级联删除以它为主剧情点的 ${chapterCount} 张章卡及对应正文文件`
-            : ""
-        }。`
+        description:
+          "将永久删除该剧情点、相关事件和伏笔关联；已关联章卡会保留并解除关联。"
       };
     }
     if (currentIsChapterCardWorkspace.value && currentChapterCard.value) {
@@ -600,6 +617,32 @@ const currentChapterCardCommitted = computed(() => {
       )
   );
 });
+
+function canReorderChapterCard(
+  chapterCardId: LongChapterCardId,
+  index: number,
+  direction: "up" | "down"
+): boolean {
+  const tabs = props.selection?.chapterCardTabs ?? [];
+  if (props.locked) return false;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= tabs.length) return false;
+  return true;
+}
+
+const currentIsCommittedEditableDocument = computed(
+  () =>
+    currentChapterCardCommitted.value &&
+    ((props.selection?.root === "draft" &&
+      currentSelectionFile.value?.role === "body") ||
+      (currentIsChapterCardWorkspace.value &&
+        currentSelectionFile.value?.role === "card"))
+);
+const currentCommittedEditNotice = computed(() =>
+  currentIsChapterCardWorkspace.value
+    ? "章卡已有连续性记录；仍可编辑、移动或删除，删除时会同时清理该章正文与记录。"
+    : "本章已有连续性记录；记录仅供参考，不限制正文修改。"
+);
 const currentIsVolumeOutline = computed(
   () =>
     currentIsBookLineWorkspace.value &&
@@ -632,15 +675,18 @@ const currentIsPlotPointForeshadowing = computed(
 );
 const currentIsForeshadowingView = computed(
   () =>
+    currentIsForeshadowingWorkspace.value ||
     currentIsVolumeForeshadowing.value ||
     currentIsPlotPointForeshadowing.value
 );
 const currentForeshadowingMode = computed<
   "overview" | "volume" | "plotPoint"
 >(() =>
-    currentIsVolumeForeshadowing.value
-      ? "volume"
-      : "plotPoint"
+    currentIsForeshadowingWorkspace.value
+      ? "overview"
+      : currentIsVolumeForeshadowing.value
+        ? "volume"
+        : "plotPoint"
 );
 const currentForeshadowingVolumeId = computed(
   () => {
@@ -691,7 +737,6 @@ const currentReadOnly = computed(() => {
   const selectedFile = currentSelectionFile.value;
   return Boolean(
     props.locked ||
-      currentChapterCardCommitted.value ||
       selectedFile?.readOnly ||
       (selectedFile && !isEditableLongFile(selectedFile.file))
   );
@@ -741,13 +786,237 @@ const currentIsWorldbuildingList = computed(
     props.selection?.root === "worldbuilding" &&
     props.selection.worldbuildingFormat === "list"
 );
+const currentWorldbuildingItemLayout = computed(
+  () =>
+    props.workspaceIndex?.featureSettings.worldbuildingItemLayout ??
+    "top-tabs"
+);
+const currentUsesTopWorldbuildingTabs = computed(
+  () =>
+    currentIsWorldbuildingList.value &&
+    currentWorldbuildingItemLayout.value === "top-tabs"
+);
+const currentUsesRightWorldbuildingList = computed(
+  () =>
+    currentIsWorldbuildingList.value &&
+    currentWorldbuildingItemLayout.value === "right-list"
+);
+const currentSharedItemLayout = computed(
+  () =>
+    props.workspaceIndex?.featureSettings.characterAndContinuityItemLayout ??
+    "top-tabs"
+);
+const currentPlotItemLayout = computed(
+  () => props.workspaceIndex?.featureSettings.plotItemLayout ?? "top-tabs"
+);
+const currentUsesTopCharacterTabs = computed(
+  () =>
+    currentIsCharacterGroup.value && currentSharedItemLayout.value === "top-tabs"
+);
+const currentUsesRightCharacterList = computed(
+  () =>
+    currentIsCharacterGroup.value && currentSharedItemLayout.value === "right-list"
+);
+const currentUsesTopPlotTabs = computed(
+  () =>
+    (currentIsBookLineWorkspace.value ||
+      currentIsPlotPointWorkspace.value ||
+      currentIsChapterCardWorkspace.value) &&
+    currentPlotItemLayout.value === "top-tabs"
+);
+const currentUsesRightBookLineList = computed(
+  () =>
+    currentIsBookLineWorkspace.value && currentPlotItemLayout.value === "right-list"
+);
+const currentUsesRightPlotPointList = computed(
+  () =>
+    currentIsPlotPointWorkspace.value &&
+    currentPlotItemLayout.value === "right-list"
+);
+const currentUsesRightChapterCardList = computed(
+  () =>
+    currentIsChapterCardWorkspace.value &&
+    currentPlotItemLayout.value === "right-list"
+);
+const currentUsesRightContinuityList = computed(
+  () =>
+    props.selection?.root === "continuity_ledger" &&
+    currentSharedItemLayout.value === "right-list"
+);
+const currentUsesAnyRightEntryList = computed(
+  () =>
+    currentUsesRightWorldbuildingList.value ||
+    currentUsesRightCharacterList.value ||
+    currentUsesRightBookLineList.value ||
+    currentUsesRightPlotPointList.value ||
+    currentUsesRightChapterCardList.value ||
+    currentUsesRightContinuityList.value
+);
+const entryListGridStyle = computed(() =>
+  entryListWidth.value === undefined
+    ? undefined
+    : { "--long-entry-list-width": `${entryListWidth.value}px` }
+);
+const storyPlotListGridStyle = computed(() =>
+  storyPlotListWidth.value === undefined
+    ? undefined
+    : { "--long-story-plot-list-width": `${storyPlotListWidth.value}px` }
+);
+
+function longEditorPaneContainer(
+  pane: LongEditorResizablePane
+): HTMLElement | null {
+  return pane === "entry-list"
+    ? longEditorDocumentElement.value
+    : storyPlotLayoutElement.value;
+}
+
+function longEditorPaneContentMinWidth(pane: LongEditorResizablePane): number {
+  if (pane === "story-plot-list") {
+    return LONG_EDITOR_STORY_DETAIL_MIN_WIDTH;
+  }
+  return currentIsPlotPointStoryline.value
+    ? LONG_EDITOR_STORY_DETAIL_MIN_WIDTH +
+        LONG_EDITOR_LIST_MIN_WIDTH +
+        LONG_EDITOR_DIVIDER_WIDTH
+    : LONG_EDITOR_ENTRY_CONTENT_MIN_WIDTH;
+}
+
+function preferredLongEditorPaneWidth(
+  pane: LongEditorResizablePane
+): number | undefined {
+  return pane === "entry-list"
+    ? preferredEntryListWidth.value
+    : preferredStoryPlotListWidth.value;
+}
+
+function resolveLongEditorPaneWidth(
+  pane: LongEditorResizablePane,
+  requestedWidth?: number
+): { width: number; max: number } | undefined {
+  const container = longEditorPaneContainer(pane);
+  if (!container) return undefined;
+  const containerWidth = container.getBoundingClientRect().width;
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) return undefined;
+  const availableMax = Math.max(
+    LONG_EDITOR_LIST_MIN_WIDTH,
+    Math.floor(
+      containerWidth -
+        longEditorPaneContentMinWidth(pane) -
+        LONG_EDITOR_DIVIDER_WIDTH
+    )
+  );
+  const max = Math.min(LONG_EDITOR_LIST_MAX_WIDTH, availableMax);
+  const target =
+    requestedWidth ??
+    preferredLongEditorPaneWidth(pane) ??
+    Math.round(containerWidth * LONG_EDITOR_DEFAULT_LIST_RATIO);
+  return {
+    width: Math.round(
+      Math.min(Math.max(target, LONG_EDITOR_LIST_MIN_WIDTH), max)
+    ),
+    max
+  };
+}
+
+function setDisplayedLongEditorPaneWidth(
+  pane: LongEditorResizablePane,
+  requestedWidth?: number
+): void {
+  const resolved = resolveLongEditorPaneWidth(pane, requestedWidth);
+  if (!resolved) return;
+  if (pane === "entry-list") {
+    entryListWidth.value = resolved.width;
+    entryListMaxWidth.value = resolved.max;
+    return;
+  }
+  storyPlotListWidth.value = resolved.width;
+  storyPlotListMaxWidth.value = resolved.max;
+}
+
+function reconcileLongEditorPaneWidths(): void {
+  if (currentUsesAnyRightEntryList.value) {
+    setDisplayedLongEditorPaneWidth("entry-list");
+  }
+  if (currentIsPlotPointStoryline.value) {
+    setDisplayedLongEditorPaneWidth("story-plot-list");
+  }
+}
+
+function persistLongEditorPaneWidths(): void {
+  saveLongEditorPanePreferences(window.localStorage, {
+    ...(preferredEntryListWidth.value === undefined
+      ? {}
+      : { entryListWidth: preferredEntryListWidth.value }),
+    ...(preferredStoryPlotListWidth.value === undefined
+      ? {}
+      : { storyPlotListWidth: preferredStoryPlotListWidth.value })
+  });
+}
+
+function commitLongEditorPaneWidth(pane: LongEditorResizablePane): void {
+  if (pane === "entry-list") {
+    preferredEntryListWidth.value = entryListWidth.value;
+  } else {
+    preferredStoryPlotListWidth.value = storyPlotListWidth.value;
+  }
+  persistLongEditorPaneWidths();
+}
+
+function handleLongEditorPaneResizeMove(event: PointerEvent): void {
+  const pane = resizingLongEditorPane.value;
+  const container = pane ? longEditorPaneContainer(pane) : null;
+  if (!pane || !container) return;
+  const bounds = container.getBoundingClientRect();
+  setDisplayedLongEditorPaneWidth(pane, bounds.right - event.clientX);
+}
+
+function stopLongEditorPaneResize(): void {
+  const pane = resizingLongEditorPane.value;
+  resizingLongEditorPane.value = null;
+  window.removeEventListener("pointermove", handleLongEditorPaneResizeMove);
+  window.removeEventListener("pointerup", stopLongEditorPaneResize);
+  window.removeEventListener("pointercancel", stopLongEditorPaneResize);
+  document.documentElement.classList.remove("is-long-editor-pane-resizing");
+  if (pane) commitLongEditorPaneWidth(pane);
+}
+
+function startLongEditorPaneResize(
+  pane: LongEditorResizablePane,
+  event: PointerEvent
+): void {
+  event.preventDefault();
+  event.stopPropagation();
+  resizingLongEditorPane.value = pane;
+  document.documentElement.classList.add("is-long-editor-pane-resizing");
+  window.addEventListener("pointermove", handleLongEditorPaneResizeMove);
+  window.addEventListener("pointerup", stopLongEditorPaneResize);
+  window.addEventListener("pointercancel", stopLongEditorPaneResize);
+}
+
+function handleLongEditorPaneResizeKeydown(
+  pane: LongEditorResizablePane,
+  event: KeyboardEvent
+): void {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  event.preventDefault();
+  const currentWidth =
+    pane === "entry-list" ? entryListWidth.value : storyPlotListWidth.value;
+  if (currentWidth === undefined) return;
+  setDisplayedLongEditorPaneWidth(
+    pane,
+    currentWidth + (event.key === "ArrowLeft" ? 12 : -12)
+  );
+  commitLongEditorPaneWidth(pane);
+}
 const showGenericFileTabs = computed(
   () =>
     Boolean(props.selection && props.selection.files.length > 1) &&
     !currentIsWorldbuildingList.value &&
     !currentIsPlotPointWorkspace.value &&
     !currentIsBookLineWorkspace.value &&
-    !currentIsChapterCardWorkspace.value
+    !currentIsChapterCardWorkspace.value &&
+    !currentUsesRightContinuityList.value
 );
 const currentWorldbuildingListState = computed<{
   items: Array<{ id: string; title: string; content: string }>;
@@ -1947,6 +2216,75 @@ function closeStoryPlotActionMenu(): void {
   storyPlotActionMenuId.value = null;
 }
 
+function toggleChapterCardActionMenu(chapterCardId: string): void {
+  chapterCardActionMenuId.value =
+    chapterCardActionMenuId.value === chapterCardId ? null : chapterCardId;
+}
+
+function closeChapterCardActionMenu(): void {
+  chapterCardActionMenuId.value = null;
+}
+
+function reorderChapterCard(
+  chapterCardId: LongChapterCardId,
+  direction: "up" | "down"
+): void {
+  const tabs = props.selection?.chapterCardTabs ?? [];
+  const index = tabs.findIndex(({ id }) => id === chapterCardId);
+  if (!canReorderChapterCard(chapterCardId, index, direction)) return;
+  const orderedIds = tabs.map(({ id }) => id);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  [orderedIds[index], orderedIds[targetIndex]] = [
+    orderedIds[targetIndex]!,
+    orderedIds[index]!
+  ];
+  const volumeId = props.selection?.chapterCardVolumeId;
+  if (!volumeId) return;
+  emitStoryPlotMutation([
+    {
+      type: "chapter.reorder",
+      volumeId,
+      orderedIds
+    }
+  ]);
+}
+
+function openChapterCardDelete(chapterCardId: LongChapterCardId): void {
+  if (
+    props.locked ||
+    currentReadOnly.value
+  ) {
+    return;
+  }
+  const chapterCard = props.workspaceIndex?.plot.chapterCards.find(
+    ({ id }) => id === chapterCardId
+  );
+  if (!chapterCard) return;
+  showNavigationDelete({
+    kind: "chapterCard",
+    id: chapterCard.id,
+    title: chapterCard.title,
+    label: "章卡",
+    description:
+      "将永久删除该章卡、章节正文、章末人物状态、下一章接续包，以及相关剧情落点和伏笔触点。"
+  });
+}
+
+function runChapterCardMenuAction(
+  chapterCardId: LongChapterCardId,
+  index: number,
+  action: "up" | "down" | "delete"
+): void {
+  closeChapterCardActionMenu();
+  if (action === "delete") {
+    openChapterCardDelete(chapterCardId);
+    return;
+  }
+  if (canReorderChapterCard(chapterCardId, index, action)) {
+    reorderChapterCard(chapterCardId, action);
+  }
+}
+
 function runStoryPlotMenuAction(
   storyPlotId: string,
   action: "up" | "down" | "delete"
@@ -1974,6 +2312,13 @@ function handleWindowPointerDown(event: PointerEvent): void {
       !target.closest(".long-story-plot-card-actions"))
   ) {
     closeStoryPlotActionMenu();
+  }
+  if (
+    chapterCardActionMenuId.value &&
+    (!(target instanceof Element) ||
+      !target.closest(".long-chapter-card-actions"))
+  ) {
+    closeChapterCardActionMenu();
   }
 }
 
@@ -2183,9 +2528,7 @@ function confirmWorldbuildingItemDelete(): void {
   );
 }
 
-function openNavigationDelete(): void {
-  const target = currentNavigationDeleteTarget.value;
-  if (!target || props.locked || currentReadOnly.value) return;
+function showNavigationDelete(target: LongNavigationDeleteTarget): void {
   navigationDeletePreviousFocus =
     document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -2194,6 +2537,12 @@ function openNavigationDelete(): void {
   void nextTick(() => {
     navigationDeleteCancelButton.value?.focus({ preventScroll: true });
   });
+}
+
+function openNavigationDelete(): void {
+  const target = currentNavigationDeleteTarget.value;
+  if (!target || props.locked || currentReadOnly.value) return;
+  showNavigationDelete(target);
 }
 
 function closeNavigationDelete(): void {
@@ -3239,11 +3588,58 @@ watch(
   { immediate: true }
 );
 
+watch(
+  longEditorDocumentElement,
+  (current, previous) => {
+    if (previous) entryListResizeObserver?.unobserve(previous);
+    if (current) entryListResizeObserver?.observe(current);
+    void nextTick(() => setDisplayedLongEditorPaneWidth("entry-list"));
+  },
+  { flush: "post" }
+);
+
+watch(
+  storyPlotLayoutElement,
+  (current, previous) => {
+    if (previous) storyPlotListResizeObserver?.unobserve(previous);
+    if (current) storyPlotListResizeObserver?.observe(current);
+    void nextTick(() => setDisplayedLongEditorPaneWidth("story-plot-list"));
+  },
+  { flush: "post" }
+);
+
+watch(
+  [currentUsesAnyRightEntryList, currentIsPlotPointStoryline],
+  () => void nextTick(reconcileLongEditorPaneWidths),
+  { flush: "post" }
+);
+
 onMounted(() => {
+  entryListResizeObserver = new ResizeObserver(() => {
+    if (resizingLongEditorPane.value !== "entry-list") {
+      setDisplayedLongEditorPaneWidth("entry-list");
+    }
+  });
+  storyPlotListResizeObserver = new ResizeObserver(() => {
+    if (resizingLongEditorPane.value !== "story-plot-list") {
+      setDisplayedLongEditorPaneWidth("story-plot-list");
+    }
+  });
+  if (longEditorDocumentElement.value) {
+    entryListResizeObserver.observe(longEditorDocumentElement.value);
+  }
+  if (storyPlotLayoutElement.value) {
+    storyPlotListResizeObserver.observe(storyPlotLayoutElement.value);
+  }
+  reconcileLongEditorPaneWidths();
   window.addEventListener("beforeunload", handleBeforeUnload);
   window.addEventListener("pointerdown", handleWindowPointerDown, true);
+  window.addEventListener("resize", reconcileLongEditorPaneWidths);
 });
 onBeforeUnmount(() => {
+  stopLongEditorPaneResize();
+  entryListResizeObserver?.disconnect();
+  storyPlotListResizeObserver?.disconnect();
   worldbuildingSelectionRequest += 1;
   worldbuildingPrefetchRequest += 1;
   selectionPrefetchRequest += 1;
@@ -3253,6 +3649,7 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener("beforeunload", handleBeforeUnload);
   window.removeEventListener("pointerdown", handleWindowPointerDown, true);
+  window.removeEventListener("resize", reconcileLongEditorPaneWidths);
   requestClockByFile.clear();
   inflightDocumentLoads.clear();
 });
@@ -3264,11 +3661,9 @@ onBeforeUnmount(() => {
     :class="{
       'is-foreshadowing-overview': currentIsForeshadowingWorkspace,
       'has-navigation-tabs':
-        currentIsCharacterGroup ||
-        currentIsBookLineWorkspace ||
-        currentIsPlotPointWorkspace ||
-        currentIsChapterCardWorkspace ||
-        currentIsWorldbuildingList
+        currentUsesTopCharacterTabs ||
+        currentUsesTopPlotTabs ||
+        currentUsesTopWorldbuildingTabs
     }"
     aria-label="长篇文件编辑器"
   >
@@ -3333,11 +3728,15 @@ onBeforeUnmount(() => {
       </header>
 
       <nav
-        v-if="currentIsCharacterGroup"
+        v-if="currentUsesTopCharacterTabs"
         class="section-tabs-bar long-worldbuilding-tabs long-character-tabs"
         :aria-label="`${selection.characterGroup ?? '人物'}人物`"
       >
-        <div class="section-tabs-scroll" role="tablist">
+        <div
+          class="section-tabs-scroll"
+          role="tablist"
+          @wheel="handleHorizontalOverflowWheel"
+        >
           <button
             v-for="character in selection.characterTabs"
             :key="character.id"
@@ -3379,11 +3778,15 @@ onBeforeUnmount(() => {
       </nav>
 
       <nav
-        v-if="currentIsBookLineWorkspace"
+        v-if="currentIsBookLineWorkspace && currentUsesTopPlotTabs"
         class="section-tabs-bar long-worldbuilding-tabs long-book-line-tabs"
         aria-label="全书故事线"
       >
-        <div class="section-tabs-scroll" role="tablist">
+        <div
+          class="section-tabs-scroll"
+          role="tablist"
+          @wheel="handleHorizontalOverflowWheel"
+        >
           <button
             class="section-tab"
             :class="{ 'is-active': activeBookLineVolumeId === null }"
@@ -3435,11 +3838,15 @@ onBeforeUnmount(() => {
       </nav>
 
       <nav
-        v-if="currentIsPlotPointWorkspace"
+        v-if="currentIsPlotPointWorkspace && currentUsesTopPlotTabs"
         class="section-tabs-bar long-worldbuilding-tabs long-plot-point-tabs"
         :aria-label="`${selection.breadcrumbs.at(-1) ?? '当前分卷'}剧情点`"
       >
-        <div class="section-tabs-scroll" role="tablist">
+        <div
+          class="section-tabs-scroll"
+          role="tablist"
+          @wheel="handleHorizontalOverflowWheel"
+        >
           <button
             v-for="plotPoint in selection.plotPointTabs"
             :key="plotPoint.id"
@@ -3479,11 +3886,15 @@ onBeforeUnmount(() => {
       </nav>
 
       <nav
-        v-if="currentIsChapterCardWorkspace"
+        v-if="currentIsChapterCardWorkspace && currentUsesTopPlotTabs"
         class="section-tabs-bar long-worldbuilding-tabs long-chapter-card-tabs"
         :aria-label="`${selection.breadcrumbs[3] ?? '当前分卷'}章卡`"
       >
-        <div class="section-tabs-scroll" role="tablist">
+        <div
+          class="section-tabs-scroll"
+          role="tablist"
+          @wheel="handleHorizontalOverflowWheel"
+        >
           <button
             v-for="chapterCard in selection.chapterCardTabs"
             :key="chapterCard.id"
@@ -3516,12 +3927,11 @@ onBeforeUnmount(() => {
           aria-label="删除当前章卡"
           :title="
             currentChapterCardCommitted
-              ? '已提交章卡不能删除'
+              ? '删除当前章卡及对应正文和连续性记录'
               : '删除当前章卡'
           "
           :disabled="
             locked ||
-            currentChapterCardCommitted ||
             !currentNavigationDeleteTarget
           "
           @click="openNavigationDelete"
@@ -3531,11 +3941,15 @@ onBeforeUnmount(() => {
       </nav>
 
       <nav
-        v-if="currentIsWorldbuildingList"
+        v-if="currentUsesTopWorldbuildingTabs"
         class="section-tabs-bar long-worldbuilding-tabs"
         aria-label="世界观条目"
       >
-        <div class="section-tabs-scroll" role="tablist">
+        <div
+          class="section-tabs-scroll"
+          role="tablist"
+          @wheel="handleHorizontalOverflowWheel"
+        >
           <button
             class="section-tab"
             :class="{
@@ -3914,7 +4328,15 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="long-editor-document">
+      <div
+        ref="longEditorDocumentElement"
+        class="long-editor-document"
+        :style="entryListGridStyle"
+        :class="{
+          'is-entry-right-list': currentUsesAnyRightEntryList,
+          'is-resizing-entry-list': resizingLongEditorPane === 'entry-list'
+        }"
+      >
         <aside
           v-if="currentStaleRecovery"
           class="long-editor-recovery"
@@ -3983,7 +4405,15 @@ onBeforeUnmount(() => {
             </div>
           </header>
 
-          <div class="long-story-plot-layout">
+          <div
+            ref="storyPlotLayoutElement"
+            class="long-story-plot-layout"
+            :class="{
+              'is-resizing-story-list':
+                resizingLongEditorPane === 'story-plot-list'
+            }"
+            :style="storyPlotListGridStyle"
+          >
             <aside class="long-story-plot-pane" aria-label="故事情节列表">
               <header>
                 <div>
@@ -4096,6 +4526,23 @@ onBeforeUnmount(() => {
                 <span>新增情节后会出现在这里，左侧可直接编写正文。</span>
               </div>
             </aside>
+
+            <div
+              class="long-editor-internal-resizer long-story-plot-resizer"
+              role="separator"
+              aria-label="调整当前剧情点涉及列表宽度"
+              aria-orientation="vertical"
+              :aria-valuemin="LONG_EDITOR_LIST_MIN_WIDTH"
+              :aria-valuemax="storyPlotListMaxWidth"
+              :aria-valuenow="storyPlotListWidth ?? LONG_EDITOR_LIST_MIN_WIDTH"
+              tabindex="0"
+              @pointerdown="
+                startLongEditorPaneResize('story-plot-list', $event)
+              "
+              @keydown="
+                handleLongEditorPaneResizeKeydown('story-plot-list', $event)
+              "
+            />
 
             <main class="long-story-plot-detail" aria-label="故事情节正文">
               <div
@@ -4406,7 +4853,11 @@ onBeforeUnmount(() => {
           >
             <AppIcon name="file" :size="22" />
             <strong>还没有世界观条目</strong>
-            <span>新建条目后，可通过上方 Tab 切换并编辑内容。</span>
+            <span>
+              新建条目后，可通过{{
+                currentUsesRightWorldbuildingList ? "右侧列表" : "上方 Tab"
+              }}切换并编辑内容。
+            </span>
             <button
               v-if="!currentReadOnly"
               type="button"
@@ -4421,12 +4872,18 @@ onBeforeUnmount(() => {
               <span v-if="currentDocumentFormat" class="long-document-format">
                 {{ currentDocumentFormat }}
               </span>
-              <span v-if="currentReadOnly" class="long-readonly-badge">
+              <span
+                v-if="currentIsCommittedEditableDocument"
+                class="long-committed-content-notice"
+              >
+                {{ currentCommittedEditNotice }}
+              </span>
+              <span v-else-if="currentReadOnly" class="long-readonly-badge">
                 只读内容
               </span>
               <button
                 v-if="
-                  currentIsWorldbuildingList &&
+                  currentUsesTopWorldbuildingTabs &&
                   currentWorldbuildingItem &&
                   !currentReadOnly
                 "
@@ -4565,6 +5022,387 @@ onBeforeUnmount(() => {
             }}
           </span>
         </div>
+
+        <div
+          v-if="currentUsesAnyRightEntryList"
+          class="long-editor-internal-resizer long-entry-list-resizer"
+          role="separator"
+          aria-label="调整右侧条目列表宽度"
+          aria-orientation="vertical"
+          :aria-valuemin="LONG_EDITOR_LIST_MIN_WIDTH"
+          :aria-valuemax="entryListMaxWidth"
+          :aria-valuenow="entryListWidth ?? LONG_EDITOR_LIST_MIN_WIDTH"
+          tabindex="0"
+          @pointerdown="startLongEditorPaneResize('entry-list', $event)"
+          @keydown="handleLongEditorPaneResizeKeydown('entry-list', $event)"
+        />
+
+        <aside
+          v-if="currentUsesRightWorldbuildingList"
+          class="long-story-plot-pane long-entry-list-pane"
+          aria-label="世界观条目列表"
+        >
+          <header>
+            <div>
+              <strong>世界观条目</strong>
+              <span>{{ currentWorldbuildingItems.length }}</span>
+            </div>
+            <div
+              v-if="!currentReadOnly"
+              class="long-entry-list-actions"
+            >
+              <button
+                type="button"
+                aria-label="新建世界观条目"
+                title="新建条目"
+                :disabled="locked"
+                @click="addWorldbuildingItem"
+              >
+                <AppIcon name="plus" :size="14" />
+              </button>
+              <button
+                type="button"
+                aria-label="删除当前世界观条目"
+                :title="
+                  currentWorldbuildingItem
+                    ? '删除当前世界观条目'
+                    : '请先选择一个世界观条目'
+                "
+                :disabled="locked || !currentWorldbuildingItem"
+                @click="
+                  currentWorldbuildingItem &&
+                    openWorldbuildingItemDelete(currentWorldbuildingItem.id)
+                "
+              >
+                <AppIcon name="minus" :size="14" />
+              </button>
+            </div>
+          </header>
+          <div class="long-story-plot-list" role="list">
+            <article
+              class="long-story-plot-card"
+              :class="{
+                'is-active': activeWorldbuildingItemId === null,
+                'is-loading': pendingWorldbuildingOverview
+              }"
+              role="listitem"
+            >
+              <button
+                class="long-story-plot-card-main"
+                type="button"
+                :aria-pressed="activeWorldbuildingItemId === null"
+                :aria-busy="pendingWorldbuildingOverview"
+                @click="selectWorldbuildingOverview"
+              >
+                <span class="long-story-plot-card-order">—</span>
+                <span class="long-story-plot-card-title">概览</span>
+              </button>
+            </article>
+            <article
+              v-for="(item, index) in currentWorldbuildingItems"
+              :key="item.id"
+              class="long-story-plot-card"
+              :class="{
+                'is-active': currentWorldbuildingItem?.id === item.id,
+                'is-loading': pendingWorldbuildingItemId === item.id
+              }"
+              role="listitem"
+            >
+              <button
+                class="long-story-plot-card-main"
+                type="button"
+                :aria-pressed="currentWorldbuildingItem?.id === item.id"
+                :aria-busy="pendingWorldbuildingItemId === item.id"
+                :title="item.title"
+                @click="selectWorldbuildingItem(item.id)"
+              >
+                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
+                <span class="long-story-plot-card-title">{{ item.title }}</span>
+              </button>
+            </article>
+          </div>
+        </aside>
+        <aside
+          v-if="currentUsesRightCharacterList"
+          class="long-story-plot-pane long-entry-list-pane"
+          :aria-label="`${selection.characterGroup ?? '人物'}人物列表`"
+        >
+          <header>
+            <div>
+              <strong>{{ selection.title }}</strong>
+              <span>{{ selection.characterTabs?.length ?? 0 }}</span>
+            </div>
+            <div class="long-entry-list-actions">
+              <button
+                type="button"
+                aria-label="新增人物"
+                title="新增人物"
+                :disabled="locked"
+                @click="emit('createCharacter')"
+              >
+                <AppIcon name="plus" :size="14" />
+              </button>
+              <button
+                type="button"
+                aria-label="删除当前人物"
+                title="删除当前人物"
+                :disabled="locked || !currentNavigationDeleteTarget"
+                @click="openNavigationDelete"
+              >
+                <AppIcon name="minus" :size="14" />
+              </button>
+            </div>
+          </header>
+          <div class="long-story-plot-list" role="list">
+            <article
+              v-for="(character, index) in selection.characterTabs"
+              :key="character.id"
+              class="long-story-plot-card"
+              :class="{
+                'is-active': selection.characterId === character.id,
+                'is-loading': pendingCharacterId === character.id
+              }"
+              role="listitem"
+            >
+              <button
+                class="long-story-plot-card-main"
+                type="button"
+                :aria-pressed="selection.characterId === character.id"
+                :aria-busy="pendingCharacterId === character.id"
+                :title="character.label"
+                @click="requestSelectCharacter(character.id)"
+              >
+                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
+                <span class="long-story-plot-card-title">{{ character.label }}</span>
+              </button>
+            </article>
+          </div>
+        </aside>
+        <aside
+          v-if="currentUsesRightBookLineList"
+          class="long-story-plot-pane long-entry-list-pane"
+          aria-label="全书故事线列表"
+        >
+          <header>
+            <div>
+              <strong>全书故事线</strong>
+              <span>{{ orderedBookLineVolumes.length + 1 }}</span>
+            </div>
+            <div v-if="!currentReadOnly" class="long-entry-list-actions">
+              <button type="button" aria-label="新建分卷" title="新建分卷" @click="requestCreateVolume">
+                <AppIcon name="plus" :size="14" />
+              </button>
+              <button
+                type="button"
+                aria-label="删除当前分卷"
+                :disabled="locked || !currentNavigationDeleteTarget"
+                @click="openNavigationDelete"
+              >
+                <AppIcon name="minus" :size="14" />
+              </button>
+            </div>
+          </header>
+          <div class="long-story-plot-list" role="list">
+            <article class="long-story-plot-card" :class="{ 'is-active': activeBookLineVolumeId === null }" role="listitem">
+              <button class="long-story-plot-card-main" type="button" :aria-pressed="activeBookLineVolumeId === null" @click="selectBookLineOverview">
+                <span class="long-story-plot-card-order">—</span>
+                <span class="long-story-plot-card-title">全书总纲</span>
+              </button>
+            </article>
+            <article
+              v-for="volume in orderedBookLineVolumes"
+              :key="volume.id"
+              class="long-story-plot-card"
+              :class="{ 'is-active': activeBookLineVolumeId === volume.id }"
+              role="listitem"
+            >
+              <button class="long-story-plot-card-main" type="button" :aria-pressed="activeBookLineVolumeId === volume.id" :title="volume.title" @click="selectBookLineVolume(volume.id)">
+                <span class="long-story-plot-card-order">{{ volume.order }}</span>
+                <span class="long-story-plot-card-title">{{ volume.title }}</span>
+              </button>
+            </article>
+          </div>
+        </aside>
+        <aside
+          v-if="currentUsesRightPlotPointList"
+          class="long-story-plot-pane long-entry-list-pane"
+          aria-label="剧情点列表"
+        >
+          <header>
+            <div>
+              <strong>剧情点</strong>
+              <span>{{ selection.plotPointTabs?.length ?? 0 }}</span>
+            </div>
+            <div v-if="!currentReadOnly" class="long-entry-list-actions">
+              <button type="button" aria-label="新增剧情点" title="新增剧情点" :disabled="locked" @click="emit('createPlotPoint')">
+                <AppIcon name="plus" :size="14" />
+              </button>
+              <button type="button" aria-label="删除当前剧情点" :disabled="locked || !currentNavigationDeleteTarget" @click="openNavigationDelete">
+                <AppIcon name="minus" :size="14" />
+              </button>
+            </div>
+          </header>
+          <div class="long-story-plot-list" role="list">
+            <article
+              v-for="(plotPoint, index) in selection.plotPointTabs"
+              :key="plotPoint.id"
+              class="long-story-plot-card"
+              :class="{ 'is-active': selection.plotPointId === plotPoint.id }"
+              role="listitem"
+            >
+              <button class="long-story-plot-card-main" type="button" :aria-pressed="selection.plotPointId === plotPoint.id" :title="plotPoint.label" @click="emit('selectPlotPoint', plotPoint.id)">
+                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
+                <span class="long-story-plot-card-title">{{ plotPoint.label }}</span>
+              </button>
+            </article>
+          </div>
+        </aside>
+        <aside
+          v-if="currentUsesRightChapterCardList"
+          class="long-story-plot-pane long-entry-list-pane"
+          aria-label="章卡列表"
+        >
+          <header>
+            <div>
+              <strong>章卡</strong>
+              <span>{{ selection.chapterCardTabs?.length ?? 0 }}</span>
+            </div>
+            <div class="long-entry-list-actions">
+              <button type="button" aria-label="新增章卡" title="新增章卡" :disabled="locked" @click="emit('createChapterCard')">
+                <AppIcon name="plus" :size="14" />
+              </button>
+              <button type="button" aria-label="删除当前章卡" :disabled="locked || !currentNavigationDeleteTarget" @click="openNavigationDelete">
+                <AppIcon name="minus" :size="14" />
+              </button>
+            </div>
+          </header>
+          <div class="long-story-plot-list" role="list">
+            <article
+              v-for="(chapterCard, index) in selection.chapterCardTabs"
+              :key="chapterCard.id"
+              class="long-story-plot-card"
+              :class="{
+                'is-active': selection.chapterCardId === chapterCard.id,
+                'is-menu-open': chapterCardActionMenuId === chapterCard.id
+              }"
+              role="listitem"
+            >
+              <button class="long-story-plot-card-main" type="button" :aria-pressed="selection.chapterCardId === chapterCard.id" :title="chapterCard.label" @click="emit('selectChapterCard', chapterCard.id)">
+                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
+                <span class="long-story-plot-card-title">{{ chapterCard.label }}</span>
+              </button>
+              <div
+                class="long-story-plot-card-actions long-chapter-card-actions"
+                :class="{
+                  'is-menu-open': chapterCardActionMenuId === chapterCard.id
+                }"
+              >
+                <button
+                  class="long-story-plot-more-button"
+                  :class="{
+                    'is-active': chapterCardActionMenuId === chapterCard.id
+                  }"
+                  type="button"
+                  :aria-label="`${chapterCard.label}更多操作`"
+                  :aria-expanded="chapterCardActionMenuId === chapterCard.id"
+                  aria-haspopup="menu"
+                  :disabled="locked"
+                  @click.stop="toggleChapterCardActionMenu(chapterCard.id)"
+                >
+                  <AppIcon name="more" :size="16" />
+                </button>
+                <div
+                  v-if="chapterCardActionMenuId === chapterCard.id"
+                  class="long-story-plot-action-menu"
+                  :class="{
+                    'opens-upward':
+                      index >= 2 &&
+                      index >= (selection.chapterCardTabs?.length ?? 0) - 2
+                  }"
+                  role="menu"
+                  @keydown.esc.stop="closeChapterCardActionMenu"
+                >
+                  <button
+                    class="long-story-plot-action-menu-item"
+                    type="button"
+                    role="menuitem"
+                    :disabled="
+                      !canReorderChapterCard(chapterCard.id, index, 'up')
+                    "
+                    @click.stop="
+                      runChapterCardMenuAction(chapterCard.id, index, 'up')
+                    "
+                  >
+                    <AppIcon name="arrow-up" :size="14" />
+                    <span>上移</span>
+                  </button>
+                  <button
+                    class="long-story-plot-action-menu-item"
+                    type="button"
+                    role="menuitem"
+                    :disabled="
+                      !canReorderChapterCard(chapterCard.id, index, 'down')
+                    "
+                    @click.stop="
+                      runChapterCardMenuAction(chapterCard.id, index, 'down')
+                    "
+                  >
+                    <AppIcon
+                      class="long-story-plot-arrow-down"
+                      name="arrow-up"
+                      :size="14"
+                    />
+                    <span>下移</span>
+                  </button>
+                  <button
+                    class="long-story-plot-action-menu-item is-danger"
+                    type="button"
+                    role="menuitem"
+                    @click.stop="
+                      runChapterCardMenuAction(
+                        chapterCard.id,
+                        index,
+                        'delete'
+                      )
+                    "
+                  >
+                    <AppIcon name="trash" :size="14" />
+                    <span>删除</span>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </aside>
+        <aside
+          v-if="currentUsesRightContinuityList"
+          class="long-story-plot-pane long-entry-list-pane"
+          aria-label="连续性账本文件列表"
+        >
+          <header>
+            <div>
+              <strong>本章记录</strong>
+              <span>{{ selection.files.length }}</span>
+            </div>
+          </header>
+          <div class="long-story-plot-list" role="list">
+            <article
+              v-for="(file, index) in selection.files"
+              :key="file.file.id"
+              class="long-story-plot-card"
+              :class="{
+                'is-active': currentSelectionFile?.file.id === file.file.id,
+                'is-loading': pendingFileId === file.file.id
+              }"
+              role="listitem"
+            >
+              <button class="long-story-plot-card-main" type="button" :aria-pressed="currentSelectionFile?.file.id === file.file.id" :aria-busy="pendingFileId === file.file.id" :title="file.label" @click="selectWorkspaceFile(file.file.id)">
+                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
+                <span class="long-story-plot-card-title">{{ file.label }}</span>
+              </button>
+            </article>
+          </div>
+        </aside>
       </div>
 
       <footer class="long-editor-footer">
@@ -4946,6 +5784,7 @@ onBeforeUnmount(() => {
 
 .long-editor-toolbar {
   position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -5013,7 +5852,7 @@ onBeforeUnmount(() => {
 }
 
 .long-editor-text-tools {
-  position: relative;
+  position: static;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -5054,11 +5893,11 @@ onBeforeUnmount(() => {
 
 .long-editor-find-panel {
   position: absolute;
-  z-index: 25;
+  z-index: 100;
   top: calc(100% + 8px);
-  right: 0;
+  right: 13px;
   display: grid;
-  width: min(350px, calc(100vw - 36px));
+  width: min(350px, calc(100% - 26px));
   gap: 7px;
   padding: 8px;
   border: 1px solid var(--theme-line);
@@ -5067,6 +5906,8 @@ onBeforeUnmount(() => {
   box-shadow:
     0 12px 30px rgb(24 27 30 / 16%),
     0 2px 7px rgb(24 27 30 / 8%);
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .long-editor-find-row,
@@ -5204,6 +6045,111 @@ onBeforeUnmount(() => {
   background: var(--surface-main);
 }
 
+.long-editor-document.is-entry-right-list {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr) 7px
+    minmax(170px, var(--long-entry-list-width, 38%));
+}
+
+.long-editor-document.is-entry-right-list
+  > :not(.long-entry-list-pane):not(.long-editor-recovery):not(.long-editor-internal-resizer) {
+  grid-row: 1;
+  grid-column: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.long-entry-list-pane {
+  grid-row: 1;
+  grid-column: 3;
+}
+
+.long-editor-internal-resizer {
+  position: relative;
+  z-index: 4;
+  width: 7px;
+  min-width: 7px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.long-editor-internal-resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--theme-line-soft);
+  content: "";
+  transition:
+    width 120ms ease,
+    background 120ms ease;
+}
+
+.long-editor-internal-resizer:hover::after,
+.long-editor-internal-resizer:focus-visible::after,
+.is-resizing-entry-list > .long-entry-list-resizer::after,
+.is-resizing-story-list > .long-story-plot-resizer::after {
+  left: 2px;
+  width: 3px;
+  background: color-mix(in srgb, var(--accent) 72%, var(--theme-line));
+}
+
+.long-entry-list-resizer {
+  grid-row: 1;
+  grid-column: 2;
+}
+
+:global(html.is-long-editor-pane-resizing),
+:global(html.is-long-editor-pane-resizing *) {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.long-entry-list-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+
+.long-entry-list-actions button {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.long-entry-list-actions button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.long-entry-list-actions button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.long-entry-list-pane .long-story-plot-card.is-loading {
+  opacity: 0.62;
+}
+
+.long-entry-list-pane
+  .long-story-plot-card.is-loading
+  .long-story-plot-card-main {
+  cursor: progress;
+}
+
 .long-editor-writing-surface {
   --long-document-inline-padding: clamp(18px, 2vw, 24px);
   display: grid;
@@ -5236,7 +6182,8 @@ onBeforeUnmount(() => {
 }
 
 .long-document-format,
-.long-readonly-badge {
+.long-readonly-badge,
+.long-committed-content-notice {
   padding: 2px 6px;
   border: 1px solid var(--theme-line);
   border-radius: 8px;
@@ -5251,6 +6198,19 @@ onBeforeUnmount(() => {
     var(--surface-raised)
   );
   color: var(--warning);
+}
+
+.long-committed-content-notice {
+  min-width: 0;
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--theme-line));
+  background: color-mix(
+    in srgb,
+    var(--accent) 8%,
+    var(--surface-raised)
+  );
+  color: var(--text-secondary);
+  line-height: 1.45;
+  white-space: normal;
 }
 
 .long-worldbuilding-delete-button {
@@ -5717,8 +6677,7 @@ onBeforeUnmount(() => {
   }
 
   .long-editor-find-panel {
-    right: -3.25rem;
-    width: min(350px, calc(100cqw - 16px));
+    right: 8px;
   }
 }
 
@@ -5730,6 +6689,7 @@ onBeforeUnmount(() => {
 }
 
 .long-story-plot-workspace {
+  container-type: inline-size;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
@@ -5797,7 +6757,9 @@ onBeforeUnmount(() => {
 
 .long-story-plot-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(170px, 38%);
+  grid-template-columns:
+    minmax(0, 1fr) 7px
+    minmax(170px, var(--long-story-plot-list-width, 38%));
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -5805,6 +6767,8 @@ onBeforeUnmount(() => {
 
 .long-story-plot-pane {
   order: 2;
+  grid-row: 1;
+  grid-column: 3;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
@@ -5959,6 +6923,11 @@ onBeforeUnmount(() => {
     0 2px 6px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
 }
 
+.long-story-plot-action-menu.opens-upward {
+  top: auto;
+  bottom: calc(100% + 3px);
+}
+
 .long-story-plot-action-menu-item {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
@@ -6040,6 +7009,8 @@ onBeforeUnmount(() => {
 
 .long-story-plot-detail {
   order: 1;
+  grid-row: 1;
+  grid-column: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -6088,6 +7059,8 @@ onBeforeUnmount(() => {
 }
 
 .long-story-plot-text-toolbar {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -6098,8 +7071,8 @@ onBeforeUnmount(() => {
 }
 
 .long-story-plot-text-toolbar .long-editor-find-panel {
-  right: auto;
-  left: 0;
+  right: 0;
+  left: auto;
 }
 
 .long-story-plot-editor {
@@ -6109,6 +7082,11 @@ onBeforeUnmount(() => {
   padding: 12px var(--long-document-inline-padding) 20px;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.long-story-plot-resizer {
+  grid-row: 1;
+  grid-column: 2;
 }
 
 @media (max-width: 56rem) {
@@ -6123,9 +7101,67 @@ onBeforeUnmount(() => {
     grid-template-rows: minmax(0, 1fr) minmax(10rem, 34%);
   }
 
-  .long-story-plot-pane {
+  .long-story-plot-resizer {
+    display: none;
+  }
+
+  .long-story-plot-layout > .long-story-plot-pane {
+    grid-row: 2;
+    grid-column: 1;
     border-left: none;
     border-top: 1px solid var(--theme-line-soft);
+  }
+
+  .long-story-plot-layout > .long-story-plot-detail {
+    grid-row: 1;
+    grid-column: 1;
+  }
+}
+
+@container (max-width: 26rem) {
+  .long-editor-document.is-entry-right-list {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(10rem, 34%);
+  }
+
+  .long-editor-document.is-entry-right-list
+    > :not(.long-entry-list-pane):not(.long-editor-recovery) {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .long-entry-list-pane {
+    grid-row: 2;
+    grid-column: 1;
+    border-top: 1px solid var(--theme-line-soft);
+    border-left: none;
+  }
+
+  .long-entry-list-resizer {
+    display: none;
+  }
+}
+
+@container (max-width: 31rem) {
+  .long-story-plot-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(10rem, 34%);
+  }
+
+  .long-story-plot-resizer {
+    display: none;
+  }
+
+  .long-story-plot-layout > .long-story-plot-pane {
+    grid-row: 2;
+    grid-column: 1;
+    border-top: 1px solid var(--theme-line-soft);
+    border-left: none;
+  }
+
+  .long-story-plot-layout > .long-story-plot-detail {
+    grid-row: 1;
+    grid-column: 1;
   }
 }
 

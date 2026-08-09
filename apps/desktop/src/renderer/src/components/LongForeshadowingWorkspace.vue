@@ -685,7 +685,8 @@ function beatBody(beat: ForeshadowingBeat): string {
 }
 
 function isThreadLocked(thread: ForeshadowingThread): boolean {
-  return thread.beats.some((beat) => beat.commitId !== null);
+  void thread;
+  return false;
 }
 
 function canBackfillThreadMetadata(
@@ -699,7 +700,8 @@ function canBackfillThreadMetadata(
 }
 
 function isBeatLocked(beat: ForeshadowingBeat): boolean {
-  return beat.commitId !== null;
+  void beat;
+  return false;
 }
 
 function selectThread(threadId: string): void {
@@ -798,7 +800,7 @@ function openCreateThread(): void {
 function openEditThread(thread: ForeshadowingThread): void {
   if (mutationLocked.value) return;
   if (isThreadLocked(thread) && !canBackfillThreadMetadata(thread)) {
-    uiMessage.info("该伏笔线已有已提交触点，核心信息已由连续性账本锁定。");
+    uiMessage.info("该伏笔线正在处理其它变更，请稍后重试。");
     return;
   }
   Object.assign(threadDraft, {

@@ -25,6 +25,8 @@ export const CatalogLibraryProjectDomainSchema = z.enum(["material", "skill"]);
 export type CatalogLibraryProjectDomain = z.infer<
   typeof CatalogLibraryProjectDomainSchema
 >;
+export const CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS = 40_000;
+export const CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS = 40_000;
 
 export const CATALOG_PROJECT_KINDS = [
   "deepwrite.book",
@@ -1996,6 +1998,28 @@ export type DeleteDraftSectionResult = z.infer<
   typeof DeleteDraftSectionResultSchema
 >;
 
+export const MoveDraftSectionInputSchema = z.object({
+  bookId: CatalogIdSchema,
+  sectionId: DraftSectionIdSchema,
+  direction: z.enum(["up", "down"]),
+  baseProjectRevision: z.number().int().nonnegative().optional(),
+  force: z.boolean().optional()
+});
+export type MoveDraftSectionInput = z.infer<
+  typeof MoveDraftSectionInputSchema
+>;
+
+export const MoveDraftSectionResultSchema = z.object({
+  bookId: CatalogIdSchema,
+  sectionId: DraftSectionIdSchema,
+  direction: z.enum(["up", "down"]),
+  moved: z.boolean(),
+  projectRevision: z.number().int().nonnegative()
+});
+export type MoveDraftSectionResult = z.infer<
+  typeof MoveDraftSectionResultSchema
+>;
+
 export const CatalogLibrarySchema = z.union([
   MaterialLibrarySchema,
   SkillLibrarySchema
@@ -2041,6 +2065,23 @@ export const CreateLibraryInputSchema = z.discriminatedUnion("domain", [
 ]);
 export type CreateLibraryInput = z.infer<typeof CreateLibraryInputSchema>;
 
+export const UpdateLibraryInputSchema = z
+  .object({
+    domain: CatalogLibraryProjectDomainSchema,
+    libraryId: CatalogIdSchema,
+    title: CatalogTitleSchema.optional(),
+    overview: z.string().max(CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS).optional(),
+    baseProjectRevision: z.number().int().nonnegative().optional(),
+    force: z.boolean().optional()
+  })
+  .refine(
+    (value) => value.title !== undefined || value.overview !== undefined,
+    {
+      message: "Library updates must include a title or overview."
+    }
+  );
+export type UpdateLibraryInput = z.infer<typeof UpdateLibraryInputSchema>;
+
 const LibraryParentDirectorySchema = z.string().trim().min(1);
 export const CreateLibraryAtPathInputSchema = z.discriminatedUnion("domain", [
   CreateMaterialLibraryInputSchema.extend({
@@ -2077,6 +2118,7 @@ export type CreateLibraryGroupInput = z.infer<
 const UpdateMaterialLibraryGroupInputSchema = z.object({
   domain: z.literal("material"),
   groupId: CatalogIdSchema,
+  title: CatalogTitleSchema.optional(),
   members: MaterialLibraryGroupSchema.shape.members,
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
@@ -2085,6 +2127,7 @@ const UpdateMaterialLibraryGroupInputSchema = z.object({
 const UpdateSkillLibraryGroupInputSchema = z.object({
   domain: z.literal("skill"),
   groupId: CatalogIdSchema,
+  title: CatalogTitleSchema.optional(),
   members: SkillLibraryGroupSchema.shape.members,
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
@@ -2110,7 +2153,7 @@ const CreateMaterialLibraryEntryInputSchema = z.object({
   domain: z.literal("material"),
   libraryId: CatalogIdSchema,
   title: CatalogTitleSchema,
-  content: z.string(),
+  content: z.string().max(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS),
   stageId: MaterialStageIdSchema.optional(),
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
@@ -2120,7 +2163,7 @@ const CreateSkillLibraryEntryInputSchema = z.object({
   domain: z.literal("skill"),
   libraryId: CatalogIdSchema,
   title: CatalogTitleSchema,
-  content: z.string(),
+  content: z.string().max(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS),
   stageId: SkillStageIdSchema.optional(),
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
@@ -2154,6 +2197,27 @@ export const RemoveLibraryEntryResultSchema = z.object({
 export type RemoveLibraryEntryResult = z.infer<
   typeof RemoveLibraryEntryResultSchema
 >;
+
+export const MoveLibraryEntryInputSchema = z.object({
+  domain: CatalogLibraryProjectDomainSchema,
+  sourceLibraryId: CatalogIdSchema,
+  targetLibraryId: CatalogIdSchema,
+  entryId: CatalogIdSchema,
+  beforeEntryId: CatalogIdSchema.optional(),
+  targetStageId: MaterialStageIdSchema.optional(),
+  sourceBaseProjectRevision: z.number().int().nonnegative().optional(),
+  targetBaseProjectRevision: z.number().int().nonnegative().optional(),
+  force: z.boolean().optional()
+});
+export type MoveLibraryEntryInput = z.infer<typeof MoveLibraryEntryInputSchema>;
+
+export const MoveLibraryEntryResultSchema = z.object({
+  domain: CatalogLibraryProjectDomainSchema,
+  sourceLibraryId: CatalogIdSchema,
+  targetLibraryId: CatalogIdSchema,
+  entryId: CatalogIdSchema
+});
+export type MoveLibraryEntryResult = z.infer<typeof MoveLibraryEntryResultSchema>;
 
 export const UnregisterCatalogProjectDomainSchema = z.enum([
   ...CATALOG_PROJECT_DOMAINS,
@@ -2198,12 +2262,42 @@ export type DeleteCatalogProjectResult = z.infer<
   typeof DeleteCatalogProjectResultSchema
 >;
 
+export const DuplicateCatalogProjectDomainSchema = z.enum([
+  "book",
+  "material",
+  "skill",
+  "material-group",
+  "skill-group"
+]);
+export type DuplicateCatalogProjectDomain = z.infer<
+  typeof DuplicateCatalogProjectDomainSchema
+>;
+
+export const DuplicateCatalogProjectInputSchema = z.object({
+  domain: DuplicateCatalogProjectDomainSchema,
+  projectId: CatalogIdSchema
+});
+export type DuplicateCatalogProjectInput = z.infer<
+  typeof DuplicateCatalogProjectInputSchema
+>;
+
+export const DuplicateCatalogProjectResultSchema = z.object({
+  sourceProjectId: CatalogIdSchema,
+  projectId: CatalogIdSchema,
+  domain: DuplicateCatalogProjectDomainSchema,
+  title: CatalogTitleSchema,
+  copiedMemberLibraryIds: z.array(CatalogIdSchema)
+});
+export type DuplicateCatalogProjectResult = z.infer<
+  typeof DuplicateCatalogProjectResultSchema
+>;
+
 export const SaveLibraryEntryInputSchema = z.object({
   domain: CatalogLibraryProjectDomainSchema,
   libraryId: CatalogIdSchema,
   entryId: CatalogIdSchema,
   title: CatalogTitleSchema.optional(),
-  content: z.string(),
+  content: z.string().max(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS),
   baseRevision: z.string().min(1).optional(),
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
@@ -2252,6 +2346,11 @@ export const CatalogCreateLibraryCommandEnvelopeSchema =
     type: z.literal("catalog.createLibrary"),
     payload: CreateLibraryInputSchema
   });
+
+export const CatalogUpdateLibraryCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("catalog.updateLibrary"),
+  payload: UpdateLibraryInputSchema
+});
 
 export const CatalogCreateLibraryGroupCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -2369,6 +2468,12 @@ export const CatalogDeleteDraftSectionCommandEnvelopeSchema =
     payload: DeleteDraftSectionInputSchema
   });
 
+export const CatalogMoveDraftSectionCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.moveDraftSection"),
+    payload: MoveDraftSectionInputSchema
+  });
+
 export const CatalogSaveLibraryEntryCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("catalog.saveLibraryEntry"),
@@ -2387,6 +2492,12 @@ export const CatalogRemoveLibraryEntryCommandEnvelopeSchema =
     payload: RemoveLibraryEntryInputSchema
   });
 
+export const CatalogMoveLibraryEntryCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.moveLibraryEntry"),
+    payload: MoveLibraryEntryInputSchema
+  });
+
 export const CatalogUnregisterProjectCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("catalog.unregisterProject"),
@@ -2399,6 +2510,12 @@ export const CatalogDeleteProjectCommandEnvelopeSchema =
     payload: DeleteCatalogProjectInputSchema
   });
 
+export const CatalogDuplicateProjectCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.duplicateProject"),
+    payload: DuplicateCatalogProjectInputSchema
+  });
+
 export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogSnapshotCommandEnvelopeSchema,
   CatalogLoadDraftRecoveryCommandEnvelopeSchema,
@@ -2406,16 +2523,15 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogCreateShortBookCommandEnvelopeSchema,
   CatalogCreateScriptBookCommandEnvelopeSchema,
   CatalogCreateLibraryCommandEnvelopeSchema,
+  CatalogUpdateLibraryCommandEnvelopeSchema,
   CatalogCreateLibraryGroupCommandEnvelopeSchema,
   CatalogOpenProjectCommandEnvelopeSchema,
-  CatalogImportLegacyBookCommandEnvelopeSchema,
   CatalogImportLegacyLibraryCommandEnvelopeSchema,
   CatalogCreateShortBookAtPathCommandEnvelopeSchema,
   CatalogCreateScriptBookAtPathCommandEnvelopeSchema,
   CatalogCreateLibraryAtPathCommandEnvelopeSchema,
   CatalogCreateLibraryGroupAtPathCommandEnvelopeSchema,
   CatalogOpenProjectAtPathCommandEnvelopeSchema,
-  CatalogImportLegacyBookAtPathCommandEnvelopeSchema,
   CatalogImportLegacyLibraryAtPathCommandEnvelopeSchema,
   CatalogUpdateBookCommandEnvelopeSchema,
   CatalogMutatePlotStructureCommandEnvelopeSchema,
@@ -2426,10 +2542,13 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogCreateDraftSectionCommandEnvelopeSchema,
   CatalogCreateDraftSectionsCommandEnvelopeSchema,
   CatalogDeleteDraftSectionCommandEnvelopeSchema,
+  CatalogMoveDraftSectionCommandEnvelopeSchema,
   CatalogSaveLibraryEntryCommandEnvelopeSchema,
   CatalogCreateLibraryEntryCommandEnvelopeSchema,
   CatalogRemoveLibraryEntryCommandEnvelopeSchema,
+  CatalogMoveLibraryEntryCommandEnvelopeSchema,
   CatalogUnregisterProjectCommandEnvelopeSchema,
-  CatalogDeleteProjectCommandEnvelopeSchema
+  CatalogDeleteProjectCommandEnvelopeSchema,
+  CatalogDuplicateProjectCommandEnvelopeSchema
 ]);
 export type CatalogCommandEnvelope = z.infer<typeof CatalogCommandEnvelopeSchema>;

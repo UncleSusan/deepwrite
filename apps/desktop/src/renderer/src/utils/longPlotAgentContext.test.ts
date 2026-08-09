@@ -20,6 +20,7 @@ const navigation: LongWorkspaceNavigationSnapshot = {
     committedChapters: 0
   },
   worldbuilding: [],
+  characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
   characters: [],
   volumes: [
     { id: "volume_one", title: "第一卷", order: 1 },
@@ -34,7 +35,8 @@ const navigation: LongWorkspaceNavigationSnapshot = {
       volumeId: "volume_one",
       primaryArcId: "arc_main",
       title: "第一章",
-      narrativeOrder: 1
+      narrativeOrder: 1,
+      bodyStatus: "empty"
     }
   ],
   committedThroughChapterId: null

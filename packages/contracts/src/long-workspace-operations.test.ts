@@ -611,6 +611,43 @@ function createBatch() {
 }
 
 describe("long workspace operation engine", () => {
+  it("defaults old projects to top tabs and updates per-book feature settings", () => {
+    const source = workspace();
+    expect(source.featureSettings.worldbuildingItemLayout).toBe("top-tabs");
+    expect(source.featureSettings.characterAndContinuityItemLayout).toBe(
+      "top-tabs"
+    );
+    expect(source.featureSettings.plotItemLayout).toBe("top-tabs");
+
+    const result = applyLongWorkspaceOperations(
+      source,
+      LongWorkspaceOperationBatchSchema.parse({
+        baseRevision: source.revision,
+        updatedAt: later,
+        operations: [
+          {
+            type: "featureSettings.update",
+            patch: {
+              worldbuildingItemLayout: "right-list",
+              characterAndContinuityItemLayout: "right-list",
+              plotItemLayout: "right-list"
+            }
+          }
+        ]
+      })
+    );
+
+    expect(result.snapshot.featureSettings.worldbuildingItemLayout).toBe(
+      "right-list"
+    );
+    expect(
+      result.snapshot.featureSettings.characterAndContinuityItemLayout
+    ).toBe("right-list");
+    expect(result.snapshot.featureSettings.plotItemLayout).toBe("right-list");
+    expect(result.fileIntents).toEqual([]);
+    expect(result.documentWrites).toEqual([]);
+  });
+
   it("applies typed cross-entity CRUD and returns only file/document intentions", () => {
     const source = workspace();
     const result = applyLongWorkspaceOperations(source, createBatch());
@@ -810,40 +847,6 @@ describe("long workspace operation engine", () => {
       )
     ).toHaveLength(2);
 
-    const committed = structuredClone(created.snapshot);
-    committed.chapters[0]!.commitId = "commit_existing";
-    committed.ledger.committedThroughChapterId = "chapter_one";
-    committed.ledger.commits.push({
-      id: "commit_existing",
-      mode: "structured",
-      sequence: 1,
-      chapterCardId: "chapter_one",
-      committedAt: later,
-      reversible: true,
-      sourceRevision: committed.revision,
-      placementIds: [],
-      foreshadowingBeatIds: [],
-      recordFile: file(
-        longLedgerCommitFileId("commit_existing"),
-        "long/ledger/commit-existing.json"
-      )
-    });
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(committed, {
-          baseRevision: created.resultRevision,
-          updatedAt: later,
-          operations: [
-            {
-              type: "character.delete",
-              id: "character_alice",
-              cascade: true
-            }
-          ]
-        }),
-      "committed_prefix_protected"
-    );
-
     const deleted = applyLongWorkspaceOperations(created.snapshot, {
       baseRevision: created.resultRevision,
       updatedAt: later,
@@ -853,6 +856,59 @@ describe("long workspace operation engine", () => {
     });
     expect(deleted.fileIntents.filter(({ action }) => action === "delete"))
       .toHaveLength(8);
+  });
+
+  it("creates custom character types and migrates characters atomically on delete", () => {
+    const source = workspace();
+    const created = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "characterType.create",
+          characterType: {
+            id: "chartype_antagonist",
+            title: "反派",
+            order: source.characterTypes.length + 1
+          }
+        }
+      ]
+    });
+    expect(created.snapshot.characterTypes.at(-1)).toEqual({
+      id: "chartype_antagonist",
+      title: "反派",
+      order: 5
+    });
+
+    const originalFiles = structuredClone(created.snapshot.characterFiles);
+    const migrated = applyLongWorkspaceOperations(created.snapshot, {
+      baseRevision: created.resultRevision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "characterType.delete",
+          id: "protagonist",
+          moveCharactersToTypeId: "chartype_antagonist"
+        }
+      ]
+    });
+    expect(
+      migrated.snapshot.characterTypes.some(({ id }) => id === "protagonist")
+    ).toBe(false);
+    expect(migrated.snapshot.characters[0]).toMatchObject({
+      id: "character_alice",
+      group: "chartype_antagonist",
+      order: 1
+    });
+    expect(migrated.snapshot.characterFiles).toEqual(originalFiles);
+
+    expect(() =>
+      applyLongWorkspaceOperations(created.snapshot, {
+        baseRevision: created.resultRevision,
+        updatedAt: later,
+        operations: [{ type: "characterType.delete", id: "protagonist" }]
+      })
+    ).toThrow(/requires another target type/u);
   });
 
   it("deletes only optional continuity files from uncommitted chapters", () => {
@@ -968,15 +1024,13 @@ describe("long workspace operation engine", () => {
         characterId: "character_alice"
       }
     ]) {
-      expectOperationError(
-        () =>
-          applyLongWorkspaceOperations(committed, {
-            baseRevision: committed.revision,
-            updatedAt: later,
-            operations: [operation]
-          }),
-        "committed_prefix_protected"
-      );
+      expect(() =>
+        applyLongWorkspaceOperations(structuredClone(committed), {
+          baseRevision: committed.revision,
+          updatedAt: later,
+          operations: [operation]
+        })
+      ).not.toThrow();
     }
 
     for (const forbiddenType of [
@@ -1054,6 +1108,50 @@ describe("long workspace operation engine", () => {
     );
   });
 
+  it("deletes a plot point without cascading through weakly linked chapters", () => {
+    const source = workspace();
+    source.plot.storyEvents = [];
+    source.plot.storyPlots = [];
+    source.plot.eventConnections = [];
+    source.plot.narrativePlacements = [];
+    source.plot.foreshadowing = [];
+
+    const result = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        { type: "arc.delete", id: "arc_letter", cascade: false }
+      ]
+    });
+
+    expect(result.snapshot.plot.arcs).toEqual([]);
+    expect(result.snapshot.plot.chapterCards).toHaveLength(2);
+    expect(
+      result.snapshot.plot.chapterCards.every(
+        ({ volumeId, primaryArcId }) =>
+          volumeId === "volume_one" && primaryArcId === null
+      )
+    ).toBe(true);
+    expect(result.snapshot.chapters).toHaveLength(2);
+    expect(result.fileIntents).toEqual([]);
+
+    const committed = committedWorkspace();
+    committed.plot.storyEvents = [];
+    const committedResult = applyLongWorkspaceOperations(committed, {
+      baseRevision: committed.revision,
+      updatedAt: later,
+      operations: [
+        { type: "arc.delete", id: "arc_letter", cascade: false }
+      ]
+    });
+    expect(
+      committedResult.snapshot.plot.chapterCards.find(
+        ({ id }) => id === "chapter_one"
+      )?.primaryArcId
+    ).toBeNull();
+    expect(committedResult.snapshot.chapters[0]!.commitId).toBe("commit_first");
+  });
+
   it("requires an exact preview impact for cascading deletion", () => {
     const source = workspace();
     const plan = LongWorkspaceOperationBatchSchema.parse({
@@ -1065,13 +1163,12 @@ describe("long workspace operation engine", () => {
     });
     const preview = previewLongWorkspaceOperations(source, plan);
 
-    expect(preview.impact.deletedEntityIds).toEqual([
-      "arc_letter",
-      "chapter_one",
-      "chapter_two"
-    ]);
+    expect(preview.impact.deletedEntityIds).toEqual(["arc_letter"]);
+    expect(preview.impact.updatedEntityIds).toEqual(
+      expect.arrayContaining(["chapter_one", "chapter_two", "event_letter"])
+    );
     expect(preview.impact.updatedEntityIds).toContain("event_letter");
-    expect(preview.impact.deletedFileIds).toHaveLength(10);
+    expect(preview.impact.deletedFileIds).toHaveLength(0);
     expect(
       preview.entityChanges.find(({ id }) => id === "arc_letter")
     ).toMatchObject({
@@ -1088,13 +1185,31 @@ describe("long workspace operation engine", () => {
       before: expect.objectContaining({ arcIds: ["arc_letter"] }),
       after: expect.objectContaining({ arcIds: [] })
     });
-    expectOperationError(
-      () => applyLongWorkspaceOperations(source, plan),
-      "cascade_impact_mismatch"
+    expect(
+      preview.entityChanges.find(({ id }) => id === "chapter_one")
+    ).toMatchObject({
+      kind: "chapter-card",
+      action: "update",
+      before: expect.objectContaining({ primaryArcId: "arc_letter" }),
+      after: expect.objectContaining({ primaryArcId: null })
+    });
+    const applied = applyLongWorkspaceOperations(
+      source,
+      LongWorkspaceOperationBatchSchema.parse({
+        ...plan,
+        expectedImpact: preview.impact
+      })
     );
+    expect(applied.snapshot.plot.chapterCards).toHaveLength(2);
+    expect(
+      applied.snapshot.plot.chapterCards.every(
+        ({ primaryArcId }) => primaryArcId === null
+      )
+    ).toBe(true);
+    expect(applied.snapshot.chapters).toHaveLength(2);
 
     const staleImpact = structuredClone(preview.impact);
-    staleImpact.deletedFileIds = [];
+    staleImpact.deletedEntityIds = [];
     expectOperationError(
       () =>
         applyLongWorkspaceOperations(
@@ -1115,11 +1230,14 @@ describe("long workspace operation engine", () => {
       })
     );
     expect(result.snapshot.plot.arcs).toEqual([]);
-    expect(result.snapshot.plot.chapterCards).toEqual([]);
+    expect(result.snapshot.plot.chapterCards).toHaveLength(2);
+    expect(
+      result.snapshot.plot.chapterCards.every(
+        ({ primaryArcId }) => primaryArcId === null
+      )
+    ).toBe(true);
     expect(result.snapshot.plot.storyEvents[0]?.arcIds).toEqual([]);
-    expect(result.fileIntents.every(({ action }) => action === "delete")).toBe(
-      true
-    );
+    expect(result.fileIntents).toEqual([]);
   });
 
   it("reports implicit order shifts and omits no-op metadata updates", () => {
@@ -1160,254 +1278,81 @@ describe("long workspace operation engine", () => {
     expect(noOp.entityChanges).toEqual([]);
   });
 
-  it("protects committed chapters and their narrative prefix", () => {
+  it("keeps recorded chapters structurally mutable and cascades their records", () => {
     const source = committedWorkspace();
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(
-          source,
-          LongWorkspaceOperationBatchSchema.parse({
-            baseRevision: source.revision,
-            updatedAt: later,
-            operations: [
-              {
-                type: "chapter.delete",
-                id: "chapter_one",
-                cascade: true
-              }
-            ]
-          })
-        ),
-      "committed_prefix_protected"
-    );
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(
-          source,
-          LongWorkspaceOperationBatchSchema.parse({
-            baseRevision: source.revision,
-            updatedAt: later,
-            operations: [
-              {
-                type: "chapter.reorder",
-                volumeId: "volume_one",
-                orderedIds: ["chapter_two", "chapter_one"]
-              }
-            ]
-          })
-        ),
-      "committed_prefix_protected"
-    );
+    const reordered = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "chapter.reorder",
+          volumeId: "volume_one",
+          orderedIds: ["chapter_two", "chapter_one"]
+        }
+      ]
+    });
+    expect(
+      reordered.snapshot.plot.chapterCards
+        .filter(({ volumeId }) => volumeId === "volume_one")
+        .sort((left, right) => left.narrativeOrder - right.narrativeOrder)
+        .map(({ id }) => id)
+    ).toEqual(["chapter_two", "chapter_one"]);
+
+    const batch = LongWorkspaceOperationBatchSchema.parse({
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        { type: "chapter.delete", id: "chapter_one", cascade: true }
+      ]
+    });
+    const preview = previewLongWorkspaceOperations(source, batch);
+    const deleted = applyLongWorkspaceOperations(source, {
+      ...batch,
+      expectedImpact: preview.impact
+    });
+    expect(
+      deleted.snapshot.plot.chapterCards.some(({ id }) => id === "chapter_one")
+    ).toBe(false);
+    expect(deleted.snapshot.ledger.commits).toEqual([]);
+    expect(
+      deleted.fileIntents.some(
+        ({ action, file: target }) =>
+          action === "delete" &&
+          target.id === longLedgerCommitFileId("commit_first")
+      )
+    ).toBe(true);
   });
 
-  it("rejects indirect create, move, reorder, and relationship bypasses around committed anchors", () => {
-    const rejected: Array<{
-      label: string;
-      operation: LongWorkspaceOperation;
-    }> = [
-      {
-        label: "insert volume before committed volume",
-        operation: {
+  it("allows structure changes around recorded anchors", () => {
+    const source = committedWorkspace();
+    const result = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
           type: "volume.create",
           volume: {
-            id: "volume_intruder",
-            title: "插队卷",
-            order: 1,
-            summary: ""
-          }
-        }
-      },
-      {
-        label: "reorder committed volume prefix",
-        operation: {
-          type: "volume.reorder",
-          orderedIds: [
-            "volume_one",
-            "volume_setup",
-            "volume_tail_a",
-            "volume_tail_b"
-          ]
-        }
-      },
-      {
-        label: "delete volume before committed volume",
-        operation: {
-          type: "volume.delete",
-          id: "volume_setup",
-          cascade: true
-        }
-      },
-      {
-        label: "insert arc before committed primary arc",
-        operation: {
-          type: "arc.create",
-          arc: {
-            id: "arc_intruder",
-            volumeId: "volume_one",
-            title: "插队弧",
-            order: 1,
-            outline: ""
-          }
-        }
-      },
-      {
-        label: "move arc before committed primary arc",
-        operation: {
-          type: "arc.move",
-          id: "arc_movable",
-          toVolumeId: "volume_one",
-          beforeArcId: "arc_letter"
-        }
-      },
-      {
-        label: "reorder committed primary arc prefix",
-        operation: {
-          type: "arc.reorder",
-          volumeId: "volume_one",
-          orderedIds: [
-            "arc_letter",
-            "arc_setup",
-            "arc_tail_a",
-            "arc_tail_b"
-          ]
-        }
-      },
-      {
-        label: "insert event before committed-fact events",
-        operation: {
-          type: "event.create",
-          event: {
-            id: "event_intruder",
-            title: "插队事件",
+            id: "volume_prologue",
+            title: "序卷",
             summary: "",
-            timeMode: "sequence",
-            timeLabel: "",
-            storyOrder: 1,
-            location: "",
-            arcIds: ["arc_setup"],
-            characterIds: []
+            order: 1
           }
+        },
+        {
+          type: "chapter.move",
+          id: "chapter_one",
+          toVolumeId: "volume_prologue",
+          toPrimaryArcId: null
         }
-      },
-      {
-        label: "create placement in committed chapter",
-        operation: {
-          type: "placement.create",
-          placement: {
-            id: "placement_intruder",
-            eventId: "event_tail_a",
-            chapterCardId: "chapter_one",
-            orderInChapter: 99,
-            mode: "scene",
-            disclosure: "hint",
-            writingPrompt: "",
-            status: "planned",
-            commitId: null
-          }
-        }
-      },
-      {
-        label: "insert beat before committed beats",
-        operation: {
-          type: "foreshadowingBeat.create",
-          threadId: "foreshadow_letter",
-          beat: {
-            id: "beat_intruder",
-            type: "source",
-            order: 1,
-            eventId: "event_tail_a",
-            placementId: null,
-            chapterCardId: "chapter_two",
-            plannedScope: "",
-            note: "",
-            status: "planned",
-            commitId: null
-          }
-        }
-      },
-      {
-        label: "bind new beat to committed chapter",
-        operation: {
-          type: "foreshadowingBeat.create",
-          threadId: "foreshadow_letter",
-          beat: {
-            id: "beat_committed-chapter-bypass",
-            type: "source",
-            order: 99,
-            eventId: "event_letter",
-            placementId: null,
-            chapterCardId: "chapter_one",
-            plannedScope: "",
-            note: "",
-            status: "planned",
-            commitId: null
-          }
-        }
-      },
-      {
-        label: "bind existing beat to committed placement",
-        operation: {
-          type: "foreshadowingBeat.update",
-          id: "beat_tail_a",
-          patch: {
-            placementId: "placement_letter",
-            chapterCardId: "chapter_one"
-          }
-        }
-      },
-      {
-        label: "move beat before committed beats",
-        operation: {
-          type: "foreshadowingBeat.move",
-          id: "beat_movable",
-          toThreadId: "foreshadow_letter",
-          beforeBeatId: "beat_letter"
-        }
-      },
-      {
-        label: "move thread before committed thread",
-        operation: {
-          type: "foreshadowing.reorder",
-          orderedIds: [
-            "foreshadow_setup",
-            "foreshadow_tail_a",
-            "foreshadow_letter",
-            "foreshadow_tail_b"
-          ]
-        }
-      },
-      {
-        label: "create relationship between committed-fact events",
-        operation: {
-          type: "connection.create",
-          connection: {
-            id: "connection_committed-bypass",
-            sourceEventId: "event_letter",
-            targetEventId: "event_committed_second",
-            type: "causes",
-            note: ""
-          }
-        }
-      }
-    ];
-
-    for (const { label, operation } of rejected) {
-      const source = committedAnchorWorkspace();
-      try {
-        applyLongWorkspaceOperations(source, {
-          baseRevision: source.revision,
-          updatedAt: later,
-          operations: [operation]
-        });
-        throw new Error(`Expected rejection: ${label}`);
-      } catch (error) {
-        expect(error, label).toBeInstanceOf(LongWorkspaceOperationError);
-        expect(
-          (error as LongWorkspaceOperationError).code,
-          label
-        ).toBe("committed_prefix_protected");
-      }
-    }
+      ]
+    });
+    expect(
+      result.snapshot.plot.chapterCards.find(({ id }) => id === "chapter_one")
+    ).toMatchObject({
+      volumeId: "volume_prologue",
+      primaryArcId: null
+    });
+    expect(result.snapshot.ledger.commits[0]?.chapterCardId).toBe("chapter_one");
   });
 
   it("keeps the uncommitted suffix editable after every committed anchor", () => {
@@ -1864,10 +1809,25 @@ describe("long workspace operation engine", () => {
         }
       ]
     });
+    expect(movedArc.snapshot.plot.chapterCards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "chapter_one",
+          volumeId: "volume_one",
+          primaryArcId: "arc_stays_in_volume_one"
+        }),
+        expect.objectContaining({
+          id: "chapter_two",
+          volumeId: "volume_one",
+          primaryArcId: null
+        })
+      ])
+    );
+    expect(movedArc.snapshot.chapters).toHaveLength(2);
     expect(
       movedArc.snapshot.plot.foreshadowing[0]!.beats[0]
     ).toMatchObject({
-      volumeId: "volume_two",
+      volumeId: "volume_one",
       arcId: null
     });
     expect(
@@ -2174,9 +2134,9 @@ describe("long workspace operation engine", () => {
     });
   });
 
-  it("allows abandoning and restoring a derived thread but locks committed core facts", () => {
+  it("allows recorded foreshadowing facts to be edited", () => {
     const source = committedForeshadowingWorkspace();
-    const backfilled = applyLongWorkspaceOperations(source, {
+    const result = applyLongWorkspaceOperations(source, {
       baseRevision: source.revision,
       updatedAt: later,
       operations: [
@@ -2184,74 +2144,23 @@ describe("long workspace operation engine", () => {
           type: "foreshadowing.update",
           id: "foreshadow_letter",
           patch: {
-            hiddenTruth: "寄信人是失踪多年的兄长。",
+            hiddenTruth: "寄信人身份仍可重新设计。",
             plannedSpan: "cross_volume"
           }
+        },
+        {
+          type: "foreshadowingBeat.update",
+          id: "beat_letter",
+          patch: { note: "记录后仍可调整触点说明。" }
         }
       ]
     });
-    expect(backfilled.snapshot.plot.foreshadowing[0]).toMatchObject({
-      hiddenTruth: "寄信人是失踪多年的兄长。",
+    expect(result.snapshot.plot.foreshadowing[0]).toMatchObject({
+      hiddenTruth: "寄信人身份仍可重新设计。",
       plannedSpan: "cross_volume"
     });
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(backfilled.snapshot, {
-          baseRevision: backfilled.resultRevision,
-          updatedAt: later,
-          operations: [
-            {
-              type: "foreshadowing.update",
-              id: "foreshadow_letter",
-              patch: { hiddenTruth: "不能再次改写已经补全的真相。" }
-            }
-          ]
-        }),
-      "committed_prefix_protected"
-    );
-
-    const abandoned = applyLongWorkspaceOperations(backfilled.snapshot, {
-      baseRevision: backfilled.resultRevision,
-      updatedAt: later,
-      operations: [
-        {
-          type: "foreshadowing.update",
-          id: "foreshadow_letter",
-          patch: { status: "abandoned" }
-        }
-      ]
-    });
-    expect(
-      abandoned.snapshot.plot.foreshadowing[0]!.status
-    ).toBe("abandoned");
-
-    const restored = applyLongWorkspaceOperations(abandoned.snapshot, {
-      baseRevision: abandoned.resultRevision,
-      updatedAt: later,
-      operations: [
-        {
-          type: "foreshadowing.update",
-          id: "foreshadow_letter",
-          patch: { status: "planned" }
-        }
-      ]
-    });
-    expect(restored.snapshot.plot.foreshadowing[0]!.status).toBe("open");
-
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(restored.snapshot, {
-          baseRevision: restored.resultRevision,
-          updatedAt: later,
-          operations: [
-            {
-              type: "foreshadowing.update",
-              id: "foreshadow_letter",
-              patch: { title: "不允许改写已提交伏笔核心" }
-            }
-          ]
-        }),
-      "committed_prefix_protected"
+    expect(result.snapshot.plot.foreshadowing[0]!.beats[0]!.note).toBe(
+      "记录后仍可调整触点说明。"
     );
   });
 
@@ -2362,7 +2271,7 @@ describe("long workspace operation engine", () => {
     );
   });
 
-  it("locks ledger-owned character continuity writes after the first commit but keeps core profiles editable", () => {
+  it("keeps all character design files editable after continuity records", () => {
     const source = committedWorkspace();
     const files = source.characterFiles[0]!;
     const batchFor = (fileId: string) => ({
@@ -2394,16 +2303,46 @@ describe("long workspace operation engine", () => {
       files.currentState.id,
       files.history.id
     ]) {
-      expectOperationError(
-        () => applyLongWorkspaceOperations(source, batchFor(fileId)),
-        "committed_prefix_protected"
-      );
+      expect(
+        applyLongWorkspaceOperations(source, batchFor(fileId))
+          .documentWrites[0]?.fileId
+      ).toBe(fileId);
     }
 
     expect(
       applyLongWorkspaceOperations(source, batchFor(files.coreProfile.id))
         .documentWrites[0]?.fileId
     ).toBe(files.coreProfile.id);
+  });
+
+  it("does not let a continuation-import checkpoint take ownership of character design files", () => {
+    const source = committedWorkspace();
+    source.ledger.commits[0]!.mode = "import_checkpoint";
+    const relationships = source.characterFiles[0]!.relationships;
+    const result = applyLongWorkspaceOperations(source, {
+      baseRevision: source.revision,
+      updatedAt: later,
+      operations: [
+        {
+          type: "character.update",
+          id: "character_alice",
+          patch: { aliases: ["阿岚"] }
+        }
+      ],
+      documentWrites: [
+        {
+          proposalId: "proposal_import_checkpoint_relationships",
+          fileId: relationships.id,
+          mode: "replace",
+          expectedRevision: revision,
+          nextRevision: "v1:1:1234abcd",
+          updatedAt: later,
+          content: "导入后补录的人物关系",
+          reason: "导入检查点不接管人物设计"
+        }
+      ]
+    });
+    expect(result.documentWrites[0]?.fileId).toBe(relationships.id);
   });
 
   it("creates, updates, reorders, and deletes story plots bound to an arc", () => {

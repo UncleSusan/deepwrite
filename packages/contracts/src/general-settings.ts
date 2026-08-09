@@ -30,8 +30,8 @@ export type GeneralSettingsSnapshot = z.infer<
 
 export function createDefaultGeneralSettings(): GeneralSettings {
   return {
-    permissionMode: "request-approval",
-    autoSave: false,
+    permissionMode: "auto-approve",
+    autoSave: true,
     language: "auto",
     showInMenuBar: true
   };

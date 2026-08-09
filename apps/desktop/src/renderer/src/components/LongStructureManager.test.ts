@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import source from "./LongStructureManager.vue?raw";
 
 describe("LongStructureManager", () => {
-  it("keeps worldbuilding as the only editable structure category", () => {
-    expect(source).toContain("世界观与功能设置");
-    expect(source).toContain("其他内容请在对应工作区编辑");
+  it("manages worldbuilding categories and text-only character types", () => {
+    expect(source).toContain("结构管理");
+    expect(source).toContain("管理世界观分类、人物类型和长篇功能配置");
     expect(source).toContain("props.snapshot.worldbuilding");
     expect(source).toContain("builder.createWorldbuilding");
     expect(source).toContain("builder.updateWorldbuilding");
@@ -18,27 +18,46 @@ describe("LongStructureManager", () => {
     expect(source).not.toContain("builder.createVolume");
     expect(source).not.toContain("builder.createArc");
     expect(source).not.toContain("builder.createChapter");
-    expect(source).not.toContain("builder.updateCharacter");
+    expect(source).toContain("builder.createCharacterType");
+    expect(source).toContain("builder.updateCharacterType");
+    expect(source).toContain("builder.reorderCharacterType");
+    expect(source).toContain("builder.deleteCharacterType");
+    expect(source).toContain("人物类型");
+    expect(source).toContain("迁移人物并删除");
+    expect(source).toContain("activeFoundationSection === 'worldbuilding'");
     expect(source).not.toContain("builder.updateVolume");
     expect(source).not.toContain("builder.updateArc");
     expect(source).not.toContain("builder.updateChapter");
-    expect(source).not.toContain("builder.deleteCharacter");
     expect(source).not.toContain("builder.deleteVolume");
     expect(source).not.toContain("builder.deleteArc");
     expect(source).not.toContain("builder.deleteChapter");
   });
 
-  it("replaces narrative management with an empty feature configuration panel", () => {
+  it("replaces narrative management with worldbuilding feature settings", () => {
     expect(source).toContain('type StructurePanel = "foundation" | "features"');
     expect(source).toContain('label: "基础结构"');
     expect(source).toContain('label: "功能配置"');
-    expect(source).toContain("功能配置项暂时为空");
+    expect(source).toContain("世界观条目样式");
+    expect(source).toContain("人物与连续性条目样式");
+    expect(source).toContain("剧情设计条目样式");
+    expect(source).toContain('value: "top-tabs"');
+    expect(source).toContain('value: "right-list"');
+    expect(source).toContain("builder.updateFeatureSettings");
+    expect(source).toContain(
+      "snapshot.featureSettings.worldbuildingItemLayout"
+    );
+    expect(source).toContain(
+      "snapshot.featureSettings.characterAndContinuityItemLayout"
+    );
+    expect(source).toContain("snapshot.featureSettings.plotItemLayout");
+    expect(source).toContain("<PopupSelect");
     expect(source).not.toContain('label: "剧情与叙事"');
     expect(source).not.toContain("<LongPlotStructureManager");
     expect(source).not.toContain('label: "人物"');
     expect(source).not.toContain('label: "分卷"');
     expect(source).not.toContain('label: "剧情点"');
     expect(source).not.toContain('label: "章卡"');
+    expect(source).not.toContain("功能配置项暂时为空");
   });
 
   it("waits for durable completion and preserves form drafts on failure", () => {

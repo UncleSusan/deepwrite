@@ -66,12 +66,19 @@ function systemEvent(event: unknown): SystemEventEnvelope {
   return SystemEventEnvelopeSchema.parse(event);
 }
 
-function mutationEvent(): LongMutationProposalEvent {
+function mutationEvent(
+  options: {
+    id?: string;
+    toolCallId?: string;
+    title?: string;
+  } = {}
+): LongMutationProposalEvent {
   return systemEvent(
     createEnvelope(
       "long.mutation_proposal",
       {
         ...proposalBase,
+        toolCallId: options.toolCallId ?? proposalBase.toolCallId,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -79,14 +86,14 @@ function mutationEvent(): LongMutationProposalEvent {
             {
               type: "worldbuilding.update" as const,
               id: "world_rules",
-              patch: { title: "世界规则" }
+              patch: { title: options.title ?? "世界规则" }
             }
           ],
           documentWrites: []
         },
         baseProjectRevision: 11
       },
-      { id: "event_mutation", context: envelopeContext }
+      { id: options.id ?? "event_mutation", context: envelopeContext }
     )
   ) as LongMutationProposalEvent;
 }
@@ -392,12 +399,9 @@ function textFilesLedgerEvent() {
             {
               fileId: longChapterHandoffFileId("chapter_one"),
               revision: fileRevision
-            },
-            {
-              fileId: longChapterForeshadowingChangesFileId("chapter_one"),
-              revision: fileRevision
             }
           ],
+          foreshadowingBeatDecisions: {},
           commitMessage: "留存第一章连续性文本",
           baseWorkspaceRevision: 7,
           baseProjectRevision: 11
@@ -450,8 +454,8 @@ function harness(
     return {
       bookId: proposalBase.bookId,
       preview: {
-        baseRevision: 7,
-        resultRevision: 8,
+        baseRevision: _input.batch.baseRevision,
+        resultRevision: _input.batch.baseRevision + 1,
         impact: emptyImpact,
         entityChanges: [],
         fileIntents: [],
@@ -459,7 +463,7 @@ function harness(
           [] as LongWorkspaceOperationBatch["documentWrites"],
         provisionalIdMap: {}
       },
-      projectRevision: 11
+      projectRevision: 13
     };
   });
   const applyOperations = vi.fn(async (input: unknown) => {
@@ -952,11 +956,12 @@ describe("long workspace proposal approval", () => {
         baseWorkspaceRevision: 9,
         baseProjectRevision: 13,
         chapterFileRevisions: { body: fileRevision },
-        continuityFileRevisions: expect.arrayContaining([
+        continuityFileRevisions: expect.not.arrayContaining([
           expect.objectContaining({
             fileId: longChapterForeshadowingChangesFileId("chapter_one")
           })
-        ])
+        ]),
+        foreshadowingBeatDecisions: {}
       })
     );
     expect(test.notifications.error).not.toHaveBeenCalled();
@@ -1071,7 +1076,68 @@ describe("long workspace proposal approval", () => {
       expect.objectContaining({ id: "event_mutation" })
     );
     expect(test.applyOperations).toHaveBeenCalledTimes(1);
-    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        status: "accepted",
+        event: { id: "event_mutation", type: "long.mutation_proposal" }
+      }
+    ]);
+  });
+
+  it("queues same-run mutation proposals and rebases the next one after approval", async () => {
+    const test = harness();
+    const first = mutationEvent();
+    const second = mutationEvent({
+      id: "event_mutation_second",
+      toolCallId: "tool_long_second",
+      title: "世界法则"
+    });
+
+    await test.controller.handleEvent(first);
+    await test.controller.handleEvent(second);
+
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      { status: "ready", event: { id: "event_mutation" } },
+      { status: "waiting", event: { id: "event_mutation_second" } }
+    ]);
+
+    await test.controller.approve("longbook_test", "event_mutation");
+
+    expect(test.controller.itemsForBook("longbook_test")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "accepted",
+          event: expect.objectContaining({ id: "event_mutation" })
+        }),
+        expect.objectContaining({
+          status: "ready",
+          event: expect.objectContaining({ id: "event_mutation_second" }),
+          effectiveBatch: expect.objectContaining({ baseRevision: 9 }),
+          effectiveProjectRevision: 13
+        })
+      ])
+    );
+  });
+
+  it("marks deterministic preview validation failures as non-retryable", async () => {
+    const test = harness();
+    test.previewOperations.mockRejectedValueOnce(
+      new Error(
+        "long.operation.invalid_reference: Target chapter volume and primary arc must match."
+      )
+    );
+
+    await test.controller.handleEvent(mutationEvent());
+
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        status: "error",
+        errorPhase: "preview",
+        errorRetryable: false,
+        error: expect.stringContaining("long.operation.invalid_reference")
+      }
+    ]);
+    expect(test.applyOperations).not.toHaveBeenCalled();
   });
 
   it("keeps chapter drafts out of the legacy long queue and routes the remaining proposal types", async () => {
@@ -1131,7 +1197,7 @@ describe("long workspace proposal approval", () => {
     expect(test.applyOperations).not.toHaveBeenCalled();
     expect(test.controller.itemsForBook("longbook_test")[0]).toMatchObject({
       status: "ready",
-      previewProjectRevision: 11
+      previewProjectRevision: 13
     });
 
     await test.controller.approve("longbook_test", "event_mutation");
@@ -1139,12 +1205,17 @@ describe("long workspace proposal approval", () => {
     expect(test.applyOperations).toHaveBeenCalledWith({
       bookId: "longbook_test",
       batch: expect.objectContaining({
-        baseRevision: 7,
+        baseRevision: 9,
         expectedImpact: emptyImpact
       }),
-      baseProjectRevision: 11
+      baseProjectRevision: 13
     });
-    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        status: "accepted",
+        event: { type: "long.mutation_proposal" }
+      }
+    ]);
   });
 
   it("enqueues schema-valid manual mutations through preview and approval", async () => {
@@ -1178,12 +1249,15 @@ describe("long workspace proposal approval", () => {
     });
     expect(test.previewOperations).toHaveBeenCalledWith({
       bookId: "longbook_test",
-      batch: event.payload.batch
+      batch: expect.objectContaining({
+        ...event.payload.batch,
+        baseRevision: 9
+      })
     });
     expect(test.controller.itemsForBook("longbook_test")[0]).toMatchObject({
       event: { id: event.id },
       status: "ready",
-      previewProjectRevision: 11
+      previewProjectRevision: 13
     });
 
     await test.controller.approve("longbook_test", event.id);
@@ -1191,10 +1265,10 @@ describe("long workspace proposal approval", () => {
     expect(test.applyOperations).toHaveBeenCalledWith({
       bookId: "longbook_test",
       batch: expect.objectContaining({
-        baseRevision: 7,
+        baseRevision: 9,
         expectedImpact: emptyImpact
       }),
-      baseProjectRevision: 11
+      baseProjectRevision: 13
     });
     expect(test.onApplied).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1202,7 +1276,12 @@ describe("long workspace proposal approval", () => {
         payload: expect.objectContaining({ bookId: "longbook_test" })
       })
     );
-    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        status: "accepted",
+        event: { id: event.id, type: "long.mutation_proposal" }
+      }
+    ]);
   });
 
   it("creates unique manual proposal envelopes and validates their payload", async () => {

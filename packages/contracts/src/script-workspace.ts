@@ -58,8 +58,7 @@ export type ScriptWorkspaceTextStageId = z.infer<
 export const SCRIPT_WORKSPACE_AGENT_IDS = [
   "character_design",
   "plot_design",
-  "expert_draft_coordinator",
-  "expert_section_writer"
+  "expert_draft_coordinator"
 ] as const;
 
 export const ScriptWorkspaceAgentIdSchema = z.enum(
@@ -76,18 +75,6 @@ export function resolveScriptWorkspaceAgentIdForStage(
   if (stageId === "draft") return "expert_draft_coordinator";
   return "plot_design";
 }
-
-export const SCRIPT_WORKSPACE_READ_TARGETS = [
-  "character_design",
-  "plot_structure",
-  "draft"
-] as const;
-export const ScriptWorkspaceReadTargetSchema = z.enum(
-  SCRIPT_WORKSPACE_READ_TARGETS
-);
-export type ScriptWorkspaceReadTarget = z.infer<
-  typeof ScriptWorkspaceReadTargetSchema
->;
 
 export const SCRIPT_MATERIAL_KINDS = [
   "character",
@@ -156,28 +143,34 @@ export const DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite 的剧
 - 写入编辑器的只能是当前阶段的正式内容，不要混入分析过程或工具说明。
 `;
 
-export const DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 DeepWrite 的剧本正文专家编写智能体，站在全剧角度处理剧集目录初始化、全文审阅、格式整理和跨集修订。正文是一个虚拟剧集目录，每一集的正文和人物状态是两个独立文件，不存在可覆盖的合并正文文件。
+export const DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 DeepWrite 的剧本正文专家编写智能体，也是剧本唯一的正文写作智能体。你既能站在全剧角度处理剧集目录初始化、统一创作、全文审阅、格式整理和跨集修订，也能在用户打开具体剧集时直接创作或修改该集。正文是一个虚拟剧集目录，每一集的正文和人物状态是两个独立文件，不存在可覆盖的合并正文文件。
 
 工作流程：
 1. 用户要求初始化正文、按剧情结构创建剧集或批量创建空白剧集时，先根据本轮「当前剧情结构配置」和用户需求，按需调用 read_workspace_content 读取相关剧情阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。
 2. 优先依据已被读取、且结构说明承担章节规划职责的内容，一次调用 create_draft_sections 批量提交所有尚未存在的剧集标题和字数要求；该工具只创建空白正文文件和空白人物状态文件。
 3. 处理全剧正文时，先调用 read_draft_sections（mode=preview）扫描相关剧集，再对真正需要处理的剧集调用 read_draft_sections（mode=full）。
-4. 只处理某一集时，直接对该 section_id 调用 read_draft_sections（mode=full）。
+4. 运行时提供「当前用户正在操作的剧集」时，把它视为用户当前焦点：只处理这一集的请求优先作用于该 section_id，写入工具可省略 section_id；需要统一创作或跨集修改时仍可显式指定其它 section_id。没有当前剧集时，写入必须显式指定 section_id。
 5. 局部修改使用 replace_draft_section_text；只有剧集为空或用户明确要求整集重写时，才使用 write_draft_section。
 6. 用户要求修改剧集名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。
 7. 用户要求删除剧集时，先核对目录，再调用 delete_draft_section；正文至少保留一个剧集，删除会同时移除正文与人物状态文件。
 
 读取与初始化规则：
-- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。
-- 工具返回“本次未读取”时，必须继续分批读完再下结论；preview 不算完整读取。
+- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。工具返回 next_offset 时，必须用该 offset 继续分页读取，直至 next_offset=null 才算读完该阶段文件。
+- read_draft_sections 返回“本次未读取”或非空 next_offset 时，必须继续分批、分页读完再下结论；preview 不算完整读取。
 - 改动会影响后续连续性时，一并读取相关剧集的 character_state，并在修改正文后同步更新受影响的人物状态。
 - 涉及具体人物设定时，先调用 list_characters 确认人物结构：文本样式可读整份人物设计；条目样式下，概览只是姓名与一句话索引，必须对本集/本次修订涉及的人物用 read_character 并指定 item_id 读取对应人物卡。不得只读概览或只调用 read_workspace_content（stage_id=character_design）就开始编写或修订。
 - 当前剧情结构不足以确定剧集清单且用户没有明确给出时，不得猜测剧集结构。
 - 批量初始化必须在一次 create_draft_sections 调用中提交全部待创建剧集，不得拆成多次单集调用。
 - 初始化只新增空白剧集文件，不删除、不改名、不排序、不覆盖已有剧集。
 
+分集写作标准：
+- 写作或修订当前剧集前，按需读取当前集、相邻前文和上一集人物状态；严格执行已读取剧情内容中的任务、承接点和篇幅要求。
+- 延续前文的时间、空间、人物关系、信息知情范围、物品位置、伤势和情绪，不重复已经完成的情节。
+- 让冲突通过可被镜头呈现的人物行动、表演和对白推进，避免用小说化总结代替场面。
+- 保持题材、风格和节奏一致；剧集结尾应完成本集任务，并为下一集留下明确承接点或观看动力。
+
 写回规则：
-- 每次写入或替换都必须显式指定稳定 section_id；file 参数决定写正文还是人物状态，默认是 body。
+- 运行时提供当前剧集时，省略 section_id 默认作用于该集；仍可为全剧任务显式指定其它稳定 section_id。file 参数决定写正文还是人物状态，默认是 body。
 - 同一轮内先创建再写文时，必须使用创建结果给出的 section_id。
 - 修改已有剧集名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。
 - 删除已有剧集时调用 delete_draft_section；正文至少保留一个剧集。排序仍由界面管理。
@@ -191,7 +184,7 @@ export const DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWr
 写作前必须完成：
 1. 根据用户本轮需求和本轮「当前剧情结构配置」，按需调用 read_workspace_content 读取相关剧情阶段（每次一个 stage_id，使用清单中的真实 id）；以被读取阶段的说明与正文作为写作依据，不要默认通读全部阶段，也不得臆造未出现在清单中的阶段名。
 2. 调用 read_workspace_content（stage_id=draft）确认当前剧集在目录中的位置和相邻剧集 id。
-3. 调用 read_draft_sections（mode=full）读取当前剧集，以及紧邻的前 2 到 3 个已有正文的剧集；读取紧邻上一集时，include 必须包含 character_state。
+3. 调用 read_draft_sections（mode=full）读取当前剧集，以及紧邻的前 2 到 3 个已有正文的剧集；读取紧邻上一集时，include 必须包含 character_state。任一文件返回非空 next_offset 时，必须用该 offset 继续分页，直至 next_offset=null 才算完整读取。
 4. 只有用户明确要求跨集呼应或必须核对前文伏笔时，才扩大读取范围，并优先用 mode=preview 扫描。
 5. 用户点名技能或写作方法时调用 load_skill；确需参考剧本素材时，调用 query_linked_material_entries 检索并读取相关条目。
 
@@ -224,8 +217,7 @@ export const DEFAULT_SCRIPT_WORKSPACE_AGENT_SYSTEM_PROMPTS: Record<
 > = {
   character_design: DEFAULT_SCRIPT_CHARACTER_DESIGN_SYSTEM_PROMPT,
   plot_design: DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT,
-  expert_draft_coordinator: DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
-  expert_section_writer: DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT
+  expert_draft_coordinator: DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT
 };
 
 function uniqueEnumValuesSchema<T extends string>(
@@ -249,11 +241,6 @@ function uniqueEnumValuesSchema<T extends string>(
     });
 }
 
-const UniqueScriptWorkspaceStageIdsSchema = uniqueEnumValuesSchema(
-  ScriptWorkspaceReadTargetSchema,
-  SCRIPT_WORKSPACE_READ_TARGETS.length,
-  "workspace stage id"
-);
 const UniqueScriptMaterialKindsSchema = uniqueEnumValuesSchema(
   ScriptMaterialKindSchema,
   SCRIPT_MATERIAL_KINDS.length,
@@ -266,10 +253,9 @@ const UniqueScriptSkillKindsSchema = uniqueEnumValuesSchema(
 );
 
 export const ScriptAgentReadAccessSchema = z.object({
-  workspace: UniqueScriptWorkspaceStageIdsSchema,
   material: UniqueScriptMaterialKindsSchema,
   skill: UniqueScriptSkillKindsSchema
-});
+}).strict();
 export type ScriptAgentReadAccess = z.infer<typeof ScriptAgentReadAccessSchema>;
 
 export const DEFAULT_SCRIPT_AGENT_READ_ACCESS: Record<
@@ -277,24 +263,16 @@ export const DEFAULT_SCRIPT_AGENT_READ_ACCESS: Record<
   ScriptAgentReadAccess
 > = {
   character_design: {
-    workspace: ["character_design", "plot_structure"],
     material: ["character"],
     skill: ["general", "plot", "other"]
   },
   plot_design: {
-    workspace: ["character_design", "plot_structure"],
     material: ["gimmick", "character", "plot"],
     skill: ["general", "plot", "other"]
   },
   expert_draft_coordinator: {
-    workspace: ["plot_structure", "draft", "character_design"],
-    material: [],
-    skill: ["general", "other"]
-  },
-  expert_section_writer: {
-    workspace: ["plot_structure", "draft", "character_design"],
-    material: ["draft"],
-    skill: ["style", "general"]
+    material: ["character", "gimmick", "plot", "draft", "other"],
+    skill: ["style", "general", "other"]
   }
 };
 
@@ -335,20 +313,53 @@ export const ScriptWorkspaceStageSnapshotSchema = z
         message: "A truncated stage must report an originalLength larger than content."
       });
     }
+    if (value.truncated !== true && value.originalLength !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message: "An untruncated stage must omit originalLength."
+      });
+    }
   });
 export type ScriptWorkspaceStageSnapshot = z.infer<
   typeof ScriptWorkspaceStageSnapshotSchema
 >;
 
-const ScriptCharacterItemSnapshotSchema = z.object({
-  id: z.string().trim().min(1).max(512),
-  title: z.string().trim().min(1).max(256),
-  order: z.number().int().positive(),
-  content: z.string().max(SCRIPT_WORKSPACE_FILE_MAX_CHARACTERS),
-  revision: z.string().regex(/^v1:\d+:[0-9a-f]{8}$/),
-  truncated: z.boolean().optional(),
-  originalLength: z.number().int().nonnegative().optional()
-});
+const ScriptCharacterItemSnapshotSchema = z
+  .object({
+    id: z.string().trim().min(1).max(512),
+    title: z.string().trim().min(1).max(256),
+    order: z.number().int().positive(),
+    content: z.string().max(SCRIPT_WORKSPACE_FILE_MAX_CHARACTERS),
+    revision: z.string().regex(/^v1:\d+:[0-9a-f]{8}$/),
+    truncated: z.boolean().optional(),
+    originalLength: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(SCRIPT_WORKSPACE_FILE_MAX_CHARACTERS)
+      .optional()
+  })
+  .superRefine((value, context) => {
+    if (
+      value.truncated === true &&
+      (value.originalLength === undefined ||
+        value.originalLength <= value.content.length)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message: "A truncated character item must report its original length."
+      });
+    }
+    if (value.truncated !== true && value.originalLength !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message: "An untruncated character item must omit originalLength."
+      });
+    }
+  });
 
 const ScriptCharacterStructureSnapshotSchema = z.discriminatedUnion("format", [
   z.object({ format: z.literal("text") }),
@@ -488,48 +499,24 @@ export const ScriptWorkspaceSnapshotSchema = z
         context.addIssue({
           code: "custom",
           path: ["activeSectionId"],
-          message: "Only the script section writer may target an episode."
+          message: "Only the script draft stage may target an episode."
         });
       }
       return;
     }
 
-    if (value.activeAgentId === undefined) {
-      if (value.activeSectionId !== undefined) {
-        context.addIssue({
-          code: "custom",
-          path: ["activeSectionId"],
-          message: "An episode target requires the script section writer."
-        });
-      }
-      return;
-    }
-    if (value.activeAgentId === "expert_draft_coordinator") {
-      if (value.activeSectionId !== undefined) {
-        context.addIssue({
-          code: "custom",
-          path: ["activeSectionId"],
-          message: "The script coordinator cannot target an individual episode."
-        });
-      }
-      return;
-    }
-    if (value.activeAgentId !== "expert_section_writer") {
+    if (
+      value.activeAgentId !== undefined &&
+      value.activeAgentId !== "expert_draft_coordinator"
+    ) {
       context.addIssue({
         code: "custom",
         path: ["activeAgentId"],
-        message: "The script draft stage must use a script writing agent."
+        message: "The script draft stage must use the draft coordinator agent."
       });
       return;
     }
-    if (value.activeSectionId === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["activeSectionId"],
-        message: "The script section writer requires an active episode id."
-      });
-      return;
-    }
+    if (value.activeSectionId === undefined) return;
     if (
       !value.expertDraft.sections.some(
         (section) => section.id === value.activeSectionId
@@ -569,13 +556,8 @@ export const DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS = {
   ],
   expert_draft_coordinator: [
     "根据剧情结构初始化剧集目录",
-    "审阅全剧的连续性和格式",
-    "帮我跨集修订当前剧本"
-  ],
-  expert_section_writer: [
     "按照剧情结构写当前剧集",
-    "续写当前剧集并衔接前文",
-    "重写当前剧集，增强冲突和画面感"
+    "审阅并统一修订当前剧本"
   ]
 } as const satisfies Record<ScriptWorkspaceAgentId, ScriptAgentWelcomeShortcuts>;
 
@@ -611,22 +593,12 @@ export const DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES: readonly ScriptWorkspaceAg
   {
     id: "expert_draft_coordinator",
     label: "剧本正文专家",
-    description: "管理剧集结构、审阅连续性并处理跨集修订。",
+    description: "统一负责剧集结构、全剧创作、当前剧集写作与跨集修订。",
     systemPrompt: DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
     welcomeShortcuts: [
       ...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
     ],
     readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.expert_draft_coordinator
-  },
-  {
-    id: "expert_section_writer",
-    label: "剧本分集写手",
-    description: "按剧情结构、连续人物状态和剧本格式完成单集正文。",
-    systemPrompt: DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT,
-    welcomeShortcuts: [
-      ...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.expert_section_writer
-    ],
-    readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.expert_section_writer
   }
 ];
 

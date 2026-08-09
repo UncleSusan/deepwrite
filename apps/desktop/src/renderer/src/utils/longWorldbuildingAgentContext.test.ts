@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   LongReadDocumentInput,
-  LongReadDocumentResult
+  LongReadDocumentResult,
+  LongWorldbuildingCategory
 } from "@deepwrite/contracts";
 import type { LongWorkspaceSelection } from "../types/longWorkspace";
-import { buildLongWorldbuildingFocusSnapshot } from "./longWorldbuildingAgentContext";
+import {
+  buildLongWorldbuildingDirectorySnapshot,
+  buildLongWorldbuildingFocusSnapshot
+} from "./longWorldbuildingAgentContext";
 
 const UPDATED_AT = "2026-07-30T10:00:00.000Z";
 
@@ -39,6 +43,77 @@ function page(
 }
 
 describe("long worldbuilding agent context", () => {
+  it("builds a lightweight ordered directory without document contents", () => {
+    const categories: LongWorldbuildingCategory[] = [
+      {
+        id: "world_factions",
+        title: "势力",
+        order: 2,
+        format: "list",
+        contentAuthority: "files",
+        overview: file(
+          "file_world_factions:overview",
+          "long/worldbuilding/world_factions/overview.md"
+        ),
+        items: [
+          {
+            id: "worlditem_harbor",
+            title: "港务会",
+            order: 2,
+            file: file(
+              "file_worlditem_harbor:content",
+              "long/worldbuilding/world_factions/items/worlditem_harbor.md"
+            )
+          },
+          {
+            id: "worlditem_watchers",
+            title: "守夜人",
+            order: 1,
+            file: file(
+              "file_worlditem_watchers:content",
+              "long/worldbuilding/world_factions/items/worlditem_watchers.md"
+            )
+          }
+        ]
+      },
+      {
+        id: "world_rules",
+        title: "规则",
+        order: 1,
+        format: "text",
+        contentAuthority: "markdown",
+        file: file(
+          "file_world_rules:content",
+          "long/worldbuilding/world_rules/content.md"
+        )
+      }
+    ];
+
+    expect(buildLongWorldbuildingDirectorySnapshot(categories)).toEqual({
+      categories: [
+        {
+          categoryId: "world_rules",
+          title: "规则",
+          order: 1,
+          format: "text"
+        },
+        {
+          categoryId: "world_factions",
+          title: "势力",
+          order: 2,
+          format: "list",
+          itemCount: 2,
+          items: [
+            { itemId: "worlditem_watchers", title: "守夜人", order: 1 },
+            { itemId: "worlditem_harbor", title: "港务会", order: 2 }
+          ],
+          omittedItemCount: 0
+        }
+      ],
+      omittedCategoryCount: 0
+    });
+  });
+
   it("captures the active list item together with its category overview", async () => {
     const overview = file(
       "file_factions:overview",

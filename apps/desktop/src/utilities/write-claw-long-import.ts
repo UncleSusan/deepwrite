@@ -1936,7 +1936,6 @@ export function createWriteClawLongImportPlan(
     rawCards.push({
       id: `chapter-from-stage:${stageId}`,
       volume_id: volumeRows[0]!.legacyId,
-      arc_id: arcRows[0]!.legacyId,
       stage_id: stageId,
       title: record(rawChapters[stageId]).title || "未命名章节",
       narrative_order: rawCards.length + 1
@@ -1948,7 +1947,6 @@ export function createWriteClawLongImportPlan(
     rawCards.push({
       id: "chapter-card-1-1-1",
       volume_id: volumeRows[0]!.legacyId,
-      arc_id: arcRows[0]!.legacyId,
       stage_id: "draft.volume-1.arc-1.chapter-1",
       title: "第一章",
       narrative_order: 1
@@ -1958,21 +1956,19 @@ export function createWriteClawLongImportPlan(
 
   const chapterRows = rawCards.map((rawCard, sourceIndex) => {
     const card = record(rawCard);
-    let arcId = ids.resolve("arc", card.arc_id);
-    if (!arcId) {
-      const requestedVolume = ids.resolve("volume", card.volume_id);
-      arcId =
-        arcs.find(({ volumeId }) => volumeId === requestedVolume)?.id ??
-        arcs[0]!.id;
-      warnings.add("部分章卡引用了不存在的剧情弧，已迁入可用剧情弧。");
+    const requestedVolume = ids.resolve("volume", card.volume_id);
+    const arcId = ids.resolve("arc", card.arc_id) ?? null;
+    if (card.arc_id && arcId === null) {
+      warnings.add("部分章卡引用了不存在的剧情弧，已移除该关联。");
       warnings.preserveDecision(
         "unresolved-reference",
         `long_workspace.json.plot.chapter_cards[${sourceIndex}].arc_id`,
-        "章卡引用的剧情弧不存在，已迁入同卷或首个可用剧情弧。",
+        "章卡引用的剧情弧不存在，已保留章卡并移除剧情点关联。",
         rawCard
       );
     }
-    const currentArc = arcs.find(({ id }) => id === arcId)!;
+    const currentArc =
+      arcId === null ? undefined : arcs.find(({ id }) => id === arcId);
     const stageId =
       stringValue(card.stage_id).trim() || `legacy-stage-${sourceIndex + 1}`;
     return {
@@ -1986,8 +1982,8 @@ export function createWriteClawLongImportPlan(
         card.id,
         `chapter-${sourceIndex + 1}:${stageId}`
       ),
-      volumeId: currentArc.volumeId,
-      arcId: currentArc.id,
+      volumeId: currentArc?.volumeId ?? requestedVolume ?? volumes[0]!.id,
+      arcId: currentArc?.id ?? null,
       sourceOrder: positiveNumber(
         card.narrative_order ?? card.order,
         sourceIndex + 1
@@ -2101,6 +2097,7 @@ export function createWriteClawLongImportPlan(
     }
     chapterFiles.push({
       chapterCardId: row.id,
+      bodyStatus: body.trim() ? "written" : "empty",
       body: documents.add(
         longChapterBodyFileId(row.id),
         chapterPath(row.id, "body.md"),

@@ -19,6 +19,8 @@ describe("AgentTeamSettingsPanel", () => {
     expect(source).toContain("@click=\"activeWorkspaceType = 'long'\"");
     expect(source).toContain(":settings=\"longSettings\"");
     expect(source.match(/role=\"tab\"/g)?.length).toBe(3);
+    expect(source).toContain("const activeSkills = computed(() => props.skills ?? [])");
+    expect(source).not.toContain("skill.skillType === activeWorkspaceType.value");
   });
 
   it("maps all six long parent agents and preserves approval boundaries", () => {
@@ -37,11 +39,12 @@ describe("AgentTeamSettingsPanel", () => {
     expect(longSource).toContain("LongAgentTeamSettingsInputSchema.safeParse");
   });
 
-  it("maps the four short parent agents and prevents recursive delegation", () => {
-    for (const label of ["人设", "剧情", "正文", "分节"]) {
+  it("keeps the same three parent agents for short and script", () => {
+    for (const label of ["人设", "剧情", "正文"]) {
       expect(source).toContain(`label: "${label}"`);
     }
     expect(source).not.toContain('label: "大纲"');
+    expect(source).not.toContain('label: "分节"');
     expect(source).toContain("不能继续创建子智能体");
     expect(source).toContain("默认跟随所属主智能体的模型");
   });

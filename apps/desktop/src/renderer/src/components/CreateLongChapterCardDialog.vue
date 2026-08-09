@@ -22,7 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  submit: [input: { title: string; primaryArcId: string }];
+  submit: [input: { title: string; primaryArcId: string | null }];
 }>();
 
 const dialogElement = ref<HTMLElement | null>(null);
@@ -48,13 +48,9 @@ function submit(): void {
     titleInput.value?.focus({ preventScroll: true });
     return;
   }
-  if (!primaryArcId.value) {
-    uiMessage.warning("请选择主剧情点。");
-    return;
-  }
   emit("submit", {
     title: normalizedTitle,
-    primaryArcId: primaryArcId.value
+    primaryArcId: primaryArcId.value || null
   });
 }
 
@@ -107,10 +103,7 @@ watch(
           ? document.activeElement
           : null;
       title.value = "";
-      primaryArcId.value =
-        typeof props.arcOptions[0]?.value === "string"
-          ? props.arcOptions[0].value
-          : "";
+      primaryArcId.value = "";
       await nextTick();
       titleInput.value?.focus({ preventScroll: true });
       return;
@@ -173,11 +166,14 @@ onBeforeUnmount(() =>
               />
             </label>
             <label>
-              <span>主剧情点</span>
+              <span>关联剧情点（可选）</span>
               <PopupSelect
                 :model-value="primaryArcId"
-                :options="arcOptions"
-                accessible-label="选择章卡主剧情点"
+                :options="[
+                  { value: '', label: '不关联剧情点' },
+                  ...arcOptions
+                ]"
+                accessible-label="选择章卡关联剧情点"
                 :disabled="pending"
                 :menu-z-index="2500"
                 @update:model-value="selectArc"

@@ -5,7 +5,7 @@ export interface GeneralPreferences {
 }
 
 export const DEFAULT_GENERAL_PREFERENCES: GeneralPreferences = {
-  autoSave: false
+  autoSave: true
 };
 
 interface GeneralPreferencesStorage {

@@ -19,6 +19,7 @@ import {
   CreateDraftSectionsResultSchema,
   CreateLibraryGroupInputSchema,
   CreateLibraryInputSchema,
+  UpdateLibraryInputSchema,
   CreateScriptBookInputSchema,
   CreateShortBookInputSchema,
   DeleteCatalogProjectInputSchema,
@@ -27,6 +28,12 @@ import {
   DeleteBookResultSchema,
   DeleteDraftSectionInputSchema,
   DeleteDraftSectionResultSchema,
+  MoveDraftSectionInputSchema,
+  MoveDraftSectionResultSchema,
+  DuplicateCatalogProjectInputSchema,
+  DuplicateCatalogProjectResultSchema,
+  ExportLongManuscriptInputSchema,
+  ExportLongManuscriptResultSchema,
   ExportShortManuscriptInputSchema,
   ExportShortManuscriptResultSchema,
   GeneralSettingsSchema,
@@ -48,13 +55,19 @@ import {
   LibraryAgentSettingsSchema,
   ModelConnectionTestResultSchema,
   ModelConfigInputSchema,
+  OfficialModelBalanceSchema,
   ModelSettingsInputSchema,
   ModelSettingsSchema,
   ModelUsageDashboardSchema,
   ModelUsageQueryInputSchema,
   CreateLongBookInputSchema,
   LongImportPortableResultSchema,
-  LongImportWriteClawResultSchema,
+  LongApplyLegacySyncInputSchema,
+  LongApplyLegacySyncResultSchema,
+  LongChooseLegacySyncSourceResultSchema,
+  LongChooseContinuationImportSourceResultSchema,
+  LongImportContinuationInputSchema,
+  LongImportContinuationResultSchema,
   LongApplyOperationsInputSchema,
   LongApplyOperationsResultSchema,
   LongAgentIdSchema,
@@ -64,6 +77,7 @@ import {
   LongAgentTeamSettingsSchema,
   LongCommitChapterInputSchema,
   LongCommitChapterResultSchema,
+  LongDuplicateBookInputSchema,
   LongListBooksResultSchema,
   LongOpenBookInputSchema,
   LongOpenBookResultSchema,
@@ -71,6 +85,7 @@ import {
   LongPreviewOperationsResultSchema,
   LongReadDocumentInputSchema,
   LongReadDocumentResultSchema,
+  LongRenameBookInputSchema,
   LongRemoveBookInputSchema,
   LongRemoveBookResultSchema,
   LongRollbackLastCommitInputSchema,
@@ -85,6 +100,8 @@ import {
   MutatePlotStructureInputSchema,
   RemoveLibraryEntryInputSchema,
   RemoveLibraryEntryResultSchema,
+  MoveLibraryEntryInputSchema,
+  MoveLibraryEntryResultSchema,
   SessionAbortAcceptedPayloadSchema,
   SessionAbortCommandPayloadSchema,
   SessionPromptAcceptedPayloadSchema,
@@ -134,6 +151,7 @@ import {
   type CreateDraftSectionsResult,
   type CreateLibraryGroupInput,
   type CreateLibraryInput,
+  type UpdateLibraryInput,
   type CreateScriptBookInput,
   type CreateShortBookInput,
   type DeepWriteApi,
@@ -142,6 +160,12 @@ import {
   type DeleteBookResult,
   type DeleteDraftSectionInput,
   type DeleteDraftSectionResult,
+  type MoveDraftSectionInput,
+  type MoveDraftSectionResult,
+  type DuplicateCatalogProjectInput,
+  type DuplicateCatalogProjectResult,
+  type ExportLongManuscriptInput,
+  type ExportLongManuscriptResult,
   type ExportShortManuscriptInput,
   type ExportShortManuscriptResult,
   type GeneralSettings,
@@ -153,7 +177,12 @@ import {
   type LearningImitationStageId,
   type CreateLongBookInput,
   type LongImportPortableResult,
-  type LongImportWriteClawResult,
+  type LongApplyLegacySyncInput,
+  type LongApplyLegacySyncResult,
+  type LongChooseLegacySyncSourceResult,
+  type LongChooseContinuationImportSourceResult,
+  type LongImportContinuationInput,
+  type LongImportContinuationResult,
   type LongApplyOperationsInput,
   type LongApplyOperationsResult,
   type LongAgentId,
@@ -163,6 +192,7 @@ import {
   type LongAgentTeamSettingsInput,
   type LongCommitChapterInput,
   type LongCommitChapterResult,
+  type LongDuplicateBookInput,
   type LongListBooksResult,
   type LongOpenBookInput,
   type LongOpenBookResult,
@@ -170,6 +200,7 @@ import {
   type LongPreviewOperationsResult,
   type LongReadDocumentInput,
   type LongReadDocumentResult,
+  type LongRenameBookInput,
   type LongRemoveBookInput,
   type LongRemoveBookResult,
   type LongRollbackLastCommitInput,
@@ -192,6 +223,8 @@ import {
   type MutatePlotStructureInput,
   type RemoveLibraryEntryInput,
   type RemoveLibraryEntryResult,
+  type MoveLibraryEntryInput,
+  type MoveLibraryEntryResult,
   type SessionAbortAcceptedPayload,
   type SessionAbortCommandPayload,
   type SessionPromptAcceptedPayload,
@@ -374,6 +407,22 @@ async function createLongBook(
   );
 }
 
+async function duplicateLongBook(
+  rawInput: LongDuplicateBookInput
+): Promise<LongOpenBookResult> {
+  const input = LongDuplicateBookInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_duplicate");
+  return LongOpenBookResultSchema.parse(
+    await invokeCommand<LongOpenBookResult>(
+      createEnvelope("long.duplicateBook", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
 async function updateLongBookBindings(
   rawInput: LongUpdateBindingsInput
 ): Promise<LongOpenBookResult> {
@@ -390,23 +439,73 @@ async function updateLongBookBindings(
   );
 }
 
-async function importWriteClawLongBook(): Promise<LongImportWriteClawResult | null> {
-  const id = browserId("cmd_long_import_write_claw");
-  try {
-    return LongImportWriteClawResultSchema.nullable().parse(
-      await invokeCommand<LongImportWriteClawResult | null>(
-        createEnvelope("long.importWriteClaw", {}, { id, correlationId: id })
+async function renameLongBook(
+  rawInput: LongRenameBookInput
+): Promise<LongOpenBookResult> {
+  const input = LongRenameBookInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_rename");
+  return LongOpenBookResultSchema.parse(
+    await invokeCommand<LongOpenBookResult>(
+      createEnvelope("long.rename", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function chooseLegacySyncSource(): Promise<LongChooseLegacySyncSourceResult | null> {
+  const id = browserId("cmd_long_choose_legacy_sync");
+  return LongChooseLegacySyncSourceResultSchema.nullable().parse(
+    await invokeCommand<LongChooseLegacySyncSourceResult | null>(
+      createEnvelope("long.chooseLegacySyncSource", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function applyLegacySync(
+  rawInput: LongApplyLegacySyncInput
+): Promise<LongApplyLegacySyncResult> {
+  const input = LongApplyLegacySyncInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_apply_legacy_sync");
+  return LongApplyLegacySyncResultSchema.parse(
+    await invokeCommand<LongApplyLegacySyncResult>(
+      createEnvelope("long.applyLegacySync", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function chooseContinuationImportSource(): Promise<LongChooseContinuationImportSourceResult | null> {
+  const id = browserId("cmd_long_choose_continuation_import");
+  return LongChooseContinuationImportSourceResultSchema.nullable().parse(
+    await invokeCommand<LongChooseContinuationImportSourceResult | null>(
+      createEnvelope(
+        "long.chooseContinuationImportSource",
+        {},
+        { id, correlationId: id }
       )
-    );
-  } catch (error: unknown) {
-    const rawMessage =
-      error instanceof Error ? error.message : "导入旧版本长篇失败。";
-    const userMessage = rawMessage.replace(
-      /^[a-z][a-z0-9_.-]*:\s*/u,
-      ""
-    );
-    throw new Error(userMessage || "导入旧版本长篇失败。");
-  }
+    )
+  );
+}
+
+async function importContinuationLongBook(
+  rawInput: LongImportContinuationInput
+): Promise<LongImportContinuationResult | null> {
+  const input = LongImportContinuationInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_import_continuation");
+  return LongImportContinuationResultSchema.nullable().parse(
+    await invokeCommand<LongImportContinuationResult | null>(
+      createEnvelope("long.importContinuation", input, {
+        id,
+        correlationId: id
+      })
+    )
+  );
 }
 
 async function importPortableLongBook(): Promise<LongImportPortableResult | null> {
@@ -648,15 +747,6 @@ async function openProject(
   );
 }
 
-async function importLegacyBook(): Promise<ShortBook | null> {
-  const id = browserId("cmd_catalog_import_legacy_book");
-  return ShortBookSchema.nullable().parse(
-    await invokeCommand<ShortBook | null>(
-      createEnvelope("catalog.importLegacyBook", {}, { id, correlationId: id })
-    )
-  );
-}
-
 async function importLegacyLibrary(
   rawDomain: CatalogLibraryProjectDomain
 ): Promise<ImportLegacyLibraryResult | null> {
@@ -813,6 +903,22 @@ async function deleteDraftSection(
   );
 }
 
+async function moveDraftSection(
+  rawInput: MoveDraftSectionInput
+): Promise<MoveDraftSectionResult> {
+  const input = MoveDraftSectionInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_move_draft_section");
+  return MoveDraftSectionResultSchema.parse(
+    await invokeCommand<MoveDraftSectionResult>(
+      createEnvelope("catalog.moveDraftSection", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
 async function saveLibraryEntry(
   rawInput: SaveLibraryEntryInput
 ): Promise<CatalogLibraryEntry> {
@@ -845,6 +951,20 @@ async function createLibraryEntry(
   );
 }
 
+async function updateLibrary(rawInput: UpdateLibraryInput): Promise<CatalogLibrary> {
+  const input = UpdateLibraryInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_update_library");
+  return CatalogLibrarySchema.parse(
+    await invokeCommand<CatalogLibrary>(
+      createEnvelope("catalog.updateLibrary", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.libraryId }
+      })
+    )
+  );
+}
+
 async function removeLibraryEntry(
   rawInput: RemoveLibraryEntryInput
 ): Promise<RemoveLibraryEntryResult> {
@@ -856,6 +976,22 @@ async function removeLibraryEntry(
         id,
         correlationId: id,
         context: { resourceId: input.libraryId }
+      })
+    )
+  );
+}
+
+async function moveLibraryEntry(
+  rawInput: MoveLibraryEntryInput
+): Promise<MoveLibraryEntryResult> {
+  const input = MoveLibraryEntryInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_move_library_entry");
+  return MoveLibraryEntryResultSchema.parse(
+    await invokeCommand<MoveLibraryEntryResult>(
+      createEnvelope("catalog.moveLibraryEntry", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.targetLibraryId }
       })
     )
   );
@@ -885,6 +1021,22 @@ async function deleteProject(
   return DeleteCatalogProjectResultSchema.parse(
     await invokeCommand<DeleteCatalogProjectResult>(
       createEnvelope("catalog.deleteProject", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.projectId }
+      })
+    )
+  );
+}
+
+async function duplicateProject(
+  rawInput: DuplicateCatalogProjectInput
+): Promise<DuplicateCatalogProjectResult> {
+  const input = DuplicateCatalogProjectInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_duplicate_project");
+  return DuplicateCatalogProjectResultSchema.parse(
+    await invokeCommand<DuplicateCatalogProjectResult>(
+      createEnvelope("catalog.duplicateProject", input, {
         id,
         correlationId: id,
         context: { resourceId: input.projectId }
@@ -963,6 +1115,15 @@ async function refreshOfficialModels(): Promise<ModelSettings> {
   );
 }
 
+async function queryOfficialModelBalance() {
+  const id = browserId("cmd_models_query_official_balance");
+  return OfficialModelBalanceSchema.parse(
+    await invokeCommand(
+      createEnvelope("models.queryOfficialBalance", {}, { id, correlationId: id })
+    )
+  );
+}
+
 async function saveOfficialModelToken(rawApiKey: string): Promise<ModelSettings> {
   const apiKey = rawApiKey.trim();
   if (!apiKey || apiKey.length > 16_000) {
@@ -981,6 +1142,15 @@ async function clearOfficialModelToken(): Promise<ModelSettings> {
   return ModelSettingsSchema.parse(
     await invokeCommand<ModelSettings>(
       createEnvelope("models.clearOfficialToken", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function setOfficialModelEnabled(modelId: string, enabled: boolean): Promise<ModelSettings> {
+  const id = browserId("cmd_models_set_official_enabled");
+  return ModelSettingsSchema.parse(
+    await invokeCommand<ModelSettings>(
+      createEnvelope("models.setOfficialModelEnabled", { modelId, enabled }, { id, correlationId: id })
     )
   );
 }
@@ -1201,11 +1371,21 @@ async function resetWorkspaceAgents(
       : ShortWorkspaceAgentIdSchema.parse(rawAgentId)
     : undefined;
   const id = browserId("cmd_workspace_agents_reset");
+  const payload =
+    workspaceType === "script"
+      ? {
+          workspaceType,
+          ...(agentId ? { agentId: ScriptWorkspaceAgentIdSchema.parse(agentId) } : {})
+        }
+      : {
+          workspaceType,
+          ...(agentId ? { agentId: ShortWorkspaceAgentIdSchema.parse(agentId) } : {})
+        };
   return WorkspaceAgentSettingsSchema.parse(
     await invokeCommand<WorkspaceAgentSettings>(
       createEnvelope(
         "workspaceAgents.reset",
-        { workspaceType, ...(agentId ? { agentId } : {}) },
+        payload,
         { id, correlationId: id }
       )
     )
@@ -1371,6 +1551,21 @@ async function exportShortManuscript(
   );
 }
 
+async function exportLongManuscript(
+  rawInput: ExportLongManuscriptInput
+): Promise<ExportLongManuscriptResult> {
+  const input = ExportLongManuscriptInputSchema.parse(rawInput);
+  const id = browserId("cmd_manuscript_export_long");
+  return ExportLongManuscriptResultSchema.parse(
+    await invokeCommand<ExportLongManuscriptResult>(
+      createEnvelope("manuscript.exportLong", input, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
 const api: DeepWriteApi = {
   system: {
     health: getHealth
@@ -1404,9 +1599,9 @@ const api: DeepWriteApi = {
     createShortBook,
     createScriptBook,
     createLibrary,
+    updateLibrary,
     createLibraryGroup,
     openProject,
-    importLegacyBook,
     importLegacyLibrary,
     updateBook,
     mutateCharacterStructure,
@@ -1417,18 +1612,26 @@ const api: DeepWriteApi = {
     createDraftSection,
     createDraftSections,
     deleteDraftSection,
+    moveDraftSection,
     saveLibraryEntry,
     createLibraryEntry,
     removeLibraryEntry,
+    moveLibraryEntry,
     unregisterProject,
-    deleteProject
+    deleteProject,
+    duplicateProject
   },
   long: {
     list: listLongBooks,
     create: createLongBook,
+    duplicateBook: duplicateLongBook,
+    rename: renameLongBook,
     updateBindings: updateLongBookBindings,
-    importWriteClaw: importWriteClawLongBook,
+    chooseLegacySyncSource,
+    applyLegacySync,
     importPortable: importPortableLongBook,
+    chooseContinuationImportSource,
+    importContinuation: importContinuationLongBook,
     open: openLongBook,
     openExisting: openExistingLongBook,
     getWorkspaceIndex: getLongWorkspaceIndex,
@@ -1450,8 +1653,10 @@ const api: DeepWriteApi = {
     list: listModels,
     refreshFree: refreshFreeModels,
     refreshOfficial: refreshOfficialModels,
+    queryOfficialBalance: queryOfficialModelBalance,
     saveOfficialToken: saveOfficialModelToken,
     clearOfficialToken: clearOfficialModelToken,
+    setOfficialModelEnabled,
     save: saveModels,
     test: testModel
   },
@@ -1499,6 +1704,7 @@ const api: DeepWriteApi = {
     save: saveGeneralSettings
   },
   manuscript: {
+    exportLong: exportLongManuscript,
     exportShort: exportShortManuscript
   },
   events: {

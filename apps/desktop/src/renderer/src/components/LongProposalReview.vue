@@ -17,9 +17,11 @@ const props = withDefaults(
     items: LongWorkspaceProposalItem[];
     workspaceIndex?: LongWorkspaceIndexSnapshot | null;
     embedded?: boolean;
+    conversationCard?: boolean;
   }>(),
   {
-    embedded: false
+    embedded: false,
+    conversationCard: false
   }
 );
 
@@ -56,8 +58,12 @@ function isContentFileProposalItem(
   );
 }
 
-const hasContentFileItems = computed(() =>
-  props.items.some(isContentFileProposalItem)
+const hasEditProposalSurfaceItems = computed(() =>
+  props.items.some(
+    (item) =>
+      item.event.type === "long.mutation_proposal" ||
+      isContentFileProposalItem(item)
+  )
 );
 
 const contentFileCards = computed(() => {
@@ -260,9 +266,12 @@ function proposalStatusText(item: LongWorkspaceProposalItem): string {
       : "正在处理";
   }
   if (item.status === "error") {
+    if (item.errorPhase === "preview") return "校验未通过";
     return item.approvalMode === "auto-approve"
       ? "自动保存失败"
-      : "需要重试";
+      : item.errorRetryable === false
+        ? "需要重新生成"
+        : "应用失败";
   }
   return item.approvalMode === "auto-approve"
     ? "等待自动保存"
@@ -284,7 +293,9 @@ function contentProposalStatusLabel(
   item: LongWorkspaceProposalItem
 ): string {
   if (item.status === "accepted") return "已接受";
-  if (item.status === "error") return "应用失败";
+  if (item.status === "error") {
+    return item.errorPhase === "preview" ? "校验未通过" : "应用失败";
+  }
   if (item.status === "waiting") return "等待前序文件";
   if (item.status === "previewing") return "正在校验";
   if (item.status === "submitting") return "正在应用";
@@ -315,6 +326,10 @@ function contentProposalStatusMessage(
       : "变更已应用并保存到本机。";
   }
   if (item.status === "error") {
+    if (item.errorPhase === "preview") {
+      return item.error ??
+        "变更未通过审批前校验，尚未应用。请关闭本提案并基于最新内容重新生成。";
+    }
     return item.error ?? "变更未能应用，可重试接受并保存或拒绝。";
   }
   if (item.status === "waiting") {
@@ -347,6 +362,7 @@ function contentProposalAcceptDisabled(
     item.status === "previewing" ||
     item.status === "submitting" ||
     item.status === "waiting" ||
+    (item.status === "error" && item.errorRetryable === false) ||
     (item.status === "ready" && !item.preview)
   );
 }
@@ -355,9 +371,76 @@ function contentProposalAcceptLabel(
   item: LongWorkspaceProposalItem
 ): string {
   if (item.status === "submitting") return "保存中…";
+  if (item.status === "error" && item.errorRetryable === false) {
+    return "需重新生成提案";
+  }
   return item.status === "error"
-    ? "重试接受并保存"
+    ? item.errorPhase === "preview"
+      ? "重新校验并保存"
+      : "重试接受并保存"
     : "接受并保存";
+}
+
+function isStructureProposalItem(
+  item: LongWorkspaceProposalItem
+): boolean {
+  return item.event.type === "long.mutation_proposal";
+}
+
+function usesEditProposalSurface(item: LongWorkspaceProposalItem): boolean {
+  return isStructureProposalItem(item) || isContentFileProposalItem(item);
+}
+
+function proposalVisualStatus(
+  item: LongWorkspaceProposalItem
+): "pending" | "accepting" | "accepted" | "error" {
+  return contentProposalVisualStatus(item);
+}
+
+function structureProposalStatusMessage(
+  item: LongWorkspaceProposalItem
+): string {
+  if (item.status === "accepted") return "结构变更已应用并保存到本机。";
+  if (item.status === "error") {
+    if (item.errorPhase === "preview") {
+      return item.error ??
+        "结构提案未通过审批前校验，尚未应用。请关闭本提案并让智能体基于最新结构重新生成。";
+    }
+    return item.error ?? "结构变更未能应用，可重新预览后重试或拒绝。";
+  }
+  if (item.status === "previewing") {
+    return "正在核验当前结构、版本与影响范围……";
+  }
+  if (item.status === "submitting") {
+    return "正在校验版本并应用结构变更……";
+  }
+  return item.approvalMode === "auto-approve"
+    ? "已加入实时自动保存队列。"
+    : "接受后将应用到当前书籍的结构并自动保存到本机。";
+}
+
+function structureProposalAcceptDisabled(
+  item: LongWorkspaceProposalItem
+): boolean {
+  return (
+    item.status === "previewing" ||
+    item.status === "submitting" ||
+    item.status === "waiting" ||
+    (item.status === "error" && item.errorRetryable === false) ||
+    (item.status === "ready" && !item.preview)
+  );
+}
+
+function structureProposalAcceptLabel(item: LongWorkspaceProposalItem): string {
+  if (item.status === "submitting") return "应用中…";
+  if (item.status === "error" && item.errorRetryable === false) {
+    return "需重新生成提案";
+  }
+  return item.status === "error"
+    ? item.errorPhase === "preview"
+      ? "重新校验并应用"
+      : "重试应用"
+    : "接受并应用";
 }
 
 function diffLineMark(type: "context" | "addition" | "deletion"): string {
@@ -464,7 +547,8 @@ function entitySnapshotText(
     class="long-proposal-review"
     :class="{
       'is-embedded': embedded,
-      'has-content-file-items': hasContentFileItems
+      'is-conversation-card': conversationCard,
+      'has-edit-proposal-surface-items': hasEditProposalSurfaceItems
     }"
     aria-label="长篇待审批提案"
   >
@@ -482,18 +566,15 @@ function entitySnapshotText(
         v-for="item in items"
         :key="item.event.id"
         :class="
-          isContentFileProposalItem(item)
-            ? [
-                'edit-proposal-card',
-                `is-${contentProposalVisualStatus(item)}`
-              ]
+          usesEditProposalSurface(item)
+            ? ['edit-proposal-card', `is-${proposalVisualStatus(item)}`]
             : 'long-proposal-card'
         "
         :data-proposal-type="item.event.type"
         :aria-busy="item.status === 'submitting'"
       >
         <div
-          v-if="!isContentFileProposalItem(item)"
+          v-if="!usesEditProposalSurface(item)"
           class="long-proposal-heading"
         >
           <span class="long-proposal-icon">
@@ -522,29 +603,39 @@ function entitySnapshotText(
           </span>
         </div>
 
-        <p v-if="!isContentFileProposalItem(item)">
+        <p v-if="!usesEditProposalSurface(item)">
           {{ item.event.payload.summary }}
         </p>
 
-        <template v-if="isContentFileProposalItem(item)">
+        <template v-if="usesEditProposalSurface(item)">
           <header class="edit-proposal-header">
             <span class="edit-proposal-icon" aria-hidden="true">
-              <AppIcon name="file" :size="17" />
+              <AppIcon
+                :name="isStructureProposalItem(item) ? 'wand' : 'file'"
+                :size="17"
+              />
             </span>
             <div class="edit-proposal-heading">
               <div class="edit-proposal-title-row">
                 <strong>{{ proposalTitle(item) }}</strong>
                 <span
                   class="edit-proposal-status"
-                  :class="`is-${contentProposalVisualStatus(item)}`"
+                  :class="`is-${proposalVisualStatus(item)}`"
                 >
-                  {{ contentProposalStatusLabel(item) }}
+                  {{
+                    isStructureProposalItem(item)
+                      ? proposalStatusText(item)
+                      : contentProposalStatusLabel(item)
+                  }}
                 </span>
               </div>
               <p>{{ item.event.payload.summary }}</p>
             </div>
             <div
-              v-if="canDisplayContentFileDiff(item)"
+              v-if="
+                isContentFileProposalItem(item) &&
+                canDisplayContentFileDiff(item)
+              "
               class="edit-proposal-stats"
               :aria-label="`增加 ${contentProposalDiffStats(item).additions} 行，删除 ${contentProposalDiffStats(item).deletions} 行`"
             >
@@ -559,6 +650,7 @@ function entitySnapshotText(
 
           <details
             v-if="
+              isContentFileProposalItem(item) &&
               canDisplayContentFileDiff(item) &&
               contentProposalDiffStats(item).hunks
             "
@@ -618,21 +710,34 @@ function entitySnapshotText(
             </div>
           </details>
           <p
-            v-else-if="!canDisplayContentFileDiff(item)"
+            v-else-if="
+              isContentFileProposalItem(item) &&
+              !canDisplayContentFileDiff(item)
+            "
             class="edit-proposal-empty"
           >
             文件身份和原文尚未通过校验，暂不显示差异。
           </p>
-          <p v-else class="edit-proposal-empty">
+          <p v-else-if="isContentFileProposalItem(item)" class="edit-proposal-empty">
             已创建空白 Markdown 文件，没有正文行级差异。
           </p>
 
           <footer class="edit-proposal-footer">
             <span class="edit-proposal-message">
-              {{ contentProposalStatusMessage(item) }}
+              {{
+                isStructureProposalItem(item)
+                  ? structureProposalStatusMessage(item)
+                  : contentProposalStatusMessage(item)
+              }}
             </span>
             <div
-              v-if="showContentProposalActions(item)"
+              v-if="
+                isStructureProposalItem(item)
+                  ? item.status !== 'accepted' &&
+                    (item.approvalMode !== 'auto-approve' ||
+                      item.status === 'error')
+                  : showContentProposalActions(item)
+              "
               class="edit-proposal-actions"
             >
               <button
@@ -646,10 +751,18 @@ function entitySnapshotText(
               <button
                 class="edit-review-button is-accept"
                 type="button"
-                :disabled="contentProposalAcceptDisabled(item)"
+                :disabled="
+                  isStructureProposalItem(item)
+                    ? structureProposalAcceptDisabled(item)
+                    : contentProposalAcceptDisabled(item)
+                "
                 @click="emit('approve', item.event.id)"
               >
-                {{ contentProposalAcceptLabel(item) }}
+                {{
+                  isStructureProposalItem(item)
+                    ? structureProposalAcceptLabel(item)
+                    : contentProposalAcceptLabel(item)
+                }}
               </button>
             </div>
           </footer>
@@ -834,7 +947,7 @@ function entitySnapshotText(
 
         <footer
           v-if="
-            !isContentFileProposalItem(item) &&
+            !usesEditProposalSurface(item) &&
             item.status !== 'accepted' &&
             (item.approvalMode !== 'auto-approve' ||
               item.status === 'error')
@@ -912,10 +1025,15 @@ function entitySnapshotText(
   overflow: visible;
 }
 
-.long-proposal-review.is-embedded.has-content-file-items .long-proposal-list {
+.long-proposal-review.is-embedded.has-edit-proposal-surface-items .long-proposal-list {
   gap: 12px;
   padding: 0;
   margin: 14px 0 20px;
+}
+
+.long-proposal-review.is-embedded.is-conversation-card .long-proposal-list {
+  padding: 0;
+  margin: 0;
 }
 
 .long-proposal-review > header {

@@ -1157,11 +1157,6 @@ function assertCatalogReferences(snapshot: CatalogSnapshot): void {
         if (!material) {
           throw new Error(`书籍「${book.title}」关联了不存在的素材库：${materialId}`);
         }
-        if (material.materialType !== book.bookType) {
-          throw new Error(
-            `${book.bookType === "script" ? "剧本" : "短篇"}书籍不能关联${material.materialType}素材库：${material.title}`
-          );
-        }
         if (material.materialKind !== "mixed" && material.materialKind !== kind) {
           throw new Error(`素材库「${material.title}」不能关联到 ${kind} 分类。`);
         }
@@ -1172,11 +1167,6 @@ function assertCatalogReferences(snapshot: CatalogSnapshot): void {
         const skill = skills.get(skillId);
         if (!skill) {
           throw new Error(`书籍「${book.title}」绑定了不存在的技能库：${skillId}`);
-        }
-        if (skill.skillType !== book.bookType) {
-          throw new Error(
-            `${book.bookType === "script" ? "剧本" : "短篇"}书籍不能绑定${skill.skillType}技能库：${skill.title}`
-          );
         }
         if (skill.skillKind !== kind) {
           throw new Error(`技能库「${skill.title}」不能绑定到 ${kind} 分类。`);

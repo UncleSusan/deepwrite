@@ -117,7 +117,7 @@ describe("AgentTeamConfigStore", () => {
     );
 
     const settings = await new AgentTeamConfigStore(root).list();
-    expect(settings.teams).toHaveLength(4);
+    expect(settings.teams).toHaveLength(3);
     expect(
       settings.teams.some(({ parentAgentId }) =>
         (parentAgentId as string) === "outline"

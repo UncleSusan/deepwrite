@@ -40,7 +40,7 @@ import type {
 } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
 
-interface ConversationStorage {
+export interface ConversationStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem?(key: string): void;
@@ -69,8 +69,6 @@ interface StoredConversation {
   approvalMode: AgentApprovalMode;
   createdAt: string;
   updatedAt: string;
-  selectedModelId: string;
-  thinkingLevel: ThinkingLevel;
   temperature: number;
 }
 
@@ -106,9 +104,24 @@ type SubagentActivityEventEnvelope = Extract<
   SubagentEventEnvelope,
   { type: "subagent.activity" }
 >;
+type AgentTextDeltaEventEnvelope = Extract<
+  SystemEventEnvelope,
+  { type: "agent.message_delta" | "agent.thinking_delta" }
+>;
+
+interface PendingAgentTextDelta {
+  type: AgentTextDeltaEventEnvelope["type"];
+  runId: string;
+  messageId: string;
+  runtime: AgentRuntimeRef;
+  eventId: string;
+  createdAt: string;
+  chunks: string[];
+}
 
 const MAX_STORED_CONVERSATIONS = 20;
 const PERSISTENCE_DEBOUNCE_MS = 180;
+const STREAM_PRESENTATION_FALLBACK_MS = 120;
 
 export interface AgentConversationController {
   messages: Ref<ChatMessage[]>;
@@ -1179,11 +1192,9 @@ function parseStoredConversation(value: unknown): StoredConversation | undefined
     typeof value.draft !== "string" ||
     !validDate(value.createdAt) ||
     !validDate(value.updatedAt) ||
-    typeof value.selectedModelId !== "string" ||
     (value.approvalMode !== undefined &&
       value.approvalMode !== "request-approval" &&
       value.approvalMode !== "auto-approve") ||
-    typeof value.thinkingLevel !== "string" ||
     typeof value.temperature !== "number" ||
     !Number.isFinite(value.temperature)
   ) {
@@ -1201,8 +1212,6 @@ function parseStoredConversation(value: unknown): StoredConversation | undefined
       value.approvalMode === "auto-approve" ? "auto-approve" : "request-approval",
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
-    selectedModelId: value.selectedModelId,
-    thinkingLevel: value.thinkingLevel,
     temperature: value.temperature
   };
 }
@@ -1234,6 +1243,79 @@ function loadStoredEnvelope(
     };
   } catch {
     return undefined;
+  }
+}
+
+export function mergeStoredConversationHistories(
+  storage: ConversationStorage,
+  targetKey: string,
+  sourceKeys: readonly string[]
+): boolean {
+  const target = loadStoredEnvelope(storage, targetKey);
+  const sources = [...new Set(sourceKeys)]
+    .filter((key) => key !== targetKey)
+    .map((key) => loadStoredEnvelope(storage, key))
+    .filter(
+      (envelope): envelope is StoredConversationEnvelope =>
+        envelope !== undefined && envelope.conversations.length > 0
+    );
+  if (!sources.length) return false;
+
+  const conversationBySessionId = new Map<string, StoredConversation>();
+  for (const envelope of [...(target ? [target] : []), ...sources]) {
+    for (const conversation of envelope.conversations) {
+      const existing = conversationBySessionId.get(conversation.sessionId);
+      if (
+        !existing ||
+        Date.parse(conversation.updatedAt) > Date.parse(existing.updatedAt)
+      ) {
+        conversationBySessionId.set(conversation.sessionId, conversation);
+      }
+    }
+  }
+  const sortedConversations = [...conversationBySessionId.values()].sort(
+    (left, right) =>
+      Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+  );
+  const preferredActiveConversation = target
+    ? conversationBySessionId.get(target.activeSessionId)
+    : undefined;
+  let conversations = sortedConversations.slice(0, MAX_STORED_CONVERSATIONS);
+  if (
+    preferredActiveConversation &&
+    !conversations.some(
+      (conversation) =>
+        conversation.sessionId === preferredActiveConversation.sessionId
+    )
+  ) {
+    conversations = [
+      ...conversations.slice(0, MAX_STORED_CONVERSATIONS - 1),
+      preferredActiveConversation
+    ].sort(
+      (left, right) =>
+        Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+    );
+  }
+  if (!conversations.length) return false;
+  const activeSessionId =
+    target &&
+    conversations.some(
+      (conversation) => conversation.sessionId === target.activeSessionId
+    )
+      ? target.activeSessionId
+      : conversations[0]!.sessionId;
+  try {
+    storage.setItem(
+      targetKey,
+      JSON.stringify({
+        version: 1,
+        activeSessionId,
+        conversations
+      } satisfies StoredConversationEnvelope)
+    );
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -1292,7 +1374,7 @@ export function useAgentConversation(
   const storedActive = storedEnvelope?.conversations.find(
     (conversation) => conversation.sessionId === storedEnvelope.activeSessionId
   );
-  let hasRunSettingsPreference = storedActive !== undefined;
+  let hasRunSettingsPreference = false;
   let modelSettingsApplied = false;
   let conversationClock = Math.max(
     Date.now(),
@@ -1311,11 +1393,11 @@ export function useAgentConversation(
   const approvalMode = ref<AgentApprovalMode>(
     storedActive?.approvalMode ?? "request-approval"
   );
-  const thinkingLevel = ref<ThinkingLevel>(storedActive?.thinkingLevel ?? "medium");
+  const thinkingLevel = ref<ThinkingLevel>("medium");
   const temperature = ref(storedActive?.temperature ?? 0.7);
   const configuredModels = ref<ModelConfig[]>([]);
   const defaultModelId = ref("");
-  const selectedModelId = ref(storedActive?.selectedModelId ?? "");
+  const selectedModelId = ref("");
   const runtime = ref<AgentRuntimeRef | null>(null);
   const conversationError = ref<string | null>(null);
   const storedConversations = ref<StoredConversation[]>(
@@ -1347,6 +1429,9 @@ export function useAgentConversation(
   let idleTimer: number | undefined;
   let persistenceTimer: number | undefined;
   let persistenceErrorReported = false;
+  let pendingAgentTextDelta: PendingAgentTextDelta | undefined;
+  let streamPresentationFrame: number | undefined;
+  let streamPresentationFallbackTimer: number | undefined;
 
   const isBusy = computed(
     () => pendingAttemptId.value !== null || submitting.value || activeRunId.value !== null
@@ -1395,8 +1480,6 @@ export function useAgentConversation(
       approvalMode: approvalMode.value,
       createdAt: currentCreatedAt.value,
       updatedAt: currentUpdatedAt.value,
-      selectedModelId: selectedModelId.value,
-      thinkingLevel: thinkingLevel.value,
       temperature: temperature.value
     };
   }
@@ -1533,6 +1616,7 @@ export function useAgentConversation(
     messageText: string,
     eventRuntime?: AgentRuntimeRef
   ): void {
+    flushPendingAgentTextDelta();
     const messageId = runMessageIds.get(runId) ?? `${runId}_assistant`;
     let message = messages.value.find(
       (item) => item.id === messageId && item.role === "assistant" && item.runId === runId
@@ -1565,6 +1649,7 @@ export function useAgentConversation(
   }
 
   function markRunStopped(runId: string, eventRuntime?: AgentRuntimeRef): void {
+    flushPendingAgentTextDelta();
     const messageId = runMessageIds.get(runId) ?? `${runId}_assistant`;
     let message = messages.value.find(
       (item) => item.id === messageId && item.role === "assistant" && item.runId === runId
@@ -2535,6 +2620,124 @@ export function useAgentConversation(
     return cloneEditProposal(next);
   }
 
+  function clearStreamPresentationSchedule(): void {
+    if (streamPresentationFrame !== undefined) {
+      globalThis.cancelAnimationFrame?.(streamPresentationFrame);
+      streamPresentationFrame = undefined;
+    }
+    if (streamPresentationFallbackTimer !== undefined) {
+      globalThis.clearTimeout(streamPresentationFallbackTimer);
+      streamPresentationFallbackTimer = undefined;
+    }
+  }
+
+  function applyAgentTextDelta(pending: PendingAgentTextDelta): void {
+    const delta = pending.chunks.join("");
+    const message = ensureAssistantMessage(
+      pending.runId,
+      pending.messageId,
+      pending.runtime,
+      pending.createdAt
+    );
+    if (!message) return;
+
+    message.processingStartedAt ??= pending.createdAt;
+    const lastStep = message.processingSteps?.at(-1);
+    if (pending.type === "agent.message_delta") {
+      message.content += delta;
+      if (lastStep?.type === "response") {
+        lastStep.content += delta;
+      } else {
+        (message.processingSteps ??= []).push({
+          id: pending.eventId,
+          type: "response",
+          content: delta,
+          createdAt: pending.createdAt
+        });
+      }
+      return;
+    }
+
+    if (lastStep?.type === "thinking") {
+      lastStep.content += delta;
+      message.thinking = `${message.thinking ?? ""}${delta}`;
+    } else {
+      (message.processingSteps ??= []).push({
+        id: pending.eventId,
+        type: "thinking",
+        content: delta,
+        createdAt: pending.createdAt
+      });
+      message.thinking = message.thinking
+        ? `${message.thinking}\n\n${delta}`
+        : delta;
+    }
+  }
+
+  function flushPendingAgentTextDelta(): void {
+    clearStreamPresentationSchedule();
+    const pending = pendingAgentTextDelta;
+    pendingAgentTextDelta = undefined;
+    if (pending) applyAgentTextDelta(pending);
+  }
+
+  function scheduleStreamPresentation(): void {
+    if (typeof globalThis.requestAnimationFrame !== "function") {
+      flushPendingAgentTextDelta();
+      return;
+    }
+    if (
+      streamPresentationFrame !== undefined ||
+      streamPresentationFallbackTimer !== undefined
+    ) {
+      return;
+    }
+
+    streamPresentationFrame = globalThis.requestAnimationFrame(() => {
+      streamPresentationFrame = undefined;
+      if (streamPresentationFallbackTimer !== undefined) {
+        globalThis.clearTimeout(streamPresentationFallbackTimer);
+        streamPresentationFallbackTimer = undefined;
+      }
+      flushPendingAgentTextDelta();
+    });
+    // requestAnimationFrame is paused for hidden Electron windows. Keep a
+    // bounded fallback so the complete stream still reaches state/persistence.
+    streamPresentationFallbackTimer = globalThis.setTimeout(() => {
+      streamPresentationFallbackTimer = undefined;
+      if (streamPresentationFrame !== undefined) {
+        globalThis.cancelAnimationFrame(streamPresentationFrame);
+        streamPresentationFrame = undefined;
+      }
+      flushPendingAgentTextDelta();
+    }, STREAM_PRESENTATION_FALLBACK_MS);
+  }
+
+  function queueAgentTextDelta(event: AgentTextDeltaEventEnvelope): void {
+    const { runId, messageId, runtime: eventRuntime, delta } = event.payload;
+    const pending = pendingAgentTextDelta;
+    const sharesPendingStep =
+      pending?.type === event.type &&
+      pending.runId === runId &&
+      pending.messageId === messageId;
+    if (!sharesPendingStep) {
+      flushPendingAgentTextDelta();
+      pendingAgentTextDelta = {
+        type: event.type,
+        runId,
+        messageId,
+        runtime: eventRuntime,
+        eventId: event.id,
+        createdAt: event.timestamp,
+        chunks: [delta]
+      };
+    } else if (pending) {
+      pending.chunks.push(delta);
+      pending.runtime = eventRuntime;
+    }
+    scheduleStreamPresentation();
+  }
+
   function handleEvent(event: SystemEventEnvelope): void {
     if (!isAgentEvent(event) || event.payload.sessionId !== sessionId.value) {
       return;
@@ -2582,6 +2785,15 @@ export function useAgentConversation(
       });
     }
 
+    if (
+      event.type !== "agent.message_delta" &&
+      event.type !== "agent.thinking_delta"
+    ) {
+      // Terminal, retry, tool, and subagent events are ordering boundaries.
+      // Settle every preceding text fragment before applying that event.
+      flushPendingAgentTextDelta();
+    }
+
     if (subagentEvent) {
       handleSubagentEvent(event);
       return;
@@ -2597,58 +2809,12 @@ export function useAgentConversation(
       return;
     }
 
-    if (event.type === "agent.message_delta") {
+    if (
+      event.type === "agent.message_delta" ||
+      event.type === "agent.thinking_delta"
+    ) {
       if (!acceptsRetryActivity(runId, event.timestamp)) return;
-      const message = ensureAssistantMessage(
-        runId,
-        event.payload.messageId,
-        event.payload.runtime,
-        event.timestamp
-      );
-      if (message) {
-        message.content += event.payload.delta;
-        message.processingStartedAt ??= event.timestamp;
-        const lastStep = message.processingSteps?.at(-1);
-        if (lastStep?.type === "response") {
-          lastStep.content += event.payload.delta;
-        } else {
-          (message.processingSteps ??= []).push({
-            id: event.id,
-            type: "response",
-            content: event.payload.delta,
-            createdAt: event.timestamp
-          });
-        }
-      }
-      return;
-    }
-
-    if (event.type === "agent.thinking_delta") {
-      if (!acceptsRetryActivity(runId, event.timestamp)) return;
-      const message = ensureAssistantMessage(
-        runId,
-        event.payload.messageId,
-        event.payload.runtime,
-        event.timestamp
-      );
-      if (message) {
-        message.processingStartedAt ??= event.timestamp;
-        const lastStep = message.processingSteps?.at(-1);
-        if (lastStep?.type === "thinking") {
-          lastStep.content += event.payload.delta;
-          message.thinking = `${message.thinking ?? ""}${event.payload.delta}`;
-        } else {
-          (message.processingSteps ??= []).push({
-            id: event.id,
-            type: "thinking",
-            content: event.payload.delta,
-            createdAt: event.timestamp
-          });
-          message.thinking = message.thinking
-            ? `${message.thinking}\n\n${event.payload.delta}`
-            : event.payload.delta;
-        }
-      }
+      queueAgentTextDelta(event);
       return;
     }
 
@@ -2884,6 +3050,12 @@ export function useAgentConversation(
           });
         }
       }
+      finalizeRunningSubagents(
+        message,
+        "error",
+        event.timestamp,
+        "父智能体运行已完成，但子任务未返回完整终态。"
+      );
       message.status = "completed";
       message.activityOnly = false;
       if (message.processingStartedAt) {
@@ -3015,16 +3187,11 @@ export function useAgentConversation(
               candidate.characterFileKind !== "item")
         );
         if (!document) return undefined;
-        const originalLength = document.content.length;
-        const stageContent = document.content.slice(0, 20_000);
         return {
           stageId,
           title: document.title,
-          content: stageContent,
-          revision: createShortWorkspaceContentRevision(document.content),
-          ...(originalLength > stageContent.length
-            ? { truncated: true as const, originalLength }
-            : {})
+          content: document.content,
+          revision: createShortWorkspaceContentRevision(document.content)
         };
       });
       const completeStages = stages.filter(
@@ -3051,17 +3218,12 @@ export function useAgentConversation(
         ? {
             format: "list" as const,
             items: characterItemDocuments.map((document, index) => {
-              const originalLength = document.content.length;
-              const content = document.content.slice(0, 20_000);
               return {
                 id: document.characterItemId!,
                 title: document.title,
                 order: document.characterItemOrder ?? index + 1,
-                content,
-                revision: createShortWorkspaceContentRevision(document.content),
-                ...(originalLength > content.length
-                  ? { truncated: true as const, originalLength }
-                  : {})
+                content: document.content,
+                revision: createShortWorkspaceContentRevision(document.content)
               };
             })
           }
@@ -3330,6 +3492,7 @@ export function useAgentConversation(
   }
 
   async function stopGeneration(): Promise<boolean> {
+    flushPendingAgentTextDelta();
     const api = options.api();
     const runId = activeRunId.value;
     if (!api || !runId || stopping.value) {
@@ -3397,11 +3560,18 @@ export function useAgentConversation(
   }
 
   function stopStreamingMessages(): void {
+    flushPendingAgentTextDelta();
     const completedAt = new Date().toISOString();
     for (const message of messages.value) {
       if (message.status !== "streaming") continue;
       message.status = "stopped";
       if (message.retry) delete message.retry;
+      finalizeRunningSubagents(
+        message,
+        "stopped",
+        completedAt,
+        "会话已切换或关闭，子任务同步停止。"
+      );
       for (const run of message.subagentRuns ?? []) {
         if (run.retry) delete run.retry;
       }
@@ -3428,6 +3598,10 @@ export function useAgentConversation(
     if (nextSessionId === sessionId.value) return true;
     if (isBusy.value) return false;
 
+    // A selectable conversation should already be idle. Normalize any stale
+    // presentation state before persisting so a detached streaming card cannot
+    // be restored without an owning run.
+    stopStreamingMessages();
     flushConversationPersistence();
     const selectedConversation = storedConversations.value.find(
       (conversation) => conversation.sessionId === nextSessionId
@@ -3597,6 +3771,9 @@ export function useAgentConversation(
       draft.value = value;
     },
     dispose(disposeOptions): void {
+      // Disposing invalidates the run ownership below. Settle presentation
+      // state first so `status: streaming` cannot outlive `activeRunId`.
+      stopStreamingMessages();
       if (persistenceTimer !== undefined) {
         globalThis.clearTimeout(persistenceTimer);
         persistenceTimer = undefined;

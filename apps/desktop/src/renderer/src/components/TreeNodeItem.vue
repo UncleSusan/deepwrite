@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type {
   BookResourceDialogMode,
   CatalogResourceNodeAction,
   CatalogResourceNodeActionPayload,
+  CatalogLibraryEntryDragPayload,
   LongBookResourceNodeAction,
   LongBookResourceNodeActionPayload,
   ResourceDomain,
@@ -22,6 +23,8 @@ const props = defineProps<{
   pinnedIds?: string[] | undefined;
   resourceDomain?: ResourceDomain | undefined;
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
+  expertSectionMoveUpDisabled?: boolean;
+  expertSectionMoveDownDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -31,8 +34,10 @@ const emit = defineEmits<{
   exportBook: [node: ResourceTreeNode];
   longBookAction: [payload: LongBookResourceNodeActionPayload];
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
+  moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
+  expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
   createCharacterItem: [node: ResourceTreeNode];
   characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
 }>();
@@ -40,8 +45,12 @@ const emit = defineEmits<{
 const open = ref(
   Boolean(props.node.selectableBranch && props.selectedId === props.node.id)
 );
+const ACTION_MENU_GAP = 3;
+const ACTION_MENU_EDGE_GAP = 8;
 const actionMenuOpen = ref(false);
 const actionArea = ref<HTMLElement | null>(null);
+const actionMenu = ref<HTMLElement | null>(null);
+const actionMenuOpensUpward = ref(false);
 const libraryDomain = computed<"skill" | "material" | undefined>(() =>
   props.resourceDomain === "skill" || props.resourceDomain === "material"
     ? props.resourceDomain
@@ -81,12 +90,12 @@ const isExpertDraftParent = computed(
   () =>
     props.resourceDomain === "creation" &&
     props.node.shortAgentId === "expert_draft_coordinator" &&
-    props.node.stageCategoryId === "draft"
+    props.node.stageCategoryId === "draft" &&
+    !props.node.expertSectionId
 );
 const isExpertDraftSection = computed(
   () =>
     props.resourceDomain === "creation" &&
-    props.node.shortAgentId === "expert_section_writer" &&
     Boolean(props.node.expertSectionId)
 );
 const isCharacterDirectory = computed(
@@ -113,6 +122,14 @@ const hasNodeAction = computed(
     isExpertDraftParent.value ||
     isCharacterDirectory.value
 );
+const canDragLibraryEntry = computed(() =>
+  libraryDomain.value !== undefined &&
+  props.node.catalogNodeType === "document" &&
+  Boolean(props.node.libraryId && props.node.catalogEntryId) &&
+  !props.node.readOnly && !props.node.unavailable
+);
+const dragPayload = ref<{ domain: "skill" | "material"; sourceLibraryId: string; entryId: string } | null>(null);
+const isDropTarget = ref(false);
 const draftUnitLabel = computed(() =>
   props.node.workspaceType === "script" ? "剧集" : "小节"
 );
@@ -150,9 +167,8 @@ function activate(): void {
     return;
   }
   if (props.node.children?.length) {
-    const opening = !open.value;
-    open.value = opening;
-    if (opening && props.node.selectableBranch) {
+    open.value = !open.value;
+    if (props.node.selectableBranch) {
       emit("select", props.node);
     }
     return;
@@ -165,8 +181,32 @@ function togglePin(): void {
   emit("togglePin", props.node);
 }
 
+function updateActionMenuPlacement(): void {
+  const area = actionArea.value;
+  const menu = actionMenu.value;
+  if (!actionMenuOpen.value || !area || !menu) return;
+
+  const scrollContainer = area.closest<HTMLElement>(".sidebar-scroll");
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const scrollBounds = scrollContainer?.getBoundingClientRect();
+  const boundaryTop = Math.max(scrollBounds?.top ?? 0, 0) + ACTION_MENU_EDGE_GAP;
+  const boundaryBottom =
+    Math.min(scrollBounds?.bottom ?? viewportHeight, viewportHeight) -
+    ACTION_MENU_EDGE_GAP;
+  const areaBounds = area.getBoundingClientRect();
+  const menuHeight = menu.getBoundingClientRect().height;
+  const availableBelow = boundaryBottom - areaBounds.bottom - ACTION_MENU_GAP;
+  const availableAbove = areaBounds.top - boundaryTop - ACTION_MENU_GAP;
+
+  actionMenuOpensUpward.value =
+    menuHeight > availableBelow && availableAbove > availableBelow;
+}
+
 function toggleActionMenu(): void {
-  actionMenuOpen.value = !actionMenuOpen.value;
+  const willOpen = !actionMenuOpen.value;
+  if (willOpen) actionMenuOpensUpward.value = false;
+  actionMenuOpen.value = willOpen;
+  if (willOpen) void nextTick(updateActionMenuPlacement);
 }
 
 function openBookAction(mode: BookResourceDialogMode): void {
@@ -204,6 +244,49 @@ function activateResourceNodeAction(action: CatalogResourceNodeAction): void {
   emit("resourceNodeAction", { domain, action, node: props.node });
 }
 
+function startLibraryEntryDrag(event: DragEvent): void {
+  const domain = libraryDomain.value;
+  if (!domain || !props.node.libraryId || !props.node.catalogEntryId) return;
+  dragPayload.value = { domain, sourceLibraryId: props.node.libraryId, entryId: props.node.catalogEntryId };
+  event.dataTransfer?.setData("application/x-deepwrite-library-entry", JSON.stringify(dragPayload.value));
+  event.dataTransfer?.setData(`application/x-deepwrite-library-entry-${domain}`, "1");
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+}
+
+function readLibraryEntryDrag(event: DragEvent): { domain: "skill" | "material"; sourceLibraryId: string; entryId: string } | null {
+  try {
+    const value = JSON.parse(event.dataTransfer?.getData("application/x-deepwrite-library-entry") ?? "") as typeof dragPayload.value;
+    return value && value.domain === libraryDomain.value && value.sourceLibraryId && value.entryId ? value : null;
+  } catch { return null; }
+}
+
+function handleLibraryEntryDragOver(event: DragEvent): void {
+  const source = readLibraryEntryDrag(event);
+  const domain = libraryDomain.value;
+  const targetLibraryId = props.node.catalogNodeType === "library" ? props.node.libraryId : props.node.catalogNodeType === "document" ? props.node.libraryId : undefined;
+  const matchingDragType = domain
+    ? Array.from(event.dataTransfer?.types ?? []).includes(`application/x-deepwrite-library-entry-${domain}`)
+    : false;
+  if ((!source && !matchingDragType) || !domain || !targetLibraryId || props.node.readOnly || props.node.unavailable) return;
+  event.preventDefault();
+  isDropTarget.value = true;
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+}
+
+function clearLibraryEntryDropTarget(): void { isDropTarget.value = false; }
+
+function dropLibraryEntry(event: DragEvent): void {
+  const source = readLibraryEntryDrag(event);
+  const domain = libraryDomain.value;
+  const targetLibraryId = props.node.catalogNodeType === "library" ? props.node.libraryId : props.node.catalogNodeType === "document" ? props.node.libraryId : undefined;
+  isDropTarget.value = false;
+  if (!source || !domain || !targetLibraryId || props.node.readOnly || props.node.unavailable) return;
+  event.preventDefault();
+  const beforeEntryId = props.node.catalogNodeType === "document" ? props.node.catalogEntryId : undefined;
+  if (source.sourceLibraryId === targetLibraryId && source.entryId === beforeEntryId) return;
+  emit("moveLibraryEntry", { domain, sourceLibraryId: source.sourceLibraryId, entryId: source.entryId, targetLibraryId, ...(beforeEntryId ? { beforeEntryId } : {}) });
+}
+
 function createExpertSection(): void {
   emit("select", props.node);
   emit("createExpertSection", props.node);
@@ -213,6 +296,12 @@ function removeExpertSection(): void {
   actionMenuOpen.value = false;
   emit("select", props.node);
   emit("removeExpertSection", props.node);
+}
+
+function expertSectionAction(action: "move-up" | "move-down"): void {
+  actionMenuOpen.value = false;
+  emit("select", props.node);
+  emit("expertSectionAction", action, props.node);
 }
 
 function createCharacterItem(): void {
@@ -244,6 +333,7 @@ onMounted(() => {
   }
   document.addEventListener("pointerdown", handleDocumentPointerDown);
   document.addEventListener("keydown", handleDocumentKeydown);
+  window.addEventListener("resize", updateActionMenuPlacement);
 });
 
 onBeforeUnmount(() => {
@@ -252,6 +342,7 @@ onBeforeUnmount(() => {
   }
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
   document.removeEventListener("keydown", handleDocumentKeydown);
+  window.removeEventListener("resize", updateActionMenuPlacement);
 });
 </script>
 
@@ -262,7 +353,8 @@ onBeforeUnmount(() => {
       :class="{
         'is-selected': selectedId === node.id,
         'is-muted': node.muted,
-        'has-node-action': hasNodeAction
+        'has-node-action': hasNodeAction,
+        'is-library-entry-drop-target': isDropTarget
       }"
       :style="{ '--tree-depth': depth }"
       :data-tree-depth="depth"
@@ -271,7 +363,12 @@ onBeforeUnmount(() => {
       :data-resource-id="node.id"
       :aria-expanded="node.children?.length ? open : undefined"
       :aria-label="`${node.children?.length ? `${node.selectableBranch ? '选择并' : ''}${open ? '折叠' : '展开'}` : ''}${node.label}${node.categoryTag ? `，${node.categoryTag}` : ''}`"
+      :draggable="canDragLibraryEntry"
       @click="activate"
+      @dragstart="startLibraryEntryDrag"
+      @dragover="handleLibraryEntryDragOver"
+      @dragleave="clearLibraryEntryDropTarget"
+      @drop="dropLibraryEntry"
     >
       <AppIcon :name="node.icon ?? (node.children?.length ? 'folder' : 'file')" :size="15" />
       <span class="tree-label">{{ node.label }}</span>
@@ -283,7 +380,6 @@ onBeforeUnmount(() => {
           node.badge
         "
         class="tree-badge"
-        :class="{ 'is-script': node.workspaceType === 'script' }"
       >
         {{ node.badge }}
       </span>
@@ -339,7 +435,13 @@ onBeforeUnmount(() => {
         <AppIcon name="more" :size="16" />
       </button>
 
-      <div v-if="actionMenuOpen" class="tree-node-action-menu" role="menu">
+      <div
+        v-if="actionMenuOpen"
+        ref="actionMenu"
+        class="tree-node-action-menu"
+        :class="{ 'opens-upward': actionMenuOpensUpward }"
+        role="menu"
+      >
         <button
           v-if="pinnable"
           class="tree-node-action-menu-item"
@@ -351,6 +453,24 @@ onBeforeUnmount(() => {
           <span>{{ pinned ? "取消置顶" : "置顶" }}</span>
         </button>
         <template v-if="isExpertDraftSection">
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            :disabled="expertSectionMoveUpDisabled"
+            @click.stop="expertSectionAction('move-up')"
+          >
+            <span>↑</span><span>上移</span>
+          </button>
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            :disabled="expertSectionMoveDownDisabled"
+            @click.stop="expertSectionAction('move-down')"
+          >
+            <span>↓</span><span>下移</span>
+          </button>
           <button
             class="tree-node-action-menu-item is-danger"
             type="button"
@@ -386,7 +506,25 @@ onBeforeUnmount(() => {
               "
             >
               <AppIcon name="settings" :size="16" />
-              <span>世界观与功能设置</span>
+              <span>结构管理</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="activateLongBookAction('rename')"
+            >
+              <AppIcon name="edit" :size="16" />
+              <span>修改名称</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="activateLongBookAction('duplicate')"
+            >
+              <AppIcon name="copy" :size="16" />
+              <span>复制</span>
             </button>
             <button
               class="tree-node-action-menu-item"
@@ -409,6 +547,24 @@ onBeforeUnmount(() => {
             >
               <AppIcon name="archive" :size="16" />
               <span>素材库绑定</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="activateLongBookAction('export')"
+            >
+              <AppIcon name="download" :size="16" />
+              <span>导出</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="activateLongBookAction('sync-legacy')"
+            >
+              <AppIcon name="history" :size="16" />
+              <span>同步旧版本</span>
             </button>
           </template>
           <div class="tree-node-action-menu-divider" role="separator" />
@@ -451,6 +607,15 @@ onBeforeUnmount(() => {
           >
             <AppIcon name="edit" :size="16" />
             <span>修改名称</span>
+          </button>
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="openBookAction('duplicate')"
+          >
+            <AppIcon name="copy" :size="16" />
+            <span>复制</span>
           </button>
           <button
             class="tree-node-action-menu-item"
@@ -502,6 +667,19 @@ onBeforeUnmount(() => {
           </button>
         </template>
         <template v-else-if="node.catalogNodeType === 'library' && libraryDomain">
+          <button v-if="!node.readOnly && !node.unavailable" class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="activateResourceNodeAction('rename-library')">
+            <AppIcon name="edit" :size="16" /><span>修改名称</span>
+          </button>
+          <button
+            v-if="!node.unavailable"
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="activateResourceNodeAction('duplicate-library')"
+          >
+            <AppIcon name="copy" :size="16" />
+            <span>复制</span>
+          </button>
           <button
             v-if="!node.readOnly && !node.unavailable"
             class="tree-node-action-menu-item"
@@ -551,7 +729,17 @@ onBeforeUnmount(() => {
             @click.stop="activateResourceNodeAction('edit-group-bindings')"
           >
             <AppIcon name="edit" :size="16" />
-            <span>切换绑定</span>
+            <span>编辑分组</span>
+          </button>
+          <button
+            v-if="!node.unavailable"
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="activateResourceNodeAction('duplicate-group')"
+          >
+            <AppIcon name="copy" :size="16" />
+            <span>复制</span>
           </button>
           <button
             class="tree-node-action-menu-item is-danger"
@@ -566,6 +754,9 @@ onBeforeUnmount(() => {
         <template
           v-else-if="node.catalogNodeType === 'document' && node.catalogEntryId && libraryDomain"
         >
+          <button v-if="!node.readOnly" class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="activateResourceNodeAction('rename-entry')">
+            <AppIcon name="edit" :size="16" /><span>修改名称</span>
+          </button>
           <button
             class="tree-node-action-menu-item"
             type="button"
@@ -591,7 +782,7 @@ onBeforeUnmount(() => {
 
     <ul v-if="node.children?.length && open" class="tree-children">
       <TreeNodeItem
-        v-for="child in node.children"
+        v-for="(child, childIndex) in node.children"
         :key="child.id"
         :node="child"
         :depth="depth + 1"
@@ -605,14 +796,18 @@ onBeforeUnmount(() => {
         "
         :pinned="pinnedIds?.includes(child.id) ?? false"
         :pinned-ids="pinnedIds"
+        :expert-section-move-up-disabled="Boolean(child.expertSectionId) && childIndex === 0"
+        :expert-section-move-down-disabled="Boolean(child.expertSectionId) && childIndex === node.children.length - 1"
         @select="emit('select', $event)"
         @toggle-pin="emit('togglePin', $event)"
         @book-action="(mode, book) => emit('bookAction', mode, book)"
         @export-book="emit('exportBook', $event)"
         @long-book-action="emit('longBookAction', $event)"
         @resource-node-action="emit('resourceNodeAction', $event)"
+        @move-library-entry="emit('moveLibraryEntry', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @remove-expert-section="emit('removeExpertSection', $event)"
+        @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
         @create-character-item="emit('createCharacterItem', $event)"
         @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
       />
@@ -623,5 +818,15 @@ onBeforeUnmount(() => {
 <style scoped>
 .tree-node-action-area.is-menu-open {
   z-index: 30;
+}
+
+.tree-node-action-menu.opens-upward {
+  top: auto;
+  bottom: calc(100% + 3px);
+}
+
+.tree-node-action-menu-item:disabled {
+  cursor: default;
+  opacity: 0.42;
 }
 </style>

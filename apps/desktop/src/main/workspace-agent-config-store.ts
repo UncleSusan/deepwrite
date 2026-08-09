@@ -21,7 +21,6 @@ import {
   resolveShortWorkspaceAgentIdForStage,
   resolveScriptWorkspaceAgentIdForStage,
   type ScriptAgentReadAccess,
-  type ScriptWorkspaceReadTarget,
   type ScriptWorkspaceAgentId,
   type ScriptWorkspaceAgentProfile,
   type ScriptWorkspaceAgentSettings,
@@ -29,7 +28,6 @@ import {
   type ScriptWorkspaceSnapshot,
   type ScriptWorkspaceStageId,
   type ShortAgentReadAccess,
-  type ShortWorkspaceReadTarget,
   type ShortWorkspaceAgentId,
   type ShortWorkspaceAgentProfile,
   type ShortWorkspaceAgentSettings,
@@ -43,13 +41,13 @@ import {
 } from "@deepwrite/contracts";
 
 interface DiskWorkspaceAgentSettings {
-  version: 1;
+  version: 2;
   workspaceType: "short";
   agents: ShortWorkspaceAgentSettingsInput["agents"];
 }
 
 interface DiskScriptWorkspaceAgentSettings {
-  version: 1;
+  version: 2;
   workspaceType: "script";
   agents: ScriptWorkspaceAgentSettingsInput["agents"];
 }
@@ -222,9 +220,20 @@ export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1 = `你是 Deep
 - 没有完成正文与人物状态的必要写回工具调用，本小节不算完成。
 `;
 
-export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V8 =
+export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V9 =
   retiredPromptByReplacing(
     DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+    [
+      [
+        "- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。工具返回 next_offset 时，必须用该 offset 继续分页读取，直至 next_offset=null 才算读完该阶段文件。\n- read_draft_sections 单次批量完整读取有章数和字数上限，超出的章节会被留到下一次调用；单个超长文件必须按 next_offset 分页读取。工具返回“本次未读取”或非空 next_offset 时，必须继续分批、分页读完再下结论，不得假设剩余内容为空或与已读部分一致。",
+        "- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。\n- read_draft_sections 单次完整读取有章数和字数上限，超出的章节会被留到下一次调用。工具返回“本次未读取”时，必须继续分批读完再下结论，不得假设剩余章节为空或与已读部分一致。"
+      ]
+    ]
+  );
+
+export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V8 =
+  retiredPromptByReplacing(
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V9,
     [
       [
         "- 改动会影响后续章节连贯性时，用 include 一并读取相关章节的 character_state，并在修改正文后同步更新受影响章节的人物状态。\n- 涉及具体人物设定时，先调用 list_characters 确认人物结构：文本样式可读整份人物设计；条目样式下，概览只是姓名与一句话索引，必须对本章/本次修订涉及的人物用 read_character 并指定 item_id 读取对应人物卡。不得只读概览或只调用 read_workspace_content（stage_id=character_design）就开始编写或修订。\n",
@@ -309,8 +318,16 @@ export const RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4 =
     ]
   );
 
-export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V6 =
+export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V7 =
   retiredPromptByReplacing(DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT, [
+    [
+      "3. 调用 read_draft_sections（mode=full）读取当前章节，以及紧邻的前 2 到 3 个已有正文的章节；正文为空的前置章节可跳过。读取紧邻上一章时，include 必须包含 character_state。任一文件返回非空 next_offset 时，必须用该 offset 继续分页，直至 next_offset=null 才算完整读取。",
+      "3. 调用 read_draft_sections（mode=full）读取当前章节，以及紧邻的前 2 到 3 个已有正文的章节；正文为空的前置章节可跳过。读取紧邻上一章时，include 必须包含 character_state。"
+    ]
+  ]);
+
+export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V6 =
+  retiredPromptByReplacing(RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V7, [
     [
       "5. 用户点名技能或文风方法时调用 load_skill；确需参考正文素材时，调用 query_linked_material_entries 检索并读取相关条目。\n\n人物设定：\n- 编写或修订前先调用 list_characters 确认人物结构。\n- 文本样式：可用 read_character 或 read_workspace_content（stage_id=character_design）读取整份人物设计。\n- 条目样式：概览只维护姓名、定位与一句话摘要，不是完整人设。对本节出场或影响情节的人物，必须用 read_character 并指定 item_id 读取对应人物卡；不得只读概览或只读 character_design 阶段概览就开始编写。\n\n写作标准：",
       "5. 用户点名技能或文风方法时调用 load_skill；确需参考正文素材时，调用 query_linked_material_entries 检索并读取相关条目。\n\n写作标准："
@@ -361,9 +378,20 @@ export const RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2 =
     ]
   ]);
 
-export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5 =
+export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V6 =
   retiredPromptByReplacing(
     DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+    [
+      [
+        "- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。工具返回 next_offset 时，必须用该 offset 继续分页读取，直至 next_offset=null 才算读完该阶段文件。\n- read_draft_sections 返回“本次未读取”或非空 next_offset 时，必须继续分批、分页读完再下结论；preview 不算完整读取。",
+        "- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。\n- 工具返回“本次未读取”时，必须继续分批读完再下结论；preview 不算完整读取。"
+      ]
+    ]
+  );
+
+export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5 =
+  retiredPromptByReplacing(
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V6,
     [
       [
         "- 改动会影响后续连续性时，一并读取相关剧集的 character_state，并在修改正文后同步更新受影响的人物状态。\n- 涉及具体人物设定时，先调用 list_characters 确认人物结构：文本样式可读整份人物设计；条目样式下，概览只是姓名与一句话索引，必须对本集/本次修订涉及的人物用 read_character 并指定 item_id 读取对应人物卡。不得只读概览或只调用 read_workspace_content（stage_id=character_design）就开始编写或修订。\n",
@@ -440,8 +468,16 @@ export const RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1 =
     ]
   );
 
-export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5 =
+export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V6 =
   retiredPromptByReplacing(DEFAULT_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT, [
+    [
+      "3. 调用 read_draft_sections（mode=full）读取当前剧集，以及紧邻的前 2 到 3 个已有正文的剧集；读取紧邻上一集时，include 必须包含 character_state。任一文件返回非空 next_offset 时，必须用该 offset 继续分页，直至 next_offset=null 才算完整读取。",
+      "3. 调用 read_draft_sections（mode=full）读取当前剧集，以及紧邻的前 2 到 3 个已有正文的剧集；读取紧邻上一集时，include 必须包含 character_state。"
+    ]
+  ]);
+
+export const RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5 =
+  retiredPromptByReplacing(RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V6, [
     [
       "5. 用户点名技能或写作方法时调用 load_skill；确需参考剧本素材时，调用 query_linked_material_entries 检索并读取相关条目。\n\n人物设定：\n- 编写或修订前先调用 list_characters 确认人物结构。\n- 文本样式：可用 read_character 或 read_workspace_content（stage_id=character_design）读取整份人物设计。\n- 条目样式：概览只维护姓名、定位与一句话摘要，不是完整人设。对本集出场或影响情节的人物，必须用 read_character 并指定 item_id 读取对应人物卡；不得只读概览或只读 character_design 阶段概览就开始编写。\n\n写作标准：",
       "5. 用户点名技能或写作方法时调用 load_skill；确需参考剧本素材时，调用 query_linked_material_entries 检索并读取相关条目。\n\n写作标准："
@@ -505,15 +541,8 @@ const RETIRED_SYSTEM_PROMPTS: Partial<
     RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5,
     RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V6,
     RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V7,
-    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V8
-  ],
-  expert_section_writer: [
-    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
-    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2,
-    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3,
-    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4,
-    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5,
-    RETIRED_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V6
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V8,
+    RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V9
   ]
 };
 
@@ -526,66 +555,22 @@ const RETIRED_SCRIPT_SYSTEM_PROMPTS: Partial<
     RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V2,
     RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V3,
     RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V4,
-    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5
-  ],
-  expert_section_writer: [
-    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V1,
-    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V2,
-    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V3,
-    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V4,
-    RETIRED_SCRIPT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT_V5
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V5,
+    RETIRED_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V6
   ]
 };
-
-const REQUIRED_WORKSPACE_STAGES: Record<
-  ShortWorkspaceAgentId,
-  readonly ShortWorkspaceReadTarget[]
-> = {
-  character_design: ["character_design"],
-  plot_design: ["plot_structure"],
-  expert_draft_coordinator: ["draft", "plot_structure"],
-  expert_section_writer: ["draft", "plot_structure"]
-};
-
-const REQUIRED_SCRIPT_WORKSPACE_STAGES: Record<
-  ScriptWorkspaceAgentId,
-  readonly ScriptWorkspaceReadTarget[]
-> = {
-  character_design: ["character_design"],
-  plot_design: ["plot_structure"],
-  expert_draft_coordinator: ["draft", "plot_structure"],
-  expert_section_writer: ["draft", "plot_structure"]
-};
-
-function normalizeWorkspaceReadTargets(
-  raw: unknown
-): ShortWorkspaceReadTarget[] {
-  if (!Array.isArray(raw)) return [];
-  const normalized: ShortWorkspaceReadTarget[] = [];
-  for (const value of raw) {
-    const target: ShortWorkspaceReadTarget | undefined =
-      value === "character_design" || value === "draft"
-        ? value
-        : typeof value === "string"
-          ? "plot_structure"
-          : undefined;
-    if (target && !normalized.includes(target)) normalized.push(target);
-  }
-  return normalized;
-}
 
 function normalizeLegacyReadAccess(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const access = raw as Record<string, unknown>;
   return {
-    ...access,
-    workspace: normalizeWorkspaceReadTargets(access.workspace)
+    material: access.material,
+    skill: access.skill
   };
 }
 
 function cloneReadAccess(value: ShortAgentReadAccess): ShortAgentReadAccess {
   return {
-    workspace: [...value.workspace],
     material: [...value.material],
     skill: [...value.skill]
   };
@@ -615,17 +600,8 @@ function defaultProfile(agentId: ShortWorkspaceAgentId): ShortWorkspaceAgentProf
   return cloneProfile(profile);
 }
 
-function normalizeReadAccess(
-  agentId: ShortWorkspaceAgentId,
-  access: ShortAgentReadAccess
-): ShortAgentReadAccess {
-  const workspace = [...access.workspace];
-  for (const required of REQUIRED_WORKSPACE_STAGES[agentId]) {
-    if (!workspace.includes(required)) {
-      workspace.push(required);
-    }
-  }
-  return { workspace, material: [...access.material], skill: [...access.skill] };
+function normalizeReadAccess(access: ShortAgentReadAccess): ShortAgentReadAccess {
+  return { material: [...access.material], skill: [...access.skill] };
 }
 
 function defaultsAsInput(): ShortWorkspaceAgentSettingsInput {
@@ -644,7 +620,6 @@ function cloneScriptReadAccess(
   value: ScriptAgentReadAccess
 ): ScriptAgentReadAccess {
   return {
-    workspace: [...value.workspace],
     material: [...value.material],
     skill: [...value.skill]
   };
@@ -679,20 +654,9 @@ function defaultScriptProfile(
 }
 
 function normalizeScriptReadAccess(
-  agentId: ScriptWorkspaceAgentId,
   access: ScriptAgentReadAccess
 ): ScriptAgentReadAccess {
-  const workspace = [...access.workspace];
-  for (const required of REQUIRED_SCRIPT_WORKSPACE_STAGES[agentId]) {
-    if (!workspace.includes(required)) {
-      workspace.push(required);
-    }
-  }
-  return {
-    workspace,
-    material: [...access.material],
-    skill: [...access.skill]
-  };
+  return { material: [...access.material], skill: [...access.skill] };
 }
 
 function scriptDefaultsAsInput(): ScriptWorkspaceAgentSettingsInput {
@@ -748,6 +712,7 @@ function normalizeDiskSettings(raw: unknown): ShortWorkspaceAgentSettingsInput {
     return defaultsAsInput();
   }
   const candidate = raw as Record<string, unknown>;
+  const migrateDraftResources = candidate.version !== 2;
   const agents = Array.isArray(candidate.agents)
     ? candidate.agents.flatMap((agent) => {
         if (!agent || typeof agent !== "object") return agent;
@@ -785,7 +750,10 @@ function normalizeDiskSettings(raw: unknown): ShortWorkspaceAgentSettingsInput {
         ? defaultProfile(agent.id).systemPrompt
         : agent.systemPrompt,
       welcomeShortcuts: cloneWelcomeShortcuts(agent.welcomeShortcuts),
-      readAccess: normalizeReadAccess(agent.id, agent.readAccess)
+      readAccess:
+        migrateDraftResources && agent.id === "expert_draft_coordinator"
+          ? cloneReadAccess(defaultProfile(agent.id).readAccess)
+          : normalizeReadAccess(agent.readAccess)
     }))
   };
 }
@@ -814,6 +782,7 @@ function normalizeScriptDiskSettings(
     return scriptDefaultsAsInput();
   }
   const candidate = raw as Record<string, unknown>;
+  const migrateDraftResources = candidate.version !== 2;
   const agents = Array.isArray(candidate.agents)
     ? candidate.agents.flatMap((agent) => {
         if (!agent || typeof agent !== "object") return agent;
@@ -851,7 +820,10 @@ function normalizeScriptDiskSettings(
         ? defaultScriptProfile(agent.id).systemPrompt
         : agent.systemPrompt,
       welcomeShortcuts: cloneScriptWelcomeShortcuts(agent.welcomeShortcuts),
-      readAccess: normalizeScriptReadAccess(agent.id, agent.readAccess)
+      readAccess:
+        migrateDraftResources && agent.id === "expert_draft_coordinator"
+          ? cloneScriptReadAccess(defaultScriptProfile(agent.id).readAccess)
+          : normalizeScriptReadAccess(agent.readAccess)
     }))
   };
 }
@@ -910,7 +882,7 @@ export class WorkspaceAgentConfigStore {
             welcomeShortcuts: cloneScriptWelcomeShortcuts(
               agent.welcomeShortcuts
             ),
-            readAccess: normalizeScriptReadAccess(agent.id, agent.readAccess)
+            readAccess: normalizeScriptReadAccess(agent.readAccess)
           }))
         };
         await this.writeScriptInput(normalized);
@@ -922,7 +894,7 @@ export class WorkspaceAgentConfigStore {
         agents: input.agents.map((agent) => ({
           ...agent,
           welcomeShortcuts: cloneWelcomeShortcuts(agent.welcomeShortcuts),
-          readAccess: normalizeReadAccess(agent.id, agent.readAccess)
+          readAccess: normalizeReadAccess(agent.readAccess)
         }))
       };
       await this.writeInput(normalized);
@@ -1126,16 +1098,34 @@ export class WorkspaceAgentConfigStore {
   }
 
   private async readInput(): Promise<ShortWorkspaceAgentSettingsInput> {
-    return normalizeDiskSettings(await readJson(this.shortSettingsPath));
+    const raw = await readJson(this.shortSettingsPath);
+    const normalized = normalizeDiskSettings(raw);
+    if (
+      raw &&
+      typeof raw === "object" &&
+      (raw as Record<string, unknown>).version !== 2
+    ) {
+      await this.writeInput(normalized);
+    }
+    return normalized;
   }
 
   private async readScriptInput(): Promise<ScriptWorkspaceAgentSettingsInput> {
-    return normalizeScriptDiskSettings(await readJson(this.scriptSettingsPath));
+    const raw = await readJson(this.scriptSettingsPath);
+    const normalized = normalizeScriptDiskSettings(raw);
+    if (
+      raw &&
+      typeof raw === "object" &&
+      (raw as Record<string, unknown>).version !== 2
+    ) {
+      await this.writeScriptInput(normalized);
+    }
+    return normalized;
   }
 
   private async writeInput(input: ShortWorkspaceAgentSettingsInput): Promise<void> {
     const disk: DiskWorkspaceAgentSettings = {
-      version: 1,
+      version: 2,
       workspaceType: "short",
       agents: input.agents
     };
@@ -1146,7 +1136,7 @@ export class WorkspaceAgentConfigStore {
     input: ScriptWorkspaceAgentSettingsInput
   ): Promise<void> {
     const disk: DiskScriptWorkspaceAgentSettings = {
-      version: 1,
+      version: 2,
       workspaceType: "script",
       agents: input.agents
     };
@@ -1171,7 +1161,6 @@ export class WorkspaceAgentConfigStore {
               }
             : {}),
           readAccess: normalizeReadAccess(
-            agentId,
             override?.readAccess ?? builtin.readAccess
           )
         };
@@ -1199,7 +1188,6 @@ export class WorkspaceAgentConfigStore {
               }
             : {}),
           readAccess: normalizeScriptReadAccess(
-            agentId,
             override?.readAccess ?? builtin.readAccess
           )
         };

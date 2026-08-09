@@ -3,7 +3,8 @@ import { computed, reactive, ref, watch } from "vue";
 import type {
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch,
-  LongWorldbuildingFormat
+  LongWorldbuildingFormat,
+  LongWorldbuildingItemLayout
 } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
 import {
@@ -22,8 +23,10 @@ import PopupSelect, {
 } from "./PopupSelect.vue";
 
 type StructurePanel = "foundation" | "features";
+type FoundationSection = "worldbuilding" | "characterTypes";
 
 interface ManagerRow {
+  kind: "worldbuilding" | "characterType";
   id: string;
   title: string;
   detail: string;
@@ -66,6 +69,10 @@ const formatOptions: readonly PopupSelectOption[] = [
   { value: "list", label: "条目列表" },
   { value: "text", label: "连续文本" }
 ];
+const worldbuildingItemLayoutOptions: readonly PopupSelectOption[] = [
+  { value: "top-tabs", label: "上方横向标签" },
+  { value: "right-list", label: "右侧纵向列表" }
+];
 
 const panelOptions: ReadonlyArray<{
   value: StructurePanel;
@@ -80,15 +87,17 @@ const panelOptions: ReadonlyArray<{
   {
     value: "features",
     label: "功能配置",
-    description: "功能配置项暂时为空"
+    description: "世界观条目样式"
   }
 ];
 
 const activePanel = ref<StructurePanel>("foundation");
+const activeFoundationSection = ref<FoundationSection>("worldbuilding");
 const formOpen = ref(false);
 const formMode = ref<"create" | "edit">("create");
 const pendingDelete = ref<ManagerRow | null>(null);
 const cascadeDelete = ref(false);
+const moveCharactersToTypeId = ref("");
 const syncOpen = ref(false);
 const selectedSyncBookId = ref<string>("");
 type MutationSurface = "form" | "delete" | "sync" | "background";
@@ -128,10 +137,11 @@ function emptyDraft(): StructureDraft {
 
 const draft = reactive<StructureDraft>(emptyDraft());
 
-const rows = computed<ManagerRow[]>(() =>
+const worldbuildingRows = computed<ManagerRow[]>(() =>
   [...props.snapshot.worldbuilding]
     .sort((left, right) => left.order - right.order)
     .map((category) => ({
+      kind: "worldbuilding" as const,
       id: category.id,
       title: category.title,
       detail: category.format === "list" ? "条目列表" : "连续文本",
@@ -139,8 +149,48 @@ const rows = computed<ManagerRow[]>(() =>
     }))
 );
 
+const characterTypeRows = computed<ManagerRow[]>(() =>
+  [...props.snapshot.characterTypes]
+    .sort((left, right) => left.order - right.order)
+    .map((characterType) => {
+      const count = props.snapshot.characters.filter(
+        ({ group }) => group === characterType.id
+      ).length;
+      return {
+        kind: "characterType" as const,
+        id: characterType.id,
+        title: characterType.title,
+        detail: `连续文本 · ${count} 人`
+      };
+    })
+);
+const rows = computed(() =>
+  activeFoundationSection.value === "worldbuilding"
+    ? worldbuildingRows.value
+    : characterTypeRows.value
+);
+const deletingCharacterCount = computed(() =>
+  pendingDelete.value?.kind === "characterType"
+    ? props.snapshot.characters.filter(
+        ({ group }) => group === pendingDelete.value?.id
+      ).length
+    : 0
+);
+const characterTypeMoveOptions = computed<PopupSelectOption[]>(() =>
+  props.snapshot.characterTypes
+    .filter(({ id }) => id !== pendingDelete.value?.id)
+    .sort((left, right) => left.order - right.order)
+    .map(({ id, title }) => ({ value: id, label: title }))
+);
+
 const formTitle = computed(() =>
-  formMode.value === "create" ? "新建世界观分类" : "编辑世界观分类"
+  activeFoundationSection.value === "characterTypes"
+    ? formMode.value === "create"
+      ? "新建人物类型"
+      : "编辑人物类型"
+    : formMode.value === "create"
+      ? "新建世界观分类"
+      : "编辑世界观分类"
 );
 
 watch(
@@ -160,10 +210,60 @@ function setPanel(panel: StructurePanel): void {
   activePanel.value = panel;
 }
 
+function setFoundationSection(section: FoundationSection): void {
+  if (section === activeFoundationSection.value || mutationLocked.value) return;
+  closeForm();
+  closeDelete();
+  closeSync();
+  activeFoundationSection.value = section;
+}
+
 function setFormat(value: PopupSelectValue): void {
   if (value === "list" || value === "text") {
     draft.format = value;
   }
+}
+
+function setWorldbuildingItemLayout(value: PopupSelectValue): void {
+  if (
+    (value !== "top-tabs" && value !== "right-list") ||
+    value === props.snapshot.featureSettings.worldbuildingItemLayout
+  ) {
+    return;
+  }
+  emitMutation((builder) =>
+    builder.updateFeatureSettings({
+      worldbuildingItemLayout: value as LongWorldbuildingItemLayout
+    })
+  );
+}
+
+function setCharacterAndContinuityItemLayout(value: PopupSelectValue): void {
+  if (
+    (value !== "top-tabs" && value !== "right-list") ||
+    value === props.snapshot.featureSettings.characterAndContinuityItemLayout
+  ) {
+    return;
+  }
+  emitMutation((builder) =>
+    builder.updateFeatureSettings({
+      characterAndContinuityItemLayout: value as LongWorldbuildingItemLayout
+    })
+  );
+}
+
+function setPlotItemLayout(value: PopupSelectValue): void {
+  if (
+    (value !== "top-tabs" && value !== "right-list") ||
+    value === props.snapshot.featureSettings.plotItemLayout
+  ) {
+    return;
+  }
+  emitMutation((builder) =>
+    builder.updateFeatureSettings({
+      plotItemLayout: value as LongWorldbuildingItemLayout
+    })
+  );
 }
 
 function resetDraft(): void {
@@ -181,15 +281,25 @@ function openEdit(row: ManagerRow): void {
     uiMessage.info("迁移证据是只读资料，不能改名、改格式或删除。");
     return;
   }
-  const category = props.snapshot.worldbuilding.find(
-    (candidate) => candidate.id === row.id
-  );
-  if (!category) return;
   resetDraft();
   formMode.value = "edit";
-  draft.id = category.id;
-  draft.title = category.title;
-  draft.format = category.format;
+  if (row.kind === "characterType") {
+    const characterType = props.snapshot.characterTypes.find(
+      (candidate) => candidate.id === row.id
+    );
+    if (!characterType) return;
+    draft.id = characterType.id;
+    draft.title = characterType.title;
+    draft.format = "text";
+  } else {
+    const category = props.snapshot.worldbuilding.find(
+      (candidate) => candidate.id === row.id
+    );
+    if (!category) return;
+    draft.id = category.id;
+    draft.title = category.title;
+    draft.format = category.format;
+  }
   formOpen.value = true;
 }
 
@@ -211,6 +321,7 @@ function finishMutation(
   } else if (pending.surface === "delete") {
     pendingDelete.value = null;
     cascadeDelete.value = false;
+    moveCharactersToTypeId.value = "";
   } else if (pending.surface === "sync") {
     syncOpen.value = false;
     selectedSyncBookId.value = "";
@@ -294,6 +405,13 @@ function submitForm(): void {
   }
 
   emitMutation((builder) => {
+    if (activeFoundationSection.value === "characterTypes") {
+      if (formMode.value === "create") {
+        return builder.createCharacterType({ title });
+      }
+      if (!draft.id) throw new Error("缺少待编辑人物类型的稳定 ID。");
+      return builder.updateCharacterType(draft.id, { title });
+    }
     if (formMode.value === "create") {
       return builder.createWorldbuilding({
         title,
@@ -324,7 +442,9 @@ function reorder(row: ManagerRow, direction: LongOrderDirection): void {
     return;
   }
   emitMutation((builder) =>
-    builder.reorderWorldbuilding(row.id, direction)
+    row.kind === "characterType"
+      ? builder.reorderCharacterType(row.id, direction)
+      : builder.reorderWorldbuilding(row.id, direction)
   );
 }
 
@@ -333,7 +453,15 @@ function openDelete(row: ManagerRow): void {
     uiMessage.info("迁移证据是只读资料，不能删除。");
     return;
   }
+  if (
+    row.kind === "characterType" &&
+    props.snapshot.characterTypes.length <= 1
+  ) {
+    uiMessage.warning("至少需要保留一个人物类型。");
+    return;
+  }
   cascadeDelete.value = false;
+  moveCharactersToTypeId.value = "";
   pendingDelete.value = row;
 }
 
@@ -341,11 +469,31 @@ function closeDelete(): void {
   if (mutationLocked.value) return;
   pendingDelete.value = null;
   cascadeDelete.value = false;
+  moveCharactersToTypeId.value = "";
+}
+
+function setMoveCharactersToTypeId(value: PopupSelectValue): void {
+  moveCharactersToTypeId.value = typeof value === "string" ? value : "";
 }
 
 function confirmDelete(): void {
   const target = pendingDelete.value;
   if (!target) return;
+  if (target.kind === "characterType") {
+    if (deletingCharacterCount.value > 0 && !moveCharactersToTypeId.value) {
+      uiMessage.warning("请选择这些人物要迁移到的目标类型。");
+      return;
+    }
+    emitMutation(
+      (builder) =>
+        builder.deleteCharacterType(
+          target.id,
+          moveCharactersToTypeId.value || undefined
+        ),
+      "delete"
+    );
+    return;
+  }
   emitMutation(
     (builder) =>
       builder.deleteWorldbuilding(target.id, cascadeDelete.value),
@@ -355,19 +503,19 @@ function confirmDelete(): void {
 </script>
 
 <template>
-  <section class="long-structure-manager" aria-label="世界观与功能设置">
+  <section class="long-structure-manager" aria-label="结构管理">
     <header class="manager-header">
       <div>
         <p class="manager-eyebrow">LONG-FORM STRUCTURE</p>
-        <h2>世界观与功能设置</h2>
-        <p>在这里管理世界观分类和长篇功能配置；其他内容请在对应工作区编辑。</p>
+        <h2>结构管理</h2>
+        <p>在这里管理世界观分类、人物类型和长篇功能配置；具体内容请在对应工作区编辑。</p>
       </div>
     </header>
 
     <div
       class="structure-panel-tabs"
       role="tablist"
-      aria-label="世界观与功能设置分区"
+      aria-label="结构管理分区"
     >
       <button
         v-for="panel in panelOptions"
@@ -399,13 +547,26 @@ function confirmDelete(): void {
             id="long-structure-section-worldbuilding"
             type="button"
             role="tab"
-            aria-selected="true"
+            :aria-selected="activeFoundationSection === 'worldbuilding'"
+            :disabled="mutationLocked"
+            @click="setFoundationSection('worldbuilding')"
           >
             世界观分类
+          </button>
+          <button
+            id="long-structure-section-character-types"
+            type="button"
+            role="tab"
+            :aria-selected="activeFoundationSection === 'characterTypes'"
+            :disabled="mutationLocked"
+            @click="setFoundationSection('characterTypes')"
+          >
+            人物类型
           </button>
         </div>
         <div class="toolbar-actions">
           <button
+            v-if="activeFoundationSection === 'worldbuilding'"
             type="button"
             :disabled="mutationLocked"
             @click="openSync"
@@ -418,14 +579,30 @@ function confirmDelete(): void {
             :disabled="mutationLocked"
             @click="openCreate"
           >
-            新建世界观分类
+            {{
+              activeFoundationSection === "characterTypes"
+                ? "新建人物类型"
+                : "新建世界观分类"
+            }}
           </button>
         </div>
       </header>
 
       <div v-if="rows.length === 0" class="manager-empty">
-        <strong>还没有世界观分类，可先创建第一项。</strong>
-        <span>创建后会生成完整稳定 ID，并带齐对应的空文件引用。</span>
+        <strong>
+          {{
+            activeFoundationSection === "characterTypes"
+              ? "还没有人物类型，可先创建第一项。"
+              : "还没有世界观分类，可先创建第一项。"
+          }}
+        </strong>
+        <span>
+          {{
+            activeFoundationSection === "characterTypes"
+              ? "人物类型只管理分类，人物内容始终使用连续文本。"
+              : "创建后会生成完整稳定 ID，并带齐对应的空文件引用。"
+          }}
+        </span>
       </div>
 
       <ol v-else class="manager-list">
@@ -478,7 +655,11 @@ function confirmDelete(): void {
       </ol>
 
       <p class="manager-footnote">
-        排序只调整世界观分类的展示顺序，不会改动分类中的现有内容。
+        {{
+          activeFoundationSection === "characterTypes"
+            ? "排序只调整人物类型的展示顺序；人物仍保留核心档案、人物关系、当前状态和历史轨迹四份文本文档。"
+            : "排序只调整世界观分类的展示顺序，不会改动分类中的现有内容。"
+        }}
       </p>
     </div>
 
@@ -489,9 +670,57 @@ function confirmDelete(): void {
       role="tabpanel"
       aria-labelledby="long-structure-panel-features"
     >
-      <div class="manager-empty feature-empty">
-        <strong>功能配置项暂时为空</strong>
-        <span>后续可在这里集中管理长篇写作相关功能。</span>
+      <div class="feature-settings-list">
+        <section class="feature-setting-card">
+          <div class="feature-setting-copy">
+            <strong>世界观条目样式</strong>
+            <span>
+              选择列表型世界观分类中的概览与条目如何排列。
+              右侧纵向列表会在紧凑窗口中自动移到正文下方。
+            </span>
+          </div>
+          <PopupSelect
+            :model-value="snapshot.featureSettings.worldbuildingItemLayout"
+            :options="worldbuildingItemLayoutOptions"
+            accessible-label="选择世界观条目样式"
+            :disabled="mutationLocked"
+            :menu-z-index="2300"
+            @update:model-value="setWorldbuildingItemLayout"
+          />
+        </section>
+        <section class="feature-setting-card">
+          <div class="feature-setting-copy">
+            <strong>人物与连续性条目样式</strong>
+            <span>
+              统一选择人物集合与连续性账本文件的排列方式。
+              右侧纵向列表会在紧凑窗口中自动移到正文下方。
+            </span>
+          </div>
+          <PopupSelect
+            :model-value="snapshot.featureSettings.characterAndContinuityItemLayout"
+            :options="worldbuildingItemLayoutOptions"
+            accessible-label="选择人物与连续性条目样式"
+            :disabled="mutationLocked"
+            :menu-z-index="2300"
+            @update:model-value="setCharacterAndContinuityItemLayout"
+          />
+        </section>
+        <section class="feature-setting-card">
+          <div class="feature-setting-copy">
+            <strong>剧情设计条目样式</strong>
+            <span>
+              选择全书故事线、剧情点和章卡集合的排列方式；故事情节保持原有右侧条目面板。
+            </span>
+          </div>
+          <PopupSelect
+            :model-value="snapshot.featureSettings.plotItemLayout"
+            :options="worldbuildingItemLayoutOptions"
+            accessible-label="选择剧情设计条目样式"
+            :disabled="mutationLocked"
+            :menu-z-index="2300"
+            @update:model-value="setPlotItemLayout"
+          />
+        </section>
       </div>
     </div>
 
@@ -537,7 +766,10 @@ function confirmDelete(): void {
                 />
               </label>
 
-              <label class="form-field">
+              <label
+                v-if="activeFoundationSection === 'worldbuilding'"
+                class="form-field"
+              >
                 <span>内容格式</span>
                 <PopupSelect
                   :model-value="draft.format"
@@ -674,17 +906,42 @@ function confirmDelete(): void {
             </div>
           </header>
           <fieldset class="modal-body" :disabled="mutationLocked">
-            <p id="long-structure-delete-description" class="delete-copy">
+            <p
+              v-if="pendingDelete.kind === 'worldbuilding'"
+              id="long-structure-delete-description"
+              class="delete-copy"
+            >
               删除会直接保存到本机。默认只删除当前分类；如分类中仍有内容，
               保存会被阻止，你可以核对后再选择同时删除分类内容。
             </p>
-            <label class="cascade-option">
+            <label
+              v-if="pendingDelete.kind === 'worldbuilding'"
+              class="cascade-option"
+            >
               <input v-model="cascadeDelete" type="checkbox" />
               <span>
                 同时删除分类内容
                 <small>会一并删除当前世界观分类中的现有内容。</small>
               </span>
             </label>
+            <template v-else>
+              <p id="long-structure-delete-description" class="delete-copy">
+                删除人物类型不会删除人物文档。
+                <template v-if="deletingCharacterCount > 0">
+                  当前类型中有 {{ deletingCharacterCount }} 个人物，请选择迁移目标。
+                </template>
+              </p>
+              <label v-if="deletingCharacterCount > 0" class="form-field">
+                <span>迁移到</span>
+                <PopupSelect
+                  :model-value="moveCharactersToTypeId"
+                  :options="characterTypeMoveOptions"
+                  accessible-label="选择人物迁移目标类型"
+                  :menu-z-index="2300"
+                  @update:model-value="setMoveCharactersToTypeId"
+                />
+              </label>
+            </template>
           </fieldset>
           <footer class="modal-actions">
             <button
@@ -698,11 +955,22 @@ function confirmDelete(): void {
             <button
               class="danger-button"
               type="button"
-              :disabled="mutationLocked"
+              :disabled="
+                mutationLocked ||
+                (pendingDelete.kind === 'characterType' &&
+                  deletingCharacterCount > 0 &&
+                  !moveCharactersToTypeId)
+              "
               @click="confirmDelete"
             >
               {{
-                cascadeDelete
+                pendingDelete.kind === "characterType"
+                  ? pendingMutation?.surface === "delete"
+                    ? "删除中…"
+                    : deletingCharacterCount > 0
+                      ? "迁移人物并删除"
+                      : "确认删除"
+                  : cascadeDelete
                   ? pendingMutation?.surface === "delete"
                     ? "删除中…"
                     : "确认并删除分类内容"
@@ -846,10 +1114,16 @@ function confirmDelete(): void {
   flex: 0 0 auto;
   min-height: 1.9rem;
   padding: 0.34rem 0.58rem;
+  border-color: transparent;
+  color: var(--text-secondary);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.section-tabs button[aria-selected="true"] {
   border-color: var(--theme-line);
   color: var(--accent);
   background: var(--surface-raised);
-  white-space: nowrap;
 }
 
 button,
@@ -972,8 +1246,32 @@ button:disabled {
   font-size: 0.8rem;
 }
 
-.feature-empty {
-  min-height: 10rem;
+.feature-settings-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.feature-setting-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 0.75rem;
+  background: var(--surface-raised);
+}
+
+.feature-setting-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+}
+
+.feature-setting-copy span {
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+  line-height: 1.5;
 }
 
 .structure-modal-overlay {
@@ -1164,6 +1462,11 @@ button:disabled {
 
   .row-actions button {
     flex: 1 1 auto;
+  }
+
+  .feature-setting-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 }
 </style>

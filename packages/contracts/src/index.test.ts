@@ -15,11 +15,14 @@ import {
   ModelSettingsSchema,
   ExportShortManuscriptResultSchema,
   DEFAULT_LIBRARY_AGENT_SETTINGS,
+  LearningImitationDocumentSchema,
   LibraryAgentSettingsInputSchema,
   PROTOCOL_VERSION,
   PROMPT_IMAGE_ATTACHMENT_MAX_BYTES,
+  PromptTextAttachmentSchema,
   SHORT_WORKSPACE_FILE_MAX_CHARACTERS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
+  ShortCharacterItemSnapshotSchema,
   ShortWorkspaceStageSnapshotSchema,
   SessionPromptAcceptedPayloadSchema,
   SystemEventEnvelopeSchema,
@@ -923,6 +926,82 @@ describe("DeepWrite desktop contracts", () => {
     expect(() =>
       ActiveResourceSnapshotSchema.parse({ ...snapshot, originalLength: 20_000 })
     ).toThrow();
+    expect(() =>
+      ActiveResourceSnapshotSchema.parse({
+        ...snapshot,
+        truncated: false,
+        originalLength: 20_010
+      })
+    ).toThrow();
+    const { truncated: _truncated, ...withoutTruncated } = snapshot;
+    expect(() => ActiveResourceSnapshotSchema.parse(withoutTruncated)).toThrow();
+  });
+
+  it("requires truthful truncation metadata across bounded text snapshots", () => {
+    const revision = createShortWorkspaceContentRevision("前段");
+    const bounded = { content: "前段", truncated: true, originalLength: 10 };
+
+    expect(() =>
+      ShortWorkspaceStageSnapshotSchema.parse({
+        stageId: "outline",
+        title: "大纲",
+        revision,
+        ...bounded
+      })
+    ).not.toThrow();
+    expect(() =>
+      ShortWorkspaceStageSnapshotSchema.parse({
+        stageId: "outline",
+        title: "大纲",
+        revision,
+        content: "前段",
+        originalLength: 10
+      })
+    ).toThrow();
+
+    expect(() =>
+      ShortCharacterItemSnapshotSchema.parse({
+        id: "character-1",
+        title: "林默",
+        order: 1,
+        revision,
+        ...bounded
+      })
+    ).not.toThrow();
+    expect(() =>
+      ShortCharacterItemSnapshotSchema.parse({
+        id: "character-1",
+        title: "林默",
+        order: 1,
+        revision,
+        content: "前段",
+        truncated: true
+      })
+    ).toThrow();
+
+    expect(() =>
+      PromptTextAttachmentSchema.parse({
+        id: "attachment-1",
+        kind: "text",
+        name: "资料.txt",
+        mediaType: "text/plain",
+        size: 10,
+        content: "前段",
+        originalLength: 10
+      })
+    ).toThrow();
+    expect(() =>
+      LearningImitationDocumentSchema.parse({
+        id: "learning-1",
+        name: "样本.txt",
+        extension: ".txt",
+        mediaType: "text/plain",
+        size: 10,
+        text: "前段",
+        charCount: 10,
+        originalLength: 10
+      })
+    ).toThrow();
   });
 
   it("uses one 32 MiB character boundary across stored and runtime text files", () => {
@@ -1069,11 +1148,11 @@ describe("DeepWrite desktop contracts", () => {
     ).not.toThrow();
   });
 
-  it("restricts a draft section writer to the active section's physical files", () => {
+  it("binds the unified draft agent's active section to its physical files", () => {
     const base = shortWorkspaceRuntimeFixture();
     const shortWorkspace = {
       ...base,
-      activeAgentId: "expert_section_writer" as const,
+      activeAgentId: "expert_draft_coordinator" as const,
       activeSectionId: "section-1"
     };
 
@@ -1113,6 +1192,82 @@ describe("DeepWrite desktop contracts", () => {
           path: ["运行时正文", "正文"],
           source: "live-editor",
           content: ""
+        }
+      })
+    ).toThrow();
+  });
+
+  it("matches bounded live snapshots across short stages and draft files", () => {
+    const longContent = `雨夜。${"长".repeat(20_000)}`;
+    const base = shortWorkspaceRuntimeFixture();
+    const outlineWorkspace = {
+      ...base,
+      activeStageId: "outline" as const,
+      activeAgentId: "plot_design" as const,
+      stages: base.stages.map((stage) =>
+        stage.stageId === "outline"
+          ? {
+              ...stage,
+              content: longContent,
+              revision: createShortWorkspaceContentRevision(longContent)
+            }
+          : stage
+      )
+    };
+    const boundedResource = {
+      id: "outline",
+      domain: "creation" as const,
+      title: "大纲",
+      path: ["运行时正文", "大纲"],
+      source: "live-editor" as const,
+      content: longContent.slice(0, 20_000),
+      truncated: true as const,
+      originalLength: longContent.length
+    };
+
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        shortWorkspace: outlineWorkspace,
+        activeResource: boundedResource
+      })
+    ).not.toThrow();
+
+    const draftWorkspace = {
+      ...base,
+      activeSectionId: "section-1",
+      expertDraft: {
+        ...base.expertDraft,
+        sections: base.expertDraft.sections.map((section) =>
+          section.id === "section-1"
+            ? {
+                ...section,
+                body: {
+                  ...section.body,
+                  content: longContent,
+                  revision: createShortWorkspaceContentRevision(longContent)
+                }
+              }
+            : section
+        )
+      }
+    };
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        shortWorkspace: draftWorkspace,
+        activeResource: {
+          ...boundedResource,
+          id: "draft:section-1:body",
+          title: "第一节·正文"
+        }
+      })
+    ).not.toThrow();
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        shortWorkspace: draftWorkspace,
+        activeResource: {
+          ...boundedResource,
+          id: "draft:section-1:body",
+          content: `错${boundedResource.content.slice(1)}`
         }
       })
     ).toThrow();
@@ -1207,7 +1362,9 @@ describe("DeepWrite desktop contracts", () => {
       title: "人物素材",
       libraryType: "short" as const,
       kind: "character" as const,
+      overviewDocumentId: "material-overview-1",
       overview: "只用于人物设定",
+      overviewRevision: createShortWorkspaceContentRevision("只用于人物设定"),
       readOnly: false,
       activeEntryId: "entry-1",
       projectRevision: 2,
@@ -1239,6 +1396,12 @@ describe("DeepWrite desktop contracts", () => {
     ).not.toThrow();
     expect(() =>
       WorkspaceRuntimeContextSchema.parse({
+        activeResource: { ...activeResource, content: "过期的编辑器内容" },
+        libraryWorkspace
+      })
+    ).toThrow();
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
         activeResource: { ...activeResource, domain: "skill" },
         libraryWorkspace
       })
@@ -1267,6 +1430,75 @@ describe("DeepWrite desktop contracts", () => {
         sessionId: "session-library",
         message: "整理素材",
         workspaceContext: { activeResource, libraryWorkspace }
+      })
+    ).toThrow();
+  });
+
+  it("binds truncated library entry and overview snapshots to the live editor", () => {
+    const fullContent = `资料库。${"长".repeat(50_000)}`;
+    const entrySnapshot = fullContent.slice(0, 40_000);
+    const activeSnapshot = fullContent.slice(0, 20_000);
+    const commonWorkspace = {
+      domain: "material" as const,
+      libraryId: "material-library-long",
+      title: "长素材库",
+      libraryType: "short" as const,
+      kind: "character" as const,
+      overviewDocumentId: "overview-long",
+      overview: "素材库概览",
+      overviewRevision: createShortWorkspaceContentRevision("素材库概览"),
+      readOnly: false,
+      activeEntryId: "entry-long",
+      entries: [
+        {
+          id: "entry-long",
+          documentId: "document-long",
+          stageId: "character" as const,
+          title: "长人物资料",
+          content: entrySnapshot,
+          revision: createShortWorkspaceContentRevision(entrySnapshot),
+          readOnly: false,
+          truncated: true,
+          originalLength: fullContent.length
+        }
+      ]
+    };
+    const activeResource = {
+      id: "document-long",
+      domain: "material" as const,
+      title: "长人物资料",
+      path: ["长素材库", "长人物资料"],
+      source: "live-editor" as const,
+      content: activeSnapshot,
+      truncated: true as const,
+      originalLength: fullContent.length
+    };
+
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        activeResource,
+        libraryWorkspace: commonWorkspace
+      })
+    ).not.toThrow();
+
+    const overviewWorkspace = {
+      ...commonWorkspace,
+      overview: entrySnapshot,
+      overviewRevision: createShortWorkspaceContentRevision(entrySnapshot),
+      overviewTruncated: true as const,
+      overviewOriginalLength: fullContent.length,
+      activeEntryId: undefined
+    };
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        activeResource: { ...activeResource, id: "overview-long" },
+        libraryWorkspace: overviewWorkspace
+      })
+    ).not.toThrow();
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        activeResource: { ...activeResource, id: "wrong-overview" },
+        libraryWorkspace: overviewWorkspace
       })
     ).toThrow();
   });
@@ -1310,6 +1542,22 @@ describe("DeepWrite desktop contracts", () => {
           "library.editor_mutation",
           { ...base, operation: "create" as const },
           { id: "library-create-event", context }
+        )
+      ).type
+    ).toBe("library.editor_mutation");
+    const { stageId: _stageId, ...overviewBase } = base;
+    expect(
+      SystemEventEnvelopeSchema.parse(
+        createEnvelope(
+          "library.editor_mutation",
+          {
+            ...overviewBase,
+            operation: "edit-overview" as const,
+            documentId: "material-overview-1",
+            title: "人物素材 · 库介绍",
+            text: "更新后的库介绍"
+          },
+          { id: "library-overview-event", context }
         )
       ).type
     ).toBe("library.editor_mutation");

@@ -26,6 +26,8 @@ import {
   LongFileRevisionSchema,
   LongProjectRelativePathSchema,
   LongVolumeIdSchema,
+  LongWorldbuildingCategoryIdSchema,
+  LongWorldbuildingItemIdSchema,
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
   LongWorkspaceNavigationSnapshotSchema,
@@ -35,6 +37,79 @@ import {
 
 export const LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS = 20_000;
 export const LONG_WORLDBUILDING_OVERVIEW_FOCUS_MAX_CHARACTERS = 8_000;
+export const LONG_WORLDBUILDING_DIRECTORY_MAX_CATEGORIES = 500;
+export const LONG_WORLDBUILDING_DIRECTORY_MAX_ITEMS = 2_000;
+
+const LongWorldbuildingDirectoryItemSchema = z
+  .object({
+    itemId: LongWorldbuildingItemIdSchema,
+    title: z.string().trim().min(1).max(256),
+    order: z.number().int().positive()
+  })
+  .strict();
+
+const LongWorldbuildingDirectoryCategorySchema = z.discriminatedUnion(
+  "format",
+  [
+    z
+      .object({
+        categoryId: LongWorldbuildingCategoryIdSchema,
+        title: z.string().trim().min(1).max(256),
+        order: z.number().int().positive(),
+        format: z.literal("text")
+      })
+      .strict(),
+    z
+      .object({
+        categoryId: LongWorldbuildingCategoryIdSchema,
+        title: z.string().trim().min(1).max(256),
+        order: z.number().int().positive(),
+        format: z.literal("list"),
+        itemCount: z.number().int().nonnegative(),
+        items: z
+          .array(LongWorldbuildingDirectoryItemSchema)
+          .max(LONG_WORLDBUILDING_DIRECTORY_MAX_ITEMS),
+        omittedItemCount: z.number().int().nonnegative()
+      })
+      .strict()
+      .superRefine((value, context) => {
+        if (value.itemCount !== value.items.length + value.omittedItemCount) {
+          context.addIssue({
+            code: "custom",
+            path: ["itemCount"],
+            message:
+              "Worldbuilding directory item count must include visible and omitted items."
+          });
+        }
+      })
+  ]
+);
+
+export const LongWorldbuildingDirectorySnapshotSchema = z
+  .object({
+    categories: z
+      .array(LongWorldbuildingDirectoryCategorySchema)
+      .max(LONG_WORLDBUILDING_DIRECTORY_MAX_CATEGORIES),
+    omittedCategoryCount: z.number().int().nonnegative()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const itemCount = value.categories.reduce(
+      (total, category) =>
+        total + (category.format === "list" ? category.items.length : 0),
+      0
+    );
+    if (itemCount > LONG_WORLDBUILDING_DIRECTORY_MAX_ITEMS) {
+      context.addIssue({
+        code: "custom",
+        path: ["categories"],
+        message: "Worldbuilding directory includes too many visible items."
+      });
+    }
+  });
+export type LongWorldbuildingDirectorySnapshot = z.infer<
+  typeof LongWorldbuildingDirectorySnapshotSchema
+>;
 
 const LongWorldbuildingFocusTextSnapshotSchema = z
   .object({
@@ -379,6 +454,7 @@ export const LongWorkspaceRuntimeContextSchema = z
     workspaceRevision: z.number().int().nonnegative(),
     projectRevision: z.number().int().nonnegative(),
     navigation: LongWorkspaceNavigationSnapshotSchema,
+    worldbuildingDirectory: LongWorldbuildingDirectorySnapshotSchema.optional(),
     worldbuildingFocus: LongWorldbuildingFocusSnapshotSchema.optional(),
     characterFocus: LongCharacterFocusSnapshotSchema.optional(),
     plotFocus: LongPlotFocusSnapshotSchema.optional()
@@ -446,6 +522,18 @@ export const LongWorkspaceRuntimeContextSchema = z
         path: ["activeFileRevision"],
         message:
           "Long runtime active file id and revision must be provided together."
+      });
+    }
+    if (
+      value.worldbuildingDirectory !== undefined &&
+      (value.activeRoot !== "worldbuilding" ||
+        value.activeAgentId !== "worldbuilding")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["worldbuildingDirectory"],
+        message:
+          "Long worldbuilding directory may only be provided to the worldbuilding agent."
       });
     }
     if (
@@ -625,6 +713,15 @@ export const CreateLongBookInputSchema = z
   .strict();
 export type CreateLongBookInput = z.infer<typeof CreateLongBookInputSchema>;
 
+export const LongDuplicateBookInputSchema = z
+  .object({
+    bookId: LongBookIdSchema
+  })
+  .strict();
+export type LongDuplicateBookInput = z.infer<
+  typeof LongDuplicateBookInputSchema
+>;
+
 export const CreateLongBookAtPathInputSchema = z
   .object({
     parentDirectory: z.string().trim().min(1),
@@ -675,6 +772,118 @@ export type LongImportWriteClawResult = z.infer<
   typeof LongImportWriteClawResultSchema
 >;
 
+export const LongLegacySyncModuleSchema = z.enum([
+  "worldbuilding",
+  "characters",
+  "plot"
+]);
+export type LongLegacySyncModule = z.infer<
+  typeof LongLegacySyncModuleSchema
+>;
+
+export const LongLegacySyncCountsSchema = z
+  .object({
+    worldbuilding: z.number().int().nonnegative(),
+    characters: z.number().int().nonnegative(),
+    outline: z.number().int().nonnegative().max(1),
+    volumes: z.number().int().nonnegative(),
+    plotPoints: z.number().int().nonnegative(),
+    storyEvents: z.number().int().nonnegative(),
+    chapterCards: z.number().int().nonnegative()
+  })
+  .strict();
+export type LongLegacySyncCounts = z.infer<
+  typeof LongLegacySyncCountsSchema
+>;
+
+const LongLegacySyncPreviewBaseSchema = z
+  .object({
+    sourceTitle: z.string().trim().min(1).max(256),
+    sourceKind: z.enum([
+      "write-claw-zip",
+      "long-workspace-json",
+      "book-json"
+    ]),
+    legacySchemaVersion: z.number().int().nonnegative(),
+    counts: LongLegacySyncCountsSchema,
+    warnings: z.array(z.string().trim().min(1).max(4_000)).max(10_000)
+  })
+  .strict();
+
+export const LongChooseLegacySyncSourceResultSchema =
+  LongLegacySyncPreviewBaseSchema.extend({
+    previewId: z.string().trim().min(1).max(256),
+    expiresAt: z.string().datetime()
+  }).strict();
+export type LongChooseLegacySyncSourceResult = z.infer<
+  typeof LongChooseLegacySyncSourceResultSchema
+>;
+
+export const LongPreviewLegacySyncAtPathInputSchema = z
+  .object({ sourcePath: z.string().trim().min(1) })
+  .strict();
+export const LongPreviewLegacySyncAtPathResultSchema =
+  LongLegacySyncPreviewBaseSchema.extend({
+    sourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/u)
+  }).strict();
+export type LongPreviewLegacySyncAtPathResult = z.infer<
+  typeof LongPreviewLegacySyncAtPathResultSchema
+>;
+
+export const LongApplyLegacySyncInputSchema = z
+  .object({
+    bookId: LongBookIdSchema,
+    previewId: z.string().trim().min(1).max(256),
+    expectedProjectRevision: z.number().int().nonnegative(),
+    modules: z.array(LongLegacySyncModuleSchema).min(1).max(3)
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (new Set(value.modules).size !== value.modules.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["modules"],
+        message: "Legacy sync modules must be unique."
+      });
+    }
+  });
+export type LongApplyLegacySyncInput = z.infer<
+  typeof LongApplyLegacySyncInputSchema
+>;
+
+export const LongApplyLegacySyncAtPathInputSchema = z.object({
+    bookId: LongBookIdSchema,
+    expectedProjectRevision: z.number().int().nonnegative(),
+    modules: z.array(LongLegacySyncModuleSchema).min(1).max(3),
+    sourcePath: z.string().trim().min(1),
+    expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/u)
+  }).strict().superRefine((value, context) => {
+    if (new Set(value.modules).size !== value.modules.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["modules"],
+        message: "Legacy sync modules must be unique."
+      });
+    }
+  });
+export type LongApplyLegacySyncAtPathInput = z.infer<
+  typeof LongApplyLegacySyncAtPathInputSchema
+>;
+
+export const LongApplyLegacySyncResultSchema = z
+  .object({
+    bookId: LongBookIdSchema,
+    summary: LongBookSummarySchema,
+    projectRevision: z.number().int().nonnegative(),
+    imported: LongLegacySyncCountsSchema,
+    skipped: LongLegacySyncCountsSchema,
+    warnings: z.array(z.string().trim().min(1).max(4_000)).max(10_000)
+  })
+  .strict();
+export type LongApplyLegacySyncResult = z.infer<
+  typeof LongApplyLegacySyncResultSchema
+>;
+
 export const LongImportPortableAtPathInputSchema = z
   .object({
     parentDirectory: z.string().trim().min(1),
@@ -705,12 +914,189 @@ export type LongImportPortableResult = z.infer<
   typeof LongImportPortableResultSchema
 >;
 
+export const LongContinuationImportEncodingSchema = z.enum([
+  "utf-8",
+  "utf-16le",
+  "utf-16be",
+  "gb18030"
+]);
+export type LongContinuationImportEncoding = z.infer<
+  typeof LongContinuationImportEncodingSchema
+>;
+
+export const LongContinuationImportChapterPreviewSchema = z
+  .object({
+    sourceName: z.string().trim().min(1).max(1_024),
+    title: z.string().trim().min(1).max(256),
+    order: z.number().int().positive(),
+    byteLength: z.number().int().positive(),
+    encoding: LongContinuationImportEncodingSchema
+  })
+  .strict();
+export type LongContinuationImportChapterPreview = z.infer<
+  typeof LongContinuationImportChapterPreviewSchema
+>;
+
+export const LongContinuationImportVolumePreviewSchema = z
+  .object({
+    sourceName: z.string().trim().min(1).max(1_024),
+    title: z.string().trim().min(1).max(256),
+    order: z.number().int().positive(),
+    chapters: z
+      .array(LongContinuationImportChapterPreviewSchema)
+      .min(1)
+      .max(100_000)
+  })
+  .strict();
+export type LongContinuationImportVolumePreview = z.infer<
+  typeof LongContinuationImportVolumePreviewSchema
+>;
+
+export const LongContinuationImportScanSchema = z
+  .object({
+    defaultTitle: z.string().trim().min(1).max(256),
+    mode: z.enum(["flat", "volume_folders"]),
+    volumeCount: z.number().int().positive(),
+    chapterCount: z.number().int().positive(),
+    checkpointCount: z.number().int().nonnegative(),
+    pendingVolumeTitle: z.string().trim().min(1).max(256),
+    pendingChapterTitle: z.string().trim().min(1).max(256),
+    volumes: z
+      .array(LongContinuationImportVolumePreviewSchema)
+      .min(1)
+      .max(10_000),
+    warnings: z.array(z.string().trim().min(1).max(4_000)).max(10_000)
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const chapterCount = value.volumes.reduce(
+      (total, volume) => total + volume.chapters.length,
+      0
+    );
+    if (
+      value.volumeCount !== value.volumes.length ||
+      value.chapterCount !== chapterCount ||
+      value.checkpointCount !== Math.max(0, chapterCount - 1)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["chapterCount"],
+        message: "Continuation import preview counts must match its volumes."
+      });
+    }
+    const pendingVolume = value.volumes.at(-1);
+    const pendingChapter = pendingVolume?.chapters.at(-1);
+    if (
+      pendingVolume?.title !== value.pendingVolumeTitle ||
+      pendingChapter?.title !== value.pendingChapterTitle
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["pendingChapterTitle"],
+        message: "Continuation import pending chapter must be the final ordered chapter."
+      });
+    }
+  });
+export type LongContinuationImportScan = z.infer<
+  typeof LongContinuationImportScanSchema
+>;
+
+export const LongChooseContinuationImportSourceResultSchema =
+  LongContinuationImportScanSchema.extend({
+    previewId: z.string().trim().min(1).max(256),
+    expiresAt: z.string().datetime()
+  }).strict();
+export type LongChooseContinuationImportSourceResult = z.infer<
+  typeof LongChooseContinuationImportSourceResultSchema
+>;
+
+export const LongPreviewContinuationImportAtPathInputSchema = z
+  .object({ sourcePath: z.string().trim().min(1) })
+  .strict();
+export type LongPreviewContinuationImportAtPathInput = z.infer<
+  typeof LongPreviewContinuationImportAtPathInputSchema
+>;
+
+export const LongPreviewContinuationImportAtPathResultSchema =
+  LongContinuationImportScanSchema.extend({
+    sourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/u)
+  }).strict();
+export type LongPreviewContinuationImportAtPathResult = z.infer<
+  typeof LongPreviewContinuationImportAtPathResultSchema
+>;
+
+export const LongImportContinuationInputSchema = z
+  .object({
+    previewId: z.string().trim().min(1).max(256),
+    title: z.string().trim().min(1).max(256),
+    genre: LongBookGenreSchema
+  })
+  .strict();
+export type LongImportContinuationInput = z.infer<
+  typeof LongImportContinuationInputSchema
+>;
+
+export const LongImportContinuationAtPathInputSchema = z
+  .object({
+    parentDirectory: z.string().trim().min(1),
+    sourcePath: z.string().trim().min(1),
+    expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+    title: z.string().trim().min(1).max(256),
+    genre: LongBookGenreSchema
+  })
+  .strict();
+export type LongImportContinuationAtPathInput = z.infer<
+  typeof LongImportContinuationAtPathInputSchema
+>;
+
+export const LongImportContinuationResultSchema = z
+  .object({
+    book: LongBookSchema,
+    summary: LongBookSummarySchema,
+    importedVolumeCount: z.number().int().positive(),
+    importedChapterCount: z.number().int().positive(),
+    checkpointCount: z.number().int().nonnegative(),
+    pendingChapterCardId: LongChapterCardIdSchema,
+    warnings: z.array(z.string().trim().min(1).max(4_000)).max(10_000)
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.book.id !== value.summary.id) {
+      context.addIssue({
+        code: "custom",
+        path: ["summary", "id"],
+        message: "Imported continuation book and summary must share the same id."
+      });
+    }
+    if (value.checkpointCount !== Math.max(0, value.importedChapterCount - 1)) {
+      context.addIssue({
+        code: "custom",
+        path: ["checkpointCount"],
+        message: "Continuation checkpoint count must leave exactly one pending chapter."
+      });
+    }
+  });
+export type LongImportContinuationResult = z.infer<
+  typeof LongImportContinuationResultSchema
+>;
+
 export const LongOpenBookInputSchema = z
   .object({
     bookId: LongBookIdSchema
   })
   .strict();
 export type LongOpenBookInput = z.infer<typeof LongOpenBookInputSchema>;
+
+export const LongRenameBookInputSchema = z
+  .object({
+    bookId: LongBookIdSchema,
+    expectedProjectRevision: z.number().int().nonnegative(),
+    title: z.string().trim().min(1).max(256)
+  })
+  .strict();
+export type LongRenameBookInput = z.infer<
+  typeof LongRenameBookInputSchema
+>;
 
 export const LongUpdateBindingsInputSchema = z
   .object({
@@ -1005,15 +1391,30 @@ export const LongCreateBookAtPathCommandEnvelopeSchema =
     type: z.literal("long.createBookAtPath"),
     payload: CreateLongBookAtPathInputSchema
   });
-export const LongImportWriteClawCommandEnvelopeSchema =
+export const LongDuplicateBookCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
-    type: z.literal("long.importWriteClaw"),
+    type: z.literal("long.duplicateBook"),
+    payload: LongDuplicateBookInputSchema
+  });
+export const LongChooseLegacySyncSourceCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.chooseLegacySyncSource"),
     payload: z.object({}).strict()
   });
-export const LongImportWriteClawAtPathCommandEnvelopeSchema =
+export const LongPreviewLegacySyncAtPathCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
-    type: z.literal("long.importWriteClawAtPath"),
-    payload: LongImportWriteClawAtPathInputSchema
+    type: z.literal("long.previewLegacySyncAtPath"),
+    payload: LongPreviewLegacySyncAtPathInputSchema
+  });
+export const LongApplyLegacySyncCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.applyLegacySync"),
+    payload: LongApplyLegacySyncInputSchema
+  });
+export const LongApplyLegacySyncAtPathCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.applyLegacySyncAtPath"),
+    payload: LongApplyLegacySyncAtPathInputSchema
   });
 export const LongImportPortableCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -1025,6 +1426,26 @@ export const LongImportPortableAtPathCommandEnvelopeSchema =
     type: z.literal("long.importPortableAtPath"),
     payload: LongImportPortableAtPathInputSchema
   });
+export const LongChooseContinuationImportSourceCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.chooseContinuationImportSource"),
+    payload: z.object({}).strict()
+  });
+export const LongPreviewContinuationImportAtPathCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.previewContinuationImportAtPath"),
+    payload: LongPreviewContinuationImportAtPathInputSchema
+  });
+export const LongImportContinuationCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.importContinuation"),
+    payload: LongImportContinuationInputSchema
+  });
+export const LongImportContinuationAtPathCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.importContinuationAtPath"),
+    payload: LongImportContinuationAtPathInputSchema
+  });
 export const LongListBooksCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("long.list"),
   payload: z.object({}).strict()
@@ -1032,6 +1453,10 @@ export const LongListBooksCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
 export const LongOpenBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("long.open"),
   payload: LongOpenBookInputSchema
+});
+export const LongRenameBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("long.rename"),
+  payload: LongRenameBookInputSchema
 });
 export const LongUpdateBindingsCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -1108,12 +1533,20 @@ export const LongWorkspaceCommandEnvelopeSchema = z.discriminatedUnion(
   [
     LongCreateBookCommandEnvelopeSchema,
     LongCreateBookAtPathCommandEnvelopeSchema,
-    LongImportWriteClawCommandEnvelopeSchema,
-    LongImportWriteClawAtPathCommandEnvelopeSchema,
+    LongDuplicateBookCommandEnvelopeSchema,
+    LongChooseLegacySyncSourceCommandEnvelopeSchema,
+    LongPreviewLegacySyncAtPathCommandEnvelopeSchema,
+    LongApplyLegacySyncCommandEnvelopeSchema,
+    LongApplyLegacySyncAtPathCommandEnvelopeSchema,
     LongImportPortableCommandEnvelopeSchema,
     LongImportPortableAtPathCommandEnvelopeSchema,
+    LongChooseContinuationImportSourceCommandEnvelopeSchema,
+    LongPreviewContinuationImportAtPathCommandEnvelopeSchema,
+    LongImportContinuationCommandEnvelopeSchema,
+    LongImportContinuationAtPathCommandEnvelopeSchema,
     LongListBooksCommandEnvelopeSchema,
     LongOpenBookCommandEnvelopeSchema,
+    LongRenameBookCommandEnvelopeSchema,
     LongUpdateBindingsCommandEnvelopeSchema,
     LongOpenExistingBookCommandEnvelopeSchema,
     LongOpenBookAtPathCommandEnvelopeSchema,

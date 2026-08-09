@@ -15,6 +15,7 @@ import {
 } from "@deepwrite/contracts";
 import { createId } from "@deepwrite/shared";
 import { uiMessage } from "../ui-feedback";
+import { mergeCustomModelSettings } from "../utils/customModelSettings";
 import AppIcon from "./AppIcon.vue";
 import PopupSelect from "./PopupSelect.vue";
 
@@ -29,9 +30,11 @@ type ModelConfigRow =
   | { key: string; type: "model"; model: DraftModel }
   | { key: string; type: "editor" };
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   mode: "directory" | "models";
   active?: boolean;
+  modelScope?: "all" | "custom";
+  embedded?: boolean;
   modelSettings: ModelSettings | null;
   modelLoading: boolean;
   modelSaving: boolean;
@@ -42,12 +45,17 @@ const props = defineProps<{
   modelAlertMessages: readonly string[];
   workspaceDirectoryPath: string | null;
   workspaceDirectoryLoading: boolean;
-}>();
+}>(), {
+  active: false,
+  modelScope: "all",
+  embedded: false
+});
 const emit = defineEmits<{
   saveModels: [settings: ModelSettingsInput];
   refreshFreeModels: [];
   testModel: [model: ModelConfigInput];
   chooseWorkspaceDirectory: [];
+  openOfficialModels: [];
 }>();
 
 const draftModels = ref<DraftModel[]>([]);
@@ -84,15 +92,24 @@ const reasoningOptions = BUILT_IN_REASONING_LEVELS.map((value) => ({
   value,
   label: builtInThinkingLabels[value]
 }));
-const providerOptions = [
+const allProviderOptions = [
   { value: "deepwrite-free", label: "DeepWrite 免费模型" },
   { value: "deepseek", label: "DeepSeek" },
   { value: "kimi-coding", label: "Kimi Coding" },
+  { value: "dashscope", label: "阿里云百炼" },
+  { value: "zhipu", label: "智谱 GLM" },
+  { value: "moonshot", label: "Kimi 开放平台" },
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "google", label: "Google" },
+  { value: "ollama", label: "Ollama" },
   { value: "custom", label: "其他兼容服务" }
 ] as const;
+const providerOptions = computed(() =>
+  props.modelScope === "custom"
+    ? allProviderOptions.filter((option) => option.value !== "deepwrite-free")
+    : allProviderOptions
+);
 const deepwriteFreeModels = computed(() => props.modelSettings?.deepwriteFreeModels ?? []);
 const deepwriteFreeModelOptions = computed(() =>
   deepwriteFreeModels.value.map((model) => ({
@@ -159,12 +176,14 @@ function thinkingLabel(level: ThinkingLevel): string {
 }
 
 function resetModelDraft(settings: ModelSettings | null): void {
-  draftModels.value = (settings?.models ?? []).map((model) => ({
-    ...model,
-    thinkingLevelOptions: cloneThinkingLevelOptions(model.thinkingLevelOptions),
-    temperatureOptions: cloneTemperatureOptions(model.temperatureOptions),
-    customThinkingLevel: findCustomThinkingLevel(model.thinkingLevelOptions)
-  }));
+  draftModels.value = (settings?.models ?? [])
+    .filter((model) => props.modelScope === "all" || !model.managedBy)
+    .map((model) => ({
+      ...model,
+      thinkingLevelOptions: cloneThinkingLevelOptions(model.thinkingLevelOptions),
+      temperatureOptions: cloneTemperatureOptions(model.temperatureOptions),
+      customThinkingLevel: findCustomThinkingLevel(model.thinkingLevelOptions)
+    }));
   draftDefaultModelId.value = settings?.defaultModelId ?? "";
   modelEditor.value = null;
 }
@@ -351,6 +370,18 @@ function applyProviderPreset(provider: string): void {
   } else if (provider === "kimi-coding") {
     editor.api = "openai-completions";
     editor.baseUrl = "https://api.kimi.com/coding/v1";
+  } else if (provider === "dashscope") {
+    editor.api = "openai-completions";
+    editor.baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+  } else if (provider === "zhipu") {
+    editor.api = "openai-completions";
+    editor.baseUrl = "https://open.bigmodel.cn/api/paas/v4";
+  } else if (provider === "moonshot") {
+    editor.api = "openai-completions";
+    editor.baseUrl = "https://api.moonshot.cn/v1";
+  } else if (provider === "ollama") {
+    editor.api = "openai-completions";
+    editor.baseUrl = "http://127.0.0.1:11434/v1";
   } else if (provider === "google") {
     editor.api = "google-generative-ai";
     editor.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
@@ -547,7 +578,15 @@ function removeModel(modelId: string): void {
   }
   draftModels.value = draftModels.value.filter((model) => model.id !== modelId);
   if (draftDefaultModelId.value === modelId) {
-    draftDefaultModelId.value = draftModels.value[0]?.id ?? "";
+    if (props.modelScope === "custom") {
+      const remainingCustomIds = new Set(draftModels.value.map((model) => model.id));
+      draftDefaultModelId.value =
+        props.modelSettings?.models.find(
+          (model) => model.id !== modelId && (Boolean(model.managedBy) || remainingCustomIds.has(model.id))
+        )?.id ?? draftModels.value[0]?.id ?? "";
+    } else {
+      draftDefaultModelId.value = draftModels.value[0]?.id ?? "";
+    }
   }
   if (modelEditor.value?.id === modelId) {
     modelEditor.value = null;
@@ -555,14 +594,33 @@ function removeModel(modelId: string): void {
 }
 
 function setDefaultModel(modelId: string): void {
+  if (
+    props.modelSaving ||
+    modelEditor.value ||
+    draftDefaultModelId.value === modelId
+  ) {
+    return;
+  }
   draftDefaultModelId.value = modelId;
+  submitModelSettings();
 }
 
 function submitModelSettings(): void {
-  const models: ModelConfigInput[] = draftModels.value.map(toModelInput);
+  const draftInputs = draftModels.value.map(toModelInput);
+  if (props.modelScope === "custom") {
+    emit(
+      "saveModels",
+      mergeCustomModelSettings(
+        (props.modelSettings?.models ?? []).map(toModelInput),
+        draftInputs,
+        draftDefaultModelId.value
+      )
+    );
+    return;
+  }
   emit("saveModels", {
-    models,
-    defaultModelId: draftDefaultModelId.value || models[0]?.id || ""
+    models: draftInputs,
+    defaultModelId: draftDefaultModelId.value || draftInputs[0]?.id || ""
   });
 }
 
@@ -574,9 +632,9 @@ function discardModelChanges(): void {
 <template>
       <section
         class="workspace-settings-panel"
-        :class="{ 'is-model-config': mode === 'models' }"
+        :class="{ 'is-model-config': mode === 'models', 'is-embedded': embedded }"
       >
-        <header>
+        <header v-if="!embedded">
           <div>
             <span class="dialog-eyebrow">DeepWrite</span>
             <h2>
@@ -617,24 +675,27 @@ function discardModelChanges(): void {
         <div v-else-if="mode === 'models'" class="dialog-content model-config-content">
           <div ref="modelConfigScrollArea" class="model-config-scroll-area">
             <div
-              v-if="modelAlertMessages.length > 0"
+              v-if="modelScope === 'all' && modelAlertMessages.length > 0"
               class="dialog-description model-price-notice"
-              role="note"
               aria-label="模型公告"
             >
-              <p
+              <button
                 v-for="(message, index) in modelAlertMessages"
                 :key="`${index}:${message}`"
+                class="model-price-notice-link"
+                type="button"
+                title="前往设置官方模型"
+                @click="emit('openOfficialModels')"
               >
                 {{ message }}
-              </p>
+              </button>
             </div>
 
             <div v-if="modelLoading" class="dialog-note">正在读取模型配置…</div>
             <template v-else>
               <div v-if="draftModels.length === 0" class="model-empty-state">
-                <strong>尚未配置真实模型</strong>
-                <span>当前对话继续使用 DeepWrite Faux。添加模型并设为默认后，新的请求会走真实 Provider。</span>
+                <strong>{{ modelScope === "custom" ? "尚未配置自定义模型" : "尚未配置真实模型" }}</strong>
+                <span>{{ modelScope === "custom" ? "添加自定义模型后，可在这里测试连接、维护密钥并设为全局默认模型。" : "当前对话继续使用 DeepWrite Faux。添加模型并设为默认后，新的请求会走真实 Provider。" }}</span>
               </div>
 
               <template v-for="row in modelConfigRows" :key="row.key">
@@ -837,9 +898,10 @@ function discardModelChanges(): void {
                 <button
                   type="button"
                   :class="{ 'is-active': draftDefaultModelId === row.model.id }"
+                  :disabled="modelSaving || Boolean(modelEditor)"
                   @click="setDefaultModel(row.model.id)"
                 >
-                  {{ draftDefaultModelId === row.model.id ? "默认" : "设为默认" }}
+                  {{ modelSaving && draftDefaultModelId === row.model.id ? "保存中…" : draftDefaultModelId === row.model.id ? "默认" : "设为默认" }}
                 </button>
                 <button v-if="row.model.managedBy !== 'deepwrite-official'" type="button" @click="editModel(row.model)">编辑</button>
                 <button

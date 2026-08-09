@@ -45,7 +45,13 @@ function fakeOpened(
       revision: "v1:0:00000000",
       updatedAt: now
     },
+    featureSettings: {
+      worldbuildingItemLayout: "top-tabs" as const,
+      characterAndContinuityItemLayout: "top-tabs" as const,
+      plotItemLayout: "top-tabs" as const
+    },
     worldbuilding: [],
+    characterTypes: [{ id: "protagonist" as const, title: "主角", order: 1 }],
     characters: [],
     characterFiles: [],
     plot: {
@@ -122,6 +128,7 @@ function fakeOpened(
         committedChapters: 0
       },
       worldbuilding: [],
+      characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
       characters: [],
       volumes: [{ id: "volume_default", title: "第一卷", order: 1 }],
       arcs: [],
@@ -380,7 +387,8 @@ describe("LongProjectCatalog", () => {
         volumeId: "volume_default",
         primaryArcId: "arc_catalog-large",
         title: `第 ${index + 1} 章 ${"长".repeat(180)}`,
-        narrativeOrder: index + 1
+        narrativeOrder: index + 1,
+        bodyStatus: "empty" as const
       })
     );
     oversized.navigation.counts = {
@@ -425,7 +433,8 @@ describe("LongProjectCatalog", () => {
       volumeId: "volume_default",
       primaryArcId: "arc_catalog-scale",
       title: `第 ${index + 1} 章`,
-      narrativeOrder: index + 1
+      narrativeOrder: index + 1,
+      bodyStatus: "empty" as const
     }));
     opened.summary.navigation = {
       ...opened.summary.navigation,

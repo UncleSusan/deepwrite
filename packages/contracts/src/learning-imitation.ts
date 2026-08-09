@@ -61,6 +61,13 @@ export const LearningImitationDocumentSchema = z.object({
       message: "A truncated learning document must report its original length."
     });
   }
+  if (value.truncated !== true && value.originalLength !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["originalLength"],
+      message: "An untruncated learning document must omit originalLength."
+    });
+  }
 });
 export type LearningImitationDocument = z.infer<
   typeof LearningImitationDocumentSchema

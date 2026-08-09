@@ -5,7 +5,8 @@ import {
   SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_SYSTEM_PROMPT_MAX_LENGTH
 } from "./agent-team";
-import { ShortWorkspaceAgentIdSchema } from "./workspace";
+import { LongAgentIdSchema } from "./long-workspace";
+import { WorkspaceAgentIdSchema } from "./workspace";
 
 export const SUBAGENT_AUTHORING_MAX_SKILLS = 4;
 export const SUBAGENT_AUTHORING_SKILL_BODY_MAX_LENGTH = 20_000;
@@ -46,8 +47,16 @@ export const SUBAGENT_AUTHORING_OUTPUT_MODE_LABELS: Record<
   handoff: "只交回结论"
 };
 
+export const SubagentAuthoringParentAgentIdSchema = z.union([
+  WorkspaceAgentIdSchema,
+  LongAgentIdSchema
+]);
+export type SubagentAuthoringParentAgentId = z.infer<
+  typeof SubagentAuthoringParentAgentIdSchema
+>;
+
 export const SubagentAuthoringRuntimeContextSchema = z.object({
-  parentAgentId: ShortWorkspaceAgentIdSchema,
+  parentAgentId: SubagentAuthoringParentAgentIdSchema,
   parentAgentLabel: z.string().trim().min(1).max(80),
   outputMode: SubagentAuthoringOutputModeSchema,
   skills: z

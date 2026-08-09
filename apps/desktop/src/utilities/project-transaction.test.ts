@@ -16,6 +16,7 @@ import {
   ProjectTransactionConflictError,
   commitProjectTransaction,
   projectTransactionContentSha256,
+  projectTransactionFileIdentity,
   recoverProjectTransaction
 } from "./project-transaction";
 
@@ -36,6 +37,19 @@ afterEach(async () => {
 });
 
 describe("project transaction", () => {
+  it("keeps filesystem identities exact beyond the safe integer range", () => {
+    const device = 9_007_199_254_740_992n;
+    const firstInode = 9_007_199_254_740_992n;
+    const secondInode = firstInode + 1n;
+
+    expect(Number(firstInode)).toBe(Number(secondInode));
+    expect(
+      projectTransactionFileIdentity({ dev: device, ino: firstInode })
+    ).not.toBe(
+      projectTransactionFileIdentity({ dev: device, ino: secondInode })
+    );
+  });
+
   it("commits multiple existing and new files as one recoverable unit", async () => {
     const root = await temporaryProject();
     await mkdir(join(root, "long"), { recursive: true });

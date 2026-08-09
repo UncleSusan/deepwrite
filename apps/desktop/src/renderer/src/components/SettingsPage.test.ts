@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
+import appSource from "../App.vue?raw";
 import source from "./SettingsPage.vue?raw";
 
 describe("SettingsPage", () => {
+  it("can open directly on a requested settings category", () => {
+    expect(source).toContain("initialCategory?: string");
+    expect(source).toContain('ref(props.initialCategory ?? "general")');
+  });
+
   it("offers a persisted auto-save switch in general settings", () => {
     expect(source).toContain("<strong>自动保存</strong>");
     expect(source).toContain(':checked="autoSaveEnabled"');
@@ -58,16 +64,32 @@ describe("SettingsPage", () => {
 
   it("shows usage above the official models entry", () => {
     const usageIndex = source.indexOf('{ id: "usage", label: "用量"');
+    const customModelsIndex = source.indexOf(
+      '{ id: "custom-models", label: "自定义模型配置"'
+    );
     const officialModelsIndex = source.indexOf(
-      '{ id: "official-models", label: "DeepWrite 官方模型"'
+      '{ id: "official-models", label: "DeepWrite 官方国内模型"'
     );
 
     expect(usageIndex).toBeGreaterThan(-1);
-    expect(officialModelsIndex).toBeGreaterThan(usageIndex);
+    expect(customModelsIndex).toBeGreaterThan(usageIndex);
+    expect(officialModelsIndex).toBeGreaterThan(customModelsIndex);
+    expect(source).toContain('model-scope="custom"');
+    expect(source).toContain('emit("loadModels")');
+    expect(source).toContain("emit('saveModels', $event)");
+    expect(source).toContain("emit('testModel', $event)");
     expect(source).toContain("<OfficialModelsPanel");
     expect(source).toContain("emit('saveOfficialToken', $event)");
     expect(source).toContain('if (id === "official-models")');
     expect(source).toContain('emit("loadOfficialModels")');
+  });
+
+  it("connects custom model management to the existing app model state and actions", () => {
+    expect(appSource).toContain(':model-loading="modelLoading"');
+    expect(appSource).toContain(':model-saving="modelSaving"');
+    expect(appSource).toContain('@load-models="loadModelSettings"');
+    expect(appSource).toContain('@save-models="saveModelSettings"');
+    expect(appSource).toContain('@test-model="testModel"');
   });
 
   it("lets users replace a font-size value and previews valid input immediately", () => {

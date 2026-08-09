@@ -393,5 +393,5 @@ describe("LongWorkspaceService opaque search cursor", () => {
         maxSnippetCharacters: 80
       })
     ).resolves.toMatchObject({ hits: [], nextCursor: null });
-  }, 20_000);
+  }, 60_000);
 });

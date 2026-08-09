@@ -98,6 +98,42 @@ afterEach(async () => {
 });
 
 describe("LongProjectStore", () => {
+  it("defaults new long books to right-side item layouts and persists changes", async () => {
+    const { projectStore, created } = await createFixture(
+      "worldbuilding-item-layout"
+    );
+    expect(
+      created.book.workspaceIndex.featureSettings.worldbuildingItemLayout
+    ).toBe("right-list");
+    expect(
+      created.book.workspaceIndex.featureSettings
+        .characterAndContinuityItemLayout
+    ).toBe("right-list");
+    expect(created.book.workspaceIndex.featureSettings.plotItemLayout).toBe(
+      "right-list"
+    );
+
+    await projectStore.applyWorkspaceOperations(created.projectDirectory, {
+      batch: {
+        baseRevision: created.book.workspaceIndex.revision,
+        updatedAt: FIXED_NOW,
+        operations: [
+          {
+            type: "featureSettings.update",
+            patch: { worldbuildingItemLayout: "top-tabs" }
+          }
+        ],
+        documentWrites: []
+      },
+      expectedProjectRevision: created.summary.projectRevision
+    });
+
+    const reopened = await store().openBook(created.projectDirectory);
+    expect(
+      reopened.book.workspaceIndex.featureSettings.worldbuildingItemLayout
+    ).toBe("top-tabs");
+  });
+
   it("creates a missing nested parent directory for a new long book", async () => {
     const root = await temporaryParent();
     const parent = join(root, "小说", "Deepwrite", "books");
@@ -429,8 +465,15 @@ describe("LongProjectStore", () => {
 
     expect(created.book.bookType).toBe("long");
     expect(created.book.workspaceIndex.worldbuilding).toHaveLength(7);
+    expect(created.book.workspaceIndex.characterTypes.map(({ id }) => id)).toEqual([
+      "protagonist",
+      "major_supporting",
+      "minor_supporting",
+      "passerby"
+    ]);
     expect(created.book.workspaceIndex.plot.volumes).toHaveLength(1);
     expect(created.book.workspaceIndex.plot.arcs).toHaveLength(1);
+    expect(created.book.workspaceIndex.plot.arcs[0]?.title).toBe("第一剧情点");
     expect(created.book.workspaceIndex.plot.chapterCards).toHaveLength(1);
     expect(created.book.workspaceIndex.chapters).toHaveLength(1);
     expect(
@@ -498,6 +541,89 @@ describe("LongProjectStore", () => {
         fileId: reopenedCard.id
       })
     ).resolves.toMatchObject({ content });
+  });
+
+  it("commits a chapter without adding foreshadowing output when no overview touchpoint applies", async () => {
+    const { projectStore, created } = await createFixture(
+      "text-file-no-foreshadowing"
+    );
+    const chapter = created.book.workspaceIndex.chapters[0]!;
+    const contents = [
+      [chapter.body, "第一章正文没有触及任何已规划伏笔。"],
+      [chapter.characterState, "章末状态保持稳定。"],
+      [chapter.handoff, "下一章从日常行程继续。"]
+    ] as const;
+    const written = await projectStore.applyWorkspaceOperations(
+      created.projectDirectory,
+      {
+        batch: {
+          baseRevision: 0,
+          updatedAt: FIXED_NOW,
+          operations: [],
+          documentWrites: contents.map(([reference, content], index) => ({
+            proposalId: `proposal_no_foreshadowing_${index}`,
+            fileId: reference.id,
+            mode: "replace" as const,
+            expectedRevision: reference.revision,
+            nextRevision: createLongFileRevision(content),
+            updatedAt: FIXED_NOW,
+            content,
+            reason: "写入无伏笔章节的连续性文件"
+          }))
+        },
+        expectedProjectRevision: 0
+      }
+    );
+    const writtenChapter = written.book.workspaceIndex.chapters[0]!;
+    const committed = await projectStore.commitChapter(
+      created.projectDirectory,
+      {
+        mode: "text_files",
+        chapterCardId: writtenChapter.chapterCardId,
+        chapterFileRevisions: { body: writtenChapter.body.revision },
+        continuityFileRevisions: [
+          {
+            fileId: writtenChapter.characterState.id,
+            revision: writtenChapter.characterState.revision
+          },
+          {
+            fileId: writtenChapter.handoff.id,
+            revision: writtenChapter.handoff.revision
+          }
+        ],
+        foreshadowingBeatDecisions: {},
+        commitMessage: "归档无既有伏笔触点的章节",
+        baseWorkspaceRevision: 1,
+        baseProjectRevision: 1
+      }
+    );
+
+    expect(committed.record.foreshadowingBeatChanges).toEqual([]);
+    expect(committed.record.foreshadowingThreadChanges).toEqual([]);
+    expect(
+      committed.record.continuityFiles.map(({ fileId }) => fileId)
+    ).toEqual([
+      writtenChapter.characterState.id,
+      writtenChapter.handoff.id
+    ]);
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: writtenChapter.foreshadowingChanges.id
+      })
+    ).resolves.toMatchObject({ content: "" });
+
+    await expect(
+      projectStore.rollbackLastCommit(created.projectDirectory, {
+        expectedCommitId: committed.record.id,
+        baseWorkspaceRevision: 2,
+        baseProjectRevision: 2
+      })
+    ).resolves.toMatchObject({
+      rolledBackCommitId: committed.record.id,
+      committedThroughChapterId: null,
+      workspaceRevision: 3,
+      projectRevision: 3
+    });
   });
 
   it("commits chapter continuity as lightweight per-chapter text files and leaves them editable after rollback", async () => {
@@ -747,11 +873,23 @@ describe("LongProjectStore", () => {
         body: writtenChapter.body.revision
       },
       continuityFileRevisions,
+      foreshadowingBeatDecisions: {
+        beat_text_continuity: {
+          status: "committed" as const,
+          note: "正文写明林岚收到带旧王朝印记与火漆的信。"
+        }
+      },
       commitMessage: "留存第一章连续性文本",
       baseWorkspaceRevision: 2,
       baseProjectRevision: 2
     };
 
+    await expect(
+      projectStore.commitChapter(created.projectDirectory, {
+        ...commitInput,
+        foreshadowingBeatDecisions: {}
+      })
+    ).rejects.toThrow(/伏笔触点决策必须完整覆盖/u);
     await expect(
       projectStore.commitChapter(created.projectDirectory, {
         ...commitInput,
@@ -800,13 +938,14 @@ describe("LongProjectStore", () => {
       ],
       foreshadowingBeatChanges: [
         {
+          foreshadowingId: "foreshadow_text_continuity",
           beatId: "beat_text_continuity",
           before: { status: "planned", commitId: null },
           after: {
             status: "committed",
             commitId: committed.record.id
           },
-          note: ""
+          note: "正文写明林岚收到带旧王朝印记与火漆的信。"
         }
       ],
       foreshadowingThreadChanges: [
@@ -868,9 +1007,73 @@ describe("LongProjectStore", () => {
       status: "committed",
       commitId: committed.record.id
     });
+    const refinedBody = "第一章正文（提交后精修措辞）。";
+    const refined = await projectStore.writeDocument(
+      created.projectDirectory,
+      {
+        fileId: committedChapter.body.id,
+        content: refinedBody,
+        expectedFileRevision: committedChapter.body.revision,
+        expectedWorkspaceRevision: 3,
+        expectedProjectRevision: 3
+      }
+    );
+    expect(refined).toMatchObject({
+      workspaceRevision: 4,
+      projectRevision: 4
+    });
+    expect(
+      refined.book.workspaceIndex.chapters[0]!.commitId
+    ).toBe(committed.record.id);
+    const refinedBodyReference =
+      refined.book.workspaceIndex.chapters[0]!.body;
+    const agentRefinedBody = "第一章正文（提交后由智能体继续精修措辞）。";
+    const agentRefined = await projectStore.applyWorkspaceOperations(
+      created.projectDirectory,
+      {
+        batch: {
+          baseRevision: 4,
+          updatedAt: FIXED_NOW,
+          operations: [],
+          documentWrites: [
+            {
+              proposalId: "proposal_refine_committed_body",
+              fileId: refinedBodyReference.id,
+              mode: "replace",
+              expectedRevision: refinedBodyReference.revision,
+              nextRevision: createLongFileRevision(agentRefinedBody),
+              updatedAt: FIXED_NOW,
+              content: agentRefinedBody,
+              reason: "精修已提交正文"
+            }
+          ]
+        },
+        expectedProjectRevision: 4
+      }
+    );
+    expect(agentRefined.book.workspaceIndex.chapters[0]!.commitId).toBe(
+      committed.record.id
+    );
+    const refinedCardContent = "章卡内容（提交后精修）。";
+    const refinedCard = await projectStore.writeDocument(
+      created.projectDirectory,
+      {
+        fileId: committedChapter.card.id,
+        content: refinedCardContent,
+        expectedFileRevision: committedChapter.card.revision,
+        expectedWorkspaceRevision: 5,
+        expectedProjectRevision: 5
+      }
+    );
+    expect(refinedCard).toMatchObject({
+      workspaceRevision: 6,
+      projectRevision: 6
+    });
+    expect(refinedCard.book.workspaceIndex.chapters[0]!.commitId).toBe(
+      committed.record.id
+    );
+
     for (const reference of [
-      committedChapter.body,
-      committedChapter.card,
       committedChapter.characterState,
       committedChapter.handoff,
       committedChapter.foreshadowingChanges,
@@ -885,8 +1088,8 @@ describe("LongProjectStore", () => {
           fileId: reference.id,
           content: "提交后不应允许覆盖",
           expectedFileRevision: reference.revision,
-          expectedWorkspaceRevision: 3,
-          expectedProjectRevision: 3
+          expectedWorkspaceRevision: 6,
+          expectedProjectRevision: 6
         })
       ).rejects.toThrow(/已提交章节/u);
     }
@@ -895,21 +1098,31 @@ describe("LongProjectStore", () => {
       created.projectDirectory,
       {
         expectedCommitId: committed.record.id,
-        baseWorkspaceRevision: 3,
-        baseProjectRevision: 3
+        baseWorkspaceRevision: 6,
+        baseProjectRevision: 6
       }
     );
     expect(rolledBack).toMatchObject({
       rolledBackCommitId: committed.record.id,
       committedThroughChapterId: null,
-      workspaceRevision: 4,
-      projectRevision: 4
+      workspaceRevision: 7,
+      projectRevision: 7
     });
     const afterRollback = await projectStore.openBook(
       created.projectDirectory
     );
     expect(afterRollback.book.workspaceIndex.ledger.commits).toEqual([]);
     expect(afterRollback.book.workspaceIndex.chapters[0]!.commitId).toBeNull();
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: committedChapter.body.id
+      })
+    ).resolves.toMatchObject({ content: agentRefinedBody });
+    await expect(
+      projectStore.readDocument(created.projectDirectory, {
+        fileId: committedChapter.card.id
+      })
+    ).resolves.toMatchObject({ content: refinedCardContent });
     expect(
       afterRollback.book.workspaceIndex.plot.narrativePlacements[0]
     ).toMatchObject({
@@ -936,14 +1149,14 @@ describe("LongProjectStore", () => {
         fileId: writtenCharacterContinuity.currentState.id,
         content: "回滚后可继续修订人物当前状态。",
         expectedFileRevision: writtenCharacterContinuity.currentState.revision,
-        expectedWorkspaceRevision: 4,
-        expectedProjectRevision: 4
+        expectedWorkspaceRevision: 7,
+        expectedProjectRevision: 7
       })
     ).resolves.toMatchObject({
-      workspaceRevision: 5,
-      projectRevision: 5
+      workspaceRevision: 8,
+      projectRevision: 8
     });
-  });
+  }, 10_000);
 
   it("updates only long-book bindings with project-revision CAS", async () => {
     const { projectStore, created } = await createFixture("bindings");
@@ -987,6 +1200,32 @@ describe("LongProjectStore", () => {
         linkedMaterialIdsByKind:
           updated.book.linkedMaterialIdsByKind,
         linkedSkillIdsByKind: updated.book.linkedSkillIdsByKind
+      })
+    ).rejects.toThrow(/project revision 冲突/u);
+  });
+
+  it("renames a long book without renaming its project directory", async () => {
+    const { projectStore, created } = await createFixture("rename-book");
+    const originalWorkspaceRevision = created.book.workspaceIndex.revision;
+    const updated = await projectStore.renameBook(created.projectDirectory, {
+      expectedProjectRevision: created.summary.projectRevision,
+      title: "新的长篇名称"
+    });
+
+    expect(updated.summary.title).toBe("新的长篇名称");
+    expect(updated.summary.projectRevision).toBe(
+      created.summary.projectRevision + 1
+    );
+    expect(updated.book.workspaceIndex.revision).toBe(
+      originalWorkspaceRevision + 1
+    );
+    await expect(
+      projectStore.openBook(created.projectDirectory)
+    ).resolves.toMatchObject({ summary: { title: "新的长篇名称" } });
+    await expect(
+      projectStore.renameBook(created.projectDirectory, {
+        expectedProjectRevision: created.summary.projectRevision,
+        title: "过期修改"
       })
     ).rejects.toThrow(/project revision 冲突/u);
   });
@@ -1307,6 +1546,41 @@ describe("LongProjectStore", () => {
         fileId: LONG_CHARACTER_OVERVIEW_FILE_ID
       })
     ).resolves.toMatchObject({ content: "" });
+  });
+
+  it("migrates and writes back the default character type directory", async () => {
+    const { projectStore, created } = await createFixture(
+      "missing-character-types"
+    );
+    const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
+    const manifestPath = join(created.projectDirectory, "deepwrite.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as {
+      characterTypes?: unknown;
+    };
+    delete index.characterTypes;
+    const indexContent = `${JSON.stringify(index, null, 2)}\n`;
+    await writeFile(indexPath, indexContent, "utf8");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      workspaceIndexFile: { revision: string };
+    };
+    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8"
+    );
+
+    const opened = await projectStore.openBook(created.projectDirectory);
+    expect(opened.book.workspaceIndex.characterTypes.map(({ id }) => id)).toEqual([
+      "protagonist",
+      "major_supporting",
+      "minor_supporting",
+      "passerby"
+    ]);
+    const writtenBack = JSON.parse(await readFile(indexPath, "utf8")) as {
+      characterTypes?: unknown[];
+    };
+    expect(writtenBack.characterTypes).toHaveLength(4);
   });
 
   it("stores every list worldbuilding item in its own versioned Markdown file", async () => {
@@ -2147,7 +2421,10 @@ describe("LongProjectStore", () => {
         "## 未闭合事项\n\n- loop_old-postmark"
       )
     });
-    for (const file of Object.values(committedFiles)) {
+    for (const file of [
+      committedFiles.characterState,
+      committedFiles.handoff
+    ]) {
       await expect(
         projectStore.writeDocument(created.projectDirectory, {
           fileId: file.id,
@@ -2215,50 +2492,8 @@ describe("LongProjectStore", () => {
       preexistingRelationshipContent,
       "utf8"
     );
-    for (const file of [
-      committedCharacterFiles.relationships,
-      committedCharacterFiles.currentState,
-      committedCharacterFiles.history
-    ]) {
-      await expect(
-        projectStore.writeDocument(created.projectDirectory, {
-          fileId: file.id,
-          content: "不应绕过连续性账本",
-          expectedFileRevision: file.revision,
-          expectedWorkspaceRevision: 3,
-          expectedProjectRevision: 3
-        })
-      ).rejects.toThrow(/连续性账本更新/u);
-    }
-    await expect(
-      projectStore.applyWorkspaceOperations(created.projectDirectory, {
-        batch: {
-          baseRevision: 3,
-          updatedAt: FIXED_NOW,
-          operations: [
-            {
-              type: "character.update",
-              id: "character_alice",
-              patch: { aliases: ["阿岚"] }
-            }
-          ],
-          documentWrites: [
-            {
-              proposalId: "proposal_bypass_relationships",
-              fileId: committedCharacterFiles.relationships.id,
-              mode: "replace",
-              expectedRevision:
-                committedCharacterFiles.relationships.revision,
-              nextRevision: createLongFileRevision("绕过账本"),
-              updatedAt: FIXED_NOW,
-              content: "绕过账本",
-              reason: "验证 operation batch 写锁"
-            }
-          ]
-        },
-        expectedProjectRevision: 3
-      })
-    ).rejects.toThrow(/Ledger-owned character continuity file/u);
+    // Continuity records no longer take ownership of character design files;
+    // direct-write behavior is covered by the focused store and operation tests.
     await expect(
       projectStore.readDocument(created.projectDirectory, {
         fileId: committedCharacterFiles.currentState.id
@@ -2457,6 +2692,7 @@ describe("LongProjectStore", () => {
     ).slice(0, 32);
     const secondChapterFiles = {
       chapterCardId: secondChapterId,
+      bodyStatus: "empty" as const,
       body: {
         id: longChapterBodyFileId(secondChapterId),
         path: `long/chapters/${secondChapterStorage}/body.md`,

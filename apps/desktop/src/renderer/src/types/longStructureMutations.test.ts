@@ -313,6 +313,23 @@ function plotSnapshot(): LongWorkspaceIndexSnapshot {
 }
 
 describe("long structure mutation builder", () => {
+  it("builds per-book item layout updates", () => {
+    expect(
+      builder().updateFeatureSettings({
+        characterAndContinuityItemLayout: "right-list",
+        plotItemLayout: "right-list"
+      }).operations
+    ).toEqual([
+      {
+        type: "featureSettings.update",
+        patch: {
+          characterAndContinuityItemLayout: "right-list",
+          plotItemLayout: "right-list"
+        }
+      }
+    ]);
+  });
+
   it("rebases a pending structure batch only across document-only revisions", () => {
     const before = snapshot();
     const batch = builder(before).updateWorldbuilding("world_history", {
@@ -440,6 +457,7 @@ describe("long structure mutation builder", () => {
         },
         files: {
           chapterCardId: "chapter_generated",
+          bodyStatus: "empty",
           body: {
             id: "file_chapter_generated:body",
             path: "long/chapters/chapter_generated/body.md",
@@ -481,6 +499,21 @@ describe("long structure mutation builder", () => {
         }
       }
     ]);
+
+    expect(
+      builder().createChapter({
+        title: "独立章节",
+        volumeId: "volume_one",
+        primaryArcId: null
+      }).operations[0]
+    ).toMatchObject({
+      type: "chapter.create",
+      chapterCard: {
+        volumeId: "volume_one",
+        primaryArcId: null,
+        title: "独立章节"
+      }
+    });
   });
 
   it("derives create order and reorder operations without mutating the snapshot", () => {
@@ -618,6 +651,19 @@ describe("long structure mutation builder", () => {
         id: "chapter_one",
         toVolumeId: "volume_two",
         toPrimaryArcId: "arc_return"
+      }
+    ]);
+
+    expect(
+      builder().updateChapter("chapter_one", {
+        primaryArcId: null
+      }).operations
+    ).toEqual([
+      {
+        type: "chapter.move",
+        id: "chapter_one",
+        toVolumeId: "volume_one",
+        toPrimaryArcId: null
       }
     ]);
   });

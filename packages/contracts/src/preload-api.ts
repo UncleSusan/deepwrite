@@ -7,6 +7,7 @@ import type {
 import type {
   ModelConnectionTestResult,
   ModelConfigInput,
+  OfficialModelBalance,
   ModelSettings,
   ModelSettingsInput
 } from "./models";
@@ -36,6 +37,10 @@ import type {
   ExportShortManuscriptResult
 } from "./short-manuscript-export";
 import type {
+  ExportLongManuscriptInput,
+  ExportLongManuscriptResult
+} from "./long-manuscript-export";
+import type {
   LearningImitationSettings,
   LearningImitationSettingsInput,
   LearningImitationStageId
@@ -62,15 +67,22 @@ import type {
   CreateDraftSectionsResult,
   CreateLibraryGroupInput,
   CreateLibraryInput,
+  UpdateLibraryInput,
   CreateScriptBookInput,
   CreateShortBookInput,
   DeleteCatalogProjectInput,
   DeleteCatalogProjectResult,
+  DuplicateCatalogProjectInput,
+  DuplicateCatalogProjectResult,
   DeleteBookResult,
   DeleteDraftSectionInput,
   DeleteDraftSectionResult,
+  MoveDraftSectionInput,
+  MoveDraftSectionResult,
   RemoveLibraryEntryInput,
   RemoveLibraryEntryResult,
+  MoveLibraryEntryInput,
+  MoveLibraryEntryResult,
   SaveDocumentInput,
   SaveLibraryEntryInput,
   ScriptBook,
@@ -86,8 +98,14 @@ import type {
 } from "./catalog";
 import type {
   CreateLongBookInput,
+  LongDuplicateBookInput,
   LongImportPortableResult,
-  LongImportWriteClawResult,
+  LongApplyLegacySyncInput,
+  LongApplyLegacySyncResult,
+  LongChooseLegacySyncSourceResult,
+  LongChooseContinuationImportSourceResult,
+  LongImportContinuationInput,
+  LongImportContinuationResult,
   LongApplyOperationsInput,
   LongApplyOperationsResult,
   LongListBooksResult,
@@ -97,6 +115,7 @@ import type {
   LongPreviewOperationsResult,
   LongReadDocumentInput,
   LongReadDocumentResult,
+  LongRenameBookInput,
   LongRemoveBookInput,
   LongRemoveBookResult,
   LongUpdateBindingsInput,
@@ -146,9 +165,9 @@ export interface DeepWriteApi {
     createShortBook(input: CreateShortBookInput): Promise<ShortBook | null>;
     createScriptBook(input: CreateScriptBookInput): Promise<ScriptBook | null>;
     createLibrary(input: CreateLibraryInput): Promise<CatalogLibrary | null>;
+    updateLibrary(input: UpdateLibraryInput): Promise<CatalogLibrary>;
     createLibraryGroup(input: CreateLibraryGroupInput): Promise<CatalogLibraryGroup | null>;
     openProject(domain: CatalogProjectDomain): Promise<CatalogOpenProjectResult | null>;
-    importLegacyBook(): Promise<ShortBook | null>;
     importLegacyLibrary(
       domain: CatalogLibraryProjectDomain
     ): Promise<ImportLegacyLibraryResult | null>;
@@ -165,22 +184,34 @@ export interface DeepWriteApi {
     deleteDraftSection(
       input: DeleteDraftSectionInput
     ): Promise<DeleteDraftSectionResult>;
+    moveDraftSection(input: MoveDraftSectionInput): Promise<MoveDraftSectionResult>;
     saveLibraryEntry(input: SaveLibraryEntryInput): Promise<CatalogLibraryEntry>;
     createLibraryEntry(input: CreateLibraryEntryInput): Promise<CatalogLibraryEntry>;
     removeLibraryEntry(input: RemoveLibraryEntryInput): Promise<RemoveLibraryEntryResult>;
+    moveLibraryEntry(input: MoveLibraryEntryInput): Promise<MoveLibraryEntryResult>;
     unregisterProject(
       input: UnregisterCatalogProjectInput
     ): Promise<UnregisterCatalogProjectResult>;
     deleteProject(
       input: DeleteCatalogProjectInput
     ): Promise<DeleteCatalogProjectResult>;
+    duplicateProject(
+      input: DuplicateCatalogProjectInput
+    ): Promise<DuplicateCatalogProjectResult>;
   };
   long: {
     list(): Promise<LongListBooksResult>;
     create(input: CreateLongBookInput): Promise<LongOpenBookResult | null>;
-    importWriteClaw(): Promise<LongImportWriteClawResult | null>;
+    duplicateBook(input: LongDuplicateBookInput): Promise<LongOpenBookResult>;
+    chooseLegacySyncSource(): Promise<LongChooseLegacySyncSourceResult | null>;
+    applyLegacySync(input: LongApplyLegacySyncInput): Promise<LongApplyLegacySyncResult>;
     importPortable(): Promise<LongImportPortableResult | null>;
+    chooseContinuationImportSource(): Promise<LongChooseContinuationImportSourceResult | null>;
+    importContinuation(
+      input: LongImportContinuationInput
+    ): Promise<LongImportContinuationResult | null>;
     open(input: LongOpenBookInput): Promise<LongOpenBookResult>;
+    rename(input: LongRenameBookInput): Promise<LongOpenBookResult>;
     updateBindings(
       input: LongUpdateBindingsInput
     ): Promise<LongOpenBookResult>;
@@ -220,8 +251,10 @@ export interface DeepWriteApi {
     list(): Promise<ModelSettings>;
     refreshFree(): Promise<ModelSettings>;
     refreshOfficial(): Promise<ModelSettings>;
+    queryOfficialBalance(): Promise<OfficialModelBalance>;
     saveOfficialToken(apiKey: string): Promise<ModelSettings>;
     clearOfficialToken(): Promise<ModelSettings>;
+    setOfficialModelEnabled(modelId: string, enabled: boolean): Promise<ModelSettings>;
     save(settings: ModelSettingsInput): Promise<ModelSettings>;
     test(model: ModelConfigInput): Promise<ModelConnectionTestResult>;
   };
@@ -276,6 +309,9 @@ export interface DeepWriteApi {
     save(settings: GeneralSettings): Promise<GeneralSettingsSnapshot>;
   };
   manuscript: {
+    exportLong(
+      input: ExportLongManuscriptInput
+    ): Promise<ExportLongManuscriptResult>;
     exportShort(
       input: ExportShortManuscriptInput
     ): Promise<ExportShortManuscriptResult>;

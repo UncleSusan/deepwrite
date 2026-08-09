@@ -58,8 +58,7 @@ export type ShortWorkspaceTextStageId = z.infer<
 export const SHORT_WORKSPACE_AGENT_IDS = [
   "character_design",
   "plot_design",
-  "expert_draft_coordinator",
-  "expert_section_writer"
+  "expert_draft_coordinator"
 ] as const;
 
 export const ShortWorkspaceAgentIdSchema = z.enum(SHORT_WORKSPACE_AGENT_IDS);
@@ -72,18 +71,6 @@ export function resolveShortWorkspaceAgentIdForStage(
   if (stageId === "draft") return "expert_draft_coordinator";
   return "plot_design";
 }
-
-export const SHORT_WORKSPACE_READ_TARGETS = [
-  "character_design",
-  "plot_structure",
-  "draft"
-] as const;
-export const ShortWorkspaceReadTargetSchema = z.enum(
-  SHORT_WORKSPACE_READ_TARGETS
-);
-export type ShortWorkspaceReadTarget = z.infer<
-  typeof ShortWorkspaceReadTargetSchema
->;
 
 export function createShortWorkspaceContentRevision(content: string): string {
   let hash = 0x811c9dc5;
@@ -185,20 +172,20 @@ export const DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT = `你是 DeepWrite 的剧�
 - 写入编辑器的只能是当前阶段的正式内容，不要混入分析过程或工具说明。
 `;
 
-export const DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 DeepWrite 的短篇正文专家编写智能体，站在整篇的角度处理正文：目录初始化、全文审阅、润色、去 AI 味、格式整理和跨章节修订。正文是一个虚拟目录，每个章节的正文和人物状态是两个独立文件，不存在可覆盖的合并正文文件。
+export const DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 DeepWrite 的短篇正文专家编写智能体，也是短篇唯一的正文写作智能体。你既能站在整篇角度完成目录初始化、统一创作、全文审阅、润色、去 AI 味、格式整理和跨章节修订，也能在用户打开具体小节时直接创作或修改该小节。正文是一个虚拟目录，每个小节的正文和人物状态是两个独立文件，不存在可覆盖的合并正文文件。
 
 工作流程：
 1. 用户要求初始化正文、按剧情结构创建章节或批量创建空白章节时，先根据本轮「当前剧情结构配置」和用户需求，按需调用 read_workspace_content 读取相关剧情阶段，再调用 read_workspace_content（stage_id=draft）核对现有目录。
 2. 优先依据已被读取、且结构说明承担章节规划职责的内容，一次调用 create_draft_sections 批量提交所有尚未存在的章节标题和字数要求；该工具只创建空白正文文件和空白人物状态文件，不会写入小说正文。
-3. 处理整篇正文时，先调用 read_draft_sections（mode=preview）扫描相关章节，定位真正需要处理的那几章，再对它们调用 read_draft_sections（mode=full）精读原文。
-4. 只处理某一章节时，直接对该 section_id 调用 read_draft_sections（mode=full）。
+3. 处理整篇正文时，先调用 read_draft_sections（mode=preview）扫描相关小节，定位真正需要处理的范围，再对它们调用 read_draft_sections（mode=full）精读原文。
+4. 运行时提供「当前用户正在操作的小节」时，把它视为用户当前焦点：只处理这一小节的请求优先作用于该 section_id，写入工具可省略 section_id；需要统一创作或跨小节修改时仍可显式指定其它 section_id。没有当前小节时，写入必须显式指定 section_id。
 5. 局部修改使用 replace_draft_section_text；只有章节为空或用户明确要求整章重写时，才使用 write_draft_section。
 6. 用户要求修改章节名称时，先核对目录，再调用 rename_draft_section；该工具只改目录名与对应文件标题，不改正文内容。
 7. 用户要求删除章节时，先核对目录，再调用 delete_draft_section；正文至少保留一个章节，删除会同时移除正文与人物状态文件。
 
 读取规则：
-- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。
-- read_draft_sections 单次完整读取有章数和字数上限，超出的章节会被留到下一次调用。工具返回“本次未读取”时，必须继续分批读完再下结论，不得假设剩余章节为空或与已读部分一致。
+- 剧情阶段 id 以本轮「当前剧情结构配置」清单为准；read_workspace_content 每次只读一个 stage_id，必须按用户需求按需读取，不要默认通读全部阶段，也不得臆造未出现在清单中的固定阶段名。工具返回 next_offset 时，必须用该 offset 继续分页读取，直至 next_offset=null 才算读完该阶段文件。
+- read_draft_sections 单次批量完整读取有章数和字数上限，超出的章节会被留到下一次调用；单个超长文件必须按 next_offset 分页读取。工具返回“本次未读取”或非空 next_offset 时，必须继续分批、分页读完再下结论，不得假设剩余内容为空或与已读部分一致。
 - 不要一次性把整本正文读进上下文。先用 preview 判断范围，再对目标章节 full 精读。
 - preview 不算完整读取；只有被 mode=full 完整读取的文件才允许整章覆盖。
 - 改动会影响后续章节连贯性时，用 include 一并读取相关章节的 character_state，并在修改正文后同步更新受影响章节的人物状态。
@@ -210,8 +197,14 @@ export const DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT = `你是 Deep
 - 批量初始化必须在一次 create_draft_sections 调用中提交全部待创建章节，不得拆成多次单章调用。
 - 初始化只新增空白章节文件，不删除、不改名、不排序、不覆盖已有章节；创建后若需立即写正文，使用工具返回的 section_id（含 pending:section: 临时 id）在同一轮继续写入。
 
+小节写作标准：
+- 写作或修订当前小节前，按需读取当前小节、相邻前文和上一小节人物状态；严格执行已读取剧情内容中的任务、承接点与字数要求。
+- 延续前文的时间、空间、人物关系、信息知情范围、物品位置、伤势和情绪，不重复已经完成的情节。
+- 让冲突通过人物行动、选择、对白和可感知细节推进，保持题材、叙述视角、文风和节奏一致。
+- 小节结尾应完成本节任务，并为下一节留下明确承接点或阅读动力。
+
 写回规则：
-- 你没有选中章节，每次写入或替换都必须显式指定稳定 section_id，不得把多个章节拼成一份文本覆盖。
+- 运行时提供当前小节时，省略 section_id 默认作用于该小节；仍可为整篇任务显式指定其它稳定 section_id。不得把多个小节拼成一份文本覆盖。
 - file 参数决定写正文还是写人物状态；默认是 body。
 - 同一轮内先创建再写文时，必须使用创建结果给出的 section_id；不要假设章节已落盘到磁盘。
 - 修改已有章节名称时调用 rename_draft_section；不得用写入正文的方式伪造改名。
@@ -225,7 +218,7 @@ export const DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT = `你是 DeepWri
 写作前必须完成：
 1. 根据用户本轮需求和本轮「当前剧情结构配置」，按需调用 read_workspace_content 读取相关剧情阶段（每次一个 stage_id，使用清单中的真实 id）；以被读取阶段的说明与正文作为写作依据，不要默认通读全部阶段，也不得臆造未出现在清单中的阶段名。
 2. 调用 read_workspace_content（stage_id=draft）确认当前章节在目录中的位置和相邻章节 id。
-3. 调用 read_draft_sections（mode=full）读取当前章节，以及紧邻的前 2 到 3 个已有正文的章节；正文为空的前置章节可跳过。读取紧邻上一章时，include 必须包含 character_state。
+3. 调用 read_draft_sections（mode=full）读取当前章节，以及紧邻的前 2 到 3 个已有正文的章节；正文为空的前置章节可跳过。读取紧邻上一章时，include 必须包含 character_state。任一文件返回非空 next_offset 时，必须用该 offset 继续分页，直至 next_offset=null 才算完整读取。
 4. 只有在用户明确要求跨章节呼应、或前文伏笔必须核对时，才扩大读取范围；这时优先用 mode=preview 扫描，再对确有必要的章节 full 精读，避免把无关正文塞满上下文。
 5. 用户点名技能或文风方法时调用 load_skill；确需参考正文素材时，调用 query_linked_material_entries 检索并读取相关条目。
 
@@ -259,24 +252,8 @@ export const DEFAULT_SHORT_WORKSPACE_AGENT_SYSTEM_PROMPTS: Record<
 > = {
   character_design: DEFAULT_SHORT_CHARACTER_DESIGN_SYSTEM_PROMPT,
   plot_design: DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT,
-  expert_draft_coordinator: DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
-  expert_section_writer: DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT
+  expert_draft_coordinator: DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT
 };
-
-const UniqueShortWorkspaceStageIdsSchema = z
-  .array(ShortWorkspaceReadTargetSchema)
-  .max(SHORT_WORKSPACE_READ_TARGETS.length)
-  .superRefine((values, context) => {
-    values.forEach((value, index) => {
-      if (values.indexOf(value) !== index) {
-        context.addIssue({
-          code: "custom",
-          path: [index],
-          message: `Duplicate workspace stage id: ${value}`
-        });
-      }
-    });
-  });
 
 const UniqueShortMaterialKindsSchema = z
   .array(ShortMaterialKindSchema)
@@ -309,10 +286,9 @@ const UniqueShortSkillKindsSchema = z
   });
 
 export const ShortAgentReadAccessSchema = z.object({
-  workspace: UniqueShortWorkspaceStageIdsSchema,
   material: UniqueShortMaterialKindsSchema,
   skill: UniqueShortSkillKindsSchema
-});
+}).strict();
 export type ShortAgentReadAccess = z.infer<typeof ShortAgentReadAccessSchema>;
 
 /** Defaults from write-claw's short/shared/read_access.json. */
@@ -321,24 +297,16 @@ export const DEFAULT_SHORT_AGENT_READ_ACCESS: Record<
   ShortAgentReadAccess
 > = {
   character_design: {
-    workspace: ["character_design", "plot_structure"],
     material: ["character"],
     skill: ["general", "plot", "other"]
   },
   plot_design: {
-    workspace: ["character_design", "plot_structure"],
     material: ["gimmick", "character", "plot"],
     skill: ["general", "plot", "other"]
   },
   expert_draft_coordinator: {
-    workspace: ["plot_structure", "draft", "character_design"],
-    material: [],
-    skill: ["general", "other"]
-  },
-  expert_section_writer: {
-    workspace: ["plot_structure", "draft", "character_design"],
-    material: ["draft"],
-    skill: ["style", "general"]
+    material: ["character", "gimmick", "plot", "draft", "other"],
+    skill: ["style", "general", "other"]
   }
 };
 
@@ -378,20 +346,53 @@ export const ShortWorkspaceStageSnapshotSchema = z
         message: "A truncated stage must report an originalLength larger than content."
       });
     }
+    if (value.truncated !== true && value.originalLength !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message: "An untruncated stage must omit originalLength."
+      });
+    }
   });
 export type ShortWorkspaceStageSnapshot = z.infer<
   typeof ShortWorkspaceStageSnapshotSchema
 >;
 
-export const ShortCharacterItemSnapshotSchema = z.object({
-  id: z.string().trim().min(1).max(512),
-  title: z.string().trim().min(1).max(256),
-  order: z.number().int().positive(),
-  content: z.string().max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS),
-  revision: z.string().regex(/^v1:\d+:[0-9a-f]{8}$/),
-  truncated: z.boolean().optional(),
-  originalLength: z.number().int().nonnegative().optional()
-});
+export const ShortCharacterItemSnapshotSchema = z
+  .object({
+    id: z.string().trim().min(1).max(512),
+    title: z.string().trim().min(1).max(256),
+    order: z.number().int().positive(),
+    content: z.string().max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS),
+    revision: z.string().regex(/^v1:\d+:[0-9a-f]{8}$/),
+    truncated: z.boolean().optional(),
+    originalLength: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS)
+      .optional()
+  })
+  .superRefine((value, context) => {
+    if (
+      value.truncated === true &&
+      (value.originalLength === undefined ||
+        value.originalLength <= value.content.length)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message: "A truncated character item must report its original length."
+      });
+    }
+    if (value.truncated !== true && value.originalLength !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message: "An untruncated character item must omit originalLength."
+      });
+    }
+  });
 export type ShortCharacterItemSnapshot = z.infer<
   typeof ShortCharacterItemSnapshotSchema
 >;
@@ -550,51 +551,25 @@ export const ShortWorkspaceSnapshotSchema = z
         context.addIssue({
           code: "custom",
           path: ["activeSectionId"],
-          message: "Only the draft section writer may target a section."
+          message: "Only the draft stage may target a section."
         });
       }
       return;
     }
 
-    if (value.activeAgentId === undefined) {
-      if (value.activeSectionId !== undefined) {
-        context.addIssue({
-          code: "custom",
-          path: ["activeSectionId"],
-          message: "A draft section target requires the section writer agent."
-        });
-      }
-      return;
-    }
-
-    if (value.activeAgentId === "expert_draft_coordinator") {
-      if (value.activeSectionId !== undefined) {
-        context.addIssue({
-          code: "custom",
-          path: ["activeSectionId"],
-          message: "The draft coordinator cannot target an individual section."
-        });
-      }
-      return;
-    }
-
-    if (value.activeAgentId !== "expert_section_writer") {
+    if (
+      value.activeAgentId !== undefined &&
+      value.activeAgentId !== "expert_draft_coordinator"
+    ) {
       context.addIssue({
         code: "custom",
         path: ["activeAgentId"],
-        message: "The draft stage must use the coordinator or section writer agent."
+        message: "The draft stage must use the draft coordinator agent."
       });
       return;
     }
 
-    if (value.activeSectionId === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["activeSectionId"],
-        message: "The section writer requires an active section id."
-      });
-      return;
-    }
+    if (value.activeSectionId === undefined) return;
 
     const sectionExists = value.expertDraft.sections.some(
       (section) => section.id === value.activeSectionId
@@ -635,11 +610,6 @@ export const DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS = {
     "根据剧情结构初始化并开始写正文",
     "帮我写指定的正文小节",
     "审阅并润色当前正文"
-  ],
-  expert_section_writer: [
-    "按照剧情结构写当前小节",
-    "续写当前小节并衔接前文",
-    "重写当前小节，增强冲突和画面感"
   ]
 } as const satisfies Record<ShortWorkspaceAgentId, ShortAgentWelcomeShortcuts>;
 
@@ -675,22 +645,12 @@ export const DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES: readonly ShortWorkspaceAgen
   {
     id: "expert_draft_coordinator",
     label: "正文专家编写智能体",
-    description: "管理正文结构、调度分节写作并处理成稿后的修订任务。",
+    description: "统一负责正文结构、整篇创作、当前小节写作与成稿修订。",
     systemPrompt: DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
     welcomeShortcuts: [
       ...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
     ],
     readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.expert_draft_coordinator
-  },
-  {
-    id: "expert_section_writer",
-    label: "分节写手智能体",
-    description: "按剧情结构和连续人物状态完成单个正文小节的实际创作。",
-    systemPrompt: DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT,
-    welcomeShortcuts: [
-      ...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.expert_section_writer
-    ],
-    readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.expert_section_writer
   }
 ];
 

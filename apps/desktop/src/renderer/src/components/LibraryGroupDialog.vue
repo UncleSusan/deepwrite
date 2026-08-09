@@ -90,7 +90,6 @@ const rows = computed(() =>
           ...props.materials
             .filter(
               (library) =>
-                library.materialType === "short" &&
                 (library.materialKind === kind || library.materialKind === "mixed") &&
                 !unavailableLibraryIds.value.has(library.id) &&
                 !selectedInAnotherRow(kind, library.id)
@@ -111,7 +110,6 @@ const rows = computed(() =>
           ...props.skills
             .filter(
               (library) =>
-                library.skillType === "short" &&
                 library.skillKind === kind &&
                 !unavailableLibraryIds.value.has(library.id) &&
                 !selectedInAnotherRow(kind, library.id)
@@ -130,9 +128,7 @@ function defaultLibraryName(kind: string): string {
     props.domain === "material"
       ? MATERIAL_LABELS[kind as MaterialKind]
       : SKILL_LABELS[kind as SkillKind];
-  const groupTitle = editing.value
-    ? props.group?.title.trim() || "分组"
-    : title.value.trim() || "分组";
+  const groupTitle = title.value.trim() || "分组";
   return `${groupTitle} · ${kindLabel}`;
 }
 
@@ -177,7 +173,7 @@ async function resolveMemberSelections(
 async function submit(): Promise<void> {
   if (busy.value) return;
   const name = title.value.trim();
-  if (!editing.value && !name) {
+  if (!name) {
     uiMessage.warning("请输入分组名称");
     titleInput.value?.focus();
     return;
@@ -194,6 +190,7 @@ async function submit(): Promise<void> {
           ? {
               domain: "material",
               groupId: props.group.id,
+              title: name,
               members,
               ...(props.group.projectRevision === undefined
                 ? {}
@@ -210,6 +207,7 @@ async function submit(): Promise<void> {
           ? {
               domain: "skill",
               groupId: props.group.id,
+              title: name,
               members,
               ...(props.group.projectRevision === undefined
                 ? {}
@@ -240,9 +238,7 @@ watch(
         ) as Record<string, string>)
       : {};
     resolving.value = false;
-    if (!props.group) {
-      void nextTick(() => titleInput.value?.focus());
-    }
+    void nextTick(() => titleInput.value?.focus());
   }
 );
 
@@ -262,7 +258,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <header>
           <div>
             <span class="dialog-eyebrow">{{ domainLabel }}库分组</span>
-            <h2 id="library-group-dialog-title">{{ editing ? "切换绑定" : "新建分组" }}</h2>
+            <h2 id="library-group-dialog-title">{{ editing ? "编辑分组" : "新建分组" }}</h2>
           </div>
           <button
             class="dialog-close"
@@ -278,13 +274,13 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <form class="dialog-content catalog-resource-form" @submit.prevent="submit">
           <p class="dialog-description">
             <template v-if="editing">
-              调整“{{ group?.title }}”包含的{{ domainLabel }}库。移出的库会回到原分类，新绑定的库会移动到此分组。已有库被占用时，也可选择「新建默认库」。
+              修改“{{ group?.title }}”的名称或包含的{{ domainLabel }}库。移出的库会回到原分类，新绑定的库会移动到此分组。已有库被占用时，也可选择「新建默认库」。
             </template>
             <template v-else>
               每一种类型最多选择一个已有{{ domainLabel }}库，也可以选择「新建默认库」当场创建，或全部留空稍后再补充。
             </template>
           </p>
-          <label v-if="!editing" class="book-resource-name-field">
+          <label class="book-resource-name-field">
             <span>分组名称</span>
             <input
               ref="titleInput"
@@ -331,7 +327,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                       ? "保存中…"
                       : "创建中…"
                     : editing
-                      ? "保存绑定"
+                      ? "保存分组"
                       : "创建分组"
               }}
             </button>

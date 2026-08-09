@@ -1,10 +1,14 @@
 import {
   LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS,
+  LONG_WORLDBUILDING_DIRECTORY_MAX_CATEGORIES,
+  LONG_WORLDBUILDING_DIRECTORY_MAX_ITEMS,
   LONG_WORLDBUILDING_OVERVIEW_FOCUS_MAX_CHARACTERS,
   type LongBookId,
   type LongFileId,
   type LongReadDocumentInput,
   type LongReadDocumentResult,
+  type LongWorldbuildingCategory,
+  type LongWorldbuildingDirectorySnapshot,
   type LongWorldbuildingFocusSnapshot
 } from "@deepwrite/contracts";
 import type { LongWorkspaceSelection } from "../types/longWorkspace";
@@ -12,6 +16,48 @@ import type { LongWorkspaceSelection } from "../types/longWorkspace";
 type ReadLongDocument = (
   input: LongReadDocumentInput
 ) => Promise<LongReadDocumentResult>;
+
+export function buildLongWorldbuildingDirectorySnapshot(
+  categories: readonly LongWorldbuildingCategory[]
+): LongWorldbuildingDirectorySnapshot {
+  const visibleCategories = [...categories]
+    .sort((left, right) => left.order - right.order)
+    .slice(0, LONG_WORLDBUILDING_DIRECTORY_MAX_CATEGORIES);
+  let remainingItemCapacity = LONG_WORLDBUILDING_DIRECTORY_MAX_ITEMS;
+  return {
+    categories: visibleCategories.map((category) => {
+      if (category.format === "text") {
+        return {
+          categoryId: category.id,
+          title: category.title,
+          order: category.order,
+          format: "text" as const
+        };
+      }
+      const orderedItems = [...category.items].sort(
+        (left, right) => left.order - right.order
+      );
+      const items = orderedItems
+        .slice(0, remainingItemCapacity)
+        .map((item) => ({
+          itemId: item.id,
+          title: item.title,
+          order: item.order
+        }));
+      remainingItemCapacity -= items.length;
+      return {
+        categoryId: category.id,
+        title: category.title,
+        order: category.order,
+        format: "list" as const,
+        itemCount: orderedItems.length,
+        items,
+        omittedItemCount: orderedItems.length - items.length
+      };
+    }),
+    omittedCategoryCount: categories.length - visibleCategories.length
+  };
+}
 
 function snapshotText(
   page: LongReadDocumentResult,

@@ -52,7 +52,7 @@ import type {
   LongCharacterGroup,
   MaterialKind,
   MaterialLibraryKind,
-  ShortWorkspaceAgentId,
+  WorkspaceAgentId,
   ShortWorkspaceStageId,
   SkillKind
 } from "@deepwrite/contracts";
@@ -68,9 +68,8 @@ export type ResourceSectionAction =
   | "import"
   | "open-long-book"
   | "refresh-long-books"
-  | "import-legacy-book"
   | "import-portable-long-book"
-  | "migrate-write-claw-long-book"
+  | "import-continuation-long-book"
   | "import-legacy-library";
 
 export interface ResourceSectionActionPayload {
@@ -80,12 +79,16 @@ export interface ResourceSectionActionPayload {
 
 export type CatalogResourceNodeAction =
   | "create-entry"
+  | "rename-library"
+  | "duplicate-library"
+  | "rename-entry"
   | "copy-entry"
   | "paste-entry"
   | "remove-entry"
   | "unregister-library"
   | "delete-library"
   | "edit-group-bindings"
+  | "duplicate-group"
   | "dissolve-group";
 
 export interface CatalogResourceNodeActionPayload {
@@ -94,8 +97,21 @@ export interface CatalogResourceNodeActionPayload {
   node: ResourceTreeNode;
 }
 
+export interface CatalogLibraryEntryDragPayload {
+  domain: "skill" | "material";
+  sourceLibraryId: string;
+  entryId: string;
+  targetLibraryId: string;
+  beforeEntryId?: string;
+  targetStageId?: import("@deepwrite/contracts").MaterialStageId;
+}
+
 export type LongBookResourceNodeAction =
   | "manage-structure"
+  | "sync-legacy"
+  | "rename"
+  | "duplicate"
+  | "export"
   | "bind-skill"
   | "bind-material"
   | "unregister"
@@ -113,6 +129,7 @@ export interface LongBookResourceNodeActionPayload {
 export type BookResourceDialogMode =
   | "manage-structure"
   | "rename"
+  | "duplicate"
   | "remove"
   | "delete"
   | "bind-skill"
@@ -127,7 +144,7 @@ export interface ResourceTreeNode {
   /** The real editor document represented by a synthetic navigation node. */
   targetDocumentId?: string;
   /** Overrides the stage-default short workspace agent for this navigation node. */
-  shortAgentId?: ShortWorkspaceAgentId;
+  shortAgentId?: WorkspaceAgentId;
   /** Identifies the expert-draft section selected by this navigation node. */
   expertSectionId?: string;
   /** Identifies a short/script character item represented by this node. */
@@ -198,7 +215,7 @@ export interface WorkspaceDocument {
   stageId?: ShortWorkspaceStageId;
   plotStageDescription?: string;
   plotStageOrder?: number;
-  shortAgentId?: ShortWorkspaceAgentId;
+  shortAgentId?: WorkspaceAgentId;
   expertSectionId?: string;
   characterItemId?: string;
   characterItemOrder?: number;
@@ -209,6 +226,8 @@ export interface WorkspaceDocument {
   draftFileKind?: "body" | "character-state";
   catalogDocumentId?: string;
   catalogEntryId?: string;
+  /** Identifies a fixed library manifest field projected as an editor document. */
+  catalogLibraryField?: "overview";
   catalogProjectRevision?: number;
   libraryId?: string;
   materialKind?: MaterialKind;

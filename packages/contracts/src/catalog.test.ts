@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   BOOK_CHARACTER_OVERVIEW_TITLE,
+  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
+  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
   BookProjectDraftSectionManifestSchema,
   CatalogDocumentSchema,
   CurrentBookProjectManifestSchema,
@@ -13,6 +15,8 @@ import {
   CreateDraftSectionsInputSchema,
   CreateDraftSectionsResultSchema,
   CreateLibraryInputSchema,
+  UpdateLibraryInputSchema,
+  MoveLibraryEntryInputSchema,
   CreateLibraryEntryInputSchema,
   CreateLibraryGroupInputSchema,
   ImportLegacyLibraryResultSchema,
@@ -22,6 +26,7 @@ import {
   MATERIAL_KINDS,
   MutatePlotStructureInputSchema,
   SKILL_KINDS,
+  SaveLibraryEntryInputSchema,
   UpdateLibraryGroupInputSchema,
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
@@ -316,10 +321,15 @@ describe("catalog contracts", () => {
       UpdateLibraryGroupInputSchema.parse({
         domain: "skill",
         groupId: "skill-group",
+        title: "已重命名的技能组",
         members: { plot: "skill-plot" },
         baseProjectRevision: 2
       })
-    ).toMatchObject({ groupId: "skill-group", baseProjectRevision: 2 });
+    ).toMatchObject({
+      groupId: "skill-group",
+      title: "已重命名的技能组",
+      baseProjectRevision: 2
+    });
     expect(
       CommandEnvelopeSchema.parse(
         createEnvelope(
@@ -648,6 +658,16 @@ describe("catalog contracts", () => {
         { id: "catalog-create-library-entry" }
       ),
       createEnvelope(
+        "catalog.updateLibrary",
+        { domain: "material" as const, libraryId: "material-1", title: "新名称", baseProjectRevision: 1 },
+        { id: "catalog-update-library" }
+      ),
+      createEnvelope(
+        "catalog.moveLibraryEntry",
+        { domain: "material" as const, sourceLibraryId: "material-1", targetLibraryId: "material-2", entryId: "entry-1", targetStageId: "plot_refine" as const },
+        { id: "catalog-move-library-entry" }
+      ),
+      createEnvelope(
         "catalog.removeLibraryEntry",
         {
           domain: "skill" as const,
@@ -688,6 +708,8 @@ describe("catalog contracts", () => {
         "catalog.deleteDraftSection",
         "catalog.saveLibraryEntry",
         "catalog.createLibraryEntry",
+        "catalog.updateLibrary",
+        "catalog.moveLibraryEntry",
         "catalog.removeLibraryEntry",
         "catalog.unregisterProject",
         "catalog.deleteProject"
@@ -713,6 +735,52 @@ describe("catalog contracts", () => {
         title: "错误阶段",
         content: "技能正文",
         stageId: "character"
+      })
+    ).toThrow();
+  });
+
+  it("accepts library metadata updates and entry move payloads", () => {
+    expect(UpdateLibraryInputSchema.parse({ domain: "skill", libraryId: "skill-1", title: "新技能库" })).toMatchObject({ title: "新技能库" });
+    expect(
+      UpdateLibraryInputSchema.parse({
+        domain: "material",
+        libraryId: "material-1",
+        overview: "新的库介绍"
+      })
+    ).toMatchObject({ overview: "新的库介绍" });
+    expect(() =>
+      UpdateLibraryInputSchema.parse({
+        domain: "material",
+        libraryId: "material-1"
+      })
+    ).toThrow();
+    expect(() =>
+      UpdateLibraryInputSchema.parse({
+        domain: "material",
+        libraryId: "material-1",
+        overview: "字".repeat(CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS + 1)
+      })
+    ).toThrow();
+    expect(MoveLibraryEntryInputSchema.parse({ domain: "material", sourceLibraryId: "material-1", targetLibraryId: "material-2", entryId: "entry-1", beforeEntryId: "entry-2", targetStageId: "pacing" })).toMatchObject({ targetStageId: "pacing" });
+  });
+
+  it("limits created and saved library entries to 40,000 characters", () => {
+    const common = {
+      domain: "material" as const,
+      libraryId: "material-1",
+      title: "人物素材"
+    };
+    expect(
+      CreateLibraryEntryInputSchema.parse({
+        ...common,
+        content: "字".repeat(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS)
+      }).content
+    ).toHaveLength(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS);
+    expect(() =>
+      SaveLibraryEntryInputSchema.parse({
+        ...common,
+        entryId: "entry-1",
+        content: "字".repeat(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS + 1)
       })
     ).toThrow();
   });

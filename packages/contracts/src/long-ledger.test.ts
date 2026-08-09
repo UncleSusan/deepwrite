@@ -199,6 +199,12 @@ describe("long ledger contracts", () => {
           revision: "v1:2:2345bcde"
         }
       ],
+      foreshadowingBeatDecisions: {
+        beat_letter: {
+          status: "committed" as const,
+          note: "正文明确写出旧信火漆上的月纹。"
+        }
+      },
       commitMessage: "提交第一章连续性文本文件",
       baseWorkspaceRevision: 3,
       baseProjectRevision: 7
@@ -207,7 +213,8 @@ describe("long ledger contracts", () => {
     expect(parsed).toMatchObject({
       mode: "text_files",
       chapterFileRevisions: { body: "v1:0:00000000" },
-      continuityFileRevisions: input.continuityFileRevisions
+      continuityFileRevisions: input.continuityFileRevisions,
+      foreshadowingBeatDecisions: input.foreshadowingBeatDecisions
     });
     expect(parsed).not.toHaveProperty("chapterSummary");
     expect(

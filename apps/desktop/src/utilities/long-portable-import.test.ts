@@ -295,6 +295,26 @@ describe("long portable import parser", () => {
     );
   });
 
+  it("accepts a v4 commit without a foreshadowing file audit when the chapter has no touchpoints", () => {
+    const bundle = portableTextFileCommitFixture();
+    const foreshadowingFileId =
+      bundle.index.value.chapters[0]!.foreshadowingChanges.id;
+    rehashLedgerMutation(bundle, (record) => {
+      record.continuityFiles = (
+        record.continuityFiles as Array<Record<string, unknown>>
+      ).filter(({ fileId }) => fileId !== foreshadowingFileId);
+    });
+
+    const parsed = parseLongPortableExportBundle(bundle);
+    const record = JSON.parse(
+      parsed.files.find(({ kind }) => kind === "ledger-record")!.content
+    ) as { continuityFiles: Array<{ fileId: string }> };
+    expect(record.continuityFiles.map(({ fileId }) => fileId)).toEqual([
+      parsed.index.value.chapters[0]!.characterState.id,
+      parsed.index.value.chapters[0]!.handoff.id
+    ]);
+  });
+
   it("hydrates an older portable index that predates the continuity projection", () => {
     const legacy = structuredClone(portableImportFixture());
     const legacyLedger = legacy.index.value.ledger as unknown as Record<

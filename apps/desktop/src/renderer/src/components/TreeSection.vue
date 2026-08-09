@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type {
   BookResourceDialogMode,
   CatalogResourceNodeActionPayload,
+  CatalogLibraryEntryDragPayload,
   IconName,
   LongBookResourceNodeActionPayload,
   ResourceSectionAction,
@@ -28,8 +29,10 @@ const emit = defineEmits<{
   longBookAction: [payload: LongBookResourceNodeActionPayload];
   resourceAction: [payload: ResourceSectionActionPayload];
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
+  moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
+  expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
   createCharacterItem: [node: ResourceTreeNode];
   characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
 }>();
@@ -188,8 +191,10 @@ onBeforeUnmount(() => {
         @export-book="emit('exportBook', $event)"
         @long-book-action="emit('longBookAction', $event)"
         @resource-node-action="emit('resourceNodeAction', $event)"
+        @move-library-entry="emit('moveLibraryEntry', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @remove-expert-section="emit('removeExpertSection', $event)"
+        @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
         @create-character-item="emit('createCharacterItem', $event)"
         @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
       />

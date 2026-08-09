@@ -9,6 +9,7 @@ import {
   type AgentProviderRuntimeConfig,
   type ModelConfig,
   type ModelConfigInput,
+  type OfficialModelBalance,
   type ModelSettings,
   type ModelSettingsInput
 } from "@deepwrite/contracts";
@@ -17,9 +18,9 @@ import {
   type DeepWriteFreeModelCatalog
 } from "./deepwrite-free-model-config";
 import {
-  DEEPWRITE_OFFICIAL_DEFAULT_QUOTA_TOKENS,
   DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID,
   DeepWriteOfficialModelCatalogStore,
+  isOfficialModelAvailable,
   type DeepWriteOfficialModelCatalog
 } from "./deepwrite-official-model-config";
 
@@ -43,6 +44,7 @@ interface DiskModelSettings {
   version: 1;
   defaultModelId: string;
   models: DiskModelConfig[];
+  disabledOfficialModelIds: string[];
 }
 
 interface DiskModelSecrets {
@@ -53,7 +55,8 @@ interface DiskModelSecrets {
 const EMPTY_SETTINGS: DiskModelSettings = {
   version: 1,
   defaultModelId: "",
-  models: []
+  models: [],
+  disabledOfficialModelIds: []
 };
 
 const EMPTY_SECRETS: DiskModelSecrets = {
@@ -71,6 +74,7 @@ interface OfficialModelCatalogReader {
   initialize(): Promise<void>;
   getCatalog(): Promise<DeepWriteOfficialModelCatalog>;
   refreshCatalog?(): Promise<DeepWriteOfficialModelCatalog>;
+  queryBalance?(currentKeySuffix?: string): Promise<OfficialModelBalance>;
 }
 
 export interface ModelConfigStoreOptions {
@@ -97,7 +101,10 @@ function normalizeDiskSettings(raw: unknown): DiskModelSettings {
   return {
     version: 1,
     defaultModelId: parsed.data.defaultModelId,
-    models: parsed.data.models.map(({ apiKey: _apiKey, clearApiKey: _clear, ...model }) => model)
+    models: parsed.data.models.map(({ apiKey: _apiKey, clearApiKey: _clear, ...model }) => model),
+    disabledOfficialModelIds: Array.isArray(raw.disabledOfficialModelIds)
+      ? [...new Set(raw.disabledOfficialModelIds.filter((id): id is string => typeof id === "string" && id.length <= 120))]
+      : []
   };
 }
 
@@ -211,6 +218,29 @@ export class ModelConfigStore {
     );
   }
 
+  async queryOfficialBalance(): Promise<OfficialModelBalance> {
+    if (!this.officialModelCatalog.queryBalance) {
+      throw new Error("当前官方模型配置不支持余额查询。");
+    }
+    await this.writeChain;
+    const [, secrets] = await this.readState();
+    const encrypted =
+      secrets.encryptedApiKeys[DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID];
+    if (!encrypted) {
+      return this.officialModelCatalog.queryBalance();
+    }
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error("系统安全存储当前不可用，无法查询当前 Key 的剩余用量。");
+    }
+    let apiKey: string;
+    try {
+      apiKey = safeStorage.decryptString(Buffer.from(encrypted, "base64"));
+    } catch {
+      throw new Error("官方令牌解密失败，请重新填写并保存。");
+    }
+    return this.officialModelCatalog.queryBalance(apiKey.slice(-4));
+  }
+
   async saveOfficialToken(rawApiKey: string): Promise<ModelSettings> {
     const apiKey = rawApiKey.trim();
     if (!apiKey) {
@@ -291,12 +321,41 @@ export class ModelConfigStore {
     return saved!;
   }
 
+  async setOfficialModelEnabled(modelId: string, enabled: boolean): Promise<ModelSettings> {
+    const { freeCatalog, officialCatalog } = await this.getCatalogs();
+    const officialModel = officialCatalog.models.find((model) => model.id === modelId);
+    if (!officialModel) {
+      throw new Error("这个 DeepWrite 官方模型已不再受支持。");
+    }
+    if (enabled && !isOfficialModelAvailable(officialModel)) {
+      throw new Error("这个 DeepWrite 官方模型当前不可用。");
+    }
+    let saved: ModelSettings | undefined;
+    const operation = this.writeChain.then(async () => {
+      const [settings, secrets] = await this.readState();
+      const disabledIds = new Set(settings.disabledOfficialModelIds);
+      if (enabled) disabledIds.delete(modelId);
+      else disabledIds.add(modelId);
+      const nextSettings = this.synchronizeSettings(
+        { ...settings, disabledOfficialModelIds: [...disabledIds] },
+        secrets,
+        freeCatalog,
+        officialCatalog
+      );
+      await atomicWriteJson(this.settingsPath, nextSettings);
+      saved = this.toPublicSettings(nextSettings, secrets, freeCatalog, officialCatalog);
+    });
+    this.writeChain = operation.then(() => undefined, () => undefined);
+    await operation;
+    return saved!;
+  }
+
   async save(rawInput: ModelSettingsInput): Promise<ModelSettings> {
     const input = ModelSettingsInputSchema.parse(rawInput);
     const { freeCatalog, officialCatalog } = await this.getCatalogs();
     let saved: ModelSettings | undefined;
     const operation = this.writeChain.then(async () => {
-      const [, existingSecrets] = await this.readState();
+      const [existingSettings, existingSecrets] = await this.readState();
       const encryptedApiKeys: Record<string, string> = {};
 
       const officialToken =
@@ -348,7 +407,8 @@ export class ModelConfigStore {
       const requestedSettings: DiskModelSettings = {
         version: 1,
         defaultModelId: input.defaultModelId,
-        models: editableModels
+        models: editableModels,
+        disabledOfficialModelIds: existingSettings.disabledOfficialModelIds
       };
       const nextSettings = this.synchronizeSettings(
         requestedSettings,
@@ -550,10 +610,16 @@ export class ModelConfigStore {
           secrets.encryptedApiKeys[DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID]
         )
       })),
+      deepwriteOfficialEnabledModelIds: officialCatalog.models
+        .filter(
+          (model) =>
+            isOfficialModelAvailable(model) &&
+            !settings.disabledOfficialModelIds.includes(model.id)
+        )
+        .map((model) => model.id),
       deepwriteOfficialTokenConfigured: Boolean(
         secrets.encryptedApiKeys[DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID]
-      ),
-      deepwriteOfficialQuotaTokens: DEEPWRITE_OFFICIAL_DEFAULT_QUOTA_TOKENS
+      )
     });
   }
 
@@ -566,8 +632,15 @@ export class ModelConfigStore {
     const officialModelIds = new Set(
       officialCatalog.models.map((model) => model.id)
     );
+    const disabledOfficialModelIds = new Set(settings.disabledOfficialModelIds);
     const officialModels = secrets.encryptedApiKeys[DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID]
-      ? officialCatalog.models.map((model) => this.toDiskModel(model))
+      ? officialCatalog.models
+          .filter(
+            (model) =>
+              isOfficialModelAvailable(model) &&
+              !disabledOfficialModelIds.has(model.id)
+          )
+          .map((model) => this.toDiskModel(model))
       : [];
     const otherModels = settings.models
       .filter(
@@ -588,7 +661,10 @@ export class ModelConfigStore {
     return {
       ...settings,
       defaultModelId,
-      models
+      models,
+      disabledOfficialModelIds: [...disabledOfficialModelIds].filter((id) =>
+        officialModelIds.has(id)
+      )
     };
   }
 
@@ -609,7 +685,8 @@ export class ModelConfigStore {
         );
       }
       const officialModel = officialCatalog.models.find(
-        (candidate) => candidate.id === model.id
+        (candidate) =>
+          candidate.id === model.id && isOfficialModelAvailable(candidate)
       );
       if (!officialModel) {
         throw new Error("这个 DeepWrite 官方模型已不再受支持。");

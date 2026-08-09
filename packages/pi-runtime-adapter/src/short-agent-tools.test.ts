@@ -160,11 +160,11 @@ function toolByName(tools: AgentTool[], name: string): AgentTool {
   return tool;
 }
 
-function sectionWriterWorkspace(): ShortWorkspaceSnapshot {
+function focusedDraftWorkspace(): ShortWorkspaceSnapshot {
   const value = workspace("draft");
   return {
     ...value,
-    activeAgentId: "expert_section_writer",
+    activeAgentId: "expert_draft_coordinator",
     activeSectionId: "section-1"
   };
 }
@@ -196,6 +196,70 @@ describe("short workspace tools", () => {
       "switch_storyline_stage",
       ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(-2)
     ]);
+  });
+
+  it("lets every short and script agent read all stages and draft sections", async () => {
+    const shortSnapshot = workspace("character_design");
+    const characterStage = shortSnapshot.stages.find(
+      ({ stageId }) => stageId === "character_design"
+    )!;
+    characterStage.content = "人物阶段全文。";
+    characterStage.revision = createShortWorkspaceContentRevision(
+      characterStage.content
+    );
+
+    for (const agentId of ["character_design", "plot_design"] as const) {
+      const tools = buildShortWorkspaceTools({
+        workspace: shortSnapshot,
+        profile: profile(agentId)
+      });
+      const readStage = toolByName(tools, "read_workspace_content");
+      const readDraft = toolByName(tools, "read_draft_sections");
+      expect(
+        resultText(
+          await readStage.execute(`read-character-${agentId}`, {
+            stage_id: "character_design"
+          })
+        )
+      ).toContain("人物阶段全文");
+      expect(
+        resultText(
+          await readStage.execute(`read-plot-${agentId}`, {
+            stage_id: "plot_design"
+          })
+        )
+      ).toContain("旧剧情的唯一片段");
+      expect(
+        resultText(
+          await readDraft.execute(`read-draft-${agentId}`, {
+            section_ids: ["section-1"],
+            include: ["body"],
+            mode: "full"
+          })
+        )
+      ).toContain("汽笛迟到了七分钟");
+      expect(tools.map(({ name }) => name)).not.toContain("write_draft_section");
+    }
+
+    const scriptTools = buildScriptWorkspaceTools({
+      workspace: scriptWorkspace("plot_design"),
+      profile: scriptProfile("character_design")
+    });
+    expect(
+      resultText(
+        await toolByName(scriptTools, "read_draft_sections").execute(
+          "read-script-draft",
+          {
+            section_ids: ["section-1"],
+            include: ["body"],
+            mode: "full"
+          }
+        )
+      )
+    ).toContain("汽笛迟到了七分钟");
+    expect(scriptTools.map(({ name }) => name)).not.toContain(
+      "write_draft_section"
+    );
   });
 
   it("switches the plot substage before applying an implicit write target", async () => {
@@ -324,6 +388,65 @@ describe("short workspace tools", () => {
         itemId: "character-linmo",
         deletedText: "林默是守塔人。"
       }
+    });
+  });
+
+  it("requires every page of an oversized character file before editing", async () => {
+    const value = workspace("character_design");
+    const tail = "人物档案末尾秘密。";
+    const content = `${"人".repeat(40_000)}${tail}`;
+    value.characterStructure = {
+      format: "list",
+      items: [
+        {
+          id: "character-long",
+          title: "长档案人物",
+          order: 1,
+          content,
+          revision: createShortWorkspaceContentRevision(content)
+        }
+      ]
+    };
+    const tools = buildShortWorkspaceTools({
+      workspace: value,
+      profile: profile("character_design")
+    });
+    const read = toolByName(tools, "read_character");
+
+    const firstPage = await read.execute("character-page-1", {
+      item_id: "character-long",
+      mode: "full"
+    });
+    expect(resultText(firstPage)).toContain("next_offset: 32768");
+    expect(resultText(firstPage)).not.toContain(tail);
+
+    const blocked = await toolByName(tools, "edit_character_file").execute(
+      "character-edit-blocked",
+      {
+        item_id: "character-long",
+        replacements: [{ original_text: tail, new_text: "秘密已公开。" }]
+      }
+    );
+    expect(resultText(blocked)).toContain("请先用 read_character");
+
+    const finalPage = await read.execute("character-page-2", {
+      item_id: "character-long",
+      mode: "full",
+      offset: 32_768
+    });
+    expect(resultText(finalPage)).toContain("next_offset: null");
+    expect(resultText(finalPage)).toContain(tail);
+
+    const edited = await toolByName(tools, "edit_character_file").execute(
+      "character-edit-complete",
+      {
+        item_id: "character-long",
+        replacements: [{ original_text: tail, new_text: "秘密已公开。" }]
+      }
+    );
+    expect(edited.details).toMatchObject({
+      kind: "workspace-character-file-mutation",
+      itemId: "character-long"
     });
   });
 
@@ -813,25 +936,28 @@ describe("short workspace tools", () => {
     expect(provisionalRename.details).toEqual({ kind: "none" });
     expect(resultText(provisionalRename)).toContain("尚在本轮待创建");
 
-    const writerTools = buildShortWorkspaceTools({
+    const focusedTools = buildShortWorkspaceTools({
       workspace: {
         ...snapshot,
-        activeAgentId: "expert_section_writer",
+        activeAgentId: "expert_draft_coordinator",
         activeSectionId: "section-1"
       },
-      profile: profile("expert_section_writer")
+      profile: profile("expert_draft_coordinator")
     });
-    const cross = await toolByName(writerTools, "rename_draft_section").execute(
+    const cross = await toolByName(focusedTools, "rename_draft_section").execute(
       "rename-other",
       {
         section_id: "section-2",
         title: "第二节·别名"
       }
     );
-    expect(cross.details).toEqual({ kind: "none" });
-    expect(resultText(cross)).toContain("只能修改当前章节");
+    expect(cross.details).toMatchObject({
+      kind: "workspace-expert-draft-section-rename",
+      sectionId: "section-2",
+      title: "第二节·别名"
+    });
 
-    const own = await toolByName(writerTools, "rename_draft_section").execute(
+    const own = await toolByName(focusedTools, "rename_draft_section").execute(
       "rename-own",
       {
         title: "第一节·夜车"
@@ -913,8 +1039,7 @@ describe("short workspace tools", () => {
 
     for (const agentId of [
       "character_design",
-      "plot_design",
-      "expert_section_writer"
+      "plot_design"
     ] as const) {
       expect(
         buildShortWorkspaceTools({
@@ -1001,28 +1126,16 @@ describe("short workspace tools", () => {
     expect(resultText(blocked)).not.toContain("文风方法正文");
   });
 
-  it("gives both draft agents the same tools apart from chapter creation", () => {
+  it("gives the unified draft agent the complete draft tool set", () => {
     const coordinatorNames = buildShortWorkspaceTools({
       workspace: workspace("draft"),
       profile: profile("expert_draft_coordinator")
     }).map((tool) => tool.name);
-    const writerNames = buildShortWorkspaceTools({
-      workspace: sectionWriterWorkspace(),
-      profile: profile("expert_section_writer")
-    }).map((tool) => tool.name);
-
     expect(coordinatorNames).toEqual([
       ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(0, -2),
       "create_draft_sections",
       ...SHORT_WORKSPACE_TOOL_MANIFEST.draft
     ]);
-    expect(writerNames).toEqual([
-      ...SHORT_WORKSPACE_TOOL_MANIFEST.standard.slice(0, -2),
-      ...SHORT_WORKSPACE_TOOL_MANIFEST.draft
-    ]);
-    expect(coordinatorNames.filter((name) => name !== "create_draft_sections")).toEqual(
-      writerNames
-    );
     expect(coordinatorNames).not.toContain("initialize_expert_draft");
   });
 
@@ -1121,6 +1234,83 @@ describe("short workspace tools", () => {
     });
   });
 
+  it("pages one oversized draft file and grants write rights only after contiguous full reading", async () => {
+    const value = workspace("draft");
+    const tail = "超长章节的最终证据。";
+    const longBody = `${"长".repeat(100_000)}${tail}`;
+    value.expertDraft.sections = [
+      expertSection("section-long", "超长章节", "", longBody, "")
+    ];
+    const tools = buildShortWorkspaceTools({
+      workspace: value,
+      profile: profile("expert_draft_coordinator")
+    });
+    const read = toolByName(tools, "read_draft_sections");
+
+    const firstPage = await read.execute("long-page-1", {
+      section_ids: ["section-long"]
+    });
+    expect(resultText(firstPage)).toContain("next_offset: 60000");
+    expect(resultText(firstPage)).not.toContain(tail);
+
+    const blocked = await toolByName(tools, "replace_draft_section_text").execute(
+      "replace-before-tail",
+      {
+        section_id: "section-long",
+        replacements: [{ original_text: tail, new_text: "新结尾。" }]
+      }
+    );
+    expect(resultText(blocked)).toContain("请先读取");
+
+    const finalPage = await read.execute("long-page-2", {
+      section_ids: ["section-long"],
+      include: ["body"],
+      offset: 60_000,
+      max_characters: 60_000
+    });
+    expect(resultText(finalPage)).toContain("next_offset: null");
+    expect(resultText(finalPage)).toContain(tail);
+
+    const replaced = await toolByName(tools, "replace_draft_section_text").execute(
+      "replace-after-tail",
+      {
+        section_id: "section-long",
+        replacements: [{ original_text: tail, new_text: "新结尾。" }]
+      }
+    );
+    expect(replaced.details).toMatchObject({
+      kind: "workspace-expert-draft-file-mutation",
+      sectionId: "section-long"
+    });
+  });
+
+  it("paginates a complete non-draft stage instead of exposing a fixed prefix", async () => {
+    const value = workspace("plot_design");
+    const tail = "剧情文件末尾证据。";
+    const content = `${"纲".repeat(40_000)}${tail}`;
+    const stage = value.stages.find(({ stageId }) => stageId === "plot_design")!;
+    stage.content = content;
+    stage.revision = createShortWorkspaceContentRevision(content);
+    const tools = buildShortWorkspaceTools({
+      workspace: value,
+      profile: profile("plot_design")
+    });
+    const read = toolByName(tools, "read_workspace_content");
+
+    const firstPage = await read.execute("stage-page-1", {
+      stage_id: "plot_design"
+    });
+    expect(resultText(firstPage)).toContain("next_offset: 32768");
+    expect(resultText(firstPage)).not.toContain(tail);
+
+    const finalPage = await read.execute("stage-page-2", {
+      stage_id: "plot_design",
+      offset: 32_768
+    });
+    expect(resultText(finalPage)).toContain("next_offset: null");
+    expect(resultText(finalPage)).toContain(tail);
+  });
+
   it("previews chapters without granting whole-chapter overwrite rights", async () => {
     const tools = buildShortWorkspaceTools({
       workspace: workspace("draft"),
@@ -1175,29 +1365,32 @@ describe("short workspace tools", () => {
     });
   });
 
-  it("keeps section-writer writes pinned to the active chapter", async () => {
-    const writerWorkspace = sectionWriterWorkspace();
+  it("uses the focused section by default while allowing cross-section writes", async () => {
+    const writerWorkspace = focusedDraftWorkspace();
     const originalBody = writerWorkspace.expertDraft.sections[1]!.body;
     const originalState = writerWorkspace.expertDraft.sections[1]!.characterState;
     const tools = buildShortWorkspaceTools({
       workspace: writerWorkspace,
-      profile: profile("expert_section_writer")
+      profile: profile("expert_draft_coordinator")
     });
 
     await toolByName(tools, "read_draft_sections").execute("read-neighbours", {
-      section_ids: ["intro", "section-1"],
+      section_ids: ["intro", "section-1", "section-2"],
       include: ["body", "character_state"]
     });
 
-    const outOfScope = await toolByName(tools, "replace_draft_section_text").execute(
+    const crossSection = await toolByName(tools, "replace_draft_section_text").execute(
       "replace-other-section",
       {
         section_id: "section-2",
         replacements: [{ original_text: "共同片段", new_text: "越权修改" }]
       }
     );
-    expect(outOfScope.details).toEqual({ kind: "none" });
-    expect(resultText(outOfScope)).toContain("只能修改当前章节");
+    expect(crossSection.details).toMatchObject({
+      kind: "workspace-expert-draft-file-mutation",
+      sectionId: "section-2",
+      fileKind: "body"
+    });
 
     const replaced = await toolByName(tools, "replace_draft_section_text").execute(
       "replace-section",
@@ -1227,10 +1420,10 @@ describe("short workspace tools", () => {
     });
   });
 
-  it("lets the section writer search the whole draft for continuity", async () => {
+  it("lets the focused draft agent search the whole draft for continuity", async () => {
     const tools = buildShortWorkspaceTools({
-      workspace: sectionWriterWorkspace(),
-      profile: profile("expert_section_writer")
+      workspace: focusedDraftWorkspace(),
+      profile: profile("expert_draft_coordinator")
     });
     const search = toolByName(tools, "search_workspace_text");
 
@@ -1249,8 +1442,8 @@ describe("short workspace tools", () => {
 
   it("requires reading an existing file before whole-section overwrite", async () => {
     const tools = buildShortWorkspaceTools({
-      workspace: sectionWriterWorkspace(),
-      profile: profile("expert_section_writer")
+      workspace: focusedDraftWorkspace(),
+      profile: profile("expert_draft_coordinator")
     });
     const write = toolByName(tools, "write_draft_section");
 

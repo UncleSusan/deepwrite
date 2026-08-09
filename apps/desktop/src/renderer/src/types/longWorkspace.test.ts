@@ -43,7 +43,8 @@ function fixture(commitId: string | null): {
           id: "chapter_one",
           volumeId: "volume_one",
           title: "第一章",
-          narrativeOrder: 1
+          narrativeOrder: 1,
+          bodyStatus: "written"
         }
       ],
       characters: [],
@@ -115,6 +116,7 @@ function fixture(commitId: string | null): {
     chapters: [
       {
         chapterCardId: "chapter_one",
+        bodyStatus: "written",
         body: file("file_chapter_body", "long/chapters/chapter_one/body.md"),
         card: file("file_chapter_card", "long/chapters/chapter_one/card.md"),
         characterState: file(
@@ -407,7 +409,7 @@ describe("long workspace chapter navigation", () => {
         .filter(({ role }) => role !== "body")
         .every((entry) => entry.readOnly)
     ).toBe(true);
-    expect(selection?.description).toContain("单章写手只写正文");
+    expect(selection?.description).toContain("正文已完成");
   });
 
   it("gives the continuity agent one read-only Markdown group for the chapter", () => {
@@ -426,7 +428,6 @@ describe("long workspace chapter navigation", () => {
     });
     expect(selection?.files.map(({ role }) => role)).toEqual([
       "body",
-      "foreshadowing-changes",
       "character-state",
       "handoff"
     ]);
@@ -443,7 +444,7 @@ describe("long workspace chapter navigation", () => {
     });
   });
 
-  it("locks committed draft files while keeping their chapter record visible", () => {
+  it("keeps committed body editable while locking generated continuity files", () => {
     const { summary, workspaceIndex } = fixture("commit_one");
     const chapter = createLongChapterSelection(
       summary,
@@ -451,8 +452,25 @@ describe("long workspace chapter navigation", () => {
       "chapter_one"
     );
 
-    expect(chapter?.files.every((entry) => entry.readOnly)).toBe(true);
-    expect(chapter?.description).toContain("先回滚最后一次连续性提交");
+    expect(
+      chapter?.files.find(({ role }) => role === "body")?.readOnly
+    ).toBeUndefined();
+    expect(
+      chapter?.files
+        .filter(({ role }) => role !== "body")
+        .every((entry) => entry.readOnly)
+    ).toBe(true);
+    expect(chapter?.description).toContain("记录仅供参考");
+    const chapterCard = createLongChapterCardVolumeSelection(
+      summary,
+      workspaceIndex,
+      "volume_one",
+      "chapter_one"
+    );
+    expect(
+      chapterCard?.files.find(({ role }) => role === "card")?.readOnly
+    ).toBeUndefined();
+    expect(chapterCard?.description).toContain("章卡仍可自由修改");
     expect(
       createLongContinuitySelection(
         summary,
@@ -465,7 +483,7 @@ describe("long workspace chapter navigation", () => {
     });
   });
 
-  it("offers continuity review only for the next chapter in the commit prefix", () => {
+  it("offers continuity review for every written unrecorded chapter", () => {
     const { summary, workspaceIndex } = fixture(null);
     summary.navigation.chapterCards.push({
       ...summary.navigation.chapterCards[0]!,
@@ -480,6 +498,7 @@ describe("long workspace chapter navigation", () => {
     });
     workspaceIndex.chapters.push({
       chapterCardId: "chapter_two",
+      bodyStatus: "written",
       body: file("file_chapter_two_body", "chapters/chapter-two/body.md"),
       card: file("file_chapter_two_card", "chapters/chapter-two/card.md"),
       characterState: file(
@@ -505,25 +524,17 @@ describe("long workspace chapter navigation", () => {
         workspaceIndex,
         "chapter_two"
       )
-    ).toBeUndefined();
-
-    workspaceIndex.chapters[0]!.commitId = "commit_one";
-    workspaceIndex.ledger.commits.push({
-      id: "commit_one",
-      mode: "structured",
-      sequence: 1,
-      chapterCardId: "chapter_one"
-    } as (typeof workspaceIndex.ledger.commits)[number]);
-    expect(
-      createLongContinuitySelection(
-        summary,
-        workspaceIndex,
-        "chapter_two"
-      )
     ).toMatchObject({
       key: "continuity:chapter_two",
       chapterCardId: "chapter_two"
     });
+    expect(
+      createLongContinuitySelection(
+        summary,
+        workspaceIndex,
+        "chapter_one"
+      )
+    ).toMatchObject({ chapterCardId: "chapter_one" });
   });
 
   it("maps all per-chapter continuity text files without exposing commit JSON", () => {
@@ -533,6 +544,8 @@ describe("long workspace chapter navigation", () => {
       "file_chapter_world",
       "long/chapters/chapter_one/continuity/world-reveals.md"
     );
+    workspaceIndex.chapters[0]!.foreshadowingChanges.revision =
+      "v2:1:0000000000000000000000000000000000000000000000000000000000000000" as LongWorkspaceFileReference["revision"];
     workspaceIndex.chapters[0]!.characterContinuity = [
       {
         characterId: "character_lead",
@@ -576,7 +589,19 @@ describe("long workspace chapter navigation", () => {
     );
   });
 
-  it("maps character state and history from the newest matching text-files chapter", () => {
+  it("shows an import checkpoint as body evidence without empty continuity outputs", () => {
+    const { summary, workspaceIndex } = fixture("commit_import");
+    workspaceIndex.ledger.commits[0]!.mode = "import_checkpoint";
+    const selection = createLongContinuitySelection(
+      summary,
+      workspaceIndex,
+      "chapter_one"
+    );
+    expect(selection?.files.map(({ role }) => role)).toEqual(["body"]);
+    expect(selection?.description).toContain("仅表示历史正文已封存");
+  });
+
+  it("keeps character design files editable while records remain references", () => {
     const { summary, workspaceIndex } = fixture("commit_one");
     summary.navigation.characters = [
       {
@@ -628,12 +653,18 @@ describe("long workspace chapter navigation", () => {
       "protagonist",
       "character_lead"
     );
-    expect(selection.files.find(({ role }) => role === "current-state")?.file).toBe(
-      mappedState
-    );
+    expect(
+      selection.files.find(({ role }) => role === "current-state")?.file
+    ).toBe(workspaceIndex.characterFiles[0]!.currentState);
     expect(selection.files.find(({ role }) => role === "history")?.file).toBe(
-      mappedHistory
+      workspaceIndex.characterFiles[0]!.history
     );
+    expect(
+      selection.files.find(({ role }) => role === "current-state")?.readOnly
+    ).not.toBe(true);
+    expect(
+      selection.files.find(({ role }) => role === "history")?.readOnly
+    ).not.toBe(true);
     expect(
       selection.files.find(({ role }) => role === "relationships")?.readOnly
     ).toBeUndefined();
@@ -653,10 +684,10 @@ describe("long workspace chapter navigation", () => {
         "protagonist",
         "character_lead"
       ).files.find(({ role }) => role === "relationships")?.readOnly
-    ).toBe(true);
+    ).toBeUndefined();
   });
 
-  it("maps the foreshadowing workspace to the newest committed chapter file", () => {
+  it("keeps the foreshadowing workspace as the global design overview", () => {
     const { summary, workspaceIndex } = fixture("commit_one");
     workspaceIndex.ledger.commits[0]!.mode = "text_files";
     const selection = reconcileLongWorkspaceSelection(
@@ -671,14 +702,12 @@ describe("long workspace chapter navigation", () => {
         preferredRole: "book-line"
       }
     );
-    expect(selection?.files).toEqual([
-      {
-        role: "foreshadowing-changes",
-        label: "最新伏笔变化",
-        file: workspaceIndex.chapters[0]!.foreshadowingChanges,
-        readOnly: true
-      }
-    ]);
+    expect(selection).toMatchObject({
+      title: "伏笔总览",
+      files: [],
+      preferredRole: "book-line",
+      description: "维护全书伏笔线及其埋设、推进、揭示与回收触点。"
+    });
   });
 
   it("maps a legacy structured chapter only after its Markdown projection exists", () => {

@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
+  LIBRARY_AGENT_ENTRY_MAX_CHARACTERS
+} from "@deepwrite/contracts";
 import { randomHex8 } from "@deepwrite/shared";
 import type {
   EditorTextReference,
@@ -10,6 +14,14 @@ import {
   createEditorTextReference,
   resolveEditorTextReferenceRange
 } from "../utils/editorTextReferences";
+import {
+  editorScrollMemoryKey,
+  recalledEditorScrollPosition,
+  rememberEditorScrollPosition,
+  type EditorScrollView
+} from "../utils/editorScrollMemory";
+import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
+import { parseSkillFrontmatter } from "../utils/skillFrontmatter";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 import MarkdownContent from "./MarkdownContent.vue";
@@ -46,6 +58,7 @@ const emit = defineEmits<{
 }>();
 
 const editorInput = ref<HTMLTextAreaElement>();
+const documentPreview = ref<HTMLElement>();
 const selectionMenuElement = ref<HTMLElement>();
 const editorToolsElement = ref<HTMLElement>();
 const findPanelElement = ref<HTMLElement>();
@@ -58,7 +71,7 @@ const selectionAction = ref<{
 const title = ref(props.draftState?.title ?? props.document.title);
 const content = ref(props.draftState?.content ?? props.document.content);
 const dirty = ref(props.draftState?.dirty ?? false);
-const viewMode = ref<"edit" | "preview">("edit");
+const viewMode = ref<EditorScrollView>("edit");
 const findPanelOpen = ref(false);
 const findPanelMode = ref<"find" | "replace">("find");
 const searchQuery = ref("");
@@ -80,10 +93,12 @@ interface EditorSearchMatch {
 const undoHistory = ref<EditorHistorySnapshot[]>([]);
 const redoHistory = ref<EditorHistorySnapshot[]>([]);
 const HISTORY_LIMIT = 120;
+const activeScrollMemoryKey = computed(() => editorScrollMemoryKey(props.document));
 
 watch(
-  () => props.document.id,
-  () => {
+  activeScrollMemoryKey,
+  (nextScrollMemoryKey, previousScrollMemoryKey) => {
+    rememberCurrentDocumentScroll(previousScrollMemoryKey);
     title.value = props.draftState?.title ?? props.document.title;
     content.value = props.draftState?.content ?? props.document.content;
     dirty.value = props.draftState?.dirty ?? false;
@@ -95,6 +110,7 @@ watch(
     currentMatchIndex.value = -1;
     undoHistory.value = [];
     redoHistory.value = [];
+    void restoreDocumentScroll(nextScrollMemoryKey, "edit");
   }
 );
 
@@ -115,7 +131,37 @@ watch(
   }
 );
 
-const characterCount = computed(() => content.value.replace(/\s/g, "").length);
+const isLibraryEntry = computed(
+  () =>
+    (props.document.domain === "material" || props.document.domain === "skill") &&
+    Boolean(props.document.catalogEntryId)
+);
+const isLibraryOverview = computed(
+  () => props.document.catalogLibraryField === "overview"
+);
+const isLibraryDocument = computed(
+  () => isLibraryEntry.value || isLibraryOverview.value
+);
+const skillFormatError = computed(() => {
+  if (props.document.domain !== "skill" || !props.document.catalogEntryId) {
+    return undefined;
+  }
+  const result = parseSkillFrontmatter(content.value);
+  return result.valid ? undefined : result.message;
+});
+const contentMaxLength = computed(() =>
+  isLibraryOverview.value
+    ? CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS
+    : isLibraryEntry.value
+      ? LIBRARY_AGENT_ENTRY_MAX_CHARACTERS
+      : undefined
+);
+const contentExceedsLimit = computed(
+  () => contentMaxLength.value !== undefined && content.value.length > contentMaxLength.value
+);
+const characterCount = computed(() =>
+  isLibraryDocument.value ? content.value.length : content.value.replace(/\s/g, "").length
+);
 const showSectionTabs = computed(() => Boolean(props.sectionTabs?.length));
 const showDraftFileTabs = computed(() => Boolean(props.document.draftFileKind));
 const editorReadOnly = computed(() => props.document.readOnly || props.locked);
@@ -157,6 +203,7 @@ const persistedDocument = computed(() =>
   Boolean(
     props.document.catalogDocumentId ||
       props.document.catalogEntryId ||
+      props.document.catalogLibraryField ||
       props.document.catalogProjectRevision !== undefined
   )
 );
@@ -216,6 +263,14 @@ function handleEditorBeforeInput(event: InputEvent): void {
 }
 
 function updateContent(nextContent: string): void {
+  if (contentMaxLength.value !== undefined && nextContent.length > contentMaxLength.value) {
+    uiMessage.warning(
+      isLibraryOverview.value
+        ? "素材库或技能库介绍最多 40,000 字，请精简内容后再编辑"
+        : "每个素材库或技能库条目最多 40,000 字，请精简内容后再编辑"
+    );
+    return;
+  }
   content.value = nextContent;
   currentMatchIndex.value = -1;
   markDirty();
@@ -281,11 +336,59 @@ function save(): void {
   if (props.document.readOnly || props.locked || props.saving) {
     return;
   }
+  if (contentExceedsLimit.value) {
+    uiMessage.warning(
+      isLibraryOverview.value
+        ? "素材库或技能库介绍最多 40,000 字，请精简内容后再保存"
+        : "每个素材库或技能库条目最多 40,000 字，请精简内容后再保存"
+    );
+    return;
+  }
   emit("save", { id: props.document.id, title: title.value, content: content.value });
 }
 
 function closeSelectionAction(): void {
   selectionAction.value = null;
+}
+
+function currentDocumentScroller(view: EditorScrollView): HTMLElement | undefined {
+  return view === "edit" ? editorInput.value : documentPreview.value;
+}
+
+function rememberCurrentDocumentScroll(key = activeScrollMemoryKey.value): void {
+  const scroller = currentDocumentScroller(viewMode.value);
+  if (!scroller) return;
+  rememberEditorScrollPosition(key, viewMode.value, scroller.scrollTop);
+}
+
+async function restoreDocumentScroll(
+  key = activeScrollMemoryKey.value,
+  view = viewMode.value
+): Promise<void> {
+  await nextTick();
+  if (activeScrollMemoryKey.value !== key || viewMode.value !== view) return;
+  const scroller = currentDocumentScroller(view);
+  if (!scroller) return;
+  scroller.scrollTop = recalledEditorScrollPosition(key, view);
+}
+
+function handleDocumentScroll(event: Event): void {
+  const scroller = event.currentTarget;
+  if (!(scroller instanceof HTMLElement)) return;
+  rememberEditorScrollPosition(
+    activeScrollMemoryKey.value,
+    viewMode.value,
+    scroller.scrollTop
+  );
+  closeSelectionAction();
+}
+
+function selectViewMode(view: EditorScrollView): void {
+  if (view === viewMode.value) return;
+  rememberCurrentDocumentScroll();
+  viewMode.value = view;
+  closeSelectionAction();
+  void restoreDocumentScroll(activeScrollMemoryKey.value, view);
 }
 
 function closeFindPanel(): void {
@@ -511,9 +614,11 @@ watch(
 
 onMounted(() => {
   globalThis.addEventListener("pointerdown", handleWindowPointerDown, true);
+  void restoreDocumentScroll();
 });
 
 onBeforeUnmount(() => {
+  rememberCurrentDocumentScroll();
   globalThis.removeEventListener("pointerdown", handleWindowPointerDown, true);
 });
 </script>
@@ -555,7 +660,11 @@ onBeforeUnmount(() => {
       class="section-tabs-bar"
       :aria-label="resolvedSectionTabsLabel"
     >
-      <div class="section-tabs-scroll" role="tablist">
+      <div
+        class="section-tabs-scroll"
+        role="tablist"
+        @wheel="handleHorizontalOverflowWheel"
+      >
         <button
           v-for="section in sectionTabs ?? []"
           :key="section.id"
@@ -627,7 +736,7 @@ onBeforeUnmount(() => {
           role="tab"
           :aria-selected="viewMode === 'edit'"
           :class="{ 'is-active': viewMode === 'edit' }"
-          @click="viewMode = 'edit'"
+          @click="selectViewMode('edit')"
         >
           编辑
         </button>
@@ -636,7 +745,7 @@ onBeforeUnmount(() => {
           role="tab"
           :aria-selected="viewMode === 'preview'"
           :class="{ 'is-active': viewMode === 'preview' }"
-          @click="viewMode = 'preview'"
+          @click="selectViewMode('preview')"
         >
           预览
         </button>
@@ -786,12 +895,21 @@ onBeforeUnmount(() => {
         <span v-if="document.domain !== 'creation'" class="readonly-badge">
           {{ boundToCurrentBook ? "已绑定到当前书籍" : "仅浏览 · 未绑定" }}
         </span>
+        <span
+          v-if="skillFormatError"
+          class="skill-format-error-badge"
+          role="status"
+          :title="skillFormatError"
+          :aria-label="skillFormatError"
+        >
+          {{ skillFormatError }}
+        </span>
       </div>
 
       <input
         v-model="title"
         class="document-title-input"
-        :readonly="document.readOnly || locked || document.draftFileKind === 'character-state'"
+        :readonly="document.readOnly || locked || document.draftFileKind === 'character-state' || isLibraryOverview"
         aria-label="文档标题"
         @input="markDirty"
       />
@@ -802,28 +920,44 @@ onBeforeUnmount(() => {
         v-model="content"
         class="document-editor"
         :readonly="document.readOnly || locked"
+        :maxlength="contentMaxLength"
         aria-label="文本内容编辑器"
         spellcheck="false"
         @beforeinput="handleEditorBeforeInput"
         @input="markDirty"
         @keydown="handleEditorKeydown"
         @contextmenu="handleEditorContextMenu"
-        @scroll="closeSelectionAction"
+        @scroll="handleDocumentScroll"
       />
-      <article v-else class="document-preview">
+      <article
+        v-else
+        ref="documentPreview"
+        class="document-preview"
+        @scroll="handleDocumentScroll"
+      >
         <MarkdownContent v-if="content.trim()" :content="content" />
         <p v-else class="document-preview-empty">暂无内容</p>
       </article>
     </div>
 
     <footer class="editor-footer">
-      <span>{{ characterCount.toLocaleString("zh-CN") }} 字</span>
-      <span>{{ locked ? (lockedLabel ?? "智能体运行中 · 防止版本冲突") : saving ? "正在原子保存本机文稿" : persistedDocument ? (autoSaveEnabled ? "本机文稿 · 更改后自动保存" : "本机文稿 · 应用后持久保存") : "内存草稿 · 重启后不保留" }}</span>
+      <span>
+        {{ characterCount.toLocaleString("zh-CN") }}<template v-if="contentMaxLength"> / {{ contentMaxLength.toLocaleString("zh-CN") }}</template> 字
+      </span>
+      <span
+        v-if="isLibraryDocument"
+        class="library-entry-limit-hint"
+        :class="{ 'limit-warning': contentExceedsLimit }"
+        :title="isLibraryOverview ? '素材库或技能库介绍最多 40,000 字' : '每个素材库或技能库条目最多 40,000 字，请勿上传过多内容'"
+      >
+        {{ isLibraryOverview ? "库介绍最多 40,000 字" : "每个条目最多 40,000 字，请勿上传过多内容" }}
+      </span>
+      <span class="editor-save-status">{{ locked ? (lockedLabel ?? "智能体运行中 · 防止版本冲突") : saving ? "正在原子保存本机文稿" : persistedDocument ? (autoSaveEnabled ? "本机文稿 · 更改后自动保存" : "本机文稿 · 应用后持久保存") : "内存草稿 · 重启后不保留" }}</span>
       <span class="footer-spacer" />
       <button
         class="save-button"
         type="button"
-        :disabled="document.readOnly || locked || saving || !dirty"
+        :disabled="document.readOnly || locked || saving || !dirty || contentExceedsLimit"
         @click="save"
       >
         <AppIcon name="save" :size="14" />

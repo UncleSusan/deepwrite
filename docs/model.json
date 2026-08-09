@@ -1,0 +1,183 @@
+{
+  "models": [
+    {
+      "id": "deepwrite-deepseek-v4-flash",
+      "label": "DeepSeek-V4-Flash",
+      "modelId": "deepseek-v4-flash",
+      "api": "openai-completions",
+      "baseUrl": "https://www.moxing.pro/v1/",
+      "reasoning": true,
+      "defaultThinkingLevel": "high",
+      "supportsDeveloperRole": true,
+      "thinkingLevelOptions": [
+        "low",
+        "high",
+        "max"
+      ],
+      "temperatureOptions": [
+        0.7,
+        1,
+        1.5
+      ],
+      "input": 1,
+      "output": 2,
+      "cache": 0.02,
+      "discount": 0.65,
+      "status": 0
+    },
+    {
+      "id": "deepwrite-deepseek-v4-flash-0731",
+      "label": "DeepSeek-V4-Flash-正式版",
+      "modelId": "deepseek-v4-flash-0731",
+      "api": "openai-completions",
+      "baseUrl": "https://www.moxing.pro/v1/",
+      "reasoning": true,
+      "defaultThinkingLevel": "high",
+      "supportsDeveloperRole": true,
+      "thinkingLevelOptions": [
+        "low",
+        "high",
+        "max"
+      ],
+      "temperatureOptions": [
+        0.7,
+        1,
+        1.5
+      ],
+      "input": 1,
+      "output": 2,
+      "cache": 0.02,
+      "discount": 1,
+      "status": 0
+    },
+    {
+      "id": "deepwrite-glm-5.2",
+      "label": "GLM-5.2",
+      "modelId": "glm-5.2",
+      "api": "openai-completions",
+      "baseUrl": "https://www.moxing.pro/v1/",
+      "reasoning": true,
+      "defaultThinkingLevel": "high",
+      "supportsDeveloperRole": true,
+      "thinkingLevelOptions": [
+        "low",
+        "high",
+        "max"
+      ],
+      "temperatureOptions": [
+        0.7,
+        1,
+        1.5
+      ],
+      "input": 8,
+      "output": 28,
+      "cache": 2,
+      "discount": 0.65,
+      "status": 0
+    },
+    {
+      "id": "deepwrite-kimi-k3",
+      "label": "Kimi K3",
+      "modelId": "kimi-k3",
+      "api": "openai-completions",
+      "baseUrl": "https://www.moxing.pro/v1/",
+      "reasoning": true,
+      "defaultThinkingLevel": "high",
+      "supportsDeveloperRole": true,
+      "thinkingLevelOptions": [
+        "low",
+        "high",
+        "max"
+      ],
+      "temperatureOptions": [
+        0.7,
+        1,
+        1.5
+      ],
+      "input": 20,
+      "output": 100,
+      "cache": 2,
+      "discount": 1,
+      "status": 0
+    },
+    {
+      "id": "deepwrite-qwen3.7-plus",
+      "label": "qwen3.7-plus",
+      "modelId": "qwen3.7-plus",
+      "api": "openai-completions",
+      "baseUrl": "https://www.moxing.pro/v1/",
+      "reasoning": true,
+      "defaultThinkingLevel": "high",
+      "supportsDeveloperRole": true,
+      "thinkingLevelOptions": [
+        "low",
+        "high",
+        "max"
+      ],
+      "temperatureOptions": [
+        0.7,
+        1,
+        1.5
+      ],
+      "input": 2,
+      "output": 8,
+      "cache": 0.2,
+      "discount": 1,
+      "status": 0
+    },
+    {
+      "id": "deepwrite-qwen3.8-max",
+      "label": "Qwen3.8-Max",
+      "modelId": "qwen3.8-max",
+      "api": "openai-completions",
+      "baseUrl": "https://www.moxing.pro/v1/",
+      "reasoning": true,
+      "defaultThinkingLevel": "high",
+      "supportsDeveloperRole": true,
+      "thinkingLevelOptions": [
+        "low",
+        "high",
+        "max"
+      ],
+      "temperatureOptions": [
+        0.7,
+        1,
+        1.5
+      ],
+      "input": 12,
+      "output": 36,
+      "cache": 1.5,
+      "discount": 1,
+      "status": 0
+    },
+    {
+      "id": "deepwrite-qwen3.8-max-preview",
+      "label": "Qwen3.8-max-preview",
+      "modelId": "qwen3.8-max-preview",
+      "api": "openai-completions",
+      "baseUrl": "https://www.moxing.pro/v1/",
+      "reasoning": true,
+      "defaultThinkingLevel": "high",
+      "supportsDeveloperRole": true,
+      "thinkingLevelOptions": [
+        "low",
+        "high",
+        "max"
+      ],
+      "temperatureOptions": [
+        0.7,
+        1,
+        1.5
+      ],
+      "input": 12,
+      "output": 36,
+      "cache": 1.5,
+      "discount": 0.65,
+      "status": 0
+    }
+  ],
+  "balance": {
+    "url": "https://www.moxing.pro/v1/balance",
+    "key": "itk-mxai-8f03f0e200590c38f7c7793ce138301c65601ded0f745e36d1b00d786d11b26d"
+  }
+}

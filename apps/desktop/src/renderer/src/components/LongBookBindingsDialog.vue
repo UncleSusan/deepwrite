@@ -112,7 +112,6 @@ function materialOptions(kind: MaterialKind): Array<{
     ...props.materials
       .filter(
         (library) =>
-          library.materialType === "long" &&
           (library.materialKind === kind || library.materialKind === "mixed") &&
           !selected.has(library.id)
       )
@@ -133,7 +132,6 @@ function skillOptions(kind: SkillKind): Array<{
     ...props.skills
       .filter(
         (library) =>
-          library.skillType === "long" &&
           library.skillKind === kind &&
           !selected.has(library.id)
       )

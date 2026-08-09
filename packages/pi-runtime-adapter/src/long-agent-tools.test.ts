@@ -12,6 +12,8 @@ import {
   longChapterBodyFileId,
   longChapterCardFileId,
   longChapterCharacterStateFileId,
+  longChapterContinuityFilePath,
+  longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
   longCharacterCurrentStateFileId,
@@ -295,6 +297,7 @@ function expectNoPhysicalWorldbuildingMetadata(text: string) {
 
 function committedFixtureIndex(): LongWorkspaceIndexSnapshot {
   const index = structuredClone(fixtureIndex());
+  index.chapters[0]!.bodyStatus = "written";
   index.chapters[0]!.commitId = "commit_one";
   index.ledger.committedThroughChapterId = "chapter_one";
   index.ledger.commits = [
@@ -600,6 +603,17 @@ describe("long workspace agent tools", () => {
     const plotMutationSchema = JSON.stringify(
       toolByName(plotTools, "propose_long_mutation").parameters
     );
+    const plotMutationDescription = toolByName(
+      plotTools,
+      "propose_long_mutation"
+    ).description;
+    expect(plotMutationDescription).toContain("连续性记录只作参考");
+    expect(plotMutationDescription).toContain("不锁定这些结构");
+    expect(plotMutationDescription).toContain("级联清理该章正文与记录");
+    expect(plotMutationDescription).toContain("剧情点关联可为 null");
+    expect(plotMutationDescription).toContain("预检失败不会生成审批卡");
+    expect(plotMutationSchema).toContain("toPrimaryArcId 非空时必须属于该分卷");
+    expect(plotMutationSchema).toContain('"null"');
     expect(plotMutationSchema).toContain('"foreshadowing.create"');
     expect(plotMutationSchema).toContain('"foreshadowingBeat.create"');
     expect(plotMutationSchema).toContain('"volume.update"');
@@ -621,6 +635,179 @@ describe("long workspace agent tools", () => {
     expect(rootlessLedgerNames).not.toContain(
       "propose_continuity_commit"
     );
+  });
+
+  it("rejects a cross-volume chapter move before creating an approval proposal", async () => {
+    const source = fixtureIndex();
+    source.plot.volumes.push({
+      id: "volume_prologue",
+      title: "开篇/楔子卷",
+      order: 2,
+      summary: ""
+    });
+    const index = LongWorkspaceIndexSnapshotSchema.parse(source);
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(index);
+      }
+      throw new Error(`Unexpected command: ${command.type}`);
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-cross-volume-chapter-move",
+      runId: "run-cross-volume-chapter-move",
+      executor
+    });
+
+    const result = await toolByName(
+      tools,
+      "propose_long_mutation"
+    ).execute("cross-volume-chapter-move", {
+      operations: [
+        {
+          type: "chapter.move",
+          id: "chapter_one",
+          toVolumeId: "volume_prologue",
+          toPrimaryArcId: "arc_one"
+        }
+      ],
+      summary: "将楔子章移入开篇卷并保留正片弧"
+    });
+
+    expect(result.details).toEqual({ kind: "none" });
+    expect(resultText(result)).toContain("未形成长篇结构变更提案");
+    expect(resultText(result)).toContain("开篇/楔子卷");
+    expect(resultText(result)).toContain("主线");
+    expect(resultText(result)).toContain("非空剧情点关联必须与章卡属于同一分卷");
+    expect(resultText(result)).toContain("不会生成审批卡");
+    expect(resultText(result)).toContain("将剧情点关联设为 null");
+
+    const createResult = await toolByName(
+      tools,
+      "create_plot_design"
+    ).execute("cross-volume-chapter-create", {
+      item: {
+        kind: "chapter",
+        volume_id: "volume_prologue",
+        primary_arc_id: "arc_one",
+        title: "楔子章"
+      },
+      summary: "在开篇卷创建绑定正片弧的楔子章"
+    });
+    expect(createResult.details).toEqual({ kind: "none" });
+    expect(resultText(createResult)).toContain("章卡创建存在跨卷绑定");
+    expect(resultText(createResult)).toContain("不会生成审批卡");
+
+    const orderedResult = await toolByName(
+      tools,
+      "propose_long_mutation"
+    ).execute("move-arc-before-chapter", {
+      operations: [
+        {
+          type: "arc.move",
+          id: "arc_one",
+          toVolumeId: "volume_prologue"
+        },
+        {
+          type: "chapter.move",
+          id: "chapter_one",
+          toVolumeId: "volume_prologue",
+          toPrimaryArcId: "arc_one"
+        }
+      ],
+      summary: "先移动主线，再核对章卡归属"
+    });
+    expect(orderedResult.details).toMatchObject({
+      kind: "long-mutation-proposal"
+    });
+    expect(executor).toHaveBeenCalledTimes(1);
+  });
+
+  it("preflights plot-specific writes against committed event locks", async () => {
+    const source = fixtureIndex();
+    source.plot.storyEvents.push({
+      id: "event_committed",
+      title: "楔子事件",
+      summary: "楔子中已经发生的事件。",
+      timeMode: "sequence",
+      timeLabel: "故事开始前",
+      storyOrder: 1,
+      location: "旧城门",
+      arcIds: ["arc_one"],
+      characterIds: ["character_alice"]
+    });
+    source.plot.narrativePlacements.push({
+      id: "placement_committed",
+      eventId: "event_committed",
+      chapterCardId: "chapter_one",
+      orderInChapter: 1,
+      mode: "scene",
+      disclosure: "full",
+      writingPrompt: "完整呈现楔子事件。",
+      status: "committed",
+      commitId: "commit_one"
+    });
+    source.chapters[0]!.commitId = "commit_one";
+    source.ledger.committedThroughChapterId = "chapter_one";
+    source.ledger.commits.push({
+      id: "commit_one",
+      mode: "structured",
+      sequence: 1,
+      chapterCardId: "chapter_one",
+      committedAt: NOW,
+      reversible: true,
+      sourceRevision: 6,
+      placementIds: ["placement_committed"],
+      foreshadowingBeatIds: [],
+      recordFile: file(
+        longLedgerCommitFileId("commit_one"),
+        "long/ledger/commit-one.json"
+      )
+    });
+    const index = LongWorkspaceIndexSnapshotSchema.parse(source);
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(index);
+      }
+      throw new Error(`Unexpected command: ${command.type}`);
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-committed-event-write",
+      runId: "run-committed-event-write",
+      executor
+    });
+
+    await toolByName(tools, "read_plot_design").execute(
+      "read-committed-event",
+      {
+        target: { kind: "event", event_id: "event_committed" },
+        mode: "full"
+      }
+    );
+    const result = await toolByName(tools, "write_plot_design").execute(
+      "write-committed-event",
+      {
+        item: {
+          kind: "event",
+          event_id: "event_committed",
+          summary: "试图改变已经提交的事件。",
+          time_mode: "sequence",
+          time_label: "故事开始前",
+          location: "旧城门",
+          arc_ids: ["arc_one"],
+          character_ids: ["character_alice"]
+        },
+        allow_overwrite_existing: true,
+        summary: "修改已提交事件"
+      }
+    );
+
+    expect(result.details).toMatchObject({
+      kind: "long-mutation-proposal"
+    });
   });
 
   it("loads only long-bound resources allowed by the active long profile", async () => {
@@ -917,6 +1104,77 @@ describe("long workspace agent tools", () => {
     });
   });
 
+  it("allows plot design to refine a committed chapter card", async () => {
+    const index = committedFixtureIndex();
+    const chapter = index.chapters[0]!;
+    const cardContent = "旧章卡内容";
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(index);
+      }
+      if (command.type !== "long.readDocument") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      expect(command.payload.fileId).toBe(chapter.card.id);
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: index.bookId,
+          file: chapter.card,
+          content: cardContent,
+          offset: 0,
+          totalCharacters: Array.from(cardContent).length,
+          nextOffset: null,
+          workspaceRevision: index.revision,
+          projectRevision: 11
+        }
+      };
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-refine-committed-card",
+      runId: "run-refine-committed-card",
+      executor
+    });
+
+    await toolByName(tools, "read_plot_design").execute(
+      "read-committed-card",
+      {
+        target: { kind: "chapter", chapter_card_id: "chapter_one" },
+        mode: "full"
+      }
+    );
+    const result = await toolByName(tools, "edit_plot_design").execute(
+      "edit-committed-card",
+      {
+        item: {
+          kind: "chapter",
+          chapter_card_id: "chapter_one",
+          replacements: [
+            { original_text: cardContent, new_text: "精修后的章卡内容" }
+          ]
+        },
+        summary: "精修已提交章卡"
+      }
+    );
+
+    expect(result.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [],
+        documentWrites: [
+          {
+            fileId: chapter.card.id,
+            content: "精修后的章卡内容",
+            mode: "replace"
+          }
+        ]
+      }
+    });
+  });
+
   it("creates a chapter card and writes its complete text once without an extra read", async () => {
     const index = fixtureIndex();
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
@@ -939,7 +1197,7 @@ describe("long workspace agent tools", () => {
         item: {
           kind: "chapter",
           volume_id: "volume_one",
-          primary_arc_id: "arc_one",
+          primary_arc_id: null,
           title: "第二章"
         },
         summary: "创建第二章章卡"
@@ -956,7 +1214,7 @@ describe("long workspace agent tools", () => {
     const chapterCardId = createOperation.chapterCard.id;
     expect(createOperation.chapterCard).toMatchObject({
       volumeId: "volume_one",
-      primaryArcId: "arc_one",
+      primaryArcId: null,
       title: "第二章",
       narrativeOrder: 2
     });
@@ -1066,10 +1324,10 @@ describe("long workspace agent tools", () => {
 
     const createdStoryPlotId = createOperation.storyPlot.id;
     const createText = resultText(create);
-    expect(createText).toContain("已创建故事情节");
+    expect(createText).toContain("已形成故事情节");
     expect(createText).toContain(createdStoryPlotId);
-    expect(createText).not.toContain("提案");
-    expect(createText).not.toContain("审批");
+    expect(createText).toContain("创建提案");
+    expect(createText).toContain("等待本创建提案获批");
 
     const secondCreate = await toolByName(tools, "create_plot_design").execute(
       "create-second-story-plot",
@@ -1634,16 +1892,19 @@ describe("long workspace agent tools", () => {
       },
       ledger: {
         commits: [{ chapterCardId: "chapter_one_first" }]
-      }
+      },
+      chapters: [
+        { chapterCardId: "chapter_one_first", bodyStatus: "written" },
+        { chapterCardId: "chapter_one_second", bodyStatus: "empty" },
+        { chapterCardId: "chapter_volume_two", bodyStatus: "empty" }
+      ]
     } as unknown as LongWorkspaceIndexSnapshot;
 
     expect(selectNextLongChapterForDispatch(index)).toMatchObject({
       id: "chapter_one_second"
     });
-    index.ledger.commits.push(
-      { chapterCardId: "chapter_one_second" } as never,
-      { chapterCardId: "chapter_volume_two" } as never
-    );
+    index.chapters[1]!.bodyStatus = "written";
+    index.chapters[2]!.bodyStatus = "written";
     expect(selectNextLongChapterForDispatch(index)).toBeUndefined();
   });
 
@@ -1740,6 +2001,22 @@ describe("long workspace agent tools", () => {
         ({ id }) => id
       )
     ).toEqual(["chapter_three"]);
+
+    index.ledger.commits.length = 0;
+    index.plot.chapterCards.find(({ id }) => id === "chapter_one")!.primaryArcId = null;
+    expect(() =>
+      selectLongChaptersForWritingScope(index, { scope: "arc" })
+    ).toThrow(/primary arc/u);
+    expect(
+      selectLongChaptersForWritingScope(index, { scope: "volume" }).map(
+        ({ id }) => id
+      )
+    ).toEqual([
+      "chapter_one",
+      "chapter_two",
+      "chapter_three",
+      "chapter_four"
+    ]);
   });
 
   it("derives chapter readiness from body content only", async () => {
@@ -1921,7 +2198,7 @@ describe("long workspace agent tools", () => {
     expect(complete.content).toEqual([
       {
         type: "text",
-        text: "全部章卡均已连续提交，没有可调度的下一章。"
+        text: "全部章卡均已有正文，没有可调度的下一章。"
       }
     ]);
     expect(
@@ -2480,7 +2757,7 @@ describe("long workspace agent tools", () => {
       "create_character"
     ).execute("create-character", {
       name: "沈砚",
-      group: "major_supporting",
+      type_id: "major_supporting",
       aliases: ["阿砚"]
     });
 
@@ -2558,6 +2835,71 @@ describe("long workspace agent tools", () => {
         beforeText: "",
         afterText: "沈砚是负责追查旧案的年轻捕快。"
       }]
+    });
+  });
+
+  it("lists and creates characters with a custom dynamic type id", async () => {
+    const index = LongWorkspaceIndexSnapshotSchema.parse({
+      ...fixtureIndex(),
+      characterTypes: [
+        ...fixtureIndex().characterTypes,
+        { id: "chartype_antagonist", title: "反派", order: 5 }
+      ]
+    });
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") return indexResult(index);
+      if (command.type === "long.readDocument") {
+        return {
+          status: "accepted" as const,
+          requestId: command.id,
+          payload: {
+            bookId: index.bookId,
+            file: index.characterOverview!,
+            content: "",
+            offset: 0,
+            totalCharacters: 0,
+            nextOffset: null,
+            workspaceRevision: index.revision,
+            projectRevision: 11
+          }
+        };
+      }
+      throw new Error(`Unexpected command: ${command.type}`);
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("character_design", "character_design"),
+      profile: profile("character_design"),
+      sessionId: "session-character-custom-type",
+      runId: "run-character-custom-type",
+      executor
+    });
+
+    expect(
+      Check(
+        toolByName(tools, "create_character").parameters,
+        { name: "陆烬", type_id: "chartype_antagonist" }
+      )
+    ).toBe(true);
+    const listed = await toolByName(tools, "list_characters").execute(
+      "list-custom-types",
+      { type_id: "chartype_antagonist" }
+    );
+    expect(JSON.stringify(listed.content)).toContain("chartype_antagonist");
+    expect(JSON.stringify(listed.content)).toContain("反派");
+
+    const created = await toolByName(tools, "create_character").execute(
+      "create-custom-type-character",
+      { name: "陆烬", type_id: "chartype_antagonist" }
+    );
+    expect(created.details).toMatchObject({
+      batch: {
+        operations: [
+          {
+            type: "character.create",
+            character: { name: "陆烬", group: "chartype_antagonist" }
+          }
+        ]
+      }
     });
   });
 
@@ -2642,11 +2984,28 @@ describe("long workspace agent tools", () => {
     });
   });
 
-  it("keeps ledger-owned character continuity files out of direct character writes", async () => {
+  it("allows direct character state writes after continuity records exist", async () => {
     const index = committedFixtureIndex();
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
       if (command.type === "long.getWorkspaceIndex") {
         return indexResult(index);
+      }
+      if (command.type === "long.readDocument") {
+        const target = index.characterFiles[0]!.currentState;
+        return {
+          status: "accepted",
+          requestId: command.id,
+          payload: {
+            bookId: index.bookId,
+            file: target,
+            content: "",
+            offset: 0,
+            totalCharacters: 0,
+            nextOffset: null,
+            workspaceRevision: index.revision,
+            projectRevision: 11
+          }
+        };
       }
       throw new Error(`Unexpected command: ${command.type}`);
     });
@@ -2662,17 +3021,17 @@ describe("long workspace agent tools", () => {
       executor
     });
 
-    await expect(
-      toolByName(tools, "write_character_file").execute(
+    const result = await toolByName(tools, "write_character_file").execute(
         "write-ledger-owned-state",
         {
           character_id: "character_alice",
           document: "current_state",
           text: "试图绕过连续性账本。"
         }
-      )
-    ).rejects.toThrow(/ledger-owned/u);
-    expect(executor).toHaveBeenCalledTimes(1);
+      );
+    expect(result.details).toMatchObject({
+      kind: "long-character-file-proposal"
+    });
   });
 
   it("pins a mutation proposal to the Core index revision instead of stale session metadata", async () => {
@@ -2737,7 +3096,7 @@ describe("long workspace agent tools", () => {
         {
           type: "character.create",
           name: "沈砚",
-          group: "major_supporting",
+          type_id: "major_supporting",
           aliases: ["阿砚"]
         }
       ],
@@ -3259,6 +3618,7 @@ describe("long workspace agent tools", () => {
   it("requires a full read and explicit permission before overwriting non-empty chapter text", async () => {
     const latest = fixtureIndex();
     const chapter = latest.chapters[0]!;
+    chapter.bodyStatus = "written";
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
       if (command.type === "long.getWorkspaceIndex") {
         return indexResult(latest);
@@ -3323,9 +3683,194 @@ describe("long workspace agent tools", () => {
     });
   });
 
+  it("lets the chapter writer read any chapter body while writes stay active-only", async () => {
+    const latest = fixtureIndex();
+    const first = latest.chapters[0]!;
+    latest.plot.chapterCards.push({
+      id: "chapter_two",
+      volumeId: "volume_one",
+      primaryArcId: "arc_one",
+      title: "第二章",
+      narrativeOrder: 2
+    });
+    latest.chapters.push({
+      ...first,
+      chapterCardId: "chapter_two",
+      bodyStatus: "written",
+      body: file(
+        longChapterBodyFileId("chapter_two"),
+        "long/chapters/two/body.md"
+      ),
+      card: file(
+        longChapterCardFileId("chapter_two"),
+        "long/chapters/two/card.md"
+      ),
+      characterState: file(
+        longChapterCharacterStateFileId("chapter_two"),
+        "long/chapters/two/character-state.md"
+      ),
+      handoff: file(
+        longChapterHandoffFileId("chapter_two"),
+        "long/chapters/two/handoff.md"
+      ),
+      foreshadowingChanges: file(
+        longChapterForeshadowingChangesFileId("chapter_two"),
+        longChapterContinuityFilePath(
+          "chapter_two",
+          "foreshadowing-changes.md"
+        )
+      )
+    });
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(latest);
+      }
+      if (command.type !== "long.readDocument") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      const chapter = latest.chapters.find(
+        ({ body }) => body.id === command.payload.fileId
+      )!;
+      const content =
+        chapter.chapterCardId === "chapter_one" ? "第一章正文" : "第二章正文";
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: latest.bookId,
+          file: chapter.body,
+          content,
+          offset: 0,
+          totalCharacters: content.length,
+          nextOffset: null,
+          workspaceRevision: latest.revision,
+          projectRevision: 11
+        }
+      };
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("expert_section_writer", "draft", "chapter_two"),
+      profile: profile("expert_section_writer"),
+      sessionId: "session-read-any-chapter",
+      runId: "run-read-any-chapter",
+      executor
+    });
+    const read = toolByName(tools, "read_chapter");
+
+    expect(
+      resultText(
+        await read.execute("read-first", {
+          chapter_card_id: "chapter_one",
+          mode: "full"
+        })
+      )
+    ).toContain("第一章正文");
+    expect(
+      resultText(
+        await read.execute("read-second", {
+          chapter_card_id: "chapter_two",
+          mode: "full"
+        })
+      )
+    ).toContain("第二章正文");
+    expect(toolByName(tools, "write_chapter_draft").description).toContain(
+      "运行时锁定章节"
+    );
+  });
+
+  it("allows the chapter writer to refine a committed chapter body", async () => {
+    const latest = committedFixtureIndex();
+    const chapter = latest.chapters[0]!;
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(latest);
+      }
+      if (command.type !== "long.readDocument") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: latest.bookId,
+          file: chapter.body,
+          content: "旧正文措辞",
+          offset: 0,
+          totalCharacters: 5,
+          nextOffset: null,
+          workspaceRevision: latest.revision,
+          projectRevision: 11
+        }
+      };
+    });
+    const committedWorkspace = workspace(
+      "expert_section_writer",
+      "draft",
+      "chapter_one"
+    );
+    committedWorkspace.navigation =
+      createLongWorkspaceNavigationSnapshot(latest);
+    const tools = buildLongWorkspaceTools({
+      workspace: committedWorkspace,
+      profile: profile("expert_section_writer"),
+      sessionId: "session-refine-committed-chapter",
+      runId: "run-refine-committed-chapter",
+      executor
+    });
+
+    await toolByName(tools, "read_chapter").execute("read-committed", {
+      mode: "full"
+    });
+    const result = await toolByName(
+      tools,
+      "edit_chapter_draft"
+    ).execute("refine-committed", {
+      replacements: [
+        { original_text: "旧正文措辞", new_text: "精修后的正文措辞" }
+      ],
+      summary: "精修已提交正文措辞"
+    });
+
+    expect(result.details).toMatchObject({
+      kind: "long-chapter-write-proposal",
+      file: {
+        chapterCardId: "chapter_one",
+        operation: "edit",
+        beforeText: "旧正文措辞",
+        afterText: "精修后的正文措辞"
+      }
+    });
+    expect(
+      toolByName(tools, "edit_chapter_draft").description
+    ).toContain("不限制局部或大幅修改");
+  });
+
   it("creates, writes, edits, and commits chapter continuity text files", async () => {
     const latest = fixtureIndex();
     const chapter = latest.chapters[0]!;
+    chapter.bodyStatus = "written";
+    latest.plot.foreshadowing.push({
+      id: "foreshadow_seal",
+      title: "蜡封来源",
+      coreQuestion: "蜡封来自谁？",
+      truthEventId: null,
+      expectedReaderEffect: "让读者注意蜡封图案。",
+      status: "planned",
+      beats: [
+        {
+          id: "beat_seal_plant",
+          type: "plant",
+          order: 1,
+          eventId: null,
+          placementId: null,
+          chapterCardId: "chapter_one",
+          plannedScope: "",
+          note: "正文首次呈现蜡封。",
+          status: "planned",
+          commitId: null
+        }
+      ]
+    });
     const fileContents = new Map([
       [chapter.body.id, "第一章正文。"],
       [chapter.characterState.id, "章末状态：林岚抵达北门。"],
@@ -3384,6 +3929,8 @@ describe("long workspace agent tools", () => {
       { chapter_card_id: "chapter_one" }
     );
     expect(resultText(list)).toContain("foreshadowing_changes");
+    expect(resultText(list)).toContain("foreshadow_seal");
+    expect(resultText(list)).toContain("beat_seal_plant");
     expect(resultText(list)).toContain("not_created");
 
     await toolByName(tools, "read_continuity_file").execute(
@@ -3468,8 +4015,35 @@ describe("long workspace agent tools", () => {
     );
 
     const commitTool = toolByName(tools, "propose_continuity_commit");
+    await expect(
+      commitTool.execute("reject-missing-touchpoint-decision", {
+        summary: "不应遗漏伏笔触点决策",
+        foreshadowing_touchpoint_decisions: []
+      })
+    ).rejects.toThrow(/必须完整覆盖/u);
+    await expect(
+      commitTool.execute("reject-wrong-foreshadowing-link", {
+        summary: "不应关联错误伏笔线",
+        foreshadowing_touchpoint_decisions: [
+          {
+            foreshadowing_id: "foreshadow_other",
+            beat_id: "beat_seal_plant",
+            status: "committed",
+            evidence: "正文明确写出信封上的蜡封图案。"
+          }
+        ]
+      })
+    ).rejects.toThrow(/不属于伏笔线/u);
     const commit = await commitTool.execute("commit-continuity", {
-      summary: "留存第一章连续性记录"
+      summary: "留存第一章连续性记录",
+      foreshadowing_touchpoint_decisions: [
+        {
+          foreshadowing_id: "foreshadow_seal",
+          beat_id: "beat_seal_plant",
+          status: "committed",
+          evidence: "正文明确写出信封上的蜡封图案。"
+        }
+      ]
     });
     expect(commit.details).toMatchObject({
       kind: "long-ledger-commit-proposal",
@@ -3478,6 +4052,12 @@ describe("long workspace agent tools", () => {
         bookId: "longbook_tools",
         chapterCardId: "chapter_one",
         chapterFileRevisions: { body: chapter.body.revision },
+        foreshadowingBeatDecisions: {
+          beat_seal_plant: {
+            status: "committed",
+            note: "正文明确写出信封上的蜡封图案。"
+          }
+        },
         commitMessage: "留存第一章连续性记录",
         baseWorkspaceRevision: 7,
         baseProjectRevision: 11
@@ -3546,7 +4126,17 @@ describe("long workspace agent tools", () => {
     expect(deleteTool.description).toMatch(/误创建|不再适用/u);
     const commitAfterOptionalDeletes = await commitTool.execute(
       "commit-after-optional-deletes",
-      { summary: "删除误建文件后留存第一章连续性记录" }
+      {
+        summary: "删除误建文件后留存第一章连续性记录",
+        foreshadowing_touchpoint_decisions: [
+          {
+            foreshadowing_id: "foreshadow_seal",
+            beat_id: "beat_seal_plant",
+            status: "missed",
+            evidence: "正文未出现计划中的蜡封图案。"
+          }
+        ]
+      }
     );
     if (
       !commitAfterOptionalDeletes.details ||
@@ -3559,17 +4149,26 @@ describe("long workspace agent tools", () => {
     expect(
       commitAfterOptionalDeletes.details.input.continuityFileRevisions
     ).toHaveLength(3);
+    expect(
+      commitAfterOptionalDeletes.details.input.foreshadowingBeatDecisions
+    ).toEqual({
+      beat_seal_plant: {
+        status: "missed",
+        note: "正文未出现计划中的蜡封图案。"
+      }
+    });
 
   });
 
   it("registers continuity finalization after unrelated file approvals advance global revisions", async () => {
     const latest = fixtureIndex();
     const chapter = latest.chapters[0]!;
+    chapter.bodyStatus = "written";
     const fileContents = new Map([
       [chapter.body.id, "第一章正文。"],
       [chapter.characterState.id, "章末状态：林岚抵达北门。"],
       [chapter.handoff.id, "接续包：追兵即将封锁北门。"],
-      [chapter.foreshadowingChanges.id, "本章无变化。"]
+      [chapter.foreshadowingChanges.id, ""]
     ]);
     const indexedFiles = [
       chapter.body,
@@ -3620,6 +4219,26 @@ describe("long workspace agent tools", () => {
       executor
     });
 
+    const list = await toolByName(
+      tools,
+      "list_continuity_files"
+    ).execute("list-no-foreshadowing", {
+      chapter_card_id: "chapter_one"
+    });
+    expect(resultText(list)).not.toContain("foreshadowing_changes");
+    expect(resultText(list)).toContain(
+      '"foreshadowing_touchpoint_candidates": []'
+    );
+    await expect(
+      toolByName(tools, "write_continuity_file").execute(
+        "reject-unmodeled-foreshadowing",
+        {
+          target: { document: "foreshadowing_changes" },
+          text: "不应创建的伏笔记录。"
+        }
+      )
+    ).rejects.toThrow(/没有关联伏笔总览中的既有触点/u);
+
     await toolByName(tools, "read_chapter").execute("read-body", {
       mode: "full"
     });
@@ -3630,13 +4249,18 @@ describe("long workspace agent tools", () => {
       tools,
       "propose_continuity_commit"
     ).execute("commit-after-file-approvals", {
-      summary: "连续性文件获批后归档第一章"
+      summary: "连续性文件获批后归档第一章",
+      foreshadowing_touchpoint_decisions: []
     });
 
     expect(commit.details).toMatchObject({
       kind: "long-ledger-commit-proposal",
       input: {
         chapterFileRevisions: { body: chapter.body.revision },
+        continuityFileRevisions: expect.not.arrayContaining([
+          expect.objectContaining({ fileId: chapter.foreshadowingChanges.id })
+        ]),
+        foreshadowingBeatDecisions: {},
         baseWorkspaceRevision: latest.revision,
         baseProjectRevision: 11
       }
@@ -3646,6 +4270,7 @@ describe("long workspace agent tools", () => {
   it("still rejects continuity finalization when the chapter file itself changed", async () => {
     const latest = fixtureIndex();
     const chapter = latest.chapters[0]!;
+    chapter.bodyStatus = "written";
     const changedBody = {
       ...chapter.body,
       revision: `v2:15:${"a".repeat(64)}`
@@ -3707,7 +4332,10 @@ describe("long workspace agent tools", () => {
     await expect(
       toolByName(tools, "propose_continuity_commit").execute(
         "commit-changed-body",
-        { summary: "不应归档已变化的正文" }
+        {
+          summary: "不应归档已变化的正文",
+          foreshadowing_touchpoint_decisions: []
+        }
       )
     ).rejects.toThrow(/changed after continuity analysis/u);
   });

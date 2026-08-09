@@ -31,6 +31,28 @@ import {
 import { createLongFileRevision } from "./long-project-store";
 
 describe("LongWorkspaceService", () => {
+  it("renames a long book and refreshes its catalog summary", async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "deepwrite-long-rename-service-"))
+    );
+    const service = new LongWorkspaceService({
+      userDataPath: join(root, "user-data"),
+      now: () => "2026-07-26T10:00:00.000Z"
+    });
+    const created = await service.create(root, {
+      title: "旧名称",
+      genre: "科幻"
+    });
+    const renamed = await service.renameBook({
+      bookId: created.book.id,
+      expectedProjectRevision: created.summary.projectRevision,
+      title: "新名称"
+    });
+
+    expect(renamed.summary.title).toBe("新名称");
+    expect((await service.list()).books[0]?.title).toBe("新名称");
+  });
+
   it("updates long bindings independently from the short/script Catalog", async () => {
     const root = await realpath(
       await mkdtemp(join(tmpdir(), "deepwrite-long-bindings-service-"))

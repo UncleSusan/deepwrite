@@ -44,6 +44,15 @@ describe("long agent settings UI", () => {
     expect(longPanelSource).toContain("不能通过设置扩大");
   });
 
+  it("removes stage read controls only from short and script settings", () => {
+    expect(workspacePanelSource).not.toContain("<legend>创作空间</legend>");
+    expect(workspacePanelSource).not.toContain("REQUIRED_WORKSPACE_STAGES");
+    expect(workspacePanelSource).not.toContain("readAccess.workspace");
+    expect(workspacePanelSource).toContain("创作空间各阶段始终可按需读取");
+    expect(longPanelSource).toContain("<legend>长篇工作区</legend>");
+    expect(longPanelSource).toContain("readAccess.workspaceRoots");
+  });
+
   it("uses global theme surfaces and remains responsive in narrow windows", () => {
     expect(longPanelSource).toContain("var(--surface-raised)");
     expect(longPanelSource).toContain("var(--theme-line-soft)");

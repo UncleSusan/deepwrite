@@ -21,6 +21,7 @@ import {
   longWorldbuildingOverviewContentPath,
   longWorldbuildingOverviewFileId,
   type LongCharacterGroup,
+  type LongCharacterTypeId,
   type LongDisclosureLevel,
   type LongEventConnectionType,
   type LongForeshadowingBeatType,
@@ -31,7 +32,8 @@ import {
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperation,
   type LongWorkspaceOperationBatch,
-  type LongWorldbuildingFormat
+  type LongWorldbuildingFormat,
+  type LongWorldbuildingItemLayout
 } from "@deepwrite/contracts";
 import { createId as createSharedId } from "@deepwrite/shared";
 
@@ -98,6 +100,14 @@ export interface CreateLongCharacterInput {
   aliases?: string[];
 }
 
+export interface CreateLongCharacterTypeInput {
+  title: string;
+}
+
+export interface UpdateLongCharacterTypeInput {
+  title: string;
+}
+
 export interface UpdateLongCharacterInput {
   name?: string;
   aliases?: string[];
@@ -130,14 +140,14 @@ export interface UpdateLongArcInput {
 
 export interface CreateLongChapterInput {
   volumeId: string;
-  primaryArcId: string;
+  primaryArcId: string | null;
   title: string;
 }
 
 export interface UpdateLongChapterInput {
   title?: string;
   volumeId?: string;
-  primaryArcId?: string;
+  primaryArcId?: string | null;
 }
 
 export interface CreateLongStoryEventInput {
@@ -233,6 +243,11 @@ export interface UpdateLongForeshadowingBeatInput {
 }
 
 export interface LongStructureMutationBuilder {
+  updateFeatureSettings(input: {
+    worldbuildingItemLayout?: LongWorldbuildingItemLayout;
+    characterAndContinuityItemLayout?: LongWorldbuildingItemLayout;
+    plotItemLayout?: LongWorldbuildingItemLayout;
+  }): LongWorkspaceOperationBatch;
   createWorldbuilding(
     input: CreateLongWorldbuildingInput
   ): LongWorkspaceOperationBatch;
@@ -247,6 +262,22 @@ export interface LongStructureMutationBuilder {
   deleteWorldbuilding(
     id: string,
     cascade: boolean
+  ): LongWorkspaceOperationBatch;
+
+  createCharacterType(
+    input: CreateLongCharacterTypeInput
+  ): LongWorkspaceOperationBatch;
+  updateCharacterType(
+    id: LongCharacterTypeId,
+    input: UpdateLongCharacterTypeInput
+  ): LongWorkspaceOperationBatch;
+  reorderCharacterType(
+    id: LongCharacterTypeId,
+    direction: LongOrderDirection
+  ): LongWorkspaceOperationBatch;
+  deleteCharacterType(
+    id: LongCharacterTypeId,
+    moveCharactersToTypeId?: LongCharacterTypeId
   ): LongWorkspaceOperationBatch;
 
   createCharacter(input: CreateLongCharacterInput): LongWorkspaceOperationBatch;
@@ -294,7 +325,7 @@ export interface LongStructureMutationBuilder {
   moveChapter(
     id: string,
     toVolumeId: string,
-    toPrimaryArcId: string,
+    toPrimaryArcId: string | null,
     beforeChapterCardId?: string
   ): LongWorkspaceOperationBatch;
   reorderChapter(
@@ -464,6 +495,8 @@ export function createLongStructureMutationBuilder(
     snapshot.plot.chapterCards.find((candidate) => candidate.id === id);
   const character = (id: string) =>
     snapshot.characters.find((candidate) => candidate.id === id);
+  const characterType = (id: string) =>
+    snapshot.characterTypes.find((candidate) => candidate.id === id);
   const storyEvent = (id: string) =>
     snapshot.plot.storyEvents.find((candidate) => candidate.id === id);
   const storyPlot = (id: string) =>
@@ -493,6 +526,10 @@ export function createLongStructureMutationBuilder(
   const orderedCharacters = (group: LongCharacterGroup) =>
     snapshot.characters
       .filter((candidate) => candidate.group === group)
+      .sort((left, right) => left.order - right.order)
+      .map(({ id }) => id);
+  const orderedCharacterTypes = () =>
+    [...snapshot.characterTypes]
       .sort((left, right) => left.order - right.order)
       .map(({ id }) => id);
   const orderedVolumes = () =>
@@ -628,6 +665,7 @@ export function createLongStructureMutationBuilder(
     if (
       arcAnchor &&
       anchoredChapter &&
+      anchoredChapter.primaryArcId !== null &&
       anchoredChapter.primaryArcId !== arcAnchor.id
     ) {
       throw new Error(
@@ -701,14 +739,16 @@ export function createLongStructureMutationBuilder(
   const moveChapter = (
     id: string,
     toVolumeId: string,
-    toPrimaryArcId: string,
+    toPrimaryArcId: string | null,
     beforeChapterCardId?: string
   ): LongWorkspaceOperationBatch => {
     assertPresent(volume(toVolumeId), "Target volume");
-    const targetArc = arc(toPrimaryArcId);
-    assertPresent(targetArc, "Target primary arc");
-    if (targetArc.volumeId !== toVolumeId) {
-      throw new Error("Target primary arc must belong to the target volume.");
+    if (toPrimaryArcId !== null) {
+      const targetArc = arc(toPrimaryArcId);
+      assertPresent(targetArc, "Target primary arc");
+      if (targetArc.volumeId !== toVolumeId) {
+        throw new Error("Target primary arc must belong to the target volume.");
+      }
     }
     return batch([
       {
@@ -774,6 +814,29 @@ export function createLongStructureMutationBuilder(
   };
 
   return {
+    updateFeatureSettings(input) {
+      const patch = {
+        ...(input.worldbuildingItemLayout !== undefined
+          ? { worldbuildingItemLayout: input.worldbuildingItemLayout }
+          : {}),
+        ...(input.characterAndContinuityItemLayout !== undefined
+          ? {
+              characterAndContinuityItemLayout:
+                input.characterAndContinuityItemLayout
+            }
+          : {}),
+        ...(input.plotItemLayout !== undefined
+          ? { plotItemLayout: input.plotItemLayout }
+          : {})
+      };
+      return batch([
+        {
+          type: "featureSettings.update",
+          patch
+        }
+      ]);
+    },
+
     createWorldbuilding(input) {
       const updatedAt = now();
       const id = createId("world");
@@ -835,7 +898,61 @@ export function createLongStructureMutationBuilder(
       return batch([{ type: "worldbuilding.delete", id, cascade }]);
     },
 
+    createCharacterType(input) {
+      const id = createId("chartype");
+      return batch([
+        {
+          type: "characterType.create",
+          characterType: {
+            id,
+            title: input.title.trim(),
+            order: snapshot.characterTypes.length + 1
+          }
+        }
+      ]);
+    },
+
+    updateCharacterType(id, input) {
+      assertPresent(characterType(id), "Character type");
+      return batch([
+        {
+          type: "characterType.update",
+          id,
+          patch: { title: input.title.trim() }
+        }
+      ]);
+    },
+
+    reorderCharacterType(id, direction) {
+      assertPresent(characterType(id), "Character type");
+      return batch([
+        {
+          type: "characterType.reorder",
+          orderedIds: moveLongOrderedId(
+            orderedCharacterTypes(),
+            id,
+            direction
+          )
+        }
+      ]);
+    },
+
+    deleteCharacterType(id, moveCharactersToTypeId) {
+      assertPresent(characterType(id), "Character type");
+      if (moveCharactersToTypeId) {
+        assertPresent(characterType(moveCharactersToTypeId), "Target character type");
+      }
+      return batch([
+        {
+          type: "characterType.delete",
+          id,
+          ...(moveCharactersToTypeId ? { moveCharactersToTypeId } : {})
+        }
+      ]);
+    },
+
     createCharacter(input) {
+      assertPresent(characterType(input.group), "Character type");
       const updatedAt = now();
       const id = createId("character");
       const operation: OperationOf<"character.create"> = {
@@ -1038,10 +1155,12 @@ export function createLongStructureMutationBuilder(
 
     createChapter(input) {
       assertPresent(volume(input.volumeId), "Volume");
-      const primaryArc = arc(input.primaryArcId);
-      assertPresent(primaryArc, "Primary arc");
-      if (primaryArc.volumeId !== input.volumeId) {
-        throw new Error("Primary arc must belong to the selected volume.");
+      if (input.primaryArcId !== null) {
+        const primaryArc = arc(input.primaryArcId);
+        assertPresent(primaryArc, "Primary arc");
+        if (primaryArc.volumeId !== input.volumeId) {
+          throw new Error("Primary arc must belong to the selected volume.");
+        }
       }
       const updatedAt = now();
       const id = createId("chapter");
@@ -1059,6 +1178,7 @@ export function createLongStructureMutationBuilder(
         },
         files: {
           chapterCardId: id,
+          bodyStatus: "empty",
           body: createEmptyLongMarkdownFileReference(
             longChapterBodyFileId(id),
             longChapterFilePath(id, "body.md"),
@@ -1099,12 +1219,17 @@ export function createLongStructureMutationBuilder(
       const current = chapter(id);
       assertPresent(current, "Chapter card");
       const targetVolumeId = input.volumeId ?? current.volumeId;
-      const targetArcId = input.primaryArcId ?? current.primaryArcId;
+      const targetArcId =
+        input.primaryArcId === undefined
+          ? current.primaryArcId
+          : input.primaryArcId;
       assertPresent(volume(targetVolumeId), "Target volume");
-      const targetArc = arc(targetArcId);
-      assertPresent(targetArc, "Target primary arc");
-      if (targetArc.volumeId !== targetVolumeId) {
-        throw new Error("Target primary arc must belong to the target volume.");
+      if (targetArcId !== null) {
+        const targetArc = arc(targetArcId);
+        assertPresent(targetArc, "Target primary arc");
+        if (targetArc.volumeId !== targetVolumeId) {
+          throw new Error("Target primary arc must belong to the target volume.");
+        }
       }
       const patch: Partial<OperationOf<"chapter.update">["patch"]> = {
         ...(input.title !== undefined ? { title: input.title.trim() } : {})

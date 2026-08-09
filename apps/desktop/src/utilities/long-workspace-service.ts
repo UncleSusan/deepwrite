@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
+import { dirname } from "node:path";
 import {
   LongApplyOperationsInputSchema,
   LongApplyOperationsResultSchema,
+  LongApplyLegacySyncAtPathInputSchema,
+  LongApplyLegacySyncResultSchema,
   LongBookSummarySchema,
   LongCommitChapterInputSchema,
   LongCommitChapterResultSchema,
+  LongDuplicateBookInputSchema,
+  LongPreviewContinuationImportAtPathResultSchema,
+  LongPreviewLegacySyncAtPathResultSchema,
   LongListBooksResultSchema,
   LongOpenBookInputSchema,
   LongOpenBookResultSchema,
@@ -12,6 +18,7 @@ import {
   LongPreviewOperationsResultSchema,
   LongReadDocumentInputSchema,
   LongReadDocumentResultSchema,
+  LongRenameBookInputSchema,
   LongRemoveBookInputSchema,
   LongRemoveBookResultSchema,
   LongRollbackLastCommitInputSchema,
@@ -27,9 +34,15 @@ import {
   type CreateLongBookInput,
   type LongApplyOperationsInput,
   type LongApplyOperationsResult,
+  type LongApplyLegacySyncAtPathInput,
+  type LongApplyLegacySyncResult,
   type LongBookSummary,
   type LongCommitChapterInput,
   type LongCommitChapterResult,
+  type LongDuplicateBookInput,
+  type LongImportContinuationAtPathInput,
+  type LongPreviewContinuationImportAtPathResult,
+  type LongPreviewLegacySyncAtPathResult,
   type LongListBooksResult,
   type LongOpenBookInput,
   type LongOpenBookResult,
@@ -37,6 +50,7 @@ import {
   type LongPreviewOperationsResult,
   type LongReadDocumentInput,
   type LongReadDocumentResult,
+  type LongRenameBookInput,
   type LongRemoveBookInput,
   type LongRemoveBookResult,
   type LongRollbackLastCommitInput,
@@ -60,10 +74,16 @@ import {
   LongProjectStore,
   type CreateLongBookInput as StoreCreateLongBookInput,
   type ImportedPortableLongBook,
+  type ImportedContinuationLongBook,
   type ImportedWriteClawLongBook,
   type ImportWriteClawLongBookOptions,
   type LongProjectSearchResume
 } from "./long-project-store";
+import {
+  buildWriteClawLongSync,
+  previewWriteClawLongSync
+} from "./write-claw-long-sync";
+import { nextCopyTitle } from "./copy-title";
 
 interface IndexedSearchFile {
   file: LongWorkspaceFileReference;
@@ -82,6 +102,7 @@ export interface LongWorkspaceServiceDiagnostic {
   bookId: string;
   operation:
     | "update-bindings"
+    | "rename-book"
     | "write-document"
     | "write-chapter"
     | "commit-chapter"
@@ -141,6 +162,26 @@ export class LongWorkspaceService {
     return parseOpenResult(opened);
   }
 
+  async duplicateBook(
+    input: LongDuplicateBookInput
+  ): Promise<LongOpenBookResult> {
+    const parsed = LongDuplicateBookInputSchema.parse(input);
+    const source = await this.catalog.open(parsed.bookId);
+    const listed = LongListBooksResultSchema.parse(await this.catalog.list());
+    const title = nextCopyTitle(
+      source.summary.title,
+      listed.books.map((book) => book.title)
+    );
+    const duplicated = await this.store.duplicateBook(
+      dirname(source.projectDirectory),
+      source.projectDirectory,
+      title
+    );
+    return parseOpenResult(
+      await this.catalog.openAtPath(duplicated.projectDirectory)
+    );
+  }
+
   async importWriteClawBook(
     parentDirectory: string,
     sourcePath: string,
@@ -150,6 +191,109 @@ export class LongWorkspaceService {
       parentDirectory,
       sourcePath,
       options
+    );
+    const registered = await this.catalog.openAtPath(
+      imported.projectDirectory
+    );
+    return {
+      ...imported,
+      projectDirectory: registered.projectDirectory,
+      book: registered.book,
+      summary: registered.summary
+    };
+  }
+
+  async previewContinuationImport(
+    sourcePath: string
+  ): Promise<LongPreviewContinuationImportAtPathResult> {
+    return LongPreviewContinuationImportAtPathResultSchema.parse(
+      await this.store.previewContinuationImport(sourcePath)
+    );
+  }
+
+  async previewLegacySync(
+    sourcePath: string
+  ): Promise<LongPreviewLegacySyncAtPathResult> {
+    return LongPreviewLegacySyncAtPathResultSchema.parse(
+      await previewWriteClawLongSync(sourcePath)
+    );
+  }
+
+  async applyLegacySync(
+    input: LongApplyLegacySyncAtPathInput
+  ): Promise<LongApplyLegacySyncResult> {
+    const parsed = LongApplyLegacySyncAtPathInputSchema.parse(input);
+    const opened = await this.openProject(parsed);
+    const actualProjectRevision =
+      opened.book.projectRevision ?? opened.book.workspaceIndex.revision;
+    if (actualProjectRevision !== parsed.expectedProjectRevision) {
+      throw new Error(
+        `长篇项目版本冲突：期望 ${parsed.expectedProjectRevision}，实际 ${actualProjectRevision}。`
+      );
+    }
+    const bookLineParts: string[] = [];
+    let bookLineOffset = 0;
+    while (true) {
+      const page = await this.store.readDocument(opened.projectDirectory, {
+        fileId: opened.book.workspaceIndex.bookLine.id,
+        offset: bookLineOffset,
+        limit: 262_144
+      });
+      bookLineParts.push(page.content);
+      if (page.nextOffset === null) break;
+      bookLineOffset = page.nextOffset;
+    }
+    const sync = await buildWriteClawLongSync({
+      sourcePath: parsed.sourcePath,
+      expectedFingerprint: parsed.expectedFingerprint,
+      modules: parsed.modules,
+      target: opened.book.workspaceIndex,
+      targetBookLineContent: bookLineParts.join(""),
+      updatedAt: this.now()
+    });
+    if (!sync.batch) {
+      return LongApplyLegacySyncResultSchema.parse({
+        bookId: parsed.bookId,
+        summary: opened.summary,
+        projectRevision: actualProjectRevision,
+        imported: sync.imported,
+        skipped: sync.skipped,
+        warnings: sync.warnings
+      });
+    }
+    const applied = await this.store.applyWorkspaceOperations(
+      opened.projectDirectory,
+      {
+        batch: sync.batch,
+        expectedProjectRevision: parsed.expectedProjectRevision
+      }
+    );
+    await this.updateCatalogSummaryBestEffort(
+      parsed.bookId,
+      applied.summary,
+      "apply-operations"
+    );
+    return LongApplyLegacySyncResultSchema.parse({
+      bookId: parsed.bookId,
+      summary: applied.summary,
+      projectRevision: applied.projectRevision,
+      imported: sync.imported,
+      skipped: sync.skipped,
+      warnings: sync.warnings
+    });
+  }
+
+  async importContinuationBook(
+    input: LongImportContinuationAtPathInput
+  ): Promise<ImportedContinuationLongBook> {
+    const imported = await this.store.importContinuationBook(
+      input.parentDirectory,
+      {
+        sourcePath: input.sourcePath,
+        expectedFingerprint: input.expectedFingerprint,
+        title: input.title,
+        genre: input.genre
+      }
     );
     const registered = await this.catalog.openAtPath(
       imported.projectDirectory
@@ -222,6 +366,21 @@ export class LongWorkspaceService {
       parsed.bookId,
       updated.summary,
       "update-bindings"
+    );
+    return LongOpenBookResultSchema.parse(updated);
+  }
+
+  async renameBook(input: LongRenameBookInput): Promise<LongOpenBookResult> {
+    const parsed = LongRenameBookInputSchema.parse(input);
+    const opened = await this.openProject({ bookId: parsed.bookId });
+    const updated = await this.store.renameBook(opened.projectDirectory, {
+      expectedProjectRevision: parsed.expectedProjectRevision,
+      title: parsed.title
+    });
+    await this.updateCatalogSummaryBestEffort(
+      parsed.bookId,
+      updated.summary,
+      "rename-book"
     );
     return LongOpenBookResultSchema.parse(updated);
   }

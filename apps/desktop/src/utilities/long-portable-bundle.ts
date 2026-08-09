@@ -372,10 +372,25 @@ export function assertLongLedgerRecordMatchesIndex(
   const indexedPosition = index.ledger.commits.findIndex(
     (candidate) => candidate.id === entry.id
   );
-  const previous = index.ledger.commits[indexedPosition - 1];
   const chapter = index.chapters.find(
     (candidate) => candidate.chapterCardId === entry.chapterCardId
   );
+  const importCheckpointMatches =
+    entry.mode === "import_checkpoint" &&
+    record.schemaVersion === 1 &&
+    !record.reversible &&
+    record.placementChanges.length === 0 &&
+    record.foreshadowingBeatChanges.length === 0 &&
+    record.foreshadowingThreadChanges.length === 0 &&
+    record.fileChanges.length === 0 &&
+    record.continuityFiles.length === 0 &&
+    record.factChanges.length === 0 &&
+    record.knowledgeChanges.length === 0 &&
+    record.openLoopChanges.length === 0;
+  const modeMatches =
+    importCheckpointMatches ||
+    (entry.mode === "text_files" && record.schemaVersion === 4) ||
+    (entry.mode === "structured" && record.schemaVersion !== 4);
   if (
     indexedPosition < 0 ||
     record.id !== entry.id ||
@@ -385,11 +400,7 @@ export function assertLongLedgerRecordMatchesIndex(
     record.committedAt !== entry.committedAt ||
     record.reversible !== entry.reversible ||
     record.sourceWorkspaceRevision !== entry.sourceRevision ||
-    record.committedThroughChapterId !== entry.chapterCardId ||
-    record.previousCommittedThroughChapterId !==
-      (previous?.chapterCardId ?? null) ||
-    entry.mode !==
-      (record.schemaVersion === 4 ? "text_files" : "structured") ||
+    !modeMatches ||
     chapter?.commitId !== entry.id ||
     !sameIdSet(
       entry.placementIds,
@@ -526,10 +537,17 @@ export function assertLongLedgerRecordChain(
           `v4 连续性账本引用了不存在的章节：${record.chapterCardId}。`
         );
       }
+      const auditsForeshadowingChanges =
+        entry.foreshadowingBeatIds.length > 0 ||
+        record.continuityFiles.some(
+          ({ fileId }) => fileId === chapter.foreshadowingChanges.id
+        );
       const expectedFiles = [
         chapter.characterState,
         chapter.handoff,
-        chapter.foreshadowingChanges,
+        ...(auditsForeshadowingChanges
+          ? [chapter.foreshadowingChanges]
+          : []),
         ...(chapter.worldReveals ? [chapter.worldReveals] : []),
         ...chapter.characterContinuity.flatMap((continuity) => [
           continuity.currentState,

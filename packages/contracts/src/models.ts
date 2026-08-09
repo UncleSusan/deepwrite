@@ -95,7 +95,17 @@ const ModelIdentitySchema = z.object({
   defaultThinkingLevel: ThinkingLevelSchema,
   thinkingLevelOptions: ThinkingLevelOptionsSchema,
   temperatureOptions: TemperatureOptionsSchema,
-  managedBy: ModelManagedBySchema.optional()
+  managedBy: ModelManagedBySchema.optional(),
+  /** Remote official-catalog availability: 0 = available, 1 = unavailable. */
+  status: z.union([z.literal(0), z.literal(1)]).optional(),
+  /** Current billing multiplier (for example 0.65 means 6.5折). */
+  discount: z.number().finite().positive().max(1).optional(),
+  /** Official input price in CNY per million tokens. */
+  input: z.number().finite().nonnegative().optional(),
+  /** Official output price in CNY per million tokens. */
+  output: z.number().finite().nonnegative().optional(),
+  /** Official cache price in CNY per million tokens. */
+  cache: z.number().finite().nonnegative().optional()
 }).superRefine((value, context) => {
   if (!value.reasoning && value.defaultThinkingLevel !== "off") {
     context.addIssue({
@@ -134,8 +144,8 @@ export const ModelSettingsSchema = z.object({
   deepwriteFreeDefaultModelId: z.string().max(120).optional(),
   deepwriteFreeMessage: z.string().max(500).optional(),
   deepwriteOfficialModels: z.array(ModelConfigSchema).max(50).optional(),
-  deepwriteOfficialTokenConfigured: z.boolean().optional(),
-  deepwriteOfficialQuotaTokens: z.number().int().positive().optional()
+  deepwriteOfficialEnabledModelIds: z.array(z.string().max(120)).max(50).optional(),
+  deepwriteOfficialTokenConfigured: z.boolean().optional()
 }).superRefine((value, context) => {
   if (
     value.defaultModelId &&
@@ -149,6 +159,25 @@ export const ModelSettingsSchema = z.object({
   }
 });
 export type ModelSettings = z.infer<typeof ModelSettingsSchema>;
+
+export const OfficialModelBalanceSchema = z.object({
+  queriedAt: z.string().min(1),
+  accountBalance: z.number().int().nonnegative(),
+  accountBalanceYuan: z.number().nonnegative(),
+  keyQuotaRemaining: z.number().int().nonnegative(),
+  keyQuotaRemainingYuan: z.number().nonnegative(),
+  currentKeyRemaining: z.number().int().nonnegative().optional(),
+  currentKeyRemainingYuan: z.number().nonnegative().optional(),
+  currentKeyGranted: z.number().int().nonnegative().optional(),
+  currentKeyGrantedYuan: z.number().nonnegative().optional(),
+  currentKeyUsed: z.number().int().nonnegative().optional(),
+  currentKeyUsedYuan: z.number().nonnegative().optional(),
+  currentKeyUnlimited: z.boolean().optional(),
+  usedQuota: z.number().int().nonnegative().optional(),
+  usedYuan: z.number().nonnegative().optional(),
+  quotaPerUnit: z.number().positive()
+});
+export type OfficialModelBalance = z.infer<typeof OfficialModelBalanceSchema>;
 
 export const ModelSettingsInputSchema = z.object({
   models: z.array(ModelConfigInputSchema).max(100),
@@ -220,6 +249,11 @@ export const ModelsRefreshOfficialCommandEnvelopeSchema = EnvelopeBaseSchema.ext
   payload: z.object({})
 });
 
+export const ModelsQueryOfficialBalanceCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("models.queryOfficialBalance"),
+  payload: z.object({})
+});
+
 export const ModelsSaveOfficialTokenCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("models.saveOfficialToken"),
   payload: z.object({
@@ -230,6 +264,14 @@ export const ModelsSaveOfficialTokenCommandEnvelopeSchema = EnvelopeBaseSchema.e
 export const ModelsClearOfficialTokenCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("models.clearOfficialToken"),
   payload: z.object({})
+});
+
+export const ModelsSetOfficialModelEnabledCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("models.setOfficialModelEnabled"),
+  payload: z.object({
+    modelId: z.string().trim().min(1).max(120),
+    enabled: z.boolean()
+  })
 });
 
 export const ModelsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({

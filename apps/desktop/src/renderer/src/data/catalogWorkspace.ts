@@ -355,7 +355,7 @@ function createDraftFileDocument(
     workspaceTitle: book.title,
     workspaceCategories: [book.genre],
     stageId: "draft",
-    shortAgentId: "expert_section_writer",
+    shortAgentId: "expert_draft_coordinator",
     expertSectionId: section.id,
     expertSectionOrder: sectionOrder,
     expertWordCountRequirement: section.wordCountRequirement,
@@ -469,7 +469,7 @@ function createBookProjection(book: Book): {
       stageCategoryId: "draft",
       targetDocumentId: section.bodyDocumentId,
       characterStateDocumentId: section.characterStateDocumentId,
-      shortAgentId: "expert_section_writer",
+      shortAgentId: "expert_draft_coordinator",
       expertSectionId: section.id,
       draftDirectoryId: book.draft.id,
       workspaceType: book.bookType
@@ -613,7 +613,7 @@ function createMaterialLibraryNode(library: MaterialLibrary): ResourceTreeNode {
 }
 
 function createMaterialDocuments(library: MaterialLibrary): WorkspaceDocument[] {
-  const typeLabel = `${LIBRARY_TYPE_LABELS[library.materialType]}素材`;
+  const typeLabel = "素材";
   const genreParts = materialGenreParts(library);
   const overviewKind = library.materialKind === "mixed" ? undefined : library.materialKind;
   const overview: WorkspaceDocument = {
@@ -624,7 +624,7 @@ function createMaterialDocuments(library: MaterialLibrary): WorkspaceDocument[] 
     path: [library.title, "库介绍"],
     content: library.overview,
     format: "素材",
-    readOnly: true,
+    catalogLibraryField: "overview",
     libraryId: library.id,
     ...(library.projectRevision === undefined
       ? {}
@@ -762,7 +762,7 @@ function createSkillLibraryNode(library: SkillLibrary): ResourceTreeNode {
 }
 
 function createSkillDocuments(library: SkillLibrary): WorkspaceDocument[] {
-  const typeLabel = `${LIBRARY_TYPE_LABELS[library.skillType]}技能`;
+  const typeLabel = "技能";
   const readOnly = library.isBuiltin ? { readOnly: true as const } : {};
   return [
     {
@@ -773,7 +773,7 @@ function createSkillDocuments(library: SkillLibrary): WorkspaceDocument[] {
       path: [library.title, "库说明"],
       content: library.overview,
       format: "技能",
-      readOnly: true,
+      catalogLibraryField: "overview",
       libraryId: library.id,
       ...(library.projectRevision === undefined
         ? {}

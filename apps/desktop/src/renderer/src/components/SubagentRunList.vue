@@ -7,7 +7,7 @@ import type {
 } from "../types/conversation";
 import type { IconName } from "../types/workspace";
 import AppIcon from "./AppIcon.vue";
-import MessageMarkdown from "./MessageMarkdown.vue";
+import StreamedContent from "./StreamedContent.vue";
 
 const props = defineProps<{
   message: ChatMessage;
@@ -582,14 +582,20 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
                 <AppIcon name="chevron" :size="13" />
               </summary>
               <div class="processing-live-body processing-thinking">
-                <MessageMarkdown :content="item.content" />
+                <StreamedContent
+                  :content="item.content"
+                  :streaming="run.status === 'running'"
+                />
               </div>
             </details>
             <div
               v-else-if="item.type === 'response'"
               class="processing-step processing-response subagent-processing-response"
             >
-              <MessageMarkdown :content="item.content" />
+              <StreamedContent
+                :content="item.content"
+                :streaming="run.status === 'running'"
+              />
             </div>
             <details
               v-else-if="item.type === 'tool'"
@@ -696,7 +702,7 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
           :class="{ 'is-error': run.status === 'error' }"
         >
           <strong>{{ run.status === 'completed' ? '交接摘要' : '结束说明' }}</strong>
-          <MessageMarkdown v-if="run.summary" :content="run.summary" />
+          <StreamedContent v-if="run.summary" :content="run.summary" />
           <p v-if="run.errorMessage">{{ run.errorMessage }}</p>
           <small v-if="subagentUsageLabel(run)">{{ subagentUsageLabel(run) }}</small>
         </section>

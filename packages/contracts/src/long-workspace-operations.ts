@@ -10,6 +10,8 @@ import {
   LongCharacterGroupSchema,
   LongCharacterIdSchema,
   LongCharacterSchema,
+  LongCharacterTypeIdSchema,
+  LongCharacterTypeSchema,
   LongEventConnectionIdSchema,
   LongEventConnectionSchema,
   LongFileIdSchema,
@@ -29,6 +31,7 @@ import {
   LongStoryPlotSchema,
   LongVolumeIdSchema,
   LongVolumeSchema,
+  LongWorldbuildingItemLayoutSchema,
   LongWorkspaceIndexSnapshotSchema,
   LongWorldbuildingCategoryIdSchema,
   LongWorldbuildingCategorySchema,
@@ -110,9 +113,18 @@ const WorldbuildingUpdatePatchSchema = nonEmptyPatch({
   title: OperationTitleSchema.optional(),
   format: z.enum(["list", "text"]).optional()
 });
+const FeatureSettingsUpdatePatchSchema = nonEmptyPatch({
+  worldbuildingItemLayout: LongWorldbuildingItemLayoutSchema.optional(),
+  characterAndContinuityItemLayout:
+    LongWorldbuildingItemLayoutSchema.optional(),
+  plotItemLayout: LongWorldbuildingItemLayoutSchema.optional()
+});
 const CharacterUpdatePatchSchema = nonEmptyPatch({
   name: OperationTitleSchema.optional(),
   aliases: z.array(z.string().trim().min(1).max(120)).max(64).optional()
+});
+const CharacterTypeUpdatePatchSchema = nonEmptyPatch({
+  title: OperationTitleSchema.optional()
 });
 const VolumeUpdatePatchSchema = nonEmptyPatch({
   title: OperationTitleSchema.optional(),
@@ -207,6 +219,12 @@ const ForeshadowingBeatUpdatePatchSchema = nonEmptyPatch({
 export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
   z
     .object({
+      type: z.literal("featureSettings.update"),
+      patch: FeatureSettingsUpdatePatchSchema
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("worldbuilding.create"),
       category: LongWorldbuildingCategorySchema,
       ...OptionalProvisionalIdShape
@@ -268,6 +286,37 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
       orderedIds: uniqueIdArray(
         LongWorldbuildingItemIdSchema,
         "worldbuilding item reorder id"
+      )
+    })
+    .strict(),
+
+  z
+    .object({
+      type: z.literal("characterType.create"),
+      characterType: LongCharacterTypeSchema,
+      ...OptionalProvisionalIdShape
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("characterType.update"),
+      id: LongCharacterTypeIdSchema,
+      patch: CharacterTypeUpdatePatchSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("characterType.delete"),
+      id: LongCharacterTypeIdSchema,
+      moveCharactersToTypeId: LongCharacterTypeIdSchema.optional()
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("characterType.reorder"),
+      orderedIds: uniqueIdArray(
+        LongCharacterTypeIdSchema,
+        "character type reorder id"
       )
     })
     .strict(),
@@ -405,7 +454,7 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
       type: z.literal("chapter.move"),
       id: LongChapterCardIdSchema,
       toVolumeId: LongVolumeIdSchema,
-      toPrimaryArcId: LongArcIdSchema,
+      toPrimaryArcId: LongArcIdSchema.nullable(),
       beforeChapterCardId: LongChapterCardIdSchema.optional()
     })
     .strict(),
@@ -1114,55 +1163,30 @@ function addFileDeleteIntent(
   });
 }
 
-function committedChapterIds(
-  workspace: LongWorkspaceIndexSnapshot
-): Set<string> {
-  return new Set(
-    workspace.ledger.commits.map(({ chapterCardId }) => chapterCardId)
-  );
-}
-
 function assertChapterIsMutable(
   workspace: LongWorkspaceIndexSnapshot,
   chapterCardId: string,
   action: string
 ): void {
-  const chapterFiles = workspace.chapters.find(
-    (chapter) => chapter.chapterCardId === chapterCardId
-  );
-  if (
-    committedChapterIds(workspace).has(chapterCardId) ||
-    (chapterFiles !== undefined && chapterFiles.commitId !== null)
-  ) {
-    operationError(
-      "committed_prefix_protected",
-      `Cannot ${action} committed chapter ${chapterCardId}.`
-    );
-  }
+  void workspace;
+  void chapterCardId;
+  void action;
 }
 
 function assertPlacementIsMutable(
   placement: LongNarrativePlacement,
   action: string
 ): void {
-  if (placement.commitId !== null) {
-    operationError(
-      "committed_prefix_protected",
-      `Cannot ${action} committed placement ${placement.id}.`
-    );
-  }
+  void placement;
+  void action;
 }
 
 function assertBeatIsMutable(
   beat: LongForeshadowingBeat,
   action: string
 ): void {
-  if (beat.commitId !== null) {
-    operationError(
-      "committed_prefix_protected",
-      `Cannot ${action} committed foreshadowing beat ${beat.id}.`
-    );
-  }
+  void beat;
+  void action;
 }
 
 function concreteChapterIdForBeat(
@@ -1184,7 +1208,7 @@ function retargetBeatPlanningAnchorsToChapter(
   chapter: {
     id: string;
     volumeId: string;
-    primaryArcId: string;
+    primaryArcId: string | null;
   },
   action: string
 ): void {
@@ -1216,7 +1240,8 @@ function retargetBeatPlanningAnchorsToChapter(
         )?.volumeId === chapter.volumeId
     );
   const eventSupportsTargetArc =
-    !event || event.arcIds.includes(chapter.primaryArcId);
+    chapter.primaryArcId !== null &&
+    (!event || event.arcIds.includes(chapter.primaryArcId));
   if (hasVolumeAnchor) {
     beat.volumeId = eventSupportsTargetVolume ? chapter.volumeId : null;
   }
@@ -1224,15 +1249,6 @@ function retargetBeatPlanningAnchorsToChapter(
     beat.arcId = eventSupportsTargetArc ? chapter.primaryArcId : null;
   }
   markUpdated(state, beat.id);
-}
-
-function stableGroupRank(group: string): number {
-  return [
-    "protagonist",
-    "major_supporting",
-    "minor_supporting",
-    "passerby"
-  ].indexOf(group);
 }
 
 function volumeOrderMap(
@@ -1270,9 +1286,17 @@ function normalizeLongWorkspaceOrders(
     }
   });
 
+  workspace.characterTypes.sort((left, right) => left.order - right.order);
+  workspace.characterTypes.forEach((characterType, index) => {
+    characterType.order = index + 1;
+  });
+
   workspace.characters.sort(
     (left, right) =>
-      stableGroupRank(left.group) - stableGroupRank(right.group) ||
+      (workspace.characterTypes.find(({ id }) => id === left.group)?.order ??
+        Number.MAX_SAFE_INTEGER) -
+        (workspace.characterTypes.find(({ id }) => id === right.group)?.order ??
+          Number.MAX_SAFE_INTEGER) ||
       left.order - right.order
   );
   const characterOrder = new Map<string, number>();
@@ -1503,404 +1527,10 @@ function idsByGroupAndOrder<T extends { id: string }>(
  * the committed entity itself. Only the suffix after the last committed
  * anchor in each ordered scope remains structurally mutable.
  */
-function assertCommittedFactAnchorsPreserved(
-  state: MutationState
-): void {
-  const original = state.original;
-  const draft = state.draft;
-  const originalChapterById = new Map(
-    original.plot.chapterCards.map((chapter) => [chapter.id, chapter])
-  );
-  const draftChapterById = new Map(
-    draft.plot.chapterCards.map((chapter) => [chapter.id, chapter])
-  );
-  const committedChapterIdSet = new Set(
-    original.ledger.commits.map(({ chapterCardId }) => chapterCardId)
-  );
-
-  assertCommittedPrefixPreserved(state);
-  for (const chapterId of committedChapterIdSet) {
-    const before = originalChapterById.get(chapterId);
-    const after = draftChapterById.get(chapterId);
-    if (!before || !after) {
-      operationError(
-        "committed_prefix_protected",
-        `Committed chapter ${chapterId} cannot be removed.`
-      );
-    }
-    const {
-      narrativeOrder: _beforeNarrativeOrder,
-      ...beforeAnchor
-    } = before;
-    const {
-      narrativeOrder: _afterNarrativeOrder,
-      ...afterAnchor
-    } = after;
-    assertAnchoredValue(
-      beforeAnchor,
-      afterAnchor,
-      `Committed chapter ${chapterId}`
-    );
-  }
-
-  const originalPlacementById = new Map(
-    original.plot.narrativePlacements.map((placement) => [
-      placement.id,
-      placement
-    ])
-  );
-  const draftPlacementById = new Map(
-    draft.plot.narrativePlacements.map((placement) => [
-      placement.id,
-      placement
-    ])
-  );
-  const committedPlacementIds = new Set(
-    original.plot.narrativePlacements
-      .filter(({ commitId }) => commitId !== null)
-      .map(({ id }) => id)
-  );
-  for (const placementId of committedPlacementIds) {
-    const before = originalPlacementById.get(placementId);
-    const after = draftPlacementById.get(placementId);
-    if (!before || !after) {
-      operationError(
-        "committed_prefix_protected",
-        `Committed placement ${placementId} cannot be removed.`
-      );
-    }
-    const { orderInChapter: _beforeOrder, ...beforeAnchor } = before;
-    const { orderInChapter: _afterOrder, ...afterAnchor } = after;
-    assertAnchoredValue(
-      beforeAnchor,
-      afterAnchor,
-      `Committed placement ${placementId}`
-    );
-  }
-  for (const placement of draft.plot.narrativePlacements) {
-    if (
-      committedChapterIdSet.has(placement.chapterCardId) &&
-      !committedPlacementIds.has(placement.id)
-    ) {
-      operationError(
-        "committed_prefix_protected",
-        `Placement ${placement.id} cannot be newly bound to committed chapter ${placement.chapterCardId}.`
-      );
-    }
-  }
-
-  const originalPlacementsByChapter = idsByGroupAndOrder(
-    original.plot.narrativePlacements,
-    ({ chapterCardId }) => chapterCardId,
-    ({ orderInChapter }) => orderInChapter
-  );
-  const draftPlacementsByChapter = idsByGroupAndOrder(
-    draft.plot.narrativePlacements,
-    ({ chapterCardId }) => chapterCardId,
-    ({ orderInChapter }) => orderInChapter
-  );
-  for (const chapterId of committedChapterIdSet) {
-    assertFrozenOrderPrefix(
-      originalPlacementsByChapter.get(chapterId) ?? [],
-      draftPlacementsByChapter.get(chapterId) ?? [],
-      committedPlacementIds,
-      `Placements in committed chapter ${chapterId}`
-    );
-  }
-
-  const originalBeatById = new Map<
-    string,
-    {
-      threadId: string;
-      beat: LongForeshadowingBeat;
-    }
-  >();
-  const draftBeatById = new Map<
-    string,
-    {
-      threadId: string;
-      beat: LongForeshadowingBeat;
-    }
-  >();
-  original.plot.foreshadowing.forEach((thread) => {
-    thread.beats.forEach((beat) => {
-      originalBeatById.set(beat.id, { threadId: thread.id, beat });
-    });
-  });
-  draft.plot.foreshadowing.forEach((thread) => {
-    thread.beats.forEach((beat) => {
-      draftBeatById.set(beat.id, { threadId: thread.id, beat });
-    });
-  });
-  const committedBeatIds = new Set(
-    [...originalBeatById.values()]
-      .filter(({ beat }) => beat.commitId !== null)
-      .map(({ beat }) => beat.id)
-  );
-  const committedThreadIds = new Set<string>();
-  for (const beatId of committedBeatIds) {
-    const beforeRecord = originalBeatById.get(beatId);
-    const afterRecord = draftBeatById.get(beatId);
-    if (!beforeRecord || !afterRecord) {
-      operationError(
-        "committed_prefix_protected",
-        `Committed foreshadowing beat ${beatId} cannot be removed.`
-      );
-    }
-    committedThreadIds.add(beforeRecord.threadId);
-    if (afterRecord.threadId !== beforeRecord.threadId) {
-      operationError(
-        "committed_prefix_protected",
-        `Committed foreshadowing beat ${beatId} cannot change threads.`
-      );
-    }
-    const { order: _beforeOrder, ...beforeAnchor } = beforeRecord.beat;
-    const { order: _afterOrder, ...afterAnchor } = afterRecord.beat;
-    assertAnchoredValue(
-      beforeAnchor,
-      afterAnchor,
-      `Committed foreshadowing beat ${beatId}`
-    );
-  }
-  for (const { beat } of draftBeatById.values()) {
-    if (committedBeatIds.has(beat.id)) continue;
-    if (
-      (beat.chapterCardId !== null &&
-        committedChapterIdSet.has(beat.chapterCardId)) ||
-      (beat.placementId !== null &&
-        committedPlacementIds.has(beat.placementId))
-    ) {
-      operationError(
-        "committed_prefix_protected",
-        `Foreshadowing beat ${beat.id} cannot be newly bound to a committed chapter or placement.`
-      );
-    }
-  }
-
-  const originalThreadById = new Map(
-    original.plot.foreshadowing.map((thread) => [thread.id, thread])
-  );
-  const draftThreadById = new Map(
-    draft.plot.foreshadowing.map((thread) => [thread.id, thread])
-  );
-  for (const threadId of committedThreadIds) {
-    const before = originalThreadById.get(threadId);
-    const after = draftThreadById.get(threadId);
-    if (!before || !after) {
-      operationError(
-        "committed_prefix_protected",
-        `Foreshadowing thread ${threadId} with committed beats cannot be removed.`
-      );
-    }
-    assertAnchoredValue(
-      {
-        id: before.id,
-        title: before.title,
-        coreQuestion: before.coreQuestion,
-        ...(before.hiddenTruth === undefined
-          ? {}
-          : { hiddenTruth: before.hiddenTruth }),
-        ...(before.plannedSpan === undefined
-          ? {}
-          : { plannedSpan: before.plannedSpan }),
-        truthEventId: before.truthEventId,
-        expectedReaderEffect: before.expectedReaderEffect
-      },
-      {
-        id: after.id,
-        title: after.title,
-        coreQuestion: after.coreQuestion,
-        ...(before.hiddenTruth === undefined
-          ? {}
-          : { hiddenTruth: after.hiddenTruth }),
-        ...(before.plannedSpan === undefined
-          ? {}
-          : { plannedSpan: after.plannedSpan }),
-        truthEventId: after.truthEventId,
-        expectedReaderEffect: after.expectedReaderEffect
-      },
-      `Foreshadowing thread ${threadId}`
-    );
-    assertFrozenOrderPrefix(
-      orderedIdsByOrder(before.beats, ({ order }) => order),
-      orderedIdsByOrder(after.beats, ({ order }) => order),
-      committedBeatIds,
-      `Beats in foreshadowing thread ${threadId}`
-    );
-  }
-  assertFrozenOrderPrefix(
-    original.plot.foreshadowing.map(({ id }) => id),
-    draft.plot.foreshadowing.map(({ id }) => id),
-    committedThreadIds,
-    "Foreshadowing threads"
-  );
-
-  const committedEventIds = new Set<string>();
-  for (const placementId of committedPlacementIds) {
-    const placement = originalPlacementById.get(placementId);
-    if (placement) committedEventIds.add(placement.eventId);
-  }
-  for (const beatId of committedBeatIds) {
-    const record = originalBeatById.get(beatId);
-    if (record?.beat.eventId) committedEventIds.add(record.beat.eventId);
-  }
-  for (const threadId of committedThreadIds) {
-    const truthEventId =
-      originalThreadById.get(threadId)?.truthEventId ?? null;
-    if (truthEventId !== null) committedEventIds.add(truthEventId);
-  }
-
-  const originalEventById = new Map(
-    original.plot.storyEvents.map((event) => [event.id, event])
-  );
-  const draftEventById = new Map(
-    draft.plot.storyEvents.map((event) => [event.id, event])
-  );
-  for (const eventId of committedEventIds) {
-    const before = originalEventById.get(eventId);
-    const after = draftEventById.get(eventId);
-    if (!before || !after) {
-      operationError(
-        "committed_prefix_protected",
-        `Committed-fact event ${eventId} cannot be removed.`
-      );
-    }
-    const { storyOrder: _beforeOrder, ...beforeAnchor } = before;
-    const { storyOrder: _afterOrder, ...afterAnchor } = after;
-    assertAnchoredValue(
-      beforeAnchor,
-      afterAnchor,
-      `Committed-fact event ${eventId}`
-    );
-  }
-  assertFrozenOrderPrefix(
-    orderedIdsByOrder(
-      original.plot.storyEvents,
-      ({ storyOrder }) => storyOrder
-    ),
-    orderedIdsByOrder(
-      draft.plot.storyEvents,
-      ({ storyOrder }) => storyOrder
-    ),
-    committedEventIds,
-    "Story events"
-  );
-
-  const originalConnectionById = new Map(
-    original.plot.eventConnections.map((connection) => [
-      connection.id,
-      connection
-    ])
-  );
-  const draftConnectionById = new Map(
-    draft.plot.eventConnections.map((connection) => [
-      connection.id,
-      connection
-    ])
-  );
-  for (const connection of original.plot.eventConnections) {
-    if (
-      !committedEventIds.has(connection.sourceEventId) &&
-      !committedEventIds.has(connection.targetEventId)
-    ) {
-      continue;
-    }
-    assertAnchoredValue(
-      connection,
-      draftConnectionById.get(connection.id),
-      `Connection ${connection.id} involving a committed-fact event`
-    );
-  }
-  for (const connection of draft.plot.eventConnections) {
-    if (
-      committedEventIds.has(connection.sourceEventId) &&
-      committedEventIds.has(connection.targetEventId)
-    ) {
-      const before = originalConnectionById.get(connection.id);
-      if (
-        before === undefined ||
-        JSON.stringify(before) !== JSON.stringify(connection)
-      ) {
-        operationError(
-          "committed_prefix_protected",
-          `Cannot create or redirect connection ${connection.id} between two committed-fact events.`
-        );
-      }
-    }
-  }
-
-  const committedArcIds = new Set<string>();
-  for (const chapterId of committedChapterIdSet) {
-    const chapter = originalChapterById.get(chapterId);
-    if (chapter) committedArcIds.add(chapter.primaryArcId);
-  }
-  for (const eventId of committedEventIds) {
-    originalEventById
-      .get(eventId)
-      ?.arcIds.forEach((arcId) => committedArcIds.add(arcId));
-  }
-  for (const beatId of committedBeatIds) {
-    const arcId = originalBeatById.get(beatId)?.beat.arcId ?? null;
-    if (arcId !== null) committedArcIds.add(arcId);
-  }
-  const originalArcById = new Map(
-    original.plot.arcs.map((arc) => [arc.id, arc])
-  );
-  const draftArcById = new Map(
-    draft.plot.arcs.map((arc) => [arc.id, arc])
-  );
-  for (const arcId of committedArcIds) {
-    const before = originalArcById.get(arcId);
-    const after = draftArcById.get(arcId);
-    if (!before || !after || before.volumeId !== after.volumeId) {
-      operationError(
-        "committed_prefix_protected",
-        `Committed-fact arc ${arcId} cannot be removed or change volumes.`
-      );
-    }
-  }
-  const originalArcsByVolume = idsByGroupAndOrder(
-    original.plot.arcs,
-    ({ volumeId }) => volumeId,
-    ({ order }) => order
-  );
-  const draftArcsByVolume = idsByGroupAndOrder(
-    draft.plot.arcs,
-    ({ volumeId }) => volumeId,
-    ({ order }) => order
-  );
-  const committedArcVolumeIds = new Set(
-    [...committedArcIds]
-      .map((arcId) => originalArcById.get(arcId)?.volumeId)
-      .filter((volumeId): volumeId is string => volumeId !== undefined)
-  );
-  for (const volumeId of committedArcVolumeIds) {
-    assertFrozenOrderPrefix(
-      originalArcsByVolume.get(volumeId) ?? [],
-      draftArcsByVolume.get(volumeId) ?? [],
-      committedArcIds,
-      `Arcs in committed-fact volume ${volumeId}`
-    );
-  }
-
-  const committedVolumeIds = new Set(committedArcVolumeIds);
-  for (const chapterId of committedChapterIdSet) {
-    const volumeId = originalChapterById.get(chapterId)?.volumeId;
-    if (volumeId) committedVolumeIds.add(volumeId);
-  }
-  for (const beatId of committedBeatIds) {
-    const volumeId =
-      originalBeatById.get(beatId)?.beat.volumeId ?? null;
-    if (volumeId !== null) committedVolumeIds.add(volumeId);
-  }
-  assertFrozenOrderPrefix(
-    orderedIdsByOrder(original.plot.volumes, ({ order }) => order),
-    orderedIdsByOrder(draft.plot.volumes, ({ order }) => order),
-    committedVolumeIds,
-    "Volumes"
-  );
+function assertCommittedFactAnchorsPreserved(state: MutationState): void {
+  // Continuity records are references only and never freeze plot structure.
+  void state;
 }
-
 function requireCascade(
   cascade: boolean,
   references: readonly string[],
@@ -1992,6 +1622,39 @@ function deleteChapter(
     deleteNarrativePlacement(state, placementId, true);
   }
 
+  const ledgerRecord = state.draft.ledger.commits.find(
+    (commit) => commit.chapterCardId === chapterCardId
+  );
+  if (ledgerRecord) {
+    addFileDeleteIntent(
+      state,
+      ledgerRecord.recordFile,
+      `Delete continuity record for chapter ${chapterCardId}`
+    );
+    state.draft.ledger.commits = state.draft.ledger.commits.filter(
+      ({ id }) => id !== ledgerRecord.id
+    );
+    state.draft.plot.narrativePlacements.forEach((placement) => {
+      if (placement.commitId !== ledgerRecord.id) return;
+      placement.commitId = null;
+      placement.status = "planned";
+    });
+    state.draft.plot.foreshadowing.forEach((thread) => {
+      thread.beats.forEach((beat) => {
+        if (beat.commitId !== ledgerRecord.id) return;
+        beat.commitId = null;
+        beat.status = "planned";
+      });
+    });
+    state.draft.ledger.projection = {
+      throughCommitId: null,
+      facts: [],
+      knowledge: [],
+      openLoops: [],
+      latestHandoff: null
+    };
+  }
+
   const fileIndex = state.draft.chapters.findIndex(
     (entry) => entry.chapterCardId === chapterCardId
   );
@@ -2022,6 +1685,14 @@ function deleteChapter(
   );
   state.draft.chapters.splice(fileIndex, 1);
   state.draft.plot.chapterCards.splice(chapterIndex, 1);
+  const recordedChapterIds = new Set(
+    state.draft.ledger.commits.map(({ chapterCardId }) => chapterCardId)
+  );
+  state.draft.ledger.committedThroughChapterId = null;
+  for (const orderedChapterId of orderedChapterIds(state.draft)) {
+    if (!recordedChapterIds.has(orderedChapterId)) break;
+    state.draft.ledger.committedThroughChapterId = orderedChapterId;
+  }
   markDeleted(state, chapter.id);
 }
 
@@ -2048,9 +1719,6 @@ function deleteArc(
 ): void {
   const arcIndex = findEntityIndex(state.draft.plot.arcs, arcId, "Arc");
   const arc = state.draft.plot.arcs[arcIndex]!;
-  const chapterIds = state.draft.plot.chapterCards
-    .filter((chapter) => chapter.primaryArcId === arcId)
-    .map(({ id }) => id);
   const eventIds = state.draft.plot.storyEvents
     .filter((event) => event.arcIds.includes(arcId))
     .map(({ id }) => id);
@@ -2075,7 +1743,7 @@ function deleteArc(
   }
   requireCascade(
     cascade,
-    [...chapterIds, ...eventIds, ...storyPlotIds, ...directBeatIds],
+    [...eventIds, ...storyPlotIds, ...directBeatIds],
     `Arc ${arcId}`
   );
   for (const beatId of new Set(directBeatIds)) {
@@ -2084,9 +1752,11 @@ function deleteArc(
     );
     if (stillExists) deleteForeshadowingBeat(state, beatId);
   }
-  chapterIds.forEach((chapterId) =>
-    deleteChapter(state, chapterId, true)
-  );
+  state.draft.plot.chapterCards.forEach((chapter) => {
+    if (chapter.primaryArcId !== arcId) return;
+    chapter.primaryArcId = null;
+    markUpdated(state, chapter.id);
+  });
   storyPlotIds.forEach((storyPlotId) => deleteStoryPlot(state, storyPlotId));
   state.draft.plot.storyEvents.forEach((event) => {
     if (!event.arcIds.includes(arcId)) return;
@@ -2279,17 +1949,6 @@ function deleteCharacter(
       .filter((entry) => entry.characterId === characterId)
       .map((entry) => ({ chapter, entry }))
   );
-  if (
-    eventRefs.some((eventId) =>
-      eventParticipatesInCommittedFacts(state.draft, eventId)
-    ) ||
-    continuityRefs.some(({ chapter }) => chapter.commitId !== null)
-  ) {
-    operationError(
-      "committed_prefix_protected",
-      `Cannot delete character ${characterId}; a committed chapter references it.`
-    );
-  }
   requireCascade(
     cascade,
     [
@@ -2389,22 +2048,9 @@ function eventParticipatesInCommittedFacts(
   workspace: LongWorkspaceIndexSnapshot,
   eventId: string
 ): boolean {
-  if (
-    workspace.plot.narrativePlacements.some(
-      (placement) =>
-        placement.eventId === eventId && placement.commitId !== null
-    )
-  ) {
-    return true;
-  }
-  return workspace.plot.foreshadowing.some(
-    (thread) =>
-      thread.beats.some(
-        (beat) => beat.eventId === eventId && beat.commitId !== null
-      ) ||
-      (thread.truthEventId === eventId &&
-        thread.beats.some((beat) => beat.commitId !== null))
-  );
+  void workspace;
+  void eventId;
+  return false;
 }
 
 function applyLongWorkspaceOperation(
@@ -2414,6 +2060,21 @@ function applyLongWorkspaceOperation(
   const workspace = state.draft;
 
   switch (operation.type) {
+    case "featureSettings.update": {
+      if (operation.patch.worldbuildingItemLayout !== undefined) {
+        workspace.featureSettings.worldbuildingItemLayout =
+          operation.patch.worldbuildingItemLayout;
+      }
+      if (operation.patch.characterAndContinuityItemLayout !== undefined) {
+        workspace.featureSettings.characterAndContinuityItemLayout =
+          operation.patch.characterAndContinuityItemLayout;
+      }
+      if (operation.patch.plotItemLayout !== undefined) {
+        workspace.featureSettings.plotItemLayout =
+          operation.patch.plotItemLayout;
+      }
+      break;
+    }
     case "worldbuilding.create": {
       assertNewEntityId(
         workspace.worldbuilding,
@@ -2708,7 +2369,105 @@ function applyLongWorkspaceOperation(
       break;
     }
 
+    case "characterType.create": {
+      assertNewEntityId(
+        workspace.characterTypes,
+        operation.characterType.id,
+        "Character type"
+      );
+      workspace.characterTypes.push(structuredClone(operation.characterType));
+      markCreated(state, operation.characterType.id);
+      registerProvisionalId(
+        state,
+        operation.provisionalId,
+        operation.characterType.id
+      );
+      break;
+    }
+    case "characterType.update": {
+      const characterType =
+        workspace.characterTypes[
+          findEntityIndex(
+            workspace.characterTypes,
+            operation.id,
+            "Character type"
+          )
+        ]!;
+      Object.assign(characterType, operation.patch);
+      markUpdated(state, characterType.id);
+      break;
+    }
+    case "characterType.delete": {
+      if (workspace.characterTypes.length <= 1) {
+        operationError(
+          "invalid_reference",
+          "A long workspace must retain at least one character type."
+        );
+      }
+      const typeIndex = findEntityIndex(
+        workspace.characterTypes,
+        operation.id,
+        "Character type"
+      );
+      const affected = workspace.characters.filter(
+        ({ group }) => group === operation.id
+      );
+      if (affected.length > 0) {
+        const targetId = operation.moveCharactersToTypeId;
+        if (!targetId || targetId === operation.id) {
+          operationError(
+            "invalid_reference",
+            "Deleting a non-empty character type requires another target type."
+          );
+        }
+        findEntityIndex(workspace.characterTypes, targetId, "Character type");
+        const nextOrder = workspace.characters.filter(
+          ({ group }) => group === targetId
+        ).length;
+        affected
+          .sort((left, right) => left.order - right.order)
+          .forEach((character, index) => {
+            character.group = targetId;
+            character.order = nextOrder + index + 1;
+            markUpdated(state, character.id);
+          });
+      } else if (
+        operation.moveCharactersToTypeId !== undefined &&
+        operation.moveCharactersToTypeId !== operation.id
+      ) {
+        findEntityIndex(
+          workspace.characterTypes,
+          operation.moveCharactersToTypeId,
+          "Character type"
+        );
+      }
+      workspace.characterTypes.splice(typeIndex, 1);
+      markDeleted(state, operation.id);
+      break;
+    }
+    case "characterType.reorder": {
+      assertExactOrder(
+        workspace.characterTypes.map(({ id }) => id),
+        operation.orderedIds,
+        "Character types"
+      );
+      updateOrdersById(
+        workspace.characterTypes,
+        operation.orderedIds,
+        (value, order) => {
+          value.order = order;
+        },
+        state
+      );
+      break;
+    }
+
     case "character.create": {
+      findEntityIndex(
+        workspace.characterTypes,
+        operation.character.group,
+        "Character type"
+      );
       assertNewEntityId(
         workspace.characters,
         operation.character.id,
@@ -2762,6 +2521,11 @@ function applyLongWorkspaceOperation(
       break;
     }
     case "character.move": {
+      findEntityIndex(
+        workspace.characterTypes,
+        operation.toGroup,
+        "Character type"
+      );
       const character =
         workspace.characters[
           findEntityIndex(
@@ -2792,6 +2556,11 @@ function applyLongWorkspaceOperation(
       break;
     }
     case "character.reorder": {
+      findEntityIndex(
+        workspace.characterTypes,
+        operation.group,
+        "Character type"
+      );
       const target = workspace.characters
         .filter(({ group }) => group === operation.group)
         .sort((left, right) => left.order - right.order);
@@ -2895,7 +2664,7 @@ function applyLongWorkspaceOperation(
           findEntityIndex(workspace.plot.arcs, operation.id, "Arc")
         ]!;
       const sourceVolumeId = arc.volumeId;
-      const childChapters = workspace.plot.chapterCards.filter(
+      const linkedChapters = workspace.plot.chapterCards.filter(
         (chapter) => chapter.primaryArcId === arc.id
       );
       if (
@@ -2910,60 +2679,51 @@ function applyLongWorkspaceOperation(
           `Cannot move arc ${arc.id}; a committed event references it.`
         );
       }
-      childChapters.forEach((chapter) =>
-        assertChapterIsMutable(workspace, chapter.id, "move")
-      );
       arc.volumeId = operation.toVolumeId;
-      childChapters.forEach((chapter) => {
-        chapter.volumeId = operation.toVolumeId;
-        markUpdated(state, chapter.id);
-      });
-      const movedChapterIds = new Set(
-        childChapters.map((chapter) => chapter.id)
-      );
-      workspace.plot.foreshadowing.forEach((thread) => {
-        thread.beats.forEach((beat) => {
-          const followsMovedArc = (beat.arcId ?? null) === arc.id;
-          const followsMovedChapter = movedChapterIds.has(
-            concreteChapterIdForBeat(workspace, beat) ?? ""
-          );
-          const anchoredEvent =
-            beat.eventId === null
-              ? undefined
-              : workspace.plot.storyEvents.find(
-                  (event) => event.id === beat.eventId
-                );
-          const followsMovedEvent =
-            anchoredEvent?.arcIds.includes(arc.id) === true &&
-            beat.volumeId === sourceVolumeId &&
-            !anchoredEvent.arcIds.some((eventArcId) => {
-              const eventArc = workspace.plot.arcs.find(
-                (candidate) => candidate.id === eventArcId
-              );
-              return eventArc?.volumeId === sourceVolumeId;
-            });
-          if (
-            (!followsMovedArc &&
-              !followsMovedChapter &&
-              !followsMovedEvent) ||
-            (beat.volumeId ?? null) === null
-          ) {
-            return;
-          }
-          assertBeatIsMutable(beat, "move with its planning arc");
-          const concreteChapterId = concreteChapterIdForBeat(
-            workspace,
-            beat
-          );
-          beat.volumeId =
-            followsMovedEvent &&
-            !followsMovedChapter &&
-            concreteChapterId !== null
-              ? null
-              : operation.toVolumeId;
-          markUpdated(state, beat.id);
+      if (sourceVolumeId !== operation.toVolumeId) {
+        linkedChapters.forEach((chapter) => {
+          chapter.primaryArcId = null;
+          markUpdated(state, chapter.id);
         });
-      });
+        workspace.plot.foreshadowing.forEach((thread) => {
+          thread.beats.forEach((beat) => {
+            const followsMovedArc = (beat.arcId ?? null) === arc.id;
+            const anchoredEvent =
+              beat.eventId === null
+                ? undefined
+                : workspace.plot.storyEvents.find(
+                    (event) => event.id === beat.eventId
+                  );
+            const followsMovedEvent =
+              anchoredEvent?.arcIds.includes(arc.id) === true &&
+              beat.volumeId === sourceVolumeId &&
+              !anchoredEvent.arcIds.some((eventArcId) => {
+                const eventArc = workspace.plot.arcs.find(
+                  (candidate) => candidate.id === eventArcId
+                );
+                return eventArc?.volumeId === sourceVolumeId;
+              });
+            if (
+              (!followsMovedArc && !followsMovedEvent) ||
+              (beat.volumeId ?? null) === null
+            ) {
+              return;
+            }
+            assertBeatIsMutable(beat, "move with its planning arc");
+            const concreteChapterId = concreteChapterIdForBeat(
+              workspace,
+              beat
+            );
+            beat.volumeId =
+              followsMovedEvent && concreteChapterId !== null
+                ? null
+                : followsMovedArc && concreteChapterId !== null
+                  ? null
+                  : operation.toVolumeId;
+            markUpdated(state, beat.id);
+          });
+        });
+      }
       const target = workspace.plot.arcs
         .filter(({ volumeId }) => volumeId === operation.toVolumeId)
         .sort((left, right) => left.order - right.order);
@@ -3054,7 +2814,6 @@ function applyLongWorkspaceOperation(
       break;
     }
     case "chapter.update": {
-      assertChapterIsMutable(workspace, operation.id, "update");
       const chapter =
         workspace.plot.chapterCards[
           findEntityIndex(
@@ -3078,19 +2837,21 @@ function applyLongWorkspaceOperation(
         operation.toVolumeId,
         "Target volume"
       );
-      const targetArc =
-        workspace.plot.arcs[
-          findEntityIndex(
-            workspace.plot.arcs,
-            operation.toPrimaryArcId,
-            "Target primary arc"
-          )
-        ]!;
-      if (targetArc.volumeId !== operation.toVolumeId) {
-        operationError(
-          "invalid_reference",
-          "Target chapter volume and primary arc must match."
-        );
+      if (operation.toPrimaryArcId !== null) {
+        const targetArc =
+          workspace.plot.arcs[
+            findEntityIndex(
+              workspace.plot.arcs,
+              operation.toPrimaryArcId,
+              "Target primary arc"
+            )
+          ]!;
+        if (targetArc.volumeId !== operation.toVolumeId) {
+          operationError(
+            "invalid_reference",
+            "Target chapter volume and primary arc must match."
+          );
+        }
       }
       const chapter =
         workspace.plot.chapterCards[
@@ -3378,6 +3139,7 @@ function applyLongWorkspaceOperation(
             if (arcNeedsRetarget) {
               beat.arcId =
                 concreteChapter &&
+                concreteChapter.primaryArcId !== null &&
                 event.arcIds.includes(concreteChapter.primaryArcId)
                   ? concreteChapter.primaryArcId
                   : !concreteChapter && event.arcIds.length === 1
@@ -3970,16 +3732,6 @@ function applyDocumentWriteProposals(
   const ledgerFileIds = new Set(
     state.draft.ledger.commits.map(({ recordFile }) => recordFile.id)
   );
-  const ledgerOwnedCharacterFileIds =
-    state.original.ledger.commits.length === 0
-      ? new Set<string>()
-      : new Set(
-          state.original.characterFiles.flatMap((entry) => [
-            entry.relationships.id,
-            entry.currentState.id,
-            entry.history.id
-          ])
-        );
 
   for (const proposal of proposals) {
     if (proposalIds.has(proposal.proposalId)) {
@@ -4002,16 +3754,6 @@ function applyDocumentWriteProposals(
         `Committed ledger file ${proposal.fileId} cannot be rewritten.`
       );
     }
-    if (
-      proposal.mode !== "create" &&
-      ledgerOwnedCharacterFileIds.has(proposal.fileId)
-    ) {
-      operationError(
-        "committed_prefix_protected",
-        `Ledger-owned character continuity file ${proposal.fileId} cannot be rewritten outside a ledger commit.`
-      );
-    }
-
     const intent = state.fileIntents.get(proposal.fileId);
     if (intent?.action === "delete") {
       operationError(
@@ -4269,6 +4011,14 @@ function simulateLongWorkspaceOperations(
   );
   normalizeLongWorkspaceOrders(state.draft);
   assertCommittedFactAnchorsPreserved(state);
+  const recordedChapterIds = new Set(
+    state.draft.ledger.commits.map(({ chapterCardId }) => chapterCardId)
+  );
+  state.draft.ledger.committedThroughChapterId = null;
+  for (const chapterCardId of orderedChapterIds(state.draft)) {
+    if (!recordedChapterIds.has(chapterCardId)) break;
+    state.draft.ledger.committedThroughChapterId = chapterCardId;
+  }
   state.draft.revision = original.revision + 1;
   state.draft.updatedAt = batch.updatedAt;
 

@@ -9,6 +9,38 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain('autoSaveEnabled ? "立即保存" : "应用"');
   });
 
+  it("limits material and skill entries to 40,000 characters with a footer reminder", () => {
+    expect(source).toContain("LIBRARY_AGENT_ENTRY_MAX_CHARACTERS");
+    expect(source).toContain(':maxlength="contentMaxLength"');
+    expect(source).toContain("每个条目最多 40,000 字，请勿上传过多内容");
+    expect(source).toContain("contentExceedsLimit");
+  });
+
+  it("shows a live, non-blocking format reason after the binding badge for skill entries", () => {
+    expect(source).toContain('import { parseSkillFrontmatter } from "../utils/skillFrontmatter"');
+    expect(source).toContain('props.document.domain !== "skill" || !props.document.catalogEntryId');
+    expect(source).toContain("parseSkillFrontmatter(content.value)");
+
+    const bindingBadge = source.indexOf("仅浏览 · 未绑定");
+    const formatBadge = source.indexOf('class="skill-format-error-badge"');
+    expect(bindingBadge).toBeGreaterThan(-1);
+    expect(formatBadge).toBeGreaterThan(bindingBadge);
+    expect(source).toContain('v-if="skillFormatError"');
+    expect(source).toContain(':title="skillFormatError"');
+    expect(source).toContain(':aria-label="skillFormatError"');
+    expect(source).not.toContain("!dirty || contentExceedsLimit || skillFormatError");
+  });
+
+  it("keeps library overview titles fixed while routing overview content to persistent saves", () => {
+    expect(source).toContain('props.document.catalogLibraryField === "overview"');
+    expect(source).toContain("document.draftFileKind === 'character-state' || isLibraryOverview");
+    expect(source).toContain("CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS");
+    expect(appSource).toContain("async function saveCatalogLibraryOverview(");
+    expect(appSource).toContain('catalogLibraryField !== "overview"');
+    expect(appSource).toContain("overview: payload.content");
+    expect(appSource).toContain("return saveCatalogLibraryOverview(document, payload");
+  });
+
   it("renders independently managed section tabs before the active section editor", () => {
     const tabsStart = source.indexOf('class="section-tabs-bar"');
     const editorStart = source.indexOf('class="editor-document"', tabsStart);
@@ -25,6 +57,14 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain('class="section-tabs-remove"');
     expect(source).toContain("emit('deleteSection')");
     expect(editorStart).toBeGreaterThan(tabsStart);
+  });
+
+  it("remembers the scroll position of every section instead of reusing the previous section position", () => {
+    expect(source).toContain("editorScrollMemoryKey(props.document)");
+    expect(source).toContain("rememberCurrentDocumentScroll(previousScrollMemoryKey)");
+    expect(source).toContain('restoreDocumentScroll(nextScrollMemoryKey, "edit")');
+    expect(source).toContain('@scroll="handleDocumentScroll"');
+    expect(source).toContain("scroller.scrollTop = recalledEditorScrollPosition(key, view)");
   });
 
   it("routes the short-story tab add button through the existing sidebar creation flow", () => {

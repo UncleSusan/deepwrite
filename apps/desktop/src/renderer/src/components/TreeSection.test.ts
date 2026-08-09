@@ -33,4 +33,14 @@ describe("TreeSection resource actions", () => {
       "longBookAction: [payload: LongBookResourceNodeActionPayload]"
     );
   });
+
+  it("forwards draft section ordering actions through the normal resource tree", () => {
+    expect(source).toContain(
+      'expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode]'
+    );
+    expect(source).toContain(
+      "@expert-section-action=\"(action, sectionNode) => emit('expertSectionAction', action, sectionNode)\""
+    );
+    expect(sidebarSource.match(/@expert-section-action=/gu)).toHaveLength(2);
+  });
 });

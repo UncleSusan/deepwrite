@@ -4,6 +4,7 @@ import {
   CreateLongBookInputSchema,
   LongReadDocumentInputSchema,
   LongReadDocumentResultSchema,
+  LongRenameBookInputSchema,
   LongSearchInputSchema,
   LongUpdateBindingsInputSchema,
   LongWorkspaceRuntimeContextSchema,
@@ -186,6 +187,49 @@ describe("long workspace API contracts", () => {
     ).toThrow(/maximum character count/iu);
   });
 
+  it("accepts a lightweight worldbuilding directory only for the worldbuilding agent", () => {
+    const worldbuildingDirectory = {
+      categories: [
+        {
+          categoryId: "world_rules",
+          title: "规则",
+          order: 1,
+          format: "text" as const
+        },
+        {
+          categoryId: "world_factions",
+          title: "势力",
+          order: 2,
+          format: "list" as const,
+          itemCount: 1,
+          items: [
+            {
+              itemId: "worlditem_watchers",
+              title: "守夜人",
+              order: 1
+            }
+          ],
+          omittedItemCount: 0
+        }
+      ],
+      omittedCategoryCount: 0
+    };
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "worldbuilding",
+          activeAgentId: "worldbuilding",
+          worldbuildingDirectory
+        })
+      )
+    ).toMatchObject({ worldbuildingDirectory });
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({ worldbuildingDirectory })
+      )
+    ).toThrow(/worldbuilding directory/iu);
+  });
+
   it("bounds character focus and keeps it exclusive to the character-design agent", () => {
     const focus = {
       characterName: "林岚",
@@ -349,6 +393,27 @@ describe("long workspace API contracts", () => {
     ).toThrow(/1,?000 ids per kind/iu);
   });
 
+  it("validates long-book rename inputs", () => {
+    expect(
+      LongRenameBookInputSchema.parse({
+        bookId: "longbook_api",
+        expectedProjectRevision: 3,
+        title: "  时间尽头  "
+      })
+    ).toEqual({
+      bookId: "longbook_api",
+      expectedProjectRevision: 3,
+      title: "时间尽头"
+    });
+    expect(() =>
+      LongRenameBookInputSchema.parse({
+        bookId: "longbook_api",
+        expectedProjectRevision: 3,
+        title: "   "
+      })
+    ).toThrow();
+  });
+
   it("rejects an inconsistent document page cursor", () => {
     expect(() =>
       LongReadDocumentResultSchema.parse({
@@ -405,13 +470,21 @@ describe("long workspace API contracts", () => {
       },
       { id: "cmd_long_read", context: { runId: "run_api" } }
     );
-    const migrate = createEnvelope(
-      "long.importWriteClawAtPath",
+    const previewLegacySync = createEnvelope(
+      "long.previewLegacySyncAtPath",
+      { sourcePath: "/imports/legacy.zip" },
+      { id: "cmd_long_preview_legacy_sync" }
+    );
+    const applyLegacySync = createEnvelope(
+      "long.applyLegacySyncAtPath",
       {
-        parentDirectory: "/projects",
-        sourcePath: "/imports/legacy.zip"
+        bookId: "longbook_api",
+        expectedProjectRevision: 3,
+        modules: ["worldbuilding", "plot"],
+        sourcePath: "/imports/legacy.zip",
+        expectedFingerprint: "b".repeat(64)
       },
-      { id: "cmd_long_import" }
+      { id: "cmd_long_apply_legacy_sync" }
     );
     const importPortable = createEnvelope(
       "long.importPortableAtPath",
@@ -420,6 +493,22 @@ describe("long workspace API contracts", () => {
         sourcePath: "/imports/time.deepwrite-long.json"
       },
       { id: "cmd_long_import_portable" }
+    );
+    const previewContinuation = createEnvelope(
+      "long.previewContinuationImportAtPath",
+      { sourcePath: "/imports/chapters" },
+      { id: "cmd_long_preview_continuation" }
+    );
+    const importContinuation = createEnvelope(
+      "long.importContinuationAtPath",
+      {
+        parentDirectory: "/projects",
+        sourcePath: "/imports/chapters",
+        expectedFingerprint: "a".repeat(64),
+        title: "时间尽头",
+        genre: "科幻"
+      },
+      { id: "cmd_long_import_continuation" }
     );
     const updateBindings = createEnvelope(
       "long.updateBindings",
@@ -431,20 +520,39 @@ describe("long workspace API contracts", () => {
       },
       { id: "cmd_long_update_bindings" }
     );
+    const rename = createEnvelope(
+      "long.rename",
+      {
+        bookId: "longbook_api",
+        expectedProjectRevision: 3,
+        title: "时间尽头"
+      },
+      { id: "cmd_long_rename" }
+    );
 
     expect(LongWorkspaceCommandEnvelopeSchema.parse(create).type).toBe(
       "long.createBook"
     );
     expect(CommandEnvelopeSchema.parse(create).type).toBe("long.createBook");
     expect(CommandEnvelopeSchema.parse(read).context.runId).toBe("run_api");
-    expect(CommandEnvelopeSchema.parse(migrate).type).toBe(
-      "long.importWriteClawAtPath"
+    expect(CommandEnvelopeSchema.parse(previewLegacySync).type).toBe(
+      "long.previewLegacySyncAtPath"
+    );
+    expect(CommandEnvelopeSchema.parse(applyLegacySync).type).toBe(
+      "long.applyLegacySyncAtPath"
     );
     expect(CommandEnvelopeSchema.parse(importPortable).type).toBe(
       "long.importPortableAtPath"
     );
+    expect(CommandEnvelopeSchema.parse(previewContinuation).type).toBe(
+      "long.previewContinuationImportAtPath"
+    );
+    expect(CommandEnvelopeSchema.parse(importContinuation).type).toBe(
+      "long.importContinuationAtPath"
+    );
     expect(CommandEnvelopeSchema.parse(updateBindings).type).toBe(
       "long.updateBindings"
     );
+    expect(CommandEnvelopeSchema.parse(rename).type).toBe("long.rename");
   });
 });

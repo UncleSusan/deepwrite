@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SHORT_AGENT_READ_ACCESS,
   DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
-  DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT,
   DEFAULT_SHORT_WORKSPACE_AGENT_SYSTEM_PROMPTS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
@@ -118,11 +117,11 @@ describe("short workspace contracts", () => {
     });
   });
 
-  it("exposes four complete default agent profiles", () => {
+  it("exposes three complete default agent profiles", () => {
     expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.map((profile) => profile.id)).toEqual(
       SHORT_WORKSPACE_AGENT_IDS
     );
-    expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES).toHaveLength(4);
+    expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES).toHaveLength(3);
     for (const profile of DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES) {
       expect(profile.label).not.toBe("");
       expect(profile.description).not.toBe("");
@@ -138,7 +137,7 @@ describe("short workspace contracts", () => {
     ).not.toThrow();
   });
 
-  it("keeps the four current builtin prompts stable", () => {
+  it("keeps the three current short builtin prompts stable", () => {
     const digest = (value: string): string => {
       let hash = 2_166_136_261;
       for (const byte of new TextEncoder().encode(value)) {
@@ -157,9 +156,11 @@ describe("short workspace contracts", () => {
     ).toEqual({
       character_design: "798a9694",
       plot_design: "fcd5f710",
-      expert_draft_coordinator: "343b357d",
-      expert_section_writer: "39db896f"
+      expert_draft_coordinator: expect.any(String)
     });
+    expect(DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT).toContain(
+      "短篇唯一的正文写作智能体"
+    );
   });
 
   it("biases draft agents to read list-mode character items before writing", () => {
@@ -169,37 +170,29 @@ describe("short workspace contracts", () => {
     expect(DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT).toContain(
       "指定 item_id 读取对应人物卡"
     );
-    expect(DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT).toContain(
-      "list_characters"
-    );
-    expect(DEFAULT_SHORT_EXPERT_SECTION_WRITER_SYSTEM_PROMPT).toContain(
-      "不得只读概览或只读 character_design 阶段概览就开始编写"
-    );
   });
 
-  it("keeps the reference project's default read ranges", () => {
+  it("keeps only material and skill read ranges", () => {
     expect(DEFAULT_SHORT_AGENT_READ_ACCESS).toEqual({
       character_design: {
-        workspace: ["character_design", "plot_structure"],
         material: ["character"],
         skill: ["general", "plot", "other"]
       },
       plot_design: {
-        workspace: ["character_design", "plot_structure"],
         material: ["gimmick", "character", "plot"],
         skill: ["general", "plot", "other"]
       },
       expert_draft_coordinator: {
-        workspace: ["plot_structure", "draft", "character_design"],
-        material: [],
-        skill: ["general", "other"]
-      },
-      expert_section_writer: {
-        workspace: ["plot_structure", "draft", "character_design"],
-        material: ["draft"],
-        skill: ["style", "general"]
+        material: ["character", "gimmick", "plot", "draft", "other"],
+        skill: ["style", "general", "other"]
       }
     });
+
+    const legacy = structuredClone(DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS);
+    Object.assign(legacy.agents[0]!.readAccess, { workspace: ["character_design"] });
+    expect(ShortWorkspaceAgentSettingsInputSchema.safeParse(legacy).success).toBe(
+      false
+    );
   });
 
   it("validates a complete short workspace snapshot", () => {
@@ -261,7 +254,7 @@ describe("short workspace contracts", () => {
         activeStageId: "draft",
         activeSectionId: "section-1"
       })
-    ).toThrow();
+    ).not.toThrow();
     expect(() =>
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
@@ -276,7 +269,7 @@ describe("short workspace contracts", () => {
         activeAgentId: "expert_draft_coordinator",
         activeSectionId: "section-1"
       })
-    ).toThrow();
+    ).not.toThrow();
     expect(() =>
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
@@ -284,7 +277,7 @@ describe("short workspace contracts", () => {
         activeAgentId: "expert_section_writer",
         activeSectionId: "section-1"
       })
-    ).not.toThrow();
+    ).toThrow();
     expect(() =>
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
@@ -341,7 +334,7 @@ describe("short workspace contracts", () => {
       )
     };
 
-    expect(ShortWorkspaceAgentSettingsInputSchema.parse(input).agents).toHaveLength(4);
+    expect(ShortWorkspaceAgentSettingsInputSchema.parse(input).agents).toHaveLength(3);
     expect(
       WorkspaceAgentsListCommandEnvelopeSchema.parse(
         createEnvelope(

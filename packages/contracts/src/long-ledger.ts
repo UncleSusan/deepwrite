@@ -95,6 +95,8 @@ export type LongLedgerPlacementChange = z.infer<
 
 export const LongLedgerForeshadowingBeatChangeSchema = z
   .object({
+    /** Direct link to the owning item in the plot-design foreshadowing overview. */
+    foreshadowingId: LongForeshadowingIdSchema.optional(),
     beatId: LongForeshadowingBeatIdSchema,
     before: LongLedgerExecutionDecisionSchema,
     after: LongLedgerExecutionDecisionSchema,
@@ -459,7 +461,7 @@ export const LongLedgerCommitRecordSchema = z
     committedProjectRevision: LedgerRevisionSchema,
     previousCommittedThroughChapterId:
       LongChapterCardIdSchema.nullable(),
-    committedThroughChapterId: LongChapterCardIdSchema,
+    committedThroughChapterId: LongChapterCardIdSchema.nullable(),
     previousChapterCommitId: LongLedgerCommitIdSchema.nullable(),
     placementChanges: z
       .array(LongLedgerPlacementChangeSchema)
@@ -967,6 +969,12 @@ export const LongTextFilesCommitChapterInputSchema = z
     chapterCardId: LongChapterCardIdSchema,
     chapterFileRevisions: LongTextChapterFileRevisionSnapshotSchema,
     continuityFileRevisions: LongContinuityFileRevisionsSchema,
+    foreshadowingBeatDecisions: z
+      .record(
+        LongForeshadowingBeatIdSchema,
+        LongCommitExecutionDecisionInputSchema
+      )
+      .default({}),
     commitMessage: RequiredLedgerCommitMessageSchema,
     baseWorkspaceRevision: LedgerRevisionSchema,
     baseProjectRevision: LedgerRevisionSchema

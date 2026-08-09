@@ -10,7 +10,7 @@ describe("library management agent wiring", () => {
     expect(appSource).toContain("activeAgentDocument.value");
   });
 
-  it("stages library tool mutations and persists accepted entry changes", () => {
+  it("stages library tool mutations and persists accepted entry or overview changes", () => {
     expect(appSource).toContain('event.type === "library.editor_mutation"');
     expect(appSource).toContain("stageLibraryEditProposal(event)");
     expect(appSource).toContain("window.deepwrite.catalog.saveLibraryEntry({");
@@ -18,6 +18,10 @@ describe("library management agent wiring", () => {
     expect(appSource).toContain("currentLibraryProjectRevisionMatches(");
     expect(appSource).toContain("applySavedLibraryEntry(");
     expect(appSource).toContain("applyCreatedLibraryEntry(");
+    expect(appSource).toContain('event.payload.operation === "edit-overview"');
+    expect(appSource).toContain('proposal.libraryTarget?.operation === "edit-overview"');
+    expect(appSource).toContain("window.deepwrite.catalog.updateLibrary({");
+    expect(appSource).toContain("applyUpdatedCatalogLibrary(");
   });
 
   it("loads and saves both library agent settings without loading the catalog again", () => {

@@ -332,6 +332,13 @@ describe("independent long-form workspace contracts", () => {
     };
 
     expect(navigation.counts.chapterCards).toBe(2);
+    expect(book.workspaceIndex.characterTypes.map(({ id }) => id)).toEqual([
+      "protagonist",
+      "major_supporting",
+      "minor_supporting",
+      "passerby"
+    ]);
+    expect(navigation.characterTypes).toEqual(book.workspaceIndex.characterTypes);
     expect(book.workspaceIndex.ledger.projection).toEqual({
       throughCommitId: null,
       facts: [],
@@ -353,7 +360,8 @@ describe("independent long-form workspace contracts", () => {
       volumeId: "volume_one",
       primaryArcId: "arc_letter",
       title: "雨夜来信",
-      narrativeOrder: 1
+      narrativeOrder: 1,
+      bodyStatus: "empty"
     });
     expect(navigation).not.toHaveProperty("chapters");
     expect(navigation.chapterCards[0]).not.toHaveProperty("outline");
@@ -553,6 +561,50 @@ describe("independent long-form workspace contracts", () => {
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(missingReference).success
     ).toBe(false);
+
+    const unassociatedChapter = LongWorkspaceIndexSnapshotSchema.parse(
+      workspaceIndex()
+    );
+    unassociatedChapter.plot.chapterCards[0]!.primaryArcId = null;
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(unassociatedChapter).success
+    ).toBe(true);
+
+    const missingChapterArc = LongWorkspaceIndexSnapshotSchema.parse(
+      workspaceIndex()
+    );
+    missingChapterArc.plot.chapterCards[0]!.primaryArcId = "arc_missing";
+    expect(
+      LongWorkspaceIndexSnapshotSchema.safeParse(missingChapterArc).success
+    ).toBe(false);
+  });
+
+  it("accepts custom character type ids and rejects unresolved character types", () => {
+    const source = workspaceIndex();
+    const custom = {
+      ...source,
+      characterTypes: [
+        { id: "chartype_viewpoint", title: "视角人物", order: 1 }
+      ],
+      characters: source.characters.map((character) => ({
+        ...character,
+        group: "chartype_viewpoint"
+      }))
+    };
+    expect(LongWorkspaceIndexSnapshotSchema.parse(custom).characters[0]?.group)
+      .toBe("chartype_viewpoint");
+
+    expect(() =>
+      LongWorkspaceIndexSnapshotSchema.parse({
+        ...custom,
+        characters: custom.characters.map((character) => ({
+          ...character,
+          group: "chartype_missing"
+        }))
+      })
+    ).toThrow(
+      /existing character type/u
+    );
   });
 
   it("requires contiguous volume, arc, chapter, event and placement order", () => {
@@ -632,7 +684,7 @@ describe("independent long-form workspace contracts", () => {
     );
   });
 
-  it("accepts a coherent commit and rejects non-prefix or partial commit state", () => {
+  it("accepts coherent sparse records and rejects mismatched record state", () => {
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(
         commitFirstChapter(workspaceIndex())
@@ -641,7 +693,7 @@ describe("independent long-form workspace contracts", () => {
 
     const skippedFirst = workspaceIndex();
     skippedFirst.chapters[1]!.commitId = "commit_second";
-    skippedFirst.ledger.committedThroughChapterId = "chapter_two";
+    skippedFirst.ledger.committedThroughChapterId = null;
     skippedFirst.ledger.commits.push({
       id: "commit_second",
       sequence: 1,
@@ -658,7 +710,7 @@ describe("independent long-form workspace contracts", () => {
     });
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(skippedFirst).success
-    ).toBe(false);
+    ).toBe(true);
 
     const undecidedPlacement = commitFirstChapter(workspaceIndex());
     undecidedPlacement.plot.narrativePlacements[0]!.status = "planned";
@@ -939,8 +991,9 @@ describe("independent long-form workspace contracts", () => {
     expect(characterProfile.systemPrompt).not.toContain("file_id");
     expect(characterProfile.systemPrompt).not.toContain("bookId");
     expect(characterProfile.systemPrompt).toContain(
-      "映射最近一章已经提交的连续性 Markdown"
+      "按章连续性记录可作为只读参考"
     );
+    expect(characterProfile.systemPrompt).toContain("不接管或锁定人物文档");
     const plotProfile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"
     )!;
@@ -951,6 +1004,8 @@ describe("independent long-form workspace contracts", () => {
     expect(plotProfile.systemPrompt).toContain("write_plot_design");
     expect(plotProfile.systemPrompt).toContain("edit_plot_design");
     expect(plotProfile.systemPrompt).toContain("伏笔线与伏笔触点继续完全使用");
+    expect(plotProfile.systemPrompt).toContain("连续性记录只供参考");
+    expect(plotProfile.systemPrompt).toContain("不锁定剧情结构");
     expect(plotProfile.systemPrompt).not.toContain("get_long_workspace_index");
     expect(plotProfile.systemPrompt).not.toContain("fileId");
     const writerProfile = DEFAULT_LONG_AGENT_PROFILES.find(
@@ -973,7 +1028,7 @@ describe("independent long-form workspace contracts", () => {
       "不得编写、草拟、补全或修改章末人物状态、交接文档"
     );
     expect(writerProfile.systemPrompt).toContain(
-      "由连续性账本智能体读取正文并独立生成"
+      "连续性记录由用户之后按需触发"
     );
     expect(writerProfile.welcomeShortcuts).toEqual([
       "写当前章",

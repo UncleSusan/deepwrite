@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Type } from "typebox";
 import {
   createAssistantMessageEventStream,
   type AssistantMessage
@@ -42,11 +44,11 @@ const providerRuntime = {
 
 function scriptAgentProfile(): ScriptWorkspaceAgentProfile {
   const profile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
-    ({ id }) => id === "expert_section_writer"
+    ({ id }) => id === "expert_draft_coordinator"
   )!;
   return {
     ...profile,
-    systemPrompt: "用户在设置中编辑的剧本分集写手提示词。"
+    systemPrompt: "用户在设置中编辑的剧本正文专家提示词。"
   };
 }
 
@@ -57,7 +59,7 @@ function screenplayWorkspace(): ScriptWorkspaceSnapshot {
     title: "雾港剧本",
     categories: ["悬疑"],
     activeStageId: "draft",
-    activeAgentId: "expert_section_writer",
+    activeAgentId: "expert_draft_coordinator",
     activeSectionId: "episode-1",
     characterStructure: { format: "text" },
     plotStages: createDefaultCreativePlotStages(),
@@ -145,6 +147,86 @@ async function captureDisabledThinkingPayload(
   return capturedPayload as Record<string, unknown>;
 }
 
+async function captureThinkingPayload(
+  config: AgentProviderRuntimeConfig,
+  configuredLevel: "low" | "high" | "max"
+): Promise<Record<string, unknown>> {
+  const { model, streamFn } = buildProviderRuntime(
+    config,
+    undefined,
+    configuredLevel
+  );
+  let capturedPayload: unknown;
+  const stream = await streamFn(
+    model,
+    {
+      systemPrompt: "Reply with OK only.",
+      messages: [{
+        role: "user",
+        content: "OK",
+        timestamp: Date.now()
+      }]
+    },
+    {
+      reasoning: configuredLevel === "max" ? "xhigh" : configuredLevel,
+      onPayload: (payload) => {
+        capturedPayload = payload;
+        throw new Error("payload captured");
+      }
+    }
+  );
+  await stream.result();
+  expect(capturedPayload).toBeDefined();
+  return capturedPayload as Record<string, unknown>;
+}
+
+function ollamaGrammarRegressionTool(): AgentTool {
+  const parameters = Type.Object({
+    direct_text: Type.String({ maxLength: 200_000 }),
+    replacements: Type.Array(
+      Type.Object({
+        original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
+        new_text: Type.String({ maxLength: 20_000 })
+      })
+    )
+  });
+  return {
+    name: "edit_text",
+    label: "Edit text",
+    description: "Edit text with exact replacements.",
+    parameters,
+    execute: async () => ({
+      content: [{ type: "text", text: "ok" }],
+      details: {}
+    })
+  };
+}
+
+async function captureToolPayload(
+  config: AgentProviderRuntimeConfig,
+  tool: AgentTool
+): Promise<Record<string, unknown>> {
+  const { model, streamFn } = buildProviderRuntime(config, 0.7, "off");
+  let capturedPayload: unknown;
+  const stream = await streamFn(
+    model,
+    {
+      systemPrompt: "Use the available tool.",
+      messages: [{ role: "user", content: "Edit the text.", timestamp: Date.now() }],
+      tools: [tool]
+    },
+    {
+      onPayload: (payload) => {
+        capturedPayload = payload;
+        throw new Error("payload captured");
+      }
+    }
+  );
+  await stream.result();
+  expect(capturedPayload).toBeDefined();
+  return capturedPayload as Record<string, unknown>;
+}
+
 describe("DeepWrite Pi runtime adapter", () => {
   it("injects immutable screenplay rules only for script workspace runs", () => {
     const scriptWorkspace = screenplayWorkspace();
@@ -182,12 +264,14 @@ describe("DeepWrite Pi runtime adapter", () => {
 
     const runtimePrompt = buildRuntimeUserPrompt(scriptInput);
     expect(runtimePrompt).toContain("剧本作品: 《雾港剧本》");
-    expect(runtimePrompt).toContain("当前剧集: episode-1");
+    expect(runtimePrompt).toContain(
+      "当前用户正在操作的剧集: 第一集（section_id=episode-1）"
+    );
     expect(runtimePrompt).toContain("正文目录剧集（由早到晚）: 第一集 (episode-1)");
     expect(runtimePrompt).not.toContain("短篇作品:");
 
     const shortProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
-      ({ id }) => id === "expert_section_writer"
+      ({ id }) => id === "expert_draft_coordinator"
     )!;
     const shortSystemPrompt = buildEffectiveSystemPrompt("DeepWrite base", {
       runId: "run_short_prompt",
@@ -195,7 +279,10 @@ describe("DeepWrite Pi runtime adapter", () => {
       prompt: "继续写第一节",
       agentProfile: shortProfile,
       workspaceContext: {
-        shortWorkspace: scriptWorkspace as unknown as ShortWorkspaceSnapshot
+        shortWorkspace: {
+          ...(scriptWorkspace as unknown as ShortWorkspaceSnapshot),
+          activeAgentId: "expert_draft_coordinator"
+        }
       }
     });
     expect(shortSystemPrompt).toContain("【当前短篇智能体");
@@ -204,12 +291,111 @@ describe("DeepWrite Pi runtime adapter", () => {
     );
   });
 
+  it("keeps one draft conversation while refreshing the selected script episode", async () => {
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+    const firstWorkspace = screenplayWorkspace();
+    const firstEpisode = firstWorkspace.expertDraft.sections[0]!;
+    const emptyRevision = createShortWorkspaceContentRevision("");
+    const secondWorkspace: ScriptWorkspaceSnapshot = {
+      ...firstWorkspace,
+      activeSectionId: "episode-2",
+      expertDraft: {
+        ...firstWorkspace.expertDraft,
+        revision: createShortWorkspaceContentRevision("episode-1\nepisode-2"),
+        sections: [
+          firstEpisode,
+          {
+            id: "episode-2",
+            title: "第二集",
+            wordCountRequirement: "15 分钟",
+            body: {
+              documentId: "draft:episode-2:body",
+              title: "第二集",
+              content: "",
+              revision: emptyRevision
+            },
+            characterState: {
+              documentId: "draft:episode-2:state",
+              title: "第二集 · 人物状态",
+              content: "",
+              revision: emptyRevision
+            }
+          }
+        ]
+      }
+    };
+    const profile = scriptAgentProfile();
+    const sessionId = "session_script_shared_draft";
+
+    for await (const _event of runtime.start({
+      runId: "run_script_episode_1",
+      sessionId,
+      prompt: "先写第一集",
+      thinkingLevel: "off",
+      scriptAgentProfile: profile,
+      workspaceContext: { scriptWorkspace: firstWorkspace }
+    })) {
+      // Consume the first turn before changing the UI focus.
+    }
+    for await (const _event of runtime.start({
+      runId: "run_script_episode_2",
+      sessionId,
+      prompt: "再写第二集",
+      thinkingLevel: "off",
+      scriptAgentProfile: profile,
+      workspaceContext: { scriptWorkspace: secondWorkspace }
+    })) {
+      // Consume the follow-up turn so the same cached agent is refreshed.
+    }
+
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          {
+            state: {
+              systemPrompt: string;
+              messages: Array<{ role?: string; content?: unknown }>;
+              tools: AgentTool[];
+            };
+          }
+        >;
+      }
+    ).conversationAgents;
+    expect(cache).toHaveLength(1);
+    const agent = cache.get(`${sessionId}:script:expert_draft_coordinator`);
+    expect(
+      agent?.state.messages.filter((message) => message.role === "user")
+    ).toHaveLength(2);
+    expect(agent?.state.systemPrompt).toContain(
+      "【当前用户正在操作的剧集】\n标题：第二集"
+    );
+    expect(agent?.state.systemPrompt).not.toContain(
+      "【当前用户正在操作的剧集】\n标题：第一集"
+    );
+
+    const write = agent?.state.tools.find(
+      (candidate) => candidate.name === "write_draft_section"
+    );
+    if (!write) throw new Error("Missing refreshed draft write tool.");
+    const result = await write.execute("write-focused-episode", {
+      text: "第二集正式正文。"
+    });
+    expect(result.details).toMatchObject({
+      kind: "workspace-expert-draft-file-mutation",
+      documentId: "draft:episode-2:body",
+      sectionId: "episode-2",
+      fileKind: "body"
+    });
+  });
+
   it("reminds draft agents to read character items in list mode", () => {
     const profile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
-      ({ id }) => id === "expert_section_writer"
+      ({ id }) => id === "expert_draft_coordinator"
     )!;
     const shortWorkspace = {
       ...(screenplayWorkspace() as unknown as ShortWorkspaceSnapshot),
+      activeAgentId: "expert_draft_coordinator" as const,
       characterStructure: {
         format: "list" as const,
         items: [
@@ -265,6 +451,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           committedChapters: 0
         },
         worldbuilding: [],
+        characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
         characters: [],
         volumes: [{ id: "volume_prompt", title: "第一卷", order: 1 }],
         arcs: [],
@@ -316,6 +503,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           committedChapters: 0
         },
         worldbuilding: [],
+        characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
         characters: [],
         volumes: [{ id: "volume_writer_prompt", title: "第一卷", order: 1 }],
         arcs: [{
@@ -329,7 +517,8 @@ describe("DeepWrite Pi runtime adapter", () => {
           volumeId: "volume_writer_prompt",
           primaryArcId: "arc_writer_prompt",
           title: "第一章",
-          narrativeOrder: 1
+          narrativeOrder: 1,
+          bodyStatus: "empty"
         }],
         committedThroughChapterId: null
       }
@@ -361,6 +550,37 @@ describe("DeepWrite Pi runtime adapter", () => {
       activeFileRevision: "v1:0:00000000",
       workspaceRevision: 3,
       projectRevision: 5,
+      worldbuildingDirectory: {
+        categories: [
+          {
+            categoryId: "world_rules",
+            title: "世界规则",
+            order: 1,
+            format: "text"
+          },
+          {
+            categoryId: "world_factions",
+            title: "势力",
+            order: 2,
+            format: "list",
+            itemCount: 2,
+            items: [
+              {
+                itemId: "worlditem_watchers",
+                title: "守夜人",
+                order: 1
+              },
+              {
+                itemId: "worlditem_harbor",
+                title: "港务会",
+                order: 2
+              }
+            ],
+            omittedItemCount: 0
+          }
+        ],
+        omittedCategoryCount: 0
+      },
       worldbuildingFocus: {
         categoryTitle: "世界规则",
         format: "text",
@@ -392,6 +612,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           order: 1,
           format: "text"
         }],
+        characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
         characters: [],
         volumes: [{ id: "volume_world_prompt", title: "第一卷", order: 1 }],
         arcs: [],
@@ -418,6 +639,16 @@ describe("DeepWrite Pi runtime adapter", () => {
 
     const userPrompt = buildRuntimeUserPrompt(input);
     expect(userPrompt).toContain("长篇作品: 《雾港长篇》");
+    expect(userPrompt).toContain("【世界观条目列表（发送时快照）】");
+    expect(userPrompt).toContain(
+      "世界规则（category_id=world_rules；类型=文本）"
+    );
+    expect(userPrompt).toContain(
+      "势力（category_id=world_factions；类型=条目列表；共 2 项）"
+    );
+    expect(userPrompt).toContain(
+      "守夜人（item_id=worlditem_watchers；顺序=1）"
+    );
     expect(userPrompt).toContain("当前智能体: 世界观智能体");
     expect(userPrompt).toContain(
       "当前用户所处的世界观阶段: 文本型分类「世界规则」"
@@ -474,7 +705,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       projectRevision: 5,
       characterFocus: {
         characterName: "林岚",
-        group: "protagonist",
+        group: "chartype_viewpoint",
         currentDocument: {
           kind: "relationships",
           title: "人物关系",
@@ -499,11 +730,14 @@ describe("DeepWrite Pi runtime adapter", () => {
           committedChapters: 0
         },
         worldbuilding: [],
+        characterTypes: [
+          { id: "chartype_viewpoint", title: "视角人物", order: 1 }
+        ],
         characters: [
           {
             id: "character_lan",
             name: "林岚",
-            group: "protagonist",
+            group: "chartype_viewpoint",
             order: 1
           }
         ],
@@ -529,6 +763,10 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(systemPrompt).not.toContain("bookId");
 
     const userPrompt = buildRuntimeUserPrompt(input);
+    expect(userPrompt).toContain("【人物类型目录（发送时快照）】");
+    expect(userPrompt).toContain(
+      "视角人物（type_id=chartype_viewpoint；1 人）"
+    );
     expect(userPrompt).toContain(
       "当前用户所处的人物阶段: 「林岚」 / 人物关系"
     );
@@ -541,7 +779,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(userPrompt).not.toContain("run_character_prompt");
   });
 
-  it("injects plot structure navigation and the current plot position for plot-design runs", () => {
+  it("injects plot structure navigation and refreshes the plot position on every turn", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"
     )!;
@@ -559,9 +797,10 @@ describe("DeepWrite Pi runtime adapter", () => {
         storyEvents: 0,
         storyPlots: 2,
         foreshadowingThreads: 1,
-        committedChapters: 0
+        committedChapters: 1
       },
       worldbuilding: [],
+      characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
       characters: [],
       volumes: [
         { id: "volume_plot_a", title: "起势", order: 1 },
@@ -578,10 +817,11 @@ describe("DeepWrite Pi runtime adapter", () => {
           volumeId: "volume_plot_a",
           primaryArcId: "arc_plot_main",
           title: "第一章",
-          narrativeOrder: 1
+          narrativeOrder: 1,
+          bodyStatus: "written" as const
         }
       ],
-      committedThroughChapterId: null
+      committedThroughChapterId: "chapter_plot_one"
     };
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_plot_prompt",
@@ -608,8 +848,22 @@ describe("DeepWrite Pi runtime adapter", () => {
     };
 
     const userPrompt = buildRuntimeUserPrompt(input);
+    const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", input);
+    expect(systemPrompt).toContain("连续性记录只提供按章参考");
+    expect(systemPrompt).toContain("不锁定章卡、故事情节或伏笔结构");
+    expect(systemPrompt).toContain("删除章卡时客户端会在危险确认后级联清理");
+    expect(systemPrompt).toContain("剧情点关联可为 null");
+    expect(systemPrompt).toContain("非空时必须与章卡属于同一分卷");
+    expect(systemPrompt).toContain("移动或删除剧情点只解除章卡的弱关联");
     expect(userPrompt).toContain(
       "全书共 2 卷、3 个剧情点、1 张章卡、2 条故事情节、0 个故事事件、1 条伏笔线"
+    );
+    expect(userPrompt).toContain(
+      "连续性记录：1 章；最高连续记录位置为「第一章」(chapter_plot_one)"
+    );
+    expect(userPrompt).toContain("记录只作参考，不锁定正文或结构");
+    expect(userPrompt).toContain(
+      "已有正文章卡（由早到晚）：「第一章」(chapter_plot_one)"
     );
     expect(userPrompt).toContain(
       "- 第 1 卷「起势」(volume_plot_a): 「主线」(arc_plot_main)、「暗线」(arc_plot_hidden)"
@@ -669,6 +923,97 @@ describe("DeepWrite Pi runtime adapter", () => {
     });
     expect(draftPrompt).not.toContain("长篇结构导航");
     expect(draftPrompt).not.toContain("当前剧情工作区");
+
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+    const turnContexts: LongWorkspaceRuntimeContext[] = [
+      {
+        ...longWorkspace,
+        plotFocus: { section: "book_line" }
+      },
+      {
+        ...longWorkspace,
+        workspaceRevision: 4,
+        projectRevision: 6,
+        navigation: {
+          ...navigation,
+          revision: 4,
+          updatedAt: "2026-07-26T10:01:00.000Z"
+        },
+        plotFocus: {
+          section: "plot_point",
+          volumeId: "volume_plot_a",
+          volumeTitle: "起势",
+          arcId: "arc_plot_hidden",
+          arcTitle: "暗线"
+        }
+      },
+      {
+        ...longWorkspace,
+        workspaceRevision: 5,
+        projectRevision: 7,
+        activeChapterCardId: "chapter_plot_one",
+        navigation: {
+          ...navigation,
+          revision: 5,
+          updatedAt: "2026-07-26T10:02:00.000Z"
+        },
+        plotFocus: {
+          section: "chapter_card",
+          volumeId: "volume_plot_a",
+          volumeTitle: "起势",
+          chapterCardId: "chapter_plot_one",
+          chapterCardTitle: "第一章"
+        }
+      }
+    ];
+    for (const [turnIndex, context] of turnContexts.entries()) {
+      for await (const _event of runtime.start({
+        runId: `run_plot_turn_${turnIndex}`,
+        sessionId: "session_plot_turns",
+        prompt: `剧情请求 ${turnIndex + 1}`,
+        thinkingLevel: "off",
+        longAgentProfile: profile,
+        workspaceContext: { longWorkspace: context }
+      })) {
+        // Consume every turn before inspecting the cached model transcript.
+      }
+    }
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          { state: { messages: Array<{ role?: string; content?: unknown }> } }
+        >;
+      }
+    ).conversationAgents;
+    const agent = cache.get(
+      "session_plot_turns:long:plot_design:longbook_plot_prompt"
+    );
+    const userMessages = agent?.state.messages.filter(
+      (message) => message.role === "user"
+    );
+    expect(userMessages).toHaveLength(3);
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "【本次智能体会话固定上下文】"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "当前剧情工作区: 全书故事线"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "【本轮剧情工作区上下文】"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "结构版本 4；项目版本 6"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "当前剧情工作区: 剧情点「暗线」(arc_plot_hidden)"
+    );
+    expect(String(userMessages?.[2]?.content)).toContain(
+      "当前章卡: chapter_plot_one"
+    );
+    expect(String(userMessages?.[2]?.content)).toContain(
+      "当前剧情工作区: 章卡「第一章」(chapter_plot_one)"
+    );
   });
 
   it("lets configured long-form teams delegate with the same bounded tools", async () => {
@@ -699,6 +1044,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           committedChapters: 0
         },
         worldbuilding: [],
+        characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
         characters: [],
         volumes: [{ id: "volume_subagents", title: "第一卷", order: 1 }],
         arcs: [],
@@ -782,6 +1128,78 @@ describe("DeepWrite Pi runtime adapter", () => {
     ).toBe(false);
   });
 
+  it("sanitizes only Ollama transport schemas without weakening local validation", async () => {
+    const baseConfig: AgentProviderRuntimeConfig = {
+      id: "local-writer",
+      label: "Local writer",
+      provider: "ollama",
+      modelId: "qwen3",
+      api: "openai-completions",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: ["low", "medium", "high"],
+      temperatureOptions: [0.2, 0.7, 1.2],
+      apiKey: ""
+    };
+    const tool = ollamaGrammarRegressionTool();
+    const ollamaPayload = await captureToolPayload(baseConfig, tool);
+    const ollamaParameters = (
+      ollamaPayload.tools as Array<{
+        function: { parameters: Record<string, unknown> };
+      }>
+    )[0]!.function.parameters;
+
+    expect(ollamaParameters).toMatchObject({
+      properties: {
+        direct_text: { type: "string", maxLength: 200_000 },
+        replacements: {
+          items: {
+            properties: {
+              original_text: { type: "string", minLength: 1 },
+              new_text: { type: "string" }
+            }
+          }
+        }
+      }
+    });
+    const ollamaNested = (
+      (ollamaParameters.properties as Record<string, unknown>).replacements as {
+        items: { properties: Record<string, Record<string, unknown>> };
+      }
+    ).items.properties;
+    expect(ollamaNested.original_text).not.toHaveProperty("maxLength");
+    expect(ollamaNested.new_text).not.toHaveProperty("maxLength");
+
+    const originalParameters = tool.parameters as unknown as {
+      properties: Record<string, unknown>;
+    };
+    const originalNested = (
+      originalParameters.properties.replacements as {
+        items: { properties: Record<string, Record<string, unknown>> };
+      }
+    ).items.properties;
+    expect(originalNested.original_text).toHaveProperty("maxLength", 2_400);
+    expect(originalNested.new_text).toHaveProperty("maxLength", 20_000);
+
+    const customPayload = await captureToolPayload(
+      { ...baseConfig, provider: "custom", apiKey: "test-only" },
+      tool
+    );
+    const customParameters = (
+      customPayload.tools as Array<{
+        function: { parameters: Record<string, unknown> };
+      }>
+    )[0]!.function.parameters;
+    const customNested = (
+      (customParameters.properties as Record<string, unknown>).replacements as {
+        items: { properties: Record<string, Record<string, unknown>> };
+      }
+    ).items.properties;
+    expect(customNested.original_text).toHaveProperty("maxLength", 2_400);
+    expect(customNested.new_text).toHaveProperty("maxLength", 20_000);
+  });
+
   it("uses a provider routing id without replacing the public model id", async () => {
     const config: AgentProviderRuntimeConfig = {
       id: "routed-model",
@@ -835,6 +1253,212 @@ describe("DeepWrite Pi runtime adapter", () => {
       supportsDeveloperRole: false
     });
   });
+
+  it("uses the DeepWrite Kimi K3 runtime catalog for an official gateway route", async () => {
+    const config: AgentProviderRuntimeConfig = {
+      id: "deepwrite-kimi-k3",
+      label: "Kimi K3",
+      provider: "deepseek-official",
+      modelId: "kimi-k3",
+      api: "openai-completions",
+      baseUrl: "https://www.moxing.pro/v1",
+      reasoning: true,
+      supportsDeveloperRole: false,
+      defaultThinkingLevel: "high",
+      thinkingLevelOptions: ["low", "high", "max"],
+      temperatureOptions: [0.7, 1, 1.5],
+      managedBy: "deepwrite-official",
+      apiKey: "test-only"
+    };
+
+    const high = buildProviderRuntime(config, undefined, "high").model;
+    expect(high).toMatchObject({
+      id: "kimi-k3",
+      provider: "deepseek-official",
+      baseUrl: "https://www.moxing.pro/v1",
+      reasoning: true,
+      input: ["text", "image"],
+      contextWindow: 1_048_576,
+      maxTokens: 131_072,
+      thinkingLevelMap: {
+        off: null,
+        low: "low",
+        high: "high",
+        xhigh: "max"
+      },
+      compat: {
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: true,
+        maxTokensField: "max_completion_tokens",
+        requiresReasoningContentOnAssistantMessages: true,
+        thinkingFormat: "openai",
+        supportsStrictMode: true
+      }
+    });
+
+    expect(buildProviderRuntime(config, undefined, "max").model.thinkingLevelMap)
+      .toMatchObject({ xhigh: "max" });
+    await expect(captureThinkingPayload(config, "high")).resolves.toMatchObject({
+      model: "kimi-k3",
+      reasoning_effort: "high"
+    });
+    await expect(captureThinkingPayload(config, "max")).resolves.toMatchObject({
+      model: "kimi-k3",
+      reasoning_effort: "max"
+    });
+  });
+
+  it("uses the production DeepSeek V4 Flash metadata for the 0731 gateway route", () => {
+    const config: AgentProviderRuntimeConfig = {
+      id: "deepwrite-deepseek-v4-flash-0731",
+      label: "DeepSeek-V4-Flash-正式版",
+      provider: "deepseek-official",
+      modelId: "deepseek-v4-flash-0731",
+      api: "openai-completions",
+      baseUrl: "https://www.moxing.pro/v1/",
+      reasoning: true,
+      supportsDeveloperRole: true,
+      defaultThinkingLevel: "high",
+      thinkingLevelOptions: ["low", "high", "max"],
+      temperatureOptions: [0.7, 1, 1.5],
+      managedBy: "deepwrite-official",
+      apiKey: "test-only"
+    };
+
+    expect(buildProviderRuntime(config, undefined, "max").model).toMatchObject({
+      id: "deepseek-v4-flash-0731",
+      provider: "deepseek-official",
+      baseUrl: "https://www.moxing.pro/v1/",
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+      input: ["text"],
+      thinkingLevelMap: {
+        minimal: null,
+        low: null,
+        medium: null,
+        high: "high",
+        xhigh: "max"
+      },
+      compat: {
+        supportsStore: false,
+        supportsDeveloperRole: true,
+        requiresReasoningContentOnAssistantMessages: true,
+        thinkingFormat: "deepseek"
+      }
+    });
+  });
+
+  it.each([
+    ["gpt-5.6-sol", "GPT-5.6 Sol", "xhigh"],
+    ["gpt-5.6-terra", "GPT-5.6 Terra", "xhigh"],
+    ["gpt-5.6-luna", "GPT-5.6 Luna", "max"]
+  ] as const)(
+    "uses the DeepWrite %s runtime catalog instead of the generic fallback",
+    (modelId, label, xhighMapping) => {
+      const config: AgentProviderRuntimeConfig = {
+        id: `deepwrite-${modelId}`,
+        label,
+        provider: "openai",
+        modelId,
+        api: "openai-responses",
+        baseUrl: "http://127.0.0.1:1455/v1",
+        reasoning: true,
+        defaultThinkingLevel: "medium",
+        thinkingLevelOptions: ["low", "medium", "high", "xhigh", "max"],
+        temperatureOptions: [0.1, 0.7, 1.5],
+        apiKey: "test-only"
+      };
+
+      expect(buildProviderRuntime(config).model).toMatchObject({
+        id: modelId,
+        provider: "openai",
+        baseUrl: "http://127.0.0.1:1455/v1",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 272_000,
+        maxTokens: 128_000,
+        thinkingLevelMap: {
+          off: null,
+          minimal: null,
+          xhigh: xhighMapping
+        }
+      });
+    }
+  );
+
+  it.each([
+    ["qwen3.8-max", "none"],
+    ["qwen3.8-max-preview", null]
+  ] as const)(
+    "uses the DeepWrite %s runtime catalog for an official gateway route",
+    async (modelId, offMapping) => {
+      const config: AgentProviderRuntimeConfig = {
+        id: `deepwrite-${modelId}`,
+        label: modelId === "qwen3.8-max" ? "Qwen3.8 Max" : "Qwen3.8 Max Preview",
+        provider: "deepseek-official",
+        modelId,
+        api: "openai-completions",
+        baseUrl: "https://www.moxing.pro/v1",
+        reasoning: true,
+        supportsDeveloperRole: false,
+        defaultThinkingLevel: "high",
+        thinkingLevelOptions: ["low", "high", "max"],
+        temperatureOptions: [0.7, 1, 1.5],
+        managedBy: "deepwrite-official",
+        apiKey: "test-only"
+      };
+
+      const high = buildProviderRuntime(config, undefined, "high").model;
+      expect(high).toMatchObject({
+        id: modelId,
+        provider: "deepseek-official",
+        baseUrl: "https://www.moxing.pro/v1",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 983_616,
+        maxTokens: 131_072,
+        thinkingLevelMap: {
+          off: offMapping,
+          low: "low",
+          high: "xhigh",
+          xhigh: "xhigh"
+        },
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: true,
+          maxTokensField: "max_completion_tokens",
+          requiresReasoningContentOnAssistantMessages: true,
+          thinkingFormat: "openai",
+          supportsStrictMode: true
+        }
+      });
+
+      await expect(captureThinkingPayload(config, "low")).resolves.toMatchObject({
+        model: modelId,
+        reasoning_effort: "low"
+      });
+      await expect(captureThinkingPayload(config, "high")).resolves.toMatchObject({
+        model: modelId,
+        reasoning_effort: "xhigh"
+      });
+      await expect(captureThinkingPayload(config, "max")).resolves.toMatchObject({
+        model: modelId,
+        reasoning_effort: "max"
+      });
+      const disabledPayload = await captureDisabledThinkingPayload(config);
+      if (offMapping === null) {
+        expect(disabledPayload).not.toHaveProperty("reasoning_effort");
+        expect(disabledPayload).not.toHaveProperty("temperature");
+      } else {
+        expect(disabledPayload).toMatchObject({
+          reasoning_effort: "none",
+          temperature: 1
+        });
+      }
+    }
+  );
 
   it("serializes disabled thinking for supported provider protocols", async () => {
     const baseConfig: AgentProviderRuntimeConfig = {
@@ -1478,7 +2102,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       }
     ).conversationAgents;
     const agent = cache.get(
-      "session_script_history:script:expert_section_writer"
+      "session_script_history:script:expert_draft_coordinator"
     );
     const userMessages = agent?.state.messages.filter(
       (message) => message.role === "user"
@@ -1495,12 +2119,13 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(userMessages?.[1]?.content).toBe("继续细化开场");
 
     const shortProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
-      ({ id }) => id === "expert_section_writer"
+      ({ id }) => id === "expert_draft_coordinator"
     )!;
     const shortWorkspace = {
       ...(scriptWorkspace as unknown as ShortWorkspaceSnapshot),
       id: "short-history",
-      title: "雾港短篇"
+      title: "雾港短篇",
+      activeAgentId: "expert_draft_coordinator" as const
     };
     for (const [index, prompt] of ["先规划第一节", "继续细化冲突"].entries()) {
       for await (const _event of runtime.start({
@@ -1515,7 +2140,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       }
     }
     const shortAgent = cache.get(
-      "session_short_history:expert_section_writer"
+      "session_short_history:expert_draft_coordinator"
     );
     const shortUserMessages = shortAgent?.state.messages.filter(
       (message) => message.role === "user"
@@ -1540,6 +2165,26 @@ describe("DeepWrite Pi runtime adapter", () => {
       activeFileRevision: "v1:3:1234abcd",
       workspaceRevision: 3,
       projectRevision: 5,
+      worldbuildingDirectory: {
+        categories: [
+          {
+            categoryId: "world_factions",
+            title: "势力",
+            order: 1,
+            format: "list",
+            itemCount: 1,
+            items: [
+              {
+                itemId: "worlditem_watchers",
+                title: "守夜人",
+                order: 1
+              }
+            ],
+            omittedItemCount: 0
+          }
+        ],
+        omittedCategoryCount: 0
+      },
       worldbuildingFocus: {
         categoryTitle: "势力",
         format: "list",
@@ -1567,6 +2212,7 @@ describe("DeepWrite Pi runtime adapter", () => {
           committedChapters: 0
         },
         worldbuilding: [],
+        characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
         characters: [],
         volumes: [{ id: "volume_world_history", title: "第一卷", order: 1 }],
         arcs: [],
@@ -1612,6 +2258,12 @@ describe("DeepWrite Pi runtime adapter", () => {
       "长篇作品: 《雾港长篇》"
     );
     expect(String(userMessages?.[0]?.content)).toContain(
+      "势力（category_id=world_factions；类型=条目列表；共 1 项）"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
+      "守夜人（item_id=worlditem_watchers；顺序=1）"
+    );
+    expect(String(userMessages?.[0]?.content)).toContain(
       "当前用户所处的世界观阶段: 列表型分类「势力」 / 条目「守夜人」"
     );
     expect(String(userMessages?.[0]?.content)).toContain(
@@ -1647,7 +2299,11 @@ describe("DeepWrite Pi runtime adapter", () => {
           title: "人物素材",
           libraryType: "short" as const,
           kind: "character" as const,
+          overviewDocumentId: "material-overview-1",
           overview: "仅用于都市悬疑人物",
+          overviewRevision: createShortWorkspaceContentRevision(
+            "仅用于都市悬疑人物"
+          ),
           readOnly: false,
           activeEntryId: "material-entry-1",
           projectRevision: 2,
@@ -1705,7 +2361,8 @@ describe("DeepWrite Pi runtime adapter", () => {
       "search_material_entries",
       "load_skill",
       "create_material_entry",
-      "edit_material_entry"
+      "edit_material_entry",
+      "edit_material_library_overview"
     ]);
     expect(agent?.state.systemPrompt).toContain("素材库管理智能体");
     const userMessages = agent?.state.messages.filter(
@@ -1731,7 +2388,11 @@ describe("DeepWrite Pi runtime adapter", () => {
       title: "悬疑写作技能",
       libraryType: "short" as const,
       kind: "general" as const,
+      overviewDocumentId: "skill-overview-history",
       overview: "沉淀悬疑写作检查方法",
+      overviewRevision: createShortWorkspaceContentRevision(
+        "沉淀悬疑写作检查方法"
+      ),
       readOnly: false,
       projectRevision: 1,
       entries: []
@@ -2598,6 +3259,56 @@ describe("DeepWrite Pi runtime adapter", () => {
         text: "修改后",
         baseRevision: createShortWorkspaceContentRevision("修改前"),
         baseProjectRevision: 4,
+        summary: "等待审阅",
+        runtime: providerRuntime
+      }
+    });
+
+    const overviewEvents = toRuntimeEvents(
+      {
+        type: "tool_execution_end",
+        toolCallId: "tool_edit_overview",
+        toolName: "edit_material_library_overview",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "等待审阅" }],
+          details: {
+            kind: "library-overview-mutation",
+            operation: "edit-overview",
+            domain: "material",
+            libraryId: "material-library-1",
+            documentId: "material-overview-1",
+            title: "人物素材 · 库介绍",
+            text: "修改后的库介绍",
+            baseRevision: createShortWorkspaceContentRevision("修改前的库介绍"),
+            baseProjectRevision: 5,
+            summary: "等待审阅"
+          }
+        }
+      } as never,
+      {
+        runId: "run_library_overview_event",
+        sessionId: "session_library_event",
+        prompt: "修改库介绍"
+      },
+      providerRuntime,
+      "assistant-library-overview"
+    );
+
+    expect(overviewEvents).toContainEqual({
+      type: "library.editor_mutation",
+      runId: "run_library_overview_event",
+      sessionId: "session_library_event",
+      payload: {
+        toolCallId: "tool_edit_overview",
+        operation: "edit-overview",
+        domain: "material",
+        libraryId: "material-library-1",
+        documentId: "material-overview-1",
+        title: "人物素材 · 库介绍",
+        text: "修改后的库介绍",
+        baseRevision: createShortWorkspaceContentRevision("修改前的库介绍"),
+        baseProjectRevision: 5,
         summary: "等待审阅",
         runtime: providerRuntime
       }

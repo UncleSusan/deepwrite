@@ -65,6 +65,10 @@ export type LongWorldbuildingItemId = z.infer<
 >;
 export const LongCharacterIdSchema = stableIdWithPrefix("character");
 export type LongCharacterId = z.infer<typeof LongCharacterIdSchema>;
+export const LongCustomCharacterTypeIdSchema = stableIdWithPrefix("chartype");
+export type LongCustomCharacterTypeId = z.infer<
+  typeof LongCustomCharacterTypeIdSchema
+>;
 export const LongVolumeIdSchema = stableIdWithPrefix("volume");
 export type LongVolumeId = z.infer<typeof LongVolumeIdSchema>;
 export const LongArcIdSchema = stableIdWithPrefix("arc");
@@ -282,6 +286,11 @@ export function longLedgerCommitFileId(commitId: string): string {
 export const EMPTY_LONG_MARKDOWN_REVISION =
   "v2:0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" as LongFileRevision;
 
+export const LongChapterBodyStatusSchema = z.enum(["empty", "written"]);
+export type LongChapterBodyStatus = z.infer<
+  typeof LongChapterBodyStatusSchema
+>;
+
 export function longWorldbuildingContentPath(categoryId: string): string {
   return `long/worldbuilding/${categoryId}/content.md`;
 }
@@ -359,6 +368,37 @@ export const LONG_WORKSPACE_INDEX_FILE_ID =
 export const LongWorldbuildingFormatSchema = z.enum(["list", "text"]);
 export type LongWorldbuildingFormat = z.infer<
   typeof LongWorldbuildingFormatSchema
+>;
+
+export const LongWorldbuildingItemLayoutSchema = z.enum([
+  "top-tabs",
+  "right-list"
+]);
+export type LongWorldbuildingItemLayout = z.infer<
+  typeof LongWorldbuildingItemLayoutSchema
+>;
+
+export const DEFAULT_LONG_WORKSPACE_FEATURE_SETTINGS = {
+  worldbuildingItemLayout: "top-tabs",
+  characterAndContinuityItemLayout: "top-tabs",
+  plotItemLayout: "top-tabs"
+} as const;
+
+export const LongWorkspaceFeatureSettingsSchema = z
+  .object({
+    worldbuildingItemLayout: LongWorldbuildingItemLayoutSchema.default(
+      DEFAULT_LONG_WORKSPACE_FEATURE_SETTINGS.worldbuildingItemLayout
+    ),
+    characterAndContinuityItemLayout: LongWorldbuildingItemLayoutSchema.default(
+      DEFAULT_LONG_WORKSPACE_FEATURE_SETTINGS.characterAndContinuityItemLayout
+    ),
+    plotItemLayout: LongWorldbuildingItemLayoutSchema.default(
+      DEFAULT_LONG_WORKSPACE_FEATURE_SETTINGS.plotItemLayout
+    )
+  })
+  .strict();
+export type LongWorkspaceFeatureSettings = z.infer<
+  typeof LongWorkspaceFeatureSettingsSchema
 >;
 
 export const LongWorldbuildingItemSchema = z
@@ -479,14 +519,38 @@ export type LongWorldbuildingCategory = z.infer<
   typeof LongWorldbuildingCategorySchema
 >;
 
-export const LONG_CHARACTER_GROUPS = [
+export const LONG_BUILTIN_CHARACTER_TYPE_IDS = [
   "protagonist",
   "major_supporting",
   "minor_supporting",
   "passerby"
 ] as const;
-export const LongCharacterGroupSchema = z.enum(LONG_CHARACTER_GROUPS);
+/** @deprecated Use LONG_BUILTIN_CHARACTER_TYPE_IDS. */
+export const LONG_CHARACTER_GROUPS = LONG_BUILTIN_CHARACTER_TYPE_IDS;
+export const LongCharacterTypeIdSchema = z.union([
+  z.enum(LONG_BUILTIN_CHARACTER_TYPE_IDS),
+  LongCustomCharacterTypeIdSchema
+]);
+export type LongCharacterTypeId = z.infer<typeof LongCharacterTypeIdSchema>;
+/** @deprecated The serialized `group` field now stores a character type id. */
+export const LongCharacterGroupSchema = LongCharacterTypeIdSchema;
 export type LongCharacterGroup = z.infer<typeof LongCharacterGroupSchema>;
+
+export const LongCharacterTypeSchema = z
+  .object({
+    id: LongCharacterTypeIdSchema,
+    title: LongTitleSchema,
+    order: z.number().int().positive()
+  })
+  .strict();
+export type LongCharacterType = z.infer<typeof LongCharacterTypeSchema>;
+
+export const DEFAULT_LONG_CHARACTER_TYPES: readonly LongCharacterType[] = [
+  { id: "protagonist", title: "主角", order: 1 },
+  { id: "major_supporting", title: "主要配角", order: 2 },
+  { id: "minor_supporting", title: "次要配角", order: 3 },
+  { id: "passerby", title: "路人", order: 4 }
+];
 
 const UniqueAliasListSchema = z
   .array(z.string().trim().min(1).max(120))
@@ -626,7 +690,7 @@ export const LongChapterCardSchema = z
   .object({
     id: LongChapterCardIdSchema,
     volumeId: LongVolumeIdSchema,
-    primaryArcId: LongArcIdSchema,
+    primaryArcId: LongArcIdSchema.nullable(),
     title: LongTitleSchema,
     narrativeOrder: z.number().int().positive()
   })
@@ -966,6 +1030,7 @@ const LongChapterFileIndexEntryObjectSchema = z
       .array(LongChapterCharacterContinuityFileIndexEntrySchema)
       .max(100_000)
       .default([]),
+    bodyStatus: LongChapterBodyStatusSchema.optional(),
     commitId: LongLedgerCommitIdSchema.nullable()
   })
   .strict();
@@ -973,6 +1038,7 @@ const LongChapterFileIndexEntryObjectSchema = z
 export const LongChapterFileIndexEntrySchema =
   LongChapterFileIndexEntryObjectSchema.transform((entry) => ({
     ...entry,
+    bodyStatus: entry.bodyStatus ?? "empty",
     foreshadowingChanges:
       entry.foreshadowingChanges ??
       createEmptyLongMarkdownFileReference(
@@ -1511,7 +1577,9 @@ export const EMPTY_LONG_CONTINUITY_PROJECTION: LongContinuityProjection = {
 export const LongLedgerCommitIndexEntrySchema = z
   .object({
     id: LongLedgerCommitIdSchema,
-    mode: z.enum(["structured", "text_files"]).default("structured"),
+    mode: z
+      .enum(["structured", "text_files", "import_checkpoint"])
+      .default("structured"),
     sequence: z.number().int().positive(),
     chapterCardId: LongChapterCardIdSchema,
     committedAt: LongTimestampSchema,
@@ -1555,6 +1623,9 @@ const LongWorkspaceIndexSnapshotObjectSchema = z
     bookId: LongBookIdSchema,
     updatedAt: LongTimestampSchema,
     bookLine: LongMarkdownFileReferenceSchema,
+    featureSettings: LongWorkspaceFeatureSettingsSchema.default(
+      DEFAULT_LONG_WORKSPACE_FEATURE_SETTINGS
+    ),
     worldbuilding: z
       .array(LongWorldbuildingCategorySchema)
       .max(10_000),
@@ -1564,6 +1635,11 @@ const LongWorkspaceIndexSnapshotObjectSchema = z
      * exposing them.
      */
     characterOverview: LongMarkdownFileReferenceSchema.optional(),
+    characterTypes: z
+      .array(LongCharacterTypeSchema)
+      .min(1)
+      .max(10_000)
+      .default(() => DEFAULT_LONG_CHARACTER_TYPES.map((value) => ({ ...value }))),
     characters: z.array(LongCharacterSchema).max(100_000),
     characterFiles: z
       .array(LongCharacterFileIndexEntrySchema)
@@ -1752,6 +1828,31 @@ function validateLongWorkspaceIndexSnapshot(
   });
 
   validateUniqueValues(
+    snapshot.characterTypes.map(({ id }) => id),
+    (index) => ["characterTypes", index, "id"],
+    "character type id",
+    context
+  );
+  validateContiguousOrder(
+    snapshot.characterTypes.map(({ order }, index) => ({ index, order })),
+    (index) => ["characterTypes", index, "order"],
+    "Character type",
+    context
+  );
+  const characterTypeIds = new Set(
+    snapshot.characterTypes.map(({ id }) => id)
+  );
+  snapshot.characters.forEach((character, index) => {
+    if (!characterTypeIds.has(character.group)) {
+      addIssue(
+        context,
+        ["characters", index, "group"],
+        "Character group must reference an existing character type."
+      );
+    }
+  });
+
+  validateUniqueValues(
     snapshot.characters.map(({ id }) => id),
     (index) => ["characters", index, "id"],
     "character id",
@@ -1863,7 +1964,10 @@ function validateLongWorkspaceIndexSnapshot(
   );
   chapterCards.forEach((card, index) => {
     const volume = volumeById.get(card.volumeId);
-    const arc = arcById.get(card.primaryArcId);
+    const arc =
+      card.primaryArcId === null
+        ? undefined
+        : arcById.get(card.primaryArcId);
     if (!volume) {
       addIssue(
         context,
@@ -1871,13 +1975,13 @@ function validateLongWorkspaceIndexSnapshot(
         "Chapter card must reference an existing volume."
       );
     }
-    if (!arc) {
+    if (card.primaryArcId !== null && !arc) {
       addIssue(
         context,
         ["plot", "chapterCards", index, "primaryArcId"],
         "Chapter card must reference an existing primary arc."
       );
-    } else if (arc.volumeId !== card.volumeId) {
+    } else if (arc && arc.volumeId !== card.volumeId) {
       addIssue(
         context,
         ["plot", "chapterCards", index, "primaryArcId"],
@@ -2259,6 +2363,7 @@ function validateLongWorkspaceIndexSnapshot(
       if (
         plannedArc &&
         anchoredChapter &&
+        anchoredChapter.primaryArcId !== null &&
         anchoredChapter.primaryArcId !== plannedArc.id
       ) {
         addIssue(
@@ -2559,11 +2664,14 @@ function validateLongWorkspaceIndexSnapshot(
     context
   );
   commits.forEach((commit, index) => {
-    if (commit.sequence !== index + 1) {
+    if (
+      index > 0 &&
+      commit.sequence <= commits[index - 1]!.sequence
+    ) {
       addIssue(
         context,
         ["ledger", "commits", index, "sequence"],
-        "Ledger commit sequence must be contiguous and stored in order."
+        "Ledger record sequence must be strictly increasing and stored in order."
       );
     }
     if (!chapterById.has(commit.chapterCardId)) {
@@ -2598,18 +2706,8 @@ function validateLongWorkspaceIndexSnapshot(
       left.narrativeOrder - right.narrativeOrder
     );
   });
-  commits.forEach((commit, index) => {
-    if (orderedChapters[index]?.id !== commit.chapterCardId) {
-      addIssue(
-        context,
-        ["ledger", "commits", index, "chapterCardId"],
-        "Ledger commits must cover one contiguous narrative prefix."
-      );
-    }
-  });
-
-  orderedChapters.forEach((chapter, index) => {
-    const expectedCommitId = commits[index]?.id ?? null;
+  orderedChapters.forEach((chapter) => {
+    const expectedCommitId = commitByChapterId.get(chapter.id)?.id ?? null;
     const fileIndex = chapterFilesById.get(chapter.id);
     if (fileIndex && fileIndex.commitId !== expectedCommitId) {
       const fileIndexPosition = snapshot.chapters.findIndex(
@@ -2618,13 +2716,16 @@ function validateLongWorkspaceIndexSnapshot(
       addIssue(
         context,
         ["chapters", fileIndexPosition, "commitId"],
-        "Chapter commit id must match its position in the committed prefix."
+        "Chapter record id must match its ledger record."
       );
     }
   });
 
-  const expectedCommittedThrough =
-    commits.length === 0 ? null : commits[commits.length - 1]!.chapterCardId;
+  let expectedCommittedThrough: string | null = null;
+  for (const chapter of orderedChapters) {
+    if (!commitByChapterId.has(chapter.id)) break;
+    expectedCommittedThrough = chapter.id;
+  }
   if (
     snapshot.ledger.committedThroughChapterId !==
     expectedCommittedThrough
@@ -2632,7 +2733,7 @@ function validateLongWorkspaceIndexSnapshot(
     addIssue(
       context,
       ["ledger", "committedThroughChapterId"],
-      "Committed-through chapter must match the last committed prefix entry."
+      "Committed-through chapter must match the highest contiguous recorded chapter."
     );
   }
 
@@ -3009,6 +3110,7 @@ const LongCharacterNavigationEntrySchema = z
     order: z.number().int().positive()
   })
   .strict();
+const LongCharacterTypeNavigationEntrySchema = LongCharacterTypeSchema;
 const LongVolumeNavigationEntrySchema = z
   .object({
     id: LongVolumeIdSchema,
@@ -3028,9 +3130,10 @@ const LongChapterCardNavigationEntrySchema = z
   .object({
     id: LongChapterCardIdSchema,
     volumeId: LongVolumeIdSchema,
-    primaryArcId: LongArcIdSchema,
+    primaryArcId: LongArcIdSchema.nullable(),
     title: LongTitleSchema,
-    narrativeOrder: z.number().int().positive()
+    narrativeOrder: z.number().int().positive(),
+    bodyStatus: LongChapterBodyStatusSchema.default("empty")
   })
   .strict();
 
@@ -3048,6 +3151,11 @@ export const LongWorkspaceNavigationSnapshotSchema = z
     worldbuilding: z
       .array(LongWorldbuildingNavigationEntrySchema)
       .max(10_000),
+    characterTypes: z
+      .array(LongCharacterTypeNavigationEntrySchema)
+      .min(1)
+      .max(10_000)
+      .default(() => DEFAULT_LONG_CHARACTER_TYPES.map((value) => ({ ...value }))),
     characters: z.array(LongCharacterNavigationEntrySchema).max(100_000),
     volumes: z.array(LongVolumeNavigationEntrySchema).min(1).max(10_000),
     arcs: z.array(LongArcNavigationEntrySchema).max(100_000),
@@ -3088,14 +3196,15 @@ export const LongWorkspaceNavigationSnapshotSchema = z
       });
     }
     if (
-      (snapshot.counts.committedChapters === 0) !==
-      (snapshot.committedThroughChapterId === null)
+      snapshot.committedThroughChapterId !== null &&
+      !snapshot.chapterCards.some(
+        ({ id }) => id === snapshot.committedThroughChapterId
+      )
     ) {
       context.addIssue({
         code: "custom",
         path: ["committedThroughChapterId"],
-        message:
-          "Committed-through navigation state must match the committed count."
+        message: "Recorded-through navigation chapter must exist."
       });
     }
 
@@ -3111,6 +3220,32 @@ export const LongWorkspaceNavigationSnapshotSchema = z
       "Navigation worldbuilding",
       context
     );
+
+    validateUniqueValues(
+      snapshot.characterTypes.map(({ id }) => id),
+      (index) => ["characterTypes", index, "id"],
+      "navigation character type id",
+      context
+    );
+    validateContiguousOrder(
+      snapshot.characterTypes.map(({ order }, index) => ({ index, order })),
+      (index) => ["characterTypes", index, "order"],
+      "Navigation character type",
+      context
+    );
+    const characterTypeIds = new Set(
+      snapshot.characterTypes.map(({ id }) => id)
+    );
+    snapshot.characters.forEach((character, index) => {
+      if (!characterTypeIds.has(character.group)) {
+        context.addIssue({
+          code: "custom",
+          path: ["characters", index, "group"],
+          message:
+            "Navigation character group must reference an existing character type."
+        });
+      }
+    });
 
     validateUniqueValues(
       snapshot.characters.map(({ id }) => id),
@@ -3183,7 +3318,10 @@ export const LongWorkspaceNavigationSnapshotSchema = z
       context
     );
     snapshot.chapterCards.forEach((chapter, index) => {
-      const arc = arcById.get(chapter.primaryArcId);
+      const arc =
+        chapter.primaryArcId === null
+          ? undefined
+          : arcById.get(chapter.primaryArcId);
       if (!volumeById.has(chapter.volumeId)) {
         addIssue(
           context,
@@ -3191,13 +3329,13 @@ export const LongWorkspaceNavigationSnapshotSchema = z
           "Navigation chapter must reference an existing volume."
         );
       }
-      if (!arc) {
+      if (chapter.primaryArcId !== null && !arc) {
         addIssue(
           context,
           ["chapterCards", index, "primaryArcId"],
           "Navigation chapter must reference an existing primary arc."
         );
-      } else if (arc.volumeId !== chapter.volumeId) {
+      } else if (arc && arc.volumeId !== chapter.volumeId) {
         addIssue(
           context,
           ["chapterCards", index, "primaryArcId"],
@@ -3230,21 +3368,7 @@ export const LongWorkspaceNavigationSnapshotSchema = z
         );
       }
     );
-    const expectedCommittedThrough =
-      snapshot.counts.committedChapters === 0
-        ? null
-        : orderedChapters[snapshot.counts.committedChapters - 1]?.id ??
-          null;
-    if (
-      snapshot.committedThroughChapterId !== expectedCommittedThrough
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["committedThroughChapterId"],
-        message:
-          "Navigation committed-through id must end the committed narrative prefix."
-      });
-    }
+    void orderedChapters;
   });
 export type LongWorkspaceNavigationSnapshot = z.infer<
   typeof LongWorkspaceNavigationSnapshotSchema
@@ -3272,6 +3396,11 @@ export function createLongWorkspaceNavigationSnapshot(
     worldbuilding: workspace.worldbuilding.map(
       ({ id, title, order, format }) => ({ id, title, order, format })
     ),
+    characterTypes: workspace.characterTypes.map(({ id, title, order }) => ({
+      id,
+      title,
+      order
+    })),
     characters: workspace.characters.map(
       ({ id, name, group, order }) => ({ id, name, group, order })
     ),
@@ -3294,7 +3423,10 @@ export function createLongWorkspaceNavigationSnapshot(
         volumeId,
         primaryArcId,
         title,
-        narrativeOrder
+        narrativeOrder,
+        bodyStatus:
+          workspace.chapters.find(({ chapterCardId }) => chapterCardId === id)
+            ?.bodyStatus ?? "empty"
       })
     ),
     committedThroughChapterId:
@@ -3672,7 +3804,7 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
 
 能力范围：
 1. 可以查看人物概览、人物列表和各人物文档，搜索已有人物设定，并结合只读世界观、关联素材与技能回答问题或检查人物冲突。
-2. 可以创建一名人物及其四份独立文档，维护人物概览，并在当前连续性状态允许时撰写、整体重写或局部修改人物文档。
+2. 可以创建一名人物及其四份独立文档，维护人物概览，并随时撰写、整体重写或局部修改人物文档；连续性记录只作参考。
 3. 可以重命名人物、调整别名和分组、删除人物或修改人物顺序；世界观内容只读，不得由人物设计智能体修改。
 
 操作要求：
@@ -3681,7 +3813,7 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
 3. 创建人物时使用 create_character，一次创建一名人物及四份空白文档，不在创建参数中写初始化正文；需要正文时，再用返回的 character_id 分别调用 write_character_file，并同步维护人物概览。
 4. 新建空白文档的首次写入、空正文写入或按用户明确要求整体重写时使用 write_character_file；覆盖已有正文前必须完整读取并明确允许覆盖。局部修改使用 edit_character_file，对完整读取后的唯一原文片段进行替换。人物概览使用 write_character_overview 或 edit_character_overview 维护。
 5. 人物重命名、别名、分组、删除和排序使用 propose_long_mutation；该工具不创建人物，也不写人物正文。结构变化后必须同步更新人物概览，不得把多名人物拼接到同一人物文档中。
-6. 核心档案与人物关系表达稳定设计；首次连续性提交后，人物关系、当前状态和历史轨迹由连续性账本接管，人物阶段读取映射最近一章已经提交的连续性 Markdown，不在人物设计阶段重复维护。
+6. 核心档案、人物关系、当前状态和历史轨迹始终是可编辑的设计资料；按章连续性记录可作为只读参考，但不接管或锁定人物文档。
 7. 所有写入都只形成待审阅提案；以工具和审批卡返回的状态为准，不得声称尚未获批的内容已经落盘。`,
     readAccess: {
       workspaceRoots: [
@@ -3711,18 +3843,18 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
 
 能力范围：
 1. 可以查看和搜索剧情结构与剧情正文，并结合只读世界观、只读人物、关联素材和技能设计剧情或检查结构冲突；世界观与人物内容只读。
-2. 可以创建分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点，为故事情节与章卡撰写、整体重写或局部修改正文。
-3. 可以重命名、关联、移动、删除和排序既有剧情条目，完整管理伏笔线与伏笔触点，并按单章、当前剧情点或当前卷提议启动串行正文写作。
+2. 可以创建分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点，为故事情节与章卡撰写、整体重写或局部修改正文；已有连续性记录也不限制修改。
+3. 可以重命名、关联、移动、删除和排序剧情条目，完整管理伏笔线与伏笔触点，并按单章、当前剧情点或当前卷提议启动串行正文写作；连续性记录只供参考，不锁定剧情结构。
 
 操作要求：
 1. 当前上下文足以回答时可以直接处理；需要了解整体结构或其它剧情内容时，使用 list_plot_design、search_plot_design 和 read_plot_design 按需核验；涉及世界规则或人物约束时，使用世界观和人物的 list / search / read 工具查询。不得把未读取内容当成事实。
 2. 读取剧情内容使用 read_plot_design。搜索结果和当前页面快照只用于定位与理解；整体重写或局部修改前必须以 mode=full 完整读取目标。
 3. 创建分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点使用 create_plot_design。除叙事落点可一次批量创建多个外，一次只创建一个条目；故事情节与章卡创建时只建立空正文文件，不在创建参数中写初始化正文。
-4. 故事情节必须通过 arc_id 挂载到既有剧情点；章卡必须通过 volume_id 与 primary_arc_id 绑定既有分卷与主剧情点。为本轮刚创建的空白故事情节或章卡写正文时，可直接使用 write_plot_design 一次性写入全文；覆盖已有正文前必须完整读取并明确允许覆盖。局部修改使用 edit_plot_design，对唯一原文片段进行替换，不要把一篇正文拆成多次整体写入。
-5. 非伏笔条目的重命名、关联、移动、删除和排序使用 propose_long_mutation；该工具不创建非伏笔条目，也不写其正文。伏笔线与伏笔触点继续完全使用 propose_long_mutation 进行创建和全部结构变更。
-6. 需要启动正文写作时使用 propose_long_chapter_dispatch，只能按未提交章卡的连续顺序提议单章、当前剧情点连续章节或当前卷，不得整本调度、并行或跳章。
-7. 严格区分故事发生顺序、章节叙述顺序和读者信息进度；已成为连续性事实的结构不得绕过约束修改。
-8. 以工具和审批卡返回的状态为准：待审阅提案尚未落盘；本轮已创建并进入工具 overlay 的故事情节或章卡可以按工具返回结果继续读取和引用。`,
+4. 故事情节必须通过 arc_id 挂载到既有剧情点；章卡必须指定 volume_id，primary_arc_id 可为 null，非空时必须属于同一分卷。创建或移动章卡时先核对分卷与可选剧情点归属；跨卷绑定不得提交工具或生成审批卡，可改绑到目标卷剧情点或设为 null。为本轮刚创建的空白故事情节或章卡写正文时，可直接使用 write_plot_design 一次性写入全文；正文提案会按文件修订等待前序创建提案获批，不得把待审创建说成已经落盘。覆盖已有正文前必须完整读取并明确允许覆盖。局部修改使用 edit_plot_design，对唯一原文片段进行替换，不要把一篇正文拆成多次整体写入。已有连续性记录继续保留为历史参考，不妨碍标题、结构或正文大改。
+5. 非伏笔条目的重命名、关联、移动、删除和排序使用 propose_long_mutation。同一运行形成多个有效提案时，客户端会按先后依赖等待前序提案处理，并基于最新工作区重新预览；不得把待审提案说成已经落盘。连续性记录不限制章卡或其它剧情结构的后续修改。该工具不创建非伏笔条目，也不写其正文。伏笔线与伏笔触点继续完全使用 propose_long_mutation 进行创建和全部结构变更。
+6. 需要启动正文写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。
+7. 严格区分故事发生顺序、章节叙述顺序和读者信息进度；连续性记录是参考资料，不是结构修改权限。
+9. 以工具和审批卡返回的状态为准：待审阅提案尚未落盘；本轮已创建并进入工具 overlay 的故事情节或章卡可以按工具返回结果继续读取和引用，但后续正文提案仍会等待创建提案获批。工具返回“未形成提案”时必须向用户解释约束，不得声称已修改或要求用户审批不存在的提案。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -3751,15 +3883,15 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
 
 能力范围：
 1. 可以查看和搜索世界观、人物、剧情设计、正文目录及既有章节，并结合关联素材和技能回答正文规划、衔接与一致性问题。
-2. 可以检查当前或指定未提交章是否已形成可供连续性结算的正文证据。
+2. 可以检查当前或指定章节是否已有非空正文，并据此判断写作进度。
 3. 可以按单章、当前剧情点连续章节或当前卷形成串行写作调度提案；本智能体负责统筹与调度，不直接撰写或修改章节正文。
 
 操作要求：
 1. 当前上下文足以回答时可以直接处理；需要核验写作依据、章节顺序或既有正文时，使用世界观、人物、剧情和章节的 list / search / read 工具按需查询，不使用底层工作区索引或通用文档读取。
 2. 搜索结果只用于定位；需要准确引用或据此作出写作判断时，使用对应 read 工具读取目标内容。不得把未读取内容当成事实。
-3. 需要检查章节正文是否可供连续性结算时，使用 get_long_chapter_readiness；该检查不写入正文，也不提交连续性账本。
-4. 需要启动正文写作时使用 propose_long_chapter_dispatch，只能按未提交章卡的连续顺序提议单章、当前剧情点连续章节或当前卷，不得整本调度、并行或跳章。
-5. 调度提案只会在获批后启动每章独立的单章写作智能体，不代表正文已经创建、写入、编辑、获批或完成连续性归档。`,
+3. 需要检查章节正文状态时，使用 get_long_chapter_readiness；该检查不写入正文，也不创建连续性记录。
+4. 需要启动正文写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。
+5. 调度提案获批后只启动每章独立的单章写作智能体；正文保存后直接推进下一章，不自动启动或等待连续性记录。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -3787,16 +3919,17 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
 
 能力范围：
 1. 可以查看和搜索世界观、人物、剧情设计与既有章节，并结合关联素材和技能理解当前章的写作依据。
-2. 每张章卡对应一个独立的 Markdown 正文文件；可以为当前章空白正文首次写入完整小说正文，也可以按用户明确要求整体重写或局部修改当前章。
+2. 每张章卡对应一个独立的 Markdown 正文文件；可以为当前章空白正文首次写入完整小说正文，也可以按用户明确要求整体重写或局部修改当前章。已有连续性记录仍可自由修订。
 3. 本智能体唯一的写作产物是当前章小说正文，并且只限运行时锁定的当前章；不创建章节结构，不处理其它章节，也不编写连续性文件。
 
 操作要求：
 1. 当前上下文足以创作或回答时可以直接处理；需要核验设定、人物状态、剧情安排或前文衔接时，使用世界观、人物、剧情和章节的 list / search / read 工具按需查询，不使用底层工作区索引或通用文档读取。不得把未读取内容当成事实。
 2. 搜索结果和当前页面快照只用于定位与理解。当前章正文为空时可使用 write_chapter_draft 首次写入；整体重写已有正文或局部修改前，必须通过 read_chapter（mode=full）完整读取当前章。
 3. 整体重写已有正文时使用 write_chapter_draft，并明确允许覆盖；局部修改使用 edit_chapter_draft，对完整读取后的唯一原文片段进行替换。每次工具调用只能提交运行时锁定的当前章。
-4. content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明、工具参数、人物状态或交接内容。
-5. 所有正文写入和编辑都只形成会话 diff 审批卡；以工具和审批卡返回的状态为准，不得声称尚未获批的正文已经保存。
-6. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文获批保存后，由连续性账本智能体读取正文并独立生成、归档相关连续性文件。`,
+4. 已有连续性记录只作为写作参考，不限制正文整体重写或局部修改；不得擅自改写连续性文件。
+5. content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明、工具参数、人物状态或交接内容。
+6. 所有正文写入和编辑都只形成会话 diff 审批卡；以工具和审批卡返回的状态为准，不得声称尚未获批的正文已经保存。
+7. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文保存后写作流程可直接推进下一章；连续性记录由用户之后按需触发。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",
@@ -3816,16 +3949,17 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "continuity_ledger",
     label: "连续性账本智能体",
-    description: "按章留存人物轨迹、世界揭露、伏笔变化、章末状态和接续包。",
-    systemPrompt: `你负责长篇连续性留存。只处理正文已经写完的连续下一章，不得跳章提交。
+    description: "按章留存人物轨迹、世界揭露、既有伏笔触点变化、章末状态和接续包。",
+    systemPrompt: `你负责长篇连续性留存。可以为任意正文已经写完且尚无记录的章节按需补记，不要求前文章节已经记录。
 
 工作规则：
-1. 使用 list_continuity_files 查看待处理章节与已有按章记录，再用 read_continuity_file 按章节、文档角色和人物读取正文证据或现有文件；不得使用底层索引、file_id 或通用文档读取。
-2. 以本章正文为事实证据，并参考上一章章末状态、接续包和相关设计资料。只记录文本结果，不创建结构化事实、知识边界、开放环、覆盖率、摘要域或叙事决策。
-3. 每章必须写入三个既有文件：章末状态、下一章接续包、伏笔变化。没有伏笔变化时也要明确写“本章无变化”及简短依据，不能留空。
-4. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。当前状态写本章章末快照；历史轨迹必须读取该人物上一份已提交记录，在其基础上累积追加本章变化，使人物阶段映射最新文件时仍能看到截至本章的完整轨迹。不要为未涉及的人物制造记录。
-5. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON、ID 清单或内部审计结构。
-6. 全部文件内容准备完成后调用 propose_continuity_commit 登记内部归档。客户端会等待所有文件卡获批保存，再自动锁定本章正文与连续性文件版本；不会出现第二张归档审批卡。未获用户批准前不得声称文件已保存或章节已经归档。`,
+1. 使用 list_continuity_files 查看待处理章节、已有按章记录，以及本章在“剧情设计 → 伏笔总览”中已经规划的伏笔触点候选；使用 read_continuity_file 读取既有按章文件，再用各阶段的 list / search / read 工具读取正文证据与相关设计。不得使用底层索引、路径、file_id 或通用文档读取。
+2. 以本章正文为事实证据，并参考上一章章末状态、接续包和相关设计资料。章末状态与下一章接续包每章必须写入；世界观与人物文件仍按实际变化创建或更新。
+3. 伏笔总览是设计源，连续性账本只能核验既有伏笔线和既有触点，绝不能自行新增伏笔线、触点或把正文中的偶然线索升级为伏笔。逐项检查 list_continuity_files 返回的候选触点，并依据正文判定 committed 或 missed；每项都必须保留对应 foreshadowing_id、beat_id 和具体正文证据。
+4. 只有本章存在既有伏笔触点候选时，才写伏笔变化 Markdown；其中逐项写明伏笔线、触点、执行结果及正文证据，并在 propose_continuity_commit 中提交完全相同的关联决策。候选为空时不得写伏笔变化文件，不得添加“本章无变化”占位，提交空决策数组即可。正文出现疑似伏笔但总览中没有对应项时，只在对话中提示用户返回剧情设计确认，不得写入账本或修改伏笔总览。
+5. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。当前状态写本章章末快照；历史轨迹优先参考叙事顺序中最近的更早章节记录；若不存在，则从现有设计资料开始整理。不要为未涉及的人物制造记录。
+6. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON。
+7. 全部文件内容准备完成后调用 propose_continuity_commit 保存本章记录。记录只供参考，不锁定正文、人物资料或剧情结构。未获用户批准前不得声称文件已保存或章节已经记录。`,
     readAccess: {
       workspaceRoots: [
         "worldbuilding",

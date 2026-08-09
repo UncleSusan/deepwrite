@@ -28,6 +28,10 @@ describe("GeneralSettingsStore", () => {
       persisted: false,
       settings: createDefaultGeneralSettings()
     });
+    expect(createDefaultGeneralSettings()).toMatchObject({
+      permissionMode: "auto-approve",
+      autoSave: true
+    });
   });
 
   it("persists permission, save, language, and menu-bar preferences", async () => {
@@ -94,7 +98,8 @@ describe("GeneralSettingsStore", () => {
       persisted: true,
       settings: {
         ...createDefaultGeneralSettings(),
-        permissionMode: "auto-approve"
+        permissionMode: "auto-approve",
+        autoSave: false
       }
     });
   });

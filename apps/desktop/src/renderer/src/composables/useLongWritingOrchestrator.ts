@@ -17,29 +17,15 @@ type LongWritingWorkflowEvent = Extract<
   }
 >;
 
-type LongContinuityStageProposalEvent = Extract<
-  SystemEventEnvelope,
-  {
-    type:
-      | "long.continuity_file_proposal"
-      | "long.mutation_proposal"
-      | "long.ledger_commit_proposal";
-  }
->;
-
 export type LongWritingWorkflowPhase =
   | "idle"
   | "checking"
   | "awaiting_writer_approval"
-  | "awaiting_ledger_approval"
   | "saving"
   | "error"
   | "complete";
 
-type RetryPoint =
-  | "check"
-  | "after_write"
-  | "after_ledger";
+type RetryPoint = "check" | "after_write";
 
 export interface LongWritingWorkflowState {
   bookId: string | null;
@@ -57,38 +43,6 @@ export interface LongWritingApprovalExpectation {
   agentId: "expert_section_writer" | "continuity_ledger";
   sessionId: string;
   runId?: string;
-}
-
-function isContinuityStageProposalForChapter(
-  event: SystemEventEnvelope,
-  chapterCardId: string
-): event is LongContinuityStageProposalEvent {
-  if (
-    event.type !== "long.continuity_file_proposal" &&
-    event.type !== "long.ledger_commit_proposal" &&
-    event.type !== "long.mutation_proposal"
-  ) {
-    return false;
-  }
-  if (event.payload.agentId !== "continuity_ledger") return false;
-  if (event.type === "long.continuity_file_proposal") {
-    return event.payload.files.every(
-      (file) => file.chapterCardId === chapterCardId
-    );
-  }
-  if (event.type === "long.ledger_commit_proposal") {
-    return event.payload.input.chapterCardId === chapterCardId;
-  }
-  return (
-    event.payload.batch.documentWrites.length === 0 &&
-    event.payload.batch.operations.length > 0 &&
-    event.payload.batch.operations.every(
-      (operation) =>
-        (operation.type === "chapterContinuity.worldReveals.delete" ||
-          operation.type === "chapterContinuity.character.delete") &&
-        operation.chapterCardId === chapterCardId
-    )
-  );
 }
 
 export function canApproveLongWritingProposal(input: {
@@ -122,13 +76,10 @@ export function canApproveLongWritingProposal(input: {
     return false;
   }
   return (
-    (state.phase === "awaiting_writer_approval" &&
-      expectation.agentId === "expert_section_writer" &&
-      event.type === "long.chapter_write_proposal" &&
-      event.payload.file.chapterCardId === chapter.chapterCardId) ||
-    (state.phase === "awaiting_ledger_approval" &&
-      expectation.agentId === "continuity_ledger" &&
-      isContinuityStageProposalForChapter(event, chapter.chapterCardId))
+    state.phase === "awaiting_writer_approval" &&
+    expectation.agentId === "expert_section_writer" &&
+    event.type === "long.chapter_write_proposal" &&
+    event.payload.file.chapterCardId === chapter.chapterCardId
   );
 }
 
@@ -152,7 +103,8 @@ export interface UseLongWritingOrchestratorOptions {
     readiness: LongChapterReadiness,
     guard: LongWritingRunGuard
   ): Promise<void>;
-  startLedger(
+  /** @deprecated Continuity recording is intentionally outside writing plans. */
+  startLedger?(
     bookId: string,
     readiness: LongChapterReadiness,
     guard: LongWritingRunGuard
@@ -234,28 +186,21 @@ export function useLongWritingOrchestrator(
     };
   }
 
-  async function startLedger(
-    runEpoch: number,
-    readiness: LongChapterReadiness
-  ): Promise<void> {
-    const bookId = state.value.bookId;
-    if (!bookId || runEpoch !== epoch) return;
-    patch({
-      phase: "awaiting_ledger_approval",
-      error: null,
-      retryPoint: null
-    });
-    try {
-      await options.startLedger(bookId, readiness, runGuard(runEpoch));
-    } catch (error: unknown) {
-      if (
-        runEpoch === epoch &&
-        state.value.phase === "awaiting_ledger_approval" &&
-        currentChapter.value?.chapterCardId === readiness.chapterCardId
-      ) {
-        fail(error, "after_write");
-      }
+  async function advanceAfterBody(runEpoch: number): Promise<void> {
+    if (runEpoch !== epoch) return;
+    const nextIndex = state.value.currentIndex + 1;
+    if (nextIndex >= state.value.chapters.length) {
+      patch({
+        currentIndex: nextIndex,
+        phase: "complete",
+        error: null,
+        retryPoint: null
+      });
+      options.notifications.success("本次长篇串行写作计划已全部完成。");
+      return;
     }
+    patch({ currentIndex: nextIndex });
+    await checkAndStart(runEpoch);
   }
 
   async function checkAndStart(runEpoch: number): Promise<void> {
@@ -274,7 +219,7 @@ export function useLongWritingOrchestrator(
       }
       replaceReadiness(readiness);
       if (readiness.status === "ready_to_commit") {
-        await startLedger(runEpoch, readiness);
+        await advanceAfterBody(runEpoch);
         return;
       }
       patch({
@@ -320,38 +265,9 @@ export function useLongWritingOrchestrator(
         );
       }
       replaceReadiness(readiness);
-      await startLedger(runEpoch, readiness);
+      await advanceAfterBody(runEpoch);
     } catch (error: unknown) {
       if (runEpoch === epoch) fail(error, "after_write");
-    }
-  }
-
-  async function passLedgerBarrier(runEpoch: number): Promise<void> {
-    const bookId = state.value.bookId;
-    if (!bookId || runEpoch !== epoch) return;
-    patch({ phase: "saving", error: null, retryPoint: null });
-    try {
-      if (!(await options.saveBarrier(bookId))) {
-        throw new Error(
-          "连续性文件已归档，但工作区刷新屏障尚未完成；请重试，编排不会跳过本章。"
-        );
-      }
-      if (runEpoch !== epoch) return;
-      const nextIndex = state.value.currentIndex + 1;
-      if (nextIndex >= state.value.chapters.length) {
-        patch({
-          currentIndex: nextIndex,
-          phase: "complete",
-          error: null,
-          retryPoint: null
-        });
-        options.notifications.success("本次长篇串行写作计划已全部完成。");
-        return;
-      }
-      patch({ currentIndex: nextIndex });
-      await checkAndStart(runEpoch);
-    } catch (error: unknown) {
-      if (runEpoch === epoch) fail(error, "after_ledger");
     }
   }
 
@@ -399,16 +315,7 @@ export function useLongWritingOrchestrator(
       return false;
     }
     const runEpoch = epoch;
-    if (event.type === "long.ledger_commit_proposal") {
-      if (
-        state.value.phase !== "awaiting_ledger_approval" ||
-        event.payload.input.chapterCardId !== chapter.chapterCardId
-      ) {
-        return false;
-      }
-      await passLedgerBarrier(runEpoch);
-      return true;
-    }
+    if (event.type === "long.ledger_commit_proposal") return false;
     return false;
   }
 
@@ -463,36 +370,11 @@ export function useLongWritingOrchestrator(
       await passWriteBarrier(runEpoch);
       return;
     }
-    if (state.value.retryPoint === "after_ledger") {
-      await passLedgerBarrier(runEpoch);
-      return;
-    }
     await checkAndStart(runEpoch);
   }
 
   function handleRejected(event: SystemEventEnvelope): boolean {
-    const chapter = currentChapter.value;
-    if (
-      !chapter ||
-      !isContinuityStageProposalForChapter(
-        event,
-        chapter.chapterCardId
-      ) ||
-      state.value.bookId !== event.payload.bookId
-    ) {
-      return false;
-    }
-    if (
-      state.value.phase === "awaiting_ledger_approval"
-    ) {
-      fail(
-        new Error(
-          `已拒绝“${chapter.title}”的连续性变更；可重试当前章核对，计划不会推进。`
-        ),
-        "after_write"
-      );
-      return true;
-    }
+    void event;
     return false;
   }
 
@@ -514,18 +396,7 @@ export function useLongWritingOrchestrator(
       );
       return true;
     }
-    if (
-      agentId === "continuity_ledger" &&
-      state.value.phase === "awaiting_ledger_approval"
-    ) {
-      fail(
-        new Error(
-          `“${chapter.title}”连续性核对运行失败：${error}。可重试当前章，计划不会推进。`
-        ),
-        "after_write"
-      );
-      return true;
-    }
+    void error;
     return false;
   }
 

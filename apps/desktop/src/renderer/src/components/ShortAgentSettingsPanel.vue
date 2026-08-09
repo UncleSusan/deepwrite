@@ -2,8 +2,7 @@
 import type {
   LongAgentSettings,
   LongAgentSettingsInput,
-  ShortWorkspaceAgentId,
-  ShortWorkspaceAgentSettingsInput,
+  WorkspaceAgentId,
   WorkspaceAgentSettings,
   WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
@@ -15,14 +14,13 @@ import { computed, ref, watch } from "vue";
 import { uiMessage } from "../ui-feedback";
 import LongAgentSettingsPanel from "./LongAgentSettingsPanel.vue";
 
-type EditableAgent = ShortWorkspaceAgentSettingsInput["agents"][number];
+type EditableAgent = WorkspaceAgentSettingsInput["agents"][number];
 type ReadAccessKey = keyof EditableAgent["readAccess"];
-type WorkspaceStageId = EditableAgent["readAccess"]["workspace"][number];
 type MaterialKind = EditableAgent["readAccess"]["material"][number];
 type SkillKind = EditableAgent["readAccess"]["skill"][number];
 
 interface AgentMeta {
-  id: ShortWorkspaceAgentId;
+  id: WorkspaceAgentId;
   label: string;
   eyebrow: string;
 }
@@ -57,27 +55,8 @@ const AGENTS = [
     id: "expert_draft_coordinator",
     label: "正文专家",
     eyebrow: "正文编写"
-  },
-  {
-    id: "expert_section_writer",
-    label: "分节写手",
-    eyebrow: "正文编写"
   }
 ] as const satisfies readonly AgentMeta[];
-
-const WORKSPACE_OPTIONS = [
-  {
-    id: "character_design",
-    label: "人物",
-    description: "人物设定与人物关系"
-  },
-  {
-    id: "plot_structure",
-    label: "全部剧情结构",
-    description: "当前作品动态配置的全部剧情结构项"
-  },
-  { id: "draft", label: "正文", description: "已规划或已生成的正文内容" }
-] as const satisfies readonly ReadOption<WorkspaceStageId>[];
 
 const MATERIAL_OPTIONS = [
   { id: "character", label: "人物素材", description: "人物设定类素材" },
@@ -94,16 +73,11 @@ const SKILL_OPTIONS = [
   { id: "other", label: "其他技能", description: "未归入以上分类的技能" }
 ] as const satisfies readonly ReadOption<SkillKind>[];
 
-const REQUIRED_WORKSPACE_STAGES = {
-  character_design: ["character_design"],
-  plot_design: ["plot_structure"],
-  expert_draft_coordinator: ["draft", "plot_structure"],
-  expert_section_writer: ["draft", "plot_structure"]
-} as const satisfies Record<ShortWorkspaceAgentId, readonly WorkspaceStageId[]>;
-
-const activeAgentId = ref<ShortWorkspaceAgentId>(AGENTS[0].id);
+const activeAgentId = ref<WorkspaceAgentId>(AGENTS[0].id);
 const activeWorkspaceType = ref<"short" | "script" | "long">("short");
-const draftAgents = ref<ShortWorkspaceAgentSettingsInput["agents"]>([]);
+const draftAgents = ref<EditableAgent[]>([]);
+
+const visibleAgents = computed(() => AGENTS);
 
 const activeAgent = computed(() =>
   draftAgents.value.find((agent) => agent.id === activeAgentId.value)
@@ -120,8 +94,6 @@ const activeSettings = computed(() =>
 const activeSettingsAgent = computed(() =>
   activeSettings.value?.agents.find((agent) => agent.id === activeAgentId.value)
 );
-
-const visibleWorkspaceOptions = computed(() => WORKSPACE_OPTIONS);
 
 const activeMeta = computed(
   () => AGENTS.find((agent) => agent.id === activeAgentId.value) ?? AGENTS[0]
@@ -148,7 +120,9 @@ const activeWorkspaceLabel = computed(() =>
 );
 
 const hasCompleteDraft = computed(() =>
-  AGENTS.every(({ id }) => draftAgents.value.some((agent) => agent.id === id))
+  visibleAgents.value.every(({ id }) =>
+    draftAgents.value.some((agent) => agent.id === id)
+  )
 );
 
 watch(
@@ -165,7 +139,6 @@ watch(
             agent.welcomeShortcuts[2]
           ],
           readAccess: {
-            workspace: [...agent.readAccess.workspace],
             material: [...agent.readAccess.material],
             skill: [...agent.readAccess.skill]
           }
@@ -182,14 +155,8 @@ watch(
   { immediate: true, deep: true }
 );
 
-function selectAgent(agentId: ShortWorkspaceAgentId): void {
+function selectAgent(agentId: WorkspaceAgentId): void {
   activeAgentId.value = agentId;
-}
-
-function isRequiredWorkspaceStage(stageId: WorkspaceStageId): boolean {
-  const requiredStages: readonly WorkspaceStageId[] =
-    REQUIRED_WORKSPACE_STAGES[activeAgentId.value];
-  return requiredStages.includes(stageId);
 }
 
 function isReadAccessChecked(scope: ReadAccessKey, id: string): boolean {
@@ -206,14 +173,6 @@ function patchReadAccess(
 ): void {
   const agent = activeAgent.value;
   if (!agent || formDisabled.value) return;
-  if (
-    scope === "workspace" &&
-    !checked &&
-    isRequiredWorkspaceStage(id as WorkspaceStageId)
-  ) {
-    return;
-  }
-
   const values = new Set(agent.readAccess[scope] as readonly string[]);
   if (checked) values.add(id);
   else values.delete(id);
@@ -250,7 +209,6 @@ function resetActiveAgent(): void {
       builtin.welcomeShortcuts[2]
     ],
     readAccess: {
-      workspace: [...builtin.readAccess.workspace],
       material: [...builtin.readAccess.material],
       skill: [...builtin.readAccess.skill]
     }
@@ -268,7 +226,7 @@ function saveSettings(): void {
   }
   const workspaceType = activeWorkspaceType.value;
 
-  const agents = AGENTS.map(({ id }) => {
+  const agents = visibleAgents.value.map(({ id }) => {
     const agent = draftAgents.value.find((candidate) => candidate.id === id);
     if (!agent) return null;
 
@@ -278,24 +236,18 @@ function saveSettings(): void {
       return null;
     }
 
-    const workspace = new Set<WorkspaceStageId>(agent.readAccess.workspace);
-    const requiredStages = REQUIRED_WORKSPACE_STAGES[id];
-    for (const requiredStage of requiredStages) {
-      workspace.add(requiredStage);
-    }
     return {
       id,
       systemPrompt: agent.systemPrompt,
       welcomeShortcuts: [shortcuts[0]!, shortcuts[1]!, shortcuts[2]!],
       readAccess: {
-        workspace: [...workspace],
         material: [...agent.readAccess.material],
         skill: [...agent.readAccess.skill]
       }
     };
   }).filter((agent): agent is EditableAgent => agent !== null);
 
-  if (agents.length !== AGENTS.length) return;
+  if (agents.length !== visibleAgents.value.length) return;
   emit("save", {
     workspaceType,
     agents
@@ -310,9 +262,7 @@ function saveSettings(): void {
         <span class="panel-kicker">{{ activeWorkspaceLabel }}创作空间</span>
         <h2 id="short-agent-title">智能体设置</h2>
         <p>
-          分别配置{{ activeWorkspaceLabel }}{{
-            activeWorkspaceType === "long" ? "六" : "五"
-          }}个智能体的系统提示词、欢迎快捷按钮，以及可读取的创作内容、素材和技能范围。
+          分别配置{{ activeWorkspaceLabel }}智能体的系统提示词、欢迎快捷按钮，以及可读取的素材和技能范围。创作空间内容始终可以按需互相读取。
         </p>
         <p v-if="!runtimeAvailable" class="runtime-note">
           当前环境仅支持查看；保存和恢复默认设置需要使用 DeepWrite 桌面端。
@@ -370,7 +320,7 @@ function saveSettings(): void {
     <div v-else class="settings-layout">
       <nav class="agent-nav" :aria-label="`${activeWorkspaceType === 'script' ? '剧本' : '短篇'}智能体`">
         <button
-          v-for="agent in AGENTS"
+          v-for="agent in visibleAgents"
           :key="agent.id"
           type="button"
           class="agent-nav-item"
@@ -439,38 +389,9 @@ function saveSettings(): void {
           <div class="section-heading">
             <div>
               <h4>读取范围</h4>
-              <p>未勾选的内容不会提供给当前智能体；带“必需”标记的阶段不可取消。</p>
+              <p>未勾选的素材或技能不会提供给当前智能体；创作空间各阶段始终可按需读取。</p>
             </div>
           </div>
-
-          <fieldset>
-            <legend>创作空间</legend>
-            <div class="option-grid">
-              <label
-                v-for="option in visibleWorkspaceOptions"
-                :key="option.id"
-                class="read-option"
-                :class="{ 'is-locked': isRequiredWorkspaceStage(option.id) }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="
-                    isRequiredWorkspaceStage(option.id) ||
-                    isReadAccessChecked('workspace', option.id)
-                  "
-                  :disabled="formDisabled || isRequiredWorkspaceStage(option.id)"
-                  @change="handleCheckboxChange('workspace', option.id, $event)"
-                />
-                <span class="option-copy">
-                  <strong>
-                    {{ option.label }}
-                    <em v-if="isRequiredWorkspaceStage(option.id)">必需</em>
-                  </strong>
-                  <small>{{ option.description }}</small>
-                </span>
-              </label>
-            </div>
-          </fieldset>
 
           <fieldset>
             <legend>素材库</legend>

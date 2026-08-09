@@ -11,9 +11,12 @@ import type {
   LibraryAgentSettingsInput,
   LongAgentSettings,
   LongAgentSettingsInput,
+  ModelConfigInput,
   ModelSettings,
+  ModelSettingsInput,
   ModelUsageDashboard,
   ModelUsageQueryInput,
+  OfficialModelBalance,
   WorkspaceAgentSettings,
   WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
@@ -35,6 +38,7 @@ import ModelUsagePanel from "./ModelUsagePanel.vue";
 import OfficialModelsPanel from "./OfficialModelsPanel.vue";
 import PopupSelect from "./PopupSelect.vue";
 import ShortAgentSettingsPanel from "./ShortAgentSettingsPanel.vue";
+import WorkspaceDialog from "./WorkspaceDialog.vue";
 
 interface SettingsCategory {
   id: string;
@@ -58,7 +62,8 @@ interface SettingsSection {
   categories: SettingsCategory[];
 }
 
-defineProps<{
+const props = defineProps<{
+  initialCategory?: string;
   permissionMode: GeneralPermissionMode;
   autoSaveEnabled: boolean;
   language: AppLanguage;
@@ -76,7 +81,13 @@ defineProps<{
   modelUsageDashboard: ModelUsageDashboard | null;
   modelUsageLoading: boolean;
   modelSettings: ModelSettings | null;
+  modelLoading: boolean;
+  modelSaving: boolean;
+  modelError: string | null;
+  modelTestMessage: string | null;
+  testingModelId: string | null;
   officialModelUsageDashboard: ModelUsageDashboard | null;
+  officialModelBalance: OfficialModelBalance | null;
   officialModelsLoading: boolean;
   officialModelsSaving: boolean;
   libraryAgentSettings: LibraryAgentSettings | null;
@@ -99,12 +110,16 @@ const emit = defineEmits<{
   saveLibraryAgents: [settings: LibraryAgentSettingsInput];
   resetLibraryAgent: [domain: LibraryAgentDomain];
   loadModelUsage: [input?: ModelUsageQueryInput];
+  loadModels: [];
+  saveModels: [settings: ModelSettingsInput];
+  testModel: [model: ModelConfigInput];
   loadOfficialModels: [];
   saveOfficialToken: [apiKey: string];
   clearOfficialToken: [];
+  setOfficialModelEnabled: [modelId: string, enabled: boolean];
 }>();
 const appearance = useAppearance();
-const activeCategory = ref("general");
+const activeCategory = ref(props.initialCategory ?? "general");
 const searchQuery = ref("");
 const importInput = ref<HTMLInputElement | null>(null);
 const accentColorInput = ref<HTMLInputElement | null>(null);
@@ -134,7 +149,8 @@ const sections: SettingsSection[] = [
     label: "模型与用量",
     categories: [
       { id: "usage", label: "用量", icon: "ledger" },
-      { id: "official-models", label: "DeepWrite 官方模型", icon: "model" }
+      { id: "custom-models", label: "自定义模型配置", icon: "model" },
+      { id: "official-models", label: "DeepWrite 官方国内模型", icon: "model" }
     ]
   },
   {
@@ -202,6 +218,9 @@ async function selectCategory(id: string): Promise<void> {
   }
   if (id === "official-models") {
     emit("loadOfficialModels");
+  }
+  if (id === "custom-models") {
+    emit("loadModels");
   }
   activeCategory.value = id;
 }
@@ -420,15 +439,37 @@ async function importThemeFile(event: Event): Promise<void> {
           @query="emit('loadModelUsage', $event)"
         />
 
+        <WorkspaceDialog
+          v-else-if="activeCategory === 'custom-models'"
+          mode="models"
+          model-scope="custom"
+          embedded
+          active
+          :model-settings="modelSettings"
+          :model-loading="modelLoading"
+          :model-saving="modelSaving"
+          :free-models-refreshing="false"
+          :model-error="modelError"
+          :model-test-message="modelTestMessage"
+          :testing-model-id="testingModelId"
+          :model-alert-messages="[]"
+          :workspace-directory-path="null"
+          :workspace-directory-loading="false"
+          @save-models="emit('saveModels', $event)"
+          @test-model="emit('testModel', $event)"
+        />
+
         <OfficialModelsPanel
           v-else-if="activeCategory === 'official-models'"
           :settings="modelSettings"
           :dashboard="officialModelUsageDashboard"
+          :balance="officialModelBalance"
           :loading="officialModelsLoading"
           :saving="officialModelsSaving"
           @load="emit('loadOfficialModels')"
           @save-token="emit('saveOfficialToken', $event)"
           @clear-token="emit('clearOfficialToken')"
+          @set-model-enabled="emit('setOfficialModelEnabled', $event.modelId, $event.enabled)"
         />
 
         <section v-else-if="activeCategory === 'general'" class="settings-group">

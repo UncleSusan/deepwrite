@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  LIBRARY_AGENT_ENTRY_MAX_CHARACTERS,
   createDefaultCreativePlotStages,
+  createShortWorkspaceContentRevision,
   type CatalogSnapshot
 } from "@deepwrite/contracts";
 import type { WorkspaceDocument } from "../types/workspace";
@@ -88,13 +90,29 @@ function document(overrides: Partial<WorkspaceDocument> = {}): WorkspaceDocument
 describe("buildLibraryAgentWorkspaceContext", () => {
   it("只复制当前资料库并优先使用实时编辑器内容", () => {
     const active = document();
-    const result = buildLibraryAgentWorkspaceContext(snapshot(), active, [active]);
+    const overview: WorkspaceDocument = {
+      id: "catalog:material-overview:material-1",
+      domain: "material",
+      title: "人物素材 · 库介绍",
+      eyebrow: "素材",
+      path: ["人物素材", "库介绍"],
+      content: "实时库介绍草稿",
+      libraryId: "material-1",
+      catalogLibraryField: "overview"
+    };
+    const result = buildLibraryAgentWorkspaceContext(snapshot(), active, [
+      active,
+      overview
+    ]);
 
     expect(result).toMatchObject({
       domain: "material",
       libraryId: "material-1",
       activeEntryId: "entry-1",
       projectRevision: 3,
+      overviewDocumentId: overview.id,
+      overview: "实时库介绍草稿",
+      overviewRevision: createShortWorkspaceContentRevision("实时库介绍草稿"),
       entries: [{ id: "entry-1", title: "甲（草稿）", content: "实时草稿" }]
     });
     expect(result?.readableLibraries).toBeUndefined();
@@ -198,6 +216,28 @@ describe("buildLibraryAgentWorkspaceContext", () => {
         })
       ])
     );
+  });
+
+  it("uses the same 40,000-character snapshot limit for background entries", () => {
+    const catalog = snapshot();
+    const backgroundBody = "景".repeat(LIBRARY_AGENT_ENTRY_MAX_CHARACTERS + 17);
+    catalog.materials[0]!.entries.push({
+      id: "entry-2",
+      stageId: "character",
+      title: "背景条目",
+      body: backgroundBody,
+      createdAt: now,
+      updatedAt: now
+    });
+    const active = document();
+    const result = buildLibraryAgentWorkspaceContext(catalog, active, [active]);
+    const background = result?.entries.find(({ id }) => id === "entry-2");
+
+    expect(background?.content).toHaveLength(LIBRARY_AGENT_ENTRY_MAX_CHARACTERS);
+    expect(background).toMatchObject({
+      truncated: true,
+      originalLength: backgroundBody.length
+    });
   });
 
   it("includes sibling skill libraries from the same skill group as read-only peers", () => {

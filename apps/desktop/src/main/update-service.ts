@@ -57,10 +57,12 @@ export class UpdateService {
       });
     });
     autoUpdater.on("error", (error: Error) => {
+      const canRetryInstall =
+        this.state.status === "downloaded" || this.state.status === "installing";
       this.patchState({
         status: "error",
-        canDownload: Boolean(this.manifest),
-        canInstall: false,
+        canDownload: !canRetryInstall && Boolean(this.manifest),
+        canInstall: canRetryInstall,
         message: errorMessage(error)
       });
     });
@@ -207,7 +209,23 @@ export class UpdateService {
     if (this.state.status !== "downloaded") {
       throw new Error("更新尚未下载完成。");
     }
-    this.requestInstall();
+    this.patchState({
+      status: "installing",
+      canDownload: false,
+      canInstall: false,
+      message: "正在安全退出并准备安装，请稍候…"
+    });
+    try {
+      this.requestInstall();
+    } catch (error: unknown) {
+      this.patchState({
+        status: "error",
+        canDownload: false,
+        canInstall: true,
+        message: errorMessage(error)
+      });
+      throw error;
+    }
   }
 
   quitAndInstall(): void {

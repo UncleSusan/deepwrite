@@ -8,7 +8,7 @@ import {
 } from "./generalPreferences";
 
 describe("general preferences", () => {
-  it("keeps manual saving as the default and rejects malformed values", () => {
+  it("keeps auto-save enabled by default and rejects malformed values", () => {
     expect(parseGeneralPreferences(null)).toEqual(DEFAULT_GENERAL_PREFERENCES);
     expect(parseGeneralPreferences("not-json")).toEqual(DEFAULT_GENERAL_PREFERENCES);
     expect(parseGeneralPreferences(JSON.stringify({ version: 2, autoSave: true }))).toEqual(

@@ -3,7 +3,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import type {
   CreateLibraryInput,
   CreateLibraryEntryInput,
-  LibraryType,
   MaterialKind,
   MaterialLibraryKind,
   MaterialStageId,
@@ -17,6 +16,8 @@ type LibraryDomain = "material" | "skill";
 type LibraryDialogOperation =
   | "create-library"
   | "create-entry"
+  | "rename-library"
+  | "rename-entry"
   | "remove-entry";
 type CreateLibraryEntryDraft =
   | Omit<Extract<CreateLibraryEntryInput, { domain: "material" }>, "content">
@@ -39,6 +40,8 @@ const emit = defineEmits<{
   close: [];
   createLibrary: [payload: CreateLibraryInput];
   createEntry: [payload: CreateLibraryEntryDraft];
+  renameLibrary: [payload: { domain: LibraryDomain; libraryId: string; title: string }];
+  renameEntry: [payload: { domain: LibraryDomain; libraryId: string; entryId: string; title: string }];
   removeEntry: [payload: {
     domain: LibraryDomain;
     libraryId: string;
@@ -47,24 +50,15 @@ const emit = defineEmits<{
 }>();
 
 const title = ref("");
-const libraryType = ref<LibraryType>("short");
 const stageId = ref<MaterialStageId>("other");
 const libraryKind = ref<MaterialKind | SkillKind>("character");
 const titleInput = ref<HTMLInputElement | null>(null);
 const domainLabel = computed(() => (props.domain === "material" ? "素材" : "技能"));
-const effectiveLibraryType = computed(() =>
-  props.operation === "create-library"
-    ? libraryType.value
-    : props.workspaceType ?? "short"
-);
-const libraryTypeOptions = [
-  { value: "short", label: "短篇" },
-  { value: "script", label: "剧本" },
-  { value: "long", label: "长篇" }
-];
 const heading = computed(() => {
   if (props.operation === "create-library") return `新建${domainLabel.value}库`;
   if (props.operation === "create-entry") return `在“${props.libraryTitle ?? "资料库"}”中新建条目`;
+  if (props.operation === "rename-library") return `修改${domainLabel.value}库名称`;
+  if (props.operation === "rename-entry") return `修改条目名称`;
   return `删除“${props.entryTitle ?? "条目"}”`;
 });
 const libraryKindOptions = computed(() =>
@@ -102,9 +96,7 @@ const stageOptions = computed(() => {
     mixed: allOptions.map(({ value }) => value)
   };
   const allowed = new Set(allowedByKind[props.materialKind ?? "mixed"]);
-  return allOptions.filter(
-    ({ value }) => allowed.has(value) && !(effectiveLibraryType.value === "script" && value === "intro")
-  );
+  return allOptions.filter(({ value }) => allowed.has(value));
 });
 const showEntryStageField = computed(
   () => props.operation === "create-entry" && props.domain === "material"
@@ -139,17 +131,25 @@ function submit(): void {
       emit("createLibrary", {
         domain: "material",
         name: normalizedTitle,
-        libraryType: libraryType.value,
         materialKind: libraryKind.value as MaterialKind
       });
     } else {
       emit("createLibrary", {
         domain: "skill",
         name: normalizedTitle,
-        libraryType: libraryType.value,
         skillKind: libraryKind.value as SkillKind
       });
     }
+    return;
+  }
+  if (props.operation === "rename-library") {
+    if (!props.libraryId) { uiMessage.error("未找到要修改的资料库"); return; }
+    emit("renameLibrary", { domain: props.domain, libraryId: props.libraryId, title: normalizedTitle });
+    return;
+  }
+  if (props.operation === "rename-entry") {
+    if (!props.libraryId || !props.entryId) { uiMessage.error("未找到要修改的条目"); return; }
+    emit("renameEntry", { domain: props.domain, libraryId: props.libraryId, entryId: props.entryId, title: normalizedTitle });
     return;
   }
   if (!props.libraryId) {
@@ -188,8 +188,7 @@ watch(
     ] as const,
   ([open]) => {
     if (!open) return;
-    title.value = "";
-    libraryType.value = "short";
+    title.value = props.operation === "rename-library" ? (props.libraryTitle ?? "") : props.operation === "rename-entry" ? (props.entryTitle ?? "") : "";
     libraryKind.value = props.domain === "material" ? "character" : "general";
     stageId.value =
       (stageOptions.value[0]?.value as MaterialStageId | undefined) ?? "other";
@@ -246,18 +245,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 :disabled="submitting"
               />
             </label>
-            <label class="book-resource-name-field catalog-resource-stage-field">
-              <span>适用创作类型</span>
-              <PopupSelect
-                :model-value="libraryType"
-                :options="libraryTypeOptions"
-                accessible-label="适用创作类型"
-                size="large"
-                :disabled="submitting"
-                :menu-min-width="220"
-                @update:model-value="libraryType = String($event) as LibraryType"
-              />
-            </label>
+            <p class="book-resource-help">
+              此资料库由短篇、剧本和长篇共用，可在任意作品中绑定。
+            </p>
             <label class="book-resource-name-field catalog-resource-stage-field">
               <span>{{ domainLabel }}库分类</span>
               <PopupSelect
@@ -275,19 +265,19 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </p>
           </template>
 
-          <template v-else-if="operation === 'create-entry'">
+          <template v-else-if="operation === 'create-entry' || operation === 'rename-library' || operation === 'rename-entry'">
             <p class="dialog-description">
-              新条目会立即创建为 entries 目录中的 Markdown 文件，之后可在编辑器或外部工具中继续编写。
+              {{ operation === 'create-entry' ? '新条目会立即创建为 entries 目录中的 Markdown 文件，之后可在编辑器或外部工具中继续编写。' : '新名称会立即保存到本地资料库项目。' }}
             </p>
             <label class="book-resource-name-field">
-              <span>条目名称</span>
+              <span>{{ operation === 'rename-library' ? `${domainLabel}库名称` : '条目名称' }}</span>
               <input
                 ref="titleInput"
                 v-model="title"
                 type="text"
                 maxlength="80"
                 autocomplete="off"
-                placeholder="请输入条目名称"
+                :placeholder="operation === 'rename-library' ? `请输入${domainLabel}库名称` : '请输入条目名称'"
                 :disabled="submitting"
               />
             </label>
@@ -336,9 +326,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   ? "处理中…"
                   : operation === "create-library"
                     ? `创建${domainLabel}库`
-                    : operation === "create-entry"
-                      ? "创建条目"
-                      : "确认删除"
+                    : operation === "create-entry" ? "创建条目" : operation === "rename-library" || operation === "rename-entry" ? "保存名称" : "确认删除"
               }}
             </button>
           </div>

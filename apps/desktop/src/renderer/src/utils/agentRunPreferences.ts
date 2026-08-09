@@ -1,4 +1,5 @@
 import {
+  resolveScriptWorkspaceAgentIdForStage,
   resolveShortWorkspaceAgentIdForStage,
   type ThinkingLevel
 } from "@deepwrite/contracts";
@@ -6,11 +7,16 @@ import type { AgentApprovalMode } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
 
 export const AGENT_RUN_PREFERENCES_STORAGE_KEY =
-  "deepwrite:agent-run-preferences:v1";
+  "deepwrite:agent-run-preferences:v2";
+export const AGENT_MODEL_SELECTION_STORAGE_KEY =
+  "deepwrite:agent-model-selection:v1";
 
-export interface AgentRunPreferences {
+export interface AgentModelSelection {
   selectedModelId: string;
   thinkingLevel: ThinkingLevel;
+}
+
+export interface AgentRunPreferences {
   temperature: number;
   approvalMode: AgentApprovalMode;
 }
@@ -53,12 +59,11 @@ export function agentConversationKeyForDocument(
     return document.workspaceId ? `${document.workspaceId}:general` : "general";
   }
   const agentId =
-    document.shortAgentId ?? resolveShortWorkspaceAgentIdForStage(document.stageId);
-  return `${document.workspaceId}:${agentId}${
-    document.expertSectionId
-      ? `:${encodeURIComponent(document.expertSectionId)}`
-      : ""
-  }`;
+    document.shortAgentId ??
+    (document.workspaceType === "script"
+      ? resolveScriptWorkspaceAgentIdForStage(document.stageId)
+      : resolveShortWorkspaceAgentIdForStage(document.stageId));
+  return `${document.workspaceId}:${agentId}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,12 +80,32 @@ function validThinkingLevel(value: unknown): value is ThinkingLevel {
   );
 }
 
+export function parseAgentModelSelection(
+  storedValue: string | null
+): AgentModelSelection | undefined {
+  if (!storedValue) return undefined;
+  try {
+    const value: unknown = JSON.parse(storedValue);
+    if (
+      !isRecord(value) ||
+      typeof value.selectedModelId !== "string" ||
+      value.selectedModelId.length > 120 ||
+      !validThinkingLevel(value.thinkingLevel)
+    ) {
+      return undefined;
+    }
+    return {
+      selectedModelId: value.selectedModelId,
+      thinkingLevel: value.thinkingLevel
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function parseAgentRunPreference(value: unknown): AgentRunPreferences | undefined {
   if (
     !isRecord(value) ||
-    typeof value.selectedModelId !== "string" ||
-    value.selectedModelId.length > 120 ||
-    !validThinkingLevel(value.thinkingLevel) ||
     typeof value.temperature !== "number" ||
     !Number.isFinite(value.temperature) ||
     value.temperature < 0 ||
@@ -92,8 +117,6 @@ function parseAgentRunPreference(value: unknown): AgentRunPreferences | undefine
   }
 
   return {
-    selectedModelId: value.selectedModelId,
-    thinkingLevel: value.thinkingLevel,
     temperature: value.temperature,
     approvalMode: value.approvalMode
   };

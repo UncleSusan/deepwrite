@@ -147,13 +147,13 @@ onBeforeUnmount(() =>
           <div>
             <span>长篇设置</span>
             <strong id="long-structure-dialog-title">
-              {{ bookTitle }} · 世界观与功能设置
+              {{ bookTitle }} · 结构管理
             </strong>
           </div>
           <button
             ref="closeButton"
             type="button"
-            aria-label="关闭世界观与功能设置"
+            aria-label="关闭结构管理"
             :disabled="pending"
             @click="close"
           >

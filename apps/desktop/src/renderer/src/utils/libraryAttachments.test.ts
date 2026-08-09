@@ -168,14 +168,14 @@ describe("library attachments", () => {
       linkedMaterialIdsByKind: {
         character: [],
         gimmick: [],
-        plot: ["material-long-plot"],
+        plot: ["material-long-plot", "material-mixed"],
         draft: [],
         other: ["missing-long-material"]
       },
       linkedSkillIdsByKind: {
         general: [],
         plot: [],
-        style: ["skill-long-style"],
+        style: ["skill-long-style", "skill-style"],
         other: []
       }
     });
@@ -186,6 +186,11 @@ describe("library attachments", () => {
         title: "长篇剧情素材 · 潮汐主线",
         kind: "plot",
         content: "十年一次逆潮。"
+      }),
+      expect.objectContaining({
+        title: "综合素材 · 剧情条目",
+        kind: "plot",
+        content: "剧情素材正文"
       })
     ]);
     expect(result.attachedSkills).toEqual([
@@ -193,6 +198,11 @@ describe("library attachments", () => {
         title: "长篇文风 · 章节节奏",
         kind: "style",
         content: "章节结尾保留推进钩子。"
+      }),
+      expect.objectContaining({
+        title: "文风技能 · 文风执行",
+        kind: "style",
+        content: "技能正文"
       })
     ]);
     expect(result.diagnostics).toContainEqual(

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error Loaded as source text by the Vitest-only virtual module.
 import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
+import proposalCardSource from "./AgentEditProposalCard.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 
 describe("AgentConversation edit proposal placement", () => {
@@ -13,60 +14,68 @@ describe("AgentConversation edit proposal placement", () => {
     expect(conversationSource).toContain("retryLongProposalPreview");
   });
 
-  it("renders long file approvals before the still-streaming response", () => {
+  it("renders approvals in the live timeline before later streaming responses", () => {
     const messageBodyStart = conversationSource.indexOf(
       '<div class="message-body">'
     );
-    const proposalStart = conversationSource.indexOf(
-      "<LongProposalReview",
+    const liveTimelineStart = conversationSource.indexOf(
+      "processingDisplayItems(message, true)",
       messageBodyStart
     );
-    const responseStart = conversationSource.indexOf(
-      'v-else-if="visibleResponse(message)"',
-      messageBodyStart
+    const liveProposalStart = conversationSource.indexOf(
+      "<AgentEditProposalCard",
+      liveTimelineStart
+    );
+    const liveLongProposalStart = conversationSource.indexOf(
+      "<LongProposalReview",
+      liveProposalStart
     );
 
-    expect(proposalStart).toBeGreaterThan(messageBodyStart);
-    expect(responseStart).toBeGreaterThan(proposalStart);
+    expect(liveTimelineStart).toBeGreaterThan(messageBodyStart);
+    expect(liveProposalStart).toBeGreaterThan(liveTimelineStart);
+    expect(liveLongProposalStart).toBeGreaterThan(liveProposalStart);
+    expect(conversationSource).toContain("function liveTimelineItems");
+    expect(conversationSource).toContain("approval.toolCallIds.includes(item.tool.id)");
+    expect(conversationSource).toContain("position: anchorIndex * 2 + 1");
   });
 
   it("allows every explicitly enabled agent proposal to save while streaming", () => {
     expect(conversationSource).toContain("allowLiveEditReview?: boolean");
     expect(conversationSource).toContain("allowLiveEditReview: false");
-    expect(conversationSource).toContain("function canReviewProposalWhileStreaming");
-    expect(conversationSource).not.toContain('proposal.stageId === "draft"');
-    expect(conversationSource).not.toContain("!proposal.libraryTarget");
-    expect(conversationSource).toContain(
+    expect(proposalCardSource).toContain("function canReviewProposalWhileStreaming");
+    expect(proposalCardSource).not.toContain('proposal.stageId === "draft"');
+    expect(proposalCardSource).not.toContain("!proposal.libraryTarget");
+    expect(proposalCardSource).toContain(
       "本项已生成，可立即审阅；智能体仍在继续。"
     );
-    expect(conversationSource).toContain(
+    expect(proposalCardSource).toContain(
       "本项已生成，正在进入实时自动保存队列；智能体仍在继续。"
     );
-    expect(conversationSource).toContain("proposal.longCharacterTarget");
-    expect(conversationSource).toContain(
+    expect(proposalCardSource).toContain("proposal.longCharacterTarget");
+    expect(proposalCardSource).toContain(
       "接受后将创建人物及其四份空白档案并保存到本机。"
     );
-    expect(conversationSource).toContain(
+    expect(proposalCardSource).toContain(
       "接受后将写入人物档案并保存到本机。"
     );
-    expect(conversationSource).toContain("proposal.longPlotDesignTarget");
-    expect(conversationSource).toContain(
+    expect(proposalCardSource).toContain("proposal.longPlotDesignTarget");
+    expect(proposalCardSource).toContain(
       "接受后将校验结构影响并保存剧情设计。"
     );
-    expect(conversationSource).toContain(
+    expect(proposalCardSource).toContain(
       "本项已生成，已加入实时自动保存队列。"
     );
-    expect(conversationSource).toContain(
+    expect(proposalCardSource).toContain(
       "实时保存失败，可立即重试或拒绝；智能体仍在继续。"
     );
-    expect(conversationSource).toContain("showProposalReviewActions(proposal)");
-    expect(conversationSource).toContain(
-      ':disabled="proposalReviewDisabled(proposal, \'reject\', message.status)"'
+    expect(proposalCardSource).toContain("showProposalReviewActions()");
+    expect(proposalCardSource).toContain(
+      ':disabled="proposalReviewDisabled(\'reject\')"'
     );
-    expect(conversationSource).toContain(
-      ':disabled="proposalReviewDisabled(proposal, \'accept\', message.status)"'
+    expect(proposalCardSource).toContain(
+      ':disabled="proposalReviewDisabled(\'accept\')"'
     );
-    expect(conversationSource).not.toContain(
+    expect(proposalCardSource).not.toContain(
       ":disabled=\"message.status === 'streaming' || proposal.status === 'accepting'\""
     );
   });
@@ -78,7 +87,7 @@ describe("AgentConversation edit proposal placement", () => {
       messageBodyStart
     );
     const proposalsStart = conversationSource.indexOf(
-      'class="edit-proposal-list"',
+      'class="approval-card-stack"',
       responseStart
     );
     const actionsStart = conversationSource.indexOf(
@@ -90,6 +99,8 @@ describe("AgentConversation edit proposal placement", () => {
     expect(responseStart).toBeGreaterThan(messageBodyStart);
     expect(proposalsStart).toBeGreaterThan(responseStart);
     expect(actionsStart).toBeGreaterThan(proposalsStart);
+    expect(conversationSource).toContain("message.status !== 'streaming'");
+    expect(conversationSource).toContain("approvalItemsForMessage(message)");
   });
 
   it("does not rewrite the conversation scroll position for status-only proposal updates", () => {
@@ -113,6 +124,39 @@ describe("AgentConversation edit proposal placement", () => {
     );
     expect(tailFollow).not.toContain(
       "element.scrollTop = element.scrollHeight"
+    );
+  });
+
+  it("locks tail following for the rest of a response after any upward scroll", () => {
+    expect(conversationSource).toContain("const tailFollowLockedForResponse = ref(false)");
+    expect(conversationSource).toContain("function lockConversationTailForCurrentResponse");
+    expect(conversationSource).toContain("if (event.deltaY < 0)");
+    expect(conversationSource).toContain(
+      "nextScrollTop < lastConversationScrollTop - 1"
+    );
+    expect(conversationSource).toContain(
+      "followsConversationTail.value = !tailFollowLockedForResponse.value"
+    );
+    expect(conversationSource).toContain('@wheel.passive="handleConversationWheel"');
+
+    const responseResetStart = conversationSource.indexOf("() => props.responding");
+    const responseResetEnd = conversationSource.indexOf(
+      "() => {\n    const message = [...props.messages]",
+      responseResetStart
+    );
+    const responseReset = conversationSource.slice(
+      responseResetStart,
+      responseResetEnd
+    );
+    expect(responseReset).toContain("if (!responding || wasResponding) return");
+    expect(responseReset).toContain("tailFollowLockedForResponse.value = false");
+  });
+
+  it("preserves the free-reading position when terminal cards move below the answer", () => {
+    expect(conversationSource).toContain('previous.endsWith(":streaming")');
+    expect(conversationSource).toContain("const preservedScrollTop = element.scrollTop");
+    expect(conversationSource).toContain(
+      "scroller.value.scrollTop = preservedScrollTop"
     );
   });
 
@@ -319,7 +363,7 @@ describe("AgentConversation edit proposal placement", () => {
     );
     expect(conversationSource).toContain("待审阅文本生成中");
     expect(conversationSource).toContain("当前章正文待审核");
-    expect(conversationSource).toContain(
+    expect(proposalCardSource).toContain(
       "接受后将把当前章正文保存到该章节独立的 Markdown 文件。"
     );
     expect(subagentSource).toContain(
@@ -409,5 +453,33 @@ describe("AgentConversation edit proposal placement", () => {
     expect(subagentSource).toContain("网络波动，${seconds}s 后重试（${progress}）");
     expect(subagentSource).toContain("正在重试（${progress}）");
     expect(subagentSource).toContain('v-if="subagentRetryStatus(run)"');
+  });
+
+  it("keeps the elapsed clock alive for every visibly running state", () => {
+    expect(conversationSource).toContain("const hasLiveProcessing = computed");
+    expect(conversationSource).toContain('message.status === "streaming"');
+    expect(conversationSource).toContain('run.status === "running"');
+
+    const clockWatchStart = conversationSource.indexOf(
+      "() => hasLiveProcessing.value"
+    );
+    const clockWatchEnd = conversationSource.indexOf(
+      "() => props.currentSessionId",
+      clockWatchStart
+    );
+    const clockWatch = conversationSource.slice(clockWatchStart, clockWatchEnd);
+    expect(clockWatchStart).toBeGreaterThan(-1);
+    expect(clockWatch).toContain("if (live)");
+    expect(clockWatch).not.toContain("() => props.responding");
+  });
+
+  it("labels a run as model queueing after ten seconds without model output", () => {
+    expect(conversationSource).toContain("const MODEL_QUEUE_LABEL_DELAY_MS = 10_000");
+    expect(conversationSource).toContain("function hasFirstModelOutput");
+    expect(conversationSource).toContain("end - start >= MODEL_QUEUE_LABEL_DELAY_MS");
+    expect(conversationSource).toContain("!hasFirstModelOutput(message)");
+    expect(conversationSource).toContain("模型排队中 · 已等待 ${seconds}s");
+    expect(conversationSource).toContain("message.content || message.thinking");
+    expect(conversationSource).toContain("message.toolCalls?.length || message.subagentRuns?.length");
   });
 });

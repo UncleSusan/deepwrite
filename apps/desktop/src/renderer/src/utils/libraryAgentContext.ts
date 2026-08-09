@@ -14,8 +14,6 @@ import {
 import type { WorkspaceDocument } from "../types/workspace";
 import type { ComposerReferenceOption } from "../types/conversation";
 
-const BACKGROUND_ENTRY_MAX_CHARACTERS = 20_000;
-
 function takeSnapshotText(
   content: string,
   maximum: number
@@ -40,6 +38,13 @@ function entryDocumentId(
   entryId: string
 ): string {
   return catalogNodeId(`${domain}-entry`, libraryId, entryId);
+}
+
+function overviewDocumentId(
+  domain: "material" | "skill",
+  libraryId: string
+): string {
+  return catalogNodeId(`${domain}-overview`, libraryId);
 }
 
 function peerEntrySnapshotId(libraryId: string, entryId: string): string {
@@ -222,8 +227,15 @@ export function buildLibraryAgentWorkspaceContext(
   } = resolveReadableLibraries(snapshot, domain, library);
 
   const activeEntryId = activeDocument.catalogEntryId;
+  const liveOverview = liveDocuments.find(
+    (document) =>
+      document.domain === domain &&
+      document.libraryId === library.id &&
+      document.catalogLibraryField === "overview"
+  );
+  const overviewContent = liveOverview?.content ?? library.overview;
   const overviewSnapshot = takeSnapshotText(
-    library.overview,
+    overviewContent,
     LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS
   );
   let remainingCharacters =
@@ -276,10 +288,7 @@ export function buildLibraryAgentWorkspaceContext(
         continue;
       }
 
-      const perEntryLimit =
-        source.isCurrent && entry.id === activeEntryId
-          ? LIBRARY_AGENT_ENTRY_MAX_CHARACTERS
-          : BACKGROUND_ENTRY_MAX_CHARACTERS;
+      const perEntryLimit = LIBRARY_AGENT_ENTRY_MAX_CHARACTERS;
       const textLimit = Math.min(perEntryLimit, remainingCharacters);
       if (textLimit <= 0) break;
       const textSnapshot = takeSnapshotText(resolved.content, textLimit);
@@ -360,7 +369,12 @@ export function buildLibraryAgentWorkspaceContext(
   const common = {
     libraryId: library.id,
     title: library.title,
+    overviewDocumentId:
+      liveOverview?.id ?? overviewDocumentId(domain, library.id),
     overview: overviewSnapshot.content,
+    overviewRevision: createShortWorkspaceContentRevision(
+      overviewSnapshot.content
+    ),
     ...(overviewSnapshot.truncated
       ? {
           overviewTruncated: true as const,

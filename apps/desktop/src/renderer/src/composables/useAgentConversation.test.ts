@@ -23,7 +23,10 @@ import {
   type SessionPromptAcceptedPayload,
   type SessionPromptCommandPayload,
 } from "@deepwrite/contracts";
-import { useAgentConversation } from "./useAgentConversation";
+import {
+  mergeStoredConversationHistories,
+  useAgentConversation
+} from "./useAgentConversation";
 import type { AgentEditProposal } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
 
@@ -85,7 +88,7 @@ function createShortWorkspaceDocuments(): WorkspaceDocument[] {
         workspaceTitle: "雨夜来信",
         workspaceCategories: ["都市", "悬疑"],
         stageId: "draft" as const,
-        shortAgentId: "expert_section_writer" as const,
+        shortAgentId: "expert_draft_coordinator" as const,
         expertSectionId: sectionId,
         expertSectionOrder: index,
         expertWordCountRequirement: index === 0 ? "300 字" : "1200 字",
@@ -145,7 +148,7 @@ function createScriptWorkspaceDocuments(): WorkspaceDocument[] {
     workspaceTitle: "雨夜剧本",
     workspaceCategories: ["悬疑"],
     stageId: "draft" as const,
-    shortAgentId: "expert_section_writer" as const,
+    shortAgentId: "expert_draft_coordinator" as const,
     expertSectionId: "episode-1",
     expertSectionOrder: 0,
     expertWordCountRequirement: "1200 字",
@@ -259,7 +262,6 @@ function createDeferredApi(): {
         throw new Error("Catalog is not used by conversation tests.");
       }),
       openProject: vi.fn(async () => null),
-      importLegacyBook: vi.fn(async () => null),
       importLegacyLibrary: vi.fn(async () => null),
       createShortBook: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
@@ -282,7 +284,13 @@ function createDeferredApi(): {
       deleteDraftSection: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
+      moveDraftSection: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
       createLibrary: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
+      updateLibrary: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
       createLibraryGroup: vi.fn(async () => {
@@ -309,10 +317,16 @@ function createDeferredApi(): {
       removeLibraryEntry: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
+      moveLibraryEntry: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
       unregisterProject: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
       deleteProject: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
+      duplicateProject: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       })
     },
@@ -321,11 +335,22 @@ function createDeferredApi(): {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
       create: vi.fn(async () => null),
+      duplicateBook: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      rename: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
       updateBindings: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
-      importWriteClaw: vi.fn(async () => null),
+      chooseLegacySyncSource: vi.fn(async () => null),
+      applyLegacySync: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
       importPortable: vi.fn(async () => null),
+      chooseContinuationImportSource: vi.fn(async () => null),
+      importContinuation: vi.fn(async () => null),
       open: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
@@ -386,10 +411,23 @@ function createDeferredApi(): {
       async refreshOfficial() {
         return { models: [], defaultModelId: "" };
       },
+      async queryOfficialBalance() {
+        return {
+          queriedAt: "2026-07-06T10:04:00.000Z",
+          accountBalance: 0,
+          accountBalanceYuan: 0,
+          keyQuotaRemaining: 0,
+          keyQuotaRemainingYuan: 0,
+          quotaPerUnit: 10_000
+        };
+      },
       async saveOfficialToken() {
         return { models: [], defaultModelId: "" };
       },
       async clearOfficialToken() {
+        return { models: [], defaultModelId: "" };
+      },
+      async setOfficialModelEnabled() {
         return { models: [], defaultModelId: "" };
       },
       async save(settings) {
@@ -555,6 +593,9 @@ function createDeferredApi(): {
       }
     },
     manuscript: {
+      async exportLong() {
+        throw new Error("Long manuscript export is not used by conversation tests.");
+      },
       async exportShort() {
         throw new Error("Manuscript export is not used by conversation tests.");
       }
@@ -605,6 +646,30 @@ function createMemoryStorage(): {
   };
 }
 
+function storedConversation(
+  sessionId: string,
+  updatedAt: string,
+  content: string
+) {
+  return {
+    sessionId,
+    messages: [
+      {
+        id: `user-${sessionId}`,
+        role: "user",
+        content,
+        createdAt: updatedAt,
+        status: "completed"
+      }
+    ],
+    draft: "",
+    approvalMode: "request-approval",
+    createdAt: updatedAt,
+    updatedAt,
+    temperature: 0.7
+  };
+}
+
 function createEditProposal(
   overrides: Partial<AgentEditProposal> = {}
 ): AgentEditProposal {
@@ -649,6 +714,7 @@ function createEditProposal(
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("agent conversation controller", () => {
@@ -1402,6 +1468,95 @@ describe("agent conversation controller", () => {
     restored.dispose();
   });
 
+  it("merges legacy conversation buckets into one validated history", () => {
+    const storage = createMemoryStorage();
+    const targetKey = "plot-history-book";
+    const sourceKey = "plot-history-chapters";
+    const secondSourceKey = "plot-history-more-chapters";
+    const invalidSourceKey = "plot-history-invalid";
+    const activeSessionId = "session-target-active";
+    const activeTimestamp = "2026-07-01T00:00:00.000Z";
+    storage.setItem(
+      targetKey,
+      JSON.stringify({
+        version: 1,
+        activeSessionId,
+        conversations: [
+          storedConversation(activeSessionId, activeTimestamp, "统一桶旧内容")
+        ]
+      })
+    );
+    const sourceConversations = [
+      storedConversation(
+        activeSessionId,
+        "2026-07-01T01:00:00.000Z",
+        "同一 session 的较新内容"
+      ),
+      ...Array.from({ length: 19 }, (_, index) =>
+        storedConversation(
+          `session-source-${index}`,
+          new Date(Date.UTC(2026, 6, 2, 0, index)).toISOString(),
+          `章卡历史 ${index}`
+        )
+      )
+    ];
+    storage.setItem(
+      sourceKey,
+      JSON.stringify({
+        version: 1,
+        activeSessionId: "session-source-20",
+        conversations: sourceConversations
+      })
+    );
+    storage.setItem(
+      secondSourceKey,
+      JSON.stringify({
+        version: 1,
+        activeSessionId: "session-source-38",
+        conversations: Array.from({ length: 20 }, (_, index) => {
+          const sourceIndex = index + 19;
+          return storedConversation(
+            `session-source-${sourceIndex}`,
+            new Date(Date.UTC(2026, 6, 2, 1, index)).toISOString(),
+            `章卡历史 ${sourceIndex}`
+          );
+        })
+      })
+    );
+    storage.setItem(invalidSourceKey, "{损坏的历史");
+
+    expect(
+      mergeStoredConversationHistories(storage, targetKey, [
+        sourceKey,
+        secondSourceKey,
+        invalidSourceKey,
+        sourceKey
+      ])
+    ).toBe(true);
+
+    const merged = JSON.parse(storage.getItem(targetKey) ?? "null") as {
+      activeSessionId: string;
+      conversations: Array<{
+        sessionId: string;
+        messages: Array<{ content: string }>;
+      }>;
+    };
+    expect(merged.activeSessionId).toBe(activeSessionId);
+    expect(merged.conversations).toHaveLength(20);
+    expect(
+      merged.conversations.find(
+        (conversation) => conversation.sessionId === activeSessionId
+      )?.messages[0]?.content
+    ).toBe("同一 session 的较新内容");
+    expect(
+      merged.conversations.some(
+        (conversation) => conversation.sessionId === "session-source-0"
+      )
+    ).toBe(false);
+    expect(storage.getItem(sourceKey)).not.toBeNull();
+    expect(storage.getItem(invalidSourceKey)).toBe("{损坏的历史");
+  });
+
   it("keeps only the 20 most recent conversations", () => {
     const storage = createMemoryStorage();
     const controller = useAgentConversation({
@@ -1877,6 +2032,102 @@ describe("agent conversation controller", () => {
     controller.dispose();
   });
 
+  it("batches a long thinking stream by frame without dropping any text", async () => {
+    const scheduledFrames: Array<(timestamp: number) => void> = [];
+    const requestFrame = vi.fn((callback: (timestamp: number) => void) => {
+      scheduledFrames.push(callback);
+      return scheduledFrames.length;
+    });
+    const cancelFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
+
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    controller.draft.value = "验证超长思考流";
+    const sessionId = controller.sessionId.value;
+    const runId = "run_long_thinking";
+    const messageId = "message_long_thinking";
+    const sending = controller.sendMessage(document);
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId,
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+
+    const thinkingChunks = Array.from(
+      { length: 1_024 },
+      (_, index) => `${String(index).padStart(4, "0")}:${"思考片段".repeat(24)}\n`
+    );
+    for (const [index, delta] of thinkingChunks.entries()) {
+      controller.handleEvent(
+        createEnvelope(
+          "agent.thinking_delta",
+          { sessionId, runId, messageId, delta, runtime },
+          eventOptions(sessionId, runId, `evt_long_thinking_${index}`)
+        )
+      );
+    }
+
+    expect(requestFrame).toHaveBeenCalledTimes(1);
+    expect(
+      controller.messages.value.find((message) => message.role === "assistant")
+    ).toBeUndefined();
+
+    scheduledFrames.shift()?.(16);
+    const completeThinking = thinkingChunks.join("");
+    expect(completeThinking.length).toBeGreaterThan(100_000);
+    expect(controller.messages.value.at(-1)?.thinking).toBe(completeThinking);
+    expect(controller.messages.value.at(-1)?.processingSteps).toMatchObject([
+      { type: "thinking", content: completeThinking }
+    ]);
+
+    const responseChunks = ["最终", "回复", "也保持", "完整。"];
+    for (const [index, delta] of responseChunks.entries()) {
+      controller.handleEvent(
+        createEnvelope(
+          "agent.message_delta",
+          { sessionId, runId, messageId, delta, runtime },
+          eventOptions(sessionId, runId, `evt_long_response_${index}`)
+        )
+      );
+    }
+    const completeResponse = responseChunks.join("");
+    controller.handleEvent(
+      createEnvelope(
+        "agent.message_completed",
+        {
+          sessionId,
+          runId,
+          messageId,
+          role: "assistant" as const,
+          content: completeResponse,
+          thinking: completeThinking,
+          runtime
+        },
+        eventOptions(sessionId, runId, "evt_long_thinking_completed")
+      )
+    );
+
+    const message = controller.messages.value.at(-1);
+    expect(message).toMatchObject({
+      content: completeResponse,
+      thinking: completeThinking,
+      status: "completed"
+    });
+    expect(message?.processingSteps).toMatchObject([
+      { type: "thinking", content: completeThinking },
+      { type: "response", content: completeResponse }
+    ]);
+    expect(cancelFrame).toHaveBeenCalled();
+    controller.dispose();
+  });
+
   it("ignores accepted and events after a new conversation starts", async () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({ api: () => deferred.api, idleTimeoutMs: 10_000 });
@@ -2174,6 +2425,149 @@ describe("agent conversation controller", () => {
       resultSummary: "文稿版本已变化，未应用子智能体变更。"
     });
     controller.dispose();
+  });
+
+  it("settles an unfinished subagent when the parent completes", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    controller.draft.value = "启动一个子任务";
+    const sessionId = controller.sessionId.value;
+    const runId = "run_parent_completed_with_child";
+    const sending = controller.sendMessage(document);
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId,
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+
+    controller.handleEvent(
+      createEnvelope(
+        "tool.call_requested",
+        {
+          sessionId,
+          runId,
+          toolCallId: "spawn_unfinished",
+          toolName: "spawn_subagent",
+          args: {
+            subagent_id: "chapter_writer",
+            task: "编写当前章"
+          },
+          runtime
+        },
+        eventOptions(sessionId, runId, "evt_spawn_unfinished")
+      )
+    );
+    controller.handleEvent(
+      createEnvelope(
+        "agent.message_completed",
+        {
+          sessionId,
+          runId,
+          messageId: "message_parent_completed_with_child",
+          role: "assistant" as const,
+          content: "父任务已经完成。",
+          runtime
+        },
+        eventOptions(sessionId, runId, "evt_parent_completed_with_child")
+      )
+    );
+
+    expect(controller.messages.value.at(-1)).toMatchObject({
+      status: "completed",
+      subagentRuns: [
+        {
+          status: "error",
+          errorMessage: "父智能体运行已完成，但子任务未返回完整终态。"
+        }
+      ]
+    });
+    expect(
+      controller.messages.value.at(-1)?.subagentRuns?.[0]?.completedAt
+    ).toBeDefined();
+    expect(controller.isBusy.value).toBe(false);
+
+    controller.handleEvent(
+      createEnvelope(
+        "subagent.completed",
+        {
+          sessionId,
+          runId,
+          parentToolCallId: "spawn_unfinished",
+          subagentRunId: "subrun_finished_late",
+          subagentId: "chapter_writer",
+          name: "单章写手",
+          status: "completed" as const,
+          summary: "子任务终态稍后到达。",
+          runtime
+        },
+        eventOptions(sessionId, runId, "evt_child_completed_late")
+      )
+    );
+    expect(controller.messages.value.at(-1)?.subagentRuns?.[0]).toMatchObject({
+      subagentRunId: "subrun_finished_late",
+      status: "completed",
+      summary: "子任务终态稍后到达。"
+    });
+    expect(
+      controller.messages.value.at(-1)?.subagentRuns?.[0]?.errorMessage
+    ).toBeUndefined();
+    controller.dispose();
+  });
+
+  it("settles streaming presentation state before disposal", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    controller.draft.value = "开始流式任务";
+    const sessionId = controller.sessionId.value;
+    const runId = "run_disposed_while_streaming";
+    const sending = controller.sendMessage(document);
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId,
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+    controller.handleEvent(
+      createEnvelope(
+        "tool.call_requested",
+        {
+          sessionId,
+          runId,
+          toolCallId: "spawn_disposed",
+          toolName: "spawn_subagent",
+          args: {
+            subagent_id: "chapter_writer",
+            task: "编写当前章"
+          },
+          runtime
+        },
+        eventOptions(sessionId, runId, "evt_spawn_disposed")
+      )
+    );
+
+    expect(controller.messages.value.at(-1)).toMatchObject({
+      status: "streaming",
+      subagentRuns: [{ status: "running" }]
+    });
+    controller.dispose();
+
+    expect(controller.messages.value.at(-1)).toMatchObject({
+      status: "stopped",
+      subagentRuns: [{ status: "stopped" }]
+    });
+    expect(
+      controller.messages.value.at(-1)?.processingCompletedAt
+    ).toBeDefined();
+    expect(controller.isBusy.value).toBe(false);
   });
 
   it("stops an in-flight subagent card when its parent run is aborted", async () => {
@@ -3274,6 +3668,45 @@ describe("agent conversation controller", () => {
     }
   });
 
+  it("keeps complete short-stage files in tool context while bounding the automatic active snapshot", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    const workspaceDocuments = createShortWorkspaceDocuments();
+    const activeDocument = workspaceDocuments.find(
+      (candidate) => candidate.stageId === "plot_design"
+    );
+    if (!activeDocument) throw new Error("Missing plot stage document.");
+    const tail = "完整阶段文件末尾。";
+    activeDocument.content = `${"长".repeat(20_010)}${tail}`;
+
+    controller.draft.value = "检查完整剧情文件";
+    const sending = controller.sendMessage(activeDocument, workspaceDocuments);
+    const sessionId = controller.sessionId.value;
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId: "run_complete_short_stage",
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+
+    const context = deferred.prompts[0]?.workspaceContext;
+    const plotStage = context?.shortWorkspace?.stages.find(
+      ({ stageId }) => stageId === "plot_design"
+    );
+    expect(plotStage?.content).toContain(tail);
+    expect(plotStage?.truncated).toBeUndefined();
+    expect(context?.activeResource).toMatchObject({
+      truncated: true,
+      originalLength: activeDocument.content.length
+    });
+    expect(context?.activeResource?.content).toHaveLength(20_000);
+    controller.dispose();
+  });
+
   it("builds an isolated script workspace with the shared dynamic stages", async () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({
@@ -3303,7 +3736,7 @@ describe("agent conversation controller", () => {
       id: "script_story_1",
       title: "雨夜剧本",
       activeStageId: "draft",
-      activeAgentId: "expert_section_writer",
+      activeAgentId: "expert_draft_coordinator",
       activeSectionId: "episode-1",
       stages: SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
         stageId,
@@ -3324,7 +3757,7 @@ describe("agent conversation controller", () => {
     controller.dispose();
   });
 
-  it("forwards the selected draft section and section-writer identity", async () => {
+  it("forwards the selected draft section to the unified draft agent", async () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({
       api: () => deferred.api,
@@ -3351,7 +3784,7 @@ describe("agent conversation controller", () => {
 
     expect(deferred.prompts[0]?.workspaceContext?.shortWorkspace).toMatchObject({
       activeStageId: "draft",
-      activeAgentId: "expert_section_writer",
+      activeAgentId: "expert_draft_coordinator",
       activeSectionId: "section-1",
       expertDraft: {
         sections: [
@@ -3426,7 +3859,7 @@ describe("agent conversation controller", () => {
     const context = deferred.prompts[0]?.workspaceContext;
     expect(context?.shortWorkspace).toMatchObject({
       activeStageId: "draft",
-      activeAgentId: "expert_section_writer",
+      activeAgentId: "expert_draft_coordinator",
       activeSectionId: "section-2"
     });
     expect(
@@ -3467,7 +3900,7 @@ describe("agent conversation controller", () => {
           workspaceTitle: "雨夜来信",
           workspaceCategories: ["都市", "悬疑"],
           stageId: "draft" as const,
-          shortAgentId: "expert_section_writer" as const,
+          shortAgentId: "expert_draft_coordinator" as const,
           expertSectionId: sectionId,
           expertSectionOrder: index,
           expertWordCountRequirement: "1200 字",
@@ -3722,7 +4155,9 @@ describe("agent conversation controller", () => {
         title: "人物素材",
         libraryType: "short",
         kind: "character",
+        overviewDocumentId: "material-overview-1",
         overview: "人物素材边界",
+        overviewRevision: createShortWorkspaceContentRevision("人物素材边界"),
         readOnly: false,
         activeEntryId: "entry-1",
         projectRevision: 7,
@@ -3825,6 +4260,9 @@ describe("agent conversation controller", () => {
               order: 1,
               format: "text"
             }
+          ],
+          characterTypes: [
+            { id: "protagonist", title: "主角", order: 1 }
           ],
           characters: [],
           volumes: [{ id: "volume_one", title: "第一卷", order: 1 }],

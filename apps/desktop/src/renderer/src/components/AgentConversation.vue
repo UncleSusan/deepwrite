@@ -11,7 +11,7 @@ import {
   type LongAgentId,
   type LongWorkspaceIndexSnapshot,
   type ModelConfig,
-  type ShortWorkspaceAgentId,
+  type WorkspaceAgentId,
   type ThinkingLevel,
   type UserPromptAttachment
 } from "@deepwrite/contracts";
@@ -40,9 +40,10 @@ import {
 } from "../utils/composerReferences";
 import { createEditorReferenceAttachment } from "../utils/editorTextReferences";
 import AppIcon from "./AppIcon.vue";
+import AgentEditProposalCard from "./AgentEditProposalCard.vue";
 import LongProposalReview from "./LongProposalReview.vue";
-import MessageMarkdown from "./MessageMarkdown.vue";
 import PopupSelect from "./PopupSelect.vue";
+import StreamedContent from "./StreamedContent.vue";
 import SubagentRunList from "./SubagentRunList.vue";
 
 const props = withDefaults(
@@ -65,8 +66,8 @@ const props = withDefaults(
     bookTitle: string;
     stageLabel: string;
     agentLabel: string;
-    agentId: ShortWorkspaceAgentId | LongAgentId | undefined;
-    agentWorkspaceType?: "short" | "long";
+    agentId: WorkspaceAgentId | LongAgentId | undefined;
+    agentWorkspaceType?: "short" | "script" | "long";
     allowLiveEditReview?: boolean;
     libraryDomain: LibraryAgentDomain | undefined;
     librarySkills: readonly Pick<LibraryAgentSkill, "name">[] | undefined;
@@ -120,6 +121,15 @@ const attachmentInput = ref<HTMLInputElement>();
 const pendingAttachments = ref<UserPromptAttachment[]>([]);
 const readingAttachments = ref(false);
 const clock = ref(Date.now());
+const hasLiveProcessing = computed(
+  () =>
+    props.responding ||
+    props.messages.some(
+      (message) =>
+        message.status === "streaming" ||
+        message.subagentRuns?.some((run) => run.status === "running")
+    )
+);
 const copiedMessageId = ref<string | null>(null);
 const historyOpen = ref(false);
 const activeReference = ref<ComposerReferenceMatch | null>(null);
@@ -131,9 +141,12 @@ let conversationNavigatorFrame: number | undefined;
 let conversationNavigatorResizeObserver: ResizeObserver | undefined;
 let attachmentReadEpoch = 0;
 const followsConversationTail = ref(true);
+const tailFollowLockedForResponse = ref(false);
 const activeConversationTurnId = ref<string | null>(null);
+let lastConversationScrollTop = 0;
 
 const TAIL_FOLLOW_THRESHOLD = 72;
+const MODEL_QUEUE_LABEL_DELAY_MS = 10_000;
 
 function isNearConversationTail(element: HTMLElement): boolean {
   return element.scrollHeight - element.scrollTop - element.clientHeight <= TAIL_FOLLOW_THRESHOLD;
@@ -234,9 +247,45 @@ function scheduleActiveConversationTurnUpdate(): void {
   });
 }
 
+function hasActiveConversationResponse(): boolean {
+  return (
+    props.responding ||
+    props.messages.some(
+      (message) => message.role === "assistant" && message.status === "streaming"
+    )
+  );
+}
+
+function lockConversationTailForCurrentResponse(): void {
+  if (!hasActiveConversationResponse()) return;
+  tailFollowLockedForResponse.value = true;
+  followsConversationTail.value = false;
+  if (scrollFrame !== undefined) {
+    globalThis.cancelAnimationFrame(scrollFrame);
+    scrollFrame = undefined;
+  }
+}
+
+function handleConversationWheel(event: WheelEvent): void {
+  if (event.deltaY < 0) lockConversationTailForCurrentResponse();
+}
+
 function handleConversationScroll(): void {
-  if (!scroller.value) return;
-  followsConversationTail.value = isNearConversationTail(scroller.value);
+  const element = scroller.value;
+  if (!element) return;
+  const nextScrollTop = element.scrollTop;
+  if (
+    hasActiveConversationResponse() &&
+    nextScrollTop < lastConversationScrollTop - 1
+  ) {
+    lockConversationTailForCurrentResponse();
+  }
+  if (hasActiveConversationResponse()) {
+    followsConversationTail.value = !tailFollowLockedForResponse.value;
+  } else {
+    followsConversationTail.value = isNearConversationTail(element);
+  }
+  lastConversationScrollTop = nextScrollTop;
   scheduleActiveConversationTurnUpdate();
 }
 
@@ -244,6 +293,7 @@ function scrollToConversationTurn(messageId: string): void {
   const container = scroller.value;
   const messageElement = conversationMessageElement(messageId);
   if (!container || !messageElement) return;
+  lockConversationTailForCurrentResponse();
   followsConversationTail.value = false;
   activeConversationTurnId.value = messageId;
   keepActiveConversationCardVisible();
@@ -275,6 +325,7 @@ function scheduleConversationTailFollow(): void {
       );
       if (Math.abs(element.scrollTop - tailScrollTop) > 1) {
         element.scrollTop = tailScrollTop;
+        lastConversationScrollTop = tailScrollTop;
       }
     }
   });
@@ -310,6 +361,11 @@ watch(
         .join(","),
       message?.editProposals
         ?.map((proposal) => `${proposal.id}:${proposal.status}:${proposal.updatedAt}`)
+        .join(","),
+      props.longProposalItems
+        .map((item) =>
+          `${item.event.id}:${item.status}:${item.previewProjectRevision ?? ""}:${item.error ?? ""}`
+        )
         .join(",")
     ].join("|");
   },
@@ -324,6 +380,7 @@ watch(
 
 onMounted(async () => {
   await nextTick();
+  lastConversationScrollTop = scroller.value?.scrollTop ?? 0;
   scheduleConversationTailFollow();
   updateActiveConversationTurn();
   conversationNavigatorResizeObserver = new ResizeObserver(
@@ -339,13 +396,51 @@ onMounted(async () => {
 
 watch(
   () => props.responding,
-  (responding) => {
+  (responding, wasResponding) => {
+    if (!responding || wasResponding) return;
+    tailFollowLockedForResponse.value = false;
+    followsConversationTail.value = true;
+    void nextTick(() => {
+      scheduleConversationTailFollow();
+    });
+  }
+);
+
+watch(
+  () => {
+    const message = [...props.messages]
+      .reverse()
+      .find((candidate) => candidate.role === "assistant");
+    return message ? `${message.id}:${message.status ?? "completed"}` : "";
+  },
+  async (next, previous) => {
+    if (
+      !tailFollowLockedForResponse.value ||
+      !previous.endsWith(":streaming") ||
+      next.endsWith(":streaming")
+    ) {
+      return;
+    }
+    const element = scroller.value;
+    if (!element) return;
+    const preservedScrollTop = element.scrollTop;
+    await nextTick();
+    if (!tailFollowLockedForResponse.value || !scroller.value) return;
+    scroller.value.scrollTop = preservedScrollTop;
+    lastConversationScrollTop = preservedScrollTop;
+  },
+  { flush: "pre" }
+);
+
+watch(
+  () => hasLiveProcessing.value,
+  (live) => {
     if (clockTimer !== undefined) {
       globalThis.clearInterval(clockTimer);
       clockTimer = undefined;
     }
     clock.value = Date.now();
-    if (responding) {
+    if (live) {
       clockTimer = globalThis.setInterval(() => {
         clock.value = Date.now();
       }, 1_000);
@@ -361,8 +456,10 @@ watch(
     attachmentReadEpoch += 1;
     readingAttachments.value = false;
     pendingAttachments.value = [];
+    tailFollowLockedForResponse.value = false;
     followsConversationTail.value = true;
     void nextTick(() => {
+      lastConversationScrollTop = scroller.value?.scrollTop ?? 0;
       scheduleConversationTailFollow();
       updateActiveConversationTurn();
     });
@@ -903,14 +1000,31 @@ function hasSubagentRunForTool(
 }
 
 type ProcessingItem =
-  | { id: string; type: "thinking"; content: string }
-  | { id: string; type: "response"; content: string }
-  | { id: string; type: "tool"; tool: AgentToolTrace };
+  | { id: string; type: "thinking"; content: string; createdAt: string }
+  | { id: string; type: "response"; content: string; createdAt: string }
+  | { id: string; type: "tool"; tool: AgentToolTrace; createdAt: string };
+
+type ApprovalCardItem =
+  | {
+      id: string;
+      type: "edit-proposal";
+      createdAt: string;
+      toolCallIds: string[];
+      proposal: AgentEditProposal;
+    }
+  | {
+      id: string;
+      type: "long-proposal";
+      createdAt: string;
+      toolCallIds: string[];
+      item: LongWorkspaceProposalItem;
+    };
 
 type ProcessingDisplayItem =
   | Exclude<ProcessingItem, { type: "tool" }>
   | { id: string; type: "tool"; tool: AgentToolTrace }
-  | { id: string; type: "tool-group"; tools: AgentToolTrace[] };
+  | { id: string; type: "tool-group"; tools: AgentToolTrace[] }
+  | ApprovalCardItem;
 
 function processingItems(message: ChatMessage): ProcessingItem[] {
   const items: ProcessingItem[] = [];
@@ -924,38 +1038,159 @@ function processingItems(message: ChatMessage): ProcessingItem[] {
     }
     for (const [index, step] of message.processingSteps.entries()) {
       if (step.type === "thinking") {
-        items.push({ id: step.id, type: "thinking", content: step.content });
+        items.push({
+          id: step.id,
+          type: "thinking",
+          content: step.content,
+          createdAt: step.createdAt
+        });
         continue;
       }
       if (step.type === "response") {
         // While streaming every turn remains visible in arrival order. Once the
         // run ends, the last response moves outside the processed disclosure.
         if (message.status === "streaming" || index !== lastResponseIndex) {
-          items.push({ id: step.id, type: "response", content: step.content });
+          items.push({
+            id: step.id,
+            type: "response",
+            content: step.content,
+            createdAt: step.createdAt
+          });
         }
         continue;
       }
       const tool = message.toolCalls?.find((toolCall) => toolCall.id === step.toolCallId);
       if (tool && !hasSubagentRunForTool(message, tool)) {
-        items.push({ id: step.id, type: "tool", tool });
+        items.push({
+          id: step.id,
+          type: "tool",
+          tool,
+          createdAt: step.createdAt
+        });
       }
     }
     return items;
   }
   if (message.thinking) {
-    items.push({ id: `${message.id}_thinking`, type: "thinking", content: message.thinking });
+    items.push({
+      id: `${message.id}_thinking`,
+      type: "thinking",
+      content: message.thinking,
+      createdAt: message.createdAt
+    });
   }
   for (const tool of message.toolCalls ?? []) {
     if (!hasSubagentRunForTool(message, tool)) {
-      items.push({ id: `${message.id}_${tool.id}`, type: "tool", tool });
+      items.push({
+        id: `${message.id}_${tool.id}`,
+        type: "tool",
+        tool,
+        createdAt: tool.requestedAt
+      });
     }
   }
   return items;
 }
 
-function processingDisplayItems(message: ChatMessage): ProcessingDisplayItem[] {
+function compareApprovalCards(
+  left: ApprovalCardItem,
+  right: ApprovalCardItem
+): number {
+  return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
+}
+
+function approvalItemsForMessage(message: ChatMessage): ApprovalCardItem[] {
+  const editItems: ApprovalCardItem[] = (message.editProposals ?? []).map(
+    (proposal) => ({
+      id: `edit:${proposal.id}`,
+      type: "edit-proposal",
+      createdAt: proposal.createdAt,
+      toolCallIds: proposal.toolCallIds,
+      proposal
+    })
+  );
+  const longItems: ApprovalCardItem[] = longProposalItemsForMessage(message).map(
+    (item) => ({
+      id: `long:${item.event.id}`,
+      type: "long-proposal",
+      createdAt: item.event.timestamp,
+      toolCallIds: [item.event.payload.toolCallId],
+      item
+    })
+  );
+  return [...editItems, ...longItems].sort(compareApprovalCards);
+}
+
+function liveTimelineItems(message: ChatMessage): Array<ProcessingItem | ApprovalCardItem> {
+  const processing = processingItems(message);
+  const positioned: Array<{
+    position: number;
+    sequence: number;
+    item: ProcessingItem | ApprovalCardItem;
+  }> = processing.map((item, index) => ({
+    position: index * 2,
+    sequence: index,
+    item
+  }));
+
+  for (const [approvalIndex, approval] of approvalItemsForMessage(message).entries()) {
+    let anchorIndex = -1;
+    for (const [index, item] of processing.entries()) {
+      if (
+        item.type === "tool" &&
+        approval.toolCallIds.includes(item.tool.id)
+      ) {
+        anchorIndex = index;
+      }
+    }
+    if (anchorIndex >= 0) {
+      positioned.push({
+        position: anchorIndex * 2 + 1,
+        sequence: processing.length + approvalIndex,
+        item: approval
+      });
+      continue;
+    }
+
+    const laterIndex = processing.findIndex(
+      (item) => item.createdAt.localeCompare(approval.createdAt) > 0
+    );
+    positioned.push({
+      position: laterIndex < 0 ? processing.length * 2 + 1 : laterIndex * 2 - 1,
+      sequence: processing.length + approvalIndex,
+      item: approval
+    });
+  }
+
+  return positioned
+    .sort((left, right) => {
+      if (left.position !== right.position) return left.position - right.position;
+      const leftApproval = left.item.type === "edit-proposal" || left.item.type === "long-proposal";
+      const rightApproval = right.item.type === "edit-proposal" || right.item.type === "long-proposal";
+      if (leftApproval && rightApproval) {
+        return compareApprovalCards(
+          left.item as ApprovalCardItem,
+          right.item as ApprovalCardItem
+        );
+      }
+      return left.sequence - right.sequence;
+    })
+    .map(({ item }) => item);
+}
+
+function processingDisplayItems(
+  message: ChatMessage,
+  includeApprovalCards = false
+): ProcessingDisplayItem[] {
   const displayItems: ProcessingDisplayItem[] = [];
-  for (const item of processingItems(message)) {
+  const timelineItems = includeApprovalCards
+    ? liveTimelineItems(message)
+    : processingItems(message);
+  for (const item of timelineItems) {
+    if (item.type === "edit-proposal" || item.type === "long-proposal") {
+      displayItems.push(item);
+      continue;
+    }
     if (item.type !== "tool" || isWriteTool(item.tool)) {
       displayItems.push(item);
       continue;
@@ -1008,6 +1243,16 @@ function retryStatusLabel(message: ChatMessage): string | undefined {
   return `网络波动，${remainingSeconds}s 后重试${suffix}`;
 }
 
+function hasFirstModelOutput(message: ChatMessage): boolean {
+  if (message.content || message.thinking) return true;
+  if (message.toolCalls?.length || message.subagentRuns?.length) return true;
+  return message.processingSteps?.some(
+    (step) =>
+      step.type === "tool" ||
+      ((step.type === "thinking" || step.type === "response") && step.content.length > 0)
+  ) ?? false;
+}
+
 function processingLabel(message: ChatMessage): string {
   const retryLabel = retryStatusLabel(message);
   if (retryLabel) return retryLabel;
@@ -1021,6 +1266,13 @@ function processingLabel(message: ChatMessage): string {
     return message.status === "streaming" ? "处理中" : "已处理";
   }
   const seconds = Math.max(1, Math.ceil((end - start) / 1_000));
+  if (
+    message.status === "streaming" &&
+    end - start >= MODEL_QUEUE_LABEL_DELAY_MS &&
+    !hasFirstModelOutput(message)
+  ) {
+    return `模型排队中 · 已等待 ${seconds}s`;
+  }
   return `${message.status === "streaming" ? "处理中" : "已处理"} ${seconds}s`;
 }
 
@@ -1347,203 +1599,6 @@ function formatToolPayload(value: unknown): string | undefined {
   }
 }
 
-const proposalStatusLabels: Record<AgentEditProposal["status"], string> = {
-  pending: "待审阅",
-  accepting: "正在应用",
-  accepted: "已接受",
-  rejected: "已拒绝",
-  conflict: "版本冲突",
-  error: "应用失败"
-};
-
-const proposalStatusMessages: Record<AgentEditProposal["status"], string> = {
-  pending: "接受后将应用到当前文稿并自动保存到本机。",
-  accepting: "正在校验版本、应用变更并保存……",
-  accepted: "变更已应用并保存到本机。",
-  rejected: "已保留当前文稿，未应用这次变更。",
-  conflict: "文稿版本已经变化，未覆盖你的最新内容。",
-  error: "变更未能应用，请检查运行详情。"
-};
-
-function proposalStatusLabel(proposal: AgentEditProposal): string {
-  if (
-    proposal.status === "pending" &&
-    proposal.approvalMode === "auto-approve"
-  ) {
-    return "待自动保存";
-  }
-  return proposalStatusLabels[proposal.status];
-}
-
-function proposalAcceptLabel(proposal: AgentEditProposal): string {
-  if (proposal.status === "accepting") return "保存中…";
-  return proposal.status === "error" ? "重试接受并保存" : "接受并保存";
-}
-
-function canReviewProposalWhileStreaming(
-  _proposal: AgentEditProposal
-): boolean {
-  return props.allowLiveEditReview;
-}
-
-function showProposalReviewActions(proposal: AgentEditProposal): boolean {
-  if (
-    proposal.approvalMode === "auto-approve" &&
-    canReviewProposalWhileStreaming(proposal) &&
-    (proposal.status === "pending" || proposal.status === "accepting")
-  ) {
-    return false;
-  }
-  return (
-    proposal.status === "pending" ||
-    proposal.status === "accepting" ||
-    proposal.status === "error" ||
-    proposal.status === "conflict"
-  );
-}
-
-function isProposalReviewable(
-  proposal: AgentEditProposal,
-  decision: "accept" | "reject"
-): boolean {
-  return (
-    proposal.status === "pending" ||
-    proposal.status === "error" ||
-    (decision === "reject" && proposal.status === "conflict")
-  );
-}
-
-function proposalReviewDisabled(
-  proposal: AgentEditProposal,
-  decision: "accept" | "reject",
-  messageStatus: ChatMessage["status"]
-): boolean {
-  if (!isProposalReviewable(proposal, decision)) {
-    return true;
-  }
-  return (
-    messageStatus === "streaming" &&
-    !canReviewProposalWhileStreaming(proposal)
-  );
-}
-
-function proposalStatusMessage(
-  proposal: AgentEditProposal,
-  messageStatus: ChatMessage["status"]
-): string {
-  if (
-    messageStatus === "streaming" &&
-    proposal.status === "pending" &&
-    proposal.approvalMode === "auto-approve" &&
-    canReviewProposalWhileStreaming(proposal)
-  ) {
-    return "本项已生成，正在进入实时自动保存队列；智能体仍在继续。";
-  }
-  if (
-    messageStatus === "streaming" &&
-    proposal.status === "pending" &&
-    canReviewProposalWhileStreaming(proposal)
-  ) {
-    return "本项已生成，可立即审阅；智能体仍在继续。";
-  }
-  if (
-    messageStatus === "streaming" &&
-    proposal.status === "error" &&
-    canReviewProposalWhileStreaming(proposal)
-  ) {
-    return proposal.statusMessage ?? "实时保存失败，可立即重试或拒绝；智能体仍在继续。";
-  }
-  if (
-    messageStatus === "streaming" &&
-    proposal.status === "pending" &&
-    proposal.approvalMode === "auto-approve"
-  ) {
-    return "本项已生成，已加入实时自动保存队列。";
-  }
-  if (
-    messageStatus === "streaming" &&
-    (proposal.status === "pending" || proposal.status === "error")
-  ) {
-    return "生成完成后可审阅。";
-  }
-  if (!proposal.statusMessage && proposal.status === "pending" && proposal.libraryTarget) {
-    return proposal.libraryTarget.operation === "create"
-      ? "接受后将创建资料库条目并保存到本机。"
-      : "接受后将更新资料库条目并保存到本机。";
-  }
-  if (
-    !proposal.statusMessage &&
-    proposal.status === "pending" &&
-    proposal.draftSectionCreationTarget
-  ) {
-    return "接受后将批量创建空白正文与人物状态文件并保存到本机。";
-  }
-  if (
-    !proposal.statusMessage &&
-    proposal.status === "pending" &&
-    proposal.draftSectionRenameTarget
-  ) {
-    return "接受后将修改章节名称并保存到本机；正文内容保持不变。";
-  }
-  if (
-    !proposal.statusMessage &&
-    proposal.status === "pending" &&
-    proposal.draftSectionDeletionTarget
-  ) {
-    return "接受后将永久删除该章节及其正文与人物状态文件。";
-  }
-  if (
-    !proposal.statusMessage &&
-    proposal.status === "pending" &&
-    proposal.longWorldbuildingTarget
-  ) {
-    return proposal.longWorldbuildingTarget.file.operation === "create"
-      ? "接受后将创建一个空白世界观文件并保存到本机。"
-      : "接受后将写入世界观文件并保存到本机。";
-  }
-  if (
-    !proposal.statusMessage &&
-    proposal.status === "pending" &&
-    proposal.longCharacterTarget
-  ) {
-    return proposal.longCharacterTarget.files.every(
-      ({ operation }) => operation === "create"
-    )
-      ? "接受后将创建人物及其四份空白档案并保存到本机。"
-      : "接受后将写入人物档案并保存到本机。";
-  }
-  if (
-    !proposal.statusMessage &&
-    proposal.status === "pending" &&
-    proposal.longPlotDesignTarget
-  ) {
-    return "接受后将校验结构影响并保存剧情设计。";
-  }
-  if (
-    !proposal.statusMessage &&
-    proposal.status === "pending" &&
-    proposal.longDraftTarget
-  ) {
-    return "接受后将把当前章正文保存到该章节独立的 Markdown 文件。";
-  }
-  return proposal.statusMessage?.trim() || proposalStatusMessages[proposal.status];
-}
-
-function reviewEditProposal(
-  proposal: AgentEditProposal,
-  decision: "accept" | "reject",
-  messageStatus: ChatMessage["status"]
-): void {
-  if (proposalReviewDisabled(proposal, decision, messageStatus)) {
-    return;
-  }
-  emit("reviewEdit", {
-    runId: proposal.runId,
-    proposalId: proposal.id,
-    decision
-  });
-}
-
 function longProposalItemsForMessage(
   message: ChatMessage
 ): LongWorkspaceProposalItem[] {
@@ -1551,12 +1606,6 @@ function longProposalItemsForMessage(
   return props.longProposalItems.filter(
     (item) => item.event.payload.runId === message.runId
   );
-}
-
-function diffLineMark(type: "context" | "addition" | "deletion"): string {
-  if (type === "addition") return "+";
-  if (type === "deletion") return "−";
-  return " ";
 }
 
 async function copyMessage(message: ChatMessage): Promise<void> {
@@ -1691,6 +1740,7 @@ function copyMessageLabel(message: ChatMessage): string {
         ref="scroller"
         class="conversation-scroll"
         aria-live="polite"
+        @wheel.passive="handleConversationWheel"
         @scroll.passive="handleConversationScroll"
       >
       <div v-if="messages.length === 0" class="conversation-empty">
@@ -1742,7 +1792,7 @@ function copyMessageLabel(message: ChatMessage): string {
               <div class="processing-live-status" aria-live="off">
                 {{ processingLabel(message) }}
               </div>
-              <template v-for="item in processingDisplayItems(message)" :key="item.id">
+              <template v-for="item in processingDisplayItems(message, true)" :key="item.id">
                 <details
                   v-if="item.type === 'thinking'"
                   class="processing-live-item processing-live-thinking"
@@ -1752,14 +1802,14 @@ function copyMessageLabel(message: ChatMessage): string {
                     <AppIcon name="chevron" :size="13" />
                   </summary>
                   <div class="processing-live-body processing-thinking">
-                    <MessageMarkdown :content="item.content" />
+                    <StreamedContent :content="item.content" streaming />
                   </div>
                 </details>
                 <div
                   v-else-if="item.type === 'response'"
                   class="processing-step processing-response"
                 >
-                  <MessageMarkdown :content="item.content" />
+                  <StreamedContent :content="item.content" streaming />
                 </div>
                 <details
                   v-else-if="item.type === 'tool'"
@@ -1804,8 +1854,27 @@ function copyMessageLabel(message: ChatMessage): string {
                     </div>
                   </div>
                 </details>
+                <AgentEditProposalCard
+                  v-else-if="item.type === 'edit-proposal'"
+                  class="approval-timeline-card"
+                  :proposal="item.proposal"
+                  :message-status="message.status"
+                  :allow-live-edit-review="allowLiveEditReview"
+                  @review="emit('reviewEdit', $event)"
+                />
+                <LongProposalReview
+                  v-else-if="item.type === 'long-proposal'"
+                  class="approval-timeline-card"
+                  embedded
+                  conversation-card
+                  :items="[item.item]"
+                  :workspace-index="longWorkspaceIndex"
+                  @approve="emit('approveLongProposal', $event)"
+                  @reject="emit('rejectLongProposal', $event)"
+                  @retry-preview="emit('retryLongProposalPreview', $event)"
+                />
                 <details
-                  v-else
+                  v-else-if="item.type === 'tool-group'"
                   class="processing-live-item processing-live-thinking processing-tool-group"
                   :aria-busy="toolGroupIsRunning(item.tools)"
                 >
@@ -1863,14 +1932,14 @@ function copyMessageLabel(message: ChatMessage): string {
                       <AppIcon name="chevron" :size="13" />
                     </summary>
                     <div class="processing-live-body processing-thinking">
-                      <MessageMarkdown :content="item.content" />
+                      <StreamedContent :content="item.content" />
                     </div>
                   </details>
                   <div
                     v-else-if="item.type === 'response'"
                     class="processing-step processing-response"
                   >
-                    <MessageMarkdown :content="item.content" />
+                    <StreamedContent :content="item.content" />
                   </div>
                   <details
                     v-else-if="item.type === 'tool'"
@@ -1913,7 +1982,7 @@ function copyMessageLabel(message: ChatMessage): string {
                     </div>
                   </details>
                   <details
-                    v-else
+                    v-else-if="item.type === 'tool-group'"
                     class="processing-live-item processing-live-thinking processing-tool-group"
                   >
                     <summary>
@@ -1963,15 +2032,6 @@ function copyMessageLabel(message: ChatMessage): string {
               :message="message"
               :now="clock"
             />
-            <LongProposalReview
-              v-if="message.role === 'assistant' && longProposalItemsForMessage(message).length"
-              embedded
-              :items="longProposalItemsForMessage(message)"
-              :workspace-index="longWorkspaceIndex"
-              @approve="emit('approveLongProposal', $event)"
-              @reject="emit('rejectLongProposal', $event)"
-              @retry-preview="emit('retryLongProposalPreview', $event)"
-            />
             <div class="message-content">
               <div
                 v-if="message.role === 'user'"
@@ -2000,109 +2060,45 @@ function copyMessageLabel(message: ChatMessage): string {
                 class="message-copy"
                 :class="{ 'is-streaming': message.status === 'streaming' }"
               >
-                <MessageMarkdown :content="visibleResponse(message)" />
+                <StreamedContent
+                  :content="visibleResponse(message)"
+                  :streaming="message.status === 'streaming'"
+                />
               </div>
               <div v-if="message.status === 'stopped'" class="message-stopped-copy">
                 已停止生成
               </div>
               <section
-                v-if="message.role === 'assistant' && message.editProposals?.length"
-                class="edit-proposal-list"
-                aria-label="文稿变更提案"
+                v-if="
+                  message.role === 'assistant' &&
+                  message.status !== 'streaming' &&
+                  approvalItemsForMessage(message).length
+                "
+                class="approval-card-stack"
+                aria-label="本轮审批卡片"
               >
-                <article
-                  v-for="proposal in message.editProposals"
-                  :key="proposal.id"
-                  class="edit-proposal-card"
-                  :class="`is-${proposal.status}`"
-                  :aria-busy="proposal.status === 'accepting'"
+                <template
+                  v-for="approval in approvalItemsForMessage(message)"
+                  :key="approval.id"
                 >
-                  <header class="edit-proposal-header">
-                    <span class="edit-proposal-icon" aria-hidden="true">
-                      <AppIcon name="file" :size="17" />
-                    </span>
-                    <div class="edit-proposal-heading">
-                      <div class="edit-proposal-title-row">
-                        <strong>{{ proposal.title }}</strong>
-                        <span class="edit-proposal-status" :class="`is-${proposal.status}`">
-                          {{ proposalStatusLabel(proposal) }}
-                        </span>
-                      </div>
-                      <p>{{ proposal.summary }}</p>
-                    </div>
-                    <div
-                      class="edit-proposal-stats"
-                      :aria-label="`增加 ${proposal.additions} 行，删除 ${proposal.deletions} 行`"
-                    >
-                      <span class="is-addition">+{{ proposal.additions }}</span>
-                      <span class="is-deletion">−{{ proposal.deletions }}</span>
-                    </div>
-                  </header>
-
-                  <details v-if="proposal.hunks.length" class="edit-proposal-diff">
-                    <summary>
-                      <span>查看差异</span>
-                      <small>{{ proposal.hunks.length }} 个变更块</small>
-                      <AppIcon name="chevron" :size="13" />
-                    </summary>
-                    <div class="edit-diff-content">
-                      <div
-                        v-for="(hunk, hunkIndex) in proposal.hunks"
-                        :key="`${proposal.id}-hunk-${hunkIndex}`"
-                        class="edit-diff-hunk"
-                      >
-                        <div class="edit-diff-hunk-header">
-                          @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
-                        </div>
-                        <div
-                          v-for="(line, lineIndex) in hunk.lines"
-                          :key="`${proposal.id}-${hunkIndex}-${lineIndex}`"
-                          class="edit-diff-line"
-                          :class="`is-${line.type}`"
-                        >
-                          <span class="edit-diff-line-number">{{ line.oldLineNumber ?? "" }}</span>
-                          <span class="edit-diff-line-number">{{ line.newLineNumber ?? "" }}</span>
-                          <span class="edit-diff-line-mark" aria-hidden="true">
-                            {{ diffLineMark(line.type) }}
-                          </span>
-                          <code>{{ line.text }}</code>
-                        </div>
-                      </div>
-                      <p v-if="proposal.truncated" class="edit-diff-truncated">
-                        差异较大，仅显示部分变更；行数统计包含完整提案。
-                      </p>
-                    </div>
-                  </details>
-                  <p v-else class="edit-proposal-empty">没有可显示的行级差异。</p>
-
-                  <footer class="edit-proposal-footer">
-                    <span class="edit-proposal-message">
-                      {{ proposalStatusMessage(proposal, message.status) }}
-                    </span>
-                    <div
-                      v-if="showProposalReviewActions(proposal)"
-                      class="edit-proposal-actions"
-                    >
-                      <button
-                        class="edit-review-button is-reject"
-                        type="button"
-                        :disabled="proposalReviewDisabled(proposal, 'reject', message.status)"
-                        @click="reviewEditProposal(proposal, 'reject', message.status)"
-                      >
-                        拒绝
-                      </button>
-                      <button
-                        v-if="proposal.status !== 'conflict'"
-                        class="edit-review-button is-accept"
-                        type="button"
-                        :disabled="proposalReviewDisabled(proposal, 'accept', message.status)"
-                        @click="reviewEditProposal(proposal, 'accept', message.status)"
-                      >
-                        {{ proposalAcceptLabel(proposal) }}
-                      </button>
-                    </div>
-                  </footer>
-                </article>
+                  <AgentEditProposalCard
+                    v-if="approval.type === 'edit-proposal'"
+                    :proposal="approval.proposal"
+                    :message-status="message.status"
+                    :allow-live-edit-review="allowLiveEditReview"
+                    @review="emit('reviewEdit', $event)"
+                  />
+                  <LongProposalReview
+                    v-else
+                    embedded
+                    conversation-card
+                    :items="[approval.item]"
+                    :workspace-index="longWorkspaceIndex"
+                    @approve="emit('approveLongProposal', $event)"
+                    @reject="emit('rejectLongProposal', $event)"
+                    @retry-preview="emit('retryLongProposalPreview', $event)"
+                  />
+                </template>
               </section>
             </div>
             <div

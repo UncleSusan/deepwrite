@@ -89,8 +89,14 @@ describe("script workspace contracts", () => {
       "outline",
       "draft"
     ]);
-    expect(DEFAULT_SCRIPT_AGENT_READ_ACCESS.plot_design.workspace).toContain(
-      "plot_structure"
+    expect(DEFAULT_SCRIPT_AGENT_READ_ACCESS.expert_draft_coordinator).toEqual({
+      material: ["character", "gimmick", "plot", "draft", "other"],
+      skill: ["style", "general", "other"]
+    });
+    const legacy = structuredClone(DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS);
+    Object.assign(legacy.agents[0]!.readAccess, { workspace: ["character_design"] });
+    expect(ScriptWorkspaceAgentSettingsInputSchema.safeParse(legacy).success).toBe(
+      false
     );
     expect(resolveScriptWorkspaceAgentIdForStage("plot_refine")).toBe(
       "plot_design"
@@ -119,11 +125,8 @@ describe("script workspace contracts", () => {
     const coordinator = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
       ({ id }) => id === "expert_draft_coordinator"
     )!;
-    const writer = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
-      ({ id }) => id === "expert_section_writer"
-    )!;
     expect(coordinator.systemPrompt).toContain(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS);
-    expect(writer.systemPrompt).toContain(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS);
+    expect(coordinator.systemPrompt).toContain("剧本唯一的正文写作智能体");
   });
 
   it("validates script snapshots, profiles, and discriminated settings", () => {
@@ -159,11 +162,64 @@ describe("script workspace contracts", () => {
       )
     };
     expect(ScriptWorkspaceAgentSettingsInputSchema.parse(input).agents).toHaveLength(
-      4
+      3
     );
     expect(WorkspaceAgentSettingsInputSchema.parse(input).workspaceType).toBe(
       "script"
     );
+    expect(() =>
+      ScriptWorkspaceSnapshotSchema.parse({
+        ...scriptWorkspaceSnapshot(),
+        activeStageId: "draft",
+        activeAgentId: "expert_draft_coordinator",
+        activeSectionId: "episode-1"
+      })
+    ).not.toThrow();
+    expect(() =>
+      ScriptWorkspaceSnapshotSchema.parse({
+        ...scriptWorkspaceSnapshot(),
+        activeStageId: "draft",
+        activeAgentId: "expert_section_writer",
+        activeSectionId: "episode-1"
+      })
+    ).toThrow();
+    expect(() =>
+      ScriptWorkspaceSnapshotSchema.parse({
+        ...scriptWorkspaceSnapshot(),
+        characterStructure: {
+          format: "list",
+          items: [
+            {
+              id: "character-1",
+              title: "林默",
+              order: 1,
+              content: "前段",
+              revision: createShortWorkspaceContentRevision("前段"),
+              truncated: true,
+              originalLength: 10
+            }
+          ]
+        }
+      })
+    ).not.toThrow();
+    expect(() =>
+      ScriptWorkspaceSnapshotSchema.parse({
+        ...scriptWorkspaceSnapshot(),
+        characterStructure: {
+          format: "list",
+          items: [
+            {
+              id: "character-1",
+              title: "林默",
+              order: 1,
+              content: "前段",
+              revision: createShortWorkspaceContentRevision("前段"),
+              originalLength: 10
+            }
+          ]
+        }
+      })
+    ).toThrow();
   });
 
   it("validates script runtime context and its independent active profile", () => {
@@ -188,6 +244,50 @@ describe("script workspace contracts", () => {
       WorkspaceRuntimeContextSchema.parse({
         ...context,
         activeResource: { ...context.activeResource, content: "不匹配" }
+      })
+    ).toThrow();
+
+    const longPlotContent = `停电触发密室冲突。${"长".repeat(20_000)}`;
+    const workspaceWithLongPlot = ScriptWorkspaceSnapshotSchema.parse({
+      ...scriptWorkspaceSnapshot(),
+      stages: scriptWorkspaceSnapshot().stages.map((stage) =>
+        stage.stageId === "plot_refine"
+          ? {
+              ...stage,
+              content: longPlotContent,
+              revision: createShortWorkspaceContentRevision(longPlotContent)
+            }
+          : stage
+      )
+    });
+    const truncatedActiveResource = {
+      ...context.activeResource,
+      content: longPlotContent.slice(0, 20_000),
+      truncated: true as const,
+      originalLength: longPlotContent.length
+    };
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        activeResource: truncatedActiveResource,
+        scriptWorkspace: workspaceWithLongPlot
+      })
+    ).not.toThrow();
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        activeResource: {
+          ...truncatedActiveResource,
+          content: `错${truncatedActiveResource.content.slice(1)}`
+        },
+        scriptWorkspace: workspaceWithLongPlot
+      })
+    ).toThrow();
+    expect(() =>
+      WorkspaceRuntimeContextSchema.parse({
+        activeResource: {
+          ...truncatedActiveResource,
+          originalLength: longPlotContent.length - 1
+        },
+        scriptWorkspace: workspaceWithLongPlot
       })
     ).toThrow();
 
@@ -256,7 +356,7 @@ describe("script workspace contracts", () => {
           "workspaceAgents.reset",
           {
             workspaceType: "script" as const,
-            agentId: "expert_section_writer" as const
+            agentId: "expert_draft_coordinator" as const
           },
           { id: "script_agents_reset" }
         )

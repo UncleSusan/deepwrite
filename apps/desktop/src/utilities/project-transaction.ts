@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, type BigIntStats } from "node:fs";
 import {
   lstat,
   mkdir,
@@ -105,6 +105,18 @@ export function projectTransactionContentSha256(
   content: string | Uint8Array
 ): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+/**
+ * Node's default numeric fs.Stats can round 64-bit device and inode values on
+ * filesystems whose identifiers exceed Number.MAX_SAFE_INTEGER. Keep both
+ * components as bigint all the way through identity comparisons so distinct
+ * files cannot be mistaken for hard-link aliases on those filesystems.
+ */
+export function projectTransactionFileIdentity(
+  details: Readonly<{ dev: bigint; ino: bigint }>
+): string {
+  return `${details.dev}:${details.ino}`;
 }
 
 /**
@@ -278,7 +290,7 @@ async function commitProjectTransactionLocked(
   await ensureSafeDirectory(projectRoot, transactionRoot);
 
   const journalOperations: JournalOperation[] = [];
-  const seenInodes = new Set<string>();
+  const firstPathByIdentity = new Map<string, string>();
   const stagedDirectories = new Set<string>();
   let journalWritten = false;
   try {
@@ -290,10 +302,14 @@ async function commitProjectTransactionLocked(
         maxFileBytes
       );
       if (existing?.identity) {
-        if (seenInodes.has(existing.identity)) {
-          throw new Error("同一事务不能通过硬链接别名修改同一个文件。");
+        const firstPath = firstPathByIdentity.get(existing.identity);
+        if (firstPath) {
+          throw new Error(
+            `同一事务中的文件身份重复：${firstPath} 与 ${operation.path}。` +
+              "可能存在硬链接别名，或当前文件系统返回了重复的文件身份。"
+          );
         }
-        seenInodes.add(existing.identity);
+        firstPathByIdentity.set(existing.identity, operation.path);
       }
       const beforeSha256 = existing
         ? projectTransactionContentSha256(existing.bytes)
@@ -690,22 +706,22 @@ async function acquireProjectTransactionLock(
           fsConstants.O_NOFOLLOW,
         0o600
       );
-      const acquiredInfo = await handle.stat();
-      if (!acquiredInfo.isFile() || acquiredInfo.nlink !== 1) {
+      const acquiredInfo = await handle.stat({ bigint: true });
+      if (!acquiredInfo.isFile() || acquiredInfo.nlink !== 1n) {
         throw new Error("新建项目事务锁不是安全的普通文件。");
       }
-      acquiredIdentity = `${acquiredInfo.dev}:${acquiredInfo.ino}`;
+      acquiredIdentity = projectTransactionFileIdentity(acquiredInfo);
       await handle.writeFile(serialized);
       await handle.sync();
       await handle.close();
       handle = undefined;
       await syncDirectory(dirname(lockPath));
-      const published = await lstat(lockPath);
+      const published = await lstat(lockPath, { bigint: true });
       if (
         published.isSymbolicLink() ||
         !published.isFile() ||
-        published.nlink !== 1 ||
-        `${published.dev}:${published.ino}` !== acquiredIdentity
+        published.nlink !== 1n ||
+        projectTransactionFileIdentity(published) !== acquiredIdentity
       ) {
         throw new Error("项目事务锁在获取期间发生路径替换。");
       }
@@ -763,19 +779,19 @@ async function removeStaleProjectTransactionLock(
   projectRoot: string,
   lockPath: string
 ): Promise<void> {
-  let details: Awaited<ReturnType<typeof lstat>>;
+  let details: BigIntStats;
   try {
-    details = await lstat(lockPath);
+    details = await lstat(lockPath, { bigint: true });
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) return;
     throw error;
   }
-  if (details.isSymbolicLink() || !details.isFile() || details.nlink > 1) {
+  if (details.isSymbolicLink() || !details.isFile() || details.nlink > 1n) {
     throw new Error("项目事务锁不是安全的普通文件。");
   }
   if (
-    details.size === 0 &&
-    Date.now() - details.mtimeMs < LOCK_INITIALIZATION_GRACE_MS
+    details.size === 0n &&
+    Date.now() - Number(details.mtimeMs) < LOCK_INITIALIZATION_GRACE_MS
   ) {
     return;
   }
@@ -790,7 +806,7 @@ async function removeStaleProjectTransactionLock(
   if (owner && isProcessAlive(owner.pid)) return;
   if (
     !owner &&
-    Date.now() - details.mtimeMs < LOCK_INITIALIZATION_GRACE_MS
+    Date.now() - Number(details.mtimeMs) < LOCK_INITIALIZATION_GRACE_MS
   ) {
     return;
   }
@@ -802,16 +818,18 @@ async function unlinkProjectTransactionLockIfIdentity(
   lockPath: string,
   expectedIdentity: string
 ): Promise<boolean> {
-  const latest = await lstat(lockPath).catch((error: unknown) => {
-    if (isNodeError(error, "ENOENT")) return undefined;
-    throw error;
-  });
+  const latest = await lstat(lockPath, { bigint: true }).catch(
+    (error: unknown) => {
+      if (isNodeError(error, "ENOENT")) return undefined;
+      throw error;
+    }
+  );
   if (
     !latest ||
     latest.isSymbolicLink() ||
     !latest.isFile() ||
-    latest.nlink !== 1 ||
-    `${latest.dev}:${latest.ino}` !== expectedIdentity
+    latest.nlink !== 1n ||
+    projectTransactionFileIdentity(latest) !== expectedIdentity
   ) {
     return false;
   }
@@ -1084,11 +1102,15 @@ async function readRegularFileOptionalWithIdentity(
     throw error;
   }
   try {
-    const info = await handle.stat();
-    if (!info.isFile() || info.nlink > 1) {
+    const info = await handle.stat({ bigint: true });
+    if (!info.isFile() || info.nlink > 1n) {
       throw new Error("项目事务目标必须是普通文件。");
     }
-    if (info.size > maxFileBytes) {
+    if (info.nlink === 0n) {
+      if (options.pathRaceAsMissing) return undefined;
+      throw new Error("项目事务目标在读取前已从目录中移除。");
+    }
+    if (info.size > BigInt(maxFileBytes)) {
       throw new Error("项目事务目标超过大小限制。");
     }
     let canonical: string;
@@ -1104,9 +1126,9 @@ async function readRegularFileOptionalWithIdentity(
       throw error;
     }
     assertContained(projectRoot, canonical);
-    let pathInfo: Awaited<ReturnType<typeof lstat>>;
+    let pathInfo: BigIntStats;
     try {
-      pathInfo = await lstat(path);
+      pathInfo = await lstat(path, { bigint: true });
     } catch (error: unknown) {
       if (
         options.pathRaceAsMissing &&
@@ -1125,16 +1147,23 @@ async function readRegularFileOptionalWithIdentity(
       throw new Error("项目事务目标在读取期间发生替换。");
     }
     const bytes = await handle.readFile();
-    const after = await handle.stat();
-    if (
+    const after = await handle.stat({ bigint: true });
+    const changedDuringRead =
       after.dev !== info.dev ||
       after.ino !== info.ino ||
-      after.size !== bytes.byteLength ||
-      bytes.byteLength > maxFileBytes
-    ) {
+      after.nlink !== 1n ||
+      after.size !== BigInt(bytes.byteLength) ||
+      bytes.byteLength > maxFileBytes;
+    if (changedDuringRead) {
+      if (options.pathRaceAsMissing && after.nlink !== 1n) {
+        return undefined;
+      }
       throw new Error("项目事务目标在读取期间发生变化。");
     }
-    return { bytes, identity: `${after.dev}:${after.ino}` };
+    return {
+      bytes,
+      identity: projectTransactionFileIdentity(after)
+    };
   } finally {
     await handle.close();
   }

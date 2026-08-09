@@ -565,7 +565,7 @@ describe("CatalogStore", () => {
     expect((await store.snapshot()).books).toEqual([]);
   });
 
-  it("rejects cross-kind and cross-type bindings without changing the catalog", async () => {
+  it("rejects cross-kind bindings but allows shared libraries across writing types", async () => {
     const root = await makeTemporaryRoot("deepwrite-catalog-validation-");
     const userDataPath = join(root, "target-user-data");
     const legacyDataRoot = join(root, "legacy", ".data");
@@ -603,17 +603,17 @@ describe("CatalogStore", () => {
         linkedMaterialIdsByKind: { plot: ["material-character"] }
       })
     ).rejects.toThrow(/不能关联到 plot/u);
-    await expect(
-      store.createShortBook({
-        title: "错误类型",
-        genre: "其他",
-        linkedMaterialIdsByKind: { plot: ["material-long-plot"] }
-      })
-    ).rejects.toThrow(/不能关联long素材库/u);
+    const sharedLibraryBook = await store.createShortBook({
+      title: "共用长篇来源素材",
+      genre: "其他",
+      linkedMaterialIdsByKind: { plot: ["material-long-plot"] }
+    });
 
     const after = await store.snapshot();
-    expect(after.revision).toBe(before.revision);
-    expect(after.books).toEqual([]);
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.books).toEqual([
+      expect.objectContaining({ id: sharedLibraryBook.id })
+    ]);
   });
 
   it("persists screenplay defaults and validates screenplay library bindings", async () => {
@@ -668,23 +668,26 @@ describe("CatalogStore", () => {
       false
     );
 
-    await expect(
-      store.createScriptBook({
-        title: "不能绑定短篇素材",
-        genre: "其他",
-        linkedMaterialIdsByKind: { plot: ["material-short-plot"] }
-      })
-    ).rejects.toThrow(/剧本书籍不能关联short素材库/u);
+    const sharedLibraryScript = await store.createScriptBook({
+      title: "绑定短篇来源素材",
+      genre: "其他",
+      linkedMaterialIdsByKind: { plot: ["material-short-plot"] }
+    });
     const reloaded = await new CatalogStore({
       userDataPath,
       legacyDataRoot,
       now: tickingClock()
     }).snapshot();
-    expect(reloaded.books).toHaveLength(1);
+    expect(reloaded.books).toHaveLength(2);
     expect(reloaded.books[0]).toMatchObject({
       id: script.id,
       bookType: "script",
       draft: { sections: [{ id: "episode-1", title: "第一集" }] }
+    });
+    expect(reloaded.books[1]).toMatchObject({
+      id: sharedLibraryScript.id,
+      bookType: "script",
+      linkedMaterialIdsByKind: { plot: ["material-short-plot"] }
     });
   });
 

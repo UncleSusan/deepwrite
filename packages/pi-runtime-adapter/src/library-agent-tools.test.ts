@@ -31,7 +31,9 @@ function materialWorkspace(
     title: "雾港素材",
     libraryType: "short",
     kind: "plot",
+    overviewDocumentId: "material:material-library-1:overview",
     overview: "悬疑短篇剧情素材。",
+    overviewRevision: createShortWorkspaceContentRevision("悬疑短篇剧情素材。"),
     readOnly: false,
     activeEntryId: "material-entry-1",
     projectRevision: 7,
@@ -72,7 +74,9 @@ function skillWorkspace(
     title: "短篇方法库",
     libraryType: "short",
     kind: "style",
+    overviewDocumentId: "skill:skill-library-1:overview",
     overview: "正文与分节写作方法。",
+    overviewRevision: createShortWorkspaceContentRevision("正文与分节写作方法。"),
     readOnly: false,
     activeEntryId: "skill-entry-1",
     projectRevision: 3,
@@ -305,6 +309,66 @@ describe("library agent tools", () => {
       title: "悬疑分节写法",
       text: "新技能全文。"
     });
+  });
+
+  it("edits the live library overview with sequential revisions", async () => {
+    const tools = buildLibraryAgentTools({
+      workspace: materialWorkspace(),
+      profile: profile("material")
+    });
+    const edit = toolByName(tools, "edit_material_library_overview");
+    const first = await edit.execute("overview-1", {
+      mode: "replace_fragments",
+      replacements: [{ original_text: "悬疑短篇", new_text: "都市悬疑" }]
+    });
+    const second = await edit.execute("overview-2", {
+      mode: "append",
+      body: "不用于保存一次性正文。"
+    });
+    const blockedOverwrite = await edit.execute("overview-3", {
+      mode: "replace",
+      body: "整篇覆盖"
+    });
+
+    expect(first.details).toMatchObject({
+      kind: "library-overview-mutation",
+      operation: "edit-overview",
+      domain: "material",
+      libraryId: "material-library-1",
+      documentId: "material:material-library-1:overview",
+      text: "都市悬疑剧情素材。",
+      baseRevision: createShortWorkspaceContentRevision("悬疑短篇剧情素材。")
+    });
+    expect(second.details).toMatchObject({
+      kind: "library-overview-mutation",
+      text: "都市悬疑剧情素材。\n\n不用于保存一次性正文。",
+      baseRevision: createShortWorkspaceContentRevision("都市悬疑剧情素材。")
+    });
+    expect(resultText(blockedOverwrite)).toContain(
+      "allow_overwrite_existing=true"
+    );
+  });
+
+  it("blocks overview writes when the full overview is not in the snapshot", async () => {
+    const tools = buildLibraryAgentTools({
+      workspace: skillWorkspace({
+        overview: "截断说明",
+        overviewRevision: createShortWorkspaceContentRevision("截断说明"),
+        overviewTruncated: true,
+        overviewOriginalLength: 50_000
+      }),
+      profile: profile("skill")
+    });
+    const result = await toolByName(
+      tools,
+      "edit_skill_library_overview"
+    ).execute("overview-truncated", {
+      mode: "append",
+      body: "不能追加"
+    });
+
+    expect(resultText(result)).toContain("无法在看不到完整原文时写入");
+    expect(result.details).toEqual({ kind: "none" });
   });
 
   it("blocks truncated and entry-level read-only writes", async () => {
