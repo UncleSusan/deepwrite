@@ -7,14 +7,20 @@ import {
   type OfficialModelBalance,
   type ModelConfigInput
 } from "@deepwrite/contracts";
+import {
+  deepWritePublicDataHeaders,
+  deepWritePublicDataUrl
+} from "./deepwrite-public-data-config";
 
 export const DEEPWRITE_OFFICIAL_MODEL_CONFIG_URL =
-  "https://raw.giteeusercontent.com/swjai001/deepseekwrite/raw/master/MODELDEEPWRITE.json";
+  deepWritePublicDataUrl("MODELDEEPWRITE.json");
 export const DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID = "deepwrite-official-token";
 
 const OFFICIAL_PROVIDER = "deepseek-official";
 const OFFICIAL_API = "openai-completions" as const;
-const TRUSTED_ENDPOINT_ORIGIN = "https://www.moxing.pro";
+export const DEEPWRITE_OFFICIAL_MODEL_BASE_URL = "https://www.moxing.pro";
+export const DEEPWRITE_OFFICIAL_BALANCE_URL =
+  `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}/v1/account/balance`;
 const REMOTE_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_REMOTE_CONFIG_BYTES = 1_000_000;
 
@@ -103,7 +109,7 @@ function parseOfficialModel(raw: unknown): { model: ModelConfigInput; sort: numb
     throw new Error("远程官方模型 API 地址无效。");
   }
   if (
-    endpoint.origin !== TRUSTED_ENDPOINT_ORIGIN ||
+    endpoint.origin !== DEEPWRITE_OFFICIAL_MODEL_BASE_URL ||
     endpoint.username ||
     endpoint.password ||
     endpoint.search ||
@@ -117,7 +123,7 @@ function parseOfficialModel(raw: unknown): { model: ModelConfigInput; sort: numb
       ...model,
       provider: OFFICIAL_PROVIDER,
       api: OFFICIAL_API,
-      baseUrl: `${TRUSTED_ENDPOINT_ORIGIN}${endpoint.pathname.replace(/\/+$/u, "")}`,
+      baseUrl: `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}${endpoint.pathname.replace(/\/+$/u, "")}`,
       managedBy: "deepwrite-official"
     },
     sort: typeof raw.sort === "number" && Number.isFinite(raw.sort) ? raw.sort : 0
@@ -141,7 +147,7 @@ function parseBalanceConfig(raw: unknown): DeepWriteOfficialBalanceConfig | unde
     throw new Error("官方模型余额接口地址无效。");
   }
   if (
-    endpoint.origin !== TRUSTED_ENDPOINT_ORIGIN ||
+    endpoint.origin !== DEEPWRITE_OFFICIAL_MODEL_BASE_URL ||
     endpoint.username ||
     endpoint.password ||
     endpoint.search ||
@@ -151,7 +157,7 @@ function parseBalanceConfig(raw: unknown): DeepWriteOfficialBalanceConfig | unde
     throw new Error("官方模型余额接口地址不在受信任范围内。");
   }
   return {
-    url: `${TRUSTED_ENDPOINT_ORIGIN}/v1/account/balance`,
+    url: DEEPWRITE_OFFICIAL_BALANCE_URL,
     key
   };
 }
@@ -355,7 +361,7 @@ export class DeepWriteOfficialModelCatalogStore {
         method: "GET",
         cache: "no-store",
         signal: AbortSignal.timeout(REMOTE_REQUEST_TIMEOUT_MS),
-        headers: { Accept: "application/json" }
+        headers: deepWritePublicDataHeaders({ Accept: "application/json" })
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);

@@ -13,6 +13,7 @@ const aliases = {
 
 export default defineConfig({
   main: {
+    envDir: workspaceRoot,
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: aliases },
     build: {

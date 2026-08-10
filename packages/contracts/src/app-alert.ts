@@ -1,8 +1,5 @@
 import { z } from "zod";
 
-export const APP_ALERT_CONFIG_URL =
-  "https://raw.giteeusercontent.com/swjai001/deepseekwrite/raw/master/ALERT.json";
-
 export const APP_ALERT_GET_CHANNEL = "deepwrite:app-alert:get";
 export const APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL =
   "deepwrite:app-alert:acknowledge-desktop";

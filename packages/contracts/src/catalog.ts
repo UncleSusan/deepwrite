@@ -2177,6 +2177,34 @@ export type CreateLibraryEntryInput = z.infer<
   typeof CreateLibraryEntryInputSchema
 >;
 
+export const ExternalSkillSourceKindSchema = z.enum(["directory", "file"]);
+export type ExternalSkillSourceKind = z.infer<
+  typeof ExternalSkillSourceKindSchema
+>;
+
+export const ExternalSkillCandidateSchema = z.object({
+  title: CatalogTitleSchema,
+  description: z.string(),
+  content: z.string().max(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS)
+});
+export type ExternalSkillCandidate = z.infer<
+  typeof ExternalSkillCandidateSchema
+>;
+
+export const ExternalSkillSelectionResultSchema = z.object({
+  candidates: z.array(ExternalSkillCandidateSchema),
+  scanned: z.number().int().nonnegative(),
+  skipped: z.object({
+    invalidFormat: z.number().int().nonnegative(),
+    unreadable: z.number().int().nonnegative(),
+    invalidName: z.number().int().nonnegative(),
+    contentTooLong: z.number().int().nonnegative()
+  })
+});
+export type ExternalSkillSelectionResult = z.infer<
+  typeof ExternalSkillSelectionResultSchema
+>;
+
 export const RemoveLibraryEntryInputSchema = z.object({
   domain: CatalogLibraryProjectDomainSchema,
   libraryId: CatalogIdSchema,
@@ -2516,6 +2544,12 @@ export const CatalogDuplicateProjectCommandEnvelopeSchema =
     payload: DuplicateCatalogProjectInputSchema
   });
 
+export const CatalogChooseExternalSkillsCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.chooseExternalSkills"),
+    payload: z.object({ sourceKind: ExternalSkillSourceKindSchema })
+  });
+
 export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogSnapshotCommandEnvelopeSchema,
   CatalogLoadDraftRecoveryCommandEnvelopeSchema,
@@ -2549,6 +2583,7 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogMoveLibraryEntryCommandEnvelopeSchema,
   CatalogUnregisterProjectCommandEnvelopeSchema,
   CatalogDeleteProjectCommandEnvelopeSchema,
-  CatalogDuplicateProjectCommandEnvelopeSchema
+  CatalogDuplicateProjectCommandEnvelopeSchema,
+  CatalogChooseExternalSkillsCommandEnvelopeSchema
 ]);
 export type CatalogCommandEnvelope = z.infer<typeof CatalogCommandEnvelopeSchema>;

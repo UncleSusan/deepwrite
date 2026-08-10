@@ -1,7 +1,7 @@
 export const RIGHT_PANE_PREFERENCES_STORAGE_KEY =
   "deepwrite:right-pane-preferences:v1";
 export const RIGHT_PANE_MIN_WIDTH = 320;
-export const RIGHT_PANE_MAX_WIDTH = 760;
+export const RIGHT_PANE_MAX_WIDTH = 1013;
 
 export interface RightPanePreferences {
   widths: Record<string, number>;

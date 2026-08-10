@@ -36,6 +36,8 @@ import {
   ExportLongManuscriptResultSchema,
   ExportShortManuscriptInputSchema,
   ExportShortManuscriptResultSchema,
+  ExternalSkillSelectionResultSchema,
+  ExternalSkillSourceKindSchema,
   GeneralSettingsSchema,
   GeneralSettingsSnapshotSchema,
   ImportLegacyLibraryResultSchema,
@@ -168,6 +170,8 @@ import {
   type ExportLongManuscriptResult,
   type ExportShortManuscriptInput,
   type ExportShortManuscriptResult,
+  type ExternalSkillSelectionResult,
+  type ExternalSkillSourceKind,
   type GeneralSettings,
   type GeneralSettingsSnapshot,
   type ModelConnectionTestResult,
@@ -951,6 +955,23 @@ async function createLibraryEntry(
   );
 }
 
+async function chooseExternalSkills(
+  rawSourceKind: ExternalSkillSourceKind
+): Promise<ExternalSkillSelectionResult | null> {
+  const sourceKind = ExternalSkillSourceKindSchema.parse(rawSourceKind);
+  const id = browserId("cmd_catalog_choose_external_skills");
+  const result = await invokeCommand<ExternalSkillSelectionResult | null>(
+    createEnvelope(
+      "catalog.chooseExternalSkills",
+      { sourceKind },
+      { id, correlationId: id }
+    )
+  );
+  return result === null
+    ? null
+    : ExternalSkillSelectionResultSchema.parse(result);
+}
+
 async function updateLibrary(rawInput: UpdateLibraryInput): Promise<CatalogLibrary> {
   const input = UpdateLibraryInputSchema.parse(rawInput);
   const id = browserId("cmd_catalog_update_library");
@@ -1615,6 +1636,7 @@ const api: DeepWriteApi = {
     moveDraftSection,
     saveLibraryEntry,
     createLibraryEntry,
+    chooseExternalSkills,
     removeLibraryEntry,
     moveLibraryEntry,
     unregisterProject,

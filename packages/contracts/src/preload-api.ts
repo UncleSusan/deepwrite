@@ -74,6 +74,8 @@ import type {
   DeleteCatalogProjectResult,
   DuplicateCatalogProjectInput,
   DuplicateCatalogProjectResult,
+  ExternalSkillSelectionResult,
+  ExternalSkillSourceKind,
   DeleteBookResult,
   DeleteDraftSectionInput,
   DeleteDraftSectionResult,
@@ -187,6 +189,9 @@ export interface DeepWriteApi {
     moveDraftSection(input: MoveDraftSectionInput): Promise<MoveDraftSectionResult>;
     saveLibraryEntry(input: SaveLibraryEntryInput): Promise<CatalogLibraryEntry>;
     createLibraryEntry(input: CreateLibraryEntryInput): Promise<CatalogLibraryEntry>;
+    chooseExternalSkills(
+      sourceKind: ExternalSkillSourceKind
+    ): Promise<ExternalSkillSelectionResult | null>;
     removeLibraryEntry(input: RemoveLibraryEntryInput): Promise<RemoveLibraryEntryResult>;
     moveLibraryEntry(input: MoveLibraryEntryInput): Promise<MoveLibraryEntryResult>;
     unregisterProject(

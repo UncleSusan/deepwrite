@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  RIGHT_PANE_MAX_WIDTH,
   RIGHT_PANE_PREFERENCES_STORAGE_KEY,
   loadRightPanePreferences,
   parseRightPanePreferences,
@@ -64,6 +65,22 @@ describe("right pane preferences", () => {
         JSON.stringify({ version: 2, widths: { "short:worldbuilding": 480 } })
       )
     ).toEqual({ widths: {} });
+    expect(
+      parseRightPanePreferences(
+        JSON.stringify({
+          version: 1,
+          widths: { "short:worldbuilding": RIGHT_PANE_MAX_WIDTH + 1 }
+        })
+      )
+    ).toEqual({ widths: {} });
+    expect(
+      parseRightPanePreferences(
+        JSON.stringify({
+          version: 1,
+          widths: { "short:worldbuilding": RIGHT_PANE_MAX_WIDTH }
+        })
+      )
+    ).toEqual({ widths: { "short:worldbuilding": RIGHT_PANE_MAX_WIDTH } });
   });
 
   it("does not create preference keys outside a creative stage", () => {

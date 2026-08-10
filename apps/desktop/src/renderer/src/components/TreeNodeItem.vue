@@ -691,6 +691,16 @@ onBeforeUnmount(() => {
             <span>新建条目</span>
           </button>
           <button
+            v-if="libraryDomain === 'skill' && !node.readOnly && !node.unavailable"
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="activateResourceNodeAction('import-external-skills')"
+          >
+            <AppIcon name="download" :size="16" />
+            <span>从其他 skills 加载</span>
+          </button>
+          <button
             v-if="!node.readOnly && !node.unavailable && canPasteLibraryEntry"
             class="tree-node-action-menu-item"
             type="button"

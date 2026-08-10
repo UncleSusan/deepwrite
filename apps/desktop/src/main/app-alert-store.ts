@@ -2,12 +2,17 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
-  APP_ALERT_CONFIG_URL,
   AppAlertManifestSchema,
   AppAlertSnapshotSchema,
   type AppAlertManifest,
   type AppAlertSnapshot
 } from "@deepwrite/contracts";
+import {
+  deepWritePublicDataHeaders,
+  deepWritePublicDataUrl
+} from "./deepwrite-public-data-config";
+
+export const APP_ALERT_CONFIG_URL = deepWritePublicDataUrl("ALERT.json");
 
 const REMOTE_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_REMOTE_CONFIG_BYTES = 64 * 1_024;
@@ -142,11 +147,11 @@ export class AppAlertStore {
         method: "GET",
         cache: "no-store",
         signal: AbortSignal.timeout(REMOTE_REQUEST_TIMEOUT_MS),
-        headers: {
+        headers: deepWritePublicDataHeaders({
           Accept: "application/json",
           "Cache-Control": "no-cache, no-store, max-age=0",
           Pragma: "no-cache"
-        }
+        })
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);

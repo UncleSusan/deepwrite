@@ -17,6 +17,7 @@ import type {
   CreateLibraryEntryInput,
   CreateScriptBookInput,
   CreateShortBookInput,
+  ExternalSkillSourceKind,
   GeneralPermissionMode,
   GeneralSettings,
   LearningImitationSettings,
@@ -122,6 +123,7 @@ import ExportShortManuscriptDialog from "./components/ExportShortManuscriptDialo
 import ExportLongManuscriptDialog from "./components/ExportLongManuscriptDialog.vue";
 import CharacterItemDialog from "./components/CharacterItemDialog.vue";
 import LibraryProjectDialog from "./components/LibraryProjectDialog.vue";
+import ExternalSkillImportDialog from "./components/ExternalSkillImportDialog.vue";
 import LibraryEntryMoveDialog from "./components/LibraryEntryMoveDialog.vue";
 import LibraryGroupDialog from "./components/LibraryGroupDialog.vue";
 import LibraryRemovalDialog from "./components/LibraryRemovalDialog.vue";
@@ -643,6 +645,10 @@ type CreateLibraryEntryDraft =
   | Omit<Extract<CreateLibraryEntryInput, { domain: "material" }>, "content">
   | Omit<Extract<CreateLibraryEntryInput, { domain: "skill" }>, "content">;
 const libraryProjectDialog = ref<LibraryProjectDialogState | null>(null);
+const externalSkillImportDialog = ref<{
+  libraryId: string;
+  libraryTitle: string;
+} | null>(null);
 interface LibraryGroupDialogState {
   domain: "material" | "skill";
   groupId?: string;
@@ -7206,6 +7212,104 @@ async function pasteCatalogLibraryEntry(
   }
 }
 
+function externalSkillStageId(skillKind: SkillKind): SkillStageId {
+  return skillKind === "plot" ? "plot_design" : "draft";
+}
+
+async function importExternalSkills(
+  sourceKind: ExternalSkillSourceKind
+): Promise<void> {
+  const target = externalSkillImportDialog.value;
+  if (!window.deepwrite || !target || catalogMutationPending.value) return;
+  const library = findCatalogLibrary("skill", target.libraryId);
+  if (!library || !("skillKind" in library) || library.isBuiltin) {
+    externalSkillImportDialog.value = null;
+    uiMessage.warning("目标技能库已不可用或为只读内容");
+    return;
+  }
+
+  catalogMutationPending.value = true;
+  try {
+    const selection = await window.deepwrite.catalog.chooseExternalSkills(sourceKind);
+    if (!selection) return;
+
+    const existingTitles = new Set(library.entries.map((entry) => entry.title.trim()));
+    const candidates = selection.candidates.filter((candidate) => {
+      const title = candidate.title.trim();
+      if (existingTitles.has(title)) return false;
+      existingTitles.add(title);
+      return true;
+    });
+    const duplicateCount = selection.candidates.length - candidates.length;
+    let createdCount = 0;
+    let failedCount = 0;
+    let conflicted = false;
+    let nextRevision = library.projectRevision;
+    let firstCreatedId: string | undefined;
+
+    for (const candidate of candidates) {
+      try {
+        const created = await window.deepwrite.catalog.createLibraryEntry({
+          domain: "skill",
+          libraryId: library.id,
+          title: candidate.title,
+          content: candidate.content,
+          stageId: externalSkillStageId(library.skillKind),
+          ...(nextRevision === undefined ? {} : { baseProjectRevision: nextRevision })
+        });
+        firstCreatedId ??= created.id;
+        createdCount += 1;
+        if (nextRevision !== undefined) nextRevision += 1;
+      } catch (error: unknown) {
+        if (isCatalogConflict(error)) {
+          conflicted = true;
+          break;
+        }
+        failedCount += 1;
+      }
+    }
+
+    applyCatalogSnapshot(await window.deepwrite.catalog.snapshot());
+    if (createdCount > 0) {
+      externalSkillImportDialog.value = null;
+      const targetDocument = documents.value.find(
+        (document) =>
+          document.libraryId === library.id &&
+          document.catalogEntryId === firstCreatedId
+      );
+      if (targetDocument) {
+        selectedResourceId.value = targetDocument.id;
+        rightCollapsed.value = false;
+      }
+    }
+
+    const sourceSkipped = Object.values(selection.skipped).reduce(
+      (total, count) => total + count,
+      0
+    );
+    const skippedCount = sourceSkipped + duplicateCount + failedCount;
+    if (conflicted) {
+      uiMessage.warning(
+        `已导入 ${createdCount} 条；技能库已在外部更新，剩余项目未导入，请重试`
+      );
+    } else if (createdCount > 0) {
+      uiMessage.success(
+        skippedCount > 0
+          ? `已导入 ${createdCount} 条技能，跳过 ${skippedCount} 条`
+          : `已导入 ${createdCount} 条技能到“${library.title}”`
+      );
+    } else if (selection.scanned === 0) {
+      uiMessage.warning("所选位置中没有找到可导入的 SKILL.md");
+    } else {
+      uiMessage.warning(`没有可导入的技能，已跳过 ${skippedCount} 条`);
+    }
+  } catch (error: unknown) {
+    uiMessage.error(error instanceof Error ? error.message : "导入外部技能失败。");
+  } finally {
+    catalogMutationPending.value = false;
+  }
+}
+
 async function unregisterCatalogLibrary(
   payload: CatalogResourceNodeActionPayload
 ): Promise<void> {
@@ -7393,6 +7497,7 @@ function handleResourceNodeAction(payload: CatalogResourceNodeActionPayload): vo
   if (
     (payload.node.readOnly || payload.node.unavailable) &&
     (payload.action === "create-entry" ||
+      payload.action === "import-external-skills" ||
       payload.action === "paste-entry" ||
       payload.action === "remove-entry")
   ) {
@@ -7401,6 +7506,14 @@ function handleResourceNodeAction(payload: CatalogResourceNodeActionPayload): vo
   }
   if (payload.action === "paste-entry") {
     void pasteCatalogLibraryEntry(payload);
+    return;
+  }
+  if (payload.action === "import-external-skills") {
+    if (payload.domain !== "skill") return;
+    externalSkillImportDialog.value = {
+      libraryId,
+      libraryTitle: payload.node.label
+    };
     return;
   }
   if (payload.action === "unregister-library") {
@@ -16188,6 +16301,13 @@ onBeforeUnmount(() => {
       @rename-library="renameCatalogLibrary"
       @rename-entry="renameCatalogLibraryEntry"
       @remove-entry="removeCatalogLibraryEntry"
+    />
+    <ExternalSkillImportDialog
+      :open="Boolean(externalSkillImportDialog)"
+      :library-title="externalSkillImportDialog?.libraryTitle ?? ''"
+      :pending="catalogMutationPending"
+      @close="externalSkillImportDialog = null"
+      @choose="importExternalSkills"
     />
     <LibraryEntryMoveDialog
       :open="Boolean(pendingLibraryEntryMove)"

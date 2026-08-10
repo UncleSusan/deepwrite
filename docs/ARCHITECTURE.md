@@ -113,7 +113,7 @@ Renderer 不直接依赖 Pi SDK。`useAgentConversation.ts` 只消费 `window.de
 
 ## 7. 短篇迁移边界
 
-短篇设计以 `/home/swj/project/swj/yonquan-write/write-claw` 当前实现为参考，但按 DeepWrite 的进程和协议边界重写：
+短篇设计参考了旧版 Write Claw 的实现，但按 DeepWrite 的进程和协议边界重写：
 
 - 六个内容槽位：`character_design`、`plot_design`、`intro_design`、`plot_refine`、`outline`、`draft`。
 - 五个智能体：人物、剧情、大纲、正文专家协调、分节写手；三个剧情子槽位共用剧情智能体。

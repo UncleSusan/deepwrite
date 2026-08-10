@@ -5,6 +5,11 @@ release/
 dist/
 coverage/
 *.log
+.env
+.env.*
+!.env.example
+# Local-only public-data endpoint tests may contain private deployment details.
+/apps/desktop/src/main/deepwrite-public-data-config.test.ts
 .DS_Store
 .idea/
 .vscode/

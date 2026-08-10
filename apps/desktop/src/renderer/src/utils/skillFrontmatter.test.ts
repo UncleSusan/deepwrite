@@ -14,7 +14,8 @@ name: 人设卡建设
     ).toEqual({
       valid: true,
       name: "人设卡建设",
-      description: "当用户进行人物设计时，使用当前技能。"
+      description: "当用户进行人物设计时，使用当前技能。",
+      body: "技能正文"
     });
   });
 
@@ -66,6 +67,12 @@ name: 人设卡建设
       content: "---\nname: 人设卡建设\ndescription:\n---",
       code: "empty-description",
       message: "技能格式错误 · description 不能为空"
+    },
+    {
+      label: "the body is empty",
+      content: "---\nname: 人设卡建设\ndescription: 人物设计\n---\n   ",
+      code: "empty-body",
+      message: "技能格式错误 · 技能正文不能为空"
     }
   ])("returns a specific reason when $label", ({ content, code, message }) => {
     expect(parseSkillFrontmatter(content)).toEqual({ valid: false, code, message });

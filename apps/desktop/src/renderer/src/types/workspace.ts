@@ -79,6 +79,7 @@ export interface ResourceSectionActionPayload {
 
 export type CatalogResourceNodeAction =
   | "create-entry"
+  | "import-external-skills"
   | "rename-library"
   | "duplicate-library"
   | "rename-entry"

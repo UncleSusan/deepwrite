@@ -34,9 +34,27 @@ describe("AgentTeamSettingsPanel", () => {
     ]) {
       expect(longSource).toContain(`id: "${id}"`);
     }
-    expect(longSource).toContain("不能继续创建子智能体");
-    expect(longSource).toContain("不能绕过用户审批");
+    expect(source).toContain("不能继续创建子智能体");
+    expect(source).toContain("不能绕过用户审批");
     expect(longSource).toContain("LongAgentTeamSettingsInputSchema.safeParse");
+  });
+
+  it("keeps long-form subagent styling and editing features aligned", () => {
+    for (const marker of [
+      "从技能库加载",
+      "subagent-summary",
+      "subagentModelSummary",
+      "editingSubagentId",
+      "model-mode-options",
+      "完成编辑",
+      "当前主智能体"
+    ]) {
+      expect(longSource).toContain(marker);
+    }
+    expect(longSource).toContain("LoadSubagentFromSkillDialog");
+    expect(longSource).toContain("@change=\"toggleSubagent(definition, $event)\"");
+    expect(longSource).toContain("@click=\"removeSubagent(index)\"");
+    expect(longSource).toContain("@click=\"saveSettings\"");
   });
 
   it("keeps the same three parent agents for short and script", () => {

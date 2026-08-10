@@ -38,6 +38,7 @@ import {
   DuplicateCatalogProjectResultSchema,
   ExportLongManuscriptResultSchema,
   ExportShortManuscriptResultSchema,
+  ExternalSkillSelectionResultSchema,
   GeneralSettingsSnapshotSchema,
   IPC_COMMAND_CHANNEL,
   IPC_EVENT_CHANNEL,
@@ -140,6 +141,7 @@ import { UpdateService } from "./update-service";
 import { AppAlertStore } from "./app-alert-store";
 import { ContinuationImportPreviewRegistry } from "./continuation-import-preview-registry";
 import { LegacySyncPreviewRegistry } from "./legacy-sync-preview-registry";
+import { readExternalSkills } from "./external-skill-import";
 
 interface ActiveRun extends MainInternalCommandActiveRun {
   correlationId: string;
@@ -1844,6 +1846,63 @@ function registerIpc(): void {
                 error instanceof Error
                   ? error.message
                   : "长篇操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "catalog.chooseExternalSkills") {
+        try {
+          const selection =
+            command.payload.sourceKind === "directory"
+              ? mainWindow
+                ? await dialog.showOpenDialog(mainWindow, {
+                    title: "选择 skills 文件夹",
+                    properties: ["openDirectory"]
+                  })
+                : await dialog.showOpenDialog({
+                    title: "选择 skills 文件夹",
+                    properties: ["openDirectory"]
+                  })
+              : mainWindow
+                ? await dialog.showOpenDialog(mainWindow, {
+                    title: "选择 SKILL.md",
+                    properties: ["openFile"],
+                    filters: [{ name: "SKILL.md", extensions: ["md"] }]
+                  })
+                : await dialog.showOpenDialog({
+                    title: "选择 SKILL.md",
+                    properties: ["openFile"],
+                    filters: [{ name: "SKILL.md", extensions: ["md"] }]
+                  });
+          if (selection.canceled || selection.filePaths.length === 0) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: ExternalSkillSelectionResultSchema.parse(
+              await readExternalSkills(
+                command.payload.sourceKind,
+                selection.filePaths[0]!
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "catalog.choose_external_skills_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "读取外部技能失败。",
               details: safeErrorDetails(error)
             }
           };

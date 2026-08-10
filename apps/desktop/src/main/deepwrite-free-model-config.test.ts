@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DEEPWRITE_FREE_MODEL_BASE_URL,
   DEEPWRITE_FREE_MODEL_REFRESH_INTERVAL_MS,
   DeepWriteFreeModelCatalogStore,
   parseDeepWriteFreeModelManifest
@@ -23,7 +24,7 @@ function manifest(modelId = "openrouter/free"): Record<string, unknown> {
         provider: "openrouter",
         modelId,
         api: "openai-completions",
-        baseUrl: "https://openrouter.ai/api/v1",
+        baseUrl: DEEPWRITE_FREE_MODEL_BASE_URL,
         reasoning: false,
         defaultThinkingLevel: "off",
         thinkingLevelOptions: ["minimal", "low", "medium", "high", "xhigh", "max"],
@@ -114,7 +115,7 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/cached:free");
   });
 
-  it("keeps the last validated cache when a later startup cannot reach Gitee", async () => {
+  it("keeps the last validated cache when a later startup cannot reach the public-data service", async () => {
     const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-cache-"));
     temporaryRoots.push(root);
     const first = new DeepWriteFreeModelCatalogStore(root, {

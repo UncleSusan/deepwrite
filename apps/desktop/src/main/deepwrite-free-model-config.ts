@@ -4,15 +4,19 @@ import {
   ModelConfigInputSchema,
   type ModelConfigInput
 } from "@deepwrite/contracts";
+import {
+  deepWritePublicDataHeaders,
+  deepWritePublicDataUrl
+} from "./deepwrite-public-data-config";
 
 export const DEEPWRITE_FREE_MODEL_CONFIG_URL =
-  "https://raw.giteeusercontent.com/swjai001/deepseekwrite/raw/master/MODEL.json";
+  deepWritePublicDataUrl("MODEL.json");
 export const DEEPWRITE_FREE_MODEL_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 
 const DEEPWRITE_FREE_MODEL_SOURCE = "deepwrite-free" as const;
 const OPENROUTER_PROVIDER = "openrouter";
 const OPENROUTER_API = "openai-completions" as const;
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+export const DEEPWRITE_FREE_MODEL_BASE_URL = "https://openrouter.ai/api/v1";
 const REMOTE_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_REMOTE_CONFIG_BYTES = 1_000_000;
 
@@ -131,7 +135,7 @@ function parseRemoteModel(raw: unknown): {
   if (model.api !== OPENROUTER_API) {
     throw new Error("远程免费模型只允许使用 OpenAI Completions 协议。");
   }
-  if (model.baseUrl.replace(/\/$/u, "") !== OPENROUTER_BASE_URL) {
+  if (model.baseUrl.replace(/\/$/u, "") !== DEEPWRITE_FREE_MODEL_BASE_URL) {
     throw new Error("远程免费模型只允许使用固定的 OpenRouter API 地址。");
   }
   if (model.modelId !== "openrouter/free" && !model.modelId.endsWith(":free")) {
@@ -143,7 +147,7 @@ function parseRemoteModel(raw: unknown): {
       ...model,
       provider: OPENROUTER_PROVIDER,
       api: OPENROUTER_API,
-      baseUrl: OPENROUTER_BASE_URL,
+      baseUrl: DEEPWRITE_FREE_MODEL_BASE_URL,
       managedBy: DEEPWRITE_FREE_MODEL_SOURCE
     },
     ...(typeof rawApiKey === "string" ? { apiKey: rawApiKey.trim() } : {}),
@@ -315,7 +319,7 @@ export class DeepWriteFreeModelCatalogStore {
         method: "GET",
         cache: "no-store",
         signal: AbortSignal.timeout(REMOTE_REQUEST_TIMEOUT_MS),
-        headers: { Accept: "application/json" }
+        headers: deepWritePublicDataHeaders({ Accept: "application/json" })
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);

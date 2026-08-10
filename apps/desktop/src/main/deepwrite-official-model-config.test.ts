@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEEPWRITE_OFFICIAL_BALANCE_URL,
+  DEEPWRITE_OFFICIAL_MODEL_BASE_URL,
   DEEPWRITE_OFFICIAL_MODEL_CONFIG_URL,
   DeepWriteOfficialModelCatalogStore,
   parseDeepWriteOfficialModelManifest
@@ -13,8 +15,8 @@ const temporaryRoots: string[] = [];
 function manifest(label = "官方模型-DeepSeekFlash正式版本"): unknown {
   return {
     balance: {
-      url: "https://www.moxing.pro/v1/balance",
-      key: "itk-mxai-test-integration-token"
+      url: `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}/v1/balance`,
+      key: "itk-mxai-invalid-placeholder"
     },
     models: [
       {
@@ -22,7 +24,7 @@ function manifest(label = "官方模型-DeepSeekFlash正式版本"): unknown {
         label,
         modelId: "deepseek-v4-flash-202605",
         api: "openai-completions",
-        baseUrl: "https://www.moxing.pro/v1",
+        baseUrl: `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}/v1`,
         reasoning: true,
         defaultThinkingLevel: "high",
         supportsDeveloperRole: false,
@@ -49,7 +51,7 @@ describe("DeepWrite official remote model manifest", () => {
     const catalog = parseDeepWriteOfficialModelManifest(manifest());
 
     expect(DEEPWRITE_OFFICIAL_MODEL_CONFIG_URL).toContain(
-      "MODELDEEPWRITE.json"
+      "/deepwrite/v1/MODELDEEPWRITE.json"
     );
     expect(catalog.manifestAvailable).toBe(true);
     expect(catalog.defaultModelId).toBe("deepwrite-deepseek-v4-flash");
@@ -59,7 +61,7 @@ describe("DeepWrite official remote model manifest", () => {
         label: "官方模型-DeepSeekFlash正式版本",
         provider: "deepseek-official",
         modelId: "deepseek-v4-flash-202605",
-        baseUrl: "https://www.moxing.pro/v1",
+        baseUrl: `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}/v1`,
         reasoning: true,
         defaultThinkingLevel: "high",
         supportsDeveloperRole: false,
@@ -75,8 +77,8 @@ describe("DeepWrite official remote model manifest", () => {
     ]);
     expect(catalog.models[0]).not.toHaveProperty("requestModelId");
     expect(catalog.balance).toEqual({
-      url: "https://www.moxing.pro/v1/account/balance",
-      key: "itk-mxai-test-integration-token"
+      url: DEEPWRITE_OFFICIAL_BALANCE_URL,
+      key: "itk-mxai-invalid-placeholder"
     });
   });
 
@@ -87,7 +89,7 @@ describe("DeepWrite official remote model manifest", () => {
       if (input.includes("account/balance")) {
         expect(input).toContain("include_keys=true");
         expect(new Headers(init?.headers).get("Authorization")).toBe(
-          "Bearer itk-mxai-test-integration-token"
+          "Bearer itk-mxai-invalid-placeholder"
         );
         return new Response(JSON.stringify({
           code: 200,
@@ -124,7 +126,7 @@ describe("DeepWrite official remote model manifest", () => {
       join(root, "config", "deepwrite-official-models-cache.json"),
       "utf8"
     );
-    expect(cachedConfig).not.toContain("itk-mxai-test-integration-token");
+    expect(cachedConfig).not.toContain("itk-mxai-invalid-placeholder");
 
     await expect(store.queryBalance("a1b2")).resolves.toEqual({
       queriedAt: "2026-07-06T18:04:00+08:00",
@@ -153,7 +155,7 @@ describe("DeepWrite official remote model manifest", () => {
           label: "可用模型",
           modelId: "deepseek-v4-flash",
           api: "openai-completions",
-          baseUrl: "https://www.moxing.pro/v1",
+          baseUrl: `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}/v1`,
           reasoning: true,
           defaultThinkingLevel: "high",
           supportsDeveloperRole: false,
@@ -166,7 +168,7 @@ describe("DeepWrite official remote model manifest", () => {
           label: "不可用模型",
           modelId: "qwen3.8-max-preview",
           api: "openai-completions",
-          baseUrl: "https://www.moxing.pro/v1",
+          baseUrl: `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}/v1`,
           reasoning: true,
           defaultThinkingLevel: "high",
           supportsDeveloperRole: false,
