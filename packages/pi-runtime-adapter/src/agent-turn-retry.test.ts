@@ -62,6 +62,9 @@ function assistantMessage(
 
 function responseStream(message: AssistantMessage) {
   const stream = createAssistantMessageEventStream();
+  if (message.stopReason === "pending") {
+    throw new Error("A pending assistant message is not a terminal test response.");
+  }
   if (message.stopReason === "error" || message.stopReason === "aborted") {
     stream.push({ type: "error", reason: message.stopReason, error: message });
   } else {

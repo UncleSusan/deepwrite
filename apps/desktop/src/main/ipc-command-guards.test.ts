@@ -83,4 +83,21 @@ describe("IPC command requestId handling", () => {
       "await catalogStore.createDraftSections(command.payload)"
     );
   });
+
+  it("bounds editor save and snapshot forwarding instead of waiting forever", () => {
+    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const catalogForwarding = mainSource.slice(
+      mainSource.indexOf('command.type === "catalog.snapshot"'),
+      mainSource.indexOf('if (command.type === "models.list")')
+    );
+
+    expect(catalogForwarding).toContain("catalogCommandTimeoutMs(command.type)");
+    expect(catalogForwarding).toContain(
+      "error instanceof UtilityCommandTimeoutError"
+    );
+    expect(catalogForwarding).toContain('code: timedOut ? "catalog.command_timeout"');
+    expect(catalogForwarding).not.toContain(
+      'supervisor.requestCommand("core", command, 0)'
+    );
+  });
 });

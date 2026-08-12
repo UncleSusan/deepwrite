@@ -303,6 +303,7 @@ import {
 } from "./utils/rightPanePreferences";
 import {
   createLongWorkspaceRefreshClock,
+  hasReachedLongWorkspaceRevisionTarget,
   isMonotonicLongWorkspaceRefresh
 } from "./utils/longWorkspaceRefresh";
 import { findLongWorldbuildingFile } from "./utils/longWorldbuildingFiles";
@@ -580,9 +581,16 @@ interface LongWorkspaceRefreshStatus {
   pending: boolean;
   error: string | null;
 }
+interface LongWorkspaceRevisionSyncRequirement {
+  bookId: string;
+  workspaceRevision: number;
+  projectRevision: number;
+}
 const longWorkspaceRefreshClock = createLongWorkspaceRefreshClock();
 const longWorkspaceRefreshStatus =
   ref<LongWorkspaceRefreshStatus | null>(null);
+const longWorkspaceRevisionSyncRequirement =
+  ref<LongWorkspaceRevisionSyncRequirement | null>(null);
 const longCatalogLoading = ref(false);
 const longCatalogLoadError = ref<string | null>(null);
 let longCatalogRetryAttempts = 0;
@@ -1484,9 +1492,14 @@ const activeLongWorkspaceRefreshStatus = computed(() => {
   const status = longWorkspaceRefreshStatus.value;
   return status?.bookId === activeLongBookId.value ? status : null;
 });
+const activeLongWorkspaceRevisionSyncRequirement = computed(() => {
+  const requirement = longWorkspaceRevisionSyncRequirement.value;
+  return requirement?.bookId === activeLongBookId.value ? requirement : null;
+});
 const activeLongWorkspaceContextReady = computed(
   () =>
     activeLongWorkspaceRefreshStatus.value === null &&
+    activeLongWorkspaceRevisionSyncRequirement.value === null &&
     activeLongWorkspaceIndex.value !== null &&
     activeLongBookSummary.value !== null &&
     activeLongBookSummary.value.navigation.revision ===
@@ -2338,6 +2351,75 @@ async function refreshActiveLongWorkspace(bookId: string): Promise<boolean> {
   }
 }
 
+function synchronizeRequiredLongWorkspaceRevision(bookId: string): boolean {
+  const requirement = longWorkspaceRevisionSyncRequirement.value;
+  if (!requirement || requirement.bookId !== bookId) return true;
+  const index = activeLongWorkspaceIndex.value;
+  const summary = activeLongBookSummary.value;
+  if (
+    activeLongBookId.value !== bookId ||
+    !index ||
+    !summary ||
+    summary.id !== bookId ||
+    !hasReachedLongWorkspaceRevisionTarget(
+      {
+        workspaceRevision: index.revision,
+        projectRevision: summary.projectRevision
+      },
+      requirement
+    )
+  ) {
+    return false;
+  }
+  try {
+    longWorkspaceEditor.value?.synchronizeProjectRevisions(
+      index.revision,
+      summary.projectRevision
+    );
+  } catch {
+    return false;
+  }
+  longWorkspaceRevisionSyncRequirement.value = null;
+  return true;
+}
+
+function markLongWorkspaceRevisionSyncFailure(bookId: string): void {
+  if (activeLongBookId.value !== bookId) return;
+  const currentStatus = activeLongWorkspaceRefreshStatus.value;
+  if (currentStatus?.error) return;
+  const requestId = longWorkspaceRefreshClock.begin(bookId);
+  longWorkspaceRefreshStatus.value = {
+    bookId,
+    requestId,
+    pending: false,
+    error:
+      "账本回滚已经完成，但最新工作区版本尚未同步。正文编辑已锁定，请重新同步。"
+  };
+}
+
+async function refreshAndSynchronizeRequiredLongWorkspaceRevision(
+  bookId: string
+): Promise<boolean> {
+  const requirement = longWorkspaceRevisionSyncRequirement.value;
+  if (!requirement || requirement.bookId !== bookId) {
+    return refreshActiveLongWorkspace(bookId);
+  }
+  // A concurrent refresh may supersede the first request. Retry once and only
+  // release the write barrier after the published index reaches the mutation's
+  // returned revisions and the editor has adopted that same CAS baseline.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const refreshed = await refreshActiveLongWorkspace(bookId);
+    if (synchronizeRequiredLongWorkspaceRevision(bookId)) {
+      return true;
+    }
+    if (!refreshed && activeLongWorkspaceRefreshStatus.value?.error) {
+      break;
+    }
+  }
+  markLongWorkspaceRevisionSyncFailure(bookId);
+  return false;
+}
+
 async function selectLongWorkspaceFile(
   selection: LongWorkspaceSelection
 ): Promise<boolean> {
@@ -2652,6 +2734,9 @@ async function confirmLongRollback(): Promise<void> {
 
   longRollbackPending.value = true;
   try {
+    // Flush the readonly state into the editor before the first asynchronous
+    // save. No keystroke may land between the clean save and the rollback CAS.
+    await nextTick();
     // A user may request rollback while editing the next, still-uncommitted
     // chapter. Persist that work first, then refresh the CAS revisions that
     // the save advanced before touching the continuity ledger.
@@ -2677,24 +2762,36 @@ async function confirmLongRollback(): Promise<void> {
       uiMessage.warning("最后提交已经变化，请刷新后重新确认回滚。");
       return;
     }
-    await api.rollbackLastCommit({
+    const rollback = await api.rollbackLastCommit({
       bookId: summary.id,
       expectedCommitId: commit.id,
       baseWorkspaceRevision: index.revision,
       baseProjectRevision: summary.projectRevision
     });
+    longWorkspaceRevisionSyncRequirement.value = {
+      bookId: rollback.bookId,
+      workspaceRevision: rollback.workspaceRevision,
+      projectRevision: rollback.projectRevision
+    };
     if (activeLongSelection.value?.key === `ledger:${commit.id}`) {
       activeLongSelection.value = null;
       activeLongFileContext.value = null;
     }
+    if (
+      !(await refreshAndSynchronizeRequiredLongWorkspaceRevision(summary.id))
+    ) {
+      // The disk mutation already succeeded. Close the confirmation dialog, but
+      // keep the revision requirement active so the editor stays readonly until
+      // the explicit retry publishes and adopts the new CAS baseline.
+      longRollbackDialogOpen.value = false;
+      longRollbackCommitId.value = null;
+      uiMessage.warning(
+        "连续性账本已回滚，但最新版本尚未同步；正文编辑已锁定，请点击“重新同步”。"
+      );
+      return;
+    }
     longRollbackDialogOpen.value = false;
     longRollbackCommitId.value = null;
-    if (await refreshActiveLongWorkspace(summary.id)) {
-      longWorkspaceEditor.value?.synchronizeProjectRevisions(
-        activeLongWorkspaceIndex.value!.revision,
-        activeLongBookSummary.value!.projectRevision
-      );
-    }
     await loadLongBookList({ force: true });
     uiMessage.success(`已回滚提交 #${commit.sequence}。`);
   } catch (error: unknown) {
@@ -3858,6 +3955,9 @@ const longEditorLocked = computed(() => {
     ? `long:${activeLongBookSummary.value.id}`
     : null;
   return (
+    longRollbackPending.value ||
+    Boolean(activeLongWorkspaceRefreshStatus.value?.pending) ||
+    activeLongWorkspaceRevisionSyncRequirement.value !== null ||
     longSendPreflightPending.value ||
     longProposalApprovalPending.value ||
     Boolean(
@@ -3870,6 +3970,15 @@ const longEditorLocked = computed(() => {
   );
 });
 const longEditorLockedReason = computed(() => {
+  if (longRollbackPending.value) {
+    return "正在回滚连续性账本并同步最新版本，编辑暂时锁定";
+  }
+  if (activeLongWorkspaceRevisionSyncRequirement.value) {
+    return "账本已回滚，正在等待最新版本同步，编辑暂时锁定";
+  }
+  if (activeLongWorkspaceRefreshStatus.value?.pending) {
+    return "正在同步长篇工作区最新版本，编辑暂时锁定";
+  }
   if (longSendPreflightPending.value) {
     return "正在保存并准备发送，编辑暂时锁定";
   }
@@ -5318,6 +5427,9 @@ function disposeLongBookRuntime(bookId: string): void {
   }
   if (longWritingAgentRunExpectation?.bookId === bookId) {
     longWritingAgentRunExpectation = null;
+  }
+  if (longWorkspaceRevisionSyncRequirement.value?.bookId === bookId) {
+    longWorkspaceRevisionSyncRequirement.value = null;
   }
   removeAgentRunPreferences(`long:${bookId}`);
 }
@@ -9420,6 +9532,12 @@ async function sendLongMessage(
 async function retryActiveLongWorkspaceRefresh(): Promise<void> {
   const bookId = activeLongBookId.value;
   if (!bookId || activeLongWorkspaceRefreshStatus.value?.pending) return;
+  if (activeLongWorkspaceRevisionSyncRequirement.value) {
+    if (await refreshAndSynchronizeRequiredLongWorkspaceRevision(bookId)) {
+      uiMessage.success("已同步账本回滚后的最新版本，可以继续编辑正文。");
+    }
+    return;
+  }
   await refreshActiveLongWorkspace(bookId);
 }
 
@@ -15905,7 +16023,10 @@ onBeforeUnmount(() => {
               class="long-workspace-refresh-status is-error"
               aria-live="polite"
             >
-              <span>
+              <span v-if="activeLongWorkspaceRevisionSyncRequirement">
+                账本回滚已完成，但最新版本尚未同步；正文编辑已锁定以防止版本冲突。
+              </span>
+              <span v-else>
                 最新工作区索引尚未同步，长篇智能体已暂停发送。
               </span>
               <button

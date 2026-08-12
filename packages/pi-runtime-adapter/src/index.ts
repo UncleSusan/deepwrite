@@ -1023,7 +1023,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       agent.state.model = model;
       agent.state.thinkingLevel = effectiveThinkingLevel;
       agent.state.tools = tools;
-      agent.streamFn = interceptedStreamFn;
+      agent.streamFunction = interceptedStreamFn;
       if (this.toolExecutionHooks.beforeToolCall) {
         agent.beforeToolCall = this.toolExecutionHooks.beforeToolCall;
       } else {
@@ -1551,8 +1551,10 @@ export function buildProviderRuntime(
     // model is text-only; silently dropping a user image is never acceptable.
     input: builtin?.input ?? ["text", "image"],
     cost: builtin?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: builtin?.contextWindow ?? 128_000,
-    maxTokens: builtin?.maxTokens ?? 8_192,
+    // Unknown routes inherit the GPT-5.6 Sol capacity baseline so a missing
+    // catalog entry does not unnecessarily constrain long-form writing runs.
+    contextWindow: builtin?.contextWindow ?? 272_000,
+    maxTokens: builtin?.maxTokens ?? 128_000,
     ...(builtin?.headers ? { headers: builtin.headers } : {}),
     ...(Object.keys(thinkingLevelMap).length > 0 ? { thinkingLevelMap } : {}),
     ...(compat ? { compat } : {})

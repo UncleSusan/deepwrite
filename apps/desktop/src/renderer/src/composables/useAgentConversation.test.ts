@@ -845,6 +845,38 @@ describe("agent conversation controller", () => {
     controller.dispose();
   });
 
+  it("unblocks sending after an in-flight proposal save fails", () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({ api: () => deferred.api });
+    controller.messages.value = [{
+      id: "run_edit_timeout_assistant",
+      role: "assistant",
+      content: "本轮已经完成",
+      createdAt: "2026-07-19T11:00:00.000Z",
+      runId: "run_edit_timeout",
+      status: "completed"
+    }];
+    controller.upsertEditProposal(
+      "run_edit_timeout",
+      createEditProposal({ runId: "run_edit_timeout" })
+    );
+    controller.draft.value = "保存失败后继续沟通";
+
+    controller.updateEditProposal("run_edit_timeout", "proposal_1", {
+      status: "accepting",
+      statusMessage: "正在保存"
+    });
+    expect(controller.canSend.value).toBe(false);
+
+    controller.updateEditProposal("run_edit_timeout", "proposal_1", {
+      status: "error",
+      statusMessage: "保存超时"
+    });
+    expect(controller.hasPendingEditReview.value).toBe(false);
+    expect(controller.canSend.value).toBe(true);
+    controller.dispose();
+  });
+
   it("freezes the selected approval mode for each in-flight run", async () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({ api: () => deferred.api, idleTimeoutMs: 10_000 });

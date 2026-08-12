@@ -1128,6 +1128,27 @@ describe("DeepWrite Pi runtime adapter", () => {
     ).toBe(false);
   });
 
+  it("uses the GPT-5.6 Sol capacity baseline when no model catalog matches", () => {
+    const config: AgentProviderRuntimeConfig = {
+      id: "unknown-writer",
+      label: "Unknown writer",
+      provider: "custom",
+      modelId: "unknown-writer-model",
+      api: "openai-completions",
+      baseUrl: "https://example.test/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: ["low", "medium", "high"],
+      temperatureOptions: [0.2, 0.7, 1.2],
+      apiKey: "test-only"
+    };
+
+    expect(buildProviderRuntime(config).model).toMatchObject({
+      contextWindow: 272_000,
+      maxTokens: 128_000
+    });
+  });
+
   it("sanitizes only Ollama transport schemas without weakening local validation", async () => {
     const baseConfig: AgentProviderRuntimeConfig = {
       id: "local-writer",
@@ -1350,12 +1371,107 @@ describe("DeepWrite Pi runtime adapter", () => {
   });
 
   it.each([
-    ["gpt-5.6-sol", "GPT-5.6 Sol", "xhigh"],
-    ["gpt-5.6-terra", "GPT-5.6 Terra", "xhigh"],
-    ["gpt-5.6-luna", "GPT-5.6 Luna", "max"]
+    ["deepseek-v4-pro", "DeepSeek V4 Pro"],
+    ["deepseek-v4-flash", "DeepSeek V4 Flash"]
+  ] as const)(
+    "uses the DeepWrite %s runtime catalog for an official gateway route",
+    (modelId, label) => {
+      const config: AgentProviderRuntimeConfig = {
+        id: `deepwrite-${modelId}`,
+        label,
+        provider: "deepseek-official",
+        modelId,
+        api: "openai-completions",
+        baseUrl: "https://example.test/v1",
+        reasoning: true,
+        supportsDeveloperRole: false,
+        defaultThinkingLevel: "high",
+        thinkingLevelOptions: ["low", "high", "max"],
+        temperatureOptions: [0.7, 1, 1.5],
+        managedBy: "deepwrite-official",
+        apiKey: "test-only"
+      };
+
+      expect(buildProviderRuntime(config, undefined, "max").model).toMatchObject({
+        id: modelId,
+        provider: "deepseek-official",
+        baseUrl: "https://example.test/v1",
+        contextWindow: 1_000_000,
+        maxTokens: 384_000,
+        input: ["text"],
+        thinkingLevelMap: {
+          minimal: null,
+          low: "high",
+          medium: "high",
+          high: "high",
+          xhigh: "max"
+        },
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: true,
+          maxTokensField: "max_tokens",
+          requiresReasoningContentOnAssistantMessages: true,
+          thinkingFormat: "deepseek",
+          supportsStrictMode: true
+        }
+      });
+    }
+  );
+
+  it.each([
+    ["glm-5.2", "GLM-5.2", 1_000_000, 131_072, "zai"],
+    ["qwen3.7-plus", "Qwen3.7 Plus", 1_000_000, 131_072, "openai"]
+  ] as const)(
+    "uses the DeepWrite %s runtime catalog for an official gateway route",
+    (modelId, label, contextWindow, maxTokens, thinkingFormat) => {
+      const config: AgentProviderRuntimeConfig = {
+        id: `deepwrite-${modelId}`,
+        label,
+        provider: "deepseek-official",
+        modelId,
+        api: "openai-completions",
+        baseUrl: "https://example.test/v1",
+        reasoning: true,
+        supportsDeveloperRole: false,
+        defaultThinkingLevel: "high",
+        thinkingLevelOptions: ["low", "high", "max"],
+        temperatureOptions: [0.7, 1, 1.5],
+        managedBy: "deepwrite-official",
+        apiKey: "test-only"
+      };
+
+      expect(buildProviderRuntime(config, undefined, "max").model).toMatchObject({
+        id: modelId,
+        provider: "deepseek-official",
+        baseUrl: "https://example.test/v1",
+        contextWindow,
+        maxTokens,
+        thinkingLevelMap: {
+          low: expect.anything(),
+          high: expect.anything(),
+          xhigh: expect.anything()
+        },
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: true,
+          maxTokensField: "max_completion_tokens",
+          requiresReasoningContentOnAssistantMessages: true,
+          thinkingFormat,
+          supportsStrictMode: true
+        }
+      });
+    }
+  );
+
+  it.each([
+    ["gpt-5.6-sol", "GPT-5.6 Sol"],
+    ["gpt-5.6-terra", "GPT-5.6 Terra"],
+    ["gpt-5.6-luna", "GPT-5.6 Luna"]
   ] as const)(
     "uses the DeepWrite %s runtime catalog instead of the generic fallback",
-    (modelId, label, xhighMapping) => {
+    (modelId, label) => {
       const config: AgentProviderRuntimeConfig = {
         id: `deepwrite-${modelId}`,
         label,
@@ -1379,9 +1495,10 @@ describe("DeepWrite Pi runtime adapter", () => {
         contextWindow: 272_000,
         maxTokens: 128_000,
         thinkingLevelMap: {
-          off: null,
+          off: "none",
           minimal: null,
-          xhigh: xhighMapping
+          xhigh: "xhigh",
+          max: "max"
         }
       });
     }
@@ -1584,11 +1701,11 @@ describe("DeepWrite Pi runtime adapter", () => {
     };
 
     expect(buildProviderRuntime(builtinConfig, undefined, "low").model.thinkingLevelMap)
-      .toMatchObject({ low: null, xhigh: "max" });
+      .toMatchObject({ low: null, max: "max" });
     expect(buildProviderRuntime(builtinConfig, undefined, "xhigh").model.thinkingLevelMap)
-      .toMatchObject({ low: null, xhigh: "max" });
+      .toMatchObject({ low: null, max: "max" });
     expect(buildProviderRuntime(builtinConfig, undefined, "max").model.thinkingLevelMap)
-      .toMatchObject({ low: null, xhigh: "max" });
+      .toMatchObject({ low: null, max: "max", xhigh: "max" });
 
     const customConfig: AgentProviderRuntimeConfig = {
       ...builtinConfig,

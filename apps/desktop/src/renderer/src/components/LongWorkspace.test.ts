@@ -985,6 +985,67 @@ describe("long-form renderer vertical slice", () => {
     expect(rollbackSource).toContain("var(--surface-raised)");
   });
 
+  it("keeps a write barrier until rollback revisions are refreshed and adopted", () => {
+    const confirmRollbackSource =
+      appSource
+        .split("async function confirmLongRollback(")[1]
+        ?.split("function captureAgentRunSettings(")[0] ?? "";
+    const editorLockSource =
+      appSource
+        .split("const longEditorLocked = computed(")[1]
+        ?.split("const longEditorLockedReason = computed(")[0] ?? "";
+    const retryRefreshSource =
+      appSource
+        .split("async function retryActiveLongWorkspaceRefresh(")[1]
+        ?.split("async function stopLongGeneration(")[0] ?? "";
+
+    expect(
+      confirmRollbackSource.indexOf("longRollbackPending.value = true")
+    ).toBeLessThan(confirmRollbackSource.indexOf("await nextTick()"));
+    expect(confirmRollbackSource.indexOf("await nextTick()")).toBeLessThan(
+      confirmRollbackSource.indexOf("saveActiveLongEditorChanges()")
+    );
+    expect(confirmRollbackSource).toContain(
+      "const rollback = await api.rollbackLastCommit({"
+    );
+    expect(confirmRollbackSource).toContain(
+      "longWorkspaceRevisionSyncRequirement.value = {"
+    );
+    expect(confirmRollbackSource).toContain(
+      "workspaceRevision: rollback.workspaceRevision"
+    );
+    expect(confirmRollbackSource).toContain(
+      "projectRevision: rollback.projectRevision"
+    );
+    const afterRevisionRequirement =
+      confirmRollbackSource.split(
+        "longWorkspaceRevisionSyncRequirement.value = {"
+      )[1] ?? "";
+    expect(
+      afterRevisionRequirement.indexOf(
+        "refreshAndSynchronizeRequiredLongWorkspaceRevision(summary.id)"
+      )
+    ).toBeLessThan(
+      afterRevisionRequirement.indexOf("longRollbackDialogOpen.value = false")
+    );
+
+    expect(editorLockSource).toContain("longRollbackPending.value");
+    expect(editorLockSource).toContain(
+      "activeLongWorkspaceRefreshStatus.value?.pending"
+    );
+    expect(editorLockSource).toContain(
+      "activeLongWorkspaceRevisionSyncRequirement.value !== null"
+    );
+    expect(appSource).toContain(
+      "activeLongWorkspaceRevisionSyncRequirement.value === null"
+    );
+    expect(appSource).toContain("hasReachedLongWorkspaceRevisionTarget(");
+    expect(retryRefreshSource).toContain(
+      "refreshAndSynchronizeRequiredLongWorkspaceRevision(bookId)"
+    );
+    expect(appSource).toContain("正文编辑已锁定以防止版本冲突");
+  });
+
   it("provides a continuity review entry without replacing chapter authoring", () => {
     expect(appSource).toContain("createLongChapterSelection");
     expect(appSource).toContain("createLongContinuitySelection");

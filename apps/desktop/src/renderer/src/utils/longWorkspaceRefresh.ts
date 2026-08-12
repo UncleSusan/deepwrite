@@ -39,3 +39,14 @@ export function isMonotonicLongWorkspaceRefresh(
       incoming.projectRevision >= current.projectRevision)
   );
 }
+
+export function hasReachedLongWorkspaceRevisionTarget(
+  current: LongWorkspaceRevisionPair | null,
+  target: LongWorkspaceRevisionPair
+): boolean {
+  return (
+    current !== null &&
+    current.workspaceRevision >= target.workspaceRevision &&
+    current.projectRevision >= target.projectRevision
+  );
+}

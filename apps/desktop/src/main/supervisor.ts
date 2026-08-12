@@ -17,7 +17,12 @@ type WorkerStatus = UtilityHealthPayload["status"];
 
 const MAX_PENDING_INTERNAL_COMMANDS = 32;
 
-class UtilityCommandTimeoutError extends Error {}
+export class UtilityCommandTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UtilityCommandTimeoutError";
+  }
+}
 
 interface PendingHealthCheck {
   resolve(payload: UtilityHealthPayload): void;

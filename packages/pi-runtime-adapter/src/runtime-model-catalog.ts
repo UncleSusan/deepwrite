@@ -9,6 +9,62 @@ import type { Api, Model } from "@earendil-works/pi-ai";
  */
 const DEEPWRITE_RUNTIME_MODELS = [
   {
+    id: "deepseek-v4-pro",
+    name: "DeepSeek V4 Pro",
+    api: "openai-completions",
+    provider: "deepseek",
+    baseUrl: "https://api.deepseek.com",
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: true,
+      maxTokensField: "max_tokens",
+      requiresReasoningContentOnAssistantMessages: true,
+      thinkingFormat: "deepseek",
+      supportsStrictMode: true
+    },
+    reasoning: true,
+    thinkingLevelMap: {
+      minimal: null,
+      low: "high",
+      medium: "high",
+      high: "high",
+      xhigh: "max"
+    },
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 384_000
+  } satisfies Model<"openai-completions">,
+  {
+    id: "deepseek-v4-flash",
+    name: "DeepSeek V4 Flash",
+    api: "openai-completions",
+    provider: "deepseek",
+    baseUrl: "https://api.deepseek.com",
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: true,
+      maxTokensField: "max_tokens",
+      requiresReasoningContentOnAssistantMessages: true,
+      thinkingFormat: "deepseek",
+      supportsStrictMode: true
+    },
+    reasoning: true,
+    thinkingLevelMap: {
+      minimal: null,
+      low: "high",
+      medium: "high",
+      high: "high",
+      xhigh: "max"
+    },
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 384_000
+  } satisfies Model<"openai-completions">,
+  {
     id: "deepseek-v4-flash-0731",
     name: "DeepSeek V4 Flash 0731",
     api: "openai-completions",
@@ -35,6 +91,62 @@ const DEEPWRITE_RUNTIME_MODELS = [
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 1_000_000,
     maxTokens: 384_000
+  } satisfies Model<"openai-completions">,
+  {
+    id: "glm-5.2",
+    name: "GLM-5.2",
+    api: "openai-completions",
+    provider: "zai",
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: true,
+      maxTokensField: "max_completion_tokens",
+      requiresReasoningContentOnAssistantMessages: true,
+      thinkingFormat: "zai",
+      supportsStrictMode: true,
+      zaiToolStream: true
+    },
+    reasoning: true,
+    thinkingLevelMap: {
+      minimal: null,
+      low: "high",
+      medium: "high",
+      high: "high",
+      xhigh: "max"
+    },
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 131_072
+  } satisfies Model<"openai-completions">,
+  {
+    id: "qwen3.7-plus",
+    name: "Qwen3.7 Plus",
+    api: "openai-completions",
+    provider: "qwen",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: true,
+      maxTokensField: "max_completion_tokens",
+      requiresReasoningContentOnAssistantMessages: true,
+      thinkingFormat: "openai",
+      supportsStrictMode: true
+    },
+    reasoning: true,
+    thinkingLevelMap: {
+      off: "none",
+      low: "low",
+      high: "xhigh",
+      xhigh: "xhigh"
+    },
+    input: ["text", "image"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 131_072
   } satisfies Model<"openai-completions">,
   {
     id: "gpt-5.6-sol",
@@ -186,7 +298,17 @@ const DEEPWRITE_RUNTIME_MODELS = [
 ] as const;
 
 export function findDeepWriteRuntimeModel(modelId: string): Model<Api> | undefined {
-  return DEEPWRITE_RUNTIME_MODELS.find(
-    (model) => model.id.toLowerCase() === modelId.toLowerCase()
-  ) as Model<Api> | undefined;
+  const normalizedModelId = modelId.toLowerCase();
+  let matchedModel: Model<Api> | undefined;
+
+  for (const model of DEEPWRITE_RUNTIME_MODELS) {
+    if (!normalizedModelId.startsWith(model.id.toLowerCase())) {
+      continue;
+    }
+    if (!matchedModel || model.id.length > matchedModel.id.length) {
+      matchedModel = model as Model<Api>;
+    }
+  }
+
+  return matchedModel;
 }

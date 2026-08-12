@@ -132,7 +132,14 @@ import {
 } from "./native-appearance-chrome";
 import { exportShortManuscript } from "./short-manuscript-export";
 import { exportLongManuscript } from "./long-manuscript-export";
-import { UtilitySupervisor } from "./supervisor";
+import {
+  UtilityCommandTimeoutError,
+  UtilitySupervisor
+} from "./supervisor";
+import {
+  catalogCommandTimeoutMessage,
+  catalogCommandTimeoutMs
+} from "./catalog-command-timeout";
 import {
   AGENT_CORE_LONG_QUERY_COMMANDS,
   authorizeMainInternalCommand,
@@ -1988,7 +1995,11 @@ function registerIpc(): void {
         command.type === "catalog.duplicateProject"
       ) {
         try {
-          const result = await supervisor.requestCommand("core", command, 0);
+          const result = await supervisor.requestCommand(
+            "core",
+            command,
+            catalogCommandTimeoutMs(command.type)
+          );
           if (result.status === "rejected") {
             return result;
           }
@@ -2054,12 +2065,17 @@ function registerIpc(): void {
           }
           return { status: "accepted", requestId: command.id, payload };
         } catch (error: unknown) {
+          const timedOut = error instanceof UtilityCommandTimeoutError;
           return {
             status: "rejected",
             requestId: command.id,
             error: {
-              code: "catalog.forward_failed",
-              message: error instanceof Error ? error.message : "目录操作失败。",
+              code: timedOut ? "catalog.command_timeout" : "catalog.forward_failed",
+              message: timedOut
+                ? catalogCommandTimeoutMessage(command.type)
+                : error instanceof Error
+                  ? error.message
+                  : "目录操作失败。",
               details: safeErrorDetails(error)
             }
           };
