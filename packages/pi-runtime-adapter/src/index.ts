@@ -89,6 +89,12 @@ import {
   isLongAgentToolDetails,
   type LongCommandExecutor
 } from "./long-agent-tools";
+import {
+  applyOllamaToolSchemaCompatibility,
+  isOllamaProviderName,
+  resolveOllamaToolSchemaProfile,
+  type ProviderRuntimeCompatibilityOptions
+} from "./ollama-tool-schema-compat";
 import { findDeepWriteRuntimeModel } from "./runtime-model-catalog";
 
 export {
@@ -778,6 +784,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     const queue = new AsyncEventQueue<AgentRuntimeEvent>();
     const runtime = this.describe(input.runtimeConfig);
     const messageId = `${input.runId}_assistant`;
+    const ollamaToolSchemaProfile = resolveOllamaToolSchemaProfile(
+      input.workspaceContext
+    );
     let model: Model<Api>;
     let streamFn: StreamFn;
     let effectiveThinkingLevel: PiThinkingLevel;
@@ -791,7 +800,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       const providerRuntime = buildProviderRuntime(
         input.runtimeConfig,
         effectiveTemperature,
-        configuredThinkingLevel
+        configuredThinkingLevel,
+        { ollamaToolSchemaProfile }
       );
       model = providerRuntime.model;
       streamFn = providerRuntime.streamFn;
@@ -942,7 +952,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
           const childRuntime = buildProviderRuntime(
             config,
             childTemperature,
-            childThinking
+            childThinking,
+            { ollamaToolSchemaProfile }
           );
           return {
             model: childRuntime.model,
@@ -1410,66 +1421,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
   }
 }
 
-const OLLAMA_GRAMMAR_REPETITION_THRESHOLD = 2_000;
-
-function isSchemaRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-/**
- * llama.cpp-based Ollama runners can fail to compile their tool-call grammar
- * when a string nested inside an object/array carries a maxLength >= 2000.
- * This clone is used only for the provider request. Agent-side validation keeps
- * the original TypeBox schema and therefore retains DeepWrite's real limits.
- *
- * @internal Exported for provider-compatibility regression tests.
- */
-export function sanitizeOllamaToolSchema(
-  value: unknown,
-  propertyDepth = 0
-): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeOllamaToolSchema(item, propertyDepth));
-  }
-  if (!isSchemaRecord(value)) return value;
-
-  const removeMaxLength =
-    value.type === "string" &&
-    propertyDepth > 1 &&
-    typeof value.maxLength === "number" &&
-    value.maxLength >= OLLAMA_GRAMMAR_REPETITION_THRESHOLD;
-  const output: Record<string, unknown> = {};
-
-  for (const [key, child] of Object.entries(value)) {
-    if (key === "maxLength" && removeMaxLength) continue;
-    if (key === "properties" && isSchemaRecord(child)) {
-      output[key] = Object.fromEntries(
-        Object.entries(child).map(([propertyName, propertySchema]) => [
-          propertyName,
-          sanitizeOllamaToolSchema(propertySchema, propertyDepth + 1)
-        ])
-      );
-      continue;
-    }
-    output[key] = sanitizeOllamaToolSchema(
-      child,
-      key === "items" ? propertyDepth + 1 : propertyDepth
-    );
-  }
-  return output;
-}
-
-function withOllamaCompatibleToolSchemas(context: Context): Context {
-  if (!context.tools?.length) return context;
-  return {
-    ...context,
-    tools: context.tools.map((tool) => ({
-      ...tool,
-      parameters: sanitizeOllamaToolSchema(tool.parameters) as typeof tool.parameters
-    }))
-  };
-}
-
 function providerStreams(api: AgentProviderRuntimeConfig["api"]): ProviderStreams {
   if (api === "openai-completions") {
     return openAICompletionsApi();
@@ -1549,7 +1500,8 @@ function toPiThinkingLevel(level: ConfiguredThinkingLevel): PiThinkingLevel {
 export function buildProviderRuntime(
   config: AgentProviderRuntimeConfig,
   temperature?: number,
-  configuredThinkingLevel?: ConfiguredThinkingLevel
+  configuredThinkingLevel?: ConfiguredThinkingLevel,
+  compatibility: ProviderRuntimeCompatibilityOptions = {}
 ): {
   model: Model<Api>;
   streamFn: StreamFn;
@@ -1606,16 +1558,18 @@ export function buildProviderRuntime(
     ...(compat ? { compat } : {})
   } as Model<Api>;
   const streams = providerStreams(config.api);
-  const isOllamaProvider = config.provider.trim().toLowerCase() === "ollama";
+  const isOllamaProvider = isOllamaProviderName(config.provider);
   const streamFn = (
     requestModel: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions
   ) => streams.streamSimple(
     requestModel,
-    isOllamaProvider
-      ? withOllamaCompatibleToolSchemas(context)
-      : context,
+    applyOllamaToolSchemaCompatibility(
+      context,
+      config.provider,
+      compatibility.ollamaToolSchemaProfile
+    ),
     {
       ...options,
       ...(effectiveTemperature !== undefined

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import source from "./App.vue?raw";
 
 describe("App right pane preference integration", () => {
-  it("restores a stage-specific width and persists explicit resize actions", () => {
+  it("restores an area-specific width and persists explicit resize actions", () => {
     expect(source).toContain("const activeRightPanePreferenceKey = computed");
     expect(source).toContain('workspaceType: "long"');
     expect(source).toContain("stageId: activeLongRoot.value");
@@ -21,7 +21,7 @@ describe("App right pane preference integration", () => {
     expect(source).toContain("window.requestAnimationFrame(() => {");
   });
 
-  it("keys short and script widths from the selected stage rather than the shared agent", () => {
+  it("keys short and script widths from the selected resource area", () => {
     const preferenceBlock = source.slice(
       source.indexOf("const activeRightPanePreferenceKey = computed"),
       source.indexOf("const liveWorkspaceDocuments = computed")
@@ -30,6 +30,7 @@ describe("App right pane preference integration", () => {
     expect(preferenceBlock).toContain("const stageId = document.stageId ?? nodeStageId");
     expect(preferenceBlock).toContain("const workspaceType = document.workspaceType");
     expect(preferenceBlock).not.toContain("activeAgentDocument.value.stageId");
+    expect(preferenceBlock).toContain("all plot stages share one width");
   });
 
   it("uses saved widths when reconciling window size without replacing them", () => {

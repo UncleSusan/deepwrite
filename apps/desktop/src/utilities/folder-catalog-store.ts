@@ -50,6 +50,8 @@ import {
   MaterialLibraryGroupSchema,
   MaterialLibrarySchema,
   MaterialLibraryProjectManifestSchema,
+  MarketplaceInstallPackageSchema,
+  CatalogInstallMarketplaceSkillContentResultSchema,
   SaveLibraryEntryInputSchema,
   MoveLibraryEntryInputSchema,
   SkillGroupProjectManifestSchema,
@@ -107,6 +109,8 @@ import {
   type MaterialLibraryGroup,
   type MaterialEntry,
   type MaterialStageId,
+  type MarketplaceInstallPackage,
+  type CatalogInstallMarketplaceSkillContentResult,
   type MutateCharacterStructureInput,
   type MutatePlotStructureInput,
   type SaveLibraryEntryInput,
@@ -2571,6 +2575,9 @@ export class FolderCatalogStore {
         body: input.content,
         createdAt: skillEntry.createdAt,
         updatedAt: skillEntry.updatedAt,
+        ...(skillEntry.marketplaceSource
+          ? { marketplaceSource: skillEntry.marketplaceSource }
+          : {}),
         ...(skillEntry.sourceCommonSkillId === undefined
           ? {}
           : { sourceCommonSkillId: skillEntry.sourceCommonSkillId }),
@@ -3189,6 +3196,268 @@ export class FolderCatalogStore {
         title: primaryResource.title,
         copiedMemberLibraryIds
       };
+    });
+  }
+
+  async installMarketplaceSkillContent(
+    rawInput: MarketplaceInstallPackage
+  ): Promise<CatalogInstallMarketplaceSkillContentResult> {
+    const input = MarketplaceInstallPackageSchema.parse(rawInput);
+    return await this.mutate(async () => {
+      const registry = await this.ensureRegistry();
+      const snapshot = await this.aggregateSnapshot(registry);
+      const sourceRef = {
+        contentType: input.source.contentType,
+        id: input.source.contentId
+      } as const;
+      const matchingLibraries = snapshot.skills.filter(
+        ({ marketplaceSource }) =>
+          marketplaceSource?.contentType === input.source.contentType &&
+          marketplaceSource.contentId === input.source.contentId &&
+          marketplaceSource.version === input.source.version
+      );
+      const matchingEntryLibrary = snapshot.skills.find(({ entries }) =>
+        entries.some(
+          ({ marketplaceSource }) =>
+            marketplaceSource?.contentType === input.source.contentType &&
+            marketplaceSource.contentId === input.source.contentId &&
+            marketplaceSource.version === input.source.version
+        )
+      );
+      const matchingGroup = snapshot.skillGroups.find(
+        ({ marketplaceSource }) =>
+          marketplaceSource?.contentType === input.source.contentType &&
+          marketplaceSource.contentId === input.source.contentId &&
+          marketplaceSource.version === input.source.version
+      );
+      if (matchingLibraries.length > 0 || matchingEntryLibrary || matchingGroup) {
+        const installedLibraries = matchingEntryLibrary
+          ? [...matchingLibraries, matchingEntryLibrary].filter(
+              (library, index, values) =>
+                values.findIndex(({ id }) => id === library.id) === index
+            )
+          : matchingLibraries;
+        return CatalogInstallMarketplaceSkillContentResultSchema.parse({
+          source: sourceRef,
+          version: input.source.version,
+          title: matchingGroup?.title ?? installedLibraries[0]?.title ?? input.title,
+          alreadyInstalled: true,
+          libraryIds: installedLibraries.map(({ id }) => id),
+          ...(matchingGroup ? { groupId: matchingGroup.id } : {})
+        });
+      }
+
+      if (input.targetLibraryId) {
+        if (
+          input.source.contentType !== "skill" ||
+          input.createGroup ||
+          input.buckets.length !== 1 ||
+          input.buckets[0]!.entries.length !== 1
+        ) {
+          throw new Error("只有单技能可以安装到已有技能库。");
+        }
+        const targetLibrary = snapshot.skills.find(
+          ({ id }) => id === input.targetLibraryId
+        );
+        if (!targetLibrary || targetLibrary.isBuiltin) {
+          throw new Error("目标技能库不存在或不可写。");
+        }
+        const bucket = input.buckets[0]!;
+        const registration = findRegistration(
+          registry,
+          targetLibrary.id,
+          "skill-library"
+        );
+        const projectDirectory = await secureProjectRoot(
+          registration.projectDirectory
+        );
+        const manifest = await this.readManifest(
+          projectDirectory,
+          "deepwrite.skill-library",
+          targetLibrary.id
+        );
+        const remoteEntry = bucket.entries[0]!;
+        const now = this.now();
+        const id = createCatalogId("skill-entry");
+        const path = await uniqueRelativeMarkdownPath(
+          projectDirectory,
+          "entries",
+          id,
+          new Set(
+            manifest.entries.map((entry) => portableContentPathKey(entry.path))
+          )
+        );
+        const title = nextMarketplaceTitle(
+          remoteEntry.title,
+          manifest.entries.map((entry) => entry.title)
+        );
+        const entry = {
+          id,
+          stageId: remoteEntry.stageId,
+          title,
+          path,
+          createdAt: now,
+          updatedAt: now,
+          marketplaceSource: {
+            contentType: input.source.contentType,
+            contentId: input.source.contentId,
+            version: input.source.version,
+            installedAt: now
+          },
+          sourceSkillId: remoteEntry.marketplaceSkillId
+        };
+        const next = FolderSkillProjectManifestSchema.parse({
+          ...manifest,
+          revision: manifest.revision + 1,
+          updatedAt: now,
+          entries: [...manifest.entries, entry]
+        });
+        await commitProjectMarkdownUpdate(
+          await secureWritableProjectPath(projectDirectory, path),
+          remoteEntry.content,
+          undefined,
+          join(projectDirectory, MANIFEST_FILE),
+          next,
+          this.maxMarkdownBytes,
+          this.maxManifestBytes
+        );
+        await this.bumpRegistry(registry, now);
+        return CatalogInstallMarketplaceSkillContentResultSchema.parse({
+          source: sourceRef,
+          version: input.source.version,
+          title,
+          alreadyInstalled: false,
+          libraryIds: [targetLibrary.id]
+        });
+      }
+
+      const now = this.now();
+      const usedLibraryTitles = snapshot.skills.map(({ title }) => title);
+      const plans: DuplicateProjectWritePlan[] = [];
+      const members: SkillLibraryGroup["members"] = {};
+      const libraryIds: string[] = [];
+      const kindLabels: Record<MarketplaceInstallPackage["buckets"][number]["kind"], string> = {
+        general: "通用",
+        plot: "剧情",
+        style: "风格",
+        other: "其他"
+      };
+
+      for (const bucket of input.buckets) {
+        const baseTitle =
+          input.buckets.length === 1 && !input.createGroup
+            ? input.title
+            : `${input.title} · ${kindLabels[bucket.kind]}`;
+        const title = nextMarketplaceTitle(baseTitle, usedLibraryTitles);
+        usedLibraryTitles.push(title);
+        const usedEntryTitles: string[] = [];
+        const library = SkillLibrarySchema.parse({
+          id: createCatalogId("skill"),
+          title,
+          skillType: bucket.libraryType,
+          skillKind: bucket.kind,
+          overview: input.overview,
+          isBuiltin: false,
+          marketplaceSource: {
+            contentType: input.source.contentType,
+            contentId: input.source.contentId,
+            version: input.source.version,
+            installedAt: now,
+            ...(input.createGroup ? { bucketKind: bucket.kind } : {})
+          },
+          entries: bucket.entries.map((entry) => {
+            const entryTitle = nextMarketplaceTitle(entry.title, usedEntryTitles);
+            usedEntryTitles.push(entryTitle);
+            return {
+              id: createCatalogId("skill-entry"),
+              stageId: entry.stageId,
+              title: entryTitle,
+              body: entry.content,
+              sourceSkillId: entry.marketplaceSkillId,
+              createdAt: now,
+              updatedAt: now
+            };
+          }),
+          createdAt: now,
+          updatedAt: now
+        });
+        libraryIds.push(library.id);
+        members[bucket.kind] = library.id;
+        plans.push({
+          domain: "skill-library",
+          parentDirectory: this.defaultProjectParents["skill-library"],
+          resource: library
+        });
+      }
+
+      let group: SkillLibraryGroup | undefined;
+      if (input.createGroup) {
+        group = SkillLibraryGroupSchema.parse({
+          id: createCatalogId("skill-group"),
+          title: nextMarketplaceTitle(
+            input.title,
+            snapshot.skillGroups.map(({ title }) => title)
+          ),
+          members,
+          marketplaceSource: {
+            contentType: input.source.contentType,
+            contentId: input.source.contentId,
+            version: input.source.version,
+            installedAt: now
+          },
+          createdAt: now,
+          updatedAt: now
+        });
+        plans.push({
+          domain: "skill-group",
+          parentDirectory: this.defaultProjectParents["skill-group"],
+          resource: group
+        });
+      }
+
+      const createdProjectDirectories: string[] = [];
+      const registrations: RegistryProject[] = [];
+      try {
+        for (const plan of plans) {
+          const projectDirectory = await this.writeNewResourceProject(
+            plan.domain,
+            plan.parentDirectory,
+            plan.resource
+          );
+          createdProjectDirectories.push(projectDirectory);
+          registrations.push({
+            id: plan.resource.id,
+            domain: plan.domain,
+            projectDirectory,
+            registeredAt: now
+          });
+        }
+        await this.writeRegistry({
+          ...registry,
+          revision: registry.revision + 1,
+          updatedAt: now,
+          projects: [...registry.projects, ...registrations]
+        });
+      } catch (error: unknown) {
+        try {
+          await cleanupNewProjectDirectories(createdProjectDirectories);
+        } catch (cleanupError: unknown) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "技能广场安装失败，且无法完整清理未注册目录。"
+          );
+        }
+        throw error;
+      }
+
+      return CatalogInstallMarketplaceSkillContentResultSchema.parse({
+        source: sourceRef,
+        version: input.source.version,
+        title: group?.title ?? plans[0]!.resource.title,
+        alreadyInstalled: false,
+        libraryIds,
+        ...(group ? { groupId: group.id } : {})
+      });
     });
   }
 
@@ -3861,6 +4130,23 @@ function duplicateLibraryResource(
     createdAt: now,
     updatedAt: now
   });
+}
+
+function nextMarketplaceTitle(
+  baseTitle: string,
+  existingTitles: readonly string[]
+): string {
+  const normalized = new Set(
+    existingTitles.map((title) => title.trim().toLocaleLowerCase())
+  );
+  if (!normalized.has(baseTitle.trim().toLocaleLowerCase())) return baseTitle;
+  let suffix = 2;
+  while (
+    normalized.has(`${baseTitle} (${suffix})`.trim().toLocaleLowerCase())
+  ) {
+    suffix += 1;
+  }
+  return `${baseTitle} (${suffix})`;
 }
 
 const DEFAULT_SHORT_DOCUMENTS = [
@@ -5071,6 +5357,9 @@ async function writeResourceContents(
           path,
           createdAt: entry.createdAt,
           updatedAt: entry.updatedAt,
+          ...(entry.marketplaceSource
+            ? { marketplaceSource: entry.marketplaceSource }
+            : {}),
           ...(entry.sourceCommonSkillId === undefined
             ? {}
             : { sourceCommonSkillId: entry.sourceCommonSkillId }),
@@ -5089,6 +5378,9 @@ async function writeResourceContents(
         skillKind: skill.skillKind,
         overview: skill.overview,
         isBuiltin: skill.isBuiltin,
+        ...(skill.marketplaceSource
+          ? { marketplaceSource: skill.marketplaceSource }
+          : {}),
         entries
       });
     }
@@ -5105,7 +5397,10 @@ async function writeResourceContents(
       return FolderSkillGroupProjectManifestSchema.parse({
         ...common,
         kind: kindForDomain(domain),
-        members: group.members
+        members: group.members,
+        ...(group.marketplaceSource
+          ? { marketplaceSource: group.marketplaceSource }
+          : {})
       });
     }
   }
@@ -5224,6 +5519,9 @@ async function hydrateResource(
         skillKind: manifest.skillKind,
         overview: manifest.overview,
         isBuiltin: manifest.isBuiltin,
+        ...(manifest.marketplaceSource
+          ? { marketplaceSource: manifest.marketplaceSource }
+          : {}),
         projectRevision: manifest.revision,
         entries: manifest.entries.map((entry, index) => ({
             id: entry.id,
@@ -5232,6 +5530,9 @@ async function hydrateResource(
             body: contents[index]!,
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt,
+            ...(entry.marketplaceSource
+              ? { marketplaceSource: entry.marketplaceSource }
+              : {}),
             ...(entry.sourceCommonSkillId === undefined
               ? {}
               : { sourceCommonSkillId: entry.sourceCommonSkillId }),
@@ -5260,6 +5561,9 @@ async function hydrateResource(
         id: manifest.id,
         title: manifest.title,
         members: manifest.members,
+        ...(manifest.marketplaceSource
+          ? { marketplaceSource: manifest.marketplaceSource }
+          : {}),
         projectRevision: manifest.revision,
         createdAt: manifest.createdAt,
         updatedAt: manifest.updatedAt

@@ -30,9 +30,11 @@ function isValidWidth(value: unknown): value is number {
 }
 
 /**
- * A stage is shared by all books of the same writing type, but never between
- * short fiction, scripts, and long-form workspaces where similarly named stages
- * can have different layouts.
+ * Short fiction and scripts remember one width per major workspace area:
+ * character, plot, and draft. All configurable plot stages intentionally share
+ * the plot width. Long-form keeps its existing root-specific layout memory.
+ * Writing types remain isolated because similarly named areas can have
+ * different layouts.
  */
 export function rightPanePreferenceKey(
   document: RightPaneStageDocument
@@ -47,7 +49,17 @@ export function rightPanePreferenceKey(
   ) {
     return undefined;
   }
-  return `${document.workspaceType}:${document.stageId}`;
+  const stageId = document.stageId.trim();
+  if (document.workspaceType === "long") {
+    return `long:${stageId}`;
+  }
+  const area =
+    stageId === "character_design"
+      ? "character"
+      : stageId === "draft"
+        ? "draft"
+        : "plot";
+  return `${document.workspaceType}:${area}`;
 }
 
 export function parseRightPanePreferences(

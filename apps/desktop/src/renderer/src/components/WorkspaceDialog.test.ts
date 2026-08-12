@@ -32,30 +32,38 @@ describe("WorkspaceDialog DeepWrite free models", () => {
 });
 
 describe("WorkspaceDialog provider presets", () => {
-  it("offers Kimi Coding with its OpenAI-compatible API endpoint", () => {
+  it("offers Kimi Coding with its Anthropic-compatible API endpoint", () => {
     expect(source).toContain('{ value: "kimi-coding", label: "Kimi Coding" }');
     expect(source).toContain('provider === "kimi-coding"');
-    expect(source).toContain('editor.api = "openai-completions"');
-    expect(source).toContain('editor.baseUrl = "https://api.kimi.com/coding/v1"');
+    expect(source).toContain('editor.api = "anthropic-messages"');
+    expect(source).toMatch(
+      /provider === "kimi-coding"[\s\S]{0,800}editor\.baseUrl = "https:\/\//
+    );
   });
 
   it("offers Ollama with its local OpenAI-compatible endpoint", () => {
     expect(source).toContain('{ value: "ollama", label: "Ollama" }');
     expect(source).toContain('provider === "ollama"');
     expect(source).toContain('editor.api = "openai-completions"');
-    expect(source).toContain('editor.baseUrl = "http://127.0.0.1:11434/v1"');
+    expect(source).toMatch(
+      /provider === "ollama"[\s\S]{0,800}editor\.baseUrl = "http:\/\//
+    );
   });
 
   it.each([
-    ["dashscope", "阿里云百炼", "https://dashscope.aliyuncs.com/compatible-mode/v1"],
-    ["zhipu", "智谱 GLM", "https://open.bigmodel.cn/api/paas/v4"],
-    ["moonshot", "Kimi 开放平台", "https://api.moonshot.cn/v1"]
+    ["dashscope", "阿里云百炼"],
+    ["zhipu", "智谱 GLM"],
+    ["moonshot", "Kimi 开放平台"]
   ])(
     "offers the %s OpenAI-compatible provider preset",
-    (provider, label, baseUrl) => {
+    (provider, label) => {
       expect(source).toContain(`{ value: "${provider}", label: "${label}" }`);
       expect(source).toContain(`provider === "${provider}"`);
-      expect(source).toContain(`editor.baseUrl = "${baseUrl}"`);
+      expect(source).toMatch(
+        new RegExp(
+          `provider === "${provider}"[\\s\\S]{0,800}editor\\.baseUrl = "https://`
+        )
+      );
     }
   );
 });

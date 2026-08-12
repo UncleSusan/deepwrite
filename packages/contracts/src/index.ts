@@ -15,6 +15,7 @@ export * from "./long-workspace";
 export * from "./long-workspace-api";
 export * from "./long-worldbuilding-markdown";
 export * from "./long-workspace-operations";
+export * from "./marketplace";
 export * from "./models";
 export * from "./model-usage";
 export * from "./preload-api";

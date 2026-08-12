@@ -15,6 +15,7 @@ import {
   DeleteDraftSectionResultSchema,
   MoveDraftSectionResultSchema,
   DuplicateCatalogProjectResultSchema,
+  CatalogInstallMarketplaceSkillContentResultSchema,
   RemoveLibraryEntryResultSchema,
   MoveLibraryEntryResultSchema,
   ScriptBookSchema,
@@ -631,6 +632,15 @@ async function handleCatalogCommand(
         requestId: command.id,
         payload: DuplicateCatalogProjectResultSchema.parse(
           await catalogStore.duplicateProject(command.payload)
+        )
+      };
+    }
+    if (command.type === "catalog.installMarketplaceSkillContent") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: CatalogInstallMarketplaceSkillContentResultSchema.parse(
+          await catalogStore.installMarketplaceSkillContent(command.payload)
         )
       };
     }

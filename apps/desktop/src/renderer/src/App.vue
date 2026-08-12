@@ -57,6 +57,7 @@ import type {
   MaterialKind,
   MaterialLibraryKind,
   MaterialStageId,
+  MarketplaceSession,
   ModelConfigInput,
   ModelSettings,
   ModelSettingsInput,
@@ -143,6 +144,7 @@ import PlotStructureDialog, {
 import RightEditorPane from "./components/RightEditorPane.vue";
 import SaveConflictDialog from "./components/SaveConflictDialog.vue";
 import SettingsPage from "./components/SettingsPage.vue";
+import SkillMarketplacePage from "./components/SkillMarketplacePage.vue";
 import StartupAlertDialog from "./components/StartupAlertDialog.vue";
 import WorkspaceDialog from "./components/WorkspaceDialog.vue";
 import {
@@ -732,14 +734,22 @@ const saveConflict = ref<SaveConflictState | null>(null);
 const saveConflictSubmitting = ref(false);
 const currentView = ref<"workspace" | "settings">("workspace");
 const settingsInitialCategory = ref("general");
-type WorkspaceMainView = "conversation" | "directory" | "models" | "imitation" | "agent-team";
+type WorkspaceMainView =
+  | "conversation"
+  | "directory"
+  | "models"
+  | "imitation"
+  | "agent-team"
+  | "marketplace";
 const workspaceMainView = ref<WorkspaceMainView>("conversation");
+const marketplaceDisplayName = ref<string | undefined>(undefined);
 const activePrimaryFeature = computed<
   "directory" | "models" | "imitation" | "agent-teams" | undefined
 >(() =>
   workspaceMainView.value === "agent-team"
     ? "agent-teams"
-    : workspaceMainView.value === "conversation"
+    : workspaceMainView.value === "conversation" ||
+        workspaceMainView.value === "marketplace"
       ? undefined
       : workspaceMainView.value
 );
@@ -3668,9 +3678,8 @@ const activeRightPanePreferenceKey = computed(() => {
     });
   }
   // Pane layout follows the resource stage that is actually open in the
-  // editor. Do not derive this from the active agent: every creative plot
-  // stage uses the same plot agent, but stages such as plot_design and
-  // plot_refine need independent widths.
+  // editor. The preference helper groups short/script stages into character,
+  // plot, and draft areas, so all plot stages share one width.
   const document = activeDocument.value;
   const nodeStageId = resourceNode(selectedResourceId.value)?.stageCategoryId;
   const stageId = document.stageId ?? nodeStageId;
@@ -4035,6 +4044,22 @@ const shellStyle = computed(() => ({
   "--right-pane-width": `${rightPaneWidth.value}px`
 }));
 const hasDesktopRuntime = computed(() => Boolean(window.deepwrite));
+
+function applyMarketplaceSession(session: MarketplaceSession): void {
+  marketplaceDisplayName.value = session.authenticated
+    ? session.user?.displayName
+    : undefined;
+}
+
+async function loadMarketplaceSession(): Promise<void> {
+  if (!window.deepwrite?.marketplace) return;
+  try {
+    applyMarketplaceSession(await window.deepwrite.marketplace.session());
+  } catch {
+    // The marketplace may be temporarily unreachable during startup. Its page
+    // will surface the error if the user opens it.
+  }
+}
 
 watch(conversationError, (message) => {
   if (message) {
@@ -9645,6 +9670,16 @@ async function openAgentTeams(): Promise<void> {
   if (window.deepwrite && !modelSettings.value) {
     void loadModelSettings();
   }
+  if (window.deepwrite && !catalogSnapshot.value) {
+    void loadCatalogSnapshot();
+  }
+}
+
+async function openMarketplace(): Promise<void> {
+  if (!(await saveActiveLongEditorBeforeLeaving())) {
+    return;
+  }
+  workspaceMainView.value = "marketplace";
   if (window.deepwrite && !catalogSnapshot.value) {
     void loadCatalogSnapshot();
   }
@@ -15529,6 +15564,7 @@ onMounted(async () => {
   }
 
   void loadAppAlerts();
+  void loadMarketplaceSession();
   removeSystemListener = window.deepwrite.events.subscribe(handleSystemEvent);
   await Promise.all([
     loadCatalogSnapshot(),
@@ -15651,10 +15687,12 @@ onBeforeUnmount(() => {
         :imitation-running="learningImitationRunning"
         :library-entry-clipboard-domain="libraryEntryClipboardDomain"
         :active-primary-feature="activePrimaryFeature"
+        :marketplace-display-name="marketplaceDisplayName"
         @collapse="leftCollapsed = true"
         @new-conversation="newConversation"
         @open-dialog="openWorkspaceDialog"
         @open-agent-teams="openAgentTeams"
+        @open-marketplace="openMarketplace"
         @open-settings="openSettings"
         @select-resource="selectResource"
         @book-action="openBookDialog"
@@ -15748,7 +15786,7 @@ onBeforeUnmount(() => {
       <main
         v-show="workspaceMainView === 'imitation'"
         class="learning-imitation-main-view"
-        aria-label="学习仿写"
+        aria-label="短篇学习仿写"
       >
         <button
           v-if="leftCollapsed"
@@ -15766,6 +15804,28 @@ onBeforeUnmount(() => {
           :catalog-snapshot="catalogSnapshot"
           :approval-mode="generalSettings.permissionMode"
           @refresh-catalog="loadCatalogSnapshot"
+        />
+      </main>
+
+      <main
+        v-show="workspaceMainView === 'marketplace'"
+        class="marketplace-main-view"
+        aria-label="技能广场"
+      >
+        <button
+          v-if="leftCollapsed"
+          class="icon-button marketplace-expand-sidebar"
+          type="button"
+          aria-label="展开左侧栏"
+          @click="leftCollapsed = false"
+        >
+          <AppIcon name="panel-left" :size="18" />
+        </button>
+        <SkillMarketplacePage
+          :active="workspaceMainView === 'marketplace'"
+          :catalog-snapshot="catalogSnapshot"
+          @refresh-catalog="loadCatalogSnapshot"
+          @session-change="applyMarketplaceSession"
         />
       </main>
 

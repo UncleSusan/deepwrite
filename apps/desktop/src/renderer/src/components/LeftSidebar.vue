@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type {
   BookResourceDialogMode,
   CatalogResourceNodeActionPayload,
@@ -32,6 +32,7 @@ const props = defineProps<{
   imitationRunning?: boolean;
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
   activePrimaryFeature: PrimaryFeatureId | undefined;
+  marketplaceDisplayName?: string | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -39,6 +40,7 @@ const emit = defineEmits<{
   newConversation: [];
   openDialog: [mode: DialogMode];
   openAgentTeams: [];
+  openMarketplace: [];
   openSettings: [];
   selectResource: [node: ResourceTreeNode];
   bookAction: [mode: BookResourceDialogMode, node: ResourceTreeNode];
@@ -54,28 +56,17 @@ const emit = defineEmits<{
   characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
 }>();
 
-const USER_NAME_STORAGE_KEY = "deepwrite:user-name:v1";
 const DEFAULT_USER_NAME = "作者";
-const MAX_USER_NAME_LENGTH = 30;
-
-function loadUserName(): string {
-  try {
-    const storedName = localStorage.getItem(USER_NAME_STORAGE_KEY)?.trim();
-    return storedName
-      ? Array.from(storedName).slice(0, MAX_USER_NAME_LENGTH).join("")
-      : DEFAULT_USER_NAME;
-  } catch {
-    return DEFAULT_USER_NAME;
-  }
-}
 
 const accountMenuRoot = ref<HTMLElement | null>(null);
-const nameInput = ref<HTMLInputElement | null>(null);
 const accountMenuOpen = ref(false);
-const profileDialog = ref<"name" | "contact" | "update" | null>(null);
-const userName = ref(loadUserName());
-const userNameDraft = ref(userName.value);
-const avatarInitial = computed(() => Array.from(userName.value.trim())[0] ?? "作");
+const profileDialog = ref<"contact" | "update" | null>(null);
+const displayedUserName = computed(
+  () => props.marketplaceDisplayName?.trim() || DEFAULT_USER_NAME
+);
+const avatarInitial = computed(
+  () => Array.from(displayedUserName.value.trim())[0] ?? "作"
+);
 const updateState = ref<UpdateState>({
   status: "idle",
   currentVersion: "—",
@@ -109,13 +100,6 @@ function showUpdateError(state: UpdateState): void {
 
 function toggleAccountMenu(): void {
   accountMenuOpen.value = !accountMenuOpen.value;
-}
-
-function openNameDialog(): void {
-  accountMenuOpen.value = false;
-  userNameDraft.value = userName.value;
-  profileDialog.value = "name";
-  void nextTick(() => nameInput.value?.select());
 }
 
 function openContactDialog(): void {
@@ -175,29 +159,6 @@ function closeProfileDialog(): void {
   profileDialog.value = null;
 }
 
-function saveUserName(): void {
-  const nextName = userNameDraft.value.trim();
-  if (!nextName) {
-    uiMessage.warning("请输入用户姓名");
-    nameInput.value?.focus();
-    return;
-  }
-  if (Array.from(nextName).length > MAX_USER_NAME_LENGTH) {
-    uiMessage.warning(`用户姓名不能超过 ${MAX_USER_NAME_LENGTH} 个字符`);
-    nameInput.value?.focus();
-    return;
-  }
-
-  userName.value = nextName;
-  profileDialog.value = null;
-  try {
-    localStorage.setItem(USER_NAME_STORAGE_KEY, nextName);
-    uiMessage.success("用户姓名已更新");
-  } catch {
-    uiMessage.warning("姓名暂时无法保存到本机，但本次运行中仍会显示新姓名");
-  }
-}
-
 function openSettings(): void {
   accountMenuOpen.value = false;
   emit("openSettings");
@@ -253,7 +214,6 @@ const navItems: Array<{
 }> = [
   { id: "directory", label: "工作目录", icon: "directory" },
   { id: "models", label: "模型配置", icon: "model" },
-  { id: "imitation", label: "学习仿写", icon: "wand" },
   { id: "agent-teams", label: "智能体团队", icon: "brain" }
 ];
 
@@ -295,13 +255,27 @@ const resourceDomainsByNodeId = computed(
     )
 );
 const moreFeatures: Array<{
-  id: string;
+  id: "imitation" | "skill-marketplace" | "runtime";
   label: string;
   description: string;
   icon: IconName;
 }> = [
+  { id: "imitation", label: "短篇学习仿写", description: "学习范文并生成同类短篇", icon: "wand" },
+  { id: "skill-marketplace", label: "技能广场", description: "发现、安装与发布写作技能", icon: "globe" },
   { id: "runtime", label: "运行设置", description: "智能体与工具边界", icon: "model" }
 ];
+
+function activateMoreFeature(id: "imitation" | "skill-marketplace" | "runtime"): void {
+  if (id === "imitation") {
+    emit("openDialog", "imitation");
+    return;
+  }
+  if (id === "skill-marketplace") {
+    emit("openMarketplace");
+    return;
+  }
+  openSettings();
+}
 
 function activateNav(id: "new" | PrimaryFeatureId): void {
   if (id === "new") {
@@ -395,13 +369,6 @@ watch(
         >
           <AppIcon :name="item.icon" :size="17" />
           <span>{{ item.label }}</span>
-          <span
-            v-if="item.id === 'imitation' && props.imitationRunning"
-            class="nav-background-status"
-            title="学习仿写正在后台运行"
-          >
-            <i aria-hidden="true" />后台中
-          </span>
         </button>
 
         <button
@@ -423,15 +390,24 @@ watch(
             v-for="feature in moreFeatures"
             :key="feature.id"
             class="more-feature-row"
+            :class="{ 'is-active': feature.id === props.activePrimaryFeature }"
             type="button"
             :data-feature-id="feature.id"
             :title="feature.description"
-            @click="openSettings"
+            :aria-current="feature.id === props.activePrimaryFeature ? 'page' : undefined"
+            @click="activateMoreFeature(feature.id)"
           >
             <span class="more-feature-icon"><AppIcon :name="feature.icon" :size="15" /></span>
             <span class="more-feature-copy">
               <strong>{{ feature.label }}</strong>
               <small>{{ feature.description }}</small>
+            </span>
+            <span
+              v-if="feature.id === 'imitation' && props.imitationRunning"
+              class="nav-background-status"
+              title="学习仿写正在后台运行"
+            >
+              <i aria-hidden="true" />后台中
             </span>
           </button>
         </div>
@@ -508,7 +484,7 @@ watch(
           >
             <span class="avatar">{{ avatarInitial }}</span>
             <span class="account-copy">
-              <strong :title="userName">{{ userName }}</strong>
+              <strong :title="displayedUserName">{{ displayedUserName }}</strong>
             </span>
           </button>
 
@@ -516,10 +492,6 @@ watch(
             <button type="button" role="menuitem" @click="openSettings">
               <AppIcon name="settings" :size="16" />
               <span>设置</span>
-            </button>
-            <button type="button" role="menuitem" @click="openNameDialog">
-              <AppIcon name="user" :size="16" />
-              <span>姓名</span>
             </button>
             <button type="button" role="menuitem" @click="openUpdateDialog">
               <AppIcon name="download" :size="16" />
@@ -547,56 +519,7 @@ watch(
 
   <Teleport to="body">
     <div
-      v-if="profileDialog === 'name'"
-      class="dialog-backdrop"
-      @mousedown.self="closeProfileDialog"
-    >
-      <section
-        class="workspace-dialog profile-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-name-dialog-title"
-      >
-        <header>
-          <div>
-            <span class="dialog-eyebrow">个人信息</span>
-            <h2 id="profile-name-dialog-title">设置姓名</h2>
-          </div>
-          <button
-            class="dialog-close"
-            type="button"
-            aria-label="关闭"
-            @click="closeProfileDialog"
-          >
-            ×
-          </button>
-        </header>
-
-        <form class="dialog-content" @submit.prevent="saveUserName">
-          <label class="profile-name-field">
-            <span>用户姓名</span>
-            <input
-              ref="nameInput"
-              v-model="userNameDraft"
-              type="text"
-              :maxlength="MAX_USER_NAME_LENGTH"
-              autocomplete="off"
-              placeholder="请输入用户姓名"
-            />
-          </label>
-          <p class="profile-field-help">姓名会显示在左侧栏的头像旁边。</p>
-          <div class="dialog-actions">
-            <button class="dialog-secondary-button" type="button" @click="closeProfileDialog">
-              取消
-            </button>
-            <button class="dialog-primary-button" type="submit">保存</button>
-          </div>
-        </form>
-      </section>
-    </div>
-
-    <div
-      v-else-if="profileDialog === 'contact'"
+      v-if="profileDialog === 'contact'"
       class="dialog-backdrop"
       @mousedown.self="closeProfileDialog"
     >

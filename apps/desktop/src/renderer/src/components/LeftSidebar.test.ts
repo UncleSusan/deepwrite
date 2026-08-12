@@ -9,20 +9,31 @@ describe("LeftSidebar account controls", () => {
     expect(source).not.toContain('@click="emit(\'openSettings\')"');
   });
 
-  it("offers settings, name and author-contact actions from the account menu", () => {
+  it("offers settings, updates and author contact without local name editing", () => {
     expect(source).toContain("<span>设置</span>");
     expect(source).toContain('@click="openSettings"');
-    expect(source).toContain("<span>姓名</span>");
+    expect(source).toContain("<span>版本更新</span>");
     expect(source).toContain("联系作者");
-    expect(source).toContain('profileDialog.value = "name"');
     expect(source).toContain('profileDialog.value = "contact"');
+    expect(source).not.toContain("<span>姓名</span>");
+    expect(source).not.toContain("openNameDialog");
+    expect(source).not.toContain("设置姓名");
   });
 
-  it("persists the user name and shows the requested author contact", () => {
-    expect(source).toContain('const USER_NAME_STORAGE_KEY = "deepwrite:user-name:v1"');
-    expect(source).toContain("localStorage.setItem(USER_NAME_STORAGE_KEY, nextName)");
+  it("shows the requested author contact without local name persistence", () => {
+    expect(source).not.toContain("USER_NAME_STORAGE_KEY");
+    expect(source).not.toContain("saveUserName");
+    expect(source).not.toContain("userNameDraft");
     expect(source).toContain("如果你有任何反馈，或者想体验最新版本，请添加作者微信并加入交流群。");
     expect(source).toContain("deepseekwrite");
+  });
+
+  it("prefers the signed-in marketplace display name", () => {
+    expect(source).toContain("marketplaceDisplayName?: string | undefined");
+    expect(source).toContain(
+      "props.marketplaceDisplayName?.trim() || DEFAULT_USER_NAME"
+    );
+    expect(source).toContain("{{ displayedUserName }}");
   });
 
   it("shows a background-running marker for learning imitation", () => {
@@ -31,10 +42,7 @@ describe("LeftSidebar account controls", () => {
     expect(source).toContain("后台中");
   });
 
-  it("places agent-team management directly below learning imitation", () => {
-    expect(source.indexOf('label: "学习仿写"')).toBeLessThan(
-      source.indexOf('label: "智能体团队"')
-    );
+  it("keeps agent-team management in the primary navigation", () => {
     expect(source).toContain('id: "agent-teams"');
     expect(source).toContain('emit("openAgentTeams")');
     expect(source).toContain("props.activePrimaryFeature");
@@ -42,12 +50,31 @@ describe("LeftSidebar account controls", () => {
     expect(source).toContain("'page'");
   });
 
-  it("only keeps runtime settings in more features and opens the settings page", () => {
+  it("moves learning imitation into more features and keeps its state feedback", () => {
+    const primaryFeatures = source.slice(
+      source.indexOf("const navItems"),
+      source.indexOf("function loadPinnedResourceIds")
+    );
+    const moreFeatures = source.slice(
+      source.indexOf("const moreFeatures"),
+      source.indexOf("function activateMoreFeature")
+    );
+
+    expect(primaryFeatures).not.toContain('label: "短篇学习仿写"');
+    expect(moreFeatures).toContain('{ id: "imitation", label: "短篇学习仿写"');
+    expect(source).toContain('emit("openDialog", "imitation")');
+    expect(source).toContain("feature.id === props.activePrimaryFeature");
+    expect(source).toContain("feature.id === 'imitation' && props.imitationRunning");
+  });
+
+  it("adds the skill marketplace to more features while keeping runtime settings", () => {
+    expect(source).toContain('{ id: "skill-marketplace", label: "技能广场"');
+    expect(source).toContain('emit("openMarketplace")');
     expect(source).toContain('{ id: "runtime", label: "运行设置"');
     expect(source).not.toContain('{ id: "history", label: "版本历史"');
     expect(source).not.toContain('{ id: "search", label: "全局检索"');
     expect(source).not.toContain('{ id: "transfer", label: "导入与导出"');
-    expect(source).toContain('@click="openSettings"');
+    expect(source).toContain('@click="activateMoreFeature(feature.id)"');
   });
 
   it("shows and locks the update dialog while macOS hands off to the installer", () => {

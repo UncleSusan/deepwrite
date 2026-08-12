@@ -368,8 +368,8 @@ function applyProviderPreset(provider: string): void {
     editor.api = "openai-completions";
     editor.baseUrl = "https://api.deepseek.com/v1";
   } else if (provider === "kimi-coding") {
-    editor.api = "openai-completions";
-    editor.baseUrl = "https://api.kimi.com/coding/v1";
+    editor.api = "anthropic-messages";
+    editor.baseUrl = "https://api.kimi.com/coding";
   } else if (provider === "dashscope") {
     editor.api = "openai-completions";
     editor.baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";

@@ -147,6 +147,7 @@ import {
 } from "./general-settings";
 import { ExportShortManuscriptCommandEnvelopeSchema } from "./short-manuscript-export";
 import { ExportLongManuscriptCommandEnvelopeSchema } from "./long-manuscript-export";
+import { CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema } from "./marketplace";
 import {
   LongApplyOperationsCommandEnvelopeSchema,
   LongCreateBookAtPathCommandEnvelopeSchema,
@@ -244,6 +245,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogUnregisterProjectCommandEnvelopeSchema,
   CatalogDeleteProjectCommandEnvelopeSchema,
   CatalogDuplicateProjectCommandEnvelopeSchema,
+  CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema,
   LongCreateBookCommandEnvelopeSchema,
   LongCreateBookAtPathCommandEnvelopeSchema,
   LongDuplicateBookCommandEnvelopeSchema,

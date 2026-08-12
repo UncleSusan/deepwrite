@@ -159,14 +159,23 @@ async function recoverProjectTransactionLocked(
 
   if (journal.phase === "prepared") {
     try {
+      // A project directory can be moved or copied while the source is
+      // finishing a commit. The destination may then contain the durable
+      // prepared journal together with one or more files that already match
+      // their staged contents. Hash equality makes those replacements
+      // idempotent, so recover them just like a journal already marked as
+      // committing instead of rejecting a valid migrated project as stale.
       await assertJournalPreconditions(
         projectRoot,
         journal,
         maxFileBytes,
-        false
+        true
       );
     } catch (error: unknown) {
-      if (abortPreparedConflict && error instanceof ProjectTransactionConflictError) {
+      if (
+        abortPreparedConflict &&
+        error instanceof ProjectTransactionConflictError
+      ) {
         await cleanupTransaction(projectRoot, journal);
       }
       throw error;

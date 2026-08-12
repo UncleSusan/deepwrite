@@ -9,13 +9,13 @@ import {
 } from "./rightPanePreferences";
 
 describe("right pane preferences", () => {
-  it("uses independent stage keys while sharing a stage across books", () => {
+  it("shares character, plot, and draft area widths across short books", () => {
     const worldbuilding = rightPanePreferenceKey({
       domain: "creation",
       workspaceType: "short",
       stageId: "worldbuilding"
     });
-    expect(worldbuilding).toBe("short:worldbuilding");
+    expect(worldbuilding).toBe("short:plot");
     expect(
       rightPanePreferenceKey({
         domain: "creation",
@@ -29,21 +29,35 @@ describe("right pane preferences", () => {
         workspaceType: "short",
         stageId: "plot_design"
       })
-    ).toBe("short:plot_design");
+    ).toBe("short:plot");
     expect(
       rightPanePreferenceKey({
         domain: "creation",
         workspaceType: "short",
         stageId: "plot_refine"
       })
-    ).toBe("short:plot_refine");
+    ).toBe("short:plot");
+    expect(
+      rightPanePreferenceKey({
+        domain: "creation",
+        workspaceType: "short",
+        stageId: "character_design"
+      })
+    ).toBe("short:character");
+    expect(
+      rightPanePreferenceKey({
+        domain: "creation",
+        workspaceType: "short",
+        stageId: "draft"
+      })
+    ).toBe("short:draft");
     expect(
       rightPanePreferenceKey({
         domain: "creation",
         workspaceType: "script",
         stageId: "plot_design"
       })
-    ).toBe("script:plot_design");
+    ).toBe("script:plot");
     expect(
       rightPanePreferenceKey({
         domain: "creation",
@@ -99,7 +113,7 @@ describe("right pane preferences", () => {
     ).toBeUndefined();
   });
 
-  it("persists and restores each stage width", () => {
+  it("persists and restores each workspace area width", () => {
     const values = new Map<string, string>();
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
@@ -107,10 +121,10 @@ describe("right pane preferences", () => {
     };
     const preferences = {
       widths: {
-        "short:character_design": 430,
-        "short:plot_design": 520,
-        "short:plot_refine": 610,
-        "script:plot_design": 470
+        "short:character": 430,
+        "short:plot": 520,
+        "short:draft": 610,
+        "script:plot": 470
       }
     };
 

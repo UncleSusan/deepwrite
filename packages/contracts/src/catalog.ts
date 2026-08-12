@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { EnvelopeBaseSchema } from "./envelope";
 import {
+  CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema,
+  MarketplaceSourceSchema
+} from "./marketplace";
+import {
   DraftSectionIdSchema,
   DraftSectionTitleSchema,
   createDefaultExpertDraft,
@@ -1015,6 +1019,7 @@ export const SkillEntrySchema = z.object({
   body: z.string(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
+  marketplaceSource: MarketplaceSourceSchema.optional(),
   sourceCommonSkillId: CatalogIdSchema.optional(),
   sourceSkillId: CatalogIdSchema.optional(),
   sourceSkillEntryId: CatalogIdSchema.optional()
@@ -1028,6 +1033,7 @@ export const SkillLibrarySchema = z.object({
   skillKind: SkillKindSchema,
   overview: z.string(),
   isBuiltin: z.boolean(),
+  marketplaceSource: MarketplaceSourceSchema.optional(),
   entries: z.array(SkillEntrySchema),
   projectRevision: z.number().int().nonnegative().optional(),
   createdAt: TimestampSchema,
@@ -1044,6 +1050,7 @@ export const SkillLibraryGroupSchema = z.object({
     style: CatalogIdSchema.optional(),
     other: CatalogIdSchema.optional()
   }),
+  marketplaceSource: MarketplaceSourceSchema.optional(),
   projectRevision: z.number().int().nonnegative().optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema
@@ -1085,6 +1092,7 @@ export const SkillProjectEntryManifestSchema = z
     path: CatalogProjectContentPathSchema,
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,
+    marketplaceSource: MarketplaceSourceSchema.optional(),
     sourceCommonSkillId: CatalogIdSchema.optional(),
     sourceSkillId: CatalogIdSchema.optional(),
     sourceSkillEntryId: CatalogIdSchema.optional()
@@ -1463,6 +1471,7 @@ export const SkillLibraryProjectManifestSchema =
     skillKind: SkillKindSchema,
     overview: z.string(),
     isBuiltin: z.boolean(),
+    marketplaceSource: MarketplaceSourceSchema.optional(),
     entries: z.array(SkillProjectEntryManifestSchema).max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
   });
 export type SkillLibraryProjectManifest = z.infer<
@@ -1492,7 +1501,8 @@ export const SkillGroupProjectManifestSchema =
       plot: CatalogIdSchema.optional(),
       style: CatalogIdSchema.optional(),
       other: CatalogIdSchema.optional()
-    })
+    }),
+    marketplaceSource: MarketplaceSourceSchema.optional()
   });
 export type SkillGroupProjectManifest = z.infer<
   typeof SkillGroupProjectManifestSchema
@@ -2584,6 +2594,7 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogUnregisterProjectCommandEnvelopeSchema,
   CatalogDeleteProjectCommandEnvelopeSchema,
   CatalogDuplicateProjectCommandEnvelopeSchema,
+  CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema,
   CatalogChooseExternalSkillsCommandEnvelopeSchema
 ]);
 export type CatalogCommandEnvelope = z.infer<typeof CatalogCommandEnvelopeSchema>;

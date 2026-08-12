@@ -48,6 +48,9 @@ import {
   UPDATE_INSTALL_CHANNEL,
   UPDATE_STATE_EVENT_CHANNEL,
   LearningImitationSettingsSchema,
+  MARKETPLACE_IPC_CHANNEL,
+  MarketplaceIpcRequestSchema,
+  CatalogInstallMarketplaceSkillContentResultSchema,
   LibraryAgentSettingsSchema,
   LongApplyOperationsResultSchema,
   LongApplyLegacySyncResultSchema,
@@ -139,6 +142,7 @@ import { WorkspaceAgentConfigStore } from "./workspace-agent-config-store";
 import { WorkspaceDirectoryStore } from "./workspace-directory-store";
 import { UpdateService } from "./update-service";
 import { AppAlertStore } from "./app-alert-store";
+import { MarketplaceClient } from "./marketplace-client";
 import { ContinuationImportPreviewRegistry } from "./continuation-import-preview-registry";
 import { LegacySyncPreviewRegistry } from "./legacy-sync-preview-registry";
 import { readExternalSkills } from "./external-skill-import";
@@ -179,6 +183,7 @@ let shutdownComplete = false;
 let menuBarTray: Tray | undefined;
 let updateService: UpdateService | undefined;
 let appAlertStore: AppAlertStore | undefined;
+let marketplaceClient: MarketplaceClient | undefined;
 let installUpdateAfterShutdown = false;
 const RENDERER_DRAFT_FLUSH_GRACE_MS = 500;
 const continuationImportPreviews = new ContinuationImportPreviewRegistry();
@@ -933,6 +938,55 @@ function registerIpc(): void {
   );
 
   ipcMain.handle(
+    MARKETPLACE_IPC_CHANNEL,
+    async (event, rawRequest: unknown): Promise<unknown> => {
+      if (
+        !mainWindow ||
+        mainWindow.isDestroyed() ||
+        event.sender !== mainWindow.webContents
+      ) {
+        throw new Error("技能广场 IPC 请求来源无效。");
+      }
+      if (!marketplaceClient) {
+        throw new Error("技能广场服务尚未初始化。");
+      }
+      const request = MarketplaceIpcRequestSchema.parse(rawRequest);
+      switch (request.operation) {
+        case "session":
+          return marketplaceClient.session();
+        case "register":
+          return marketplaceClient.register(request.input);
+        case "login":
+          return marketplaceClient.login(request.input);
+        case "logout":
+          return marketplaceClient.logout();
+        case "list":
+          return marketplaceClient.list(request.filter);
+        case "detail":
+          return marketplaceClient.detail(request.ref);
+        case "listMine":
+          return marketplaceClient.listMine(request.filter);
+        case "myDetail":
+          return marketplaceClient.myDetail(request.ref);
+        case "publish":
+          return marketplaceClient.publish(request.input);
+        case "update":
+          return marketplaceClient.update(request.input);
+        case "setEnabled":
+          return marketplaceClient.setEnabled(request.input);
+        case "delete":
+          return marketplaceClient.delete(request.ref);
+        case "like":
+          return marketplaceClient.like(request.input);
+        case "previewInstall":
+          return marketplaceClient.previewInstall(request.ref);
+        case "install":
+          return marketplaceClient.install(request.input);
+      }
+    }
+  );
+
+  ipcMain.handle(
     IPC_COMMAND_CHANNEL,
     async (event, rawCommand: unknown): Promise<CommandResult> => {
       const requestId = extractCommandRequestId(rawCommand);
@@ -993,6 +1047,7 @@ function registerIpc(): void {
         command.type === "catalog.createLibraryGroupAtPath" ||
         command.type === "catalog.openProjectAtPath" ||
         command.type === "catalog.importLegacyLibraryAtPath"
+        || command.type === "catalog.installMarketplaceSkillContent"
       ) {
         return {
           status: "rejected",
@@ -3036,6 +3091,35 @@ if (!hasSingleInstanceLock) {
       beginGracefulShutdown({ installUpdate: true });
     });
     appAlertStore = new AppAlertStore(userDataPath);
+    marketplaceClient = new MarketplaceClient(userDataPath, {
+      loadCatalogSnapshot: async () => {
+        const id = createId("cmd_marketplace_snapshot");
+        const command = CommandEnvelopeSchema.parse(
+          createEnvelope("catalog.snapshot", {}, { id, correlationId: id })
+        );
+        const result = await supervisor.requestCommand("core", command, 0);
+        if (result.status === "rejected") {
+          throw new Error(result.error.message);
+        }
+        return CatalogSnapshotSchema.parse(result.payload);
+      },
+      installPackage: async (input) => {
+        const id = createId("cmd_marketplace_install");
+        const command = CommandEnvelopeSchema.parse(
+          createEnvelope("catalog.installMarketplaceSkillContent", input, {
+            id,
+            correlationId: id
+          })
+        );
+        const result = await supervisor.requestCommand("core", command, 0);
+        if (result.status === "rejected") {
+          throw new Error(result.error.message);
+        }
+        return CatalogInstallMarketplaceSkillContentResultSchema.parse(
+          result.payload
+        );
+      }
+    });
     updateService.subscribe((state) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(UPDATE_STATE_EVENT_CHANNEL, state);

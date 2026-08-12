@@ -41,7 +41,7 @@ describe("SettingsPage", () => {
   });
 
   it("provides a dedicated learning-imitation prompt category", () => {
-    expect(source).toContain('label: "学习仿写设置"');
+    expect(source).toContain('label: "短篇学习仿写设置"');
     expect(source).toContain("<LearningImitationSettingsPanel");
     expect(source).toContain("emit('saveLearningImitation', $event)");
   });

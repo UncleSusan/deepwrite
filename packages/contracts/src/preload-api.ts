@@ -144,6 +144,24 @@ import type {
 import type { LongAgentId } from "./long-workspace";
 import type { UpdateState } from "./update";
 import type { AppAlertSnapshot } from "./app-alert";
+import type {
+  MarketplaceContentDetail,
+  MarketplaceContentPage,
+  MarketplaceContentRef,
+  MarketplaceContentSummary,
+  MarketplaceInstallInput,
+  MarketplaceInstallPreview,
+  MarketplaceInstallResult,
+  MarketplaceLikeInput,
+  MarketplaceLikeResult,
+  MarketplaceListFilter,
+  MarketplaceLoginInput,
+  MarketplacePublishInput,
+  MarketplaceRegisterInput,
+  MarketplaceSetEnabledInput,
+  MarketplaceSession,
+  MarketplaceUpdateInput
+} from "./marketplace";
 
 export interface DeepWriteApi {
   system: {
@@ -159,6 +177,23 @@ export interface DeepWriteApi {
   appAlerts: {
     get(): Promise<AppAlertSnapshot>;
     acknowledgeDesktop(revision: string): Promise<void>;
+  };
+  marketplace: {
+    session(): Promise<MarketplaceSession>;
+    register(input: MarketplaceRegisterInput): Promise<MarketplaceSession>;
+    login(input: MarketplaceLoginInput): Promise<MarketplaceSession>;
+    logout(): Promise<MarketplaceSession>;
+    list(filter?: MarketplaceListFilter): Promise<MarketplaceContentPage>;
+    detail(ref: MarketplaceContentRef): Promise<MarketplaceContentDetail>;
+    listMine(filter?: MarketplaceListFilter): Promise<MarketplaceContentPage>;
+    myDetail(ref: MarketplaceContentRef): Promise<MarketplaceContentDetail>;
+    publish(input: MarketplacePublishInput): Promise<MarketplaceContentDetail>;
+    update(input: MarketplaceUpdateInput): Promise<MarketplaceContentDetail>;
+    setEnabled(input: MarketplaceSetEnabledInput): Promise<MarketplaceContentSummary>;
+    delete(ref: MarketplaceContentRef): Promise<void>;
+    like(input: MarketplaceLikeInput): Promise<MarketplaceLikeResult>;
+    previewInstall(ref: MarketplaceContentRef): Promise<MarketplaceInstallPreview>;
+    install(input: MarketplaceInstallInput): Promise<MarketplaceInstallResult>;
   };
   catalog: {
     snapshot(): Promise<CatalogSnapshot>;

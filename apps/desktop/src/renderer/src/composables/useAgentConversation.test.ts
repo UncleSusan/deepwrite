@@ -255,6 +255,53 @@ function createDeferredApi(): {
       },
       async acknowledgeDesktop() {}
     },
+    marketplace: {
+      async session() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async register() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async login() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async logout() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async list() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async detail() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async listMine() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async myDetail() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async publish() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async update() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async setEnabled() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async delete() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async like() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async previewInstall() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      },
+      async install() {
+        throw new Error("Marketplace is not used by conversation tests.");
+      }
+    },
     catalog: {
       loadDraftRecovery: vi.fn(async () => ({})),
       saveDraftRecovery: vi.fn(async () => undefined),

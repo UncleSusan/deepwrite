@@ -3057,6 +3057,139 @@ describe("LongProjectStore", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("opens a migrated copy whose prepared transaction already applied the manifest", async () => {
+    const { projectStore, created } = await createFixture(
+      "migrated-prepared-recovery"
+    );
+    const manifestPath = join(created.projectDirectory, "deepwrite.json");
+    const indexPath = join(
+      created.projectDirectory,
+      LONG_WORKSPACE_INDEX_PATH
+    );
+    const previousManifestContent = await readFile(manifestPath, "utf8");
+    const previousIndexContent = await readFile(indexPath, "utf8");
+    const previousManifest = JSON.parse(previousManifestContent) as {
+      revision: number;
+      workspaceIndexFile: {
+        revision: string;
+        updatedAt: string;
+      };
+      updatedAt: string;
+    };
+    const previousIndex = JSON.parse(previousIndexContent) as {
+      revision: number;
+      updatedAt: string;
+      [key: string]: unknown;
+    };
+    const migratedAt = "2026-07-26T12:01:00.000Z";
+    const nextIndexContent = `${JSON.stringify(
+      {
+        ...previousIndex,
+        revision: previousIndex.revision + 1,
+        updatedAt: migratedAt
+      },
+      null,
+      2
+    )}\n`;
+    const nextManifestContent = `${JSON.stringify(
+      {
+        ...previousManifest,
+        revision: previousManifest.revision + 1,
+        updatedAt: migratedAt,
+        workspaceIndexFile: {
+          ...previousManifest.workspaceIndexFile,
+          revision: createLongFileRevision(nextIndexContent),
+          updatedAt: migratedAt
+        }
+      },
+      null,
+      2
+    )}\n`;
+    const transactionId = "txn-2001-b2c3d4e5";
+    const transactionRoot = join(
+      created.projectDirectory,
+      ".deepwrite",
+      "transactions",
+      transactionId
+    );
+    await mkdir(join(transactionRoot, "stage"), { recursive: true });
+    await mkdir(join(transactionRoot, "backup"), { recursive: true });
+    await writeFile(
+      join(transactionRoot, "stage", "0.next"),
+      nextIndexContent,
+      "utf8"
+    );
+    await writeFile(
+      join(transactionRoot, "stage", "1.next"),
+      nextManifestContent,
+      "utf8"
+    );
+    await writeFile(
+      join(transactionRoot, "backup", "0.previous"),
+      previousIndexContent,
+      "utf8"
+    );
+    await writeFile(
+      join(transactionRoot, "backup", "1.previous"),
+      previousManifestContent,
+      "utf8"
+    );
+
+    // A directory migration can observe the manifest replacement before it
+    // observes the journal phase update or the index replacement.
+    await writeFile(manifestPath, nextManifestContent, "utf8");
+    await writeFile(
+      join(created.projectDirectory, ".deepwrite", "transaction.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          transactionId,
+          phase: "prepared",
+          appliedCount: 0,
+          operations: [
+            {
+              action: "write",
+              path: LONG_WORKSPACE_INDEX_PATH,
+              stagePath: `.deepwrite/transactions/${transactionId}/stage/0.next`,
+              backupPath: `.deepwrite/transactions/${transactionId}/backup/0.previous`,
+              beforeSha256: projectTransactionContentSha256(
+                previousIndexContent
+              ),
+              afterSha256: projectTransactionContentSha256(nextIndexContent)
+            },
+            {
+              action: "write",
+              path: "deepwrite.json",
+              stagePath: `.deepwrite/transactions/${transactionId}/stage/1.next`,
+              backupPath: `.deepwrite/transactions/${transactionId}/backup/1.previous`,
+              beforeSha256: projectTransactionContentSha256(
+                previousManifestContent
+              ),
+              afterSha256:
+                projectTransactionContentSha256(nextManifestContent)
+            }
+          ]
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const opened = await projectStore.openBook(created.projectDirectory);
+    expect(opened.book.projectRevision).toBe(previousManifest.revision + 1);
+    expect(opened.book.workspaceIndex.revision).toBe(
+      previousIndex.revision + 1
+    );
+    await expect(readFile(indexPath, "utf8")).resolves.toBe(nextIndexContent);
+    await expect(readFile(manifestPath, "utf8")).resolves.toBe(
+      nextManifestContent
+    );
+    await expect(
+      lstat(join(created.projectDirectory, ".deepwrite", "transaction.json"))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("rejects unsafe indexed paths eagerly and validates document bytes lazily", async () => {
     const unsafe = await createFixture("unsafe-path");
     const unsafeIndexPath = join(

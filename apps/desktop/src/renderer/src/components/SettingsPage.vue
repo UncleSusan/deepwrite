@@ -141,7 +141,7 @@ const sections: SettingsSection[] = [
       { id: "short-agents", label: "创作空间配置", icon: "brain" },
       { id: "skill-library-agent", label: "技能库配置", icon: "wand" },
       { id: "material-library-agent", label: "素材库配置", icon: "archive" },
-      { id: "learning-imitation", label: "学习仿写设置", icon: "sparkles" }
+      { id: "learning-imitation", label: "短篇学习仿写设置", icon: "sparkles" }
     ]
   },
   {

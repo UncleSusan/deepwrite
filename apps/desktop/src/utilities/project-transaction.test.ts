@@ -550,6 +550,91 @@ describe("project transaction", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("recovers a copied prepared transaction when some files already contain the staged contents", async () => {
+    const root = await temporaryProject();
+    const transactionId = "txn-1004-e1f2a3b4";
+    const transactionRoot = join(
+      root,
+      ".deepwrite",
+      "transactions",
+      transactionId
+    );
+    await mkdir(join(transactionRoot, "stage"), { recursive: true });
+    await mkdir(join(transactionRoot, "backup"), { recursive: true });
+    await writeFile(join(root, "deepwrite.json"), "new manifest", "utf8");
+    await writeFile(join(root, "index.json"), "old index", "utf8");
+    await writeFile(
+      join(transactionRoot, "stage", "1.next"),
+      "new index",
+      "utf8"
+    );
+    await writeFile(
+      join(transactionRoot, "backup", "0.previous"),
+      "old manifest",
+      "utf8"
+    );
+    await writeFile(
+      join(transactionRoot, "backup", "1.previous"),
+      "old index",
+      "utf8"
+    );
+    await writeFile(
+      join(root, ".deepwrite", "transaction.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          transactionId,
+          phase: "prepared",
+          appliedCount: 0,
+          operations: [
+            {
+              action: "write",
+              path: "deepwrite.json",
+              stagePath: `.deepwrite/transactions/${transactionId}/stage/0.next`,
+              backupPath: `.deepwrite/transactions/${transactionId}/backup/0.previous`,
+              beforeSha256: projectTransactionContentSha256("old manifest"),
+              afterSha256: projectTransactionContentSha256("new manifest")
+            },
+            {
+              action: "write",
+              path: "index.json",
+              stagePath: `.deepwrite/transactions/${transactionId}/stage/1.next`,
+              backupPath: `.deepwrite/transactions/${transactionId}/backup/1.previous`,
+              beforeSha256: projectTransactionContentSha256("old index"),
+              afterSha256: projectTransactionContentSha256("new index")
+            }
+          ]
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    await expect(recoverProjectTransaction(root)).resolves.toMatchObject({
+      transactionId,
+      files: [
+        {
+          path: "deepwrite.json",
+          sha256: projectTransactionContentSha256("new manifest")
+        },
+        {
+          path: "index.json",
+          sha256: projectTransactionContentSha256("new index")
+        }
+      ]
+    });
+    await expect(readFile(join(root, "deepwrite.json"), "utf8")).resolves.toBe(
+      "new manifest"
+    );
+    await expect(readFile(join(root, "index.json"), "utf8")).resolves.toBe(
+      "new index"
+    );
+    await expect(
+      lstat(join(root, ".deepwrite", "transaction.json"))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("rolls forward an interrupted deletion from its durable journal", async () => {
     const root = await temporaryProject();
     const transactionId = "txn-1002-c1d2e3f4";
