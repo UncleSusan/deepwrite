@@ -39,6 +39,7 @@ import {
   type ComposerReferenceMatch
 } from "../utils/composerReferences";
 import { createEditorReferenceAttachment } from "../utils/editorTextReferences";
+import { writeToolText } from "../utils/agentWriteToolPreview";
 import AppIcon from "./AppIcon.vue";
 import AgentEditProposalCard from "./AgentEditProposalCard.vue";
 import LongProposalReview from "./LongProposalReview.vue";
@@ -1472,103 +1473,6 @@ function toolDetail(tool: AgentToolTrace): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function decodeJsonStringFragment(source: string): string {
-  let result = "";
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (character !== "\\") {
-      result += character;
-      continue;
-    }
-    const escaped = source[index + 1];
-    if (escaped === undefined) break;
-    index += 1;
-    const simpleEscapes: Record<string, string> = {
-      '"': '"',
-      "\\": "\\",
-      "/": "/",
-      b: "\b",
-      f: "\f",
-      n: "\n",
-      r: "\r",
-      t: "\t"
-    };
-    if (escaped === "u") {
-      const code = source.slice(index + 1, index + 5);
-      if (/^[0-9a-fA-F]{4}$/.test(code)) {
-        result += String.fromCharCode(Number.parseInt(code, 16));
-        index += 4;
-      }
-      continue;
-    }
-    result += simpleEscapes[escaped] ?? escaped;
-  }
-  return result;
-}
-
-function streamedStringField(source: string, field: string): string {
-  const match = new RegExp(`"${field}"\\s*:\\s*"`).exec(source);
-  if (!match) return "";
-  const start = (match.index ?? 0) + match[0].length;
-  let escaped = false;
-  let end = source.length;
-  for (let index = start; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (character === '"') {
-      end = index;
-      break;
-    }
-  }
-  return decodeJsonStringFragment(source.slice(start, end));
-}
-
-function writeToolText(tool: AgentToolTrace): string {
-  if (tool.args && typeof tool.args === "object") {
-    const args = tool.args as Record<string, unknown>;
-    if (typeof args.text === "string") return args.text;
-    if (typeof args.content === "string") return args.content;
-    if (Array.isArray(args.replacements)) {
-      return args.replacements
-        .flatMap((replacement) =>
-          replacement && typeof replacement === "object" &&
-          typeof (replacement as Record<string, unknown>).new_text === "string"
-            ? [(replacement as Record<string, unknown>).new_text as string]
-            : []
-        )
-        .join("\n\n");
-    }
-    if (Array.isArray(args.sections)) {
-      return args.sections
-        .flatMap((section) => {
-          if (!section || typeof section !== "object") return [];
-          const value = section as Record<string, unknown>;
-          return [
-            [
-              typeof value.title === "string" ? `## ${value.title}` : "",
-              typeof value.body === "string" ? value.body : ""
-            ].filter(Boolean).join("\n")
-          ];
-        })
-        .join("\n\n");
-    }
-  }
-  const source = tool.argumentsText ?? "";
-  return (
-    streamedStringField(source, "text") ||
-    streamedStringField(source, "content") ||
-    streamedStringField(source, "body") ||
-    streamedStringField(source, "new_text")
-  );
 }
 
 function writeToolContentLabel(tool: AgentToolTrace): string {

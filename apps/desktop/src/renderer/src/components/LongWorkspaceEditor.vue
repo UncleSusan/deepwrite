@@ -6242,7 +6242,7 @@ onBeforeUnmount(() => {
   outline: 0;
   background: transparent;
   color: var(--text-primary);
-  font-family: Georgia, "Songti SC", "SimSun", serif;
+  font-family: var(--editor-font);
   font-size: clamp(1.71429rem, 2.2vw, 2.42857rem);
   font-weight: 600;
   line-height: 1.28;
@@ -6270,7 +6270,7 @@ onBeforeUnmount(() => {
   outline: 0;
   background: transparent;
   color: var(--text-primary);
-  font-family: Georgia, "Songti SC", "SimSun", serif;
+  font-family: var(--editor-font);
   font-size: 1.07143rem;
   line-height: 1.95;
   letter-spacing: 0.025em;

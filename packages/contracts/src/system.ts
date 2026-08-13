@@ -75,7 +75,8 @@ import {
   ModelsRefreshOfficialCommandEnvelopeSchema,
   ModelsSaveOfficialTokenCommandEnvelopeSchema,
   ModelsSaveCommandEnvelopeSchema,
-  ModelsTestCommandEnvelopeSchema
+  ModelsTestCommandEnvelopeSchema,
+  ModelsListRemoteCommandEnvelopeSchema
 } from "./models";
 import { ModelUsageQueryCommandEnvelopeSchema } from "./model-usage";
 import {
@@ -287,6 +288,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   ModelsSetOfficialModelEnabledCommandEnvelopeSchema,
   ModelsSaveCommandEnvelopeSchema,
   ModelsTestCommandEnvelopeSchema,
+  ModelsListRemoteCommandEnvelopeSchema,
   ModelUsageQueryCommandEnvelopeSchema,
   WorkspaceAgentsListCommandEnvelopeSchema,
   WorkspaceAgentsSaveCommandEnvelopeSchema,

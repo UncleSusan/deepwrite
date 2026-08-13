@@ -34,6 +34,32 @@ describe("TreeSection resource actions", () => {
     );
   });
 
+  it("forwards long draft section creation through the sidebar tree", () => {
+    expect(source).toContain(
+      "createLongDraftSection: [node: ResourceTreeNode]"
+    );
+    expect(source).toContain(
+      "@create-long-draft-section=\"emit('createLongDraftSection', $event)\""
+    );
+    expect(sidebarSource).toContain(
+      "createLongDraftSection: [node: ResourceTreeNode]"
+    );
+    expect(sidebarSource.match(/@create-long-draft-section=/gu)).toHaveLength(2);
+  });
+
+  it("forwards long draft section move and delete actions through the sidebar tree", () => {
+    expect(source).toContain(
+      'longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode]'
+    );
+    expect(source).toContain(
+      "@long-draft-section-action=\"(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)\""
+    );
+    expect(sidebarSource).toContain(
+      'longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode]'
+    );
+    expect(sidebarSource.match(/@long-draft-section-action=/gu)).toHaveLength(2);
+  });
+
   it("forwards draft section ordering actions through the normal resource tree", () => {
     expect(source).toContain(
       'expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode]'

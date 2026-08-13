@@ -31,6 +31,8 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
+  createLongDraftSection: [node: ResourceTreeNode];
+  longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
   expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
   createCharacterItem: [node: ResourceTreeNode];
@@ -193,6 +195,8 @@ onBeforeUnmount(() => {
         @resource-node-action="emit('resourceNodeAction', $event)"
         @move-library-entry="emit('moveLibraryEntry', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
+        @create-long-draft-section="emit('createLongDraftSection', $event)"
+        @long-draft-section-action="(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)"
         @remove-expert-section="emit('removeExpertSection', $event)"
         @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
         @create-character-item="emit('createCharacterItem', $event)"

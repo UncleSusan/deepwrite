@@ -176,6 +176,8 @@ export interface ResourceTreeNode {
   longWorkspaceSelection?: LongWorkspaceSelection;
   /** Identifies one of the fixed long-form character folders. */
   longCharacterGroup?: LongCharacterGroup;
+  /** Identifies a long-form draft volume folder that can add a manuscript section. */
+  longDraftVolumeId?: string;
   catalogNodeType?:
     | "book"
     | "long-book"

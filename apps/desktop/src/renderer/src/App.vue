@@ -115,11 +115,13 @@ import type {
   BookTransferDialogMode
 } from "./components/BookTransferDialog.vue";
 import CreateBookDialog from "./components/CreateBookDialog.vue";
+import CreateExpertSectionDialog from "./components/CreateExpertSectionDialog.vue";
 import CreateLongChapterCardDialog from "./components/CreateLongChapterCardDialog.vue";
 import CreateLongCharacterDialog from "./components/CreateLongCharacterDialog.vue";
 import CreateLongPlotPointDialog from "./components/CreateLongPlotPointDialog.vue";
 import CreateLongVolumeDialog from "./components/CreateLongVolumeDialog.vue";
 import DeleteExpertSectionDialog from "./components/DeleteExpertSectionDialog.vue";
+import DeleteLongDraftSectionDialog from "./components/DeleteLongDraftSectionDialog.vue";
 import ExportShortManuscriptDialog from "./components/ExportShortManuscriptDialog.vue";
 import ExportLongManuscriptDialog from "./components/ExportLongManuscriptDialog.vue";
 import CharacterItemDialog from "./components/CharacterItemDialog.vue";
@@ -145,6 +147,7 @@ import RightEditorPane from "./components/RightEditorPane.vue";
 import SaveConflictDialog from "./components/SaveConflictDialog.vue";
 import SettingsPage from "./components/SettingsPage.vue";
 import SkillMarketplacePage from "./components/SkillMarketplacePage.vue";
+import CloudBackupPage from "./extras/cloud-backup/CloudBackupPage.vue";
 import StartupAlertDialog from "./components/StartupAlertDialog.vue";
 import WorkspaceDialog from "./components/WorkspaceDialog.vue";
 import {
@@ -246,7 +249,7 @@ import {
   rebaseDraftsForMatchingDocuments,
   type WorkspaceDocumentBaseline
 } from "./utils/catalogSaveReconciliation";
-import { draftCharacterStateTitle } from "./utils/draftFileTitles";
+import { draftCharacterStateTitle, suggestedDraftSectionTitle } from "./utils/draftFileTitles";
 import {
   advanceDraftSectionCreationRevision,
   draftSectionCreationRevisionKey,
@@ -620,6 +623,13 @@ const longChapterCardCreate = ref<{
   volumeId: string;
   volumeTitle: string;
   arcOptions: Array<{ value: string; label: string }>;
+  source: "chapter-card" | "draft";
+} | null>(null);
+const longDraftSectionDelete = ref<{
+  bookId: string;
+  chapterCardId: string;
+  volumeId: string;
+  title: string;
 } | null>(null);
 const longVolumeCreateOpen = ref(false);
 const longBindingsDialogMode = ref<"skill" | "material" | null>(null);
@@ -731,6 +741,12 @@ type CreateCreativeBookPayload =
   | ({ workspaceType: "long" } & CreateLongBookInput);
 
 const pendingExpertSectionDeletion = ref<PendingExpertSectionDeletion | null>(null);
+interface PendingExpertSectionCreation {
+  draftDirectoryId: string;
+  workspaceType: "short" | "script";
+  suggestedTitle: string;
+}
+const pendingExpertSectionCreation = ref<PendingExpertSectionCreation | null>(null);
 interface SaveConflictState {
   documentId: string;
   payload: { id: string; title: string; content: string };
@@ -748,18 +764,28 @@ type WorkspaceMainView =
   | "models"
   | "imitation"
   | "agent-team"
-  | "marketplace";
+  | "marketplace"
+  | "cloud-backup";
 const workspaceMainView = ref<WorkspaceMainView>("conversation");
 const marketplaceDisplayName = ref<string | undefined>(undefined);
 const activePrimaryFeature = computed<
-  "directory" | "models" | "imitation" | "agent-teams" | undefined
+  | "directory"
+  | "models"
+  | "imitation"
+  | "agent-teams"
+  | "skill-marketplace"
+  | "cloud-backup"
+  | undefined
 >(() =>
   workspaceMainView.value === "agent-team"
     ? "agent-teams"
-    : workspaceMainView.value === "conversation" ||
-        workspaceMainView.value === "marketplace"
-      ? undefined
-      : workspaceMainView.value
+    : workspaceMainView.value === "marketplace"
+      ? "skill-marketplace"
+      : workspaceMainView.value === "cloud-backup"
+        ? "cloud-backup"
+        : workspaceMainView.value === "conversation"
+          ? undefined
+          : workspaceMainView.value
 );
 const modelSettings = ref<ModelSettings | null>(null);
 const modelLoading = ref(false);
@@ -1253,7 +1279,7 @@ function projectLongWorkspaceNavigation(
       (left, right) =>
         left.order - right.order || left.id.localeCompare(right.id)
     )
-    .flatMap<ResourceTreeNode>((volume) => {
+    .map<ResourceTreeNode>((volume) => {
       const chapters = book.navigation.chapterCards
         .filter((chapter) => chapter.volumeId === volume.id)
         .sort(
@@ -1275,20 +1301,17 @@ function projectLongWorkspaceNavigation(
               };
           return selection ? [node(selection, { icon: "edit" })] : [];
         });
-      return chapters.length
-        ? [
-            {
-              id: longNavigationNodeId(book.id, `volume:${volume.id}`),
-              label: volume.title,
-              icon: "folder",
-              badge: `${chapters.length} 章`,
-              workspaceType: "long",
-              longBookId: book.id,
-              catalogNodeType: "category",
-              children: chapters
-            }
-          ]
-        : [];
+      return {
+        id: longNavigationNodeId(book.id, `volume:${volume.id}`),
+        label: volume.title,
+        icon: "folder",
+        badge: `${chapters.length} 章`,
+        workspaceType: "long",
+        longBookId: book.id,
+        catalogNodeType: "category",
+        longDraftVolumeId: volume.id,
+        ...(chapters.length ? { children: chapters } : {})
+      };
     });
 
   const continuityPendingChildren: ResourceTreeNode[] = [];
@@ -2214,6 +2237,7 @@ async function openLongBook(
   longCharacterCreate.value = null;
   longPlotPointCreate.value = null;
   longChapterCardCreate.value = null;
+  longDraftSectionDelete.value = null;
   longVolumeCreateOpen.value = false;
   longBindingsDialogMode.value = null;
   longWorkspaceLoading.value = true;
@@ -2503,38 +2527,188 @@ async function selectLongChapterCardTab(
   }
 }
 
-async function openLongChapterCardCreate(): Promise<void> {
-  const volumeId = activeLongSelection.value?.chapterCardVolumeId;
-  const bookId = activeLongBookId.value;
+async function openLongChapterCardCreate(target?: {
+  bookId: string;
+  volumeId: string;
+  source?: "chapter-card" | "draft";
+}): Promise<void> {
+  const volumeId =
+    target?.volumeId ?? activeLongSelection.value?.chapterCardVolumeId;
+  const bookId = target?.bookId ?? activeLongBookId.value;
+  const source = target?.source ?? "chapter-card";
   if (
     !volumeId ||
     !bookId ||
-    !activeLongWorkspaceIndex.value ||
-    blockActiveLongWritingPlan("新增章卡")
+    blockActiveLongWritingPlan(source === "draft" ? "新增小节" : "新增章卡")
   ) {
     return;
   }
-  if (!(await saveActiveLongEditorChanges())) {
+  if (activeLongBookId.value !== bookId) {
+    if (!(await saveActiveLongEditorBeforeLeaving(bookId))) {
+      return;
+    }
+    await openLongBook(bookId);
+  } else if (!(await saveActiveLongEditorChanges())) {
     return;
   }
   const index = activeLongWorkspaceIndex.value;
   const volume = index?.plot.volumes.find(({ id }) => id === volumeId);
-  const arcs = index?.plot.arcs
+  if (activeLongBookId.value !== bookId || !index || !volume) {
+    uiMessage.warning("该分卷已不存在，请刷新后重试。");
+    return;
+  }
+  const arcs = index.plot.arcs
     .filter((arc) => arc.volumeId === volumeId)
     .sort(
       (left, right) =>
         left.order - right.order || left.id.localeCompare(right.id)
     );
-  if (!index || !volume) {
-    uiMessage.warning("该分卷已不存在，请刷新后重试。");
-    return;
-  }
   longChapterCardCreate.value = {
     bookId,
     volumeId,
     volumeTitle: volume.title,
-    arcOptions: arcs.map((arc) => ({ value: arc.id, label: arc.title }))
+    arcOptions: arcs.map((arc) => ({ value: arc.id, label: arc.title })),
+    source
   };
+}
+
+function requestCreateLongDraftSection(node: ResourceTreeNode): void {
+  if (!node.longBookId || !node.longDraftVolumeId) {
+    uiMessage.warning("当前分卷尚未准备好新建小节。");
+    return;
+  }
+  void openLongChapterCardCreate({
+    bookId: node.longBookId,
+    volumeId: node.longDraftVolumeId,
+    source: "draft"
+  });
+}
+
+async function handleLongDraftSectionAction(
+  action: "move-up" | "move-down" | "delete",
+  node: ResourceTreeNode
+): Promise<void> {
+  const bookId = node.longBookId;
+  const chapterCardId = node.longWorkspaceSelection?.chapterCardId;
+  if (
+    !bookId ||
+    !chapterCardId ||
+    node.longWorkspaceSelection?.root !== "draft"
+  ) {
+    uiMessage.warning("当前小节尚未准备好。");
+    return;
+  }
+  if (
+    blockActiveLongWritingPlan(
+      action === "delete" ? "删除小节" : "调整小节顺序"
+    )
+  ) {
+    return;
+  }
+  if (activeLongBookId.value !== bookId) {
+    if (!(await saveActiveLongEditorBeforeLeaving(bookId))) {
+      return;
+    }
+    await openLongBook(bookId);
+  } else if (!(await saveActiveLongEditorChanges())) {
+    return;
+  }
+  const index = activeLongWorkspaceIndex.value;
+  const chapter = index?.plot.chapterCards.find(
+    ({ id }) => id === chapterCardId
+  );
+  if (activeLongBookId.value !== bookId || !index || !chapter) {
+    uiMessage.warning("该小节已不存在，请刷新后重试。");
+    return;
+  }
+  if (action === "delete") {
+    longDraftSectionDelete.value = {
+      bookId,
+      chapterCardId,
+      volumeId: chapter.volumeId,
+      title: chapter.title
+    };
+    return;
+  }
+  if (longBookActionPending.value) {
+    uiMessage.info("当前长篇暂时不能调整小节顺序，请稍候");
+    return;
+  }
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    batch = createLongStructureMutationBuilder(index).reorderChapter(
+      chapterCardId,
+      action === "move-up" ? "up" : "down"
+    );
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法调整小节顺序。"
+    );
+    return;
+  }
+  await applyLongStructureMutation(
+    batch,
+    {
+      succeed: () => undefined,
+      fail: () => undefined,
+      appliedButRefreshFailed: () => undefined
+    },
+    {
+      saveEditor: false,
+      successMessage:
+        action === "move-up"
+          ? `已上移小节“${chapter.title}”`
+          : `已下移小节“${chapter.title}”`
+    }
+  );
+}
+
+async function confirmDeleteLongDraftSection(): Promise<void> {
+  const pending = longDraftSectionDelete.value;
+  if (!pending || longBookActionPending.value) return;
+  if (blockActiveLongWritingPlan("删除小节")) return;
+  await deleteLongNavigationStructure(
+    {
+      kind: "chapterCard",
+      id: pending.chapterCardId,
+      title: pending.title
+    },
+    (succeeded) => {
+      if (!succeeded) return;
+      const deletedSelected =
+        activeLongSelection.value?.chapterCardId === pending.chapterCardId ||
+        selectedResourceId.value ===
+          longNavigationNodeId(pending.bookId, `chapter:${pending.chapterCardId}`);
+      longDraftSectionDelete.value = null;
+      if (!deletedSelected) return;
+      const summary = activeLongBookSummary.value;
+      const index = activeLongWorkspaceIndex.value;
+      if (!summary || !index || summary.id !== pending.bookId) return;
+      const remaining = summary.navigation.chapterCards
+        .filter((chapter) => chapter.volumeId === pending.volumeId)
+        .sort(
+          (left, right) =>
+            left.narrativeOrder - right.narrativeOrder ||
+            left.id.localeCompare(right.id)
+        );
+      const next = remaining[0];
+      if (next) {
+        const selection = createLongChapterSelection(summary, index, next.id);
+        if (selection) {
+          selectedResourceId.value = longNavigationNodeId(
+            pending.bookId,
+            selection.key
+          );
+          void selectLongWorkspaceFile(selection);
+          return;
+        }
+      }
+      selectedResourceId.value = longNavigationNodeId(
+        pending.bookId,
+        `volume:${pending.volumeId}`
+      );
+    }
+  );
 }
 
 async function renameLongCharacter(
@@ -4418,6 +4592,7 @@ async function selectResource(node: ResourceTreeNode): Promise<void> {
   longCharacterCreate.value = null;
   longPlotPointCreate.value = null;
   longChapterCardCreate.value = null;
+  longDraftSectionDelete.value = null;
   longVolumeCreateOpen.value = false;
   longBindingsDialogMode.value = null;
   const directory = draftDirectoryForResourceId(node.id);
@@ -4706,13 +4881,16 @@ async function createLongChapterCard(
 ): Promise<void> {
   const target = longChapterCardCreate.value;
   const index = activeLongWorkspaceIndex.value;
+  const fromDraft = target?.source === "draft";
   if (
     !target ||
     !index ||
     activeLongBookId.value !== target.bookId ||
     longBookActionPending.value
   ) {
-    uiMessage.warning("当前分卷尚未准备好新建章卡。");
+    uiMessage.warning(
+      fromDraft ? "当前分卷尚未准备好新建小节。" : "当前分卷尚未准备好新建章卡。"
+    );
     return;
   }
   if (
@@ -4732,7 +4910,11 @@ async function createLongChapterCard(
     });
   } catch (error: unknown) {
     uiMessage.warning(
-      error instanceof Error ? error.message : "无法创建章卡。"
+      error instanceof Error
+        ? error.message
+        : fromDraft
+          ? "无法创建小节。"
+          : "无法创建章卡。"
     );
     return;
   }
@@ -4740,7 +4922,7 @@ async function createLongChapterCard(
     (operation) => operation.type === "chapter.create"
   );
   if (!created || created.type !== "chapter.create") {
-    uiMessage.warning("无法确定新建章卡。");
+    uiMessage.warning(fromDraft ? "无法确定新建小节。" : "无法确定新建章卡。");
     return;
   }
 
@@ -4760,13 +4942,35 @@ async function createLongChapterCard(
     },
     {
       saveEditor: false,
-      successMessage: `已创建章卡“${input.title}”`
+      successMessage: fromDraft
+        ? `已新建小节“${input.title}”，并同步创建章卡`
+        : `已创建章卡“${input.title}”`
     }
   );
   if (!applied) return;
   longChapterCardCreate.value = null;
   if (!succeeded) return;
   await nextTick();
+  if (fromDraft) {
+    const summary = activeLongBookSummary.value;
+    const nextIndex = activeLongWorkspaceIndex.value;
+    const selection =
+      summary && nextIndex
+        ? createLongChapterSelection(
+            summary,
+            nextIndex,
+            created.chapterCard.id
+          )
+        : undefined;
+    if (selection) {
+      selectedResourceId.value = longNavigationNodeId(
+        target.bookId,
+        selection.key
+      );
+      await selectLongWorkspaceFile(selection);
+    }
+    return;
+  }
   await selectLongChapterCardTab(created.chapterCard.id);
 }
 
@@ -6105,6 +6309,7 @@ async function clearActiveLongBook(bookId: string): Promise<void> {
   longCharacterCreate.value = null;
   longPlotPointCreate.value = null;
   longChapterCardCreate.value = null;
+  longDraftSectionDelete.value = null;
   longVolumeCreateOpen.value = false;
   longBindingsDialogMode.value = null;
   const fallback = resourceTreeSections.value
@@ -8028,7 +8233,7 @@ function locateEditorSelectionReference(reference: EditorTextReference): void {
   };
 }
 
-async function addExpertSection(draftNode: ResourceTreeNode): Promise<void> {
+function requestCreateExpertSection(draftNode: ResourceTreeNode): void {
   const directory = draftDirectoryForResourceId(draftNode.id);
   const source = documentForResourceId(draftNode.id);
   if (!directory) return;
@@ -8052,11 +8257,58 @@ async function addExpertSection(draftNode: ResourceTreeNode): Promise<void> {
     uiMessage.warning(`正文最多支持 100 个${unitLabel}`);
     return;
   }
+  pendingExpertSectionCreation.value = {
+    draftDirectoryId: directory.id,
+    workspaceType: directory.workspaceType,
+    suggestedTitle: suggestedDraftSectionTitle(
+      directory.workspaceType,
+      directory.sections.map((section) => section.id)
+    )
+  };
+}
+
+async function addExpertSection(draftNode: ResourceTreeNode): Promise<void> {
+  requestCreateExpertSection(draftNode);
+}
+
+function closeCreateExpertSectionDialog(): void {
+  if (!catalogMutationPending.value) pendingExpertSectionCreation.value = null;
+}
+
+async function confirmCreateExpertSection(title: string): Promise<void> {
+  const pending = pendingExpertSectionCreation.value;
+  if (!pending) return;
+  const directory = catalogProjection.value?.draftDirectories.find(
+    (candidate) => candidate.id === pending.draftDirectoryId
+  );
+  const draftNode = directory ? resourceNode(directory.id) : undefined;
+  const source = draftNode ? documentForResourceId(draftNode.id) : undefined;
+  const unitLabel = pending.workspaceType === "script" ? "剧集" : "小节";
+  if (!directory || !draftNode || !source) {
+    pendingExpertSectionCreation.value = null;
+    uiMessage.warning("该正文已经不存在");
+    return;
+  }
+  if (
+    draftNode.shortAgentId !== "expert_draft_coordinator" ||
+    expertDraftMutationBlocked(source) ||
+    source.readOnly ||
+    catalogMutationPending.value ||
+    !window.deepwrite
+  ) {
+    uiMessage.info(`当前正文暂时不能新建${unitLabel}，请稍候`);
+    return;
+  }
+  if (directory.sections.length >= 100) {
+    uiMessage.warning(`正文最多支持 100 个${unitLabel}`);
+    return;
+  }
   catalogMutationPending.value = true;
   try {
     const book = catalogBook(directory.workspaceId);
     const added = await window.deepwrite.catalog.createDraftSection({
       bookId: directory.workspaceId,
+      title,
       ...(directory.sections.at(-1)
         ? { afterSectionId: directory.sections.at(-1)!.id }
         : {}),
@@ -8075,6 +8327,7 @@ async function addExpertSection(draftNode: ResourceTreeNode): Promise<void> {
       ...selectedDraftFileKinds.value,
       [directory.id]: "body"
     };
+    pendingExpertSectionCreation.value = null;
     uiMessage.success(`已新建“${added.title}”并保存到正文文件夹`);
   } catch (error: unknown) {
     uiMessage.error(error instanceof Error ? error.message : `新建正文${unitLabel}失败。`);
@@ -9801,6 +10054,13 @@ async function openMarketplace(): Promise<void> {
   if (window.deepwrite && !catalogSnapshot.value) {
     void loadCatalogSnapshot();
   }
+}
+
+async function openCloudBackup(): Promise<void> {
+  if (!(await saveActiveLongEditorBeforeLeaving())) {
+    return;
+  }
+  workspaceMainView.value = "cloud-backup";
 }
 
 async function loadWorkspaceDirectory(): Promise<void> {
@@ -15811,6 +16071,7 @@ onBeforeUnmount(() => {
         @open-dialog="openWorkspaceDialog"
         @open-agent-teams="openAgentTeams"
         @open-marketplace="openMarketplace"
+        @open-cloud-backup="openCloudBackup"
         @open-settings="openSettings"
         @select-resource="selectResource"
         @book-action="openBookDialog"
@@ -15820,6 +16081,8 @@ onBeforeUnmount(() => {
         @move-library-entry="requestCatalogLibraryEntryMove"
         @long-book-action="handleLongBookAction"
         @create-expert-section="addExpertSection"
+        @create-long-draft-section="requestCreateLongDraftSection"
+        @long-draft-section-action="handleLongDraftSectionAction"
         @remove-expert-section="requestRemoveExpertSection"
         @expert-section-action="moveExpertSection"
         @create-character-item="requestCreateCharacterItem"
@@ -15944,6 +16207,26 @@ onBeforeUnmount(() => {
           :catalog-snapshot="catalogSnapshot"
           @refresh-catalog="loadCatalogSnapshot"
           @session-change="applyMarketplaceSession"
+        />
+      </main>
+
+      <main
+        v-show="workspaceMainView === 'cloud-backup'"
+        class="marketplace-main-view"
+        aria-label="云端备份"
+      >
+        <button
+          v-if="leftCollapsed"
+          class="icon-button marketplace-expand-sidebar"
+          type="button"
+          aria-label="展开左侧栏"
+          @click="leftCollapsed = false"
+        >
+          <AppIcon name="panel-left" :size="18" />
+        </button>
+        <CloudBackupPage
+          :active="workspaceMainView === 'cloud-backup'"
+          @refresh-catalog="loadCatalogSnapshot"
         />
       </main>
 
@@ -16424,9 +16707,17 @@ onBeforeUnmount(() => {
       :open="Boolean(longChapterCardCreate)"
       :volume-title="longChapterCardCreate?.volumeTitle ?? ''"
       :arc-options="longChapterCardCreate?.arcOptions ?? []"
+      :source="longChapterCardCreate?.source ?? 'chapter-card'"
       :pending="longBookActionPending"
       @close="longChapterCardCreate = null"
       @submit="createLongChapterCard"
+    />
+    <DeleteLongDraftSectionDialog
+      :open="Boolean(longDraftSectionDelete)"
+      :section-title="longDraftSectionDelete?.title ?? ''"
+      :pending="longBookActionPending"
+      @close="longDraftSectionDelete = null"
+      @confirm="confirmDeleteLongDraftSection"
     />
     <CreateLongVolumeDialog
       :open="longVolumeCreateOpen"
@@ -16521,6 +16812,14 @@ onBeforeUnmount(() => {
       @keep="keepSaveConflictDraft"
       @reload="reloadSaveConflictFromDisk"
       @overwrite="overwriteSaveConflictOnDisk"
+    />
+    <CreateExpertSectionDialog
+      :open="Boolean(pendingExpertSectionCreation)"
+      :suggested-title="pendingExpertSectionCreation?.suggestedTitle ?? ''"
+      :workspace-type="pendingExpertSectionCreation?.workspaceType"
+      :pending="catalogMutationPending"
+      @close="closeCreateExpertSectionDialog"
+      @submit="confirmCreateExpertSection"
     />
     <DeleteExpertSectionDialog
       :open="Boolean(pendingExpertSectionDeletion)"

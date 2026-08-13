@@ -30,6 +30,7 @@
   --ui-font-size: 14px;
   --code-font-size: 13px;
   --ui-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --editor-font: "Songti SC", "SimSun", "Noto Serif SC", Georgia, serif;
   --code-font: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
@@ -4013,7 +4014,7 @@ html[data-platform="darwin"] .editor-header {
   outline: 0;
   background: transparent;
   color: var(--text-primary);
-  font-family: Georgia, "Songti SC", "SimSun", serif;
+  font-family: var(--editor-font);
   font-size: clamp(1.71429rem, 2.2vw, 2.42857rem);
   font-weight: 600;
   line-height: 1.28;
@@ -4035,7 +4036,7 @@ html[data-platform="darwin"] .editor-header {
   outline: 0;
   background: transparent;
   color: var(--text-primary);
-  font-family: Georgia, "Songti SC", "SimSun", serif;
+  font-family: var(--editor-font);
   font-size: 1.07143rem;
   line-height: 1.95;
   letter-spacing: 0.025em;
@@ -4436,7 +4437,7 @@ html[data-theme="dark"] .document-editor:focus-visible {
   outline: 0;
   background: var(--surface-raised);
   color: var(--text-primary);
-  font-family: Georgia, "Songti SC", serif;
+  font-family: var(--editor-font);
   font-size: 0.857143rem;
   line-height: 1.7;
 }
@@ -5382,6 +5383,88 @@ html[data-theme="dark"] .document-editor:focus-visible {
   color: var(--text-secondary);
 }
 
+.model-id-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.model-id-field > input,
+.model-id-field > .popup-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.model-id-fetch-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--theme-line);
+  border-radius: 8px;
+  background: var(--surface-main);
+  color: var(--text-secondary);
+  font-family: var(--ui-font);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.model-id-fetch-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.model-id-fetch-button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--theme-line));
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.model-id-fetch-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.model-fetch-hint-overlay {
+  z-index: 2400;
+}
+
+.model-fetch-hint-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(420px, calc(100vw - 48px));
+  overflow: hidden;
+  border: 1px solid var(--theme-line);
+  border-radius: 15px;
+  background: var(--surface-raised);
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--theme-foreground) 20%, transparent);
+  color: var(--text-primary);
+}
+
+.model-fetch-hint-dialog header {
+  padding: 16px 18px 0;
+}
+
+.model-fetch-hint-dialog h2 {
+  margin: 4px 0 0;
+  font-size: 1.05rem;
+}
+
+.model-fetch-hint-dialog p {
+  margin: 0;
+  padding: 14px 18px 0;
+  color: var(--text-secondary);
+  font-size: 0.857143rem;
+  line-height: 1.55;
+}
+
+.model-fetch-hint-dialog .dialog-actions {
+  padding: 16px 18px 18px;
+}
+
 .model-managed-note {
   grid-column: 1 / -1;
   margin: 0;
@@ -5559,6 +5642,17 @@ html[data-theme] select {
   font-family: var(--ui-font);
 }
 
+html[data-theme] .document-title-input,
+html[data-theme] .document-editor,
+html[data-theme] .document-preview,
+html[data-theme] .dialog-content textarea,
+html[data-theme] .long-document-title-input,
+html[data-theme] .long-document-title,
+html[data-theme] .long-document-editor,
+html[data-theme] .long-document-preview {
+  font-family: var(--editor-font);
+}
+
 html[data-theme] body,
 html[data-theme] #app,
 html[data-theme] .desktop-shell,
@@ -5668,7 +5762,8 @@ html[data-theme] :where(
   .message-actions button:hover,
   .format-button:hover,
   .dialog-close:hover,
-  .model-card-actions button:hover
+  .model-card-actions button:hover,
+  .model-id-fetch-button:hover
 ) {
   background: var(--surface-hover);
   color: var(--text-primary);
@@ -5691,6 +5786,7 @@ html[data-theme] :where(
   .dialog-secondary-button,
   .model-config-card,
   .model-editor,
+  .model-fetch-hint-dialog,
   .model-thinking-options label,
   .book-resource-name-field input,
   .book-binding-option,

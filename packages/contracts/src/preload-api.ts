@@ -9,7 +9,9 @@ import type {
   ModelConfigInput,
   OfficialModelBalance,
   ModelSettings,
-  ModelSettingsInput
+  ModelSettingsInput,
+  RemoteModelListInput,
+  RemoteModelListResult
 } from "./models";
 import type { ModelUsageDashboard, ModelUsageQueryInput } from "./model-usage";
 import type { SystemEventEnvelope, SystemHealthPayload } from "./system";
@@ -162,6 +164,11 @@ import type {
   MarketplaceSession,
   MarketplaceUpdateInput
 } from "./marketplace";
+import type {
+  CloudBackupApplyResult,
+  CloudBackupPreview,
+  CloudBackupStatus
+} from "./cloud-backup";
 
 export interface DeepWriteApi {
   system: {
@@ -194,6 +201,13 @@ export interface DeepWriteApi {
     like(input: MarketplaceLikeInput): Promise<MarketplaceLikeResult>;
     previewInstall(ref: MarketplaceContentRef): Promise<MarketplaceInstallPreview>;
     install(input: MarketplaceInstallInput): Promise<MarketplaceInstallResult>;
+  };
+  cloudBackup: {
+    status(): Promise<CloudBackupStatus>;
+    previewBackup(): Promise<CloudBackupPreview>;
+    applyBackup(previewId: string): Promise<CloudBackupApplyResult>;
+    previewRestore(machineKey: string): Promise<CloudBackupPreview>;
+    applyRestore(previewId: string): Promise<CloudBackupApplyResult>;
   };
   catalog: {
     snapshot(): Promise<CatalogSnapshot>;
@@ -297,6 +311,7 @@ export interface DeepWriteApi {
     setOfficialModelEnabled(modelId: string, enabled: boolean): Promise<ModelSettings>;
     save(settings: ModelSettingsInput): Promise<ModelSettings>;
     test(model: ModelConfigInput): Promise<ModelConnectionTestResult>;
+    listRemote(input: RemoteModelListInput): Promise<RemoteModelListResult>;
   };
   modelUsage: {
     query(input?: ModelUsageQueryInput): Promise<ModelUsageDashboard>;

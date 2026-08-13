@@ -284,6 +284,32 @@ export const ModelsTestCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: z.object({ model: ModelConfigInputSchema })
 });
 
+export const RemoteModelListInputSchema = z.object({
+  id: z.string().trim().min(1).max(120).optional(),
+  provider: z.string().trim().min(1).max(120),
+  api: ModelApiSchema,
+  baseUrl: z.union([z.literal(""), z.url().max(2_000)]),
+  apiKey: z.string().trim().max(16_000).optional(),
+  clearApiKey: z.boolean().optional()
+});
+export type RemoteModelListInput = z.infer<typeof RemoteModelListInputSchema>;
+
+export const RemoteModelListItemSchema = z.object({
+  id: z.string().trim().min(1).max(240),
+  label: z.string().trim().min(1).max(240).optional()
+});
+export type RemoteModelListItem = z.infer<typeof RemoteModelListItemSchema>;
+
+export const RemoteModelListResultSchema = z.object({
+  models: z.array(RemoteModelListItemSchema).max(2_000)
+});
+export type RemoteModelListResult = z.infer<typeof RemoteModelListResultSchema>;
+
+export const ModelsListRemoteCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("models.listRemote"),
+  payload: RemoteModelListInputSchema
+});
+
 export const AgentModelTestCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agent.model_test"),
   payload: z.object({ runtimeConfig: AgentProviderRuntimeConfigSchema })

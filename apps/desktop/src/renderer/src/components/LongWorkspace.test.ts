@@ -249,15 +249,46 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain(
       "createLongStructureMutationBuilder(index).createChapter"
     );
+    expect(appSource).toContain(
+      "已新建小节“${input.title}”，并同步创建章卡"
+    );
+    expect(appSource).toContain(
+      "createLongChapterSelection(\n            summary,\n            nextIndex,\n            created.chapterCard.id"
+    );
     expect(appSource).not.toContain('worldConstraints: ""');
     expect(appSource).toContain("<CreateLongVolumeDialog");
     expect(appSource).toContain("@submit=\"createLongVolume\"");
     expect(appSource).toContain("<CreateLongPlotPointDialog");
     expect(appSource).toContain("@submit=\"createLongPlotPoint\"");
     expect(appSource).toContain("<CreateLongChapterCardDialog");
+    expect(appSource).toContain(":source=\"longChapterCardCreate?.source ?? 'chapter-card'\"");
     expect(appSource).toContain("@submit=\"createLongChapterCard\"");
-    expect(chapterCardDialogSource).toContain("新建章卡");
+    expect(appSource).toContain("longDraftVolumeId: volume.id");
+    expect(appSource).toContain("function requestCreateLongDraftSection");
+    expect(appSource).toContain("function handleLongDraftSectionAction");
+    expect(appSource).toContain("async function confirmDeleteLongDraftSection");
+    expect(appSource).toContain('source: "draft"');
+    expect(appSource).toContain(
+      '@create-long-draft-section="requestCreateLongDraftSection"'
+    );
+    expect(appSource).toContain(
+      '@long-draft-section-action="handleLongDraftSectionAction"'
+    );
+    expect(appSource).toContain("<DeleteLongDraftSectionDialog");
+    expect(appSource).toContain(
+      "createLongStructureMutationBuilder(index).reorderChapter"
+    );
+    const draftChildrenProjection = appSource.slice(
+      appSource.indexOf("const draftChildren"),
+      appSource.indexOf("const continuityPendingChildren")
+    );
+    expect(draftChildrenProjection).toContain("longDraftVolumeId: volume.id");
+    expect(draftChildrenProjection).not.toContain("return chapters.length");
+    expect(chapterCardDialogSource).toContain("新建{{ unitLabel }}");
     expect(chapterCardDialogSource).toContain("补充完整内容");
+    expect(chapterCardDialogSource).toContain(
+      "确认后会同步创建对应章卡。建议先在「剧情设计 → 章卡」中维护好章卡，再开始编写正文。"
+    );
     expect(chapterCardDialogSource).not.toContain("章节大纲和世界约束");
     expect(chapterCardDialogSource).not.toContain("LongStructureManager");
     expect(plotPointDialogSource).toContain("新建剧情点");

@@ -19,6 +19,7 @@ export interface PopupSelectOption {
   description?: string;
   disabled?: boolean;
   title?: string;
+  style?: CSSProperties;
 }
 
 const props = withDefaults(
@@ -287,7 +288,11 @@ onBeforeUnmount(() => {
       @keydown="handleTriggerKeydown"
     >
       <span v-if="$slots.prefix" class="popup-select-prefix"><slot name="prefix" /></span>
-      <span class="popup-select-label" :class="{ 'is-placeholder': !selectedOption }">
+      <span
+        class="popup-select-label"
+        :class="{ 'is-placeholder': !selectedOption }"
+        :style="selectedOption?.style"
+      >
         {{ displayLabel }}
       </span>
       <AppIcon class="popup-select-chevron" name="chevron" :size="variant === 'compact' ? 11 : 13" />
@@ -320,6 +325,7 @@ onBeforeUnmount(() => {
             :aria-selected="Object.is(option.value, modelValue)"
             :disabled="option.disabled"
             :title="option.title"
+            :style="option.style"
             @click="selectOption(option)"
           >
             <span class="popup-select-option-copy">

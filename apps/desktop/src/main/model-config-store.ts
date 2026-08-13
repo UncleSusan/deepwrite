@@ -524,6 +524,38 @@ export class ModelConfigStore {
     return AgentProviderRuntimeConfigSchema.parse({ ...identity, apiKey });
   }
 
+  async resolveDraftApiKey(input: {
+    id?: string;
+    apiKey?: string;
+    clearApiKey?: boolean;
+  }): Promise<string> {
+    const provided = input.apiKey?.trim() ?? "";
+    if (provided) {
+      return provided;
+    }
+    if (input.clearApiKey) {
+      return "";
+    }
+    const modelId = input.id?.trim() ?? "";
+    if (!modelId) {
+      return "";
+    }
+    await this.writeChain;
+    const [, secrets] = await this.readState();
+    const encrypted = secrets.encryptedApiKeys[modelId];
+    if (!encrypted) {
+      return "";
+    }
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error("系统安全存储当前不可用，无法解密这个模型的 API Key。");
+    }
+    try {
+      return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
+    } catch {
+      throw new Error("模型 API Key 解密失败，请在模型配置中重新填写并保存。");
+    }
+  }
+
   private async getCatalogs(): Promise<{
     freeCatalog: DeepWriteFreeModelCatalog;
     officialCatalog: DeepWriteOfficialModelCatalog;

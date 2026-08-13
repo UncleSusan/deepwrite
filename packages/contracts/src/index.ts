@@ -2,6 +2,7 @@ export * from "./appearance";
 export * from "./app-alert";
 export * from "./agent-team";
 export * from "./catalog";
+export * from "./cloud-backup";
 export * from "./envelope";
 export * from "./expert-draft";
 export * from "./general-settings";

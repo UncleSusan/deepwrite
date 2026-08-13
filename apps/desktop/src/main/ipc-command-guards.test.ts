@@ -84,6 +84,22 @@ describe("IPC command requestId handling", () => {
     );
   });
 
+  it("routes remote model listing through preload and main", () => {
+    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const preloadSource = readFileSync(
+      new URL("../preload/index.ts", import.meta.url),
+      "utf8"
+    );
+
+    expect(preloadSource).toContain("async function listRemoteModels");
+    expect(preloadSource).toContain('"models.listRemote"');
+    expect(preloadSource).toContain("listRemote: listRemoteModels");
+    expect(mainSource).toContain('command.type === "models.listRemote"');
+    expect(mainSource).toContain("resolveDraftApiKey(");
+    expect(mainSource).toContain("listRemoteModels({");
+    expect(mainSource).toContain("RemoteModelListResultSchema.parse({ models })");
+  });
+
   it("bounds editor save and snapshot forwarding instead of waiting forever", () => {
     const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
     const catalogForwarding = mainSource.slice(

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  computed,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -17,8 +18,15 @@ const props = defineProps<{
   open: boolean;
   volumeTitle: string;
   arcOptions: readonly PopupSelectOption[];
+  source?: "chapter-card" | "draft";
   pending?: boolean;
 }>();
+
+const fromDraft = computed(() => props.source === "draft");
+const unitLabel = computed(() => (fromDraft.value ? "小节" : "章卡"));
+const titleFieldLabel = computed(() =>
+  fromDraft.value ? "小节名称" : "章卡标题"
+);
 
 const emit = defineEmits<{
   close: [];
@@ -44,7 +52,7 @@ function selectArc(value: PopupSelectValue): void {
 function submit(): void {
   const normalizedTitle = title.value.trim();
   if (!normalizedTitle) {
-    uiMessage.warning("请输入章卡标题。");
+    uiMessage.warning(`请输入${titleFieldLabel.value}。`);
     titleInput.value?.focus({ preventScroll: true });
     return;
   }
@@ -139,13 +147,13 @@ onBeforeUnmount(() =>
         <form @submit.prevent="submit">
           <header>
             <div>
-              <span>剧情设计 · {{ volumeTitle }}</span>
-              <h2 id="create-long-chapter-card-title">新建章卡</h2>
+              <span>{{ fromDraft ? "正文" : "剧情设计" }} · {{ volumeTitle }}</span>
+              <h2 id="create-long-chapter-card-title">新建{{ unitLabel }}</h2>
             </div>
             <button
               class="close-button"
               type="button"
-              aria-label="关闭新建章卡弹窗"
+              :aria-label="`关闭新建${unitLabel}弹窗`"
               :disabled="pending"
               @click="close"
             >
@@ -155,7 +163,7 @@ onBeforeUnmount(() =>
 
           <fieldset :disabled="pending">
             <label>
-              <span>章卡标题</span>
+              <span>{{ titleFieldLabel }}</span>
               <input
                 ref="titleInput"
                 v-model="title"
@@ -173,13 +181,16 @@ onBeforeUnmount(() =>
                   { value: '', label: '不关联剧情点' },
                   ...arcOptions
                 ]"
-                accessible-label="选择章卡关联剧情点"
+                :accessible-label="`选择${unitLabel}关联剧情点`"
                 :disabled="pending"
                 :menu-z-index="2500"
                 @update:model-value="selectArc"
               />
             </label>
-            <p>创建后可在章卡中继续补充完整内容。</p>
+            <p v-if="fromDraft">
+              确认后会同步创建对应章卡。建议先在「剧情设计 → 章卡」中维护好章卡，再开始编写正文。
+            </p>
+            <p v-else>创建后可在章卡中继续补充完整内容。</p>
           </fieldset>
 
           <footer>
@@ -187,7 +198,7 @@ onBeforeUnmount(() =>
               取消
             </button>
             <button class="primary-button" type="submit" :disabled="pending">
-              {{ pending ? "创建中…" : "创建章卡" }}
+              {{ pending ? "创建中…" : fromDraft ? "确认新建" : "创建章卡" }}
             </button>
           </footer>
         </form>

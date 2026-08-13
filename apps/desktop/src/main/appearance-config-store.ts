@@ -13,6 +13,8 @@ interface DiskAppearanceSettings {
   mode: AppearanceSettings["mode"];
   light: AppearanceSettings["light"];
   dark: AppearanceSettings["dark"];
+  uiFontFamily?: AppearanceSettings["uiFontFamily"];
+  editorFontFamily?: AppearanceSettings["editorFontFamily"];
 }
 
 function isNodeError(error: unknown, code: string): boolean {
@@ -63,7 +65,9 @@ export class AppearanceConfigStore {
         settings: toPublicSettings({
           mode: candidate.mode,
           light: candidate.light,
-          dark: candidate.dark
+          dark: candidate.dark,
+          uiFontFamily: candidate.uiFontFamily,
+          editorFontFamily: candidate.editorFontFamily
         })
       });
     } catch (error: unknown) {
@@ -85,7 +89,9 @@ export class AppearanceConfigStore {
         version: 1,
         mode: settings.mode,
         light: settings.light,
-        dark: settings.dark
+        dark: settings.dark,
+        uiFontFamily: settings.uiFontFamily,
+        editorFontFamily: settings.editorFontFamily
       };
       await atomicWriteJson(this.settingsPath, disk);
       saved = AppearanceSettingsSnapshotSchema.parse({

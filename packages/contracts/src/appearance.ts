@@ -15,6 +15,97 @@ export const APPEARANCE_FONT_SIZE_LIMITS = {
 export const DEFAULT_APPEARANCE_UI_FONT_SIZE = 14;
 export const DEFAULT_APPEARANCE_CODE_FONT_SIZE = 13;
 
+export const APPEARANCE_UI_FONT_FAMILIES = ["system", "sans", "yuan"] as const;
+export const AppearanceUiFontFamilySchema = z.enum(APPEARANCE_UI_FONT_FAMILIES);
+export type AppearanceUiFontFamily = z.infer<typeof AppearanceUiFontFamilySchema>;
+
+export const APPEARANCE_EDITOR_FONT_FAMILIES = [
+  "song",
+  "kai",
+  "fangsong",
+  "sans",
+  "yuan"
+] as const;
+export const AppearanceEditorFontFamilySchema = z.enum(
+  APPEARANCE_EDITOR_FONT_FAMILIES
+);
+export type AppearanceEditorFontFamily = z.infer<
+  typeof AppearanceEditorFontFamilySchema
+>;
+
+export const DEFAULT_APPEARANCE_UI_FONT_FAMILY: AppearanceUiFontFamily =
+  "system";
+export const DEFAULT_APPEARANCE_EDITOR_FONT_FAMILY: AppearanceEditorFontFamily =
+  "song";
+
+export const APPEARANCE_FONT_FAMILY_LABELS = {
+  system: "系统默认",
+  sans: "黑体",
+  song: "宋体",
+  kai: "楷体",
+  fangsong: "仿宋",
+  yuan: "圆体"
+} as const;
+
+export const APPEARANCE_UI_FONT_STACKS = {
+  system:
+    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+  sans: '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", sans-serif',
+  yuan: '"Yuanti SC", "YouYuan", "PingFang SC", "Microsoft YaHei", sans-serif'
+} as const satisfies Record<AppearanceUiFontFamily, string>;
+
+export const APPEARANCE_EDITOR_FONT_STACKS = {
+  song: '"Songti SC", "SimSun", "Noto Serif SC", Georgia, serif',
+  kai: '"Kaiti SC", "STKaiti", "KaiTi", serif',
+  fangsong: '"STFangsong", "FangSong", "KaiTi", serif',
+  sans: APPEARANCE_UI_FONT_STACKS.sans,
+  yuan: APPEARANCE_UI_FONT_STACKS.yuan
+} as const satisfies Record<AppearanceEditorFontFamily, string>;
+
+export interface AppearanceFontFamilyOption<T extends string> {
+  value: T;
+  label: string;
+  stack: string;
+}
+
+export function resolveAppearanceUiFontStack(
+  family: string | undefined
+): string {
+  if (family && family in APPEARANCE_UI_FONT_STACKS) {
+    return APPEARANCE_UI_FONT_STACKS[family as AppearanceUiFontFamily];
+  }
+  return APPEARANCE_UI_FONT_STACKS[DEFAULT_APPEARANCE_UI_FONT_FAMILY];
+}
+
+export function resolveAppearanceEditorFontStack(
+  family: string | undefined
+): string {
+  if (family && family in APPEARANCE_EDITOR_FONT_STACKS) {
+    return APPEARANCE_EDITOR_FONT_STACKS[family as AppearanceEditorFontFamily];
+  }
+  return APPEARANCE_EDITOR_FONT_STACKS[DEFAULT_APPEARANCE_EDITOR_FONT_FAMILY];
+}
+
+export function listAppearanceUiFontFamilyOptions(): Array<
+  AppearanceFontFamilyOption<AppearanceUiFontFamily>
+> {
+  return APPEARANCE_UI_FONT_FAMILIES.map((value) => ({
+    value,
+    label: APPEARANCE_FONT_FAMILY_LABELS[value],
+    stack: APPEARANCE_UI_FONT_STACKS[value]
+  }));
+}
+
+export function listAppearanceEditorFontFamilyOptions(): Array<
+  AppearanceFontFamilyOption<AppearanceEditorFontFamily>
+> {
+  return APPEARANCE_EDITOR_FONT_FAMILIES.map((value) => ({
+    value,
+    label: APPEARANCE_FONT_FAMILY_LABELS[value],
+    stack: APPEARANCE_EDITOR_FONT_STACKS[value]
+  }));
+}
+
 const HexColorSchema = z
   .string()
   .regex(/^#[\da-f]{6}$/iu, "颜色必须是 6 位十六进制值")
@@ -43,7 +134,13 @@ export type AppearanceThemeConfig = z.infer<typeof AppearanceThemeConfigSchema>;
 export const AppearanceSettingsSchema = z.object({
   mode: AppearanceModeSchema,
   light: AppearanceThemeConfigSchema,
-  dark: AppearanceThemeConfigSchema
+  dark: AppearanceThemeConfigSchema,
+  uiFontFamily: AppearanceUiFontFamilySchema.default(
+    DEFAULT_APPEARANCE_UI_FONT_FAMILY
+  ),
+  editorFontFamily: AppearanceEditorFontFamilySchema.default(
+    DEFAULT_APPEARANCE_EDITOR_FONT_FAMILY
+  )
 });
 export type AppearanceSettings = z.infer<typeof AppearanceSettingsSchema>;
 
@@ -84,7 +181,9 @@ export function createDefaultAppearanceSettings(): AppearanceSettings {
   return {
     mode: "system",
     light: createDefaultAppearanceTheme("light"),
-    dark: createDefaultAppearanceTheme("dark")
+    dark: createDefaultAppearanceTheme("dark"),
+    uiFontFamily: DEFAULT_APPEARANCE_UI_FONT_FAMILY,
+    editorFontFamily: DEFAULT_APPEARANCE_EDITOR_FONT_FAMILY
   };
 }
 

@@ -92,6 +92,17 @@ describe("SettingsPage", () => {
     expect(appSource).toContain('@test-model="testModel"');
   });
 
+  it("lets users pick UI and editor font families from appearance settings", () => {
+    expect(source).toContain("<strong>界面字体</strong>");
+    expect(source).toContain("<strong>正文字体</strong>");
+    expect(source).toContain("appearance.setUiFontFamily");
+    expect(source).toContain("appearance.setEditorFontFamily");
+    expect(source).toContain(':model-value="appearance.state.uiFontFamily"');
+    expect(source).toContain(':model-value="appearance.state.editorFontFamily"');
+    expect(source).toContain("listAppearanceUiFontFamilyOptions");
+    expect(source).toContain("listAppearanceEditorFontFamilyOptions");
+  });
+
   it("lets users replace a font-size value and previews valid input immediately", () => {
     expect(source).toContain('@input="previewFontSize(\'uiFontSize\', $event)"');
     expect(source).toContain('@change="commitFontSize(\'uiFontSize\', $event)"');

@@ -2282,7 +2282,7 @@ button:disabled {
 .thread-detail-header h3 {
   overflow: hidden;
   margin: 0;
-  font-family: Georgia, "Songti SC", "SimSun", serif;
+  font-family: var(--editor-font);
   font-size: 1.285714rem;
   text-overflow: ellipsis;
   white-space: nowrap;

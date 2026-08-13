@@ -13,6 +13,34 @@ describe("TreeNodeItem actions", () => {
     expect(source).not.toContain("opening && props.node.selectableBranch");
   });
 
+  it("offers adding a manuscript section from each long draft volume", () => {
+    expect(source).toContain("Boolean(props.node.longDraftVolumeId)");
+    expect(source).toContain("isLongDraftVolume");
+    expect(source).toContain("'新增小节'");
+    expect(source).toContain("`在${node.label}新增小节`");
+    expect(source).toContain("createLongDraftSection()");
+    expect(source).toContain('emit("createLongDraftSection", props.node)');
+    expect(source).not.toContain("<span>新增小节</span>");
+  });
+
+  it("mirrors chapter-card move and delete actions on each long draft section", () => {
+    expect(source).toContain("isLongDraftSection");
+    expect(source).toContain(
+      'props.node.longWorkspaceSelection?.root === "draft"'
+    );
+    expect(source).toContain(
+      "Boolean(props.node.longWorkspaceSelection?.chapterCardId)"
+    );
+    expect(source).toContain("longDraftSectionAction('move-up')");
+    expect(source).toContain("longDraftSectionAction('move-down')");
+    expect(source).toContain("longDraftSectionAction('delete')");
+    expect(source).toContain(":disabled=\"longDraftSectionMoveUpDisabled\"");
+    expect(source).toContain(":disabled=\"longDraftSectionMoveDownDisabled\"");
+    expect(source).toContain(
+      'emit("longDraftSectionAction", action, props.node)'
+    );
+  });
+
   it("places add on the draft parent and ordering plus delete in each section menu", () => {
     expect(source).toContain('props.node.shortAgentId === "expert_draft_coordinator"');
     expect(source).toContain("!props.node.expertSectionId");
@@ -24,7 +52,8 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain(":disabled=\"expertSectionMoveUpDisabled\"");
     expect(source).toContain(":disabled=\"expertSectionMoveDownDisabled\"");
     expect(source).toContain('props.node.workspaceType === "script" ? "剧集" : "小节"');
-    expect(source).toContain("isCharacterDirectory ? '新建人物条目' : `新建${draftUnitLabel}`");
+    expect(source).toContain("isCharacterDirectory");
+    expect(source).toContain("`新建${draftUnitLabel}`");
     expect(source).toContain("<span>删除{{ draftUnitLabel }}</span>");
   });
 

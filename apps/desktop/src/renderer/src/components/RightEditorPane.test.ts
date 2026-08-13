@@ -67,10 +67,16 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain("scroller.scrollTop = recalledEditorScrollPosition(key, view)");
   });
 
-  it("routes the short-story tab add button through the existing sidebar creation flow", () => {
+  it("routes the short-story tab add button through a named confirmation dialog", () => {
     expect(appSource).toContain("async function addExpertSectionFromEditor()");
     expect(appSource).toContain('directory.workspaceType !== "short"');
     expect(appSource).toContain("await addExpertSection(draftNode)");
+    expect(appSource).toContain("function requestCreateExpertSection(");
+    expect(appSource).toContain("async function confirmCreateExpertSection(");
+    expect(appSource).toContain("suggestedDraftSectionTitle(");
+    expect(appSource).toContain("title,");
+    expect(appSource).toContain("await window.deepwrite.catalog.createDraftSection({");
+    expect(appSource).toContain("<CreateExpertSectionDialog");
     expect(appSource).toContain('@create-section="createEditorSection"');
     expect(appSource).toContain(
       'activeDocument.value.workspaceType === "short"'

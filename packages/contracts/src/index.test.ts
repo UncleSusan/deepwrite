@@ -7,6 +7,7 @@ import {
   AgentTurnStartedEventEnvelopeSchema,
   AgentPromptCommandPayloadSchema,
   ActiveResourceSnapshotSchema,
+  AppearanceSettingsSchema,
   AppearanceSettingsSnapshotSchema,
   CommandEnvelopeSchema,
   ExpertDraftFileSnapshotSchema,
@@ -35,6 +36,10 @@ import {
   WorkspaceEditorMutationPayloadSchema,
   createDefaultCreativePlotStages,
   createDefaultAppearanceSettings,
+  listAppearanceEditorFontFamilyOptions,
+  listAppearanceUiFontFamilyOptions,
+  resolveAppearanceEditorFontStack,
+  resolveAppearanceUiFontStack,
   createShortWorkspaceContentRevision,
   createEnvelope
 } from "./index";
@@ -373,6 +378,22 @@ describe("DeepWrite desktop contracts", () => {
     );
 
     expect(CommandEnvelopeSchema.parse(envelope).type).toBe("models.test");
+  });
+
+  it("accepts a remote model list request from an unsaved draft", () => {
+    const envelope = createEnvelope(
+      "models.listRemote",
+      {
+        id: "draft-model",
+        provider: "custom",
+        api: "openai-completions" as const,
+        baseUrl: "https://api.example.test/v1",
+        apiKey: "not-a-real-key"
+      },
+      { id: "cmd_list_remote" }
+    );
+
+    expect(CommandEnvelopeSchema.parse(envelope).type).toBe("models.listRemote");
   });
 
   it("rejects blank prompts and mismatched session context", () => {
@@ -1350,8 +1371,53 @@ describe("DeepWrite desktop contracts", () => {
       settings
     })).toMatchObject({
       persisted: true,
-      settings: { mode: "dark", light: { uiFontSize: 16.5 } }
+      settings: {
+        mode: "dark",
+        light: { uiFontSize: 16.5 },
+        uiFontFamily: "system",
+        editorFontFamily: "song"
+      }
     });
+  });
+
+  it("defaults missing appearance font families and rejects unknown ids", () => {
+    const settings = createDefaultAppearanceSettings();
+    const parsed = AppearanceSettingsSchema.parse({
+      mode: settings.mode,
+      light: settings.light,
+      dark: settings.dark
+    });
+    expect(parsed.uiFontFamily).toBe("system");
+    expect(parsed.editorFontFamily).toBe("song");
+    expect(resolveAppearanceUiFontStack("sans")).toContain("PingFang SC");
+    expect(resolveAppearanceEditorFontStack("kai")).toContain("Kaiti SC");
+    expect(resolveAppearanceUiFontStack("missing")).toBe(
+      resolveAppearanceUiFontStack("system")
+    );
+    expect(listAppearanceUiFontFamilyOptions().map((option) => option.value)).toEqual([
+      "system",
+      "sans",
+      "yuan"
+    ]);
+    expect(listAppearanceEditorFontFamilyOptions().map((option) => option.value)).toEqual([
+      "song",
+      "kai",
+      "fangsong",
+      "sans",
+      "yuan"
+    ]);
+    expect(
+      AppearanceSettingsSchema.safeParse({
+        ...settings,
+        uiFontFamily: "comic-sans"
+      } as unknown).success
+    ).toBe(false);
+    expect(
+      AppearanceSettingsSchema.safeParse({
+        ...settings,
+        editorFontFamily: "times"
+      } as unknown).success
+    ).toBe(false);
   });
 
   it("keeps library workspaces isolated from short and learning contexts", () => {

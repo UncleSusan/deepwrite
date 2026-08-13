@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -126,6 +126,56 @@ describe("AppearanceConfigStore", () => {
         mode: "dark",
         light: { uiFontSize: 16 }
       }
+    });
+  });
+
+  it("defaults missing font families from legacy appearance files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-appearance-legacy-font-"));
+    temporaryRoots.push(root);
+    const userData = join(root, "user-data");
+    const store = new AppearanceConfigStore(userData);
+    const defaults = createDefaultAppearanceSettings();
+    await mkdir(join(userData, "config"), { recursive: true });
+    await writeFile(
+      join(userData, "config", "appearance.json"),
+      `${JSON.stringify({
+        version: 1,
+        mode: "dark",
+        light: defaults.light,
+        dark: defaults.dark
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    await expect(store.list()).resolves.toEqual({
+      persisted: true,
+      settings: {
+        ...defaults,
+        mode: "dark"
+      }
+    });
+  });
+
+  it("persists selected font families and reloads them", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-appearance-fonts-"));
+    temporaryRoots.push(root);
+    const userData = join(root, "user-data");
+    const store = new AppearanceConfigStore(userData);
+    const settings = {
+      ...createDefaultAppearanceSettings(),
+      uiFontFamily: "sans" as const,
+      editorFontFamily: "kai" as const
+    };
+
+    await expect(store.save(settings)).resolves.toEqual({
+      persisted: true,
+      settings
+    });
+
+    const reloaded = new AppearanceConfigStore(userData);
+    await expect(reloaded.list()).resolves.toEqual({
+      persisted: true,
+      settings
     });
   });
 });

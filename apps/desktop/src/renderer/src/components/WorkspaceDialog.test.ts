@@ -87,6 +87,39 @@ describe("WorkspaceDialog official models", () => {
   });
 });
 
+describe("WorkspaceDialog remote model ids", () => {
+  it("offers a fetch button beside the model id field and turns it into a selector", () => {
+    expect(source).toContain('class="model-id-field"');
+    expect(source).toContain(":aria-label=\"listingRemoteModels ? '拉取中' : '拉取可用模型'\"");
+    expect(source).toContain("{{ listingRemoteModels ? \"拉取中\" : \"拉取\" }}");
+    expect(source).toContain("@click=\"fetchRemoteModels\"");
+    expect(source).toContain("window.deepwrite.models.listRemote({");
+    expect(source).toContain('accessible-label="选择模型 ID"');
+    expect(source).toContain('label: "手动输入其他模型 ID"');
+    expect(source).toContain("canSelectRemoteModel");
+  });
+
+  it("shows a dialog when the api url or key is missing", () => {
+    expect(source).toContain("function missingRemoteModelCredentials");
+    expect(source).toContain("请先填写 API 地址和 API Key，再拉取可用模型。");
+    expect(source).toContain("请先填写 API 地址，再拉取可用模型。");
+    expect(source).toContain("请先填写 API Key，再拉取可用模型。");
+    expect(source).toContain('class="dialog-backdrop model-fetch-hint-overlay"');
+    expect(source).toContain('id="model-fetch-hint-title"');
+    expect(source).toContain("无法拉取模型");
+    expect(source).toContain("fetchHintDialog.value = missing");
+    expect(source).not.toContain("uiMessage.warning(missing)");
+  });
+
+  it("reuses a saved key and allows ollama without a key", () => {
+    const start = source.indexOf("function missingRemoteModelCredentials");
+    const end = source.indexOf("function commandErrorMessage", start);
+    const body = source.slice(start, end);
+    expect(body).toContain("!editor.hasApiKey");
+    expect(body).toContain('editor.provider !== "ollama"');
+  });
+});
+
 describe("WorkspaceDialog model draft lifecycle", () => {
   it("persists a newly selected default model immediately", () => {
     const start = source.indexOf("function setDefaultModel(");

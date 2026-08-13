@@ -9,6 +9,7 @@ import {
   type ModelSettings,
   type ModelSettingsInput,
   type ReasoningLevel,
+  type RemoteModelListItem,
   type TemperatureOptions,
   type ThinkingLevelOptions,
   type ThinkingLevel
@@ -58,10 +59,16 @@ const emit = defineEmits<{
   openOfficialModels: [];
 }>();
 
+const MANUAL_MODEL_ID_VALUE = "__deepwrite-manual-model-id__";
+
 const draftModels = ref<DraftModel[]>([]);
 const draftDefaultModelId = ref("");
 const modelEditor = ref<DraftModel | null>(null);
 const modelConfigScrollArea = ref<HTMLElement | null>(null);
+const fetchedRemoteModels = ref<RemoteModelListItem[]>([]);
+const listingRemoteModels = ref(false);
+const fetchHintDialog = ref<string | null>(null);
+const fetchHintConfirmButton = ref<HTMLButtonElement | null>(null);
 const modelConfigRows = computed<ModelConfigRow[]>(() => {
   const rows: ModelConfigRow[] = [];
   const editedModelId = modelEditor.value?.originalId;
@@ -122,6 +129,30 @@ const deepwriteFreeModelOptions = computed(() =>
 const isDeepWriteFreeEditor = computed(
   () => modelEditor.value?.managedBy === "deepwrite-free"
 );
+const canSelectRemoteModel = computed(() => fetchedRemoteModels.value.length > 0);
+const remoteModelOptions = computed(() => {
+  const current = modelEditor.value?.modelId.trim() ?? "";
+  const options = fetchedRemoteModels.value.map((model) => ({
+    value: model.id,
+    label: model.label && model.label !== model.id ? model.label : model.id,
+    ...(model.label && model.label !== model.id
+      ? { description: model.id, title: model.id }
+      : { title: model.id })
+  }));
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({
+      value: current,
+      label: current,
+      title: current
+    });
+  }
+  options.push({
+    value: MANUAL_MODEL_ID_VALUE,
+    label: "手动输入其他模型 ID",
+    title: "返回手动填写"
+  });
+  return options;
+});
 const apiOptions: ReadonlyArray<{ value: ModelApi; label: string }> = [
   { value: "openai-completions", label: "OpenAI Completions" },
   { value: "openai-responses", label: "OpenAI Responses" },
@@ -263,6 +294,27 @@ watch(
     }
   }
 );
+
+watch(
+  () =>
+    modelEditor.value
+      ? [
+          modelEditor.value.id,
+          modelEditor.value.provider,
+          modelEditor.value.api,
+          modelEditor.value.baseUrl.trim()
+        ]
+      : null,
+  () => {
+    fetchedRemoteModels.value = [];
+  }
+);
+
+watch(fetchHintDialog, (message) => {
+  if (message) {
+    void nextTick(() => fetchHintConfirmButton.value?.focus());
+  }
+});
 
 function createModel(): void {
   modelEditor.value = {
@@ -561,6 +613,84 @@ function toModelInput(model: DraftModel): ModelConfigInput {
   };
 }
 
+function missingRemoteModelCredentials(editor: DraftModel): string | null {
+  const missingUrl = !editor.baseUrl.trim();
+  const missingKey =
+    !editor.apiKey?.trim() &&
+    !editor.hasApiKey &&
+    editor.provider !== "ollama";
+  if (missingUrl && missingKey) {
+    return "请先填写 API 地址和 API Key，再拉取可用模型。";
+  }
+  if (missingUrl) {
+    return "请先填写 API 地址，再拉取可用模型。";
+  }
+  if (missingKey) {
+    return "请先填写 API Key，再拉取可用模型。";
+  }
+  return null;
+}
+
+function commandErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof Error) || !error.message.trim()) {
+    return fallback;
+  }
+  const separator = error.message.indexOf(": ");
+  return separator >= 0 ? error.message.slice(separator + 2) : error.message;
+}
+
+function setFetchedModelId(value: string | number): void {
+  const editor = modelEditor.value;
+  if (!editor) {
+    return;
+  }
+  if (String(value) === MANUAL_MODEL_ID_VALUE) {
+    fetchedRemoteModels.value = [];
+    return;
+  }
+  editor.modelId = String(value);
+}
+
+async function fetchRemoteModels(): Promise<void> {
+  const editor = modelEditor.value;
+  if (!editor || listingRemoteModels.value) {
+    return;
+  }
+  const missing = missingRemoteModelCredentials(editor);
+  if (missing) {
+    fetchHintDialog.value = missing;
+    return;
+  }
+  if (!window.deepwrite) {
+    uiMessage.error("当前环境无法拉取模型列表。");
+    return;
+  }
+  listingRemoteModels.value = true;
+  try {
+    const result = await window.deepwrite.models.listRemote({
+      id: editor.originalId ?? editor.id,
+      provider: editor.provider.trim(),
+      api: editor.api,
+      baseUrl: editor.baseUrl.trim(),
+      ...(editor.apiKey?.trim() ? { apiKey: editor.apiKey.trim() } : {}),
+      ...(editor.clearApiKey ? { clearApiKey: true } : {})
+    });
+    fetchedRemoteModels.value = result.models;
+    if (result.models.length === 0) {
+      uiMessage.warning("当前接口没有返回可用模型。");
+      return;
+    }
+    if (!editor.modelId.trim()) {
+      editor.modelId = result.models[0]!.id;
+    }
+    uiMessage.success(`已拉取 ${result.models.length} 个可用模型，请选择模型 ID。`);
+  } catch (error: unknown) {
+    uiMessage.error(commandErrorMessage(error, "拉取模型列表失败。"));
+  } finally {
+    listingRemoteModels.value = false;
+  }
+}
+
 function testDraftModel(model: DraftModel): void {
   if (!model.label.trim() || !model.provider.trim() || !model.modelId.trim()) {
     uiMessage.warning("请先填写名称、Provider 和模型 ID，再测试连接。");
@@ -733,12 +863,34 @@ function discardModelChanges(): void {
                       :menu-min-width="300"
                       @update:model-value="applyDeepWriteFreeModel(String($event))"
                     />
-                    <input
-                      v-else
-                      v-model="modelEditor.modelId"
-                      type="text"
-                      placeholder="服务商提供的模型 ID"
-                    />
+                    <div v-else class="model-id-field">
+                      <PopupSelect
+                        v-if="canSelectRemoteModel"
+                        :model-value="modelEditor.modelId"
+                        :options="remoteModelOptions"
+                        accessible-label="选择模型 ID"
+                        placeholder="请选择模型 ID"
+                        :menu-min-width="280"
+                        :disabled="listingRemoteModels"
+                        @update:model-value="setFetchedModelId"
+                      />
+                      <input
+                        v-else
+                        v-model="modelEditor.modelId"
+                        type="text"
+                        placeholder="服务商提供的模型 ID"
+                      />
+                      <button
+                        class="model-id-fetch-button"
+                        type="button"
+                        :disabled="listingRemoteModels"
+                        :title="listingRemoteModels ? '拉取中…' : '根据 API 地址和 Key 拉取可用模型'"
+                        :aria-label="listingRemoteModels ? '拉取中' : '拉取可用模型'"
+                        @click="fetchRemoteModels"
+                      >
+                        {{ listingRemoteModels ? "拉取中" : "拉取" }}
+                      </button>
+                    </div>
                   </label>
                   <label v-if="!isDeepWriteFreeEditor">
                     <span>API 类型</span>
@@ -942,4 +1094,41 @@ function discardModelChanges(): void {
         </div>
 
       </section>
+
+      <Teleport to="body">
+        <div
+          v-if="fetchHintDialog"
+          class="dialog-backdrop model-fetch-hint-overlay"
+          @mousedown.self="fetchHintDialog = null"
+          @keydown.esc.stop="fetchHintDialog = null"
+        >
+          <section
+            class="model-fetch-hint-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="model-fetch-hint-title"
+            aria-describedby="model-fetch-hint-message"
+            tabindex="-1"
+            @keydown.esc.stop="fetchHintDialog = null"
+          >
+            <header>
+              <div>
+                <span class="dialog-eyebrow">模型配置</span>
+                <h2 id="model-fetch-hint-title">无法拉取模型</h2>
+              </div>
+            </header>
+            <p id="model-fetch-hint-message">{{ fetchHintDialog }}</p>
+            <footer class="dialog-actions">
+              <button
+                ref="fetchHintConfirmButton"
+                class="dialog-primary-button"
+                type="button"
+                @click="fetchHintDialog = null"
+              >
+                知道了
+              </button>
+            </footer>
+          </section>
+        </div>
+      </Teleport>
 </template>

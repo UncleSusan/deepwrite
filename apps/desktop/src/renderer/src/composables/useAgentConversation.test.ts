@@ -9,6 +9,7 @@ import {
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
+  createDefaultAppearanceSettings,
   createDefaultCreativePlotStages,
   createEmptyLongMarkdownFileReference,
   createShortWorkspaceContentRevision,
@@ -302,6 +303,23 @@ function createDeferredApi(): {
         throw new Error("Marketplace is not used by conversation tests.");
       }
     },
+    cloudBackup: {
+      async status() {
+        throw new Error("Cloud backup is not used by conversation tests.");
+      },
+      async previewBackup() {
+        throw new Error("Cloud backup is not used by conversation tests.");
+      },
+      async applyBackup() {
+        throw new Error("Cloud backup is not used by conversation tests.");
+      },
+      async previewRestore() {
+        throw new Error("Cloud backup is not used by conversation tests.");
+      },
+      async applyRestore() {
+        throw new Error("Cloud backup is not used by conversation tests.");
+      }
+    },
     catalog: {
       loadDraftRecovery: vi.fn(async () => ({})),
       saveDraftRecovery: vi.fn(async () => undefined),
@@ -503,6 +521,9 @@ function createDeferredApi(): {
           message: "连接成功",
           testedAt: new Date().toISOString()
         };
+      },
+      async listRemote() {
+        return { models: [] };
       }
     },
     modelUsage: {
@@ -597,27 +618,7 @@ function createDeferredApi(): {
       async list() {
         return {
           persisted: false,
-          settings: {
-            mode: "system" as const,
-            light: {
-              preset: "codex",
-              accent: "#339CFF",
-              background: "#FFFFFF",
-              foreground: "#1A1C1F",
-              uiFontSize: 14,
-              codeFontSize: 13,
-              translucentSidebar: true
-            },
-            dark: {
-              preset: "codex",
-              accent: "#5EACFF",
-              background: "#17191C",
-              foreground: "#F3F4F6",
-              uiFontSize: 14,
-              codeFontSize: 13,
-              translucentSidebar: true
-            }
-          }
+          settings: createDefaultAppearanceSettings()
         };
       },
       async save(settings) {

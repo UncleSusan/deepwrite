@@ -1,13 +1,19 @@
 import { computed, reactive, readonly, watch } from "vue";
 import {
   APPEARANCE_FONT_SIZE_LIMITS,
+  AppearanceEditorFontFamilySchema,
   AppearanceSettingsSchema,
+  AppearanceUiFontFamilySchema,
   createDefaultAppearanceSettings,
   createDefaultAppearanceTheme,
+  resolveAppearanceEditorFontStack,
+  resolveAppearanceUiFontStack,
   type AppearanceColorScheme,
+  type AppearanceEditorFontFamily,
   type AppearanceMode,
   type AppearanceSettings,
-  type AppearanceThemeConfig
+  type AppearanceThemeConfig,
+  type AppearanceUiFontFamily
 } from "@deepwrite/contracts";
 
 export type { AppearanceMode };
@@ -19,6 +25,8 @@ interface AppearanceState {
   systemScheme: ColorScheme;
   light: ThemeConfig;
   dark: ThemeConfig;
+  uiFontFamily: AppearanceUiFontFamily;
+  editorFontFamily: AppearanceEditorFontFamily;
 }
 
 export interface ThemePreset {
@@ -109,13 +117,17 @@ function captureSettings(): AppearanceSettings {
   return AppearanceSettingsSchema.parse({
     mode: state.mode,
     light: state.light,
-    dark: state.dark
+    dark: state.dark,
+    uiFontFamily: state.uiFontFamily,
+    editorFontFamily: state.editorFontFamily
   });
 }
 
 function applySettings(settings: AppearanceSettings): void {
   suppressPersist = true;
   state.mode = settings.mode;
+  state.uiFontFamily = settings.uiFontFamily;
+  state.editorFontFamily = settings.editorFontFamily;
   Object.assign(state.light, settings.light);
   Object.assign(state.dark, settings.dark);
   suppressPersist = false;
@@ -128,7 +140,9 @@ function readLegacyStoredState(systemScheme: ColorScheme): AppearanceState {
     mode: defaults.mode,
     systemScheme,
     light: defaults.light,
-    dark: defaults.dark
+    dark: defaults.dark,
+    uiFontFamily: defaults.uiFontFamily,
+    editorFontFamily: defaults.editorFontFamily
   };
   try {
     const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
@@ -137,14 +151,18 @@ function readLegacyStoredState(systemScheme: ColorScheme): AppearanceState {
     const settings = AppearanceSettingsSchema.safeParse({
       mode: parsed.mode,
       light: parsed.light,
-      dark: parsed.dark
+      dark: parsed.dark,
+      uiFontFamily: parsed.uiFontFamily,
+      editorFontFamily: parsed.editorFontFamily
     });
     if (settings.success) {
       return {
         mode: settings.data.mode,
         systemScheme,
         light: settings.data.light,
-        dark: settings.data.dark
+        dark: settings.data.dark,
+        uiFontFamily: settings.data.uiFontFamily,
+        editorFontFamily: settings.data.editorFontFamily
       };
     }
     return {
@@ -154,7 +172,12 @@ function readLegacyStoredState(systemScheme: ColorScheme): AppearanceState {
           : fallback.mode,
       systemScheme,
       light: sanitizeTheme(parsed.light, "light"),
-      dark: sanitizeTheme(parsed.dark, "dark")
+      dark: sanitizeTheme(parsed.dark, "dark"),
+      uiFontFamily: sanitizeUiFontFamily(parsed.uiFontFamily, fallback.uiFontFamily),
+      editorFontFamily: sanitizeEditorFontFamily(
+        parsed.editorFontFamily,
+        fallback.editorFontFamily
+      )
     };
   } catch {
     return fallback;
@@ -173,7 +196,13 @@ function persistToLegacyStorage(): void {
   try {
     window.localStorage.setItem(
       LEGACY_STORAGE_KEY,
-      JSON.stringify({ mode: state.mode, light: state.light, dark: state.dark })
+      JSON.stringify({
+        mode: state.mode,
+        light: state.light,
+        dark: state.dark,
+        uiFontFamily: state.uiFontFamily,
+        editorFontFamily: state.editorFontFamily
+      })
     );
   } catch {
     // The live theme still works when storage is unavailable.
@@ -259,6 +288,11 @@ function applyToDocument(): void {
   root.style.setProperty("--text-tertiary", mix(theme.background, theme.foreground, scheme === "dark" ? 0.52 : 0.5));
   root.style.setProperty("--ui-font-size", `${theme.uiFontSize}px`);
   root.style.setProperty("--code-font-size", `${theme.codeFontSize}px`);
+  root.style.setProperty("--ui-font", resolveAppearanceUiFontStack(state.uiFontFamily));
+  root.style.setProperty(
+    "--editor-font",
+    resolveAppearanceEditorFontStack(state.editorFontFamily)
+  );
   root.style.setProperty(
     "--sidebar-surface",
     theme.translucentSidebar
@@ -349,6 +383,34 @@ export function setAppearanceMode(mode: AppearanceMode): void {
   state.mode = mode;
 }
 
+function sanitizeUiFontFamily(
+  value: unknown,
+  fallback: AppearanceUiFontFamily
+): AppearanceUiFontFamily {
+  const parsed = AppearanceUiFontFamilySchema.safeParse(value);
+  return parsed.success ? parsed.data : fallback;
+}
+
+function sanitizeEditorFontFamily(
+  value: unknown,
+  fallback: AppearanceEditorFontFamily
+): AppearanceEditorFontFamily {
+  const parsed = AppearanceEditorFontFamilySchema.safeParse(value);
+  return parsed.success ? parsed.data : fallback;
+}
+
+export function setUiFontFamily(family: string): void {
+  const parsed = AppearanceUiFontFamilySchema.safeParse(family);
+  if (!parsed.success || parsed.data === state.uiFontFamily) return;
+  state.uiFontFamily = parsed.data;
+}
+
+export function setEditorFontFamily(family: string): void {
+  const parsed = AppearanceEditorFontFamilySchema.safeParse(family);
+  if (!parsed.success || parsed.data === state.editorFontFamily) return;
+  state.editorFontFamily = parsed.data;
+}
+
 export function updateTheme(scheme: ColorScheme, patch: Partial<ThemeConfig>): void {
   Object.assign(state[scheme], patch);
 }
@@ -374,6 +436,8 @@ export function useAppearance() {
     resolvedScheme,
     activeTheme,
     setMode: setAppearanceMode,
+    setUiFontFamily,
+    setEditorFontFamily,
     updateTheme,
     applyPreset: applyThemePreset,
     importTheme,

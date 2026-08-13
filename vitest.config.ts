@@ -30,6 +30,7 @@ export default defineConfig({
       "packages/**/*.test.ts",
       "apps/desktop/src/main/**/*.test.ts",
       "apps/desktop/src/utilities/**/*.test.ts",
+      "apps/desktop/src/extras/**/*.test.ts",
       "apps/desktop/src/renderer/**/*.test.ts"
     ],
     environment: "node"

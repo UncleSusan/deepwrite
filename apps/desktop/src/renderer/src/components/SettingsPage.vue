@@ -1,24 +1,26 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import type {
-  AppLanguage,
-  GeneralPermissionMode,
-  LearningImitationSettings,
-  LearningImitationSettingsInput,
-  LearningImitationStageId,
-  LibraryAgentDomain,
-  LibraryAgentSettings,
-  LibraryAgentSettingsInput,
-  LongAgentSettings,
-  LongAgentSettingsInput,
-  ModelConfigInput,
-  ModelSettings,
-  ModelSettingsInput,
-  ModelUsageDashboard,
-  ModelUsageQueryInput,
-  OfficialModelBalance,
-  WorkspaceAgentSettings,
-  WorkspaceAgentSettingsInput
+import {
+  listAppearanceEditorFontFamilyOptions,
+  listAppearanceUiFontFamilyOptions,
+  type AppLanguage,
+  type GeneralPermissionMode,
+  type LearningImitationSettings,
+  type LearningImitationSettingsInput,
+  type LearningImitationStageId,
+  type LibraryAgentDomain,
+  type LibraryAgentSettings,
+  type LibraryAgentSettingsInput,
+  type LongAgentSettings,
+  type LongAgentSettingsInput,
+  type ModelConfigInput,
+  type ModelSettings,
+  type ModelSettingsInput,
+  type ModelUsageDashboard,
+  type ModelUsageQueryInput,
+  type OfficialModelBalance,
+  type WorkspaceAgentSettings,
+  type WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
 import {
   FONT_SIZE_LIMITS,
@@ -210,6 +212,16 @@ const languageOptions: Array<{ value: AppLanguage; label: string }> = [
   { value: "auto", label: "自动检测（简体中文）" },
   { value: "zh-CN", label: "简体中文" }
 ];
+const uiFontOptions = listAppearanceUiFontFamilyOptions().map((option) => ({
+  value: option.value,
+  label: option.label,
+  style: { fontFamily: option.stack }
+}));
+const editorFontOptions = listAppearanceEditorFontFamilyOptions().map((option) => ({
+  value: option.value,
+  label: option.label,
+  style: { fontFamily: option.stack }
+}));
 
 async function selectCategory(id: string): Promise<void> {
   if (id === "appearance" && !appearanceReady.value) {
@@ -227,6 +239,14 @@ async function selectCategory(id: string): Promise<void> {
 
 function selectMode(mode: AppearanceMode): void {
   appearance.setMode(mode);
+}
+
+function selectUiFontFamily(value: string | number): void {
+  appearance.setUiFontFamily(String(value));
+}
+
+function selectEditorFontFamily(value: string | number): void {
+  appearance.setEditorFontFamily(String(value));
 }
 
 function applyThemePreset(value: string | number): void {
@@ -658,6 +678,42 @@ async function importThemeFile(event: Event): Promise<void> {
               <span class="settings-toggle"><input type="checkbox" :checked="editingTheme.translucentSidebar" @change="updateTheme('translucentSidebar', ($event.target as HTMLInputElement).checked)" /></span>
             </label>
           </div>
+
+          <div class="appearance-font-group">
+            <h2 class="appearance-heading">字体</h2>
+            <div class="settings-card">
+              <div class="settings-item settings-select-item">
+                <span class="settings-item-text">
+                  <strong>界面字体</strong>
+                  <small>侧栏、设置和对话等界面文字</small>
+                </span>
+                <PopupSelect
+                  class="general-select-control"
+                  :model-value="appearance.state.uiFontFamily"
+                  :options="uiFontOptions"
+                  accessible-label="选择界面字体"
+                  align="end"
+                  :menu-min-width="210"
+                  @update:model-value="selectUiFontFamily"
+                />
+              </div>
+              <div class="settings-item settings-select-item">
+                <span class="settings-item-text">
+                  <strong>正文字体</strong>
+                  <small>短篇和长篇文稿标题、正文与预览</small>
+                </span>
+                <PopupSelect
+                  class="general-select-control"
+                  :model-value="appearance.state.editorFontFamily"
+                  :options="editorFontOptions"
+                  accessible-label="选择正文字体"
+                  align="end"
+                  :menu-min-width="210"
+                  @update:model-value="selectEditorFontFamily"
+                />
+              </div>
+            </div>
+          </div>
         </section>
 
         <section v-else class="settings-group">
@@ -750,6 +806,7 @@ async function importThemeFile(event: Event): Promise<void> {
 .settings-placeholder { padding: 24px 18px; color: var(--text-secondary); font-size: 0.964286rem; }
 
 .appearance-group { width: 100%; }
+.appearance-font-group { margin-top: 40px; }
 .theme-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-bottom: 40px; }
 .theme-mode-option { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
 .theme-mode-option strong { display: block; padding-top: 11px; font-size: 1.14286rem; font-weight: 590; }

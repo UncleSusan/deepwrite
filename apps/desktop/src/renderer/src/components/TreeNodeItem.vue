@@ -25,6 +25,8 @@ const props = defineProps<{
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
   expertSectionMoveUpDisabled?: boolean;
   expertSectionMoveDownDisabled?: boolean;
+  longDraftSectionMoveUpDisabled?: boolean;
+  longDraftSectionMoveDownDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -36,6 +38,8 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
+  createLongDraftSection: [node: ResourceTreeNode];
+  longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
   expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
   createCharacterItem: [node: ResourceTreeNode];
@@ -93,6 +97,19 @@ const isExpertDraftParent = computed(
     props.node.stageCategoryId === "draft" &&
     !props.node.expertSectionId
 );
+const isLongDraftVolume = computed(
+  () =>
+    props.resourceDomain === "creation" &&
+    props.node.workspaceType === "long" &&
+    Boolean(props.node.longDraftVolumeId)
+);
+const isLongDraftSection = computed(
+  () =>
+    props.resourceDomain === "creation" &&
+    props.node.workspaceType === "long" &&
+    props.node.longWorkspaceSelection?.root === "draft" &&
+    Boolean(props.node.longWorkspaceSelection?.chapterCardId)
+);
 const isExpertDraftSection = computed(
   () =>
     props.resourceDomain === "creation" &&
@@ -113,12 +130,14 @@ const hasActionMenu = computed(
     hasGroupAction.value ||
     hasBookAction.value ||
     hasLongBookAction.value ||
+    isLongDraftSection.value ||
     isExpertDraftSection.value ||
     isCharacterItem.value
 );
 const hasNodeAction = computed(
   () =>
     hasActionMenu.value ||
+    isLongDraftVolume.value ||
     isExpertDraftParent.value ||
     isCharacterDirectory.value
 );
@@ -292,6 +311,17 @@ function createExpertSection(): void {
   emit("createExpertSection", props.node);
 }
 
+function createLongDraftSection(): void {
+  emit("select", props.node);
+  emit("createLongDraftSection", props.node);
+}
+
+function longDraftSectionAction(action: "move-up" | "move-down" | "delete"): void {
+  actionMenuOpen.value = false;
+  emit("select", props.node);
+  emit("longDraftSectionAction", action, props.node);
+}
+
 function removeExpertSection(): void {
   actionMenuOpen.value = false;
   emit("select", props.node);
@@ -403,15 +433,33 @@ onBeforeUnmount(() => {
     </button>
 
     <div
-      v-if="isExpertDraftParent || isCharacterDirectory"
+      v-if="isLongDraftVolume || isExpertDraftParent || isCharacterDirectory"
       class="tree-node-action-area"
     >
       <button
         class="tree-node-action"
         type="button"
-        :aria-label="isCharacterDirectory ? '新建人物条目' : `在${node.label}末尾新建${draftUnitLabel}`"
-        :title="isCharacterDirectory ? '新建人物条目' : `新建${draftUnitLabel}`"
-        @click.stop="isCharacterDirectory ? createCharacterItem() : createExpertSection()"
+        :aria-label="
+          isCharacterDirectory
+            ? '新建人物条目'
+            : isLongDraftVolume
+              ? `在${node.label}新增小节`
+              : `在${node.label}末尾新建${draftUnitLabel}`
+        "
+        :title="
+          isCharacterDirectory
+            ? '新建人物条目'
+            : isLongDraftVolume
+              ? '新增小节'
+              : `新建${draftUnitLabel}`
+        "
+        @click.stop="
+          isCharacterDirectory
+            ? createCharacterItem()
+            : isLongDraftVolume
+              ? createLongDraftSection()
+              : createExpertSection()
+        "
       >
         <AppIcon name="plus" :size="16" />
       </button>
@@ -452,7 +500,36 @@ onBeforeUnmount(() => {
           <AppIcon name="pin" :size="16" />
           <span>{{ pinned ? "取消置顶" : "置顶" }}</span>
         </button>
-        <template v-if="isExpertDraftSection">
+        <template v-if="isLongDraftSection">
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            :disabled="longDraftSectionMoveUpDisabled"
+            @click.stop="longDraftSectionAction('move-up')"
+          >
+            <span>↑</span><span>上移</span>
+          </button>
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            :disabled="longDraftSectionMoveDownDisabled"
+            @click.stop="longDraftSectionAction('move-down')"
+          >
+            <span>↓</span><span>下移</span>
+          </button>
+          <button
+            class="tree-node-action-menu-item is-danger"
+            type="button"
+            role="menuitem"
+            @click.stop="longDraftSectionAction('delete')"
+          >
+            <AppIcon name="trash" :size="16" />
+            <span>删除</span>
+          </button>
+        </template>
+        <template v-else-if="isExpertDraftSection">
           <button
             class="tree-node-action-menu-item"
             type="button"
@@ -808,6 +885,16 @@ onBeforeUnmount(() => {
         :pinned-ids="pinnedIds"
         :expert-section-move-up-disabled="Boolean(child.expertSectionId) && childIndex === 0"
         :expert-section-move-down-disabled="Boolean(child.expertSectionId) && childIndex === node.children.length - 1"
+        :long-draft-section-move-up-disabled="
+          child.longWorkspaceSelection?.root === 'draft' &&
+          Boolean(child.longWorkspaceSelection?.chapterCardId) &&
+          childIndex === 0
+        "
+        :long-draft-section-move-down-disabled="
+          child.longWorkspaceSelection?.root === 'draft' &&
+          Boolean(child.longWorkspaceSelection?.chapterCardId) &&
+          childIndex === node.children.length - 1
+        "
         @select="emit('select', $event)"
         @toggle-pin="emit('togglePin', $event)"
         @book-action="(mode, book) => emit('bookAction', mode, book)"
@@ -816,6 +903,8 @@ onBeforeUnmount(() => {
         @resource-node-action="emit('resourceNodeAction', $event)"
         @move-library-entry="emit('moveLibraryEntry', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
+        @create-long-draft-section="emit('createLongDraftSection', $event)"
+        @long-draft-section-action="(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)"
         @remove-expert-section="emit('removeExpertSection', $event)"
         @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
         @create-character-item="emit('createCharacterItem', $event)"

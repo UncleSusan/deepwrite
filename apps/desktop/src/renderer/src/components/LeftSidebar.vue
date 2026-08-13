@@ -31,7 +31,11 @@ const props = defineProps<{
   selectedId: string;
   imitationRunning?: boolean;
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
-  activePrimaryFeature: PrimaryFeatureId | undefined;
+  activePrimaryFeature:
+    | PrimaryFeatureId
+    | "skill-marketplace"
+    | "cloud-backup"
+    | undefined;
   marketplaceDisplayName?: string | undefined;
 }>();
 
@@ -41,6 +45,7 @@ const emit = defineEmits<{
   openDialog: [mode: DialogMode];
   openAgentTeams: [];
   openMarketplace: [];
+  openCloudBackup: [];
   openSettings: [];
   selectResource: [node: ResourceTreeNode];
   bookAction: [mode: BookResourceDialogMode, node: ResourceTreeNode];
@@ -50,6 +55,8 @@ const emit = defineEmits<{
   resourceNodeAction: [payload: CatalogResourceNodeActionPayload];
   moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
+  createLongDraftSection: [node: ResourceTreeNode];
+  longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
   expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
   createCharacterItem: [node: ResourceTreeNode];
@@ -255,23 +262,30 @@ const resourceDomainsByNodeId = computed(
     )
 );
 const moreFeatures: Array<{
-  id: "imitation" | "skill-marketplace" | "runtime";
+  id: "imitation" | "skill-marketplace" | "cloud-backup" | "runtime";
   label: string;
   description: string;
   icon: IconName;
 }> = [
   { id: "imitation", label: "短篇学习仿写", description: "学习范文并生成同类短篇", icon: "wand" },
   { id: "skill-marketplace", label: "技能广场", description: "发现、安装与发布写作技能", icon: "globe" },
+  { id: "cloud-backup", label: "云端备份", description: "用本机密钥备份创作空间与资料库", icon: "archive" },
   { id: "runtime", label: "运行设置", description: "智能体与工具边界", icon: "model" }
 ];
 
-function activateMoreFeature(id: "imitation" | "skill-marketplace" | "runtime"): void {
+function activateMoreFeature(
+  id: "imitation" | "skill-marketplace" | "cloud-backup" | "runtime"
+): void {
   if (id === "imitation") {
     emit("openDialog", "imitation");
     return;
   }
   if (id === "skill-marketplace") {
     emit("openMarketplace");
+    return;
+  }
+  if (id === "cloud-backup") {
+    emit("openCloudBackup");
     return;
   }
   openSettings();
@@ -439,6 +453,8 @@ watch(
               @resource-node-action="emit('resourceNodeAction', $event)"
               @move-library-entry="emit('moveLibraryEntry', $event)"
               @create-expert-section="emit('createExpertSection', $event)"
+              @create-long-draft-section="emit('createLongDraftSection', $event)"
+              @long-draft-section-action="(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)"
               @remove-expert-section="emit('removeExpertSection', $event)"
               @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
               @create-character-item="emit('createCharacterItem', $event)"
@@ -463,6 +479,8 @@ watch(
           @resource-node-action="emit('resourceNodeAction', $event)"
           @move-library-entry="emit('moveLibraryEntry', $event)"
           @create-expert-section="emit('createExpertSection', $event)"
+          @create-long-draft-section="emit('createLongDraftSection', $event)"
+          @long-draft-section-action="(action: 'move-up' | 'move-down' | 'delete', sectionNode: ResourceTreeNode) => emit('longDraftSectionAction', action, sectionNode)"
           @remove-expert-section="emit('removeExpertSection', $event)"
           @expert-section-action="(action: 'move-up' | 'move-down', sectionNode: ResourceTreeNode) => emit('expertSectionAction', action, sectionNode)"
           @create-character-item="emit('createCharacterItem', $event)"

@@ -76,6 +76,7 @@ import {
   ModelConnectionTestResultSchema,
   OfficialModelBalanceSchema,
   ModelSettingsSchema,
+  RemoteModelListResultSchema,
   ModelUsageDashboardSchema,
   RemoveLibraryEntryResultSchema,
   MoveLibraryEntryResultSchema,
@@ -114,6 +115,7 @@ import { AppearanceConfigStore } from "./appearance-config-store";
 import { AgentTeamConfigStore } from "./agent-team-config-store";
 import { GeneralSettingsStore } from "./general-settings-store";
 import { ModelConfigStore } from "./model-config-store";
+import { listRemoteModels } from "./list-remote-models";
 import {
   createModelUsageRevisionId,
   ModelUsageStore
@@ -150,9 +152,14 @@ import { WorkspaceDirectoryStore } from "./workspace-directory-store";
 import { UpdateService } from "./update-service";
 import { AppAlertStore } from "./app-alert-store";
 import { MarketplaceClient } from "./marketplace-client";
+import {
+  CloudBackupService,
+  registerCloudBackupIpc
+} from "../extras/cloud-backup";
 import { ContinuationImportPreviewRegistry } from "./continuation-import-preview-registry";
 import { LegacySyncPreviewRegistry } from "./legacy-sync-preview-registry";
 import { readExternalSkills } from "./external-skill-import";
+import { createMainWindowStartupGate } from "./main-window-startup-gate";
 
 interface ActiveRun extends MainInternalCommandActiveRun {
   correlationId: string;
@@ -191,10 +198,12 @@ let menuBarTray: Tray | undefined;
 let updateService: UpdateService | undefined;
 let appAlertStore: AppAlertStore | undefined;
 let marketplaceClient: MarketplaceClient | undefined;
+let cloudBackupService: CloudBackupService | undefined;
 let installUpdateAfterShutdown = false;
 const RENDERER_DRAFT_FLUSH_GRACE_MS = 500;
 const continuationImportPreviews = new ContinuationImportPreviewRegistry();
 const legacySyncPreviews = new LegacySyncPreviewRegistry();
+const mainWindowStartupGate = createMainWindowStartupGate(() => showMainWindow());
 
 function broadcastEvent(event: SystemEventEnvelope): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -991,6 +1000,11 @@ function registerIpc(): void {
           return marketplaceClient.install(request.input);
       }
     }
+  );
+
+  registerCloudBackupIpc(
+    () => cloudBackupService,
+    () => mainWindow
   );
 
   ipcMain.handle(
@@ -2302,6 +2316,38 @@ function registerIpc(): void {
         }
       }
 
+      if (command.type === "models.listRemote") {
+        try {
+          const apiKey = await requireModelConfigStore().resolveDraftApiKey({
+            ...(command.payload.id ? { id: command.payload.id } : {}),
+            ...(command.payload.apiKey ? { apiKey: command.payload.apiKey } : {}),
+            ...(command.payload.clearApiKey ? { clearApiKey: true } : {})
+          });
+          const models = await listRemoteModels({
+            provider: command.payload.provider,
+            api: command.payload.api,
+            baseUrl: command.payload.baseUrl,
+            apiKey
+          });
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: RemoteModelListResultSchema.parse({ models })
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.list_remote_failed",
+              message:
+                error instanceof Error ? error.message : "拉取可用模型失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
       if (command.type === "models.test") {
         try {
           const runtimeConfig = await requireModelConfigStore().resolveDraft(
@@ -3069,7 +3115,7 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    showMainWindow();
+    mainWindowStartupGate.requestShow();
   });
 
   app.whenReady().then(async () => {
@@ -3107,6 +3153,40 @@ if (!hasSingleInstanceLock) {
       beginGracefulShutdown({ installUpdate: true });
     });
     appAlertStore = new AppAlertStore(userDataPath);
+    cloudBackupService = new CloudBackupService(userDataPath, {
+      getWorkspaceDirectory: async () => {
+        const current = await requireWorkspaceDirectoryStore().list();
+        return current.path;
+      },
+      registerCatalogProject: async ({ projectDirectory, domain }) => {
+        const id = createId("cmd_cloud_backup_open");
+        const command = CommandEnvelopeSchema.parse(
+          createEnvelope(
+            "catalog.openProjectAtPath",
+            { projectDirectory, domain },
+            { id, correlationId: id }
+          )
+        );
+        const result = await supervisor.requestCommand("core", command, 0);
+        if (result.status === "rejected") {
+          throw new Error(result.error.message);
+        }
+      },
+      registerLongBook: async (projectDirectory) => {
+        const id = createId("cmd_cloud_backup_open_long");
+        const command = CommandEnvelopeSchema.parse(
+          createEnvelope(
+            "long.openAtPath",
+            { projectDirectory },
+            { id, correlationId: id }
+          )
+        );
+        const result = await supervisor.requestCommand("core", command, 0);
+        if (result.status === "rejected") {
+          throw new Error(result.error.message);
+        }
+      }
+    });
     marketplaceClient = new MarketplaceClient(userDataPath, {
       loadCatalogSnapshot: async () => {
         const id = createId("cmd_marketplace_snapshot");
@@ -3144,6 +3224,7 @@ if (!hasSingleInstanceLock) {
     registerIpc();
     supervisor.startAll();
     mainWindow = createMainWindow();
+    mainWindowStartupGate.markReady();
 
     app.on("activate", () => {
       showMainWindow();

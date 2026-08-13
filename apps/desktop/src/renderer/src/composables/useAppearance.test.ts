@@ -15,4 +15,14 @@ describe("useAppearance", () => {
     expect(source).toContain("await api.save(legacy.data)");
     expect(source).toContain("hydrateFromDesktop");
   });
+
+  it("applies selected font families to document CSS variables", () => {
+    expect(source).toContain('root.style.setProperty("--ui-font"');
+    expect(source).toContain('root.style.setProperty(');
+    expect(source).toContain('"--editor-font"');
+    expect(source).toContain("resolveAppearanceUiFontStack(state.uiFontFamily)");
+    expect(source).toContain("resolveAppearanceEditorFontStack(state.editorFontFamily)");
+    expect(source).toContain("setUiFontFamily");
+    expect(source).toContain("setEditorFontFamily");
+  });
 });

@@ -52,6 +52,11 @@ import {
   LearningImitationSettingsInputSchema,
   LearningImitationSettingsSchema,
   LearningImitationStageIdSchema,
+  CLOUD_BACKUP_IPC_CHANNEL,
+  CloudBackupApplyResultSchema,
+  CloudBackupIpcRequestSchema,
+  CloudBackupPreviewSchema,
+  CloudBackupStatusSchema,
   MARKETPLACE_IPC_CHANNEL,
   MarketplaceContentDetailSchema,
   MarketplaceContentPageSchema,
@@ -78,6 +83,8 @@ import {
   OfficialModelBalanceSchema,
   ModelSettingsInputSchema,
   ModelSettingsSchema,
+  RemoteModelListInputSchema,
+  RemoteModelListResultSchema,
   ModelUsageDashboardSchema,
   ModelUsageQueryInputSchema,
   CreateLongBookInputSchema,
@@ -248,6 +255,8 @@ import {
   type ModelConfigInput,
   type ModelSettings,
   type ModelSettingsInput,
+  type RemoteModelListInput,
+  type RemoteModelListResult,
   type ModelUsageDashboard,
   type ModelUsageQueryInput,
   type MutateCharacterStructureInput,
@@ -1223,6 +1232,18 @@ async function testModel(rawModel: ModelConfigInput): Promise<ModelConnectionTes
   );
 }
 
+async function listRemoteModels(
+  rawInput: RemoteModelListInput
+): Promise<RemoteModelListResult> {
+  const input = RemoteModelListInputSchema.parse(rawInput);
+  const id = browserId("cmd_models_list_remote");
+  return RemoteModelListResultSchema.parse(
+    await invokeCommand<RemoteModelListResult>(
+      createEnvelope("models.listRemote", input, { id, correlationId: id })
+    )
+  );
+}
+
 async function queryModelUsage(
   rawInput: ModelUsageQueryInput = {}
 ): Promise<ModelUsageDashboard> {
@@ -1619,6 +1640,11 @@ async function invokeMarketplace(rawRequest: unknown): Promise<unknown> {
   return ipcRenderer.invoke(MARKETPLACE_IPC_CHANNEL, request) as Promise<unknown>;
 }
 
+async function invokeCloudBackup(rawRequest: unknown): Promise<unknown> {
+  const request = CloudBackupIpcRequestSchema.parse(rawRequest);
+  return ipcRenderer.invoke(CLOUD_BACKUP_IPC_CHANNEL, request) as Promise<unknown>;
+}
+
 const api: DeepWriteApi = {
   system: {
     health: getHealth
@@ -1759,6 +1785,42 @@ const api: DeepWriteApi = {
       );
     }
   },
+  cloudBackup: {
+    async status() {
+      return CloudBackupStatusSchema.parse(
+        await invokeCloudBackup({ operation: "status" })
+      );
+    },
+    async previewBackup() {
+      return CloudBackupPreviewSchema.parse(
+        await invokeCloudBackup({ operation: "previewBackup" })
+      );
+    },
+    async applyBackup(previewId: string) {
+      return CloudBackupApplyResultSchema.parse(
+        await invokeCloudBackup({
+          operation: "applyBackup",
+          previewId
+        })
+      );
+    },
+    async previewRestore(machineKey: string) {
+      return CloudBackupPreviewSchema.parse(
+        await invokeCloudBackup({
+          operation: "previewRestore",
+          machineKey
+        })
+      );
+    },
+    async applyRestore(previewId: string) {
+      return CloudBackupApplyResultSchema.parse(
+        await invokeCloudBackup({
+          operation: "applyRestore",
+          previewId
+        })
+      );
+    }
+  },
   catalog: {
     snapshot: getCatalogSnapshot,
     loadDraftRecovery,
@@ -1826,7 +1888,8 @@ const api: DeepWriteApi = {
     clearOfficialToken: clearOfficialModelToken,
     setOfficialModelEnabled,
     save: saveModels,
-    test: testModel
+    test: testModel,
+    listRemote: listRemoteModels
   },
   modelUsage: {
     query: queryModelUsage

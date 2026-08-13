@@ -70,6 +70,8 @@ describe("LeftSidebar account controls", () => {
   it("adds the skill marketplace to more features while keeping runtime settings", () => {
     expect(source).toContain('{ id: "skill-marketplace", label: "技能广场"');
     expect(source).toContain('emit("openMarketplace")');
+    expect(source).toContain('{ id: "cloud-backup", label: "云端备份"');
+    expect(source).toContain('emit("openCloudBackup")');
     expect(source).toContain('{ id: "runtime", label: "运行设置"');
     expect(source).not.toContain('{ id: "history", label: "版本历史"');
     expect(source).not.toContain('{ id: "search", label: "全局检索"');

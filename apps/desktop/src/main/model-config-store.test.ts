@@ -368,3 +368,28 @@ describe("ModelConfigStore managed free models", () => {
     ).rejects.toThrow(/免费模型 ID/u);
   });
 });
+
+describe("ModelConfigStore draft API keys", () => {
+  it("reuses a saved key when the draft key field is blank", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-model-store-draft-key-"));
+    temporaryRoots.push(root);
+    const store = new ModelConfigStore(root);
+    await store.save({
+      models: [{ ...customModel(), apiKey: "sk-saved-test-only" }],
+      defaultModelId: "custom-writer"
+    });
+
+    await expect(
+      store.resolveDraftApiKey({ id: "custom-writer" })
+    ).resolves.toBe("sk-saved-test-only");
+    await expect(
+      store.resolveDraftApiKey({
+        id: "custom-writer",
+        apiKey: "sk-typed-test-only"
+      })
+    ).resolves.toBe("sk-typed-test-only");
+    await expect(
+      store.resolveDraftApiKey({ id: "custom-writer", clearApiKey: true })
+    ).resolves.toBe("");
+  });
+});
