@@ -149,6 +149,57 @@ const DEEPWRITE_RUNTIME_MODELS = [
     maxTokens: 131_072
   } satisfies Model<"openai-completions">,
   {
+    id: "grok-4.5",
+    name: "Grok 4.5",
+    api: "openai-responses",
+    provider: "xai",
+    baseUrl: "https://api.x.ai/v1",
+    compat: {
+      supportsLongCacheRetention: false
+    },
+    reasoning: true,
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: null,
+      max: null
+    },
+    input: ["text", "image"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 500_000,
+    maxTokens: 500_000
+  } satisfies Model<"openai-responses">,
+  {
+    id: "grok-4.6",
+    name: "Grok 4.6",
+    api: "openai-responses",
+    provider: "xai",
+    baseUrl: "https://api.x.ai/v1",
+    compat: {
+      supportsLongCacheRetention: false
+    },
+    reasoning: true,
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: null
+    },
+    input: ["text", "image"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    // Grok 4.6 retains the 500K capacity of Grok 4.5. Keeping this explicit
+    // prevents custom gateways from falling back to DeepWrite's 272K/128K
+    // unknown-model baseline while upstream catalogs catch up.
+    contextWindow: 500_000,
+    maxTokens: 500_000
+  } satisfies Model<"openai-responses">,
+  {
     id: "gpt-5.6-sol",
     name: "GPT-5.6 Sol",
     api: "openai-responses",

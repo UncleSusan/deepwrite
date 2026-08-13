@@ -20,6 +20,17 @@ describe("DeepWrite runtime model catalog", () => {
     );
   });
 
+  it.each(["grok-4.5", "grok-4.6"])(
+    "keeps the full 500K capacity for %s custom routes",
+    (modelId) => {
+      expect(findDeepWriteRuntimeModel(`${modelId}-routed`)).toMatchObject({
+        id: modelId,
+        contextWindow: 500_000,
+        maxTokens: 500_000
+      });
+    }
+  );
+
   it("does not match an unrelated model id", () => {
     expect(findDeepWriteRuntimeModel("unrelated-model-route")).toBeUndefined();
   });
