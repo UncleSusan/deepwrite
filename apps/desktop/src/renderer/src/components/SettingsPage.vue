@@ -36,11 +36,11 @@ import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 import LearningImitationSettingsPanel from "./LearningImitationSettingsPanel.vue";
 import LibraryAgentSettingsPanel from "./LibraryAgentSettingsPanel.vue";
+import ModelSettingsFeature from "./ModelSettingsFeature.vue";
 import ModelUsagePanel from "./ModelUsagePanel.vue";
 import OfficialModelsPanel from "./OfficialModelsPanel.vue";
 import PopupSelect from "./PopupSelect.vue";
 import ShortAgentSettingsPanel from "./ShortAgentSettingsPanel.vue";
-import WorkspaceDialog from "./WorkspaceDialog.vue";
 
 interface SettingsCategory {
   id: string;
@@ -459,9 +459,8 @@ async function importThemeFile(event: Event): Promise<void> {
           @query="emit('loadModelUsage', $event)"
         />
 
-        <WorkspaceDialog
+        <ModelSettingsFeature
           v-else-if="activeCategory === 'custom-models'"
-          mode="models"
           model-scope="custom"
           embedded
           active
@@ -473,8 +472,6 @@ async function importThemeFile(event: Event): Promise<void> {
           :model-test-message="modelTestMessage"
           :testing-model-id="testingModelId"
           :model-alert-messages="[]"
-          :workspace-directory-path="null"
-          :workspace-directory-loading="false"
           @save-models="emit('saveModels', $event)"
           @test-model="emit('testModel', $event)"
         />

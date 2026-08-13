@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import appSource from "../App.vue?raw";
+import resourceTreeSource from "../utils/longWorkspaceResourceTree.ts?raw";
 import selectionSource from "../types/longWorkspace.ts?raw";
 import source from "./LongWorkspaceEditor.vue?raw";
 
@@ -26,11 +26,11 @@ describe("LongWorkspaceEditor continuity text-file integration", () => {
   });
 
   it("lists only pending chapters and chapter records in the continuity tree", () => {
-    expect(appSource).toContain('title: "待处理章节"');
-    expect(appSource).toContain('title: "章节记录"');
-    expect(appSource).not.toContain('key: "continuity-view:snapshot"');
-    expect(appSource).not.toContain('key: "continuity-view:execution"');
-    expect(appSource).not.toContain('key: "continuity-view:knowledge"');
+    expect(resourceTreeSource).toContain('title: "待处理章节"');
+    expect(resourceTreeSource).toContain('title: "章节记录"');
+    expect(resourceTreeSource).not.toContain('key: "continuity-view:snapshot"');
+    expect(resourceTreeSource).not.toContain('key: "continuity-view:execution"');
+    expect(resourceTreeSource).not.toContain('key: "continuity-view:knowledge"');
   });
 
   it("maps ledger navigation to chapter Markdown and never selects record JSON", () => {

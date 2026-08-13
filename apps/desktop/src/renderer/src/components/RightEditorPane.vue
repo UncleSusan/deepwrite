@@ -20,6 +20,12 @@ import {
   rememberEditorScrollPosition,
   type EditorScrollView
 } from "../utils/editorScrollMemory";
+import {
+  countNonWhitespaceCharacters,
+  createBoundedTextHistory,
+  type TextHistoryRestoreResult,
+  type TextSelectionRange
+} from "../utils/boundedTextHistory";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
 import { parseSkillFrontmatter } from "../utils/skillFrontmatter";
 import { uiMessage } from "../ui-feedback";
@@ -70,6 +76,9 @@ const selectionAction = ref<{
 } | null>(null);
 const title = ref(props.draftState?.title ?? props.document.title);
 const content = ref(props.draftState?.content ?? props.document.content);
+const nonWhitespaceCharacterCount = ref(
+  countNonWhitespaceCharacters(content.value)
+);
 const dirty = ref(props.draftState?.dirty ?? false);
 const viewMode = ref<EditorScrollView>("edit");
 const findPanelOpen = ref(false);
@@ -79,20 +88,18 @@ const replacementText = ref("");
 const currentMatchIndex = ref(-1);
 const searchAnchor = ref(0);
 
-interface EditorHistorySnapshot {
-  content: string;
-  selectionStart: number;
-  selectionEnd: number;
-}
-
 interface EditorSearchMatch {
   start: number;
   end: number;
 }
 
-const undoHistory = ref<EditorHistorySnapshot[]>([]);
-const redoHistory = ref<EditorHistorySnapshot[]>([]);
-const HISTORY_LIMIT = 120;
+const textHistory = createBoundedTextHistory();
+const historyVersion = ref(0);
+let pendingEditorInput: {
+  selectionBefore: TextSelectionRange;
+  inputType: string;
+  timestamp: number;
+} | null = null;
 const activeScrollMemoryKey = computed(() => editorScrollMemoryKey(props.document));
 
 watch(
@@ -101,6 +108,9 @@ watch(
     rememberCurrentDocumentScroll(previousScrollMemoryKey);
     title.value = props.draftState?.title ?? props.document.title;
     content.value = props.draftState?.content ?? props.document.content;
+    nonWhitespaceCharacterCount.value = countNonWhitespaceCharacters(
+      content.value
+    );
     dirty.value = props.draftState?.dirty ?? false;
     viewMode.value = "edit";
     selectionAction.value = null;
@@ -108,8 +118,7 @@ watch(
     searchQuery.value = "";
     replacementText.value = "";
     currentMatchIndex.value = -1;
-    undoHistory.value = [];
-    redoHistory.value = [];
+    resetEditorHistory();
     void restoreDocumentScroll(nextScrollMemoryKey, "edit");
   }
 );
@@ -126,7 +135,12 @@ watch(
     const resolvedTitle = nextTitle ?? documentTitle;
     const resolvedContent = nextContent ?? documentContent;
     if (title.value !== resolvedTitle) title.value = resolvedTitle;
-    if (content.value !== resolvedContent) content.value = resolvedContent;
+    if (content.value !== resolvedContent) {
+      content.value = resolvedContent;
+      nonWhitespaceCharacterCount.value =
+        countNonWhitespaceCharacters(resolvedContent);
+      resetEditorHistory();
+    }
     dirty.value = nextDirty ?? false;
   }
 );
@@ -160,13 +174,21 @@ const contentExceedsLimit = computed(
   () => contentMaxLength.value !== undefined && content.value.length > contentMaxLength.value
 );
 const characterCount = computed(() =>
-  isLibraryDocument.value ? content.value.length : content.value.replace(/\s/g, "").length
+  isLibraryDocument.value
+    ? content.value.length
+    : nonWhitespaceCharacterCount.value
 );
 const showSectionTabs = computed(() => Boolean(props.sectionTabs?.length));
 const showDraftFileTabs = computed(() => Boolean(props.document.draftFileKind));
 const editorReadOnly = computed(() => props.document.readOnly || props.locked);
-const canUndo = computed(() => !editorReadOnly.value && undoHistory.value.length > 0);
-const canRedo = computed(() => !editorReadOnly.value && redoHistory.value.length > 0);
+const canUndo = computed(() => {
+  void historyVersion.value;
+  return !editorReadOnly.value && textHistory.canUndo;
+});
+const canRedo = computed(() => {
+  void historyVersion.value;
+  return !editorReadOnly.value && textHistory.canRedo;
+});
 const searchMatches = computed<EditorSearchMatch[]>(() => {
   const query = searchQuery.value;
   if (!query) return [];
@@ -218,89 +240,156 @@ function markDirty(): void {
   });
 }
 
-function getEditorSnapshot(): EditorHistorySnapshot {
+function getEditorSelection(
+  fallback = content.value.length
+): TextSelectionRange {
   const input = editorInput.value;
-  const fallback = content.value.length;
   return {
-    content: content.value,
-    selectionStart: input?.selectionStart ?? fallback,
-    selectionEnd: input?.selectionEnd ?? fallback
+    start: input?.selectionStart ?? fallback,
+    end: input?.selectionEnd ?? fallback
   };
 }
 
-function pushHistorySnapshot(
-  history: EditorHistorySnapshot[],
-  snapshot: EditorHistorySnapshot
-): void {
-  if (history.at(-1)?.content === snapshot.content) return;
-  history.push(snapshot);
-  if (history.length > HISTORY_LIMIT) history.shift();
+function notifyHistoryChanged(): void {
+  historyVersion.value += 1;
 }
 
-function recordUndoSnapshot(snapshot = getEditorSnapshot()): void {
-  pushHistorySnapshot(undoHistory.value, snapshot);
-  redoHistory.value = [];
+function resetEditorHistory(): void {
+  pendingEditorInput = null;
+  textHistory.clear();
+  notifyHistoryChanged();
 }
 
 function handleEditorBeforeInput(event: InputEvent): void {
   if (editorReadOnly.value) return;
   if (event.inputType === "historyUndo") {
     event.preventDefault();
+    pendingEditorInput = null;
     undo();
     return;
   }
   if (event.inputType === "historyRedo") {
     event.preventDefault();
+    pendingEditorInput = null;
     redo();
     return;
   }
   const input = event.currentTarget as HTMLTextAreaElement;
-  recordUndoSnapshot({
-    content: content.value,
-    selectionStart: input.selectionStart ?? content.value.length,
-    selectionEnd: input.selectionEnd ?? content.value.length
-  });
+  pendingEditorInput = {
+    selectionBefore: {
+      start: input.selectionStart ?? content.value.length,
+      end: input.selectionEnd ?? content.value.length
+    },
+    inputType: event.inputType,
+    timestamp: event.timeStamp
+  };
 }
 
-function updateContent(nextContent: string): void {
+function handleEditorInput(event: Event): void {
+  if (editorReadOnly.value) return;
+  const input = event.currentTarget as HTMLTextAreaElement;
+  const beforeContent = content.value;
+  const afterContent = input.value;
+  if (
+    contentMaxLength.value !== undefined &&
+    afterContent.length > contentMaxLength.value
+  ) {
+    input.value = beforeContent;
+    pendingEditorInput = null;
+    updateContent(afterContent);
+    return;
+  }
+  const selectionAfter = {
+    start: input.selectionStart ?? afterContent.length,
+    end: input.selectionEnd ?? afterContent.length
+  };
+  const pending = pendingEditorInput;
+  pendingEditorInput = null;
+  const historyResult = textHistory.recordInput({
+    beforeContent,
+    afterContent,
+    selectionBefore: pending?.selectionBefore ?? selectionAfter,
+    selectionAfter,
+    inputType:
+      pending?.inputType ??
+      (event instanceof InputEvent ? event.inputType : ""),
+    timestamp: pending?.timestamp ?? event.timeStamp
+  });
+  if (historyResult) {
+    notifyHistoryChanged();
+  }
+  updateContent(afterContent, historyResult?.nonWhitespaceDelta);
+}
+
+function updateContent(
+  nextContent: string,
+  nonWhitespaceDelta?: number
+): boolean {
   if (contentMaxLength.value !== undefined && nextContent.length > contentMaxLength.value) {
     uiMessage.warning(
       isLibraryOverview.value
         ? "素材库或技能库介绍最多 40,000 字，请精简内容后再编辑"
         : "每个素材库或技能库条目最多 40,000 字，请精简内容后再编辑"
     );
-    return;
+    return false;
   }
+  if (content.value === nextContent) return true;
   content.value = nextContent;
+  nonWhitespaceCharacterCount.value =
+    nonWhitespaceDelta === undefined
+      ? countNonWhitespaceCharacters(nextContent)
+      : Math.max(
+          0,
+          nonWhitespaceCharacterCount.value + nonWhitespaceDelta
+        );
   currentMatchIndex.value = -1;
   markDirty();
+  return true;
 }
 
-async function restoreEditorSnapshot(snapshot: EditorHistorySnapshot): Promise<void> {
+function recordProgrammaticChange(
+  nextContent: string,
+  selectionAfter: TextSelectionRange
+): number | undefined {
+  const result = textHistory.recordChange({
+    beforeContent: content.value,
+    afterContent: nextContent,
+    selectionBefore: getEditorSelection(),
+    selectionAfter
+  });
+  if (result) {
+    notifyHistoryChanged();
+  }
+  return result?.nonWhitespaceDelta;
+}
+
+async function restoreEditorHistory(
+  result: TextHistoryRestoreResult
+): Promise<void> {
   viewMode.value = "edit";
-  updateContent(snapshot.content);
+  updateContent(result.content, result.nonWhitespaceDelta);
   await nextTick();
   const input = editorInput.value;
   if (!input) return;
   input.focus({ preventScroll: true });
-  input.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd, "forward");
-  scrollEditorToRange(input, snapshot.selectionStart);
+  input.setSelectionRange(result.start, result.end, "forward");
+  scrollEditorToRange(input, result.start);
 }
 
 function undo(): void {
   if (!canUndo.value) return;
-  const snapshot = undoHistory.value.pop();
-  if (!snapshot) return;
-  pushHistorySnapshot(redoHistory.value, getEditorSnapshot());
-  void restoreEditorSnapshot(snapshot);
+  pendingEditorInput = null;
+  const result = textHistory.undo(content.value);
+  notifyHistoryChanged();
+  if (result) void restoreEditorHistory(result);
 }
 
 function redo(): void {
   if (!canRedo.value) return;
-  const snapshot = redoHistory.value.pop();
-  if (!snapshot) return;
-  pushHistorySnapshot(undoHistory.value, getEditorSnapshot());
-  void restoreEditorSnapshot(snapshot);
+  pendingEditorInput = null;
+  const result = textHistory.redo(content.value);
+  notifyHistoryChanged();
+  if (result) void restoreEditorHistory(result);
 }
 
 function handleEditorKeydown(event: KeyboardEvent): void {
@@ -497,8 +586,11 @@ function replaceCurrentMatch(): void {
     return;
   }
 
-  recordUndoSnapshot();
-  updateContent(nextContent);
+  const nonWhitespaceDelta = recordProgrammaticChange(nextContent, {
+    start: match.start + replacementText.value.length,
+    end: match.start + replacementText.value.length
+  });
+  updateContent(nextContent, nonWhitespaceDelta);
   searchAnchor.value = match.start + replacementText.value.length;
   void nextTick(() => findMatch(1, true));
 }
@@ -523,8 +615,11 @@ function replaceAllMatches(): void {
     uiMessage.info("查找文字与替换文字相同");
     return;
   }
-  recordUndoSnapshot();
-  updateContent(nextContent);
+  const nonWhitespaceDelta = recordProgrammaticChange(nextContent, {
+    start: 0,
+    end: 0
+  });
+  updateContent(nextContent, nonWhitespaceDelta);
   searchAnchor.value = 0;
   uiMessage.success(`已替换 ${matches.length} 处文字`);
 }
@@ -917,14 +1012,14 @@ onBeforeUnmount(() => {
       <textarea
         v-if="viewMode === 'edit'"
         ref="editorInput"
-        v-model="content"
+        :value="content"
         class="document-editor"
         :readonly="document.readOnly || locked"
         :maxlength="contentMaxLength"
         aria-label="文本内容编辑器"
         spellcheck="false"
         @beforeinput="handleEditorBeforeInput"
-        @input="markDirty"
+        @input="handleEditorInput"
         @keydown="handleEditorKeydown"
         @contextmenu="handleEditorContextMenu"
         @scroll="handleDocumentScroll"

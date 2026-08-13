@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import appSource from "../App.vue?raw";
 import source from "./RightEditorPane.vue?raw";
+import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
 
 describe("RightEditorPane expert draft navigation", () => {
   it("shows automatic save status while preserving an immediate save action", () => {
@@ -90,7 +91,10 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(appSource).toContain("(directory?.sections.length ?? 0) > 1");
     expect(appSource).toContain("function removeExpertSectionFromEditor()");
     expect(appSource).toContain("requestRemoveExpertSection(sectionNode)");
-    expect(appSource).toContain(':show-delete-section="showEditorDeleteSection"');
+    expect(appSource).toContain(
+      "showDeleteSection: showEditorDeleteSection.value"
+    );
+    expect(writingWorkspaceSource).toContain('v-bind="viewModel.editor"');
     expect(appSource).toContain('@delete-section="deleteEditorSection"');
   });
 
@@ -101,7 +105,9 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(appSource).toContain('? "人物条目"');
     expect(appSource).toContain('? "新建人物条目"');
     expect(appSource).toContain('return "删除当前人物条目"');
-    expect(appSource).toContain(':show-delete-section="showEditorDeleteSection"');
+    expect(appSource).toContain(
+      "showDeleteSection: showEditorDeleteSection.value"
+    );
     expect(appSource).toContain("function addCharacterItemFromEditor()");
     expect(appSource).toContain("function deleteCharacterItemFromEditor()");
     expect(appSource).toContain('@delete-section="deleteEditorSection"');
@@ -125,8 +131,12 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain('aria-label="查找"');
     expect(source).toContain('aria-label="替换"');
     expect(source).toContain('@beforeinput="handleEditorBeforeInput"');
+    expect(source).toContain('@input="handleEditorInput"');
     expect(source).toContain('@keydown="handleEditorKeydown"');
-    expect(source).toContain("recordUndoSnapshot()");
+    expect(source).toContain("createBoundedTextHistory()");
+    expect(source).toContain("textHistory.recordInput({");
+    expect(source).not.toContain("recordUndoSnapshot");
+    expect(source).not.toContain("content.value.replace(/\\s/g");
     expect(source).toContain("replaceCurrentMatch");
     expect(source).toContain("replaceAllMatches");
     expect(source).not.toContain('aria-label="粗体"');

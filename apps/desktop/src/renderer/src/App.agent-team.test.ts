@@ -21,9 +21,16 @@ describe("App agent-team integration", () => {
     expect(source).not.toContain('@save-agent-teams="saveAgentTeamSettings"');
   });
 
-  it("keeps unsaved team drafts mounted and does not reload them on every click", () => {
-    expect(source).toContain('v-show="workspaceMainView === \'agent-team\'"');
-    expect(source).toContain('v-show="workspaceMainView === \'conversation\'"');
+  it("keeps unsaved team drafts cached without retaining inactive feature DOM", () => {
+    expect(source).toContain("<KeepAlive>");
+    expect(source).toContain('key="agent-team"');
+    expect(source).toContain('v-if="workspaceMainView === \'agent-team\'"');
+    expect(source).toContain(
+      'v-if="workspaceMainView === \'conversation\' && !isLongWorkspaceActive"'
+    );
+    expect(source).not.toContain(
+      'v-show="workspaceMainView === \'agent-team\'"'
+    );
     expect(source).toContain("!agentTeamLoaded.value");
     expect(source).toContain(':load-error="agentTeamLoadError"');
     expect(source).toContain('@retry="loadAgentTeamSettings"');
@@ -31,7 +38,11 @@ describe("App agent-team integration", () => {
 
   it("returns to the writing workspace when a document or new conversation is selected", () => {
     expect(source.match(/workspaceMainView\.value = "conversation"/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(source).toContain("workspaceMainView === 'conversation' && !rightCollapsed");
+    expect(source).toContain("<WritingWorkspaceModule");
+    expect(source).toContain(
+      "workspaceMainView === 'conversation' && !isLongWorkspaceActive"
+    );
+    expect(source).toContain(":view-model=\"writingWorkspaceViewModel\"");
   });
 
   it("keeps workspace utilities beside agent-team as full main views", () => {
@@ -94,7 +105,7 @@ describe("App agent-team integration", () => {
     expect(source).toContain(':long-agent-error="longAgentLoadError"');
   });
 
-  it("keeps long loading outside the short/script startup and focus critical paths", () => {
+  it("keeps feature-only settings outside the writing startup critical path", () => {
     const mounted =
       source
         .split("onMounted(async () => {")[1]
@@ -104,26 +115,29 @@ describe("App agent-team integration", () => {
     expect(awaitedStartup).toContain(
       "loadShortAndScriptAgentSettings()"
     );
-    expect(awaitedStartup).toContain(
+    expect(awaitedStartup).not.toContain(
       "loadShortAndScriptAgentTeamSettings()"
     );
+    expect(awaitedStartup).not.toContain("loadLearningImitationSettings()"
+    );
+    expect(awaitedStartup).not.toContain("loadWorkspaceDirectory()");
     expect(awaitedStartup).not.toContain("loadLongBookList");
     expect(awaitedStartup).not.toContain("loadLongAgentSettings");
     expect(awaitedStartup).not.toContain("loadLongAgentTeamSettings");
     expect(mounted.indexOf("scheduleDirtyEditorDraftsForAutoSave()")).toBeLessThan(
       mounted.indexOf("loadLongBookList({ notify: false })")
     );
-    expect(mounted.indexOf("scheduleDirtyEditorDraftsForAutoSave()")).toBeLessThan(
-      mounted.indexOf("loadLongAgentSettings()")
-    );
+    expect(mounted).not.toContain("void loadLongAgentSettings()");
 
     const focusRefresh =
       source
-        .split("function refreshCatalogOnWindowFocus()")[1]
-        ?.split("watch([leftCollapsed")[0] ?? "";
+        .split("function performWindowFocusRefresh()")[1]
+        ?.split("function refreshCatalogOnWindowFocus()")[0] ?? "";
     expect(focusRefresh).toContain("if (bookId)");
     expect(focusRefresh).toContain(
       "loadLongBookList({ notify: true })"
     );
+    expect(source).toContain("WINDOW_FOCUS_REFRESH_INTERVAL_MS");
+    expect(source).toContain("windowFocusRefreshTimer === undefined");
   });
 });

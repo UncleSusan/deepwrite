@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import source from "./WorkspaceDialog.vue?raw";
+import source from "./ModelSettingsFeature.vue?raw";
 
-describe("WorkspaceDialog DeepWrite free models", () => {
+describe("ModelSettingsFeature DeepWrite free models", () => {
   it("offers the managed provider and a remote model selector without a key field", () => {
     expect(source).toContain('{ value: "deepwrite-free", label: "DeepWrite 免费模型" }');
     expect(source).toContain('accessible-label="选择 DeepWrite 免费模型"');
@@ -31,7 +31,7 @@ describe("WorkspaceDialog DeepWrite free models", () => {
   });
 });
 
-describe("WorkspaceDialog provider presets", () => {
+describe("ModelSettingsFeature provider presets", () => {
   it("offers Kimi Coding with its Anthropic-compatible API endpoint", () => {
     expect(source).toContain('{ value: "kimi-coding", label: "Kimi Coding" }');
     expect(source).toContain('provider === "kimi-coding"');
@@ -68,7 +68,7 @@ describe("WorkspaceDialog provider presets", () => {
   );
 });
 
-describe("WorkspaceDialog official models", () => {
+describe("ModelSettingsFeature official models", () => {
   it("keeps official models selectable but hides edit and delete actions", () => {
     expect(source).toContain("DeepWrite 官方模型");
     expect(source).toContain("row.model.managedBy !== 'deepwrite-official'");
@@ -87,7 +87,7 @@ describe("WorkspaceDialog official models", () => {
   });
 });
 
-describe("WorkspaceDialog remote model ids", () => {
+describe("ModelSettingsFeature remote model ids", () => {
   it("offers a fetch button beside the model id field and turns it into a selector", () => {
     expect(source).toContain('class="model-id-field"');
     expect(source).toContain(":aria-label=\"listingRemoteModels ? '拉取中' : '拉取可用模型'\"");
@@ -120,7 +120,7 @@ describe("WorkspaceDialog remote model ids", () => {
   });
 });
 
-describe("WorkspaceDialog model draft lifecycle", () => {
+describe("ModelSettingsFeature model draft lifecycle", () => {
   it("persists a newly selected default model immediately", () => {
     const start = source.indexOf("function setDefaultModel(");
     const end = source.indexOf("function submitModelSettings(", start);
@@ -132,7 +132,7 @@ describe("WorkspaceDialog model draft lifecycle", () => {
 
   it("hydrates saved models when the dialog mounts already active", () => {
     expect(source).toMatch(
-      /watch\(\s*\(\) => \[props\.mode, props\.active\] as const,[\s\S]*?\{ immediate: true \}\s*\);/
+      /watch\(\s*\(\) => props\.active,[\s\S]*?\{ immediate: true \}\s*\);/
     );
   });
 

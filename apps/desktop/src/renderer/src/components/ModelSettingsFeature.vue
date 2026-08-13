@@ -32,7 +32,6 @@ type ModelConfigRow =
   | { key: string; type: "editor" };
 
 const props = withDefaults(defineProps<{
-  mode: "directory" | "models";
   active?: boolean;
   modelScope?: "all" | "custom";
   embedded?: boolean;
@@ -44,8 +43,6 @@ const props = withDefaults(defineProps<{
   modelTestMessage: string | null;
   testingModelId: string | null;
   modelAlertMessages: readonly string[];
-  workspaceDirectoryPath: string | null;
-  workspaceDirectoryLoading: boolean;
 }>(), {
   active: false,
   modelScope: "all",
@@ -55,7 +52,6 @@ const emit = defineEmits<{
   saveModels: [settings: ModelSettingsInput];
   refreshFreeModels: [];
   testModel: [model: ModelConfigInput];
-  chooseWorkspaceDirectory: [];
   openOfficialModels: [];
 }>();
 
@@ -220,9 +216,9 @@ function resetModelDraft(settings: ModelSettings | null): void {
 }
 
 watch(
-  () => [props.mode, props.active] as const,
-  ([mode, active]) => {
-    if (active && mode === "models") {
+  () => props.active,
+  (active) => {
+    if (active) {
       resetModelDraft(props.modelSettings);
     }
   },
@@ -232,7 +228,7 @@ watch(
 watch(
   () => [props.modelSettings, props.modelSaving] as const,
   ([settings, saving]) => {
-    if (props.active && props.mode === "models" && !saving) {
+    if (props.active && !saving) {
       const editor = modelEditor.value;
       if (editor?.managedBy === "deepwrite-free" && settings) {
         draftModels.value = draftModels.value.map((model) => {
@@ -761,48 +757,17 @@ function discardModelChanges(): void {
 
 <template>
       <section
-        class="workspace-settings-panel"
-        :class="{ 'is-model-config': mode === 'models', 'is-embedded': embedded }"
+        class="workspace-settings-panel is-model-config"
+        :class="{ 'is-embedded': embedded }"
       >
         <header v-if="!embedded">
           <div>
             <span class="dialog-eyebrow">DeepWrite</span>
-            <h2>
-              {{
-                mode === "directory"
-                  ? "工作目录"
-                  : mode === "models"
-                    ? "模型配置"
-                    : "模型配置"
-              }}
-            </h2>
+            <h2>模型配置</h2>
           </div>
         </header>
 
-        <div v-if="mode === 'directory'" class="dialog-content">
-          <p class="dialog-description">这里决定以后新建和导入项目的默认位置。切换目录不会移动或影响已经打开的书籍、素材库和技能库。</p>
-          <div class="directory-card">
-            <AppIcon name="directory" :size="20" />
-            <div>
-              <strong>{{ workspaceDirectoryPath ? "当前工作目录" : "尚未选择工作目录" }}</strong>
-              <code>{{ workspaceDirectoryPath ?? "首次创建或导入时也会提示选择" }}</code>
-            </div>
-            <span>{{ workspaceDirectoryPath ? "已启用" : "待设置" }}</span>
-          </div>
-          <div class="dialog-note">新书和旧版导入保存在 books，新素材库保存在 materials，新技能库保存在 skills。项目仍采用 deepwrite.json + Markdown 文件结构，可由 Git 或同步盘直接管理。</div>
-          <div class="dialog-actions">
-            <button
-              class="dialog-primary-button"
-              type="button"
-              :disabled="workspaceDirectoryLoading"
-              @click="emit('chooseWorkspaceDirectory')"
-            >
-              {{ workspaceDirectoryLoading ? "选择中…" : workspaceDirectoryPath ? "切换工作目录" : "选择工作目录" }}
-            </button>
-          </div>
-        </div>
-
-        <div v-else-if="mode === 'models'" class="dialog-content model-config-content">
+        <div class="dialog-content model-config-content">
           <div ref="modelConfigScrollArea" class="model-config-scroll-area">
             <div
               v-if="modelScope === 'all' && modelAlertMessages.length > 0"

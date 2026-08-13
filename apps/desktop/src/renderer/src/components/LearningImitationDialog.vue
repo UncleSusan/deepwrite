@@ -2,7 +2,9 @@
 import {
   computed,
   nextTick,
+  onActivated,
   onBeforeUnmount,
+  onDeactivated,
   onMounted,
   reactive,
   ref,
@@ -893,8 +895,12 @@ watch(
 watch(
   () => props.active,
   (active) => {
-    if (active && runningStage.value) activeStage.value = runningStage.value;
-  }
+    if (!active) return;
+    const latestStage =
+      runningStage.value ?? props.controller.lastCompletedStage.value;
+    if (latestStage) activeStage.value = latestStage;
+  },
+  { immediate: true }
 );
 
 watch(
@@ -950,8 +956,24 @@ watch(
   }
 );
 
-onMounted(() => document.addEventListener("keydown", onKeyDown));
-onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
+let keydownListening = false;
+
+function startKeydownListener(): void {
+  if (keydownListening) return;
+  document.addEventListener("keydown", onKeyDown);
+  keydownListening = true;
+}
+
+function stopKeydownListener(): void {
+  if (!keydownListening) return;
+  document.removeEventListener("keydown", onKeyDown);
+  keydownListening = false;
+}
+
+onMounted(startKeydownListener);
+onActivated(startKeydownListener);
+onDeactivated(stopKeydownListener);
+onBeforeUnmount(stopKeydownListener);
 </script>
 
 <template>

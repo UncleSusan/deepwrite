@@ -97,6 +97,23 @@ export interface CatalogWorkspaceProjection {
   resourceSections: ResourceTreeSection[];
   workspaceDocuments: WorkspaceDocument[];
   draftDirectories: DraftDirectoryProjection[];
+  /**
+   * Read-only lookup tables built alongside the projection. Keeping these on
+   * the projection makes selection, navigation and draft recovery independent
+   * of repeated full-tree walks as a catalog grows.
+   */
+  index: CatalogWorkspaceProjectionIndex;
+}
+
+export interface CatalogWorkspaceProjectionIndex {
+  resourceNodeById: ReadonlyMap<string, ResourceTreeNode>;
+  workspaceDocumentById: ReadonlyMap<string, WorkspaceDocument>;
+  resourceIdByDocumentId: ReadonlyMap<string, string>;
+  resourceTargetDocumentIdById: ReadonlyMap<string, string>;
+  draftDirectoryById: ReadonlyMap<string, DraftDirectoryProjection>;
+  draftDirectoryByWorkspaceId: ReadonlyMap<string, DraftDirectoryProjection>;
+  preferredResourceIdByWorkspaceId: ReadonlyMap<string, string>;
+  workspaceIdByResourceId: ReadonlyMap<string, string>;
 }
 
 export interface DraftSectionProjection {
@@ -119,61 +136,51 @@ export function resolvePreferredBookResourceId(
   projection: CatalogWorkspaceProjection | undefined,
   workspaceId: string
 ): string | undefined {
-  return (
-    projection?.draftDirectories.find(
-      (directory) => directory.workspaceId === workspaceId
-    )?.id ??
-    projection?.workspaceDocuments.find(
-      (document) => document.workspaceId === workspaceId
-    )?.id
-  );
+  return projection?.index.preferredResourceIdByWorkspaceId.get(workspaceId);
 }
 
-function findProjectedResourceNode(
-  nodes: readonly ResourceTreeNode[],
+export function findProjectedResourceNode(
+  projection: CatalogWorkspaceProjection | undefined,
   resourceId: string
 ): ResourceTreeNode | undefined {
-  for (const node of nodes) {
-    if (node.id === resourceId) return node;
-    const nested = findProjectedResourceNode(node.children ?? [], resourceId);
-    if (nested) return nested;
-  }
-  return undefined;
+  return projection?.index.resourceNodeById.get(resourceId);
+}
+
+export function resolveProjectedResourceIdForDocumentId(
+  projection: CatalogWorkspaceProjection | undefined,
+  documentId: string
+): string | undefined {
+  return projection?.index.resourceIdByDocumentId.get(documentId);
+}
+
+export function resolveProjectedResourceTargetDocumentId(
+  projection: CatalogWorkspaceProjection | undefined,
+  resourceId: string
+): string {
+  return (
+    projection?.index.resourceTargetDocumentIdById.get(resourceId) ?? resourceId
+  );
 }
 
 export function resolveBookWorkspaceId(
   projection: CatalogWorkspaceProjection | undefined,
   resourceId: string
 ): string | undefined {
-  if (!projection) return undefined;
-  const directory = projection.draftDirectories.find(
-    (candidate) => candidate.id === resourceId
-  );
-  if (directory) return directory.workspaceId;
+  return projection?.index.workspaceIdByResourceId.get(resourceId);
+}
 
-  const directDocument = projection.workspaceDocuments.find(
-    (document) => document.id === resourceId
-  );
-  if (directDocument?.domain === "creation") return directDocument.workspaceId;
+export function findProjectedWorkspaceDocument(
+  projection: CatalogWorkspaceProjection | undefined,
+  documentId: string
+): WorkspaceDocument | undefined {
+  return projection?.index.workspaceDocumentById.get(documentId);
+}
 
-  const creationNodes =
-    projection.resourceSections.find((section) => section.id === "creation")?.nodes ?? [];
-  const node = findProjectedResourceNode(creationNodes, resourceId);
-  if (!node) return undefined;
-  if (
-    node.catalogNodeType === "book" &&
-    projection.draftDirectories.some(
-      (candidate) => candidate.workspaceId === node.id
-    )
-  ) {
-    return node.id;
-  }
-  const target = node.targetDocumentId
-    ? projection.workspaceDocuments.find(
-        (document) => document.id === node.targetDocumentId
-      )
-    : undefined;
-  return target?.domain === "creation" ? target.workspaceId : undefined;
+export function findProjectedDraftDirectoryForWorkspace(
+  projection: CatalogWorkspaceProjection | undefined,
+  workspaceId: string
+): DraftDirectoryProjection | undefined {
+  return projection?.index.draftDirectoryByWorkspaceId.get(workspaceId);
 }
 
 export function resolveDraftSectionResourceId(
@@ -199,6 +206,139 @@ export function resolveDraftSectionProjection(
       : undefined) ??
     directory.sections[0]
   );
+}
+
+function setIndexValueIfAbsent<Key, Value>(
+  index: Map<Key, Value>,
+  key: Key,
+  value: Value
+): void {
+  if (!index.has(key)) index.set(key, value);
+}
+
+function createCatalogWorkspaceProjectionIndex(
+  resourceSections: readonly ResourceTreeSection[],
+  workspaceDocuments: readonly WorkspaceDocument[],
+  draftDirectories: readonly DraftDirectoryProjection[]
+): CatalogWorkspaceProjectionIndex {
+  const resourceNodeById = new Map<string, ResourceTreeNode>();
+  const workspaceDocumentById = new Map<string, WorkspaceDocument>();
+  const resourceIdByDocumentId = new Map<string, string>();
+  const resourceTargetDocumentIdById = new Map<string, string>();
+  const draftDirectoryById = new Map<string, DraftDirectoryProjection>();
+  const draftDirectoryByWorkspaceId = new Map<
+    string,
+    DraftDirectoryProjection
+  >();
+  const preferredResourceIdByWorkspaceId = new Map<string, string>();
+  const workspaceIdByResourceId = new Map<string, string>();
+
+  for (const directory of draftDirectories) {
+    setIndexValueIfAbsent(draftDirectoryById, directory.id, directory);
+    setIndexValueIfAbsent(
+      draftDirectoryByWorkspaceId,
+      directory.workspaceId,
+      directory
+    );
+    setIndexValueIfAbsent(
+      preferredResourceIdByWorkspaceId,
+      directory.workspaceId,
+      directory.id
+    );
+    setIndexValueIfAbsent(
+      workspaceIdByResourceId,
+      directory.id,
+      directory.workspaceId
+    );
+  }
+
+  for (const document of workspaceDocuments) {
+    setIndexValueIfAbsent(workspaceDocumentById, document.id, document);
+    if (!document.workspaceId) continue;
+    setIndexValueIfAbsent(
+      preferredResourceIdByWorkspaceId,
+      document.workspaceId,
+      document.id
+    );
+    if (document.domain === "creation") {
+      setIndexValueIfAbsent(
+        workspaceIdByResourceId,
+        document.id,
+        document.workspaceId
+      );
+    }
+  }
+
+  const visit = (
+    nodes: readonly ResourceTreeNode[],
+    creationSection: boolean
+  ): void => {
+    for (const node of nodes) {
+      setIndexValueIfAbsent(resourceNodeById, node.id, node);
+      setIndexValueIfAbsent(resourceIdByDocumentId, node.id, node.id);
+      if (node.targetDocumentId) {
+        setIndexValueIfAbsent(
+          resourceIdByDocumentId,
+          node.targetDocumentId,
+          node.id
+        );
+      }
+      if (node.characterStateDocumentId) {
+        setIndexValueIfAbsent(
+          resourceIdByDocumentId,
+          node.characterStateDocumentId,
+          node.id
+        );
+      }
+      const targetDocumentId =
+        node.targetDocumentId ??
+        (node.shortAgentId === "expert_draft_coordinator"
+          ? node.children?.find((child) => child.targetDocumentId)
+              ?.targetDocumentId
+          : undefined) ??
+        node.id;
+      setIndexValueIfAbsent(
+        resourceTargetDocumentIdById,
+        node.id,
+        targetDocumentId
+      );
+
+      if (creationSection) {
+        if (
+          node.catalogNodeType === "book" &&
+          draftDirectoryByWorkspaceId.has(node.id)
+        ) {
+          setIndexValueIfAbsent(workspaceIdByResourceId, node.id, node.id);
+        }
+        if (node.targetDocumentId) {
+          const target = workspaceDocumentById.get(node.targetDocumentId);
+          if (target?.domain === "creation" && target.workspaceId) {
+            setIndexValueIfAbsent(
+              workspaceIdByResourceId,
+              node.id,
+              target.workspaceId
+            );
+          }
+        }
+      }
+      visit(node.children ?? [], creationSection);
+    }
+  };
+
+  for (const section of resourceSections) {
+    visit(section.nodes, section.id === "creation");
+  }
+
+  return {
+    resourceNodeById,
+    workspaceDocumentById,
+    resourceIdByDocumentId,
+    resourceTargetDocumentIdById,
+    draftDirectoryById,
+    draftDirectoryByWorkspaceId,
+    preferredResourceIdByWorkspaceId,
+    workspaceIdByResourceId
+  };
 }
 
 function catalogNodeId(...parts: string[]): string {
@@ -239,13 +379,9 @@ function linkedSkillLibraryIds(book: Book): string[] {
   return uniqueIds(SKILL_KINDS.flatMap((kind) => book.linkedSkillIdsByKind[kind]));
 }
 
-function enabledBookPlotStages(book: Book) {
-  return book.plotStages.filter((stage) => stage.enabled);
-}
-
 function inferWorkspaceStageId(
-  book: Book,
-  document: CatalogDocument
+  document: CatalogDocument,
+  enabledPlotStageIds: ReadonlySet<string>
 ): ShortWorkspaceStageId | undefined {
   if (
     document.id === "character_design" ||
@@ -254,7 +390,7 @@ function inferWorkspaceStageId(
   ) {
     return "character_design";
   }
-  if (enabledBookPlotStages(book).some(({ id }) => id === document.id)) {
+  if (enabledPlotStageIds.has(document.id)) {
     return document.id;
   }
   return undefined;
@@ -264,14 +400,10 @@ function createBookDocument(
   book: Book,
   document: CatalogDocument,
   stageId: ShortWorkspaceStageId | undefined,
+  plotStage: Book["plotStages"][number] | undefined,
+  plotStageIndex: number,
   characterItem?: { id: string; title: string; order: number }
 ): WorkspaceDocument {
-  const enabledPlotStages = enabledBookPlotStages(book);
-  const plotStageIndex = enabledPlotStages.findIndex(
-    ({ id }) => id === stageId
-  );
-  const plotStage =
-    plotStageIndex >= 0 ? enabledPlotStages[plotStageIndex] : undefined;
   const stageLabel =
     stageId === "character_design"
       ? characterItem?.title ?? (book.characterStructure.format === "list" ? "概览" : "人物")
@@ -373,9 +505,15 @@ function createBookProjection(book: Book): {
   documents: WorkspaceDocument[];
   draftDirectory: DraftDirectoryProjection;
 } {
-  const enabledPlotStageIds = new Set(
-    enabledBookPlotStages(book).map((stage) => stage.id)
+  const enabledPlotStages = book.plotStages.filter((stage) => stage.enabled);
+  const enabledPlotStageById = new Map(
+    enabledPlotStages.map((stage) => [stage.id, stage] as const)
   );
+  const enabledPlotStageOrderById = new Map(
+    enabledPlotStages.map((stage, index) => [stage.id, index] as const)
+  );
+  const enabledPlotStageIds = new Set(enabledPlotStageById.keys());
+  const plotStageIds = new Set(book.plotStages.map((stage) => stage.id));
   const characterItems = new Map(
     book.characterStructure.format === "list"
       ? book.characterStructure.items.map((item) => [item.id, item] as const)
@@ -383,21 +521,33 @@ function createBookProjection(book: Book): {
   );
   const projected = book.documents
     .filter((document) => {
-      const isPlotStage = book.plotStages.some(
-        (stage) => stage.id === document.id
+      return (
+        !plotStageIds.has(document.id) ||
+        enabledPlotStageIds.has(document.id)
       );
-      return !isPlotStage || enabledPlotStageIds.has(document.id);
     })
     .map((document) => {
       const characterItem = characterItems.get(document.id);
       const stageId = characterItem
         ? "character_design" as const
-        : inferWorkspaceStageId(book, document);
+        : inferWorkspaceStageId(document, enabledPlotStageIds);
+      const plotStage = stageId
+        ? enabledPlotStageById.get(stageId)
+        : undefined;
       return {
         source: document,
         stageId,
         characterItem,
-        document: createBookDocument(book, document, stageId, characterItem)
+        document: createBookDocument(
+          book,
+          document,
+          stageId,
+          plotStage,
+          plotStage
+            ? enabledPlotStageOrderById.get(plotStage.id) ?? -1
+            : -1,
+          characterItem
+        )
       };
     });
   const stageNodes = new Map<ShortWorkspaceStageId, ResourceTreeNode>();
@@ -516,7 +666,7 @@ function createBookProjection(book: Book): {
       children.push(character);
     }
   }
-  const plotChildren = enabledBookPlotStages(book)
+  const plotChildren = enabledPlotStages
     .map(({ id }) => stageNodes.get(id))
     .filter((node): node is ResourceTreeNode => node !== undefined);
   children.push({
@@ -917,37 +1067,48 @@ export function projectCatalogWorkspace(snapshot: CatalogSnapshot): CatalogWorks
       : [];
   });
 
+  const resourceSections: ResourceTreeSection[] = [
+    {
+      id: "creation",
+      label: "创作空间",
+      icon: "book",
+      nodes: [...diagnosticBookNodes, ...bookProjections.map(({ node }) => node)]
+    },
+    {
+      id: "skill",
+      label: "技能库",
+      icon: "library",
+      nodes: [
+        ...diagnosticSkillNodes,
+        ...skillGroupNodes,
+        ...skillKindNodes
+      ]
+    },
+    {
+      id: "material",
+      label: "素材库",
+      icon: "archive",
+      nodes: [...diagnosticMaterialNodes, ...materialGroupNodes, ...materialKindNodes]
+    }
+  ];
+  const workspaceDocuments = [
+    ...bookProjections.flatMap(({ documents }) => documents),
+    ...snapshot.skills.flatMap(createSkillDocuments),
+    ...snapshot.materials.flatMap(createMaterialDocuments)
+  ];
+  const draftDirectories = bookProjections.map(
+    ({ draftDirectory }) => draftDirectory
+  );
+
   return {
-    resourceSections: [
-      {
-        id: "creation",
-        label: "创作空间",
-        icon: "book",
-        nodes: [...diagnosticBookNodes, ...bookProjections.map(({ node }) => node)]
-      },
-      {
-        id: "skill",
-        label: "技能库",
-        icon: "library",
-        nodes: [
-          ...diagnosticSkillNodes,
-          ...skillGroupNodes,
-          ...skillKindNodes
-        ]
-      },
-      {
-        id: "material",
-        label: "素材库",
-        icon: "archive",
-        nodes: [...diagnosticMaterialNodes, ...materialGroupNodes, ...materialKindNodes]
-      }
-    ],
-    workspaceDocuments: [
-      ...bookProjections.flatMap(({ documents }) => documents),
-      ...snapshot.skills.flatMap(createSkillDocuments),
-      ...snapshot.materials.flatMap(createMaterialDocuments)
-    ],
-    draftDirectories: bookProjections.map(({ draftDirectory }) => draftDirectory)
+    resourceSections,
+    workspaceDocuments,
+    draftDirectories,
+    index: createCatalogWorkspaceProjectionIndex(
+      resourceSections,
+      workspaceDocuments,
+      draftDirectories
+    )
   };
 }
 

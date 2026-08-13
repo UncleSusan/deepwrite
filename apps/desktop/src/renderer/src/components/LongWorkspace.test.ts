@@ -20,6 +20,8 @@ import longWorkspaceTypeSource from "../types/longWorkspace.ts?raw";
 import workspaceTypeSource from "../types/workspace.ts?raw";
 import writingOrchestratorSource from "../composables/useLongWritingOrchestrator.ts?raw";
 import agentRunPreferencesSource from "../utils/agentRunPreferences.ts?raw";
+import longWorkspaceResourceTreeSource from "../utils/longWorkspaceResourceTree.ts?raw";
+import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
 
 describe("long-form renderer vertical slice", () => {
   it("keeps create-book loading feedback inside the stable action footer", () => {
@@ -44,8 +46,10 @@ describe("long-form renderer vertical slice", () => {
   });
 
   it("projects one foreshadowing data source into overview, volume, and plot-point views", () => {
-    expect(appSource).toContain('key: "plot-design:foreshadowing"');
-    expect(appSource).toContain(
+    expect(longWorkspaceResourceTreeSource).toContain(
+      'key: "plot-design:foreshadowing"'
+    );
+    expect(longWorkspaceResourceTreeSource).toContain(
       "book.navigation.counts.foreshadowingThreads"
     );
     expect(longWorkspaceTypeSource).toContain(
@@ -67,7 +71,9 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).toContain(
       "if (currentIsPlotPointForeshadowing.value)"
     );
-    expect(appSource).toContain('@mutation="handleLongStructureMutation"');
+    expect(appSource).toContain(
+      '@mutation="handleActiveLongStructureMutation"'
+    );
     expect(foreshadowingSource).toContain(
       "createLongStructureMutationBuilder"
     );
@@ -96,10 +102,10 @@ describe("long-form renderer vertical slice", () => {
       "draft",
       "continuity_ledger"
     ]) {
-      expect(appSource).toContain(`${root}:`);
+      expect(longWorkspaceResourceTreeSource).toContain(`${root}:`);
     }
-    expect(appSource).toContain("book.navigation.counts");
-    expect(appSource).toContain("index.ledger.commits");
+    expect(longWorkspaceResourceTreeSource).toContain("book.navigation.counts");
+    expect(longWorkspaceResourceTreeSource).toContain("index.ledger.commits");
     expect(longWorkspaceTypeSource).toContain(
       "isLongMigrationEvidenceCategoryId"
     );
@@ -111,19 +117,21 @@ describe("long-form renderer vertical slice", () => {
 
   it("groups characters by each book's dynamic type directory with tab-bar creation", () => {
     expect(longWorkspaceTypeSource).toContain("DEFAULT_LONG_CHARACTER_TYPES");
-    expect(appSource).toContain(
+    expect(longWorkspaceResourceTreeSource).toContain(
       "const characterGroupChildren = [...book.navigation.characterTypes]"
     );
-    expect(appSource).toContain('key: "character-overview"');
-    expect(appSource).toContain("character.group === group.id");
-    expect(appSource).toContain("longCharacterGroup: group.id");
-    expect(appSource).toContain("label: options.label ?? selection.title");
-    expect(appSource).toContain("label: group.title");
-    const characterProjection = appSource.slice(
-      appSource.indexOf(
+    expect(longWorkspaceResourceTreeSource).toContain('key: "character-overview"');
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "characterCountByGroup.get(character.group)"
+    );
+    expect(longWorkspaceResourceTreeSource).toContain("longCharacterGroup: group.id");
+    expect(longWorkspaceResourceTreeSource).toContain("label: options.label ?? selection.title");
+    expect(longWorkspaceResourceTreeSource).toContain("label: group.title");
+    const characterProjection = longWorkspaceResourceTreeSource.slice(
+      longWorkspaceResourceTreeSource.indexOf(
         "const characterGroupChildren = [...book.navigation.characterTypes]"
       ),
-      appSource.indexOf("const bookLineSelection")
+      longWorkspaceResourceTreeSource.indexOf("const bookLineSelection")
     );
     expect(characterProjection).not.toContain(
       "key: `character:${character.id}`"
@@ -141,7 +149,7 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).toContain('role="alertdialog"');
     expect(editorSource).toContain('emit(\n    "deleteStructure"');
     expect(appSource).toContain(
-      '@delete-structure="deleteLongNavigationStructure"'
+      '@delete-structure="deleteActiveLongNavigationStructure"'
     );
     expect(appSource).toContain("builder.deleteCharacter(target.id, true)");
     expect(appSource).toContain("builder.deleteVolume(target.id, true)");
@@ -157,23 +165,23 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain(
       '@create-character="openLongCharacterCreate"'
     );
-    expect(appSource).toContain('plot_design: "剧情设计"');
-    expect(appSource).toContain('key: "root:plot-points"');
-    expect(appSource).toContain(
+    expect(longWorkspaceResourceTreeSource).toContain('plot_design: "剧情设计"');
+    expect(longWorkspaceResourceTreeSource).toContain('key: "root:plot-points"');
+    expect(longWorkspaceResourceTreeSource).toContain(
       "const plotPointVolumeChildren: ResourceTreeNode[]"
     );
-    expect(appSource).toContain(
+    expect(longWorkspaceResourceTreeSource).toContain(
       "key: `plot-design:plot-points:${volume.id}`"
     );
-    expect(appSource).toContain("label: volume.title");
-    expect(appSource).toContain('title: "剧情点"');
-    expect(appSource).toContain('title: "章卡"');
-    expect(appSource).toContain('label: "正文"');
-    const chapterCardProjection = appSource.slice(
-      appSource.indexOf(
+    expect(longWorkspaceResourceTreeSource).toContain("label: volume.title");
+    expect(longWorkspaceResourceTreeSource).toContain('title: "剧情点"');
+    expect(longWorkspaceResourceTreeSource).toContain('title: "章卡"');
+    expect(longWorkspaceResourceTreeSource).toContain('label: "正文"');
+    const chapterCardProjection = longWorkspaceResourceTreeSource.slice(
+      longWorkspaceResourceTreeSource.indexOf(
         "const chapterCardManagementChildren: ResourceTreeNode[]"
       ),
-      appSource.indexOf("const plotChildren: ResourceTreeNode[]")
+      longWorkspaceResourceTreeSource.indexOf("const plotChildren: ResourceTreeNode[]")
     );
     expect(chapterCardProjection).toContain(
       "key: `plot-design:chapter-cards:${volume.id}`"
@@ -183,9 +191,9 @@ describe("long-form renderer vertical slice", () => {
       "root:chapter-card-management:"
     );
     expect(chapterCardProjection).not.toContain("children: chapters");
-    const plotChildrenProjection = appSource.slice(
-      appSource.indexOf("const plotChildren: ResourceTreeNode[]"),
-      appSource.indexOf("const draftChildren")
+    const plotChildrenProjection = longWorkspaceResourceTreeSource.slice(
+      longWorkspaceResourceTreeSource.indexOf("const plotChildren: ResourceTreeNode[]"),
+      longWorkspaceResourceTreeSource.indexOf("const draftChildren")
     );
     const plotPointsPosition = plotChildrenProjection.indexOf(
       'key: "root:plot-points"'
@@ -205,9 +213,8 @@ describe("long-form renderer vertical slice", () => {
     ).toBeLessThan(
       plotChildrenProjection.indexOf('key: "root:plot-chapter-cards"')
     );
-    const longRootProjection = appSource.slice(
-      appSource.indexOf("const counts = book.navigation.counts;"),
-      appSource.indexOf("const longBookResourceNodes")
+    const longRootProjection = longWorkspaceResourceTreeSource.slice(
+      longWorkspaceResourceTreeSource.indexOf("const counts = book.navigation.counts;")
     );
     expect(
       longRootProjection.match(/node\(createLongRootSelection/gu)
@@ -263,7 +270,9 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain("<CreateLongChapterCardDialog");
     expect(appSource).toContain(":source=\"longChapterCardCreate?.source ?? 'chapter-card'\"");
     expect(appSource).toContain("@submit=\"createLongChapterCard\"");
-    expect(appSource).toContain("longDraftVolumeId: volume.id");
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "longDraftVolumeId: volume.id"
+    );
     expect(appSource).toContain("function requestCreateLongDraftSection");
     expect(appSource).toContain("function handleLongDraftSectionAction");
     expect(appSource).toContain("async function confirmDeleteLongDraftSection");
@@ -278,9 +287,9 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain(
       "createLongStructureMutationBuilder(index).reorderChapter"
     );
-    const draftChildrenProjection = appSource.slice(
-      appSource.indexOf("const draftChildren"),
-      appSource.indexOf("const continuityPendingChildren")
+    const draftChildrenProjection = longWorkspaceResourceTreeSource.slice(
+      longWorkspaceResourceTreeSource.indexOf("const draftChildren"),
+      longWorkspaceResourceTreeSource.indexOf("const continuityPendingChildren")
     );
     expect(draftChildrenProjection).toContain("longDraftVolumeId: volume.id");
     expect(draftChildrenProjection).not.toContain("return chapters.length");
@@ -297,7 +306,7 @@ describe("long-form renderer vertical slice", () => {
       appSource.indexOf("async function openLongVolumeCreate"),
       appSource.indexOf("async function openLongPlotPointCreate")
     );
-    expect(createVolumeEntry).toContain("longVolumeCreateOpen.value = true");
+    expect(createVolumeEntry).toContain("longVolumeCreate.value = { bookId }");
     expect(createVolumeEntry).not.toContain(
       "longStructureDialogOpen.value = true"
     );
@@ -603,9 +612,10 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain("<LongWorkspaceEditor");
     expect(appSource).toContain("isLongWorkspaceActive");
     expect(appSource).toContain("!isLongWorkspaceActive");
-    const shortEditorMountSource =
-      appSource.split("<RightEditorPane")[1]?.split("/>")[0] ?? "";
-    expect(shortEditorMountSource).toContain("!isLongWorkspaceActive");
+    const shortWorkspaceMountSource =
+      appSource.split("<WritingWorkspaceModule")[1]?.split("/>")[0] ?? "";
+    expect(shortWorkspaceMountSource).toContain("!isLongWorkspaceActive");
+    expect(writingWorkspaceSource).toContain("<RightEditorPane");
     expect(appSource).toContain("<CreateBookDialog");
     expect(appSource).toContain("async function createCreativeBook(");
     expect(appSource).toContain(
@@ -644,17 +654,25 @@ describe("long-form renderer vertical slice", () => {
   });
 
   it("projects long-form navigation into the same recursive tree used by short books", () => {
-    expect(appSource).toContain("function projectLongWorkspaceNavigation(");
-    expect(appSource).toContain("longWorkspaceSelection: selection");
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "function projectLongWorkspaceNavigation("
+    );
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "longWorkspaceSelection: selection"
+    );
     expect(appSource).toContain(
       "children: projectLongWorkspaceNavigation(book, workspaceIndex)"
     );
-    expect(appSource).toContain(
+    expect(longWorkspaceResourceTreeSource).toContain(
       "index\n      ? reconcileLongWorkspaceSelection(book, index, selection)\n      : selection"
     );
-    expect(appSource).toContain("[...book.navigation.worldbuilding]");
-    expect(appSource.indexOf("[...book.navigation.worldbuilding]")).toBeLessThan(
-      appSource.indexOf("...(worldRevealSelection")
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "[...book.navigation.worldbuilding]"
+    );
+    expect(
+      longWorkspaceResourceTreeSource.indexOf("[...book.navigation.worldbuilding]")
+    ).toBeLessThan(
+      longWorkspaceResourceTreeSource.indexOf("...(worldRevealSelection")
     );
     expect(appSource).toContain("selectableBranch: true");
     expect(appSource).toContain('badge: "长篇"');
@@ -671,7 +689,7 @@ describe("long-form renderer vertical slice", () => {
       "正文",
       "连续性账本"
     ]) {
-      expect(appSource).toContain(label);
+      expect(longWorkspaceResourceTreeSource).toContain(label);
     }
     expect(appSource).toContain("class=\"long-workspace-main-view\"");
     expect(appSource).toContain("'is-right-collapsed': rightCollapsed");
@@ -1078,9 +1096,15 @@ describe("long-form renderer vertical slice", () => {
   });
 
   it("provides a continuity review entry without replacing chapter authoring", () => {
-    expect(appSource).toContain("createLongChapterSelection");
-    expect(appSource).toContain("createLongContinuitySelection");
-    expect(appSource).toContain('title: "待处理章节"');
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "createLongChapterSelection"
+    );
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "createLongContinuitySelection"
+    );
+    expect(longWorkspaceResourceTreeSource).toContain(
+      'title: "待处理章节"'
+    );
     expect(longWorkspaceTypeSource).toContain(
       "没有候选时不生成伏笔记录"
     );
@@ -1195,5 +1219,79 @@ describe("long-form renderer vertical slice", () => {
     expect(structureSource).toContain('@click="openCreate"');
     expect(structureSource).toContain('@click="openEdit(row)"');
     expect(structureSource).toContain('@click="openDelete(row)"');
+  });
+
+  it("keeps every lazy long-structure mutation bound to its originating book and index", () => {
+    const lazyMutationLoads = appSource.match(
+      /await loadLongStructureMutationModule\(\)/g
+    );
+    expect(lazyMutationLoads).toHaveLength(11);
+
+    for (const resumedPath of appSource
+      .split("await loadLongStructureMutationModule()")
+      .slice(1)) {
+      expect(resumedPath.slice(0, 600)).toContain(
+        "assertCurrentLongStructureMutationTarget("
+      );
+    }
+
+    const targetGuard = appSource.slice(
+      appSource.indexOf("interface LongStructureMutationTargetSnapshot"),
+      appSource.indexOf("const longWorldbuildingSyncBookOptions")
+    );
+    expect(targetGuard).toContain(
+      "activeLongBookId.value !== expectedBookId"
+    );
+    expect(targetGuard).toContain("summary?.id !== expectedBookId");
+    expect(targetGuard).toContain("current.index !== target.index");
+    expect(targetGuard).toContain("current.revision !== target.revision");
+
+    const applyMutation = appSource.slice(
+      appSource.indexOf("async function applyLongStructureMutation("),
+      appSource.indexOf("async function deleteLongNavigationStructure(")
+    );
+    expect(applyMutation).toContain("expectedBookId: string");
+    expect(applyMutation).toContain(
+      "captureLongStructureMutationTarget(expectedBookId)"
+    );
+    expect(applyMutation).toContain("bookId: expectedBookId");
+
+    const importGuard = applyMutation.indexOf(
+      "assertCurrentLongStructureMutationTarget(latestTarget)"
+    );
+    const preview = applyMutation.indexOf(
+      "const preview = await api.previewOperations("
+    );
+    const previewGuard = applyMutation.indexOf(
+      "assertCurrentLongStructureMutationTarget(latestTarget)",
+      importGuard + 1
+    );
+    const previewValidation = applyMutation.indexOf(
+      "preview.bookId !== expectedBookId"
+    );
+    const applyGuard = applyMutation.indexOf(
+      "assertCurrentLongStructureMutationTarget(latestTarget)",
+      previewGuard + 1
+    );
+    const apply = applyMutation.indexOf(
+      "const applyResult = await api.applyOperations("
+    );
+    expect(importGuard).toBeGreaterThan(-1);
+    expect(preview).toBeGreaterThan(importGuard);
+    expect(previewGuard).toBeGreaterThan(preview);
+    expect(previewValidation).toBeGreaterThan(previewGuard);
+    expect(applyGuard).toBeGreaterThan(previewValidation);
+    expect(apply).toBeGreaterThan(applyGuard);
+
+    expect(appSource).toContain(
+      "const longVolumeCreate = ref<{ bookId: string } | null>(null)"
+    );
+    expect(appSource).toContain("longVolumeCreate.value !== target");
+    expect(appSource).toContain("longPlotPointCreate.value !== target");
+    expect(appSource).toContain("longChapterCardCreate.value !== target");
+    expect(appSource).toContain("longCharacterCreate.value !== target");
+    expect(appSource).toContain(
+      "() => longDraftSectionDelete.value === pending"
+    );
   });
 });

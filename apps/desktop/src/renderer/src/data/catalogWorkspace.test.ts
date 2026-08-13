@@ -7,11 +7,16 @@ import {
 } from "@deepwrite/contracts";
 import type { ResourceTreeNode } from "../types/workspace";
 import {
+  findProjectedDraftDirectoryForWorkspace,
+  findProjectedResourceNode,
+  findProjectedWorkspaceDocument,
   projectCatalogWorkspace,
   resolveBookWorkspaceId,
   resolveDraftSectionResourceId,
   resolvePreferredBookResourceId,
-  resolveDraftSectionProjection
+  resolveDraftSectionProjection,
+  resolveProjectedResourceIdForDocumentId,
+  resolveProjectedResourceTargetDocumentId
 } from "./catalogWorkspace";
 
 const NOW = "2026-07-18T08:00:00.000Z";
@@ -204,6 +209,82 @@ describe("catalog workspace projection", () => {
     expect(
       resolveDraftSectionResourceId(directoryNode, "section-1")
     ).toBe(secondChild.id);
+  });
+
+  it("builds reusable lookup indexes while projecting the catalog", () => {
+    const projection = projectCatalogWorkspace(fixture());
+    const directory = projection.draftDirectories[0]!;
+    const bookNode = projection.resourceSections[0]!.nodes[0]!;
+    const directoryNode = bookNode.children!.find(
+      (node) => node.id === directory.id
+    )!;
+    const sectionNode = directoryNode.children![1]!;
+    const section = directory.sections[1]!;
+    const bodyDocument = projection.workspaceDocuments.find(
+      (document) => document.id === section.bodyDocumentId
+    )!;
+
+    expect(findProjectedResourceNode(projection, sectionNode.id)).toBe(
+      sectionNode
+    );
+    expect(findProjectedWorkspaceDocument(projection, bodyDocument.id)).toBe(
+      bodyDocument
+    );
+    expect(
+      findProjectedDraftDirectoryForWorkspace(projection, "book-short")
+    ).toBe(directory);
+    expect(
+      resolveProjectedResourceIdForDocumentId(
+        projection,
+        section.bodyDocumentId
+      )
+    ).toBe(sectionNode.id);
+    expect(
+      resolveProjectedResourceIdForDocumentId(
+        projection,
+        section.characterStateDocumentId
+      )
+    ).toBe(sectionNode.id);
+    expect(
+      resolveProjectedResourceTargetDocumentId(projection, directory.id)
+    ).toBe(directory.sections[0]!.bodyDocumentId);
+    expect(
+      resolveProjectedResourceTargetDocumentId(projection, "missing-resource")
+    ).toBe("missing-resource");
+    expect(
+      resolveProjectedResourceIdForDocumentId(projection, "missing-document")
+    ).toBeUndefined();
+    expect(
+      findProjectedResourceNode(projection, "missing-resource")
+    ).toBeUndefined();
+    expect(
+      findProjectedWorkspaceDocument(projection, "missing-document")
+    ).toBeUndefined();
+    expect(
+      findProjectedDraftDirectoryForWorkspace(projection, "missing-book")
+    ).toBeUndefined();
+    expect(resolveBookWorkspaceId(projection, "missing-resource")).toBeUndefined();
+  });
+
+  it("uses the projection index without rescanning projection arrays", () => {
+    const projection = projectCatalogWorkspace(fixture());
+    const directory = projection.draftDirectories[0]!;
+    const sectionNode = projection.resourceSections[0]!.nodes[0]!.children!
+      .find((node) => node.id === directory.id)!.children![0]!;
+
+    projection.resourceSections = [];
+    projection.workspaceDocuments = [];
+    projection.draftDirectories = [];
+
+    expect(resolvePreferredBookResourceId(projection, "book-short")).toBe(
+      directory.id
+    );
+    expect(resolveBookWorkspaceId(projection, sectionNode.id)).toBe(
+      "book-short"
+    );
+    expect(findProjectedResourceNode(projection, sectionNode.id)).toBe(
+      sectionNode
+    );
   });
 
   it("prefers the section selected from editor tabs over the tree node section", () => {

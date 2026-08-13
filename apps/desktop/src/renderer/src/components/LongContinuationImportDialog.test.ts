@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import dialogSource from "./LongContinuationImportDialog.vue?raw";
 import transferSource from "./BookTransferDialog.vue?raw";
 import appSource from "../App.vue?raw";
+import resourceTreeSource from "../utils/longWorkspaceResourceTree.ts?raw";
 
 describe("LongContinuationImportDialog", () => {
   it("adds the continuation import entry and uses the protected preview API", () => {
@@ -11,8 +12,10 @@ describe("LongContinuationImportDialog", () => {
     expect(transferSource).not.toContain("旧版本短篇/剧本");
     expect(appSource).toContain("api.chooseContinuationImportSource()");
     expect(appSource).toContain("api.importContinuation(input)");
-    expect(appSource).toContain("createLongContinuitySelection(");
-    expect(appSource).toContain('commit.mode === "import_checkpoint"');
+    expect(resourceTreeSource).toContain("createLongContinuitySelection(");
+    expect(resourceTreeSource).toContain(
+      'commit.mode === "import_checkpoint"'
+    );
   });
 
   it("previews order, encoding and the non-authoritative checkpoint policy", () => {

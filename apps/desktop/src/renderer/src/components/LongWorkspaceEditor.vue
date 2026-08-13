@@ -35,6 +35,12 @@ import {
   loadLongEditorPanePreferences,
   saveLongEditorPanePreferences
 } from "../utils/longEditorPanePreferences";
+import {
+  countNonWhitespaceCharacters,
+  createBoundedTextHistory,
+  type TextHistoryRestoreResult,
+  type TextSelectionRange
+} from "../utils/boundedTextHistory";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
 import {
   isEditableLongFile,
@@ -246,8 +252,13 @@ const searchQuery = ref("");
 const replacementText = ref("");
 const currentMatchIndex = ref(-1);
 const searchAnchor = ref(0);
-const undoHistory = ref<LongEditorHistorySnapshot[]>([]);
-const redoHistory = ref<LongEditorHistorySnapshot[]>([]);
+const textHistory = createBoundedTextHistory();
+const historyVersion = ref(0);
+let pendingEditorInput: {
+  selectionBefore: TextSelectionRange;
+  inputType: string;
+  timestamp: number;
+} | null = null;
 const requestClockByFile = new Map<string, number>();
 const inflightDocumentLoads = new Map<string, Promise<void>>();
 const recoveryWriteTimers = new Map<
@@ -261,14 +272,6 @@ let worldbuildingDeletePreviousFocus: HTMLElement | null = null;
 let navigationDeletePreviousFocus: HTMLElement | null = null;
 let volumeDraftBookId = "";
 let worldbuildingSelectionRequest = 0;
-const HISTORY_LIMIT = 120;
-
-interface LongEditorHistorySnapshot {
-  content: string;
-  selectionStart: number;
-  selectionEnd: number;
-}
-
 interface LongEditorSearchMatch {
   start: number;
   end: number;
@@ -1141,8 +1144,18 @@ const documentEyebrow = computed(() => {
   }
   return "长篇文稿";
 });
-const characterCount = computed(
-  () => currentVisibleContent.value.replace(/\s/gu, "").length
+const characterCount = ref(
+  countNonWhitespaceCharacters(currentVisibleContent.value)
+);
+let countedVisibleContent = currentVisibleContent.value;
+watch(
+  currentVisibleContent,
+  (nextContent) => {
+    if (nextContent === countedVisibleContent) return;
+    countedVisibleContent = nextContent;
+    characterCount.value = countNonWhitespaceCharacters(nextContent);
+  },
+  { flush: "post" }
 );
 const canUseTextTools = computed(
   () =>
@@ -1158,18 +1171,22 @@ const canUseTextTools = computed(
       !currentIsPlotPointStoryline.value || currentStoryPlot.value
     )
 );
-const canUndo = computed(
-  () =>
+const canUndo = computed(() => {
+  void historyVersion.value;
+  return (
     canUseTextTools.value &&
     !currentReadOnly.value &&
-    undoHistory.value.length > 0
-);
-const canRedo = computed(
-  () =>
+    textHistory.canUndo
+  );
+});
+const canRedo = computed(() => {
+  void historyVersion.value;
+  return (
     canUseTextTools.value &&
     !currentReadOnly.value &&
-    redoHistory.value.length > 0
-);
+    textHistory.canRedo
+  );
+});
 const hasUnsavedChanges = computed(() =>
   Object.values(documentStates.value).some(
     (state) => state.loaded && state.content !== state.savedContent
@@ -1413,10 +1430,9 @@ function updateCurrentContent(content: string): void {
     return;
   }
   const key = stateKey(file.file.id);
-  replaceDocumentState(key, {
-    ...state,
-    content
-  });
+  // `documentStates` is deeply reactive. Mutating this one hot field avoids
+  // cloning every open document entry for each keystroke.
+  state.content = content;
   if (content === state.savedContent) {
     clearRecoveryRecordForKey(key, state.bookId, state.file.id);
   } else {
@@ -1582,34 +1598,32 @@ function updateVisibleContent(content: string): void {
     activePlotPointTab.value === "summary"
   ) {
     const persistedContent = plotPoint.summary ?? "";
-    const current = plotPointSummaryDrafts.value[plotPoint.id] ?? {
-      content: persistedContent,
-      savedContent: persistedContent,
-      saving: false
-    };
-    plotPointSummaryDrafts.value = {
-      ...plotPointSummaryDrafts.value,
-      [plotPoint.id]: {
-        ...current,
-        content
-      }
-    };
+    let current = plotPointSummaryDrafts.value[plotPoint.id];
+    if (!current) {
+      current = {
+        content,
+        savedContent: persistedContent,
+        saving: false
+      };
+      plotPointSummaryDrafts.value[plotPoint.id] = current;
+      return;
+    }
+    current.content = content;
     return;
   }
   const volume = currentBookLineVolume.value;
   if (currentIsVolumeOutline.value && volume) {
-    const current = volumeOutlineDrafts.value[volume.id] ?? {
-      content: volume.summary,
-      savedContent: volume.summary,
-      saving: false
-    };
-    volumeOutlineDrafts.value = {
-      ...volumeOutlineDrafts.value,
-      [volume.id]: {
-        ...current,
-        content
-      }
-    };
+    let current = volumeOutlineDrafts.value[volume.id];
+    if (!current) {
+      current = {
+        content,
+        savedContent: volume.summary,
+        saving: false
+      };
+      volumeOutlineDrafts.value[volume.id] = current;
+      return;
+    }
+    current.content = content;
     return;
   }
   const item = currentWorldbuildingItem.value;
@@ -1625,8 +1639,9 @@ function updateVisibleContent(content: string): void {
 }
 
 function resetEditorHistory(): void {
-  undoHistory.value = [];
-  redoHistory.value = [];
+  pendingEditorInput = null;
+  textHistory.clear();
+  historyVersion.value += 1;
 }
 
 function selectBookLineOverview(): void {
@@ -1955,82 +1970,132 @@ function reorderStoryPlot(
   ]);
 }
 
-function getEditorSnapshot(): LongEditorHistorySnapshot {
+function getEditorSelection(
+  fallback = currentVisibleContent.value.length
+): TextSelectionRange {
   const input = editorInput.value;
-  const fallback = currentVisibleContent.value.length;
   return {
-    content: currentVisibleContent.value,
-    selectionStart: input?.selectionStart ?? fallback,
-    selectionEnd: input?.selectionEnd ?? fallback
+    start: input?.selectionStart ?? fallback,
+    end: input?.selectionEnd ?? fallback
   };
 }
 
-function pushHistorySnapshot(
-  history: LongEditorHistorySnapshot[],
-  snapshot: LongEditorHistorySnapshot
-): void {
-  if (history.at(-1)?.content === snapshot.content) return;
-  history.push(snapshot);
-  if (history.length > HISTORY_LIMIT) history.shift();
-}
-
-function recordUndoSnapshot(snapshot = getEditorSnapshot()): void {
-  pushHistorySnapshot(undoHistory.value, snapshot);
-  redoHistory.value = [];
+function notifyHistoryChanged(): void {
+  historyVersion.value += 1;
 }
 
 function handleEditorBeforeInput(event: InputEvent): void {
   if (currentReadOnly.value) return;
   if (event.inputType === "historyUndo") {
     event.preventDefault();
+    pendingEditorInput = null;
     undo();
     return;
   }
   if (event.inputType === "historyRedo") {
     event.preventDefault();
+    pendingEditorInput = null;
     redo();
     return;
   }
   const input = event.currentTarget as HTMLTextAreaElement;
-  recordUndoSnapshot({
-    content: currentVisibleContent.value,
-    selectionStart:
-      input.selectionStart ?? currentVisibleContent.value.length,
-    selectionEnd: input.selectionEnd ?? currentVisibleContent.value.length
-  });
+  pendingEditorInput = {
+    selectionBefore: {
+      start: input.selectionStart ?? currentVisibleContent.value.length,
+      end: input.selectionEnd ?? currentVisibleContent.value.length
+    },
+    inputType: event.inputType,
+    timestamp: event.timeStamp
+  };
 }
 
-async function restoreEditorSnapshot(
-  snapshot: LongEditorHistorySnapshot
+function handleEditorInput(event: Event): void {
+  if (currentReadOnly.value || isDocumentContentBusy.value) return;
+  const input = event.currentTarget as HTMLTextAreaElement;
+  const beforeContent = currentVisibleContent.value;
+  const afterContent = input.value;
+  const selectionAfter = {
+    start: input.selectionStart ?? afterContent.length,
+    end: input.selectionEnd ?? afterContent.length
+  };
+  const pending = pendingEditorInput;
+  pendingEditorInput = null;
+  const historyResult = textHistory.recordInput({
+    beforeContent,
+    afterContent,
+    selectionBefore: pending?.selectionBefore ?? selectionAfter,
+    selectionAfter,
+    inputType:
+      pending?.inputType ??
+      (event instanceof InputEvent ? event.inputType : ""),
+    timestamp: pending?.timestamp ?? event.timeStamp
+  });
+  if (historyResult) {
+    notifyHistoryChanged();
+  }
+  updateVisibleContent(afterContent);
+  updateVisibleCharacterCount(
+    afterContent,
+    historyResult?.nonWhitespaceDelta
+  );
+}
+
+function recordProgrammaticChange(
+  nextContent: string,
+  selectionAfter: TextSelectionRange
+): number | undefined {
+  const result = textHistory.recordChange({
+    beforeContent: currentVisibleContent.value,
+    afterContent: nextContent,
+    selectionBefore: getEditorSelection(),
+    selectionAfter
+  });
+  if (result) {
+    notifyHistoryChanged();
+  }
+  return result?.nonWhitespaceDelta;
+}
+
+function updateVisibleCharacterCount(
+  nextContent: string,
+  nonWhitespaceDelta?: number
+): void {
+  if (currentVisibleContent.value !== nextContent) return;
+  countedVisibleContent = nextContent;
+  characterCount.value =
+    nonWhitespaceDelta === undefined
+      ? countNonWhitespaceCharacters(nextContent)
+      : Math.max(0, characterCount.value + nonWhitespaceDelta);
+}
+
+async function restoreEditorHistory(
+  result: TextHistoryRestoreResult
 ): Promise<void> {
   viewMode.value = "edit";
-  updateVisibleContent(snapshot.content);
+  updateVisibleContent(result.content);
+  updateVisibleCharacterCount(result.content, result.nonWhitespaceDelta);
   await nextTick();
   const input = editorInput.value;
   if (!input) return;
   input.focus({ preventScroll: true });
-  input.setSelectionRange(
-    snapshot.selectionStart,
-    snapshot.selectionEnd,
-    "forward"
-  );
-  scrollEditorToRange(input, snapshot.selectionStart);
+  input.setSelectionRange(result.start, result.end, "forward");
+  scrollEditorToRange(input, result.start);
 }
 
 function undo(): void {
   if (!canUndo.value) return;
-  const snapshot = undoHistory.value.pop();
-  if (!snapshot) return;
-  pushHistorySnapshot(redoHistory.value, getEditorSnapshot());
-  void restoreEditorSnapshot(snapshot);
+  pendingEditorInput = null;
+  const result = textHistory.undo(currentVisibleContent.value);
+  notifyHistoryChanged();
+  if (result) void restoreEditorHistory(result);
 }
 
 function redo(): void {
   if (!canRedo.value) return;
-  const snapshot = redoHistory.value.pop();
-  if (!snapshot) return;
-  pushHistorySnapshot(undoHistory.value, getEditorSnapshot());
-  void restoreEditorSnapshot(snapshot);
+  pendingEditorInput = null;
+  const result = textHistory.redo(currentVisibleContent.value);
+  notifyHistoryChanged();
+  if (result) void restoreEditorHistory(result);
 }
 
 function closeFindPanel(): void {
@@ -2145,8 +2210,12 @@ function replaceCurrentMatch(): void {
     findMatch(1);
     return;
   }
-  recordUndoSnapshot();
+  const nonWhitespaceDelta = recordProgrammaticChange(nextContent, {
+    start: match.start + replacementText.value.length,
+    end: match.start + replacementText.value.length
+  });
   updateVisibleContent(nextContent);
+  updateVisibleCharacterCount(nextContent, nonWhitespaceDelta);
   searchAnchor.value = match.start + replacementText.value.length;
   void nextTick(() => findMatch(1, true));
 }
@@ -2173,8 +2242,12 @@ function replaceAllMatches(): void {
     uiMessage.info("查找文字与替换文字相同");
     return;
   }
-  recordUndoSnapshot();
+  const nonWhitespaceDelta = recordProgrammaticChange(nextContent, {
+    start: 0,
+    end: 0
+  });
   updateVisibleContent(nextContent);
+  updateVisibleCharacterCount(nextContent, nonWhitespaceDelta);
   searchAnchor.value = 0;
   uiMessage.success(`已替换 ${matches.length} 处文字`);
 }
@@ -3409,8 +3482,7 @@ watch(
     closeFindPanel();
     searchQuery.value = "";
     replacementText.value = "";
-    undoHistory.value = [];
-    redoHistory.value = [];
+    resetEditorHistory();
   },
   { flush: "sync" }
 );
@@ -4779,11 +4851,7 @@ onBeforeUnmount(() => {
                   :aria-label="`${currentStoryPlot.title}正文`"
                   spellcheck="false"
                   @beforeinput="handleEditorBeforeInput"
-                  @input="
-                    updateVisibleContent(
-                      ($event.target as HTMLTextAreaElement).value
-                    )
-                  "
+                  @input="handleEditorInput"
                   @keydown="handleEditorKeydown"
                 />
                 <article
@@ -4960,11 +5028,7 @@ onBeforeUnmount(() => {
               "
               spellcheck="false"
               @beforeinput="handleEditorBeforeInput"
-              @input="
-                updateVisibleContent(
-                  ($event.target as HTMLTextAreaElement).value
-                )
-              "
+              @input="handleEditorInput"
               @keydown="handleEditorKeydown"
             />
             <article v-else class="long-document-preview">

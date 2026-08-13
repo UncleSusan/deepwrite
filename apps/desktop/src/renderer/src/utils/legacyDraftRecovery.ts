@@ -64,18 +64,14 @@ export function migrateLegacyDraftRecoveries(
   const nextDrafts = { ...drafts };
   const migratedLegacyKeys: string[] = [];
   const unmappedLegacyKeys: string[] = [];
-  const documentsById = new Map(
-    projection.workspaceDocuments.map((document) => [document.id, document] as const)
-  );
+  const documentsById = projection.index.workspaceDocumentById;
 
   for (const book of snapshot.books) {
     const legacyKey = legacyBookDraftRecoveryKey(book.id);
     const legacy = nextDrafts[legacyKey];
     if (!legacy?.dirty) continue;
 
-    const directory = projection.draftDirectories.find(
-      (candidate) => candidate.workspaceId === book.id
-    );
+    const directory = projection.index.draftDirectoryByWorkspaceId.get(book.id);
     const recovered = parseExpertDraftMarkdown(legacy.content);
     const currentCombinedRevision = createShortWorkspaceContentRevision(
       serializeExpertDraftMarkdown({
