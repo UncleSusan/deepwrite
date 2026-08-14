@@ -4,10 +4,9 @@ import workspacePanelSource from "./ShortAgentSettingsPanel.vue?raw";
 import settingsPageSource from "./SettingsPage.vue?raw";
 
 describe("long agent settings UI", () => {
-  it("exposes all six long-form roles in the creation settings page", () => {
+  it("exposes all five long-form roles in the creation settings page", () => {
     for (const id of [
-      "worldbuilding",
-      "character_design",
+      "setting",
       "plot_design",
       "draft",
       "expert_section_writer",

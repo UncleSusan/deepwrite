@@ -935,6 +935,87 @@ describe("agent conversation controller", () => {
     restored.dispose();
   });
 
+  it("stores and restores the evaluation snapshot on its assistant run", async () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-evaluation-snapshot-test";
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      persistenceKey,
+      storage,
+      idleTimeoutMs: 10_000
+    });
+    controller.draft.value = "评估这一轮";
+    const sessionId = controller.sessionId.value;
+    const sending = controller.sendMessage(document);
+    const runId = "run_evaluation_snapshot";
+
+    controller.handleEvent(
+      createEnvelope(
+        "agent.evaluation_snapshot",
+        {
+          sessionId,
+          runId,
+          messageId: `${runId}_assistant`,
+          runtime,
+          snapshot: {
+            schemaVersion: 1 as const,
+            capturedAt: "2026-08-13T00:00:00.000Z",
+            systemPrompt: "最终系统提示词",
+            runtimeContext: {
+              kind: "initial-session-context" as const,
+              text: "运行时上下文与用户消息"
+            },
+            tools: [
+              {
+                name: "read_fixture",
+                label: "读取夹具",
+                description: "读取评估夹具。",
+                inputSchema: {
+                  type: "object",
+                  properties: { id: { type: "string" } },
+                  required: ["id"]
+                }
+              }
+            ]
+          }
+        },
+        {
+          id: "event_evaluation_snapshot",
+          context: { sessionId, runId }
+        }
+      )
+    );
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId,
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      persistenceKey,
+      storage
+    });
+    expect(restored.messages.value.find((message) => message.runId === runId))
+      .toMatchObject({
+        evaluationSnapshot: {
+          systemPrompt: "最终系统提示词",
+          runtimeContext: { text: "运行时上下文与用户消息" },
+          tools: [
+            {
+              name: "read_fixture",
+              inputSchema: { type: "object" }
+            }
+          ]
+        }
+      });
+    restored.dispose({ clearPersistence: true });
+  });
+
   it("clears persisted conversations when a project runtime is disposed", () => {
     const storage = createMemoryStorage();
     const persistenceKey = "conversation-project-removal-test";
@@ -4313,7 +4394,7 @@ describe("agent conversation controller", () => {
         bookId: "longbook_context",
         title: "雾港来信",
         activeRoot: "worldbuilding",
-        activeAgentId: "worldbuilding",
+        activeAgentId: "setting",
         activeFileId: "file_world_rules:content",
         activeFileRevision: "v1:3:1234abcd",
         workspaceRevision: 7,
@@ -4378,7 +4459,7 @@ describe("agent conversation controller", () => {
       longWorkspace: expect.objectContaining({
         bookId: "longbook_context",
         activeRoot: "worldbuilding",
-        activeAgentId: "worldbuilding",
+        activeAgentId: "setting",
         activeFileId: "file_world_rules:content",
         activeFileRevision: "v1:3:1234abcd",
         workspaceRevision: 7,

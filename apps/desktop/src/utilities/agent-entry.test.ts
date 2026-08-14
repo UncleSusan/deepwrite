@@ -204,7 +204,7 @@ describe("Agent Utility prompt forwarding", () => {
   it("forwards the isolated longAgentProfile and navigation context", async () => {
     await import("./agent-entry");
     const longAgentProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      (profile) => profile.id === "worldbuilding"
+      (profile) => profile.id === "setting"
     )!;
     const command = CommandEnvelopeSchema.parse(
       createEnvelope(
@@ -218,7 +218,7 @@ describe("Agent Utility prompt forwarding", () => {
               bookId: "longbook_forwarding",
               title: "长篇测试",
               activeRoot: "worldbuilding",
-              activeAgentId: "worldbuilding",
+              activeAgentId: "setting",
               workspaceRevision: 0,
               projectRevision: 0,
               navigation: {
@@ -279,7 +279,7 @@ describe("Agent Utility prompt forwarding", () => {
     expect(result.status).toBe("accepted");
     await vi.waitFor(() => expect(captured.startInputs).toHaveLength(1));
     expect(captured.startInputs[0]).toMatchObject({
-      longAgentProfile: { id: "worldbuilding" },
+      longAgentProfile: { id: "setting" },
       workspaceContext: {
         longWorkspace: {
           bookId: "longbook_forwarding",
@@ -418,7 +418,7 @@ describe("Agent Utility prompt forwarding", () => {
         type: "long.mutation_proposal",
         payload: {
           ...payloadBase,
-          agentId: "worldbuilding",
+          agentId: "setting",
           batch: {
             baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -439,7 +439,7 @@ describe("Agent Utility prompt forwarding", () => {
         type: "long.worldbuilding_file_proposal",
         payload: {
           ...payloadBase,
-          agentId: "worldbuilding",
+          agentId: "setting",
           batch: {
             baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",

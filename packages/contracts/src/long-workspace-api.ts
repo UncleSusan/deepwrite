@@ -527,25 +527,25 @@ export const LongWorkspaceRuntimeContextSchema = z
     if (
       value.worldbuildingDirectory !== undefined &&
       (value.activeRoot !== "worldbuilding" ||
-        value.activeAgentId !== "worldbuilding")
+        value.activeAgentId !== "setting")
     ) {
       context.addIssue({
         code: "custom",
         path: ["worldbuildingDirectory"],
         message:
-          "Long worldbuilding directory may only be provided to the worldbuilding agent."
+          "Long worldbuilding directory may only be provided to the setting agent on the worldbuilding root."
       });
     }
     if (
       value.worldbuildingFocus !== undefined &&
       (value.activeRoot !== "worldbuilding" ||
-        value.activeAgentId !== "worldbuilding")
+        value.activeAgentId !== "setting")
     ) {
       context.addIssue({
         code: "custom",
         path: ["worldbuildingFocus"],
         message:
-          "Long worldbuilding focus may only be provided to the worldbuilding agent."
+          "Long worldbuilding focus may only be provided to the setting agent on the worldbuilding root."
       });
     }
     if (
@@ -562,13 +562,13 @@ export const LongWorkspaceRuntimeContextSchema = z
     if (
       value.characterFocus !== undefined &&
       (value.activeRoot !== "character_design" ||
-        value.activeAgentId !== "character_design")
+        value.activeAgentId !== "setting")
     ) {
       context.addIssue({
         code: "custom",
         path: ["characterFocus"],
         message:
-          "Long character focus may only be provided to the character-design agent."
+          "Long character focus may only be provided to the setting agent on the character-design root."
       });
     }
     if (

@@ -50,6 +50,7 @@ import {
   type LongWorkspaceSelection,
   type LongWorkspaceSelectionFile
 } from "../types/longWorkspace";
+import type { LongApprovalEditorFocus } from "../utils/approvalNavigation";
 import AppIcon from "./AppIcon.vue";
 import LongForeshadowingWorkspace from "./LongForeshadowingWorkspace.vue";
 import MarkdownContent from "./MarkdownContent.vue";
@@ -218,6 +219,9 @@ const pendingCharacterId = ref<string | null>(null);
 const pendingRole = ref<LongWorkspaceFileRole | null>(null);
 const pendingFileId = ref<string | null>(null);
 const heldSelectionFile = ref<LongWorkspaceSelectionFile | null>(null);
+const foreshadowingWorkspace = ref<{
+  focusTarget(threadId?: string, beatId?: string): Promise<boolean>;
+} | null>(null);
 let worldbuildingPrefetchRequest = 0;
 let selectionPrefetchRequest = 0;
 const activeBookLineVolumeId = ref<string | null>(null);
@@ -281,14 +285,23 @@ const currentSelectionFile = computed<LongWorkspaceSelectionFile | undefined>(
   () => {
     const selection = props.selection;
     if (!selection) return undefined;
+    const explicitlySelectedFile = selection.preferredFileId
+      ? selection.files.find(
+          ({ file }) => file.id === selection.preferredFileId
+        )
+      : undefined;
     if (selection.worldbuildingFormat === "list") {
+      const selectedItemId =
+        selection.worldbuildingItemId !== undefined
+          ? selection.worldbuildingItemId
+          : activeWorldbuildingItemId.value;
       const item = selection.worldbuildingItems?.find(
-        ({ id }) => id === activeWorldbuildingItemId.value
+        ({ id }) => id === selectedItemId
       );
-      return item
+      return explicitlySelectedFile ?? (item
         ? selection.files.find(({ file }) => file.id === item.file.id)
         : selection.files.find(({ role }) => role === "overview") ??
-            selection.files[0];
+            selection.files[0]);
     }
     if (
       selection.plotPointId &&
@@ -309,6 +322,7 @@ const currentSelectionFile = computed<LongWorkspaceSelectionFile | undefined>(
       return selection.files.find(({ role }) => role === "book-line");
     }
     return (
+      explicitlySelectedFile ??
       selection.files.find(({ file }) => file.id === activeFileId.value) ??
       selection.files.find(({ role }) => role === activeRole.value) ??
       selection.files[0]
@@ -397,7 +411,9 @@ const currentEmptyCollection = computed<{
     return {
       icon: "user",
       title: `还没有${selection.title}`,
-      description: "新建人物后，可通过上方 Tab 切换并编辑人物档案。",
+      description: currentUsesLeftTreeCharacter.value
+        ? "新建人物后，可从左侧树选择并编辑人物档案。"
+        : "新建人物后，可通过条目导航切换并编辑人物档案。",
       buttonLabel: "新建第一个人物",
       action: "character"
     };
@@ -409,7 +425,9 @@ const currentEmptyCollection = computed<{
     return {
       icon: "file",
       title: "还没有剧情点",
-      description: "新建剧情点后，可通过上方 Tab 切换并编辑内容。",
+      description: currentUsesLeftTreePlot.value
+        ? "新建剧情点后，可从左侧树选择并编辑内容。"
+        : "新建剧情点后，可通过条目导航切换并编辑内容。",
       buttonLabel: "新建第一个剧情点",
       action: "plotPoint"
     };
@@ -421,7 +439,9 @@ const currentEmptyCollection = computed<{
     return {
       icon: "file",
       title: "还没有章卡",
-      description: "新建章卡后，可通过上方 Tab 切换并编辑内容。",
+      description: currentUsesLeftTreePlot.value
+        ? "新建章卡后，可从左侧树选择并编辑内容。"
+        : "新建章卡后，可通过条目导航切换并编辑内容。",
       buttonLabel: "新建第一张章卡",
       action: "chapterCard"
     };
@@ -794,6 +814,11 @@ const currentWorldbuildingItemLayout = computed(
     props.workspaceIndex?.featureSettings.worldbuildingItemLayout ??
     "top-tabs"
 );
+const currentUsesLeftTreeWorldbuilding = computed(
+  () =>
+    currentIsWorldbuildingList.value &&
+    currentWorldbuildingItemLayout.value === "left-tree"
+);
 const currentUsesTopWorldbuildingTabs = computed(
   () =>
     currentIsWorldbuildingList.value &&
@@ -811,6 +836,22 @@ const currentSharedItemLayout = computed(
 );
 const currentPlotItemLayout = computed(
   () => props.workspaceIndex?.featureSettings.plotItemLayout ?? "top-tabs"
+);
+const currentUsesLeftTreeCharacter = computed(
+  () =>
+    currentIsCharacterGroup.value && currentSharedItemLayout.value === "left-tree"
+);
+const currentUsesLeftTreePlot = computed(
+  () =>
+    (currentIsBookLineWorkspace.value ||
+      currentIsPlotPointWorkspace.value ||
+      currentIsChapterCardWorkspace.value) &&
+    currentPlotItemLayout.value === "left-tree"
+);
+const currentUsesLeftTreeContinuity = computed(
+  () =>
+    props.selection?.root === "continuity_ledger" &&
+    currentSharedItemLayout.value === "left-tree"
 );
 const currentUsesTopCharacterTabs = computed(
   () =>
@@ -1019,7 +1060,8 @@ const showGenericFileTabs = computed(
     !currentIsPlotPointWorkspace.value &&
     !currentIsBookLineWorkspace.value &&
     !currentIsChapterCardWorkspace.value &&
-    !currentUsesRightContinuityList.value
+    !currentUsesRightContinuityList.value &&
+    !currentUsesLeftTreeContinuity.value
 );
 const currentWorldbuildingListState = computed<{
   items: Array<{ id: string; title: string; content: string }>;
@@ -3013,6 +3055,65 @@ async function selectWorkspaceFile(fileId: string): Promise<void> {
   }
 }
 
+async function focusFile(fileId: string): Promise<boolean> {
+  const selection = props.selection;
+  if (!selection?.files.some(({ file }) => file.id === fileId)) return false;
+  if (selection.worldbuildingFormat === "list") {
+    const item = selection.worldbuildingItems?.find(
+      ({ file }) => file.id === fileId
+    );
+    if (item) {
+      await selectWorldbuildingItem(item.id);
+    } else {
+      await selectWorldbuildingOverview();
+    }
+  } else {
+    const storyPlot = selection.storyPlots?.find(
+      ({ file }) => file.id === fileId
+    );
+    if (storyPlot) {
+      await selectPlotPointTab("storyline");
+      await selectStoryPlot(storyPlot.id);
+    } else {
+      await selectWorkspaceFile(fileId);
+    }
+  }
+  return currentSelectionFile.value?.file.id === fileId;
+}
+
+async function focusTarget(target: LongApprovalEditorFocus): Promise<boolean> {
+  if (target.bookLineVolumeId) {
+    selectBookLineVolume(target.bookLineVolumeId);
+  }
+  if (target.foreshadowingThreadId || target.foreshadowingBeatId) {
+    await nextTick();
+    if (
+      !(await foreshadowingWorkspace.value?.focusTarget(
+        target.foreshadowingThreadId,
+        target.foreshadowingBeatId
+      ))
+    ) {
+      return false;
+    }
+  }
+  return target.fileId ? focusFile(target.fileId) : true;
+}
+
+function captureNavigationSelection(): Partial<LongWorkspaceSelection> {
+  const selection = props.selection;
+  if (!selection) return {};
+  const selectedFile = currentSelectionFile.value;
+  return {
+    ...(selection.worldbuildingFormat === "list"
+      ? { worldbuildingItemId: activeWorldbuildingItemId.value }
+      : {}),
+    ...(currentIsBookLineWorkspace.value
+      ? { bookLineVolumeId: activeBookLineVolumeId.value }
+      : {}),
+    ...(selectedFile ? { preferredFileId: selectedFile.file.id } : {})
+  };
+}
+
 function requestSelectCharacter(characterId: LongCharacterId): void {
   if (
     characterId === props.selection?.characterId ||
@@ -3335,6 +3436,9 @@ function synchronizeProjectRevisionsIfClean(
 defineExpose({
   saveAllChanges,
   selectBookLineVolume,
+  focusFile,
+  focusTarget,
+  captureNavigationSelection,
   ensureDocumentsLoaded,
   synchronizeProjectRevisions,
   synchronizeProjectRevisionsIfClean
@@ -3412,16 +3516,47 @@ watch(
     [
       props.bookId,
       props.selection?.key,
-      props.selection?.preferredRole
+      props.selection?.preferredRole,
+      props.selection?.preferredFileId
     ] as const,
   () => {
     const preferredRole = props.selection?.preferredRole ?? "content";
     activeRole.value = preferredRole;
     activeFileId.value =
-      props.selection?.files.find(({ role }) => role === preferredRole)?.file
-        .id ??
+      props.selection?.preferredFileId ??
+      props.selection?.files.find(({ role }) => role === preferredRole)?.file.id ??
       props.selection?.files[0]?.file.id ??
       null;
+  },
+  { immediate: true, flush: "sync" }
+);
+
+watch(
+  () =>
+    [
+      props.bookId,
+      props.selection?.key,
+      props.selection?.worldbuildingItemId
+    ] as const,
+  ([, , itemId]) => {
+    if (itemId !== undefined) {
+      activeWorldbuildingItemId.value = itemId;
+    }
+  },
+  { immediate: true, flush: "sync" }
+);
+
+watch(
+  () =>
+    [
+      props.bookId,
+      props.selection?.key,
+      props.selection?.bookLineVolumeId
+    ] as const,
+  ([, , volumeId]) => {
+    if (volumeId !== undefined) {
+      activeBookLineVolumeId.value = volumeId;
+    }
   },
   { immediate: true, flush: "sync" }
 );
@@ -4445,6 +4580,7 @@ onBeforeUnmount(() => {
         </aside>
         <LongForeshadowingWorkspace
           v-if="currentIsForeshadowingView && workspaceIndex"
+          ref="foreshadowingWorkspace"
           :snapshot="workspaceIndex"
           :mode="currentForeshadowingMode"
           :volume-id="currentForeshadowingVolumeId"
@@ -4923,7 +5059,11 @@ onBeforeUnmount(() => {
             <strong>还没有世界观条目</strong>
             <span>
               新建条目后，可通过{{
-                currentUsesRightWorldbuildingList ? "右侧列表" : "上方 Tab"
+                currentUsesLeftTreeWorldbuilding
+                  ? "左侧树"
+                  : currentUsesRightWorldbuildingList
+                    ? "右侧列表"
+                    : "上方 Tab"
               }}切换并编辑内容。
             </span>
             <button

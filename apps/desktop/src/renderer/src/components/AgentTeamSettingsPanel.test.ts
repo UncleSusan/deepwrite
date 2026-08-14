@@ -23,10 +23,9 @@ describe("AgentTeamSettingsPanel", () => {
     expect(source).not.toContain("skill.skillType === activeWorkspaceType.value");
   });
 
-  it("maps all six long parent agents and preserves approval boundaries", () => {
+  it("maps all five long parent agents and preserves approval boundaries", () => {
     for (const id of [
-      "worldbuilding",
-      "character_design",
+      "setting",
       "plot_design",
       "draft",
       "expert_section_writer",

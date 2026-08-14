@@ -65,6 +65,33 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain("characterItemAction('delete')");
   });
 
+  it("uses parent add and a fixed three-action menu for long left-tree items", () => {
+    expect(source).toContain("isLongTreeCollection");
+    expect(source).toContain("createLongTreeItem()");
+    expect(source).toContain('emit("createLongTreeItem", props.node)');
+    expect(source).toContain("isLongTreeItem");
+    const itemMenu = source.slice(
+      source.indexOf('<template v-if="isLongTreeItem">'),
+      source.indexOf('<template v-else-if="isLongDraftSection">')
+    );
+    expect(itemMenu).toContain("longTreeItemAction('move-up')");
+    expect(itemMenu).toContain("longTreeItemAction('move-down')");
+    expect(itemMenu).toContain("longTreeItemAction('delete')");
+    expect(itemMenu).toContain("@click.stop");
+    expect(itemMenu).toContain("<span>上移</span>");
+    expect(itemMenu).toContain("<span>下移</span>");
+    expect(itemMenu).toContain("<span>删除</span>");
+    expect(itemMenu).not.toContain("修改名称");
+    expect(source).toContain("isFirstLongTreeItem(child)");
+    expect(source).toContain("isLastLongTreeItem(child)");
+    expect(source).toContain(
+      ":disabled=\"longTreeActionsDisabled || longTreeItemMoveUpDisabled\""
+    );
+    expect(source).toContain(
+      ":disabled=\"longTreeActionsDisabled || longTreeItemMoveDownDisabled\""
+    );
+  });
+
   it("keeps long character creation out of the resource tree", () => {
     expect(source).not.toContain("isLongCharacterGroup");
     expect(source).not.toContain('title="新增人物"');

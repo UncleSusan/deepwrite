@@ -7,6 +7,7 @@ import type {
   DialogMode,
   IconName,
   LongBookResourceNodeActionPayload,
+  LongTreeItemAction,
   ResourceDomain,
   ResourceSectionActionPayload,
   ResourceTreeNode,
@@ -37,6 +38,7 @@ const props = defineProps<{
     | "cloud-backup"
     | undefined;
   marketplaceDisplayName?: string | undefined;
+  longTreeActionsDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -57,6 +59,8 @@ const emit = defineEmits<{
   createExpertSection: [node: ResourceTreeNode];
   createLongDraftSection: [node: ResourceTreeNode];
   longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode];
+  createLongTreeItem: [node: ResourceTreeNode];
+  longTreeItemAction: [action: LongTreeItemAction, node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
   expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
   createCharacterItem: [node: ResourceTreeNode];
@@ -445,6 +449,7 @@ watch(
               :pinned-ids="pinnedResourceIds"
               :resource-domain="resourceDomainFor(node)"
               :library-entry-clipboard-domain="libraryEntryClipboardDomain"
+              :long-tree-actions-disabled="longTreeActionsDisabled"
               @select="emit('selectResource', $event)"
               @toggle-pin="toggleResourcePin"
               @book-action="(mode, book) => emit('bookAction', mode, book)"
@@ -455,6 +460,8 @@ watch(
               @create-expert-section="emit('createExpertSection', $event)"
               @create-long-draft-section="emit('createLongDraftSection', $event)"
               @long-draft-section-action="(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)"
+              @create-long-tree-item="emit('createLongTreeItem', $event)"
+              @long-tree-item-action="(action, itemNode) => emit('longTreeItemAction', action, itemNode)"
               @remove-expert-section="emit('removeExpertSection', $event)"
               @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
               @create-character-item="emit('createCharacterItem', $event)"
@@ -468,6 +475,7 @@ watch(
           :key="section.id"
           :section="section"
           :selected-id="selectedId"
+          :long-tree-actions-disabled="longTreeActionsDisabled"
           :pinned-ids="pinnedResourceIds"
           :library-entry-clipboard-domain="libraryEntryClipboardDomain"
           @select="emit('selectResource', $event)"
@@ -481,6 +489,8 @@ watch(
           @create-expert-section="emit('createExpertSection', $event)"
           @create-long-draft-section="emit('createLongDraftSection', $event)"
           @long-draft-section-action="(action: 'move-up' | 'move-down' | 'delete', sectionNode: ResourceTreeNode) => emit('longDraftSectionAction', action, sectionNode)"
+          @create-long-tree-item="emit('createLongTreeItem', $event)"
+          @long-tree-item-action="(action: LongTreeItemAction, itemNode: ResourceTreeNode) => emit('longTreeItemAction', action, itemNode)"
           @remove-expert-section="emit('removeExpertSection', $event)"
           @expert-section-action="(action: 'move-up' | 'move-down', sectionNode: ResourceTreeNode) => emit('expertSectionAction', action, sectionNode)"
           @create-character-item="emit('createCharacterItem', $event)"

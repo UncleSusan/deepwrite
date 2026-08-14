@@ -6,6 +6,7 @@ import type {
   CatalogLibraryEntryDragPayload,
   IconName,
   LongBookResourceNodeActionPayload,
+  LongTreeItemAction,
   ResourceSectionAction,
   ResourceSectionActionPayload,
   ResourceTreeNode,
@@ -19,6 +20,7 @@ const props = defineProps<{
   selectedId: string;
   pinnedIds?: string[];
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
+  longTreeActionsDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,6 +35,8 @@ const emit = defineEmits<{
   createExpertSection: [node: ResourceTreeNode];
   createLongDraftSection: [node: ResourceTreeNode];
   longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode];
+  createLongTreeItem: [node: ResourceTreeNode];
+  longTreeItemAction: [action: LongTreeItemAction, node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
   expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
   createCharacterItem: [node: ResourceTreeNode];
@@ -187,6 +191,7 @@ onBeforeUnmount(() => {
         :pinned-ids="pinnedIds"
         :resource-domain="section.id"
         :library-entry-clipboard-domain="libraryEntryClipboardDomain"
+        :long-tree-actions-disabled="longTreeActionsDisabled"
         @select="emit('select', $event)"
         @toggle-pin="emit('togglePin', $event)"
         @book-action="(mode, book) => emit('bookAction', mode, book)"
@@ -197,6 +202,8 @@ onBeforeUnmount(() => {
         @create-expert-section="emit('createExpertSection', $event)"
         @create-long-draft-section="emit('createLongDraftSection', $event)"
         @long-draft-section-action="(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)"
+        @create-long-tree-item="emit('createLongTreeItem', $event)"
+        @long-tree-item-action="(action, itemNode) => emit('longTreeItemAction', action, itemNode)"
         @remove-expert-section="emit('removeExpertSection', $event)"
         @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
         @create-character-item="emit('createCharacterItem', $event)"

@@ -127,6 +127,26 @@ export interface LongBookResourceNodeActionPayload {
   };
 }
 
+export type LongTreeCollectionKind =
+  | "worldbuilding-item"
+  | "character"
+  | "volume"
+  | "plot-point"
+  | "chapter-card";
+
+export interface LongTreeCollectionTarget {
+  kind: LongTreeCollectionKind;
+  parentId?: string;
+}
+
+export interface LongTreeItemTarget {
+  kind: LongTreeCollectionKind;
+  id: string;
+  parentId?: string;
+}
+
+export type LongTreeItemAction = "move-up" | "move-down" | "delete";
+
 export type BookResourceDialogMode =
   | "manage-structure"
   | "rename"
@@ -178,6 +198,10 @@ export interface ResourceTreeNode {
   longCharacterGroup?: LongCharacterGroup;
   /** Identifies a long-form draft volume folder that can add a manuscript section. */
   longDraftVolumeId?: string;
+  /** Identifies a left-tree collection whose parent row can create an item. */
+  longTreeCollection?: LongTreeCollectionTarget;
+  /** Identifies a mutable long-form item rendered inside a left-tree collection. */
+  longTreeItem?: LongTreeItemTarget;
   catalogNodeType?:
     | "book"
     | "long-book"

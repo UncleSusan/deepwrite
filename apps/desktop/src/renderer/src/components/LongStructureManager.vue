@@ -71,7 +71,8 @@ const formatOptions: readonly PopupSelectOption[] = [
 ];
 const worldbuildingItemLayoutOptions: readonly PopupSelectOption[] = [
   { value: "top-tabs", label: "上方横向标签" },
-  { value: "right-list", label: "右侧纵向列表" }
+  { value: "right-list", label: "右侧纵向列表" },
+  { value: "left-tree", label: "左侧树形结构" }
 ];
 
 const panelOptions: ReadonlyArray<{
@@ -226,7 +227,9 @@ function setFormat(value: PopupSelectValue): void {
 
 function setWorldbuildingItemLayout(value: PopupSelectValue): void {
   if (
-    (value !== "top-tabs" && value !== "right-list") ||
+    (value !== "top-tabs" &&
+      value !== "right-list" &&
+      value !== "left-tree") ||
     value === props.snapshot.featureSettings.worldbuildingItemLayout
   ) {
     return;
@@ -240,7 +243,9 @@ function setWorldbuildingItemLayout(value: PopupSelectValue): void {
 
 function setCharacterAndContinuityItemLayout(value: PopupSelectValue): void {
   if (
-    (value !== "top-tabs" && value !== "right-list") ||
+    (value !== "top-tabs" &&
+      value !== "right-list" &&
+      value !== "left-tree") ||
     value === props.snapshot.featureSettings.characterAndContinuityItemLayout
   ) {
     return;
@@ -254,7 +259,9 @@ function setCharacterAndContinuityItemLayout(value: PopupSelectValue): void {
 
 function setPlotItemLayout(value: PopupSelectValue): void {
   if (
-    (value !== "top-tabs" && value !== "right-list") ||
+    (value !== "top-tabs" &&
+      value !== "right-list" &&
+      value !== "left-tree") ||
     value === props.snapshot.featureSettings.plotItemLayout
   ) {
     return;
@@ -676,7 +683,7 @@ function confirmDelete(): void {
             <strong>世界观条目样式</strong>
             <span>
               选择列表型世界观分类中的概览与条目如何排列。
-              右侧纵向列表会在紧凑窗口中自动移到正文下方。
+              左侧树形结构会把概览与条目放到世界观分类下方。
             </span>
           </div>
           <PopupSelect
@@ -693,7 +700,7 @@ function confirmDelete(): void {
             <strong>人物与连续性条目样式</strong>
             <span>
               统一选择人物集合与连续性账本文件的排列方式。
-              右侧纵向列表会在紧凑窗口中自动移到正文下方。
+              左侧树形结构会把人物与账本文件放到对应标题下方。
             </span>
           </div>
           <PopupSelect
@@ -709,7 +716,7 @@ function confirmDelete(): void {
           <div class="feature-setting-copy">
             <strong>剧情设计条目样式</strong>
             <span>
-              选择全书故事线、剧情点和章卡集合的排列方式；故事情节保持原有右侧条目面板。
+              选择全书故事线、剧情点和章卡集合的排列方式；左侧树形结构不会改变故事情节面板。
             </span>
           </div>
           <PopupSelect

@@ -160,6 +160,7 @@ import { ContinuationImportPreviewRegistry } from "./continuation-import-preview
 import { LegacySyncPreviewRegistry } from "./legacy-sync-preview-registry";
 import { readExternalSkills } from "./external-skill-import";
 import { createMainWindowStartupGate } from "./main-window-startup-gate";
+import { resolveDeepWriteAppMode } from "./app-run-mode";
 
 interface ActiveRun extends MainInternalCommandActiveRun {
   correlationId: string;
@@ -256,6 +257,7 @@ type AgentEventEnvelope = Extract<
   SystemEventEnvelope,
   {
     type:
+      | "agent.evaluation_snapshot"
       | "agent.turn_started"
       | "agent.retry_scheduled"
       | "agent.message_delta"
@@ -283,6 +285,7 @@ type AgentEventEnvelope = Extract<
 
 function isAgentEvent(event: SystemEventEnvelope): event is AgentEventEnvelope {
   return (
+    event.type === "agent.evaluation_snapshot" ||
     event.type === "agent.turn_started" ||
     event.type === "agent.retry_scheduled" ||
     event.type === "agent.message_delta" ||
@@ -872,6 +875,9 @@ function workspaceGroupParent(
 function configureCatalogEnvironment(): string {
   const userDataPath = app.getPath("userData");
   process.env.DEEPWRITE_USER_DATA_PATH = userDataPath;
+  process.env.DEEPWRITE_APP_MODE = resolveDeepWriteAppMode(
+    import.meta.env.MAIN_VITE_DEEPWRITE_APP_MODE
+  );
 
   const currentLegacyRoot = join(
     app.getPath("home"),

@@ -3,9 +3,31 @@ import { describe, expect, it } from "vitest";
 import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
 import proposalCardSource from "./AgentEditProposalCard.vue?raw";
+import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 
 describe("AgentConversation edit proposal placement", () => {
+  it("shows target navigation only for accepted approval cards and relays it", () => {
+    expect(proposalCardSource).toContain(
+      "v-if=\"proposal.status === 'accepted'\""
+    );
+    expect(proposalCardSource).toContain("approval-target-button");
+    expect(proposalCardSource).toContain('aria-label="跳转到目标文件"');
+    expect(proposalCardSource).toContain(">\n            跳转到目标文件\n");
+    expect(proposalCardSource).toContain("emit('locate', {");
+    expect(conversationSource).toContain(
+      "@locate=\"emit('locateEditProposal', $event)\""
+    );
+    expect(
+      conversationSource.match(
+        /@locate="emit\('locateEditProposal', \$event\)"/g
+      )
+    ).toHaveLength(2);
+    expect(writingWorkspaceSource).toContain(
+      "@locate-edit-proposal=\"emit('locateEditProposal', $event)\""
+    );
+  });
+
   it("places structured long proposals in the matching assistant turn", () => {
     expect(conversationSource).toContain("longProposalItemsForMessage");
     expect(conversationSource).toContain("<LongProposalReview");

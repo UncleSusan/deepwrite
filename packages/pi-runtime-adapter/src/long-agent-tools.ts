@@ -974,6 +974,27 @@ const LONG_CHARACTER_MUTATION_PARAMETERS = strictObject({
   summary: Type.String({ minLength: 1, maxLength: 1_000 })
 });
 
+const LONG_SETTING_STRUCTURE_OPERATION_PARAMETER = Type.Union([
+  LONG_WORLDBUILDING_STRUCTURE_OPERATION_PARAMETER,
+  LONG_CHARACTER_STRUCTURE_OPERATION_PARAMETER
+]);
+
+const LONG_SETTING_MUTATION_PARAMETERS = strictObject({
+  operations: Type.Array(LONG_SETTING_STRUCTURE_OPERATION_PARAMETER, {
+    minItems: 1,
+    maxItems: 10_000
+  }),
+  summary: Type.String({ minLength: 1, maxLength: 1_000 })
+});
+
+const settingCharacterDocumentParameter = literalUnion([
+  "overview",
+  "core_profile",
+  "relationships",
+  "current_state",
+  "history"
+] as const);
+
 const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
   strictObject({
     type: Type.Literal("volume.update"),
@@ -1437,6 +1458,127 @@ function textResult(
   details: LongAgentToolDetails = { kind: "none" }
 ): AgentToolResult<LongAgentToolDetails> {
   return { content: [{ type: "text", text }], details };
+}
+
+function joinLines(lines: readonly (string | undefined)[]): string {
+  return lines.filter((line): line is string => Boolean(line)).join("\n");
+}
+
+function joinParagraphs(parts: readonly string[]): string {
+  return parts.filter((part) => part.length > 0).join("\n\n");
+}
+
+function formatWorldbuildingCategoryList(
+  categories: readonly {
+    category_id: string;
+    title: string;
+    format: "text" | "list";
+    item_count?: number;
+  }[]
+): string {
+  if (categories.length === 0) {
+    return joinParagraphs(["世界观分类", "（暂无分类）"]);
+  }
+  return joinParagraphs([
+    "世界观分类",
+    ...categories.map((category) =>
+      joinLines([
+        category.title,
+        `category_id=${category.category_id}`,
+        `类型=${category.format === "list" ? "条目列表" : "文本"}`,
+        category.format === "list"
+          ? `条目数=${category.item_count ?? 0}`
+          : undefined
+      ])
+    )
+  ]);
+}
+
+function formatWorldbuildingItemList(input: {
+  category_id: string;
+  title: string;
+  format: "text" | "list";
+  overview?: string;
+  items?: readonly { item_id: string; title: string }[];
+}): string {
+  const header = joinLines([
+    `分类：${input.title}`,
+    `category_id=${input.category_id}`,
+    `类型=${input.format === "list" ? "条目列表" : "文本"}`
+  ]);
+  if (input.format !== "list") {
+    return joinParagraphs([
+      header,
+      "这是文本型分类；读取内容时不要传 item_id。"
+    ]);
+  }
+  const items = input.items ?? [];
+  return joinParagraphs([
+    header,
+    joinLines(["概览", input.overview?.trim() ? input.overview : "（空）"]),
+    items.length === 0
+      ? joinLines(["条目", "（暂无条目）"])
+      : joinParagraphs([
+          "条目",
+          ...items.map((item) =>
+            joinLines([item.title, `item_id=${item.item_id}`])
+          )
+        ])
+  ]);
+}
+
+function formatCharacterList(input: {
+  types: readonly {
+    type_id: string;
+    title: string;
+    order: number;
+    character_count: number;
+  }[];
+  overview: string;
+  characters: readonly {
+    character_id: string;
+    name: string;
+    type_id: string;
+    type_title: string;
+    aliases: readonly string[];
+  }[];
+}): string {
+  const types =
+    input.types.length === 0
+      ? joinLines(["人物类型", "（暂无类型）"])
+      : joinParagraphs([
+          "人物类型",
+          ...input.types.map((characterType) =>
+            joinLines([
+              characterType.title,
+              `type_id=${characterType.type_id}`,
+              `顺序=${characterType.order}`,
+              `人数=${characterType.character_count}`
+            ])
+          )
+        ]);
+  const characters =
+    input.characters.length === 0
+      ? joinLines(["人物", "（暂无人物）"])
+      : joinParagraphs([
+          "人物",
+          ...input.characters.map((character) =>
+            joinLines([
+              character.name,
+              `character_id=${character.character_id}`,
+              `type_id=${character.type_id}`,
+              `类型=${character.type_title}`,
+              character.aliases.length > 0
+                ? `别名=${character.aliases.join("、")}`
+                : undefined
+            ])
+          )
+        ]);
+  return joinParagraphs([
+    types,
+    joinLines(["概览", input.overview.trim() ? input.overview : "（空）"]),
+    characters
+  ]);
 }
 
 function chapterVolumeConflictMessage(
@@ -1911,13 +2053,19 @@ function stableHash(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+const STABLE_ENTITY_ID_HEX_LENGTH = 8;
+
+function stableEntityId(prefix: string, seed: string): string {
+  return `${prefix}_${stableHash(seed).slice(0, STABLE_ENTITY_ID_HEX_LENGTH)}`;
+}
+
 function createRuntimeStableId(
   prefix: string,
   seed: string,
   occupied: Set<string>
 ): string {
   for (let attempt = 0; attempt < 10_000; attempt += 1) {
-    const id = `${prefix}_${stableHash(`${seed}:${attempt}`).slice(0, 24)}`;
+    const id = stableEntityId(prefix, `${seed}:${attempt}`);
     if (!occupied.has(id)) {
       occupied.add(id);
       return id;
@@ -3088,8 +3236,7 @@ export function buildLongWorkspaceTools(
   const readableRoots = new Set(profile.readAccess.workspaceRoots);
   const writableRoots = new Set(profile.writeAccess.workspaceRoots);
   const capabilities = new Set(profile.writeAccess.capabilities);
-  const isWorldbuildingAgent = profile.id === "worldbuilding";
-  const isCharacterDesignAgent = profile.id === "character_design";
+  const isSettingAgent = profile.id === "setting";
   const isPlotDesignAgent = profile.id === "plot_design";
   const isDraftWritingAgent =
     profile.id === "draft" || profile.id === "expert_section_writer";
@@ -3928,8 +4075,7 @@ export function buildLongWorkspaceTools(
   if (
     capabilities.has("query_structure") &&
     readableRoots.size > 0 &&
-    !isWorldbuildingAgent &&
-    !isCharacterDesignAgent &&
+    !isSettingAgent &&
     !isPlotDesignAgent &&
     !isDraftWritingAgent &&
     !isContinuityLedgerAgent
@@ -4115,35 +4261,26 @@ export function buildLongWorkspaceTools(
     );
   }
 
+  const worldbuildingQueryTools: AgentTool[] = [];
   if (
-    (isWorldbuildingAgent ||
-      isCharacterDesignAgent ||
+    (isSettingAgent ||
       isPlotDesignAgent ||
       isDraftWritingAgent ||
       isContinuityLedgerAgent) &&
     capabilities.has("query_structure") &&
     readableRoots.has("worldbuilding")
   ) {
-    tools.push(
+    worldbuildingQueryTools.push(
       defineTool({
         name: "list_worldbuilding",
         label: "列出世界观",
         description:
-          "列出世界观分类；指定 category_id 时列出该列表型分类的条目，并自动附带该分类手动维护的概览内容。返回顺序就是当前顺序，只显示分类和条目的业务 ID，不显示文件或版本信息。",
+          "一次列出全部世界观分类；指定 category_id 时列出该列表型分类的全部条目，并自动附带该分类手动维护的概览内容。按行段落返回，顺序就是当前顺序，只显示分类和条目的业务 ID，不显示文件或版本信息。",
         parameters: strictObject({
-          category_id: Type.Optional(worldbuildingCategoryIdParameter),
-          page: Type.Optional(
-            Type.Integer({ minimum: 1, maximum: 10_000 })
-          ),
-          limit: Type.Optional(
-            Type.Integer({ minimum: 1, maximum: 100 })
-          )
+          category_id: Type.Optional(worldbuildingCategoryIdParameter)
         }),
         execute: async (_toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
-          const page = params.page ?? 1;
-          const limit = params.limit ?? 50;
-          const start = (page - 1) * limit;
           if (!params.category_id) {
             const categories = index.worldbuilding.map((category) => {
               const pendingItemCount =
@@ -4163,12 +4300,7 @@ export function buildLongWorkspaceTools(
                   : {})
               };
             });
-            const end = Math.min(start + limit, categories.length);
-            return textResult(JSON.stringify({
-              categories: categories.slice(start, end),
-              next_page:
-                end < categories.length && page < 10_000 ? page + 1 : null
-            }));
+            return textResult(formatWorldbuildingCategoryList(categories));
           }
 
           const category = index.worldbuilding.find(
@@ -4224,24 +4356,19 @@ export function buildLongWorkspaceTools(
               });
             }
           }
-          const end = Math.min(start + limit, items.length);
-          return textResult(JSON.stringify({
-            category: {
+          return textResult(
+            formatWorldbuildingItemList({
               category_id: category.id,
               title: category.title,
-              format: category.format
-            },
-            ...(category.format === "list"
-              ? {
-                  overview: overview ?? "",
-                  items: items.slice(start, end)
-                }
-              : {
-                  note: "这是文本型分类；读取内容时不要传 item_id。"
-                }),
-            next_page:
-              end < items.length && page < 10_000 ? page + 1 : null
-          }));
+              format: category.format,
+              ...(category.format === "list"
+                ? {
+                    overview: overview ?? "",
+                    items
+                  }
+                : {})
+            })
+          );
         }
       }),
       defineTool({
@@ -4442,6 +4569,7 @@ export function buildLongWorkspaceTools(
     );
   }
 
+  const worldbuildingMutationTools: AgentTool[] = [];
   if (
     capabilities.has("mutate_structure") &&
     writableRoots.has("worldbuilding")
@@ -4465,7 +4593,7 @@ export function buildLongWorkspaceTools(
         files
       });
 
-    tools.push(
+    worldbuildingMutationTools.push(
       defineTool({
         name: "create_worldbuilding_file",
         label: "创建世界观文件",
@@ -4510,9 +4638,10 @@ export function buildLongWorkspaceTools(
             );
           }
           const timestamp = new Date().toISOString();
-          const itemId = `worlditem_${stableHash(
+          const itemId = stableEntityId(
+            "worlditem",
             `${workspace.bookId}:${input.runId}:${toolCallId}`
-          ).slice(0, 24)}`;
+          );
           const file = createEmptyLongMarkdownFileReference(
             longWorldbuildingItemFileId(itemId),
             longWorldbuildingItemContentPath(category.id, itemId),
@@ -4562,7 +4691,7 @@ export function buildLongWorkspaceTools(
             `${longProposalResultSummary(
               input,
               "已形成一个空白世界观文件创建提案，等待客户端审阅与冲突检查。"
-            )}\n${title} → item_id=${itemId}\n同一轮内可立即使用该 item_id 调用 write_worldbuilding_file 写入正文。`,
+            )}\n${title} → item_id=${itemId}\n同一轮内可立即使用该 item_id 调用 write_setting（domain=worldbuilding）写入正文。`,
             {
               kind: "long-worldbuilding-file-proposal",
               bookId: workspace.bookId,
@@ -4613,7 +4742,7 @@ export function buildLongWorkspaceTools(
           );
           if (live.content.trim() && !evidence) {
             return textResult(
-              "未写入：目标已有正文，请先调用 read_worldbuilding（mode=full）完整读取。"
+              "未写入：目标已有正文，请先调用 read_setting（domain=worldbuilding，mode=full）完整读取。"
             );
           }
           if (
@@ -4621,7 +4750,7 @@ export function buildLongWorkspaceTools(
             params.allow_overwrite_existing !== true
           ) {
             return textResult(
-              "未写入：目标已有正文；局部修改请使用 edit_worldbuilding_file，整体重写需设置 allow_overwrite_existing=true。"
+              "未写入：目标已有正文；局部修改请使用 edit_setting（domain=worldbuilding），整体重写需设置 allow_overwrite_existing=true。"
             );
           }
           if (
@@ -4733,7 +4862,7 @@ export function buildLongWorkspaceTools(
             evidence.file.revision !== target.file.revision
           ) {
             return textResult(
-              "未编辑：请先调用 read_worldbuilding（mode=full）完整读取目标内容。"
+              "未编辑：请先调用 read_setting（domain=worldbuilding，mode=full）完整读取目标内容。"
             );
           }
           let content = evidence.content;
@@ -4836,24 +4965,23 @@ export function buildLongWorkspaceTools(
     void document;
   };
 
+  const characterQueryTools: AgentTool[] = [];
   if (
-    (isCharacterDesignAgent ||
+    (isSettingAgent ||
       isPlotDesignAgent ||
       isDraftWritingAgent ||
       isContinuityLedgerAgent) &&
     capabilities.has("query_structure") &&
     readableRoots.has("character_design")
   ) {
-    tools.push(
+    characterQueryTools.push(
       defineTool({
         name: "list_characters",
         label: "列出人物",
         description:
-          "列出当前人物类型目录和人物业务索引，可按 type_id 筛选，并自动附带人物设计阶段手动维护的概览完整内容，同时建立本轮 write_character_overview / edit_character_overview 所需的完整读取凭据。返回稳定 type_id、类型名称、character_id、姓名和别名，不暴露文件与版本信息。",
+          "一次列出当前人物类型目录和全部人物业务索引，可按 type_id 筛选，并自动附带人物设计阶段手动维护的概览完整内容，同时建立本轮 write_character_overview / edit_character_overview 所需的完整读取凭据。按行段落返回稳定 type_id、类型名称、character_id、姓名和别名，不暴露文件与版本信息。",
         parameters: strictObject({
-          type_id: Type.Optional(characterTypeIdParameter),
-          page: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
-          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+          type_id: Type.Optional(characterTypeIdParameter)
         }),
         execute: async (_toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
@@ -4944,25 +5072,22 @@ export function buildLongWorkspaceTools(
               });
             }
           }
-          const page = params.page ?? 1;
-          const limit = params.limit ?? 50;
-          const start = (page - 1) * limit;
-          const end = Math.min(start + limit, characters.length);
-          return textResult(JSON.stringify({
-            types: [...index.characterTypes]
-              .sort((left, right) => left.order - right.order)
-              .map((characterType) => ({
-                type_id: characterType.id,
-                title: characterType.title,
-                order: characterType.order,
-                character_count: index.characters.filter(
-                  ({ group }) => group === characterType.id
-                ).length
-              })),
-            overview,
-            characters: characters.slice(start, end),
-            next_page: end < characters.length ? page + 1 : null
-          }));
+          return textResult(
+            formatCharacterList({
+              types: [...index.characterTypes]
+                .sort((left, right) => left.order - right.order)
+                .map((characterType) => ({
+                  type_id: characterType.id,
+                  title: characterType.title,
+                  order: characterType.order,
+                  character_count: index.characters.filter(
+                    ({ group }) => group === characterType.id
+                  ).length
+                })),
+              overview,
+              characters
+            })
+          );
         }
       }),
       defineTool({
@@ -5179,8 +5304,213 @@ export function buildLongWorkspaceTools(
     );
   }
 
+  const callNamedTool = (
+    collection: readonly AgentTool[],
+    name: string,
+    toolCallId: string,
+    params: unknown,
+    signal?: AbortSignal
+  ) => {
+    const tool = collection.find((candidate) => candidate.name === name);
+    if (!tool) {
+      throw new Error(`Setting domain tool ${name} is not available.`);
+    }
+    return tool.execute(toolCallId, params as never, signal);
+  };
+
+  if (worldbuildingQueryTools.length > 0 || characterQueryTools.length > 0) {
+    tools.push(
+      defineTool({
+        name: "list_setting",
+        label: "列出设定",
+        description:
+          "按 domain 列出世界观或人物。domain=worldbuilding 一次列出全部分类，指定 category_id 时列出该列表型分类条目并附带概览；domain=character 列出人物类型目录和人物索引，可按 type_id 筛选，并附带人物概览（同时建立后续写入概览所需的完整读取凭据）。",
+        parameters: Type.Union([
+          strictObject({
+            domain: Type.Literal("worldbuilding"),
+            category_id: Type.Optional(worldbuildingCategoryIdParameter)
+          }),
+          strictObject({
+            domain: Type.Literal("character"),
+            type_id: Type.Optional(characterTypeIdParameter)
+          })
+        ]),
+        execute: async (toolCallId, params, signal) => {
+          if (params.domain === "worldbuilding") {
+            return callNamedTool(
+              worldbuildingQueryTools,
+              "list_worldbuilding",
+              toolCallId,
+              { category_id: params.category_id },
+              signal
+            );
+          }
+          return callNamedTool(
+            characterQueryTools,
+            "list_characters",
+            toolCallId,
+            { type_id: params.type_id },
+            signal
+          );
+        }
+      }),
+      defineTool({
+        name: "search_setting",
+        label: "搜索设定",
+        description:
+          "按 domain 搜索世界观或人物正文，返回可继续读取的业务 ID、标题和少量命中上下文；不返回文件、路径或版本信息。",
+        parameters: Type.Union([
+          strictObject({
+            domain: Type.Literal("worldbuilding"),
+            query: Type.String({ minLength: 1, maxLength: 256 }),
+            category_id: Type.Optional(worldbuildingCategoryIdParameter),
+            page: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+          }),
+          strictObject({
+            domain: Type.Literal("character"),
+            query: Type.String({ minLength: 1, maxLength: 256 }),
+            type_id: Type.Optional(characterTypeIdParameter),
+            document: Type.Optional(characterDocumentParameter),
+            page: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+          })
+        ]),
+        execute: async (toolCallId, params, signal) => {
+          if (params.domain === "worldbuilding") {
+            return callNamedTool(
+              worldbuildingQueryTools,
+              "search_worldbuilding",
+              toolCallId,
+              {
+                query: params.query,
+                category_id: params.category_id,
+                page: params.page,
+                limit: params.limit
+              },
+              signal
+            );
+          }
+          return callNamedTool(
+            characterQueryTools,
+            "search_characters",
+            toolCallId,
+            {
+              query: params.query,
+              type_id: params.type_id,
+              document: params.document,
+              page: params.page,
+              limit: params.limit
+            },
+            signal
+          );
+        }
+      }),
+      defineTool({
+        name: "read_setting",
+        label: "读取设定",
+        description:
+          "按 domain 读取世界观或人物正文。世界观：文本型分类和列表型分类概览省略 item_id，列表条目同时提供 category_id 和 item_id。人物：读取文档时同时提供 character_id 和 document；读取概览时指定 document=overview 且省略 character_id。mode=preview 只返回摘录，mode=full 建立本轮后续编辑凭据。",
+        parameters: Type.Union([
+          strictObject({
+            domain: Type.Literal("worldbuilding"),
+            category_id: worldbuildingCategoryIdParameter,
+            item_id: Type.Optional(worldbuildingItemIdParameter),
+            mode: Type.Optional(worldbuildingReadModeParameter)
+          }),
+          strictObject({
+            domain: Type.Literal("character"),
+            character_id: Type.Optional(stableIdParameter("character")),
+            document: settingCharacterDocumentParameter,
+            mode: Type.Optional(worldbuildingReadModeParameter)
+          })
+        ]),
+        execute: async (toolCallId, params, signal) => {
+          if (params.domain === "worldbuilding") {
+            return callNamedTool(
+              worldbuildingQueryTools,
+              "read_worldbuilding",
+              toolCallId,
+              {
+                category_id: params.category_id,
+                item_id: params.item_id,
+                mode: params.mode
+              },
+              signal
+            );
+          }
+          if (params.document === "overview") {
+            if (params.character_id) {
+              throw new Error(
+                "Character overview reads must omit character_id."
+              );
+            }
+            const { index, projectRevision } = await loadIndex(signal);
+            const mode = params.mode ?? "full";
+            const target = resolveCharacterOverviewTarget(index);
+            const result = target.overlay
+              ? { content: target.overlay.content, file: target.file }
+              : await readWholeCharacterDocument(
+                  target.file,
+                  index.revision,
+                  projectRevision,
+                  signal
+                );
+            characterDocumentOverlay.set(result.file.id, {
+              characterId: LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+              characterName: "人物概览",
+              document: "overview",
+              file: result.file,
+              content: result.content,
+              pendingCreation: target.overlay?.pendingCreation ?? false
+            });
+            if (mode === "full") {
+              fullyReadCharacterDocuments.set(result.file.id, {
+                content: result.content,
+                file: result.file,
+                workspaceRevision: index.revision,
+                projectRevision
+              });
+            }
+            const previewLength = 240;
+            const visible =
+              mode === "preview" && result.content.length > previewLength * 2
+                ? `${result.content.slice(0, previewLength)}\n\n……（中间省略 ${result.content.length - previewLength * 2} 个字符）……\n\n${result.content.slice(-previewLength)}`
+                : result.content;
+            return textResult(
+              [
+                "【人物概览】",
+                mode === "preview"
+                  ? "预览（不建立整体覆盖凭据）："
+                  : "正文：",
+                "",
+                visible || "（正文为空）"
+              ].join("\n")
+            );
+          }
+          if (!params.character_id) {
+            throw new Error(
+              "Character document reads require character_id and document."
+            );
+          }
+          return callNamedTool(
+            characterQueryTools,
+            "read_character",
+            toolCallId,
+            {
+              character_id: params.character_id,
+              document: params.document,
+              mode: params.mode
+            },
+            signal
+          );
+        }
+      })
+    );
+  }
+
+  const characterMutationTools: AgentTool[] = [];
   if (
-    isCharacterDesignAgent &&
     capabilities.has("mutate_structure") &&
     writableRoots.has("character_design")
   ) {
@@ -5206,7 +5536,7 @@ export function buildLongWorkspaceTools(
         }
       );
 
-    tools.push(
+    characterMutationTools.push(
       defineTool({
         name: "create_character",
         label: "创建人物",
@@ -5259,9 +5589,10 @@ export function buildLongWorkspaceTools(
             );
           }
           const timestamp = new Date().toISOString();
-          const characterId = `character_${stableHash(
+          const characterId = stableEntityId(
+            "character",
             `${workspace.bookId}:${input.runId}:${toolCallId}`
-          ).slice(0, 24)}`;
+          );
           const files = {
             core_profile: createEmptyLongMarkdownFileReference(
               longCharacterCoreProfileFileId(characterId),
@@ -5344,7 +5675,7 @@ export function buildLongWorkspaceTools(
             `${longProposalResultSummary(
               input,
               "已形成一名人物及四份空白文档的创建提案，等待客户端审阅与冲突检查。"
-            )}\n${name} → character_id=${characterId}\n同一轮内可立即使用该 character_id 调用 write_character_file。`,
+            )}\n${name} → character_id=${characterId}\n同一轮内可立即使用该 character_id 调用 write_setting（domain=character）写入正文。`,
             {
               kind: "long-character-file-proposal",
               bookId: workspace.bookId,
@@ -5391,12 +5722,12 @@ export function buildLongWorkspaceTools(
           const evidence = fullyReadCharacterDocuments.get(target.file.id);
           if (live.content.trim() && !evidence) {
             return textResult(
-              "未写入：目标已有正文，请先调用 read_character（mode=full）完整读取。"
+              "未写入：目标已有正文，请先调用 read_setting（domain=character，mode=full）完整读取。"
             );
           }
           if (live.content.trim() && params.allow_overwrite_existing !== true) {
             return textResult(
-              "未写入：目标已有正文；局部修改请使用 edit_character_file，整体重写需设置 allow_overwrite_existing=true。"
+              "未写入：目标已有正文；局部修改请使用 edit_setting（domain=character），整体重写需设置 allow_overwrite_existing=true。"
             );
           }
           if (
@@ -5505,7 +5836,7 @@ export function buildLongWorkspaceTools(
             evidence.file.revision !== target.file.revision
           ) {
             return textResult(
-              "未编辑：请先调用 read_character（mode=full）完整读取目标内容。"
+              "未编辑：请先调用 read_setting（domain=character，mode=full）完整读取目标内容。"
             );
           }
           let content = evidence.content;
@@ -5616,7 +5947,7 @@ export function buildLongWorkspaceTools(
           const evidence = fullyReadCharacterDocuments.get(target.file.id);
           if (live.content.trim() && !evidence) {
             return textResult(
-              "未写入：目标已有正文，请先调用 list_characters 完整读取概览。"
+              "未写入：目标已有正文，请先调用 read_setting（domain=character，document=overview，mode=full）完整读取概览。"
             );
           }
           if (live.content.trim() && params.allow_overwrite_existing !== true) {
@@ -5720,7 +6051,7 @@ export function buildLongWorkspaceTools(
             evidence.file.revision !== target.file.revision
           ) {
             return textResult(
-              "未编辑：请先调用 list_characters 完整读取概览内容。"
+              "未编辑：请先调用 read_setting（domain=character，document=overview，mode=full）完整读取概览内容。"
             );
           }
           let content = evidence.content;
@@ -5799,6 +6130,244 @@ export function buildLongWorkspaceTools(
               nextRevision
             }
           ]);
+        }
+      })
+    );
+  }
+
+  if (
+    worldbuildingMutationTools.length > 0 ||
+    characterMutationTools.length > 0
+  ) {
+    tools.push(
+      defineTool({
+        name: "create_setting",
+        label: "创建设定",
+        description:
+          "按 domain 创建一个空白设定文件。domain=worldbuilding 在列表型分类中创建一个空白条目并返回 item_id；domain=character 在现有 type_id 下创建一名人物及四份空白文档并返回 character_id。本工具不接受初始化正文。",
+        parameters: Type.Union([
+          strictObject({
+            domain: Type.Literal("worldbuilding"),
+            category_id: worldbuildingCategoryIdParameter,
+            title: Type.String({ minLength: 1, maxLength: 256 }),
+            summary: Type.Optional(
+              Type.String({ minLength: 1, maxLength: 1_000 })
+            )
+          }),
+          strictObject({
+            domain: Type.Literal("character"),
+            name: Type.String({ minLength: 1, maxLength: 256 }),
+            type_id: characterTypeIdParameter,
+            aliases: Type.Optional(aliasesParameter),
+            summary: Type.Optional(
+              Type.String({ minLength: 1, maxLength: 1_000 })
+            )
+          })
+        ]),
+        executionMode: "sequential",
+        execute: async (toolCallId, params, signal) => {
+          if (params.domain === "worldbuilding") {
+            return callNamedTool(
+              worldbuildingMutationTools,
+              "create_worldbuilding_file",
+              toolCallId,
+              {
+                category_id: params.category_id,
+                title: params.title,
+                summary: params.summary
+              },
+              signal
+            );
+          }
+          return callNamedTool(
+            characterMutationTools,
+            "create_character",
+            toolCallId,
+            {
+              name: params.name,
+              type_id: params.type_id,
+              aliases: params.aliases,
+              summary: params.summary
+            },
+            signal
+          );
+        }
+      }),
+      defineTool({
+        name: "write_setting",
+        label: "写入设定",
+        description:
+          "按 domain 覆盖世界观或人物的完整 Markdown。空文件可直接写入；已有正文必须先用 read_setting（mode=full）完整读取并明确 allow_overwrite_existing=true。人物概览指定 document=overview 且省略 character_id。局部修改应使用 edit_setting。",
+        parameters: Type.Union([
+          strictObject({
+            domain: Type.Literal("worldbuilding"),
+            category_id: worldbuildingCategoryIdParameter,
+            item_id: Type.Optional(worldbuildingItemIdParameter),
+            text: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+            allow_overwrite_existing: Type.Optional(Type.Boolean()),
+            summary: Type.Optional(
+              Type.String({ minLength: 1, maxLength: 1_000 })
+            )
+          }),
+          strictObject({
+            domain: Type.Literal("character"),
+            character_id: Type.Optional(stableIdParameter("character")),
+            document: settingCharacterDocumentParameter,
+            text: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+            allow_overwrite_existing: Type.Optional(Type.Boolean()),
+            summary: Type.Optional(
+              Type.String({ minLength: 1, maxLength: 1_000 })
+            )
+          })
+        ]),
+        executionMode: "sequential",
+        execute: async (toolCallId, params, signal) => {
+          if (params.domain === "worldbuilding") {
+            return callNamedTool(
+              worldbuildingMutationTools,
+              "write_worldbuilding_file",
+              toolCallId,
+              {
+                category_id: params.category_id,
+                item_id: params.item_id,
+                text: params.text,
+                allow_overwrite_existing: params.allow_overwrite_existing,
+                summary: params.summary
+              },
+              signal
+            );
+          }
+          if (params.document === "overview") {
+            if (params.character_id) {
+              throw new Error(
+                "Character overview writes must omit character_id."
+              );
+            }
+            return callNamedTool(
+              characterMutationTools,
+              "write_character_overview",
+              toolCallId,
+              {
+                text: params.text,
+                allow_overwrite_existing: params.allow_overwrite_existing,
+                summary: params.summary
+              },
+              signal
+            );
+          }
+          if (!params.character_id) {
+            throw new Error(
+              "Character document writes require character_id and document."
+            );
+          }
+          return callNamedTool(
+            characterMutationTools,
+            "write_character_file",
+            toolCallId,
+            {
+              character_id: params.character_id,
+              document: params.document,
+              text: params.text,
+              allow_overwrite_existing: params.allow_overwrite_existing,
+              summary: params.summary
+            },
+            signal
+          );
+        }
+      }),
+      defineTool({
+        name: "edit_setting",
+        label: "编辑设定",
+        description:
+          "按 domain 在已完整读取的世界观或人物正文中按原文片段精确替换。每个 original_text 必须唯一存在。人物概览指定 document=overview 且省略 character_id。",
+        parameters: Type.Union([
+          strictObject({
+            domain: Type.Literal("worldbuilding"),
+            category_id: worldbuildingCategoryIdParameter,
+            item_id: Type.Optional(worldbuildingItemIdParameter),
+            replacements: Type.Array(
+              Type.Object({
+                original_text: Type.String({
+                  minLength: 1,
+                  maxLength: 2_400
+                }),
+                new_text: Type.String({ maxLength: 20_000 })
+              }),
+              { minItems: 1, maxItems: 20 }
+            ),
+            summary: Type.Optional(
+              Type.String({ minLength: 1, maxLength: 1_000 })
+            )
+          }),
+          strictObject({
+            domain: Type.Literal("character"),
+            character_id: Type.Optional(stableIdParameter("character")),
+            document: settingCharacterDocumentParameter,
+            replacements: Type.Array(
+              Type.Object({
+                original_text: Type.String({
+                  minLength: 1,
+                  maxLength: 2_400
+                }),
+                new_text: Type.String({ maxLength: 20_000 })
+              }),
+              { minItems: 1, maxItems: 20 }
+            ),
+            summary: Type.Optional(
+              Type.String({ minLength: 1, maxLength: 1_000 })
+            )
+          })
+        ]),
+        executionMode: "sequential",
+        execute: async (toolCallId, params, signal) => {
+          if (params.domain === "worldbuilding") {
+            return callNamedTool(
+              worldbuildingMutationTools,
+              "edit_worldbuilding_file",
+              toolCallId,
+              {
+                category_id: params.category_id,
+                item_id: params.item_id,
+                replacements: params.replacements,
+                summary: params.summary
+              },
+              signal
+            );
+          }
+          if (params.document === "overview") {
+            if (params.character_id) {
+              throw new Error(
+                "Character overview edits must omit character_id."
+              );
+            }
+            return callNamedTool(
+              characterMutationTools,
+              "edit_character_overview",
+              toolCallId,
+              {
+                replacements: params.replacements,
+                summary: params.summary
+              },
+              signal
+            );
+          }
+          if (!params.character_id) {
+            throw new Error(
+              "Character document edits require character_id and document."
+            );
+          }
+          return callNamedTool(
+            characterMutationTools,
+            "edit_character_file",
+            toolCallId,
+            {
+              character_id: params.character_id,
+              document: params.document,
+              replacements: params.replacements,
+              summary: params.summary
+            },
+            signal
+          );
         }
       })
     );
@@ -6936,20 +7505,16 @@ export function buildLongWorkspaceTools(
         name: "propose_long_mutation",
         label: "提议长篇结构变更",
         description:
-          profile.id === "worldbuilding"
-            ? "提交世界观分类，以及已有条目的重命名、删除和排序等结构变更。此工具不能创建条目，也不能写入正文；创建条目必须使用 create_worldbuilding_file，正文必须使用 write_worldbuilding_file 或 edit_worldbuilding_file。提案只进入审阅队列，不直接写磁盘。"
-            : profile.id === "character_design"
-              ? "提交人物重命名、别名、移动到现有人物类型、删除和排序等结构变更。type_id 必须来自当前人物类型目录；本工具不能管理人物类型、创建人物或写入人物正文。创建人物必须使用 create_character，正文必须使用 write_character_file 或 edit_character_file。提案只进入审阅队列，不直接写磁盘。"
+          profile.id === "setting"
+            ? "提交世界观分类与已有条目的重命名、删除和排序，以及人物重命名、别名、移动到现有人物类型、删除和排序。此工具不能创建列表条目或人物，也不能写入正文；创建必须使用 create_setting，正文必须使用 write_setting 或 edit_setting。提案只进入审阅队列，不直接写磁盘。"
             : profile.id === "plot_design"
               ? "提交既有分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点的重命名、关联、移动、删除、排序，以及全部伏笔线/伏笔触点变更。连续性记录只作参考，不锁定这些结构；删除已有记录的章卡会在危险确认后级联清理该章正文与记录。章卡必须属于分卷，剧情点关联可为 null；非空时必须与章卡属于同一分卷。所有结构操作会在生成审批前基于当前有效索引预检；预检失败不会生成审批卡。同一轮的多个有效提案会按先后顺序等待前序提案处理，并基于最新工作区重新预览。非伏笔条目创建必须使用 create_plot_design，内容写入必须使用 write_plot_design 或 edit_plot_design。提案只进入审阅队列，不直接写磁盘。"
             : "按显式领域操作提交当前长篇的结构变更提案。伏笔线可分别填写 hiddenTruth 与 plannedSpan，伏笔触点可用 volumeId 或 arcId 设置卷级/剧情点计划锚点。运行时锁定项目版本、生成新实体与文件信息并计算文档内容修订；只能更新逻辑文档目标，不能传路径或文件修订。提案只进入审阅队列，不直接写磁盘。",
         parameters:
-          profile.id === "worldbuilding"
-            ? LONG_WORLDBUILDING_MUTATION_PARAMETERS
-            : profile.id === "character_design"
-              ? LONG_CHARACTER_MUTATION_PARAMETERS
-              : profile.id === "plot_design"
-                ? LONG_PLOT_MUTATION_PARAMETERS
+          profile.id === "setting"
+            ? LONG_SETTING_MUTATION_PARAMETERS
+            : profile.id === "plot_design"
+              ? LONG_PLOT_MUTATION_PARAMETERS
               : LONG_MUTATION_PARAMETERS,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {

@@ -33,21 +33,21 @@ describe("long agent settings contracts", () => {
     expect(
       LongAgentSettingsSchema.parse(DEFAULT_LONG_AGENT_SETTINGS).workspaceType
     ).toBe("long");
-    expect(DEFAULT_LONG_AGENT_SETTINGS.agents).toHaveLength(6);
+    expect(DEFAULT_LONG_AGENT_SETTINGS.agents).toHaveLength(5);
   });
 
   it("allows prompts, shortcuts and optional read roots to be customized", () => {
     const input = editableDefaults();
-    const agent = input.agents.find(({ id }) => id === "worldbuilding")!;
+    const agent = input.agents.find(({ id }) => id === "setting")!;
     agent.systemPrompt = "先核对世界规则，再提出最小修改。";
     agent.welcomeShortcuts[0] = "检查当前世界规则";
-    agent.readAccess.workspaceRoots.push("draft");
+    agent.readAccess.materialKinds = ["character", "plot"];
 
     expect(LongAgentSettingsInputSchema.parse(input)).toMatchObject({
       workspaceType: "long",
       agents: expect.arrayContaining([
         expect.objectContaining({
-          id: "worldbuilding",
+          id: "setting",
           systemPrompt: "先核对世界规则，再提出最小修改。"
         })
       ])
@@ -67,7 +67,7 @@ describe("long agent settings contracts", () => {
 
   it("rejects public settings that try to widen immutable write access", () => {
     const settings = structuredClone(DEFAULT_LONG_AGENT_SETTINGS);
-    const agent = settings.agents.find(({ id }) => id === "worldbuilding")!;
+    const agent = settings.agents.find(({ id }) => id === "setting")!;
     agent.writeAccess.workspaceRoots.push("draft");
     agent.writeAccess.capabilities.push("write_chapter_files");
 
@@ -75,11 +75,11 @@ describe("long agent settings contracts", () => {
       /write access is immutable/
     );
     expect(
-      getDefaultLongAgentProfile("worldbuilding").writeAccess.workspaceRoots
-    ).toEqual(["worldbuilding"]);
+      getDefaultLongAgentProfile("setting").writeAccess.workspaceRoots
+    ).toEqual(["worldbuilding", "character_design"]);
   });
 
-  it("requires each of the six long agent ids exactly once", () => {
+  it("requires each of the five long agent ids exactly once", () => {
     const input = editableDefaults();
     input.agents[5] = structuredClone(input.agents[0]!);
     expect(() => LongAgentSettingsInputSchema.parse(input)).toThrow(

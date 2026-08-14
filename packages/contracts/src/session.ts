@@ -698,6 +698,44 @@ const AgentEventIdentitySchema = z.object({
   runtime: AgentRuntimeRefSchema
 });
 
+export const AgentEvaluationToolConfigurationSchema = z.object({
+  name: z.string().trim().min(1),
+  label: z.string().trim().min(1).optional(),
+  description: z.string(),
+  inputSchema: z.unknown(),
+  executionMode: z.string().trim().min(1).optional()
+});
+export type AgentEvaluationToolConfiguration = z.infer<
+  typeof AgentEvaluationToolConfigurationSchema
+>;
+
+/**
+ * Exact run-time evidence captured only when DeepWrite is explicitly started
+ * in evaluation mode. It deliberately excludes provider credentials and image
+ * bytes while preserving every text fragment injected into the model turn.
+ */
+export const AgentEvaluationSnapshotSchema = z.object({
+  schemaVersion: z.literal(1),
+  capturedAt: z.string().datetime(),
+  systemPrompt: z.string(),
+  runtimeContext: z.object({
+    kind: z.enum(["initial-session-context", "turn-context"]),
+    text: z.string()
+  }),
+  tools: z.array(AgentEvaluationToolConfigurationSchema)
+});
+export type AgentEvaluationSnapshot = z.infer<
+  typeof AgentEvaluationSnapshotSchema
+>;
+
+export const AgentEvaluationSnapshotPayloadSchema =
+  AgentEventIdentitySchema.extend({
+    snapshot: AgentEvaluationSnapshotSchema
+  });
+export type AgentEvaluationSnapshotPayload = z.infer<
+  typeof AgentEvaluationSnapshotPayloadSchema
+>;
+
 const AgentTurnStartedFieldsSchema = z.object({
   turnId: z.string().min(1),
   attempt: z.number().int().positive(),
@@ -1698,6 +1736,12 @@ export const AgentMessageDeltaEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: AgentMessageDeltaPayloadSchema
 }).superRefine(validateAgentEventContext);
 
+export const AgentEvaluationSnapshotEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("agent.evaluation_snapshot"),
+    payload: AgentEvaluationSnapshotPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
 export const AgentTurnStartedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agent.turn_started"),
   payload: AgentTurnStartedPayloadSchema
@@ -1851,6 +1895,10 @@ function validateAgentEventContext(
 }
 
 export type AgentMessageDeltaEventEnvelope = Envelope<AgentMessageDeltaPayload, "agent.message_delta">;
+export type AgentEvaluationSnapshotEventEnvelope = Envelope<
+  AgentEvaluationSnapshotPayload,
+  "agent.evaluation_snapshot"
+>;
 export type AgentTurnStartedEventEnvelope = Envelope<
   AgentTurnStartedPayload,
   "agent.turn_started"

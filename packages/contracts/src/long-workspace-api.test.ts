@@ -140,7 +140,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "worldbuilding",
+          activeAgentId: "setting",
           activeFileId: "file_faction_watch:content",
           activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: focus
@@ -151,12 +151,12 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({ worldbuildingFocus: focus })
       )
-    ).toThrow(/worldbuilding agent/iu);
+    ).toThrow(/setting agent/iu);
     expect(() =>
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "worldbuilding",
+          activeAgentId: "setting",
           activeFileId: "file_faction_watch:content",
           activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: {
@@ -170,7 +170,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "worldbuilding",
+          activeAgentId: "setting",
           activeFileId: "file_world_rules:content",
           activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: {
@@ -218,7 +218,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "worldbuilding",
+          activeAgentId: "setting",
           worldbuildingDirectory
         })
       )
@@ -246,7 +246,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "character_design",
-          activeAgentId: "character_design",
+          activeAgentId: "setting",
           activeFileId: "file_character_lan:relationships",
           activeFileRevision: "v1:3:1234abcd",
           characterFocus: focus
@@ -257,12 +257,12 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({ characterFocus: focus })
       )
-    ).toThrow(/character-design agent/iu);
+    ).toThrow(/setting agent/iu);
     expect(() =>
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "character_design",
-          activeAgentId: "character_design",
+          activeAgentId: "setting",
           activeFileId: "file_character_lan:relationships",
           activeFileRevision: "v1:3:1234abcd",
           characterFocus: { ...focus, coreProfile: undefined }

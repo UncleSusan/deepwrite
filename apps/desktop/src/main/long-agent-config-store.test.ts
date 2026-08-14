@@ -72,7 +72,7 @@ const RETIRED_COMMITTED_LOCK_CHAPTER_WRITER_SYSTEM_PROMPT = `你是长篇单章�
 6. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文获批保存后，由连续性账本智能体读取正文并独立生成、归档相关连续性文件。`;
 
 describe("LongAgentConfigStore", () => {
-  it("returns six independent defaults without creating a file", async () => {
+  it("returns five independent defaults without creating a file", async () => {
     const { store } = await createStore();
     const settings = await store.list();
     expect(settings.workspaceType).toBe("long");
@@ -84,13 +84,13 @@ describe("LongAgentConfigStore", () => {
   it("persists only configurable fields and resolves the runtime profile", async () => {
     const { root, store } = await createStore();
     const input = editableDefaults();
-    const agent = input.agents.find(({ id }) => id === "character_design")!;
+    const agent = input.agents.find(({ id }) => id === "setting")!;
     agent.systemPrompt = "自定义长篇人物提示词";
     agent.welcomeShortcuts[1] = "追踪本章人物状态";
     agent.readAccess.materialKinds = ["character"];
 
     const saved = await store.save(input);
-    const resolved = await store.resolve("character_design");
+    const resolved = await store.resolve("setting");
     const disk = JSON.parse(
       await readFile(
         join(root, "config", "long-workspace-agents.json"),
@@ -98,33 +98,33 @@ describe("LongAgentConfigStore", () => {
       )
     ) as Record<string, unknown>;
 
-    expect(saved.agents).toHaveLength(6);
+    expect(saved.agents).toHaveLength(5);
     expect(resolved.systemPrompt).toBe("自定义长篇人物提示词");
     expect(resolved.readAccess.materialKinds).toEqual(["character"]);
     expect(resolved.writeAccess).toEqual(
       DEFAULT_LONG_AGENT_SETTINGS.agents.find(
-        ({ id }) => id === "character_design"
+        ({ id }) => id === "setting"
       )!.writeAccess
     );
     expect(JSON.stringify(disk)).not.toContain("writeAccess");
     expect(JSON.stringify(disk)).not.toContain("capabilities");
   });
 
-  it("resets one role without changing the other five roles", async () => {
+  it("resets one role without changing the other four roles", async () => {
     const { store } = await createStore();
     const input = editableDefaults();
-    input.agents.find(({ id }) => id === "worldbuilding")!.systemPrompt =
+    input.agents.find(({ id }) => id === "setting")!.systemPrompt =
       "custom:world";
     input.agents.find(({ id }) => id === "plot_design")!.systemPrompt =
       "custom:plot";
     await store.save(input);
 
-    const reset = await store.reset("worldbuilding");
+    const reset = await store.reset("setting");
     expect(
-      reset.agents.find(({ id }) => id === "worldbuilding")!.systemPrompt
+      reset.agents.find(({ id }) => id === "setting")!.systemPrompt
     ).toBe(
       DEFAULT_LONG_AGENT_SETTINGS.agents.find(
-        ({ id }) => id === "worldbuilding"
+        ({ id }) => id === "setting"
       )!.systemPrompt
     );
     expect(
@@ -136,18 +136,18 @@ describe("LongAgentConfigStore", () => {
     const { store } = await createStore();
     const input = editableDefaults();
     const worldbuilding = input.agents.find(
-      ({ id }) => id === "worldbuilding"
+      ({ id }) => id === "setting"
     )!;
     worldbuilding.systemPrompt =
       "你负责长篇世界观。先查询现有结构和相关正文，再提出可审阅的结构或文档变更；不得凭空覆盖未读取的设定。";
     await store.save(input);
 
     expect(
-      (await store.list()).agents.find(({ id }) => id === "worldbuilding")!
+      (await store.list()).agents.find(({ id }) => id === "setting")!
         .systemPrompt
     ).toBe(
       DEFAULT_LONG_AGENT_SETTINGS.agents.find(
-        ({ id }) => id === "worldbuilding"
+        ({ id }) => id === "setting"
       )!.systemPrompt
     );
 
@@ -166,14 +166,14 @@ describe("LongAgentConfigStore", () => {
 8. 所有写入都只形成待审阅提案，不得声称尚未获批的内容已经落盘。`;
     await store.save(input);
     expect(
-      (await store.list()).agents.find(({ id }) => id === "worldbuilding")!
+      (await store.list()).agents.find(({ id }) => id === "setting")!
         .systemPrompt
     ).toContain("能力范围：");
 
     worldbuilding.systemPrompt = "自定义世界观提示词";
     await store.save(input);
     expect(
-      (await store.list()).agents.find(({ id }) => id === "worldbuilding")!
+      (await store.list()).agents.find(({ id }) => id === "setting")!
         .systemPrompt
     ).toBe("自定义世界观提示词");
   });
@@ -182,7 +182,7 @@ describe("LongAgentConfigStore", () => {
     const { store } = await createStore();
     const input = editableDefaults();
     const character = input.agents.find(
-      ({ id }) => id === "character_design"
+      ({ id }) => id === "setting"
     )!;
     character.systemPrompt = `你负责长篇人物设计。模型只使用人物业务标识：
 - 每名人物以 character_id 唯一定位；人物内容按 core_profile、relationships、current_state、history 四种 document 区分。
@@ -202,14 +202,14 @@ describe("LongAgentConfigStore", () => {
     await store.save(input);
 
     expect(
-      (await store.list()).agents.find(({ id }) => id === "character_design")!
+      (await store.list()).agents.find(({ id }) => id === "setting")!
         .systemPrompt
-    ).toContain("list_worldbuilding");
+    ).toContain("list_setting");
 
     character.systemPrompt = "自定义人物提示词";
     await store.save(input);
     expect(
-      (await store.list()).agents.find(({ id }) => id === "character_design")!
+      (await store.list()).agents.find(({ id }) => id === "setting")!
         .systemPrompt
     ).toBe("自定义人物提示词");
   });
@@ -377,6 +377,67 @@ describe("LongAgentConfigStore", () => {
       (await store.list()).agents.find(({ id }) => id === "continuity_ledger")!
         .systemPrompt
     ).toBe(customizedPrompt);
+  });
+
+  it("merges legacy worldbuilding and character profiles into setting", async () => {
+    const { root, store } = await createStore();
+    const path = join(root, "config", "long-workspace-agents.json");
+    await mkdir(join(root, "config"), { recursive: true });
+    const defaults = editableDefaults();
+    const plot = defaults.agents.find(({ id }) => id === "plot_design")!;
+    await writeFile(
+      path,
+      `${JSON.stringify(
+        {
+          version: 1,
+          workspaceType: "long",
+          agents: [
+            {
+              id: "worldbuilding",
+              systemPrompt: "自定义世界观提示词",
+              welcomeShortcuts: ["世界一", "世界二", "世界三"],
+              readAccess: {
+                workspaceRoots: ["worldbuilding"],
+                materialKinds: ["gimmick"],
+                skillKinds: ["plot"]
+              }
+            },
+            {
+              id: "character_design",
+              systemPrompt: "自定义人物提示词",
+              welcomeShortcuts: ["人物一", "人物二", "人物三"],
+              readAccess: {
+                workspaceRoots: ["character_design"],
+                materialKinds: ["character"],
+                skillKinds: ["style"]
+              }
+            },
+            plot,
+            defaults.agents.find(({ id }) => id === "draft")!,
+            defaults.agents.find(({ id }) => id === "expert_section_writer")!,
+            defaults.agents.find(({ id }) => id === "continuity_ledger")!
+          ]
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const settings = await store.list();
+    expect(settings.agents.map(({ id }) => id)).toEqual(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.map(({ id }) => id)
+    );
+    const setting = settings.agents.find(({ id }) => id === "setting")!;
+    expect(setting.systemPrompt).toContain("【用户原世界观提示词】");
+    expect(setting.systemPrompt).toContain("自定义世界观提示词");
+    expect(setting.systemPrompt).toContain("【用户原人物提示词】");
+    expect(setting.systemPrompt).toContain("自定义人物提示词");
+    expect(setting.welcomeShortcuts).toEqual(["世界一", "世界二", "世界三"]);
+    expect(setting.writeAccess.workspaceRoots).toEqual([
+      "worldbuilding",
+      "character_design"
+    ]);
   });
 
   it("does not silently overwrite a malformed settings file", async () => {

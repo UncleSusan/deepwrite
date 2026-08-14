@@ -15,6 +15,8 @@ import {
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longWorldbuildingFileId,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import {
@@ -316,18 +318,107 @@ describe("long structure mutation builder", () => {
   it("builds per-book item layout updates", () => {
     expect(
       builder().updateFeatureSettings({
-        characterAndContinuityItemLayout: "right-list",
-        plotItemLayout: "right-list"
+        worldbuildingItemLayout: "left-tree",
+        characterAndContinuityItemLayout: "left-tree",
+        plotItemLayout: "left-tree"
       }).operations
     ).toEqual([
       {
         type: "featureSettings.update",
         patch: {
-          characterAndContinuityItemLayout: "right-list",
-          plotItemLayout: "right-list"
+          worldbuildingItemLayout: "left-tree",
+          characterAndContinuityItemLayout: "left-tree",
+          plotItemLayout: "left-tree"
         }
       }
     ]);
+  });
+
+  it("creates, reorders and deletes list worldbuilding items", () => {
+    const workspace = snapshot();
+    const category = workspace.worldbuilding.find(
+      ({ id }) => id === "world_geography"
+    );
+    if (!category || category.format !== "list") {
+      throw new Error("missing worldbuilding list fixture");
+    }
+    category.items = [
+      {
+        id: "worlditem_plain",
+        title: "新条目 3",
+        order: 1,
+        file: file(
+          longWorldbuildingItemFileId("worlditem_plain"),
+          longWorldbuildingItemContentPath(
+            category.id,
+            "worlditem_plain"
+          )
+        )
+      },
+      {
+        id: "worlditem_harbor",
+        title: "港口",
+        order: 2,
+        file: file(
+          longWorldbuildingItemFileId("worlditem_harbor"),
+          longWorldbuildingItemContentPath(
+            category.id,
+            "worlditem_harbor"
+          )
+        )
+      }
+    ];
+    const mutations = builder(workspace);
+    const created = mutations.createWorldbuildingItem(category.id);
+    expect(created.operations).toEqual([
+      {
+        type: "worldbuildingItem.create",
+        categoryId: category.id,
+        item: {
+          id: "worlditem_generated",
+          title: "新条目 4",
+          order: 3,
+          file: {
+            id: longWorldbuildingItemFileId("worlditem_generated"),
+            path: longWorldbuildingItemContentPath(
+              category.id,
+              "worlditem_generated"
+            ),
+            revision: EMPTY_LONG_MARKDOWN_REVISION,
+            updatedAt: later
+          }
+        }
+      }
+    ]);
+    expect(
+      mutations.reorderWorldbuildingItem(
+        category.id,
+        "worlditem_harbor",
+        "up"
+      ).operations
+    ).toEqual([
+      {
+        type: "worldbuildingItem.reorder",
+        categoryId: category.id,
+        orderedIds: ["worlditem_harbor", "worlditem_plain"]
+      }
+    ]);
+    expect(
+      mutations.deleteWorldbuildingItem(
+        category.id,
+        "worlditem_plain"
+      ).operations
+    ).toEqual([
+      {
+        type: "worldbuildingItem.delete",
+        categoryId: category.id,
+        id: "worlditem_plain",
+        cascade: true
+      }
+    ]);
+    expect(() =>
+      previewLongWorkspaceOperations(workspace, created)
+    ).not.toThrow();
   });
 
   it("rebases a pending structure batch only across document-only revisions", () => {

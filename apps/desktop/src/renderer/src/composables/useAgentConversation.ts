@@ -13,6 +13,7 @@ import type {
   WorkspaceRuntimeContext
 } from "@deepwrite/contracts";
 import {
+  AgentEvaluationSnapshotSchema,
   LibraryAgentWorkspaceSnapshotSchema,
   CharacterStructureMutationSchema,
   LongCharacterFileChangeSchema,
@@ -334,6 +335,13 @@ function parseStoredLibraryTarget(
 function cloneMessage(message: ChatMessage): ChatMessage {
   return {
     ...message,
+    ...(message.evaluationSnapshot
+      ? {
+          evaluationSnapshot: AgentEvaluationSnapshotSchema.parse(
+            JSON.parse(JSON.stringify(message.evaluationSnapshot))
+          )
+        }
+      : {}),
     ...(message.retry ? { retry: { ...message.retry } } : {}),
     ...(message.attachments
       ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
@@ -1093,6 +1101,15 @@ function parseStoredMessage(value: unknown): ChatMessage | undefined {
     }
   }
   if (value.activityOnly === true) message.activityOnly = true;
+
+  if (value.evaluationSnapshot !== undefined) {
+    const parsedEvaluation = AgentEvaluationSnapshotSchema.safeParse(
+      value.evaluationSnapshot
+    );
+    if (parsedEvaluation.success) {
+      message.evaluationSnapshot = parsedEvaluation.data;
+    }
+  }
 
   if (Array.isArray(value.tools)) {
     message.tools = value.tools.flatMap((tool) => {
@@ -2799,6 +2816,21 @@ export function useAgentConversation(
       return;
     }
 
+    if (event.type === "agent.evaluation_snapshot") {
+      const message = ensureAssistantMessage(
+        runId,
+        event.payload.messageId,
+        event.payload.runtime,
+        event.timestamp
+      );
+      if (message) {
+        message.evaluationSnapshot = AgentEvaluationSnapshotSchema.parse(
+          event.payload.snapshot
+        );
+      }
+      return;
+    }
+
     if (event.type === "agent.turn_started") {
       handleTurnStarted(event);
       return;
@@ -3814,6 +3846,7 @@ function isAgentEvent(
   SystemEventEnvelope,
   {
     type:
+      | "agent.evaluation_snapshot"
       | "agent.turn_started"
       | "agent.retry_scheduled"
       | "agent.message_delta"
@@ -3829,6 +3862,7 @@ function isAgentEvent(
   }
 > {
   return (
+    event.type === "agent.evaluation_snapshot" ||
     event.type === "agent.turn_started" ||
     event.type === "agent.retry_scheduled" ||
     event.type === "agent.message_delta" ||

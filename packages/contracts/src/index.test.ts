@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AgentEvaluationSnapshotEventEnvelopeSchema,
   AgentMessageCompletedEventEnvelopeSchema,
   AgentMessageDeltaEventEnvelopeSchema,
   AgentUsageObservedEventEnvelopeSchema,
@@ -265,7 +266,7 @@ describe("DeepWrite desktop contracts", () => {
           provider: "deepseek",
           modelId: "deepseek-chat",
           api: "openai-completions",
-          baseUrl: "https://api.deepseek.com/v1",
+          baseUrl: "https://api.deepseek.com.example.test/v1",
           reasoning: true,
           defaultThinkingLevel: "xhigh",
           hasApiKey: true,
@@ -297,7 +298,7 @@ describe("DeepWrite desktop contracts", () => {
           provider: "custom",
           modelId: "writer-model",
           api: "openai-responses",
-          baseUrl: "http://127.0.0.1:11434/v1",
+          baseUrl: "https://ollama.example.test/v1",
           reasoning: true,
           defaultThinkingLevel: "ultra",
           thinkingLevelOptions: ["low", "medium", "high", "xhigh", "max", "ultra"],
@@ -317,7 +318,7 @@ describe("DeepWrite desktop contracts", () => {
       provider: "custom",
       modelId: "plain-model",
       api: "openai-completions" as const,
-      baseUrl: "http://127.0.0.1:11434/v1",
+      baseUrl: "https://ollama.example.test/v1",
       reasoning: false,
       defaultThinkingLevel: "high" as const
     };
@@ -368,7 +369,7 @@ describe("DeepWrite desktop contracts", () => {
           provider: "custom",
           modelId: "draft-v1",
           api: "openai-completions" as const,
-          baseUrl: "http://127.0.0.1:11434/v1",
+          baseUrl: "https://ollama.example.test/v1",
           reasoning: false,
           defaultThinkingLevel: "off" as const,
           apiKey: "not-yet-saved"
@@ -483,6 +484,48 @@ describe("DeepWrite desktop contracts", () => {
       "第一段"
     );
     expect(SystemEventEnvelopeSchema.parse(completed).type).toBe("agent.message_completed");
+  });
+
+  it("validates an evaluation snapshot tied to its run and assistant message", () => {
+    const context = { sessionId: "session_eval", runId: "run_eval" };
+    const snapshot = createEnvelope(
+      "agent.evaluation_snapshot",
+      {
+        ...context,
+        messageId: "run_eval_assistant",
+        runtime,
+        snapshot: {
+          schemaVersion: 1 as const,
+          capturedAt: "2026-08-13T00:00:00.000Z",
+          systemPrompt: "最终系统提示词",
+          runtimeContext: {
+            kind: "initial-session-context" as const,
+            text: "运行时注入文本"
+          },
+          tools: [
+            {
+              name: "read_fixture",
+              label: "读取夹具",
+              description: "读取测试夹具。",
+              inputSchema: {
+                type: "object",
+                properties: { id: { type: "string" } },
+                required: ["id"]
+              }
+            }
+          ]
+        }
+      },
+      { id: "event_eval", context }
+    );
+
+    expect(
+      AgentEvaluationSnapshotEventEnvelopeSchema.parse(snapshot).payload.snapshot
+        .tools[0]
+    ).toMatchObject({ name: "read_fixture", inputSchema: { type: "object" } });
+    expect(SystemEventEnvelopeSchema.parse(snapshot).type).toBe(
+      "agent.evaluation_snapshot"
+    );
   });
 
   it("validates internal assistant usage observations without making them UI terminal events", () => {

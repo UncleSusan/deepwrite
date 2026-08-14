@@ -2521,6 +2521,40 @@ html[data-platform="darwin"] .conversation-header {
   color: color-mix(in srgb, var(--danger) 82%, var(--text-primary, #202226));
 }
 
+.approval-status-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.approval-target-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--theme-line-soft, #e6e6e4);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #60646b);
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.approval-target-button:hover {
+  border-color: color-mix(in srgb, var(--accent, #5b82b8) 45%, var(--theme-line, #dedfdf));
+  background: var(--surface-hover, #e9e9e7);
+  color: var(--accent, #5b82b8);
+}
+
+.approval-target-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent, #5b82b8) 65%, transparent);
+  outline-offset: 2px;
+}
+
 .edit-proposal-stats {
   display: inline-flex;
   align-items: center;

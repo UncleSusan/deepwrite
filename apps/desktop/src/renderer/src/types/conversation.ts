@@ -1,4 +1,5 @@
 import type {
+  AgentEvaluationSnapshot,
   AgentRuntimeRef,
   AgentUsage,
   CharacterStructureMutation,
@@ -278,6 +279,8 @@ export interface ChatMessage {
   subagentRuns?: AgentSubagentRun[];
   editProposals?: AgentEditProposal[];
   retry?: AgentRetryMetadata;
+  /** Present only for runs captured in the opt-in evaluation mode. */
+  evaluationSnapshot?: AgentEvaluationSnapshot;
 }
 
 export interface ConversationHistoryItem {

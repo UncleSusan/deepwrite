@@ -111,6 +111,7 @@ const emit = defineEmits<{
     proposalId: string;
     decision: "accept" | "reject";
   }];
+  locateEditProposal: [payload: { runId: string; proposalId: string }];
   collapse: [];
   save: [payload: { id: string; title: string; content: string }];
   liveChange: [payload: { id: string; title: string; content: string }];
@@ -140,6 +141,7 @@ const emit = defineEmits<{
     @select-temperature="emit('selectTemperature', $event)"
     @select-approval="emit('selectApproval', $event)"
     @review-edit="emit('reviewEdit', $event)"
+    @locate-edit-proposal="emit('locateEditProposal', $event)"
     @clear-editor-references="emit('clearEditorReferences')"
     @remove-editor-reference="emit('removeEditorReference', $event)"
     @locate-editor-reference="emit('locateEditorReference', $event)"

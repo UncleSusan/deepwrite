@@ -3,6 +3,7 @@ import { EnvelopeBaseSchema, type Envelope } from "./envelope";
 import {
   AgentAbortCommandEnvelopeSchema,
   AgentErrorEventEnvelopeSchema,
+  AgentEvaluationSnapshotEventEnvelopeSchema,
   AgentMessageCompletedEventEnvelopeSchema,
   AgentMessageDeltaEventEnvelopeSchema,
   AgentUsageObservedEventEnvelopeSchema,
@@ -31,6 +32,7 @@ import {
   SessionAbortCommandEnvelopeSchema,
   SessionPromptCommandEnvelopeSchema,
   type AgentErrorEventEnvelope,
+  type AgentEvaluationSnapshotEventEnvelope,
   type AgentMessageCompletedEventEnvelope,
   type AgentMessageDeltaEventEnvelope,
   type AgentUsageObservedEventEnvelope,
@@ -371,6 +373,7 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   SystemReadyEventEnvelopeSchema,
   SystemWorkerRestartingEventEnvelopeSchema,
   SystemWorkerRestartedEventEnvelopeSchema,
+  AgentEvaluationSnapshotEventEnvelopeSchema,
   AgentTurnStartedEventEnvelopeSchema,
   AgentRetryScheduledEventEnvelopeSchema,
   AgentMessageDeltaEventEnvelopeSchema,
@@ -411,6 +414,7 @@ export type SystemEventEnvelope =
   | SystemReadyEventEnvelope
   | SystemWorkerRestartingEventEnvelope
   | SystemWorkerRestartedEventEnvelope
+  | AgentEvaluationSnapshotEventEnvelope
   | AgentTurnStartedEventEnvelope
   | AgentRetryScheduledEventEnvelope
   | AgentMessageDeltaEventEnvelope

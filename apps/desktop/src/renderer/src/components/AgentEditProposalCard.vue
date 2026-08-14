@@ -19,6 +19,7 @@ const emit = defineEmits<{
     proposalId: string;
     decision: "accept" | "reject";
   }];
+  locate: [payload: { runId: string; proposalId: string }];
 }>();
 
 const proposalStatusLabels: Record<AgentEditProposal["status"], string> = {
@@ -222,6 +223,19 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
           <span class="edit-proposal-status" :class="`is-${proposal.status}`">
             {{ proposalStatusLabel() }}
           </span>
+          <button
+            v-if="proposal.status === 'accepted'"
+            class="approval-target-button"
+            type="button"
+            title="跳转到目标文件"
+            aria-label="跳转到目标文件"
+            @click.stop="emit('locate', {
+              runId: proposal.runId,
+              proposalId: proposal.id
+            })"
+          >
+            跳转到目标文件
+          </button>
         </div>
         <p>{{ proposal.summary }}</p>
       </div>

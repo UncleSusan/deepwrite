@@ -42,6 +42,60 @@ function defaultSettings(): LongAgentTeamSettings {
   return cloneSettings(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
 }
 
+function migrateLegacyLongAgentTeams(
+  settings: LongAgentTeamSettingsInput | Record<string, unknown>
+): Record<string, unknown> {
+  const teams = Array.isArray((settings as { teams?: unknown }).teams)
+    ? ((settings as { teams: unknown[] }).teams)
+    : [];
+  const records = teams.filter(
+    (team): team is Record<string, unknown> =>
+      Boolean(team) && typeof team === "object" && !Array.isArray(team)
+  );
+  const world = records.find((team) => team.parentAgentId === "worldbuilding");
+  const character = records.find(
+    (team) => team.parentAgentId === "character_design"
+  );
+  if (!world && !character) {
+    return settings as Record<string, unknown>;
+  }
+  const remaining = records.filter(
+    (team) =>
+      team.parentAgentId !== "worldbuilding" &&
+      team.parentAgentId !== "character_design" &&
+      team.parentAgentId !== "setting"
+  );
+  const usedNames = new Set<string>();
+  const merged: ShortAgentSubagentDefinition[] = [];
+  for (const source of [world, character]) {
+    const suffix =
+      source?.parentAgentId === "worldbuilding"
+        ? "（世界观）"
+        : source?.parentAgentId === "character_design"
+          ? "（人物）"
+          : "";
+    const subagents = Array.isArray(source?.subagents) ? source.subagents : [];
+    for (const raw of subagents) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const definition = cloneDefinition(raw as ShortAgentSubagentDefinition);
+      let name = definition.name;
+      if (usedNames.has(name)) {
+        name = `${definition.name}${suffix}`;
+        definition.name = name;
+      }
+      usedNames.add(name);
+      merged.push(definition);
+    }
+  }
+  return {
+    ...(settings as Record<string, unknown>),
+    teams: [
+      { parentAgentId: "setting", subagents: merged },
+      ...remaining
+    ]
+  };
+}
+
 async function readJson(path: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(path, "utf8")) as unknown;
@@ -87,7 +141,9 @@ export class LongAgentTeamConfigStore {
     }
     const { version: _version, ...settings } =
       raw as DiskLongAgentTeamSettings;
-    const parsed = LongAgentTeamSettingsInputSchema.safeParse(settings);
+    const parsed = LongAgentTeamSettingsInputSchema.safeParse(
+      migrateLegacyLongAgentTeams(settings)
+    );
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
       throw new Error(

@@ -120,7 +120,11 @@ describe("LongProjectStore", () => {
         operations: [
           {
             type: "featureSettings.update",
-            patch: { worldbuildingItemLayout: "top-tabs" }
+            patch: {
+              worldbuildingItemLayout: "left-tree",
+              characterAndContinuityItemLayout: "left-tree",
+              plotItemLayout: "left-tree"
+            }
           }
         ],
         documentWrites: []
@@ -131,7 +135,14 @@ describe("LongProjectStore", () => {
     const reopened = await store().openBook(created.projectDirectory);
     expect(
       reopened.book.workspaceIndex.featureSettings.worldbuildingItemLayout
-    ).toBe("top-tabs");
+    ).toBe("left-tree");
+    expect(
+      reopened.book.workspaceIndex.featureSettings
+        .characterAndContinuityItemLayout
+    ).toBe("left-tree");
+    expect(reopened.book.workspaceIndex.featureSettings.plotItemLayout).toBe(
+      "left-tree"
+    );
   });
 
   it("creates a missing nested parent directory for a new long book", async () => {

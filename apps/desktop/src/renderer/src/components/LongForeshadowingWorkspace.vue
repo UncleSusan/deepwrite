@@ -186,6 +186,7 @@ const query = ref("");
 const lifecycleFilter = ref<FilterValue>("all");
 const spanFilter = ref<SpanFilterValue>("all");
 const activeThreadId = ref<string | null>(null);
+const workspaceElement = ref<HTMLElement | null>(null);
 const formOpen = ref(false);
 const formKind = ref<FormKind>("thread");
 const formMode = ref<FormMode>("create");
@@ -708,6 +709,34 @@ function selectThread(threadId: string): void {
   activeThreadId.value = threadId;
 }
 
+async function focusTarget(
+  threadId?: string,
+  beatId?: string
+): Promise<boolean> {
+  const thread = threadId
+    ? threads.value.find(({ id }) => id === threadId)
+    : beatId
+      ? threads.value.find(({ beats }) =>
+          beats.some(({ id }) => id === beatId)
+        )
+      : threads.value[0];
+  if (!thread) return false;
+  query.value = "";
+  lifecycleFilter.value = "all";
+  spanFilter.value = "all";
+  activeThreadId.value = thread.id;
+  await nextTick();
+  const selector = beatId
+    ? `[data-foreshadowing-beat-id="${CSS.escape(beatId)}"]`
+    : `[data-foreshadowing-thread-id="${CSS.escape(thread.id)}"]`;
+  const target = workspaceElement.value?.querySelector<HTMLElement>(selector);
+  if (!target) return false;
+  target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  return true;
+}
+
+defineExpose({ focusTarget });
+
 function setLifecycleFilter(value: PopupSelectValue): void {
   if (
     value === "all" ||
@@ -1142,6 +1171,7 @@ onBeforeUnmount(() =>
 
 <template>
   <section
+    ref="workspaceElement"
     class="foreshadow-workspace"
     :class="`is-${mode}`"
     :aria-label="workspaceTitle"
@@ -1302,6 +1332,7 @@ onBeforeUnmount(() =>
             v-for="thread in visibleThreads"
             :key="thread.id"
             class="thread-card"
+            :data-foreshadowing-thread-id="thread.id"
             :class="{ 'is-active': activeThread?.id === thread.id }"
             role="listitem"
           >
@@ -1461,6 +1492,7 @@ onBeforeUnmount(() =>
                 v-for="beat in activeThreadBeats"
                 :key="beat.id"
                 :class="`is-${beat.type}`"
+                :data-foreshadowing-beat-id="beat.id"
               >
                 <span class="beat-marker" />
                 <article>

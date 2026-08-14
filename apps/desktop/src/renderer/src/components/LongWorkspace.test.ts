@@ -484,7 +484,7 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).not.toContain('{ immediate: true, deep: true, flush: "sync" }');
   });
 
-  it("renders list worldbuilding with configurable top tabs or a right-side list", () => {
+  it("renders list worldbuilding with top, right-list or left-tree navigation", () => {
     expect(editorSource).toContain(
       'selection.files.find(({ role }) => role === "overview")'
     );
@@ -496,6 +496,8 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).toContain('aria-label="世界观条目"');
     expect(editorSource).toContain("currentUsesTopWorldbuildingTabs");
     expect(editorSource).toContain("currentUsesRightWorldbuildingList");
+    expect(editorSource).toContain("currentUsesLeftTreeWorldbuilding");
+    expect(editorSource).toContain('=== "left-tree"');
     expect(editorSource).toContain('"right-list"');
     expect(editorSource).toContain('aria-label="世界观条目列表"');
     expect(editorSource).toContain("long-entry-list-pane");
@@ -525,6 +527,9 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).toContain("currentUsesRightBookLineList");
     expect(editorSource).toContain("currentUsesRightPlotPointList");
     expect(editorSource).toContain("currentUsesRightChapterCardList");
+    expect(editorSource).toContain("currentUsesLeftTreeCharacter");
+    expect(editorSource).toContain("currentUsesLeftTreePlot");
+    expect(editorSource).toContain("currentUsesLeftTreeContinuity");
     expect(editorSource).toContain('aria-label="连续性账本文件列表"');
     expect(editorSource).toContain('aria-label="全书故事线列表"');
     expect(editorSource).toContain('aria-label="剧情点列表"');
@@ -535,6 +540,7 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).not.toContain("isChapterCardCommitted");
     expect(editorSource).toContain("!currentUsesRightContinuityList.value");
     expect(editorSource).toContain("long-entry-list-pane");
+    expect(editorSource).toContain("captureNavigationSelection");
   });
 
   it("loads a list worldbuilding item before activating its tab", () => {
@@ -698,6 +704,44 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain('@toggle-left="leftCollapsed = !leftCollapsed"');
     expect(appSource).toContain('@toggle-right="rightCollapsed = !rightCollapsed"');
     expect(appSource).toContain('v-show="!rightCollapsed"');
+  });
+
+  it("wires left-tree collection actions through the existing structure pipeline", () => {
+    expect(workspaceTypeSource).toContain("longTreeCollection?:");
+    expect(workspaceTypeSource).toContain("longTreeItem?:");
+    for (const kind of [
+      "worldbuilding-item",
+      "character",
+      "volume",
+      "plot-point",
+      "chapter-card"
+    ]) {
+      expect(workspaceTypeSource).toContain(`| "${kind}"`);
+    }
+    expect(leftSidebarSource).toContain("createLongTreeItem");
+    expect(leftSidebarSource).toContain("longTreeItemAction");
+    expect(sectionSource).toContain("createLongTreeItem");
+    expect(sectionSource).toContain("longTreeItemAction");
+    expect(appSource).toContain(
+      '@create-long-tree-item="handleCreateLongTreeItem"'
+    );
+    expect(appSource).toContain(
+      '@long-tree-item-action="handleLongTreeItemAction"'
+    );
+    expect(appSource).toContain("createLongWorldbuildingTreeItem");
+    expect(appSource).toContain("builder.reorderWorldbuildingItem(");
+    expect(appSource).toContain("builder.deleteWorldbuildingItem(");
+    expect(appSource).toContain(
+      "details.orderedIds[currentIndex + 1] ??\n    details.orderedIds[currentIndex - 1]"
+    );
+    expect(appSource).toContain("details.parentResourceId");
+    expect(appSource).toContain("selectCreatedLongTreeResource(");
+    expect(appSource).toContain("captureNavigationSelection()");
+    expect(appSource).toContain("synchronizeSelectedLongResourceForLayout(");
+    expect(appSource).toContain(
+      ':long-tree-actions-disabled="longBookActionPending"'
+    );
+    expect(appSource).toContain(':item-label="longTreeItemDelete?.label');
   });
 
   it("uses dedicated long agent context and approval surfaces", () => {
@@ -1225,7 +1269,7 @@ describe("long-form renderer vertical slice", () => {
     const lazyMutationLoads = appSource.match(
       /await loadLongStructureMutationModule\(\)/g
     );
-    expect(lazyMutationLoads).toHaveLength(11);
+    expect(lazyMutationLoads).toHaveLength(14);
 
     for (const resumedPath of appSource
       .split("await loadLongStructureMutationModule()")

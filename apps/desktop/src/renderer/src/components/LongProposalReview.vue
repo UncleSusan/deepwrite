@@ -29,6 +29,7 @@ const emit = defineEmits<{
   approve: [eventId: string];
   reject: [eventId: string];
   retryPreview: [eventId: string];
+  locate: [eventId: string];
 }>();
 
 const pendingCount = computed(
@@ -595,12 +596,24 @@ function entitySnapshotText(
             <strong>{{ proposalTitle(item) }}</strong>
             <small>{{ item.event.payload.agentId }}</small>
           </div>
-          <span
-            class="long-proposal-status"
-            :class="`is-${item.status}`"
-          >
-            {{ proposalStatusText(item) }}
-          </span>
+          <div class="approval-status-actions">
+            <span
+              class="long-proposal-status"
+              :class="`is-${item.status}`"
+            >
+              {{ proposalStatusText(item) }}
+            </span>
+            <button
+              v-if="item.status === 'accepted'"
+              class="approval-target-button"
+              type="button"
+              title="跳转到目标文件"
+              aria-label="跳转到目标文件"
+              @click.stop="emit('locate', item.event.id)"
+            >
+              跳转到目标文件
+            </button>
+          </div>
         </div>
 
         <p v-if="!usesEditProposalSurface(item)">
@@ -628,6 +641,16 @@ function entitySnapshotText(
                       : contentProposalStatusLabel(item)
                   }}
                 </span>
+                <button
+                  v-if="item.status === 'accepted'"
+                  class="approval-target-button"
+                  type="button"
+                  title="跳转到目标文件"
+                  aria-label="跳转到目标文件"
+                  @click.stop="emit('locate', item.event.id)"
+                >
+                  跳转到目标文件
+                </button>
               </div>
               <p>{{ item.event.payload.summary }}</p>
             </div>

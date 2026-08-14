@@ -209,6 +209,7 @@ import type {
   DialogMode,
   EditorDraftState,
   LongBookResourceNodeActionPayload,
+  LongTreeItemAction,
   ResourceSectionActionPayload,
   ResourceTreeNode,
   ResourceTreeSection,
@@ -304,6 +305,13 @@ import {
   type AgentRunPreferencesByScope
 } from "./utils/agentRunPreferences";
 import { buildAgentTextDiff } from "./utils/agentTextDiff";
+import {
+  resolveAgentEditApprovalTarget,
+  resolveLongApprovalNavigation,
+  resolveLongProposalApprovalTarget,
+  type ApprovalNavigationTarget,
+  type LongApprovalEditorFocus
+} from "./utils/approvalNavigation";
 import {
   loadGeneralPreferences,
   saveGeneralPreferences
@@ -590,6 +598,9 @@ const activeLongSelection = ref<LongWorkspaceSelection | null>(null);
 const longWorkspaceEditor = ref<{
   saveAllChanges(): Promise<boolean>;
   selectBookLineVolume(volumeId: string): void;
+  focusFile(fileId: string): Promise<boolean>;
+  focusTarget(target: LongApprovalEditorFocus): Promise<boolean>;
+  captureNavigationSelection(): Partial<LongWorkspaceSelection>;
   ensureDocumentsLoaded(
     files: LongWorkspaceSelection["files"]
   ): Promise<boolean>;
@@ -660,6 +671,13 @@ const longDraftSectionDelete = ref<{
   chapterCardId: string;
   volumeId: string;
   title: string;
+} | null>(null);
+const longTreeItemDelete = ref<{
+  bookId: string;
+  node: ResourceTreeNode;
+  label: string;
+  title: string;
+  description: string;
 } | null>(null);
 const longVolumeCreate = ref<{ bookId: string } | null>(null);
 const longBindingsDialogMode = ref<"skill" | "material" | null>(null);
@@ -1325,7 +1343,7 @@ const activeLongRuntimeContext =
       projectRevision: summary.projectRevision,
       navigation: summary.navigation,
       ...(activeLongRoot.value === "worldbuilding" &&
-        profile.id === "worldbuilding"
+        profile.id === "setting"
         ? {
             worldbuildingDirectory:
               buildLongWorldbuildingDirectorySnapshot(
@@ -1486,6 +1504,22 @@ function findResourceNodeIn(
     return undefined;
   };
   return visit(sections.flatMap((section) => section.nodes));
+}
+
+function findResourceNodeWhere(
+  predicate: (node: ResourceTreeNode) => boolean
+): ResourceTreeNode | undefined {
+  const visit = (
+    nodes: readonly ResourceTreeNode[]
+  ): ResourceTreeNode | undefined => {
+    for (const node of nodes) {
+      if (predicate(node)) return node;
+      const nested = visit(node.children ?? []);
+      if (nested) return nested;
+    }
+    return undefined;
+  };
+  return visit(resourceTreeSections.value.flatMap(({ nodes }) => nodes));
 }
 
 function resourceIdForDocumentId(documentId: string): string | undefined {
@@ -1856,6 +1890,7 @@ async function openLongBook(
   longPlotPointCreate.value = null;
   longChapterCardCreate.value = null;
   longDraftSectionDelete.value = null;
+  longTreeItemDelete.value = null;
   longVolumeCreate.value = null;
   longBindingsDialogMode.value = null;
   longWorkspaceLoading.value = true;
@@ -1970,6 +2005,7 @@ async function refreshActiveLongWorkspace(bookId: string): Promise<boolean> {
           }
         : null;
     }
+    synchronizeSelectedLongResourceForLayout(bookId);
     longWorkspaceRefreshStatus.value = null;
     return true;
   } catch (error: unknown) {
@@ -2067,6 +2103,11 @@ async function selectLongWorkspaceFile(
 ): Promise<boolean> {
   if (
     (activeLongSelection.value?.key !== selection.key ||
+      activeLongSelection.value?.worldbuildingItemId !==
+        selection.worldbuildingItemId ||
+      activeLongSelection.value?.preferredFileId !== selection.preferredFileId ||
+      activeLongSelection.value?.bookLineVolumeId !==
+        selection.bookLineVolumeId ||
       activeLongSelection.value?.characterId !== selection.characterId ||
       activeLongSelection.value?.plotPointId !== selection.plotPointId ||
       activeLongSelection.value?.chapterCardId !== selection.chapterCardId) &&
@@ -2075,6 +2116,9 @@ async function selectLongWorkspaceFile(
     return false;
   }
   const preferredFile =
+    selection.files.find(
+      ({ file }) => file.id === selection.preferredFileId
+    ) ??
     selection.files.find((file) => file.role === selection.preferredRole) ??
     selection.files[0];
   // Prefetch the target document before publishing the selection so the right
@@ -2291,6 +2335,436 @@ async function handleLongDraftSectionAction(
           : `已下移小节“${chapter.title}”`
     }
   );
+}
+
+interface LongTreeItemDetails {
+  label: string;
+  title: string;
+  description: string;
+  orderedIds: string[];
+  parentResourceId: string;
+  resourceIdForItem(id: string): string;
+}
+
+async function ensureLongTreeTargetBook(
+  node: ResourceTreeNode,
+  actionLabel: string
+): Promise<{
+  bookId: string;
+  summary: LongBookSummary;
+  index: LongWorkspaceIndexSnapshot;
+} | null> {
+  const bookId = node.longBookId;
+  if (!bookId || !node.workspaceType || node.workspaceType !== "long") {
+    uiMessage.warning(`当前长篇尚未准备好${actionLabel}。`);
+    return null;
+  }
+  if (blockActiveLongWritingPlan(actionLabel)) return null;
+  if (activeLongBookId.value !== bookId) {
+    if (!(await saveActiveLongEditorBeforeLeaving(bookId))) return null;
+    await openLongBook(bookId, node.longWorkspaceSelection ?? null);
+  }
+  const summary = activeLongBookSummary.value;
+  const index = activeLongWorkspaceIndex.value;
+  if (!summary || !index || summary.id !== bookId) {
+    uiMessage.warning(`当前长篇尚未准备好${actionLabel}。`);
+    return null;
+  }
+  return { bookId, summary, index };
+}
+
+function resolveLongTreeItemDetails(
+  bookId: string,
+  index: LongWorkspaceIndexSnapshot,
+  node: ResourceTreeNode
+): LongTreeItemDetails | null {
+  const target = node.longTreeItem;
+  if (!target) return null;
+  if (target.kind === "worldbuilding-item") {
+    const category = index.worldbuilding.find(
+      ({ id }) => id === target.parentId
+    );
+    if (!category || category.format !== "list") return null;
+    const item = category.items.find(({ id }) => id === target.id);
+    if (!item) return null;
+    const orderedIds = [...category.items]
+      .sort((left, right) => left.order - right.order)
+      .map(({ id }) => id);
+    return {
+      label: "世界观条目",
+      title: item.title,
+      description: "将永久删除该世界观条目及其正文文件。",
+      orderedIds,
+      parentResourceId: longNavigationNodeId(
+        bookId,
+        `worldbuilding:${category.id}`
+      ),
+      resourceIdForItem: (id) =>
+        longNavigationNodeId(
+          bookId,
+          `worldbuilding:${category.id}:item:${id}`
+        )
+    };
+  }
+  if (target.kind === "character") {
+    const character = index.characters.find(({ id }) => id === target.id);
+    if (!character) return null;
+    const eventReferences = index.plot.storyEvents.filter((event) =>
+      event.characterIds.includes(character.id)
+    ).length;
+    const orderedIds = index.characters
+      .filter(({ group }) => group === character.group)
+      .sort((left, right) => left.order - right.order)
+      .map(({ id }) => id);
+    return {
+      label: "人物",
+      title: character.name,
+      description: `将永久删除该人物的四份人物档案${
+        eventReferences > 0
+          ? `，并从 ${eventReferences} 个故事事件中移除人物引用`
+          : ""
+      }。`,
+      orderedIds,
+      parentResourceId: longNavigationNodeId(
+        bookId,
+        `character-group:${character.group}`
+      ),
+      resourceIdForItem: (id) =>
+        longNavigationNodeId(bookId, `character:${id}`)
+    };
+  }
+  if (target.kind === "volume") {
+    const volume = index.plot.volumes.find(({ id }) => id === target.id);
+    if (!volume) return null;
+    const plotPointCount = index.plot.arcs.filter(
+      ({ volumeId }) => volumeId === volume.id
+    ).length;
+    const chapterCount = index.plot.chapterCards.filter(
+      ({ volumeId }) => volumeId === volume.id
+    ).length;
+    return {
+      label: "分卷",
+      title: volume.title,
+      description: `将永久删除该分卷，以及其中 ${plotPointCount} 个剧情点、${chapterCount} 张章卡及对应正文文件和关联数据。`,
+      orderedIds: [...index.plot.volumes]
+        .sort((left, right) => left.order - right.order)
+        .map(({ id }) => id),
+      parentResourceId: longNavigationNodeId(
+        bookId,
+        "plot-design:book-line"
+      ),
+      resourceIdForItem: (id) =>
+        longNavigationNodeId(bookId, `plot-design:book-line:volume:${id}`)
+    };
+  }
+  if (target.kind === "plot-point") {
+    const plotPoint = index.plot.arcs.find(({ id }) => id === target.id);
+    if (!plotPoint) return null;
+    return {
+      label: "剧情点",
+      title: plotPoint.title,
+      description:
+        "将永久删除该剧情点、相关事件和伏笔关联；已关联章卡会保留并解除关联。",
+      orderedIds: index.plot.arcs
+        .filter(({ volumeId }) => volumeId === plotPoint.volumeId)
+        .sort((left, right) => left.order - right.order)
+        .map(({ id }) => id),
+      parentResourceId: longNavigationNodeId(
+        bookId,
+        `plot-design:plot-points:${plotPoint.volumeId}`
+      ),
+      resourceIdForItem: (id) =>
+        longNavigationNodeId(bookId, `plot-design:plot-point:${id}`)
+    };
+  }
+  const chapter = index.plot.chapterCards.find(({ id }) => id === target.id);
+  if (!chapter) return null;
+  return {
+    label: "章卡",
+    title: chapter.title,
+    description:
+      "将永久删除该章卡、章节正文、章末人物状态、下一章接续包，以及相关剧情落点和伏笔触点。",
+    orderedIds: index.plot.chapterCards
+      .filter(({ volumeId }) => volumeId === chapter.volumeId)
+      .sort((left, right) => left.narrativeOrder - right.narrativeOrder)
+      .map(({ id }) => id),
+    parentResourceId: longNavigationNodeId(
+      bookId,
+      `plot-design:chapter-cards:${chapter.volumeId}`
+    ),
+    resourceIdForItem: (id) =>
+      longNavigationNodeId(bookId, `plot-design:chapter-card:${id}`)
+  };
+}
+
+function isActiveLongTreeItem(node: ResourceTreeNode): boolean {
+  const target = node.longTreeItem;
+  const selection = activeLongSelection.value;
+  if (!target || !selection) return false;
+  if (target.kind === "worldbuilding-item") {
+    return selection.worldbuildingItemId === target.id;
+  }
+  if (target.kind === "character") {
+    return selection.characterId === target.id;
+  }
+  if (target.kind === "volume") {
+    return selection.bookLineVolumeId === target.id;
+  }
+  if (target.kind === "plot-point") {
+    return selection.plotPointId === target.id;
+  }
+  return selection.chapterCardId === target.id;
+}
+
+async function createLongWorldbuildingTreeItem(
+  node: ResourceTreeNode,
+  categoryId: string
+): Promise<void> {
+  const prepared = await ensureLongTreeTargetBook(node, "新增世界观条目");
+  if (!prepared) return;
+  const mutationTarget = captureLongStructureMutationTarget(prepared.bookId);
+  if (!mutationTarget || mutationTarget.index !== prepared.index) return;
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    const { createLongStructureMutationBuilder } =
+      await loadLongStructureMutationModule();
+    assertCurrentLongStructureMutationTarget(mutationTarget);
+    batch = createLongStructureMutationBuilder(
+      prepared.index
+    ).createWorldbuildingItem(categoryId);
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法新增世界观条目。"
+    );
+    return;
+  }
+  const created = batch.operations.find(
+    (operation) => operation.type === "worldbuildingItem.create"
+  );
+  if (!created || created.type !== "worldbuildingItem.create") return;
+  let succeeded = false;
+  await applyLongStructureMutation(
+    prepared.bookId,
+    batch,
+    {
+      succeed: () => {
+        succeeded = true;
+      },
+      fail: () => undefined,
+      appliedButRefreshFailed: () => undefined
+    },
+    { successMessage: `已新增世界观条目“${created.item.title}”` }
+  );
+  if (!succeeded) return;
+  await nextTick();
+  const resourceId = longNavigationNodeId(
+    prepared.bookId,
+    `worldbuilding:${categoryId}:item:${created.item.id}`
+  );
+  const createdNode = resourceNode(resourceId);
+  if (createdNode) await selectResource(createdNode);
+}
+
+async function handleCreateLongTreeItem(node: ResourceTreeNode): Promise<void> {
+  const target = node.longTreeCollection;
+  if (!target) return;
+  if (target.kind === "worldbuilding-item" && target.parentId) {
+    await createLongWorldbuildingTreeItem(node, target.parentId);
+    return;
+  }
+  const prepared = await ensureLongTreeTargetBook(node, "新增条目");
+  if (!prepared) return;
+  if (target.kind === "character" && target.parentId) {
+    const group = prepared.index.characterTypes.find(
+      ({ id }) => id === target.parentId
+    );
+    if (!group) {
+      uiMessage.warning("当前人物类型已不存在，请刷新后重试。");
+      return;
+    }
+    longCharacterCreate.value = {
+      bookId: prepared.bookId,
+      group: group.id,
+      groupLabel: group.title
+    };
+    return;
+  }
+  if (target.kind === "volume") {
+    longVolumeCreate.value = { bookId: prepared.bookId };
+    return;
+  }
+  if (target.kind === "plot-point" && target.parentId) {
+    await openLongPlotPointCreateForVolume(
+      prepared.bookId,
+      target.parentId
+    );
+    return;
+  }
+  if (target.kind === "chapter-card" && target.parentId) {
+    await openLongChapterCardCreate({
+      bookId: prepared.bookId,
+      volumeId: target.parentId,
+      source: "chapter-card"
+    });
+  }
+}
+
+async function handleLongTreeItemAction(
+  action: LongTreeItemAction,
+  node: ResourceTreeNode
+): Promise<void> {
+  const target = node.longTreeItem;
+  if (!target) return;
+  const prepared = await ensureLongTreeTargetBook(
+    node,
+    action === "delete" ? "删除条目" : "调整条目顺序"
+  );
+  if (!prepared) return;
+  const details = resolveLongTreeItemDetails(
+    prepared.bookId,
+    prepared.index,
+    node
+  );
+  if (!details) {
+    uiMessage.warning("该条目已不存在，请刷新后重试。");
+    return;
+  }
+  if (action === "delete") {
+    longTreeItemDelete.value = {
+      bookId: prepared.bookId,
+      node,
+      label: details.label,
+      title: details.title,
+      description: details.description
+    };
+    return;
+  }
+  const mutationTarget = captureLongStructureMutationTarget(prepared.bookId);
+  if (!mutationTarget || mutationTarget.index !== prepared.index) return;
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    const { createLongStructureMutationBuilder } =
+      await loadLongStructureMutationModule();
+    assertCurrentLongStructureMutationTarget(mutationTarget);
+    const builder = createLongStructureMutationBuilder(prepared.index);
+    const direction = action === "move-up" ? "up" : "down";
+    if (target.kind === "worldbuilding-item") {
+      if (!target.parentId) throw new Error("缺少世界观分类 ID。");
+      batch = builder.reorderWorldbuildingItem(
+        target.parentId,
+        target.id,
+        direction
+      );
+    } else if (target.kind === "character") {
+      batch = builder.reorderCharacter(target.id, direction);
+    } else if (target.kind === "volume") {
+      batch = builder.reorderVolume(target.id, direction);
+    } else if (target.kind === "plot-point") {
+      batch = builder.reorderArc(target.id, direction);
+    } else {
+      batch = builder.reorderChapter(target.id, direction);
+    }
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : "无法调整条目顺序。"
+    );
+    return;
+  }
+  await applyLongStructureMutation(
+    prepared.bookId,
+    batch,
+    {
+      succeed: () => undefined,
+      fail: () => undefined,
+      appliedButRefreshFailed: () => undefined
+    },
+    {
+      successMessage: `已${action === "move-up" ? "上移" : "下移"}${
+        details.label
+      }“${details.title}”`
+    }
+  );
+}
+
+async function confirmDeleteLongTreeItem(): Promise<void> {
+  const pending = longTreeItemDelete.value;
+  const target = pending?.node.longTreeItem;
+  if (!pending || !target || longBookActionPending.value) return;
+  const mutationTarget = captureLongStructureMutationTarget(pending.bookId);
+  const index = mutationTarget?.index;
+  if (!mutationTarget || !index) {
+    uiMessage.warning("当前长篇结构尚未就绪。");
+    return;
+  }
+  const details = resolveLongTreeItemDetails(
+    pending.bookId,
+    index,
+    pending.node
+  );
+  if (!details) {
+    longTreeItemDelete.value = null;
+    uiMessage.warning("该条目已不存在，请刷新后重试。");
+    return;
+  }
+  const currentIndex = details.orderedIds.indexOf(target.id);
+  const fallbackItemId =
+    details.orderedIds[currentIndex + 1] ??
+    details.orderedIds[currentIndex - 1];
+  const fallbackResourceId = fallbackItemId
+    ? details.resourceIdForItem(fallbackItemId)
+    : details.parentResourceId;
+  const deletedSelected =
+    selectedResourceId.value === pending.node.id ||
+    isActiveLongTreeItem(pending.node);
+  let batch: LongWorkspaceOperationBatch;
+  try {
+    const { createLongStructureMutationBuilder } =
+      await loadLongStructureMutationModule();
+    assertCurrentLongStructureMutationTarget(mutationTarget);
+    const builder = createLongStructureMutationBuilder(index);
+    if (target.kind === "worldbuilding-item") {
+      if (!target.parentId) throw new Error("缺少世界观分类 ID。");
+      batch = builder.deleteWorldbuildingItem(target.parentId, target.id);
+    } else if (target.kind === "character") {
+      batch = builder.deleteCharacter(target.id, true);
+    } else if (target.kind === "volume") {
+      batch = builder.deleteVolume(target.id, true);
+    } else if (target.kind === "plot-point") {
+      batch = builder.deleteArc(target.id, true);
+    } else {
+      batch = builder.deleteChapter(target.id, true);
+    }
+  } catch (error: unknown) {
+    uiMessage.warning(
+      error instanceof Error ? error.message : `无法删除“${details.title}”。`
+    );
+    return;
+  }
+  let succeeded = false;
+  let applied = false;
+  await applyLongStructureMutation(
+    pending.bookId,
+    batch,
+    {
+      succeed: () => {
+        succeeded = true;
+        applied = true;
+      },
+      fail: () => undefined,
+      appliedButRefreshFailed: () => {
+        applied = true;
+      }
+    },
+    { successMessage: `已删除${details.label}“${details.title}”` }
+  );
+  if (!applied) return;
+  if (longTreeItemDelete.value === pending) {
+    longTreeItemDelete.value = null;
+  }
+  if (!succeeded || !deletedSelected) return;
+  await nextTick();
+  const fallbackNode = resourceNode(fallbackResourceId);
+  if (fallbackNode) await selectResource(fallbackNode);
 }
 
 async function confirmDeleteLongDraftSection(): Promise<void> {
@@ -2760,6 +3234,40 @@ function conversationForKey(
     return existing;
   }
   const persistenceKey = `deepwrite:agent-conversations:v1:${encodeURIComponent(key)}`;
+  if (key.includes(":setting:setting:")) {
+    const worldKey = key.replace(
+      ":setting:setting:",
+      ":worldbuilding:worldbuilding:"
+    );
+    const characterKey = key.replace(
+      ":setting:setting:",
+      ":character_design:character_design:"
+    );
+    try {
+      const existing = window.localStorage.getItem(persistenceKey);
+      if (!existing) {
+        const candidates = [worldKey, characterKey]
+          .map((legacyKey) => {
+            const legacyPersistenceKey = `deepwrite:agent-conversations:v1:${encodeURIComponent(legacyKey)}`;
+            const value = window.localStorage.getItem(legacyPersistenceKey);
+            return value
+              ? { key: legacyPersistenceKey, value }
+              : undefined;
+          })
+          .filter((candidate): candidate is { key: string; value: string } =>
+            Boolean(candidate)
+          );
+        const newest = candidates.sort(
+          (left, right) => right.value.length - left.value.length
+        )[0];
+        if (newest) {
+          window.localStorage.setItem(persistenceKey, newest.value);
+        }
+      }
+    } catch {
+      // A disabled or unavailable localStorage must not block the conversation.
+    }
+  }
   if (key.endsWith(":plot_design:plot_design:__book__")) {
     const unifiedPersistenceSuffix = "__book__";
     const legacyPersistencePrefix = persistenceKey.slice(
@@ -2829,9 +3337,10 @@ function longConversationKey(
   activeRoot: LongWorkspaceRuntimeContext["activeRoot"],
   chapterCardId?: string
 ): string {
+  const conversationRoot = agentId === "setting" ? "setting" : activeRoot;
   const conversationChapterCardId =
     agentId === "plot_design" ? undefined : chapterCardId;
-  return `long:${encodeURIComponent(bookId)}:${agentId}:${activeRoot}:${encodeURIComponent(
+  return `long:${encodeURIComponent(bookId)}:${agentId}:${conversationRoot}:${encodeURIComponent(
     conversationChapterCardId ?? "__book__"
   )}`;
 }
@@ -4301,6 +4810,7 @@ async function selectResource(node: ResourceTreeNode): Promise<void> {
   longPlotPointCreate.value = null;
   longChapterCardCreate.value = null;
   longDraftSectionDelete.value = null;
+  longTreeItemDelete.value = null;
   longVolumeCreate.value = null;
   longBindingsDialogMode.value = null;
   const directory = draftDirectoryForResourceId(node.id);
@@ -4508,6 +5018,16 @@ async function saveLongPlotPointContent(
   );
 }
 
+async function selectCreatedLongTreeResource(
+  resourceId: string
+): Promise<boolean> {
+  await nextTick();
+  const node = resourceNode(resourceId);
+  if (!node?.longTreeItem) return false;
+  await selectResource(node);
+  return selectedResourceId.value === node.id;
+}
+
 async function createLongVolume(
   input: { title: string; summary: string }
 ): Promise<void> {
@@ -4567,7 +5087,16 @@ async function createLongVolume(
     longVolumeCreate.value = null;
   }
   if (!succeeded) return;
-  await nextTick();
+  if (
+    await selectCreatedLongTreeResource(
+      longNavigationNodeId(
+        target.bookId,
+        `plot-design:book-line:volume:${created.volume.id}`
+      )
+    )
+  ) {
+    return;
+  }
   longWorkspaceEditor.value?.selectBookLineVolume(created.volume.id);
 }
 
@@ -4607,12 +5136,22 @@ async function createLongPlotPoint(
     return;
   }
 
+  const created = batch.operations.find(
+    (operation) => operation.type === "arc.create"
+  );
+  if (!created || created.type !== "arc.create") {
+    uiMessage.warning("无法确定新建剧情点。");
+    return;
+  }
+
+  let succeeded = false;
   let applied = false;
   await applyLongStructureMutation(
     mutationTarget.bookId,
     batch,
     {
       succeed: () => {
+        succeeded = true;
         applied = true;
       },
       fail: () => undefined,
@@ -4628,6 +5167,13 @@ async function createLongPlotPoint(
   if (applied && longPlotPointCreate.value === target) {
     longPlotPointCreate.value = null;
   }
+  if (!succeeded) return;
+  await selectCreatedLongTreeResource(
+    longNavigationNodeId(
+      target.bookId,
+      `plot-design:plot-point:${created.arc.id}`
+    )
+  );
 }
 
 async function createLongChapterCard(
@@ -4737,6 +5283,16 @@ async function createLongChapterCard(
       );
       await selectLongWorkspaceFile(selection);
     }
+    return;
+  }
+  if (
+    await selectCreatedLongTreeResource(
+      longNavigationNodeId(
+        target.bookId,
+        `plot-design:chapter-card:${created.chapterCard.id}`
+      )
+    )
+  ) {
     return;
   }
   await selectLongChapterCardTab(created.chapterCard.id);
@@ -6078,6 +6634,7 @@ async function clearActiveLongBook(bookId: string): Promise<void> {
   longPlotPointCreate.value = null;
   longChapterCardCreate.value = null;
   longDraftSectionDelete.value = null;
+  longTreeItemDelete.value = null;
   longVolumeCreate.value = null;
   longBindingsDialogMode.value = null;
   const fallback = resourceTreeSections.value
@@ -6516,6 +7073,103 @@ async function handleActiveLongStructureMutation(
   await handleLongStructureMutation(expectedBookId, batch, completion);
 }
 
+function preferredLongResourceIdForSelection(
+  bookId: string,
+  index: LongWorkspaceIndexSnapshot,
+  selection: LongWorkspaceSelection
+): string | undefined {
+  const settings = index.featureSettings;
+  if (
+    selection.key.startsWith("worldbuilding:") &&
+    selection.key !== "worldbuilding:reveals"
+  ) {
+    if (settings.worldbuildingItemLayout === "left-tree") {
+      const categoryId = selection.key.slice("worldbuilding:".length);
+      if (selection.worldbuildingItemId) {
+        return longNavigationNodeId(
+          bookId,
+          `worldbuilding:${categoryId}:item:${selection.worldbuildingItemId}`
+        );
+      }
+      if (selection.worldbuildingItemId === null) {
+        return longNavigationNodeId(
+          bookId,
+          `worldbuilding:${categoryId}:overview`
+        );
+      }
+    }
+    return longNavigationNodeId(bookId, selection.key);
+  }
+  if (selection.key.startsWith("character-group:")) {
+    if (
+      settings.characterAndContinuityItemLayout === "left-tree" &&
+      selection.characterId
+    ) {
+      return longNavigationNodeId(bookId, `character:${selection.characterId}`);
+    }
+    return longNavigationNodeId(bookId, selection.key);
+  }
+  if (selection.key === "plot-design:book-line") {
+    if (settings.plotItemLayout === "left-tree") {
+      return longNavigationNodeId(
+        bookId,
+        selection.bookLineVolumeId
+          ? `plot-design:book-line:volume:${selection.bookLineVolumeId}`
+          : "plot-design:book-line:overview"
+      );
+    }
+    return longNavigationNodeId(bookId, selection.key);
+  }
+  if (selection.key.startsWith("plot-design:plot-points:")) {
+    if (settings.plotItemLayout === "left-tree" && selection.plotPointId) {
+      return longNavigationNodeId(
+        bookId,
+        `plot-design:plot-point:${selection.plotPointId}`
+      );
+    }
+    return longNavigationNodeId(bookId, selection.key);
+  }
+  if (selection.key.startsWith("plot-design:chapter-cards:")) {
+    if (settings.plotItemLayout === "left-tree" && selection.chapterCardId) {
+      return longNavigationNodeId(
+        bookId,
+        `plot-design:chapter-card:${selection.chapterCardId}`
+      );
+    }
+    return longNavigationNodeId(bookId, selection.key);
+  }
+  if (selection.key.startsWith("continuity:")) {
+    if (
+      settings.characterAndContinuityItemLayout === "left-tree" &&
+      selection.preferredFileId
+    ) {
+      return longNavigationNodeId(
+        bookId,
+        `${selection.key}:file:${selection.preferredFileId}`
+      );
+    }
+    return longNavigationNodeId(bookId, selection.key);
+  }
+  return undefined;
+}
+
+function synchronizeSelectedLongResourceForLayout(
+  bookId: string
+): void {
+  const index = activeLongWorkspaceIndex.value;
+  const selection = activeLongSelection.value;
+  if (!index || !selection || activeLongBookId.value !== bookId) return;
+  const resourceId = preferredLongResourceIdForSelection(
+    bookId,
+    index,
+    selection
+  );
+  if (!resourceId) return;
+  if (resourceNode(resourceId)) {
+    selectedResourceId.value = resourceId;
+  }
+}
+
 async function handleLongWorldbuildingSync(
   payload: { sourceBookId: string; sourceTitle: string },
   completion: LongStructureMutationCompletion
@@ -6615,6 +7269,15 @@ async function applyLongStructureMutation(
     completion.fail("当前长篇结构尚未就绪。");
     return;
   }
+  const updatesItemLayout = batch.operations.some(
+    (operation) => operation.type === "featureSettings.update"
+  );
+  if (updatesItemLayout && activeLongSelection.value) {
+    activeLongSelection.value = {
+      ...activeLongSelection.value,
+      ...longWorkspaceEditor.value?.captureNavigationSelection()
+    };
+  }
   if (blockActiveLongWritingPlan("修改长篇结构")) {
     completion.fail("当前长篇串行写作计划尚未完成。");
     return;
@@ -6705,6 +7368,9 @@ async function applyLongStructureMutation(
         "结构修改已保存，但界面未能同步最新结构；请重新打开长篇设置。"
       );
       return;
+    }
+    if (updatesItemLayout) {
+      synchronizeSelectedLongResourceForLayout(expectedBookId);
     }
     completion.succeed();
     uiMessage.success(
@@ -6892,6 +7558,17 @@ async function createLongCharacter(
     !latestIndex ||
     latestSummary.id !== target.bookId
   ) {
+    return;
+  }
+  if (
+    await selectCreatedLongTreeResource(
+      longNavigationNodeId(
+        target.bookId,
+        `character:${created.character.id}`
+      )
+    )
+  ) {
+    rightCollapsed.value = false;
     return;
   }
   const selection = createLongCharacterGroupSelection(
@@ -8089,6 +8766,276 @@ function locateEditorSelectionReference(reference: EditorTextReference): void {
     requestId: ++editorReferenceNavigationClock,
     reference
   };
+}
+
+async function navigateToApprovalDocument(
+  document: WorkspaceDocument
+): Promise<boolean> {
+  let targetResourceId = resourceIdForDocumentId(document.id) ?? document.id;
+  let draftDirectoryId: string | undefined;
+  if (document.draftFileKind && document.expertSectionId) {
+    const directory = catalogProjection.value?.draftDirectories.find(
+      (candidate) => candidate.workspaceId === document.workspaceId
+    );
+    if (directory) {
+      draftDirectoryId = directory.id;
+      selectedExpertSectionIds.value = {
+        ...selectedExpertSectionIds.value,
+        [directory.id]: document.expertSectionId
+      };
+      targetResourceId =
+        resolveDraftSectionResourceId(
+          resourceNode(directory.id),
+          document.expertSectionId
+        ) ?? directory.id;
+    }
+  }
+  const node = resourceNode(targetResourceId);
+  if (!node) return false;
+  await selectResource(node);
+  if (selectedResourceId.value !== node.id) return false;
+  if (draftDirectoryId && document.draftFileKind) {
+    selectedDraftFileKinds.value = {
+      ...selectedDraftFileKinds.value,
+      [draftDirectoryId]: document.draftFileKind
+    };
+    await nextTick();
+  }
+  return documentForResourceId(node.id)?.id === document.id;
+}
+
+async function navigateToDocumentApproval(
+  target: Extract<ApprovalNavigationTarget, { kind: "document" }>,
+  refresh = true
+): Promise<boolean> {
+  const document = documentById.value.get(target.documentId);
+  if (document && await navigateToApprovalDocument(document)) return true;
+  if (refresh) {
+    await loadCatalogSnapshot();
+    return navigateToDocumentApproval(target, false);
+  }
+  const fallback = documents.value.find(
+    (candidate) => candidate.workspaceId === target.workspaceId
+  );
+  return fallback ? navigateToApprovalDocument(fallback) : false;
+}
+
+async function navigateToLibraryApproval(
+  target: Extract<ApprovalNavigationTarget, { kind: "library" }>,
+  refresh = true
+): Promise<boolean> {
+  const document = target.entryId
+    ? documents.value.find(
+        (candidate) =>
+          candidate.domain === target.domain &&
+          candidate.libraryId === target.libraryId &&
+          candidate.catalogEntryId === target.entryId
+      )
+    : documentById.value.get(target.documentId);
+  if (document && await navigateToApprovalDocument(document)) return true;
+  if (refresh) {
+    await loadCatalogSnapshot();
+    return navigateToLibraryApproval(target, false);
+  }
+  const libraryNode = findResourceNodeWhere(
+    (node) =>
+      node.catalogNodeType === "library" &&
+      node.libraryId === target.libraryId
+  );
+  const fallbackNode = libraryNode?.children?.find(
+    (node) => node.catalogNodeType === "document"
+  );
+  if (!fallbackNode) return false;
+  await selectResource(fallbackNode);
+  return selectedResourceId.value === fallbackNode.id;
+}
+
+async function navigateToDraftSectionApproval(
+  target: Extract<ApprovalNavigationTarget, { kind: "draft-section" }>,
+  refresh = true
+): Promise<boolean> {
+  const directory = catalogProjection.value?.draftDirectories.find(
+    (candidate) => candidate.workspaceId === target.workspaceId
+  );
+  if (!directory) {
+    if (refresh) {
+      await loadCatalogSnapshot();
+      return navigateToDraftSectionApproval(target, false);
+    }
+    return false;
+  }
+  if (!target.sectionId) {
+    const directoryNode = resourceNode(directory.id);
+    if (!directoryNode) return false;
+    await selectResource(directoryNode);
+    return selectedResourceId.value === directoryNode.id;
+  }
+  const section = directory.sections.find(({ id }) => id === target.sectionId);
+  if (!section) {
+    if (refresh) {
+      await loadCatalogSnapshot();
+      return navigateToDraftSectionApproval(target, false);
+    }
+    const directoryNode = resourceNode(directory.id);
+    if (!directoryNode) return false;
+    await selectResource(directoryNode);
+    return selectedResourceId.value === directoryNode.id;
+  }
+  selectedExpertSectionIds.value = {
+    ...selectedExpertSectionIds.value,
+    [directory.id]: section.id
+  };
+  const requestedDocument = draftFileDocument(
+    directory,
+    section.id,
+    target.fileKind
+  );
+  const resourceId =
+    resolveDraftSectionResourceId(resourceNode(directory.id), section.id) ??
+    directory.id;
+  const node = resourceNode(resourceId) ?? resourceNode(directory.id);
+  if (!node) return false;
+  await selectResource(node);
+  if (selectedResourceId.value !== node.id) return false;
+  selectedDraftFileKinds.value = {
+    ...selectedDraftFileKinds.value,
+    [directory.id]: requestedDocument ? target.fileKind : "body"
+  };
+  await nextTick();
+  return requestedDocument
+    ? documentForResourceId(node.id)?.id === requestedDocument.id
+    : true;
+}
+
+async function navigateToCharacterItemApproval(
+  target: Extract<ApprovalNavigationTarget, { kind: "character-item" }>,
+  refresh = true
+): Promise<boolean> {
+  const exact = target.itemId
+    ? documents.value.find(
+        (document) =>
+          document.workspaceId === target.workspaceId &&
+          document.stageId === "character_design" &&
+          document.characterItemId === target.itemId
+      )
+    : undefined;
+  const fallback = documents.value.find(
+    (document) =>
+      document.workspaceId === target.workspaceId &&
+      document.stageId === "character_design" &&
+      document.characterFileKind === "overview"
+  );
+  if (exact && await navigateToApprovalDocument(exact)) return true;
+  if (!exact && target.itemId && refresh) {
+    await loadCatalogSnapshot();
+    return navigateToCharacterItemApproval(target, false);
+  }
+  return fallback ? navigateToApprovalDocument(fallback) : false;
+}
+
+async function navigateToLongApproval(
+  target: Extract<ApprovalNavigationTarget, { kind: "long" }>
+): Promise<boolean> {
+  if (activeLongBookId.value !== target.bookId) {
+    if (!(await saveActiveLongEditorBeforeLeaving(target.bookId))) return false;
+    await openLongBook(target.bookId);
+  } else if (!(await saveActiveLongEditorChanges())) {
+    return false;
+  }
+  if (activeLongBookId.value !== target.bookId) return false;
+
+  let resolved =
+    activeLongBookSummary.value && activeLongWorkspaceIndex.value
+      ? resolveLongApprovalNavigation(
+          target,
+          activeLongBookSummary.value,
+          activeLongWorkspaceIndex.value
+        )
+      : undefined;
+  if (!resolved || resolved.candidateIndex > 0) {
+    const previousResolution = resolved;
+    await refreshActiveLongWorkspace(target.bookId);
+    resolved =
+      activeLongBookSummary.value && activeLongWorkspaceIndex.value
+        ? resolveLongApprovalNavigation(
+            target,
+            activeLongBookSummary.value,
+            activeLongWorkspaceIndex.value
+          )
+        : previousResolution;
+  }
+  if (!resolved) return false;
+
+  if (!(await selectLongWorkspaceFile(resolved.selection))) return false;
+  workspaceMainView.value = "conversation";
+  rightCollapsed.value = false;
+  const navigationId =
+    (activeLongWorkspaceIndex.value
+      ? preferredLongResourceIdForSelection(
+          target.bookId,
+          activeLongWorkspaceIndex.value,
+          resolved.selection
+        )
+      : undefined) ??
+    longNavigationNodeId(target.bookId, resolved.selection.key);
+  selectedResourceId.value = resourceNode(navigationId)?.id ??
+    longBookResourceId(target.bookId);
+  await nextTick();
+  if (
+    resolved.focus &&
+    longWorkspaceEditor.value &&
+    !(await longWorkspaceEditor.value.focusTarget(resolved.focus))
+  ) {
+    uiMessage.info("已跳转到所属条目，目标文件暂未就绪。");
+  }
+  return true;
+}
+
+async function navigateToApprovalTarget(
+  target: ApprovalNavigationTarget
+): Promise<boolean> {
+  if (target.kind === "document") {
+    return navigateToDocumentApproval(target);
+  }
+  if (target.kind === "library") {
+    return navigateToLibraryApproval(target);
+  }
+  if (target.kind === "draft-section") {
+    return navigateToDraftSectionApproval(target);
+  }
+  if (target.kind === "character-item") {
+    return navigateToCharacterItemApproval(target);
+  }
+  return navigateToLongApproval(target);
+}
+
+async function locateAcceptedEditProposal(input: {
+  runId: string;
+  proposalId: string;
+}): Promise<void> {
+  const conversation = isLongWorkspaceActive.value
+    ? activeLongConversation.value
+    : activeConversation.value;
+  const proposal = conversation?.getEditProposal(
+    input.runId,
+    input.proposalId
+  );
+  if (!proposal || proposal.status !== "accepted") return;
+  if (!(await navigateToApprovalTarget(resolveAgentEditApprovalTarget(proposal)))) {
+    uiMessage.warning("目标文件或所属条目已不存在，无法跳转。");
+  }
+}
+
+async function locateAcceptedLongProposal(eventId: string): Promise<void> {
+  const bookId = activeLongBookId.value;
+  if (!bookId) return;
+  const item = longWorkspaceProposals
+    .itemsForBook(bookId)
+    .find(({ event }) => event.id === eventId);
+  if (!item || item.status !== "accepted") return;
+  if (!(await navigateToApprovalTarget(resolveLongProposalApprovalTarget(item)))) {
+    uiMessage.warning("目标文件或所属条目已不存在，无法跳转。");
+  }
 }
 
 function requestCreateExpertSection(draftNode: ResourceTreeNode): void {
@@ -10116,19 +11063,24 @@ async function acceptLibraryCreationProposal(
       nextProjectRevision
     );
     rememberAcceptedLibraryMutation(proposal);
-    conversation.updateEditProposal(request.runId, request.proposalId, {
-      status: "accepted",
-      proposedText: undefined,
-      statusMessage: automatic
-        ? "已自动批准并创建资料库条目。"
-        : "已创建并保存到本地 Markdown。"
-    });
     const createdDocument = documents.value.find(
       (document) =>
         document.domain === target.domain &&
         document.libraryId === target.libraryId &&
         document.catalogEntryId === created.id
     );
+    conversation.updateEditProposal(request.runId, request.proposalId, {
+      status: "accepted",
+      proposedText: undefined,
+      ...(createdDocument ? { documentId: createdDocument.id } : {}),
+      libraryTarget: {
+        ...target,
+        entryId: created.id
+      },
+      statusMessage: automatic
+        ? "已自动批准并创建资料库条目。"
+        : "已创建并保存到本地 Markdown。"
+    });
     if (createdDocument) {
       selectedResourceId.value = createdDocument.id;
       rightCollapsed.value = false;
@@ -15920,6 +16872,7 @@ onBeforeUnmount(() => {
         :library-entry-clipboard-domain="libraryEntryClipboardDomain"
         :active-primary-feature="activePrimaryFeature"
         :marketplace-display-name="marketplaceDisplayName"
+        :long-tree-actions-disabled="longBookActionPending"
         @collapse="leftCollapsed = true"
         @new-conversation="newConversation"
         @open-dialog="openWorkspaceDialog"
@@ -15937,6 +16890,8 @@ onBeforeUnmount(() => {
         @create-expert-section="addExpertSection"
         @create-long-draft-section="requestCreateLongDraftSection"
         @long-draft-section-action="handleLongDraftSectionAction"
+        @create-long-tree-item="handleCreateLongTreeItem"
+        @long-tree-item-action="handleLongTreeItemAction"
         @remove-expert-section="requestRemoveExpertSection"
         @expert-section-action="moveExpertSection"
         @create-character-item="requestCreateCharacterItem"
@@ -16155,9 +17110,11 @@ onBeforeUnmount(() => {
               @select-temperature="selectLongTemperature"
               @select-approval="selectLongApprovalMode"
               @review-edit="reviewLongAgentEdit"
+              @locate-edit-proposal="locateAcceptedEditProposal"
               @approve-long-proposal="approveLongProposal"
               @reject-long-proposal="rejectLongProposal"
               @retry-long-proposal-preview="retryLongProposalPreview"
+              @locate-long-proposal="locateAcceptedLongProposal"
             />
             <section
               v-if="activeLongWorkspaceRefreshStatus?.error"
@@ -16344,6 +17301,7 @@ onBeforeUnmount(() => {
         @select-temperature="selectTemperature"
         @select-approval="selectApprovalMode"
         @review-edit="reviewAgentEdit"
+        @locate-edit-proposal="locateAcceptedEditProposal"
         @clear-editor-references="clearEditorSelectionReferences"
         @remove-editor-reference="removeEditorSelectionReference"
         @locate-editor-reference="locateEditorSelectionReference"
@@ -16525,6 +17483,17 @@ onBeforeUnmount(() => {
       :pending="longBookActionPending"
       @close="longDraftSectionDelete = null"
       @confirm="confirmDeleteLongDraftSection"
+    />
+    <DeleteLongDraftSectionDialog
+      v-if="longTreeItemDelete"
+      :open="Boolean(longTreeItemDelete)"
+      :section-title="longTreeItemDelete?.title ?? ''"
+      eyebrow="长篇结构"
+      :item-label="longTreeItemDelete?.label ?? '条目'"
+      :description="longTreeItemDelete?.description ?? ''"
+      :pending="longBookActionPending"
+      @close="longTreeItemDelete = null"
+      @confirm="confirmDeleteLongTreeItem"
     />
     <CreateLongVolumeDialog
       v-if="longVolumeCreate"

@@ -368,14 +368,14 @@ function indexResult(
 describe("long workspace agent tools", () => {
   it("assembles exact query and proposal tools by long capability only", () => {
     const worldNames = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-world",
       runId: "run-world"
     }).map((tool) => tool.name);
     const characterNames = buildLongWorkspaceTools({
-      workspace: workspace("character_design", "character_design"),
-      profile: profile("character_design"),
+      workspace: workspace("setting", "character_design"),
+      profile: profile("setting"),
       sessionId: "session-character",
       runId: "run-character"
     }).map((tool) => tool.name);
@@ -435,56 +435,34 @@ describe("long workspace agent tools", () => {
       runId: "run-rootless-ledger"
     }).map((tool) => tool.name);
 
-    expect(worldNames).toEqual([
+    const settingNames = [
       "query_linked_material_entries",
       "load_skill",
-      "list_worldbuilding",
-      "search_worldbuilding",
-      "read_worldbuilding",
-      "create_worldbuilding_file",
-      "write_worldbuilding_file",
-      "edit_worldbuilding_file",
+      "get_long_chapter_readiness",
+      "list_setting",
+      "search_setting",
+      "read_setting",
+      "create_setting",
+      "write_setting",
+      "edit_setting",
       "propose_long_mutation"
-    ]);
+    ];
+    expect(worldNames).toEqual(settingNames);
+    expect(characterNames).toEqual(settingNames);
     expect(worldNames).not.toEqual(
       expect.arrayContaining([
         "get_long_workspace_index",
         "read_long_document",
-        "search_long_workspace"
-      ])
-    );
-    expect(characterNames).toEqual([
-      "query_linked_material_entries",
-      "load_skill",
-      "get_long_chapter_readiness",
-      "list_worldbuilding",
-      "search_worldbuilding",
-      "read_worldbuilding",
-      "list_characters",
-      "search_characters",
-      "read_character",
-      "create_character",
-      "write_character_file",
-      "edit_character_file",
-      "write_character_overview",
-      "edit_character_overview",
-      "propose_long_mutation"
-    ]);
-    expect(characterNames).not.toEqual(
-      expect.arrayContaining([
-        "get_long_workspace_index",
-        "read_long_document",
         "search_long_workspace",
-        "create_worldbuilding_file",
-        "write_worldbuilding_file",
-        "edit_worldbuilding_file"
+        "list_worldbuilding",
+        "list_characters"
       ])
     );
     const characterMutationSchema = JSON.stringify(
       toolByName(
         buildLongWorkspaceTools({
-          workspace: workspace("character_design", "character_design"),
-          profile: profile("character_design"),
+          workspace: workspace("setting", "character_design"),
+          profile: profile("setting"),
           sessionId: "session-character-schema",
           runId: "run-character-schema"
         }),
@@ -492,19 +470,17 @@ describe("long workspace agent tools", () => {
       ).parameters
     );
     expect(characterMutationSchema).toContain('"character.update"');
+    expect(characterMutationSchema).toContain('"worldbuilding.update"');
     expect(characterMutationSchema).not.toContain('"character.create"');
-    expect(characterMutationSchema).not.toContain('"worldbuilding.create"');
+    expect(characterMutationSchema).not.toContain('"worldbuildingItem.create"');
     expect(characterMutationSchema).not.toContain('"document_updates"');
     expect(writerNames).toEqual([
       "query_linked_material_entries",
       "load_skill",
       "get_long_chapter_readiness",
-      "list_worldbuilding",
-      "search_worldbuilding",
-      "read_worldbuilding",
-      "list_characters",
-      "search_characters",
-      "read_character",
+      "list_setting",
+      "search_setting",
+      "read_setting",
       "list_plot_design",
       "search_plot_design",
       "read_plot_design",
@@ -518,12 +494,9 @@ describe("long workspace agent tools", () => {
       "query_linked_material_entries",
       "load_skill",
       "get_long_chapter_readiness",
-      "list_worldbuilding",
-      "search_worldbuilding",
-      "read_worldbuilding",
-      "list_characters",
-      "search_characters",
-      "read_character",
+      "list_setting",
+      "search_setting",
+      "read_setting",
       "list_plot_design",
       "search_plot_design",
       "read_plot_design",
@@ -542,12 +515,9 @@ describe("long workspace agent tools", () => {
       "query_linked_material_entries",
       "load_skill",
       "get_long_chapter_readiness",
-      "list_worldbuilding",
-      "search_worldbuilding",
-      "read_worldbuilding",
-      "list_characters",
-      "search_characters",
-      "read_character",
+      "list_setting",
+      "search_setting",
+      "read_setting",
       "list_plot_design",
       "search_plot_design",
       "read_plot_design",
@@ -561,12 +531,9 @@ describe("long workspace agent tools", () => {
       "query_linked_material_entries",
       "load_skill",
       "get_long_chapter_readiness",
-      "list_worldbuilding",
-      "search_worldbuilding",
-      "read_worldbuilding",
-      "list_characters",
-      "search_characters",
-      "read_character",
+      "list_setting",
+      "search_setting",
+      "read_setting",
       "list_plot_design",
       "search_plot_design",
       "read_plot_design",
@@ -579,12 +546,9 @@ describe("long workspace agent tools", () => {
       "query_linked_material_entries",
       "load_skill",
       "get_long_chapter_readiness",
-      "list_worldbuilding",
-      "search_worldbuilding",
-      "read_worldbuilding",
-      "list_characters",
-      "search_characters",
-      "read_character",
+      "list_setting",
+      "search_setting",
+      "read_setting",
       "list_plot_design",
       "search_plot_design",
       "read_plot_design",
@@ -687,7 +651,7 @@ describe("long workspace agent tools", () => {
       tools,
       "create_plot_design"
     ).execute("cross-volume-chapter-create", {
-      item: {
+      domain: "worldbuilding", item: {
         kind: "chapter",
         volume_id: "volume_prologue",
         primary_arc_id: "arc_one",
@@ -790,7 +754,7 @@ describe("long workspace agent tools", () => {
     const result = await toolByName(tools, "write_plot_design").execute(
       "write-committed-event",
       {
-        item: {
+        domain: "character", item: {
           kind: "event",
           event_id: "event_committed",
           summary: "试图改变已经提交的事件。",
@@ -812,8 +776,8 @@ describe("long workspace agent tools", () => {
 
   it("loads only long-bound resources allowed by the active long profile", async () => {
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-resources",
       runId: "run-resources",
       attachedMaterials: [
@@ -850,7 +814,7 @@ describe("long workspace agent tools", () => {
       type: "text",
       text: expect.stringContaining("潮汐设定")
     });
-    expect(JSON.stringify(listed.content)).not.toContain("正文样章");
+    expect(JSON.stringify(listed.content)).toContain("正文样章");
 
     const skill = await toolByName(tools, "load_skill").execute(
       "load-skill",
@@ -921,7 +885,7 @@ describe("long workspace agent tools", () => {
     const create = await toolByName(tools, "create_plot_design").execute(
       "create-arc",
       {
-        item: {
+        domain: "worldbuilding", item: {
           kind: "arc",
           volume_id: "volume_one",
           title: "新的剧情点",
@@ -937,7 +901,7 @@ describe("long workspace agent tools", () => {
           {
             type: "arc.create",
             arc: {
-              id: expect.stringMatching(/^arc_[0-9a-f]{24}$/u),
+              id: expect.stringMatching(/^arc_[0-9a-f]{8}$/u),
               volumeId: "volume_one",
               title: "新的剧情点",
               outline: "故事情节"
@@ -1194,7 +1158,7 @@ describe("long workspace agent tools", () => {
     const create = await toolByName(tools, "create_plot_design").execute(
       "create-chapter-card",
       {
-        item: {
+        domain: "worldbuilding", item: {
           kind: "chapter",
           volume_id: "volume_one",
           primary_arc_id: null,
@@ -1294,7 +1258,7 @@ describe("long workspace agent tools", () => {
     const create = await toolByName(tools, "create_plot_design").execute(
       "create-story-plot",
       {
-        item: {
+        domain: "worldbuilding", item: {
           kind: "story_plot",
           arc_id: "arc_one",
           title: "新的故事情节"
@@ -1311,7 +1275,7 @@ describe("long workspace agent tools", () => {
       throw new Error("Expected a storyPlot.create operation.");
     }
     expect(createOperation.storyPlot).toMatchObject({
-      id: expect.stringMatching(/^storyplot_[0-9a-f]{24}$/u),
+      id: expect.stringMatching(/^storyplot_[0-9a-f]{8}$/u),
       arcId: "arc_one",
       title: "新的故事情节",
       order: 2,
@@ -1332,7 +1296,7 @@ describe("long workspace agent tools", () => {
     const secondCreate = await toolByName(tools, "create_plot_design").execute(
       "create-second-story-plot",
       {
-        item: {
+        domain: "worldbuilding", item: {
           kind: "story_plot",
           arc_id: "arc_one",
           title: "第二个故事情节"
@@ -1374,7 +1338,7 @@ describe("long workspace agent tools", () => {
     const pendingSearch = await toolByName(
       tools,
       "search_plot_design"
-    ).execute("search-pending", { query: "新的故事情节", kind: "story_plot" });
+    ).execute("search-pending", { domain: "worldbuilding", query: "新的故事情节", kind: "story_plot" });
     expect(resultText(pendingSearch)).toContain(createdStoryPlotId);
 
     const pendingWrite = await toolByName(tools, "write_plot_design").execute(
@@ -1416,7 +1380,7 @@ describe("long workspace agent tools", () => {
     const mutation = await toolByName(tools, "propose_long_mutation").execute(
       "story-plot-structure",
       {
-        operations: [
+        domain: "worldbuilding", operations: [
           {
             type: "storyPlot.update",
             id: "storyplot_one",
@@ -1486,16 +1450,16 @@ describe("long workspace agent tools", () => {
       throw new Error(`Unexpected command: ${command.type}`);
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-world-list",
       runId: "run-world-list",
       executor
     });
-    const list = toolByName(tools, "list_worldbuilding");
-    const read = toolByName(tools, "read_worldbuilding");
-    const search = toolByName(tools, "search_worldbuilding");
-    const write = toolByName(tools, "write_worldbuilding_file");
+    const list = toolByName(tools, "list_setting");
+    const read = toolByName(tools, "read_setting");
+    const search = toolByName(tools, "search_setting");
+    const write = toolByName(tools, "write_setting");
 
     for (const tool of [list, read, search, write]) {
       const parameterSchema = JSON.stringify(tool.parameters);
@@ -1511,13 +1475,15 @@ describe("long workspace agent tools", () => {
         expect(parameterSchema).not.toContain(`\"${forbidden}\"`);
       }
     }
-    expect(JSON.stringify(list.parameters)).toContain('"page"');
-    expect(JSON.stringify(list.parameters)).toContain('"limit"');
+    expect(JSON.stringify(list.parameters)).not.toContain('"page"');
+    expect(JSON.stringify(list.parameters)).not.toContain('"limit"');
     expect(JSON.stringify(search.parameters)).toContain('"page"');
     expect(JSON.stringify(search.parameters)).toContain('"limit"');
-    expect(Check(list.parameters, { page: 1, limit: 1 })).toBe(true);
-    expect(Check(list.parameters, { page: 0 })).toBe(false);
+    expect(Check(list.parameters, {})).toBe(false);
+    expect(Check(list.parameters, { domain: "worldbuilding" })).toBe(true);
+    expect(Check(list.parameters, { page: 1, limit: 1 })).toBe(false);
     expect(Check(list.parameters, {
+      domain: "worldbuilding",
       category_id: "world_rules",
       file_id: "file_world_rules:content"
     })).toBe(false);
@@ -1525,91 +1491,77 @@ describe("long workspace agent tools", () => {
       false
     );
     expect(Check(read.parameters, {
+      domain: "worldbuilding",
       category_id: "world_rules",
       mode: "preview"
     })).toBe(true);
     expect(Check(read.parameters, {
+      domain: "worldbuilding",
       category_id: "world_rules",
       file_id: "file_world_rules:content"
     })).toBe(false);
     expect(Check(read.parameters, {
+      domain: "worldbuilding",
       category_id: "file_world_rules:content",
       mode: "preview"
     })).toBe(false);
     expect(Check(read.parameters, {
+      domain: "worldbuilding",
       category_id: "world_magic",
       item_id: "file_worlditem_memory:content",
       mode: "full"
     })).toBe(false);
     expect(Check(write.parameters, {
+      domain: "worldbuilding",
       category_id: "file_world_rules:content",
       text: "不应接受文件 ID"
     })).toBe(false);
 
-    const categoryPageOne = JSON.parse(resultText(
-      await list.execute("list-world-categories-one", { page: 1, limit: 1 })
-    ));
-    expect(categoryPageOne).toEqual({
-      categories: [{
-        category_id: "world_rules",
-        title: "世界规则",
-        format: "text"
-      }],
-      next_page: 2
-    });
-    expectNoPhysicalWorldbuildingMetadata(JSON.stringify(categoryPageOne));
+    const categoriesText = resultText(
+      await list.execute("list-world-categories", { domain: "worldbuilding" })
+    );
+    expect(() => JSON.parse(categoriesText)).toThrow();
+    expect(categoriesText).toBe(
+      [
+        "世界观分类",
+        "",
+        "世界规则",
+        "category_id=world_rules",
+        "类型=文本",
+        "",
+        "魔法体系",
+        "category_id=world_magic",
+        "类型=条目列表",
+        "条目数=2"
+      ].join("\n")
+    );
+    expectNoPhysicalWorldbuildingMetadata(categoriesText);
 
-    const categoryPageTwo = JSON.parse(resultText(
-      await list.execute("list-world-categories-two", { page: 2, limit: 1 })
-    ));
-    expect(categoryPageTwo).toEqual({
-      categories: [{
-        category_id: "world_magic",
-        title: "魔法体系",
-        format: "list",
-        item_count: 2
-      }],
-      next_page: null
-    });
-    expectNoPhysicalWorldbuildingMetadata(JSON.stringify(categoryPageTwo));
-
-    const itemPageOne = JSON.parse(resultText(
-      await list.execute("list-world-items-one", {
-        category_id: "world_magic",
-        page: 1,
-        limit: 1
+    const itemsText = resultText(
+      await list.execute("list-world-items", {
+        domain: "worldbuilding", category_id: "world_magic"
       })
-    ));
-    expect(itemPageOne).toEqual({
-      category: {
-        category_id: "world_magic",
-        title: "魔法体系",
-        format: "list"
-      },
-      overview: "记忆代价：施法会消耗施法者的记忆。",
-      items: [{ item_id: "worlditem_memory", title: "记忆代价" }],
-      next_page: 2
-    });
-    expectNoPhysicalWorldbuildingMetadata(JSON.stringify(itemPageOne));
-
-    const itemPageTwo = JSON.parse(resultText(
-      await list.execute("list-world-items-two", {
-        category_id: "world_magic",
-        page: 2,
-        limit: 1
-      })
-    ));
-    expect(itemPageTwo).toEqual({
-      category: {
-        category_id: "world_magic",
-        title: "魔法体系",
-        format: "list"
-      },
-      overview: "记忆代价：施法会消耗施法者的记忆。",
-      items: [{ item_id: "worlditem_blood", title: "血脉门槛" }],
-      next_page: null
-    });
-    expectNoPhysicalWorldbuildingMetadata(JSON.stringify(itemPageTwo));
+    );
+    expect(() => JSON.parse(itemsText)).toThrow();
+    expect(itemsText).toBe(
+      [
+        "分类：魔法体系",
+        "category_id=world_magic",
+        "类型=条目列表",
+        "",
+        "概览",
+        "记忆代价：施法会消耗施法者的记忆。",
+        "",
+        "条目",
+        "",
+        "记忆代价",
+        "item_id=worlditem_memory",
+        "",
+        "血脉门槛",
+        "item_id=worlditem_blood"
+      ].join("\n")
+    );
+    expectNoPhysicalWorldbuildingMetadata(itemsText);
     expect(executor).toHaveBeenCalledTimes(2);
   });
 
@@ -1656,17 +1608,17 @@ describe("long workspace agent tools", () => {
       };
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-world-read",
       runId: "run-world-read",
       executor
     });
-    const read = toolByName(tools, "read_worldbuilding");
-    const edit = toolByName(tools, "edit_worldbuilding_file");
+    const read = toolByName(tools, "read_setting");
+    const edit = toolByName(tools, "edit_setting");
 
     const preview = await read.execute("preview-world-item", {
-      category_id: category.id,
+      domain: "worldbuilding", category_id: category.id,
       item_id: item.id,
       mode: "preview"
     });
@@ -1677,7 +1629,7 @@ describe("long workspace agent tools", () => {
     expectNoPhysicalWorldbuildingMetadata(previewText);
 
     const blockedEdit = await edit.execute("edit-after-preview", {
-      category_id: category.id,
+      domain: "worldbuilding", category_id: category.id,
       item_id: item.id,
       replacements: [{
         original_text: replacementSource,
@@ -1685,11 +1637,11 @@ describe("long workspace agent tools", () => {
       }]
     });
     expect(resultText(blockedEdit)).toContain(
-      "read_worldbuilding（mode=full）"
+      "read_setting（domain=worldbuilding，mode=full）"
     );
 
     const full = await read.execute("full-world-item", {
-      category_id: category.id,
+      domain: "worldbuilding", category_id: category.id,
       item_id: item.id,
       mode: "full"
     });
@@ -1699,7 +1651,7 @@ describe("long workspace agent tools", () => {
     expectNoPhysicalWorldbuildingMetadata(fullText);
 
     const edited = await edit.execute("edit-after-full", {
-      category_id: category.id,
+      domain: "worldbuilding", category_id: category.id,
       item_id: item.id,
       replacements: [{
         original_text: replacementSource,
@@ -1717,13 +1669,13 @@ describe("long workspace agent tools", () => {
     });
     await expect(
       read.execute("text-category-with-item", {
-        category_id: "world_rules",
+        domain: "worldbuilding", category_id: "world_rules",
         item_id: item.id,
         mode: "full"
       })
     ).rejects.toThrow(/do not have items/u);
     const overview = await read.execute("list-category-without-item", {
-      category_id: category.id,
+      domain: "worldbuilding", category_id: category.id,
       mode: "full"
     });
     expect(resultText(overview)).toContain("【魔法体系 / 概览】");
@@ -1808,16 +1760,16 @@ describe("long workspace agent tools", () => {
       };
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-world-search",
       runId: "run-world-search",
       executor
     });
-    const search = toolByName(tools, "search_worldbuilding");
+    const search = toolByName(tools, "search_setting");
 
     const result = JSON.parse(resultText(
-      await search.execute("search-world", { query: "记忆", page: 1, limit: 2 })
+      await search.execute("search-world", { domain: "worldbuilding", query: "记忆", page: 1, limit: 2 })
     ));
     expect(result).toEqual({
       hits: [
@@ -1841,7 +1793,7 @@ describe("long workspace agent tools", () => {
 
     const filtered = JSON.parse(resultText(
       await search.execute("search-world-category", {
-        query: "记忆",
+        domain: "worldbuilding", query: "记忆",
         category_id: "world_magic",
         page: 1,
         limit: 2
@@ -1858,7 +1810,7 @@ describe("long workspace agent tools", () => {
     returnUnknownFile = true;
     await expect(
       search.execute("search-world-unknown-file", {
-        query: "未知",
+        domain: "worldbuilding", query: "未知",
         page: 1,
         limit: 2
       })
@@ -2262,28 +2214,28 @@ describe("long workspace agent tools", () => {
         }
       };
     });
-    const characterProfile = profile("character_design");
+    const characterProfile = profile("setting");
     characterProfile.readAccess.workspaceRoots = ["character_design"];
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("character_design", "character_design"),
+      workspace: workspace("setting", "character_design"),
       profile: characterProfile,
       sessionId: "session-query",
       runId: "run-query",
       executor
     });
     const controller = new AbortController();
-    await toolByName(tools, "read_character").execute(
+    await toolByName(tools, "read_setting").execute(
       "read-character",
       {
-        character_id: "character_alice",
+        domain: "character", character_id: "character_alice",
         document: "core_profile",
         mode: "full"
       },
       controller.signal
     );
-    await toolByName(tools, "search_characters").execute(
+    await toolByName(tools, "search_setting").execute(
       "search-character",
-      { query: "人物" },
+      { domain: "character", query: "人物" },
       controller.signal
     );
 
@@ -2305,9 +2257,9 @@ describe("long workspace agent tools", () => {
     const aborted = new AbortController();
     aborted.abort();
     await expect(
-      toolByName(tools, "search_characters").execute(
+      toolByName(tools, "search_setting").execute(
         "search-aborted",
-        { query: "人物" },
+        { domain: "character", query: "人物" },
         aborted.signal
       )
     ).rejects.toMatchObject({ name: "AbortError" });
@@ -2342,22 +2294,22 @@ describe("long workspace agent tools", () => {
         };
       });
       const tools = buildLongWorkspaceTools({
-        workspace: workspace("character_design", "character_design"),
-        profile: profile("character_design"),
+        workspace: workspace("setting", "character_design"),
+        profile: profile("setting"),
         sessionId: "session-concurrent-query",
         runId: "run-concurrent-query",
         executor
       });
-      const readTool = toolByName(tools, "read_character");
+      const readTool = toolByName(tools, "read_setting");
 
       await Promise.all([
         readTool.execute("read-character-one", {
-          character_id: "character_alice",
+          domain: "character", character_id: "character_alice",
           document: "core_profile",
           mode: "full"
         }),
         readTool.execute("read-character-two", {
-          character_id: "character_alice",
+          domain: "character", character_id: "character_alice",
           document: "core_profile",
           mode: "full"
         })
@@ -2403,17 +2355,17 @@ describe("long workspace agent tools", () => {
       };
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-wrong-file",
       runId: "run-wrong-file",
       executor
     });
 
     await expect(
-      toolByName(tools, "read_worldbuilding").execute(
+      toolByName(tools, "read_setting").execute(
         "read-wrong-file",
-        { category_id: "world_rules", mode: "full" }
+        { domain: "worldbuilding", category_id: "world_rules", mode: "full" }
       )
     ).rejects.toThrow(/different worldbuilding document/u);
   });
@@ -2426,8 +2378,8 @@ describe("long workspace agent tools", () => {
       return indexResult();
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-mutation",
       runId: "run-mutation",
       executor
@@ -2435,7 +2387,7 @@ describe("long workspace agent tools", () => {
     const proposal = await toolByName(tools, "propose_long_mutation").execute(
       "mutation-1",
       {
-        operations: [
+        domain: "worldbuilding", operations: [
           {
             type: "worldbuilding.update",
             id: "world_rules",
@@ -2453,7 +2405,7 @@ describe("long workspace agent tools", () => {
     expect(proposal.details).toMatchObject({
       kind: "long-mutation-proposal",
       bookId: "longbook_tools",
-      agentId: "worldbuilding",
+      agentId: "setting",
       baseProjectRevision: 11,
       summary: "更新世界规则标题",
       batch: {
@@ -2481,12 +2433,12 @@ describe("long workspace agent tools", () => {
     expect(parameterSchema).not.toContain('"chapter.create"');
     expect(tools.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
-        "list_worldbuilding",
-        "search_worldbuilding",
-        "read_worldbuilding",
-        "create_worldbuilding_file",
-        "write_worldbuilding_file",
-        "edit_worldbuilding_file"
+        "list_setting",
+        "search_setting",
+        "read_setting",
+        "create_setting",
+        "write_setting",
+        "edit_setting"
       ])
     );
 
@@ -2494,7 +2446,7 @@ describe("long workspace agent tools", () => {
       tools,
       "propose_long_mutation"
     ).execute("mutation-create", {
-      operations: [
+      domain: "worldbuilding", operations: [
         {
           type: "worldbuilding.create",
           client_ref: "weather",
@@ -2514,7 +2466,7 @@ describe("long workspace agent tools", () => {
     expect(createdCategory).toMatchObject({
       type: "worldbuilding.create",
       category: {
-        id: expect.stringMatching(/^world_[0-9a-f]{24}$/u),
+        id: expect.stringMatching(/^world_[0-9a-f]{8}$/u),
         title: "气候",
         order: 2,
         format: "text",
@@ -2539,9 +2491,9 @@ describe("long workspace agent tools", () => {
       toolByName(tools, "propose_long_mutation").execute("mutation-bad", {
         operations: [
           {
-            type: "character.update",
-            id: "character_alice",
-            patch: { name: "越权修改" }
+            type: "volume.update",
+            id: "volume_one",
+            patch: { title: "越权修改" }
           }
         ],
         summary: "越权"
@@ -2575,24 +2527,23 @@ describe("long workspace agent tools", () => {
       throw new Error(`Unexpected command: ${command.type}`);
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-world-items",
       runId: "run-world-items",
       executor
     });
     const createParameters = JSON.stringify(
-      toolByName(tools, "create_worldbuilding_file").parameters
+      toolByName(tools, "create_setting").parameters
     );
     expect(createParameters).toContain('"title"');
-    expect(createParameters).not.toContain('"items"');
     expect(createParameters).not.toContain('"content"');
 
     const proposal = await toolByName(
       tools,
-      "create_worldbuilding_file"
+      "create_setting"
     ).execute("create-world-items", {
-      category_id: "world_rules",
+      domain: "worldbuilding", category_id: "world_rules",
       title: "记忆代价"
     });
 
@@ -2603,7 +2554,7 @@ describe("long workspace agent tools", () => {
           type: "worldbuildingItem.create",
           categoryId: "world_rules",
           item: {
-            id: expect.stringMatching(/^worlditem_[0-9a-f]{24}$/u),
+            id: expect.stringMatching(/^worlditem_[0-9a-f]{8}$/u),
             title: "记忆代价",
             file: {
               path: expect.stringContaining("/items/")
@@ -2614,7 +2565,7 @@ describe("long workspace agent tools", () => {
       },
       files: [{
         categoryId: "world_rules",
-        itemId: expect.stringMatching(/^worlditem_[0-9a-f]{24}$/u),
+        itemId: expect.stringMatching(/^worlditem_[0-9a-f]{8}$/u),
         title: "记忆代价",
         operation: "create",
         beforeText: "",
@@ -2631,9 +2582,9 @@ describe("long workspace agent tools", () => {
     const createdItemId = proposal.details.files[0]!.itemId!;
     const write = await toolByName(
       tools,
-      "write_worldbuilding_file"
+      "write_setting"
     ).execute("write-created-world-file", {
-      category_id: "world_rules",
+      domain: "worldbuilding", category_id: "world_rules",
       item_id: createdItemId,
       text: "每次施法都会遗忘一段记忆。"
     });
@@ -2684,22 +2635,22 @@ describe("long workspace agent tools", () => {
       throw new Error(`Unexpected command: ${command.type}`);
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-world-files",
       runId: "run-world-files",
       executor
     });
 
-    await toolByName(tools, "read_worldbuilding").execute(
+    await toolByName(tools, "read_setting").execute(
       "read-world-file",
-      { category_id: category.id, mode: "full" }
+      { domain: "worldbuilding", category_id: category.id, mode: "full" }
     );
     const write = await toolByName(
       tools,
-      "write_worldbuilding_file"
+      "write_setting"
     ).execute("write-world-file", {
-      category_id: category.id,
+      domain: "worldbuilding", category_id: category.id,
       text: "完整新规则。",
       allow_overwrite_existing: true
     });
@@ -2719,9 +2670,9 @@ describe("long workspace agent tools", () => {
 
     const edit = await toolByName(
       tools,
-      "edit_worldbuilding_file"
+      "edit_setting"
     ).execute("edit-world-file", {
-      category_id: category.id,
+      domain: "worldbuilding", category_id: category.id,
       replacements: [{
         original_text: "完整新规则",
         new_text: "精炼新规则"
@@ -2745,8 +2696,8 @@ describe("long workspace agent tools", () => {
       throw new Error(`Unexpected command: ${command.type}`);
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("character_design", "character_design"),
-      profile: profile("character_design"),
+      workspace: workspace("setting", "character_design"),
+      profile: profile("setting"),
       sessionId: "session-character-items",
       runId: "run-character-items",
       executor
@@ -2754,9 +2705,9 @@ describe("long workspace agent tools", () => {
 
     const proposal = await toolByName(
       tools,
-      "create_character"
+      "create_setting"
     ).execute("create-character", {
-      name: "沈砚",
+      domain: "character", name: "沈砚",
       type_id: "major_supporting",
       aliases: ["阿砚"]
     });
@@ -2767,7 +2718,7 @@ describe("long workspace agent tools", () => {
         operations: [{
           type: "character.create",
           character: {
-            id: expect.stringMatching(/^character_[0-9a-f]{24}$/u),
+            id: expect.stringMatching(/^character_[0-9a-f]{8}$/u),
             name: "沈砚",
             group: "major_supporting",
             aliases: ["阿砚"]
@@ -2775,22 +2726,22 @@ describe("long workspace agent tools", () => {
           files: {
             coreProfile: {
               path: expect.stringMatching(
-                /^long\/characters\/character_[0-9a-f]{24}\/core-profile\.md$/u
+                /^long\/characters\/character_[0-9a-f]{8}\/core-profile\.md$/u
               )
             },
             relationships: {
               path: expect.stringMatching(
-                /^long\/characters\/character_[0-9a-f]{24}\/relationships\.md$/u
+                /^long\/characters\/character_[0-9a-f]{8}\/relationships\.md$/u
               )
             },
             currentState: {
               path: expect.stringMatching(
-                /^long\/characters\/character_[0-9a-f]{24}\/current-state\.md$/u
+                /^long\/characters\/character_[0-9a-f]{8}\/current-state\.md$/u
               )
             },
             history: {
               path: expect.stringMatching(
-                /^long\/characters\/character_[0-9a-f]{24}\/history\.md$/u
+                /^long\/characters\/character_[0-9a-f]{8}\/history\.md$/u
               )
             }
           }
@@ -2818,10 +2769,10 @@ describe("long workspace agent tools", () => {
       throw new Error("Expected a character file proposal.");
     }
     const characterId = proposal.details.files[0]!.characterId;
-    const write = await toolByName(tools, "write_character_file").execute(
+    const write = await toolByName(tools, "write_setting").execute(
       "write-created-character",
       {
-        character_id: characterId,
+        domain: "character", character_id: characterId,
         document: "core_profile",
         text: "沈砚是负责追查旧案的年轻捕快。"
       }
@@ -2867,8 +2818,8 @@ describe("long workspace agent tools", () => {
       throw new Error(`Unexpected command: ${command.type}`);
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("character_design", "character_design"),
-      profile: profile("character_design"),
+      workspace: workspace("setting", "character_design"),
+      profile: profile("setting"),
       sessionId: "session-character-custom-type",
       runId: "run-character-custom-type",
       executor
@@ -2876,20 +2827,27 @@ describe("long workspace agent tools", () => {
 
     expect(
       Check(
-        toolByName(tools, "create_character").parameters,
-        { name: "陆烬", type_id: "chartype_antagonist" }
+        toolByName(tools, "create_setting").parameters,
+        { domain: "character", name: "陆烬", type_id: "chartype_antagonist" }
       )
     ).toBe(true);
-    const listed = await toolByName(tools, "list_characters").execute(
-      "list-custom-types",
-      { type_id: "chartype_antagonist" }
+    const listedText = resultText(
+      await toolByName(tools, "list_setting").execute(
+        "list-custom-types",
+        { domain: "character", type_id: "chartype_antagonist" }
+      )
     );
-    expect(JSON.stringify(listed.content)).toContain("chartype_antagonist");
-    expect(JSON.stringify(listed.content)).toContain("反派");
+    expect(() => JSON.parse(listedText)).toThrow();
+    expect(listedText).toContain("type_id=chartype_antagonist");
+    expect(listedText).toContain("反派");
+    expect(listedText).not.toContain("next_page");
+    expect(JSON.stringify(
+      toolByName(tools, "list_setting").parameters
+    )).not.toContain('"page"');
 
-    const created = await toolByName(tools, "create_character").execute(
+    const created = await toolByName(tools, "create_setting").execute(
       "create-custom-type-character",
-      { name: "陆烬", type_id: "chartype_antagonist" }
+      { domain: "character", name: "陆烬", type_id: "chartype_antagonist" }
     );
     expect(created.details).toMatchObject({
       batch: {
@@ -2929,8 +2887,8 @@ describe("long workspace agent tools", () => {
       throw new Error(`Unexpected command: ${command.type}`);
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("character_design", "character_design"),
-      profile: profile("character_design"),
+      workspace: workspace("setting", "character_design"),
+      profile: profile("setting"),
       sessionId: "session-character-document",
       runId: "run-character-document",
       executor
@@ -2938,9 +2896,9 @@ describe("long workspace agent tools", () => {
 
     const beforeRead = await toolByName(
       tools,
-      "edit_character_file"
+      "edit_setting"
     ).execute("replace-before-read", {
-      character_id: "character_alice",
+      domain: "character", character_id: "character_alice",
       document: "core_profile",
       replacements: [{
         original_text: "害怕深水",
@@ -2949,22 +2907,22 @@ describe("long workspace agent tools", () => {
     });
     expect(beforeRead.content[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("请先调用 read_character")
+      text: expect.stringContaining("请先调用 read_setting")
     });
 
-    await toolByName(tools, "read_character").execute(
+    await toolByName(tools, "read_setting").execute(
       "read-character",
       {
-        character_id: "character_alice",
+        domain: "character", character_id: "character_alice",
         document: "core_profile",
         mode: "full"
       }
     );
     const proposal = await toolByName(
       tools,
-      "edit_character_file"
+      "edit_setting"
     ).execute("replace-after-read", {
-      character_id: "character_alice",
+      domain: "character", character_id: "character_alice",
       document: "core_profile",
       replacements: [{
         original_text: "害怕深水",
@@ -3011,20 +2969,20 @@ describe("long workspace agent tools", () => {
     });
     const tools = buildLongWorkspaceTools({
       workspace: {
-        ...workspace("character_design", "character_design"),
+        ...workspace("setting", "character_design"),
         workspaceRevision: index.revision,
         navigation: createLongWorkspaceNavigationSnapshot(index)
       },
-      profile: profile("character_design"),
+      profile: profile("setting"),
       sessionId: "session-character-ledger-owned",
       runId: "run-character-ledger-owned",
       executor
     });
 
-    const result = await toolByName(tools, "write_character_file").execute(
+    const result = await toolByName(tools, "write_setting").execute(
         "write-ledger-owned-state",
         {
-          character_id: "character_alice",
+          domain: "character", character_id: "character_alice",
           document: "current_state",
           text: "试图绕过连续性账本。"
         }
@@ -3047,8 +3005,8 @@ describe("long workspace agent tools", () => {
       }
     }));
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-latest-revision",
       runId: "run-latest-revision",
       executor
@@ -3057,7 +3015,7 @@ describe("long workspace agent tools", () => {
       tools,
       "propose_long_mutation"
     ).execute("latest-revision", {
-      operations: [
+      domain: "worldbuilding", operations: [
         {
           type: "worldbuilding.update",
           id: "world_rules",
@@ -3082,8 +3040,8 @@ describe("long workspace agent tools", () => {
       return indexResult();
     });
     const characterTools = buildLongWorkspaceTools({
-      workspace: workspace("character_design", "character_design"),
-      profile: profile("character_design"),
+      workspace: workspace("setting", "character_design"),
+      profile: profile("setting"),
       sessionId: "session-character-create",
       runId: "run-character-create",
       executor
@@ -3092,7 +3050,7 @@ describe("long workspace agent tools", () => {
       characterTools,
       "propose_long_mutation"
     ).execute("create-character", {
-      operations: [
+      domain: "character", operations: [
         {
           type: "character.create",
           name: "沈砚",
@@ -3109,7 +3067,7 @@ describe("long workspace agent tools", () => {
           {
             type: "character.create",
             character: {
-              id: expect.stringMatching(/^character_[0-9a-f]{24}$/u),
+              id: expect.stringMatching(/^character_[0-9a-f]{8}$/u),
               name: "沈砚",
               group: "major_supporting",
               order: 1,
@@ -3153,7 +3111,7 @@ describe("long workspace agent tools", () => {
       plotTools,
       "propose_long_mutation"
     ).execute("create-chapter", {
-      operations: [
+      domain: "worldbuilding", operations: [
         {
           type: "chapter.create",
           volumeId: "volume_one",
@@ -3171,7 +3129,7 @@ describe("long workspace agent tools", () => {
           {
             type: "chapter.create",
             chapterCard: {
-              id: expect.stringMatching(/^chapter_[0-9a-f]{24}$/u),
+              id: expect.stringMatching(/^chapter_[0-9a-f]{8}$/u),
               volumeId: "volume_one",
               primaryArcId: "arc_one",
               narrativeOrder: 2,
@@ -3243,7 +3201,7 @@ describe("long workspace agent tools", () => {
     const proposal = await mutationTool.execute(
       "foreshadowing-planning",
       {
-        operations: [
+        domain: "worldbuilding", operations: [
           {
             type: "volume.create",
             client_ref: "second-volume",
@@ -3301,22 +3259,22 @@ describe("long workspace agent tools", () => {
           {
             type: "volume.create",
             volume: {
-              id: expect.stringMatching(/^volume_[0-9a-f]{24}$/u),
+              id: expect.stringMatching(/^volume_[0-9a-f]{8}$/u),
               title: "第二卷"
             }
           },
           {
             type: "arc.create",
             arc: {
-              id: expect.stringMatching(/^arc_[0-9a-f]{24}$/u),
-              volumeId: expect.stringMatching(/^volume_[0-9a-f]{24}$/u),
+              id: expect.stringMatching(/^arc_[0-9a-f]{8}$/u),
+              volumeId: expect.stringMatching(/^volume_[0-9a-f]{8}$/u),
               title: "身份疑云"
             }
           },
           {
             type: "foreshadowing.create",
             thread: {
-              id: expect.stringMatching(/^foreshadow_[0-9a-f]{24}$/u),
+              id: expect.stringMatching(/^foreshadow_[0-9a-f]{8}$/u),
               title: "失踪者身份",
               coreQuestion: "失踪者究竟是谁？",
               hiddenTruth: "失踪者一直以管家的身份留在宅邸。",
@@ -3326,18 +3284,18 @@ describe("long workspace agent tools", () => {
           },
           {
             type: "foreshadowingBeat.create",
-            threadId: expect.stringMatching(/^foreshadow_[0-9a-f]{24}$/u),
+            threadId: expect.stringMatching(/^foreshadow_[0-9a-f]{8}$/u),
             beat: {
-              id: expect.stringMatching(/^beat_[0-9a-f]{24}$/u),
+              id: expect.stringMatching(/^beat_[0-9a-f]{8}$/u),
               type: "plant",
-              volumeId: expect.stringMatching(/^volume_[0-9a-f]{24}$/u),
-              arcId: expect.stringMatching(/^arc_[0-9a-f]{24}$/u),
+              volumeId: expect.stringMatching(/^volume_[0-9a-f]{8}$/u),
+              arcId: expect.stringMatching(/^arc_[0-9a-f]{8}$/u),
               note: "先让旧照片露出半张侧脸。"
             }
           },
           {
             type: "foreshadowing.update",
-            id: expect.stringMatching(/^foreshadow_[0-9a-f]{24}$/u),
+            id: expect.stringMatching(/^foreshadow_[0-9a-f]{8}$/u),
             patch: {
               hiddenTruth: "失踪者就是冒名顶替的现任管家。",
               plannedSpan: "cross_volume"
@@ -3345,10 +3303,10 @@ describe("long workspace agent tools", () => {
           },
           {
             type: "foreshadowingBeat.update",
-            id: expect.stringMatching(/^beat_[0-9a-f]{24}$/u),
+            id: expect.stringMatching(/^beat_[0-9a-f]{8}$/u),
             patch: {
               volumeId: null,
-              arcId: expect.stringMatching(/^arc_[0-9a-f]{24}$/u),
+              arcId: expect.stringMatching(/^arc_[0-9a-f]{8}$/u),
               note: "触点已细化到第一剧情点。"
             }
           }
@@ -3413,8 +3371,8 @@ describe("long workspace agent tools", () => {
       };
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("worldbuilding", "worldbuilding"),
-      profile: profile("worldbuilding"),
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
       sessionId: "session-document-replace",
       runId: "run-document-replace",
       executor
@@ -3424,7 +3382,7 @@ describe("long workspace agent tools", () => {
       tools,
       "propose_long_mutation"
     ).execute("replace-world-document", {
-      operations: [
+      domain: "worldbuilding", operations: [
         {
           type: "worldbuilding.update",
           id: "world_rules",
@@ -3478,7 +3436,7 @@ describe("long workspace agent tools", () => {
       toolByName(plotTools, "propose_long_mutation").execute(
         "draft-bypass",
         {
-          operations: [
+          domain: "worldbuilding", operations: [
             {
               type: "chapter.update",
               id: "chapter_one",
@@ -3936,7 +3894,7 @@ describe("long workspace agent tools", () => {
     await toolByName(tools, "read_continuity_file").execute(
       "read-foreshadowing",
       {
-        target: { document: "foreshadowing_changes" },
+        domain: "character", target: { document: "foreshadowing_changes" },
         mode: "full"
       }
     );
@@ -3944,7 +3902,7 @@ describe("long workspace agent tools", () => {
       tools,
       "edit_continuity_file"
     ).execute("edit-foreshadowing", {
-      target: { document: "foreshadowing_changes" },
+      domain: "character", target: { document: "foreshadowing_changes" },
       replacements: [
         { original_text: "无变化。", new_text: "蜡封伏笔已种下。" }
       ]
@@ -3966,7 +3924,7 @@ describe("long workspace agent tools", () => {
       tools,
       "create_continuity_file"
     ).execute("create-character-continuity", {
-      target: { document: "character", character_id: characterId }
+      domain: "character", target: { document: "character", character_id: characterId }
     });
     expect(createCharacter.details).toMatchObject({
       kind: "long-continuity-file-proposal",
@@ -4004,12 +3962,12 @@ describe("long workspace agent tools", () => {
 
     await toolByName(tools, "create_continuity_file").execute(
       "create-world-reveals",
-      { target: { document: "world_reveals" } }
+      { domain: "character", target: { document: "world_reveals" } }
     );
     await toolByName(tools, "write_continuity_file").execute(
       "write-world-reveals",
       {
-        target: { document: "world_reveals" },
+        domain: "character", target: { document: "world_reveals" },
         text: "本章揭露北门蜡封可感知灵力。"
       }
     );
@@ -4084,7 +4042,7 @@ describe("long workspace agent tools", () => {
     const deleteTool = toolByName(tools, "delete_continuity_file");
     const deleteWorld = await deleteTool.execute(
       "delete-world-reveals",
-      { target: { document: "world_reveals" } }
+      { domain: "character", target: { document: "world_reveals" } }
     );
     expect(deleteWorld.details).toMatchObject({
       kind: "long-mutation-proposal",
@@ -4101,7 +4059,7 @@ describe("long workspace agent tools", () => {
     const deleteCharacter = await deleteTool.execute(
       "delete-character-continuity",
       {
-        target: {
+        domain: "character", target: {
           document: "character",
           character_id: characterId
         }
@@ -4233,7 +4191,7 @@ describe("long workspace agent tools", () => {
       toolByName(tools, "write_continuity_file").execute(
         "reject-unmodeled-foreshadowing",
         {
-          target: { document: "foreshadowing_changes" },
+          domain: "character", target: { document: "foreshadowing_changes" },
           text: "不应创建的伏笔记录。"
         }
       )
@@ -4428,7 +4386,7 @@ describe("long workspace agent tools", () => {
       toolByName(committedTools, "write_continuity_file").execute(
         "committed-chapter",
         {
-          target: { document: "foreshadowing_changes" },
+          domain: "character", target: { document: "foreshadowing_changes" },
           text: "重复提交"
         }
       )
@@ -4436,7 +4394,7 @@ describe("long workspace agent tools", () => {
     await expect(
       toolByName(committedTools, "delete_continuity_file").execute(
         "delete-from-committed-chapter",
-        { target: { document: "world_reveals" } }
+        { domain: "character", target: { document: "world_reveals" } }
       )
     ).rejects.toThrow(/already committed/u);
   });
@@ -4457,7 +4415,7 @@ describe("long workspace agent tools", () => {
     const details: LongAgentToolDetails = {
       kind: "long-mutation-proposal",
       bookId: "longbook_tools",
-      agentId: "worldbuilding",
+      agentId: "setting",
       batch,
       baseProjectRevision: 11,
       summary: "更新规则"

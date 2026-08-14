@@ -35,8 +35,7 @@ const emit = defineEmits<{
 }>();
 
 const AGENT_META = [
-  { id: "worldbuilding", eyebrow: "设定", label: "世界观" },
-  { id: "character_design", eyebrow: "设定", label: "人物设计" },
+  { id: "setting", eyebrow: "设定", label: "设定" },
   { id: "plot_design", eyebrow: "结构", label: "剧情设计" },
   { id: "draft", eyebrow: "正文", label: "正文统筹" },
   { id: "expert_section_writer", eyebrow: "正文", label: "单章写手" },

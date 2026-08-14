@@ -53,14 +53,9 @@ const emit = defineEmits<{
 
 const PARENT_AGENTS = [
   {
-    id: "worldbuilding",
-    label: "世界观",
-    description: "配置规则校验、设定研究和冲突审阅等专项助手。"
-  },
-  {
-    id: "character_design",
-    label: "人物",
-    description: "配置人物关系、状态连续性和人物弧等专项助手。"
+    id: "setting",
+    label: "设定",
+    description: "配置世界规则、人物关系、冲突审阅和设定研究等专项助手。"
   },
   {
     id: "plot_design",

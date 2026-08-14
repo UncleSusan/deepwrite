@@ -628,9 +628,9 @@ describe("long workspace operation engine", () => {
           {
             type: "featureSettings.update",
             patch: {
-              worldbuildingItemLayout: "right-list",
-              characterAndContinuityItemLayout: "right-list",
-              plotItemLayout: "right-list"
+              worldbuildingItemLayout: "left-tree",
+              characterAndContinuityItemLayout: "left-tree",
+              plotItemLayout: "left-tree"
             }
           }
         ]
@@ -638,12 +638,12 @@ describe("long workspace operation engine", () => {
     );
 
     expect(result.snapshot.featureSettings.worldbuildingItemLayout).toBe(
-      "right-list"
+      "left-tree"
     );
     expect(
       result.snapshot.featureSettings.characterAndContinuityItemLayout
-    ).toBe("right-list");
-    expect(result.snapshot.featureSettings.plotItemLayout).toBe("right-list");
+    ).toBe("left-tree");
+    expect(result.snapshot.featureSettings.plotItemLayout).toBe("left-tree");
     expect(result.fileIntents).toEqual([]);
     expect(result.documentWrites).toEqual([]);
   });

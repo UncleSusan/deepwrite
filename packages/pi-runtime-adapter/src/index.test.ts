@@ -24,6 +24,7 @@ import {
 } from "@deepwrite/contracts";
 import {
   buildEffectiveSystemPrompt,
+  buildAgentEvaluationSnapshot,
   buildProviderRuntime,
   buildRawUserMessage,
   buildRuntimeUserPrompt,
@@ -539,7 +540,7 @@ describe("DeepWrite Pi runtime adapter", () => {
 
   it("keeps worldbuilding prompts on business ids and hides file controls", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "worldbuilding"
+      ({ id }) => id === "setting"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_world_prompt",
@@ -631,7 +632,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", input);
     expect(systemPrompt).toContain("category_id");
     expect(systemPrompt).toContain("item_id");
-    expect(systemPrompt).toContain("list_worldbuilding");
+    expect(systemPrompt).toContain("list_setting");
     expect(systemPrompt).not.toContain("fileId");
     expect(systemPrompt).not.toContain("file_id");
     expect(systemPrompt).not.toContain("bookId");
@@ -649,7 +650,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(userPrompt).toContain(
       "守夜人（item_id=worlditem_watchers；顺序=1）"
     );
-    expect(userPrompt).toContain("当前智能体: 世界观智能体");
+    expect(userPrompt).toContain("当前智能体: 设定智能体");
     expect(userPrompt).toContain(
       "当前用户所处的世界观阶段: 文本型分类「世界规则」"
     );
@@ -692,7 +693,7 @@ describe("DeepWrite Pi runtime adapter", () => {
 
   it("keeps character prompts on business ids and injects the focused document", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "character_design"
+      ({ id }) => id === "setting"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_character_prompt",
@@ -756,8 +757,8 @@ describe("DeepWrite Pi runtime adapter", () => {
     };
 
     const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", input);
-    expect(systemPrompt).toContain("list_characters");
-    expect(systemPrompt).toContain("read_character");
+    expect(systemPrompt).toContain("list_setting");
+    expect(systemPrompt).toContain("read_setting");
     expect(systemPrompt).not.toContain("fileId");
     expect(systemPrompt).not.toContain("file_id");
     expect(systemPrompt).not.toContain("bookId");
@@ -1100,7 +1101,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "custom",
       modelId: "writer-model",
       api: "openai-completions",
-      baseUrl: "http://127.0.0.1:11434/v1",
+      baseUrl: "https://ollama.example.test/v1",
       reasoning: false,
       defaultThinkingLevel: "off",
       thinkingLevelOptions: ["low", "high"],
@@ -1121,7 +1122,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "openai",
       modelId: "gpt-5-chat-latest",
       api: "openai-responses",
-      baseUrl: "https://api.openai.com/v1"
+      baseUrl: "https://api.openai.com.example.test/v1"
     };
     expect(
       buildProviderRuntime(knownNonReasoningConfig, 0.6, "off").model.reasoning
@@ -1156,7 +1157,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "ollama",
       modelId: "qwen3",
       api: "openai-completions",
-      baseUrl: "http://127.0.0.1:11434/v1",
+      baseUrl: "https://ollama.example.test/v1",
       reasoning: false,
       defaultThinkingLevel: "off",
       thinkingLevelOptions: ["low", "medium", "high"],
@@ -1255,7 +1256,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "deepseek-official",
       modelId: "deepseek-v4-flash-202605",
       api: "openai-completions",
-      baseUrl: "https://tokenhub.tencentmaas.com/v1",
+      baseUrl: "https://tokenhub.tencentmaas.com.example.test/v1",
       reasoning: true,
       supportsDeveloperRole: false,
       defaultThinkingLevel: "high",
@@ -1282,7 +1283,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "deepseek-official",
       modelId: "kimi-k3",
       api: "openai-completions",
-      baseUrl: "https://www.moxing.pro/v1",
+      baseUrl: "https://www.moxing.pro.example.test/v1",
       reasoning: true,
       supportsDeveloperRole: false,
       defaultThinkingLevel: "high",
@@ -1296,7 +1297,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(high).toMatchObject({
       id: "kimi-k3",
       provider: "deepseek-official",
-      baseUrl: "https://www.moxing.pro/v1",
+      baseUrl: "https://www.moxing.pro.example.test/v1",
       reasoning: true,
       input: ["text", "image"],
       contextWindow: 1_048_576,
@@ -1337,7 +1338,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "deepseek-official",
       modelId: "deepseek-v4-flash-0731",
       api: "openai-completions",
-      baseUrl: "https://www.moxing.pro/v1/",
+      baseUrl: "https://www.moxing.pro.example.test/v1/",
       reasoning: true,
       supportsDeveloperRole: true,
       defaultThinkingLevel: "high",
@@ -1350,7 +1351,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(buildProviderRuntime(config, undefined, "max").model).toMatchObject({
       id: "deepseek-v4-flash-0731",
       provider: "deepseek-official",
-      baseUrl: "https://www.moxing.pro/v1/",
+      baseUrl: "https://www.moxing.pro.example.test/v1/",
       contextWindow: 1_000_000,
       maxTokens: 384_000,
       input: ["text"],
@@ -1478,7 +1479,7 @@ describe("DeepWrite Pi runtime adapter", () => {
         provider: "openai",
         modelId,
         api: "openai-responses",
-        baseUrl: "http://127.0.0.1:1455/v1",
+        baseUrl: "https://local-model.example.test/v1",
         reasoning: true,
         defaultThinkingLevel: "medium",
         thinkingLevelOptions: ["low", "medium", "high", "xhigh", "max"],
@@ -1489,7 +1490,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       expect(buildProviderRuntime(config).model).toMatchObject({
         id: modelId,
         provider: "openai",
-        baseUrl: "http://127.0.0.1:1455/v1",
+        baseUrl: "https://local-model.example.test/v1",
         reasoning: true,
         input: ["text", "image"],
         contextWindow: 272_000,
@@ -1516,7 +1517,7 @@ describe("DeepWrite Pi runtime adapter", () => {
         provider: "deepseek-official",
         modelId,
         api: "openai-completions",
-        baseUrl: "https://www.moxing.pro/v1",
+        baseUrl: "https://www.moxing.pro.example.test/v1",
         reasoning: true,
         supportsDeveloperRole: false,
         defaultThinkingLevel: "high",
@@ -1530,7 +1531,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       expect(high).toMatchObject({
         id: modelId,
         provider: "deepseek-official",
-        baseUrl: "https://www.moxing.pro/v1",
+        baseUrl: "https://www.moxing.pro.example.test/v1",
         reasoning: true,
         input: ["text", "image"],
         contextWindow: 983_616,
@@ -1584,7 +1585,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "deepseek",
       modelId: "deepseek-chat",
       api: "openai-completions",
-      baseUrl: "https://api.deepseek.com/v1",
+      baseUrl: "https://api.deepseek.com.example.test/v1",
       reasoning: false,
       defaultThinkingLevel: "off",
       thinkingLevelOptions: ["low", "medium", "high"],
@@ -1604,7 +1605,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "anthropic",
       modelId: "claude-sonnet-4-6",
       api: "anthropic-messages",
-      baseUrl: "https://api.anthropic.com"
+      baseUrl: "https://api.anthropic.com.example.test"
     })).resolves.toMatchObject({
       thinking: { type: "disabled" },
       temperature: 0.6
@@ -1617,7 +1618,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "google",
       modelId: "gemini-2.5-flash",
       api: "google-generative-ai",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta"
+      baseUrl: "https://generativelanguage.googleapis.com.example.test/v1beta"
     })).resolves.toMatchObject({
       config: {
         thinkingConfig: { thinkingBudget: 0 },
@@ -1632,7 +1633,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "openai",
       modelId: "gpt-5.4",
       api: "openai-responses",
-      baseUrl: "https://api.openai.com/v1"
+      baseUrl: "https://api.openai.com.example.test/v1"
     })).resolves.toMatchObject({
       reasoning: { effort: "none" },
       temperature: 0.6
@@ -1646,7 +1647,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       modelId: "qwen-plus",
       api: "openai-completions",
       baseUrl:
-        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        "https://dashscope.aliyuncs.com.example.test/compatible-mode/v1"
     })).resolves.toMatchObject({
       enable_thinking: false,
       temperature: 0.6
@@ -1659,7 +1660,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "custom",
       modelId: "glm-4.7",
       api: "openai-completions",
-      baseUrl: "https://open.bigmodel.cn/api/paas/v4"
+      baseUrl: "https://open.bigmodel.cn.example.test/api/paas/v4"
     })).resolves.toMatchObject({
       thinking: { type: "disabled" },
       temperature: 0.6
@@ -1673,7 +1674,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       provider: "openai",
       modelId: "gpt-5",
       api: "openai-responses",
-      baseUrl: "https://api.openai.com/v1",
+      baseUrl: "https://api.openai.com.example.test/v1",
       reasoning: false,
       defaultThinkingLevel: "off",
       thinkingLevelOptions: ["low", "medium", "high"],
@@ -1711,7 +1712,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       ...builtinConfig,
       provider: "custom",
       modelId: "custom-writer",
-      baseUrl: "http://127.0.0.1:11434/v1",
+      baseUrl: "https://ollama.example.test/v1",
       thinkingLevelOptions: [
         "minimal",
         "low",
@@ -2081,6 +2082,9 @@ describe("DeepWrite Pi runtime adapter", () => {
       }
     });
     expect(usageObserved[0]?.payload.usage).toEqual(completed?.payload.usage);
+    expect(events.some((event) => event.type === "agent.evaluation_snapshot")).toBe(
+      false
+    );
     expect(events.filter((event) => event.type === "agent.turn_started"))
       .toEqual([
         expect.objectContaining({
@@ -2271,7 +2275,7 @@ describe("DeepWrite Pi runtime adapter", () => {
 
   it("permanently injects worldbuilding context only into the first user message", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "worldbuilding"
+      ({ id }) => id === "setting"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_world_history",
@@ -2361,7 +2365,7 @@ describe("DeepWrite Pi runtime adapter", () => {
       }
     ).conversationAgents;
     const agent = cache.get(
-      "session_world_history:long:worldbuilding:longbook_world_history"
+      "session_world_history:long:setting:longbook_world_history"
     );
     const userMessages = agent?.state.messages.filter(
       (message) => message.role === "user"
@@ -2701,7 +2705,7 @@ describe("DeepWrite Pi runtime adapter", () => {
         details: {
           kind: "long-mutation-proposal",
           bookId: "longbook-child",
-          agentId: "worldbuilding",
+          agentId: "setting",
           batch: {
             baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -2718,7 +2722,7 @@ describe("DeepWrite Pi runtime adapter", () => {
         details: {
           kind: "long-worldbuilding-file-proposal",
           bookId: "longbook-child",
-          agentId: "worldbuilding",
+          agentId: "setting",
           batch: {
             baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -3073,6 +3077,98 @@ describe("DeepWrite Pi runtime adapter", () => {
         summary: "已生成创建 2 个空白章节文件的变更，等待用户审阅。",
         runtime: providerRuntime
       }
+    });
+  });
+
+  it("captures exact prompt, injected context, and tool schemas only in evaluation mode", async () => {
+    const runtime = new PiAgentRuntimeAdapter({
+      evaluationMode: true,
+      tokensPerSecond: 0
+    });
+    const events: AgentRuntimeEvent[] = [];
+    const workspace = screenplayWorkspace();
+
+    for await (const event of runtime.start({
+      runId: "run_evaluation_capture",
+      sessionId: "session_evaluation_capture",
+      prompt: "检查第一集并继续写作",
+      thinkingLevel: "off",
+      scriptAgentProfile: scriptAgentProfile(),
+      workspaceContext: { scriptWorkspace: workspace }
+    })) {
+      events.push(event);
+    }
+
+    const captured = events.find(
+      (
+        event
+      ): event is Extract<
+        AgentRuntimeEvent,
+        { type: "agent.evaluation_snapshot" }
+      > => event.type === "agent.evaluation_snapshot"
+    );
+    expect(captured?.payload.snapshot).toMatchObject({
+      schemaVersion: 1,
+      runtimeContext: { kind: "initial-session-context" }
+    });
+    expect(captured?.payload.snapshot.systemPrompt).toContain(
+      "用户在设置中编辑的剧本正文专家提示词"
+    );
+    expect(captured?.payload.snapshot.runtimeContext.text).toContain(
+      "检查第一集并继续写作"
+    );
+    expect(captured?.payload.snapshot.runtimeContext.text).toContain(
+      "剧本作品: 《雾港剧本》"
+    );
+    expect(
+      captured?.payload.snapshot.tools.find(
+        (tool) => tool.name === "write_draft_section"
+      )
+    ).toMatchObject({
+      label: expect.any(String),
+      description: expect.any(String),
+      inputSchema: { type: "object" }
+    });
+  });
+
+  it("serializes evaluation tool schemas without executable TypeBox metadata", () => {
+    const parameters = Type.Object({ query: Type.String({ minLength: 1 }) });
+    const snapshot = buildAgentEvaluationSnapshot(
+      "system",
+      "runtime context",
+      false,
+      [
+        {
+          name: "search_fixture",
+          label: "搜索夹具",
+          description: "Searches a test fixture.",
+          parameters,
+          executionMode: "sequential"
+        }
+      ],
+      "2026-08-13T00:00:00.000Z"
+    );
+
+    expect(snapshot).toEqual({
+      schemaVersion: 1,
+      capturedAt: "2026-08-13T00:00:00.000Z",
+      systemPrompt: "system",
+      runtimeContext: { kind: "turn-context", text: "runtime context" },
+      tools: [
+        {
+          name: "search_fixture",
+          label: "搜索夹具",
+          description: "Searches a test fixture.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string", minLength: 1 }
+            },
+            required: ["query"]
+          },
+          executionMode: "sequential"
+        }
+      ]
     });
   });
 

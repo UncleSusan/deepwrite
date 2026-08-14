@@ -9,7 +9,7 @@ import {
 import { LongAgentTeamConfigStore } from "./long-agent-team-config-store";
 
 describe("LongAgentTeamConfigStore", () => {
-  it("persists six independent teams and resolves enabled definitions", async () => {
+  it("persists five independent teams and resolves enabled definitions", async () => {
     const root = await mkdtemp(join(tmpdir(), "deepwrite-long-team-store-"));
     const store = new LongAgentTeamConfigStore(root);
     const input = structuredClone(
@@ -43,7 +43,7 @@ describe("LongAgentTeamConfigStore", () => {
       "utf8"
     );
 
-    expect(saved.teams).toHaveLength(6);
+    expect(saved.teams).toHaveLength(5);
     expect(resolved.map(({ id }) => id)).toEqual(["timeline_reviewer"]);
     expect(disk).toContain('"workspaceType": "long"');
   });

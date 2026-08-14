@@ -17,7 +17,9 @@ import {
   type UtilityCommandHandlerContext
 } from "./runtime";
 
-const runtime = new PiAgentRuntimeAdapter();
+const runtime = new PiAgentRuntimeAdapter({
+  evaluationMode: process.env.DEEPWRITE_APP_MODE === "evaluation"
+});
 const activeStreams = new Set<Promise<void>>();
 const terminalRuns = new Set<string>();
 const activeSessionRuns = new Map<string, string>();
@@ -33,6 +35,20 @@ function toEventEnvelope(
     sessionId: event.sessionId,
     runId: event.runId
   };
+
+  if (event.type === "agent.evaluation_snapshot") {
+    return createEnvelope(
+      "agent.evaluation_snapshot",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        messageId: event.payload.messageId,
+        snapshot: event.payload.snapshot,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
 
   if (event.type === "agent.turn_started") {
     return createEnvelope(

@@ -109,9 +109,11 @@ const emit = defineEmits<{
     proposalId: string;
     decision: "accept" | "reject";
   }];
+  locateEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
+  locateLongProposal: [eventId: string];
 }>();
 
 const scroller = ref<HTMLElement>();
@@ -944,6 +946,12 @@ function workspaceToolLabel(name: string): string {
     replace_draft_section_text: "替换正文章节文本",
     rename_draft_section: "修改章节名称",
     delete_draft_section: "删除章节",
+    list_setting: "列出设定",
+    search_setting: "搜索设定",
+    read_setting: "读取设定",
+    create_setting: "创建设定",
+    write_setting: "写入设定",
+    edit_setting: "编辑设定",
     list_worldbuilding: "列出世界观",
     read_worldbuilding: "读取世界观",
     search_worldbuilding: "搜索世界观",
@@ -1287,6 +1295,9 @@ const WRITE_TOOL_NAMES = new Set([
   "replace_draft_section_text",
   "rename_draft_section",
   "delete_draft_section",
+  "create_setting",
+  "write_setting",
+  "edit_setting",
   "create_worldbuilding_file",
   "write_worldbuilding_file",
   "edit_worldbuilding_file",
@@ -1311,6 +1322,7 @@ const WRITE_TOOL_NAMES = new Set([
 
 const CREATE_FILE_TOOL_NAMES = new Set([
   "create_draft_sections",
+  "create_setting",
   "create_worldbuilding_file",
   "create_worldbuilding_files",
   "create_worldbuilding_items",
@@ -1325,6 +1337,7 @@ const DIRECT_WRITE_TOOL_NAMES = new Set([
   "write_draft_section",
   "rename_draft_section",
   "delete_draft_section",
+  "write_setting",
   "write_worldbuilding_file",
   "write_worldbuilding_content",
   "write_character_file",
@@ -1765,6 +1778,7 @@ function copyMessageLabel(message: ChatMessage): string {
                   :message-status="message.status"
                   :allow-live-edit-review="allowLiveEditReview"
                   @review="emit('reviewEdit', $event)"
+                  @locate="emit('locateEditProposal', $event)"
                 />
                 <LongProposalReview
                   v-else-if="item.type === 'long-proposal'"
@@ -1776,6 +1790,7 @@ function copyMessageLabel(message: ChatMessage): string {
                   @approve="emit('approveLongProposal', $event)"
                   @reject="emit('rejectLongProposal', $event)"
                   @retry-preview="emit('retryLongProposalPreview', $event)"
+                  @locate="emit('locateLongProposal', $event)"
                 />
                 <details
                   v-else-if="item.type === 'tool-group'"
@@ -1991,6 +2006,7 @@ function copyMessageLabel(message: ChatMessage): string {
                     :message-status="message.status"
                     :allow-live-edit-review="allowLiveEditReview"
                     @review="emit('reviewEdit', $event)"
+                    @locate="emit('locateEditProposal', $event)"
                   />
                   <LongProposalReview
                     v-else
@@ -2001,6 +2017,7 @@ function copyMessageLabel(message: ChatMessage): string {
                     @approve="emit('approveLongProposal', $event)"
                     @reject="emit('rejectLongProposal', $event)"
                     @retry-preview="emit('retryLongProposalPreview', $event)"
+                    @locate="emit('locateLongProposal', $event)"
                   />
                 </template>
               </section>

@@ -37,7 +37,7 @@ const proposalBase = {
   runId: envelopeContext.runId,
   toolCallId: "tool_long",
   bookId: "longbook_test",
-  agentId: "worldbuilding" as const,
+  agentId: "setting" as const,
   summary: "待审阅长篇提案",
   runtime
 };
@@ -214,7 +214,7 @@ function characterWriteEvent() {
       "long.character_file_proposal",
       {
         ...proposalBase,
-        agentId: "character_design" as const,
+        agentId: "setting" as const,
         toolCallId: "tool_character_write",
         summary: "写入林岚核心档案",
         batch: {
@@ -1294,7 +1294,7 @@ describe("long workspace proposal approval", () => {
     });
     const second = await test.controller.enqueueManualMutation({
       bookId: proposalBase.bookId,
-      agentId: "character_design",
+      agentId: "setting",
       batch: mutationEvent().payload.batch,
       baseProjectRevision: 11,
       summary: "第二次手工调整"
@@ -1304,7 +1304,7 @@ describe("long workspace proposal approval", () => {
     expect(second.payload.sessionId).not.toBe(first.payload.sessionId);
     expect(second.payload.runId).not.toBe(first.payload.runId);
     expect(second.payload.toolCallId).not.toBe(first.payload.toolCallId);
-    expect(second.payload.agentId).toBe("character_design");
+    expect(second.payload.agentId).toBe("setting");
     expect(test.controller.itemsForBook("longbook_test")).toHaveLength(2);
 
     await expect(

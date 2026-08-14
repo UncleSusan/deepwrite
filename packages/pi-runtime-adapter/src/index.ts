@@ -33,6 +33,8 @@ import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/pro
 import {
   renderLearningImitationSystemPrompt,
   SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
+  type AgentEvaluationSnapshot,
+  type AgentEvaluationToolConfiguration,
   type AgentProviderRuntimeConfig,
   type AgentRuntimeRef,
   type AgentUsage,
@@ -135,6 +137,16 @@ export interface AgentRunInput {
 }
 
 export type AgentRuntimeEvent =
+  | {
+      type: "agent.evaluation_snapshot";
+      runId: string;
+      sessionId: string;
+      payload: {
+        messageId: string;
+        snapshot: AgentEvaluationSnapshot;
+        runtime: AgentRuntimeRef;
+      };
+    }
   | {
       type: "agent.turn_started";
       runId: string;
@@ -554,6 +566,7 @@ export interface PiRuntimeAdapterOptions extends AgentToolExecutionHooks {
   subagentTimeoutMs?: number;
   tokensPerSecond?: number;
   systemPrompt?: string;
+  evaluationMode?: boolean;
   retryPolicy?: AgentTurnRetryPolicyOptions;
 }
 
@@ -719,6 +732,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
   private readonly subagentTimeoutMs: number | undefined;
   private readonly tokensPerSecond: number;
   private readonly systemPrompt: string;
+  private readonly evaluationMode: boolean;
   private readonly retryPolicy: AgentTurnRetryPolicyOptions | undefined;
   private readonly toolExecutionHooks: AgentToolExecutionHooks;
   private readonly conversationAgents = new Map<string, Agent>();
@@ -728,6 +742,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     this.subagentTimeoutMs = options.subagentTimeoutMs;
     this.tokensPerSecond = options.tokensPerSecond ?? 90;
     this.systemPrompt = options.systemPrompt ?? buildDeepWriteSystemPrompt();
+    this.evaluationMode = options.evaluationMode === true;
     this.retryPolicy = options.retryPolicy;
     this.toolExecutionHooks = {
       ...(options.beforeToolCall
@@ -1282,6 +1297,42 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         content: runtimeUserContent,
         timestamp: Date.now()
       };
+      if (this.evaluationMode) {
+        const providerVisibleTools = applyOllamaToolSchemaCompatibility(
+          { systemPrompt, messages: [], tools },
+          runtime.provider,
+          ollamaToolSchemaProfile
+        ).tools ?? tools;
+        const evaluationTools = providerVisibleTools.map((providerTool) => {
+          const executableTool = tools.find(
+            (candidate) => candidate.name === providerTool.name
+          );
+          return {
+            name: providerTool.name,
+            description: providerTool.description,
+            parameters: providerTool.parameters,
+            ...(executableTool?.label ? { label: executableTool.label } : {}),
+            ...(executableTool?.executionMode
+              ? { executionMode: executableTool.executionMode }
+              : {})
+          };
+        });
+        emit({
+          type: "agent.evaluation_snapshot",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: {
+            messageId,
+            snapshot: buildAgentEvaluationSnapshot(
+              systemPrompt,
+              runtimeUserContent,
+              persistInitialRuntimeContext,
+              evaluationTools
+            ),
+            runtime
+          }
+        });
+      }
       void runAgentWithTurnRetries({
         agent,
         initialPrompt: runtimeUserMessage,
@@ -1419,6 +1470,60 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       }
     }
   }
+}
+
+function evaluationContextText(content: UserMessage["content"]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter(
+      (part): part is Extract<(typeof content)[number], { type: "text" }> =>
+        part.type === "text"
+    )
+    .map((part) => part.text)
+    .join("\n");
+}
+
+type EvaluationToolSource = Pick<
+  AgentTool,
+  "name" | "description" | "parameters"
+> &
+  Partial<Pick<AgentTool, "label" | "executionMode">>;
+
+function evaluationToolConfiguration(
+  tool: EvaluationToolSource
+): AgentEvaluationToolConfiguration {
+  // TypeBox schemas contain symbol metadata used by local validation. A JSON
+  // clone records the exact provider-facing schema without executable hooks.
+  const inputSchema = JSON.parse(JSON.stringify(tool.parameters)) as unknown;
+  return {
+    name: tool.name,
+    ...(tool.label ? { label: tool.label } : {}),
+    description: tool.description,
+    inputSchema,
+    ...(tool.executionMode ? { executionMode: tool.executionMode } : {})
+  };
+}
+
+/** @internal Exported for evaluation-capture regression tests. */
+export function buildAgentEvaluationSnapshot(
+  systemPrompt: string,
+  runtimeUserContent: UserMessage["content"],
+  initialSessionContext: boolean,
+  tools: readonly EvaluationToolSource[],
+  capturedAt = new Date().toISOString()
+): AgentEvaluationSnapshot {
+  return {
+    schemaVersion: 1,
+    capturedAt,
+    systemPrompt,
+    runtimeContext: {
+      kind: initialSessionContext
+        ? "initial-session-context"
+        : "turn-context",
+      text: evaluationContextText(runtimeUserContent)
+    },
+    tools: tools.map(evaluationToolConfiguration)
+  };
 }
 
 function providerStreams(api: AgentProviderRuntimeConfig["api"]): ProviderStreams {
@@ -2434,19 +2539,16 @@ export function buildEffectiveSystemPrompt(
     return [
       basePrompt,
       "",
-      longProfile.id === "worldbuilding" ||
-      longProfile.id === "character_design"
+      longProfile.id === "setting"
         ? `【当前长篇智能体：${longProfile.label}】`
         : `【当前长篇智能体：${longProfile.label} / ${longProfile.id}】`,
       longProfile.systemPrompt.trim(),
       "",
       "【DeepWrite 长篇工具边界】",
-      longProfile.id === "worldbuilding"
-        ? "世界观只使用本次固定上下文或工具返回的 category_id 和 item_id 定位内容；固定上下文目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_worldbuilding。目录标注存在省略项、需要获取其它分页或需要核验本轮结构变更时再调用列表工具。工具会处理其余实现细节，不得索取、猜测或复述。未读取正文不得当成事实。"
-        : longProfile.id === "character_design"
-          ? "人物设计只使用工具返回的 character_id 和 document 定位内容；工具会处理其余实现细节，不得索取、猜测或复述。未读取内容不得当成事实。"
+      longProfile.id === "setting"
+        ? "设定只使用本次固定上下文或工具返回的业务 ID 定位内容：世界观用 category_id / item_id，人物用 character_id / document。查询、搜索和读取一律使用 list_setting / search_setting / read_setting，并指定 domain=worldbuilding 或 domain=character。固定上下文目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。目录标注存在省略项或需要核验本轮结构变更时再调用列表工具。工具会处理其余实现细节，不得索取、猜测或复述。未读取正文不得当成事实。"
         : longProfile.id === "continuity_ledger"
-          ? "连续性账本只使用世界观、人物、剧情和正文各阶段的 list / search / read 工具及其业务 ID；不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
+          ? "连续性账本只使用 list_setting / search_setting / read_setting（指定 domain）以及剧情和正文各阶段的 list / search / read 工具及其业务 ID；不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
         : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
       writeBoundary,
       longProfile.id === "plot_design"
@@ -2624,14 +2726,14 @@ function renderLongWorldbuildingDirectory(
       : ["  - 暂无条目"];
     if (category.omittedItemCount > 0) {
       items.push(
-        `  - 另有 ${category.omittedItemCount} 项未进入固定上下文，需要时调用 list_worldbuilding 分页查询。`
+        `  - 另有 ${category.omittedItemCount} 项未进入固定上下文，需要时调用 list_setting（domain=worldbuilding）查询。`
       );
     }
     return [header, ...items];
   });
   if (directory.omittedCategoryCount > 0) {
     lines.push(
-      `- 另有 ${directory.omittedCategoryCount} 个分类未进入固定上下文，需要时调用 list_worldbuilding 分页查询。`
+      `- 另有 ${directory.omittedCategoryCount} 个分类未进入固定上下文，需要时调用 list_setting（domain=worldbuilding）查询。`
     );
   }
   return lines.length ? lines.join("\n") : "- 暂无世界观分类";
@@ -2673,11 +2775,8 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const isLibraryAgentRun = Boolean(
     libraryContext && input.libraryAgentProfile
   );
-  const isWorldbuildingAgentRun = Boolean(
-    longWorkspace && longProfile?.id === "worldbuilding"
-  );
-  const isCharacterDesignAgentRun = Boolean(
-    longWorkspace && longProfile?.id === "character_design"
+  const isSettingAgentRun = Boolean(
+    longWorkspace && longProfile?.id === "setting"
   );
   const isPlotDesignAgentRun = Boolean(
     longWorkspace && longProfile?.id === "plot_design"
@@ -2685,10 +2784,10 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const plotFocus = isPlotDesignAgentRun
     ? longWorkspace?.plotFocus
     : undefined;
-  const worldbuildingFocus = isWorldbuildingAgentRun
+  const worldbuildingFocus = isSettingAgentRun
     ? longWorkspace?.worldbuildingFocus
     : undefined;
-  const characterFocus = isCharacterDesignAgentRun
+  const characterFocus = isSettingAgentRun
     ? longWorkspace?.characterFocus
     : undefined;
   const learningContext = input.workspaceContext?.learningImitation;
@@ -2745,25 +2844,26 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       : "显式附加素材: 无";
   const lines = [
     "【本次智能体会话固定上下文】",
-    isWorldbuildingAgentRun || isCharacterDesignAgentRun
+    isSettingAgentRun
       ? ""
       : `sessionId: ${input.sessionId}`,
-    isWorldbuildingAgentRun || isCharacterDesignAgentRun
+    isSettingAgentRun
       ? ""
       : `runId: ${input.runId}`,
     writingWorkspace
       ? `${scriptWorkspace ? "剧本" : "短篇"}作品: 《${writingWorkspace.title}》`
       : "",
     longWorkspace ? `长篇作品: 《${longWorkspace.title}》` : "",
-    isWorldbuildingAgentRun && longWorkspace?.worldbuildingDirectory
+    isSettingAgentRun && longWorkspace?.worldbuildingDirectory
       ? `【世界观条目列表（发送时快照）】\n${renderLongWorldbuildingDirectory(
           longWorkspace.worldbuildingDirectory
-        )}`
+        )}\n另一侧人物使用 list_setting（domain=character）。`
       : "",
-    isCharacterDesignAgentRun && longWorkspace
+    isSettingAgentRun &&
+    longWorkspace?.activeRoot === "character_design"
       ? `【人物类型目录（发送时快照）】\n${renderLongCharacterTypeDirectory(
           longWorkspace.navigation
-        )}\n创建、筛选或移动人物时只能使用目录中的 type_id；人物类型目录只能由用户在结构管理中维护。`
+        )}\n创建、筛选或移动人物时只能使用目录中的 type_id；人物类型目录只能由用户在结构管理中维护。另一侧世界观使用 list_setting（domain=worldbuilding）。`
       : "",
     worldbuildingFocus
       ? `当前用户所处的世界观阶段: ${
@@ -2802,20 +2902,18 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     characterFocus?.coreProfile
       ? `人物核心档案${characterFocus.coreProfile.truncated ? "（已截断）" : ""}:\n${characterFocus.coreProfile.content || "未填写"}`
       : "",
-    longWorkspace && !isWorldbuildingAgentRun && !isCharacterDesignAgentRun
+    longWorkspace && !isSettingAgentRun
       ? `长篇项目: ${longWorkspace.bookId}；结构版本 ${longWorkspace.workspaceRevision}；项目版本 ${longWorkspace.projectRevision}`
       : "",
-    longWorkspace && !isWorldbuildingAgentRun && !isCharacterDesignAgentRun
+    longWorkspace && !isSettingAgentRun
       ? `当前根节点: ${longWorkspace.activeRoot}；当前智能体: ${longWorkspace.activeAgentId}`
       : "",
     longWorkspace?.activeChapterCardId &&
-    !isWorldbuildingAgentRun &&
-    !isCharacterDesignAgentRun
+    !isSettingAgentRun
       ? `当前章卡: ${longWorkspace.activeChapterCardId}`
       : "",
     longWorkspace?.activeFileId &&
-    !isWorldbuildingAgentRun &&
-    !isCharacterDesignAgentRun
+    !isSettingAgentRun
       ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
       : "",
     isPlotDesignAgentRun
@@ -2848,7 +2946,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     writingProfile
       ? `当前智能体: ${writingProfile.label} (${writingProfile.id})`
       : longProfile
-        ? isWorldbuildingAgentRun
+        ? isSettingAgentRun
           ? `当前智能体: ${longProfile.label}`
           : `当前智能体: ${longProfile.label} (${longProfile.id})`
       : input.libraryAgentProfile
@@ -2888,7 +2986,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       : learningContext
         ? "当前资源: 学习仿写样本文档（正文请通过工具按需读取）"
         : "当前资源: 未提供",
-    active && !isWorldbuildingAgentRun
+    active && !isSettingAgentRun
       ? `资源路径: ${active.path.join(" / ")}`
       : "",
     active &&

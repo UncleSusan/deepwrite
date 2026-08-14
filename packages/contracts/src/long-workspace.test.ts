@@ -936,64 +936,54 @@ describe("independent long-form workspace contracts", () => {
     expect(
       DEFAULT_LONG_AGENT_PROFILES.map(({ id }) => id)
     ).toEqual([
-      "worldbuilding",
-      "character_design",
+      "setting",
       "plot_design",
       "draft",
       "expert_section_writer",
       "continuity_ledger"
     ]);
+    expect(resolveLongAgentIdForRoot("worldbuilding")).toBe("setting");
+    expect(resolveLongAgentIdForRoot("character_design")).toBe("setting");
     expect(resolveLongAgentIdForRoot("draft")).toBe("draft");
     expect(resolveLongAgentIdForRoot("draft", true)).toBe(
       "expert_section_writer"
     );
-    const worldbuildingProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "worldbuilding"
+    const settingProfile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "setting"
     )!;
-    expect(worldbuildingProfile.systemPrompt).toContain("category_id");
-    expect(worldbuildingProfile.systemPrompt).toContain("item_id");
-    expect(worldbuildingProfile.systemPrompt).toContain("list_worldbuilding");
-    expect(worldbuildingProfile.systemPrompt).toContain("read_worldbuilding");
-    expect(worldbuildingProfile.systemPrompt).toContain("search_worldbuilding");
-    expect(worldbuildingProfile.systemPrompt).not.toContain(
+    expect(settingProfile.label).toBe("设定智能体");
+    expect(settingProfile.writeAccess.workspaceRoots).toEqual([
+      "worldbuilding",
+      "character_design"
+    ]);
+    expect(settingProfile.systemPrompt).toContain("category_id");
+    expect(settingProfile.systemPrompt).toContain("item_id");
+    expect(settingProfile.systemPrompt).toContain("character_id 唯一定位");
+    expect(settingProfile.systemPrompt).toContain("list_setting");
+    expect(settingProfile.systemPrompt).toContain("search_setting");
+    expect(settingProfile.systemPrompt).toContain("read_setting");
+    expect(settingProfile.systemPrompt).toContain("create_setting");
+    expect(settingProfile.systemPrompt).toContain("write_setting");
+    expect(settingProfile.systemPrompt).toContain("edit_setting");
+    expect(settingProfile.systemPrompt).toContain("domain=worldbuilding");
+    expect(settingProfile.systemPrompt).toContain("domain=character");
+    expect(settingProfile.systemPrompt).toContain("document=overview");
+    expect(settingProfile.systemPrompt).not.toContain("list_worldbuilding");
+    expect(settingProfile.systemPrompt).not.toContain("list_characters");
+    expect(settingProfile.systemPrompt).not.toContain(
       "get_long_workspace_index"
     );
-    expect(worldbuildingProfile.systemPrompt).not.toContain(
+    expect(settingProfile.systemPrompt).not.toContain(
       "read_long_document"
     );
-    expect(worldbuildingProfile.systemPrompt).not.toContain(
+    expect(settingProfile.systemPrompt).not.toContain(
       "search_long_workspace"
     );
-    expect(worldbuildingProfile.systemPrompt).not.toContain("fileId");
-    expect(worldbuildingProfile.systemPrompt).not.toContain("file_id");
-    expect(worldbuildingProfile.systemPrompt).not.toContain("bookId");
-    expect(worldbuildingProfile.systemPrompt).not.toContain("路径");
-    const characterProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "character_design"
-    )!;
-    expect(characterProfile.systemPrompt).toContain("character_id 唯一定位");
-    expect(characterProfile.systemPrompt).toContain("list_characters");
-    expect(characterProfile.systemPrompt).toContain("search_characters");
-    expect(characterProfile.systemPrompt).toContain("read_character");
-    expect(characterProfile.systemPrompt).toContain("list_worldbuilding");
-    expect(characterProfile.systemPrompt).toContain("search_worldbuilding");
-    expect(characterProfile.systemPrompt).toContain("read_worldbuilding");
-    expect(characterProfile.systemPrompt).toContain("世界观内容只读");
-    expect(characterProfile.systemPrompt).toContain("create_character");
-    expect(characterProfile.systemPrompt).toContain("write_character_file");
-    expect(characterProfile.systemPrompt).toContain("edit_character_file");
-    expect(characterProfile.systemPrompt).toContain("write_character_overview");
-    expect(characterProfile.systemPrompt).toContain("edit_character_overview");
-    expect(characterProfile.systemPrompt).not.toContain(
-      "get_long_workspace_index"
-    );
-    expect(characterProfile.systemPrompt).not.toContain("fileId");
-    expect(characterProfile.systemPrompt).not.toContain("file_id");
-    expect(characterProfile.systemPrompt).not.toContain("bookId");
-    expect(characterProfile.systemPrompt).toContain(
-      "按章连续性记录可作为只读参考"
-    );
-    expect(characterProfile.systemPrompt).toContain("不接管或锁定人物文档");
+    expect(settingProfile.systemPrompt).not.toContain("fileId");
+    expect(settingProfile.systemPrompt).not.toContain("file_id");
+    expect(settingProfile.systemPrompt).not.toContain("bookId");
+    expect(settingProfile.systemPrompt).not.toContain("路径");
+    expect(settingProfile.systemPrompt).toContain("不接管或锁定人物文档");
     const plotProfile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"
     )!;

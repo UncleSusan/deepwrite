@@ -42,6 +42,8 @@ describe("LongStructureManager", () => {
     expect(source).toContain("剧情设计条目样式");
     expect(source).toContain('value: "top-tabs"');
     expect(source).toContain('value: "right-list"');
+    expect(source).toContain('value: "left-tree"');
+    expect(source).toContain('label: "左侧树形结构"');
     expect(source).toContain("builder.updateFeatureSettings");
     expect(source).toContain(
       "snapshot.featureSettings.worldbuildingItemLayout"

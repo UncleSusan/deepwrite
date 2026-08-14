@@ -20,6 +20,8 @@ import {
   longWorldbuildingFileId,
   longWorldbuildingOverviewContentPath,
   longWorldbuildingOverviewFileId,
+  longWorldbuildingItemContentPath,
+  longWorldbuildingItemFileId,
   type LongCharacterGroup,
   type LongCharacterTypeId,
   type LongDisclosureLevel,
@@ -263,6 +265,19 @@ export interface LongStructureMutationBuilder {
     id: string,
     cascade: boolean
   ): LongWorkspaceOperationBatch;
+  createWorldbuildingItem(
+    categoryId: string,
+    title?: string
+  ): LongWorkspaceOperationBatch;
+  reorderWorldbuildingItem(
+    categoryId: string,
+    id: string,
+    direction: LongOrderDirection
+  ): LongWorkspaceOperationBatch;
+  deleteWorldbuildingItem(
+    categoryId: string,
+    id: string
+  ): LongWorkspaceOperationBatch;
 
   createCharacterType(
     input: CreateLongCharacterTypeInput
@@ -497,6 +512,8 @@ export function createLongStructureMutationBuilder(
     snapshot.characters.find((candidate) => candidate.id === id);
   const characterType = (id: string) =>
     snapshot.characterTypes.find((candidate) => candidate.id === id);
+  const worldbuilding = (id: string) =>
+    snapshot.worldbuilding.find((candidate) => candidate.id === id);
   const storyEvent = (id: string) =>
     snapshot.plot.storyEvents.find((candidate) => candidate.id === id);
   const storyPlot = (id: string) =>
@@ -523,6 +540,16 @@ export function createLongStructureMutationBuilder(
     [...snapshot.worldbuilding]
       .sort((left, right) => left.order - right.order)
       .map(({ id }) => id);
+  const orderedWorldbuildingItems = (categoryId: string) => {
+    const category = worldbuilding(categoryId);
+    assertPresent(category, "Worldbuilding category");
+    if (category.format !== "list") {
+      throw new Error("Worldbuilding category is not list-based.");
+    }
+    return [...category.items]
+      .sort((left, right) => left.order - right.order)
+      .map(({ id }) => id);
+  };
   const orderedCharacters = (group: LongCharacterGroup) =>
     snapshot.characters
       .filter((candidate) => candidate.group === group)
@@ -896,6 +923,70 @@ export function createLongStructureMutationBuilder(
 
     deleteWorldbuilding(id, cascade) {
       return batch([{ type: "worldbuilding.delete", id, cascade }]);
+    },
+
+    createWorldbuildingItem(categoryId, requestedTitle) {
+      const category = worldbuilding(categoryId);
+      assertPresent(category, "Worldbuilding category");
+      if (category.format !== "list") {
+        throw new Error("只有列表型世界观分类可以新增条目。");
+      }
+      if (category.items.length >= 10_000) {
+        throw new Error("单个世界观分类最多支持 10000 个条目。");
+      }
+      const usedTitles = new Set(category.items.map(({ title }) => title));
+      let sequence = category.items.length + 1;
+      let title = requestedTitle?.trim() || `新条目 ${sequence}`;
+      while (!requestedTitle?.trim() && usedTitles.has(title)) {
+        sequence += 1;
+        title = `新条目 ${sequence}`;
+      }
+      const id = createId("worlditem");
+      const updatedAt = now();
+      return batch(
+        [
+          {
+            type: "worldbuildingItem.create",
+            categoryId,
+            item: {
+              id,
+              title,
+              order: category.items.length + 1,
+              file: createEmptyLongMarkdownFileReference(
+                longWorldbuildingItemFileId(id),
+                longWorldbuildingItemContentPath(categoryId, id),
+                updatedAt
+              )
+            }
+          }
+        ],
+        updatedAt
+      );
+    },
+
+    reorderWorldbuildingItem(categoryId, id, direction) {
+      return batch([
+        {
+          type: "worldbuildingItem.reorder",
+          categoryId,
+          orderedIds: moveLongOrderedId(
+            orderedWorldbuildingItems(categoryId),
+            id,
+            direction
+          )
+        }
+      ]);
+    },
+
+    deleteWorldbuildingItem(categoryId, id) {
+      return batch([
+        {
+          type: "worldbuildingItem.delete",
+          categoryId,
+          id,
+          cascade: true
+        }
+      ]);
     },
 
     createCharacterType(input) {

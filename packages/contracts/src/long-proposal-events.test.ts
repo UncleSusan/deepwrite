@@ -34,7 +34,7 @@ const common = {
   runId: context.runId,
   toolCallId: "tool-long-proposal",
   bookId: "longbook_proposal",
-  agentId: "worldbuilding" as const,
+  agentId: "setting" as const,
   summary: "形成待审阅提案。",
   runtime
 };
@@ -311,7 +311,7 @@ describe("long proposal event contracts", () => {
       "long.character_file_proposal",
       {
         ...common,
-        agentId: "character_design" as const,
+        agentId: "setting" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -409,7 +409,7 @@ describe("long proposal event contracts", () => {
       LongCharacterFileProposalEventEnvelopeSchema.parse(characterFile)
         .payload
     ).toMatchObject({
-      agentId: "character_design",
+      agentId: "setting",
       files: [
         {
           characterId: "character_lan",

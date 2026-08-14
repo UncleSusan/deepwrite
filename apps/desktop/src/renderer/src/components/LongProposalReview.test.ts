@@ -4,6 +4,22 @@ import editProposalSource from "./AgentEditProposalCard.vue?raw";
 import source from "./LongProposalReview.vue?raw";
 
 describe("LongProposalReview content file cards", () => {
+  it("offers target navigation after a proposal is accepted", () => {
+    expect(source).toContain("locate: [eventId: string]");
+    expect(source).toContain("v-if=\"item.status === 'accepted'\"");
+    expect(source).toContain("approval-target-button");
+    expect(source).toContain("跳转到目标文件");
+    expect(source).toContain("emit('locate', item.event.id)");
+    expect(conversationSource).toContain(
+      "@locate=\"emit('locateLongProposal', $event)\""
+    );
+    expect(
+      conversationSource.match(
+        /@locate="emit\('locateLongProposal', \$event\)"/g
+      )
+    ).toHaveLength(2);
+  });
+
   it("supports inline rendering inside its originating conversation turn", () => {
     expect(source).toContain("embedded?: boolean");
     expect(source).toContain("'is-embedded': embedded");

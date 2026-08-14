@@ -13,6 +13,7 @@ import {
   type LongWorkspaceFileReference,
   type LongWorkspaceRoot,
   type LongVolumeId,
+  type LongWorldbuildingItemId,
   type LongWorldbuildingFormat
 } from "@deepwrite/contracts";
 
@@ -71,6 +72,11 @@ export interface LongWorkspaceSelection {
     order: number;
     file: LongWorkspaceFileReference;
   }>;
+  worldbuildingItemId?: LongWorldbuildingItemId | null;
+  /** Targets a specific file when several files share the same semantic role. */
+  preferredFileId?: LongFileId;
+  /** Selects the full-book overview when null, or one volume when set. */
+  bookLineVolumeId?: LongVolumeId | null;
   chapterCardId?: LongChapterCardId;
   characterGroup?: LongCharacterGroup;
   characterId?: LongCharacterId;
@@ -721,6 +727,29 @@ export function createLongContinuitySelection(
   };
 }
 
+function preserveRequestedLongFile(
+  resolved: LongWorkspaceSelection | undefined,
+  requested: LongWorkspaceSelection,
+  promoteFileLabel = true
+): LongWorkspaceSelection | undefined {
+  if (!resolved || !requested.preferredFileId) return resolved;
+  const preferred = resolved.files.find(
+    ({ file }) => file.id === requested.preferredFileId
+  );
+  if (!preferred) return resolved;
+  return {
+    ...resolved,
+    preferredFileId: preferred.file.id,
+    preferredRole: preferred.role,
+    ...(promoteFileLabel
+      ? {
+          title: preferred.label,
+          breadcrumbs: [...resolved.breadcrumbs, preferred.label]
+        }
+      : {})
+  };
+}
+
 export function reconcileLongWorkspaceSelection(
   summary: LongBookSummary,
   workspaceIndex: LongWorkspaceIndexSnapshot,
@@ -734,23 +763,46 @@ export function reconcileLongWorkspaceSelection(
     };
   }
   if (selection.key.startsWith("chapter:")) {
-    return createLongChapterSelection(
-      summary,
-      workspaceIndex,
-      selection.key.slice("chapter:".length)
+    return preserveRequestedLongFile(
+      createLongChapterSelection(
+        summary,
+        workspaceIndex,
+        selection.key.slice("chapter:".length)
+      ),
+      selection,
+      false
     );
   }
   if (selection.key.startsWith("continuity:")) {
-    return createLongContinuitySelection(
-      summary,
-      workspaceIndex,
-      selection.key.slice("continuity:".length)
+    return preserveRequestedLongFile(
+      createLongContinuitySelection(
+        summary,
+        workspaceIndex,
+        selection.key.slice("continuity:".length)
+      ),
+      selection
     );
   }
   if (selection.key === "plot-design:book-line") {
+    const requestedVolumeId = selection.bookLineVolumeId;
+    const volume =
+      requestedVolumeId === undefined || requestedVolumeId === null
+        ? undefined
+        : workspaceIndex.plot.volumes.find(
+            ({ id }) => id === requestedVolumeId
+          );
     return {
       ...selection,
-      breadcrumbs: [summary.title, "剧情设计", "全书故事线"],
+      ...(requestedVolumeId === undefined
+        ? {}
+        : { bookLineVolumeId: volume?.id ?? null }),
+      title: volume?.title ?? "全书故事线",
+      breadcrumbs: [
+        summary.title,
+        "剧情设计",
+        "全书故事线",
+        ...(volume ? [volume.title] : [])
+      ],
       files: [
         {
           role: "book-line",
@@ -774,22 +826,30 @@ export function reconcileLongWorkspaceSelection(
     const volumeId = selection.key.slice(
       "plot-design:plot-points:".length
     ) as LongVolumeId;
-    return createLongPlotPointVolumeSelection(
-      summary,
-      workspaceIndex,
-      volumeId,
-      selection.plotPointId
+    return preserveRequestedLongFile(
+      createLongPlotPointVolumeSelection(
+        summary,
+        workspaceIndex,
+        volumeId,
+        selection.plotPointId
+      ),
+      selection,
+      false
     );
   }
   if (selection.key.startsWith("plot-design:chapter-cards:")) {
     const volumeId = selection.key.slice(
       "plot-design:chapter-cards:".length
     ) as LongVolumeId;
-    return createLongChapterCardVolumeSelection(
-      summary,
-      workspaceIndex,
-      volumeId,
-      selection.chapterCardId
+    return preserveRequestedLongFile(
+      createLongChapterCardVolumeSelection(
+        summary,
+        workspaceIndex,
+        volumeId,
+        selection.chapterCardId
+      ),
+      selection,
+      false
     );
   }
   if (selection.key === "worldbuilding:reveals") {
@@ -823,11 +883,36 @@ export function reconcileLongWorkspaceSelection(
         id === selection.key.slice("worldbuilding:".length)
     );
     if (!category) return undefined;
+    const requestedItemId = selection.worldbuildingItemId;
+    const requestedItem =
+      category.format === "list" && requestedItemId
+        ? category.items.find(({ id }) => id === requestedItemId)
+        : undefined;
+    const resolvedWorldbuildingItemId =
+      requestedItemId === undefined
+        ? undefined
+        : requestedItem?.id ?? null;
     return {
       ...selection,
-      title: category.title,
+      ...(resolvedWorldbuildingItemId === undefined
+        ? {}
+        : { worldbuildingItemId: resolvedWorldbuildingItemId }),
+      ...(requestedItem
+        ? {
+            preferredFileId: requestedItem.file.id,
+            preferredRole: "content" as const
+          }
+        : requestedItemId === null
+          ? { preferredRole: "overview" as const }
+          : {}),
+      title: requestedItem?.title ?? category.title,
       worldbuildingFormat: category.format,
-      breadcrumbs: [summary.title, "世界观", category.title],
+      breadcrumbs: [
+        summary.title,
+        "世界观",
+        category.title,
+        ...(requestedItem ? [requestedItem.title] : [])
+      ],
       ...(category.format === "list"
         ? {
             worldbuildingItems: category.items,
@@ -880,11 +965,15 @@ export function reconcileLongWorkspaceSelection(
       ({ id }) => id === groupId
     );
     if (!group) return undefined;
-    return createLongCharacterGroupSelection(
-      summary,
-      workspaceIndex,
-      group.id,
-      selection.characterId
+    return preserveRequestedLongFile(
+      createLongCharacterGroupSelection(
+        summary,
+        workspaceIndex,
+        group.id,
+        selection.characterId
+      ),
+      selection,
+      false
     );
   }
   if (selection.key.startsWith("character:")) {
@@ -937,7 +1026,7 @@ export function reconcileLongWorkspaceSelection(
       commit.chapterCardId
     );
     if (!chapterSelection) return undefined;
-    return {
+    return preserveRequestedLongFile({
       ...chapterSelection,
       key: selection.key,
       continuityView: "history",
@@ -949,7 +1038,7 @@ export function reconcileLongWorkspaceSelection(
         chapter?.title ?? `第 ${commit.sequence} 章`
       ],
       description: `${commit.committedAt} · 按章 Markdown 连续性记录`
-    };
+    }, selection);
   }
   return selection;
 }

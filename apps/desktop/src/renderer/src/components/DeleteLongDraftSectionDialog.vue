@@ -2,11 +2,23 @@
 import { onBeforeUnmount, onMounted } from "vue";
 import AppIcon from "./AppIcon.vue";
 
-const props = defineProps<{
-  open: boolean;
-  sectionTitle: string;
-  pending?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    sectionTitle: string;
+    pending?: boolean;
+    eyebrow?: string;
+    itemLabel?: string;
+    description?: string;
+  }>(),
+  {
+    pending: false,
+    eyebrow: "正文",
+    itemLabel: "小节",
+    description:
+      "将永久删除该小节及对应章卡、章节正文、章末人物状态、下一章接续包，以及相关剧情落点和伏笔触点。"
+  }
+);
 
 const emit = defineEmits<{
   close: [];
@@ -43,13 +55,13 @@ onBeforeUnmount(() =>
       >
         <header>
           <div>
-            <span>正文</span>
-            <h2 id="delete-long-draft-section-title">删除小节</h2>
+            <span>{{ eyebrow }}</span>
+            <h2 id="delete-long-draft-section-title">删除{{ itemLabel }}</h2>
           </div>
           <button
             class="close-button"
             type="button"
-            aria-label="关闭删除小节弹窗"
+            :aria-label="`关闭删除${itemLabel}弹窗`"
             :disabled="pending"
             @click="close"
           >
@@ -59,9 +71,7 @@ onBeforeUnmount(() =>
 
         <div class="dialog-body">
           <strong>确认删除“{{ sectionTitle }}”？</strong>
-          <p id="delete-long-draft-section-description">
-            将永久删除该小节及对应章卡、章节正文、章末人物状态、下一章接续包，以及相关剧情落点和伏笔触点。
-          </p>
+          <p id="delete-long-draft-section-description">{{ description }}</p>
         </div>
 
         <footer>

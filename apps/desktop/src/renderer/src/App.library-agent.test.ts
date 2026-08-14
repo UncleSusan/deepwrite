@@ -18,6 +18,10 @@ describe("library management agent wiring", () => {
     expect(appSource).toContain("currentLibraryProjectRevisionMatches(");
     expect(appSource).toContain("applySavedLibraryEntry(");
     expect(appSource).toContain("applyCreatedLibraryEntry(");
+    expect(appSource).toContain("entryId: created.id");
+    expect(appSource).toContain(
+      "...(createdDocument ? { documentId: createdDocument.id } : {})"
+    );
     expect(appSource).toContain('event.payload.operation === "edit-overview"');
     expect(appSource).toContain('proposal.libraryTarget?.operation === "edit-overview"');
     expect(appSource).toContain("window.deepwrite.catalog.updateLibrary({");
