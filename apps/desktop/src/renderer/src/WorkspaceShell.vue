@@ -135,7 +135,7 @@ const EMPTY_WORKSPACE_DOCUMENT: WorkspaceDocument = {
   title: "尚未打开书籍",
   eyebrow: "创作空间",
   path: ["尚未打开书籍"],
-  content: "请从左侧创作空间的“＋”菜单新建书籍，或打开一个已存在的 DeepWrite 书籍文件夹。",
+  content: "请从左侧点击“新建书籍”，或打开一个已存在的 DeepWrite 书籍文件夹。",
   readOnly: true,
   format: "设定"
 };
@@ -413,6 +413,7 @@ const {
   rollbackCommitId: longRollbackCommitId,
   structureDialogOpen: longStructureDialogOpen,
   characterCreateTarget: longCharacterCreate,
+  worldbuildingItemCreateTarget: longWorldbuildingItemCreate,
   plotPointCreateTarget: longPlotPointCreate,
   chapterCardCreateTarget: longChapterCardCreate,
   draftSectionDeleteTarget: longDraftSectionDelete,
@@ -491,7 +492,8 @@ const {
 const conversations = conversationControllers.value;
 const conversationScopes = conversationScopesByKey.value;
 const conversationPersistenceAdapter = createConversationPersistenceAdapter(
-  window.deepwrite?.conversationPersistence
+  window.deepwrite?.conversationPersistence,
+  { storage: window.localStorage }
 );
 const conversationRuntimeRegistry =
   useConversationRuntimeRegistryCoordinator({
@@ -1080,11 +1082,13 @@ const {
   renameLongCharacter,
   renameLongStructureTitle,
   openLongCharacterCreate,
+  openLongWorldbuildingItemCreate,
   openLongVolumeCreate,
   openLongPlotPointCreate,
   saveLongVolumeOutline,
   saveLongPlotPointContent,
   createLongVolume,
+  createLongWorldbuildingItem,
   createLongPlotPoint,
   createLongChapterCard,
   handleLongStructureMutation,
@@ -1094,6 +1098,7 @@ const {
   createLongCharacter,
   closeLongStructureDialog,
   closeLongCharacterCreate,
+  closeLongWorldbuildingItemCreate,
   closeLongPlotPointCreate,
   closeLongChapterCardCreate,
   closeLongDraftSectionDelete,
@@ -1111,6 +1116,7 @@ const {
     mutationPending: longBookActionPending,
     structureDialogOpen: longStructureDialogOpen,
     characterCreateTarget: longCharacterCreate,
+    worldbuildingItemCreateTarget: longWorldbuildingItemCreate,
     plotPointCreateTarget: longPlotPointCreate,
     chapterCardCreateTarget: longChapterCardCreate,
     draftSectionDeleteTarget: longDraftSectionDelete,
@@ -1456,6 +1462,7 @@ const workspaceDialogModule = useWorkspaceDialogModuleCoordinator({
   },
   longStructure: {
     characterCreation: longCharacterCreate,
+    worldbuildingItemCreation: longWorldbuildingItemCreate,
     plotPointCreation: longPlotPointCreate,
     chapterCardCreation: longChapterCardCreate,
     draftDeletion: longDraftSectionDelete,
@@ -1776,6 +1783,14 @@ function closeCreateBookDialog(): void {
   createBookDialogOpen.value = false;
 }
 
+function openCreateBookDialog(): void {
+  if (!window.deepwrite) {
+    uiMessage.warning("浏览器预览不能保存作品，请使用桌面客户端创建。");
+    return;
+  }
+  createBookDialogOpen.value = true;
+}
+
 async function createCreativeBook(
   input: CreateCreativeBookPayload
 ): Promise<void> {
@@ -1846,11 +1861,7 @@ async function handleResourceAction(payload: ResourceSectionActionPayload): Prom
   }
 
   if (payload.domain === "creation" && payload.action === "create") {
-    if (!window.deepwrite) {
-      uiMessage.warning("浏览器预览不能保存作品，请使用桌面客户端创建。");
-      return;
-    }
-    createBookDialogOpen.value = true;
+    openCreateBookDialog();
     return;
   }
 
@@ -2342,7 +2353,7 @@ function startWorkspaceSystemEvents(): () => void {
 function handleGlobalKeydown(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "n") {
     event.preventDefault();
-    newConversation();
+    openCreateBookDialog();
   }
   if (event.key === "Escape") {
     closeCreateBookDialog();
@@ -2506,7 +2517,7 @@ onBeforeUnmount(() => {
       :marketplace-display-name="marketplaceDisplayName"
       :long-tree-actions-disabled="longBookActionPending"
       @collapse="leftCollapsed = true"
-      @new-conversation="newConversation"
+      @create-book="openCreateBookDialog"
       @open-dialog="openWorkspaceDialog"
       @open-agent-teams="openAgentTeams"
       @open-marketplace="openMarketplace"
@@ -2568,13 +2579,15 @@ onBeforeUnmount(() => {
         :editor-locked-reason="longEditorLockedReason"
         :loading="longWorkspaceLoading"
         :left-collapsed="leftCollapsed"
-        :right-collapsed="rightCollapsed"
+        :right-pane="writingRightPaneViewModel"
         @update:draft="updateLongComposerDraft"
         @editor-port-change="updateLongWorkspaceEditorPort"
         @expand-left="leftCollapsed = false"
         @toggle-left="leftCollapsed = !leftCollapsed"
         @toggle-right="rightCollapsed = !rightCollapsed"
         @collapse-right="rightCollapsed = true"
+        @resize-start="startPaneResize('right', $event)"
+        @resize-keydown="handleResizeKeydown('right', $event)"
         @new-conversation="newLongConversation"
         @select-conversation="selectLongConversation"
         @send="sendLongMessage"
@@ -2603,6 +2616,7 @@ onBeforeUnmount(() => {
         @rename-character="renameLongCharacter"
         @rename-structure-title="renameLongStructureTitle"
         @create-character="openLongCharacterCreate"
+        @create-worldbuilding-item="openLongWorldbuildingItemCreate"
         @create-plot-point="openLongPlotPointCreate"
         @create-chapter-card="openLongChapterCardCreate"
         @create-volume="openLongVolumeCreate"
@@ -2697,6 +2711,8 @@ onBeforeUnmount(() => {
     @sync-long-worldbuilding="handleLongWorldbuildingSync"
     @close-create-long-character="closeLongCharacterCreate"
     @submit-create-long-character="createLongCharacter"
+    @close-create-long-worldbuilding-item="closeLongWorldbuildingItemCreate"
+    @submit-create-long-worldbuilding-item="createLongWorldbuildingItem"
     @close-create-long-plot-point="closeLongPlotPointCreate"
     @submit-create-long-plot-point="createLongPlotPoint"
     @close-create-long-chapter-card="closeLongChapterCardCreate"

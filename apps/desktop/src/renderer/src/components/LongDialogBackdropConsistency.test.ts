@@ -3,6 +3,7 @@ import chapterCardDialogSource from "./CreateLongChapterCardDialog.vue?raw";
 import deleteDraftSectionDialogSource from "./DeleteLongDraftSectionDialog.vue?raw";
 import characterDialogSource from "./CreateLongCharacterDialog.vue?raw";
 import plotPointDialogSource from "./CreateLongPlotPointDialog.vue?raw";
+import worldbuildingItemDialogSource from "./CreateLongWorldbuildingItemDialog.vue?raw";
 import volumeDialogSource from "./CreateLongVolumeDialog.vue?raw";
 import removalDialogSource from "./LongBookRemovalDialog.vue?raw";
 import migrationDialogSource from "./LongMigrationReportDialog.vue?raw";
@@ -19,6 +20,7 @@ describe("long-form dialog backdrops", () => {
       deleteDraftSectionDialogSource,
       characterDialogSource,
       plotPointDialogSource,
+      worldbuildingItemDialogSource,
       volumeDialogSource,
       removalDialogSource,
       migrationDialogSource,

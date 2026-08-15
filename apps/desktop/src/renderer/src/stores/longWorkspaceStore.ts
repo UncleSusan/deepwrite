@@ -64,6 +64,12 @@ export interface LongPlotPointCreateTarget {
   readonly volumeTitle: string;
 }
 
+export interface LongWorldbuildingItemCreateTarget {
+  readonly bookId: string;
+  readonly categoryId: string;
+  readonly categoryTitle: string;
+}
+
 export interface LongChapterCardCreateTarget {
   readonly bookId: string;
   readonly volumeId: string;
@@ -147,6 +153,8 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const rollbackCommitId = ref<string | null>(null);
   const structureDialogOpen = ref(false);
   const characterCreateTarget = shallowRef<LongCharacterCreateTarget | null>(null);
+  const worldbuildingItemCreateTarget =
+    shallowRef<LongWorldbuildingItemCreateTarget | null>(null);
   const plotPointCreateTarget = shallowRef<LongPlotPointCreateTarget | null>(null);
   const chapterCardCreateTarget = shallowRef<LongChapterCardCreateTarget | null>(
     null
@@ -540,6 +548,7 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     rollbackCommitId.value = null;
     structureDialogOpen.value = false;
     characterCreateTarget.value = null;
+    worldbuildingItemCreateTarget.value = null;
     plotPointCreateTarget.value = null;
     chapterCardCreateTarget.value = null;
     draftSectionDeleteTarget.value = null;
@@ -664,6 +673,7 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     rollbackCommitId,
     structureDialogOpen,
     characterCreateTarget,
+    worldbuildingItemCreateTarget,
     plotPointCreateTarget,
     chapterCardCreateTarget,
     draftSectionDeleteTarget,

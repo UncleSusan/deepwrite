@@ -99,6 +99,7 @@ const allProviderOptions = [
   { value: "deepwrite-free", label: "DeepWrite 免费模型" },
   { value: "deepseek", label: "DeepSeek" },
   { value: "kimi-coding", label: "Kimi Coding" },
+  { value: "minimax-codeplan", label: "MiniMax Plan" },
   { value: "dashscope", label: "阿里云百炼" },
   { value: "zhipu", label: "智谱 GLM" },
   { value: "moonshot", label: "Kimi 开放平台" },
@@ -418,6 +419,9 @@ function applyProviderPreset(provider: string): void {
   } else if (provider === "kimi-coding") {
     editor.api = "anthropic-messages";
     editor.baseUrl = "https://api.kimi.com/coding";
+  } else if (provider === "minimax-codeplan") {
+    editor.api = "openai-completions";
+    editor.baseUrl = "https://api.minimaxi.com/v1";
   } else if (provider === "dashscope") {
     editor.api = "openai-completions";
     editor.baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";

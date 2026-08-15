@@ -43,7 +43,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   collapse: [];
-  newConversation: [];
+  createBook: [];
   openDialog: [mode: DialogMode];
   openAgentTeams: [];
   openMarketplace: [];
@@ -209,9 +209,9 @@ onBeforeUnmount(() => {
   unsubscribeUpdates?.();
 });
 
-const newConversationItem = {
-  id: "new",
-  label: "新建对话",
+const newBookItem = {
+  id: "create-book",
+  label: "新建书籍",
   icon: "plus",
   shortcut: "Ctrl N"
 } as const;
@@ -295,9 +295,9 @@ function activateMoreFeature(
   openSettings();
 }
 
-function activateNav(id: "new" | PrimaryFeatureId): void {
-  if (id === "new") {
-    emit("newConversation");
+function activateNav(id: "create-book" | PrimaryFeatureId): void {
+  if (id === "create-book") {
+    emit("createBook");
     return;
   }
   if (id === "agent-teams") {
@@ -360,16 +360,16 @@ watch(
       </button>
     </header>
 
-    <nav class="primary-nav new-conversation-nav" aria-label="新建对话">
+    <nav class="primary-nav new-book-nav" aria-label="新建书籍">
       <button
         class="nav-row"
         type="button"
-        :data-nav-id="newConversationItem.id"
-        @click="activateNav(newConversationItem.id)"
+        :data-nav-id="newBookItem.id"
+        @click="activateNav(newBookItem.id)"
       >
-        <AppIcon :name="newConversationItem.icon" :size="17" />
-        <span>{{ newConversationItem.label }}</span>
-        <kbd>{{ newConversationItem.shortcut }}</kbd>
+        <AppIcon :name="newBookItem.icon" :size="17" />
+        <span>{{ newBookItem.label }}</span>
+        <kbd>{{ newBookItem.shortcut }}</kbd>
       </button>
     </nav>
 

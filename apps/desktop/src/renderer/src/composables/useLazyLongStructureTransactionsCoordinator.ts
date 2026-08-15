@@ -272,6 +272,16 @@ export function useLazyLongStructureTransactionsCoordinator(
     );
   }
 
+  function openLongWorldbuildingItemCreate(): ReturnType<
+    Coordinator["openLongWorldbuildingItemCreate"]
+  > {
+    const requestId = beginDialogIntent();
+    return invoke(
+      (loaded) => loaded.openLongWorldbuildingItemCreate(),
+      captureDialogGuard(requestId)
+    );
+  }
+
   function openLongVolumeCreate(): ReturnType<
     Coordinator["openLongVolumeCreate"]
   > {
@@ -320,6 +330,18 @@ export function useLazyLongStructureTransactionsCoordinator(
       captureDialogGuard(
         dialogIntentEpoch,
         captureRefTargetGuard(state.volumeCreateTarget)
+      )
+    );
+  }
+
+  function createLongWorldbuildingItem(
+    ...args: Parameters<Coordinator["createLongWorldbuildingItem"]>
+  ): ReturnType<Coordinator["createLongWorldbuildingItem"]> {
+    return invoke(
+      (loaded) => loaded.createLongWorldbuildingItem(...args),
+      captureDialogGuard(
+        dialogIntentEpoch,
+        captureRefTargetGuard(state.worldbuildingItemCreateTarget)
       )
     );
   }
@@ -418,6 +440,15 @@ export function useLazyLongStructureTransactionsCoordinator(
     );
   }
 
+  function closeLongWorldbuildingItemCreate(): void {
+    closeSynchronously(
+      () => {
+        state.worldbuildingItemCreateTarget.value = null;
+      },
+      (loaded) => loaded.closeLongWorldbuildingItemCreate()
+    );
+  }
+
   function closeLongPlotPointCreate(): void {
     closeSynchronously(
       () => {
@@ -506,11 +537,13 @@ export function useLazyLongStructureTransactionsCoordinator(
     renameLongCharacter,
     renameLongStructureTitle,
     openLongCharacterCreate,
+    openLongWorldbuildingItemCreate,
     openLongVolumeCreate,
     openLongPlotPointCreate,
     saveLongVolumeOutline,
     saveLongPlotPointContent,
     createLongVolume,
+    createLongWorldbuildingItem,
     createLongPlotPoint,
     createLongChapterCard,
     handleLongStructureMutation,
@@ -520,6 +553,7 @@ export function useLazyLongStructureTransactionsCoordinator(
     createLongCharacter,
     closeLongStructureDialog,
     closeLongCharacterCreate,
+    closeLongWorldbuildingItemCreate,
     closeLongPlotPointCreate,
     closeLongChapterCardCreate,
     closeLongDraftSectionDelete,

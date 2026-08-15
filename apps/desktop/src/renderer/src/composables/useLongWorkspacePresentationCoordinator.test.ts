@@ -381,6 +381,17 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       activeFileRevision: worldFile.revision
     });
 
+    activeSelection.value = selection("character_design", {
+      files: [{ role: "overview", label: "概览", file: worldFile }]
+    });
+    expect(coordinator.activeLongRuntimeContext.value).toMatchObject({
+      activeRoot: "character_design",
+      activeAgentId: "setting"
+    });
+    expect(
+      coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
+    ).toBeDefined();
+
     activeSelection.value = selection("draft", {
       chapterCardId: "chapter_one",
       preferredRole: "body"

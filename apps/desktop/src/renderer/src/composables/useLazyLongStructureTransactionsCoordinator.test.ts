@@ -61,11 +61,13 @@ function createLoadedCoordinator() {
     renameLongCharacter: vi.fn(async () => undefined),
     renameLongStructureTitle: vi.fn(async () => undefined),
     openLongCharacterCreate: vi.fn(),
+    openLongWorldbuildingItemCreate: vi.fn(async () => undefined),
     openLongVolumeCreate: vi.fn(async () => undefined),
     openLongPlotPointCreate: vi.fn(async () => undefined),
     saveLongVolumeOutline: vi.fn(async () => undefined),
     saveLongPlotPointContent: vi.fn(async () => undefined),
     createLongVolume: vi.fn(async () => undefined),
+    createLongWorldbuildingItem: vi.fn(async () => undefined),
     createLongPlotPoint: vi.fn(async () => undefined),
     createLongChapterCard: vi.fn(async () => undefined),
     handleLongStructureMutation: vi.fn(async () => undefined),
@@ -75,6 +77,7 @@ function createLoadedCoordinator() {
     createLongCharacter: vi.fn(async () => undefined),
     closeLongStructureDialog: vi.fn(),
     closeLongCharacterCreate: vi.fn(),
+    closeLongWorldbuildingItemCreate: vi.fn(),
     closeLongPlotPointCreate: vi.fn(),
     closeLongChapterCardCreate: vi.fn(),
     closeLongDraftSectionDelete: vi.fn(),
@@ -99,6 +102,11 @@ function createContext(input: { readonly pending?: boolean } = {}) {
     mutationPending: ref(input.pending ?? false),
     structureDialogOpen: ref(true),
     characterCreateTarget: ref<object | null>({ bookId: BOOK_ID }),
+    worldbuildingItemCreateTarget: ref<object | null>({
+      bookId: BOOK_ID,
+      categoryId: "world_factions",
+      categoryTitle: "势力"
+    }),
     plotPointCreateTarget: ref<object | null>({
       bookId: BOOK_ID,
       volumeId: "volume_a",
@@ -215,6 +223,7 @@ describe("useLazyLongStructureTransactionsCoordinator", () => {
 
     lazy.closeLongStructureDialog();
     lazy.closeLongCharacterCreate();
+    lazy.closeLongWorldbuildingItemCreate();
     lazy.closeLongPlotPointCreate();
     lazy.closeLongChapterCardCreate();
     lazy.closeLongDraftSectionDelete();
@@ -223,6 +232,7 @@ describe("useLazyLongStructureTransactionsCoordinator", () => {
 
     expect(test.state.structureDialogOpen.value).toBe(false);
     expect(test.state.characterCreateTarget.value).toBeNull();
+    expect(test.state.worldbuildingItemCreateTarget.value).toBeNull();
     expect(test.state.plotPointCreateTarget.value).toBeNull();
     expect(test.state.chapterCardCreateTarget.value).toBeNull();
     expect(test.state.draftSectionDeleteTarget.value).toBeNull();

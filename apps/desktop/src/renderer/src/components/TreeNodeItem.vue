@@ -452,14 +452,7 @@ onBeforeUnmount(() => {
       <AppIcon :name="node.icon ?? (node.children?.length ? 'folder' : 'file')" :size="15" />
       <span class="tree-label">{{ node.label }}</span>
       <span v-if="node.categoryTag" class="tree-category-tag">{{ node.categoryTag }}</span>
-      <span
-        v-if="
-          (node.catalogNodeType === 'book' ||
-            node.catalogNodeType === 'long-book') &&
-          node.badge
-        "
-        class="tree-badge"
-      >
+      <span v-if="node.badge" class="tree-badge">
         {{ node.badge }}
       </span>
       <span
@@ -468,16 +461,6 @@ onBeforeUnmount(() => {
         :class="{ 'is-open': open }"
       >
         <AppIcon name="chevron" :size="13" />
-      </span>
-      <span
-        v-if="
-          node.catalogNodeType !== 'book' &&
-          node.catalogNodeType !== 'long-book' &&
-          node.badge
-        "
-        class="tree-badge"
-      >
-        {{ node.badge }}
       </span>
     </button>
 

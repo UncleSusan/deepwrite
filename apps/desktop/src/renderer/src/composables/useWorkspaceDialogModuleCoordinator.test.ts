@@ -61,6 +61,9 @@ function createHarness() {
   const characterCreation = shallowRef<
     WorkspaceDialogModuleCoordinatorOptions["longStructure"]["characterCreation"]["value"]
   >(null);
+  const worldbuildingItemCreation = shallowRef<
+    WorkspaceDialogModuleCoordinatorOptions["longStructure"]["worldbuildingItemCreation"]["value"]
+  >(null);
   const plotPointCreation = shallowRef<
     WorkspaceDialogModuleCoordinatorOptions["longStructure"]["plotPointCreation"]["value"]
   >(null);
@@ -168,6 +171,7 @@ function createHarness() {
     },
     longStructure: {
       characterCreation,
+      worldbuildingItemCreation,
       plotPointCreation,
       chapterCardCreation,
       draftDeletion,
@@ -233,6 +237,7 @@ function createHarness() {
       plotBookId,
       plotBook,
       characterCreation,
+      worldbuildingItemCreation,
       plotPointCreation,
       chapterCardCreation,
       draftDeletion,
@@ -358,6 +363,11 @@ function setKindActive(
     case "create-long-character":
       state.characterCreation.value = active
         ? fixture({ groupLabel: "主角组" })
+        : null;
+      return;
+    case "create-long-worldbuilding-item":
+      state.worldbuildingItemCreation.value = active
+        ? fixture({ categoryTitle: "势力" })
         : null;
       return;
     case "create-long-plot-point":
@@ -518,8 +528,8 @@ function trackedRef<Value>(
 
 describe("useWorkspaceDialogModuleCoordinator", () => {
   it("covers every dialog kind and preserves the complete strict priority", () => {
-    expect(WORKSPACE_DIALOG_PRIORITY).toHaveLength(29);
-    expect(new Set(WORKSPACE_DIALOG_PRIORITY).size).toBe(29);
+    expect(WORKSPACE_DIALOG_PRIORITY).toHaveLength(30);
+    expect(new Set(WORKSPACE_DIALOG_PRIORITY).size).toBe(30);
     expect(new Set(WORKSPACE_DIALOG_PRIORITY)).toEqual(
       new Set(WORKSPACE_DIALOG_KINDS)
     );

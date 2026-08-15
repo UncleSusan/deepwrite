@@ -1,8 +1,85 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  MODEL_SELECTION_PERSISTENCE_KEY,
+  RUN_PREFERENCES_PERSISTENCE_KEY
+} from "../stores/conversationStore";
+import {
+  AGENT_MODEL_SELECTION_STORAGE_KEY,
+  AGENT_RUN_PREFERENCES_STORAGE_KEY
+} from "./agentRunPreferences";
+import {
   conversationHistoryPersistenceKey,
-  createConversationPersistenceAdapter
+  createConversationPersistenceAdapter,
+  legacyConversationHistoryStorageKey
 } from "./conversationPersistence";
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>();
+
+  get length(): number {
+    return this.values.size;
+  }
+
+  clear(): void {
+    this.values.clear();
+  }
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+
+  key(index: number): string | null {
+    return [...this.values.keys()][index] ?? null;
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
+}
+
+function snapshot(sessionId: string, content: string, updatedAt: string) {
+  return {
+    version: 1 as const,
+    activeSessionId: sessionId,
+    conversations: [
+      {
+        sessionId,
+        messages: [
+          {
+            id: `user-${sessionId}`,
+            role: "user" as const,
+            content,
+            createdAt: updatedAt,
+            status: "completed" as const
+          }
+        ],
+        draft: "",
+        approvalMode: "request-approval" as const,
+        createdAt: updatedAt,
+        updatedAt,
+        temperature: 0.7
+      }
+    ]
+  };
+}
+
+function memoryApi(initial: Record<string, unknown> = {}) {
+  const values = new Map<string, unknown>(Object.entries(initial));
+  return {
+    values,
+    load: vi.fn(async (key: string) => values.get(key)),
+    save: vi.fn(async (key: string, value: unknown) => {
+      values.set(key, value);
+    }),
+    remove: vi.fn(async (key: string) => {
+      values.delete(key);
+    })
+  };
+}
 
 describe("conversation persistence adapter", () => {
   it("creates readable contract-safe keys for ordinary conversations", () => {
@@ -51,5 +128,127 @@ describe("conversation persistence adapter", () => {
 
   it("returns null when the preload capability is unavailable", () => {
     expect(createConversationPersistenceAdapter(undefined)).toBeNull();
+  });
+
+  it("migrates Chromium localStorage conversations into renderer-state keys", async () => {
+    const storage = new MemoryStorage();
+    const logicalKey = "book-one:setting";
+    const legacy = snapshot(
+      "session-old",
+      "检查设定冲突",
+      "2026-08-14T01:47:00.000Z"
+    );
+    storage.setItem(
+      legacyConversationHistoryStorageKey(logicalKey),
+      JSON.stringify(legacy)
+    );
+    const api = memoryApi();
+    const adapter = createConversationPersistenceAdapter(api, { storage })!;
+    const persistenceKey = conversationHistoryPersistenceKey(logicalKey);
+
+    await expect(adapter.load(persistenceKey)).resolves.toEqual(legacy);
+    expect(storage.getItem(legacyConversationHistoryStorageKey(logicalKey))).toBeNull();
+    expect(api.values.get(persistenceKey)).toEqual(legacy);
+  });
+
+  it("merges leftover localStorage sessions with already-written renderer-state history", async () => {
+    const storage = new MemoryStorage();
+    const logicalKey = "long:book-1:setting:setting:__book__";
+    const persistenceKey = conversationHistoryPersistenceKey(logicalKey);
+    storage.setItem(
+      legacyConversationHistoryStorageKey(logicalKey),
+      JSON.stringify(
+        snapshot("session-old", "旧版设定讨论", "2026-08-13T10:00:00.000Z")
+      )
+    );
+    const current = snapshot(
+      "session-new",
+      "检查设定冲突",
+      "2026-08-15T07:51:00.000Z"
+    );
+    const api = memoryApi({ [persistenceKey]: current });
+    const adapter = createConversationPersistenceAdapter(api, { storage })!;
+
+    const loaded = await adapter.load(MODEL_SELECTION_PERSISTENCE_KEY);
+    expect(loaded).toBeUndefined();
+    const merged = api.values.get(persistenceKey) as {
+      conversations: Array<{ sessionId: string }>;
+      activeSessionId: string;
+    };
+    expect(merged.activeSessionId).toBe("session-new");
+    expect(merged.conversations.map((item) => item.sessionId)).toEqual([
+      "session-new",
+      "session-old"
+    ]);
+    expect(storage.length).toBe(0);
+  });
+
+  it("copies missing model selection and fills absent run-preference scopes", async () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      AGENT_MODEL_SELECTION_STORAGE_KEY,
+      JSON.stringify({ selectedModelId: "writer", thinkingLevel: "high" })
+    );
+    storage.setItem(
+      AGENT_RUN_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({
+        general: { temperature: 0.2, approvalMode: "request-approval" },
+        "book:one": { temperature: 1.1, approvalMode: "auto-approve" }
+      })
+    );
+    const api = memoryApi({
+      [RUN_PREFERENCES_PERSISTENCE_KEY]: {
+        general: { temperature: 0.8, approvalMode: "auto-approve" }
+      }
+    });
+    const adapter = createConversationPersistenceAdapter(api, { storage })!;
+
+    await expect(
+      adapter.load(MODEL_SELECTION_PERSISTENCE_KEY)
+    ).resolves.toEqual({ selectedModelId: "writer", thinkingLevel: "high" });
+    await expect(
+      adapter.load(RUN_PREFERENCES_PERSISTENCE_KEY)
+    ).resolves.toEqual({
+      general: { temperature: 0.8, approvalMode: "auto-approve" },
+      "book:one": { temperature: 1.1, approvalMode: "auto-approve" }
+    });
+    expect(storage.length).toBe(0);
+  });
+
+  it("does not let an empty restart snapshot erase stored conversations", async () => {
+    const logicalKey = "long:book-1:setting:setting:__book__";
+    const persistenceKey = conversationHistoryPersistenceKey(logicalKey);
+    const current = snapshot(
+      "session-kept",
+      "检查设定冲突",
+      "2026-08-15T07:51:00.000Z"
+    );
+    const api = memoryApi({ [persistenceKey]: current });
+    const adapter = createConversationPersistenceAdapter(api)!;
+
+    await adapter.save(persistenceKey, {
+      version: 1,
+      activeSessionId: "session-empty",
+      conversations: []
+    });
+
+    expect(api.save).not.toHaveBeenCalled();
+    expect(api.values.get(persistenceKey)).toEqual(current);
+  });
+
+  it("keeps unreadable localStorage entries so a later launch can retry", async () => {
+    const storage = new MemoryStorage();
+    const logicalKey = "book-one:plot_design";
+    storage.setItem(legacyConversationHistoryStorageKey(logicalKey), "not-json");
+    const api = memoryApi();
+    const adapter = createConversationPersistenceAdapter(api, { storage })!;
+
+    await expect(
+      adapter.load(conversationHistoryPersistenceKey(logicalKey))
+    ).resolves.toBeUndefined();
+    expect(storage.getItem(legacyConversationHistoryStorageKey(logicalKey))).toBe(
+      "not-json"
+    );
+    expect(api.save).not.toHaveBeenCalled();
   });
 });

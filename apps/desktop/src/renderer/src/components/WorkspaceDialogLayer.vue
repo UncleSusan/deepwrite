@@ -9,6 +9,7 @@ import {
   CreateLongChapterCardDialog,
   CreateLongCharacterDialog,
   CreateLongPlotPointDialog,
+  CreateLongWorldbuildingItemDialog,
   CreateLongVolumeDialog,
   DeleteExpertSectionDialog,
   DeleteLongDraftSectionDialog,
@@ -187,6 +188,15 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       :pending="module.pending"
       @close="emit('closeCreateLongCharacter')"
       @submit="emit('submitCreateLongCharacter', $event)"
+    />
+
+    <CreateLongWorldbuildingItemDialog
+      v-else-if="module.kind === 'create-long-worldbuilding-item'"
+      open
+      :category-title="module.categoryTitle"
+      :pending="module.pending"
+      @close="emit('closeCreateLongWorldbuildingItem')"
+      @submit="emit('submitCreateLongWorldbuildingItem', $event)"
     />
 
     <CreateLongPlotPointDialog

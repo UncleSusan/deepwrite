@@ -1,11 +1,34 @@
 import type { ConversationPersistenceApi } from "@deepwrite/contracts";
-import type { ConversationPersistenceAdapter } from "../stores/conversationStore";
+import { mergeAgentConversationPersistenceSnapshots } from "../composables/useAgentConversation";
+import {
+  MODEL_SELECTION_PERSISTENCE_KEY,
+  RUN_PREFERENCES_PERSISTENCE_KEY,
+  type ConversationPersistenceAdapter
+} from "../stores/conversationStore";
+import {
+  AGENT_MODEL_SELECTION_STORAGE_KEY,
+  AGENT_RUN_PREFERENCES_STORAGE_KEY,
+  parseAgentModelSelection,
+  parseAgentRunPreferences
+} from "./agentRunPreferences";
 
 const HISTORY_PREFIX = "conversation-history:";
+export const LEGACY_CONVERSATION_HISTORY_STORAGE_PREFIX =
+  "deepwrite:agent-conversations:v1:";
 const MAX_PERSISTENCE_KEY_LENGTH = 240;
 const HASH_OFFSET = 0xcbf29ce484222325n;
 const HASH_PRIME = 0x100000001b3n;
 const HASH_MASK = 0xffffffffffffffffn;
+const HASHED_KEY_SUFFIX = /~[a-f0-9]{16}$/u;
+
+export type ConversationLegacyStorage = Pick<
+  Storage,
+  "getItem" | "removeItem" | "key" | "length"
+>;
+
+export interface ConversationPersistenceAdapterOptions {
+  storage?: ConversationLegacyStorage;
+}
 
 function stableKeyHash(value: string): string {
   let hash = HASH_OFFSET;
@@ -35,13 +58,263 @@ export function conversationHistoryPersistenceKey(key: string): string {
   return `${HISTORY_PREFIX}${encoded.slice(0, prefixLength)}${suffix}`;
 }
 
+export function legacyConversationHistoryStorageKey(key: string): string {
+  const normalized = key.trim();
+  if (!normalized) throw new Error("会话 key 不能为空。");
+  return `${LEGACY_CONVERSATION_HISTORY_STORAGE_PREFIX}${encodeURIComponent(
+    normalized
+  )}`;
+}
+
+function decodePersistenceSuffix(encoded: string): string | undefined {
+  const hashed = HASHED_KEY_SUFFIX.exec(encoded)?.[0];
+  const reversible = hashed ? encoded.slice(0, -hashed.length) : encoded;
+  if (!reversible) return undefined;
+  try {
+    return decodeURIComponent(reversible);
+  } catch {
+    return reversible;
+  }
+}
+
+function persistenceKeyFromLegacyStorageKey(
+  storageKey: string
+): string | undefined {
+  if (storageKey.startsWith(LEGACY_CONVERSATION_HISTORY_STORAGE_PREFIX)) {
+    const encoded = storageKey.slice(
+      LEGACY_CONVERSATION_HISTORY_STORAGE_PREFIX.length
+    );
+    const logicalKey = decodePersistenceSuffix(encoded);
+    if (!logicalKey?.trim()) return undefined;
+    try {
+      return conversationHistoryPersistenceKey(logicalKey);
+    } catch {
+      return undefined;
+    }
+  }
+  if (
+    storageKey.startsWith(HISTORY_PREFIX) &&
+    storageKey.length <= MAX_PERSISTENCE_KEY_LENGTH
+  ) {
+    const encoded = storageKey.slice(HISTORY_PREFIX.length);
+    if (HASHED_KEY_SUFFIX.test(encoded)) return storageKey;
+    const logicalKey = decodePersistenceSuffix(encoded);
+    if (!logicalKey?.trim()) return undefined;
+    try {
+      return conversationHistoryPersistenceKey(logicalKey);
+    } catch {
+      return storageKey;
+    }
+  }
+  return undefined;
+}
+
+function listStorageKeys(storage: ConversationLegacyStorage): string[] {
+  const keys: string[] = [];
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key) keys.push(key);
+    }
+  } catch {
+    return keys;
+  }
+  return keys;
+}
+
+function readStorageItem(
+  storage: ConversationLegacyStorage,
+  key: string
+): string | null {
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function removeStorageItem(
+  storage: ConversationLegacyStorage,
+  key: string
+): void {
+  try {
+    storage.removeItem(key);
+  } catch {
+    // Quota / privacy-mode failures must not block the live adapter.
+  }
+}
+
+function parseJsonValue(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+async function migrateLegacyConversationEntry(
+  api: ConversationPersistenceApi,
+  persistenceKey: string,
+  raw: string
+): Promise<boolean> {
+  const legacyValue = parseJsonValue(raw);
+  const current = await api.load(persistenceKey);
+  const merged = mergeAgentConversationPersistenceSnapshots(current, [
+    legacyValue
+  ]);
+  if (!merged) return false;
+  if (!sameJsonValue(current, merged)) {
+    await api.save(persistenceKey, merged);
+  }
+  return true;
+}
+
+async function migrateLegacyModelSelection(
+  api: ConversationPersistenceApi,
+  raw: string
+): Promise<boolean> {
+  const legacy = parseAgentModelSelection(raw);
+  if (!legacy) return false;
+  const current = parseAgentModelSelection(
+    jsonStringOrNull(await api.load(MODEL_SELECTION_PERSISTENCE_KEY))
+  );
+  if (!current) {
+    await api.save(MODEL_SELECTION_PERSISTENCE_KEY, legacy);
+  }
+  return true;
+}
+
+async function migrateLegacyRunPreferences(
+  api: ConversationPersistenceApi,
+  raw: string
+): Promise<boolean> {
+  const legacy = parseAgentRunPreferences(raw);
+  if (!Object.keys(legacy).length) return false;
+  const current = parseAgentRunPreferences(
+    jsonStringOrNull(await api.load(RUN_PREFERENCES_PERSISTENCE_KEY))
+  );
+  const merged = { ...legacy, ...current };
+  if (!sameJsonValue(current, merged)) {
+    await api.save(RUN_PREFERENCES_PERSISTENCE_KEY, merged);
+  }
+  return true;
+}
+
+function jsonStringOrNull(value: unknown): string | null {
+  if (value === undefined) return null;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function conversationEnvelopeHasContent(value: unknown): boolean {
+  if (!isPlainRecord(value) || !Array.isArray(value.conversations)) {
+    return false;
+  }
+  return value.conversations.some((conversation) => {
+    if (!isPlainRecord(conversation)) return false;
+    if (typeof conversation.draft === "string" && conversation.draft.trim()) {
+      return true;
+    }
+    return (
+      Array.isArray(conversation.messages) && conversation.messages.length > 0
+    );
+  });
+}
+
+function isEmptyConversationEnvelope(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    value.version === 1 &&
+    Array.isArray(value.conversations) &&
+    !conversationEnvelopeHasContent(value)
+  );
+}
+
+async function migrateLegacyConversationPersistence(
+  api: ConversationPersistenceApi,
+  storage: ConversationLegacyStorage
+): Promise<void> {
+  for (const storageKey of listStorageKeys(storage)) {
+    const raw = readStorageItem(storage, storageKey);
+    if (!raw) continue;
+    try {
+      let migrated = false;
+      if (storageKey === AGENT_MODEL_SELECTION_STORAGE_KEY) {
+        migrated = await migrateLegacyModelSelection(api, raw);
+      } else if (storageKey === AGENT_RUN_PREFERENCES_STORAGE_KEY) {
+        migrated = await migrateLegacyRunPreferences(api, raw);
+      } else {
+        const persistenceKey = persistenceKeyFromLegacyStorageKey(storageKey);
+        if (!persistenceKey) continue;
+        migrated = await migrateLegacyConversationEntry(
+          api,
+          persistenceKey,
+          raw
+        );
+      }
+      if (migrated) removeStorageItem(storage, storageKey);
+    } catch {
+      // Keep the localStorage copy when a single key cannot be written.
+    }
+  }
+}
+
 export function createConversationPersistenceAdapter(
-  api: ConversationPersistenceApi | undefined
+  api: ConversationPersistenceApi | undefined,
+  options: ConversationPersistenceAdapterOptions = {}
 ): ConversationPersistenceAdapter | null {
   if (!api) return null;
+  const persistenceApi = api;
+  const storage = options.storage;
+  let migratePromise: Promise<void> | undefined;
+
+  function migrateLegacy(): Promise<void> {
+    if (!storage) return Promise.resolve();
+    if (!migratePromise) {
+      migratePromise = migrateLegacyConversationPersistence(
+        persistenceApi,
+        storage
+      ).catch(() => undefined);
+    }
+    return migratePromise;
+  }
+
   return {
-    load: (key) => api.load(key),
-    save: (key, value) => api.save(key, value),
-    remove: (key) => api.remove(key)
+    async load(key) {
+      await migrateLegacy();
+      return persistenceApi.load(key);
+    },
+    async save(key, value) {
+      await migrateLegacy();
+      if (
+        key.startsWith(HISTORY_PREFIX) &&
+        isEmptyConversationEnvelope(value)
+      ) {
+        const current = await persistenceApi.load(key);
+        if (conversationEnvelopeHasContent(current)) {
+          return;
+        }
+      }
+      return persistenceApi.save(key, value);
+    },
+    async remove(key) {
+      await migrateLegacy();
+      return persistenceApi.remove(key);
+    }
   };
 }

@@ -8,8 +8,17 @@ describe("LongWorkspaceModule boundary", () => {
     expect(shellSource).not.toContain("<LongWorkspaceEditor");
     expect(source).toContain("<AgentConversation");
     expect(source).toContain("<LongWorkspaceEditor");
-    expect(source).toContain('class="long-workspace-main-view"');
-    expect(source).toContain('v-show="!rightCollapsed"');
+    expect(source).toContain('class="long-agent-column"');
+    expect(source).toContain('class="pane-resizer pane-resizer-right"');
+    expect(source).toContain('v-show="!rightPane.collapsed"');
+    expect(source).toContain('v-if="!rightPane.collapsed"');
+    expect(shellSource).toContain(':right-pane="writingRightPaneViewModel"');
+    expect(shellSource).toContain(
+      '@resize-start="startPaneResize(\'right\', $event)"'
+    );
+    expect(shellSource).toContain(
+      '@resize-keydown="handleResizeKeydown(\'right\', $event)"'
+    );
   });
 
   it("reads high-frequency conversation state below the shell boundary", () => {

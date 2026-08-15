@@ -192,6 +192,8 @@ export interface AgentConversationController {
   useSuggestion(value: string): void;
   capturePersistenceSnapshot(): AgentConversationPersistenceSnapshot;
   restorePersistenceSnapshot(snapshot: unknown): Promise<boolean>;
+  holdPersistenceEmits(): void;
+  releasePersistenceEmits(): void;
   dispose(options?: { clearPersistence?: boolean }): void;
 }
 
@@ -1227,14 +1229,15 @@ function parsePersistenceRecord(
     !isRecord(value) ||
     typeof value.sessionId !== "string" ||
     !Array.isArray(value.messages) ||
-    typeof value.draft !== "string" ||
     !validDate(value.createdAt) ||
     !validDate(value.updatedAt) ||
     (value.approvalMode !== undefined &&
       value.approvalMode !== "request-approval" &&
       value.approvalMode !== "auto-approve") ||
-    typeof value.temperature !== "number" ||
-    !Number.isFinite(value.temperature)
+    (value.draft !== undefined && typeof value.draft !== "string") ||
+    (value.temperature !== undefined &&
+      (typeof value.temperature !== "number" ||
+        !Number.isFinite(value.temperature)))
   ) {
     return undefined;
   }
@@ -1245,12 +1248,15 @@ function parsePersistenceRecord(
   return {
     sessionId: value.sessionId,
     messages,
-    draft: value.draft,
+    draft: typeof value.draft === "string" ? value.draft : "",
     approvalMode:
       value.approvalMode === "auto-approve" ? "auto-approve" : "request-approval",
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
-    temperature: value.temperature
+    temperature:
+      typeof value.temperature === "number" && Number.isFinite(value.temperature)
+        ? value.temperature
+        : 0.7
   };
 }
 
@@ -1273,7 +1279,9 @@ export function parseAgentConversationPersistenceSnapshot(
       ): conversation is AgentConversationPersistenceRecord =>
         conversation !== undefined
     );
-  if (conversations.length !== value.conversations.length) return undefined;
+  if (!conversations.length && value.conversations.length > 0) {
+    return undefined;
+  }
   const limited = conversations
     .sort(
       (left, right) =>
@@ -1475,6 +1483,7 @@ export function useAgentConversation(
   let persistenceBatchChanged = false;
   let applyingPersistenceSnapshot = false;
   let persistenceNotificationsEnabled = true;
+  let persistenceEmitHold = 0;
   let pendingAgentTextDelta: PendingAgentTextDelta | undefined;
   let streamPresentationFrame: number | undefined;
   let streamPresentationFallbackTimer: number | undefined;
@@ -1579,8 +1588,17 @@ export function useAgentConversation(
     );
   }
 
+  function holdPersistenceEmits(): void {
+    persistenceEmitHold += 1;
+  }
+
+  function releasePersistenceEmits(): void {
+    persistenceEmitHold = Math.max(0, persistenceEmitHold - 1);
+  }
+
   function emitPersistenceSnapshot(): void {
     if (
+      persistenceEmitHold > 0 ||
       !persistenceNotificationsEnabled ||
       applyingPersistenceSnapshot ||
       (!options.onPersistenceChange && !options.onPersistenceSnapshot)
@@ -1676,7 +1694,13 @@ export function useAgentConversation(
       temperature
     ],
     () => {
-      if (applyingPersistenceSnapshot || !persistenceNotificationsEnabled) return;
+      if (
+        applyingPersistenceSnapshot ||
+        !persistenceNotificationsEnabled ||
+        persistenceEmitHold > 0
+      ) {
+        return;
+      }
       persistenceMutationRevision += 1;
       currentUpdatedAt.value = nextConversationTimestamp();
       if (persistenceBatchDepth > 0) {
@@ -3930,6 +3954,8 @@ export function useAgentConversation(
     selectApprovalMode,
     capturePersistenceSnapshot,
     restorePersistenceSnapshot,
+    holdPersistenceEmits,
+    releasePersistenceEmits,
     useSuggestion(value: string): void {
       draft.value = value;
     },

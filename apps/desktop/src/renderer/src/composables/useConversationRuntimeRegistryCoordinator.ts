@@ -268,6 +268,7 @@ export function useConversationRuntimeRegistryCoordinator(
         );
       }
     } finally {
+      conversation.releasePersistenceEmits();
       applyConversationRuntimeSettings(
         key,
         scope,
@@ -311,6 +312,7 @@ export function useConversationRuntimeRegistryCoordinator(
     });
     if (persistenceEnabled) {
       const generation = lifecycleGeneration;
+      created.holdPersistenceEmits();
       void trackHydrate(
         hydrateConversation(
           key,

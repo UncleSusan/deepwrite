@@ -171,6 +171,12 @@ export interface CreateLongCharacterDialogModule {
   pending: boolean;
 }
 
+export interface CreateLongWorldbuildingItemDialogModule {
+  kind: "create-long-worldbuilding-item";
+  categoryTitle: string;
+  pending: boolean;
+}
+
 export interface CreateLongPlotPointDialogModule {
   kind: "create-long-plot-point";
   volumeTitle: string;
@@ -308,6 +314,7 @@ export type WorkspaceDialogModule =
   | LongRollbackDialogModule
   | LongStructureDialogModule
   | CreateLongCharacterDialogModule
+  | CreateLongWorldbuildingItemDialogModule
   | CreateLongPlotPointDialogModule
   | CreateLongChapterCardDialogModule
   | DeleteLongDraftDialogModule
@@ -341,6 +348,7 @@ export const WORKSPACE_DIALOG_KINDS = [
   "long-rollback",
   "long-structure",
   "create-long-character",
+  "create-long-worldbuilding-item",
   "create-long-plot-point",
   "create-long-chapter-card",
   "delete-long-draft",
@@ -403,6 +411,8 @@ export interface WorkspaceDialogLayerEmits {
   ];
   closeCreateLongCharacter: [];
   submitCreateLongCharacter: [input: { name: string; aliases: string[] }];
+  closeCreateLongWorldbuildingItem: [];
+  submitCreateLongWorldbuildingItem: [input: { title: string }];
   closeCreateLongPlotPoint: [];
   submitCreateLongPlotPoint: [input: { title: string; summary: string }];
   closeCreateLongChapterCard: [];

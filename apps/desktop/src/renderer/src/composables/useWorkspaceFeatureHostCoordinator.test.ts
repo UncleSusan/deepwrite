@@ -431,6 +431,30 @@ describe("useWorkspaceFeatureHostCoordinator", () => {
     await firstChoice;
   });
 
+  it("projects the known marketplace session into the feature module", async () => {
+    const harness = createHarness({
+      loadMarketplaceSession: async () => signedInSession("Plaza User")
+    });
+
+    harness.workspaceMainView.value = "marketplace";
+    expect(harness.coordinator.workspaceFeatureModule.value).toMatchObject({
+      kind: "marketplace",
+      session: null
+    });
+
+    await harness.coordinator.loadMarketplaceSession();
+    expect(harness.coordinator.workspaceFeatureModule.value).toMatchObject({
+      kind: "marketplace",
+      session: signedInSession("Plaza User")
+    });
+
+    harness.coordinator.applyMarketplaceSession(signedOutSession());
+    expect(harness.coordinator.workspaceFeatureModule.value).toMatchObject({
+      kind: "marketplace",
+      session: signedOutSession()
+    });
+  });
+
   it("lets page session events supersede startup discovery and ignores results after dispose", async () => {
     const startupSession = deferred<MarketplaceSession>();
     const harness = createHarness({

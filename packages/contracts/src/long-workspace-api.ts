@@ -526,14 +526,13 @@ export const LongWorkspaceRuntimeContextSchema = z
     }
     if (
       value.worldbuildingDirectory !== undefined &&
-      (value.activeRoot !== "worldbuilding" ||
-        value.activeAgentId !== "setting")
+      value.activeAgentId !== "setting"
     ) {
       context.addIssue({
         code: "custom",
         path: ["worldbuildingDirectory"],
         message:
-          "Long worldbuilding directory may only be provided to the setting agent on the worldbuilding root."
+          "Long worldbuilding directory may only be provided to the setting agent."
       });
     }
     if (

@@ -101,6 +101,11 @@ describe("long-form renderer vertical slice", () => {
   });
 
   it("offers long-book creation in the unified themed creation dialog", () => {
+    expect(leftSidebarSource).toContain('label: "新建书籍"');
+    expect(leftSidebarSource).toContain('emit("createBook")');
+    expect(appSource).toContain('@create-book="openCreateBookDialog"');
+    expect(appSource).toContain("function openCreateBookDialog(): void {");
+    expect(appSource).toContain("createBookDialogOpen.value = true");
     expect(sectionSource).toContain('"新建作品"');
     expect(sectionSource).not.toContain('id: "create-long-book"');
     expect(dialogSource).toContain('role="tablist"');
@@ -188,6 +193,7 @@ describe("long-form renderer vertical slice", () => {
       "builder.deleteChapter(target.id, true)"
     );
     expect(editorSource).toContain("emit('createCharacter')");
+    expect(editorSource).toContain('emit("createWorldbuildingItem")');
     expect(editorSource).toContain("currentEmptyCollection");
     expect(editorSource).toContain("还没有${selection.title}");
     expect(editorSource).toContain("新建第一个人物");
@@ -196,6 +202,9 @@ describe("long-form renderer vertical slice", () => {
     expect(editorSource).toContain("@click=\"createFirstCollectionItem\"");
     expect(appSource).toContain(
       '@create-character="openLongCharacterCreate"'
+    );
+    expect(appSource).toContain(
+      '@create-worldbuilding-item="openLongWorldbuildingItemCreate"'
     );
     expect(longWorkspaceResourceTreeSource).toContain('plot_design: "剧情设计"');
     expect(longWorkspaceResourceTreeSource).toContain('key: "root:plot-points"');
@@ -308,6 +317,15 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(appSource).toContain(
       '@submit-create-long-plot-point="createLongPlotPoint"'
+    );
+    expect(workspaceDialogLayerSource).toContain(
+      "<CreateLongWorldbuildingItemDialog"
+    );
+    expect(workspaceDialogLayerSource).toContain(
+      "@submit=\"emit('submitCreateLongWorldbuildingItem', $event)\""
+    );
+    expect(appSource).toContain(
+      '@submit-create-long-worldbuilding-item="createLongWorldbuildingItem"'
     );
     expect(workspaceDialogLayerSource).toContain("<CreateLongChapterCardDialog");
     expect(dialogCoordinatorSource).toContain(
@@ -569,9 +587,10 @@ describe("long-form renderer vertical slice", () => {
     expect(worldbuildingNavigationSource).toContain(
       `@click="emit('selectOverview')"`
     );
-    expect(editorSource).toContain(
-      'type: "worldbuildingItem.create"'
+    expect(longStructureTransactionsSource).toContain(
+      'type === "worldbuildingItem.create"'
     );
+    expect(editorSource).toContain('emit("createWorldbuildingItem")');
     expect(worldbuildingNavigationSource).toContain(
       'class="section-tabs-bar long-worldbuilding-tabs"'
     );
@@ -647,7 +666,7 @@ describe("long-form renderer vertical slice", () => {
     expect(worldbuildingNavigationSource).toContain(
       "'is-loading': pendingOverview"
     );
-    expect(editorSource).toContain("void selectWorldbuildingItem(item.id)");
+    expect(editorSource).toContain("await selectWorldbuildingItem(item.id)");
     expect(editorSource).toContain("void selectWorldbuildingItem(nextId)");
   });
 
@@ -802,16 +821,19 @@ describe("long-form renderer vertical slice", () => {
       expect(longWorkspaceResourceTreeSource).toContain(label);
     }
     expect(longWorkspaceModuleSource).toContain(
-      "class=\"long-workspace-main-view\""
+      "class=\"long-agent-column\""
     );
     expect(longWorkspaceModuleSource).toContain(
-      "'is-right-collapsed': rightCollapsed"
+      'class="pane-resizer pane-resizer-right"'
     );
     expect(appSource).toContain(':left-collapsed="leftCollapsed"');
-    expect(appSource).toContain(':right-collapsed="rightCollapsed"');
+    expect(appSource).toContain(':right-pane="writingRightPaneViewModel"');
     expect(appSource).toContain('@toggle-left="leftCollapsed = !leftCollapsed"');
     expect(appSource).toContain('@toggle-right="rightCollapsed = !rightCollapsed"');
-    expect(longWorkspaceModuleSource).toContain('v-show="!rightCollapsed"');
+    expect(appSource).toContain(
+      '@resize-start="startPaneResize(\'right\', $event)"'
+    );
+    expect(longWorkspaceModuleSource).toContain('v-show="!rightPane.collapsed"');
   });
 
   it("wires left-tree collection actions through the existing structure pipeline", () => {
@@ -837,7 +859,7 @@ describe("long-form renderer vertical slice", () => {
       '@long-tree-item-action="handleLongTreeItemAction"'
     );
     expect(longStructureTransactionsSource).toContain(
-      "createLongWorldbuildingTreeItem"
+      "openLongWorldbuildingItemCreateForCategoryInternal"
     );
     expect(longStructureTransactionsSource).toContain(
       "builder.reorderWorldbuildingItem("
@@ -1586,6 +1608,9 @@ describe("long-form renderer vertical slice", () => {
     );
     expect(longStructureTransactionsSource).toContain(
       "longCharacterCreate.value !== target"
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "longWorldbuildingItemCreate.value !== target"
     );
     expect(longStructureTransactionsSource).toContain(
       "() => longDraftSectionDelete.value === pending"

@@ -13,6 +13,7 @@ describe("App agent model selection", () => {
   it("restores and persists the global model selection across app launches", () => {
     expect(source).toContain("sessionAgentModelSelection\n} = storeToRefs(conversationStore)");
     expect(source).toContain("createConversationPersistenceAdapter(");
+    expect(source).toContain("{ storage: window.localStorage }");
     const body = functionBody(
       runtimeRegistrySource,
       "synchronizeSessionAgentModelSelection",

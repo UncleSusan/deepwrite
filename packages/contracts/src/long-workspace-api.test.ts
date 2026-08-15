@@ -187,7 +187,7 @@ describe("long workspace API contracts", () => {
     ).toThrow(/maximum character count/iu);
   });
 
-  it("accepts a lightweight worldbuilding directory only for the worldbuilding agent", () => {
+  it("accepts a lightweight worldbuilding directory only for the setting agent", () => {
     const worldbuildingDirectory = {
       categories: [
         {
@@ -218,6 +218,15 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
+          activeAgentId: "setting",
+          worldbuildingDirectory
+        })
+      )
+    ).toMatchObject({ worldbuildingDirectory });
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "character_design",
           activeAgentId: "setting",
           worldbuildingDirectory
         })

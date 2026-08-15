@@ -63,6 +63,9 @@ export const CreateLongPlotPointDialog = defineAsyncComponent(
 export const CreateLongVolumeDialog = defineAsyncComponent(
   () => import("./CreateLongVolumeDialog.vue")
 );
+export const CreateLongWorldbuildingItemDialog = defineAsyncComponent(
+  () => import("./CreateLongWorldbuildingItemDialog.vue")
+);
 export const DeleteExpertSectionDialog = defineAsyncComponent(
   () => import("./DeleteExpertSectionDialog.vue")
 );

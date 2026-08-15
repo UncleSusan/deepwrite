@@ -42,6 +42,15 @@ describe("LeftSidebar account controls", () => {
     expect(source).toContain("后台中");
   });
 
+  it("turns the top action into create-book instead of a new conversation", () => {
+    expect(source).toContain('label: "新建书籍"');
+    expect(source).toContain('id: "create-book"');
+    expect(source).toContain('aria-label="新建书籍"');
+    expect(source).toContain('emit("createBook")');
+    expect(source).not.toContain('label: "新建对话"');
+    expect(source).not.toContain("newConversation");
+  });
+
   it("keeps agent-team management in the primary navigation", () => {
     expect(source).toContain('id: "agent-teams"');
     expect(source).toContain('emit("openAgentTeams")');

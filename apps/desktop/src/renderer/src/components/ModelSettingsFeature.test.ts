@@ -51,6 +51,7 @@ describe("ModelSettingsFeature provider presets", () => {
   });
 
   it.each([
+    ["minimax-codeplan", "MiniMax Plan"],
     ["dashscope", "阿里云百炼"],
     ["zhipu", "智谱 GLM"],
     ["moonshot", "Kimi 开放平台"]

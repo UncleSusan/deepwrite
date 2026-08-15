@@ -657,6 +657,7 @@ describe("DeepWrite Pi runtime adapter", () => {
     const userPrompt = buildRuntimeUserPrompt(input);
     expect(userPrompt).toContain("长篇作品: 《雾港长篇》");
     expect(userPrompt).toContain("【世界观条目列表（发送时快照）】");
+    expect(userPrompt).toContain("【人物设计列表（发送时快照）】");
     expect(userPrompt).toContain(
       "世界规则（category_id=world_rules；类型=文本）"
     );
@@ -666,14 +667,18 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(userPrompt).toContain(
       "守夜人（item_id=worlditem_watchers；顺序=1）"
     );
+    expect(userPrompt).toContain("主角（type_id=protagonist；共 0 人）");
     expect(userPrompt).toContain("当前智能体: 设定智能体");
     expect(userPrompt).toContain(
-      "当前用户所处的世界观阶段: 文本型分类「世界规则」"
+      "当前用户所处的世界观阶段: 文本型分类「世界规则」（category_id=world_rules）"
     );
     expect(userPrompt).toContain(
-      "当前阶段信息:\n雾潮期间禁止点燃蓝焰。"
+      "当前阶段简要信息: 仅定位当前页面，正文未注入；需要时调用 read_setting（domain=worldbuilding, category_id=world_rules）读取。"
     );
+    expect(userPrompt).not.toContain("雾潮期间禁止点燃蓝焰。");
+    expect(userPrompt).not.toContain("当前阶段信息:");
     expect(userPrompt).not.toContain("当前分类概览");
+    expect(userPrompt).not.toContain("另一侧人物");
     expect(userPrompt).not.toContain("当前根节点:");
     expect(userPrompt).not.toContain("(worldbuilding)");
     expect(userPrompt).not.toContain("longbook_world_prompt");
@@ -701,13 +706,17 @@ describe("DeepWrite Pi runtime adapter", () => {
       }
     });
     expect(listPrompt).toContain(
-      "当前用户所处的世界观阶段: 列表型分类「势力」 / 条目「守夜人」"
+      "当前用户所处的世界观阶段: 列表型分类「势力」 / 条目「守夜人」（category_id=world_factions；item_id=worlditem_watchers）"
     );
-    expect(listPrompt).toContain("当前阶段信息:\n守夜人负责执行宵禁。");
-    expect(listPrompt).toContain("当前分类概览:\n各势力争夺港务权。");
+    expect(listPrompt).toContain(
+      "当前阶段简要信息: 仅定位当前页面，正文未注入；需要时调用 read_setting（domain=worldbuilding, category_id=world_factions, item_id=worlditem_watchers）读取。"
+    );
+    expect(listPrompt).not.toContain("守夜人负责执行宵禁。");
+    expect(listPrompt).not.toContain("各势力争夺港务权。");
+    expect(listPrompt).not.toContain("当前分类概览");
   });
 
-  it("keeps character prompts on business ids and injects the focused document", () => {
+  it("keeps character prompts on business ids and injects a brief focused stage", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "setting"
     )!;
@@ -720,6 +729,17 @@ describe("DeepWrite Pi runtime adapter", () => {
       activeFileRevision: "v1:0:00000000",
       workspaceRevision: 3,
       projectRevision: 5,
+      worldbuildingDirectory: {
+        categories: [
+          {
+            categoryId: "world_rules",
+            title: "世界规则",
+            order: 1,
+            format: "text"
+          }
+        ],
+        omittedCategoryCount: 0
+      },
       characterFocus: {
         characterName: "林岚",
         group: "chartype_viewpoint",
@@ -780,20 +800,115 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(systemPrompt).not.toContain("bookId");
 
     const userPrompt = buildRuntimeUserPrompt(input);
-    expect(userPrompt).toContain("【人物类型目录（发送时快照）】");
+    expect(userPrompt).toContain("【世界观条目列表（发送时快照）】");
     expect(userPrompt).toContain(
-      "视角人物（type_id=chartype_viewpoint；1 人）"
+      "世界规则（category_id=world_rules；类型=文本）"
+    );
+    expect(userPrompt).toContain("【人物设计列表（发送时快照）】");
+    expect(userPrompt).toContain(
+      "视角人物（type_id=chartype_viewpoint；共 1 人）"
     );
     expect(userPrompt).toContain(
-      "当前用户所处的人物阶段: 「林岚」 / 人物关系"
+      "林岚（character_id=character_lan；顺序=1）"
     );
-    expect(userPrompt).toContain("当前阶段信息:\n与沈砚暂时合作。");
-    expect(userPrompt).toContain("人物核心档案:\n雾港巡夜人，害怕深水。");
+    expect(userPrompt).toContain(
+      "当前用户所处的人物阶段: 「林岚」 / 人物关系（character_id=character_lan；document=relationships；type_id=chartype_viewpoint）"
+    );
+    expect(userPrompt).toContain(
+      "当前阶段简要信息: 仅定位当前人物文档，正文未注入；需要时调用 read_setting（domain=character, character_id=character_lan, document=relationships）读取。"
+    );
+    expect(userPrompt).not.toContain("与沈砚暂时合作。");
+    expect(userPrompt).not.toContain("雾港巡夜人，害怕深水。");
+    expect(userPrompt).not.toContain("人物核心档案:");
+    expect(userPrompt).not.toContain("【人物类型目录");
+    expect(userPrompt).not.toContain("另一侧世界观");
     expect(userPrompt).not.toContain("当前根节点:");
     expect(userPrompt).not.toContain("longbook_character_prompt");
     expect(userPrompt).not.toContain("file_character_lan:relationships");
     expect(userPrompt).not.toContain("session_character_prompt");
     expect(userPrompt).not.toContain("run_character_prompt");
+  });
+
+  it("caps the setting-agent character directory at 50 people per type", () => {
+    const profile = DEFAULT_LONG_AGENT_PROFILES.find(
+      ({ id }) => id === "setting"
+    )!;
+    const extras = Array.from({ length: 52 }, (_, index) => ({
+      id: `character_extra_${String(index + 1).padStart(2, "0")}`,
+      name: `配角${index + 1}`,
+      group: "supporting",
+      order: index + 1
+    }));
+    const userPrompt = buildRuntimeUserPrompt({
+      runId: "run_character_directory_cap",
+      sessionId: "session_character_directory_cap",
+      prompt: "补充配角",
+      longAgentProfile: profile,
+      workspaceContext: {
+        longWorkspace: {
+          bookId: "longbook_character_directory",
+          title: "雾港长篇",
+          activeRoot: "worldbuilding",
+          activeAgentId: profile.id,
+          workspaceRevision: 3,
+          projectRevision: 5,
+          worldbuildingDirectory: {
+            categories: [
+              {
+                categoryId: "world_rules",
+                title: "世界规则",
+                order: 1,
+                format: "text"
+              }
+            ],
+            omittedCategoryCount: 0
+          },
+          navigation: {
+            schemaVersion: 1,
+            revision: 3,
+            bookId: "longbook_character_directory",
+            updatedAt: "2026-07-26T10:00:00.000Z",
+            counts: {
+              worldbuildingCategories: 0,
+              characters: extras.length,
+              volumes: 1,
+              arcs: 0,
+              chapterCards: 0,
+              storyEvents: 0,
+              storyPlots: 0,
+              foreshadowingThreads: 0,
+              committedChapters: 0
+            },
+            worldbuilding: [],
+            characterTypes: [
+              { id: "supporting", title: "配角", order: 1 }
+            ],
+            characters: extras,
+            volumes: [
+              { id: "volume_character_directory", title: "第一卷", order: 1 }
+            ],
+            arcs: [],
+            chapterCards: [],
+            committedThroughChapterId: null
+          }
+        }
+      }
+    });
+
+    expect(userPrompt).toContain("【世界观条目列表（发送时快照）】");
+    expect(userPrompt).toContain("【人物设计列表（发送时快照）】");
+    expect(userPrompt).toContain("配角（type_id=supporting；共 52 人）");
+    expect(userPrompt).toContain(
+      "配角1（character_id=character_extra_01；顺序=1）"
+    );
+    expect(userPrompt).toContain(
+      "配角50（character_id=character_extra_50；顺序=50）"
+    );
+    expect(userPrompt).not.toContain("character_extra_51");
+    expect(userPrompt).not.toContain("配角51");
+    expect(userPrompt).toContain(
+      "另有 2 人未进入固定上下文，需要时调用 list_setting（domain=character, type_id=supporting）查询。"
+    );
   });
 
   it("injects plot structure navigation and refreshes the plot position on every turn", async () => {
@@ -845,6 +960,9 @@ describe("DeepWrite Pi runtime adapter", () => {
       title: "雾港长篇",
       activeRoot: "plot_design",
       activeAgentId: profile.id,
+      activeFileId: "file_long-book-line",
+      activeFileRevision:
+        "v2:0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       workspaceRevision: 3,
       projectRevision: 5,
       navigation,
@@ -872,6 +990,9 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(systemPrompt).toContain("剧情点关联可为 null");
     expect(systemPrompt).toContain("非空时必须与章卡属于同一分卷");
     expect(systemPrompt).toContain("移动或删除剧情点只解除章卡的弱关联");
+    expect(systemPrompt).toContain("全书故事线用 book_line");
+    expect(systemPrompt).toContain("不得把设定目录、设定正文或 fileId 写入本轮固定上下文");
+    expect(systemPrompt).not.toContain("按稳定实体 ID 和 fileId 查询");
     expect(userPrompt).toContain(
       "全书共 2 卷、3 个剧情点、1 张章卡、2 条故事情节、0 个故事事件、1 条伏笔线"
     );
@@ -891,6 +1012,16 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(userPrompt).toContain(
       "当前剧情工作区: 剧情点「主线」(arc_plot_main)，所属分卷「起势」(volume_plot_a)"
     );
+    expect(userPrompt).not.toContain("session_plot_prompt");
+    expect(userPrompt).not.toContain("run_plot_prompt");
+    expect(userPrompt).not.toContain("当前根节点:");
+    expect(userPrompt).not.toContain("当前文件:");
+    expect(userPrompt).not.toContain("file_long-book-line");
+    expect(userPrompt).not.toContain("【世界观条目列表");
+    expect(userPrompt).not.toContain("【人物设计列表");
+    expect(userPrompt).not.toContain("当前用户所处的世界观阶段");
+    expect(userPrompt).not.toContain("当前用户所处的人物阶段");
+    expect(userPrompt).not.toContain("list_setting");
 
     const chapterCardPrompt = buildRuntimeUserPrompt({
       ...input,
@@ -922,6 +1053,8 @@ describe("DeepWrite Pi runtime adapter", () => {
       }
     });
     expect(bookLinePrompt).toContain("当前剧情工作区: 全书故事线");
+    expect(bookLinePrompt).not.toContain("当前文件:");
+    expect(bookLinePrompt).not.toContain("file_long-book-line");
 
     const draftProfile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "draft"
@@ -1016,6 +1149,10 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(String(userMessages?.[0]?.content)).toContain(
       "当前剧情工作区: 全书故事线"
     );
+    expect(String(userMessages?.[0]?.content)).not.toContain("session_plot_turns");
+    expect(String(userMessages?.[0]?.content)).not.toContain("当前文件:");
+    expect(String(userMessages?.[0]?.content)).not.toContain("file_long-book-line");
+    expect(String(userMessages?.[0]?.content)).not.toContain("【世界观条目列表");
     expect(String(userMessages?.[1]?.content)).toContain(
       "【本轮剧情工作区上下文】"
     );
@@ -1025,12 +1162,16 @@ describe("DeepWrite Pi runtime adapter", () => {
     expect(String(userMessages?.[1]?.content)).toContain(
       "当前剧情工作区: 剧情点「暗线」(arc_plot_hidden)"
     );
+    expect(String(userMessages?.[1]?.content)).not.toContain("当前文件:");
+    expect(String(userMessages?.[1]?.content)).not.toContain("file_long-book-line");
+    expect(String(userMessages?.[1]?.content)).not.toContain("当前根节点:");
     expect(String(userMessages?.[2]?.content)).toContain(
       "当前章卡: chapter_plot_one"
     );
     expect(String(userMessages?.[2]?.content)).toContain(
       "当前剧情工作区: 章卡「第一章」(chapter_plot_one)"
     );
+    expect(String(userMessages?.[2]?.content)).not.toContain("当前文件:");
   });
 
   it("lets configured long-form teams delegate with the same bounded tools", async () => {
@@ -2525,10 +2666,16 @@ describe("DeepWrite Pi runtime adapter", () => {
       "守夜人（item_id=worlditem_watchers；顺序=1）"
     );
     expect(String(userMessages?.[0]?.content)).toContain(
-      "当前用户所处的世界观阶段: 列表型分类「势力」 / 条目「守夜人」"
+      "当前用户所处的世界观阶段: 列表型分类「势力」 / 条目「守夜人」（category_id=world_factions；item_id=worlditem_watchers）"
     );
     expect(String(userMessages?.[0]?.content)).toContain(
-      "当前分类概览:\n各势力争夺港务权。"
+      "当前阶段简要信息: 仅定位当前页面，正文未注入"
+    );
+    expect(String(userMessages?.[0]?.content)).not.toContain(
+      "各势力争夺港务权。"
+    );
+    expect(String(userMessages?.[0]?.content)).not.toContain(
+      "守夜人负责执行宵禁。"
     );
     expect(String(userMessages?.[0]?.content)).toContain("先检查世界规则");
     expect(userMessages?.[1]?.content).toBe("再补充力量体系");

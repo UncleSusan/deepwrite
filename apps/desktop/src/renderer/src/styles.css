@@ -223,32 +223,14 @@ html[data-platform="darwin"] .desktop-shell {
   background: var(--surface-raised);
 }
 
-.long-workspace-main-view {
-  position: relative;
-  grid-column: 2 / 4;
-  display: grid;
-  grid-template-columns:
-    minmax(var(--center-pane-min), 1fr)
-    var(--right-pane-width);
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--surface-main);
-  color: var(--text-primary);
-}
-
-.long-workspace-main-view.is-right-collapsed {
-  grid-template-columns: minmax(var(--center-pane-min), 1fr);
-}
-
 .long-agent-column {
   position: relative;
+  grid-column: 2;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto auto auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid var(--theme-line);
   background: var(--surface-main);
 }
 
@@ -348,7 +330,7 @@ html[data-platform="darwin"] .desktop-shell {
 }
 
 .long-workspace-loading-state {
-  grid-column: 1 / -1;
+  grid-column: 2 / 4;
   display: grid;
   place-content: center;
   justify-items: center;
@@ -360,7 +342,7 @@ html[data-platform="darwin"] .desktop-shell {
 }
 
 .long-workspace-editor-loading-state {
-  grid-column: 2;
+  grid-column: 3;
   display: grid;
   place-content: center;
   justify-items: center;
@@ -521,7 +503,7 @@ html[data-platform="darwin"] .sidebar-brand-row {
   padding: 4px 7px 11px;
 }
 
-.new-conversation-nav {
+.new-book-nav {
   padding-bottom: 4px;
 }
 
@@ -879,6 +861,12 @@ html[data-platform="darwin"] .sidebar-brand-row {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
+  opacity: 0;
+}
+
+.tree-row:hover ~ .tree-node-action-area .tree-node-action,
+.tree-node-action-area:is(:hover, :focus-within, .is-menu-open) .tree-node-action {
+  opacity: 1;
 }
 
 .tree-node-action:hover,
@@ -1011,6 +999,13 @@ html[data-platform="darwin"] .sidebar-brand-row {
   width: 14px;
   height: 20px;
   color: var(--text-tertiary);
+  opacity: 0;
+}
+
+.tree-row:hover .tree-chevron,
+.tree-row:focus-visible .tree-chevron,
+.tree-node:has(> .tree-node-action-area:is(:hover, :focus-within, .is-menu-open)) > .tree-row .tree-chevron {
+  opacity: 1;
 }
 
 .tree-chevron svg {
@@ -5987,15 +5982,6 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb {
     display: none;
   }
 
-  .long-workspace-main-view {
-    grid-template-columns:
-      minmax(var(--center-pane-min), 1fr)
-      var(--right-pane-width);
-  }
-
-  .long-workspace-main-view.is-right-collapsed {
-    grid-template-columns: minmax(var(--center-pane-min), 1fr);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

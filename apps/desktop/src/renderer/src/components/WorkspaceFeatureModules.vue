@@ -240,6 +240,7 @@ const emit = defineEmits<{
     <SkillMarketplacePage
       active
       :catalog-snapshot="module.catalogSnapshot"
+      :initial-session="module.session"
       @refresh-catalog="emit('refreshCatalog')"
       @session-change="emit('marketplaceSessionChange', $event)"
     />

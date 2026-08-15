@@ -7,6 +7,10 @@ import sidebarSource from "./LeftSidebar.vue?raw";
 
 describe("SkillMarketplacePage", () => {
   it("gates the marketplace behind login or registration and keeps the HTTP warning visible", () => {
+    expect(source).toContain("initialSession?: MarketplaceSession | null");
+    expect(source).toContain("props.initialSession ?? null");
+    expect(source).toContain('v-else-if="session === null"');
+    expect(source).toContain("正在恢复登录状态…");
     expect(source).toContain('v-else-if="!authenticated"');
     expect(source).toContain('authMode === "login"');
     expect(source).toContain("marketplace.register");
@@ -136,6 +140,12 @@ describe("SkillMarketplacePage", () => {
     );
     expect(appSource).toContain(
       ':marketplace-display-name="marketplaceDisplayName"'
+    );
+    expect(featureHostSource).toContain(
+      "session: knownMarketplaceSession.value"
+    );
+    expect(featureModulesSource).toContain(
+      ':initial-session="module.session"'
     );
     expect(featureModulesSource).toContain(
       '@session-change="emit(\'marketplaceSessionChange\', $event)"'

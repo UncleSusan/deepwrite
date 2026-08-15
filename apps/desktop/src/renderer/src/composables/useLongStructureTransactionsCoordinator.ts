@@ -12,7 +12,8 @@ import type {
   LongCharacterCreateTarget,
   LongDraftSectionDeleteTarget,
   LongPlotPointCreateTarget,
-  LongTreeItemDeleteTarget
+  LongTreeItemDeleteTarget,
+  LongWorldbuildingItemCreateTarget
 } from "../stores/longWorkspaceStore";
 import type {
   LongTreeItemAction,
@@ -58,6 +59,7 @@ export interface LongStructureTransactionsState {
   mutationPending: Ref<boolean>;
   structureDialogOpen: Ref<boolean>;
   characterCreateTarget: Ref<LongCharacterCreateTarget | null>;
+  worldbuildingItemCreateTarget: Ref<LongWorldbuildingItemCreateTarget | null>;
   plotPointCreateTarget: Ref<LongPlotPointCreateTarget | null>;
   chapterCardCreateTarget: Ref<LongChapterCardCreateTarget | null>;
   draftSectionDeleteTarget: Ref<LongDraftSectionDeleteTarget | null>;
@@ -141,6 +143,7 @@ export function useLongStructureTransactionsCoordinator(
     mutationPending: longBookActionPending,
     structureDialogOpen: longStructureDialogOpen,
     characterCreateTarget: longCharacterCreate,
+    worldbuildingItemCreateTarget: longWorldbuildingItemCreate,
     plotPointCreateTarget: longPlotPointCreate,
     chapterCardCreateTarget: longChapterCardCreate,
     draftSectionDeleteTarget: longDraftSectionDelete,
@@ -310,6 +313,11 @@ export function useLongStructureTransactionsCoordinator(
   function closeLongCharacterCreate(): void {
     cancelDialogRequests();
     longCharacterCreate.value = null;
+  }
+
+  function closeLongWorldbuildingItemCreate(): void {
+    cancelDialogRequests();
+    longWorldbuildingItemCreate.value = null;
   }
 
   function closeLongPlotPointCreate(): void {
@@ -694,67 +702,39 @@ export function useLongStructureTransactionsCoordinator(
     return selection.chapterCardId === target.id;
   }
 
-  async function createLongWorldbuildingTreeItem(
-    node: ResourceTreeNode,
-    categoryId: string,
-    requestId: number
+  async function openLongWorldbuildingItemCreateForCategoryInternal(
+    requestId: number,
+    bookId: string,
+    categoryId: string
   ): Promise<void> {
-    const prepared = await ensureLongTreeTargetBook(
-      node,
-      "新增世界观条目",
-      requestId
-    );
-    if (!prepared) return;
-    await withMutation(
-      prepared.bookId,
-      (message) => uiMessage.info(message),
-      async (lease) => {
-        if (lease.target.index !== prepared.index) return;
-        let batch: LongWorkspaceOperationBatch;
-        try {
-          const { createLongStructureMutationBuilder } =
-            await loadLongStructureMutationModule();
-          assertCurrentLongStructureMutationTarget(lease.target, lease);
-          batch = createLongStructureMutationBuilder(
-            prepared.index
-          ).createWorldbuildingItem(categoryId);
-        } catch (error: unknown) {
-          if (disposed) return;
-          uiMessage.warning(
-            error instanceof Error ? error.message : "无法新增世界观条目。"
-          );
-          return;
-        }
-        const created = batch.operations.find(
-          (operation) => operation.type === "worldbuildingItem.create"
-        );
-        if (!created || created.type !== "worldbuildingItem.create") return;
-        let succeeded = false;
-        await executeLongStructureMutation(
-          lease,
-          batch,
-          {
-            succeed: () => {
-              succeeded = true;
-            },
-            fail: () => undefined,
-            appliedButRefreshFailed: () => undefined
-          },
-          { successMessage: `已新增世界观条目“${created.item.title}”` },
-          prepared.index
-        );
-        if (!succeeded || !mutationIsCurrent(lease)) return;
-        await nextTick();
-        if (!mutationIsCurrent(lease)) return;
-        const createdNode = resourceNode(
-          longNavigationNodeId(
-            prepared.bookId,
-            `worldbuilding:${categoryId}:item:${created.item.id}`
-          )
-        );
-        if (createdNode) await selectResource(createdNode);
-      }
-    );
+    if (blockActiveLongWritingPlan("新增世界观条目")) return;
+    if (activeLongBookId.value !== bookId) {
+      if (!(await saveActiveLongEditorBeforeLeaving(bookId))) return;
+      if (!dialogRequestIsCurrent(requestId)) return;
+      await openLongBook(bookId);
+    } else if (!(await saveActiveLongEditorChanges())) {
+      return;
+    }
+    if (!dialogRequestIsCurrent(requestId)) return;
+    const index = activeLongWorkspaceIndex.value;
+    const category = index?.worldbuilding.find(({ id }) => id === categoryId);
+    if (activeLongBookId.value !== bookId || !index || !category) {
+      uiMessage.warning("该世界观分类已不存在，请刷新后重试。");
+      return;
+    }
+    if (category.format !== "list") {
+      uiMessage.warning("只有列表型世界观分类可以新增条目。");
+      return;
+    }
+    if (category.items.length >= 10_000) {
+      uiMessage.warning("单个世界观分类最多支持 10000 个条目。");
+      return;
+    }
+    longWorldbuildingItemCreate.value = {
+      bookId,
+      categoryId,
+      categoryTitle: category.title
+    };
   }
 
   async function handleCreateLongTreeItem(node: ResourceTreeNode): Promise<void> {
@@ -764,7 +744,17 @@ export function useLongStructureTransactionsCoordinator(
       const target = node.longTreeCollection;
       if (!target) return;
       if (target.kind === "worldbuilding-item" && target.parentId) {
-        await createLongWorldbuildingTreeItem(node, target.parentId, requestId);
+        const prepared = await ensureLongTreeTargetBook(
+          node,
+          "新增世界观条目",
+          requestId
+        );
+        if (!prepared || !dialogRequestIsCurrent(requestId)) return;
+        await openLongWorldbuildingItemCreateForCategoryInternal(
+          requestId,
+          prepared.bookId,
+          target.parentId
+        );
         return;
       }
       const prepared = await ensureLongTreeTargetBook(
@@ -1232,6 +1222,29 @@ export function useLongStructureTransactionsCoordinator(
     };
   }
 
+  async function openLongWorldbuildingItemCreate(): Promise<void> {
+    const bookId = activeLongBookId.value;
+    const selection = activeLongSelection.value;
+    if (
+      !bookId ||
+      !selection?.key.startsWith("worldbuilding:") ||
+      selection.key === "worldbuilding:reveals"
+    ) {
+      uiMessage.warning("当前世界观分类尚未就绪。");
+      return;
+    }
+    const categoryId = selection.key.slice("worldbuilding:".length);
+    const requestId = beginDialogRequest();
+    if (requestId === null) return;
+    await runTracked(() =>
+      openLongWorldbuildingItemCreateForCategoryInternal(
+        requestId,
+        bookId,
+        categoryId
+      )
+    );
+  }
+
   async function openLongVolumeCreate(): Promise<void> {
     const requestId = beginDialogRequest();
     if (requestId === null) return;
@@ -1501,6 +1514,81 @@ export function useLongStructureTransactionsCoordinator(
         if (mutationIsCurrent(lease)) {
           longWorkspaceEditor.value?.selectBookLineVolume(created.volume.id);
         }
+      }
+    );
+  }
+
+  async function createLongWorldbuildingItem(input: {
+    title: string;
+  }): Promise<void> {
+    const target = longWorldbuildingItemCreate.value;
+    if (!target) {
+      uiMessage.warning("当前世界观分类尚未准备好新建条目。");
+      return;
+    }
+    await withMutation(
+      target.bookId,
+      (message) => uiMessage.info(message),
+      async (lease) => {
+        const index = lease.target.index;
+        let batch: LongWorkspaceOperationBatch;
+        try {
+          const { createLongStructureMutationBuilder } =
+            await loadLongStructureMutationModule();
+          assertCurrentLongStructureMutationTarget(lease.target, lease);
+          if (longWorldbuildingItemCreate.value !== target) {
+            throw new Error("新建世界观条目目标已切换，本次操作已取消。");
+          }
+          batch = createLongStructureMutationBuilder(index).createWorldbuildingItem(
+            target.categoryId,
+            input.title
+          );
+        } catch (error: unknown) {
+          if (disposed) return;
+          uiMessage.warning(
+            error instanceof Error ? error.message : "无法创建世界观条目。"
+          );
+          return;
+        }
+        const created = batch.operations.find(
+          (operation) => operation.type === "worldbuildingItem.create"
+        );
+        if (!created || created.type !== "worldbuildingItem.create") {
+          uiMessage.warning("无法确定新建世界观条目。");
+          return;
+        }
+        let succeeded = false;
+        let applied = false;
+        await executeLongStructureMutation(
+          lease,
+          batch,
+          {
+            succeed: () => {
+              succeeded = true;
+              applied = true;
+            },
+            fail: () => undefined,
+            appliedButRefreshFailed: () => {
+              applied = true;
+            }
+          },
+          {
+            saveEditor: false,
+            successMessage: `已创建世界观条目“${input.title}”`
+          },
+          index
+        );
+        if (applied && longWorldbuildingItemCreate.value === target) {
+          longWorldbuildingItemCreate.value = null;
+        }
+        if (!succeeded || !mutationIsCurrent(lease)) return;
+        await selectCreatedLongTreeResource(
+          lease,
+          longNavigationNodeId(
+            target.bookId,
+            `worldbuilding:${target.categoryId}:item:${created.item.id}`
+          )
+        );
       }
     );
   }
@@ -2209,11 +2297,13 @@ export function useLongStructureTransactionsCoordinator(
     renameLongCharacter,
     renameLongStructureTitle,
     openLongCharacterCreate,
+    openLongWorldbuildingItemCreate,
     openLongVolumeCreate,
     openLongPlotPointCreate,
     saveLongVolumeOutline,
     saveLongPlotPointContent,
     createLongVolume,
+    createLongWorldbuildingItem,
     createLongPlotPoint,
     createLongChapterCard,
     handleLongStructureMutation,
@@ -2223,6 +2313,7 @@ export function useLongStructureTransactionsCoordinator(
     createLongCharacter,
     closeLongStructureDialog,
     closeLongCharacterCreate,
+    closeLongWorldbuildingItemCreate,
     closeLongPlotPointCreate,
     closeLongChapterCardCreate,
     closeLongDraftSectionDelete,

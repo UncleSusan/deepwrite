@@ -28,6 +28,7 @@ import { uiMessage } from "../ui-feedback";
 const props = defineProps<{
   active: boolean;
   catalogSnapshot: CatalogSnapshot | null;
+  initialSession?: MarketplaceSession | null;
 }>();
 
 const emit = defineEmits<{
@@ -99,7 +100,7 @@ const publishTypeOptions: PopupSelectOption[] = [
   { value: "group", label: "发布技能组" }
 ];
 
-const session = ref<MarketplaceSession | null>(null);
+const session = ref<MarketplaceSession | null>(props.initialSession ?? null);
 const authMode = ref<AuthMode>("login");
 const authPending = ref(false);
 const username = ref("");
@@ -932,6 +933,10 @@ onMounted(() => {
     <div v-if="!apiAvailable" class="marketplace-empty-state">
       <strong>当前环境未连接桌面端能力</strong>
       <span>请在 DeepWrite 桌面客户端中打开技能广场。</span>
+    </div>
+
+    <div v-else-if="session === null" class="marketplace-empty-state">
+      <span>正在恢复登录状态…</span>
     </div>
 
     <section v-else-if="!authenticated" class="auth-shell">

@@ -7,6 +7,7 @@ import type {
   LongAgentSettings,
   LongAgentTeamSettings,
   ModelConfig,
+  MarketplaceSession,
   ModelSettings,
   ModelUsageDashboard,
   OfficialModelBalance,
@@ -98,6 +99,7 @@ export interface ImitationFeatureModule {
 export interface MarketplaceFeatureModule {
   kind: "marketplace";
   catalogSnapshot: CatalogSnapshot | null;
+  session: MarketplaceSession | null;
 }
 
 export interface CloudBackupFeatureModule {

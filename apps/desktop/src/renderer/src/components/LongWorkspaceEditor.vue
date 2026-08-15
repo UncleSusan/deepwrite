@@ -12,8 +12,6 @@ import {
   createEmptyLongMarkdownFileReference,
   longStoryPlotBodyFileId,
   longStoryPlotFilePath,
-  longWorldbuildingItemContentPath,
-  longWorldbuildingItemFileId,
   type LongLedgerCommitIndexEntry,
   type LongArcId,
   type LongChapterCardId,
@@ -100,6 +98,7 @@ const emit = defineEmits<{
     completion: (succeeded: boolean) => void
   ];
   createCharacter: [];
+  createWorldbuildingItem: [];
   createPlotPoint: [];
   createChapterCard: [];
   createVolume: [];
@@ -1590,47 +1589,8 @@ async function selectWorldbuildingOverview(): Promise<void> {
 }
 
 function addWorldbuildingItem(): void {
-  const items = currentWorldbuildingItems.value;
-  if (currentReadOnly.value || items.length >= 10_000) {
-    if (items.length >= 10_000) {
-      uiMessage.warning("单个世界观分类最多支持 10000 个条目。");
-    }
-    return;
-  }
-  const usedTitles = new Set(items.map(({ title }) => title));
-  let sequence = items.length + 1;
-  let title = `新条目 ${sequence}`;
-  while (usedTitles.has(title)) {
-    sequence += 1;
-    title = `新条目 ${sequence}`;
-  }
-  const item = {
-    id: createId("worlditem"),
-    title,
-    content: ""
-  };
-  const categoryId = props.selection?.key.slice("worldbuilding:".length);
-  if (!categoryId) return;
-  const updatedAt = new Date().toISOString();
-  emitWorldbuildingItemMutation(
-    [{
-      type: "worldbuildingItem.create",
-      categoryId,
-      item: {
-        id: item.id,
-        title: item.title,
-        order: items.length + 1,
-        file: createEmptyLongMarkdownFileReference(
-          longWorldbuildingItemFileId(item.id),
-          longWorldbuildingItemContentPath(categoryId, item.id),
-          updatedAt
-        )
-      }
-    }],
-    () => {
-      void selectWorldbuildingItem(item.id);
-    }
-  );
+  if (currentReadOnly.value) return;
+  emit("createWorldbuildingItem");
 }
 
 function updateWorldbuildingItemContent(
@@ -5354,6 +5314,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .long-workspace-editor {
   container-type: inline-size;
+  grid-column: 3;
   display: grid;
   grid-template-rows:
     minmax(50px, auto) minmax(40px, auto) minmax(0, 1fr)

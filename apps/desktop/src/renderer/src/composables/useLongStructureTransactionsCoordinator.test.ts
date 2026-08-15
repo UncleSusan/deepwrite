@@ -172,6 +172,7 @@ function createHarness(overrides: {
       mutationPending: ref(false),
       structureDialogOpen: ref(true),
       characterCreateTarget: shallowRef(null),
+      worldbuildingItemCreateTarget: shallowRef(null),
       plotPointCreateTarget: shallowRef(null),
       chapterCardCreateTarget: shallowRef(null),
       draftSectionDeleteTarget: shallowRef(null),

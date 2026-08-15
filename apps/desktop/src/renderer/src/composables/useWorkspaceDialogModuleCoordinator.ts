@@ -32,7 +32,8 @@ import type {
   LongCharacterCreateTarget,
   LongDraftSectionDeleteTarget,
   LongPlotPointCreateTarget,
-  LongTreeItemDeleteTarget
+  LongTreeItemDeleteTarget,
+  LongWorldbuildingItemCreateTarget
 } from "../stores/longWorkspaceStore";
 
 type DialogModule<Kind extends WorkspaceDialogKind> = Extract<
@@ -51,6 +52,7 @@ export const WORKSPACE_DIALOG_PRIORITY = [
   "legacy-sync",
   "long-rollback",
   "create-long-character",
+  "create-long-worldbuilding-item",
   "create-long-plot-point",
   "create-long-chapter-card",
   "delete-long-draft",
@@ -93,6 +95,7 @@ export interface WorkspaceDialogShortStructureState {
 
 export interface WorkspaceDialogLongStructureState {
   characterCreation: Readonly<Ref<LongCharacterCreateTarget | null>>;
+  worldbuildingItemCreation: Readonly<Ref<LongWorldbuildingItemCreateTarget | null>>;
   plotPointCreation: Readonly<Ref<LongPlotPointCreateTarget | null>>;
   chapterCardCreation: Readonly<Ref<LongChapterCardCreateTarget | null>>;
   draftDeletion: Readonly<Ref<LongDraftSectionDeleteTarget | null>>;
@@ -263,6 +266,16 @@ export function useWorkspaceDialogModuleCoordinator(
       return {
         kind: "create-long-character",
         groupLabel: characterCreation.groupLabel,
+        pending: options.longLifecycle.bookActionPending.value
+      };
+    }
+
+    const worldbuildingItemCreation =
+      options.longStructure.worldbuildingItemCreation.value;
+    if (worldbuildingItemCreation) {
+      return {
+        kind: "create-long-worldbuilding-item",
+        categoryTitle: worldbuildingItemCreation.categoryTitle,
         pending: options.longLifecycle.bookActionPending.value
       };
     }

@@ -76,6 +76,8 @@ function controllerFixture(name: string) {
   );
   const capturePersistenceSnapshot = vi.fn(() => ({ name }));
   const restorePersistenceSnapshot = vi.fn(async () => true);
+  const holdPersistenceEmits = vi.fn();
+  const releasePersistenceEmits = vi.fn();
   const controller = {
     selectedModelId,
     thinkingLevel,
@@ -86,6 +88,8 @@ function controllerFixture(name: string) {
     selectApprovalMode,
     capturePersistenceSnapshot,
     restorePersistenceSnapshot,
+    holdPersistenceEmits,
+    releasePersistenceEmits,
     dispose: vi.fn()
   } as unknown as AgentConversationController;
   return {
@@ -94,6 +98,8 @@ function controllerFixture(name: string) {
     approvalMode,
     capturePersistenceSnapshot,
     controller,
+    holdPersistenceEmits,
+    releasePersistenceEmits,
     restorePersistenceSnapshot,
     selectApprovalMode,
     selectedModelId,
@@ -340,6 +346,8 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
     await test.coordinator.drain();
     await flushMicrotasks();
 
+    expect(fixture.holdPersistenceEmits).toHaveBeenCalledOnce();
+    expect(fixture.releasePersistenceEmits).toHaveBeenCalledOnce();
     expect(fixture.restorePersistenceSnapshot).toHaveBeenCalledWith({
       persisted: true
     });
@@ -361,6 +369,8 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
     await test.coordinator.drain();
     await flushMicrotasks();
 
+    expect(fixture.holdPersistenceEmits).toHaveBeenCalledOnce();
+    expect(fixture.releasePersistenceEmits).toHaveBeenCalledOnce();
     expect(fixture.restorePersistenceSnapshot).not.toHaveBeenCalled();
     expect(fixture.applyModelSettings).not.toHaveBeenCalled();
     expect(fixture.selectApprovalMode).not.toHaveBeenCalled();
@@ -385,6 +395,7 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
     await test.coordinator.drain();
     await flushMicrotasks();
 
+    expect(fixture.releasePersistenceEmits).toHaveBeenCalledOnce();
     expect(fixture.applyModelSettings).not.toHaveBeenCalled();
     expect(fixture.selectApprovalMode).not.toHaveBeenCalled();
     expect(test.resumeRecovered).not.toHaveBeenCalled();
@@ -478,6 +489,7 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
     await disposing;
     await flushMicrotasks();
 
+    expect(fixture.releasePersistenceEmits).toHaveBeenCalledOnce();
     expect(fixture.restorePersistenceSnapshot).not.toHaveBeenCalled();
     expect(fixture.applyModelSettings).not.toHaveBeenCalled();
     expect(test.resumeRecovered).not.toHaveBeenCalled();

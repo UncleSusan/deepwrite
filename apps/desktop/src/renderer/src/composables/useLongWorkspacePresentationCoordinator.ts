@@ -387,8 +387,7 @@ export function useLongWorkspacePresentationCoordinator(
         workspaceRevision: workspaceIndex.revision,
         projectRevision: summary.projectRevision,
         navigation: summary.navigation,
-        ...(activeLongRoot.value === "worldbuilding" &&
-        profile.id === "setting"
+        ...(profile.id === "setting"
           ? {
               worldbuildingDirectory:
                 buildLongWorldbuildingDirectorySnapshot(

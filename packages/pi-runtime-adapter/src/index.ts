@@ -2565,6 +2565,8 @@ export function buildEffectiveSystemPrompt(
       "【DeepWrite 长篇工具边界】",
       longProfile.id === "setting"
         ? "设定只使用本次固定上下文或工具返回的业务 ID 定位内容：世界观用 category_id / item_id，人物用 character_id / document。查询、搜索和读取一律使用 list_setting / search_setting / read_setting，并指定 domain=worldbuilding 或 domain=character。固定上下文目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。目录标注存在省略项或需要核验本轮结构变更时再调用列表工具。工具会处理其余实现细节，不得索取、猜测或复述。未读取正文不得当成事实。"
+        : longProfile.id === "plot_design"
+          ? "剧情设计只使用本次固定上下文或工具返回的业务 ID 定位内容：全书故事线用 book_line，分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点用各自稳定业务 ID。查询、搜索和读取使用 list_plot_design / search_plot_design / read_plot_design。世界观与人物只按需通过设定只读工具查询，不得把设定目录、设定正文或 fileId 写入本轮固定上下文。不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
         : longProfile.id === "continuity_ledger"
           ? "连续性账本只使用 list_setting / search_setting / read_setting（指定 domain）以及剧情和正文各阶段的 list / search / read 工具及其业务 ID；不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
         : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
@@ -2636,6 +2638,7 @@ export function buildEffectiveSystemPrompt(
 
 const LONG_PLOT_NAVIGATION_ARC_LIMIT_PER_VOLUME = 50;
 const LONG_PLOT_NAVIGATION_COMMITTED_CHAPTER_LIMIT = 50;
+const LONG_CHARACTER_DIRECTORY_LIMIT_PER_TYPE = 50;
 
 function renderLongPlotNavigation(
   navigation: LongWorkspaceRuntimeContext["navigation"]
@@ -2757,22 +2760,135 @@ function renderLongWorldbuildingDirectory(
   return lines.length ? lines.join("\n") : "- 暂无世界观分类";
 }
 
-function renderLongCharacterTypeDirectory(
+function renderLongCharacterDirectory(
   navigation: LongWorkspaceRuntimeContext["navigation"]
 ): string {
   const types = [...navigation.characterTypes].sort(
     (left, right) => left.order - right.order || left.id.localeCompare(right.id)
   );
-  return types.length
-    ? types
-        .map((characterType) => {
-          const count = navigation.characters.filter(
-            ({ group }) => group === characterType.id
-          ).length;
-          return `- ${characterType.title}（type_id=${characterType.id}；${count} 人）`;
-        })
-        .join("\n")
-    : "- 暂无人物类型";
+  const knownTypeIds = new Set(types.map((characterType) => characterType.id));
+  const extraGroups = [
+    ...new Set(
+      navigation.characters
+        .map((character) => character.group)
+        .filter((group) => !knownTypeIds.has(group))
+    )
+  ].sort((left, right) => left.localeCompare(right));
+  const sections = [
+    ...types.map((characterType) => ({
+      typeId: characterType.id,
+      title: characterType.title
+    })),
+    ...extraGroups.map((group) => ({
+      typeId: group,
+      title: group
+    }))
+  ];
+  const lines = sections.flatMap((section) => {
+    const characters = navigation.characters
+      .filter((character) => character.group === section.typeId)
+      .sort(
+        (left, right) =>
+          left.order - right.order || left.id.localeCompare(right.id)
+      );
+    const visible = characters.slice(0, LONG_CHARACTER_DIRECTORY_LIMIT_PER_TYPE);
+    const header = `- ${section.title}（type_id=${section.typeId}；共 ${characters.length} 人）`;
+    const items = visible.length
+      ? visible.map(
+          (character) =>
+            `  - ${character.name}（character_id=${character.id}；顺序=${character.order}）`
+        )
+      : ["  - 暂无条目"];
+    const omitted = characters.length - visible.length;
+    if (omitted > 0) {
+      items.push(
+        `  - 另有 ${omitted} 人未进入固定上下文，需要时调用 list_setting（domain=character, type_id=${section.typeId}）查询。`
+      );
+    }
+    return [header, ...items];
+  });
+  return lines.length ? lines.join("\n") : "- 暂无人物类型";
+}
+
+function renderLongWorldbuildingStageBrief(
+  focus: NonNullable<LongWorkspaceRuntimeContext["worldbuildingFocus"]>,
+  directory: LongWorkspaceRuntimeContext["worldbuildingDirectory"]
+): string {
+  const category = directory?.categories.find(
+    (entry) => entry.title === focus.categoryTitle
+  );
+  const categoryId = category?.categoryId;
+  const itemId =
+    focus.currentStage.kind === "item" && category?.format === "list"
+      ? category.items.find((item) => item.title === focus.currentStage.title)
+          ?.itemId
+      : undefined;
+  const ids = [
+    categoryId ? `category_id=${categoryId}` : "",
+    itemId ? `item_id=${itemId}` : ""
+  ]
+    .filter(Boolean)
+    .join("；");
+  const location =
+    focus.format === "list"
+      ? `列表型分类「${focus.categoryTitle}」${
+          focus.currentStage.kind === "item"
+            ? ` / 条目「${focus.currentStage.title}」`
+            : " / 分类概览"
+        }${ids ? `（${ids}）` : ""}`
+      : `文本型分类「${focus.categoryTitle}」${
+          categoryId ? `（category_id=${categoryId}）` : ""
+        }`;
+  const readArgs = [
+    "domain=worldbuilding",
+    categoryId ? `category_id=${categoryId}` : "",
+    itemId ? `item_id=${itemId}` : ""
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return [
+    `当前用户所处的世界观阶段: ${location}`,
+    `当前阶段简要信息: 仅定位当前页面，正文未注入；需要时调用 read_setting（${readArgs}）读取。`
+  ].join("\n");
+}
+
+function renderLongCharacterStageBrief(
+  focus: NonNullable<LongWorkspaceRuntimeContext["characterFocus"]>,
+  navigation: LongWorkspaceRuntimeContext["navigation"]
+): string {
+  if (focus.currentDocument.kind === "overview") {
+    return [
+      "当前用户所处的人物阶段: 人物概览",
+      "当前阶段简要信息: 仅定位人物概览，正文未注入；需要时调用 read_setting（domain=character, document=overview）读取。"
+    ].join("\n");
+  }
+  const character = navigation.characters.find(
+    (entry) =>
+      entry.name === focus.characterName &&
+      (focus.group === undefined || entry.group === focus.group)
+  );
+  const characterId = character?.id;
+  const typeId = focus.group ?? character?.group;
+  const ids = [
+    characterId ? `character_id=${characterId}` : "",
+    `document=${focus.currentDocument.kind}`,
+    typeId ? `type_id=${typeId}` : ""
+  ]
+    .filter(Boolean)
+    .join("；");
+  const readArgs = [
+    "domain=character",
+    characterId ? `character_id=${characterId}` : "",
+    `document=${focus.currentDocument.kind}`
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return [
+    `当前用户所处的人物阶段: 「${focus.characterName}」 / ${focus.currentDocument.title}${
+      ids ? `（${ids}）` : ""
+    }`,
+    `当前阶段简要信息: 仅定位当前人物文档，正文未注入；需要时调用 read_setting（${readArgs}）读取。`
+  ].join("\n");
 }
 
 /** @internal Exported for prompt-boundary regression tests. */
@@ -2799,6 +2915,8 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const isPlotDesignAgentRun = Boolean(
     longWorkspace && longProfile?.id === "plot_design"
   );
+  const omitLongImplementationIds =
+    isSettingAgentRun || isPlotDesignAgentRun;
   const plotFocus = isPlotDesignAgentRun
     ? longWorkspace?.plotFocus
     : undefined;
@@ -2862,10 +2980,10 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       : "显式附加素材: 无";
   const lines = [
     "【本次智能体会话固定上下文】",
-    isSettingAgentRun
+    omitLongImplementationIds
       ? ""
       : `sessionId: ${input.sessionId}`,
-    isSettingAgentRun
+    omitLongImplementationIds
       ? ""
       : `runId: ${input.runId}`,
     writingWorkspace
@@ -2875,55 +2993,26 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     isSettingAgentRun && longWorkspace?.worldbuildingDirectory
       ? `【世界观条目列表（发送时快照）】\n${renderLongWorldbuildingDirectory(
           longWorkspace.worldbuildingDirectory
-        )}\n另一侧人物使用 list_setting（domain=character）。`
+        )}`
       : "",
-    isSettingAgentRun &&
-    longWorkspace?.activeRoot === "character_design"
-      ? `【人物类型目录（发送时快照）】\n${renderLongCharacterTypeDirectory(
+    isSettingAgentRun && longWorkspace
+      ? `【人物设计列表（发送时快照）】\n${renderLongCharacterDirectory(
           longWorkspace.navigation
-        )}\n创建、筛选或移动人物时只能使用目录中的 type_id；人物类型目录只能由用户在结构管理中维护。另一侧世界观使用 list_setting（domain=worldbuilding）。`
+        )}\n创建、筛选或移动人物时只能使用目录中的 type_id；人物类型目录只能由用户在结构管理中维护。超出列表的人物调用 list_setting（domain=character）查询。`
       : "",
     worldbuildingFocus
-      ? `当前用户所处的世界观阶段: ${
-          worldbuildingFocus.format === "list"
-            ? `列表型分类「${worldbuildingFocus.categoryTitle}」${
-                worldbuildingFocus.currentStage.kind === "item"
-                  ? ` / 条目「${worldbuildingFocus.currentStage.title}」`
-                  : " / 分类概览"
-              }`
-            : `文本型分类「${worldbuildingFocus.categoryTitle}」`
-        }`
+      ? renderLongWorldbuildingStageBrief(
+          worldbuildingFocus,
+          longWorkspace?.worldbuildingDirectory
+        )
       : "",
-    worldbuildingFocus
-      ? `当前阶段信息${worldbuildingFocus.currentStage.text.truncated ? "（已截断）" : ""}:\n${worldbuildingFocus.currentStage.text.content || "未填写"}`
-      : "",
-    worldbuildingFocus?.overview
-      ? `当前分类概览${worldbuildingFocus.overview.truncated ? "（已截断）" : ""}:\n${worldbuildingFocus.overview.content || "未填写"}`
-      : "",
-    characterFocus
-      ? `当前用户所处的人物阶段: ${
-          characterFocus.currentDocument.kind === "overview"
-            ? "人物概览"
-            : `「${characterFocus.characterName}」 / ${characterFocus.currentDocument.title}${
-                characterFocus.group
-                  ? `（人物类型 type_id=${characterFocus.group}）`
-                  : ""
-              }`
-        }`
-      : "",
-    characterFocus
-      ? `当前阶段信息${characterFocus.currentDocument.text.truncated ? "（已截断）" : ""}:\n${characterFocus.currentDocument.text.content || "未填写"}`
-      : "",
-    characterFocus?.overview
-      ? `人物设计概览${characterFocus.overview.truncated ? "（已截断）" : ""}:\n${characterFocus.overview.content || "未填写"}`
-      : "",
-    characterFocus?.coreProfile
-      ? `人物核心档案${characterFocus.coreProfile.truncated ? "（已截断）" : ""}:\n${characterFocus.coreProfile.content || "未填写"}`
+    characterFocus && longWorkspace
+      ? renderLongCharacterStageBrief(characterFocus, longWorkspace.navigation)
       : "",
     longWorkspace && !isSettingAgentRun
       ? `长篇项目: ${longWorkspace.bookId}；结构版本 ${longWorkspace.workspaceRevision}；项目版本 ${longWorkspace.projectRevision}`
       : "",
-    longWorkspace && !isSettingAgentRun
+    longWorkspace && !omitLongImplementationIds
       ? `当前根节点: ${longWorkspace.activeRoot}；当前智能体: ${longWorkspace.activeAgentId}`
       : "",
     longWorkspace?.activeChapterCardId &&
@@ -2931,7 +3020,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       ? `当前章卡: ${longWorkspace.activeChapterCardId}`
       : "",
     longWorkspace?.activeFileId &&
-    !isSettingAgentRun
+    !omitLongImplementationIds
       ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
       : "",
     isPlotDesignAgentRun
@@ -3004,7 +3093,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       : learningContext
         ? "当前资源: 学习仿写样本文档（正文请通过工具按需读取）"
         : "当前资源: 未提供",
-    active && !isSettingAgentRun
+    active && !omitLongImplementationIds
       ? `资源路径: ${active.path.join(" / ")}`
       : "",
     active &&
@@ -3061,14 +3150,10 @@ function buildLongPlotTurnUserPrompt(input: AgentRunInput): string {
   const plotFocus = longWorkspace.plotFocus;
   const lines = [
     "【本轮剧情工作区上下文】",
-    `长篇作品: 《${longWorkspace.title}》 (${longWorkspace.bookId})`,
+    `长篇作品: 《${longWorkspace.title}》`,
     `结构版本 ${longWorkspace.workspaceRevision}；项目版本 ${longWorkspace.projectRevision}`,
-    `当前根节点: ${longWorkspace.activeRoot}；当前智能体: ${longWorkspace.activeAgentId}`,
     longWorkspace.activeChapterCardId
       ? `当前章卡: ${longWorkspace.activeChapterCardId}`
-      : "",
-    longWorkspace.activeFileId
-      ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
       : "",
     `长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）:\n${renderLongPlotNavigation(
       longWorkspace.navigation

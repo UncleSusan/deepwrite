@@ -986,6 +986,77 @@ describe("agent conversation controller", () => {
     controller.dispose();
   });
 
+  it("restores a snapshot that omitted draft and temperature", async () => {
+    const controller = useAgentConversation({ api: () => undefined });
+    await expect(
+      controller.restorePersistenceSnapshot({
+        version: 1,
+        activeSessionId: "session-legacy",
+        conversations: [
+          {
+            sessionId: "session-legacy",
+            messages: [
+              {
+                id: "user-legacy",
+                role: "user",
+                content: "检查设定冲突",
+                createdAt: "2026-08-15T07:51:00.000Z"
+              }
+            ],
+            createdAt: "2026-08-15T07:51:00.000Z",
+            updatedAt: "2026-08-15T07:51:09.000Z"
+          }
+        ]
+      })
+    ).resolves.toBe(true);
+    expect(controller.sessionId.value).toBe("session-legacy");
+    expect(controller.messages.value[0]?.content).toBe("检查设定冲突");
+    expect(controller.draft.value).toBe("");
+    expect(controller.temperature.value).toBe(0.7);
+    controller.dispose();
+  });
+
+  it("keeps valid conversations when one stored session cannot be parsed", async () => {
+    const controller = useAgentConversation({ api: () => undefined });
+    await expect(
+      controller.restorePersistenceSnapshot({
+        version: 1,
+        activeSessionId: "session-valid",
+        conversations: [
+          storedConversation(
+            "session-valid",
+            "2026-08-15T07:51:00.000Z",
+            "检查设定冲突"
+          ),
+          { sessionId: "session-invalid", messages: "invalid" }
+        ]
+      })
+    ).resolves.toBe(true);
+    expect(controller.sessionId.value).toBe("session-valid");
+    expect(controller.history.value).toHaveLength(1);
+    controller.dispose();
+  });
+
+  it("does not persist while hydration is holding writes", () => {
+    const snapshots: AgentConversationPersistenceSnapshot[] = [];
+    const controller = useAgentConversation({
+      api: () => undefined,
+      onPersistenceSnapshot(snapshot) {
+        snapshots.push(snapshot);
+      }
+    });
+
+    controller.holdPersistenceEmits();
+    controller.draft.value = "水合完成前不应落盘";
+    expect(snapshots).toEqual([]);
+    controller.releasePersistenceEmits();
+    controller.draft.value = "水合完成后可以落盘";
+    expect(snapshots.at(-1)).toMatchObject({
+      conversations: [{ draft: "水合完成后可以落盘" }]
+    });
+    controller.dispose();
+  });
+
   it("rejects malformed snapshots without changing the active conversation", async () => {
     const controller = useAgentConversation({ api: () => undefined });
     const originalSessionId = controller.sessionId.value;

@@ -856,6 +856,114 @@ describe("long workspace agent tools", () => {
     });
   });
 
+  it("lists plot design as paragraph text without pagination", async () => {
+    const index = fixtureIndex();
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(index);
+      }
+      throw new Error(`Unexpected command: ${command.type}`);
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-plot-list",
+      runId: "run-plot-list",
+      executor
+    });
+    const list = toolByName(tools, "list_plot_design");
+
+    expect(JSON.stringify(list.parameters)).not.toContain('"page"');
+    expect(JSON.stringify(list.parameters)).not.toContain('"limit"');
+    expect(Check(list.parameters, {})).toBe(true);
+    expect(Check(list.parameters, { kind: "arc", volume_id: "volume_one" })).toBe(
+      true
+    );
+    expect(Check(list.parameters, { page: 1, limit: 1 })).toBe(false);
+
+    const kindsText = resultText(await list.execute("list-kinds", {}));
+    expect(() => JSON.parse(kindsText)).toThrow();
+    expect(kindsText).toBe(
+      [
+        "剧情结构",
+        "",
+        "全书故事线",
+        "kind=book_line",
+        "条目数=1",
+        "",
+        "分卷",
+        "kind=volume",
+        "条目数=1",
+        "",
+        "剧情点",
+        "kind=arc",
+        "条目数=1",
+        "",
+        "故事情节",
+        "kind=story_plot",
+        "条目数=0",
+        "",
+        "章卡",
+        "kind=chapter",
+        "条目数=1",
+        "",
+        "故事事件",
+        "kind=event",
+        "条目数=0",
+        "",
+        "事件连接",
+        "kind=connection",
+        "条目数=0",
+        "",
+        "叙事落点",
+        "kind=placement",
+        "条目数=0"
+      ].join("\n")
+    );
+    expect(kindsText).not.toContain("next_page");
+    expect(kindsText).not.toContain("fileId");
+
+    const bookLineText = resultText(
+      await list.execute("list-book-line", { kind: "book_line" })
+    );
+    expect(bookLineText).toBe(["全书故事线", "kind=book_line"].join("\n"));
+
+    const arcsText = resultText(
+      await list.execute("list-arcs", { kind: "arc", volume_id: "volume_one" })
+    );
+    expect(() => JSON.parse(arcsText)).toThrow();
+    expect(arcsText).toBe(
+      [
+        "剧情点",
+        "",
+        "主线",
+        "arc_id=arc_one",
+        "volume_id=volume_one",
+        "顺序=1"
+      ].join("\n")
+    );
+
+    const chaptersText = resultText(
+      await list.execute("list-chapters", { kind: "chapter" })
+    );
+    expect(chaptersText).toBe(
+      [
+        "章卡",
+        "",
+        "第一章",
+        "chapter_card_id=chapter_one",
+        "volume_id=volume_one",
+        "primary_arc_id=arc_one",
+        "叙事顺序=1"
+      ].join("\n")
+    );
+
+    const emptyEventsText = resultText(
+      await list.execute("list-events", { kind: "event" })
+    );
+    expect(emptyEventsText).toBe(["故事事件", "（暂无故事事件）"].join("\n\n"));
+  });
+
   it("uses business-level plot tools for non-foreshadowing content", async () => {
     const index = fixtureIndex();
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
@@ -880,7 +988,7 @@ describe("long workspace agent tools", () => {
       .filter((item) => item.type === "text")
       .map((item) => item.text)
       .join("\n");
-    expect(listedText).toContain('"arc_id":"arc_one"');
+    expect(listedText).toContain("arc_id=arc_one");
     expect(listedText).not.toContain("fileId");
 
     await toolByName(tools, "read_plot_design").execute("read-arc", {
@@ -961,8 +1069,8 @@ describe("long workspace agent tools", () => {
       .filter((item) => item.type === "text")
       .map((item) => item.text)
       .join("\n");
-    expect(listedText).toContain('"story_plot_id":"storyplot_one"');
-    expect(listedText).toContain('"arc_id":"arc_one"');
+    expect(listedText).toContain("story_plot_id=storyplot_one");
+    expect(listedText).toContain("arc_id=arc_one");
     expect(listedText).not.toContain("fileId");
 
     const premature = await toolByName(tools, "write_plot_design").execute(
@@ -1362,7 +1470,7 @@ describe("long workspace agent tools", () => {
       { kind: "story_plot", arc_id: "arc_one" }
     );
     const pendingListText = resultText(pendingList);
-    expect(pendingListText).toContain('"story_plot_id":"storyplot_one"');
+    expect(pendingListText).toContain("story_plot_id=storyplot_one");
     expect(pendingListText).toContain(createdStoryPlotId);
 
     const pendingSearch = await toolByName(

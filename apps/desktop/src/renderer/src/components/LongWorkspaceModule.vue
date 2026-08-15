@@ -56,7 +56,12 @@ const props = defineProps<{
   editorLockedReason: string | undefined;
   loading: boolean;
   leftCollapsed: boolean;
-  rightCollapsed: boolean;
+  rightPane: Readonly<{
+    collapsed: boolean;
+    minWidth: number;
+    maxWidth: number;
+    width: number;
+  }>;
 }>();
 
 const emit = defineEmits<{
@@ -66,6 +71,8 @@ const emit = defineEmits<{
   toggleLeft: [];
   toggleRight: [];
   collapseRight: [];
+  resizeStart: [event: PointerEvent];
+  resizeKeydown: [event: KeyboardEvent];
   newConversation: [];
   selectConversation: [sessionId: string];
   send: [attachments: UserPromptAttachment[]];
@@ -111,6 +118,7 @@ const emit = defineEmits<{
     completion: (succeeded: boolean) => void
   ];
   createCharacter: [];
+  createWorldbuildingItem: [];
   createPlotPoint: [];
   createChapterCard: [];
   createVolume: [];
@@ -228,11 +236,228 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main
-    class="long-workspace-main-view"
-    :class="{ 'is-right-collapsed': rightCollapsed }"
-    aria-label="长篇创作空间"
-  >
+  <template v-if="book">
+    <div class="long-agent-column" aria-label="长篇创作空间">
+      <button
+        v-if="leftCollapsed && !(conversationController && agentProfile)"
+        class="icon-button long-workspace-expand-sidebar"
+        type="button"
+        aria-label="展开左侧栏"
+        @click="emit('expandLeft')"
+      >
+        <AppIcon name="panel-left" :size="18" />
+      </button>
+      <AgentConversation
+        v-if="conversationController && agentProfile"
+        class="long-agent-conversation"
+        v-model:draft="conversationDraft"
+        :messages="conversationController.messages.value"
+        :conversation-history="conversationController.history.value"
+        :current-session-id="conversationController.sessionId.value"
+        :responding="conversationController.isBusy.value"
+        :can-send="
+          !sendPreflightPending &&
+          sendContextReady &&
+          conversationController.canSend.value
+        "
+        :can-send-attachments="
+          conversationController.canSendAttachments.value
+        "
+        :can-stop="conversationController.canStop.value"
+        :runtime-available="runtimeAvailable"
+        :models="conversationController.configuredModels.value"
+        :selected-model-id="conversationController.selectedModelId.value"
+        :thinking-level="conversationController.thinkingLevel.value"
+        :temperature="conversationController.temperature.value"
+        :approval-mode="conversationController.approvalMode.value"
+        allow-live-edit-review
+        :context-title="selection?.title ?? book.title"
+        :book-title="book.title"
+        :stage-label="activeStageLabel"
+        :agent-label="agentProfile.label"
+        :agent-id="agentProfile.id"
+        agent-workspace-type="long"
+        :library-domain="undefined"
+        :library-skills="undefined"
+        :welcome-shortcuts="agentProfile.welcomeShortcuts"
+        :available-skills="availableSkillReferences"
+        :available-materials="availableMaterialReferences"
+        :editor-references="[]"
+        :long-proposal-items="proposalItems"
+        :long-workspace-index="workspaceIndex"
+        :left-collapsed="leftCollapsed"
+        :right-collapsed="rightPane.collapsed"
+        @new-conversation="emit('newConversation')"
+        @select-conversation="emit('selectConversation', $event)"
+        @send="emit('send', $event)"
+        @stop="emit('stop')"
+        @suggestion="emit('suggestion', $event)"
+        @toggle-left="emit('toggleLeft')"
+        @toggle-right="emit('toggleRight')"
+        @select-model="emit('selectModel', $event)"
+        @select-thinking="emit('selectThinking', $event)"
+        @select-temperature="emit('selectTemperature', $event)"
+        @select-approval="emit('selectApproval', $event)"
+        @review-edit="emit('reviewEdit', $event)"
+        @locate-edit-proposal="emit('locateEditProposal', $event)"
+        @approve-long-proposal="emit('approveLongProposal', $event)"
+        @reject-long-proposal="emit('rejectLongProposal', $event)"
+        @retry-long-proposal-preview="
+          emit('retryLongProposalPreview', $event)
+        "
+        @locate-long-proposal="emit('locateLongProposal', $event)"
+      />
+      <section
+        v-if="refreshStatus?.error"
+        class="long-workspace-refresh-status is-error"
+        aria-live="polite"
+      >
+        <span v-if="revisionSyncRequired">
+          账本回滚已完成，但最新版本尚未同步；正文编辑已锁定以防止版本冲突。
+        </span>
+        <span v-else>
+          最新工作区索引尚未同步，长篇智能体已暂停发送。
+        </span>
+        <button
+          type="button"
+          @click="emit('retryWorkspaceRefresh')"
+        >
+          重新同步
+        </button>
+      </section>
+      <section
+        v-if="
+          writingOrchestrator.state.value.phase !== 'idle' &&
+          writingOrchestrator.state.value.bookId === book.id
+        "
+        class="long-writing-workflow-status"
+        aria-live="polite"
+      >
+        <div>
+          <strong>串行写作计划</strong>
+          <span v-if="writingOrchestrator.currentChapter.value">
+            {{ writingOrchestrator.currentChapter.value.title }}
+            ·
+            {{
+              Math.min(
+                writingOrchestrator.state.value.currentIndex + 1,
+                writingOrchestrator.state.value.chapters.length
+              )
+            }}/{{ writingOrchestrator.state.value.chapters.length }}
+          </span>
+          <span v-else>已完成</span>
+        </div>
+        <small
+          v-if="writingOrchestrator.state.value.error"
+          class="is-error"
+        >
+          {{ writingOrchestrator.state.value.error }}
+        </small>
+        <small v-else>
+          {{
+            writingOrchestrator.state.value.phase ===
+            "awaiting_writer_approval"
+              ? "等待你审阅本章正文写入提案"
+              : writingOrchestrator.state.value.phase === "complete"
+                ? "本次计划已完成"
+                : "正在核对文件与保存屏障"
+          }}
+        </small>
+        <div
+          v-if="writingOrchestrator.state.value.phase !== 'complete'"
+          class="long-writing-workflow-actions"
+        >
+          <button
+            v-if="writingOrchestrator.state.value.phase === 'error'"
+            type="button"
+            @click="emit('retryWritingWorkflow')"
+          >
+            重试当前章
+          </button>
+          <button
+            type="button"
+            @click="emit('cancelWritingWorkflow')"
+          >
+            取消计划
+          </button>
+        </div>
+        <button
+          v-if="writingOrchestrator.state.value.phase === 'complete'"
+          type="button"
+          @click="emit('finishWritingWorkflow')"
+        >
+          完成
+        </button>
+      </section>
+    </div>
+    <template v-if="workspaceIndex">
+      <LongWorkspaceEditor
+        v-show="!rightPane.collapsed"
+        :ref="captureEditorPort"
+        :book-id="book.id"
+        :selection="selection"
+        :workspace-index="workspaceIndex"
+        :latest-commit="latestCommit"
+        :locked="editorLocked"
+        :locked-reason="editorLockedReason"
+        @saved="emit('saved', $event)"
+        @context-change="emit('contextChange', $event)"
+        @collapse="emit('collapseRight')"
+        @rollback="emit('rollback')"
+        @select-character="forwardSelectCharacter"
+        @select-plot-point="emit('selectPlotPoint', $event)"
+        @select-chapter-card="emit('selectChapterCard', $event)"
+        @rename-character="forwardRenameCharacter"
+        @rename-structure-title="forwardRenameStructureTitle"
+        @create-character="emit('createCharacter')"
+        @create-worldbuilding-item="emit('createWorldbuildingItem')"
+        @create-plot-point="emit('createPlotPoint')"
+        @create-chapter-card="emit('createChapterCard')"
+        @create-volume="emit('createVolume')"
+        @delete-structure="forwardDeleteStructure"
+        @save-volume-outline="forwardSaveVolumeOutline"
+        @save-plot-point-content="forwardSavePlotPointContent"
+        @mutation="forwardMutation"
+      />
+    </template>
+    <div
+      v-else-if="!rightPane.collapsed"
+      class="long-workspace-editor-loading-state"
+      aria-live="polite"
+    >
+      <span class="long-workspace-loading-icon">
+        <AppIcon name="book" :size="28" />
+      </span>
+      <strong>
+        {{
+          loading
+            ? "正在打开长篇工作区…"
+            : "长篇工作区尚未载入"
+        }}
+      </strong>
+      <span>
+        {{
+          loading
+            ? "正在读取轻量导航索引，正文将在选择文件后按需读取。"
+            : "请再次选择左侧长篇书籍重试。"
+        }}
+      </span>
+    </div>
+    <div
+      v-if="!rightPane.collapsed"
+      class="pane-resizer pane-resizer-right"
+      role="separator"
+      aria-label="调整右侧栏宽度"
+      aria-orientation="vertical"
+      :aria-valuemin="rightPane.minWidth"
+      :aria-valuemax="rightPane.maxWidth"
+      :aria-valuenow="rightPane.width"
+      tabindex="0"
+      @pointerdown="emit('resizeStart', $event)"
+      @keydown="emit('resizeKeydown', $event)"
+    />
+  </template>
+  <template v-else>
     <button
       v-if="leftCollapsed"
       class="icon-button long-workspace-expand-sidebar"
@@ -242,205 +467,7 @@ onBeforeUnmount(() => {
     >
       <AppIcon name="panel-left" :size="18" />
     </button>
-    <template v-if="book">
-      <div class="long-agent-column">
-        <AgentConversation
-          v-if="conversationController && agentProfile"
-          class="long-agent-conversation"
-          v-model:draft="conversationDraft"
-          :messages="conversationController.messages.value"
-          :conversation-history="conversationController.history.value"
-          :current-session-id="conversationController.sessionId.value"
-          :responding="conversationController.isBusy.value"
-          :can-send="
-            !sendPreflightPending &&
-            sendContextReady &&
-            conversationController.canSend.value
-          "
-          :can-send-attachments="
-            conversationController.canSendAttachments.value
-          "
-          :can-stop="conversationController.canStop.value"
-          :runtime-available="runtimeAvailable"
-          :models="conversationController.configuredModels.value"
-          :selected-model-id="conversationController.selectedModelId.value"
-          :thinking-level="conversationController.thinkingLevel.value"
-          :temperature="conversationController.temperature.value"
-          :approval-mode="conversationController.approvalMode.value"
-          allow-live-edit-review
-          :context-title="selection?.title ?? book.title"
-          :book-title="book.title"
-          :stage-label="activeStageLabel"
-          :agent-label="agentProfile.label"
-          :agent-id="agentProfile.id"
-          agent-workspace-type="long"
-          :library-domain="undefined"
-          :library-skills="undefined"
-          :welcome-shortcuts="agentProfile.welcomeShortcuts"
-          :available-skills="availableSkillReferences"
-          :available-materials="availableMaterialReferences"
-          :editor-references="[]"
-          :long-proposal-items="proposalItems"
-          :long-workspace-index="workspaceIndex"
-          :left-collapsed="leftCollapsed"
-          :right-collapsed="rightCollapsed"
-          @new-conversation="emit('newConversation')"
-          @select-conversation="emit('selectConversation', $event)"
-          @send="emit('send', $event)"
-          @stop="emit('stop')"
-          @suggestion="emit('suggestion', $event)"
-          @toggle-left="emit('toggleLeft')"
-          @toggle-right="emit('toggleRight')"
-          @select-model="emit('selectModel', $event)"
-          @select-thinking="emit('selectThinking', $event)"
-          @select-temperature="emit('selectTemperature', $event)"
-          @select-approval="emit('selectApproval', $event)"
-          @review-edit="emit('reviewEdit', $event)"
-          @locate-edit-proposal="emit('locateEditProposal', $event)"
-          @approve-long-proposal="emit('approveLongProposal', $event)"
-          @reject-long-proposal="emit('rejectLongProposal', $event)"
-          @retry-long-proposal-preview="
-            emit('retryLongProposalPreview', $event)
-          "
-          @locate-long-proposal="emit('locateLongProposal', $event)"
-        />
-        <section
-          v-if="refreshStatus?.error"
-          class="long-workspace-refresh-status is-error"
-          aria-live="polite"
-        >
-          <span v-if="revisionSyncRequired">
-            账本回滚已完成，但最新版本尚未同步；正文编辑已锁定以防止版本冲突。
-          </span>
-          <span v-else>
-            最新工作区索引尚未同步，长篇智能体已暂停发送。
-          </span>
-          <button
-            type="button"
-            @click="emit('retryWorkspaceRefresh')"
-          >
-            重新同步
-          </button>
-        </section>
-        <section
-          v-if="
-            writingOrchestrator.state.value.phase !== 'idle' &&
-            writingOrchestrator.state.value.bookId === book.id
-          "
-          class="long-writing-workflow-status"
-          aria-live="polite"
-        >
-          <div>
-            <strong>串行写作计划</strong>
-            <span v-if="writingOrchestrator.currentChapter.value">
-              {{ writingOrchestrator.currentChapter.value.title }}
-              ·
-              {{
-                Math.min(
-                  writingOrchestrator.state.value.currentIndex + 1,
-                  writingOrchestrator.state.value.chapters.length
-                )
-              }}/{{ writingOrchestrator.state.value.chapters.length }}
-            </span>
-            <span v-else>已完成</span>
-          </div>
-          <small
-            v-if="writingOrchestrator.state.value.error"
-            class="is-error"
-          >
-            {{ writingOrchestrator.state.value.error }}
-          </small>
-          <small v-else>
-            {{
-              writingOrchestrator.state.value.phase ===
-              "awaiting_writer_approval"
-                ? "等待你审阅本章正文写入提案"
-                : writingOrchestrator.state.value.phase === "complete"
-                  ? "本次计划已完成"
-                  : "正在核对文件与保存屏障"
-            }}
-          </small>
-          <div
-            v-if="writingOrchestrator.state.value.phase !== 'complete'"
-            class="long-writing-workflow-actions"
-          >
-            <button
-              v-if="writingOrchestrator.state.value.phase === 'error'"
-              type="button"
-              @click="emit('retryWritingWorkflow')"
-            >
-              重试当前章
-            </button>
-            <button
-              type="button"
-              @click="emit('cancelWritingWorkflow')"
-            >
-              取消计划
-            </button>
-          </div>
-          <button
-            v-if="writingOrchestrator.state.value.phase === 'complete'"
-            type="button"
-            @click="emit('finishWritingWorkflow')"
-          >
-            完成
-          </button>
-        </section>
-      </div>
-      <template v-if="workspaceIndex">
-        <LongWorkspaceEditor
-          v-show="!rightCollapsed"
-          :ref="captureEditorPort"
-          :book-id="book.id"
-          :selection="selection"
-          :workspace-index="workspaceIndex"
-          :latest-commit="latestCommit"
-          :locked="editorLocked"
-          :locked-reason="editorLockedReason"
-          @saved="emit('saved', $event)"
-          @context-change="emit('contextChange', $event)"
-          @collapse="emit('collapseRight')"
-          @rollback="emit('rollback')"
-          @select-character="forwardSelectCharacter"
-          @select-plot-point="emit('selectPlotPoint', $event)"
-          @select-chapter-card="emit('selectChapterCard', $event)"
-          @rename-character="forwardRenameCharacter"
-          @rename-structure-title="forwardRenameStructureTitle"
-          @create-character="emit('createCharacter')"
-          @create-plot-point="emit('createPlotPoint')"
-          @create-chapter-card="emit('createChapterCard')"
-          @create-volume="emit('createVolume')"
-          @delete-structure="forwardDeleteStructure"
-          @save-volume-outline="forwardSaveVolumeOutline"
-          @save-plot-point-content="forwardSavePlotPointContent"
-          @mutation="forwardMutation"
-        />
-      </template>
-      <div
-        v-else-if="!rightCollapsed"
-        class="long-workspace-editor-loading-state"
-        aria-live="polite"
-      >
-        <span class="long-workspace-loading-icon">
-          <AppIcon name="book" :size="28" />
-        </span>
-        <strong>
-          {{
-            loading
-              ? "正在打开长篇工作区…"
-              : "长篇工作区尚未载入"
-          }}
-        </strong>
-        <span>
-          {{
-            loading
-              ? "正在读取轻量导航索引，正文将在选择文件后按需读取。"
-              : "请再次选择左侧长篇书籍重试。"
-          }}
-        </span>
-      </div>
-    </template>
-    <div v-else class="long-workspace-loading-state">
+    <div class="long-workspace-loading-state">
       <span class="long-workspace-loading-icon">
         <AppIcon name="book" :size="28" />
       </span>
@@ -459,5 +486,5 @@ onBeforeUnmount(() => {
         }}
       </span>
     </div>
-  </main>
+  </template>
 </template>

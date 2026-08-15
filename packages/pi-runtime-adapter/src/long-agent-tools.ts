@@ -1591,6 +1591,169 @@ function formatCharacterList(input: {
   ]);
 }
 
+const PLOT_DESIGN_KIND_LABELS = {
+  book_line: "全书故事线",
+  volume: "分卷",
+  arc: "剧情点",
+  story_plot: "故事情节",
+  chapter: "章卡",
+  event: "故事事件",
+  connection: "事件连接",
+  placement: "叙事落点"
+} as const;
+
+type PlotDesignKind = keyof typeof PLOT_DESIGN_KIND_LABELS;
+
+type PlotDesignListItem = {
+  kind: PlotDesignKind;
+  title?: string;
+  volume_id?: string;
+  arc_id?: string;
+  story_plot_id?: string;
+  chapter_card_id?: string;
+  event_id?: string;
+  connection_id?: string;
+  placement_id?: string;
+  primary_arc_id?: string | null;
+  source_event_id?: string;
+  target_event_id?: string;
+  connection_type?: string;
+  order?: number;
+  narrative_order?: number;
+  order_in_chapter?: number;
+  status?: string;
+};
+
+function formatPlotDesignKindList(
+  sections: readonly { kind: PlotDesignKind; count: number }[]
+): string {
+  return joinParagraphs([
+    "剧情结构",
+    ...sections.map((section) =>
+      joinLines([
+        PLOT_DESIGN_KIND_LABELS[section.kind],
+        `kind=${section.kind}`,
+        `条目数=${section.count}`
+      ])
+    )
+  ]);
+}
+
+function formatPlotDesignItem(item: PlotDesignListItem): string {
+  switch (item.kind) {
+    case "book_line":
+      return joinLines(["全书故事线", "kind=book_line"]);
+    case "volume":
+      return joinLines([
+        item.title,
+        item.volume_id ? `volume_id=${item.volume_id}` : undefined,
+        item.order !== undefined ? `顺序=${item.order}` : undefined
+      ]);
+    case "arc":
+      return joinLines([
+        item.title,
+        item.arc_id ? `arc_id=${item.arc_id}` : undefined,
+        item.volume_id ? `volume_id=${item.volume_id}` : undefined,
+        item.order !== undefined ? `顺序=${item.order}` : undefined
+      ]);
+    case "story_plot":
+      return joinLines([
+        item.title,
+        item.story_plot_id ? `story_plot_id=${item.story_plot_id}` : undefined,
+        item.arc_id ? `arc_id=${item.arc_id}` : undefined,
+        item.order !== undefined ? `顺序=${item.order}` : undefined
+      ]);
+    case "chapter":
+      return joinLines([
+        item.title,
+        item.chapter_card_id
+          ? `chapter_card_id=${item.chapter_card_id}`
+          : undefined,
+        item.volume_id ? `volume_id=${item.volume_id}` : undefined,
+        `primary_arc_id=${item.primary_arc_id ?? "null"}`,
+        item.narrative_order !== undefined
+          ? `叙事顺序=${item.narrative_order}`
+          : undefined
+      ]);
+    case "event":
+      return joinLines([
+        item.title,
+        item.event_id ? `event_id=${item.event_id}` : undefined,
+        item.order !== undefined ? `顺序=${item.order}` : undefined
+      ]);
+    case "connection":
+      return joinLines([
+        item.connection_id ? `connection_id=${item.connection_id}` : undefined,
+        item.source_event_id
+          ? `source_event_id=${item.source_event_id}`
+          : undefined,
+        item.target_event_id
+          ? `target_event_id=${item.target_event_id}`
+          : undefined,
+        item.connection_type ? `类型=${item.connection_type}` : undefined
+      ]);
+    case "placement":
+      return joinLines([
+        item.placement_id ? `placement_id=${item.placement_id}` : undefined,
+        item.event_id ? `event_id=${item.event_id}` : undefined,
+        item.chapter_card_id
+          ? `chapter_card_id=${item.chapter_card_id}`
+          : undefined,
+        item.order_in_chapter !== undefined
+          ? `章内顺序=${item.order_in_chapter}`
+          : undefined,
+        item.status ? `状态=${item.status}` : undefined
+      ]);
+  }
+}
+
+function formatPlotDesignItemList(input: {
+  kind: PlotDesignKind;
+  items: readonly PlotDesignListItem[];
+}): string {
+  if (input.kind === "book_line") {
+    return formatPlotDesignItem({ kind: "book_line", title: "全书故事线" });
+  }
+  const label = PLOT_DESIGN_KIND_LABELS[input.kind];
+  if (input.items.length === 0) {
+    return joinParagraphs([label, `（暂无${label}）`]);
+  }
+  return joinParagraphs([
+    label,
+    ...input.items.map((item) => formatPlotDesignItem(item))
+  ]);
+}
+
+function comparePlotDesignListItems(
+  left: PlotDesignListItem,
+  right: PlotDesignListItem
+): number {
+  const leftOrder =
+    left.order ?? left.narrative_order ?? left.order_in_chapter ?? 0;
+  const rightOrder =
+    right.order ?? right.narrative_order ?? right.order_in_chapter ?? 0;
+  if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  const leftId =
+    left.volume_id ??
+    left.arc_id ??
+    left.story_plot_id ??
+    left.chapter_card_id ??
+    left.event_id ??
+    left.connection_id ??
+    left.placement_id ??
+    "";
+  const rightId =
+    right.volume_id ??
+    right.arc_id ??
+    right.story_plot_id ??
+    right.chapter_card_id ??
+    right.event_id ??
+    right.connection_id ??
+    right.placement_id ??
+    "";
+  return leftId.localeCompare(rightId);
+}
+
 function chapterVolumeConflictMessage(
   index: LongWorkspaceIndexSnapshot,
   batch: LongWorkspaceOperationBatch
@@ -6398,130 +6561,218 @@ export function buildLongWorkspaceTools(
       placement: index.plot.narrativePlacements
     });
 
+    const pendingStoryPlotEntries = (index: LongWorkspaceIndexSnapshot) =>
+      [...storyPlotOverlay.entries()].filter(
+        ([id, entry]) =>
+          entry.pendingCreation &&
+          !index.plot.storyPlots.some((storyPlot) => storyPlot.id === id)
+      );
+
+    const pendingChapterCardEntries = (index: LongWorkspaceIndexSnapshot) =>
+      [...chapterCardOverlay.entries()].filter(
+        ([id, entry]) =>
+          entry.pendingCreation &&
+          !index.plot.chapterCards.some((chapter) => chapter.id === id)
+      );
+
+    const collectPlotDesignListItems = (
+      index: LongWorkspaceIndexSnapshot,
+      kind: Exclude<PlotDesignKind, "book_line">,
+      filters: {
+        volume_id?: string;
+        arc_id?: string;
+        chapter_card_id?: string;
+      }
+    ): PlotDesignListItem[] => {
+      let persisted: PlotDesignListItem[] = [];
+      let pending: PlotDesignListItem[] = [];
+      switch (kind) {
+        case "volume":
+          persisted = index.plot.volumes
+            .filter(
+              (volume) => !filters.volume_id || volume.id === filters.volume_id
+            )
+            .map((volume) => ({
+              kind,
+              title: volume.title,
+              volume_id: volume.id,
+              order: volume.order
+            }));
+          break;
+        case "arc":
+          persisted = index.plot.arcs
+            .filter(
+              (arc) =>
+                (!filters.volume_id || arc.volumeId === filters.volume_id) &&
+                (!filters.arc_id || arc.id === filters.arc_id)
+            )
+            .map((arc) => ({
+              kind,
+              title: arc.title,
+              arc_id: arc.id,
+              volume_id: arc.volumeId,
+              order: arc.order
+            }));
+          break;
+        case "story_plot":
+          persisted = index.plot.storyPlots
+            .filter(
+              (storyPlot) =>
+                !filters.arc_id || storyPlot.arcId === filters.arc_id
+            )
+            .map((storyPlot) => ({
+              kind,
+              title: storyPlot.title,
+              story_plot_id: storyPlot.id,
+              arc_id: storyPlot.arcId,
+              order: storyPlot.order
+            }));
+          pending = pendingStoryPlotEntries(index)
+            .filter(
+              ([, entry]) => !filters.arc_id || entry.arcId === filters.arc_id
+            )
+            .map(([id, entry]) => ({
+              kind,
+              title: entry.title,
+              story_plot_id: id,
+              arc_id: entry.arcId,
+              order: entry.order
+            }));
+          break;
+        case "chapter":
+          persisted = index.plot.chapterCards
+            .filter(
+              (chapter) =>
+                (!filters.volume_id || chapter.volumeId === filters.volume_id) &&
+                (!filters.arc_id || chapter.primaryArcId === filters.arc_id)
+            )
+            .map((chapter) => ({
+              kind,
+              title: chapter.title,
+              chapter_card_id: chapter.id,
+              volume_id: chapter.volumeId,
+              primary_arc_id: chapter.primaryArcId,
+              narrative_order: chapter.narrativeOrder
+            }));
+          pending = pendingChapterCardEntries(index)
+            .filter(
+              ([, entry]) =>
+                (!filters.volume_id || entry.volumeId === filters.volume_id) &&
+                (!filters.arc_id || entry.primaryArcId === filters.arc_id)
+            )
+            .map(([id, entry]) => ({
+              kind,
+              title: entry.title,
+              chapter_card_id: id,
+              volume_id: entry.volumeId,
+              primary_arc_id: entry.primaryArcId,
+              narrative_order: entry.narrativeOrder
+            }));
+          break;
+        case "event":
+          persisted = index.plot.storyEvents
+            .filter(
+              (event) =>
+                !filters.arc_id || event.arcIds.includes(filters.arc_id)
+            )
+            .map((event) => ({
+              kind,
+              title: event.title,
+              event_id: event.id,
+              order: event.storyOrder
+            }));
+          break;
+        case "connection":
+          persisted = index.plot.eventConnections.map((connection) => ({
+            kind,
+            connection_id: connection.id,
+            source_event_id: connection.sourceEventId,
+            target_event_id: connection.targetEventId,
+            connection_type: connection.type
+          }));
+          break;
+        case "placement":
+          persisted = index.plot.narrativePlacements
+            .filter(
+              (placement) =>
+                !filters.chapter_card_id ||
+                placement.chapterCardId === filters.chapter_card_id
+            )
+            .map((placement) => ({
+              kind,
+              placement_id: placement.id,
+              event_id: placement.eventId,
+              chapter_card_id: placement.chapterCardId,
+              order_in_chapter: placement.orderInChapter,
+              status: placement.status
+            }));
+          break;
+      }
+      return [...persisted, ...pending].sort(comparePlotDesignListItems);
+    };
+
     tools.push(
       defineTool({
         name: "list_plot_design",
         label: "列出剧情设计",
         description:
-          "列出全书故事线及剧情结构类型；指定 kind 时分页返回对应条目的业务 ID 与标题/关联摘要。伏笔不在本工具中，继续使用现有伏笔结构工具。",
+          "一次列出全部剧情结构类型；指定 kind 时列出该类型的全部条目。按行段落返回稳定业务 ID、标题和关联摘要，不显示文件或版本信息。可用 volume_id / arc_id / chapter_card_id 筛选。伏笔不在本工具中，继续使用现有伏笔结构工具。",
         parameters: strictObject({
           kind: Type.Optional(plotItemKindParameter),
           volume_id: Type.Optional(stableIdParameter("volume")),
           arc_id: Type.Optional(stableIdParameter("arc")),
-          chapter_card_id: Type.Optional(stableIdParameter("chapter")),
-          page: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
-          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+          chapter_card_id: Type.Optional(stableIdParameter("chapter"))
         }),
         execute: async (_toolCallId, params, signal) => {
           const { index } = await loadIndex(signal);
           if (!params.kind) {
-            const pendingStoryPlotCount = [...storyPlotOverlay.entries()].filter(
-              ([id, entry]) =>
-                entry.pendingCreation &&
-                !index.plot.storyPlots.some((storyPlot) => storyPlot.id === id)
-            ).length;
-            const pendingChapterCount = [...chapterCardOverlay.entries()].filter(
-              ([id, entry]) =>
-                entry.pendingCreation &&
-                !index.plot.chapterCards.some((chapter) => chapter.id === id)
-            ).length;
-            return textResult(JSON.stringify({
-              sections: [
-                { kind: "book_line", label: "全书故事线", count: 1 },
-                { kind: "volume", label: "分卷", count: index.plot.volumes.length },
-                { kind: "arc", label: "剧情点", count: index.plot.arcs.length },
-                { kind: "story_plot", label: "故事情节", count: index.plot.storyPlots.length + pendingStoryPlotCount },
-                { kind: "chapter", label: "章卡", count: index.plot.chapterCards.length + pendingChapterCount },
-                { kind: "event", label: "故事事件", count: index.plot.storyEvents.length },
-                { kind: "connection", label: "事件连接", count: index.plot.eventConnections.length },
-                { kind: "placement", label: "叙事落点", count: index.plot.narrativePlacements.length }
-              ],
-              note: "伏笔线与伏笔触点沿用独立的现有工具设计。"
-            }));
+            return textResult(
+              formatPlotDesignKindList([
+                { kind: "book_line", count: 1 },
+                { kind: "volume", count: index.plot.volumes.length },
+                { kind: "arc", count: index.plot.arcs.length },
+                {
+                  kind: "story_plot",
+                  count:
+                    index.plot.storyPlots.length +
+                    pendingStoryPlotEntries(index).length
+                },
+                {
+                  kind: "chapter",
+                  count:
+                    index.plot.chapterCards.length +
+                    pendingChapterCardEntries(index).length
+                },
+                { kind: "event", count: index.plot.storyEvents.length },
+                {
+                  kind: "connection",
+                  count: index.plot.eventConnections.length
+                },
+                {
+                  kind: "placement",
+                  count: index.plot.narrativePlacements.length
+                }
+              ])
+            );
           }
           if (params.kind === "book_line") {
-            return textResult(JSON.stringify({
-              items: [{ kind: "book_line", title: "全书故事线" }],
-              next_page: null
-            }));
+            return textResult(
+              formatPlotDesignItemList({
+                kind: "book_line",
+                items: [{ kind: "book_line", title: "全书故事线" }]
+              })
+            );
           }
-          const source = plotCollections(index)[params.kind]
-            .filter((item) => {
-              const value = item as unknown as Record<string, unknown>;
-              return (
-                (!params.volume_id || value.volumeId === params.volume_id) &&
-                (!params.arc_id || value.arcId === params.arc_id) &&
-                (!params.chapter_card_id || value.chapterCardId === params.chapter_card_id)
-              );
+          return textResult(
+            formatPlotDesignItemList({
+              kind: params.kind,
+              items: collectPlotDesignListItems(index, params.kind, {
+                volume_id: params.volume_id,
+                arc_id: params.arc_id,
+                chapter_card_id: params.chapter_card_id
+              })
             })
-            .map((item) => {
-              const value = toPlotBusinessItem(
-                params.kind as Exclude<PlotItemKind, "book_line">,
-                item as unknown as Record<string, unknown>
-              );
-              return {
-                kind: params.kind,
-                ...(params.kind === "volume" ? { volume_id: item.id } : {}),
-                ...(params.kind === "arc" ? { arc_id: item.id } : {}),
-                ...(params.kind === "story_plot" ? { story_plot_id: item.id } : {}),
-                ...(params.kind === "chapter" ? { chapter_card_id: item.id } : {}),
-                ...(params.kind === "event" ? { event_id: item.id } : {}),
-                ...(params.kind === "connection" ? { connection_id: item.id } : {}),
-                ...(params.kind === "placement" ? { placement_id: item.id } : {}),
-                ...(typeof value.title === "string" ? { title: value.title } : {}),
-                ...(value.volume_id ? { volume_id: value.volume_id } : {}),
-                ...(value.arc_id && params.kind !== "arc" ? { arc_id: value.arc_id } : {}),
-                ...(value.chapter_card_id ? { chapter_card_id: value.chapter_card_id } : {}),
-                ...(value.source_event_id ? { source_event_id: value.source_event_id } : {}),
-                ...(value.target_event_id ? { target_event_id: value.target_event_id } : {}),
-                ...(value.event_id ? { event_id: value.event_id } : {})
-              };
-            });
-          const pendingStoryPlots =
-            params.kind === "story_plot"
-              ? [...storyPlotOverlay.entries()]
-                  .filter(
-                    ([id, entry]) =>
-                      entry.pendingCreation &&
-                      !index.plot.storyPlots.some((storyPlot) => storyPlot.id === id) &&
-                      (!params.arc_id || entry.arcId === params.arc_id)
-                  )
-                  .map(([id, entry]) => ({
-                    kind: params.kind as "story_plot",
-                    story_plot_id: id,
-                    title: entry.title,
-                    arc_id: entry.arcId,
-                    order: entry.order
-                  }))
-              : [];
-          const pendingChapterCards =
-            params.kind === "chapter"
-              ? [...chapterCardOverlay.entries()]
-                  .filter(
-                    ([id, entry]) =>
-                      entry.pendingCreation &&
-                      !index.plot.chapterCards.some((chapter) => chapter.id === id) &&
-                      (!params.volume_id || entry.volumeId === params.volume_id) &&
-                      (!params.arc_id || entry.primaryArcId === params.arc_id)
-                  )
-                  .map(([id, entry]) => ({
-                    kind: params.kind as "chapter",
-                    chapter_card_id: id,
-                    title: entry.title,
-                    volume_id: entry.volumeId,
-                    primary_arc_id: entry.primaryArcId,
-                    narrative_order: entry.narrativeOrder
-                  }))
-              : [];
-          const items = [...source, ...pendingStoryPlots, ...pendingChapterCards];
-          const page = params.page ?? 1;
-          const limit = params.limit ?? 50;
-          const start = (page - 1) * limit;
-          const end = Math.min(start + limit, items.length);
-          return textResult(JSON.stringify({
-            items: items.slice(start, end),
-            next_page: end < items.length ? page + 1 : null
-          }));
+          );
         }
       }),
       defineTool({

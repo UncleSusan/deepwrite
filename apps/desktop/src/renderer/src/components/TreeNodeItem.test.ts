@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
+// @ts-expect-error Loaded as source text by the Vitest-only virtual module.
+import styles from "virtual:deepwrite-renderer-styles";
 import source from "./TreeNodeItem.vue?raw";
 
 describe("TreeNodeItem actions", () => {
   it("uses the shared neutral badge style for every workspace type", () => {
     expect(source).toContain('class="tree-badge"');
     expect(source).not.toContain("'is-script': node.workspaceType === 'script'");
+  });
+
+  it("places the expand chevron after number and text/list badges", () => {
+    expect(source.indexOf('class="tree-badge"')).toBeGreaterThan(-1);
+    expect(source.indexOf('class="tree-chevron"')).toBeGreaterThan(
+      source.indexOf('class="tree-badge"')
+    );
+    expect(source).not.toContain("catalogNodeType !== 'book'");
   });
 
   it("selects a selectable branch immediately whether it opens or collapses", () => {
@@ -96,6 +106,22 @@ describe("TreeNodeItem actions", () => {
     expect(source).not.toContain("isLongCharacterGroup");
     expect(source).not.toContain('title="新增人物"');
     expect(source).not.toContain("createLongCharacter");
+  });
+
+  it("hides row chevron and action icons until the row or action area is hovered", () => {
+    expect(styles).toContain(".tree-row:hover .tree-chevron,");
+    expect(styles).toContain(".tree-row:focus-visible .tree-chevron,");
+    expect(styles).toContain(
+      ".tree-node:has(> .tree-node-action-area:is(:hover, :focus-within, .is-menu-open)) > .tree-row .tree-chevron"
+    );
+    expect(styles).toContain(
+      ".tree-row:hover ~ .tree-node-action-area .tree-node-action,"
+    );
+    expect(styles).toContain(
+      ".tree-node-action-area:is(:hover, :focus-within, .is-menu-open) .tree-node-action"
+    );
+    expect(styles).not.toContain(".section-action { opacity: 0");
+    expect(styles).not.toContain(".section-toggle-chevron { opacity: 0");
   });
 
   it("raises the whole action area while its menu is open", () => {

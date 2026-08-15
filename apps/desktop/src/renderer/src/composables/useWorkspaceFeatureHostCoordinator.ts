@@ -115,6 +115,7 @@ export function useWorkspaceFeatureHostCoordinator(
 ): WorkspaceFeatureHostCoordinator {
   const { settingsStore } = options;
   const marketplaceDisplayName = ref<string>();
+  const knownMarketplaceSession = ref<MarketplaceSession | null>(null);
   let active = true;
   let navigationGeneration = 0;
   let marketplaceRevision = 0;
@@ -220,7 +221,8 @@ export function useWorkspaceFeatureHostCoordinator(
       case "marketplace":
         return {
           kind: "marketplace",
-          catalogSnapshot: options.catalogSnapshot.value
+          catalogSnapshot: options.catalogSnapshot.value,
+          session: knownMarketplaceSession.value
         };
       case "cloud-backup":
         return { kind: "cloud-backup" };
@@ -433,6 +435,7 @@ export function useWorkspaceFeatureHostCoordinator(
   function applyMarketplaceSession(session: MarketplaceSession): void {
     if (!active) return;
     marketplaceRevision += 1;
+    knownMarketplaceSession.value = session;
     marketplaceDisplayName.value = session.authenticated
       ? session.user?.displayName
       : undefined;
