@@ -124,6 +124,7 @@ import {
   createModelUsageRevisionId,
   ModelUsageStore
 } from "./model-usage-store";
+import { SoftwareTokenUsageReporter } from "./software-token-usage-reporter";
 import { LearningImitationConfigStore } from "./learning-imitation-config-store";
 import { LibraryAgentConfigStore } from "./library-agent-config-store";
 import { LongAgentConfigStore } from "./long-agent-config-store";
@@ -185,6 +186,7 @@ let smokeEventTap: ((event: SystemEventEnvelope) => void) | undefined;
 let mainWindow: BrowserWindow | undefined;
 let modelConfigStore: ModelConfigStore | undefined;
 let modelUsageStore: ModelUsageStore | undefined;
+let softwareTokenUsageReporter: SoftwareTokenUsageReporter | undefined;
 let agentTeamConfigStore: AgentTeamConfigStore | undefined;
 let appearanceConfigStore: AppearanceConfigStore | undefined;
 let generalSettingsStore: GeneralSettingsStore | undefined;
@@ -245,6 +247,11 @@ function beginGracefulShutdown(options: { installUpdate?: boolean } = {}): void 
             "DeepWrite model usage records could not finish flushing:",
             error instanceof Error ? error.message : "unknown error"
           );
+        }
+        try {
+          await softwareTokenUsageReporter?.reportBeforeShutdown();
+        } catch {
+          console.warn("DeepWrite software token usage was not reported before shutdown.");
         }
         shutdownComplete = true;
         if (installUpdateAfterShutdown && updateService) {
@@ -3179,6 +3186,13 @@ if (!hasSingleInstanceLock) {
       appVersion: app.getVersion()
     });
     modelUsageStore = new ModelUsageStore(userDataPath);
+    softwareTokenUsageReporter = new SoftwareTokenUsageReporter(
+      userDataPath,
+      modelUsageStore
+    );
+    void softwareTokenUsageReporter.reportAtStartup().catch(() => {
+      console.warn("DeepWrite software token usage was not reported at startup.");
+    });
     void modelConfigStore.initialize();
     void modelConfigStore
       .list()

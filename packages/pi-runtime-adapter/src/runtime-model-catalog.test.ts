@@ -31,6 +31,21 @@ describe("DeepWrite runtime model catalog", () => {
     }
   );
 
+  it("exposes the official GLM-5.3 capacity and mandatory thinking levels", () => {
+    expect(findDeepWriteRuntimeModel("glm-5.3-routed")).toMatchObject({
+      id: "glm-5.3",
+      input: ["text"],
+      contextWindow: 1_000_000,
+      maxTokens: 131_072,
+      thinkingLevelMap: {
+        off: null,
+        low: "low",
+        high: "high",
+        xhigh: "max"
+      }
+    });
+  });
+
   it("does not match an unrelated model id", () => {
     expect(findDeepWriteRuntimeModel("unrelated-model-route")).toBeUndefined();
   });

@@ -93,6 +93,36 @@ const DEEPWRITE_RUNTIME_MODELS = [
     maxTokens: 384_000
   } satisfies Model<"openai-completions">,
   {
+    id: "glm-5.3",
+    name: "GLM-5.3",
+    api: "openai-completions",
+    provider: "zai",
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: true,
+      maxTokensField: "max_completion_tokens",
+      requiresReasoningContentOnAssistantMessages: true,
+      thinkingFormat: "zai",
+      supportsStrictMode: true,
+      zaiToolStream: true
+    },
+    reasoning: true,
+    // GLM-5.3 always thinks and accepts exactly low / high / max. Pi carries
+    // the provider's max value through its xhigh reasoning slot.
+    thinkingLevelMap: {
+      off: null,
+      low: "low",
+      high: "high",
+      xhigh: "max"
+    },
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 131_072
+  } satisfies Model<"openai-completions">,
+  {
     id: "glm-5.2",
     name: "GLM-5.2",
     api: "openai-completions",

@@ -1505,6 +1505,7 @@ describe("DeepWrite Pi runtime adapter", () => {
   );
 
   it.each([
+    ["glm-5.3", "GLM-5.3", 1_000_000, 131_072, "zai"],
     ["glm-5.2", "GLM-5.2", 1_000_000, 131_072, "zai"],
     ["qwen3.7-plus", "Qwen3.7 Plus", 1_000_000, 131_072, "openai"]
   ] as const)(
@@ -1549,6 +1550,61 @@ describe("DeepWrite Pi runtime adapter", () => {
       });
     }
   );
+
+  it("keeps GLM-5.3 thinking enabled and maps all supported effort levels", async () => {
+    const config: AgentProviderRuntimeConfig = {
+      id: "deepwrite-glm-5.3",
+      label: "GLM-5.3",
+      provider: "deepseek-official",
+      modelId: "glm-5.3",
+      api: "openai-completions",
+      baseUrl: "https://example.test/v1",
+      reasoning: true,
+      supportsDeveloperRole: false,
+      defaultThinkingLevel: "max",
+      thinkingLevelOptions: ["low", "high", "max"],
+      temperatureOptions: [0.7, 1, 1.5],
+      managedBy: "deepwrite-official",
+      apiKey: "test-only"
+    };
+
+    expect(buildProviderRuntime(config, undefined, "max").model).toMatchObject({
+      id: "glm-5.3",
+      input: ["text"],
+      contextWindow: 1_000_000,
+      maxTokens: 131_072,
+      thinkingLevelMap: {
+        off: null,
+        low: "low",
+        high: "high",
+        xhigh: "max"
+      },
+      compat: {
+        thinkingFormat: "zai",
+        supportsReasoningEffort: true,
+        zaiToolStream: true
+      }
+    });
+
+    await expect(captureThinkingPayload(config, "low")).resolves.toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "low"
+    });
+    await expect(captureThinkingPayload(config, "high")).resolves.toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "high"
+    });
+    await expect(captureThinkingPayload(config, "max")).resolves.toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "max"
+    });
+    const disabledPayload = await captureDisabledThinkingPayload(config);
+    expect(disabledPayload).toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "low"
+    });
+    expect(disabledPayload).not.toHaveProperty("temperature");
+  });
 
   it.each([
     ["gpt-5.6-sol", "GPT-5.6 Sol"],

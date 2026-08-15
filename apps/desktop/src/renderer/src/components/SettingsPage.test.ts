@@ -70,7 +70,7 @@ describe("SettingsPage", () => {
       '{ id: "custom-models", label: "自定义模型配置"'
     );
     const officialModelsIndex = source.indexOf(
-      '{ id: "official-models", label: "DeepWrite 官方国内模型"'
+      '{ id: "official-models", label: "内部提供模型"'
     );
 
     expect(usageIndex).toBeGreaterThan(-1);

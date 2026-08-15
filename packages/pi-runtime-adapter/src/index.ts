@@ -1633,6 +1633,16 @@ export function buildProviderRuntime(
     ...(builtin?.thinkingLevelMap ?? {})
   };
   const compat = resolveOpenAICompletionsCompat(config, builtin);
+  // Pi's Z.AI serializer emits `thinking: disabled` whenever reasoning is
+  // absent, even when the catalog marks off as unsupported. GLM-5.3 rejects
+  // that payload, so stale/off run settings must degrade to its lowest valid
+  // effort instead of attempting to disable mandatory thinking.
+  const mandatoryZaiThinkingFallback =
+    configuredThinkingLevel === "off" &&
+    builtin?.thinkingLevelMap?.off === null &&
+    compat?.thinkingFormat === "zai"
+      ? "low"
+      : undefined;
   if (configuredThinkingLevel && configuredThinkingLevel !== "off") {
     const carrier = toPiThinkingLevel(configuredThinkingLevel);
     if (configuredThinkingLevel !== carrier) {
@@ -1684,6 +1694,9 @@ export function buildProviderRuntime(
     ),
     {
       ...options,
+      ...(mandatoryZaiThinkingFallback
+        ? { reasoning: mandatoryZaiThinkingFallback }
+        : {}),
       ...(effectiveTemperature !== undefined
         ? { temperature: effectiveTemperature }
         : {}),
