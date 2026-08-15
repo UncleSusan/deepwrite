@@ -5,17 +5,19 @@ import {
   type CatalogSnapshot
 } from "@deepwrite/contracts";
 import type { CatalogWorkspaceProjection } from "../data/catalogWorkspace";
-import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
+import type { EditorDraftState } from "../types/workspace";
 import { draftCharacterStateTitle } from "./draftFileTitles";
+import { legacyBookDraftRecoveryKey } from "./legacyDraftRecoveryDetection";
+
+export {
+  hasDirtyLegacyDraftRecoveries,
+  legacyBookDraftRecoveryKey
+} from "./legacyDraftRecoveryDetection";
 
 export interface LegacyDraftRecoveryMigrationResult {
   drafts: Record<string, EditorDraftState>;
   migratedLegacyKeys: string[];
   unmappedLegacyKeys: string[];
-}
-
-export function legacyBookDraftRecoveryKey(bookId: string): string {
-  return ["catalog", "book-document", encodeURIComponent(bookId), "draft"].join(":");
 }
 
 function newerDraft(
@@ -33,9 +35,9 @@ function newerDraft(
 
 function recoveredPhysicalDraft(
   legacy: EditorDraftState,
-  document: WorkspaceDocument,
   title: string,
   content: string,
+  diskContent: string,
   projectRevision: number | undefined
 ): EditorDraftState {
   return {
@@ -45,7 +47,7 @@ function recoveredPhysicalDraft(
     ...(legacy.recoveryUpdatedAt
       ? { recoveryUpdatedAt: legacy.recoveryUpdatedAt }
       : {}),
-    baseRevision: createShortWorkspaceContentRevision(document.content),
+    baseRevision: createShortWorkspaceContentRevision(diskContent),
     ...(projectRevision === undefined
       ? {}
       : { baseProjectRevision: projectRevision })
@@ -111,6 +113,7 @@ export function migrateLegacyDraftRecoveries(
       const projectedSection = directory.sections[index]!;
       return {
         section,
+        diskSection: book.draft.sections[index]!,
         body: documentsById.get(projectedSection.bodyDocumentId),
         characterState: documentsById.get(
           projectedSection.characterStateDocumentId
@@ -123,28 +126,31 @@ export function migrateLegacyDraftRecoveries(
     }
 
     delete nextDrafts[legacyKey];
-    for (const { section, body, characterState } of mappedFiles) {
+    for (const { section, diskSection, body, characterState } of mappedFiles) {
       if (!body || !characterState) continue;
-      if (section.title !== body.title || section.body !== body.content) {
+      if (
+        section.title !== diskSection.body.title ||
+        section.body !== diskSection.body.content
+      ) {
         const candidate = recoveredPhysicalDraft(
           legacy,
-          body,
           section.title,
           section.body,
+          diskSection.body.content,
           book.projectRevision
         );
         nextDrafts[body.id] = newerDraft(nextDrafts[body.id], candidate);
       }
       const stateTitle = draftCharacterStateTitle(section.title);
       if (
-        stateTitle !== characterState.title ||
-        section.characterState !== characterState.content
+        stateTitle !== diskSection.characterState.title ||
+        section.characterState !== diskSection.characterState.content
       ) {
         const candidate = recoveredPhysicalDraft(
           legacy,
-          characterState,
           stateTitle,
           section.characterState,
+          diskSection.characterState.content,
           book.projectRevision
         );
         nextDrafts[characterState.id] = newerDraft(

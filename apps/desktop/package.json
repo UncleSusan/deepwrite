@@ -8,7 +8,7 @@
   "scripts": {
     "predev": "node ../../tools/ensure-electron-runtime.mjs",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-vite build && node ../../tools/check-renderer-build.mjs",
     "prepreview": "node ../../tools/ensure-electron-runtime.mjs",
     "preview": "electron-vite preview",
     "presmoke": "node ../../tools/ensure-electron-runtime.mjs",

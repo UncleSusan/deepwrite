@@ -53,7 +53,6 @@ import type {
   LibraryAgentSettingsInput
 } from "./library-agent";
 import type {
-  CatalogDocument,
   CatalogDraftSection,
   CatalogDraftRecovery,
   CatalogLibrary,
@@ -61,6 +60,9 @@ import type {
   CatalogLibraryEntry,
   CatalogOpenProjectResult,
   CatalogProjectDomain,
+  CatalogIndexSnapshot,
+  CatalogReadDocumentInput,
+  CatalogReadDocumentResult,
   CatalogSnapshot,
   CatalogLibraryProjectDomain,
   CreateLibraryEntryInput,
@@ -88,6 +90,7 @@ import type {
   MoveLibraryEntryInput,
   MoveLibraryEntryResult,
   SaveDocumentInput,
+  SaveDocumentResult,
   SaveLibraryEntryInput,
   ScriptBook,
   ShortBook,
@@ -169,11 +172,13 @@ import type {
   CloudBackupPreview,
   CloudBackupStatus
 } from "./cloud-backup";
+import type { ConversationPersistenceApi } from "./renderer-state";
 
 export interface DeepWriteApi {
   system: {
     health(): Promise<SystemHealthPayload>;
   };
+  conversationPersistence?: ConversationPersistenceApi;
   updates: {
     getState(): Promise<UpdateState>;
     check(): Promise<UpdateState>;
@@ -210,6 +215,8 @@ export interface DeepWriteApi {
     applyRestore(previewId: string): Promise<CloudBackupApplyResult>;
   };
   catalog: {
+    index(): Promise<CatalogIndexSnapshot>;
+    readDocument(input: CatalogReadDocumentInput): Promise<CatalogReadDocumentResult>;
     snapshot(): Promise<CatalogSnapshot>;
     loadDraftRecovery(): Promise<CatalogDraftRecovery>;
     saveDraftRecovery(drafts: CatalogDraftRecovery): Promise<void>;
@@ -227,7 +234,7 @@ export interface DeepWriteApi {
     mutatePlotStructure(input: MutatePlotStructureInput): Promise<Book>;
     updateLibraryGroup(input: UpdateLibraryGroupInput): Promise<CatalogLibraryGroup>;
     deleteBook(bookId: string): Promise<DeleteBookResult>;
-    saveDocument(input: SaveDocumentInput): Promise<CatalogDocument>;
+    saveDocument(input: SaveDocumentInput): Promise<SaveDocumentResult>;
     createDraftSection(input: CreateDraftSectionInput): Promise<CatalogDraftSection>;
     createDraftSections(
       input: CreateDraftSectionsInput

@@ -1,30 +1,32 @@
 import { describe, expect, it } from "vitest";
-import source from "./App.vue?raw";
+import source from "./WorkspaceShell.vue?raw";
+import resourceSource from "./composables/useWorkspaceResourceCoordinator.ts?raw";
+import layoutSource from "./stores/layoutStore.ts?raw";
 
 describe("App right pane preference integration", () => {
   it("restores an area-specific width and persists explicit resize actions", () => {
-    expect(source).toContain("const activeRightPanePreferenceKey = computed");
-    expect(source).toContain('workspaceType: "long"');
-    expect(source).toContain("stageId: activeLongRoot.value");
-    expect(source).toContain("watch(activeRightPanePreferenceKey");
-    expect(source).toContain("restoreRightPaneWidthForNavigation(key)");
-    expect(source).toContain("persistActiveRightPaneWidth(rightPaneWidth.value)");
-    expect(source).toContain("rightPaneWidth.value !== currentWidth");
+    expect(resourceSource).toContain("const activeRightPanePreferenceKey = computed");
+    expect(resourceSource).toContain('workspaceType: "long"');
+    expect(resourceSource).toContain("stageId: longNavigation.activeRoot.value");
+    expect(source).toContain("layoutStore.setActiveRightPanePreferenceKey(key)");
+    expect(layoutSource).toContain("restoreRightPaneWidthForNavigation(key)");
+    expect(layoutSource).toContain("persistActiveRightPaneWidth(rightPaneWidth.value)");
+    expect(layoutSource).toContain("rightPaneWidth.value !== currentWidth");
   });
 
   it("restores navigation widths without animating the whole workspace", () => {
-    expect(source).toContain("const paneTransitionSuppressed = ref(false)");
-    expect(source).toContain(
+    expect(layoutSource).toContain("const paneTransitionSuppressed = ref(false)");
+    expect(layoutSource).toContain(
       '"is-pane-transition-suppressed": paneTransitionSuppressed.value'
     );
-    expect(source).toContain('{ flush: "sync" }');
-    expect(source).toContain("window.requestAnimationFrame(() => {");
+    expect(source).toContain('{ flush: "sync", immediate: true }');
+    expect(layoutSource).toContain("currentWindow.requestAnimationFrame(() => {");
   });
 
   it("keys short and script widths from the selected resource area", () => {
-    const preferenceBlock = source.slice(
-      source.indexOf("const activeRightPanePreferenceKey = computed"),
-      source.indexOf("const liveWorkspaceDocuments = computed")
+    const preferenceBlock = resourceSource.slice(
+      resourceSource.indexOf("const activeRightPanePreferenceKey = computed"),
+      resourceSource.indexOf("const liveWorkspaceDocuments = computed")
     );
     expect(preferenceBlock).toContain("const document = activeDocument.value");
     expect(preferenceBlock).toContain("const stageId = document.stageId ?? nodeStageId");
@@ -34,9 +36,9 @@ describe("App right pane preference integration", () => {
   });
 
   it("uses saved widths when reconciling window size without replacing them", () => {
-    expect(source).toContain("restoreRightPaneWidth();");
-    expect(source).toContain("rightPanePreferences.value.widths[key] ?? defaultRightPaneWidth");
-    expect(source).toContain(": defaultRightPaneWidth;");
-    expect(source).not.toContain("saveRightPanePreferences(window.localStorage, { widths: {} })");
+    expect(layoutSource).toContain("restoreRightPaneWidth();");
+    expect(layoutSource).toContain("rightPanePreferences.value.widths[key] ?? initialRightPaneWidth");
+    expect(layoutSource).toContain(": initialRightPaneWidth;");
+    expect(layoutSource).not.toContain("saveRightPanePreferences(window.localStorage, { widths: {} })");
   });
 });

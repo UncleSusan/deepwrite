@@ -15,7 +15,7 @@ import { join, resolve } from "node:path";
 import {
   WorkspaceAgentTeamSettingsSchema,
   BookSchema,
-  CatalogDocumentSchema,
+  SaveDocumentResultSchema,
   CatalogDraftSectionSchema,
   CreateDraftSectionsResultSchema,
   CatalogDraftRecoverySaveResultSchema,
@@ -29,6 +29,8 @@ import {
   APP_ALERT_GET_CHANNEL,
   AppAlertDesktopRevisionSchema,
   AppAlertSnapshotSchema,
+  CatalogIndexSnapshotSchema,
+  CatalogReadDocumentResultSchema,
   CatalogSnapshotSchema,
   CommandEnvelopeSchema,
   DeleteCatalogProjectResultSchema,
@@ -77,6 +79,8 @@ import {
   OfficialModelBalanceSchema,
   ModelSettingsSchema,
   RemoteModelListResultSchema,
+  RendererStateLoadResultSchema,
+  RendererStateMutationResultSchema,
   ModelUsageDashboardSchema,
   RemoveLibraryEntryResultSchema,
   MoveLibraryEntryResultSchema,
@@ -1992,6 +1996,44 @@ function registerIpc(): void {
       }
 
       if (
+        command.type === "rendererState.load" ||
+        command.type === "rendererState.save" ||
+        command.type === "rendererState.remove"
+      ) {
+        try {
+          const result = await supervisor.requestCommand("core", command, 15_000);
+          if (result.status === "rejected") return result;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload:
+              command.type === "rendererState.load"
+                ? RendererStateLoadResultSchema.parse(result.payload)
+                : RendererStateMutationResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          const timedOut = error instanceof UtilityCommandTimeoutError;
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: timedOut
+                ? "renderer_state.command_timeout"
+                : "renderer_state.forward_failed",
+              message: timedOut
+                ? "会话历史持久化操作超时。"
+                : error instanceof Error
+                  ? error.message
+                  : "会话历史持久化操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "catalog.index" ||
+        command.type === "catalog.readDocument" ||
         command.type === "catalog.snapshot" ||
         command.type === "catalog.loadDraftRecovery" ||
         command.type === "catalog.saveDraftRecovery" ||
@@ -2025,6 +2067,12 @@ function registerIpc(): void {
           }
           let payload: unknown;
           switch (command.type) {
+            case "catalog.index":
+              payload = CatalogIndexSnapshotSchema.parse(result.payload);
+              break;
+            case "catalog.readDocument":
+              payload = CatalogReadDocumentResultSchema.parse(result.payload);
+              break;
             case "catalog.snapshot":
               payload = CatalogSnapshotSchema.parse(result.payload);
               break;
@@ -2038,7 +2086,7 @@ function registerIpc(): void {
               payload = DeleteBookResultSchema.parse(result.payload);
               break;
             case "catalog.saveDocument":
-              payload = CatalogDocumentSchema.parse(result.payload);
+              payload = SaveDocumentResultSchema.parse(result.payload);
               break;
             case "catalog.createDraftSection":
               payload = CatalogDraftSectionSchema.parse(result.payload);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CatalogIndexSnapshotSchema,
   CatalogSnapshotSchema,
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
@@ -173,6 +174,96 @@ function flattenNodes(nodes: readonly ResourceTreeNode[]): ResourceTreeNode[] {
 }
 
 describe("catalog workspace projection", () => {
+  it("projects a metadata-only index without treating unloaded bodies as empty", () => {
+    const source = fixture();
+    const byteLength = (value: string): number =>
+      new TextEncoder().encode(value).byteLength;
+    const fileStamp = (value: string): string =>
+      `fs-v1:${byteLength(value)}:1:1`;
+    const manifestStamp = (value: string): string =>
+      `manifest-v1:${byteLength(value)}:${NOW}`;
+    const index = CatalogIndexSnapshotSchema.parse({
+      ...source,
+      books: source.books.map((book) => ({
+        ...book,
+        documents: book.documents.map((document) => ({
+          ...document,
+          content: "",
+          contentBytes: byteLength(document.content),
+          contentStamp: fileStamp(document.content)
+        })),
+        draft: {
+          ...book.draft,
+          sections: book.draft.sections.map((section) => ({
+            ...section,
+            body: {
+              ...section.body,
+              content: "",
+              contentBytes: byteLength(section.body.content),
+              contentStamp: fileStamp(section.body.content)
+            },
+            characterState: {
+              ...section.characterState,
+              content: "",
+              contentBytes: byteLength(section.characterState.content),
+              contentStamp: fileStamp(section.characterState.content)
+            }
+          }))
+        }
+      })),
+      materials: source.materials.map((library) => ({
+        ...library,
+        overview: "",
+        overviewContentBytes: byteLength(library.overview),
+        overviewContentStamp: manifestStamp(library.overview),
+        entries: library.entries.map((entry) => ({
+          ...entry,
+          body: "",
+          contentBytes: byteLength(entry.body),
+          contentStamp: fileStamp(entry.body)
+        }))
+      })),
+      skills: source.skills.map((library) => ({
+        ...library,
+        overview: "",
+        overviewContentBytes: byteLength(library.overview),
+        overviewContentStamp: manifestStamp(library.overview),
+        entries: library.entries.map((entry) => ({
+          ...entry,
+          body: "",
+          contentBytes: byteLength(entry.body),
+          contentStamp: fileStamp(entry.body)
+        }))
+      }))
+    });
+
+    const projection = projectCatalogWorkspace(index);
+    const bookDocument = projection.workspaceDocuments.find(
+      (document) => document.catalogDocumentId === "character_design"
+    )!;
+    const materialOverview = projection.workspaceDocuments.find(
+      (document) =>
+        document.libraryId === "material-plot" &&
+        document.catalogLibraryField === "overview"
+    )!;
+    const overviewResourceId =
+      projection.index.resourceIdByDocumentId.get(materialOverview.id)!;
+
+    expect(bookDocument).toMatchObject({
+      content: "",
+      catalogContentBytes: byteLength("人物"),
+      catalogContentLoaded: false
+    });
+    expect(materialOverview).toMatchObject({
+      content: "",
+      catalogContentBytes: byteLength("剧情素材说明"),
+      catalogContentLoaded: false
+    });
+    expect(
+      projection.index.resourceNodeById.get(overviewResourceId)?.muted
+    ).toBe(false);
+  });
+
   it("prefers the virtual draft directory for a newly selected book", () => {
     const projection = projectCatalogWorkspace(fixture());
     const directory = projection.draftDirectories[0]!;

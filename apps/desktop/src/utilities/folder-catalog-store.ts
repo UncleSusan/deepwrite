@@ -23,6 +23,7 @@ import {
   BookProjectManifestSchema,
   BookSchema,
   BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID,
+  CATALOG_DRAFT_DIRECTORY_ID,
   CATALOG_PROJECT_MAX_CONTENT_ITEMS,
   CatalogDraftSectionSchema,
   CreateDraftSectionsInputSchema,
@@ -31,6 +32,10 @@ import {
   CatalogProjectContentPathSchema,
   CatalogProjectManifestSchema,
   CatalogLegacyImportSchema,
+  CatalogIndexBookSchema,
+  CatalogIndexSnapshotSchema,
+  CatalogReadDocumentInputSchema,
+  CatalogReadDocumentResultSchema,
   CatalogSnapshotSchema,
   CreateDraftSectionInputSchema,
   CreateLibraryInputSchema,
@@ -46,6 +51,7 @@ import {
   MutateCharacterStructureInputSchema,
   MutatePlotStructureInputSchema,
   SaveDocumentInputSchema,
+  SaveDocumentResultSchema,
   MaterialGroupProjectManifestSchema,
   MaterialLibraryGroupSchema,
   MaterialLibrarySchema,
@@ -82,6 +88,9 @@ import {
   type Book,
   type CatalogDraftSection,
   type CatalogLegacyImport,
+  type CatalogIndexSnapshot,
+  type CatalogReadDocumentInput,
+  type CatalogReadDocumentResult,
   type CatalogProjectManifest,
   type CatalogProjectDiagnostic,
   type CatalogDocument,
@@ -117,6 +126,7 @@ import {
   type MoveLibraryEntryInput,
   type MoveLibraryEntryResult,
   type SaveDocumentInput,
+  type SaveDocumentResult,
   type ScriptBook,
   type ShortBook,
   type SkillLibraryProjectManifest,
@@ -202,6 +212,11 @@ export type FolderCatalogResource =
   | MaterialLibraryGroup
   | SkillLibrary
   | SkillLibraryGroup;
+
+interface CatalogContentMetadata {
+  contentBytes: number;
+  contentStamp: string;
+}
 
 export interface OpenFolderCatalogProjectResult<
   Resource extends FolderCatalogResource = FolderCatalogResource
@@ -402,6 +417,77 @@ export class FolderCatalogStore {
     return await this.readAfterWrites(async () => {
       const registry = await this.ensureRegistry();
       return await this.aggregateSnapshot(registry);
+    });
+  }
+
+  async indexSnapshot(): Promise<CatalogIndexSnapshot> {
+    return await this.readAfterWrites(async () => {
+      const registry = await this.ensureRegistry();
+      return await this.aggregateIndexSnapshot(registry);
+    });
+  }
+
+  async readDocument(
+    rawInput: CatalogReadDocumentInput
+  ): Promise<CatalogReadDocumentResult> {
+    const input = CatalogReadDocumentInputSchema.parse(rawInput);
+    return await this.readAfterWrites(async () => {
+      const registry = await this.ensureRegistry();
+      const registration = findRegistrationByProjectId(
+        registry,
+        input.projectId
+      );
+      const { projectDirectory, manifest } =
+        await this.readManifestWithoutContent(
+          registration.projectDirectory,
+          kindForDomain(registration.domain),
+          input.projectId
+        );
+
+      if (input.target === "overview") {
+        if (
+          manifest.kind !== "deepwrite.material-library" &&
+          manifest.kind !== "deepwrite.skill-library"
+        ) {
+          throw new Error("只有素材库或技能库提供库介绍。");
+        }
+        assertTextByteLength(
+          manifest.overview,
+          this.maxMarkdownBytes,
+          "library overview"
+        );
+        return CatalogReadDocumentResultSchema.parse({
+          projectId: input.projectId,
+          target: "overview",
+          title: manifest.title,
+          content: manifest.overview,
+          contentBytes: Buffer.byteLength(manifest.overview, "utf8"),
+          revision: createShortWorkspaceContentRevision(manifest.overview),
+          projectRevision: manifest.revision,
+          updatedAt: manifest.updatedAt
+        });
+      }
+
+      const document = findManifestDocument(manifest, input.documentId);
+      if (!document) {
+        throw new Error("文档不存在或不属于指定项目。");
+      }
+      const content = await readProjectMarkdown(
+        projectDirectory,
+        document.path,
+        this.maxMarkdownBytes
+      );
+      return CatalogReadDocumentResultSchema.parse({
+        projectId: input.projectId,
+        target: "document",
+        documentId: input.documentId,
+        title: document.title,
+        content,
+        contentBytes: Buffer.byteLength(content, "utf8"),
+        revision: createShortWorkspaceContentRevision(content),
+        projectRevision: manifest.revision,
+        updatedAt: document.updatedAt
+      });
     });
   }
 
@@ -1805,7 +1891,9 @@ export class FolderCatalogStore {
     });
   }
 
-  async saveDocument(rawInput: SaveFolderDocumentInput): Promise<CatalogDocument> {
+  async saveDocument(
+    rawInput: SaveFolderDocumentInput
+  ): Promise<SaveDocumentResult> {
     const input = SaveDocumentInputSchema.parse(rawInput);
     assertTextByteLength(input.content, this.maxMarkdownBytes, "Markdown content");
     return await this.mutate(async () => {
@@ -2005,13 +2093,14 @@ export class FolderCatalogStore {
         this.maxManifestBytes
       );
       await this.bumpRegistry(registry, now);
-      return {
+      return SaveDocumentResultSchema.parse({
         id: documentManifest.id,
         title: documentManifest.title,
         content: input.content,
         createdAt: documentManifest.createdAt,
-        updatedAt: documentManifest.updatedAt
-      };
+        updatedAt: documentManifest.updatedAt,
+        projectRevision: next.revision
+      });
     });
   }
 
@@ -3681,6 +3770,44 @@ export class FolderCatalogStore {
     }
   }
 
+  /**
+   * Reads only deepwrite.json. In particular, this path must never perform a
+   * legacy migration because that migration reads the legacy draft Markdown.
+   */
+  private async readManifestWithoutContent(
+    rawProjectDirectory: string,
+    expectedKind?: FolderCatalogProjectManifest["kind"],
+    expectedResourceId?: string
+  ): Promise<{
+    projectDirectory: string;
+    manifest: FolderCatalogProjectManifest;
+  }> {
+    const projectDirectory = await secureProjectRoot(rawProjectDirectory);
+    const manifestPath = await secureExistingProjectPath(
+      projectDirectory,
+      MANIFEST_FILE,
+      false
+    );
+    const text = await readRequiredUtf8File(
+      manifestPath,
+      this.maxManifestBytes,
+      "project manifest"
+    );
+    const manifest = FolderCatalogProjectManifestSchema.parse(
+      parseJson(text, manifestPath)
+    );
+    assertManifestUniqueness(manifest);
+    if (expectedKind && manifest.kind !== expectedKind) {
+      throw new Error(
+        `项目类型不匹配：需要 ${expectedKind}，实际为 ${manifest.kind}。`
+      );
+    }
+    if (expectedResourceId !== undefined && manifest.id !== expectedResourceId) {
+      throw new Error("项目标识与注册信息不一致。");
+    }
+    return { projectDirectory, manifest };
+  }
+
   private async readManifest<Kind extends FolderCatalogProjectManifest["kind"]>(
     projectDirectory: string,
     expectedKind?: Kind,
@@ -4046,6 +4173,98 @@ export class FolderCatalogStore {
     });
   }
 
+  private async aggregateIndexSnapshot(
+    registry: FolderCatalogRegistry
+  ): Promise<CatalogIndexSnapshot> {
+    const books: CatalogIndexSnapshot["books"] = [];
+    const materials: CatalogIndexSnapshot["materials"] = [];
+    const materialGroups: CatalogIndexSnapshot["materialGroups"] = [];
+    const skills: CatalogIndexSnapshot["skills"] = [];
+    const skillGroups: CatalogIndexSnapshot["skillGroups"] = [];
+    const projectDiagnostics: CatalogProjectDiagnostic[] = [];
+
+    for (const project of registry.projects) {
+      try {
+        const { projectDirectory, manifest } =
+          await this.readManifestWithoutContent(
+            project.projectDirectory,
+            kindForDomain(project.domain),
+            project.id
+          );
+        const manifestBytes = Buffer.byteLength(JSON.stringify(manifest), "utf8");
+        if (manifestBytes >= this.maxProjectContentBytes) {
+          throw new Error(
+            `项目 manifest 超过 ${this.maxProjectContentBytes} 字节项目预算。`
+          );
+        }
+        const contentMetadataById = await inspectProjectMarkdownMetadata(
+          projectDirectory,
+          manifest,
+          this.maxMarkdownBytes,
+          this.maxProjectContentBytes - manifestBytes
+        );
+        const resource = indexResourceFromManifest(
+          manifest,
+          contentMetadataById
+        );
+        switch (project.domain) {
+          case "book":
+            books.push(resource as CatalogIndexSnapshot["books"][number]);
+            break;
+          case "material-library":
+            materials.push(
+              resource as CatalogIndexSnapshot["materials"][number]
+            );
+            break;
+          case "material-group":
+            materialGroups.push(
+              resource as CatalogIndexSnapshot["materialGroups"][number]
+            );
+            break;
+          case "skill-library":
+            skills.push(resource as CatalogIndexSnapshot["skills"][number]);
+            break;
+          case "skill-group":
+            skillGroups.push(
+              resource as CatalogIndexSnapshot["skillGroups"][number]
+            );
+            break;
+        }
+      } catch (error: unknown) {
+        projectDiagnostics.push({
+          projectId: project.id,
+          kind: kindForDomain(project.domain),
+          code:
+            isNodeError(error, "ENOENT") || isNodeError(error, "ENOTDIR")
+              ? "unavailable"
+              : "invalid",
+          message:
+            error instanceof Error ? error.message : "本地项目无法读取。"
+        });
+      }
+    }
+
+    const creativePlotStages = mergeCreativePlotStageDefinitions(
+      registry.creativePlotStages,
+      books.flatMap((book) => book.plotStages)
+    );
+    return CatalogIndexSnapshotSchema.parse({
+      schemaVersion: 1,
+      revision: registry.revision,
+      creativePlotStages,
+      books,
+      materials,
+      materialGroups,
+      skills,
+      skillGroups,
+      updatedAt: registry.updatedAt,
+      ...(registry.legacyImport === undefined
+        ? {}
+        : { legacyImport: registry.legacyImport }),
+      ...(projectDiagnostics.length ? { projectDiagnostics } : {})
+    });
+  }
+
   private async mutate<Result>(operation: () => Promise<Result>): Promise<Result> {
     let result: Result | undefined;
     let failure: unknown;
@@ -4216,6 +4435,40 @@ function findDraftDocumentManifest(
     if (section.characterState.id === documentId) {
       return { sectionIndex, kind: "characterState" };
     }
+  }
+  return undefined;
+}
+
+function findManifestDocument(
+  manifest: FolderCatalogProjectManifest,
+  documentId: string
+):
+  | {
+      id: string;
+      title: string;
+      path: string;
+      updatedAt: string;
+    }
+  | undefined {
+  if (manifest.kind === "deepwrite.book") {
+    const document = manifest.documents.find(({ id }) => id === documentId);
+    if (document) return document;
+    if (manifest.schemaVersion === 1) return undefined;
+    const draftDocument = findDraftDocumentManifest(
+      manifest.draft,
+      documentId
+    );
+    if (!draftDocument) return undefined;
+    const section = manifest.draft.sections[draftDocument.sectionIndex]!;
+    return draftDocument.kind === "body"
+      ? section.body
+      : section.characterState;
+  }
+  if (
+    manifest.kind === "deepwrite.material-library" ||
+    manifest.kind === "deepwrite.skill-library"
+  ) {
+    return manifest.entries.find(({ id }) => id === documentId);
   }
   return undefined;
 }
@@ -4694,6 +4947,56 @@ async function assertManifestContentFilesUnique(
     }
     identities.add(identity);
   }
+}
+
+/**
+ * Resolve and stat every Markdown file without opening it. The returned byte
+ * counts power the metadata-only index and the inode identity check prevents
+ * aliases from making two manifest entries point at the same file.
+ */
+async function inspectProjectMarkdownMetadata(
+  projectDirectory: string,
+  manifest: FolderCatalogProjectManifest,
+  maxMarkdownBytes: number,
+  maxProjectContentBytes: number
+): Promise<ReadonlyMap<string, CatalogContentMetadata>> {
+  const items = manifestContentItems(manifest);
+  const identities = new Set<string>();
+  const contentMetadataById = new Map<string, CatalogContentMetadata>();
+  const markdownLimit = BigInt(maxMarkdownBytes);
+  const projectLimit = BigInt(maxProjectContentBytes);
+  let totalBytes = 0n;
+  for (const item of items) {
+    const actualPath = await secureExistingProjectPath(
+      projectDirectory,
+      item.path,
+      true
+    );
+    const info = await stat(actualPath, { bigint: true });
+    if (info.size > markdownLimit) {
+      throw new Error(
+        `Markdown file exceeds the ${maxMarkdownBytes} byte limit.`
+      );
+    }
+    totalBytes += info.size;
+    if (totalBytes > projectLimit) {
+      throw new Error(
+        `项目 Markdown 总量超过 ${maxProjectContentBytes} 字节安全上限。`
+      );
+    }
+    const identity = projectTransactionFileIdentity(info);
+    if (identities.has(identity)) {
+      throw new Error(
+        "Project manifest content paths must resolve to distinct files."
+      );
+    }
+    identities.add(identity);
+    contentMetadataById.set(item.id, {
+      contentBytes: Number(info.size),
+      contentStamp: `fs-v1:${info.size}:${info.mtimeNs}:${info.ctimeNs}`
+    });
+  }
+  return contentMetadataById;
 }
 
 function isCreateAtDirectoryInput(
@@ -5406,6 +5709,235 @@ async function writeResourceContents(
   }
 }
 
+function emptyContentMetadata(updatedAt: string): CatalogContentMetadata {
+  return {
+    contentBytes: 0,
+    contentStamp: `manifest-v1:0:${updatedAt}`
+  };
+}
+
+function manifestContentStamp(content: string, updatedAt: string): string {
+  return `manifest-v1:${Buffer.byteLength(content, "utf8")}:${updatedAt}`;
+}
+
+function indexBookFromManifest(
+  manifest: FolderBookProjectManifest,
+  contentMetadataById: ReadonlyMap<string, CatalogContentMetadata>
+): CatalogIndexSnapshot["books"][number] {
+  const bookInput = {
+    id: manifest.id,
+    title: manifest.title,
+    bookType: manifest.bookType,
+    genre: manifest.genre,
+    status: manifest.status,
+    linkedMaterialIdsByKind: manifest.linkedMaterialIdsByKind,
+    linkedSkillIdsByKind: manifest.linkedSkillIdsByKind,
+    projectRevision: manifest.revision,
+    documents: manifest.documents.map((document) => ({
+      id: document.id,
+      title: document.title,
+      content: "",
+      createdAt: document.createdAt,
+      updatedAt: document.updatedAt
+    })),
+    ...(manifest.schemaVersion === 1
+      ? {}
+      : {
+          draft: {
+            id: manifest.draft.id,
+            title: manifest.draft.title,
+            sections: manifest.draft.sections.map((section) => ({
+              id: section.id,
+              title: section.title,
+              wordCountRequirement: section.wordCountRequirement,
+              body: {
+                id: section.body.id,
+                title: section.body.title,
+                content: "",
+                createdAt: section.body.createdAt,
+                updatedAt: section.body.updatedAt
+              },
+              characterState: {
+                id: section.characterState.id,
+                title: section.characterState.title,
+                content: "",
+                createdAt: section.characterState.createdAt,
+                updatedAt: section.characterState.updatedAt
+              },
+              createdAt: section.createdAt,
+              updatedAt: section.updatedAt
+            })),
+            createdAt: manifest.draft.createdAt,
+            updatedAt: manifest.draft.updatedAt
+          }
+        }),
+    ...(manifest.schemaVersion === 3 || manifest.schemaVersion === 4
+      ? { plotStages: manifest.plotStages }
+      : {}),
+    ...(manifest.schemaVersion === 4
+      ? { characterStructure: manifest.characterStructure }
+      : {}),
+    createdAt: manifest.createdAt,
+    updatedAt: manifest.updatedAt
+  };
+  const book = BookSchema.parse(bookInput);
+  const legacyDraft =
+    manifest.schemaVersion === 1
+      ? manifest.documents.find(
+          (document) =>
+            document.id === CATALOG_DRAFT_DIRECTORY_ID ||
+            document.title === "正文编写"
+        )
+      : undefined;
+  const legacyDraftMetadata = legacyDraft
+    ? contentMetadataById.get(legacyDraft.id)
+    : undefined;
+  return CatalogIndexBookSchema.parse({
+    ...book,
+    documents: book.documents.map((document) => ({
+      ...document,
+      content: "",
+      ...(
+        contentMetadataById.get(document.id) ??
+        emptyContentMetadata(document.updatedAt)
+      )
+    })),
+    draft: {
+      ...book.draft,
+      sections: book.draft.sections.map((section, sectionIndex) => ({
+        ...section,
+        body: {
+          ...section.body,
+          content: "",
+          ...(
+            contentMetadataById.get(section.body.id) ??
+            (sectionIndex === 0 ? legacyDraftMetadata : undefined) ??
+            emptyContentMetadata(section.body.updatedAt)
+          )
+        },
+        characterState: {
+          ...section.characterState,
+          content: "",
+          ...(
+            contentMetadataById.get(section.characterState.id) ??
+            emptyContentMetadata(section.characterState.updatedAt)
+          )
+        }
+      }))
+    }
+  });
+}
+
+function indexResourceFromManifest(
+  manifest: FolderCatalogProjectManifest,
+  contentMetadataById: ReadonlyMap<string, CatalogContentMetadata>
+):
+  | CatalogIndexSnapshot["books"][number]
+  | CatalogIndexSnapshot["materials"][number]
+  | CatalogIndexSnapshot["materialGroups"][number]
+  | CatalogIndexSnapshot["skills"][number]
+  | CatalogIndexSnapshot["skillGroups"][number] {
+  switch (manifest.kind) {
+    case "deepwrite.book":
+      return indexBookFromManifest(manifest, contentMetadataById);
+    case "deepwrite.material-library":
+      return {
+        id: manifest.id,
+        title: manifest.title,
+        materialType: manifest.materialType,
+        materialKind: manifest.materialKind,
+        parentGenre: manifest.parentGenre,
+        subGenre: manifest.subGenre,
+        overview: "",
+        overviewContentBytes: Buffer.byteLength(manifest.overview, "utf8"),
+        overviewContentStamp: manifestContentStamp(
+          manifest.overview,
+          manifest.updatedAt
+        ),
+        projectRevision: manifest.revision,
+        entries: manifest.entries.map((entry) => ({
+          id: entry.id,
+          stageId: entry.stageId,
+          title: entry.title,
+          body: "",
+          ...(
+            contentMetadataById.get(entry.id) ??
+            emptyContentMetadata(entry.updatedAt)
+          ),
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt
+        })),
+        createdAt: manifest.createdAt,
+        updatedAt: manifest.updatedAt
+      };
+    case "deepwrite.skill-library":
+      return {
+        id: manifest.id,
+        title: manifest.title,
+        skillType: manifest.skillType,
+        skillKind: manifest.skillKind,
+        overview: "",
+        overviewContentBytes: Buffer.byteLength(manifest.overview, "utf8"),
+        overviewContentStamp: manifestContentStamp(
+          manifest.overview,
+          manifest.updatedAt
+        ),
+        isBuiltin: manifest.isBuiltin,
+        ...(manifest.marketplaceSource
+          ? { marketplaceSource: manifest.marketplaceSource }
+          : {}),
+        projectRevision: manifest.revision,
+        entries: manifest.entries.map((entry) => ({
+          id: entry.id,
+          stageId: entry.stageId,
+          title: entry.title,
+          body: "",
+          ...(
+            contentMetadataById.get(entry.id) ??
+            emptyContentMetadata(entry.updatedAt)
+          ),
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt,
+          ...(entry.marketplaceSource
+            ? { marketplaceSource: entry.marketplaceSource }
+            : {}),
+          ...(entry.sourceCommonSkillId === undefined
+            ? {}
+            : { sourceCommonSkillId: entry.sourceCommonSkillId }),
+          ...(entry.sourceSkillId === undefined
+            ? {}
+            : { sourceSkillId: entry.sourceSkillId }),
+          ...(entry.sourceSkillEntryId === undefined
+            ? {}
+            : { sourceSkillEntryId: entry.sourceSkillEntryId })
+        })),
+        createdAt: manifest.createdAt,
+        updatedAt: manifest.updatedAt
+      };
+    case "deepwrite.material-group":
+      return {
+        id: manifest.id,
+        title: manifest.title,
+        members: manifest.members,
+        projectRevision: manifest.revision,
+        createdAt: manifest.createdAt,
+        updatedAt: manifest.updatedAt
+      };
+    case "deepwrite.skill-group":
+      return {
+        id: manifest.id,
+        title: manifest.title,
+        members: manifest.members,
+        ...(manifest.marketplaceSource
+          ? { marketplaceSource: manifest.marketplaceSource }
+          : {}),
+        projectRevision: manifest.revision,
+        createdAt: manifest.createdAt,
+        updatedAt: manifest.updatedAt
+      };
+  }
+}
+
 async function hydrateResource(
   projectDirectory: string,
   manifest: FolderCatalogProjectManifest,
@@ -6061,6 +6593,20 @@ function findRegistration(
     throw new Error("项目不存在、未注册或已从创作空间移除。");
   }
   return project;
+}
+
+function findRegistrationByProjectId(
+  registry: FolderCatalogRegistry,
+  id: string
+): RegistryProject {
+  const projects = registry.projects.filter((candidate) => candidate.id === id);
+  if (projects.length === 0) {
+    throw new Error("项目不存在、未注册或已从创作空间移除。");
+  }
+  if (projects.length > 1) {
+    throw new Error("项目标识不唯一，无法确定要读取的项目。");
+  }
+  return projects[0]!;
 }
 
 function defaultDocumentTitle(documentId: string): string {

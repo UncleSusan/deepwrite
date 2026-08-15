@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./renderer": "./src/renderer.ts",
+    "./system": "./src/system.ts"
   },
   "dependencies": {
     "zod": "4.4.3"

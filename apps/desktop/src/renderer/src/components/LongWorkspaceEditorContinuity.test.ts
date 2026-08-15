@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import resourceTreeSource from "../utils/longWorkspaceResourceTree.ts?raw";
 import selectionSource from "../types/longWorkspace.ts?raw";
+import ledgerNavigationSource from "./LongContinuityLedgerNavigation.vue?raw";
 import source from "./LongWorkspaceEditor.vue?raw";
 
 describe("LongWorkspaceEditor continuity text-file integration", () => {
@@ -16,13 +17,17 @@ describe("LongWorkspaceEditor continuity text-file integration", () => {
     expect(source).toContain('class="long-document-preview"');
   });
 
-  it("selects tabs by file id so several character records can share one role", () => {
+  it("selects ledger entries by file id even when records share a role", () => {
     expect(source).toContain("const activeFileId = ref<string | null>(null)");
-    expect(source).toContain(':key="file.file.id"');
-    expect(source).toContain(
-      ':aria-selected="currentSelectionFile?.file.id === file.file.id"'
+    expect(source).toContain("<LongContinuityLedgerNavigation");
+    expect(ledgerNavigationSource).toContain(':key="file.id"');
+    expect(ledgerNavigationSource).toContain(
+      ':aria-selected="activeFileId === file.id"'
     );
-    expect(source).toContain('@click="selectWorkspaceFile(file.file.id)"');
+    expect(ledgerNavigationSource).toContain(
+      "@click=\"emit('selectFile', file.id)\""
+    );
+    expect(source).toContain('@select-file="selectWorkspaceFile"');
   });
 
   it("lists only pending chapters and chapter records in the continuity tree", () => {

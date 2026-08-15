@@ -1,31 +1,45 @@
 import { describe, expect, it } from "vitest";
-import source from "./App.vue?raw";
+import source from "./WorkspaceShell.vue?raw";
+import longWorkspaceSource from "./components/LongWorkspaceModule.vue?raw";
+import writingWorkspaceSource from "./components/WritingWorkspaceModule.vue?raw";
+import autoSaveSource from "./composables/useEditorAutoSaveCoordinator.ts?raw";
+import presentationCoordinatorSource from "./composables/useLongWorkspacePresentationCoordinator.ts?raw";
+import coordinatorSource from "./composables/useProposalCoordinator.ts?raw";
+import shortConversationSource from "./composables/useShortConversationCoordinator.ts?raw";
+import eventRoutesSource from "./events/registerWorkspaceSystemEventRoutes.ts?raw";
 
 describe("App agent realtime auto persistence", () => {
   it("keeps editor writes behind the active run and review revision barrier", () => {
-    expect(source).toContain("function agentRunScopeHasWriteBarrier");
-    expect(source).toContain(
-      "conversation.isBusy.value || conversation.hasPendingEditReview.value"
+    expect(presentationCoordinatorSource).toContain(
+      "function agentRunScopeHasWriteBarrier"
     );
-    const autoSaveSource =
-      source
-        .split("async function runEditorAutoSave(")[1]
-        ?.split("function applyDocument(")[0] ?? "";
-    expect(autoSaveSource).toContain(
+    expect(presentationCoordinatorSource).toContain("conversation.isBusy.value");
+    expect(presentationCoordinatorSource).toContain(
+      "conversation.hasPendingEditReview.value"
+    );
+    expect(presentationCoordinatorSource).toContain(
       "agentRunScopeHasWriteBarrier(agentRunScopeForDocument(document))"
     );
-    expect(source).toContain("请先接受或拒绝待审阅变更");
+    expect(source).toContain("useLongWorkspacePresentationCoordinator({");
+    expect(source).not.toContain("function agentRunScopeHasWriteBarrier");
+    expect(autoSaveSource).toContain("options.isWriteBlocked(document)");
+    expect(presentationCoordinatorSource).toContain(
+      "请先接受或拒绝待审阅变更"
+    );
   });
 
   it("allows every short, script, library, and long content proposal to commit during a run", () => {
-    const eligibilityStart = source.indexOf(
+    const eligibilityStart = coordinatorSource.indexOf(
       "function canReviewAgentEditDuringRun"
     );
-    const eligibilityEnd = source.indexOf(
+    const eligibilityEnd = coordinatorSource.indexOf(
       "function removeQueuedAgentEdit",
       eligibilityStart
     );
-    const eligibility = source.slice(eligibilityStart, eligibilityEnd);
+    const eligibility = coordinatorSource.slice(
+      eligibilityStart,
+      eligibilityEnd
+    );
 
     expect(eligibility).toContain("Boolean(proposal.libraryTarget)");
     expect(eligibility).toContain(
@@ -43,14 +57,19 @@ describe("App agent realtime auto persistence", () => {
   });
 
   it("routes long chapter drafts into the standard conversation approval flow", () => {
-    expect(source).toContain(
+    expect(eventRoutesSource).toContain(
       '} else if (event.type === "long.chapter_write_proposal")'
     );
-    expect(source).toContain("stageLongDraftEditProposal(event)");
-    expect(source).toContain('stageId: "long-draft"');
-    expect(source).toContain("async function acceptLongDraftProposal");
-    expect(source).toContain("await acceptLongDraftProposal(");
-    const acceptance = source
+    expect(eventRoutesSource).toContain(
+      "dependencies.stageLongDraftEditProposal(event)"
+    );
+    expect(source).toContain("stageLongDraftEditProposal,");
+    expect(coordinatorSource).toContain('stageId: "long-draft"');
+    expect(coordinatorSource).toContain(
+      "async function acceptLongDraftProposal"
+    );
+    expect(coordinatorSource).toContain("await acceptLongDraftProposal(");
+    const acceptance = coordinatorSource
       .split("async function acceptLongDraftProposal(")[1]
       ?.split("async function applyAgentEdit(")[0] ?? "";
     expect(acceptance).toContain("await api.previewOperations(");
@@ -59,81 +78,98 @@ describe("App agent realtime auto persistence", () => {
   });
 
   it("routes long worldbuilding files into the standard conversation approval flow", () => {
-    expect(source).toContain(
+    expect(eventRoutesSource).toContain(
       'if (event.type === "long.worldbuilding_file_proposal")'
     );
-    expect(source).toContain("stageLongWorldbuildingEditProposal(event)");
-    expect(source).toContain(
+    expect(eventRoutesSource).toContain(
+      "dependencies.stageLongWorldbuildingEditProposal(event)"
+    );
+    expect(source).toContain("stageLongWorldbuildingEditProposal,");
+    expect(coordinatorSource).toContain(
       'stageId: "long-worldbuilding"'
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       "async function acceptLongWorldbuildingFileProposal"
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       "await acceptLongWorldbuildingFileProposal("
     );
   });
 
   it("routes long character files into the standard conversation approval flow", () => {
-    expect(source).toContain(
+    expect(eventRoutesSource).toContain(
       '} else if (event.type === "long.character_file_proposal")'
     );
-    expect(source).toContain("stageLongCharacterEditProposal(event)");
-    expect(source).toContain('stageId: "long-character"');
-    expect(source).toContain(
+    expect(eventRoutesSource).toContain(
+      "dependencies.stageLongCharacterEditProposal(event)"
+    );
+    expect(source).toContain("stageLongCharacterEditProposal,");
+    expect(coordinatorSource).toContain('stageId: "long-character"');
+    expect(coordinatorSource).toContain(
       "async function acceptLongCharacterFileProposal"
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       "await acceptLongCharacterFileProposal("
     );
   });
 
   it("routes plot design mutations into the standard conversation approval flow only", () => {
-    expect(source).toContain(
+    expect(eventRoutesSource).toContain(
       'event.type === "long.mutation_proposal" &&'
     );
-    expect(source).toContain(
+    expect(eventRoutesSource).toContain(
       'event.payload.agentId === "plot_design"'
     );
-    expect(source).toContain("stageLongPlotDesignEditProposal(event)");
-    expect(source).toContain('stageId: "long-plot-design"');
-    expect(source).toContain("async function acceptLongPlotDesignProposal");
-    expect(source).toContain("await acceptLongPlotDesignProposal(");
+    expect(eventRoutesSource).toContain(
+      "dependencies.stageLongPlotDesignEditProposal(event)"
+    );
+    expect(source).toContain("stageLongPlotDesignEditProposal,");
+    expect(coordinatorSource).toContain('stageId: "long-plot-design"');
+    expect(coordinatorSource).toContain(
+      "async function acceptLongPlotDesignProposal"
+    );
+    expect(coordinatorSource).toContain(
+      "await acceptLongPlotDesignProposal("
+    );
 
-    const eventRouting = source.slice(
-      source.indexOf("function handleSystemEvent"),
-      source.indexOf("async function loadModelSettings")
+    const eventRouting = eventRoutesSource.slice(
+      eventRoutesSource.indexOf("export function registerWorkspaceSystemEventRoutes")
     );
     expect(eventRouting).toMatch(
-      /stageLongPlotDesignEditProposal\(event\);\s*} else if/s
+      /dependencies\.stageLongPlotDesignEditProposal\(event\);\s*} else if/s
     );
   });
 
   it("immediately schedules ordinary workspace and library auto approvals", () => {
-    const workspaceQueueStart = source.lastIndexOf(
+    const workspaceQueueStart = coordinatorSource.lastIndexOf(
       "queueAgentEdit(",
-      source.indexOf("function stageLibraryEditProposal")
+      coordinatorSource.indexOf("function stageLibraryEditProposal")
     );
-    const workspaceQueue = source.slice(
+    const workspaceQueue = coordinatorSource.slice(
       workspaceQueueStart,
-      source.indexOf("function stageLibraryEditProposal")
+      coordinatorSource.indexOf("function stageLibraryEditProposal")
     );
     expect(workspaceQueue).toContain("proposal.id");
     expect(workspaceQueue).toMatch(/proposal\.id,\s*true,\s*true/s);
 
-    const libraryStageStart = source.indexOf(
+    const libraryStageStart = coordinatorSource.indexOf(
       "function stageLibraryEditProposal"
     );
-    const libraryStageEnd = source.indexOf(
+    const libraryStageEnd = coordinatorSource.indexOf(
       "async function acceptDraftSectionCreationProposal",
       libraryStageStart
     );
-    const libraryStage = source.slice(libraryStageStart, libraryStageEnd);
+    const libraryStage = coordinatorSource.slice(
+      libraryStageStart,
+      libraryStageEnd
+    );
     expect(libraryStage).toMatch(/proposalId,\s*true,\s*true/s);
   });
 
   it("enables live proposal handling for every main conversation context", () => {
-    expect(source).toContain("allow-live-edit-review");
+    expect(shortConversationSource).toContain("allowLiveEditReview: true");
+    expect(writingWorkspaceSource).toContain('v-bind="conversationContext"');
+    expect(longWorkspaceSource).toContain("allow-live-edit-review");
     expect(source).not.toContain(
       ":allow-live-edit-review=\"\n          activeAgentDocument.domain === 'creation'"
     );

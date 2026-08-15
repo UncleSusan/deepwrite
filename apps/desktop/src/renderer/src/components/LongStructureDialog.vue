@@ -41,6 +41,7 @@ const emit = defineEmits<{
 
 const dialogElement = ref<HTMLElement | null>(null);
 const closeButton = ref<HTMLButtonElement | null>(null);
+const childModalActive = ref(false);
 let previousFocus: HTMLElement | null = null;
 
 function close(): void {
@@ -72,7 +73,7 @@ function focusableElements(): HTMLElement[] {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
-  if (!props.open) return;
+  if (!props.open || childModalActive.value) return;
   if (event.key === "Escape") {
     close();
     return;
@@ -138,8 +139,11 @@ onBeforeUnmount(() =>
       <section
         ref="dialogElement"
         class="long-structure-dialog"
-        role="dialog"
-        aria-modal="true"
+        :class="{ 'is-suspended': childModalActive }"
+        :role="childModalActive ? undefined : 'dialog'"
+        :aria-modal="childModalActive ? undefined : 'true'"
+        :aria-hidden="childModalActive ? 'true' : undefined"
+        :inert="childModalActive ? true : undefined"
         aria-labelledby="long-structure-dialog-title"
         tabindex="-1"
       >
@@ -167,6 +171,7 @@ onBeforeUnmount(() =>
           :sync-book-options="syncBookOptions"
           :disabled="pending"
           @mutation="forwardMutation"
+          @modal-active-change="childModalActive = $event"
           @sync-worldbuilding="forwardSyncWorldbuilding"
         />
       </section>
@@ -192,6 +197,11 @@ onBeforeUnmount(() =>
   box-shadow: 0 22px 70px
     color-mix(in srgb, var(--text-primary) 18%, transparent);
   color: var(--text-primary);
+}
+
+.long-structure-dialog.is-suspended {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .long-structure-dialog-header {

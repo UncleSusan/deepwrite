@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
 import {
   captureWorkspaceDocumentBaselines,
-  rebaseDraftsForMatchingDocuments
+  rebaseDraftsForMatchingDocuments,
+  workspaceDocumentProvesDraftPersisted
 } from "./catalogSaveReconciliation";
 
 function document(id: string, title: string, content: string): WorkspaceDocument {
@@ -33,6 +34,36 @@ function draft(content: string): EditorDraftState {
 }
 
 describe("catalog save reconciliation", () => {
+  it("never treats a metadata placeholder as proof that a cleared draft is on disk", () => {
+    const metadataOnly = document("body-1", "第一节", "");
+    metadataOnly.catalogContentLoaded = false;
+    metadataOnly.catalogContentBytes = 24;
+    const withoutKnownBytes = { ...metadataOnly };
+    delete withoutKnownBytes.catalogContentBytes;
+
+    expect(
+      workspaceDocumentProvesDraftPersisted(metadataOnly, draft(""))
+    ).toBe(false);
+    expect(
+      workspaceDocumentProvesDraftPersisted(
+        withoutKnownBytes,
+        draft("")
+      )
+    ).toBe(false);
+    expect(
+      workspaceDocumentProvesDraftPersisted(
+        { ...metadataOnly, catalogContentBytes: 0 },
+        draft("")
+      )
+    ).toBe(true);
+    expect(
+      workspaceDocumentProvesDraftPersisted(
+        { ...metadataOnly, content: "已加载", catalogContentLoaded: true },
+        draft("已加载")
+      )
+    ).toBe(true);
+  });
+
   it("adopts the real project revision when the refreshed file matches the saved baseline", () => {
     const persisted = document("body-1", "第一节", "已保存正文");
     const expected = captureWorkspaceDocumentBaselines([persisted], "book-1");

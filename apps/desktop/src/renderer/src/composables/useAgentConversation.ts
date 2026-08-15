@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from "vue";
+import { computed, ref, shallowRef, toRaw, watch, type Ref } from "vue";
 import type {
   AgentRuntimeRef,
   AgentUsage,
@@ -47,11 +47,24 @@ export interface ConversationStorage {
   removeItem?(key: string): void;
 }
 
-interface UseAgentConversationOptions {
+export interface UseAgentConversationOptions {
   api: () => DeepWriteApi | undefined;
   initialMessages?: ChatMessage[];
   idleTimeoutMs?: number;
+  initialPersistenceSnapshot?: unknown;
+  onPersistenceSnapshot?: (
+    snapshot: AgentConversationPersistenceSnapshot
+  ) => void | Promise<void>;
+  /**
+   * Hot-path notification for stores that defer snapshot capture until their
+   * own debounce expires. When supplied, this takes precedence over the
+   * eager snapshot callback above.
+   */
+  onPersistenceChange?: () => void | Promise<void>;
+  onPersistenceRemove?: () => void | Promise<void>;
+  /** @deprecated Persistence is now coordinated through structured snapshots. */
   persistenceKey?: string;
+  /** @deprecated Persistence is now coordinated through structured snapshots. */
   storage?: ConversationStorage;
   onPersistenceError?: () => void;
 }
@@ -63,7 +76,7 @@ export interface AgentRunSettings {
   approvalMode: AgentApprovalMode;
 }
 
-interface StoredConversation {
+export interface AgentConversationPersistenceRecord {
   sessionId: string;
   messages: ChatMessage[];
   draft: string;
@@ -73,10 +86,10 @@ interface StoredConversation {
   temperature: number;
 }
 
-interface StoredConversationEnvelope {
+export interface AgentConversationPersistenceSnapshot {
   version: 1;
   activeSessionId: string;
-  conversations: StoredConversation[];
+  conversations: AgentConversationPersistenceRecord[];
 }
 
 interface AgentTurnCheckpoint {
@@ -121,7 +134,6 @@ interface PendingAgentTextDelta {
 }
 
 const MAX_STORED_CONVERSATIONS = 20;
-const PERSISTENCE_DEBOUNCE_MS = 180;
 const STREAM_PRESENTATION_FALLBACK_MS = 120;
 
 export interface AgentConversationController {
@@ -178,6 +190,8 @@ export interface AgentConversationController {
   selectTemperature(temperature: number): void;
   selectApprovalMode(mode: AgentApprovalMode): void;
   useSuggestion(value: string): void;
+  capturePersistenceSnapshot(): AgentConversationPersistenceSnapshot;
+  restorePersistenceSnapshot(snapshot: unknown): Promise<boolean>;
   dispose(options?: { clearPersistence?: boolean }): void;
 }
 
@@ -191,10 +205,12 @@ function id(prefix: string): string {
 }
 
 function cloneTextDiffLine(line: AgentTextDiffLine): AgentTextDiffLine {
+  line = toRaw(line);
   return { ...line };
 }
 
 function cloneTextDiffHunk(hunk: AgentTextDiffHunk): AgentTextDiffHunk {
+  hunk = toRaw(hunk);
   return {
     ...hunk,
     lines: hunk.lines.map(cloneTextDiffLine)
@@ -202,6 +218,7 @@ function cloneTextDiffHunk(hunk: AgentTextDiffHunk): AgentTextDiffHunk {
 }
 
 function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
+  proposal = toRaw(proposal);
   return {
     ...proposal,
     ...(proposal.libraryTarget
@@ -294,6 +311,7 @@ function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
 }
 
 function cloneSubagentRun(run: AgentSubagentRun): AgentSubagentRun {
+  run = toRaw(run);
   return {
     ...run,
     runtime: { ...run.runtime },
@@ -333,12 +351,13 @@ function parseStoredLibraryTarget(
 }
 
 function cloneMessage(message: ChatMessage): ChatMessage {
+  message = toRaw(message);
   return {
     ...message,
     ...(message.evaluationSnapshot
       ? {
           evaluationSnapshot: AgentEvaluationSnapshotSchema.parse(
-            JSON.parse(JSON.stringify(message.evaluationSnapshot))
+            structuredClone(message.evaluationSnapshot)
           )
         }
       : {}),
@@ -1201,7 +1220,9 @@ function parseStoredMessage(value: unknown): ChatMessage | undefined {
   return message;
 }
 
-function parseStoredConversation(value: unknown): StoredConversation | undefined {
+function parsePersistenceRecord(
+  value: unknown
+): AgentConversationPersistenceRecord | undefined {
   if (
     !isRecord(value) ||
     typeof value.sessionId !== "string" ||
@@ -1233,52 +1254,63 @@ function parseStoredConversation(value: unknown): StoredConversation | undefined
   };
 }
 
-function loadStoredEnvelope(
-  storage: ConversationStorage | undefined,
-  key: string | undefined
-): StoredConversationEnvelope | undefined {
-  if (!storage || !key) return undefined;
-  try {
-    const raw = storage.getItem(key);
-    if (!raw) return undefined;
-    const value: unknown = JSON.parse(raw);
-    if (
-      !isRecord(value) ||
-      value.version !== 1 ||
-      typeof value.activeSessionId !== "string" ||
-      !Array.isArray(value.conversations)
-    ) {
-      return undefined;
-    }
-    const conversations = value.conversations
-      .map(parseStoredConversation)
-      .filter((conversation): conversation is StoredConversation => conversation !== undefined);
-    return {
-      version: 1,
-      activeSessionId: value.activeSessionId,
-      conversations: conversations.slice(0, MAX_STORED_CONVERSATIONS)
-    };
-  } catch {
+export function parseAgentConversationPersistenceSnapshot(
+  value: unknown
+): AgentConversationPersistenceSnapshot | undefined {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    typeof value.activeSessionId !== "string" ||
+    !Array.isArray(value.conversations)
+  ) {
     return undefined;
   }
+  const conversations = value.conversations
+    .map(parsePersistenceRecord)
+    .filter(
+      (
+        conversation
+      ): conversation is AgentConversationPersistenceRecord =>
+        conversation !== undefined
+    );
+  if (conversations.length !== value.conversations.length) return undefined;
+  const limited = conversations
+    .sort(
+      (left, right) =>
+        Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+    )
+    .slice(0, MAX_STORED_CONVERSATIONS);
+  const activeSessionId = limited.some(
+    (conversation) => conversation.sessionId === value.activeSessionId
+  )
+    ? value.activeSessionId
+    : limited[0]?.sessionId ?? value.activeSessionId;
+  return {
+    version: 1,
+    activeSessionId,
+    conversations: limited
+  };
 }
 
-export function mergeStoredConversationHistories(
-  storage: ConversationStorage,
-  targetKey: string,
-  sourceKeys: readonly string[]
-): boolean {
-  const target = loadStoredEnvelope(storage, targetKey);
-  const sources = [...new Set(sourceKeys)]
-    .filter((key) => key !== targetKey)
-    .map((key) => loadStoredEnvelope(storage, key))
+export function mergeAgentConversationPersistenceSnapshots(
+  targetValue: unknown,
+  sourceValues: readonly unknown[]
+): AgentConversationPersistenceSnapshot | undefined {
+  const target = parseAgentConversationPersistenceSnapshot(targetValue);
+  const sources = sourceValues
+    .map(parseAgentConversationPersistenceSnapshot)
     .filter(
-      (envelope): envelope is StoredConversationEnvelope =>
+      (
+        envelope
+      ): envelope is AgentConversationPersistenceSnapshot =>
         envelope !== undefined && envelope.conversations.length > 0
     );
-  if (!sources.length) return false;
+  if (!sources.length) return target;
 
-  const conversationBySessionId = new Map<string, StoredConversation>();
+  const conversationBySessionId = new Map<
+    string,
+    AgentConversationPersistenceRecord
+  >();
   for (const envelope of [...(target ? [target] : []), ...sources]) {
     for (const conversation of envelope.conversations) {
       const existing = conversationBySessionId.get(conversation.sessionId);
@@ -1313,7 +1345,7 @@ export function mergeStoredConversationHistories(
         Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
     );
   }
-  if (!conversations.length) return false;
+  if (!conversations.length) return undefined;
   const activeSessionId =
     target &&
     conversations.some(
@@ -1321,30 +1353,20 @@ export function mergeStoredConversationHistories(
     )
       ? target.activeSessionId
       : conversations[0]!.sessionId;
-  try {
-    storage.setItem(
-      targetKey,
-      JSON.stringify({
-        version: 1,
-        activeSessionId,
-        conversations
-      } satisfies StoredConversationEnvelope)
-    );
-    return true;
-  } catch {
-    return false;
-  }
+  return { version: 1, activeSessionId, conversations };
 }
 
-function resolveConversationStorage(
-  preferred: ConversationStorage | undefined
-): ConversationStorage | undefined {
-  if (preferred) return preferred;
-  try {
-    return typeof localStorage === "undefined" ? undefined : localStorage;
-  } catch {
-    return undefined;
-  }
+/**
+ * @deprecated Text-storage migration belongs in the persistence adapter. This
+ * compatibility export remains temporarily so callers can migrate without a
+ * flag day; it deliberately performs no synchronous reads or writes.
+ */
+export function mergeStoredConversationHistories(
+  _storage: ConversationStorage,
+  _targetKey: string,
+  _sourceKeys: readonly string[]
+): boolean {
+  return false;
 }
 
 function compactConversationText(value: string, limit: number): string {
@@ -1353,7 +1375,7 @@ function compactConversationText(value: string, limit: number): string {
 }
 
 function historyItemFor(
-  conversation: StoredConversation,
+  conversation: AgentConversationPersistenceRecord,
   currentSessionId: string
 ): ConversationHistoryItem {
   const firstUserMessage = conversation.messages.find((message) => message.role === "user");
@@ -1386,8 +1408,9 @@ function rememberBounded(set: Set<string>, value: string, limit = 2_000): void {
 export function useAgentConversation(
   options: UseAgentConversationOptions
 ): AgentConversationController {
-  const persistenceStorage = resolveConversationStorage(options.storage);
-  const storedEnvelope = loadStoredEnvelope(persistenceStorage, options.persistenceKey);
+  const storedEnvelope = parseAgentConversationPersistenceSnapshot(
+    options.initialPersistenceSnapshot
+  );
   const storedActive = storedEnvelope?.conversations.find(
     (conversation) => conversation.sessionId === storedEnvelope.activeSessionId
   );
@@ -1417,7 +1440,9 @@ export function useAgentConversation(
   const selectedModelId = ref("");
   const runtime = ref<AgentRuntimeRef | null>(null);
   const conversationError = ref<string | null>(null);
-  const storedConversations = ref<StoredConversation[]>(
+  // Completed conversation records are immutable snapshots. Keeping the
+  // bounded history shallow avoids proxying every restored message.
+  const storedConversations = shallowRef<AgentConversationPersistenceRecord[]>(
     (storedEnvelope?.conversations ?? []).map((conversation) => ({
       ...conversation,
       messages: conversation.messages.map(cloneMessage)
@@ -1444,8 +1469,12 @@ export function useAgentConversation(
   let attemptSequence = 0;
   const pendingAttemptId = ref<number | null>(null);
   let idleTimer: number | undefined;
-  let persistenceTimer: number | undefined;
   let persistenceErrorReported = false;
+  let persistenceMutationRevision = 0;
+  let persistenceBatchDepth = 0;
+  let persistenceBatchChanged = false;
+  let applyingPersistenceSnapshot = false;
+  let persistenceNotificationsEnabled = true;
   let pendingAgentTextDelta: PendingAgentTextDelta | undefined;
   let streamPresentationFrame: number | undefined;
   let streamPresentationFallbackTimer: number | undefined;
@@ -1489,7 +1518,7 @@ export function useAgentConversation(
       .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
   });
 
-  function currentStoredConversation(): StoredConversation {
+  function currentStoredConversation(): AgentConversationPersistenceRecord {
     return {
       sessionId: sessionId.value,
       messages: messages.value.map(cloneMessage),
@@ -1501,7 +1530,9 @@ export function useAgentConversation(
     };
   }
 
-  function hasConversationContent(conversation: StoredConversation): boolean {
+  function hasConversationContent(
+    conversation: AgentConversationPersistenceRecord
+  ): boolean {
     return conversation.messages.length > 0 || conversation.draft.trim().length > 0;
   }
 
@@ -1518,49 +1549,141 @@ export function useAgentConversation(
       .slice(0, MAX_STORED_CONVERSATIONS);
   }
 
-  function persistConversations(): void {
-    if (!persistenceStorage || !options.persistenceKey) return;
+  function capturePersistenceSnapshot(): AgentConversationPersistenceSnapshot {
     storeCurrentConversation();
-    const envelope: StoredConversationEnvelope = {
+    return {
       version: 1,
       activeSessionId: sessionId.value,
-      conversations: storedConversations.value
+      conversations: [...storedConversations.value]
     };
-    try {
-      persistenceStorage.setItem(options.persistenceKey, JSON.stringify(envelope));
+  }
+
+  function reportPersistenceError(): void {
+    if (persistenceErrorReported) return;
+    persistenceErrorReported = true;
+    options.onPersistenceError?.();
+  }
+
+  function observePersistenceResult(result: void | Promise<void>): void {
+    if (!result || typeof result.then !== "function") {
       persistenceErrorReported = false;
+      return;
+    }
+    void result.then(
+      () => {
+        persistenceErrorReported = false;
+      },
+      () => {
+        reportPersistenceError();
+      }
+    );
+  }
+
+  function emitPersistenceSnapshot(): void {
+    if (
+      !persistenceNotificationsEnabled ||
+      applyingPersistenceSnapshot ||
+      (!options.onPersistenceChange && !options.onPersistenceSnapshot)
+    ) {
+      return;
+    }
+    try {
+      observePersistenceResult(
+        options.onPersistenceChange
+          ? options.onPersistenceChange()
+          : options.onPersistenceSnapshot!(capturePersistenceSnapshot())
+      );
     } catch {
-      if (!persistenceErrorReported) {
-        persistenceErrorReported = true;
-        options.onPersistenceError?.();
+      reportPersistenceError();
+    }
+  }
+
+  function runPersistenceBatch<T>(operation: () => T): T {
+    persistenceBatchDepth += 1;
+    try {
+      return operation();
+    } finally {
+      persistenceBatchDepth -= 1;
+      if (persistenceBatchDepth === 0 && persistenceBatchChanged) {
+        persistenceBatchChanged = false;
+        emitPersistenceSnapshot();
       }
     }
   }
 
-  function scheduleConversationPersistence(): void {
-    if (!persistenceStorage || !options.persistenceKey) return;
-    if (persistenceTimer !== undefined) {
-      globalThis.clearTimeout(persistenceTimer);
+  async function restorePersistenceSnapshot(snapshot: unknown): Promise<boolean> {
+    const parsed = parseAgentConversationPersistenceSnapshot(snapshot);
+    if (!parsed) return false;
+    const expectedRevision = persistenceMutationRevision;
+
+    // Yield once so edits made while an asynchronously loaded snapshot is
+    // being handed to the controller win over the older persisted state.
+    await Promise.resolve();
+    if (
+      !persistenceNotificationsEnabled ||
+      expectedRevision !== 0 ||
+      persistenceMutationRevision !== expectedRevision ||
+      storedEnvelope !== undefined ||
+      options.initialMessages?.length ||
+      messages.value.length > 0 ||
+      draft.value.length > 0 ||
+      storedConversations.value.length > 0 ||
+      isBusy.value
+    ) {
+      return false;
     }
-    persistenceTimer = globalThis.setTimeout(() => {
-      persistenceTimer = undefined;
-      persistConversations();
-    }, PERSISTENCE_DEBOUNCE_MS);
+
+    applyingPersistenceSnapshot = true;
+    try {
+      resetTransientConversationState();
+      storedConversations.value = parsed.conversations.map((conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map(cloneMessage)
+      }));
+      const active = storedConversations.value.find(
+        (conversation) => conversation.sessionId === parsed.activeSessionId
+      );
+      const restoredTimestamp = active?.updatedAt ?? nextConversationTimestamp();
+      conversationClock = Math.max(
+        conversationClock,
+        ...storedConversations.value.map((conversation) =>
+          Date.parse(conversation.updatedAt)
+        )
+      );
+      sessionId.value = active?.sessionId ?? parsed.activeSessionId;
+      messages.value = (active?.messages ?? []).map(cloneMessage);
+      draft.value = active?.draft ?? "";
+      approvalMode.value = active?.approvalMode ?? "request-approval";
+      temperature.value = active?.temperature ?? 0.7;
+      currentCreatedAt.value = active?.createdAt ?? restoredTimestamp;
+      currentUpdatedAt.value = restoredTimestamp;
+      persistenceMutationRevision = 0;
+      persistenceBatchChanged = false;
+    } finally {
+      applyingPersistenceSnapshot = false;
+    }
+    return true;
   }
 
-  function flushConversationPersistence(): void {
-    if (persistenceTimer !== undefined) {
-      globalThis.clearTimeout(persistenceTimer);
-      persistenceTimer = undefined;
-    }
-    persistConversations();
-  }
-
-  watch(
-    [messages, draft, approvalMode, selectedModelId, thinkingLevel, temperature],
+  const stopPersistenceWatch = watch(
+    [
+      sessionId,
+      messages,
+      draft,
+      approvalMode,
+      selectedModelId,
+      thinkingLevel,
+      temperature
+    ],
     () => {
+      if (applyingPersistenceSnapshot || !persistenceNotificationsEnabled) return;
+      persistenceMutationRevision += 1;
       currentUpdatedAt.value = nextConversationTimestamp();
-      scheduleConversationPersistence();
+      if (persistenceBatchDepth > 0) {
+        persistenceBatchChanged = true;
+        return;
+      }
+      emitPersistenceSnapshot();
     },
     { deep: true, flush: "sync" }
   );
@@ -1652,6 +1775,7 @@ export function useAgentConversation(
         ...(eventRuntime ? { runtime: eventRuntime } : {})
       };
       messages.value.push(message);
+      message = messages.value.find((item) => item.id === messageId)!;
       runMessageIds.set(runId, message.id);
     }
     message.status = "error";
@@ -1684,6 +1808,7 @@ export function useAgentConversation(
         ...(eventRuntime ? { runtime: eventRuntime } : {})
       };
       messages.value.push(message);
+      message = messages.value.find((item) => item.id === messageId)!;
       runMessageIds.set(runId, message.id);
     }
     message.status = "stopped";
@@ -1817,7 +1942,7 @@ export function useAgentConversation(
     };
     runMessageIds.set(runId, messageId);
     messages.value.push(message);
-    return message;
+    return messages.value.find((candidate) => candidate.id === messageId)!;
   }
 
   function retryMetadata(input: {
@@ -2028,7 +2153,7 @@ export function useAgentConversation(
     };
     runMessageIds.set(runId, message.id);
     messages.value.push(message);
-    return message;
+    return messages.value.find((candidate) => candidate.id === message.id)!;
   }
 
   function ensureSubagentMessage(runId: string, createdAt: string): ChatMessage {
@@ -2065,7 +2190,7 @@ export function useAgentConversation(
     };
     runMessageIds.set(runId, message.id);
     messages.value.push(message);
-    return message;
+    return messages.value.find((candidate) => candidate.id === message.id)!;
   }
 
   function earlierTimestamp(current: string, candidate: string): string {
@@ -2580,7 +2705,7 @@ export function useAgentConversation(
     };
     messages.value.push(message);
     runMessageIds.set(runId, message.id);
-    return message;
+    return messages.value.find((candidate) => candidate.id === message.id)!;
   }
 
   function getEditProposal(
@@ -3614,16 +3739,17 @@ export function useAgentConversation(
   }
 
   function newConversation(): void {
-    stopStreamingMessages();
-    flushConversationPersistence();
-    resetTransientConversationState();
-    const timestamp = nextConversationTimestamp();
-    sessionId.value = id("session");
-    messages.value = [];
-    draft.value = "";
-    currentCreatedAt.value = timestamp;
-    currentUpdatedAt.value = timestamp;
-    flushConversationPersistence();
+    runPersistenceBatch(() => {
+      stopStreamingMessages();
+      storeCurrentConversation();
+      resetTransientConversationState();
+      const timestamp = nextConversationTimestamp();
+      sessionId.value = id("session");
+      messages.value = [];
+      draft.value = "";
+      currentCreatedAt.value = timestamp;
+      currentUpdatedAt.value = timestamp;
+    });
   }
 
   function selectConversation(nextSessionId: string): boolean {
@@ -3633,21 +3759,24 @@ export function useAgentConversation(
     // A selectable conversation should already be idle. Normalize any stale
     // presentation state before persisting so a detached streaming card cannot
     // be restored without an owning run.
-    stopStreamingMessages();
-    flushConversationPersistence();
-    const selectedConversation = storedConversations.value.find(
-      (conversation) => conversation.sessionId === nextSessionId
-    );
-    if (!selectedConversation) return false;
+    let selected = false;
+    runPersistenceBatch(() => {
+      stopStreamingMessages();
+      storeCurrentConversation();
+      const selectedConversation = storedConversations.value.find(
+        (conversation) => conversation.sessionId === nextSessionId
+      );
+      if (!selectedConversation) return;
 
-    resetTransientConversationState();
-    sessionId.value = selectedConversation.sessionId;
-    messages.value = selectedConversation.messages.map(cloneMessage);
-    draft.value = selectedConversation.draft;
-    currentCreatedAt.value = selectedConversation.createdAt;
-    currentUpdatedAt.value = nextConversationTimestamp();
-    flushConversationPersistence();
-    return true;
+      resetTransientConversationState();
+      sessionId.value = selectedConversation.sessionId;
+      messages.value = selectedConversation.messages.map(cloneMessage);
+      draft.value = selectedConversation.draft;
+      currentCreatedAt.value = selectedConversation.createdAt;
+      currentUpdatedAt.value = nextConversationTimestamp();
+      selected = true;
+    });
+    return selected;
   }
 
   function applyRunSettings(settings: AgentRunSettings): void {
@@ -3799,31 +3928,25 @@ export function useAgentConversation(
     selectThinkingLevel,
     selectTemperature,
     selectApprovalMode,
+    capturePersistenceSnapshot,
+    restorePersistenceSnapshot,
     useSuggestion(value: string): void {
       draft.value = value;
     },
     dispose(disposeOptions): void {
+      persistenceNotificationsEnabled = false;
+      stopPersistenceWatch();
       // Disposing invalidates the run ownership below. Settle presentation
       // state first so `status: streaming` cannot outlive `activeRunId`.
       stopStreamingMessages();
-      if (persistenceTimer !== undefined) {
-        globalThis.clearTimeout(persistenceTimer);
-        persistenceTimer = undefined;
-      }
-      if (disposeOptions?.clearPersistence) {
-        if (persistenceStorage && options.persistenceKey) {
+      if (disposeOptions?.clearPersistence && options.onPersistenceRemove) {
+        void Promise.resolve().then(() => {
           try {
-            if (persistenceStorage.removeItem) {
-              persistenceStorage.removeItem(options.persistenceKey);
-            } else {
-              persistenceStorage.setItem(options.persistenceKey, "");
-            }
+            observePersistenceResult(options.onPersistenceRemove?.());
           } catch {
-            options.onPersistenceError?.();
+            reportPersistenceError();
           }
-        }
-      } else {
-        flushConversationPersistence();
+        });
       }
       epoch += 1;
       pendingAttemptId.value = null;

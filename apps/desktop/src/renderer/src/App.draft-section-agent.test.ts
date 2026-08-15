@@ -1,81 +1,82 @@
 import { describe, expect, it } from "vitest";
-import source from "./App.vue?raw";
+import source from "./WorkspaceShell.vue?raw";
+import coordinatorSource from "./composables/useProposalCoordinator.ts?raw";
+import structureSource from "./composables/useShortWorkspaceStructureCoordinator.ts?raw";
 
 describe("App agent chapter-file creation", () => {
   it("keeps shared draft conversations out of per-section cleanup", () => {
-    expect(source).toContain("function legacyDraftSectionConversationKeys(");
-    expect(source).toContain(
+    expect(structureSource).toContain("function legacyDraftSectionConversationKeys(");
+    expect(structureSource).toContain(
       "`${workspaceId}:expert_draft_coordinator:${suffix}`"
     );
-    expect(source).toContain(
+    expect(structureSource).toContain(
       "`${workspaceId}:expert_section_writer:${suffix}`"
     );
-    expect(source).toContain(
+    expect(structureSource).toContain(
       "for (const key of legacyDraftSectionConversationKeys(bookId, sectionId))"
     );
-    expect(source).not.toContain("function draftSectionConversationKeys(");
+    expect(structureSource).not.toContain("function draftSectionConversationKeys(");
+    expect(source).toContain("legacyDraftSectionConversationKeys,");
   });
 
   it("stages one structural proposal and atomically persists its chapters", () => {
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       'mutationTarget?.kind === "expert-draft-section-creation"'
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       'mutationTarget?.kind === "expert-draft-section-rename"'
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       'mutationTarget?.kind === "expert-draft-section-deletion"'
     );
-    expect(source).toContain("draftSectionCreationTarget: {");
-    expect(source).toContain("draftSectionRenameTarget: {");
-    expect(source).toContain("draftSectionDeletionTarget: {");
-    expect(source).toContain("acceptDraftSectionCreationProposal(");
-    expect(source).toContain("acceptDraftSectionRenameProposal(");
-    expect(source).toContain("acceptDraftSectionDeletionProposal(");
-    expect(source).toContain(
-      "await window.deepwrite.catalog.deleteDraftSection({"
+    expect(coordinatorSource).toContain("draftSectionCreationTarget: {");
+    expect(coordinatorSource).toContain("draftSectionRenameTarget: {");
+    expect(coordinatorSource).toContain("draftSectionDeletionTarget: {");
+    expect(coordinatorSource).toContain("acceptDraftSectionCreationProposal(");
+    expect(coordinatorSource).toContain("acceptDraftSectionRenameProposal(");
+    expect(coordinatorSource).toContain("acceptDraftSectionDeletionProposal(");
+    expect(coordinatorSource).toContain(
+      "await currentApi.catalog.deleteDraftSection({"
     );
-    expect(source).toContain(
-      "await window.deepwrite.catalog.createDraftSections({"
+    expect(coordinatorSource).toContain(
+      "await currentApi.catalog.createDraftSections({"
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       "operationId: draftSectionCreationOperationId(proposal)"
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       "clientSectionId: section.provisionalSectionId"
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       "createdCount = created.sections.length"
     );
-    expect(source).toContain(
-      "applyCatalogSnapshot(await window.deepwrite.catalog.snapshot())"
-    );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain("await loadCatalogSnapshot()");
+    expect(coordinatorSource).toContain(
       "expectedDraftSectionCreationBaseRevision(proposal)"
     );
-    expect(source).toContain(
+    expect(coordinatorSource).toContain(
       "rememberAcceptedDraftSectionCreation(proposal, savedDirectoryRevision)"
     );
-    expect(source).toContain("remapProvisionalExpertSectionFileProposals(");
-    expect(source).toContain("restoreAcceptedDraftSectionCreationMappings(");
-    expect(source).toContain("acceptedDirectoryRevision: savedDirectoryRevision");
-    expect(source).toContain("realSectionId: createdMapping.get(");
-    expect(source).toContain("requiresIdempotentRecoveryProbe");
-    expect(source).toContain("resolveDraftSectionCreationCommitPlan({");
-    expect(source).toContain("target.baseProjectRevision");
-    expect(source).toContain("pauseDependentProvisionalFileProposals(");
-    expect(source).toContain("provisionalExpertSection: true");
-    expect(source).toContain("createExpertDraftDirectoryRevision(");
-    expect(source).toContain("autoApproveEditPriority(");
-    expect(source).toContain("scheduleQueuedAgentEdits(");
-    expect(source).toContain("agentEditCommitQueue");
-    expect(source).toContain("decisionToken");
-    expect(source).toContain("section.hasBody && section.hasCharacterState");
-    expect(source).toContain("expectedDirectoryRevision");
-    expect(source).toContain("resolveProvisionalWriteStagingMode(");
-    expect(source).toContain('stagingMode === "mapped-real"');
-    expect(source).toContain("draftSectionCreationRevisionKey(");
-    expect(source).toContain("resolveAgentEditProposalGeneration(");
-    expect(source).toContain("expectedMutationDurableRevision(");
+    expect(coordinatorSource).toContain("remapProvisionalExpertSectionFileProposals(");
+    expect(coordinatorSource).toContain("restoreAcceptedDraftSectionCreationMappings(");
+    expect(coordinatorSource).toContain("acceptedDirectoryRevision: savedDirectoryRevision");
+    expect(coordinatorSource).toContain("realSectionId: createdMapping.get(");
+    expect(coordinatorSource).toContain("requiresIdempotentRecoveryProbe");
+    expect(coordinatorSource).toContain("resolveDraftSectionCreationCommitPlan({");
+    expect(coordinatorSource).toContain("target.baseProjectRevision");
+    expect(coordinatorSource).toContain("pauseDependentProvisionalFileProposals(");
+    expect(coordinatorSource).toContain("provisionalExpertSection: true");
+    expect(coordinatorSource).toContain("createExpertDraftDirectoryRevision(");
+    expect(coordinatorSource).toContain("autoApproveEditPriority(");
+    expect(coordinatorSource).toContain("scheduleQueuedAgentEdits(");
+    expect(coordinatorSource).toContain("agentEditCommitQueue");
+    expect(coordinatorSource).toContain("decisionToken");
+    expect(coordinatorSource).toContain("section.hasBody && section.hasCharacterState");
+    expect(coordinatorSource).toContain("expectedDirectoryRevision");
+    expect(coordinatorSource).toContain("resolveProvisionalWriteStagingMode(");
+    expect(coordinatorSource).toContain('stagingMode === "mapped-real"');
+    expect(coordinatorSource).toContain("draftSectionCreationRevisionKey(");
+    expect(coordinatorSource).toContain("resolveAgentEditProposalGeneration(");
+    expect(coordinatorSource).toContain("expectedMutationDurableRevision(");
   });
 });

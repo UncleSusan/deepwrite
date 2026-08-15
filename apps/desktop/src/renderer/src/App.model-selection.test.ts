@@ -1,40 +1,57 @@
 import { describe, expect, it } from "vitest";
-import source from "./App.vue?raw";
+import source from "./WorkspaceShell.vue?raw";
+import runtimeRegistrySource from "./composables/useConversationRuntimeRegistryCoordinator.ts?raw";
+import shortConversationSource from "./composables/useShortConversationCoordinator.ts?raw";
 
-function functionBody(name: string, nextName: string): string {
-  const start = source.indexOf(`function ${name}(`);
-  const end = source.indexOf(`function ${nextName}(`, start);
-  return source.slice(start, end);
+function functionBody(text: string, name: string, nextName: string): string {
+  const start = text.indexOf(`function ${name}(`);
+  const end = text.indexOf(`function ${nextName}(`, start);
+  return text.slice(start, end);
 }
 
 describe("App agent model selection", () => {
   it("restores and persists the global model selection across app launches", () => {
-    expect(source).toContain(
-      "const sessionAgentModelSelection = ref<AgentModelSelection | undefined>(\n  loadAgentModelSelection()\n);"
-    );
+    expect(source).toContain("sessionAgentModelSelection\n} = storeToRefs(conversationStore)");
+    expect(source).toContain("createConversationPersistenceAdapter(");
     const body = functionBody(
+      runtimeRegistrySource,
       "synchronizeSessionAgentModelSelection",
-      "storeAgentRunPreferences"
+      "persistAgentRunPreferences"
     );
-    expect(body).toContain("AGENT_MODEL_SELECTION_STORAGE_KEY");
-    expect(body).toContain("JSON.stringify(selection)");
+    expect(source).toContain("useConversationRuntimeRegistryCoordinator({");
+    expect(body).toContain("options.store.setSessionAgentModelSelection(");
+    expect(body).toContain("{ source }");
+    expect(body).not.toContain("localStorage");
+    expect(body).not.toContain("JSON.stringify");
   });
 
   it("keeps the selected conversation stable while publishing a model change", () => {
-    const body = functionBody("selectModel", "selectThinking");
+    const body = functionBody(
+      shortConversationSource,
+      "selectModel",
+      "selectThinking"
+    );
 
     expect(body).toContain("const conversation = activeConversation.value;");
     expect(body).toContain("conversation.selectModel(modelId);");
-    expect(body).toContain("synchronizeSessionAgentModelSelection(conversation);");
+    expect(body).toContain(
+      "options.runtime.synchronizeSessionModelSelection(conversation);"
+    );
     expect(body.match(/activeConversation\.value/g)).toHaveLength(1);
   });
 
   it("keeps the selected conversation stable while publishing a thinking-level change", () => {
-    const body = functionBody("selectThinking", "selectTemperature");
+    const body = functionBody(
+      shortConversationSource,
+      "selectThinking",
+      "selectTemperature"
+    );
 
     expect(body).toContain("const conversation = activeConversation.value;");
     expect(body).toContain("conversation.selectThinkingLevel(level);");
-    expect(body).toContain("synchronizeSessionAgentModelSelection(conversation);");
+    expect(body).toContain(
+      "options.runtime.synchronizeSessionModelSelection(conversation);"
+    );
     expect(body.match(/activeConversation\.value/g)).toHaveLength(1);
   });
 });

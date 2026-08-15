@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import dialogSource from "./LongContinuationImportDialog.vue?raw";
 import transferSource from "./BookTransferDialog.vue?raw";
-import appSource from "../App.vue?raw";
+import appSource from "../WorkspaceShell.vue?raw";
+import longBookLifecycleSource from "../composables/useLongBookLifecycleCoordinator.ts?raw";
 import resourceTreeSource from "../utils/longWorkspaceResourceTree.ts?raw";
 
 describe("LongContinuationImportDialog", () => {
@@ -10,8 +11,14 @@ describe("LongContinuationImportDialog", () => {
     expect(transferSource).toContain('action: "import-continuation-long-book"');
     expect(transferSource).not.toContain("旧版本长篇");
     expect(transferSource).not.toContain("旧版本短篇/剧本");
-    expect(appSource).toContain("api.chooseContinuationImportSource()");
-    expect(appSource).toContain("api.importContinuation(input)");
+    expect(appSource).toContain("await chooseContinuationImportSource();");
+    expect(appSource).toContain(
+      '@confirm-continuation-import="confirmContinuationImport"'
+    );
+    expect(longBookLifecycleSource).toContain(
+      "api.chooseContinuationImportSource()"
+    );
+    expect(longBookLifecycleSource).toContain("api.importContinuation(input)");
     expect(resourceTreeSource).toContain("createLongContinuitySelection(");
     expect(resourceTreeSource).toContain(
       'commit.mode === "import_checkpoint"'

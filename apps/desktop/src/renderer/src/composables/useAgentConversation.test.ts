@@ -25,8 +25,11 @@ import {
   type SessionPromptCommandPayload,
 } from "@deepwrite/contracts";
 import {
-  mergeStoredConversationHistories,
-  useAgentConversation
+  mergeAgentConversationPersistenceSnapshots,
+  useAgentConversation,
+  type AgentConversationPersistenceRecord,
+  type AgentConversationPersistenceSnapshot,
+  type UseAgentConversationOptions
 } from "./useAgentConversation";
 import type { AgentEditProposal } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
@@ -323,6 +326,12 @@ function createDeferredApi(): {
     catalog: {
       loadDraftRecovery: vi.fn(async () => ({})),
       saveDraftRecovery: vi.fn(async () => undefined),
+      index: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
+      readDocument: vi.fn(async () => {
+        throw new Error("Catalog is not used by conversation tests.");
+      }),
       snapshot: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
       }),
@@ -677,12 +686,31 @@ function eventOptions(sessionId: string, runId: string, id: string) {
 }
 
 function createMemoryStorage(): {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
+  options(
+    key: string
+  ): Pick<
+    UseAgentConversationOptions,
+    | "initialPersistenceSnapshot"
+    | "onPersistenceSnapshot"
+    | "onPersistenceRemove"
+  >;
+  getItem(key: string): unknown | null;
+  setItem(key: string, value: unknown): void;
   removeItem(key: string): void;
 } {
-  const values = new Map<string, string>();
+  const values = new Map<string, unknown>();
   return {
+    options(key) {
+      return {
+        initialPersistenceSnapshot: structuredClone(values.get(key)),
+        onPersistenceSnapshot(snapshot) {
+          values.set(key, structuredClone(snapshot));
+        },
+        onPersistenceRemove() {
+          values.delete(key);
+        }
+      };
+    },
     getItem(key) {
       return values.get(key) ?? null;
     },
@@ -699,7 +727,7 @@ function storedConversation(
   sessionId: string,
   updatedAt: string,
   content: string
-) {
+): AgentConversationPersistenceRecord {
   return {
     sessionId,
     messages: [
@@ -913,13 +941,116 @@ describe("agent conversation controller", () => {
     controller.dispose();
   });
 
+  it("restores a validated structured snapshot into a pristine controller", async () => {
+    const snapshot: AgentConversationPersistenceSnapshot = {
+      version: 1,
+      activeSessionId: "session-restored",
+      conversations: [
+        storedConversation(
+          "session-restored",
+          "2026-08-14T01:00:00.000Z",
+          "从异步存储恢复的消息"
+        )
+      ]
+    };
+    snapshot.conversations[0]!.draft = "从异步存储恢复的草稿";
+    const controller = useAgentConversation({ api: () => undefined });
+
+    await expect(controller.restorePersistenceSnapshot(snapshot)).resolves.toBe(true);
+    expect(controller.sessionId.value).toBe("session-restored");
+    expect(controller.messages.value[0]?.content).toBe("从异步存储恢复的消息");
+    expect(controller.draft.value).toBe("从异步存储恢复的草稿");
+    controller.dispose();
+  });
+
+  it("does not let a late persistence snapshot overwrite a local edit", async () => {
+    const snapshot: AgentConversationPersistenceSnapshot = {
+      version: 1,
+      activeSessionId: "session-stale",
+      conversations: [
+        storedConversation(
+          "session-stale",
+          "2026-08-14T01:00:00.000Z",
+          "已经过时的历史消息"
+        )
+      ]
+    };
+    const controller = useAgentConversation({ api: () => undefined });
+
+    const restoring = controller.restorePersistenceSnapshot(snapshot);
+    controller.draft.value = "用户刚刚输入的新草稿";
+
+    await expect(restoring).resolves.toBe(false);
+    expect(controller.draft.value).toBe("用户刚刚输入的新草稿");
+    expect(controller.messages.value).toEqual([]);
+    controller.dispose();
+  });
+
+  it("rejects malformed snapshots without changing the active conversation", async () => {
+    const controller = useAgentConversation({ api: () => undefined });
+    const originalSessionId = controller.sessionId.value;
+
+    await expect(
+      controller.restorePersistenceSnapshot({
+        version: 1,
+        activeSessionId: "session-invalid",
+        conversations: [{ sessionId: "session-invalid", messages: "invalid" }]
+      })
+    ).resolves.toBe(false);
+    expect(controller.sessionId.value).toBe(originalSessionId);
+    expect(controller.messages.value).toEqual([]);
+    controller.dispose();
+  });
+
+  it("emits structured snapshots on changes but does not write during dispose", () => {
+    const snapshots: AgentConversationPersistenceSnapshot[] = [];
+    const controller = useAgentConversation({
+      api: () => undefined,
+      onPersistenceSnapshot(snapshot) {
+        snapshots.push(snapshot);
+      }
+    });
+
+    controller.draft.value = "需要持久化的草稿";
+    expect(snapshots.at(-1)).toMatchObject({
+      version: 1,
+      activeSessionId: controller.sessionId.value,
+      conversations: [{ draft: "需要持久化的草稿" }]
+    });
+    const writesBeforeDispose = snapshots.length;
+
+    controller.dispose();
+    expect(snapshots).toHaveLength(writesBeforeDispose);
+  });
+
+  it("can emit a cheap dirty signal and defer structured snapshot capture", () => {
+    const changes: string[] = [];
+    const eagerSnapshots: AgentConversationPersistenceSnapshot[] = [];
+    const controller = useAgentConversation({
+      api: () => undefined,
+      onPersistenceChange() {
+        changes.push("changed");
+      },
+      onPersistenceSnapshot(snapshot) {
+        eagerSnapshots.push(snapshot);
+      }
+    });
+
+    controller.draft.value = "输入热路径不复制整份历史";
+    expect(changes).toEqual(["changed"]);
+    expect(eagerSnapshots).toEqual([]);
+    expect(controller.capturePersistenceSnapshot()).toMatchObject({
+      conversations: [{ draft: "输入热路径不复制整份历史" }]
+    });
+    controller.dispose();
+  });
+
   it("persists the approval mode with its conversation", () => {
     const storage = createMemoryStorage();
     const persistenceKey = "conversation-approval-mode-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(controller.approvalMode.value).toBe("request-approval");
     controller.draft.value = "保留这份对话草稿";
@@ -928,8 +1059,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(restored.approvalMode.value).toBe("auto-approve");
     restored.dispose();
@@ -941,8 +1071,7 @@ describe("agent conversation controller", () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({
       api: () => deferred.api,
-      persistenceKey,
-      storage,
+      ...storage.options(persistenceKey),
       idleTimeoutMs: 10_000
     });
     controller.draft.value = "评估这一轮";
@@ -997,8 +1126,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(restored.messages.value.find((message) => message.runId === runId))
       .toMatchObject({
@@ -1016,22 +1144,21 @@ describe("agent conversation controller", () => {
     restored.dispose({ clearPersistence: true });
   });
 
-  it("clears persisted conversations when a project runtime is disposed", () => {
+  it("clears persisted conversations when a project runtime is disposed", async () => {
     const storage = createMemoryStorage();
     const persistenceKey = "conversation-project-removal-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.draft.value = "不应在删除项目后恢复";
     controller.dispose({ clearPersistence: true });
+    await Promise.resolve();
 
     expect(storage.getItem(persistenceKey)).toBeNull();
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(restored.draft.value).toBe("");
     expect(restored.messages.value).toEqual([]);
@@ -1043,8 +1170,7 @@ describe("agent conversation controller", () => {
     const persistenceKey = "conversation-edit-proposal-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     const interruptedProposal = createEditProposal({
       status: "accepting",
@@ -1063,8 +1189,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(restored.getEditProposal("run_edit_1", "proposal_1")).toMatchObject({
       status: "pending",
@@ -1098,8 +1223,7 @@ describe("agent conversation controller", () => {
     const persistenceKey = "conversation-draft-section-mapping-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.upsertEditProposal(
       "run_edit_1",
@@ -1125,8 +1249,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(
       restored.getEditProposal("run_edit_1", "proposal_1")
@@ -1149,8 +1272,7 @@ describe("agent conversation controller", () => {
     const persistenceKey = "conversation-draft-section-rename-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.upsertEditProposal(
       "run_edit_1",
@@ -1172,8 +1294,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(
       restored.getEditProposal("run_edit_1", "proposal_1")
@@ -1192,8 +1313,7 @@ describe("agent conversation controller", () => {
     const persistenceKey = "conversation-draft-section-deletion-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.upsertEditProposal(
       "run_edit_1",
@@ -1214,8 +1334,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(
       restored.getEditProposal("run_edit_1", "proposal_1")
@@ -1241,8 +1360,7 @@ describe("agent conversation controller", () => {
     );
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.upsertEditProposal(
       "run_edit_1",
@@ -1291,8 +1409,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(
       restored.getEditProposal("run_edit_1", "proposal_1")
@@ -1323,8 +1440,7 @@ describe("agent conversation controller", () => {
     );
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.upsertEditProposal(
       "run_edit_1",
@@ -1374,8 +1490,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(
       restored.getEditProposal("run_edit_1", "proposal_1")
@@ -1397,8 +1512,7 @@ describe("agent conversation controller", () => {
     const persistenceKey = "conversation-long-plot-design-proposal-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.upsertEditProposal(
       "run_edit_1",
@@ -1435,8 +1549,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(
       restored.getEditProposal("run_edit_1", "proposal_1")
@@ -1461,8 +1574,7 @@ describe("agent conversation controller", () => {
     const persistenceKey = "conversation-library-proposal-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.upsertEditProposal(
       "run_edit_1",
@@ -1487,8 +1599,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(restored.getEditProposal("run_edit_1", "proposal_1")).toMatchObject({
       stageId: "library",
@@ -1508,8 +1619,7 @@ describe("agent conversation controller", () => {
     const persistenceKey = "conversation-subagent-history-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     controller.messages.value = [{
       id: "assistant-subagent-history",
@@ -1556,8 +1666,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(restored.messages.value[0]?.subagentRuns?.[0]).toMatchObject({
       subagentRunId: "subrun_history",
@@ -1584,8 +1693,7 @@ describe("agent conversation controller", () => {
     const persistenceKey = "conversation-history-test";
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     const firstSessionId = controller.sessionId.value;
     controller.messages.value = [{
@@ -1620,8 +1728,7 @@ describe("agent conversation controller", () => {
 
     const restored = useAgentConversation({
       api: () => undefined,
-      persistenceKey,
-      storage
+      ...storage.options(persistenceKey)
     });
     expect(restored.sessionId.value).toBe(firstSessionId);
     expect(restored.history.value).toHaveLength(2);
@@ -1630,24 +1737,16 @@ describe("agent conversation controller", () => {
     restored.dispose();
   });
 
-  it("merges legacy conversation buckets into one validated history", () => {
-    const storage = createMemoryStorage();
-    const targetKey = "plot-history-book";
-    const sourceKey = "plot-history-chapters";
-    const secondSourceKey = "plot-history-more-chapters";
-    const invalidSourceKey = "plot-history-invalid";
+  it("merges structured conversation snapshots into one validated history", () => {
     const activeSessionId = "session-target-active";
     const activeTimestamp = "2026-07-01T00:00:00.000Z";
-    storage.setItem(
-      targetKey,
-      JSON.stringify({
-        version: 1,
-        activeSessionId,
-        conversations: [
-          storedConversation(activeSessionId, activeTimestamp, "统一桶旧内容")
-        ]
-      })
-    );
+    const target: AgentConversationPersistenceSnapshot = {
+      version: 1,
+      activeSessionId,
+      conversations: [
+        storedConversation(activeSessionId, activeTimestamp, "统一桶旧内容")
+      ]
+    };
     const sourceConversations = [
       storedConversation(
         activeSessionId,
@@ -1662,69 +1761,50 @@ describe("agent conversation controller", () => {
         )
       )
     ];
-    storage.setItem(
-      sourceKey,
-      JSON.stringify({
-        version: 1,
-        activeSessionId: "session-source-20",
-        conversations: sourceConversations
-      })
-    );
-    storage.setItem(
-      secondSourceKey,
-      JSON.stringify({
-        version: 1,
-        activeSessionId: "session-source-38",
-        conversations: Array.from({ length: 20 }, (_, index) => {
-          const sourceIndex = index + 19;
-          return storedConversation(
-            `session-source-${sourceIndex}`,
-            new Date(Date.UTC(2026, 6, 2, 1, index)).toISOString(),
-            `章卡历史 ${sourceIndex}`
-          );
-        })
-      })
-    );
-    storage.setItem(invalidSourceKey, "{损坏的历史");
-
-    expect(
-      mergeStoredConversationHistories(storage, targetKey, [
-        sourceKey,
-        secondSourceKey,
-        invalidSourceKey,
-        sourceKey
-      ])
-    ).toBe(true);
-
-    const merged = JSON.parse(storage.getItem(targetKey) ?? "null") as {
-      activeSessionId: string;
-      conversations: Array<{
-        sessionId: string;
-        messages: Array<{ content: string }>;
-      }>;
+    const source: AgentConversationPersistenceSnapshot = {
+      version: 1,
+      activeSessionId: "session-source-20",
+      conversations: sourceConversations
     };
-    expect(merged.activeSessionId).toBe(activeSessionId);
-    expect(merged.conversations).toHaveLength(20);
+    const secondSource: AgentConversationPersistenceSnapshot = {
+      version: 1,
+      activeSessionId: "session-source-38",
+      conversations: Array.from({ length: 20 }, (_, index) => {
+        const sourceIndex = index + 19;
+        return storedConversation(
+          `session-source-${sourceIndex}`,
+          new Date(Date.UTC(2026, 6, 2, 1, index)).toISOString(),
+          `章卡历史 ${sourceIndex}`
+        );
+      })
+    };
+
+    const merged = mergeAgentConversationPersistenceSnapshots(target, [
+      source,
+      secondSource,
+      "invalid structured snapshot",
+      source
+    ]);
+
+    expect(merged?.activeSessionId).toBe(activeSessionId);
+    expect(merged?.conversations).toHaveLength(20);
     expect(
-      merged.conversations.find(
+      merged?.conversations.find(
         (conversation) => conversation.sessionId === activeSessionId
       )?.messages[0]?.content
     ).toBe("同一 session 的较新内容");
     expect(
-      merged.conversations.some(
+      merged?.conversations.some(
         (conversation) => conversation.sessionId === "session-source-0"
       )
     ).toBe(false);
-    expect(storage.getItem(sourceKey)).not.toBeNull();
-    expect(storage.getItem(invalidSourceKey)).toBe("{损坏的历史");
   });
 
   it("keeps only the 20 most recent conversations", () => {
     const storage = createMemoryStorage();
     const controller = useAgentConversation({
       api: () => undefined,
-      persistenceKey: "conversation-history-limit-test",
-      storage
+      ...storage.options("conversation-history-limit-test")
     });
 
     for (let index = 0; index < 22; index += 1) {
@@ -1791,9 +1871,7 @@ describe("agent conversation controller", () => {
 
   it("keeps the latest run choices when starting or reopening a conversation", () => {
     const controller = useAgentConversation({
-      api: () => undefined,
-      persistenceKey: "project-run-preferences-test",
-      storage: createMemoryStorage()
+      api: () => undefined
     });
     controller.applyModelSettings({
       defaultModelId: "writer",

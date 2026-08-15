@@ -75,6 +75,16 @@ const characterTextPreview = computed(() => {
   if (!text) return "（当前人物文本为空，将转换为空条目列表）";
   return text.length > 500 ? `${text.slice(0, 500)}\n……` : text;
 });
+const activeSubdialog = computed<"character-format" | "form" | "delete" | null>(
+  () =>
+    requestedCharacterFormat.value
+      ? "character-format"
+      : formOpen.value
+        ? "form"
+        : deletingStage.value
+          ? "delete"
+          : null
+);
 
 function resetPanels(): void {
   formOpen.value = false;
@@ -289,7 +299,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 <template>
   <Teleport to="body">
     <div
-      v-if="open && book"
+      v-if="open && book && !activeSubdialog"
       class="dialog-backdrop plot-structure-dialog-overlay"
       @mousedown.self="close"
     >
@@ -478,7 +488,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
     </div>
 
     <div
-      v-if="open && book && requestedCharacterFormat"
+      v-if="open && book && activeSubdialog === 'character-format'"
       class="dialog-backdrop structure-modal-overlay"
       @mousedown.self="requestedCharacterFormat = null"
       @keydown.esc.stop="requestedCharacterFormat = null"
@@ -526,7 +536,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
     </div>
 
     <div
-      v-if="open && book && formOpen"
+      v-else-if="open && book && activeSubdialog === 'form'"
       class="dialog-backdrop structure-modal-overlay"
       @mousedown.self="close"
       @keydown.esc.stop="close"
@@ -591,7 +601,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
     </div>
 
     <div
-      v-if="open && book && deletingStage"
+      v-else-if="open && book && activeSubdialog === 'delete' && deletingStage"
       class="dialog-backdrop structure-modal-overlay"
       @mousedown.self="close"
       @keydown.esc.stop="close"

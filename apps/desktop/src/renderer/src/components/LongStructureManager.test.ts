@@ -109,4 +109,12 @@ describe("LongStructureManager", () => {
     expect(source).toContain("danger-button");
     expect(source).toContain("确认同步全部数据");
   });
+
+  it("publishes one prioritized child modal so its parent can suspend", () => {
+    expect(source).toContain("const activeModal = computed");
+    expect(source).toContain('modalActiveChange: [active: boolean]');
+    expect(source).toContain('activeModal === \'form\'');
+    expect(source).toContain('activeModal === \'sync\'');
+    expect(source).toContain('activeModal === \'delete\'');
+  });
 });

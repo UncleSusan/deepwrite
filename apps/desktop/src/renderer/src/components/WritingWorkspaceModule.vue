@@ -7,6 +7,7 @@ import type {
   AgentApprovalMode,
   EditorTextReference
 } from "../types/conversation";
+import type { AgentConversationController } from "../composables/useAgentConversation";
 import AgentConversation from "./AgentConversation.vue";
 import RightEditorPane from "./RightEditorPane.vue";
 
@@ -17,23 +18,10 @@ type RightEditorPanePublicProps = InstanceType<
   typeof RightEditorPane
 >["$props"];
 
-type WritingConversationViewModel = Readonly<
+type WritingConversationContext = Readonly<
   Pick<
     AgentConversationPublicProps,
-    | "messages"
-    | "conversationHistory"
-    | "currentSessionId"
-    | "draft"
-    | "responding"
-    | "canSend"
-    | "canSendAttachments"
-    | "canStop"
     | "runtimeAvailable"
-    | "models"
-    | "selectedModelId"
-    | "thinkingLevel"
-    | "temperature"
-    | "approvalMode"
     | "contextTitle"
     | "bookTitle"
     | "stageLabel"
@@ -75,8 +63,9 @@ type WritingEditorViewModel = Readonly<
   >
 >;
 
-interface WritingWorkspaceModuleViewModel {
-  conversation: WritingConversationViewModel;
+defineProps<{
+  conversationController: AgentConversationController;
+  conversationContext: WritingConversationContext;
   editor: WritingEditorViewModel;
   rightPane: Readonly<{
     collapsed: boolean;
@@ -84,10 +73,6 @@ interface WritingWorkspaceModuleViewModel {
     maxWidth: number;
     width: number;
   }>;
-}
-
-defineProps<{
-  viewModel: WritingWorkspaceModuleViewModel;
 }>();
 
 const emit = defineEmits<{
@@ -127,7 +112,20 @@ const emit = defineEmits<{
 
 <template>
   <AgentConversation
-    v-bind="viewModel.conversation"
+    v-bind="conversationContext"
+    :messages="conversationController.messages.value"
+    :conversation-history="conversationController.history.value"
+    :current-session-id="conversationController.sessionId.value"
+    :draft="conversationController.draft.value"
+    :responding="conversationController.isBusy.value"
+    :can-send="conversationController.canSend.value"
+    :can-send-attachments="conversationController.canSendAttachments.value"
+    :can-stop="conversationController.canStop.value"
+    :models="conversationController.configuredModels.value"
+    :selected-model-id="conversationController.selectedModelId.value"
+    :thinking-level="conversationController.thinkingLevel.value"
+    :temperature="conversationController.temperature.value"
+    :approval-mode="conversationController.approvalMode.value"
     @update:draft="emit('update:draft', $event)"
     @new-conversation="emit('newConversation')"
     @select-conversation="emit('selectConversation', $event)"
@@ -148,8 +146,8 @@ const emit = defineEmits<{
   />
 
   <RightEditorPane
-    v-if="!viewModel.rightPane.collapsed"
-    v-bind="viewModel.editor"
+    v-if="!rightPane.collapsed"
+    v-bind="editor"
     @collapse="emit('collapse')"
     @save="emit('save', $event)"
     @live-change="emit('liveChange', $event)"
@@ -161,14 +159,14 @@ const emit = defineEmits<{
   />
 
   <div
-    v-if="!viewModel.rightPane.collapsed"
+    v-if="!rightPane.collapsed"
     class="pane-resizer pane-resizer-right"
     role="separator"
     aria-label="调整右侧栏宽度"
     aria-orientation="vertical"
-    :aria-valuemin="viewModel.rightPane.minWidth"
-    :aria-valuemax="viewModel.rightPane.maxWidth"
-    :aria-valuenow="viewModel.rightPane.width"
+    :aria-valuemin="rightPane.minWidth"
+    :aria-valuemax="rightPane.maxWidth"
+    :aria-valuenow="rightPane.width"
     tabindex="0"
     @pointerdown="emit('resizeStart', $event)"
     @keydown="emit('resizeKeydown', $event)"

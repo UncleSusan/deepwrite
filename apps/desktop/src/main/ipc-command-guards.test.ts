@@ -100,10 +100,49 @@ describe("IPC command requestId handling", () => {
     expect(mainSource).toContain("RemoteModelListResultSchema.parse({ models })");
   });
 
-  it("bounds editor save and snapshot forwarding instead of waiting forever", () => {
+  it("routes metadata index and on-demand document reads through every boundary", () => {
+    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const preloadSource = readFileSync(
+      new URL("../preload/index.ts", import.meta.url),
+      "utf8"
+    );
+    const apiSource = readFileSync(
+      new URL("../../../../packages/contracts/src/preload-api.ts", import.meta.url),
+      "utf8"
+    );
+    const coreSource = readFileSync(
+      new URL("../utilities/core-entry.ts", import.meta.url),
+      "utf8"
+    );
+    const initialization = coreSource.slice(
+      coreSource.indexOf("async function requireCatalogStore"),
+      coreSource.indexOf("async function handleCatalogCommand")
+    );
+
+    expect(apiSource).toContain("index(): Promise<CatalogIndexSnapshot>");
+    expect(apiSource).toContain(
+      "readDocument(input: CatalogReadDocumentInput): Promise<CatalogReadDocumentResult>"
+    );
+    expect(preloadSource).toContain("async function getCatalogIndex");
+    expect(preloadSource).toContain("async function readCatalogDocument");
+    expect(preloadSource).toContain('"catalog.index"');
+    expect(preloadSource).toContain('"catalog.readDocument"');
+    expect(mainSource).toContain('command.type === "catalog.index"');
+    expect(mainSource).toContain('command.type === "catalog.readDocument"');
+    expect(mainSource).toContain("CatalogIndexSnapshotSchema.parse(result.payload)");
+    expect(mainSource).toContain("CatalogReadDocumentResultSchema.parse(result.payload)");
+    expect(coreSource).toContain("await catalogStore.indexSnapshot()");
+    expect(coreSource).toContain("await catalogStore.readDocument(command.payload)");
+    expect(initialization).toContain("await existingFolderStore.indexSnapshot()");
+    expect(initialization).toContain("await folderStore.indexSnapshot()");
+    expect(initialization).not.toContain("existingFolderStore.snapshot()");
+    expect(initialization).not.toContain("folderStore.snapshot()");
+  });
+
+  it("bounds editor index, reads, saves, and snapshots instead of waiting forever", () => {
     const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
     const catalogForwarding = mainSource.slice(
-      mainSource.indexOf('command.type === "catalog.snapshot"'),
+      mainSource.indexOf('command.type === "catalog.index"'),
       mainSource.indexOf('if (command.type === "models.list")')
     );
 

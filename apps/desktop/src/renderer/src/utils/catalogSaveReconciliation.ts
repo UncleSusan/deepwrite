@@ -6,6 +6,22 @@ export interface WorkspaceDocumentBaseline {
   content: string;
 }
 
+/**
+ * Metadata-only catalog projections intentionally expose an empty `content`.
+ * Treat it as proof of an empty disk file only when the byte stamp also says
+ * zero; otherwise a user draft that clears a non-empty file must stay dirty.
+ */
+export function workspaceDocumentProvesDraftPersisted(
+  document: WorkspaceDocument,
+  draft: Pick<EditorDraftState, "title" | "content">
+): boolean {
+  if (document.title !== draft.title) return false;
+  if (document.catalogContentLoaded !== false) {
+    return document.content === draft.content;
+  }
+  return document.catalogContentBytes === 0 && draft.content === "";
+}
+
 export function captureWorkspaceDocumentBaselines(
   documents: readonly WorkspaceDocument[],
   workspaceId: string

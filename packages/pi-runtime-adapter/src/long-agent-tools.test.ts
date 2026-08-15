@@ -601,6 +601,36 @@ describe("long workspace agent tools", () => {
     );
   });
 
+  it("publishes unified setting tools with provider-compatible object roots", () => {
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("setting", "worldbuilding"),
+      profile: profile("setting"),
+      sessionId: "session-setting-provider-schema",
+      runId: "run-setting-provider-schema"
+    });
+
+    for (const name of [
+      "list_setting",
+      "search_setting",
+      "read_setting",
+      "create_setting",
+      "write_setting",
+      "edit_setting"
+    ]) {
+      const schema = toolByName(tools, name).parameters as {
+        type?: unknown;
+        anyOf?: unknown;
+      };
+      expect(schema.type).toBe("object");
+      expect(schema.anyOf).toBeInstanceOf(Array);
+    }
+
+    const listSchema = toolByName(tools, "list_setting").parameters;
+    expect(Check(listSchema, { domain: "worldbuilding" })).toBe(true);
+    expect(Check(listSchema, { domain: "character" })).toBe(true);
+    expect(Check(listSchema, {})).toBe(false);
+  });
+
   it("rejects a cross-volume chapter move before creating an approval proposal", async () => {
     const source = fixtureIndex();
     source.plot.volumes.push({

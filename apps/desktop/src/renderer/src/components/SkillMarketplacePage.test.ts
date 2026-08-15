@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import source from "./SkillMarketplacePage.vue?raw";
-import appSource from "../App.vue?raw";
+import appSource from "../WorkspaceShell.vue?raw";
+import featureModulesSource from "./WorkspaceFeatureModules.vue?raw";
+import featureHostSource from "../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
 import sidebarSource from "./LeftSidebar.vue?raw";
 
 describe("SkillMarketplacePage", () => {
@@ -123,16 +125,23 @@ describe("SkillMarketplacePage", () => {
   it("is reachable from More Features and mounted as a workspace page", () => {
     expect(sidebarSource).toContain('id: "skill-marketplace"');
     expect(sidebarSource).toContain('emit("openMarketplace")');
-    expect(appSource).toContain("<SkillMarketplacePage");
+    expect(featureModulesSource).toContain("<SkillMarketplacePage");
     expect(appSource).toContain('@open-marketplace="openMarketplace"');
   });
 
   it("keeps the sidebar identity synchronized with marketplace sessions", () => {
     expect(source).toContain('emit("sessionChange", nextSession)');
-    expect(appSource).toContain("void loadMarketplaceSession()");
+    expect(featureHostSource).toContain(
+      "async function loadMarketplaceSession()"
+    );
     expect(appSource).toContain(
       ':marketplace-display-name="marketplaceDisplayName"'
     );
-    expect(appSource).toContain('@session-change="applyMarketplaceSession"');
+    expect(featureModulesSource).toContain(
+      '@session-change="emit(\'marketplaceSessionChange\', $event)"'
+    );
+    expect(appSource).toContain(
+      '@marketplace-session-change="applyMarketplaceSession"'
+    );
   });
 });

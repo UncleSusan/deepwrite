@@ -52,7 +52,13 @@ import {
 } from "../types/longWorkspace";
 import type { LongApprovalEditorFocus } from "../utils/approvalNavigation";
 import AppIcon from "./AppIcon.vue";
+import LongCharacterNavigation from "./LongCharacterNavigation.vue";
+import LongContinuityLedgerNavigation from "./LongContinuityLedgerNavigation.vue";
 import LongForeshadowingWorkspace from "./LongForeshadowingWorkspace.vue";
+import LongManuscriptEditor from "./LongManuscriptEditor.vue";
+import LongManuscriptNavigation from "./LongManuscriptNavigation.vue";
+import LongPlotStoryListPane from "./LongPlotStoryListPane.vue";
+import LongWorldbuildingNavigation from "./LongWorldbuildingNavigation.vue";
 import MarkdownContent from "./MarkdownContent.vue";
 
 const props = defineProps<{
@@ -195,7 +201,6 @@ const activeStoryPlotId = ref<string | null>(null);
 const pendingStoryPlotId = ref<string | null>(null);
 const pendingStoryPlotDeleteId = ref<string | null>(null);
 const storyPlotActionMenuId = ref<string | null>(null);
-const chapterCardActionMenuId = ref<string | null>(null);
 const longEditorDocumentElement = ref<HTMLElement | null>(null);
 const storyPlotLayoutElement = ref<HTMLElement | null>(null);
 const longEditorPanePreferences = loadLongEditorPanePreferences(
@@ -245,7 +250,7 @@ const navigationDeletePending = ref(false);
 const navigationDeleteDialog = ref<HTMLElement>();
 const navigationDeleteCancelButton = ref<HTMLButtonElement>();
 const workspaceSavePending = ref(false);
-const editorInput = ref<HTMLTextAreaElement>();
+const editorInput = ref<HTMLTextAreaElement | null>(null);
 const editorToolsElement = ref<HTMLElement>();
 const findPanelElement = ref<HTMLElement>();
 const findInput = ref<HTMLInputElement>();
@@ -263,6 +268,11 @@ let pendingEditorInput: {
   inputType: string;
   timestamp: number;
 } | null = null;
+
+function setEditorInputElement(element: HTMLTextAreaElement | null): void {
+  editorInput.value = element;
+}
+
 const requestClockByFile = new Map<string, number>();
 const inflightDocumentLoads = new Map<string, Promise<void>>();
 const recoveryWriteTimers = new Map<
@@ -641,18 +651,6 @@ const currentChapterCardCommitted = computed(() => {
   );
 });
 
-function canReorderChapterCard(
-  chapterCardId: LongChapterCardId,
-  index: number,
-  direction: "up" | "down"
-): boolean {
-  const tabs = props.selection?.chapterCardTabs ?? [];
-  if (props.locked) return false;
-  const targetIndex = direction === "up" ? index - 1 : index + 1;
-  if (targetIndex < 0 || targetIndex >= tabs.length) return false;
-  return true;
-}
-
 const currentIsCommittedEditableDocument = computed(
   () =>
     currentChapterCardCommitted.value &&
@@ -861,6 +859,9 @@ const currentUsesRightCharacterList = computed(
   () =>
     currentIsCharacterGroup.value && currentSharedItemLayout.value === "right-list"
 );
+const currentCharacterNavigationItems = computed(
+  () => props.selection?.characterTabs ?? []
+);
 const currentUsesTopPlotTabs = computed(
   () =>
     (currentIsBookLineWorkspace.value ||
@@ -882,10 +883,23 @@ const currentUsesRightChapterCardList = computed(
     currentIsChapterCardWorkspace.value &&
     currentPlotItemLayout.value === "right-list"
 );
+const currentUsesTopContinuityTabs = computed(
+  () =>
+    props.selection?.root === "continuity_ledger" &&
+    currentSharedItemLayout.value === "top-tabs"
+);
 const currentUsesRightContinuityList = computed(
   () =>
     props.selection?.root === "continuity_ledger" &&
     currentSharedItemLayout.value === "right-list"
+);
+const currentContinuityNavigationItems = computed(() =>
+  props.selection?.root === "continuity_ledger"
+    ? props.selection.files.map((file) => ({
+        id: file.file.id,
+        label: file.label
+      }))
+    : []
 );
 const currentUsesAnyRightEntryList = computed(
   () =>
@@ -1060,23 +1074,19 @@ const showGenericFileTabs = computed(
     !currentIsPlotPointWorkspace.value &&
     !currentIsBookLineWorkspace.value &&
     !currentIsChapterCardWorkspace.value &&
+    !currentUsesTopContinuityTabs.value &&
     !currentUsesRightContinuityList.value &&
     !currentUsesLeftTreeContinuity.value
 );
 const currentWorldbuildingListState = computed<{
-  items: Array<{ id: string; title: string; content: string }>;
+  items: Array<{ id: string; title: string }>;
   error: string | null;
 }>(() => {
   if (!currentIsWorldbuildingList.value) {
     return { items: [], error: null };
   }
   return {
-    items: (props.selection?.worldbuildingItems ?? []).map((item) => ({
-      id: item.id,
-      title: item.title,
-      content:
-        documentStates.value[stateKey(item.file.id)]?.content ?? ""
-    })),
+    items: props.selection?.worldbuildingItems ?? [],
     error: null
   };
 });
@@ -2331,24 +2341,22 @@ function closeStoryPlotActionMenu(): void {
   storyPlotActionMenuId.value = null;
 }
 
-function toggleChapterCardActionMenu(chapterCardId: string): void {
-  chapterCardActionMenuId.value =
-    chapterCardActionMenuId.value === chapterCardId ? null : chapterCardId;
-}
-
-function closeChapterCardActionMenu(): void {
-  chapterCardActionMenuId.value = null;
-}
-
 function reorderChapterCard(
   chapterCardId: LongChapterCardId,
   direction: "up" | "down"
 ): void {
   const tabs = props.selection?.chapterCardTabs ?? [];
   const index = tabs.findIndex(({ id }) => id === chapterCardId);
-  if (!canReorderChapterCard(chapterCardId, index, direction)) return;
-  const orderedIds = tabs.map(({ id }) => id);
   const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (
+    props.locked ||
+    index < 0 ||
+    targetIndex < 0 ||
+    targetIndex >= tabs.length
+  ) {
+    return;
+  }
+  const orderedIds = tabs.map(({ id }) => id);
   [orderedIds[index], orderedIds[targetIndex]] = [
     orderedIds[targetIndex]!,
     orderedIds[index]!
@@ -2385,21 +2393,6 @@ function openChapterCardDelete(chapterCardId: LongChapterCardId): void {
   });
 }
 
-function runChapterCardMenuAction(
-  chapterCardId: LongChapterCardId,
-  index: number,
-  action: "up" | "down" | "delete"
-): void {
-  closeChapterCardActionMenu();
-  if (action === "delete") {
-    openChapterCardDelete(chapterCardId);
-    return;
-  }
-  if (canReorderChapterCard(chapterCardId, index, action)) {
-    reorderChapterCard(chapterCardId, action);
-  }
-}
-
 function runStoryPlotMenuAction(
   storyPlotId: string,
   action: "up" | "down" | "delete"
@@ -2427,13 +2420,6 @@ function handleWindowPointerDown(event: PointerEvent): void {
       !target.closest(".long-story-plot-card-actions"))
   ) {
     closeStoryPlotActionMenu();
-  }
-  if (
-    chapterCardActionMenuId.value &&
-    (!(target instanceof Element) ||
-      !target.closest(".long-chapter-card-actions"))
-  ) {
-    closeChapterCardActionMenu();
   }
 }
 
@@ -3660,11 +3646,13 @@ watch(
 
 watch(
   () =>
-    props.selection?.characterTabs?.map(({ id }) => id).join("\u0000") ?? "",
+    currentCharacterNavigationItems.value
+      .map(({ id }) => id)
+      .join("\u0000"),
   () => {
     if (
       pendingCharacterId.value &&
-      !(props.selection?.characterTabs ?? []).some(
+      !currentCharacterNavigationItems.value.some(
         ({ id }) => id === pendingCharacterId.value
       )
     ) {
@@ -3934,55 +3922,20 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <nav
+      <LongCharacterNavigation
         v-if="currentUsesTopCharacterTabs"
-        class="section-tabs-bar long-worldbuilding-tabs long-character-tabs"
-        :aria-label="`${selection.characterGroup ?? '人物'}人物`"
-      >
-        <div
-          class="section-tabs-scroll"
-          role="tablist"
-          @wheel="handleHorizontalOverflowWheel"
-        >
-          <button
-            v-for="character in selection.characterTabs"
-            :key="character.id"
-            class="section-tab"
-            :class="{
-              'is-active': selection.characterId === character.id,
-              'is-loading': pendingCharacterId === character.id
-            }"
-            type="button"
-            role="tab"
-            :aria-selected="selection.characterId === character.id"
-            :aria-busy="pendingCharacterId === character.id"
-            :title="character.label"
-            @click="requestSelectCharacter(character.id)"
-          >
-            {{ character.label }}
-          </button>
-        </div>
-        <button
-          class="long-worldbuilding-add"
-          type="button"
-          aria-label="新增人物"
-          title="新增人物"
-          :disabled="locked"
-          @click="emit('createCharacter')"
-        >
-          <AppIcon name="plus" :size="15" />
-        </button>
-        <button
-          class="long-worldbuilding-remove"
-          type="button"
-          aria-label="删除当前人物"
-          title="删除当前人物"
-          :disabled="locked || !currentNavigationDeleteTarget"
-          @click="openNavigationDelete"
-        >
-          <AppIcon name="minus" :size="15" />
-        </button>
-      </nav>
+        mode="top-tabs"
+        :label="`${selection.characterGroup ?? '人物'}人物`"
+        :title="selection.title"
+        :items="currentCharacterNavigationItems"
+        :active-character-id="selection.characterId ?? null"
+        :pending-character-id="pendingCharacterId"
+        :locked="locked"
+        :can-delete="Boolean(currentNavigationDeleteTarget)"
+        @select-character="requestSelectCharacter"
+        @create-character="emit('createCharacter')"
+        @delete-character="openNavigationDelete"
+      />
 
       <nav
         v-if="currentIsBookLineWorkspace && currentUsesTopPlotTabs"
@@ -4092,133 +4045,34 @@ onBeforeUnmount(() => {
         </button>
       </nav>
 
-      <nav
+      <LongManuscriptNavigation
         v-if="currentIsChapterCardWorkspace && currentUsesTopPlotTabs"
-        class="section-tabs-bar long-worldbuilding-tabs long-chapter-card-tabs"
-        :aria-label="`${selection.breadcrumbs[3] ?? '当前分卷'}章卡`"
-      >
-        <div
-          class="section-tabs-scroll"
-          role="tablist"
-          @wheel="handleHorizontalOverflowWheel"
-        >
-          <button
-            v-for="chapterCard in selection.chapterCardTabs"
-            :key="chapterCard.id"
-            class="section-tab"
-            :class="{
-              'is-active': selection.chapterCardId === chapterCard.id
-            }"
-            type="button"
-            role="tab"
-            :aria-selected="selection.chapterCardId === chapterCard.id"
-            :title="chapterCard.label"
-            @click="emit('selectChapterCard', chapterCard.id)"
-          >
-            {{ chapterCard.label }}
-          </button>
-        </div>
-        <button
-          class="long-worldbuilding-add"
-          type="button"
-          aria-label="新增章卡"
-          title="新增章卡"
-          :disabled="locked"
-          @click="emit('createChapterCard')"
-        >
-          <AppIcon name="plus" :size="15" />
-        </button>
-        <button
-          class="long-worldbuilding-remove"
-          type="button"
-          aria-label="删除当前章卡"
-          :title="
-            currentChapterCardCommitted
-              ? '删除当前章卡及对应正文和连续性记录'
-              : '删除当前章卡'
-          "
-          :disabled="
-            locked ||
-            !currentNavigationDeleteTarget
-          "
-          @click="openNavigationDelete"
-        >
-          <AppIcon name="minus" :size="15" />
-        </button>
-      </nav>
+        mode="top-tabs"
+        :label="`${selection.breadcrumbs[3] ?? '当前分卷'}章卡`"
+        :items="selection.chapterCardTabs ?? []"
+        :active-chapter-id="selection.chapterCardId ?? null"
+        :locked="locked"
+        :committed="currentChapterCardCommitted"
+        @select-chapter="emit('selectChapterCard', $event)"
+        @create-chapter="emit('createChapterCard')"
+        @delete-chapter="openChapterCardDelete"
+        @reorder-chapter="reorderChapterCard"
+      />
 
-      <nav
+      <LongWorldbuildingNavigation
         v-if="currentUsesTopWorldbuildingTabs"
-        class="section-tabs-bar long-worldbuilding-tabs"
-        aria-label="世界观条目"
-      >
-        <div
-          class="section-tabs-scroll"
-          role="tablist"
-          @wheel="handleHorizontalOverflowWheel"
-        >
-          <button
-            class="section-tab"
-            :class="{
-              'is-active': activeWorldbuildingItemId === null,
-              'is-loading': pendingWorldbuildingOverview
-            }"
-            type="button"
-            role="tab"
-            :aria-selected="activeWorldbuildingItemId === null"
-            :aria-busy="pendingWorldbuildingOverview"
-            title="概览"
-            @click="selectWorldbuildingOverview"
-          >
-            概览
-          </button>
-          <button
-            v-for="item in currentWorldbuildingItems"
-            :key="item.id"
-            class="section-tab"
-            :class="{
-              'is-active': currentWorldbuildingItem?.id === item.id,
-              'is-loading': pendingWorldbuildingItemId === item.id
-            }"
-            type="button"
-            role="tab"
-            :aria-selected="currentWorldbuildingItem?.id === item.id"
-            :aria-busy="pendingWorldbuildingItemId === item.id"
-            :title="item.title"
-            @click="selectWorldbuildingItem(item.id)"
-          >
-            {{ item.title }}
-          </button>
-        </div>
-        <button
-          v-if="!currentReadOnly"
-          class="long-worldbuilding-add"
-          type="button"
-          aria-label="新建世界观条目"
-          title="新建条目"
-          @click="addWorldbuildingItem"
-        >
-          <AppIcon name="plus" :size="15" />
-        </button>
-        <button
-          v-if="!currentReadOnly"
-          class="long-worldbuilding-remove"
-          type="button"
-          aria-label="删除当前世界观条目"
-          :title="
-            currentWorldbuildingItem
-              ? '删除当前世界观条目'
-              : '请先选择一个世界观条目'
-          "
-          :disabled="locked || !currentWorldbuildingItem"
-          @click="
-            currentWorldbuildingItem &&
-              openWorldbuildingItemDelete(currentWorldbuildingItem.id)
-          "
-        >
-          <AppIcon name="minus" :size="15" />
-        </button>
-      </nav>
+        mode="top-tabs"
+        :items="currentWorldbuildingItems"
+        :active-item-id="activeWorldbuildingItemId"
+        :pending-item-id="pendingWorldbuildingItemId"
+        :pending-overview="pendingWorldbuildingOverview"
+        :read-only="currentReadOnly"
+        :locked="locked"
+        @select-overview="selectWorldbuildingOverview"
+        @select-item="selectWorldbuildingItem"
+        @add-item="addWorldbuildingItem"
+        @delete-item="openWorldbuildingItemDelete"
+      />
 
       <div
         v-if="!currentIsForeshadowingWorkspace"
@@ -4292,6 +4146,15 @@ onBeforeUnmount(() => {
             伏笔触点
           </button>
         </div>
+        <LongContinuityLedgerNavigation
+          v-if="currentUsesTopContinuityTabs"
+          mode="top-tabs"
+          :title="selection.title"
+          :items="currentContinuityNavigationItems"
+          :active-file-id="currentSelectionFile?.file.id ?? null"
+          :pending-file-id="pendingFileId"
+          @select-file="selectWorkspaceFile"
+        />
         <div
           v-if="showGenericFileTabs"
           class="long-editor-file-tabs"
@@ -4321,6 +4184,7 @@ onBeforeUnmount(() => {
             ((currentIsBookLineWorkspace && currentBookLineVolume) ||
               (currentIsPlotPointWorkspace && currentPlotPoint) ||
               (currentIsChapterCardWorkspace && currentChapterCard) ||
+              currentUsesTopContinuityTabs ||
               showGenericFileTabs)
           "
           class="long-toolbar-separator"
@@ -4622,118 +4486,18 @@ onBeforeUnmount(() => {
             }"
             :style="storyPlotListGridStyle"
           >
-            <aside class="long-story-plot-pane" aria-label="故事情节列表">
-              <header>
-                <div>
-                  <strong>当前剧情点涉及</strong>
-                  <span>{{ currentStoryPlots.length }}</span>
-                </div>
-              </header>
-              <div
-                v-if="currentStoryPlots.length"
-                class="long-story-plot-list"
-                role="list"
-              >
-                <article
-                  v-for="(plot, index) in currentStoryPlots"
-                  :key="plot.id"
-                  class="long-story-plot-card"
-                  :class="{
-                    'is-active': plot.id === activeStoryPlotId,
-                    'is-loading': pendingStoryPlotId === plot.id,
-                    'is-menu-open': storyPlotActionMenuId === plot.id
-                  }"
-                  role="listitem"
-                >
-                  <button
-                    class="long-story-plot-card-main"
-                    type="button"
-                    :aria-pressed="plot.id === activeStoryPlotId"
-                    @click="selectStoryPlot(plot.id)"
-                  >
-                    <span class="long-story-plot-card-order">
-                      {{ index + 1 }}
-                    </span>
-                    <span class="long-story-plot-card-title">{{
-                      plot.title
-                    }}</span>
-                  </button>
-                  <div
-                    v-if="!currentReadOnly"
-                    class="long-story-plot-card-actions"
-                    :class="{
-                      'is-menu-open': storyPlotActionMenuId === plot.id
-                    }"
-                  >
-                    <button
-                      class="long-story-plot-more-button"
-                      :class="{
-                        'is-active': storyPlotActionMenuId === plot.id
-                      }"
-                      type="button"
-                      :aria-label="`${plot.title}更多操作`"
-                      :aria-expanded="storyPlotActionMenuId === plot.id"
-                      aria-haspopup="menu"
-                      :disabled="locked"
-                      @click.stop="toggleStoryPlotActionMenu(plot.id)"
-                    >
-                      <AppIcon name="more" :size="16" />
-                    </button>
-                    <div
-                      v-if="storyPlotActionMenuId === plot.id"
-                      class="long-story-plot-action-menu"
-                      role="menu"
-                      @keydown.esc.stop="closeStoryPlotActionMenu"
-                    >
-                      <button
-                        class="long-story-plot-action-menu-item"
-                        type="button"
-                        role="menuitem"
-                        :disabled="index === 0"
-                        @click.stop="runStoryPlotMenuAction(plot.id, 'up')"
-                      >
-                        <AppIcon name="arrow-up" :size="14" />
-                        <span>上移</span>
-                      </button>
-                      <button
-                        class="long-story-plot-action-menu-item"
-                        type="button"
-                        role="menuitem"
-                        :disabled="
-                          index === currentStoryPlots.length - 1
-                        "
-                        @click.stop="
-                          runStoryPlotMenuAction(plot.id, 'down')
-                        "
-                      >
-                        <AppIcon
-                          class="long-story-plot-arrow-down"
-                          name="arrow-up"
-                          :size="14"
-                        />
-                        <span>下移</span>
-                      </button>
-                      <button
-                        class="long-story-plot-action-menu-item is-danger"
-                        type="button"
-                        role="menuitem"
-                        @click.stop="
-                          runStoryPlotMenuAction(plot.id, 'delete')
-                        "
-                      >
-                        <AppIcon name="trash" :size="14" />
-                        <span>删除</span>
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              </div>
-              <div v-else class="long-story-plot-pane-empty">
-                <AppIcon name="sparkles" :size="22" />
-                <strong>当前范围还没有故事情节</strong>
-                <span>新增情节后会出现在这里，左侧可直接编写正文。</span>
-              </div>
-            </aside>
+            <LongPlotStoryListPane
+              :plots="currentStoryPlots"
+              :active-story-plot-id="activeStoryPlotId"
+              :pending-story-plot-id="pendingStoryPlotId"
+              :action-menu-id="storyPlotActionMenuId"
+              :read-only="currentReadOnly"
+              :locked="locked"
+              @select="selectStoryPlot"
+              @toggle-action-menu="toggleStoryPlotActionMenu"
+              @close-action-menu="closeStoryPlotActionMenu"
+              @menu-action="runStoryPlotMenuAction"
+            />
 
             <div
               class="long-editor-internal-resizer long-story-plot-resizer"
@@ -5034,6 +4798,35 @@ onBeforeUnmount(() => {
             重新读取
           </button>
         </div>
+        <LongManuscriptEditor
+          v-else-if="
+            selection.root === 'draft' &&
+            (currentState?.loaded ||
+              Boolean(currentState?.content) ||
+              isDocumentSwitchPending)
+          "
+          v-model:title-draft="structureTitleDraft"
+          :title="currentDocumentTitle"
+          :title-editable="Boolean(currentStructureTitleTarget)"
+          :title-read-only="currentStructureTitleReadOnly"
+          :eyebrow="documentEyebrow"
+          :format="currentDocumentFormat"
+          :content="currentVisibleContent"
+          :view-mode="viewMode"
+          :read-only="currentReadOnly"
+          :busy="isDocumentContentBusy"
+          :committed-notice="
+            currentIsCommittedEditableDocument
+              ? currentCommittedEditNotice
+              : undefined
+          "
+          @title-change="saveStructureTitle"
+          @title-keydown="handleStructureTitleKeydown"
+          @beforeinput="handleEditorBeforeInput"
+          @input="handleEditorInput"
+          @keydown="handleEditorKeydown"
+          @editor-element-change="setEditorInputElement"
+        />
         <div
           v-else-if="
             currentState?.loaded ||
@@ -5241,147 +5034,34 @@ onBeforeUnmount(() => {
           @keydown="handleLongEditorPaneResizeKeydown('entry-list', $event)"
         />
 
-        <aside
+        <LongWorldbuildingNavigation
           v-if="currentUsesRightWorldbuildingList"
-          class="long-story-plot-pane long-entry-list-pane"
-          aria-label="世界观条目列表"
-        >
-          <header>
-            <div>
-              <strong>世界观条目</strong>
-              <span>{{ currentWorldbuildingItems.length }}</span>
-            </div>
-            <div
-              v-if="!currentReadOnly"
-              class="long-entry-list-actions"
-            >
-              <button
-                type="button"
-                aria-label="新建世界观条目"
-                title="新建条目"
-                :disabled="locked"
-                @click="addWorldbuildingItem"
-              >
-                <AppIcon name="plus" :size="14" />
-              </button>
-              <button
-                type="button"
-                aria-label="删除当前世界观条目"
-                :title="
-                  currentWorldbuildingItem
-                    ? '删除当前世界观条目'
-                    : '请先选择一个世界观条目'
-                "
-                :disabled="locked || !currentWorldbuildingItem"
-                @click="
-                  currentWorldbuildingItem &&
-                    openWorldbuildingItemDelete(currentWorldbuildingItem.id)
-                "
-              >
-                <AppIcon name="minus" :size="14" />
-              </button>
-            </div>
-          </header>
-          <div class="long-story-plot-list" role="list">
-            <article
-              class="long-story-plot-card"
-              :class="{
-                'is-active': activeWorldbuildingItemId === null,
-                'is-loading': pendingWorldbuildingOverview
-              }"
-              role="listitem"
-            >
-              <button
-                class="long-story-plot-card-main"
-                type="button"
-                :aria-pressed="activeWorldbuildingItemId === null"
-                :aria-busy="pendingWorldbuildingOverview"
-                @click="selectWorldbuildingOverview"
-              >
-                <span class="long-story-plot-card-order">—</span>
-                <span class="long-story-plot-card-title">概览</span>
-              </button>
-            </article>
-            <article
-              v-for="(item, index) in currentWorldbuildingItems"
-              :key="item.id"
-              class="long-story-plot-card"
-              :class="{
-                'is-active': currentWorldbuildingItem?.id === item.id,
-                'is-loading': pendingWorldbuildingItemId === item.id
-              }"
-              role="listitem"
-            >
-              <button
-                class="long-story-plot-card-main"
-                type="button"
-                :aria-pressed="currentWorldbuildingItem?.id === item.id"
-                :aria-busy="pendingWorldbuildingItemId === item.id"
-                :title="item.title"
-                @click="selectWorldbuildingItem(item.id)"
-              >
-                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
-                <span class="long-story-plot-card-title">{{ item.title }}</span>
-              </button>
-            </article>
-          </div>
-        </aside>
-        <aside
+          mode="right-list"
+          :items="currentWorldbuildingItems"
+          :active-item-id="activeWorldbuildingItemId"
+          :pending-item-id="pendingWorldbuildingItemId"
+          :pending-overview="pendingWorldbuildingOverview"
+          :read-only="currentReadOnly"
+          :locked="locked"
+          @select-overview="selectWorldbuildingOverview"
+          @select-item="selectWorldbuildingItem"
+          @add-item="addWorldbuildingItem"
+          @delete-item="openWorldbuildingItemDelete"
+        />
+        <LongCharacterNavigation
           v-if="currentUsesRightCharacterList"
-          class="long-story-plot-pane long-entry-list-pane"
-          :aria-label="`${selection.characterGroup ?? '人物'}人物列表`"
-        >
-          <header>
-            <div>
-              <strong>{{ selection.title }}</strong>
-              <span>{{ selection.characterTabs?.length ?? 0 }}</span>
-            </div>
-            <div class="long-entry-list-actions">
-              <button
-                type="button"
-                aria-label="新增人物"
-                title="新增人物"
-                :disabled="locked"
-                @click="emit('createCharacter')"
-              >
-                <AppIcon name="plus" :size="14" />
-              </button>
-              <button
-                type="button"
-                aria-label="删除当前人物"
-                title="删除当前人物"
-                :disabled="locked || !currentNavigationDeleteTarget"
-                @click="openNavigationDelete"
-              >
-                <AppIcon name="minus" :size="14" />
-              </button>
-            </div>
-          </header>
-          <div class="long-story-plot-list" role="list">
-            <article
-              v-for="(character, index) in selection.characterTabs"
-              :key="character.id"
-              class="long-story-plot-card"
-              :class="{
-                'is-active': selection.characterId === character.id,
-                'is-loading': pendingCharacterId === character.id
-              }"
-              role="listitem"
-            >
-              <button
-                class="long-story-plot-card-main"
-                type="button"
-                :aria-pressed="selection.characterId === character.id"
-                :aria-busy="pendingCharacterId === character.id"
-                :title="character.label"
-                @click="requestSelectCharacter(character.id)"
-              >
-                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
-                <span class="long-story-plot-card-title">{{ character.label }}</span>
-              </button>
-            </article>
-          </div>
-        </aside>
+          mode="right-list"
+          :label="`${selection.characterGroup ?? '人物'}人物`"
+          :title="selection.title"
+          :items="currentCharacterNavigationItems"
+          :active-character-id="selection.characterId ?? null"
+          :pending-character-id="pendingCharacterId"
+          :locked="locked"
+          :can-delete="Boolean(currentNavigationDeleteTarget)"
+          @select-character="requestSelectCharacter"
+          @create-character="emit('createCharacter')"
+          @delete-character="openNavigationDelete"
+        />
         <aside
           v-if="currentUsesRightBookLineList"
           class="long-story-plot-pane long-entry-list-pane"
@@ -5461,152 +5141,28 @@ onBeforeUnmount(() => {
             </article>
           </div>
         </aside>
-        <aside
+        <LongManuscriptNavigation
           v-if="currentUsesRightChapterCardList"
-          class="long-story-plot-pane long-entry-list-pane"
-          aria-label="章卡列表"
-        >
-          <header>
-            <div>
-              <strong>章卡</strong>
-              <span>{{ selection.chapterCardTabs?.length ?? 0 }}</span>
-            </div>
-            <div class="long-entry-list-actions">
-              <button type="button" aria-label="新增章卡" title="新增章卡" :disabled="locked" @click="emit('createChapterCard')">
-                <AppIcon name="plus" :size="14" />
-              </button>
-              <button type="button" aria-label="删除当前章卡" :disabled="locked || !currentNavigationDeleteTarget" @click="openNavigationDelete">
-                <AppIcon name="minus" :size="14" />
-              </button>
-            </div>
-          </header>
-          <div class="long-story-plot-list" role="list">
-            <article
-              v-for="(chapterCard, index) in selection.chapterCardTabs"
-              :key="chapterCard.id"
-              class="long-story-plot-card"
-              :class="{
-                'is-active': selection.chapterCardId === chapterCard.id,
-                'is-menu-open': chapterCardActionMenuId === chapterCard.id
-              }"
-              role="listitem"
-            >
-              <button class="long-story-plot-card-main" type="button" :aria-pressed="selection.chapterCardId === chapterCard.id" :title="chapterCard.label" @click="emit('selectChapterCard', chapterCard.id)">
-                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
-                <span class="long-story-plot-card-title">{{ chapterCard.label }}</span>
-              </button>
-              <div
-                class="long-story-plot-card-actions long-chapter-card-actions"
-                :class="{
-                  'is-menu-open': chapterCardActionMenuId === chapterCard.id
-                }"
-              >
-                <button
-                  class="long-story-plot-more-button"
-                  :class="{
-                    'is-active': chapterCardActionMenuId === chapterCard.id
-                  }"
-                  type="button"
-                  :aria-label="`${chapterCard.label}更多操作`"
-                  :aria-expanded="chapterCardActionMenuId === chapterCard.id"
-                  aria-haspopup="menu"
-                  :disabled="locked"
-                  @click.stop="toggleChapterCardActionMenu(chapterCard.id)"
-                >
-                  <AppIcon name="more" :size="16" />
-                </button>
-                <div
-                  v-if="chapterCardActionMenuId === chapterCard.id"
-                  class="long-story-plot-action-menu"
-                  :class="{
-                    'opens-upward':
-                      index >= 2 &&
-                      index >= (selection.chapterCardTabs?.length ?? 0) - 2
-                  }"
-                  role="menu"
-                  @keydown.esc.stop="closeChapterCardActionMenu"
-                >
-                  <button
-                    class="long-story-plot-action-menu-item"
-                    type="button"
-                    role="menuitem"
-                    :disabled="
-                      !canReorderChapterCard(chapterCard.id, index, 'up')
-                    "
-                    @click.stop="
-                      runChapterCardMenuAction(chapterCard.id, index, 'up')
-                    "
-                  >
-                    <AppIcon name="arrow-up" :size="14" />
-                    <span>上移</span>
-                  </button>
-                  <button
-                    class="long-story-plot-action-menu-item"
-                    type="button"
-                    role="menuitem"
-                    :disabled="
-                      !canReorderChapterCard(chapterCard.id, index, 'down')
-                    "
-                    @click.stop="
-                      runChapterCardMenuAction(chapterCard.id, index, 'down')
-                    "
-                  >
-                    <AppIcon
-                      class="long-story-plot-arrow-down"
-                      name="arrow-up"
-                      :size="14"
-                    />
-                    <span>下移</span>
-                  </button>
-                  <button
-                    class="long-story-plot-action-menu-item is-danger"
-                    type="button"
-                    role="menuitem"
-                    @click.stop="
-                      runChapterCardMenuAction(
-                        chapterCard.id,
-                        index,
-                        'delete'
-                      )
-                    "
-                  >
-                    <AppIcon name="trash" :size="14" />
-                    <span>删除</span>
-                  </button>
-                </div>
-              </div>
-            </article>
-          </div>
-        </aside>
-        <aside
+          mode="right-list"
+          label="章卡列表"
+          :items="selection.chapterCardTabs ?? []"
+          :active-chapter-id="selection.chapterCardId ?? null"
+          :locked="locked"
+          :committed="currentChapterCardCommitted"
+          @select-chapter="emit('selectChapterCard', $event)"
+          @create-chapter="emit('createChapterCard')"
+          @delete-chapter="openChapterCardDelete"
+          @reorder-chapter="reorderChapterCard"
+        />
+        <LongContinuityLedgerNavigation
           v-if="currentUsesRightContinuityList"
-          class="long-story-plot-pane long-entry-list-pane"
-          aria-label="连续性账本文件列表"
-        >
-          <header>
-            <div>
-              <strong>本章记录</strong>
-              <span>{{ selection.files.length }}</span>
-            </div>
-          </header>
-          <div class="long-story-plot-list" role="list">
-            <article
-              v-for="(file, index) in selection.files"
-              :key="file.file.id"
-              class="long-story-plot-card"
-              :class="{
-                'is-active': currentSelectionFile?.file.id === file.file.id,
-                'is-loading': pendingFileId === file.file.id
-              }"
-              role="listitem"
-            >
-              <button class="long-story-plot-card-main" type="button" :aria-pressed="currentSelectionFile?.file.id === file.file.id" :aria-busy="pendingFileId === file.file.id" :title="file.label" @click="selectWorkspaceFile(file.file.id)">
-                <span class="long-story-plot-card-order">{{ index + 1 }}</span>
-                <span class="long-story-plot-card-title">{{ file.label }}</span>
-              </button>
-            </article>
-          </div>
-        </aside>
+          mode="right-list"
+          :title="selection.title"
+          :items="currentContinuityNavigationItems"
+          :active-file-id="currentSelectionFile?.file.id ?? null"
+          :pending-file-id="pendingFileId"
+          @select-file="selectWorkspaceFile"
+        />
       </div>
 
       <footer class="long-editor-footer">
@@ -5929,61 +5485,6 @@ onBeforeUnmount(() => {
   min-height: 52px;
   padding-top: 10px;
   padding-bottom: 8px;
-}
-
-.long-worldbuilding-tabs.section-tabs-bar {
-  min-height: 42px;
-  padding-right: 10px;
-  border-color: var(--theme-line-soft);
-  background: var(--surface-raised);
-}
-
-.long-worldbuilding-tabs .section-tab {
-  color: var(--text-tertiary);
-}
-
-.long-worldbuilding-tabs .section-tab:hover,
-.long-worldbuilding-tabs .section-tab.is-active {
-  color: var(--text-primary);
-}
-
-.long-worldbuilding-tabs .section-tab.is-loading {
-  color: var(--text-secondary);
-  cursor: progress;
-}
-
-.long-worldbuilding-add,
-.long-worldbuilding-remove {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  align-self: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.long-worldbuilding-remove {
-  margin-left: 2px;
-}
-
-.long-worldbuilding-add:hover,
-.long-worldbuilding-remove:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.long-worldbuilding-remove:hover:not(:disabled) {
-  color: var(--danger);
-}
-
-.long-worldbuilding-add:disabled,
-.long-worldbuilding-remove:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
 }
 
 .long-editor-toolbar {
@@ -6314,44 +5815,6 @@ onBeforeUnmount(() => {
 :global(html.is-long-editor-pane-resizing *) {
   cursor: col-resize !important;
   user-select: none !important;
-}
-
-.long-entry-list-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 3px;
-}
-
-.long-entry-list-actions button {
-  display: grid;
-  place-items: center;
-  width: 25px;
-  height: 25px;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-}
-
-.long-entry-list-actions button:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.long-entry-list-actions button:disabled {
-  cursor: default;
-  opacity: 0.35;
-}
-
-.long-entry-list-pane .long-story-plot-card.is-loading {
-  opacity: 0.62;
-}
-
-.long-entry-list-pane
-  .long-story-plot-card.is-loading
-  .long-story-plot-card-main {
-  cursor: progress;
 }
 
 .long-editor-writing-surface {
@@ -6969,220 +6432,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.long-story-plot-pane {
-  order: 2;
-  grid-row: 1;
-  grid-column: 3;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border-left: 1px solid var(--theme-line-soft);
-  background: var(--surface-raised);
-}
-
-.long-story-plot-pane > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-width: 0;
-  gap: 8px;
-  padding: 9px 10px;
-  border-bottom: 1px solid var(--theme-line-soft);
-}
-
-.long-story-plot-pane > header > div {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 6px;
-}
-
-.long-story-plot-pane > header strong {
-  font-size: 0.75rem;
-}
-
-.long-story-plot-pane > header span {
-  color: var(--text-tertiary);
-  font-size: 0.642857rem;
-}
-
-.long-story-plot-list {
-  min-height: 0;
-  padding: 7px;
-  overflow-y: auto;
-}
-
-.long-story-plot-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  min-width: 0;
-  border: 1px solid transparent;
-  border-radius: 9px;
-}
-
-.long-story-plot-card + .long-story-plot-card {
-  margin-top: 4px;
-}
-
-.long-story-plot-card:hover,
-.long-story-plot-card.is-active {
-  border-color: var(--theme-line-soft);
-  background: var(--surface-hover);
-}
-
-.long-story-plot-card.is-active {
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--theme-line));
-  background: var(--surface-selected);
-}
-
-.long-story-plot-card-main {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 6px;
-  padding: 9px;
-  background: transparent;
-  color: var(--text-secondary);
-  text-align: left;
-  cursor: pointer;
-}
-
-.long-story-plot-card-main:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.long-story-plot-card-order {
-  flex: 0 0 auto;
-  min-width: 0.9rem;
-  color: var(--text-tertiary);
-  font-size: 0.535714rem;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  text-align: right;
-}
-
-.long-story-plot-card-title {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-primary);
-  font-size: 0.75rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.long-story-plot-card-actions {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  padding-right: 5px;
-}
-
-.long-story-plot-card.is-menu-open,
-.long-story-plot-card-actions.is-menu-open {
-  z-index: 8;
-}
-
-.long-story-plot-more-button {
-  display: grid;
-  place-items: center;
-  width: 25px;
-  height: 25px;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-}
-
-.long-story-plot-more-button:hover:not(:disabled),
-.long-story-plot-more-button.is-active {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.long-story-plot-more-button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.long-story-plot-action-menu {
-  position: absolute;
-  z-index: 50;
-  top: calc(100% + 3px);
-  right: 0;
-  display: grid;
-  width: max-content;
-  min-width: 112px;
-  gap: 2px;
-  padding: 5px;
-  border: 1px solid var(--theme-line);
-  border-radius: 9px;
-  background: var(--surface-raised);
-  box-shadow:
-    0 10px 28px color-mix(in srgb, var(--theme-foreground) 13%, transparent),
-    0 2px 6px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
-}
-
-.long-story-plot-action-menu.opens-upward {
-  top: auto;
-  bottom: calc(100% + 3px);
-}
-
-.long-story-plot-action-menu-item {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  min-height: 30px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 0.75rem;
-  font-weight: 540;
-  text-align: left;
-  cursor: pointer;
-}
-
-.long-story-plot-action-menu-item:hover:not(:disabled),
-.long-story-plot-action-menu-item:focus-visible:not(:disabled) {
-  outline: none;
-  background: var(--surface-hover);
-}
-
-.long-story-plot-action-menu-item > svg {
-  color: var(--text-secondary);
-}
-
-.long-story-plot-action-menu-item:disabled {
-  opacity: 0.38;
-  cursor: default;
-}
-
-.long-story-plot-action-menu-item.is-danger {
-  color: var(--danger);
-}
-
-.long-story-plot-action-menu-item.is-danger > svg {
-  color: var(--danger);
-}
-
-.long-story-plot-action-menu-item.is-danger:hover:not(:disabled),
-.long-story-plot-action-menu-item.is-danger:focus-visible:not(:disabled) {
-  background: var(--danger-soft);
-  color: var(--danger-text);
-}
-
-.long-story-plot-arrow-down {
-  transform: rotate(180deg);
-}
-
-.long-story-plot-pane-empty,
 .long-story-plot-detail-empty {
   display: grid;
   place-content: center;
@@ -7194,13 +6443,11 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-.long-story-plot-pane-empty strong,
 .long-story-plot-detail-empty strong {
   color: var(--text-primary);
   font-size: 0.785714rem;
 }
 
-.long-story-plot-pane-empty span,
 .long-story-plot-detail-empty span {
   max-width: 18rem;
   font-size: 0.678571rem;

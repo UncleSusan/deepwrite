@@ -11,6 +11,25 @@ const aliases = {
   "@deepwrite/shared": resolve(workspaceRoot, "packages/shared/src/index.ts")
 };
 
+const rendererAliases = [
+  {
+    find: /^@deepwrite\/contracts$/,
+    replacement: resolve(workspaceRoot, "packages/contracts/src/renderer.ts")
+  },
+  {
+    find: /^@deepwrite\/contracts\/system$/,
+    replacement: resolve(workspaceRoot, "packages/contracts/src/system.ts")
+  },
+  {
+    find: "@deepwrite/pi-runtime-adapter",
+    replacement: resolve(workspaceRoot, "packages/pi-runtime-adapter/src/index.ts")
+  },
+  {
+    find: "@deepwrite/shared",
+    replacement: resolve(workspaceRoot, "packages/shared/src/index.ts")
+  }
+];
+
 export default defineConfig({
   main: {
     envDir: workspaceRoot,
@@ -42,6 +61,12 @@ export default defineConfig({
   renderer: {
     root: resolve(appRoot, "src/renderer"),
     plugins: [vue()],
-    resolve: { alias: aliases }
+    resolve: { alias: rendererAliases },
+    build: {
+      // Vite's Rolldown environment currently preserves readable identifiers
+      // unless minification is explicit. Shipping that output adds roughly a
+      // megabyte of parse work to the workspace shell.
+      minify: true
+    }
   }
 });

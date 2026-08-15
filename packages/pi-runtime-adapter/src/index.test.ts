@@ -203,6 +203,22 @@ function ollamaGrammarRegressionTool(): AgentTool {
   };
 }
 
+function toolWithParameters(
+  name: string,
+  parameters: AgentTool["parameters"]
+): AgentTool {
+  return {
+    name,
+    label: name,
+    description: "Provider schema compatibility regression tool.",
+    parameters,
+    execute: async () => ({
+      content: [{ type: "text", text: "ok" }],
+      details: {}
+    })
+  };
+}
+
 async function captureToolPayload(
   config: AgentProviderRuntimeConfig,
   tool: AgentTool
@@ -1148,6 +1164,74 @@ describe("DeepWrite Pi runtime adapter", () => {
       contextWindow: 272_000,
       maxTokens: 128_000
     });
+  });
+
+  it.each(["openai-completions", "openai-responses"] as const)(
+    "normalizes object-union tool roots before an %s request",
+    async (api) => {
+      const config: AgentProviderRuntimeConfig = {
+        id: `schema-${api}`,
+        label: `Schema ${api}`,
+        provider: "custom",
+        modelId: "schema-test-model",
+        api,
+        baseUrl: "https://schema.example.test/v1",
+        reasoning: false,
+        defaultThinkingLevel: "off",
+        thinkingLevelOptions: ["off"],
+        temperatureOptions: [0.2, 0.7, 1.2],
+        apiKey: "test-only"
+      };
+      const parameters = Type.Union([
+        Type.Object({ domain: Type.Literal("worldbuilding") }),
+        Type.Object({ domain: Type.Literal("character") })
+      ]);
+      const payload = await captureToolPayload(
+        config,
+        toolWithParameters("list_setting_regression", parameters)
+      );
+      const providerSchema =
+        api === "openai-completions"
+          ? (
+              payload.tools as Array<{
+                function: { parameters: Record<string, unknown> };
+              }>
+            )[0]!.function.parameters
+          : (
+              payload.tools as Array<{
+                parameters: Record<string, unknown>;
+              }>
+            )[0]!.parameters;
+
+      expect(providerSchema).toMatchObject({
+        type: "object",
+        anyOf: expect.any(Array)
+      });
+      expect(parameters).not.toHaveProperty("type");
+    }
+  );
+
+  it("rejects a non-object tool root before sending a provider request", async () => {
+    const config: AgentProviderRuntimeConfig = {
+      id: "invalid-schema",
+      label: "Invalid schema",
+      provider: "custom",
+      modelId: "schema-test-model",
+      api: "openai-completions",
+      baseUrl: "https://schema.example.test/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: ["off"],
+      temperatureOptions: [0.2, 0.7, 1.2],
+      apiKey: "test-only"
+    };
+
+    await expect(
+      captureToolPayload(
+        config,
+        toolWithParameters("invalid_text_tool", Type.String())
+      )
+    ).rejects.toThrow(/invalid_text_tool.*type: "object"/u);
   });
 
   it("sanitizes only Ollama transport schemas without weakening local validation", async () => {

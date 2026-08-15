@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import source from "./ExternalSkillImportDialog.vue?raw";
 import treeSource from "./TreeNodeItem.vue?raw";
-import appSource from "../App.vue?raw";
+import libraryTransactionsSource from "../composables/useCatalogLibraryTransactionsCoordinator.ts?raw";
 
 describe("external skill import UI", () => {
   it("offers directory and SKILL.md choices for a concrete target library", () => {
@@ -19,8 +19,12 @@ describe("external skill import UI", () => {
   });
 
   it("imports through the selected library and preserves complete content", () => {
-    expect(appSource).toContain("window.deepwrite.catalog.chooseExternalSkills(sourceKind)");
-    expect(appSource).toContain("content: candidate.content");
-    expect(appSource).toContain("externalSkillStageId(library.skillKind)");
+    expect(libraryTransactionsSource).toContain(
+      "api.chooseExternalSkills(sourceKind)"
+    );
+    expect(libraryTransactionsSource).toContain("content: candidate.content");
+    expect(libraryTransactionsSource).toContain(
+      "externalSkillStageId(library.skillKind)"
+    );
   });
 });

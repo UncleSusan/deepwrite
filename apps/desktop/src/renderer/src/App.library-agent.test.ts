@@ -1,38 +1,69 @@
 import { describe, expect, it } from "vitest";
-import appSource from "./App.vue?raw";
+import appSource from "./WorkspaceShell.vue?raw";
+import coordinatorSource from "./composables/useProposalCoordinator.ts?raw";
+import resourceSource from "./composables/useWorkspaceResourceCoordinator.ts?raw";
+import eventRoutesSource from "./events/registerWorkspaceSystemEventRoutes.ts?raw";
+import settingsCoordinatorSource from "./composables/useSettingsFeatureCoordinator.ts?raw";
+import shortConversationSource from "./composables/useShortConversationCoordinator.ts?raw";
 
 describe("library management agent wiring", () => {
   it("routes selected libraries into a bounded management context", () => {
-    expect(appSource).toContain("activeAgentDocumentForSelection(");
-    expect(appSource).toContain("buildLibraryEntryComposerReferences(");
-    expect(appSource).toContain("按需加载的方法");
-    expect(appSource).toContain("libraryWorkspace: activeLibraryAgentContext.value");
-    expect(appSource).toContain("activeAgentDocument.value");
+    expect(resourceSource).toContain("activeAgentDocumentForSelection(");
+    expect(shortConversationSource).toContain("function libraryEntryReferences(");
+    expect(shortConversationSource).toContain("按需加载的方法");
+    expect(shortConversationSource).toContain(
+      "await options.resource.ensureDocumentsLoaded("
+    );
+    expect(shortConversationSource).toContain(
+      "libraryWorkspace: libraryAgentContext"
+    );
+    expect(shortConversationSource).toContain(
+      "const agentDocument = options.resource.activeAgentDocument.value"
+    );
   });
 
   it("stages library tool mutations and persists accepted entry or overview changes", () => {
-    expect(appSource).toContain('event.type === "library.editor_mutation"');
-    expect(appSource).toContain("stageLibraryEditProposal(event)");
-    expect(appSource).toContain("window.deepwrite.catalog.saveLibraryEntry({");
-    expect(appSource).toContain("window.deepwrite.catalog.createLibraryEntry({");
-    expect(appSource).toContain("currentLibraryProjectRevisionMatches(");
-    expect(appSource).toContain("applySavedLibraryEntry(");
-    expect(appSource).toContain("applyCreatedLibraryEntry(");
-    expect(appSource).toContain("entryId: created.id");
-    expect(appSource).toContain(
+    expect(eventRoutesSource).toContain(
+      'center.subscribe("library.editor_mutation"'
+    );
+    expect(eventRoutesSource).toContain(
+      "dependencies.stageLibraryEditProposal(event)"
+    );
+    expect(appSource).toContain("stageLibraryEditProposal,");
+    expect(coordinatorSource).toContain("currentApi.catalog.saveLibraryEntry({");
+    expect(coordinatorSource).toContain("currentApi.catalog.createLibraryEntry({");
+    expect(coordinatorSource).toContain("currentLibraryProjectRevisionMatches(");
+    expect(coordinatorSource).toContain("applySavedLibraryEntry(");
+    expect(coordinatorSource).toContain("applyCreatedLibraryEntry(");
+    expect(coordinatorSource).toContain("entryId: created.id");
+    expect(coordinatorSource).toContain(
       "...(createdDocument ? { documentId: createdDocument.id } : {})"
     );
-    expect(appSource).toContain('event.payload.operation === "edit-overview"');
-    expect(appSource).toContain('proposal.libraryTarget?.operation === "edit-overview"');
-    expect(appSource).toContain("window.deepwrite.catalog.updateLibrary({");
-    expect(appSource).toContain("applyUpdatedCatalogLibrary(");
+    expect(coordinatorSource).toContain(
+      'event.payload.operation === "edit-overview"'
+    );
+    expect(coordinatorSource).toContain(
+      'proposal.libraryTarget?.operation === "edit-overview"'
+    );
+    expect(coordinatorSource).toContain("currentApi.catalog.updateLibrary({");
+    expect(coordinatorSource).toContain("applyUpdatedCatalogLibrary(");
   });
 
   it("loads and saves both library agent settings without loading the catalog again", () => {
-    expect(appSource).toContain("window.deepwrite.libraryAgents.list()");
-    expect(appSource).toContain("window.deepwrite.libraryAgents.save(");
-    expect(appSource).toContain("window.deepwrite.libraryAgents.reset(");
-    expect(appSource).not.toMatch(
+    expect(appSource).toContain("loadLibraryAgentSettings,");
+    expect(appSource).toContain("saveLibraryAgentSettings,");
+    expect(appSource).toContain("resetLibraryAgentSettings,");
+    expect(settingsCoordinatorSource).toContain("api.libraryAgents.list()");
+    expect(settingsCoordinatorSource).toContain(
+      "settingsStore.ensureLibraryAgentsLoaded"
+    );
+    expect(settingsCoordinatorSource).toContain(
+      "api.libraryAgents.save(settings)"
+    );
+    expect(settingsCoordinatorSource).toContain(
+      "api.libraryAgents.reset(domain)"
+    );
+    expect(settingsCoordinatorSource).not.toMatch(
       /saveLibraryAgentSettings[\s\S]{0,900}catalog\.snapshot\(/u
     );
   });

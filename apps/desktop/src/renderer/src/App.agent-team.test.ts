@@ -1,143 +1,158 @@
 import { describe, expect, it } from "vitest";
-import source from "./App.vue?raw";
+import source from "./WorkspaceShell.vue?raw";
+import featureModulesSource from "./components/WorkspaceFeatureModules.vue?raw";
+import featureHostSource from "./composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import coordinatorSource from "./composables/useSettingsFeatureCoordinator.ts?raw";
+import lifecycleSource from "./composables/useWorkspaceLifecycleCoordinator.ts?raw";
+import layoutSource from "./stores/layoutStore.ts?raw";
+import settingsSource from "./stores/settingsStore.ts?raw";
 
 describe("App agent-team integration", () => {
-  it("opens agent-team management from the workspace sidebar", () => {
+  it("opens agent-team management through the feature-host boundary", () => {
     expect(source).toContain('@open-agent-teams="openAgentTeams"');
-    expect(source).toContain('workspaceMainView.value = "agent-team"');
-    expect(source).toContain("type WorkspaceMainView =");
-    expect(source).toContain('| "agent-team"');
-    expect(source).toContain('| "marketplace"');
-    expect(source).toContain("<AgentTeamSettingsPanel");
-    expect(source).toContain(':models="modelSettings?.models ?? []"');
-    expect(source).toContain("class=\"agent-team-main-view\"");
+    expect(source).toContain("useWorkspaceFeatureHostCoordinator({");
+    expect(featureHostSource).toContain(
+      'options.view.workspaceMain.value = "agent-team"'
+    );
+    expect(layoutSource).toContain("export type WorkspaceMainView =");
+    expect(layoutSource).toContain('| "agent-team"');
+    expect(layoutSource).toContain('| "marketplace"');
+    expect(featureModulesSource).toContain("<AgentTeamSettingsPanel");
+    expect(featureModulesSource).toContain(':models="module.models"');
+    expect(featureModulesSource).toContain('class="agent-team-main-view"');
   });
 
-  it("keeps agent-team persistence in App instead of SettingsPage", () => {
-    expect(source).toContain('window.deepwrite.agentTeams.list("short")');
-    expect(source).toContain("window.deepwrite.agentTeams.save(settings)");
-    expect(source).toContain('@save="saveAgentTeamSettings"');
+  it("keeps agent-team persistence in the settings coordinator", () => {
+    expect(source).toContain("useSettingsFeatureCoordinator({");
+    expect(source).toContain("loadAgentTeamSettings,");
+    expect(source).toContain("saveAgentTeamSettings,");
+    expect(coordinatorSource).toContain('api.agentTeams.list("short")');
+    expect(coordinatorSource).toContain("api.agentTeams.save(settings)");
+    expect(source).toContain('@save-agent-team="saveAgentTeamSettings"');
+    expect(featureModulesSource).toContain(
+      '@save="emit(\'saveAgentTeam\', $event)"'
+    );
     expect(source).not.toContain(':agent-team-settings="agentTeamSettings"');
-    expect(source).not.toContain('@save-agent-teams="saveAgentTeamSettings"');
   });
 
-  it("keeps unsaved team drafts cached without retaining inactive feature DOM", () => {
-    expect(source).toContain("<KeepAlive>");
-    expect(source).toContain('key="agent-team"');
-    expect(source).toContain('v-if="workspaceMainView === \'agent-team\'"');
-    expect(source).toContain(
-      'v-if="workspaceMainView === \'conversation\' && !isLongWorkspaceActive"'
+  it("retains controller state without retaining inactive feature DOM", () => {
+    expect(source).not.toContain("<KeepAlive>");
+    expect(featureModulesSource).toContain(
+      'v-else-if="module.kind === \'agent-team\'"'
     );
-    expect(source).not.toContain(
-      'v-show="workspaceMainView === \'agent-team\'"'
+    expect(source).toContain('v-if="activeFeature === \'conversation\'"');
+    expect(featureModulesSource).not.toContain("v-show=");
+    expect(featureHostSource).toContain("!settingsStore.agentTeamLoaded");
+    expect(featureModulesSource).toContain(':load-error="module.loadError"');
+    expect(featureModulesSource).toContain(
+      '@retry="emit(\'retryAgentTeam\')"'
     );
-    expect(source).toContain("!agentTeamLoaded.value");
-    expect(source).toContain(':load-error="agentTeamLoadError"');
-    expect(source).toContain('@retry="loadAgentTeamSettings"');
   });
 
-  it("returns to the writing workspace when a document or new conversation is selected", () => {
-    expect(source.match(/workspaceMainView\.value = "conversation"/g)?.length).toBeGreaterThanOrEqual(2);
+  it("returns to the writing workspace when a resource or conversation is selected", () => {
+    expect(featureHostSource).toContain(
+      "function showConversation(): void"
+    );
+    expect(featureHostSource).toContain(
+      'options.view.workspaceMain.value = "conversation"'
+    );
+    expect(
+      source.match(/^\s+showConversation,$/gm)?.length ?? 0
+    ).toBeGreaterThanOrEqual(4);
     expect(source).toContain("<WritingWorkspaceModule");
-    expect(source).toContain(
-      "workspaceMainView === 'conversation' && !isLongWorkspaceActive"
-    );
-    expect(source).toContain(":view-model=\"writingWorkspaceViewModel\"");
+    expect(source).toContain("activeFeature === 'conversation'");
+    expect(source).toContain(':conversation-controller="activeConversation"');
   });
 
   it("keeps workspace utilities beside agent-team as full main views", () => {
-    expect(source).toContain('class="workspace-settings-main-view"');
-    expect(source).toContain('class="learning-imitation-main-view"');
+    expect(featureModulesSource).toContain(
+      'class="workspace-settings-main-view"'
+    );
+    expect(featureModulesSource).toContain(
+      'class="learning-imitation-main-view"'
+    );
     expect(source).toContain(':active-primary-feature="activePrimaryFeature"');
   });
 
   it("loads and saves long teams independently in both failure directions", () => {
-    expect(source).toContain("const longAgentTeamLoading = ref(false)");
-    expect(source).toContain("const longAgentTeamSaving = ref(false)");
-    expect(source).toContain("const longAgentTeamLoadError = ref<string | null>(null)");
-    expect(source).toContain("loadShortAndScriptAgentTeamSettings()");
-    expect(source).toContain("loadLongAgentTeamSettings()");
-    expect(source).toContain("Promise.allSettled([");
-    expect(source).toContain(
-      "if (!agentTeamLoaded.value && !agentTeamLoading.value)"
+    expect(settingsSource).toContain("const longAgentTeamLoading = ref(false)");
+    expect(settingsSource).toContain("const longAgentTeamSaving = ref(false)");
+    expect(settingsSource).toContain(
+      "const longAgentTeamLoadError = ref<string | null>(null)"
     );
-    expect(source).toContain(
-      "if (!longAgentTeamLoaded.value && !longAgentTeamLoading.value)"
+    expect(coordinatorSource).toContain(
+      "loadShortAndScriptAgentTeamSettings()"
     );
-    expect(source).toContain(':long-loading="longAgentTeamLoading"');
-    expect(source).toContain(':long-saving="longAgentTeamSaving"');
-    expect(source).toContain(':long-load-error="longAgentTeamLoadError"');
+    expect(coordinatorSource).toContain("loadLongAgentTeamSettings()");
+    expect(coordinatorSource).toContain("settingsStore.ensureAgentTeamsLoaded");
+    expect(coordinatorSource).toContain(
+      "settingsStore.ensureLongAgentTeamsLoaded"
+    );
+    expect(featureModulesSource).toContain(':long-loading="module.longLoading"');
+    expect(featureModulesSource).toContain(':long-saving="module.longSaving"');
+    expect(featureModulesSource).toContain(
+      ':long-load-error="module.longLoadError"'
+    );
   });
 
   it("loads and saves long agent profiles independently from short and script", () => {
-    expect(source).toContain("const longAgentLoading = ref(false)");
-    expect(source).toContain("const longAgentSaving = ref(false)");
-    expect(source).toContain("loadShortAndScriptAgentSettings()");
-    expect(source).toContain("loadLongAgentSettings()");
-    expect(source).toContain(':long-agent-loading="longAgentLoading"');
-    expect(source).toContain(':long-agent-saving="longAgentSaving"');
-    expect(source).toContain(
+    expect(settingsSource).toContain("const longAgentLoading = ref(false)");
+    expect(settingsSource).toContain("const longAgentSaving = ref(false)");
+    expect(coordinatorSource).toContain("loadShortAndScriptAgentSettings()");
+    expect(coordinatorSource).toContain("loadLongAgentSettings()");
+    expect(featureModulesSource).toContain(
+      ':long-agent-loading="module.longAgentLoading"'
+    );
+    expect(featureModulesSource).toContain(
+      ':long-agent-saving="module.longAgentSaving"'
+    );
+    expect(settingsSource).toContain(
       "const longAgentLoadError = ref<string | null>(null)"
     );
-    expect(source).toContain(
-      "let longAgentLoadPromise: Promise<boolean> | null = null"
-    );
-    expect(source).toContain("ensureLongAgentSettingsLoaded()");
-    expect(source).toContain(
-      '@retry-long-agents="loadLongAgentSettings"'
-    );
+    expect(coordinatorSource).toContain("settingsStore.ensureLongAgentsLoaded");
+    expect(coordinatorSource).toContain("ensureLongAgentSettingsLoaded()");
+    expect(source).toContain('@retry-long-agents="loadLongAgentSettings"');
   });
 
-  it("routes short/script and long agent setting feedback through top-centered uiMessage", () => {
+  it("routes agent-setting feedback through top-centered uiMessage", () => {
     expect(source).toContain('import { uiMessage } from "./ui-feedback"');
-    expect(source).toContain("uiMessage.success(");
-    expect(source).toContain(
-      "长篇六个智能体的提示词、欢迎快捷与读取范围已保存，下一轮对话立即生效。"
-    );
-    expect(source).toContain("保存创作空间智能体设置失败。");
-    expect(source).toContain("保存长篇智能体设置失败。");
+    expect(source).toContain("notifications: uiMessage");
+    expect(coordinatorSource).toContain("uiMessage.success(");
+    expect(coordinatorSource).toContain("保存创作空间智能体设置失败。");
+    expect(coordinatorSource).toContain("保存长篇智能体设置失败。");
     expect(source).not.toContain("function showWorkspaceAgentFeedback");
     expect(source).not.toContain("function showLongAgentFeedback");
-    expect(source).not.toContain("workspaceAgentFeedbackTimer");
-    expect(source).not.toContain("longAgentFeedbackTimer");
-    expect(source).not.toContain("workspaceAgentStatus");
-    expect(source).not.toContain("longAgentStatus");
-    expect(source).toContain(':long-agent-error="longAgentLoadError"');
+    expect(featureModulesSource).toContain(
+      ':long-agent-error="module.longAgentError"'
+    );
   });
 
   it("keeps feature-only settings outside the writing startup critical path", () => {
-    const mounted =
-      source
-        .split("onMounted(async () => {")[1]
-        ?.split("onBeforeUnmount(() => {")[0] ?? "";
-    const awaitedStartup =
-      mounted.split("await Promise.all([")[1]?.split("]);")[0] ?? "";
-    expect(awaitedStartup).toContain(
-      "loadShortAndScriptAgentSettings()"
+    expect(lifecycleSource).toContain(
+      "options.ensureFeatureDependencies(options.activeFeature.value)"
     );
-    expect(awaitedStartup).not.toContain(
-      "loadShortAndScriptAgentTeamSettings()"
+    expect(featureHostSource).toContain('feature === "conversation"');
+    expect(featureHostSource).toContain(
+      "options.loaders.loadShortAndScriptAgentSettings()"
     );
-    expect(awaitedStartup).not.toContain("loadLearningImitationSettings()"
+    expect(featureHostSource).toContain(
+      "options.loaders.ensureLongAgentSettingsLoaded()"
     );
-    expect(awaitedStartup).not.toContain("loadWorkspaceDirectory()");
-    expect(awaitedStartup).not.toContain("loadLongBookList");
-    expect(awaitedStartup).not.toContain("loadLongAgentSettings");
-    expect(awaitedStartup).not.toContain("loadLongAgentTeamSettings");
-    expect(mounted.indexOf("scheduleDirtyEditorDraftsForAutoSave()")).toBeLessThan(
-      mounted.indexOf("loadLongBookList({ notify: false })")
-    );
-    expect(mounted).not.toContain("void loadLongAgentSettings()");
+    expect(lifecycleSource).not.toContain("loadShortAndScriptAgentTeamSettings");
+    expect(lifecycleSource).not.toContain("loadLearningImitationSettings");
+    expect(lifecycleSource).not.toContain("loadWorkspaceDirectory");
+    expect(
+      lifecycleSource.indexOf("options.scheduleDirtyDraftAutoSave()")
+    ).toBeLessThan(lifecycleSource.indexOf("options.loadLongBookList()"));
 
     const focusRefresh =
       source
-        .split("function performWindowFocusRefresh()")[1]
-        ?.split("function refreshCatalogOnWindowFocus()")[0] ?? "";
+        .split("async function refreshWorkspaceOnWindowFocus()")[1]
+        ?.split("watch(\n  activeRightPanePreferenceKey")[0] ?? "";
     expect(focusRefresh).toContain("if (bookId)");
-    expect(focusRefresh).toContain(
-      "loadLongBookList({ notify: true })"
-    );
-    expect(source).toContain("WINDOW_FOCUS_REFRESH_INTERVAL_MS");
-    expect(source).toContain("windowFocusRefreshTimer === undefined");
+    expect(focusRefresh).toContain("loadLongBookList({ notify: true })");
+    expect(focusRefresh).toContain("await Promise.allSettled(tasks)");
+    expect(lifecycleSource).toContain("DEFAULT_FOCUS_REFRESH_INTERVAL_MS");
+    expect(lifecycleSource).toContain("focusRefreshPromise");
   });
 });

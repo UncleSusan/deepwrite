@@ -78,4 +78,13 @@ describe("PlotStructureDialog", () => {
     expect(source).toContain("@media (max-height: 680px), (max-width: 760px)");
     expect(source).toContain("@media (max-width: 42rem)");
   });
+
+  it("unmounts the parent dialog while exactly one child dialog is active", () => {
+    expect(source).toContain("const activeSubdialog = computed");
+    expect(source).toContain('v-if="open && book && !activeSubdialog"');
+    expect(source).toContain("activeSubdialog === 'character-format'");
+    expect(source).toContain("activeSubdialog === 'form'");
+    expect(source).toContain("activeSubdialog === 'delete'");
+    expect(source.match(/v-else-if=/g)).toHaveLength(2);
+  });
 });

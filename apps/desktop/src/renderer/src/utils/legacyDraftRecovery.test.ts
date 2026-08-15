@@ -7,9 +7,13 @@ import {
   type CatalogSnapshot
 } from "@deepwrite/contracts";
 import { describe, expect, it } from "vitest";
-import { projectCatalogWorkspace } from "../data/catalogWorkspace";
+import {
+  projectCatalogWorkspace,
+  type CatalogWorkspaceProjection
+} from "../data/catalogWorkspace";
 import type { EditorDraftState } from "../types/workspace";
 import {
+  hasDirtyLegacyDraftRecoveries,
   legacyBookDraftRecoveryKey,
   migrateLegacyDraftRecoveries
 } from "./legacyDraftRecovery";
@@ -120,6 +124,28 @@ function currentCombinedRevision(snapshot = fixture()): string {
   );
 }
 
+function metadataProjection(
+  snapshot: CatalogSnapshot
+): CatalogWorkspaceProjection {
+  const projected = projectCatalogWorkspace(snapshot);
+  const workspaceDocuments = projected.workspaceDocuments.map((document) => ({
+    ...document,
+    content: "",
+    catalogContentBytes: new TextEncoder().encode(document.content).byteLength,
+    catalogContentLoaded: false
+  }));
+  return {
+    ...projected,
+    workspaceDocuments,
+    index: {
+      ...projected.index,
+      workspaceDocumentById: new Map(
+        workspaceDocuments.map((document) => [document.id, document])
+      )
+    }
+  };
+}
+
 function legacyRecovery(
   sections = [
     {
@@ -149,10 +175,61 @@ function legacyRecovery(
   };
 }
 
+describe("legacy combined draft recovery detection", () => {
+  it("detects a dirty legacy recovery for a catalog book", () => {
+    const snapshot = fixture();
+    const legacyKey = legacyBookDraftRecoveryKey("book-1");
+
+    expect(
+      hasDirtyLegacyDraftRecoveries(
+        { [legacyKey]: legacyRecovery() },
+        snapshot
+      )
+    ).toBe(true);
+  });
+
+  it("ignores clean legacy entries and unrelated draft keys", () => {
+    const snapshot = fixture();
+    const legacyKey = legacyBookDraftRecoveryKey("book-1");
+
+    expect(
+      hasDirtyLegacyDraftRecoveries(
+        { [legacyKey]: { ...legacyRecovery(), dirty: false } },
+        snapshot
+      )
+    ).toBe(false);
+    expect(
+      hasDirtyLegacyDraftRecoveries(
+        { "catalog:document:unrelated": legacyRecovery() },
+        snapshot
+      )
+    ).toBe(false);
+  });
+
+  it("detects a dirty recovery belonging to any book in an index-shaped snapshot", () => {
+    const indexSnapshot = {
+      books: [{ id: "book-1" }, { id: "book-2" }, { id: "book-3" }]
+    };
+
+    expect(
+      hasDirtyLegacyDraftRecoveries(
+        {
+          [legacyBookDraftRecoveryKey("book-1")]: {
+            ...legacyRecovery(),
+            dirty: false
+          },
+          [legacyBookDraftRecoveryKey("book-3")]: legacyRecovery()
+        },
+        indexSnapshot
+      )
+    ).toBe(true);
+  });
+});
+
 describe("legacy combined draft recovery migration", () => {
   it("splits a matching legacy recovery into physical body and state drafts", () => {
     const snapshot = fixture();
-    const projection = projectCatalogWorkspace(snapshot);
+    const projection = metadataProjection(snapshot);
     const legacyKey = legacyBookDraftRecoveryKey("book-1");
     const result = migrateLegacyDraftRecoveries(
       { [legacyKey]: legacyRecovery() },
@@ -180,6 +257,29 @@ describe("legacy combined draft recovery migration", () => {
       baseRevision: createShortWorkspaceContentRevision("磁盘状态"),
       baseProjectRevision: 7
     });
+  });
+
+  it("does not create redundant physical drafts from a metadata-only projection", () => {
+    const snapshot = fixture();
+    const projection = metadataProjection(snapshot);
+    const legacyKey = legacyBookDraftRecoveryKey("book-1");
+    const diskSections = snapshot.books[0]!.draft.sections.map((section) => ({
+      id: section.id,
+      title: section.title,
+      wordCountRequirement: section.wordCountRequirement,
+      body: section.body.content,
+      characterState: section.characterState.content
+    }));
+
+    const result = migrateLegacyDraftRecoveries(
+      { [legacyKey]: legacyRecovery(diskSections) },
+      snapshot,
+      projection
+    );
+
+    expect(result.migratedLegacyKeys).toEqual([legacyKey]);
+    expect(result.unmappedLegacyKeys).toEqual([]);
+    expect(result.drafts).toEqual({});
   });
 
   it("retains the legacy fallback when its section structure cannot be mapped", () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import appSource from "../App.vue?raw";
+import appSource from "../WorkspaceShell.vue?raw";
+import lifecycleSource from "../composables/useShortBookLifecycleCoordinator.ts?raw";
 import dialogSource from "./BookResourceDialog.vue?raw";
 
 describe("BookResourceDialog binding editor", () => {
@@ -16,8 +17,15 @@ describe("BookResourceDialog binding editor", () => {
     expect(dialogSource).toContain('domain: "material"');
     expect(dialogSource).toContain('domain: "skill"');
     expect(dialogSource).toContain("linksByKind");
-    expect(appSource).toContain("linkedSkillIdsByKind: payload.linksByKind");
-    expect(appSource).toContain("linkedMaterialIdsByKind: payload.linksByKind");
+    expect(lifecycleSource).toContain(
+      "linkedSkillIdsByKind: payload.linksByKind"
+    );
+    expect(lifecycleSource).toContain(
+      "linkedMaterialIdsByKind: payload.linksByKind"
+    );
+    expect(appSource).toContain(
+      '@update-book-bindings="updateBookBindings"'
+    );
   });
 
   it("offers the shared library pool to short and script books", () => {

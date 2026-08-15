@@ -26,6 +26,7 @@ import {
   MATERIAL_KINDS,
   MutatePlotStructureInputSchema,
   SKILL_KINDS,
+  SaveDocumentResultSchema,
   SaveLibraryEntryInputSchema,
   UpdateLibraryGroupInputSchema,
   catalogDraftBodyDocumentId,
@@ -282,6 +283,28 @@ describe("catalog contracts", () => {
         materialKind: "mixed"
       })
     ).toThrow();
+  });
+
+  it("returns an authoritative nonnegative project revision after saving a document", () => {
+    const result = {
+      id: "draft-section:section-1:body",
+      title: "第一节",
+      content: "新的正文",
+      createdAt: now,
+      updatedAt: now,
+      projectRevision: 7
+    };
+
+    expect(SaveDocumentResultSchema.parse(result)).toEqual(result);
+    expect(
+      SaveDocumentResultSchema.safeParse({ ...result, projectRevision: -1 }).success
+    ).toBe(false);
+    expect(
+      SaveDocumentResultSchema.safeParse({
+        ...result,
+        unexpected: "must not cross the IPC boundary"
+      }).success
+    ).toBe(false);
   });
 
   it("validates multi-archive legacy library import results", () => {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import source from "./CloudBackupPage.vue?raw";
-import appSource from "../../App.vue?raw";
+import appSource from "../../WorkspaceShell.vue?raw";
 import sidebarSource from "../../components/LeftSidebar.vue?raw";
+import featureModulesSource from "../../components/WorkspaceFeatureModules.vue?raw";
+import featureHostSource from "../../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
 
 describe("CloudBackupPage", () => {
   it("lives under more features and never asks the user to log in", () => {
@@ -13,7 +15,16 @@ describe("CloudBackupPage", () => {
     expect(sidebarSource).toContain('{ id: "cloud-backup", label: "云端备份"');
     expect(sidebarSource).toContain('emit("openCloudBackup")');
     expect(appSource).toContain('@open-cloud-backup="openCloudBackup"');
-    expect(appSource).toContain("workspaceMainView === 'cloud-backup'");
+    expect(featureHostSource).toContain('case "cloud-backup":');
+    expect(featureHostSource).toContain(
+      'return { kind: "cloud-backup" };'
+    );
+    expect(featureHostSource).toContain(
+      'options.view.workspaceMain.value = "cloud-backup"'
+    );
+    expect(featureModulesSource).toContain(
+      'v-else-if="module.kind === \'cloud-backup\'"'
+    );
   });
 
   it("requires a confirmation dialog before backup or restore writes data", () => {
@@ -24,5 +35,12 @@ describe("CloudBackupPage", () => {
     expect(source).toContain("confirmPreview");
     expect(source).toContain("danger-button");
     expect(source).toContain("100 MB");
+  });
+
+  it("keeps status in the shared settings store and coalesces first-entry loading", () => {
+    expect(source).toContain("useSettingsStore");
+    expect(source).toContain("ensureCloudBackupLoaded");
+    expect(source).toContain('invalidate("cloudBackup")');
+    expect(source).not.toContain("onMounted");
   });
 });

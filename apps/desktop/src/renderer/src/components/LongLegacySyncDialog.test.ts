@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import dialogSource from "./LongLegacySyncDialog.vue?raw";
-import appSource from "../App.vue?raw";
+import appSource from "../WorkspaceShell.vue?raw";
+import longBookLifecycleSource from "../composables/useLongBookLifecycleCoordinator.ts?raw";
 
 describe("LongLegacySyncDialog", () => {
   it("defaults to every non-empty module and requires at least one selection", () => {
@@ -21,11 +22,18 @@ describe("LongLegacySyncDialog", () => {
   });
 
   it("uses the protected preview and transactional commit APIs", () => {
-    expect(appSource).toContain("api.chooseLegacySyncSource()");
-    expect(appSource).toContain("api.applyLegacySync({");
-    expect(appSource).toContain("expectedProjectRevision: summary.projectRevision");
-    expect(appSource).toContain("modules: [...modules]");
-    expect(appSource).toContain("await saveActiveLongEditorChanges()");
-    expect(appSource).toContain("await refreshActiveLongWorkspace(bookId)");
+    expect(appSource).toContain('@confirm-legacy-sync="confirmLegacySync"');
+    expect(longBookLifecycleSource).toContain("api.chooseLegacySyncSource()");
+    expect(longBookLifecycleSource).toContain("api.applyLegacySync({");
+    expect(longBookLifecycleSource).toContain(
+      "expectedProjectRevision: summary.projectRevision"
+    );
+    expect(longBookLifecycleSource).toContain("modules: [...modules]");
+    expect(longBookLifecycleSource).toContain(
+      "await session.saveActiveEditorChanges()"
+    );
+    expect(longBookLifecycleSource).toContain(
+      "await session.refreshActiveWorkspace(bookId)"
+    );
   });
 });

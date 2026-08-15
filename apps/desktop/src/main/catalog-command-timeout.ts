@@ -3,7 +3,7 @@ import type { CommandEnvelope } from "@deepwrite/contracts";
 export const CATALOG_INTERACTIVE_COMMAND_TIMEOUT_MS = 60_000;
 
 /**
- * Bound the two catalog calls that sit directly on the editor save path.
+ * Bound catalog calls that sit directly on the editor startup/read/save path.
  *
  * Other catalog operations keep their existing unlimited timeout because
  * project import, duplication, and deletion can legitimately take longer on
@@ -13,7 +13,9 @@ export function catalogCommandTimeoutMs(
   commandType: CommandEnvelope["type"]
 ): number {
   return commandType === "catalog.saveDocument" ||
-    commandType === "catalog.snapshot"
+    commandType === "catalog.snapshot" ||
+    commandType === "catalog.index" ||
+    commandType === "catalog.readDocument"
     ? CATALOG_INTERACTIVE_COMMAND_TIMEOUT_MS
     : 0;
 }

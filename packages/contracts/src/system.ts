@@ -129,6 +129,8 @@ import {
   CatalogSaveLibraryEntryCommandEnvelopeSchema,
   CatalogRemoveLibraryEntryCommandEnvelopeSchema,
   CatalogMoveLibraryEntryCommandEnvelopeSchema,
+  CatalogIndexCommandEnvelopeSchema,
+  CatalogReadDocumentCommandEnvelopeSchema,
   CatalogSnapshotCommandEnvelopeSchema,
   CatalogUpdateBookCommandEnvelopeSchema,
   CatalogMutateCharacterStructureCommandEnvelopeSchema,
@@ -151,6 +153,11 @@ import {
 import { ExportShortManuscriptCommandEnvelopeSchema } from "./short-manuscript-export";
 import { ExportLongManuscriptCommandEnvelopeSchema } from "./long-manuscript-export";
 import { CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema } from "./marketplace";
+import {
+  RendererStateLoadCommandEnvelopeSchema,
+  RendererStateRemoveCommandEnvelopeSchema,
+  RendererStateSaveCommandEnvelopeSchema
+} from "./renderer-state";
 import {
   LongApplyOperationsCommandEnvelopeSchema,
   LongCreateBookAtPathCommandEnvelopeSchema,
@@ -214,6 +221,11 @@ export const SystemHealthCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
 
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   SystemHealthCommandEnvelopeSchema,
+  RendererStateLoadCommandEnvelopeSchema,
+  RendererStateSaveCommandEnvelopeSchema,
+  RendererStateRemoveCommandEnvelopeSchema,
+  CatalogIndexCommandEnvelopeSchema,
+  CatalogReadDocumentCommandEnvelopeSchema,
   CatalogSnapshotCommandEnvelopeSchema,
   CatalogLoadDraftRecoveryCommandEnvelopeSchema,
   CatalogSaveDraftRecoveryCommandEnvelopeSchema,

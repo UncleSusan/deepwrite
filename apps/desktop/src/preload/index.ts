@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   BookSchema,
-  CatalogDocumentSchema,
+  SaveDocumentResultSchema,
   CatalogDraftSectionSchema,
   CatalogDraftRecoverySaveResultSchema,
   CatalogDraftRecoverySchema,
@@ -11,6 +11,9 @@ import {
   CatalogLibraryProjectDomainSchema,
   CatalogOpenProjectResultSchema,
   CatalogProjectDomainSchema,
+  CatalogIndexSnapshotSchema,
+  CatalogReadDocumentInputSchema,
+  CatalogReadDocumentResultSchema,
   CatalogSnapshotSchema,
   CommandResultSchema,
   CreateLibraryEntryInputSchema,
@@ -85,6 +88,9 @@ import {
   ModelSettingsSchema,
   RemoteModelListInputSchema,
   RemoteModelListResultSchema,
+  RendererStateKeySchema,
+  RendererStateLoadResultSchema,
+  RendererStateMutationResultSchema,
   ModelUsageDashboardSchema,
   ModelUsageQueryInputSchema,
   CreateLongBookInputSchema,
@@ -162,7 +168,6 @@ import {
   type AgentTeamSettings,
   type AgentTeamSettingsInput,
   type Book,
-  type CatalogDocument,
   type CatalogDraftSection,
   type CatalogDraftRecovery,
   type CatalogLibrary,
@@ -171,6 +176,9 @@ import {
   type CatalogLibraryProjectDomain,
   type CatalogOpenProjectResult,
   type CatalogProjectDomain,
+  type CatalogIndexSnapshot,
+  type CatalogReadDocumentInput,
+  type CatalogReadDocumentResult,
   type CatalogSnapshot,
   type CreateLibraryEntryInput,
   type CreateDraftSectionInput,
@@ -270,6 +278,7 @@ import {
   type SessionPromptAcceptedPayload,
   type SessionPromptCommandPayload,
   type SaveDocumentInput,
+  type SaveDocumentResult,
   type SaveLibraryEntryInput,
   type ScriptAgentTeamSettings,
   type ScriptAgentTeamSettingsInput,
@@ -335,6 +344,46 @@ async function getHealth(): Promise<SystemHealthPayload> {
   );
 }
 
+async function loadConversationPersistence(
+  rawKey: string
+): Promise<unknown | undefined> {
+  const key = RendererStateKeySchema.parse(rawKey);
+  const id = browserId("cmd_renderer_state_load");
+  const result = RendererStateLoadResultSchema.parse(
+    await invokeCommand(
+      createEnvelope("rendererState.load", { key }, { id, correlationId: id })
+    )
+  );
+  return result.found ? result.value : undefined;
+}
+
+async function saveConversationPersistence(
+  rawKey: string,
+  value: unknown
+): Promise<void> {
+  const key = RendererStateKeySchema.parse(rawKey);
+  const id = browserId("cmd_renderer_state_save");
+  RendererStateMutationResultSchema.parse(
+    await invokeCommand(
+      createEnvelope(
+        "rendererState.save",
+        { key, value },
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
+async function removeConversationPersistence(rawKey: string): Promise<void> {
+  const key = RendererStateKeySchema.parse(rawKey);
+  const id = browserId("cmd_renderer_state_remove");
+  RendererStateMutationResultSchema.parse(
+    await invokeCommand(
+      createEnvelope("rendererState.remove", { key }, { id, correlationId: id })
+    )
+  );
+}
+
 async function getUpdateState(): Promise<UpdateState> {
   return UpdateStateSchema.parse(await ipcRenderer.invoke(UPDATE_GET_STATE_CHANNEL));
 }
@@ -367,6 +416,30 @@ async function getCatalogSnapshot(): Promise<CatalogSnapshot> {
   return CatalogSnapshotSchema.parse(
     await invokeCommand<CatalogSnapshot>(
       createEnvelope("catalog.snapshot", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function getCatalogIndex(): Promise<CatalogIndexSnapshot> {
+  const id = browserId("cmd_catalog_index");
+  return CatalogIndexSnapshotSchema.parse(
+    await invokeCommand<CatalogIndexSnapshot>(
+      createEnvelope("catalog.index", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function readCatalogDocument(
+  rawInput: CatalogReadDocumentInput
+): Promise<CatalogReadDocumentResult> {
+  const input = CatalogReadDocumentInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_read_document");
+  return CatalogReadDocumentResultSchema.parse(
+    await invokeCommand<CatalogReadDocumentResult>(
+      createEnvelope("catalog.readDocument", input, {
+        id,
+        correlationId: id
+      })
     )
   );
 }
@@ -881,11 +954,11 @@ async function deleteBook(bookId: string): Promise<DeleteBookResult> {
 
 async function saveDocument(
   rawInput: SaveDocumentInput
-): Promise<CatalogDocument> {
+): Promise<SaveDocumentResult> {
   const input = SaveDocumentInputSchema.parse(rawInput);
   const id = browserId("cmd_catalog_save_document");
-  return CatalogDocumentSchema.parse(
-    await invokeCommand<CatalogDocument>(
+  return SaveDocumentResultSchema.parse(
+    await invokeCommand<SaveDocumentResult>(
       createEnvelope("catalog.saveDocument", input, {
         id,
         correlationId: id,
@@ -1649,6 +1722,11 @@ const api: DeepWriteApi = {
   system: {
     health: getHealth
   },
+  conversationPersistence: {
+    load: loadConversationPersistence,
+    save: saveConversationPersistence,
+    remove: removeConversationPersistence
+  },
   updates: {
     getState: getUpdateState,
     check: checkForUpdates,
@@ -1822,6 +1900,8 @@ const api: DeepWriteApi = {
     }
   },
   catalog: {
+    index: getCatalogIndex,
+    readDocument: readCatalogDocument,
     snapshot: getCatalogSnapshot,
     loadDraftRecovery,
     saveDraftRecovery,

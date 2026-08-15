@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import appSource from "../App.vue?raw";
+import appSource from "../WorkspaceShell.vue?raw";
 import source from "./RightEditorPane.vue?raw";
 import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
+import persistenceSource from "../composables/useCatalogDocumentPersistence.ts?raw";
+import resourceSource from "../composables/useWorkspaceResourceCoordinator.ts?raw";
+import structureSource from "../composables/useShortWorkspaceStructureCoordinator.ts?raw";
+import dialogLayerSource from "./WorkspaceDialogLayer.vue?raw";
+import dialogCoordinatorSource from "../composables/useWorkspaceDialogModuleCoordinator.ts?raw";
 
 describe("RightEditorPane expert draft navigation", () => {
   it("shows automatic save status while preserving an immediate save action", () => {
@@ -36,10 +41,14 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain('props.document.catalogLibraryField === "overview"');
     expect(source).toContain("document.draftFileKind === 'character-state' || isLibraryOverview");
     expect(source).toContain("CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS");
-    expect(appSource).toContain("async function saveCatalogLibraryOverview(");
-    expect(appSource).toContain('catalogLibraryField !== "overview"');
-    expect(appSource).toContain("overview: payload.content");
-    expect(appSource).toContain("return saveCatalogLibraryOverview(document, payload");
+    expect(persistenceSource).toContain(
+      "async function saveCatalogLibraryOverview("
+    );
+    expect(persistenceSource).toContain('catalogLibraryField !== "overview"');
+    expect(persistenceSource).toContain("overview: payload.content");
+    expect(persistenceSource).toContain(
+      "await saveCatalogLibraryOverview(document, payload"
+    );
   });
 
   it("renders independently managed section tabs before the active section editor", () => {
@@ -69,47 +78,50 @@ describe("RightEditorPane expert draft navigation", () => {
   });
 
   it("routes the short-story tab add button through a named confirmation dialog", () => {
-    expect(appSource).toContain("async function addExpertSectionFromEditor()");
-    expect(appSource).toContain('directory.workspaceType !== "short"');
-    expect(appSource).toContain("await addExpertSection(draftNode)");
-    expect(appSource).toContain("function requestCreateExpertSection(");
-    expect(appSource).toContain("async function confirmCreateExpertSection(");
-    expect(appSource).toContain("suggestedDraftSectionTitle(");
-    expect(appSource).toContain("title,");
-    expect(appSource).toContain("await window.deepwrite.catalog.createDraftSection({");
-    expect(appSource).toContain("<CreateExpertSectionDialog");
+    expect(structureSource).toContain("async function addExpertSectionFromEditor()");
+    expect(structureSource).toContain('directory.workspaceType !== "short"');
+    expect(structureSource).toContain("await addExpertSection(draftNode)");
+    expect(structureSource).toContain("function requestCreateExpertSection(");
+    expect(structureSource).toContain("async function confirmCreateExpertSection(");
+    expect(structureSource).toContain("suggestedDraftSectionTitle(");
+    expect(structureSource).toContain("title,");
+    expect(structureSource).toContain("await api.createDraftSection({");
+    expect(dialogCoordinatorSource).toContain(
+      'kind: "create-expert-section"'
+    );
+    expect(dialogLayerSource).toContain("<CreateExpertSectionDialog");
     expect(appSource).toContain('@create-section="createEditorSection"');
-    expect(appSource).toContain(
+    expect(resourceSource).toContain(
       'activeDocument.value.workspaceType === "short"'
     );
   });
 
   it("routes the short-story tab remove button through the existing sidebar deletion flow", () => {
-    expect(appSource).toContain("const editorShowsExpertSectionTabs = computed");
-    expect(appSource).toContain("const showEditorDeleteSection = computed");
-    expect(appSource).toContain('return "删除当前小节"');
-    expect(appSource).toContain("(directory?.sections.length ?? 0) > 1");
-    expect(appSource).toContain("function removeExpertSectionFromEditor()");
-    expect(appSource).toContain("requestRemoveExpertSection(sectionNode)");
+    expect(resourceSource).toContain("const editorShowsExpertSectionTabs = computed");
+    expect(resourceSource).toContain("const showEditorDeleteSection = computed");
+    expect(resourceSource).toContain('return "删除当前小节"');
+    expect(resourceSource).toContain("(directory?.sections.length ?? 0) > 1");
+    expect(structureSource).toContain("function removeExpertSectionFromEditor()");
+    expect(structureSource).toContain("requestRemoveExpertSection(sectionNode)");
     expect(appSource).toContain(
       "showDeleteSection: showEditorDeleteSection.value"
     );
-    expect(writingWorkspaceSource).toContain('v-bind="viewModel.editor"');
+    expect(writingWorkspaceSource).toContain('v-bind="editor"');
     expect(appSource).toContain('@delete-section="deleteEditorSection"');
   });
 
   it("reuses section tabs for list-style short character items with add and remove controls", () => {
-    expect(appSource).toContain("const activeCharacterItemTabs = computed");
-    expect(appSource).toContain('book.characterStructure.format !== "list"');
-    expect(appSource).toContain('title: "概览"');
-    expect(appSource).toContain('? "人物条目"');
-    expect(appSource).toContain('? "新建人物条目"');
-    expect(appSource).toContain('return "删除当前人物条目"');
+    expect(resourceSource).toContain("const activeCharacterItemTabs = computed");
+    expect(resourceSource).toContain('book.characterStructure.format !== "list"');
+    expect(resourceSource).toContain('title: "概览"');
+    expect(resourceSource).toContain('? "人物条目"');
+    expect(resourceSource).toContain('? "新建人物条目"');
+    expect(resourceSource).toContain('return "删除当前人物条目"');
     expect(appSource).toContain(
       "showDeleteSection: showEditorDeleteSection.value"
     );
-    expect(appSource).toContain("function addCharacterItemFromEditor()");
-    expect(appSource).toContain("function deleteCharacterItemFromEditor()");
+    expect(structureSource).toContain("function addCharacterItemFromEditor()");
+    expect(structureSource).toContain("function deleteCharacterItemFromEditor()");
     expect(appSource).toContain('@delete-section="deleteEditorSection"');
   });
 

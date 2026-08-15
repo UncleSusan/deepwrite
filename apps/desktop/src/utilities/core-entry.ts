@@ -1,5 +1,5 @@
 import {
-  CatalogDocumentSchema,
+  SaveDocumentResultSchema,
   CatalogDraftSectionSchema,
   CreateDraftSectionsResultSchema,
   CatalogDraftRecoverySaveResultSchema,
@@ -8,6 +8,8 @@ import {
   CatalogLibraryGroupSchema,
   CatalogLibraryEntrySchema,
   CatalogOpenProjectResultSchema,
+  CatalogIndexSnapshotSchema,
+  CatalogReadDocumentResultSchema,
   CatalogSnapshotSchema,
   BookSchema,
   DeleteCatalogProjectResultSchema,
@@ -38,6 +40,8 @@ import {
   LongWorkspaceIndexResultSchema,
   LongWriteChapterResultSchema,
   LongWriteDocumentResultSchema,
+  RendererStateLoadResultSchema,
+  RendererStateMutationResultSchema,
   UnregisterCatalogProjectResultSchema,
   type CommandEnvelope,
   type CommandResult
@@ -52,6 +56,7 @@ import { readLegacyLibraryArchive } from "./legacy-library-import";
 import { bootUtility } from "./runtime";
 import { LongProjectConflictError } from "./long-project-store";
 import { LongWorkspaceService } from "./long-workspace-service";
+import { RendererStateStore } from "./renderer-state-store";
 
 const userDataPath = process.env.DEEPWRITE_USER_DATA_PATH?.trim();
 if (!userDataPath) {
@@ -92,6 +97,7 @@ const draftRecoveryStore = new FolderCatalogStore({
 const longWorkspaceService = new LongWorkspaceService({
   userDataPath: resolvedUserDataPath
 });
+const rendererStateStore = new RendererStateStore(resolvedUserDataPath);
 
 async function requireCatalogStore(): Promise<FolderCatalogStore> {
   if (!catalogStoreInitialization) {
@@ -100,7 +106,7 @@ async function requireCatalogStore(): Promise<FolderCatalogStore> {
         userDataPath: resolvedUserDataPath
       });
       if (existsSync(existingFolderStore.registryPath)) {
-        await existingFolderStore.snapshot();
+        await existingFolderStore.indexSnapshot();
         return existingFolderStore;
       }
       const legacySnapshot = await legacyCatalogStore.snapshot();
@@ -108,7 +114,7 @@ async function requireCatalogStore(): Promise<FolderCatalogStore> {
         userDataPath: resolvedUserDataPath,
         initialSnapshot: legacySnapshot
       });
-      await folderStore.snapshot();
+      await folderStore.indexSnapshot();
       return folderStore;
     })();
     catalogStoreInitialization = initialization.catch((error: unknown) => {
@@ -123,6 +129,32 @@ async function handleCatalogCommand(
   command: CommandEnvelope
 ): Promise<CommandResult> {
   try {
+    if (command.type === "rendererState.load") {
+      const value = await rendererStateStore.load(command.payload.key);
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: RendererStateLoadResultSchema.parse(
+          value === undefined ? { found: false } : { found: true, value }
+        )
+      };
+    }
+    if (command.type === "rendererState.save") {
+      await rendererStateStore.save(command.payload.key, command.payload.value);
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: RendererStateMutationResultSchema.parse({ ok: true })
+      };
+    }
+    if (command.type === "rendererState.remove") {
+      await rendererStateStore.remove(command.payload.key);
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: RendererStateMutationResultSchema.parse({ ok: true })
+      };
+    }
     if (command.type === "long.list") {
       return {
         status: "accepted",
@@ -372,6 +404,24 @@ async function handleCatalogCommand(
       };
     }
     const catalogStore = await requireCatalogStore();
+    if (command.type === "catalog.index") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: CatalogIndexSnapshotSchema.parse(
+          await catalogStore.indexSnapshot()
+        )
+      };
+    }
+    if (command.type === "catalog.readDocument") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: CatalogReadDocumentResultSchema.parse(
+          await catalogStore.readDocument(command.payload)
+        )
+      };
+    }
     if (command.type === "catalog.snapshot") {
       return {
         status: "accepted",
@@ -522,7 +572,7 @@ async function handleCatalogCommand(
       return {
         status: "accepted",
         requestId: command.id,
-        payload: CatalogDocumentSchema.parse(
+        payload: SaveDocumentResultSchema.parse(
           await catalogStore.saveDocument(command.payload)
         )
       };
@@ -653,6 +703,22 @@ async function handleCatalogCommand(
       }
     };
   } catch (error: unknown) {
+    if (command.type.startsWith("rendererState.")) {
+      return {
+        status: "rejected",
+        requestId: command.id,
+        error: {
+          code: "renderer_state.command_failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "会话历史持久化操作失败。",
+          details: {
+            kind: error instanceof Error ? error.name : "unknown"
+          }
+        }
+      };
+    }
     if (error instanceof LongWorkspaceOperationError) {
       return {
         status: "rejected",

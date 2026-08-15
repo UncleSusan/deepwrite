@@ -1,5 +1,6 @@
 import {
   access,
+  chmod,
   cp,
   link,
   mkdir,
@@ -10,6 +11,7 @@ import {
   rm,
   stat,
   symlink,
+  utimes,
   writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -361,6 +363,248 @@ describe("FolderCatalogStore", () => {
     expect(reloaded).toMatchObject(source);
   });
 
+  it("builds a content-aware index while Markdown files are unreadable", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-index-");
+    const store = new FolderCatalogStore({ userDataPath: join(root, "user-data") });
+    const source = catalogFixture();
+    source.books[0]!.documents.find(({ id }) => id === "worldbuilding")!.content =
+      "雾城终年没有日出。";
+    source.books[0]!.draft.sections[0]!.body.content = "第一节正文";
+    source.books[0]!.draft.sections[0]!.characterState.content = "主角受伤";
+    source.skills[0]!.overview = "技能库介绍";
+    await store.migrateSnapshot(source);
+
+    const registry = JSON.parse(await readFile(store.registryPath, "utf8")) as {
+      projects: Array<{ id: string; projectDirectory: string }>;
+    };
+    const markdownFiles: Array<{
+      id: string;
+      path: string;
+      bytes: number;
+    }> = [];
+    for (const project of registry.projects) {
+      const manifest = JSON.parse(
+        await readFile(join(project.projectDirectory, "deepwrite.json"), "utf8")
+      ) as {
+        kind: string;
+        documents?: Array<{ id: string; path: string }>;
+        draft?: {
+          sections: Array<{
+            body: { id: string; path: string };
+            characterState: { id: string; path: string };
+          }>;
+        };
+        entries?: Array<{ id: string; path: string }>;
+      };
+      const items = [
+        ...(manifest.documents ?? []),
+        ...(manifest.draft?.sections.flatMap((section) => [
+          section.body,
+          section.characterState
+        ]) ?? []),
+        ...(manifest.entries ?? [])
+      ];
+      for (const item of items) {
+        const path = join(project.projectDirectory, item.path);
+        markdownFiles.push({
+          id: item.id,
+          path,
+          bytes: (await stat(path)).size
+        });
+        await chmod(path, 0o000);
+      }
+    }
+
+    await expect(readFile(markdownFiles[0]!.path, "utf8")).rejects.toMatchObject({
+      code: "EACCES"
+    });
+    const index = await new FolderCatalogStore({
+      userDataPath: join(root, "user-data")
+    }).indexSnapshot();
+    expect(() => CatalogSnapshotSchema.parse(index)).not.toThrow();
+    expect(index.projectDiagnostics).toBeUndefined();
+    expect(index.books[0]!.documents.every(({ content }) => content === "")).toBe(
+      true
+    );
+    expect(
+      index.books[0]!.draft.sections.every(
+        ({ body, characterState }) =>
+          body.content === "" && characterState.content === ""
+      )
+    ).toBe(true);
+    expect(index.materials[0]).toMatchObject({
+      overview: "",
+      overviewContentBytes: Buffer.byteLength("人物备忘", "utf8"),
+      entries: [
+        {
+          id: "material-entry",
+          body: "",
+          contentBytes: Buffer.byteLength("守夜人从不在白天出现。", "utf8")
+        }
+      ]
+    });
+    expect(index.skills[0]).toMatchObject({
+      overview: "",
+      overviewContentBytes: Buffer.byteLength("技能库介绍", "utf8"),
+      entries: [
+        {
+          id: "skill-entry",
+          body: "",
+          contentBytes: Buffer.byteLength("保持短句和悬念。", "utf8")
+        }
+      ]
+    });
+    for (const file of markdownFiles) {
+      const indexedDocument = [
+        ...index.books.flatMap((book) => [
+          ...book.documents,
+          ...book.draft.sections.flatMap((section) => [
+            section.body,
+            section.characterState
+          ])
+        ]),
+        ...index.materials.flatMap((library) => library.entries),
+        ...index.skills.flatMap((library) => library.entries)
+      ].find(({ id }) => id === file.id);
+      expect(indexedDocument?.contentBytes).toBe(file.bytes);
+    }
+  });
+
+  it("reads book files, draft files, library entries, and overviews on demand", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-read-document-");
+    const userDataPath = join(root, "user-data");
+    const store = new FolderCatalogStore({ userDataPath });
+    const source = catalogFixture();
+    const book = source.books[0]!;
+    const ordinary = book.documents.find(({ id }) => id === "worldbuilding")!;
+    ordinary.content = "世界观正文";
+    book.draft.sections[0]!.body.content = "正文小节内容";
+    book.draft.sections[0]!.characterState.content = "人物状态内容";
+    source.skills[0]!.overview = "技能库介绍";
+    await store.migrateSnapshot(source);
+
+    const reads = await Promise.all([
+      store.readDocument({
+        projectId: book.id,
+        target: "document",
+        documentId: ordinary.id
+      }),
+      store.readDocument({
+        projectId: book.id,
+        target: "document",
+        documentId: book.draft.sections[0]!.body.id
+      }),
+      store.readDocument({
+        projectId: book.id,
+        target: "document",
+        documentId: book.draft.sections[0]!.characterState.id
+      }),
+      store.readDocument({
+        projectId: source.materials[0]!.id,
+        target: "document",
+        documentId: source.materials[0]!.entries[0]!.id
+      }),
+      store.readDocument({
+        projectId: source.skills[0]!.id,
+        target: "document",
+        documentId: source.skills[0]!.entries[0]!.id
+      }),
+      store.readDocument({
+        projectId: source.materials[0]!.id,
+        target: "overview"
+      }),
+      store.readDocument({
+        projectId: source.skills[0]!.id,
+        target: "overview"
+      })
+    ]);
+
+    expect(reads.map(({ content }) => content)).toEqual([
+      "世界观正文",
+      "正文小节内容",
+      "人物状态内容",
+      "守夜人从不在白天出现。",
+      "保持短句和悬念。",
+      "人物备忘",
+      "技能库介绍"
+    ]);
+    for (const result of reads) {
+      expect(result.revision).toBe(
+        createShortWorkspaceContentRevision(result.content)
+      );
+      expect(result.contentBytes).toBe(Buffer.byteLength(result.content, "utf8"));
+      expect(result.projectRevision).toBe(0);
+    }
+    await expect(
+      store.readDocument({
+        projectId: book.id,
+        target: "document",
+        documentId: "missing-document"
+      })
+    ).rejects.toThrow(/文档不存在/u);
+    await expect(
+      store.readDocument({
+        projectId: source.materialGroups[0]!.id,
+        target: "overview"
+      })
+    ).rejects.toThrow(/素材库或技能库/u);
+    await expect(
+      new FolderCatalogStore({
+        userDataPath,
+        maxMarkdownBytes: 4
+      }).readDocument({
+        projectId: book.id,
+        target: "document",
+        documentId: ordinary.id
+      })
+    ).rejects.toThrow(/byte limit/u);
+  });
+
+  it("changes contentStamp after a same-byte external Markdown edit", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-content-stamp-");
+    const userDataPath = join(root, "user-data");
+    const store = new FolderCatalogStore({ userDataPath });
+    const source = catalogFixture();
+    await store.migrateSnapshot(source);
+
+    const before = await store.indexSnapshot();
+    const beforeEntry = before.materials[0]!.entries[0]!;
+    const registry = JSON.parse(await readFile(store.registryPath, "utf8")) as {
+      projects: Array<{ id: string; projectDirectory: string }>;
+    };
+    const project = registry.projects.find(
+      ({ id }) => id === source.materials[0]!.id
+    )!;
+    const manifest = JSON.parse(
+      await readFile(join(project.projectDirectory, "deepwrite.json"), "utf8")
+    ) as { entries: Array<{ id: string; path: string }> };
+    const entry = manifest.entries.find(({ id }) => id === beforeEntry.id)!;
+    const entryPath = join(project.projectDirectory, entry.path);
+    const original = await readFile(entryPath, "utf8");
+    const externallyEdited = original.replace("守", "巡");
+    expect(Buffer.byteLength(externallyEdited, "utf8")).toBe(
+      Buffer.byteLength(original, "utf8")
+    );
+    await writeFile(entryPath, externallyEdited, "utf8");
+    await utimes(
+      entryPath,
+      new Date("2030-01-01T00:00:00.000Z"),
+      new Date("2030-01-01T00:00:00.000Z")
+    );
+
+    const after = await new FolderCatalogStore({ userDataPath }).indexSnapshot();
+    const afterEntry = after.materials[0]!.entries[0]!;
+    expect(afterEntry.contentBytes).toBe(beforeEntry.contentBytes);
+    expect(afterEntry.contentStamp).not.toBe(beforeEntry.contentStamp);
+    await expect(
+      store.readDocument({
+        projectId: source.materials[0]!.id,
+        target: "document",
+        documentId: entry.id
+      })
+    ).resolves.toMatchObject({ content: externallyEdited });
+  });
+
   it("creates collision-safe book folders, saves with content revisions, and only unregisters", async () => {
     const root = await makeTemporaryRoot("deepwrite-folder-create-");
     const userDataPath = join(root, "user-data");
@@ -395,6 +639,7 @@ describe("FolderCatalogStore", () => {
       baseProjectRevision: 0
     });
     expect(saved.content).toBe("新的正文");
+    expect(saved.projectRevision).toBe(1);
     await expect(
       store.saveDocument({
         bookId: first.resource.id,
@@ -1079,24 +1324,27 @@ describe("FolderCatalogStore", () => {
     const stateId = catalogDraftCharacterStateDocumentId("section-1");
     const emptyRevision = createShortWorkspaceContentRevision("");
 
-    await store.saveDocument({
+    const savedBody = await store.saveDocument({
       bookId: opened.resource.id,
       documentId: bodyId,
       content: "第一节正文",
       baseRevision: emptyRevision,
       baseProjectRevision: 0
     });
-    await expect(
-      store.saveDocument({
-        bookId: opened.resource.id,
-        documentId: stateId,
-        content: "林舟：仍在门外",
-        baseRevision: emptyRevision,
-        // A content-only save uses the target file revision, so an unrelated
-        // body save must not make this independent file stale.
-        baseProjectRevision: 0
-      })
-    ).resolves.toMatchObject({ content: "林舟：仍在门外" });
+    expect(savedBody.projectRevision).toBe(1);
+    const savedState = await store.saveDocument({
+      bookId: opened.resource.id,
+      documentId: stateId,
+      content: "林舟：仍在门外",
+      baseRevision: emptyRevision,
+      // A content-only save uses the target file revision, so an unrelated
+      // body save must not make this independent file stale.
+      baseProjectRevision: 0
+    });
+    expect(savedState).toMatchObject({
+      content: "林舟：仍在门外",
+      projectRevision: 2
+    });
 
     await expect(
       store.saveDocument({

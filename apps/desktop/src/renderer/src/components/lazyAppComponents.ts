@@ -11,6 +11,9 @@ export const LearningImitationDialog = defineAsyncComponent(
 export const LongWorkspaceEditor = defineAsyncComponent(
   () => import("./LongWorkspaceEditor.vue")
 );
+export const LongWorkspaceModule = defineAsyncComponent(
+  () => import("./LongWorkspaceModule.vue")
+);
 export const SettingsPage = defineAsyncComponent(
   () => import("./SettingsPage.vue")
 );
@@ -25,6 +28,12 @@ export const ModelSettingsFeature = defineAsyncComponent(
 );
 export const WorkspaceDirectoryFeature = defineAsyncComponent(
   () => import("./WorkspaceDirectoryFeature.vue")
+);
+export const WorkspaceFeatureModules = defineAsyncComponent(
+  () => import("./WorkspaceFeatureModules.vue")
+);
+export const WorkspaceDialogLayer = defineAsyncComponent(
+  () => import("./WorkspaceDialogLayer.vue")
 );
 
 export const BookResourceDialog = defineAsyncComponent(

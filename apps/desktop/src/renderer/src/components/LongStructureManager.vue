@@ -64,6 +64,7 @@ const emit = defineEmits<{
     payload: { sourceBookId: string; sourceTitle: string },
     completion: LongStructureMutationCompletion
   ];
+  modalActiveChange: [active: boolean];
 }>();
 const formatOptions: readonly PopupSelectOption[] = [
   { value: "list", label: "条目列表" },
@@ -101,6 +102,15 @@ const cascadeDelete = ref(false);
 const moveCharactersToTypeId = ref("");
 const syncOpen = ref(false);
 const selectedSyncBookId = ref<string>("");
+const activeModal = computed<"form" | "sync" | "delete" | null>(() =>
+  formOpen.value
+    ? "form"
+    : syncOpen.value
+      ? "sync"
+      : pendingDelete.value
+        ? "delete"
+        : null
+);
 type MutationSurface = "form" | "delete" | "sync" | "background";
 const pendingMutation = ref<{
   id: number;
@@ -201,6 +211,12 @@ watch(
       uiMessage.warning(message);
     }
   }
+);
+
+watch(
+  () => activeModal.value !== null,
+  (active) => emit("modalActiveChange", active),
+  { immediate: true }
 );
 
 function setPanel(panel: StructurePanel): void {
@@ -733,7 +749,7 @@ function confirmDelete(): void {
 
     <Teleport to="body">
       <div
-        v-if="formOpen"
+        v-if="activeModal === 'form'"
         class="dialog-backdrop structure-modal-overlay"
         @mousedown.self="closeForm"
         @keydown.esc.stop="closeForm"
@@ -817,7 +833,7 @@ function confirmDelete(): void {
 
     <Teleport to="body">
       <div
-        v-if="syncOpen"
+        v-if="activeModal === 'sync'"
         class="dialog-backdrop structure-modal-overlay"
         @mousedown.self="closeSync"
         @keydown.esc.stop="closeSync"
@@ -892,7 +908,7 @@ function confirmDelete(): void {
 
     <Teleport to="body">
       <div
-        v-if="pendingDelete"
+        v-if="activeModal === 'delete' && pendingDelete"
         class="dialog-backdrop structure-modal-overlay"
         @mousedown.self="closeDelete"
         @keydown.esc.stop="closeDelete"

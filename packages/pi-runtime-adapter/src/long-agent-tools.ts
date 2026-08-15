@@ -193,6 +193,16 @@ function strictObject<T extends Record<string, TSchema>>(
   });
 }
 
+function providerObjectUnion<T extends TSchema[]>(schemas: [...T]) {
+  // OpenAI-compatible providers require every function parameter schema to
+  // declare an object at the root, even when the valid shapes are expressed
+  // as a discriminated union.
+  return {
+    ...Type.Union(schemas),
+    type: "object" as const
+  };
+}
+
 function stableIdParameter(prefix: string) {
   return Type.String({
     minLength: 3,
@@ -5325,7 +5335,7 @@ export function buildLongWorkspaceTools(
         label: "列出设定",
         description:
           "按 domain 列出世界观或人物。domain=worldbuilding 一次列出全部分类，指定 category_id 时列出该列表型分类条目并附带概览；domain=character 列出人物类型目录和人物索引，可按 type_id 筛选，并附带人物概览（同时建立后续写入概览所需的完整读取凭据）。",
-        parameters: Type.Union([
+        parameters: providerObjectUnion([
           strictObject({
             domain: Type.Literal("worldbuilding"),
             category_id: Type.Optional(worldbuildingCategoryIdParameter)
@@ -5359,7 +5369,7 @@ export function buildLongWorkspaceTools(
         label: "搜索设定",
         description:
           "按 domain 搜索世界观或人物正文，返回可继续读取的业务 ID、标题和少量命中上下文；不返回文件、路径或版本信息。",
-        parameters: Type.Union([
+        parameters: providerObjectUnion([
           strictObject({
             domain: Type.Literal("worldbuilding"),
             query: Type.String({ minLength: 1, maxLength: 256 }),
@@ -5411,7 +5421,7 @@ export function buildLongWorkspaceTools(
         label: "读取设定",
         description:
           "按 domain 读取世界观或人物正文。世界观：文本型分类和列表型分类概览省略 item_id，列表条目同时提供 category_id 和 item_id。人物：读取文档时同时提供 character_id 和 document；读取概览时指定 document=overview 且省略 character_id。mode=preview 只返回摘录，mode=full 建立本轮后续编辑凭据。",
-        parameters: Type.Union([
+        parameters: providerObjectUnion([
           strictObject({
             domain: Type.Literal("worldbuilding"),
             category_id: worldbuildingCategoryIdParameter,
@@ -6145,7 +6155,7 @@ export function buildLongWorkspaceTools(
         label: "创建设定",
         description:
           "按 domain 创建一个空白设定文件。domain=worldbuilding 在列表型分类中创建一个空白条目并返回 item_id；domain=character 在现有 type_id 下创建一名人物及四份空白文档并返回 character_id。本工具不接受初始化正文。",
-        parameters: Type.Union([
+        parameters: providerObjectUnion([
           strictObject({
             domain: Type.Literal("worldbuilding"),
             category_id: worldbuildingCategoryIdParameter,
@@ -6198,7 +6208,7 @@ export function buildLongWorkspaceTools(
         label: "写入设定",
         description:
           "按 domain 覆盖世界观或人物的完整 Markdown。空文件可直接写入；已有正文必须先用 read_setting（mode=full）完整读取并明确 allow_overwrite_existing=true。人物概览指定 document=overview 且省略 character_id。局部修改应使用 edit_setting。",
-        parameters: Type.Union([
+        parameters: providerObjectUnion([
           strictObject({
             domain: Type.Literal("worldbuilding"),
             category_id: worldbuildingCategoryIdParameter,
@@ -6280,7 +6290,7 @@ export function buildLongWorkspaceTools(
         label: "编辑设定",
         description:
           "按 domain 在已完整读取的世界观或人物正文中按原文片段精确替换。每个 original_text 必须唯一存在。人物概览指定 document=overview 且省略 character_id。",
-        parameters: Type.Union([
+        parameters: providerObjectUnion([
           strictObject({
             domain: Type.Literal("worldbuilding"),
             category_id: worldbuildingCategoryIdParameter,

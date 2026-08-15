@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import appSource from "../App.vue?raw";
+import appSource from "../WorkspaceShell.vue?raw";
+import featureModulesSource from "./WorkspaceFeatureModules.vue?raw";
+import featureHostSource from "../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
 import source from "./SettingsPage.vue?raw";
 
 describe("SettingsPage", () => {
@@ -85,8 +87,21 @@ describe("SettingsPage", () => {
   });
 
   it("connects custom model management to the existing app model state and actions", () => {
-    expect(appSource).toContain(':model-loading="modelLoading"');
-    expect(appSource).toContain(':model-saving="modelSaving"');
+    expect(featureHostSource).toContain(
+      "modelLoading: settingsStore.modelLoading"
+    );
+    expect(featureHostSource).toContain(
+      "modelSaving: settingsStore.modelSaving"
+    );
+    expect(featureModulesSource).toContain(
+      ':model-loading="module.modelLoading"'
+    );
+    expect(featureModulesSource).toContain(
+      ':model-saving="module.modelSaving"'
+    );
+    expect(featureModulesSource).toContain(
+      "@load-models=\"emit('loadModels')\""
+    );
     expect(appSource).toContain('@load-models="loadModelSettings"');
     expect(appSource).toContain('@save-models="saveModelSettings"');
     expect(appSource).toContain('@test-model="testModel"');

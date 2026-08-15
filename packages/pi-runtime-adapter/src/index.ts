@@ -97,6 +97,7 @@ import {
   resolveOllamaToolSchemaProfile,
   type ProviderRuntimeCompatibilityOptions
 } from "./ollama-tool-schema-compat";
+import { enforceProviderToolSchemaCompatibility } from "./provider-tool-schema-compat";
 import { findDeepWriteRuntimeModel } from "./runtime-model-catalog";
 
 export {
@@ -1299,7 +1300,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       };
       if (this.evaluationMode) {
         const providerVisibleTools = applyOllamaToolSchemaCompatibility(
-          { systemPrompt, messages: [], tools },
+          enforceProviderToolSchemaCompatibility({
+            systemPrompt,
+            messages: [],
+            tools
+          }),
           runtime.provider,
           ollamaToolSchemaProfile
         ).tools ?? tools;
@@ -1673,7 +1678,7 @@ export function buildProviderRuntime(
   ) => streams.streamSimple(
     requestModel,
     applyOllamaToolSchemaCompatibility(
-      context,
+      enforceProviderToolSchemaCompatibility(context),
       config.provider,
       compatibility.ollamaToolSchemaProfile
     ),

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import type {
   CloudBackupChange,
-  CloudBackupPreview,
-  CloudBackupStatus
+  CloudBackupPreview
 } from "@deepwrite/contracts";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { uiMessage } from "../../ui-feedback";
 
 const props = defineProps<{
@@ -15,9 +16,12 @@ const emit = defineEmits<{
   refreshCatalog: [];
 }>();
 
-const loading = ref(false);
+const settingsStore = useSettingsStore();
+const {
+  cloudBackupStatus: status,
+  cloudBackupLoading: loading
+} = storeToRefs(settingsStore);
 const pending = ref(false);
-const status = ref<CloudBackupStatus | null>(null);
 const remoteKey = ref("");
 const preview = ref<CloudBackupPreview | null>(null);
 const copied = ref(false);
@@ -81,16 +85,20 @@ function formatTime(value: string | null): string {
   return date.toLocaleString();
 }
 
-async function loadStatus(): Promise<void> {
+async function ensureStatusLoaded(): Promise<void> {
   if (!window.deepwrite?.cloudBackup) return;
-  loading.value = true;
   try {
-    status.value = await window.deepwrite.cloudBackup.status();
+    await settingsStore.ensureCloudBackupLoaded(() =>
+      window.deepwrite!.cloudBackup!.status()
+    );
   } catch (error: unknown) {
     uiMessage.error(errorMessage(error, "加载云端备份状态失败。"));
-  } finally {
-    loading.value = false;
   }
+}
+
+async function refreshStatus(): Promise<void> {
+  settingsStore.invalidate("cloudBackup");
+  await ensureStatusLoaded();
 }
 
 async function copyMachineKey(): Promise<void> {
@@ -150,7 +158,7 @@ async function confirmPreview(): Promise<void> {
         ? `已备份到云端，共 ${formatBytes(result.sizeBytes)}。`
         : `已同步到本机：新增 ${result.added}，覆盖 ${result.overwritten}。`
     );
-    await loadStatus();
+    await refreshStatus();
   } catch (error: unknown) {
     uiMessage.error(errorMessage(error, "同步失败。"));
   } finally {
@@ -161,13 +169,10 @@ async function confirmPreview(): Promise<void> {
 watch(
   () => props.active,
   (active) => {
-    if (active) void loadStatus();
-  }
+    if (active) void ensureStatusLoaded();
+  },
+  { immediate: true }
 );
-
-onMounted(() => {
-  if (props.active) void loadStatus();
-});
 </script>
 
 <template>
@@ -178,7 +183,7 @@ onMounted(() => {
         <h1>云端备份</h1>
         <p>把本机创作空间、技能库和素材库备份到云端，或用另一台机器的密钥同步过来。无需登录。</p>
       </div>
-      <button class="secondary-button" type="button" :disabled="loading" @click="loadStatus">
+      <button class="secondary-button" type="button" :disabled="loading" @click="refreshStatus">
         {{ loading ? "刷新中…" : "刷新状态" }}
       </button>
     </header>

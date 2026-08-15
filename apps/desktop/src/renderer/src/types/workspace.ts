@@ -256,6 +256,12 @@ export interface WorkspaceDocument {
   /** Identifies a fixed library manifest field projected as an editor document. */
   catalogLibraryField?: "overview";
   catalogProjectRevision?: number;
+  /** UTF-8 size from a metadata-only Catalog index. */
+  catalogContentBytes?: number;
+  /** Metadata revision used to invalidate the on-demand body LRU. */
+  catalogContentStamp?: string;
+  /** False until the body has been fetched through catalog.readDocument. */
+  catalogContentLoaded?: boolean;
   libraryId?: string;
   materialKind?: MaterialKind;
   skillKind?: SkillKind;

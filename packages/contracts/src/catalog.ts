@@ -1674,6 +1674,187 @@ export const CatalogSnapshotSchema = z
   });
 export type CatalogSnapshot = z.infer<typeof CatalogSnapshotSchema>;
 
+const CatalogContentBytesSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+
+const CatalogContentStampSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^(?:fs|manifest)-v1:/u);
+
+/**
+ * Catalog index documents deliberately omit Markdown text while retaining
+ * enough metadata for the Renderer to distinguish unloaded content from a
+ * genuinely empty file.
+ */
+export const CatalogIndexDocumentSchema = z
+  .object({
+    id: CatalogIdSchema,
+    title: CatalogTitleSchema,
+    content: z.literal(""),
+    contentBytes: CatalogContentBytesSchema,
+    contentStamp: CatalogContentStampSchema,
+    createdAt: TimestampSchema,
+    updatedAt: TimestampSchema
+  })
+  .strict();
+export type CatalogIndexDocument = z.infer<
+  typeof CatalogIndexDocumentSchema
+>;
+
+const CatalogIndexDraftSectionSchema = z
+  .object({
+    id: DraftSectionIdSchema,
+    title: DraftSectionTitleSchema,
+    wordCountRequirement: z.string().max(1_000),
+    body: CatalogIndexDocumentSchema,
+    characterState: CatalogIndexDocumentSchema,
+    createdAt: TimestampSchema,
+    updatedAt: TimestampSchema
+  })
+  .strict();
+
+const CatalogIndexDraftDirectorySchema = z
+  .object({
+    id: z.literal(CATALOG_DRAFT_DIRECTORY_ID),
+    title: CatalogTitleSchema,
+    sections: z.array(CatalogIndexDraftSectionSchema).min(1).max(100),
+    createdAt: TimestampSchema,
+    updatedAt: TimestampSchema
+  })
+  .strict();
+
+const CatalogIndexShortBookSchema = CurrentShortBookSchema.extend({
+  documents: z.array(CatalogIndexDocumentSchema),
+  draft: CatalogIndexDraftDirectorySchema
+}).strict();
+
+const CatalogIndexScriptBookSchema = CurrentScriptBookSchema.extend({
+  documents: z.array(CatalogIndexDocumentSchema),
+  draft: CatalogIndexDraftDirectorySchema
+}).strict();
+
+export const CatalogIndexBookSchema = z.discriminatedUnion("bookType", [
+  CatalogIndexShortBookSchema,
+  CatalogIndexScriptBookSchema
+]);
+export type CatalogIndexBook = z.infer<typeof CatalogIndexBookSchema>;
+
+export const CatalogIndexMaterialEntrySchema = MaterialEntrySchema.extend({
+  body: z.literal(""),
+  contentBytes: CatalogContentBytesSchema,
+  contentStamp: CatalogContentStampSchema
+}).strict();
+
+export const CatalogIndexMaterialLibrarySchema = MaterialLibrarySchema.extend({
+  overview: z.literal(""),
+  overviewContentBytes: CatalogContentBytesSchema,
+  overviewContentStamp: CatalogContentStampSchema,
+  entries: z.array(CatalogIndexMaterialEntrySchema)
+}).strict();
+
+export const CatalogIndexSkillEntrySchema = SkillEntrySchema.extend({
+  body: z.literal(""),
+  contentBytes: CatalogContentBytesSchema,
+  contentStamp: CatalogContentStampSchema
+}).strict();
+
+export const CatalogIndexSkillLibrarySchema = SkillLibrarySchema.extend({
+  overview: z.literal(""),
+  overviewContentBytes: CatalogContentBytesSchema,
+  overviewContentStamp: CatalogContentStampSchema,
+  entries: z.array(CatalogIndexSkillEntrySchema)
+}).strict();
+
+const CatalogIndexSnapshotObjectSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    revision: z.number().int().nonnegative(),
+    creativePlotStages: CreativePlotStagesSchema,
+    books: z.array(CatalogIndexBookSchema),
+    materials: z.array(CatalogIndexMaterialLibrarySchema),
+    materialGroups: z.array(MaterialLibraryGroupSchema),
+    skills: z.array(CatalogIndexSkillLibrarySchema),
+    skillGroups: z.array(SkillLibraryGroupSchema),
+    updatedAt: TimestampSchema,
+    legacyImport: CatalogLegacyImportSchema.optional(),
+    projectDiagnostics: z.array(CatalogProjectDiagnosticSchema).optional()
+  })
+  .strict();
+
+/**
+ * A metadata-only structural projection of CatalogSnapshot. All Markdown and
+ * library overview text is fixed to an empty string; byte counts describe the
+ * source content without loading it.
+ */
+export const CatalogIndexSnapshotSchema =
+  CatalogIndexSnapshotObjectSchema.superRefine((snapshot, context) => {
+    const compatible = CatalogSnapshotSchema.safeParse(snapshot);
+    if (!compatible.success) {
+      context.addIssue({
+        code: "custom",
+        message: "Catalog index must remain structurally compatible with CatalogSnapshot."
+      });
+    }
+  });
+export type CatalogIndexSnapshot = z.infer<typeof CatalogIndexSnapshotSchema>;
+
+export const CatalogReadDocumentInputSchema = z.discriminatedUnion("target", [
+  z
+    .object({
+      projectId: CatalogIdSchema,
+      target: z.literal("document"),
+      documentId: CatalogIdSchema
+    })
+    .strict(),
+  z
+    .object({
+      projectId: CatalogIdSchema,
+      target: z.literal("overview")
+    })
+    .strict()
+]);
+export type CatalogReadDocumentInput = z.infer<
+  typeof CatalogReadDocumentInputSchema
+>;
+
+const CatalogContentRevisionSchema = z
+  .string()
+  .regex(/^v1:\d+:[0-9a-f]{8}$/u);
+
+const CatalogReadDocumentResultSharedShape = {
+  projectId: CatalogIdSchema,
+  title: CatalogTitleSchema,
+  content: z.string(),
+  contentBytes: CatalogContentBytesSchema,
+  revision: CatalogContentRevisionSchema,
+  projectRevision: z.number().int().nonnegative(),
+  updatedAt: TimestampSchema
+} as const;
+
+export const CatalogReadDocumentResultSchema = z.discriminatedUnion("target", [
+  z
+    .object({
+      ...CatalogReadDocumentResultSharedShape,
+      target: z.literal("document"),
+      documentId: CatalogIdSchema
+    })
+    .strict(),
+  z
+    .object({
+      ...CatalogReadDocumentResultSharedShape,
+      target: z.literal("overview")
+    })
+    .strict()
+]);
+export type CatalogReadDocumentResult = z.infer<
+  typeof CatalogReadDocumentResultSchema
+>;
+
 export const CreateShortBookInputSchema = z.object({
   title: CatalogTitleSchema,
   genre: ShortBookGenreSchema,
@@ -1894,6 +2075,16 @@ export const SaveDocumentInputSchema = z.object({
   force: z.boolean().optional()
 });
 export type SaveDocumentInput = z.infer<typeof SaveDocumentInputSchema>;
+
+/**
+ * The saved document together with the authoritative revision committed by the
+ * catalog store. Consumers must use this revision for subsequent writes rather
+ * than deriving it from the requested base revision.
+ */
+export const SaveDocumentResultSchema = CatalogDocumentSchema.extend({
+  projectRevision: z.number().int().nonnegative()
+}).strict();
+export type SaveDocumentResult = z.infer<typeof SaveDocumentResultSchema>;
 
 export const CreateDraftSectionInputSchema = z.object({
   bookId: CatalogIdSchema,
@@ -2355,6 +2546,17 @@ export const CatalogSnapshotCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: z.object({})
 });
 
+export const CatalogIndexCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("catalog.index"),
+  payload: z.object({}).strict()
+});
+
+export const CatalogReadDocumentCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.readDocument"),
+    payload: CatalogReadDocumentInputSchema
+  });
+
 export const CatalogLoadDraftRecoveryCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("catalog.loadDraftRecovery"),
@@ -2561,6 +2763,8 @@ export const CatalogChooseExternalSkillsCommandEnvelopeSchema =
   });
 
 export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
+  CatalogIndexCommandEnvelopeSchema,
+  CatalogReadDocumentCommandEnvelopeSchema,
   CatalogSnapshotCommandEnvelopeSchema,
   CatalogLoadDraftRecoveryCommandEnvelopeSchema,
   CatalogSaveDraftRecoveryCommandEnvelopeSchema,
