@@ -23,16 +23,17 @@ describe("AgentTeamSettingsPanel", () => {
     expect(source).not.toContain("skill.skillType === activeWorkspaceType.value");
   });
 
-  it("maps all five long parent agents and preserves approval boundaries", () => {
+  it("maps all four long parent agents and preserves approval boundaries", () => {
     for (const id of [
       "setting",
       "plot_design",
       "draft",
-      "expert_section_writer",
       "continuity_ledger"
     ]) {
       expect(longSource).toContain(`id: "${id}"`);
     }
+    expect(longSource).not.toContain("expert_section_writer");
+    expect(longSource).toContain('label: "写手"');
     expect(source).toContain("不能继续创建子智能体");
     expect(source).toContain("不能绕过用户审批");
     expect(longSource).toContain("LongAgentTeamSettingsInputSchema.safeParse");

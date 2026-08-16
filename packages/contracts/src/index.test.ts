@@ -502,27 +502,30 @@ describe("DeepWrite desktop contracts", () => {
             kind: "initial-session-context" as const,
             text: "运行时注入文本"
           },
-          tools: [
-            {
-              name: "read_fixture",
-              label: "读取夹具",
-              description: "读取测试夹具。",
-              inputSchema: {
-                type: "object",
-                properties: { id: { type: "string" } },
-                required: ["id"]
+            tools: [
+              {
+                name: "read_fixture",
+                label: "读取夹具",
+                description: "读取测试夹具。",
+                inputSchema: {
+                  type: "object",
+                  properties: { id: { type: "string" } },
+                  required: ["id"]
+                }
               }
-            }
-          ]
-        }
+            ],
+            conversationHistory: [
+              { role: "user", text: "运行时注入文本" }
+            ]
+          }
       },
       { id: "event_eval", context }
     );
 
     expect(
       AgentEvaluationSnapshotEventEnvelopeSchema.parse(snapshot).payload.snapshot
-        .tools[0]
-    ).toMatchObject({ name: "read_fixture", inputSchema: { type: "object" } });
+        .conversationHistory
+    ).toEqual([{ role: "user", text: "运行时注入文本" }]);
     expect(SystemEventEnvelopeSchema.parse(snapshot).type).toBe(
       "agent.evaluation_snapshot"
     );

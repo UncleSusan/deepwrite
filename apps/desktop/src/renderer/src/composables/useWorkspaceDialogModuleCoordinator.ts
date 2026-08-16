@@ -102,6 +102,8 @@ export interface WorkspaceDialogLongStructureState {
   treeDeletion: Readonly<Ref<LongTreeItemDeleteTarget | null>>;
   volumeCreation: Readonly<Ref<Readonly<{ bookId: string }> | null>>;
   dialogOpen: Readonly<Ref<boolean>>;
+  agentsMd: Readonly<Ref<string | null>>;
+  agentsMdPending: Readonly<Ref<boolean>>;
   syncBookOptions: Readonly<
     Ref<readonly LongWorldbuildingSyncBookOption[]>
   >;
@@ -372,6 +374,8 @@ export function useWorkspaceDialogModuleCoordinator(
         bookTitle:
           options.longLifecycle.activeBookSummary.value?.title ?? "",
         bookId: options.longLifecycle.activeBookId.value,
+        agentsMd: options.longStructure.agentsMd.value,
+        agentsMdPending: options.longStructure.agentsMdPending.value,
         syncBookOptions: options.longStructure.syncBookOptions.value,
         snapshot: options.longLifecycle.workspaceIndex.value,
         pending: options.longLifecycle.bookActionPending.value

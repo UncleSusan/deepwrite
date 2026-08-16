@@ -90,6 +90,9 @@ describe("WorkspaceDialogLayer boundary", () => {
     expect(source).toContain(
       "emit('syncLongWorldbuilding', payload, completion)"
     );
+    expect(source).toContain(
+      "emit('saveLongAgentsMd', content, completion)"
+    );
     expect(typesSource).toContain(
       "completion: LongStructureMutationCompletion"
     );

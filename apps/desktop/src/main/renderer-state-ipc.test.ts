@@ -39,7 +39,7 @@ describe("renderer state IPC wiring", () => {
       mainSource.indexOf('command.type === "catalog.snapshot"')
     );
 
-    expect(forwarding).toContain('supervisor.requestCommand("core", command, 15_000)');
+    expect(forwarding).toContain('supervisor.requestCommand("core", command, 60_000)');
     expect(forwarding).toContain("RendererStateLoadResultSchema.parse");
     expect(forwarding).toContain("RendererStateMutationResultSchema.parse");
     expect(coreSource).toContain(

@@ -171,12 +171,16 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       open
       :book-title="module.bookTitle"
       :book-id="module.bookId"
+      :agents-md="module.agentsMd"
+      :agents-md-pending="module.agentsMdPending"
       :sync-book-options="module.syncBookOptions"
       :snapshot="module.snapshot"
       :pending="module.pending"
       @close="emit('closeLongStructure')"
       @mutation="(batch, completion) =>
         emit('longStructureMutation', batch, completion)"
+      @save-agents-md="(content, completion) =>
+        emit('saveLongAgentsMd', content, completion)"
       @sync-worldbuilding="(payload, completion) =>
         emit('syncLongWorldbuilding', payload, completion)"
     />

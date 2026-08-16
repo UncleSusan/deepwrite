@@ -27,6 +27,7 @@ import {
   createLongContinuitySelection,
   longBookResourceId,
   replaceLongBookSummary,
+  type LongStructureMutationCompletion,
   type LongWorkspaceRendererApi,
   type LongWorkspaceSelection
 } from "../types/longWorkspace";
@@ -58,6 +59,8 @@ export interface LongBookLifecycleState {
   rollbackDialogOpen: Ref<boolean>;
   rollbackCommitId: Ref<string | null>;
   structureDialogOpen: Ref<boolean>;
+  structureAgentsMd: Ref<string | null>;
+  structureAgentsMdPending: Ref<boolean>;
   bindingsDialogMode: Ref<LongBindingsDialogMode | null>;
   exportTarget: Ref<LongBookRenameTarget | null>;
   bookRenameTarget: Ref<LongBookRenameTarget | null>;
@@ -1003,7 +1006,32 @@ export function useLongBookLifecycleCoordinator(
         state.activeBookId.value === bookId &&
         state.workspaceIndex.value
       ) {
+        state.structureAgentsMdPending.value = true;
+        state.structureAgentsMd.value = null;
         state.structureDialogOpen.value = true;
+        const api = options.api();
+        if (!api) {
+          state.structureAgentsMdPending.value = false;
+          uiMessage.warning("当前环境未连接长篇工作区。");
+          return;
+        }
+        try {
+          const result = await api.readAgentsMd({ bookId });
+          if (!dialogRequestIsCurrent(requestId)) return;
+          state.structureAgentsMd.value = result.content;
+        } catch (error: unknown) {
+          if (!dialogRequestIsCurrent(requestId)) return;
+          uiMessage.warning(
+            error instanceof Error
+              ? `读取长篇上下文失败：${error.message}`
+              : "读取长篇上下文失败，请重试。"
+          );
+          state.structureAgentsMd.value = "";
+        } finally {
+          if (dialogRequestIsCurrent(requestId)) {
+            state.structureAgentsMdPending.value = false;
+          }
+        }
       }
     });
   }
@@ -1197,6 +1225,32 @@ export function useLongBookLifecycleCoordinator(
     }
   }
 
+  async function saveLongAgentsMd(
+    content: string,
+    completion: LongStructureMutationCompletion
+  ): Promise<void> {
+    const bookId = state.activeBookId.value;
+    const api = options.api();
+    if (!bookId || !api) {
+      const message = "当前长篇结构尚未就绪。";
+      uiMessage.warning(message);
+      completion.fail(message);
+      return;
+    }
+    try {
+      await api.writeAgentsMd({ bookId, content });
+      state.structureAgentsMd.value = content;
+      completion.succeed();
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "保存长篇上下文失败，请稍后重试。";
+      uiMessage.error(message);
+      completion.fail(message);
+    }
+  }
+
   async function drain(): Promise<void> {
     while (inFlightOperations.size > 0) {
       await Promise.allSettled([...inFlightOperations]);
@@ -1239,6 +1293,7 @@ export function useLongBookLifecycleCoordinator(
     updateLongBookBindings,
     closeLongBookRemovalDialog,
     confirmLongBookRemoval,
+    saveLongAgentsMd,
     drain,
     dispose
   };

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { LONG_AGENTS_MD_MAX_CHARACTERS } from "@deepwrite/contracts";
 import type {
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch,
@@ -22,7 +23,7 @@ import PopupSelect, {
   type PopupSelectValue
 } from "./PopupSelect.vue";
 
-type StructurePanel = "foundation" | "features";
+type StructurePanel = "foundation" | "features" | "agents";
 type FoundationSection = "worldbuilding" | "characterTypes";
 
 interface ManagerRow {
@@ -43,12 +44,16 @@ const props = withDefaults(
   defineProps<{
     snapshot: LongWorkspaceIndexSnapshot;
     currentBookId?: string | null | undefined;
+    agentsMd?: string | null | undefined;
+    agentsMdPending?: boolean;
     syncBookOptions?: readonly LongWorldbuildingSyncBookOption[] | undefined;
     disabled?: boolean;
     previewError?: string | null;
   }>(),
   {
     currentBookId: null,
+    agentsMd: null,
+    agentsMdPending: false,
     syncBookOptions: () => [],
     disabled: false,
     previewError: null
@@ -62,6 +67,10 @@ const emit = defineEmits<{
   ];
   syncWorldbuilding: [
     payload: { sourceBookId: string; sourceTitle: string },
+    completion: LongStructureMutationCompletion
+  ];
+  saveAgentsMd: [
+    content: string,
     completion: LongStructureMutationCompletion
   ];
   modalActiveChange: [active: boolean];
@@ -82,6 +91,11 @@ const panelOptions: ReadonlyArray<{
   description: string;
 }> = [
   {
+    value: "agents",
+    label: "长篇上下文",
+    description: "五阶段作用说明"
+  },
+  {
     value: "foundation",
     label: "基础结构",
     description: "世界观分类"
@@ -95,6 +109,7 @@ const panelOptions: ReadonlyArray<{
 
 const activePanel = ref<StructurePanel>("foundation");
 const activeFoundationSection = ref<FoundationSection>("worldbuilding");
+const agentsMdDraft = ref(props.agentsMd ?? "");
 const formOpen = ref(false);
 const formMode = ref<"create" | "edit">("create");
 const pendingDelete = ref<ManagerRow | null>(null);
@@ -111,7 +126,7 @@ const activeModal = computed<"form" | "sync" | "delete" | null>(() =>
         ? "delete"
         : null
 );
-type MutationSurface = "form" | "delete" | "sync" | "background";
+type MutationSurface = "form" | "delete" | "sync" | "background" | "agents";
 const pendingMutation = ref<{
   id: number;
   surface: MutationSurface;
@@ -219,12 +234,33 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.agentsMd,
+  (content) => {
+    if (pendingMutation.value?.surface === "agents") return;
+    agentsMdDraft.value = content ?? "";
+  }
+);
+
+const agentsMdDirty = computed(
+  () => agentsMdDraft.value !== (props.agentsMd ?? "")
+);
+const agentsMdCharacterCount = computed(() =>
+  Array.from(agentsMdDraft.value).length
+);
+const agentsMdOverLimit = computed(
+  () => agentsMdCharacterCount.value > LONG_AGENTS_MD_MAX_CHARACTERS
+);
+
 function setPanel(panel: StructurePanel): void {
   if (panel === activePanel.value || mutationLocked.value) return;
-  closeForm();
-  closeDelete();
-  closeSync();
-  activePanel.value = panel;
+  void (async () => {
+    if (!(await flushAgentsMdIfNeeded())) return;
+    closeForm();
+    closeDelete();
+    closeSync();
+    activePanel.value = panel;
+  })();
 }
 
 function setFoundationSection(section: FoundationSection): void {
@@ -523,6 +559,67 @@ function confirmDelete(): void {
     "delete"
   );
 }
+
+function saveAgentsMd(): boolean {
+  if (mutationLocked.value || props.agentsMdPending) return false;
+  if (agentsMdOverLimit.value) {
+    uiMessage.warning(
+      `长篇上下文不能超过 ${LONG_AGENTS_MD_MAX_CHARACTERS} 个字符。`
+    );
+    return false;
+  }
+  const requestId = ++mutationClock;
+  pendingMutation.value = { id: requestId, surface: "agents" };
+  emit("saveAgentsMd", agentsMdDraft.value, {
+    succeed: () => {
+      finishMutation(requestId, "succeeded");
+      uiMessage.success("已保存长篇上下文。");
+    },
+    fail: () => finishMutation(requestId, "failed"),
+    appliedButRefreshFailed: () =>
+      finishMutation(requestId, "applied-refresh-failed")
+  });
+  return true;
+}
+
+function flushAgentsMdIfNeeded(): Promise<boolean> {
+  if (!agentsMdDirty.value || activePanel.value !== "agents") {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    if (mutationLocked.value || props.agentsMdPending) {
+      resolve(false);
+      return;
+    }
+    if (agentsMdOverLimit.value) {
+      uiMessage.warning(
+        `长篇上下文不能超过 ${LONG_AGENTS_MD_MAX_CHARACTERS} 个字符。`
+      );
+      resolve(false);
+      return;
+    }
+    const requestId = ++mutationClock;
+    pendingMutation.value = { id: requestId, surface: "agents" };
+    emit("saveAgentsMd", agentsMdDraft.value, {
+      succeed: () => {
+        finishMutation(requestId, "succeeded");
+        resolve(true);
+      },
+      fail: () => {
+        finishMutation(requestId, "failed");
+        resolve(false);
+      },
+      appliedButRefreshFailed: () => {
+        finishMutation(requestId, "applied-refresh-failed");
+        resolve(true);
+      }
+    });
+  });
+}
+
+defineExpose({
+  flushAgentsMdIfNeeded
+});
 </script>
 
 <template>
@@ -531,7 +628,7 @@ function confirmDelete(): void {
       <div>
         <p class="manager-eyebrow">LONG-FORM STRUCTURE</p>
         <h2>结构管理</h2>
-        <p>在这里管理世界观分类、人物类型和长篇功能配置；具体内容请在对应工作区编辑。</p>
+        <p>在这里管理世界观分类、人物类型、功能配置和长篇上下文；具体内容请在对应工作区编辑。</p>
       </div>
     </header>
 
@@ -687,7 +784,7 @@ function confirmDelete(): void {
     </div>
 
     <div
-      v-else
+      v-else-if="activePanel === 'features'"
       id="long-structure-panel-content-features"
       class="structure-panel-content"
       role="tabpanel"
@@ -745,6 +842,51 @@ function confirmDelete(): void {
           />
         </section>
       </div>
+    </div>
+
+    <div
+      v-else
+      id="long-structure-panel-content-agents"
+      class="structure-panel-content agents-panel-content"
+      role="tabpanel"
+      aria-labelledby="long-structure-panel-agents"
+    >
+      <section class="agents-context-card">
+        <div class="section-heading">
+          <div>
+            <h3>长篇上下文</h3>
+            <p>
+              介绍世界观、人物、剧情点、正文和持续性账本五个阶段的作用。
+              对话时会注入给当前智能体；内容保存在本书目录的 AGENTS.md。
+            </p>
+          </div>
+          <span>{{ agentsMdCharacterCount }} / {{ LONG_AGENTS_MD_MAX_CHARACTERS }} 字符</span>
+        </div>
+        <textarea
+          v-model="agentsMdDraft"
+          :disabled="mutationLocked || agentsMdPending"
+          spellcheck="false"
+          aria-label="长篇上下文"
+          placeholder="介绍五个阶段各自负责什么…"
+        />
+        <footer class="agents-context-actions">
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="
+              mutationLocked ||
+              agentsMdPending ||
+              !agentsMdDirty ||
+              agentsMdOverLimit
+            "
+            @click="saveAgentsMd"
+          >
+            {{
+              pendingMutation?.surface === "agents" ? "保存中…" : "保存"
+            }}
+          </button>
+        </footer>
+      </section>
     </div>
 
     <Teleport to="body">
@@ -1032,7 +1174,7 @@ function confirmDelete(): void {
 
 .structure-panel-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.35rem;
   padding: 0.3rem;
   border: 1px solid var(--theme-line-soft);
@@ -1297,6 +1439,70 @@ button:disabled {
   line-height: 1.5;
 }
 
+.agents-panel-content {
+  min-height: 22rem;
+}
+
+.agents-context-card {
+  display: grid;
+  grid-template-rows: auto minmax(16rem, 1fr) auto;
+  min-height: 22rem;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 0.75rem;
+  background: var(--surface-raised);
+}
+
+.agents-context-card .section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.agents-context-card h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.agents-context-card p,
+.agents-context-card span {
+  margin: 0.25rem 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.agents-context-card textarea {
+  box-sizing: border-box;
+  min-height: 16rem;
+  width: 100%;
+  resize: vertical;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--theme-line);
+  border-radius: 0.65rem;
+  background: var(--surface-main);
+  color: var(--text-primary);
+  font: 0.9rem/1.55 inherit;
+}
+
+.agents-context-card textarea:focus {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 1px;
+}
+
+.agents-context-card textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.agents-context-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .structure-modal-overlay {
   z-index: 2200;
   overflow: auto;
@@ -1443,10 +1649,6 @@ button:disabled {
 }
 
 @media (max-width: 42rem) {
-  .structure-panel-tabs {
-    grid-template-columns: 1fr;
-  }
-
   .manager-toolbar,
   .manager-header,
   .manager-row {

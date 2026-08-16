@@ -370,7 +370,7 @@ export function useSettingsFeatureCoordinator(
       const saved = await api.longAgents.save(settings);
       settingsStore.markLoaded("longAgents", saved);
       uiMessage.success(
-        "长篇六个智能体的提示词、欢迎快捷与读取范围已保存，下一轮对话立即生效。"
+        "长篇四个阶段智能体的提示词与欢迎快捷已保存，下一轮对话立即生效。"
       );
     } catch (error: unknown) {
       uiMessage.error(errorMessage(error, "保存长篇智能体设置失败。"));

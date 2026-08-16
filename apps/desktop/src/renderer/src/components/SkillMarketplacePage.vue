@@ -24,6 +24,15 @@ import PopupSelect, {
   type PopupSelectValue
 } from "./PopupSelect.vue";
 import { uiMessage } from "../ui-feedback";
+import {
+  formatMarketplaceContractError,
+  formatMarketplacePublishEmptyContentMessage,
+  loadMarketplacePublishLibraryContent,
+  loadMarketplacePublishLibraryOverview,
+  loadMarketplacePublishSkillContent,
+  skillLibraryPublishSource,
+  type MarketplacePublishDocumentReader
+} from "../utils/marketplacePublishContent";
 
 const props = defineProps<{
   active: boolean;
@@ -152,7 +161,9 @@ const publishGroupLibraries = ref<MarketplacePublishGroupLibrary[]>([]);
 const publishGroupItems = ref<MarketplaceContentRef[]>([]);
 const publishGroupItemLabels = ref<Record<string, string>>({});
 const publishPending = ref(false);
+const publishSourceLoading = ref(false);
 const editingRef = ref<MarketplaceContentRef | null>(null);
+let publishSourceLoadToken = 0;
 
 const apiAvailable = computed(() => Boolean(window.deepwrite?.marketplace));
 const authenticated = computed(() => session.value?.authenticated === true);
@@ -273,9 +284,15 @@ function selectDetailSection(section: DetailSkillSection): void {
 
 function errorMessage(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
-  return error.message
+  const cleaned = error.message
     .replace(/^Error invoking remote method '[^']+': Error:\s*/u, "")
     .replace(/^Error:\s*/u, "");
+  return formatMarketplaceContractError(cleaned) ?? cleaned;
+}
+
+function catalogDocumentReader(): MarketplacePublishDocumentReader | null {
+  const reader = window.deepwrite?.catalog;
+  return reader?.readDocument ? reader : null;
 }
 
 function updateSession(nextSession: MarketplaceSession): MarketplaceSession {
@@ -661,6 +678,8 @@ async function confirmInstall(): Promise<void> {
 
 function resetPublishForm(type: MarketplaceContentType = publishType.value): void {
   editingRef.value = null;
+  publishSourceLoadToken += 1;
+  publishSourceLoading.value = false;
   publishType.value = type;
   publishSourceId.value = "";
   publishTitle.value = "";
@@ -679,56 +698,99 @@ function changePublishType(value: PopupSelectValue): void {
   resetPublishForm(value as MarketplaceContentType);
 }
 
-function applyPublishSource(value: PopupSelectValue): void {
+async function applyPublishSource(value: PopupSelectValue): Promise<void> {
   publishSourceId.value = String(value);
-  if (publishType.value === "skill") {
-    const [libraryId, entryId] = publishSourceId.value.split("\u0000");
-    const library = props.catalogSnapshot?.skills.find(({ id }) => id === libraryId);
-    const entry = library?.entries.find(({ id }) => id === entryId);
-    if (!library || !entry) return;
-    publishTitle.value = entry.title;
-    publishOverview.value = library.overview;
-    publishKind.value = library.skillKind;
-    publishLibraryType.value = library.skillType;
-    publishStageId.value = entry.stageId;
-    publishBody.value = entry.body;
+  const token = ++publishSourceLoadToken;
+  const reader = catalogDocumentReader();
+  if (!reader) {
+    uiMessage.warning("当前环境无法读取本地技能正文。");
     return;
   }
-  if (publishType.value === "group") {
-    const group = props.catalogSnapshot?.skillGroups.find(
+  publishSourceLoading.value = true;
+  try {
+    if (publishType.value === "skill") {
+      const [libraryId, entryId] = publishSourceId.value.split("\u0000");
+      const library = props.catalogSnapshot?.skills.find(({ id }) => id === libraryId);
+      const entry = library?.entries.find(({ id }) => id === entryId);
+      if (!library || !entry || !libraryId || !entryId) return;
+      publishTitle.value = entry.title;
+      publishKind.value = library.skillKind;
+      publishLibraryType.value = library.skillType;
+      publishStageId.value = entry.stageId;
+      const [overview, content] = await Promise.all([
+        loadMarketplacePublishLibraryOverview(reader, library.id),
+        loadMarketplacePublishSkillContent(reader, library.id, entry.id)
+      ]);
+      if (token !== publishSourceLoadToken) return;
+      publishOverview.value = overview;
+      publishBody.value = content;
+      if (!content.trim()) {
+        uiMessage.warning(
+          formatMarketplacePublishEmptyContentMessage([entry.title])
+        );
+      }
+      return;
+    }
+    if (publishType.value === "group") {
+      const group = props.catalogSnapshot?.skillGroups.find(
+        ({ id }) => id === publishSourceId.value
+      );
+      if (!group) return;
+      publishTitle.value = group.title;
+      publishOverview.value = "";
+      const libraries = await Promise.all(
+        localLibrariesForGroup(group.id).map((library) =>
+          loadMarketplacePublishLibraryContent(
+            reader,
+            skillLibraryPublishSource(library)
+          )
+        )
+      );
+      if (token !== publishSourceLoadToken) return;
+      const emptyTitles = libraries.flatMap((library) => library.emptyTitles);
+      publishGroupLibraries.value = libraries.map(
+        ({ title, overview, kind, libraryType, entries }) => ({
+          title,
+          overview,
+          kind,
+          libraryType,
+          entries
+        })
+      );
+      if (emptyTitles.length > 0) {
+        uiMessage.warning(
+          formatMarketplacePublishEmptyContentMessage(emptyTitles)
+        );
+      }
+      return;
+    }
+    const library = props.catalogSnapshot?.skills.find(
       ({ id }) => id === publishSourceId.value
     );
-    if (!group) return;
-    publishTitle.value = group.title;
-    publishOverview.value = "";
-    publishGroupLibraries.value = localLibrariesForGroup(group.id).map(
-      (library) => ({
-        title: library.title,
-        overview: library.overview,
-        kind: library.skillKind,
-        libraryType: library.skillType,
-        entries: library.entries.map((entry) => ({
-          stageId: entry.stageId,
-          title: entry.title,
-          content: entry.body
-        }))
-      })
+    if (!library) return;
+    publishTitle.value = library.title;
+    publishKind.value = library.skillKind;
+    publishLibraryType.value = library.skillType;
+    const loaded = await loadMarketplacePublishLibraryContent(
+      reader,
+      skillLibraryPublishSource(library)
     );
-    return;
+    if (token !== publishSourceLoadToken) return;
+    publishOverview.value = loaded.overview;
+    publishEntries.value = loaded.entries;
+    if (loaded.emptyTitles.length > 0) {
+      uiMessage.warning(
+        formatMarketplacePublishEmptyContentMessage(loaded.emptyTitles)
+      );
+    }
+  } catch (error: unknown) {
+    if (token !== publishSourceLoadToken) return;
+    uiMessage.error(errorMessage(error, "读取本地技能正文失败。"));
+  } finally {
+    if (token === publishSourceLoadToken) {
+      publishSourceLoading.value = false;
+    }
   }
-  const library = props.catalogSnapshot?.skills.find(
-    ({ id }) => id === publishSourceId.value
-  );
-  if (!library) return;
-  publishTitle.value = library.title;
-  publishOverview.value = library.overview;
-  publishKind.value = library.skillKind;
-  publishLibraryType.value = library.skillType;
-  publishEntries.value = library.entries.map((entry) => ({
-    stageId: entry.stageId,
-    title: entry.title,
-    content: entry.body
-  }));
 }
 
 function groupItemLabel(ref: MarketplaceContentRef): string {
@@ -761,6 +823,13 @@ function buildPublishInput(): MarketplacePublishInput | null {
       uiMessage.warning("请选择一个非内置本地技能库。");
       return null;
     }
+    const emptyTitles = publishEntries.value
+      .filter((entry) => !entry.content.trim())
+      .map((entry) => entry.title);
+    if (emptyTitles.length > 0) {
+      uiMessage.warning(formatMarketplacePublishEmptyContentMessage(emptyTitles));
+      return null;
+    }
     return {
       contentType: "library",
       title,
@@ -781,36 +850,141 @@ function buildPublishInput(): MarketplacePublishInput | null {
     uiMessage.warning("请选择一个包含非内置技能库的本地技能分组。");
     return null;
   }
-  return publishGroupLibraries.value.length > 0
-    ? {
-        contentType: "group",
-        title,
-        overview: publishOverview.value.trim(),
-        libraries: publishGroupLibraries.value.map((library) => ({
-          title: library.title,
-          overview: library.overview,
-          kind: library.kind,
-          libraryType: library.libraryType,
-          entries: library.entries.map((entry) => ({ ...entry }))
-        }))
-      }
-    : {
-        contentType: "group",
-        title,
-        overview: publishOverview.value.trim(),
-        items: publishGroupItems.value.map(({ contentType: itemType, id }) => ({
-          contentType: itemType,
-          id
-        }))
-      };
+  if (publishGroupLibraries.value.length > 0) {
+    const emptyTitles = publishGroupLibraries.value.flatMap((library) =>
+      library.entries
+        .filter((entry) => !entry.content.trim())
+        .map((entry) => entry.title)
+    );
+    if (emptyTitles.length > 0) {
+      uiMessage.warning(formatMarketplacePublishEmptyContentMessage(emptyTitles));
+      return null;
+    }
+    if (
+      publishGroupLibraries.value.some((library) => library.entries.length === 0)
+    ) {
+      uiMessage.warning("技能组内存在没有可发布正文的技能库。");
+      return null;
+    }
+    return {
+      contentType: "group",
+      title,
+      overview: publishOverview.value.trim(),
+      libraries: publishGroupLibraries.value.map((library) => ({
+        title: library.title,
+        overview: library.overview,
+        kind: library.kind,
+        libraryType: library.libraryType,
+        entries: library.entries.map((entry) => ({ ...entry }))
+      }))
+    };
+  }
+  return {
+    contentType: "group",
+    title,
+    overview: publishOverview.value.trim(),
+    items: publishGroupItems.value.map(({ contentType: itemType, id }) => ({
+      contentType: itemType,
+      id
+    }))
+  };
+}
+
+async function hydrateLocalPublishContents(): Promise<boolean> {
+  if (editingRef.value) return true;
+  const reader = catalogDocumentReader();
+  if (!reader) {
+    uiMessage.warning("当前环境无法读取本地技能正文。");
+    return false;
+  }
+  if (publishType.value === "skill") {
+    if (publishBody.value.trim()) return true;
+    const [libraryId, entryId] = publishSourceId.value.split("\u0000");
+    if (!libraryId || !entryId) {
+      uiMessage.warning("请选择并确认要发布的本地技能内容。");
+      return false;
+    }
+    publishBody.value = await loadMarketplacePublishSkillContent(
+      reader,
+      libraryId,
+      entryId
+    );
+    if (!publishOverview.value.trim()) {
+      publishOverview.value = await loadMarketplacePublishLibraryOverview(
+        reader,
+        libraryId
+      );
+    }
+    return true;
+  }
+  if (publishType.value === "library") {
+    const library = props.catalogSnapshot?.skills.find(
+      ({ id }) => id === publishSourceId.value
+    );
+    if (!library) {
+      uiMessage.warning("请选择一个非内置本地技能库。");
+      return false;
+    }
+    const needsReload =
+      publishEntries.value.length === 0 ||
+      publishEntries.value.some((entry) => !entry.content.trim()) ||
+      !publishOverview.value.trim();
+    if (!needsReload) return true;
+    const loaded = await loadMarketplacePublishLibraryContent(
+      reader,
+      skillLibraryPublishSource(library)
+    );
+    publishOverview.value = loaded.overview;
+    publishEntries.value = loaded.entries;
+    if (loaded.emptyTitles.length > 0) {
+      uiMessage.warning(
+        formatMarketplacePublishEmptyContentMessage(loaded.emptyTitles)
+      );
+      return false;
+    }
+    return true;
+  }
+  if (publishGroupItems.value.length > 0) return true;
+  const libraries = localLibrariesForGroup(publishSourceId.value);
+  if (libraries.length === 0) {
+    uiMessage.warning("请选择一个包含非内置技能库的本地技能分组。");
+    return false;
+  }
+  const loaded = await Promise.all(
+    libraries.map((library) =>
+      loadMarketplacePublishLibraryContent(
+        reader,
+        skillLibraryPublishSource(library)
+      )
+    )
+  );
+  const emptyTitles = loaded.flatMap((library) => library.emptyTitles);
+  publishGroupLibraries.value = loaded.map(
+    ({ title, overview, kind, libraryType, entries }) => ({
+      title,
+      overview,
+      kind,
+      libraryType,
+      entries
+    })
+  );
+  if (emptyTitles.length > 0) {
+    uiMessage.warning(formatMarketplacePublishEmptyContentMessage(emptyTitles));
+    return false;
+  }
+  return true;
 }
 
 async function submitPublish(): Promise<void> {
-  if (!apiAvailable.value || publishPending.value) return;
-  const input = buildPublishInput();
-  if (!input) return;
+  if (!apiAvailable.value || publishPending.value || publishSourceLoading.value) {
+    return;
+  }
   publishPending.value = true;
   try {
+    const hydrated = await hydrateLocalPublishContents();
+    if (!hydrated) return;
+    const input = buildPublishInput();
+    if (!input) return;
     if (editingRef.value) {
       await window.deepwrite!.marketplace.update({
         id: editingRef.value.id,
@@ -1173,8 +1347,20 @@ onMounted(() => {
 
           <div class="publish-actions full-field">
             <span>文件上传入口不在本轮桌面端 UI 中；当前仅发布现有本地技能。</span>
-            <button class="primary-button" type="submit" :disabled="publishPending">
-              {{ publishPending ? "正在提交…" : editingRef ? "保存并重新审核" : "提交审核" }}
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="publishPending || publishSourceLoading"
+            >
+              {{
+                publishPending
+                  ? "正在提交…"
+                  : publishSourceLoading
+                    ? "正在读取正文…"
+                    : editingRef
+                      ? "保存并重新审核"
+                      : "提交审核"
+              }}
             </button>
           </div>
         </form>

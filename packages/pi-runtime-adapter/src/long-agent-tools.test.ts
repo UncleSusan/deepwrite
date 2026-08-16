@@ -164,6 +164,46 @@ function fixtureIndex(): LongWorkspaceIndexSnapshot {
   });
 }
 
+function twoWrittenChaptersIndex(): LongWorkspaceIndexSnapshot {
+  const index = fixtureIndex();
+  index.chapters[0]!.bodyStatus = "written";
+  index.plot.chapterCards.push({
+    id: "chapter_two",
+    volumeId: "volume_one",
+    primaryArcId: "arc_one",
+    title: "第二章",
+    narrativeOrder: 2
+  });
+  index.chapters.push({
+    chapterCardId: "chapter_two",
+    bodyStatus: "written",
+    body: file(
+      longChapterBodyFileId("chapter_two"),
+      "long/chapters/two/body.md"
+    ),
+    card: file(
+      longChapterCardFileId("chapter_two"),
+      "long/chapters/two/card.md"
+    ),
+    characterState: file(
+      longChapterCharacterStateFileId("chapter_two"),
+      "long/chapters/two/character-state.md"
+    ),
+    handoff: file(
+      longChapterHandoffFileId("chapter_two"),
+      "long/chapters/two/handoff.md"
+    ),
+    foreshadowingChanges: file(
+      longChapterForeshadowingChangesFileId("chapter_two"),
+      longChapterContinuityFilePath("chapter_two", "foreshadowing-changes.md")
+    ),
+    worldReveals: null,
+    characterContinuity: [],
+    commitId: null
+  });
+  return LongWorkspaceIndexSnapshotSchema.parse(index);
+}
+
 function fixtureWorldFile(index = fixtureIndex()) {
   const category = index.worldbuilding[0]!;
   if (category.format !== "text") {
@@ -380,8 +420,8 @@ describe("long workspace agent tools", () => {
       runId: "run-character"
     }).map((tool) => tool.name);
     const writerNames = buildLongWorkspaceTools({
-      workspace: workspace("expert_section_writer", "draft", "chapter_one"),
-      profile: profile("expert_section_writer"),
+      workspace: workspace("draft", "draft", "chapter_one"),
+      profile: profile("draft"),
       sessionId: "session-writer",
       runId: "run-writer"
     }).map((tool) => tool.name);
@@ -409,15 +449,16 @@ describe("long workspace agent tools", () => {
       sessionId: "session-plot",
       runId: "run-plot"
     }).map((tool) => tool.name);
-    const forgedDraftProfile = profile("draft");
-    forgedDraftProfile.writeAccess.capabilities.push(
+    const forgedSettingProfile = profile("setting");
+    forgedSettingProfile.writeAccess.capabilities.push(
       "write_chapter_files"
     );
-    const forgedDraftNames = buildLongWorkspaceTools({
-      workspace: workspace("draft", "draft", "chapter_one"),
-      profile: forgedDraftProfile,
-      sessionId: "session-forged-draft",
-      runId: "run-forged-draft"
+    forgedSettingProfile.writeAccess.workspaceRoots.push("draft");
+    const forgedSettingNames = buildLongWorkspaceTools({
+      workspace: workspace("setting", "worldbuilding", "chapter_one"),
+      profile: forgedSettingProfile,
+      sessionId: "session-forged-setting",
+      runId: "run-forged-setting"
     }).map((tool) => tool.name);
     const rootlessLedgerProfile = profile("continuity_ledger");
     rootlessLedgerProfile.writeAccess.workspaceRoots =
@@ -445,7 +486,15 @@ describe("long workspace agent tools", () => {
       "create_setting",
       "write_setting",
       "edit_setting",
-      "propose_long_mutation"
+      "list_plot_design",
+      "search_plot_design",
+      "read_plot_design",
+      "propose_long_mutation",
+      "list_chapters",
+      "search_chapters",
+      "read_chapter",
+      "list_continuity_files",
+      "read_continuity_file"
     ];
     expect(worldNames).toEqual(settingNames);
     expect(characterNames).toEqual(settingNames);
@@ -484,11 +533,14 @@ describe("long workspace agent tools", () => {
       "list_plot_design",
       "search_plot_design",
       "read_plot_design",
+      "propose_long_chapter_dispatch",
       "list_chapters",
       "search_chapters",
       "read_chapter",
       "write_chapter_draft",
-      "edit_chapter_draft"
+      "edit_chapter_draft",
+      "list_continuity_files",
+      "read_continuity_file"
     ]);
     expect(ledgerNames).toEqual([
       "query_linked_material_entries",
@@ -525,7 +577,12 @@ describe("long workspace agent tools", () => {
       "search_chapters",
       "read_chapter",
       "list_continuity_files",
-      "read_continuity_file"
+      "read_continuity_file",
+      "create_continuity_file",
+      "delete_continuity_file",
+      "write_continuity_file",
+      "edit_continuity_file",
+      "propose_continuity_commit"
     ]);
     expect(draftNames).toEqual([
       "query_linked_material_entries",
@@ -540,7 +597,9 @@ describe("long workspace agent tools", () => {
       "propose_long_chapter_dispatch",
       "list_chapters",
       "search_chapters",
-      "read_chapter"
+      "read_chapter",
+      "list_continuity_files",
+      "read_continuity_file"
     ]);
     expect(plotNames).toEqual([
       "query_linked_material_entries",
@@ -556,7 +615,12 @@ describe("long workspace agent tools", () => {
       "write_plot_design",
       "edit_plot_design",
       "propose_long_mutation",
-      "propose_long_chapter_dispatch"
+      "propose_long_chapter_dispatch",
+      "list_chapters",
+      "search_chapters",
+      "read_chapter",
+      "list_continuity_files",
+      "read_continuity_file"
     ]);
     const plotTools = buildLongWorkspaceTools({
       workspace: workspace("plot_design", "plot_design"),
@@ -576,6 +640,15 @@ describe("long workspace agent tools", () => {
     expect(plotMutationDescription).toContain("级联清理该章正文与记录");
     expect(plotMutationDescription).toContain("剧情点关联可为 null");
     expect(plotMutationDescription).toContain("预检失败不会生成审批卡");
+    expect(toolByName(plotTools, "read_plot_design").description).toContain(
+      "读取剧情点时一次返回概要"
+    );
+    expect(toolByName(plotTools, "write_plot_design").description).toContain(
+      "读取剧情点（mode=full）也会同时建立其下故事事件与故事情节的完整读取凭据"
+    );
+    expect(toolByName(plotTools, "edit_plot_design").description).toContain(
+      "读取剧情点（mode=full）后可直接局部修改该剧情点及其下故事事件、故事情节"
+    );
     expect(plotMutationSchema).toContain("toPrimaryArcId 非空时必须属于该分卷");
     expect(plotMutationSchema).toContain('"null"');
     expect(plotMutationSchema).toContain('"foreshadowing.create"');
@@ -595,7 +668,7 @@ describe("long workspace agent tools", () => {
     expect(
       [...worldNames, ...characterNames, ...writerNames, ...ledgerNames]
     ).not.toContain("write_workspace_editor");
-    expect(forgedDraftNames).not.toContain("write_chapter_draft");
+    expect(forgedSettingNames).not.toContain("write_chapter_draft");
     expect(rootlessLedgerNames).not.toContain(
       "propose_continuity_commit"
     );
@@ -964,6 +1037,322 @@ describe("long workspace agent tools", () => {
     expect(emptyEventsText).toBe(["故事事件", "（暂无故事事件）"].join("\n\n"));
   });
 
+  it("reads plot design as paragraph text instead of JSON", async () => {
+    const index = structuredClone(fixtureIndex());
+    index.plot.volumes[0]!.title = "第一卷 青阳城·凡界蝼蚁";
+    index.plot.volumes[0]!.summary = [
+      "约1—180章，境界从凡人、炼气推进至筑基。核心是从被家族判定无望的蝼蚁，到拥有走出凡界资格的修士。本卷承担世界与金手指落地、主角性格建立、第一批敌友登场，青云宗成长体系展开，以及父亲失踪主线第一次抬头。",
+      "外部矛盾：凌家主脉及赵昊凭天资和资源垄断羞辱主角；进入青云宗后，外门规则、资深弟子与资源匮乏继续压迫。"
+    ].join("\n\n");
+    index.plot.arcs[0]!.summary = "从凡界蝼蚁走到宗门门槛。";
+    index.plot.arcs[0]!.outline = "城门受辱后转入青云宗试炼。";
+    const snapshot = LongWorkspaceIndexSnapshotSchema.parse(index);
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(snapshot);
+      }
+      throw new Error(`Unexpected command: ${command.type}`);
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-plot-read-paragraphs",
+      runId: "run-plot-read-paragraphs",
+      executor
+    });
+    const read = toolByName(tools, "read_plot_design");
+
+    const volumeText = resultText(
+      await read.execute("read-volume", {
+        target: { kind: "volume", volume_id: "volume_one" },
+        mode: "full"
+      })
+    );
+    expect(() => JSON.parse(volumeText)).toThrow();
+    expect(volumeText).not.toContain('"kind"');
+    expect(volumeText).not.toContain('"volume_id"');
+    expect(volumeText).not.toContain("\\n");
+    expect(volumeText).toBe(
+      [
+        "完整内容：",
+        "",
+        "第一卷 青阳城·凡界蝼蚁",
+        "kind=volume",
+        "volume_id=volume_one",
+        "顺序=1",
+        "",
+        "概要",
+        "约1—180章，境界从凡人、炼气推进至筑基。核心是从被家族判定无望的蝼蚁，到拥有走出凡界资格的修士。本卷承担世界与金手指落地、主角性格建立、第一批敌友登场，青云宗成长体系展开，以及父亲失踪主线第一次抬头。",
+        "",
+        "外部矛盾：凌家主脉及赵昊凭天资和资源垄断羞辱主角；进入青云宗后，外门规则、资深弟子与资源匮乏继续压迫。"
+      ].join("\n")
+    );
+
+    const arcText = resultText(
+      await read.execute("read-arc", {
+        target: { kind: "arc", arc_id: "arc_one" },
+        mode: "full"
+      })
+    );
+    expect(() => JSON.parse(arcText)).toThrow();
+    expect(arcText).toBe(
+      [
+        "完整内容：",
+        "",
+        "主线",
+        "kind=arc",
+        "arc_id=arc_one",
+        "volume_id=volume_one",
+        "顺序=1",
+        "",
+        "概要",
+        "从凡界蝼蚁走到宗门门槛。",
+        "",
+        "大纲",
+        "城门受辱后转入青云宗试炼。",
+        "",
+        "故事事件",
+        "",
+        "（暂无故事事件）",
+        "",
+        "故事情节",
+        "",
+        "（暂无故事情节）"
+      ].join("\n")
+    );
+    expect(read.description).toContain("读取剧情点时一次返回概要");
+    expect(read.description).toContain("全部故事事件");
+    expect(read.description).toContain("不要再分别为这些故事事件或故事情节调用本工具");
+  });
+
+  it("reads a plot point with story-event bodies, story-plot bodies, and related foreshadowing", async () => {
+    const index = structuredClone(fixtureStoryPlotIndex());
+    index.plot.arcs[0]!.summary = "从城门走到北上。";
+    index.plot.arcs.push({
+      id: "arc_two",
+      volumeId: "volume_one",
+      title: "支线",
+      order: 2,
+      outline: ""
+    });
+    index.plot.storyPlots.push({
+      id: "storyplot_two",
+      arcId: "arc_one",
+      title: "北上启程",
+      order: 2,
+      file: file(
+        longStoryPlotBodyFileId("storyplot_two"),
+        longStoryPlotFilePath("storyplot_two")
+      )
+    });
+    index.plot.storyEvents.push(
+      {
+        id: "event_gate",
+        title: "城门初遇",
+        summary: "追兵在城门外拦住主角，埋下北上线索。",
+        timeMode: "sequence",
+        timeLabel: "第一夜",
+        storyOrder: 1,
+        location: "南城门",
+        arcIds: ["arc_one"],
+        characterIds: ["character_alice"]
+      },
+      {
+        id: "event_depart",
+        title: "连夜北上",
+        summary: "主角带着旧信离开青阳城。",
+        timeMode: "sequence",
+        timeLabel: "第二夜",
+        storyOrder: 2,
+        location: "官道",
+        arcIds: ["arc_one"],
+        characterIds: ["character_alice"]
+      },
+      {
+        id: "event_other",
+        title: "支线密谈",
+        summary: "不该出现在主线剧情点里。",
+        timeMode: "sequence",
+        timeLabel: "同时",
+        storyOrder: 3,
+        location: "茶馆",
+        arcIds: ["arc_two"],
+        characterIds: ["character_alice"]
+      }
+    );
+    index.plot.foreshadowing.push(
+      {
+        id: "foreshadow_letter",
+        title: "旧信来源",
+        coreQuestion: "旧信是谁留下的？",
+        hiddenTruth: "父亲仍在北境。",
+        plannedSpan: "within_volume",
+        truthEventId: null,
+        expectedReaderEffect: "让读者盯住蜡封。",
+        status: "planned",
+        beats: [
+          {
+            id: "beat_letter_plant",
+            type: "plant",
+            order: 1,
+            arcId: "arc_one",
+            eventId: "event_gate",
+            placementId: null,
+            chapterCardId: null,
+            plannedScope: "城门初遇时露出半张旧信。",
+            note: "只给图案，不给署名。",
+            status: "planned",
+            commitId: null
+          }
+        ]
+      },
+      {
+        id: "foreshadow_other",
+        title: "无关伏笔",
+        coreQuestion: "茶馆里的人是谁？",
+        truthEventId: null,
+        expectedReaderEffect: "不应出现在主线剧情点。",
+        status: "planned",
+        beats: [
+          {
+            id: "beat_other",
+            type: "plant",
+            order: 1,
+            arcId: "arc_two",
+            eventId: "event_other",
+            placementId: null,
+            chapterCardId: null,
+            plannedScope: "支线密谈",
+            note: "只属于支线。",
+            status: "planned",
+            commitId: null
+          }
+        ]
+      }
+    );
+    const snapshot = LongWorkspaceIndexSnapshotSchema.parse(index);
+    const storyPlotBodies = new Map([
+      [longStoryPlotBodyFileId("storyplot_one"), STORY_PLOT_BODY],
+      [longStoryPlotBodyFileId("storyplot_two"), "连夜收拾行装，按旧信指示北上。"]
+    ]);
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(snapshot);
+      }
+      if (command.type === "long.readDocument") {
+        const content = storyPlotBodies.get(command.payload.fileId);
+        if (content === undefined) {
+          throw new Error(`Unexpected document: ${command.payload.fileId}`);
+        }
+        const storyPlot = snapshot.plot.storyPlots.find(
+          (entry) => entry.file.id === command.payload.fileId
+        );
+        if (!storyPlot) {
+          throw new Error("Missing story plot file.");
+        }
+        return {
+          status: "accepted" as const,
+          requestId: command.id,
+          payload: {
+            bookId: snapshot.bookId,
+            file: storyPlot.file,
+            content,
+            offset: command.payload.offset,
+            totalCharacters: Array.from(content).length,
+            nextOffset: null,
+            workspaceRevision: snapshot.revision,
+            projectRevision: 11
+          }
+        };
+      }
+      throw new Error(`Unexpected command: ${command.type}`);
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("plot_design", "plot_design"),
+      profile: profile("plot_design"),
+      sessionId: "session-plot-point-bundle",
+      runId: "run-plot-point-bundle",
+      executor
+    });
+    const read = toolByName(tools, "read_plot_design");
+    const arcText = resultText(
+      await read.execute("read-arc-bundle", {
+        target: { kind: "arc", arc_id: "arc_one" },
+        mode: "full"
+      })
+    );
+
+    expect(arcText).toContain("概要");
+    expect(arcText).toContain("从城门走到北上。");
+    expect(arcText).toContain("故事事件");
+    expect(arcText).toContain("event_id=event_gate");
+    expect(arcText).toContain("追兵在城门外拦住主角，埋下北上线索。");
+    expect(arcText).toContain("event_id=event_depart");
+    expect(arcText).toContain("主角带着旧信离开青阳城。");
+    expect(arcText).not.toContain("event_id=event_other");
+    expect(arcText).not.toContain("不该出现在主线剧情点里");
+    expect(arcText).toContain("故事情节");
+    expect(arcText).toContain("story_plot_id=storyplot_one");
+    expect(arcText).toContain(STORY_PLOT_BODY);
+    expect(arcText).toContain("story_plot_id=storyplot_two");
+    expect(arcText).toContain("连夜收拾行装，按旧信指示北上。");
+    expect(arcText).toContain("关联伏笔");
+    expect(arcText).toContain("foreshadowing_id=foreshadow_letter");
+    expect(arcText).toContain("旧信是谁留下的？");
+    expect(arcText).toContain("父亲仍在北境。");
+    expect(arcText).toContain("beat_id=beat_letter_plant");
+    expect(arcText).toContain("只给图案，不给署名。");
+    expect(arcText).not.toContain("foreshadowing_id=foreshadow_other");
+    expect(arcText).not.toContain("不应出现在主线剧情点");
+
+    const writeEvent = await toolByName(tools, "write_plot_design").execute(
+      "write-event-after-arc-read",
+      {
+        item: {
+          kind: "event",
+          event_id: "event_gate",
+          summary: "追兵改从西门包抄。",
+          time_mode: "sequence",
+          time_label: "第一夜",
+          location: "西城门",
+          arc_ids: ["arc_one"],
+          character_ids: ["character_alice"]
+        },
+        allow_overwrite_existing: true,
+        summary: "改写城门事件"
+      }
+    );
+    expect(writeEvent.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      summary: "改写城门事件"
+    });
+
+    const writePlot = await toolByName(tools, "write_plot_design").execute(
+      "write-story-plot-after-arc-read",
+      {
+        item: {
+          kind: "story_plot",
+          story_plot_id: "storyplot_one",
+          text: "城门外改道西门，北上线索仍在。"
+        },
+        allow_overwrite_existing: true,
+        summary: "改写故事情节正文"
+      }
+    );
+    expect(writePlot.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      summary: "改写故事情节正文",
+      batch: {
+        documentWrites: [
+          {
+            fileId: longStoryPlotBodyFileId("storyplot_one"),
+            content: "城门外改道西门，北上线索仍在。"
+          }
+        ]
+      }
+    });
+  });
+
   it("uses business-level plot tools for non-foreshadowing content", async () => {
     const index = fixtureIndex();
     const executor = vi.fn<LongCommandExecutor>(async (command) => {
@@ -1096,7 +1485,9 @@ describe("long workspace agent tools", () => {
       }
     );
     const readText = resultText(read);
-    expect(readText).toContain('"story_plot_id": "storyplot_one"');
+    expect(() => JSON.parse(readText)).toThrow();
+    expect(readText).toContain("story_plot_id=storyplot_one");
+    expect(readText).not.toContain('"story_plot_id"');
     expect(readText).toContain(STORY_PLOT_BODY);
 
     const unconfirmed = await toolByName(tools, "write_plot_design").execute(
@@ -2109,6 +2500,139 @@ describe("long workspace agent tools", () => {
     ]);
   });
 
+  it("lists and searches chapters as paragraph text", async () => {
+    const index = fixtureIndex();
+    const first = index.chapters[0]!;
+    index.plot.chapterCards.push({
+      id: "chapter_two",
+      volumeId: "volume_one",
+      primaryArcId: "arc_one",
+      title: "第二章",
+      narrativeOrder: 2
+    });
+    index.chapters.push({
+      ...first,
+      chapterCardId: "chapter_two",
+      bodyStatus: "written",
+      body: file(
+        longChapterBodyFileId("chapter_two"),
+        "long/chapters/two/body.md"
+      ),
+      card: file(
+        longChapterCardFileId("chapter_two"),
+        "long/chapters/two/card.md"
+      ),
+      characterState: file(
+        longChapterCharacterStateFileId("chapter_two"),
+        "long/chapters/two/character-state.md"
+      ),
+      handoff: file(
+        longChapterHandoffFileId("chapter_two"),
+        "long/chapters/two/handoff.md"
+      ),
+      foreshadowingChanges: file(
+        longChapterForeshadowingChangesFileId("chapter_two"),
+        longChapterContinuityFilePath(
+          "chapter_two",
+          "foreshadowing-changes.md"
+        )
+      )
+    });
+    const parsed = LongWorkspaceIndexSnapshotSchema.parse(index);
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(parsed);
+      }
+      if (command.type !== "long.search") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      expect(command.payload.scope).toBe("draft");
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: parsed.bookId,
+          query: command.payload.query,
+          scope: "draft",
+          hits: [
+            {
+              fileId: first.body.id,
+              path: first.body.path,
+              root: "draft",
+              title: "第一章",
+              start: 0,
+              end: 4,
+              snippet: "测灵台上那团青光",
+              revision: first.body.revision
+            }
+          ],
+          nextCursor: "chapter-search-next",
+          workspaceRevision: parsed.revision,
+          projectRevision: 11
+        }
+      };
+    });
+    const tools = buildLongWorkspaceTools({
+      workspace: workspace("draft", "draft", "chapter_one"),
+      profile: profile("draft"),
+      sessionId: "session-chapter-paragraphs",
+      runId: "run-chapter-paragraphs",
+      executor
+    });
+    const list = toolByName(tools, "list_chapters");
+    const search = toolByName(tools, "search_chapters");
+
+    expect(list.description).toContain("按行段落返回");
+    expect(list.description).toContain("不包装成 JSON");
+    expect(search.description).toContain("按行段落返回");
+    expect(toolByName(tools, "read_chapter").description).toContain(
+      "不包装成 JSON"
+    );
+
+    const listText = resultText(await list.execute("list-chapters", {}));
+    expect(() => JSON.parse(listText)).toThrow();
+    expect(listText).not.toContain('"chapter_card_id"');
+    expect(listText).toBe(
+      [
+        "正文章节",
+        "第 1 页 / 共 2 条",
+        "",
+        "第一章",
+        "chapter_card_id=chapter_one",
+        "叙事顺序=1",
+        "正文状态=空",
+        "提交状态=未记录",
+        "当前章=是",
+        "",
+        "第二章",
+        "chapter_card_id=chapter_two",
+        "叙事顺序=2",
+        "正文状态=已写",
+        "提交状态=未记录",
+        "当前章=否"
+      ].join("\n")
+    );
+
+    const searchText = resultText(
+      await search.execute("search-chapters", { query: "测灵台" })
+    );
+    expect(() => JSON.parse(searchText)).toThrow();
+    expect(searchText).toBe(
+      [
+        "搜索",
+        "query=测灵台",
+        "",
+        "第一章",
+        "chapter_card_id=chapter_one",
+        "document=body",
+        "摘录",
+        "测灵台上那团青光",
+        "",
+        "next_cursor=chapter-search-next"
+      ].join("\n")
+    );
+  });
+
   it("derives chapter readiness from body content only", async () => {
     const index = fixtureIndex();
     const entry = index.chapters[0]!;
@@ -2136,11 +2660,11 @@ describe("long workspace agent tools", () => {
     });
     const tools = buildLongWorkspaceTools({
       workspace: workspace(
-        "expert_section_writer",
+        "draft",
         "draft",
         "chapter_one"
       ),
-      profile: profile("expert_section_writer"),
+      profile: profile("draft"),
       sessionId: "session-readiness",
       runId: "run-readiness",
       executor
@@ -2149,13 +2673,16 @@ describe("long workspace agent tools", () => {
       tools,
       "get_long_chapter_readiness"
     ).execute("readiness", {});
-    expect(result.content[0]).toMatchObject({
-      type: "text",
-      text: expect.stringContaining('"status": "ready_to_commit"')
-    });
-    expect(result.content[0]).toMatchObject({
-      text: expect.stringContaining('"missingFiles": []')
-    });
+    const readinessText = resultText(result);
+    expect(() => JSON.parse(readinessText)).toThrow();
+    expect(readinessText).toBe(
+      [
+        "第一章",
+        "chapter_card_id=chapter_one",
+        "状态=可结算",
+        "缺失文件=（无）"
+      ].join("\n")
+    );
     expect(executor).toHaveBeenCalledTimes(2);
   });
 
@@ -3640,8 +4167,8 @@ describe("long workspace agent tools", () => {
       };
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("expert_section_writer", "draft", "chapter_one"),
-      profile: profile("expert_section_writer"),
+      workspace: workspace("draft", "draft", "chapter_one"),
+      profile: profile("draft"),
       sessionId: "session-chapter",
       runId: "run-chapter",
       writeApprovalMode: "auto-approve",
@@ -3738,8 +4265,8 @@ describe("long workspace agent tools", () => {
       };
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("expert_section_writer", "draft", "chapter_one"),
-      profile: profile("expert_section_writer"),
+      workspace: workspace("draft", "draft", "chapter_one"),
+      profile: profile("draft"),
       sessionId: "session-existing-chapter",
       runId: "run-existing-chapter",
       executor
@@ -3845,30 +4372,43 @@ describe("long workspace agent tools", () => {
       };
     });
     const tools = buildLongWorkspaceTools({
-      workspace: workspace("expert_section_writer", "draft", "chapter_two"),
-      profile: profile("expert_section_writer"),
+      workspace: workspace("draft", "draft", "chapter_two"),
+      profile: profile("draft"),
       sessionId: "session-read-any-chapter",
       runId: "run-read-any-chapter",
       executor
     });
     const read = toolByName(tools, "read_chapter");
 
-    expect(
-      resultText(
-        await read.execute("read-first", {
-          chapter_card_id: "chapter_one",
-          mode: "full"
-        })
-      )
-    ).toContain("第一章正文");
-    expect(
-      resultText(
-        await read.execute("read-second", {
-          chapter_card_id: "chapter_two",
-          mode: "full"
-        })
-      )
-    ).toContain("第二章正文");
+    const firstText = resultText(
+      await read.execute("read-first", {
+        chapter_card_id: "chapter_one",
+        mode: "full"
+      })
+    );
+    expect(() => JSON.parse(firstText)).toThrow();
+    expect(firstText).not.toContain('"chapter_card_id"');
+    expect(firstText).toBe(
+      [
+        "完整内容：",
+        "",
+        "第一章",
+        "chapter_card_id=chapter_one",
+        "document=body",
+        "mode=full",
+        "",
+        "正文",
+        "第一章正文"
+      ].join("\n")
+    );
+    const secondText = resultText(
+      await read.execute("read-second", {
+        chapter_card_id: "chapter_two",
+        mode: "full"
+      })
+    );
+    expect(secondText).toContain("chapter_card_id=chapter_two");
+    expect(secondText).toContain("第二章正文");
     expect(toolByName(tools, "write_chapter_draft").description).toContain(
       "运行时锁定章节"
     );
@@ -3900,7 +4440,7 @@ describe("long workspace agent tools", () => {
       };
     });
     const committedWorkspace = workspace(
-      "expert_section_writer",
+      "draft",
       "draft",
       "chapter_one"
     );
@@ -3908,7 +4448,7 @@ describe("long workspace agent tools", () => {
       createLongWorkspaceNavigationSnapshot(latest);
     const tools = buildLongWorkspaceTools({
       workspace: committedWorkspace,
-      profile: profile("expert_section_writer"),
+      profile: profile("draft"),
       sessionId: "session-refine-committed-chapter",
       runId: "run-refine-committed-chapter",
       executor
@@ -4256,6 +4796,181 @@ describe("long workspace agent tools", () => {
 
   });
 
+  it("lists catch-up hints and writes unrecorded chapters without an active selection", async () => {
+    const latest = twoWrittenChaptersIndex();
+    const first = latest.chapters[0]!;
+    const second = latest.chapters[1]!;
+    const fileContents = new Map([
+      [first.body.id, "第一章正文。"],
+      [first.characterState.id, ""],
+      [first.handoff.id, ""],
+      [second.body.id, "第二章正文。"],
+      [second.characterState.id, ""],
+      [second.handoff.id, ""]
+    ]);
+    const indexedFiles = [
+      first.body,
+      first.characterState,
+      first.handoff,
+      second.body,
+      second.characterState,
+      second.handoff
+    ];
+    const executor = vi.fn<LongCommandExecutor>(async (command) => {
+      if (command.type === "long.getWorkspaceIndex") {
+        return indexResult(latest);
+      }
+      if (command.type !== "long.readDocument") {
+        throw new Error(`Unexpected command: ${command.type}`);
+      }
+      const requested = indexedFiles.find(
+        ({ id }) => id === command.payload.fileId
+      );
+      if (!requested) {
+        throw new Error(`Unknown test file: ${command.payload.fileId}`);
+      }
+      const content = fileContents.get(requested.id) ?? "";
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: {
+          bookId: latest.bookId,
+          file: requested,
+          content,
+          offset: 0,
+          totalCharacters: content.length,
+          nextOffset: null,
+          workspaceRevision: latest.revision,
+          projectRevision: 11
+        }
+      };
+    });
+    const bookLevelWorkspace: LongWorkspaceRuntimeContext = {
+      bookId: latest.bookId,
+      title: "工具测试",
+      activeRoot: "continuity_ledger",
+      activeAgentId: "continuity_ledger",
+      workspaceRevision: latest.revision,
+      projectRevision: 11,
+      navigation: createLongWorkspaceNavigationSnapshot(latest)
+    };
+    const tools = buildLongWorkspaceTools({
+      workspace: bookLevelWorkspace,
+      profile: profile("continuity_ledger"),
+      sessionId: "session-continuity-catchup",
+      runId: "run-continuity-catchup",
+      executor
+    });
+    expect(tools.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "write_continuity_file",
+        "propose_continuity_commit"
+      ])
+    );
+
+    const listed = JSON.parse(
+      resultText(
+        await toolByName(tools, "list_continuity_files").execute(
+          "list-catchup",
+          {}
+        )
+      )
+    ) as {
+      pending_catchup: Array<{
+        chapter_card_id: string;
+        suggested_record: string;
+      }>;
+    };
+    expect(listed.pending_catchup).toEqual([
+      { chapter_card_id: "chapter_one", title: "第一章", suggested_record: "brief" },
+      { chapter_card_id: "chapter_two", title: "第二章", suggested_record: "full" }
+    ]);
+
+    await expect(
+      toolByName(tools, "write_continuity_file").execute(
+        "missing-chapter",
+        {
+          target: { document: "chapter_end_state" },
+          text: "缺少章卡。"
+        }
+      )
+    ).rejects.toThrow(/chapter_card_id/u);
+
+    await toolByName(tools, "write_continuity_file").execute(
+      "write-first-state",
+      {
+        chapter_card_id: "chapter_one",
+        target: { document: "chapter_end_state" },
+        text: "简短章末：林岚离开北门。"
+      }
+    );
+    await toolByName(tools, "write_continuity_file").execute(
+      "write-first-handoff",
+      {
+        chapter_card_id: "chapter_one",
+        target: { document: "handoff" },
+        text: "简短接续：追兵未至。"
+      }
+    );
+    const firstCommit = await toolByName(
+      tools,
+      "propose_continuity_commit"
+    ).execute("commit-first", {
+      chapter_card_id: "chapter_one",
+      summary: "简记第一章",
+      foreshadowing_touchpoint_decisions: []
+    });
+    expect(firstCommit.details).toMatchObject({
+      kind: "long-ledger-commit-proposal",
+      input: {
+        chapterCardId: "chapter_one",
+        continuityFileRevisions: expect.arrayContaining([
+          expect.objectContaining({ fileId: first.characterState.id }),
+          expect.objectContaining({ fileId: first.handoff.id })
+        ])
+      }
+    });
+    if (
+      !firstCommit.details ||
+      firstCommit.details.kind !== "long-ledger-commit-proposal" ||
+      firstCommit.details.input.mode !== "text_files"
+    ) {
+      throw new Error("Expected a brief first-chapter continuity commit.");
+    }
+    expect(firstCommit.details.input.continuityFileRevisions).toHaveLength(2);
+
+    await toolByName(tools, "write_continuity_file").execute(
+      "write-second-state",
+      {
+        chapter_card_id: "chapter_two",
+        target: { document: "chapter_end_state" },
+        text: "完整章末：林岚在北门与追兵对峙，旧伤复发。"
+      }
+    );
+    await toolByName(tools, "write_continuity_file").execute(
+      "write-second-handoff",
+      {
+        chapter_card_id: "chapter_two",
+        target: { document: "handoff" },
+        text: "完整接续：下一章从封锁后的北门巷战开始。"
+      }
+    );
+    const secondCommit = await toolByName(
+      tools,
+      "propose_continuity_commit"
+    ).execute("commit-second", {
+      chapter_card_id: "chapter_two",
+      summary: "完整记录第二章",
+      foreshadowing_touchpoint_decisions: []
+    });
+    expect(secondCommit.details).toMatchObject({
+      kind: "long-ledger-commit-proposal",
+      input: {
+        chapterCardId: "chapter_two"
+      }
+    });
+  });
+
   it("registers continuity finalization after unrelated file approvals advance global revisions", async () => {
     const latest = fixtureIndex();
     const chapter = latest.chapters[0]!;
@@ -4442,14 +5157,14 @@ describe("long workspace agent tools", () => {
       summary: "完成第一章"
     };
     const staleWorkspace = workspace(
-      "expert_section_writer",
+      "draft",
       "draft",
       "chapter_one"
     );
     staleWorkspace.projectRevision = 10;
     const staleTools = buildLongWorkspaceTools({
       workspace: staleWorkspace,
-      profile: profile("expert_section_writer"),
+      profile: profile("draft"),
       sessionId: "session-stale-chapter",
       runId: "run-stale-chapter",
       executor: vi.fn<LongCommandExecutor>(async () => indexResult())
@@ -4462,14 +5177,14 @@ describe("long workspace agent tools", () => {
     ).rejects.toThrow(/context no longer matches/u);
 
     const mismatchedWorkspace = workspace(
-      "expert_section_writer",
+      "draft",
       "draft",
       "chapter_one"
     );
     mismatchedWorkspace.navigation.chapterCards[0]!.title = "过期章名";
     const mismatchedTools = buildLongWorkspaceTools({
       workspace: mismatchedWorkspace,
-      profile: profile("expert_section_writer"),
+      profile: profile("draft"),
       sessionId: "session-mismatched-chapter",
       runId: "run-mismatched-chapter",
       executor: vi.fn<LongCommandExecutor>(async () => indexResult())
@@ -4479,17 +5194,17 @@ describe("long workspace agent tools", () => {
         "mismatched-chapter",
         writeInput
       )
-    ).rejects.toThrow(/active chapter no longer matches/u);
+    ).rejects.toThrow(/target chapter no longer matches/u);
 
     const otherBookIndex = fixtureIndex();
     otherBookIndex.bookId = "longbook_other";
     const otherBookTools = buildLongWorkspaceTools({
       workspace: workspace(
-        "expert_section_writer",
+        "draft",
         "draft",
         "chapter_one"
       ),
-      profile: profile("expert_section_writer"),
+      profile: profile("draft"),
       sessionId: "session-other-book",
       runId: "run-other-book",
       executor: vi.fn<LongCommandExecutor>(async () =>

@@ -18,6 +18,8 @@ import {
   LongPreviewOperationsResultSchema,
   LongReadDocumentInputSchema,
   LongReadDocumentResultSchema,
+  LongReadAgentsMdInputSchema,
+  LongReadAgentsMdResultSchema,
   LongRenameBookInputSchema,
   LongRemoveBookInputSchema,
   LongRemoveBookResultSchema,
@@ -31,6 +33,8 @@ import {
   LongWriteChapterResultSchema,
   LongWriteDocumentInputSchema,
   LongWriteDocumentResultSchema,
+  LongWriteAgentsMdInputSchema,
+  LongWriteAgentsMdResultSchema,
   type CreateLongBookInput,
   type LongApplyOperationsInput,
   type LongApplyOperationsResult,
@@ -50,6 +54,8 @@ import {
   type LongPreviewOperationsResult,
   type LongReadDocumentInput,
   type LongReadDocumentResult,
+  type LongReadAgentsMdInput,
+  type LongReadAgentsMdResult,
   type LongRenameBookInput,
   type LongRemoveBookInput,
   type LongRemoveBookResult,
@@ -64,7 +70,9 @@ import {
   type LongWriteChapterInput,
   type LongWriteChapterResult,
   type LongWriteDocumentInput,
-  type LongWriteDocumentResult
+  type LongWriteDocumentResult,
+  type LongWriteAgentsMdInput,
+  type LongWriteAgentsMdResult
 } from "@deepwrite/contracts";
 import {
   LongProjectCatalog,
@@ -420,6 +428,30 @@ export class LongWorkspaceService {
       nextOffset: read.nextOffset,
       workspaceRevision: read.workspaceRevision,
       projectRevision: read.projectRevision
+    });
+  }
+
+  async readAgentsMd(
+    input: LongReadAgentsMdInput
+  ): Promise<LongReadAgentsMdResult> {
+    const parsed = LongReadAgentsMdInputSchema.parse(input);
+    const opened = await this.openProject(parsed);
+    const read = await this.store.readAgentsMd(opened.projectDirectory);
+    return LongReadAgentsMdResultSchema.parse({
+      bookId: parsed.bookId,
+      content: read.content,
+      truncated: read.truncated
+    });
+  }
+
+  async writeAgentsMd(
+    input: LongWriteAgentsMdInput
+  ): Promise<LongWriteAgentsMdResult> {
+    const parsed = LongWriteAgentsMdInputSchema.parse(input);
+    const opened = await this.openProject(parsed);
+    await this.store.writeAgentsMd(opened.projectDirectory, parsed.content);
+    return LongWriteAgentsMdResultSchema.parse({
+      bookId: parsed.bookId
     });
   }
 

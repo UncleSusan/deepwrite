@@ -64,13 +64,8 @@ const PARENT_AGENTS = [
   },
   {
     id: "draft",
-    label: "正文统筹",
-    description: "配置章节计划、跨章审阅和调度检查等专项助手。"
-  },
-  {
-    id: "expert_section_writer",
-    label: "单章写手",
-    description: "配置场景、对白、文风和细节审阅等专项助手。"
+    label: "写手",
+    description: "配置章节计划、当前章写作、文风和调度检查等专项助手。"
   },
   {
     id: "continuity_ledger",

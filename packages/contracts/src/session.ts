@@ -709,10 +709,22 @@ export type AgentEvaluationToolConfiguration = z.infer<
   typeof AgentEvaluationToolConfigurationSchema
 >;
 
+export const AgentEvaluationHistoryMessageSchema = z.object({
+  role: z.enum(["user", "assistant", "tool"]),
+  text: z.string().max(8_000),
+  toolName: z.string().trim().min(1).optional(),
+  toolCallId: z.string().trim().min(1).optional(),
+  isError: z.boolean().optional()
+});
+export type AgentEvaluationHistoryMessage = z.infer<
+  typeof AgentEvaluationHistoryMessageSchema
+>;
+
 /**
  * Exact run-time evidence captured only when DeepWrite is explicitly started
  * in evaluation mode. It deliberately excludes provider credentials and image
- * bytes while preserving every text fragment injected into the model turn.
+ * bytes while preserving every text fragment injected into the model turn,
+ * plus a compact, truncated copy of the model-visible message array.
  */
 export const AgentEvaluationSnapshotSchema = z.object({
   schemaVersion: z.literal(1),
@@ -722,7 +734,8 @@ export const AgentEvaluationSnapshotSchema = z.object({
     kind: z.enum(["initial-session-context", "turn-context"]),
     text: z.string()
   }),
-  tools: z.array(AgentEvaluationToolConfigurationSchema)
+  tools: z.array(AgentEvaluationToolConfigurationSchema),
+  conversationHistory: z.array(AgentEvaluationHistoryMessageSchema).optional()
 });
 export type AgentEvaluationSnapshot = z.infer<
   typeof AgentEvaluationSnapshotSchema

@@ -40,7 +40,7 @@ export interface LongWritingWorkflowState {
 export interface LongWritingApprovalExpectation {
   bookId: string;
   chapterCardId: string;
-  agentId: "expert_section_writer" | "continuity_ledger";
+  agentId: "draft" | "continuity_ledger";
   sessionId: string;
   runId?: string;
 }
@@ -77,7 +77,7 @@ export function canApproveLongWritingProposal(input: {
   }
   return (
     state.phase === "awaiting_writer_approval" &&
-    expectation.agentId === "expert_section_writer" &&
+    expectation.agentId === "draft" &&
     event.type === "long.chapter_write_proposal" &&
     event.payload.file.chapterCardId === chapter.chapterCardId
   );
@@ -128,7 +128,7 @@ export interface LongWritingOrchestrator {
   handleChapterRejected(bookId: string, chapterCardId: string): boolean;
   handleRejected(event: SystemEventEnvelope): boolean;
   handleRunFailure(
-    agentId: "expert_section_writer" | "continuity_ledger",
+    agentId: "draft" | "continuity_ledger",
     error: string
   ): boolean;
   retry(): Promise<void>;
@@ -379,18 +379,18 @@ export function useLongWritingOrchestrator(
   }
 
   function handleRunFailure(
-    agentId: "expert_section_writer" | "continuity_ledger",
+    agentId: "draft" | "continuity_ledger",
     error: string
   ): boolean {
     const chapter = currentChapter.value;
     if (!chapter) return false;
     if (
-      agentId === "expert_section_writer" &&
+      agentId === "draft" &&
       state.value.phase === "awaiting_writer_approval"
     ) {
       fail(
         new Error(
-          `“${chapter.title}”单章写手运行失败：${error}。可重试当前章，计划不会跳章。`
+          `“${chapter.title}”写手运行失败：${error}。可重试当前章，计划不会跳章。`
         ),
         "check"
       );

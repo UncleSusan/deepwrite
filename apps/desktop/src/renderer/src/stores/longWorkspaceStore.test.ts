@@ -323,11 +323,15 @@ describe("long workspace store", () => {
     const store = useLongWorkspaceStore();
     store.bookRenameTarget = { bookId: "book-a", title: "待改名" };
     store.structureDialogOpen = true;
+    store.structureAgentsMd = "# 长篇上下文";
+    store.structureAgentsMdPending = true;
     store.mutationPending = true;
     store.proposalApprovalPending = true;
     store.clearDialogTargets();
     expect(store.bookRenameTarget).toBeNull();
     expect(store.structureDialogOpen).toBe(false);
+    expect(store.structureAgentsMd).toBeNull();
+    expect(store.structureAgentsMdPending).toBe(false);
     expect(store.mutationPending).toBe(true);
 
     store.clear();

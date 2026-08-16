@@ -2,6 +2,7 @@ import {
   MATERIAL_KINDS,
   SKILL_KINDS,
   getDefaultLongAgentProfile,
+  longAgentAcceptsWorldbuildingDirectory,
   resolveLongAgentIdForRoot,
   type CatalogSnapshot,
   type LongAgentProfile,
@@ -232,10 +233,7 @@ export function useLongWorkspacePresentationCoordinator(
 
   const activeLongAgentProfile = computed<LongAgentProfile | null>(() => {
     if (!options.long.activeBookSummary.value) return null;
-    const agentId = resolveLongAgentIdForRoot(
-      activeLongRoot.value,
-      activeLongChapterWriterEnabled.value
-    );
+    const agentId = resolveLongAgentIdForRoot(activeLongRoot.value);
     return (
       options.long.agentSettings.value.agents.find(
         (profile) => profile.id === agentId
@@ -387,7 +385,7 @@ export function useLongWorkspacePresentationCoordinator(
         workspaceRevision: workspaceIndex.revision,
         projectRevision: summary.projectRevision,
         navigation: summary.navigation,
-        ...(profile.id === "setting"
+        ...(longAgentAcceptsWorldbuildingDirectory(profile.id)
           ? {
               worldbuildingDirectory:
                 buildLongWorldbuildingDirectorySnapshot(

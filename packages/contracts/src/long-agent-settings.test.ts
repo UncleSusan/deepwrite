@@ -18,12 +18,7 @@ function editableDefaults() {
         string,
         string,
         string
-      ],
-      readAccess: {
-        workspaceRoots: [...agent.readAccess.workspaceRoots],
-        materialKinds: [...agent.readAccess.materialKinds],
-        skillKinds: [...agent.readAccess.skillKinds]
-      }
+      ]
     }))
   };
 }
@@ -33,15 +28,14 @@ describe("long agent settings contracts", () => {
     expect(
       LongAgentSettingsSchema.parse(DEFAULT_LONG_AGENT_SETTINGS).workspaceType
     ).toBe("long");
-    expect(DEFAULT_LONG_AGENT_SETTINGS.agents).toHaveLength(5);
+    expect(DEFAULT_LONG_AGENT_SETTINGS.agents).toHaveLength(4);
   });
 
-  it("allows prompts, shortcuts and optional read roots to be customized", () => {
+  it("allows prompts and shortcuts to be customized", () => {
     const input = editableDefaults();
     const agent = input.agents.find(({ id }) => id === "setting")!;
     agent.systemPrompt = "先核对世界规则，再提出最小修改。";
     agent.welcomeShortcuts[0] = "检查当前世界规则";
-    agent.readAccess.materialKinds = ["character", "plot"];
 
     expect(LongAgentSettingsInputSchema.parse(input)).toMatchObject({
       workspaceType: "long",
@@ -54,15 +48,36 @@ describe("long agent settings contracts", () => {
     });
   });
 
-  it("rejects removal of a root needed by immutable write access", () => {
+  it("rejects input that still carries a configurable read access override", () => {
     const input = editableDefaults();
-    const agent = input.agents.find(({ id }) => id === "plot_design")!;
-    agent.readAccess.workspaceRoots =
-      agent.readAccess.workspaceRoots.filter((root) => root !== "plot_design");
+    Object.assign(input.agents.find(({ id }) => id === "plot_design")!, {
+      readAccess: {
+        workspaceRoots: ["plot_design"],
+        materialKinds: [],
+        skillKinds: []
+      }
+    });
 
-    expect(() => LongAgentSettingsInputSchema.parse(input)).toThrow(
-      /immutable write root/
+    expect(() => LongAgentSettingsInputSchema.parse(input)).toThrow();
+  });
+
+  it("rejects public settings that try to narrow immutable read access", () => {
+    const settings = structuredClone(DEFAULT_LONG_AGENT_SETTINGS);
+    const agent = settings.agents.find(({ id }) => id === "plot_design")!;
+    agent.readAccess.workspaceRoots = ["plot_design"];
+
+    expect(() => LongAgentSettingsSchema.parse(settings)).toThrow(
+      /read access is immutable/
     );
+    expect(
+      getDefaultLongAgentProfile("plot_design").readAccess.workspaceRoots
+    ).toEqual([
+      "worldbuilding",
+      "character_design",
+      "plot_design",
+      "draft",
+      "continuity_ledger"
+    ]);
   });
 
   it("rejects public settings that try to widen immutable write access", () => {
@@ -79,9 +94,9 @@ describe("long agent settings contracts", () => {
     ).toEqual(["worldbuilding", "character_design"]);
   });
 
-  it("requires each of the five long agent ids exactly once", () => {
+  it("requires each of the four long agent ids exactly once", () => {
     const input = editableDefaults();
-    input.agents[5] = structuredClone(input.agents[0]!);
+    input.agents[4] = structuredClone(input.agents[0]!);
     expect(() => LongAgentSettingsInputSchema.parse(input)).toThrow(
       /Duplicate|Missing/
     );

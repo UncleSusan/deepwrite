@@ -641,6 +641,30 @@ export function useLongConversationCoordinator(
           }
         }
 
+        const api = options.workspace.api();
+        if (api) {
+          try {
+            const agentsMd = await api.readAgentsMd({ bookId: target.bookId });
+            if (!confirmSendTarget(target)) return;
+            const content = agentsMd.content.trim();
+            if (content) {
+              runtimeContext = { ...runtimeContext, agentsMd: content };
+            }
+            if (agentsMd.truncated) {
+              options.notifications.warning(
+                "长篇上下文过长，本轮只注入了截断后的 AGENTS.md。"
+              );
+            }
+          } catch (error: unknown) {
+            if (!confirmSendTarget(target)) return;
+            options.notifications.warning(
+              error instanceof Error
+                ? `长篇上下文未注入：${error.message}`
+                : "长篇上下文未注入，本轮仍会发送。"
+            );
+          }
+        }
+
         const summary = options.state.activeBookSummary.value;
         const profile = options.state.activeAgentProfile.value;
         if (!summary || summary.id !== target.bookId || !profile) {

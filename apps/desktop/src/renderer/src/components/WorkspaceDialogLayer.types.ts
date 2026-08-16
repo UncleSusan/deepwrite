@@ -160,6 +160,8 @@ export interface LongStructureDialogModule {
   kind: "long-structure";
   bookTitle: string;
   bookId: string | null;
+  agentsMd: string | null;
+  agentsMdPending: boolean;
   syncBookOptions: readonly LongWorldbuildingSyncBookOption[];
   snapshot: LongWorkspaceIndexSnapshot | null;
   pending: boolean;
@@ -403,6 +405,10 @@ export interface WorkspaceDialogLayerEmits {
   closeLongStructure: [];
   longStructureMutation: [
     batch: LongWorkspaceOperationBatch,
+    completion: LongStructureMutationCompletion
+  ];
+  saveLongAgentsMd: [
+    content: string,
     completion: LongStructureMutationCompletion
   ];
   syncLongWorldbuilding: [

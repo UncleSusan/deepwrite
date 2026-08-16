@@ -412,6 +412,8 @@ const {
   rollbackPending: longRollbackPending,
   rollbackCommitId: longRollbackCommitId,
   structureDialogOpen: longStructureDialogOpen,
+  structureAgentsMd: longStructureAgentsMd,
+  structureAgentsMdPending: longStructureAgentsMdPending,
   characterCreateTarget: longCharacterCreate,
   worldbuildingItemCreateTarget: longWorldbuildingItemCreate,
   plotPointCreateTarget: longPlotPointCreate,
@@ -930,6 +932,7 @@ const {
   updateLongBookBindings,
   closeLongBookRemovalDialog,
   confirmLongBookRemoval,
+  saveLongAgentsMd,
   dispose: disposeLongBookLifecycle
 } = useLazyLongBookLifecycleCoordinator({
   api: resolveLongWorkspaceApi,
@@ -948,6 +951,8 @@ const {
     rollbackDialogOpen: longRollbackDialogOpen,
     rollbackCommitId: longRollbackCommitId,
     structureDialogOpen: longStructureDialogOpen,
+    structureAgentsMd: longStructureAgentsMd,
+    structureAgentsMdPending: longStructureAgentsMdPending,
     bindingsDialogMode: longBindingsDialogMode,
     exportTarget: longExportTarget,
     bookRenameTarget: longBookRenameDialog,
@@ -1469,6 +1474,8 @@ const workspaceDialogModule = useWorkspaceDialogModuleCoordinator({
     treeDeletion: longTreeItemDelete,
     volumeCreation: longVolumeCreate,
     dialogOpen: longStructureDialogOpen,
+    agentsMd: longStructureAgentsMd,
+    agentsMdPending: longStructureAgentsMdPending,
     syncBookOptions: longWorldbuildingSyncBookOptions
   },
   longLifecycle: {
@@ -2708,6 +2715,7 @@ onBeforeUnmount(() => {
     @confirm-long-rollback="confirmLongRollback"
     @close-long-structure="closeLongStructureDialog"
     @long-structure-mutation="handleActiveLongStructureMutation"
+    @save-long-agents-md="saveLongAgentsMd"
     @sync-long-worldbuilding="handleLongWorldbuildingSync"
     @close-create-long-character="closeLongCharacterCreate"
     @submit-create-long-character="createLongCharacter"

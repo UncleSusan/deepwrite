@@ -276,6 +276,9 @@ export function useWorkspaceResourceTreeCoordinator(
       }
       return longNavigationNodeId(bookId, selection.key);
     }
+    if (selection.key.startsWith("chapter:")) {
+      return longNavigationNodeId(bookId, selection.key);
+    }
     return undefined;
   }
 

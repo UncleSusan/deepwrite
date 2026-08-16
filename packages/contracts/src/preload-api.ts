@@ -122,13 +122,17 @@ import type {
   LongPreviewOperationsResult,
   LongReadDocumentInput,
   LongReadDocumentResult,
+  LongReadAgentsMdInput,
+  LongReadAgentsMdResult,
   LongRenameBookInput,
   LongRemoveBookInput,
   LongRemoveBookResult,
   LongUpdateBindingsInput,
   LongWorkspaceIndexResult,
   LongWriteDocumentInput,
-  LongWriteDocumentResult
+  LongWriteDocumentResult,
+  LongWriteAgentsMdInput,
+  LongWriteAgentsMdResult
 } from "./long-workspace-api";
 import type {
   LongCommitChapterInput,
@@ -286,6 +290,12 @@ export interface DeepWriteApi {
     writeDocument(
       input: LongWriteDocumentInput
     ): Promise<LongWriteDocumentResult>;
+    readAgentsMd(
+      input: LongReadAgentsMdInput
+    ): Promise<LongReadAgentsMdResult>;
+    writeAgentsMd(
+      input: LongWriteAgentsMdInput
+    ): Promise<LongWriteAgentsMdResult>;
     previewOperations(
       input: LongPreviewOperationsInput
     ): Promise<LongPreviewOperationsResult>;

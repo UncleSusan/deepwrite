@@ -7,17 +7,17 @@ import {
 } from "./index";
 
 describe("long agent team contracts", () => {
-  it("defines a complete five-role team without widening WorkspaceType", () => {
+  it("defines a complete four-role team without widening WorkspaceType", () => {
     const settings = LongAgentTeamSettingsSchema.parse(
       DEFAULT_LONG_AGENT_TEAM_SETTINGS
     );
     expect(settings.workspaceType).toBe("long");
-    expect(settings.teams).toHaveLength(5);
+    expect(settings.teams).toHaveLength(4);
   });
 
   it("rejects duplicate or missing long parent roles", () => {
     const settings = structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
-    settings.teams[5] = structuredClone(settings.teams[0]!);
+    settings.teams[4] = structuredClone(settings.teams[0]!);
     expect(() => LongAgentTeamSettingsSchema.parse(settings)).toThrow(
       /Duplicate|Missing/
     );

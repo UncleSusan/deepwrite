@@ -4,16 +4,17 @@ import workspacePanelSource from "./ShortAgentSettingsPanel.vue?raw";
 import settingsPageSource from "./SettingsPage.vue?raw";
 
 describe("long agent settings UI", () => {
-  it("exposes all five long-form roles in the creation settings page", () => {
+  it("exposes all four long-form roles in the creation settings page", () => {
     for (const id of [
       "setting",
       "plot_design",
       "draft",
-      "expert_section_writer",
       "continuity_ledger"
     ]) {
       expect(longPanelSource).toContain(`id: "${id}"`);
     }
+    expect(longPanelSource).not.toContain("expert_section_writer");
+    expect(longPanelSource).toContain('label: "写手"');
     expect(workspacePanelSource).toContain(
       "@click=\"activeWorkspaceType = 'long'\""
     );
@@ -25,31 +26,29 @@ describe("long agent settings UI", () => {
     );
   });
 
-  it("only edits prompts, shortcuts and read access", () => {
+  it("only edits prompts and shortcuts", () => {
     expect(longPanelSource).toContain("LongAgentSettingsInputSchema.safeParse");
-    expect(longPanelSource).toContain("readAccess");
+    expect(longPanelSource).not.toContain("readAccess");
     expect(longPanelSource).toContain("系统提示词");
     expect(longPanelSource).toContain("欢迎快捷按钮");
     expect(longPanelSource).not.toContain("v-model=\"activeAgent.writeAccess");
     expect(longPanelSource).not.toContain("patchWriteAccess");
   });
 
-  it("shows immutable write boundaries and locks their required read roots", () => {
-    expect(longPanelSource).toContain("isRequiredWorkspaceRoot");
-    expect(longPanelSource).toContain(
-      ":disabled=\"formDisabled || isRequiredWorkspaceRoot(option.id)\""
-    );
-    expect(longPanelSource).toContain("写入与工具边界");
-    expect(longPanelSource).toContain("不能通过设置扩大");
+  it("shows fixed full read access and immutable write boundaries", () => {
+    expect(longPanelSource).not.toContain("isRequiredWorkspaceRoot");
+    expect(longPanelSource).toContain("读取、写入与工具边界");
+    expect(longPanelSource).toContain("不能通过设置修改");
+    expect(longPanelSource).toContain("互相可读");
   });
 
-  it("removes stage read controls only from short and script settings", () => {
+  it("removes stage read controls from short, script and long settings", () => {
     expect(workspacePanelSource).not.toContain("<legend>创作空间</legend>");
     expect(workspacePanelSource).not.toContain("REQUIRED_WORKSPACE_STAGES");
     expect(workspacePanelSource).not.toContain("readAccess.workspace");
     expect(workspacePanelSource).toContain("创作空间各阶段始终可按需读取");
-    expect(longPanelSource).toContain("<legend>长篇工作区</legend>");
-    expect(longPanelSource).toContain("readAccess.workspaceRoots");
+    expect(longPanelSource).not.toContain("<legend>长篇工作区</legend>");
+    expect(longPanelSource).not.toContain("readAccess.workspaceRoots");
   });
 
   it("uses global theme surfaces and remains responsive in narrow windows", () => {

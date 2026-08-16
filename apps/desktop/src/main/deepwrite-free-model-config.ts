@@ -14,9 +14,6 @@ export const DEEPWRITE_FREE_MODEL_CONFIG_URL =
 export const DEEPWRITE_FREE_MODEL_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 
 const DEEPWRITE_FREE_MODEL_SOURCE = "deepwrite-free" as const;
-const OPENROUTER_PROVIDER = "openrouter";
-const OPENROUTER_API = "openai-completions" as const;
-export const DEEPWRITE_FREE_MODEL_BASE_URL = "https://openrouter.ai/api/v1";
 const REMOTE_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_REMOTE_CONFIG_BYTES = 1_000_000;
 
@@ -129,25 +126,10 @@ function parseRemoteModel(raw: unknown): {
   if (!model.id.startsWith("deepwrite-free-")) {
     throw new Error("远程免费模型 ID 必须使用 deepwrite-free- 前缀。");
   }
-  if (model.provider.toLowerCase() !== OPENROUTER_PROVIDER) {
-    throw new Error("远程免费模型只允许使用 OpenRouter Provider。");
-  }
-  if (model.api !== OPENROUTER_API) {
-    throw new Error("远程免费模型只允许使用 OpenAI Completions 协议。");
-  }
-  if (model.baseUrl.replace(/\/$/u, "") !== DEEPWRITE_FREE_MODEL_BASE_URL) {
-    throw new Error("远程免费模型只允许使用固定的 OpenRouter API 地址。");
-  }
-  if (model.modelId !== "openrouter/free" && !model.modelId.endsWith(":free")) {
-    throw new Error("远程免费模型只能使用 OpenRouter 的免费模型 ID。");
-  }
   const sort = typeof raw.sort === "number" && Number.isFinite(raw.sort) ? raw.sort : 0;
   return {
     model: {
       ...model,
-      provider: OPENROUTER_PROVIDER,
-      api: OPENROUTER_API,
-      baseUrl: DEEPWRITE_FREE_MODEL_BASE_URL,
       managedBy: DEEPWRITE_FREE_MODEL_SOURCE
     },
     ...(typeof rawApiKey === "string" ? { apiKey: rawApiKey.trim() } : {}),

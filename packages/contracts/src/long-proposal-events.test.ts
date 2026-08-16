@@ -201,7 +201,7 @@ describe("long proposal event contracts", () => {
       "long.chapter_write_proposal",
       {
         ...common,
-        agentId: "expert_section_writer" as const,
+        agentId: "draft" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -472,7 +472,7 @@ describe("long proposal event contracts", () => {
       "long.chapter_write_proposal",
       {
         ...common,
-        agentId: "expert_section_writer" as const,
+        agentId: "draft" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",

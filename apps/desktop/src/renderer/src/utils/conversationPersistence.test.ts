@@ -236,6 +236,58 @@ describe("conversation persistence adapter", () => {
     expect(api.values.get(persistenceKey)).toEqual(current);
   });
 
+  it("retries history saves without evaluation snapshots when the full envelope is rejected", async () => {
+    const persistenceKey = conversationHistoryPersistenceKey("book-one:plot_design");
+    const envelope = {
+      version: 1,
+      activeSessionId: "session-eval",
+      conversations: [
+        {
+          sessionId: "session-eval",
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              content: "已规划剧情点",
+              evaluationSnapshot: {
+                schemaVersion: 1,
+                tools: [
+                  {
+                    name: "create_plot_design",
+                    description: "创建剧情点",
+                    inputSchema: { type: "object" }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    };
+    const api = {
+      load: vi.fn(async () => undefined),
+      save: vi.fn(async (_key: string, value: unknown) => {
+        if (JSON.stringify(value).includes("evaluationSnapshot")) {
+          throw new Error("Renderer state item exceeds the 4194304 byte limit.");
+        }
+      }),
+      remove: vi.fn(async () => undefined)
+    };
+    const adapter = createConversationPersistenceAdapter(api)!;
+
+    await adapter.save(persistenceKey, envelope);
+
+    expect(api.save).toHaveBeenCalledTimes(3);
+    const persisted = api.save.mock.calls[2]?.[1] as {
+      conversations: Array<{ messages: Array<Record<string, unknown>> }>;
+    };
+    expect(persisted.conversations[0]?.messages[0]).toMatchObject({
+      id: "assistant-1",
+      content: "已规划剧情点"
+    });
+    expect(persisted.conversations[0]?.messages[0]?.evaluationSnapshot).toBeUndefined();
+  });
+
   it("keeps unreadable localStorage entries so a later launch can retry", async () => {
     const storage = new MemoryStorage();
     const logicalKey = "book-one:plot_design";

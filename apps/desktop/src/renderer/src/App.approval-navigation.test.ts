@@ -39,6 +39,10 @@ describe("accepted approval navigation wiring", () => {
     expect(resourceTreeSource).toContain(
       "function preferredLongResourceIdForSelection("
     );
+    expect(resourceTreeSource).toContain('selection.key.startsWith("chapter:")');
+    expect(editorSource).toContain(
+      "if (explicitlySelectedFile) return explicitlySelectedFile;"
+    );
     expect(appSource).toContain(
       "preferredLongResourceId: preferredLongResourceIdForSelection"
     );

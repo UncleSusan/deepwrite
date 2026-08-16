@@ -420,6 +420,10 @@ export function longApprovalCandidatesForBatch(
     fallback.push(...candidates.fallback);
   }
   return uniqueLongCandidates([
+    ...(batch.documentWrites ?? []).map(({ fileId }) => ({
+      kind: "file" as const,
+      fileId
+    })),
     ...primary,
     ...fallback,
     { kind: "root", root: fallbackRoot }
@@ -572,10 +576,14 @@ export function resolveLongProposalApprovalTarget(
       kind: "long",
       bookId: event.payload.bookId,
       candidates: uniqueLongCandidates([
-        ...event.payload.files.map(({ fileId }) => ({
-          kind: "file" as const,
-          fileId
-        })),
+        ...event.payload.files.flatMap((file) => [
+          { kind: "file" as const, fileId: file.fileId },
+          {
+            kind: "worldbuilding" as const,
+            categoryId: file.categoryId,
+            ...(file.itemId ? { itemId: file.itemId } : {})
+          }
+        ]),
         { kind: "root", root: "worldbuilding" }
       ])
     };
@@ -589,7 +597,12 @@ export function resolveLongProposalApprovalTarget(
       kind: "long",
       bookId: event.payload.bookId,
       candidates: uniqueLongCandidates([
-        ...ordered.map(({ fileId }) => ({ kind: "file" as const, fileId })),
+        ...ordered.flatMap((file) => [
+          { kind: "file" as const, fileId: file.fileId },
+          ...(file.document === "overview"
+            ? []
+            : [{ kind: "character" as const, characterId: file.characterId }])
+        ]),
         { kind: "root", root: "character_design" }
       ])
     };
@@ -758,9 +771,11 @@ function resolveLongFileNavigation(
     ) {
       continue;
     }
-    const character = summary.navigation.characters.find(
-      ({ id }) => id === entry.characterId
-    );
+    const character =
+      index.characters?.find(({ id }) => id === entry.characterId) ??
+      summary.navigation.characters.find(
+        ({ id }) => id === entry.characterId
+      );
     if (!character) return undefined;
     return {
       selection: {
@@ -891,7 +906,6 @@ function resolveLongCandidate(
         ? category.items.find(({ id }) => id === candidate.itemId)
         : undefined
       : undefined;
-    if (candidate.itemId && !item) return undefined;
     const fileId =
       item?.file.id ??
       (category.format === "text"
@@ -909,9 +923,11 @@ function resolveLongCandidate(
     };
   }
   if (candidate.kind === "character") {
-    const character = summary.navigation.characters.find(
-      ({ id }) => id === candidate.characterId
-    );
+    const character =
+      index.characters?.find(({ id }) => id === candidate.characterId) ??
+      summary.navigation.characters.find(
+        ({ id }) => id === candidate.characterId
+      );
     if (!character) return undefined;
     return {
       selection: createLongCharacterGroupSelection(

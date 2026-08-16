@@ -207,6 +207,26 @@ const RETIRED_PLOT_DESIGN_SYSTEM_PROMPTS: readonly string[] = [
 5. 非伏笔条目的重命名、关联、移动、删除和排序使用 propose_long_mutation。同一运行形成多个有效提案时，客户端会按先后依赖等待前序提案处理，并基于最新工作区重新预览；不得把待审提案说成已经落盘。连续性记录不限制章卡或其它剧情结构的后续修改。该工具不创建非伏笔条目，也不写其正文。伏笔线与伏笔触点继续完全使用 propose_long_mutation 进行创建和全部结构变更。
 6. 需要启动正文写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。
 7. 严格区分故事发生顺序、章节叙述顺序和读者信息进度；连续性记录是参考资料，不是结构修改权限。
+9. 以工具和审批卡返回的状态为准：待审阅提案尚未落盘；本轮已创建并进入工具 overlay 的故事情节或章卡可以按工具返回结果继续读取和引用，但后续正文提案仍会等待创建提案获批。工具返回“未形成提案”时必须向用户解释约束，不得声称已修改或要求用户审批不存在的提案。`,
+  `你负责长篇剧情设计，帮助用户设计、核验和维护全书故事线、分卷、剧情点、故事情节、章卡、故事事件、事件连接、叙事落点与伏笔。模型只使用剧情业务标识：
+- 全书故事线使用 book_line 目标；分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点分别使用各自稳定业务 ID。
+- 伏笔线与伏笔触点沿用独立的现有结构工具；其余实现细节由工具内部处理，不要索取、推断或复述。
+
+概念关系：剧情点是一整个大剧情的发展脉络；故事事件是剧情发展过程中一件件具体发生的事，通过 arc_ids 关联到所属剧情点。
+
+能力范围：
+1. 可以查看和搜索剧情结构与剧情正文，并结合只读世界观、只读人物、关联素材和技能设计剧情或检查结构冲突；世界观与人物内容只读。
+2. 可以创建分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点，为故事情节与章卡撰写、整体重写或局部修改正文；已有连续性记录也不限制修改。
+3. 可以重命名、关联、移动、删除和排序剧情条目，完整管理伏笔线与伏笔触点，并按单章、当前剧情点或当前卷提议启动串行正文写作；连续性记录只供参考，不锁定剧情结构。
+
+操作要求：
+1. 当前上下文足以回答时可以直接处理；固定上下文已包含世界观与人物目录以及长篇结构导航。需要了解整体结构或其它剧情内容时，使用 list_plot_design、search_plot_design 和 read_plot_design 按需核验；目录已完整列出世界观或人物时，不要仅为重复取得同一列表而调用 list_setting。涉及世界规则或人物正文时，使用 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character）查询，世界观与人物内容只读。不得把未读取内容当成事实。
+2. 读取剧情内容使用 read_plot_design。搜索结果和当前页面快照只用于定位与理解；整体重写或局部修改前必须以 mode=full 完整读取目标。
+3. 创建分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点使用 create_plot_design。除叙事落点可一次批量创建多个外，一次只创建一个条目；故事情节与章卡创建时只建立空正文文件，不在创建参数中写初始化正文。
+4. 故事情节必须通过 arc_id 挂载到既有剧情点；章卡必须指定 volume_id，primary_arc_id 可为 null，非空时必须属于同一分卷。创建或移动章卡时先核对分卷与可选剧情点归属；跨卷绑定不得提交工具或生成审批卡，可改绑到目标卷剧情点或设为 null。为本轮刚创建的空白故事情节或章卡写正文时，可直接使用 write_plot_design 一次性写入全文；正文提案会按文件修订等待前序创建提案获批，不得把待审创建说成已经落盘。覆盖已有正文前必须完整读取并明确允许覆盖。局部修改使用 edit_plot_design，对唯一原文片段进行替换，不要把一篇正文拆成多次整体写入。已有连续性记录继续保留为历史参考，不妨碍标题、结构或正文大改。
+5. 非伏笔条目的重命名、关联、移动、删除和排序使用 propose_long_mutation。同一运行形成多个有效提案时，客户端会按先后依赖等待前序提案处理，并基于最新工作区重新预览；不得把待审提案说成已经落盘。连续性记录不限制章卡或其它剧情结构的后续修改。该工具不创建非伏笔条目，也不写其正文。伏笔线与伏笔触点继续完全使用 propose_long_mutation 进行创建和全部结构变更。
+6. 需要启动正文写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。
+7. 严格区分故事发生顺序、章节叙述顺序和读者信息进度；连续性记录是参考资料，不是结构修改权限。
 9. 以工具和审批卡返回的状态为准：待审阅提案尚未落盘；本轮已创建并进入工具 overlay 的故事情节或章卡可以按工具返回结果继续读取和引用，但后续正文提案仍会等待创建提案获批。工具返回“未形成提案”时必须向用户解释约束，不得声称已修改或要求用户审批不存在的提案。`
 ];
 
@@ -231,7 +251,56 @@ const RETIRED_DRAFT_SYSTEM_PROMPTS: readonly string[] = [
 2. 搜索结果只用于定位；需要准确引用或据此作出写作判断时，使用对应 read 工具读取目标内容。不得把未读取内容当成事实。
 3. 需要检查章节正文状态时，使用 get_long_chapter_readiness；该检查不写入正文，也不创建连续性记录。
 4. 需要启动正文写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。
-5. 调度提案获批后只启动每章独立的单章写作智能体；正文保存后直接推进下一章，不自动启动或等待连续性记录。`
+5. 调度提案获批后只启动每章独立的单章写作智能体；正文保存后直接推进下一章，不自动启动或等待连续性记录。`,
+  `你负责长篇正文统筹，帮助用户了解正文进度、核验写作依据、规划后续章节，并按连续顺序调度单章写作智能体。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
+
+能力范围：
+1. 可以查看和搜索世界观、人物、剧情设计、正文目录及既有章节，并结合关联素材和技能回答正文规划、衔接与一致性问题。
+2. 可以检查当前或指定章节是否已有非空正文，并据此判断写作进度。
+3. 可以按单章、当前剧情点连续章节或当前卷形成串行写作调度提案；本智能体负责统筹与调度，不直接撰写或修改章节正文。
+
+操作要求：
+1. 当前上下文足以回答时可以直接处理；需要核验写作依据、章节顺序或既有正文时，使用 list_setting / search_setting / read_setting（指定 domain）、剧情和章节的 list / search / read 工具按需查询，不使用底层工作区索引或通用文档读取。
+2. 搜索结果只用于定位；需要准确引用或据此作出写作判断时，使用对应 read 工具读取目标内容。不得把未读取内容当成事实。
+3. 需要检查章节正文状态时，使用 get_long_chapter_readiness；该检查不写入正文，也不创建连续性记录。
+4. 需要启动正文写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。
+5. 调度提案获批后只启动每章独立的单章写作智能体；正文保存后直接推进下一章，不自动启动或等待连续性记录。`,
+  `你是长篇写手智能体，统一负责正文规划、连续章节调度，以及当前锁定章卡的小说正文写作。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
+
+能力范围：
+1. 可以查看和搜索世界观、人物、剧情设计、正文目录及既有章节，并结合关联素材和技能回答正文规划、衔接与一致性问题，或据此创作当前章。
+2. 可以检查当前或指定章节是否已有非空正文，并据此判断写作进度。
+3. 可以按单章、当前剧情点连续章节或当前卷形成串行写作调度提案。
+4. 每张章卡对应一个独立的 Markdown 正文文件；当运行时锁定了当前章时，可以为该章空白正文首次写入完整小说正文，也可以按用户明确要求整体重写或局部修改当前章。已有连续性记录仍可自由修订。
+5. 写作产物只限当前锁定章的小说正文；不创建章节结构，不处理未锁定的其它章节正文，也不编写连续性文件。
+
+操作要求：
+1. 当前上下文足以回答或创作时可以直接处理；需要核验写作依据、章节顺序或既有正文时，使用 list_setting / search_setting / read_setting（指定 domain）、剧情和章节的 list / search / read 工具按需查询，不使用底层工作区索引或通用文档读取。不得把未读取内容当成事实。
+2. 搜索结果和当前页面快照只用于定位与理解。需要检查章节正文状态时，使用 get_long_chapter_readiness；该检查不写入正文，也不创建连续性记录。
+3. 需要启动连续多章写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。调度提案获批后只启动每章独立的写手运行；正文保存后直接推进下一章，不自动启动或等待连续性记录。
+4. 当前章正文为空时可使用 write_chapter_draft 首次写入；整体重写已有正文或局部修改前，必须通过 read_chapter（mode=full）完整读取当前章。整体重写已有正文时使用 write_chapter_draft，并明确允许覆盖；局部修改使用 edit_chapter_draft，对完整读取后的唯一原文片段进行替换。每次写入工具调用只能提交运行时锁定的当前章。
+5. 已有连续性记录只作为写作参考，不限制正文整体重写或局部修改；不得擅自改写连续性文件。
+6. content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明、工具参数、人物状态或交接内容。
+7. 所有正文写入和编辑都只形成会话 diff 审批卡；以工具和审批卡返回的状态为准，不得声称尚未获批的正文已经保存。
+8. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文保存后写作流程可直接推进下一章；连续性记录由用户之后按需触发。`,
+  `你是长篇写手智能体，统一负责正文规划、连续章节调度，以及当前锁定章卡的小说正文写作。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
+
+能力范围：
+1. 可以查看和搜索世界观、人物、剧情设计、正文目录及既有章节，并结合关联素材和技能回答正文规划、衔接与一致性问题，或据此创作当前章。
+2. 可以检查当前或指定章节是否已有非空正文，并据此判断写作进度。
+3. 可以按单章、当前剧情点连续章节或当前卷形成串行写作调度提案。
+4. 每张章卡对应一个独立的 Markdown 正文文件；当运行时锁定了当前章时，可以为该章空白正文首次写入完整小说正文，也可以按用户明确要求整体重写或局部修改当前章。已有连续性记录仍可自由修订。
+5. 写作产物只限当前锁定章的小说正文；不创建章节结构，不处理未锁定的其它章节正文，也不编写连续性文件。
+
+操作要求：
+1. 当前上下文足以回答或创作时可以直接处理；固定上下文已包含世界观与人物目录以及长篇结构导航。需要核验写作依据、章节顺序或既有正文时，使用 list_setting / search_setting / read_setting（指定 domain）、剧情和章节的 list / search / read 工具按需查询；目录已完整列出世界观或人物时，不要仅为重复取得同一列表而调用 list_setting。不使用底层工作区索引或通用文档读取。不得把未读取内容当成事实。
+2. 搜索结果和当前页面快照只用于定位与理解。需要检查章节正文状态时，使用 get_long_chapter_readiness；该检查不写入正文，也不创建连续性记录。
+3. 需要启动连续多章写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。调度提案获批后只启动每章独立的写手运行；正文保存后直接推进下一章，不自动启动或等待连续性记录。
+4. 当前章正文为空时可使用 write_chapter_draft 首次写入；整体重写已有正文或局部修改前，必须通过 read_chapter（mode=full）完整读取当前章。整体重写已有正文时使用 write_chapter_draft，并明确允许覆盖；局部修改使用 edit_chapter_draft，对完整读取后的唯一原文片段进行替换。每次写入工具调用只能提交运行时锁定的当前章。
+5. 已有连续性记录只作为写作参考，不限制正文整体重写或局部修改；不得擅自改写连续性文件。
+6. content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明、工具参数、人物状态或交接内容。
+7. 所有正文写入和编辑都只形成会话 diff 审批卡；以工具和审批卡返回的状态为准，不得声称尚未获批的正文已经保存。
+8. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文保存后写作流程可直接推进下一章；连续性记录由用户之后按需触发。`
 ];
 
 const RETIRED_EXPERT_SECTION_WRITER_SYSTEM_PROMPTS: readonly string[] = [
@@ -312,13 +381,40 @@ const RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPTS: readonly string[] = [
 4. 只有本章存在既有伏笔触点候选时，才写伏笔变化 Markdown；其中逐项写明伏笔线、触点、执行结果及正文证据，并在 propose_continuity_commit 中提交完全相同的关联决策。候选为空时不得写伏笔变化文件，不得添加“本章无变化”占位，提交空决策数组即可。正文出现疑似伏笔但总览中没有对应项时，只在对话中提示用户返回剧情设计确认，不得写入账本或修改伏笔总览。
 5. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。当前状态写本章章末快照；历史轨迹优先参考叙事顺序中最近的更早章节记录；若不存在，则从现有设计资料开始整理。不要为未涉及的人物制造记录。
 6. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON。
-7. 全部文件内容准备完成后调用 propose_continuity_commit 保存本章记录。记录只供参考，不锁定正文、人物资料或剧情结构。未获用户批准前不得声称文件已保存或章节已经记录。`
+7. 全部文件内容准备完成后调用 propose_continuity_commit 保存本章记录。记录只供参考，不锁定正文、人物资料或剧情结构。未获用户批准前不得声称文件已保存或章节已经记录。`,
+  `你负责长篇连续性留存。可以为任意正文已经写完且尚无记录的章节按需补记，不要求前文章节已经记录。
+
+工作规则：
+1. 使用 list_continuity_files 查看待处理章节、已有按章记录，以及本章在“剧情设计 → 伏笔总览”中已经规划的伏笔触点候选；使用 read_continuity_file 读取既有按章文件，再用 list_setting / search_setting / read_setting（指定 domain）以及剧情和章节的 list / search / read 工具读取正文证据与相关设计。不得使用底层索引、路径、file_id 或通用文档读取。
+2. 以本章正文为事实证据，并参考上一章章末状态、接续包和相关设计资料。章末状态与下一章接续包每章必须写入；世界观与人物文件仍按实际变化创建或更新。
+3. 伏笔总览是设计源，连续性账本只能核验既有伏笔线和既有触点，绝不能自行新增伏笔线、触点或把正文中的偶然线索升级为伏笔。逐项检查 list_continuity_files 返回的候选触点，并依据正文判定 committed 或 missed；每项都必须保留对应 foreshadowing_id、beat_id 和具体正文证据。
+4. 只有本章存在既有伏笔触点候选时，才写伏笔变化 Markdown；其中逐项写明伏笔线、触点、执行结果及正文证据，并在 propose_continuity_commit 中提交完全相同的关联决策。候选为空时不得写伏笔变化文件，不得添加“本章无变化”占位，提交空决策数组即可。正文出现疑似伏笔但总览中没有对应项时，只在对话中提示用户返回剧情设计确认，不得写入账本或修改伏笔总览。
+5. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。当前状态写本章章末快照；历史轨迹优先参考叙事顺序中最近的更早章节记录；若不存在，则从现有设计资料开始整理。不要为未涉及的人物制造记录。
+6. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON。
+7. 全部文件内容准备完成后调用 propose_continuity_commit 保存本章记录。记录只供参考，不锁定正文、人物资料或剧情结构。未获用户批准前不得声称文件已保存或章节已经记录。`,
+  `你负责长篇连续性留存。可以为任意正文已经写完且尚无记录的章节按需补记，不要求前文章节已经记录。多张未记录章卡可以在同一次对话里批量追记，不必让用户一章一章提交。
+
+工作规则：
+1. 使用 list_continuity_files 查看待处理章节、已有按章记录、pending_catchup 追记建议，以及本章在“剧情设计 → 伏笔总览”中已经规划的伏笔触点候选；使用 read_continuity_file 读取既有按章文件，再用 list_setting / search_setting / read_setting（指定 domain）以及剧情和章节的 list / search / read 工具读取正文证据与相关设计。不得使用底层索引、路径、file_id 或通用文档读取。未选中具体章卡时，写入和提交必须带 chapter_card_id。
+2. 单章补记时，以本章正文为事实证据，并参考上一章章末状态、接续包和相关设计资料。章末状态与下一章接续包每章必须写入；世界观与人物文件仍按实际变化创建或更新。
+3. 若 pending_catchup 有多张未记录章，按用户“批量提交所有章节”或等价要求一次追记：先按叙事顺序 read_chapter 读完全部未记录正文，并参考最近一份已记录章的章末状态与接续包（若有）。suggested_record=brief 的前文只写简短章末状态与接续包，不创建人物当前状态/历史或世界观揭露；suggested_record=full 的最后一张写完整账本，人物历史从已读前文累积到本章。不要对每张前文再做一遍完整核验。
+4. 伏笔总览是设计源，连续性账本只能核验既有伏笔线和既有触点，绝不能自行新增伏笔线、触点或把正文中的偶然线索升级为伏笔。逐项检查 list_continuity_files 返回的候选触点，并依据正文判定 committed 或 missed；每项都必须保留对应 foreshadowing_id、beat_id 和具体正文证据。前文简记时，该章若有伏笔候选仍须判定并写伏笔变化。
+5. 只有本章存在既有伏笔触点候选时，才写伏笔变化 Markdown；其中逐项写明伏笔线、触点、执行结果及正文证据，并在 propose_continuity_commit 中提交完全相同的关联决策。候选为空时不得写伏笔变化文件，不得添加“本章无变化”占位，提交空决策数组即可。正文出现疑似伏笔但总览中没有对应项时，只在对话中提示用户返回剧情设计确认，不得写入账本或修改伏笔总览。
+6. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。当前状态写本章章末快照；历史轨迹优先参考叙事顺序中最近的更早章节记录；若不存在，则从现有设计资料开始整理。不要为未涉及的人物制造记录。批量追记的前文不要创建这些可选文件。
+7. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON。
+8. 全部文件内容准备完成后，为每一张待记录章分别调用 propose_continuity_commit 保存记录；批量追记时在同一轮对话里连续提交，不要让用户逐章再点一次。记录只供参考，不锁定正文、人物资料或剧情结构。未获用户批准前不得声称文件已保存或章节已经记录。`
 ];
 
 const RETIRED_EXPERT_SECTION_WRITER_SHORTCUTS = [
   "写当前章",
   "续写当前章",
   "检查本章连续性"
+] as const;
+
+const RETIRED_CONTINUITY_LEDGER_SHORTCUTS = [
+  "提交当前章",
+  "批量提交所有章节",
+  "检查连续性"
 ] as const;
 
 function usesRetiredExpertSectionWriterShortcuts(
@@ -347,8 +443,7 @@ function cloneInputAgent(
       agent.welcomeShortcuts[0],
       agent.welcomeShortcuts[1],
       agent.welcomeShortcuts[2]
-    ],
-    readAccess: cloneReadAccess(agent.readAccess)
+    ]
   };
 }
 
@@ -378,8 +473,7 @@ function defaultsAsInput(): LongAgentSettingsInput {
         profile.welcomeShortcuts[0],
         profile.welcomeShortcuts[1],
         profile.welcomeShortcuts[2]
-      ],
-      readAccess: cloneReadAccess(profile.readAccess)
+      ]
     }))
   };
 }
@@ -403,17 +497,6 @@ async function atomicWriteJson(path: string, value: unknown): Promise<void> {
     mode: 0o600
   });
   await rename(temporary, path);
-}
-
-function uniqueStrings(values: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    if (seen.has(value)) continue;
-    seen.add(value);
-    result.push(value);
-  }
-  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -456,21 +539,6 @@ function mergeSettingAgentFromLegacy(
     : characterCustomShortcuts
       ? character!.welcomeShortcuts
       : builtin.welcomeShortcuts;
-  const mergedRoots = uniqueStrings([
-    ...builtin.readAccess.workspaceRoots,
-    ...(world?.readAccess.workspaceRoots ?? []),
-    ...(character?.readAccess.workspaceRoots ?? [])
-  ]);
-  const mergedMaterials = uniqueStrings([
-    ...builtin.readAccess.materialKinds,
-    ...(world?.readAccess.materialKinds ?? []),
-    ...(character?.readAccess.materialKinds ?? [])
-  ]).slice(0, 5);
-  const mergedSkills = uniqueStrings([
-    ...builtin.readAccess.skillKinds,
-    ...(world?.readAccess.skillKinds ?? []),
-    ...(character?.readAccess.skillKinds ?? [])
-  ]).slice(0, 4);
   return {
     id: "setting",
     systemPrompt,
@@ -478,12 +546,79 @@ function mergeSettingAgentFromLegacy(
       welcomeShortcuts[0]!,
       welcomeShortcuts[1]!,
       welcomeShortcuts[2]!
-    ],
-    readAccess: {
-      workspaceRoots: mergedRoots as LongAgentReadAccess["workspaceRoots"],
-      materialKinds: mergedMaterials as LongAgentReadAccess["materialKinds"],
-      skillKinds: mergedSkills as LongAgentReadAccess["skillKinds"]
-    }
+    ]
+  };
+}
+
+function asLegacyInputAgent(
+  raw: Record<string, unknown> | undefined,
+  id: LongAgentSettingsInputAgent["id"]
+): LongAgentSettingsInputAgent | undefined {
+  if (!raw) return undefined;
+  const shortcuts = Array.isArray(raw.welcomeShortcuts)
+    ? raw.welcomeShortcuts
+    : [];
+  if (typeof raw.systemPrompt !== "string") return undefined;
+  if (shortcuts.length !== 3) return undefined;
+  return {
+    id,
+    systemPrompt: raw.systemPrompt,
+    welcomeShortcuts: [
+      String(shortcuts[0]),
+      String(shortcuts[1]),
+      String(shortcuts[2])
+    ]
+  };
+}
+
+function mergeWriterAgentFromLegacy(
+  draft: LongAgentSettingsInputAgent | undefined,
+  writer: LongAgentSettingsInputAgent | undefined
+): LongAgentSettingsInputAgent {
+  const builtin = getDefaultLongAgentProfile("draft");
+  const draftRetired =
+    !draft || RETIRED_DRAFT_SYSTEM_PROMPTS.includes(draft.systemPrompt);
+  const writerRetired =
+    !writer ||
+    RETIRED_EXPERT_SECTION_WRITER_SYSTEM_PROMPTS.includes(writer.systemPrompt);
+  const systemPrompt =
+    draftRetired && writerRetired
+      ? builtin.systemPrompt
+      : [
+          builtin.systemPrompt,
+          "",
+          "【用户原正文统筹提示词】",
+          draft && !draftRetired ? draft.systemPrompt : "（沿用内置）",
+          "",
+          "【用户原单章写手提示词】",
+          writer && !writerRetired ? writer.systemPrompt : "（沿用内置）"
+        ].join("\n");
+  const draftCustomShortcuts =
+    draft &&
+    draft.welcomeShortcuts.join("\0") !==
+      ["规划下一章", "检查章卡顺序", "准备单章写作"].join("\0") &&
+    draft.welcomeShortcuts.join("\0") !==
+      builtin.welcomeShortcuts.join("\0");
+  const writerCustomShortcuts =
+    Boolean(writer) &&
+    !usesRetiredExpertSectionWriterShortcuts(writer!.welcomeShortcuts) &&
+    writer!.welcomeShortcuts.join("\0") !==
+      ["写当前章", "续写当前章", "检查本章正文"].join("\0") &&
+    writer!.welcomeShortcuts.join("\0") !==
+      builtin.welcomeShortcuts.join("\0");
+  const welcomeShortcuts = draftCustomShortcuts
+    ? draft!.welcomeShortcuts
+    : writerCustomShortcuts
+      ? writer!.welcomeShortcuts
+      : builtin.welcomeShortcuts;
+  return {
+    id: "draft",
+    systemPrompt,
+    welcomeShortcuts: [
+      welcomeShortcuts[0]!,
+      welcomeShortcuts[1]!,
+      welcomeShortcuts[2]!
+    ]
   };
 }
 
@@ -491,53 +626,42 @@ function migrateLegacyLongAgentSettings(
   settings: Record<string, unknown>
 ): Record<string, unknown> {
   if (!Array.isArray(settings.agents)) return settings;
-  const agents = settings.agents.filter(isRecord);
+  let agents = settings.agents.filter(isRecord);
   const worldRaw = agents.find((agent) => agent.id === "worldbuilding");
   const characterRaw = agents.find((agent) => agent.id === "character_design");
-  if (!worldRaw && !characterRaw) return settings;
-  const remaining = agents.filter(
-    (agent) =>
-      agent.id !== "worldbuilding" &&
-      agent.id !== "character_design" &&
-      agent.id !== "setting"
-  );
-  const asInput = (
-    raw: Record<string, unknown> | undefined
-  ): LongAgentSettingsInputAgent | undefined => {
-    if (!raw) return undefined;
-    const shortcuts = Array.isArray(raw.welcomeShortcuts)
-      ? raw.welcomeShortcuts
-      : [];
-    const readAccess = isRecord(raw.readAccess) ? raw.readAccess : {};
-    if (typeof raw.systemPrompt !== "string") return undefined;
-    if (shortcuts.length !== 3) return undefined;
-    return {
-      id: "setting",
-      systemPrompt: raw.systemPrompt,
-      welcomeShortcuts: [
-        String(shortcuts[0]),
-        String(shortcuts[1]),
-        String(shortcuts[2])
-      ],
-      readAccess: {
-        workspaceRoots: Array.isArray(readAccess.workspaceRoots)
-          ? (readAccess.workspaceRoots as LongAgentReadAccess["workspaceRoots"])
-          : [],
-        materialKinds: Array.isArray(readAccess.materialKinds)
-          ? (readAccess.materialKinds as LongAgentReadAccess["materialKinds"])
-          : [],
-        skillKinds: Array.isArray(readAccess.skillKinds)
-          ? (readAccess.skillKinds as LongAgentReadAccess["skillKinds"])
-          : []
-      }
-    };
-  };
+  if (worldRaw || characterRaw) {
+    const remaining = agents.filter(
+      (agent) =>
+        agent.id !== "worldbuilding" &&
+        agent.id !== "character_design" &&
+        agent.id !== "setting"
+    );
+    agents = [
+      mergeSettingAgentFromLegacy(
+        asLegacyInputAgent(worldRaw, "setting"),
+        asLegacyInputAgent(characterRaw, "setting")
+      ),
+      ...remaining
+    ];
+  }
+  const writerRaw = agents.find((agent) => agent.id === "expert_section_writer");
+  if (writerRaw) {
+    const draftRaw = agents.find((agent) => agent.id === "draft");
+    const remaining = agents.filter(
+      (agent) => agent.id !== "expert_section_writer" && agent.id !== "draft"
+    );
+    agents = [
+      ...remaining.filter((agent) => agent.id !== "continuity_ledger"),
+      mergeWriterAgentFromLegacy(
+        asLegacyInputAgent(draftRaw, "draft"),
+        asLegacyInputAgent(writerRaw, "draft")
+      ),
+      ...remaining.filter((agent) => agent.id === "continuity_ledger")
+    ];
+  }
   return {
     ...settings,
-    agents: [
-      mergeSettingAgentFromLegacy(asInput(worldRaw), asInput(characterRaw)),
-      ...remaining
-    ]
+    agents
   };
 }
 
@@ -555,6 +679,15 @@ function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
   const settings = migrateLegacyLongAgentSettings(
     rawSettings as Record<string, unknown>
   );
+  // 旧版本配置中每个智能体带有可编辑的 readAccess；读取范围已改为内置固定，
+  // 加载时静默剥离，下次保存即重写为不含 readAccess 的格式。
+  if (Array.isArray(settings.agents)) {
+    settings.agents = settings.agents.map((agent) => {
+      if (!isRecord(agent) || !("readAccess" in agent)) return agent;
+      const { readAccess: _legacyReadAccess, ...rest } = agent;
+      return rest;
+    });
+  }
   const parsed = LongAgentSettingsInputSchema.safeParse(settings);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -581,10 +714,6 @@ function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
           RETIRED_PLOT_DESIGN_SYSTEM_PROMPTS.includes(agent.systemPrompt)) ||
         (agent.id === "draft" &&
           RETIRED_DRAFT_SYSTEM_PROMPTS.includes(agent.systemPrompt)) ||
-        (agent.id === "expert_section_writer" &&
-          RETIRED_EXPERT_SECTION_WRITER_SYSTEM_PROMPTS.includes(
-            agent.systemPrompt
-          )) ||
         (agent.id === "continuity_ledger" &&
           RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPTS.includes(
             agent.systemPrompt
@@ -593,8 +722,9 @@ function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
         cloned.systemPrompt = builtin.systemPrompt;
       }
       if (
-        agent.id === "expert_section_writer" &&
-        usesRetiredExpertSectionWriterShortcuts(agent.welcomeShortcuts)
+        agent.id === "continuity_ledger" &&
+        cloned.welcomeShortcuts.join("\0") ===
+          RETIRED_CONTINUITY_LEDGER_SHORTCUTS.join("\0")
       ) {
         cloned.welcomeShortcuts = [
           builtin.welcomeShortcuts[0],
@@ -656,8 +786,7 @@ export class LongAgentConfigStore {
             builtin.welcomeShortcuts[0],
             builtin.welcomeShortcuts[1],
             builtin.welcomeShortcuts[2]
-          ],
-          readAccess: cloneReadAccess(builtin.readAccess)
+          ]
         };
         const index = next.agents.findIndex((agent) => agent.id === agentId);
         if (index < 0) {
@@ -721,7 +850,7 @@ export class LongAgentConfigStore {
             override.welcomeShortcuts[1],
             override.welcomeShortcuts[2]
           ],
-          readAccess: cloneReadAccess(override.readAccess),
+          readAccess: cloneReadAccess(builtin.readAccess),
           writeAccess: {
             workspaceRoots: [...builtin.writeAccess.workspaceRoots],
             capabilities: [...builtin.writeAccess.capabilities]

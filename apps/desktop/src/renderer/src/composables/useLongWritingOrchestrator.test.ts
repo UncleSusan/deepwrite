@@ -43,7 +43,7 @@ function writerProposal(chapterCardId = "chapter_one") {
     type: "long.chapter_write_proposal",
     payload: {
       bookId: "longbook_test",
-      agentId: "expert_section_writer",
+      agentId: "draft",
       sessionId: "session-current",
       runId: "run-current",
       file: { chapterCardId }
@@ -182,7 +182,7 @@ describe("useLongWritingOrchestrator", () => {
     const expectation = {
       bookId: "longbook_test",
       chapterCardId: "chapter_one",
-      agentId: "expert_section_writer" as const,
+      agentId: "draft" as const,
       sessionId: "session-current",
       runId: "run-current"
     };

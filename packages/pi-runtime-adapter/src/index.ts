@@ -22,6 +22,7 @@ import {
   type ProviderStreams,
   type SimpleStreamOptions,
   type ThinkingLevelMap,
+  type ToolResultMessage,
   type Usage,
   type UserMessage
 } from "@earendil-works/pi-ai";
@@ -33,6 +34,7 @@ import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/pro
 import {
   renderLearningImitationSystemPrompt,
   SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
+  type AgentEvaluationHistoryMessage,
   type AgentEvaluationSnapshot,
   type AgentEvaluationToolConfiguration,
   type AgentProviderRuntimeConfig,
@@ -45,6 +47,7 @@ import {
   type LongAgentProfile,
   type LongPlotFocusSnapshot,
   type LongWorkspaceRuntimeContext,
+  longAgentAcceptsWorldbuildingDirectory,
   type ScriptWorkspaceAgentProfile,
   type ShortAgentSubagentDefinition,
   type ShortWorkspaceAgentProfile,
@@ -1073,6 +1076,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
 
     let settled = false;
     let terminalEmitted = false;
+    let evaluationSnapshotEmitter: (() => void) | undefined;
     let modelRequestInFlight = false;
     let retryWaiting = false;
     let idleModelRequestTimedOut = false;
@@ -1095,7 +1099,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
 
     const emit = (event: AgentRuntimeEvent): void => {
       const terminal = event.type === "agent.completed" || event.type === "agent.error";
-      if (terminalEmitted) {
+      if (terminalEmitted && event.type !== "agent.evaluation_snapshot") {
         return;
       }
       if (event.type === "subagent.started") {
@@ -1134,7 +1138,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         }
       }
       queue.push(event);
-      if (!terminal) {
+      if (!terminal && !terminalEmitted) {
         scheduleIdleTimeout();
       }
     };
@@ -1284,14 +1288,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     if (!settled) {
       scheduleIdleTimeout();
       // Preserve the first request wrapper as the stable prefix for later turns.
-      // Plot-design turns also receive their latest navigation focus; tools and
-      // the system prompt are still refreshed before every run.
+      // Plot-design and draft turns also receive their latest structure
+      // snapshots; tools and the system prompt are still refreshed before every run.
       const persistInitialRuntimeContext = agent.state.messages.length === 0;
       const runtimeUserContent = persistInitialRuntimeContext
         ? buildRuntimeUserMessageContent(input)
-        : input.longAgentProfile?.id === "plot_design" &&
-            input.workspaceContext?.longWorkspace
-          ? buildLongPlotTurnUserMessageContent(input)
+        : longAgentRefreshesDesignContextOnLaterTurns(
+              input.longAgentProfile?.id
+            ) && input.workspaceContext?.longWorkspace
+          ? buildLongFollowUpTurnUserMessageContent(input)
           : buildRawUserMessage(input).content;
       const runtimeUserMessage: UserMessage = {
         role: "user",
@@ -1322,21 +1327,27 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
               : {})
           };
         });
-        emit({
-          type: "agent.evaluation_snapshot",
-          runId: input.runId,
-          sessionId: input.sessionId,
-          payload: {
-            messageId,
-            snapshot: buildAgentEvaluationSnapshot(
-              systemPrompt,
-              runtimeUserContent,
-              persistInitialRuntimeContext,
-              evaluationTools
-            ),
-            runtime
-          }
-        });
+        const emitEvaluationSnapshot = (): void => {
+          emit({
+            type: "agent.evaluation_snapshot",
+            runId: input.runId,
+            sessionId: input.sessionId,
+            payload: {
+              messageId,
+              snapshot: buildAgentEvaluationSnapshot(
+                systemPrompt,
+                runtimeUserContent,
+                persistInitialRuntimeContext,
+                evaluationTools,
+                new Date().toISOString(),
+                evaluationConversationHistory(agent.state.messages)
+              ),
+              runtime
+            }
+          });
+        };
+        emitEvaluationSnapshot();
+        evaluationSnapshotEmitter = emitEvaluationSnapshot;
       }
       void runAgentWithTurnRetries({
         agent,
@@ -1450,6 +1461,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
               }
             });
           }
+          evaluationSnapshotEmitter?.();
           cleanup();
         });
     }
@@ -1488,6 +1500,96 @@ function evaluationContextText(content: UserMessage["content"]): string {
     .join("\n");
 }
 
+const EVALUATION_HISTORY_TEXT_LIMIT = 4_000;
+const EVALUATION_HISTORY_MAX_MESSAGES = 40;
+
+function compactEvaluationText(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= EVALUATION_HISTORY_TEXT_LIMIT) return trimmed;
+  return `${trimmed.slice(0, EVALUATION_HISTORY_TEXT_LIMIT)}…`;
+}
+
+function isUserAgentMessage(message: AgentMessage): message is UserMessage {
+  return typeof message === "object" && message !== null && message.role === "user";
+}
+
+function isToolResultAgentMessage(
+  message: AgentMessage
+): message is ToolResultMessage {
+  return (
+    typeof message === "object" && message !== null && message.role === "toolResult"
+  );
+}
+
+function evaluationHistoryToolFields(
+  toolName: string | undefined,
+  toolCallId: string | undefined
+): Pick<AgentEvaluationHistoryMessage, "toolName" | "toolCallId"> {
+  const name = toolName?.trim();
+  const id = toolCallId?.trim();
+  return {
+    ...(name ? { toolName: name } : {}),
+    ...(id ? { toolCallId: id } : {})
+  };
+}
+
+function evaluationHistoryFromToolResult(
+  message: ToolResultMessage
+): AgentEvaluationHistoryMessage {
+  const text = message.content
+    .filter(
+      (part): part is Extract<(typeof message.content)[number], { type: "text" }> =>
+        part.type === "text"
+    )
+    .map((part) => part.text)
+    .join("\n");
+  return {
+    role: "tool",
+    text: compactEvaluationText(text || summarizeToolResult(message.details ?? message)),
+    ...evaluationHistoryToolFields(message.toolName, message.toolCallId),
+    ...(message.isError ? { isError: true } : {})
+  };
+}
+
+/** @internal Exported for evaluation-capture regression tests. */
+export function evaluationConversationHistory(
+  messages: readonly AgentMessage[]
+): AgentEvaluationHistoryMessage[] {
+  const entries: AgentEvaluationHistoryMessage[] = [];
+  for (const message of messages) {
+    if (isUserAgentMessage(message)) {
+      const text = compactEvaluationText(evaluationContextText(message.content));
+      if (text) entries.push({ role: "user", text });
+      continue;
+    }
+    if (isAssistantMessage(message)) {
+      const text = compactEvaluationText(
+        [readAssistantThinking(message), readAssistantText(message)]
+          .filter(Boolean)
+          .join("\n\n")
+      );
+      if (text) entries.push({ role: "assistant", text });
+      for (const part of message.content) {
+        if (part.type !== "toolCall") continue;
+        entries.push({
+          role: "assistant",
+          text: compactEvaluationText(
+            serializedToolArguments(part.arguments) ?? ""
+          ),
+          ...evaluationHistoryToolFields(part.name, part.id)
+        });
+      }
+      continue;
+    }
+    if (isToolResultAgentMessage(message)) {
+      entries.push(evaluationHistoryFromToolResult(message));
+    }
+  }
+  return entries.length <= EVALUATION_HISTORY_MAX_MESSAGES
+    ? entries
+    : entries.slice(-EVALUATION_HISTORY_MAX_MESSAGES);
+}
+
 type EvaluationToolSource = Pick<
   AgentTool,
   "name" | "description" | "parameters"
@@ -1515,7 +1617,8 @@ export function buildAgentEvaluationSnapshot(
   runtimeUserContent: UserMessage["content"],
   initialSessionContext: boolean,
   tools: readonly EvaluationToolSource[],
-  capturedAt = new Date().toISOString()
+  capturedAt = new Date().toISOString(),
+  conversationHistory: readonly AgentEvaluationHistoryMessage[] = []
 ): AgentEvaluationSnapshot {
   return {
     schemaVersion: 1,
@@ -1527,7 +1630,10 @@ export function buildAgentEvaluationSnapshot(
         : "turn-context",
       text: evaluationContextText(runtimeUserContent)
     },
-    tools: tools.map(evaluationToolConfiguration)
+    tools: tools.map(evaluationToolConfiguration),
+    ...(conversationHistory.length > 0
+      ? { conversationHistory: [...conversationHistory] }
+      : {})
   };
 }
 
@@ -2563,22 +2669,25 @@ export function buildEffectiveSystemPrompt(
       longProfile.systemPrompt.trim(),
       "",
       "【DeepWrite 长篇工具边界】",
+      "四个长篇智能体读取互通：设定用 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character），剧情用 list_plot_design / search_plot_design / read_plot_design，正文、章末人物状态与接续包用 list_chapters / search_chapters / read_chapter（document 可选 body / character_state / handoff），按章连续性文件用 list_continuity_files / read_continuity_file；写入仍只限当前阶段自身范围。",
       longProfile.id === "setting"
-        ? "设定只使用本次固定上下文或工具返回的业务 ID 定位内容：世界观用 category_id / item_id，人物用 character_id / document。查询、搜索和读取一律使用 list_setting / search_setting / read_setting，并指定 domain=worldbuilding 或 domain=character。固定上下文目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。目录标注存在省略项或需要核验本轮结构变更时再调用列表工具。工具会处理其余实现细节，不得索取、猜测或复述。未读取正文不得当成事实。"
+        ? "设定只使用本次固定上下文或工具返回的业务 ID 定位内容：世界观用 category_id / item_id，人物用 character_id / document。设定内容的查询、搜索和读取使用 list_setting / search_setting / read_setting，并指定 domain=worldbuilding 或 domain=character；其它阶段内容用各自阶段的 list / search / read 工具只读查阅。固定上下文目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。目录标注存在省略项或需要核验本轮结构变更时再调用列表工具。长篇结构导航已写入固定上下文，仅供对照剧情框架；不得把剧情正文写入本轮固定上下文，也不得修改剧情结构。工具会处理其余实现细节，不得索取、猜测或复述。未读取正文不得当成事实。"
         : longProfile.id === "plot_design"
-          ? "剧情设计只使用本次固定上下文或工具返回的业务 ID 定位内容：全书故事线用 book_line，分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点用各自稳定业务 ID。查询、搜索和读取使用 list_plot_design / search_plot_design / read_plot_design。世界观与人物只按需通过设定只读工具查询，不得把设定目录、设定正文或 fileId 写入本轮固定上下文。不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
+          ? "剧情设计只使用本次固定上下文或工具返回的业务 ID 定位内容：全书故事线用 book_line，分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点用各自稳定业务 ID。查询、搜索和读取使用 list_plot_design / search_plot_design / read_plot_design。世界观与人物目录已写入本轮固定上下文；条目正文仍须通过 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character）按需读取。目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。不得把设定正文或 fileId 写入本轮固定上下文。不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
+        : longProfile.id === "draft"
+          ? "写手只使用本次固定上下文或工具返回的业务 ID 定位内容：世界观用 category_id / item_id，人物用 character_id / document，剧情与章节用各自稳定业务 ID。查询、搜索和读取使用 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character），以及剧情和章节的 list / search / read 工具。世界观、人物目录与长篇结构导航已写入本轮固定上下文；条目正文仍须按需读取。目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。不得把设定正文、剧情正文或 fileId 写入本轮固定上下文。不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
         : longProfile.id === "continuity_ledger"
           ? "连续性账本只使用 list_setting / search_setting / read_setting（指定 domain）以及剧情和正文各阶段的 list / search / read 工具及其业务 ID；不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
-        : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
+          : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
       writeBoundary,
       longProfile.id === "plot_design"
         ? "连续性记录只提供按章参考，不锁定章卡、故事情节或伏笔结构。允许创建、删除、移动和重排已有记录的章卡；删除章卡时客户端会在危险确认后级联清理该章正文、连续性文件和记录索引。章卡必须指定所属分卷，剧情点关联可为 null；非空时必须与章卡属于同一分卷。调用 create_plot_design 或 propose_long_mutation 前必须核对二者；跨卷移动章卡时可改绑目标卷内剧情点或解除关联。移动或删除剧情点只解除章卡的弱关联，不移动或删除章卡。同一次运行形成多个有效提案时，客户端会按先后依赖等待前序提案处理，并基于最新工作区重新预览；不得把待审提案说成已经落盘。故事情节或章卡的纯正文写入也会按文件修订等待前序创建或写入完成。工具返回未形成提案时，必须向用户解释约束，不得要求审批不存在的卡片。"
         : "",
-      longProfile.id === "expert_section_writer"
-        ? "单章写作只允许为上下文锁定的当前章形成小说正文提案；不得生成或修改人物状态、handoff、接续包及其它连续性文件，这些内容由连续性账本智能体在正文获批后独立处理。"
+      longProfile.id === "draft"
+        ? "写手只允许为上下文锁定的当前章形成小说正文提案；不得生成或修改人物状态、handoff、接续包及其它连续性文件，这些内容由连续性账本智能体在正文获批后独立处理。未锁定章卡时只做规划、检查和调度，不得写入正文。"
         : "",
       longProfile.id === "continuity_ledger"
-        ? "连续性阶段以按章文本文件留存章末状态、接续包，以及按需创建的世界观揭露和人物当前状态/历史轨迹。伏笔总览是唯一设计源：只核验 list_continuity_files 返回的本章既有伏笔触点，以 foreshadowing_id、beat_id、committed/missed 和正文证据登记变化；没有候选时不得写伏笔变化或‘本章无变化’，也不得自行新增伏笔。先 list/read，再 create/write/edit；仅当可选文件误创建或不再适用时使用 delete_continuity_file。全部文件完成后调用 propose_continuity_commit 登记内部归档；客户端会在文件卡全部获批后自动执行，不产生第二次审批。不得调用旧式 set_long_ledger_* 工作流。"
+        ? "连续性阶段以按章文本文件留存章末状态、接续包，以及按需创建的世界观揭露和人物当前状态/历史轨迹。可对任意已有正文、尚未记录的章卡写入；未选中章卡时必须带 chapter_card_id。多张未记录章可一次追记：list_continuity_files 的 pending_catchup 中前文 brief 只写简短章末状态与接续包，最后一张 full 写完整账本。伏笔总览是唯一设计源：只核验 list_continuity_files 返回的本章既有伏笔触点，以 foreshadowing_id、beat_id、committed/missed 和正文证据登记变化；没有候选时不得写伏笔变化或‘本章无变化’，也不得自行新增伏笔。先 list/read，再 create/write/edit；仅当可选文件误创建或不再适用时使用 delete_continuity_file。每章文件完成后调用 propose_continuity_commit 登记内部归档；客户端会在文件卡全部获批后自动执行，不产生第二次审批。不得调用旧式 set_long_ledger_* 工作流。"
         : ""
     ]
       .filter(Boolean)
@@ -2891,6 +3000,27 @@ function renderLongCharacterStageBrief(
   ].join("\n");
 }
 
+function renderLongCurrentStageSection(
+  worldbuildingFocus: LongWorkspaceRuntimeContext["worldbuildingFocus"],
+  characterFocus: LongWorkspaceRuntimeContext["characterFocus"],
+  longWorkspace: LongWorkspaceRuntimeContext | undefined
+): string {
+  const parts = [
+    worldbuildingFocus
+      ? renderLongWorldbuildingStageBrief(
+          worldbuildingFocus,
+          longWorkspace?.worldbuildingDirectory
+        )
+      : "",
+    characterFocus && longWorkspace
+      ? renderLongCharacterStageBrief(characterFocus, longWorkspace.navigation)
+      : ""
+  ].filter(Boolean);
+  return parts.length
+    ? `【当前阶段信息与要求】\n${parts.join("\n")}`
+    : "";
+}
+
 /** @internal Exported for prompt-boundary regression tests. */
 export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const active = input.workspaceContext?.activeResource;
@@ -2915,8 +3045,12 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const isPlotDesignAgentRun = Boolean(
     longWorkspace && longProfile?.id === "plot_design"
   );
-  const omitLongImplementationIds =
-    isSettingAgentRun || isPlotDesignAgentRun;
+  const injectsCrossDomainDesignSnapshots = Boolean(
+    longWorkspace &&
+      longProfile &&
+      longAgentAcceptsWorldbuildingDirectory(longProfile.id)
+  );
+  const omitLongImplementationIds = injectsCrossDomainDesignSnapshots;
   const plotFocus = isPlotDesignAgentRun
     ? longWorkspace?.plotFocus
     : undefined;
@@ -2990,25 +3124,29 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       ? `${scriptWorkspace ? "剧本" : "短篇"}作品: 《${writingWorkspace.title}》`
       : "",
     longWorkspace ? `长篇作品: 《${longWorkspace.title}》` : "",
-    isSettingAgentRun && longWorkspace?.worldbuildingDirectory
+    longWorkspace?.agentsMd?.trim()
+      ? `【长篇上下文（AGENTS.md）】\n${longWorkspace.agentsMd.trim()}`
+      : "",
+    injectsCrossDomainDesignSnapshots &&
+    longWorkspace?.worldbuildingDirectory
       ? `【世界观条目列表（发送时快照）】\n${renderLongWorldbuildingDirectory(
           longWorkspace.worldbuildingDirectory
         )}`
       : "",
-    isSettingAgentRun && longWorkspace
+    injectsCrossDomainDesignSnapshots && longWorkspace
       ? `【人物设计列表（发送时快照）】\n${renderLongCharacterDirectory(
           longWorkspace.navigation
         )}\n创建、筛选或移动人物时只能使用目录中的 type_id；人物类型目录只能由用户在结构管理中维护。超出列表的人物调用 list_setting（domain=character）查询。`
       : "",
-    worldbuildingFocus
-      ? renderLongWorldbuildingStageBrief(
-          worldbuildingFocus,
-          longWorkspace?.worldbuildingDirectory
-        )
+    injectsCrossDomainDesignSnapshots
+      ? `【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】\n${renderLongPlotNavigation(longWorkspace!.navigation)}`
       : "",
-    characterFocus && longWorkspace
-      ? renderLongCharacterStageBrief(characterFocus, longWorkspace.navigation)
-      : "",
+    plotFocus ? `当前剧情工作区: ${renderLongPlotFocus(plotFocus)}` : "",
+    renderLongCurrentStageSection(
+      worldbuildingFocus,
+      characterFocus,
+      longWorkspace
+    ),
     longWorkspace && !isSettingAgentRun
       ? `长篇项目: ${longWorkspace.bookId}；结构版本 ${longWorkspace.workspaceRevision}；项目版本 ${longWorkspace.projectRevision}`
       : "",
@@ -3023,10 +3161,6 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     !omitLongImplementationIds
       ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
       : "",
-    isPlotDesignAgentRun
-      ? `长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）:\n${renderLongPlotNavigation(longWorkspace!.navigation)}`
-      : "",
-    plotFocus ? `当前剧情工作区: ${renderLongPlotFocus(plotFocus)}` : "",
     writingWorkspace
       ? `作品分类: ${writingWorkspace.categories.join("、") || "未分类"}`
       : "",
@@ -3142,25 +3276,43 @@ function buildRawUserText(input: AgentRunInput): string {
   return lines.filter((line) => line !== "").join("\n");
 }
 
-function buildLongPlotTurnUserPrompt(input: AgentRunInput): string {
+function longAgentRefreshesDesignContextOnLaterTurns(
+  agentId: LongAgentProfile["id"] | undefined
+): boolean {
+  return agentId === "plot_design" || agentId === "draft";
+}
+
+function buildLongFollowUpTurnUserPrompt(input: AgentRunInput): string {
   const longWorkspace = input.workspaceContext?.longWorkspace;
-  if (!longWorkspace || input.longAgentProfile?.id !== "plot_design") {
+  const agentId = input.longAgentProfile?.id;
+  if (
+    !longWorkspace ||
+    !longAgentRefreshesDesignContextOnLaterTurns(agentId)
+  ) {
     return buildRawUserText(input);
   }
-  const plotFocus = longWorkspace.plotFocus;
+  const plotFocus =
+    agentId === "plot_design" ? longWorkspace.plotFocus : undefined;
   const lines = [
-    "【本轮剧情工作区上下文】",
+    agentId === "plot_design"
+      ? "【本轮剧情工作区上下文】"
+      : "【本轮写手工作区上下文】",
     `长篇作品: 《${longWorkspace.title}》`,
+    longWorkspace.agentsMd?.trim()
+      ? `【长篇上下文（AGENTS.md）】\n${longWorkspace.agentsMd.trim()}`
+      : "",
     `结构版本 ${longWorkspace.workspaceRevision}；项目版本 ${longWorkspace.projectRevision}`,
     longWorkspace.activeChapterCardId
       ? `当前章卡: ${longWorkspace.activeChapterCardId}`
       : "",
-    `长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）:\n${renderLongPlotNavigation(
+    `【长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）】\n${renderLongPlotNavigation(
       longWorkspace.navigation
     )}`,
-    plotFocus
-      ? `当前剧情工作区: ${renderLongPlotFocus(plotFocus)}`
-      : "当前剧情工作区: 剧情设计根节点（未定位具体页面）",
+    agentId === "plot_design"
+      ? plotFocus
+        ? `当前剧情工作区: ${renderLongPlotFocus(plotFocus)}`
+        : "当前剧情工作区: 剧情设计根节点（未定位具体页面）"
+      : "",
     "",
     "【用户消息与上传附件】",
     buildRawUserText(input)
@@ -3187,10 +3339,10 @@ function buildRuntimeUserMessageContent(input: AgentRunInput): UserMessage["cont
     : buildRuntimeUserPrompt(input);
 }
 
-function buildLongPlotTurnUserMessageContent(
+function buildLongFollowUpTurnUserMessageContent(
   input: AgentRunInput
 ): UserMessage["content"] {
-  const text = buildLongPlotTurnUserPrompt(input);
+  const text = buildLongFollowUpTurnUserPrompt(input);
   const images = imageContentBlocks(input);
   return images.length ? [{ type: "text", text }, ...images] : text;
 }

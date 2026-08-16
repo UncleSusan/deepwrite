@@ -219,97 +219,21 @@ function cloneTextDiffHunk(hunk: AgentTextDiffHunk): AgentTextDiffHunk {
   };
 }
 
+function cloneJsonRecord<Value>(value: Value): Value {
+  return JSON.parse(JSON.stringify(toRaw(value))) as Value;
+}
+
 function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
-  proposal = toRaw(proposal);
-  return {
-    ...proposal,
-    ...(proposal.libraryTarget
-      ? { libraryTarget: { ...proposal.libraryTarget } }
-      : {}),
-    ...(proposal.longWorldbuildingTarget
-      ? {
-          longWorldbuildingTarget: {
-            ...proposal.longWorldbuildingTarget,
-            batch: LongWorkspaceOperationBatchSchema.parse(
-              proposal.longWorldbuildingTarget.batch
-            ),
-            file: LongWorldbuildingFileChangeSchema.parse(
-              proposal.longWorldbuildingTarget.file
-            )
-          }
-      }
-      : {}),
-    ...(proposal.longCharacterTarget
-      ? {
-          longCharacterTarget: {
-            ...proposal.longCharacterTarget,
-            batch: LongWorkspaceOperationBatchSchema.parse(
-              proposal.longCharacterTarget.batch
-            ),
-            files: proposal.longCharacterTarget.files.map((file) =>
-              LongCharacterFileChangeSchema.parse(file)
-            )
-          }
-        }
-      : {}),
-    ...(proposal.longPlotDesignTarget
-      ? {
-          longPlotDesignTarget: {
-            ...proposal.longPlotDesignTarget,
-            batch: LongWorkspaceOperationBatchSchema.parse(
-              proposal.longPlotDesignTarget.batch
-            )
-          }
-        }
-      : {}),
-    ...(proposal.longDraftTarget
-      ? {
-          longDraftTarget: {
-            ...proposal.longDraftTarget,
-            batch: LongWorkspaceOperationBatchSchema.parse(
-              proposal.longDraftTarget.batch
-            ),
-            file: LongChapterBodyChangeSchema.parse(
-              proposal.longDraftTarget.file
-            )
-          }
-        }
-      : {}),
-    ...(proposal.draftSectionCreationTarget
-      ? {
-          draftSectionCreationTarget: {
-            ...proposal.draftSectionCreationTarget,
-            sections: proposal.draftSectionCreationTarget.sections.map((section) => ({
-              ...section
-            }))
-          }
-        }
-      : {}),
-    ...(proposal.draftSectionRenameTarget
-      ? {
-          draftSectionRenameTarget: {
-            ...proposal.draftSectionRenameTarget
-          }
-        }
-      : {}),
-    ...(proposal.draftSectionDeletionTarget
-      ? {
-          draftSectionDeletionTarget: {
-            ...proposal.draftSectionDeletionTarget
-          }
-        }
-      : {}),
-    ...(proposal.characterStructureTarget
-      ? {
-          characterStructureTarget: {
-            ...proposal.characterStructureTarget,
-            mutation: { ...proposal.characterStructureTarget.mutation }
-          }
-        }
-      : {}),
-    toolCallIds: [...proposal.toolCallIds],
-    hunks: proposal.hunks.map(cloneTextDiffHunk)
-  };
+  try {
+    return cloneJsonRecord(proposal);
+  } catch {
+    proposal = toRaw(proposal);
+    return {
+      ...proposal,
+      toolCallIds: [...proposal.toolCallIds],
+      hunks: proposal.hunks.map(cloneTextDiffHunk)
+    };
+  }
 }
 
 function cloneSubagentRun(run: AgentSubagentRun): AgentSubagentRun {
@@ -352,17 +276,35 @@ function parseStoredLibraryTarget(
   };
 }
 
+function cloneJsonValue(value: unknown): unknown {
+  try {
+    return structuredClone(value);
+  } catch {
+    return JSON.parse(JSON.stringify(value)) as unknown;
+  }
+}
+
+function cloneEvaluationSnapshot(
+  snapshot: ChatMessage["evaluationSnapshot"]
+): ChatMessage["evaluationSnapshot"] | undefined {
+  if (!snapshot) return undefined;
+  try {
+    const parsed = AgentEvaluationSnapshotSchema.safeParse(
+      cloneJsonValue(toRaw(snapshot))
+    );
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function cloneMessage(message: ChatMessage): ChatMessage {
   message = toRaw(message);
+  const evaluationSnapshot = cloneEvaluationSnapshot(message.evaluationSnapshot);
+  const { evaluationSnapshot: _ignored, ...rest } = message;
   return {
-    ...message,
-    ...(message.evaluationSnapshot
-      ? {
-          evaluationSnapshot: AgentEvaluationSnapshotSchema.parse(
-            structuredClone(message.evaluationSnapshot)
-          )
-        }
-      : {}),
+    ...rest,
+    ...(evaluationSnapshot ? { evaluationSnapshot } : {}),
     ...(message.retry ? { retry: { ...message.retry } } : {}),
     ...(message.attachments
       ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
@@ -385,6 +327,16 @@ function cloneMessage(message: ChatMessage): ChatMessage {
       ? { editProposals: message.editProposals.map(cloneEditProposal) }
       : {})
   };
+}
+
+function cloneMessageForPersistence(message: ChatMessage): ChatMessage {
+  const cloned = cloneMessage(message);
+  // Durable conversation history is an observation log. `streaming` only
+  // exists in the live UI; restore already treats it as stopped.
+  if (cloned.status === "streaming") {
+    cloned.status = "stopped";
+  }
+  return cloned;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1530,7 +1482,7 @@ export function useAgentConversation(
   function currentStoredConversation(): AgentConversationPersistenceRecord {
     return {
       sessionId: sessionId.value,
-      messages: messages.value.map(cloneMessage),
+      messages: messages.value.map(cloneMessageForPersistence),
       draft: draft.value,
       approvalMode: approvalMode.value,
       createdAt: currentCreatedAt.value,
@@ -1560,11 +1512,11 @@ export function useAgentConversation(
 
   function capturePersistenceSnapshot(): AgentConversationPersistenceSnapshot {
     storeCurrentConversation();
-    return {
-      version: 1,
+    return cloneJsonRecord({
+      version: 1 as const,
       activeSessionId: sessionId.value,
       conversations: [...storedConversations.value]
-    };
+    });
   }
 
   function reportPersistenceError(): void {
@@ -2920,13 +2872,28 @@ export function useAgentConversation(
       messages.value.some(
         (message) => message.role === "assistant" && message.runId === runId
       );
-    if (finishedRunIds.has(runId) && !lateSubagentEvent) {
+    const lateEvaluationSnapshot =
+      event.type === "agent.evaluation_snapshot" &&
+      finishedRunIds.has(runId) &&
+      messages.value.some(
+        (message) => message.role === "assistant" && message.runId === runId
+      );
+    if (
+      finishedRunIds.has(runId) &&
+      !lateSubagentEvent &&
+      !lateEvaluationSnapshot
+    ) {
       return;
     }
-    if (activeRunId.value && activeRunId.value !== runId && !lateSubagentEvent) {
+    if (
+      activeRunId.value &&
+      activeRunId.value !== runId &&
+      !lateSubagentEvent &&
+      !lateEvaluationSnapshot
+    ) {
       return;
     }
-    if (!activeRunId.value && !lateSubagentEvent) {
+    if (!activeRunId.value && !lateSubagentEvent && !lateEvaluationSnapshot) {
       if (pendingAttemptId.value === null) {
         return;
       }
@@ -2942,7 +2909,7 @@ export function useAgentConversation(
     }
 
     rememberBounded(handledEventIds, event.id);
-    if (!lateSubagentEvent) {
+    if (!lateSubagentEvent && !lateEvaluationSnapshot) {
       submitting.value = false;
       scheduleIdleTimeout({
         expectedEpoch: epoch,
@@ -2973,9 +2940,12 @@ export function useAgentConversation(
         event.timestamp
       );
       if (message) {
-        message.evaluationSnapshot = AgentEvaluationSnapshotSchema.parse(
+        const parsedEvaluation = AgentEvaluationSnapshotSchema.safeParse(
           event.payload.snapshot
         );
+        if (parsedEvaluation.success) {
+          message.evaluationSnapshot = parsedEvaluation.data;
+        }
       }
       return;
     }

@@ -152,6 +152,8 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const rollbackDialogOpen = ref(false);
   const rollbackCommitId = ref<string | null>(null);
   const structureDialogOpen = ref(false);
+  const structureAgentsMd = ref<string | null>(null);
+  const structureAgentsMdPending = ref(false);
   const characterCreateTarget = shallowRef<LongCharacterCreateTarget | null>(null);
   const worldbuildingItemCreateTarget =
     shallowRef<LongWorldbuildingItemCreateTarget | null>(null);
@@ -547,6 +549,8 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     rollbackDialogOpen.value = false;
     rollbackCommitId.value = null;
     structureDialogOpen.value = false;
+    structureAgentsMd.value = null;
+    structureAgentsMdPending.value = false;
     characterCreateTarget.value = null;
     worldbuildingItemCreateTarget.value = null;
     plotPointCreateTarget.value = null;
@@ -672,6 +676,8 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     rollbackDialogOpen,
     rollbackCommitId,
     structureDialogOpen,
+    structureAgentsMd,
+    structureAgentsMdPending,
     characterCreateTarget,
     worldbuildingItemCreateTarget,
     plotPointCreateTarget,

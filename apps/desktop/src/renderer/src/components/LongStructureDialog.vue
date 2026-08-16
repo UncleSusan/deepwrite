@@ -18,6 +18,8 @@ const props = defineProps<{
   open: boolean;
   bookTitle: string;
   bookId?: string | null;
+  agentsMd?: string | null;
+  agentsMdPending?: boolean;
   syncBookOptions?: ReadonlyArray<{
     id: string;
     title: string;
@@ -37,15 +39,26 @@ const emit = defineEmits<{
     payload: { sourceBookId: string; sourceTitle: string },
     completion: LongStructureMutationCompletion
   ];
+  saveAgentsMd: [
+    content: string,
+    completion: LongStructureMutationCompletion
+  ];
 }>();
 
 const dialogElement = ref<HTMLElement | null>(null);
 const closeButton = ref<HTMLButtonElement | null>(null);
+const manager = ref<{
+  flushAgentsMdIfNeeded(): Promise<boolean>;
+} | null>(null);
 const childModalActive = ref(false);
 let previousFocus: HTMLElement | null = null;
 
-function close(): void {
-  if (!props.pending) emit("close");
+async function close(): Promise<void> {
+  if (props.pending) return;
+  if (manager.value && !(await manager.value.flushAgentsMdIfNeeded())) {
+    return;
+  }
+  emit("close");
 }
 
 function forwardMutation(
@@ -60,6 +73,13 @@ function forwardSyncWorldbuilding(
   completion: LongStructureMutationCompletion
 ): void {
   emit("syncWorldbuilding", payload, completion);
+}
+
+function forwardSaveAgentsMd(
+  content: string,
+  completion: LongStructureMutationCompletion
+): void {
+  emit("saveAgentsMd", content, completion);
 }
 
 function focusableElements(): HTMLElement[] {
@@ -166,13 +186,17 @@ onBeforeUnmount(() =>
         </header>
         <LongStructureManager
           v-if="snapshot"
+          ref="manager"
           :snapshot="snapshot"
           :current-book-id="bookId"
+          :agents-md="agentsMd"
+          :agents-md-pending="agentsMdPending"
           :sync-book-options="syncBookOptions"
           :disabled="pending"
           @mutation="forwardMutation"
           @modal-active-change="childModalActive = $event"
           @sync-worldbuilding="forwardSyncWorldbuilding"
+          @save-agents-md="forwardSaveAgentsMd"
         />
       </section>
     </div>

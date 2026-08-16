@@ -162,6 +162,12 @@ function createHarness(overrides: HarnessOverrides = {}) {
     })),
     readDocument: vi.fn(),
     writeDocument: vi.fn(),
+    readAgentsMd: vi.fn(async ({ bookId }) => ({
+      bookId,
+      content: "# 长篇上下文",
+      truncated: false
+    })),
+    writeAgentsMd: vi.fn(async ({ bookId }) => ({ bookId })),
     previewOperations: vi.fn(),
     applyOperations: vi.fn(),
     writeChapter: vi.fn(),
@@ -193,6 +199,8 @@ function createHarness(overrides: HarnessOverrides = {}) {
     rollbackDialogOpen: ref(true),
     rollbackCommitId: ref("commit_old"),
     structureDialogOpen: ref(false),
+    structureAgentsMd: ref<string | null>(null),
+    structureAgentsMdPending: ref(false),
     bindingsDialogMode: ref(null),
     exportTarget: shallowRef(null),
     bookRenameTarget: shallowRef(null),
@@ -626,5 +634,34 @@ describe("useLongBookLifecycleCoordinator", () => {
     expect(test.state.exportTarget.value).toBe(laterTarget);
     expect(test.notifications.success).not.toHaveBeenCalled();
     expect(test.state.manuscriptExportPending.value).toBe(false);
+  });
+
+  it("loads AGENTS.md when opening structure management and saves it without a structure mutation", async () => {
+    const test = createHarness();
+
+    await test.coordinator.handleLongBookAction(
+      bookAction("manage-structure")
+    );
+
+    expect(test.api.readAgentsMd).toHaveBeenCalledWith({ bookId: BOOK_A });
+    expect(test.state.structureDialogOpen.value).toBe(true);
+    expect(test.state.structureAgentsMd.value).toBe("# 长篇上下文");
+    expect(test.state.structureAgentsMdPending.value).toBe(false);
+
+    const completion = {
+      succeed: vi.fn(),
+      fail: vi.fn(),
+      appliedButRefreshFailed: vi.fn()
+    };
+    await test.coordinator.saveLongAgentsMd("自定义长篇上下文", completion);
+
+    expect(test.api.writeAgentsMd).toHaveBeenCalledWith({
+      bookId: BOOK_A,
+      content: "自定义长篇上下文"
+    });
+    expect(test.state.structureAgentsMd.value).toBe("自定义长篇上下文");
+    expect(completion.succeed).toHaveBeenCalledOnce();
+    expect(completion.fail).not.toHaveBeenCalled();
+    expect(test.api.applyOperations).not.toHaveBeenCalled();
   });
 });

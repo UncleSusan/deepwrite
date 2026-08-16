@@ -6,6 +6,7 @@ import type {
   LongOpenBookResult
 } from "@deepwrite/contracts";
 import type { LongBookResourceNodeActionPayload } from "../types/workspace";
+import type { LongStructureMutationCompletion } from "../types/longWorkspace";
 import type {
   LongBookBindingsUpdate,
   LongBookLifecycleCoordinator,
@@ -41,6 +42,10 @@ export interface LazyLongBookLifecycleCoordinator {
   updateLongBookBindings(payload: LongBookBindingsUpdate): Promise<void>;
   closeLongBookRemovalDialog(): void;
   confirmLongBookRemoval(): Promise<void>;
+  saveLongAgentsMd(
+    content: string,
+    completion: LongStructureMutationCompletion
+  ): Promise<void>;
   drain(): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -267,6 +272,13 @@ export function useLazyLongBookLifecycleCoordinator(
     return invoke((loaded) => loaded.confirmLongBookRemoval(), intent);
   }
 
+  function saveLongAgentsMd(
+    content: string,
+    completion: LongStructureMutationCompletion
+  ): Promise<void> {
+    return invoke((loaded) => loaded.saveLongAgentsMd(content, completion));
+  }
+
   function drain(): Promise<void> {
     if (disposePromise) return disposePromise;
     if (coordinator) return coordinator.drain();
@@ -317,6 +329,7 @@ export function useLazyLongBookLifecycleCoordinator(
     updateLongBookBindings,
     closeLongBookRemovalDialog,
     confirmLongBookRemoval,
+    saveLongAgentsMd,
     drain,
     dispose
   };

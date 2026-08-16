@@ -734,25 +734,8 @@ export class ModelConfigStore {
     const remoteModel =
       freeCatalog.models.find((candidate) => candidate.id === model.id) ??
       freeCatalog.models.find((candidate) => candidate.id === freeCatalog.defaultModelId);
-    const synchronized = remoteModel
-      ? { ...remoteModel, id: model.id }
-      : {
-          ...model,
-          provider: "openrouter",
-          api: "openai-completions" as const,
-          baseUrl: "https://openrouter.ai/api/v1"
-        };
-    if (
-      synchronized.modelId !== "openrouter/free" &&
-      !synchronized.modelId.endsWith(":free")
-    ) {
-      throw new Error("DeepWrite 免费模型只能使用 OpenRouter 的免费模型 ID。");
-    }
     return {
-      ...synchronized,
-      provider: "openrouter",
-      api: "openai-completions",
-      baseUrl: "https://openrouter.ai/api/v1",
+      ...(remoteModel ? { ...remoteModel, id: model.id } : model),
       managedBy: "deepwrite-free"
     };
   }

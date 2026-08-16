@@ -192,6 +192,42 @@ describe("approval navigation target resolution", () => {
     });
   });
 
+  it("prefers document writes as exact file targets before structure fallbacks", () => {
+    const candidates = longApprovalCandidatesForBatch(
+      {
+        baseRevision: 4,
+        updatedAt: "2026-08-14T00:00:00.000Z",
+        operations: [
+          {
+            type: "storyPlot.update",
+            id: "story_plot_one",
+            patch: { title: "新标题" }
+          }
+        ],
+        documentWrites: [
+          {
+            proposalId: "proposal_story_plot",
+            fileId: "file_story_plot",
+            content: "情节",
+            mode: "replace",
+            expectedRevision: "revision_before",
+            nextRevision: "revision_after",
+            updatedAt: "2026-08-14T00:00:00.000Z",
+            reason: "写入故事情节"
+          }
+        ]
+      } as LongWorkspaceOperationBatch
+    );
+    expect(candidates[0]).toEqual({
+      kind: "file",
+      fileId: "file_story_plot"
+    });
+    expect(candidates).toContainEqual({
+      kind: "story-plot",
+      storyPlotId: "story_plot_one"
+    });
+  });
+
   it("orders surviving structure targets before deletion fallbacks", () => {
     const candidates = longApprovalCandidatesForBatch(
       {
@@ -403,6 +439,38 @@ describe("long approval navigation against the latest index", () => {
     expect(resolved?.selection.characterId).toBe("character_hero");
     expect(resolved?.selection.preferredFileId).toBe(characterFile.id);
     expect(resolved?.focus).toEqual({ fileId: characterFile.id });
+
+    const staleCharacterSummary = {
+      ...characterSummary,
+      navigation: {
+        ...characterSummary.navigation,
+        characters: []
+      }
+    } as unknown as LongBookSummary;
+    const staleResolved = resolveLongApprovalNavigation(
+      {
+        kind: "long",
+        bookId: "long_book",
+        candidates: [
+          { kind: "file", fileId: characterFile.id },
+          { kind: "root", root: "character_design" }
+        ]
+      },
+      staleCharacterSummary,
+      {
+        ...characterIndex,
+        characters: [
+          {
+            id: "character_hero",
+            name: "主角",
+            group: "protagonist",
+            order: 1
+          }
+        ]
+      } as unknown as LongWorkspaceIndexSnapshot
+    );
+    expect(staleResolved?.selection.characterId).toBe("character_hero");
+    expect(staleResolved?.selection.preferredFileId).toBe(characterFile.id);
   });
 
   it("focuses chapter body and continuity files in their exact editor tabs", () => {
@@ -523,5 +591,103 @@ describe("long approval navigation against the latest index", () => {
     expect(resolved?.selection.key).toBe("plot-design:book-line");
     expect(resolved?.selection.bookLineVolumeId).toBe("volume_one");
     expect(resolved?.focus).toEqual({ bookLineVolumeId: "volume_one" });
+  });
+
+  it("resolves a chapter body from the index when book navigation is stale", () => {
+    const chapterBody = {
+      id: "chapter_body",
+      path: "draft/chapter.md",
+      revision: "revision_chapter_body"
+    };
+    const staleSummary = {
+      ...summary,
+      navigation: {
+        ...summary.navigation,
+        volumes: [],
+        chapterCards: []
+      }
+    } as unknown as LongBookSummary;
+    const chapterIndex = {
+      ...index,
+      chapters: [
+        {
+          chapterCardId: "chapter_one",
+          body: chapterBody,
+          card: {
+            id: "chapter_card",
+            path: "plot/chapter-card.md",
+            revision: "revision_chapter_card"
+          },
+          characterState: {
+            id: "chapter_state",
+            path: "continuity/state.md",
+            revision: "revision_state"
+          },
+          handoff: {
+            id: "chapter_handoff",
+            path: "continuity/handoff.md",
+            revision: "revision_handoff"
+          },
+          foreshadowingChanges: {
+            id: "chapter_foreshadowing",
+            path: "continuity/foreshadowing.md",
+            revision: "revision_foreshadowing"
+          },
+          worldReveals: null,
+          characterContinuity: [],
+          bodyStatus: "written",
+          commitId: null
+        }
+      ],
+      plot: {
+        ...index.plot,
+        volumes: [{ id: "volume_one", title: "第一卷", order: 1 }],
+        chapterCards: [
+          {
+            id: "chapter_one",
+            title: "第一章",
+            volumeId: "volume_one",
+            narrativeOrder: 1
+          }
+        ]
+      }
+    } as unknown as LongWorkspaceIndexSnapshot;
+    const resolved = resolveLongApprovalNavigation(
+      {
+        kind: "long",
+        bookId: "long_book",
+        candidates: [
+          { kind: "file", fileId: chapterBody.id },
+          { kind: "root", root: "draft" }
+        ]
+      },
+      staleSummary,
+      chapterIndex
+    );
+    expect(resolved?.selection.key).toBe("chapter:chapter_one");
+    expect(resolved?.selection.preferredFileId).toBe(chapterBody.id);
+    expect(resolved?.candidateIndex).toBe(0);
+  });
+
+  it("keeps a worldbuilding category when the exact item is gone", () => {
+    const resolved = resolveLongApprovalNavigation(
+      {
+        kind: "long",
+        bookId: "long_book",
+        candidates: [
+          {
+            kind: "worldbuilding",
+            categoryId: "world_rules",
+            itemId: "missing_item"
+          },
+          { kind: "root", root: "worldbuilding" }
+        ]
+      },
+      summary,
+      index
+    );
+    expect(resolved?.selection.key).toBe("worldbuilding:world_rules");
+    expect(resolved?.selection.worldbuildingItemId).toBeNull();
+    expect(resolved?.candidateIndex).toBe(0);
   });
 });

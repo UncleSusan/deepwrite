@@ -1,5 +1,6 @@
 import {
   getDefaultLongAgentProfile,
+  longAgentAcceptsWorldbuildingDirectory,
   type LongAgentProfile,
   type LongAgentSettings,
   type LongBookSummary,
@@ -33,6 +34,7 @@ import {
 } from "../types/longWorkspace";
 import type { WorkspaceDocument } from "../types/workspace";
 import { matchesLongWritingProposalExpectation } from "../utils/longWritingEventExpectation";
+import { buildLongWorldbuildingDirectorySnapshot } from "../utils/longWorldbuildingAgentContext";
 
 type LongRuntimeAttachments = NonNullable<
   Parameters<AgentConversationController["sendLongMessage"]>[1]
@@ -111,7 +113,7 @@ export interface LongWritingWorkflowCoordinatorContext {
 interface LongWritingAgentRunExpectation {
   bookId: string;
   chapterCardId: string;
-  agentId: "expert_section_writer" | "continuity_ledger";
+  agentId: "draft" | "continuity_ledger";
   sessionId: string;
   runId?: string;
   proposalSeen: boolean;
@@ -178,7 +180,9 @@ export function useLongWritingWorkflowCoordinator(
   ): string {
     const conversationRoot = agentId === "setting" ? "setting" : activeRoot;
     const conversationChapterCardId =
-      agentId === "plot_design" ? undefined : chapterCardId;
+      agentId === "plot_design" || agentId === "draft"
+        ? undefined
+        : chapterCardId;
     return `long:${encodeURIComponent(bookId)}:${agentId}:${conversationRoot}:${encodeURIComponent(
       conversationChapterCardId ?? "__book__"
     )}`;
@@ -410,7 +414,14 @@ export function useLongWritingWorkflowCoordinator(
       activeChapterCardId: chapterCardId,
       workspaceRevision: index.revision,
       projectRevision: summary.projectRevision,
-      navigation: summary.navigation
+      navigation: summary.navigation,
+      ...(longAgentAcceptsWorldbuildingDirectory(profile.id)
+        ? {
+            worldbuildingDirectory: buildLongWorldbuildingDirectorySnapshot(
+              index.worldbuilding
+            )
+          }
+        : {})
     };
   }
 
@@ -418,7 +429,7 @@ export function useLongWritingWorkflowCoordinator(
     input: {
       bookId: string;
       chapterCardId: string;
-      agentId: "expert_section_writer" | "continuity_ledger";
+      agentId: "draft" | "continuity_ledger";
       activeRoot: "draft" | "continuity_ledger";
       prompt: string;
     },
@@ -457,7 +468,6 @@ export function useLongWritingWorkflowCoordinator(
       );
     }
     if (disposed || !guard.isCurrent()) return;
-    conversation.newConversation();
     const sessionId = conversation.sessionId.value;
     const expectation: LongWritingAgentRunExpectation = {
       bookId: input.bookId,
@@ -535,12 +545,12 @@ export function useLongWritingWorkflowCoordinator(
       readiness.chapterCardId
     );
     if (!selection) {
-      throw new Error("当前长篇修改尚未保存，单章写作未启动。");
+      throw new Error("当前长篇修改尚未保存，当前章写作未启动。");
     }
     const selected = await context.workspace.selectWorkspaceFile(selection);
     if (disposed || !guard.isCurrent()) return;
     if (!selected) {
-      throw new Error("当前长篇修改尚未保存，单章写作未启动。");
+      throw new Error("当前长篇修改尚未保存，当前章写作未启动。");
     }
     const missingLabels = readiness.missingFiles.map((role) =>
       role === "body"
@@ -553,7 +563,7 @@ export function useLongWritingWorkflowCoordinator(
       {
         bookId,
         chapterCardId: readiness.chapterCardId,
-        agentId: "expert_section_writer",
+        agentId: "draft",
         activeRoot: "draft",
         prompt:
           `执行串行写作计划中的《${readiness.title}》。` +
@@ -585,7 +595,7 @@ export function useLongWritingWorkflowCoordinator(
       summary.projectRevision !== event.payload.projectRevision
     ) {
       throw new Error(
-        "长篇结构已在提案后更新，请让正文统筹智能体重新选择连续下一章。"
+        "长篇结构已在提案后更新，请让写手智能体重新选择连续下一章。"
       );
     }
     if (
@@ -743,7 +753,7 @@ export function useLongWritingWorkflowCoordinator(
     writingOrchestrator.cancel();
     if (expectation) {
       const activeRoot =
-        expectation.agentId === "expert_section_writer"
+        expectation.agentId === "draft"
           ? "draft"
           : "continuity_ledger";
       const conversation = context.conversations.byKey.get(
@@ -763,7 +773,6 @@ export function useLongWritingWorkflowCoordinator(
           !canceledPending && conversation.isBusy.value
             ? conversation.stopGeneration()
             : Promise.resolve(false);
-        if (!canceledPending) conversation.newConversation();
         try {
           await stopPromise;
         } catch (error: unknown) {

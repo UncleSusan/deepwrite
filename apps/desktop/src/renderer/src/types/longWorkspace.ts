@@ -296,6 +296,46 @@ export function createLongCharacterOverviewSelection(
   };
 }
 
+function indexedVolume(
+  summary: LongBookSummary,
+  workspaceIndex: LongWorkspaceIndexSnapshot,
+  volumeId: LongVolumeId
+) {
+  return (
+    summary.navigation.volumes.find(({ id }) => id === volumeId) ??
+    workspaceIndex.plot.volumes?.find(({ id }) => id === volumeId)
+  );
+}
+
+function indexedChapterCard(
+  summary: LongBookSummary,
+  workspaceIndex: LongWorkspaceIndexSnapshot,
+  chapterCardId: LongChapterCardId
+) {
+  return (
+    summary.navigation.chapterCards.find(({ id }) => id === chapterCardId) ??
+    workspaceIndex.plot.chapterCards?.find(({ id }) => id === chapterCardId)
+  );
+}
+
+function indexedCharacters(
+  summary: LongBookSummary,
+  workspaceIndex: LongWorkspaceIndexSnapshot
+) {
+  return workspaceIndex.characters?.length
+    ? workspaceIndex.characters
+    : summary.navigation.characters;
+}
+
+function indexedArcs(
+  summary: LongBookSummary,
+  workspaceIndex: LongWorkspaceIndexSnapshot
+) {
+  return workspaceIndex.plot.arcs?.length
+    ? workspaceIndex.plot.arcs
+    : summary.navigation.arcs;
+}
+
 export function createLongCharacterGroupSelection(
   summary: LongBookSummary,
   workspaceIndex: LongWorkspaceIndexSnapshot,
@@ -306,7 +346,7 @@ export function createLongCharacterGroupSelection(
     group,
     workspaceIndex.characterTypes
   );
-  const characters = summary.navigation.characters
+  const characters = indexedCharacters(summary, workspaceIndex)
     .filter((character) => character.group === group)
     .sort(
       (left, right) =>
@@ -377,9 +417,9 @@ export function createLongPlotPointVolumeSelection(
   volumeId: LongVolumeId,
   preferredPlotPointId?: LongArcId
 ): LongWorkspaceSelection | undefined {
-  const volume = summary.navigation.volumes.find(({ id }) => id === volumeId);
+  const volume = indexedVolume(summary, workspaceIndex, volumeId);
   if (!volume) return undefined;
-  const plotPoints = summary.navigation.arcs
+  const plotPoints = indexedArcs(summary, workspaceIndex)
     .filter((arc) => arc.volumeId === volumeId)
     .sort(
       (left, right) =>
@@ -458,16 +498,23 @@ export function createLongChapterCardVolumeSelection(
   volumeId: LongVolumeId,
   preferredChapterCardId?: LongChapterCardId
 ): LongWorkspaceSelection | undefined {
-  const volume = summary.navigation.volumes.find(({ id }) => id === volumeId);
+  const volume = indexedVolume(summary, workspaceIndex, volumeId);
   if (!volume) return undefined;
   const indexedChapterIds = new Set(
     workspaceIndex.plot.chapterCards.map(({ id }) => id)
   );
-  const chapterCards = summary.navigation.chapterCards
-    .filter(
+  const navigationChapters = summary.navigation.chapterCards.filter(
+    (chapter) =>
+      chapter.volumeId === volumeId && indexedChapterIds.has(chapter.id)
+  );
+  const navigationIds = new Set(navigationChapters.map(({ id }) => id));
+  const chapterCards = [
+    ...navigationChapters,
+    ...workspaceIndex.plot.chapterCards.filter(
       (chapter) =>
-        chapter.volumeId === volumeId && indexedChapterIds.has(chapter.id)
+        chapter.volumeId === volumeId && !navigationIds.has(chapter.id)
     )
+  ]
     .sort(
       (left, right) =>
         left.narrativeOrder - right.narrativeOrder ||
@@ -475,7 +522,7 @@ export function createLongChapterCardVolumeSelection(
     );
   const chapterCardTabs = chapterCards.map((chapter) => ({
     id: chapter.id,
-    label: chapter.title
+    label: chapter.title || chapter.id
   }));
   const chapterCard =
     chapterCards.find(({ id }) => id === preferredChapterCardId) ??
@@ -503,7 +550,7 @@ export function createLongChapterCardVolumeSelection(
     return {
       ...baseSelection,
       chapterCardId: chapterCard.id,
-      title: chapterCard.title,
+      title: chapterCard.title || chapterCard.id,
       breadcrumbs: [
         summary.title,
         "剧情设计",
@@ -546,12 +593,10 @@ export function createLongChapterSelection(
   workspaceIndex: LongWorkspaceIndexSnapshot,
   chapterCardId: LongChapterCardId
 ): LongWorkspaceSelection | undefined {
-  const chapter = summary.navigation.chapterCards.find(
-    ({ id }) => id === chapterCardId
-  );
-  const volume = summary.navigation.volumes.find(
-    ({ id }) => id === chapter?.volumeId
-  );
+  const chapter = indexedChapterCard(summary, workspaceIndex, chapterCardId);
+  const volume = chapter
+    ? indexedVolume(summary, workspaceIndex, chapter.volumeId)
+    : undefined;
   const entry = workspaceIndex.chapters.find(
     (candidate) => candidate.chapterCardId === chapterCardId
   );
@@ -562,12 +607,12 @@ export function createLongChapterSelection(
     key: `chapter:${chapter.id}`,
     root: "draft",
     chapterCardId: chapter.id,
-    title: chapter.title,
+    title: chapter.title || chapter.id,
     breadcrumbs: [
       summary.title,
       "正文",
       volume.title,
-      chapter.title
+      chapter.title || chapter.id
     ],
     files: [
       {
@@ -609,12 +654,10 @@ export function createLongContinuitySelection(
   workspaceIndex: LongWorkspaceIndexSnapshot,
   chapterCardId: LongChapterCardId
 ): LongWorkspaceSelection | undefined {
-  const chapter = summary.navigation.chapterCards.find(
-    ({ id }) => id === chapterCardId
-  );
-  const volume = summary.navigation.volumes.find(
-    ({ id }) => id === chapter?.volumeId
-  );
+  const chapter = indexedChapterCard(summary, workspaceIndex, chapterCardId);
+  const volume = chapter
+    ? indexedVolume(summary, workspaceIndex, chapter.volumeId)
+    : undefined;
   const entry = workspaceIndex.chapters.find(
     (candidate) => candidate.chapterCardId === chapterCardId
   );
@@ -662,12 +705,12 @@ export function createLongContinuitySelection(
     root: "continuity_ledger",
     continuityView: committed ? "history" : "inbox",
     chapterCardId: chapter.id,
-    title: chapter.title,
+    title: chapter.title || chapter.id,
     breadcrumbs: [
       summary.title,
       "连续性账本",
       volume.title,
-      chapter.title
+      chapter.title || chapter.id
     ],
     files: [
       {

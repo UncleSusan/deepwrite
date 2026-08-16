@@ -80,6 +80,11 @@ describe("SkillMarketplacePage", () => {
     expect(source).toContain("localLibrariesForGroup");
     expect(source).toContain("本地技能分组");
     expect(source).toContain("libraries: publishGroupLibraries.value.map");
+    expect(source).toContain("loadMarketplacePublishLibraryContent");
+    expect(source).toContain("hydrateLocalPublishContents");
+    expect(source).toContain("catalogDocumentReader");
+    expect(source).toContain("reader?.readDocument");
+    expect(source).not.toContain("content: entry.body");
     expect(source).not.toContain("本人已公开发布的远程成员");
     expect(source).not.toContain("publishedGroupCandidates");
   });

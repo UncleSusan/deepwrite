@@ -439,6 +439,12 @@ function createDeferredApi(): {
       writeDocument: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
+      readAgentsMd: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
+      writeAgentsMd: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
       previewOperations: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
@@ -1215,6 +1221,121 @@ describe("agent conversation controller", () => {
     restored.dispose({ clearPersistence: true });
   });
 
+  it("keeps a late evaluation snapshot after the run has already completed", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    controller.draft.value = "补齐评估历史";
+    const sessionId = controller.sessionId.value;
+    const sending = controller.sendMessage(document);
+    const runId = "run_late_evaluation_history";
+    deferred.resolveAccepted(0, {
+      sessionId,
+      runId,
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+    controller.handleEvent(
+      createEnvelope(
+        "agent.message_completed",
+        {
+          sessionId,
+          runId,
+          messageId: `${runId}_assistant`,
+          role: "assistant" as const,
+          content: "本轮已完成。",
+          runtime
+        },
+        eventOptions(sessionId, runId, "evt_late_eval_completed")
+      )
+    );
+    controller.handleEvent(
+      createEnvelope(
+        "agent.evaluation_snapshot",
+        {
+          sessionId,
+          runId,
+          messageId: `${runId}_assistant`,
+          runtime,
+          snapshot: {
+            schemaVersion: 1 as const,
+            capturedAt: "2026-08-15T09:00:00.000Z",
+            systemPrompt: "最终系统提示词",
+            runtimeContext: {
+              kind: "turn-context" as const,
+              text: "补齐评估历史"
+            },
+            tools: [],
+            conversationHistory: [
+              { role: "user" as const, text: "补齐评估历史" },
+              { role: "assistant" as const, text: "本轮已完成。" }
+            ]
+          }
+        },
+        eventOptions(sessionId, runId, "evt_late_eval_snapshot")
+      )
+    );
+
+    expect(controller.messages.value.at(-1)).toMatchObject({
+      status: "completed",
+      evaluationSnapshot: {
+        conversationHistory: [
+          { role: "user", text: "补齐评估历史" },
+          { role: "assistant", text: "本轮已完成。" }
+        ]
+      }
+    });
+    controller.dispose();
+  });
+
+  it("still persists conversation history when an evaluation snapshot cannot be cloned", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-invalid-evaluation-snapshot-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    controller.messages.value = [
+      {
+        id: "user-keep-history",
+        role: "user",
+        content: "根据第一个大纲规划剧情点",
+        createdAt: "2026-08-15T10:00:00.000Z",
+        status: "completed"
+      },
+      {
+        id: "assistant-invalid-eval",
+        role: "assistant",
+        content: "已创建剧情点",
+        createdAt: "2026-08-15T10:00:01.000Z",
+        status: "stopped",
+        evaluationSnapshot: {
+          schemaVersion: 1,
+          capturedAt: "not-a-timestamp",
+          systemPrompt: "系统提示词",
+          runtimeContext: { kind: "turn-context", text: "用户消息" },
+          tools: [],
+          conversationHistory: [{ role: "assistant", text: "", toolName: "" }]
+        } as never
+      }
+    ];
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    expect(restored.messages.value.map((message) => message.content)).toEqual([
+      "根据第一个大纲规划剧情点",
+      "已创建剧情点"
+    ]);
+    expect(restored.messages.value[1]?.evaluationSnapshot).toBeUndefined();
+    restored.dispose({ clearPersistence: true });
+  });
+
   it("clears persisted conversations when a project runtime is disposed", async () => {
     const storage = createMemoryStorage();
     const persistenceKey = "conversation-project-removal-test";
@@ -1637,6 +1758,73 @@ describe("agent conversation controller", () => {
         documentWrites: []
       }
     });
+    restored.dispose();
+  });
+
+  it("still persists a plot design proposal after accept clears proposedText", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-long-plot-design-accept-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        workspaceId: "long:longbook_test",
+        stageId: "long-plot-design",
+        documentId: "plot-design",
+        title: "剧情设计变更",
+        baseRevision: "long-plot:11:7",
+        proposedRevision: "long-plot:11:7:tool_edit_1",
+        proposedText: "创建第二卷",
+        longPlotDesignTarget: {
+          bookId: "longbook_test",
+          baseProjectRevision: 11,
+          batch: {
+            baseRevision: 7,
+            updatedAt: "2026-07-30T12:00:00.000Z",
+            operations: [{
+              type: "volume.create",
+              volume: {
+                id: "volume_second",
+                title: "第二卷",
+                order: 2,
+                summary: "主角进入北境"
+              }
+            }],
+            documentWrites: []
+          }
+        }
+      })
+    );
+    controller.updateEditProposal("run_edit_1", "proposal_1", {
+      status: "accepted",
+      proposedText: undefined,
+      statusMessage: "已自动批准并保存剧情设计。"
+    });
+    expect(
+      controller.capturePersistenceSnapshot().conversations[0]?.messages[0]
+    ).toMatchObject({
+      editProposals: [{
+        status: "accepted",
+        statusMessage: "已自动批准并保存剧情设计。",
+        longPlotDesignTarget: { bookId: "longbook_test" }
+      }]
+    });
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    expect(restored.getEditProposal("run_edit_1", "proposal_1")).toMatchObject({
+      status: "accepted",
+      longPlotDesignTarget: { bookId: "longbook_test" }
+    });
+    expect(
+      restored.getEditProposal("run_edit_1", "proposal_1")?.proposedText
+    ).toBeUndefined();
     restored.dispose();
   });
 
@@ -2869,6 +3057,12 @@ describe("agent conversation controller", () => {
       status: "streaming",
       subagentRuns: [{ status: "running" }]
     });
+    expect(
+      controller.capturePersistenceSnapshot().conversations[0]?.messages.at(-1)
+    ).toMatchObject({
+      status: "stopped"
+    });
+    expect(controller.messages.value.at(-1)?.status).toBe("streaming");
     controller.dispose();
 
     expect(controller.messages.value.at(-1)).toMatchObject({

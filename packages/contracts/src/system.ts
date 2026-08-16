@@ -183,11 +183,13 @@ import {
   LongRenameBookCommandEnvelopeSchema,
   LongPreviewOperationsCommandEnvelopeSchema,
   LongReadDocumentCommandEnvelopeSchema,
+  LongReadAgentsMdCommandEnvelopeSchema,
   LongRollbackLastCommitCommandEnvelopeSchema,
   LongSearchCommandEnvelopeSchema,
   LongUnregisterBookCommandEnvelopeSchema,
   LongUpdateBindingsCommandEnvelopeSchema,
   LongWriteChapterCommandEnvelopeSchema,
+  LongWriteAgentsMdCommandEnvelopeSchema,
   LongWriteDocumentCommandEnvelopeSchema
 } from "./long-workspace-api";
 
@@ -284,8 +286,10 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LongDeleteBookCommandEnvelopeSchema,
   LongGetWorkspaceIndexCommandEnvelopeSchema,
   LongReadDocumentCommandEnvelopeSchema,
+  LongReadAgentsMdCommandEnvelopeSchema,
   LongSearchCommandEnvelopeSchema,
   LongWriteDocumentCommandEnvelopeSchema,
+  LongWriteAgentsMdCommandEnvelopeSchema,
   LongPreviewOperationsCommandEnvelopeSchema,
   LongApplyOperationsCommandEnvelopeSchema,
   LongWriteChapterCommandEnvelopeSchema,

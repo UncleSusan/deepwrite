@@ -17,19 +17,23 @@ vi.mock("electron", () => ({
 const { ModelConfigStore } = await import("./model-config-store");
 const temporaryRoots: string[] = [];
 
-function managedModel(modelId: string): ModelConfigInput {
+function managedModel(
+  modelId: string,
+  overrides: Partial<ModelConfigInput> = {}
+): ModelConfigInput {
   return {
     id: "deepwrite-free-writing",
     label: "DeepWrite 免费模型",
-    provider: "openrouter",
+    provider: "custom",
     modelId,
     api: "openai-completions",
-    baseUrl: "https://openrouter.ai/api/v1",
+    baseUrl: "https://example.test/v1",
     reasoning: false,
     defaultThinkingLevel: "off",
     thinkingLevelOptions: ["minimal", "low", "medium", "high", "xhigh", "max"],
     temperatureOptions: [0.1, 0.7, 1],
-    managedBy: "deepwrite-free"
+    managedBy: "deepwrite-free",
+    ...overrides
   };
 }
 
@@ -308,8 +312,8 @@ describe("ModelConfigStore managed free models", () => {
       message: "",
       manifestAvailable: true,
       defaultModelId: "deepwrite-free-writing",
-      models: [managedModel("vendor/writer-v1:free")],
-      apiKeys: { "deepwrite-free-writing": "sk-or-v1-test-only" }
+      models: [managedModel("vendor/writer-v1")],
+      apiKeys: { "deepwrite-free-writing": "sk-test-only" }
     };
     const freeModelCatalog = {
       initialize: async () => undefined,
@@ -318,46 +322,58 @@ describe("ModelConfigStore managed free models", () => {
     const store = new ModelConfigStore(root, { freeModelCatalog });
 
     const saved = await store.save({
-      models: [managedModel("vendor/writer-v1:free")],
+      models: [managedModel("vendor/writer-v1")],
       defaultModelId: "deepwrite-free-writing"
     });
     expect(saved.models[0]).toMatchObject({
-      modelId: "vendor/writer-v1:free",
+      modelId: "vendor/writer-v1",
       hasApiKey: true,
       managedBy: "deepwrite-free"
     });
     expect(saved.models[0]).not.toHaveProperty("apiKey");
 
     catalog.revision = "v2";
-    catalog.models = [managedModel("vendor/writer-v2:free")];
+    catalog.models = [
+      managedModel("vendor/writer-v2", {
+        provider: "deepseek",
+        api: "openai-responses",
+        baseUrl: "https://example.invalid/v1"
+      })
+    ];
     const resolved = await store.resolve("deepwrite-free-writing");
     expect(resolved).toMatchObject({
-      modelId: "vendor/writer-v2:free",
-      provider: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1"
+      modelId: "vendor/writer-v2",
+      provider: "deepseek",
+      api: "openai-responses",
+      baseUrl: "https://example.invalid/v1"
     });
-    expect(resolved?.apiKey).toMatch(/^sk-or-v1-/u);
+    expect(resolved?.apiKey).toBe("sk-test-only");
     const secrets = await readFile(join(root, "config", "model-secrets.json"), "utf8");
-    expect(secrets).not.toContain("sk-or-v1-test-only");
+    expect(secrets).not.toContain("sk-test-only");
 
     const listed = await store.list();
-    expect(listed.models[0]?.modelId).toBe("vendor/writer-v2:free");
+    expect(listed.models[0]?.modelId).toBe("vendor/writer-v2");
     expect(listed.deepwriteFreeModels?.[0]?.hasApiKey).toBe(true);
     expect(listed.deepwriteFreeModels?.[0]).not.toHaveProperty("apiKey");
   });
 
-  it("does not allow the embedded key to target a paid model", async () => {
+  it("resolves a remotely configured model that is not an OpenRouter free id", async () => {
     const root = await mkdtemp(join(tmpdir(), "deepwrite-model-store-paid-"));
     temporaryRoots.push(root);
     const freeModelCatalog = {
       initialize: async () => undefined,
       getCatalog: async (): Promise<DeepWriteFreeModelCatalog> => ({
-        revision: "",
-        enabled: false,
+        revision: "v1",
+        enabled: true,
         message: "",
-        manifestAvailable: false,
-        defaultModelId: "",
-        models: [],
+        manifestAvailable: true,
+        defaultModelId: "deepwrite-free-writing",
+        models: [
+          managedModel("vendor/paid-model", {
+            provider: "deepseek",
+            baseUrl: "https://example.invalid/v1"
+          })
+        ],
         apiKeys: {}
       })
     };
@@ -365,7 +381,12 @@ describe("ModelConfigStore managed free models", () => {
 
     await expect(
       store.resolveDraft(managedModel("vendor/paid-model"))
-    ).rejects.toThrow(/免费模型 ID/u);
+    ).resolves.toMatchObject({
+      modelId: "vendor/paid-model",
+      provider: "deepseek",
+      baseUrl: "https://example.invalid/v1",
+      managedBy: "deepwrite-free"
+    });
   });
 });
 

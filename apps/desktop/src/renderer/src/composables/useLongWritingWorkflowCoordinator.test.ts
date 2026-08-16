@@ -253,7 +253,7 @@ function createHarness(options: {
   const agentLoadError = ref<string | null>(null);
   const conversation = options.conversation ?? fakeConversation();
   const conversations = new Map<string, AgentConversationController>([
-    [`long:${BOOK_ID}:draft:draft:${CHAPTER_ID}`, conversation]
+    [`long:${BOOK_ID}:draft:draft:__book__`, conversation]
   ]);
   const order: string[] = [];
   const saveActiveEditorChanges = vi.fn(async () => {
@@ -273,6 +273,10 @@ function createHarness(options: {
   const selectWorkspaceFile = vi.fn(async () => {
     order.push("select");
     return true;
+  });
+  const getOrCreate = vi.fn((key: string) => {
+    conversations.set(key, conversation);
+    return conversation;
   });
   const remove = vi.fn(
     (key: string, _options?: { clearPersistence?: boolean }) => {
@@ -311,10 +315,7 @@ function createHarness(options: {
     api: () => api as unknown as LongWorkspaceRendererApi,
     conversations: {
       byKey: conversations,
-      getOrCreate: vi.fn((key: string) => {
-        conversations.set(key, conversation);
-        return conversation;
-      }),
+      getOrCreate,
       remove,
       active: () => conversation
     },
@@ -345,6 +346,7 @@ function createHarness(options: {
     conversation,
     conversations,
     coordinator,
+    getOrCreate,
     index,
     notifications,
     order,
@@ -367,7 +369,51 @@ async function startPlan(test: ReturnType<typeof createHarness>): Promise<void> 
 }
 
 describe("long writing workflow coordinator", () => {
-  it("runs an approved dispatch through save, readiness, selection, and a fresh agent session", async () => {
+  it("shares one draft conversation across every chapter", () => {
+    const test = createHarness();
+    expect(
+      test.coordinator.conversationKey(BOOK_ID, "draft", "draft", "chapter_one")
+    ).toBe(
+      test.coordinator.conversationKey(BOOK_ID, "draft", "draft", "chapter_two")
+    );
+    expect(
+      test.coordinator.conversationKey(BOOK_ID, "draft", "draft", "chapter_one")
+    ).toBe(
+      `long:${encodeURIComponent(BOOK_ID)}:draft:draft:${encodeURIComponent("__book__")}`
+    );
+    expect(
+      test.coordinator.conversationKey(
+        BOOK_ID,
+        "plot_design",
+        "plot_design",
+        "chapter_one"
+      )
+    ).toBe(
+      test.coordinator.conversationKey(
+        BOOK_ID,
+        "plot_design",
+        "plot_design",
+        "chapter_two"
+      )
+    );
+    expect(
+      test.coordinator.conversationKey(
+        BOOK_ID,
+        "continuity_ledger",
+        "continuity_ledger",
+        "chapter_one"
+      )
+    ).not.toBe(
+      test.coordinator.conversationKey(
+        BOOK_ID,
+        "continuity_ledger",
+        "continuity_ledger",
+        "chapter_two"
+      )
+    );
+  });
+
+  it("runs an approved dispatch through save, readiness, selection, and the shared writer conversation", async () => {
     const test = createHarness();
 
     await startPlan(test);
@@ -380,7 +426,11 @@ describe("long writing workflow coordinator", () => {
         fileId: longChapterBodyFileId(CHAPTER_ID)
       })
     );
-    expect(test.conversation.newConversation).toHaveBeenCalledOnce();
+    expect(test.conversation.newConversation).not.toHaveBeenCalled();
+    expect(test.getOrCreate).toHaveBeenCalledWith(
+      `long:${encodeURIComponent(BOOK_ID)}:draft:draft:${encodeURIComponent("__book__")}`,
+      `long:${BOOK_ID}`
+    );
     expect(test.conversation.selectApprovalMode).toHaveBeenCalledWith(
       "request-approval"
     );
@@ -388,8 +438,12 @@ describe("long writing workflow coordinator", () => {
       expect.objectContaining({
         bookId: BOOK_ID,
         activeRoot: "draft",
-        activeAgentId: "expert_section_writer",
-        activeChapterCardId: CHAPTER_ID
+        activeAgentId: "draft",
+        activeChapterCardId: CHAPTER_ID,
+        worldbuildingDirectory: {
+          categories: [],
+          omittedCategoryCount: 0
+        }
       }),
       { attachedSkills: [], attachedMaterials: [] }
     );
@@ -421,7 +475,7 @@ describe("long writing workflow coordinator", () => {
         sessionId: "session_writer",
         runId: "run_writer",
         bookId: BOOK_ID,
-        agentId: "expert_section_writer",
+        agentId: "draft",
         file: { chapterCardId: CHAPTER_ID }
       }
     } as SystemEventEnvelope);
@@ -487,7 +541,7 @@ describe("long writing workflow coordinator", () => {
     );
   });
 
-  it("cancels by invalidating the session before awaiting the running stop", async () => {
+  it("cancels by stopping the shared writer without resetting conversation history", async () => {
     let releaseStop!: (accepted: boolean) => void;
     const stop = new Promise<boolean>((resolve) => {
       releaseStop = resolve;
@@ -503,7 +557,8 @@ describe("long writing workflow coordinator", () => {
     await Promise.resolve();
 
     expect(conversation.cancelPendingGeneration).toHaveBeenCalledOnce();
-    expect(conversation.newConversation).toHaveBeenCalledTimes(2);
+    expect(conversation.newConversation).not.toHaveBeenCalled();
+    expect(conversation.stopGeneration).toHaveBeenCalledOnce();
     expect(test.coordinator.writingOrchestrator.state.value.phase).toBe("idle");
     releaseStop(true);
     await canceling;
@@ -641,7 +696,7 @@ describe("long writing workflow coordinator", () => {
     }
     expect(test.conversations.has(rawLookalike)).toBe(true);
     expect(test.conversations.has(siblingKey)).toBe(true);
-    expect(test.conversations.has(`long:${BOOK_ID}:draft:draft:${CHAPTER_ID}`)).toBe(
+    expect(test.conversations.has(`long:${BOOK_ID}:draft:draft:__book__`)).toBe(
       true
     );
   });

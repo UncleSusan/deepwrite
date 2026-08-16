@@ -58,6 +58,7 @@ export interface LongPortableExportBundle {
   manifest: LongPortableBundleJsonEntry<LongProjectManifest>;
   index: LongPortableBundleJsonEntry<LongWorkspaceIndexSnapshot>;
   files: LongPortableBundleFile[];
+  agentsMd?: string;
 }
 
 interface IndexedPortableFile {
@@ -1195,6 +1196,8 @@ export function parseLongPortableExportBundle(
     throw new Error("长篇可移植包缺少索引中的文档。");
   }
   assertLongLedgerRecordChain(index, ledgerRecords, manifest.revision);
+  const agentsMd =
+    typeof bundle.agentsMd === "string" ? bundle.agentsMd : undefined;
   return {
     schema: LONG_PORTABLE_BUNDLE_SCHEMA,
     schemaVersion: LONG_PORTABLE_BUNDLE_SCHEMA_VERSION,
@@ -1210,6 +1213,7 @@ export function parseLongPortableExportBundle(
       sha256: sha256(normalizedIndexContent),
       value: index
     },
-    files
+    files,
+    ...(agentsMd !== undefined ? { agentsMd } : {})
   };
 }

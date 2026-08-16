@@ -12,7 +12,7 @@ type ProposalEvent = Extract<
 function chapterWriteProposal(
   patch: Partial<{
     bookId: string;
-    agentId: "expert_section_writer";
+    agentId: "draft";
     chapterCardId: string;
   }> = {}
 ) : ProposalEvent {
@@ -22,7 +22,7 @@ function chapterWriteProposal(
       sessionId: "session-1",
       runId: "run-1",
       bookId: patch.bookId ?? "book-1",
-      agentId: patch.agentId ?? "expert_section_writer",
+      agentId: patch.agentId ?? "draft",
       file: {
         chapterCardId: patch.chapterCardId ?? "chapter-1"
       }
@@ -49,7 +49,7 @@ describe("long-writing proposal expectation", () => {
   const writerExpectation = {
     bookId: "book-1",
     chapterCardId: "chapter-1",
-    agentId: "expert_section_writer"
+    agentId: "draft"
   } as const;
 
   it("accepts only the exact book, agent, chapter, and proposal phase", () => {

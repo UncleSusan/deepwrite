@@ -118,6 +118,8 @@ import {
   LongPreviewOperationsResultSchema,
   LongReadDocumentInputSchema,
   LongReadDocumentResultSchema,
+  LongReadAgentsMdInputSchema,
+  LongReadAgentsMdResultSchema,
   LongRenameBookInputSchema,
   LongRemoveBookInputSchema,
   LongRemoveBookResultSchema,
@@ -129,6 +131,8 @@ import {
   LongWriteChapterResultSchema,
   LongWriteDocumentInputSchema,
   LongWriteDocumentResultSchema,
+  LongWriteAgentsMdInputSchema,
+  LongWriteAgentsMdResultSchema,
   MutateCharacterStructureInputSchema,
   MutatePlotStructureInputSchema,
   RemoveLibraryEntryInputSchema,
@@ -246,6 +250,8 @@ import {
   type LongPreviewOperationsResult,
   type LongReadDocumentInput,
   type LongReadDocumentResult,
+  type LongReadAgentsMdInput,
+  type LongReadAgentsMdResult,
   type LongRenameBookInput,
   type LongRemoveBookInput,
   type LongRemoveBookResult,
@@ -257,6 +263,8 @@ import {
   type LongWriteChapterResult,
   type LongWriteDocumentInput,
   type LongWriteDocumentResult,
+  type LongWriteAgentsMdInput,
+  type LongWriteAgentsMdResult,
   type LibraryAgentDomain,
   type LibraryAgentSettings,
   type LibraryAgentSettingsInput,
@@ -695,6 +703,38 @@ async function writeLongDocument(
   return LongWriteDocumentResultSchema.parse(
     await invokeCommand<LongWriteDocumentResult>(
       createEnvelope("long.writeDocument", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function readLongAgentsMd(
+  rawInput: LongReadAgentsMdInput
+): Promise<LongReadAgentsMdResult> {
+  const input = LongReadAgentsMdInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_read_agents_md");
+  return LongReadAgentsMdResultSchema.parse(
+    await invokeCommand<LongReadAgentsMdResult>(
+      createEnvelope("long.readAgentsMd", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function writeLongAgentsMd(
+  rawInput: LongWriteAgentsMdInput
+): Promise<LongWriteAgentsMdResult> {
+  const input = LongWriteAgentsMdInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_write_agents_md");
+  return LongWriteAgentsMdResultSchema.parse(
+    await invokeCommand<LongWriteAgentsMdResult>(
+      createEnvelope("long.writeAgentsMd", input, {
         id,
         correlationId: id,
         context: { resourceId: input.bookId }
@@ -1947,6 +1987,8 @@ const api: DeepWriteApi = {
     getWorkspaceIndex: getLongWorkspaceIndex,
     readDocument: readLongDocument,
     writeDocument: writeLongDocument,
+    readAgentsMd: readLongAgentsMd,
+    writeAgentsMd: writeLongAgentsMd,
     previewOperations: previewLongOperations,
     applyOperations: applyLongOperations,
     writeChapter: writeLongChapter,

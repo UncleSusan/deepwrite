@@ -26,12 +26,7 @@ function editableDefaults(): LongAgentSettingsInput {
         agent.welcomeShortcuts[0],
         agent.welcomeShortcuts[1],
         agent.welcomeShortcuts[2]
-      ],
-      readAccess: {
-        workspaceRoots: [...agent.readAccess.workspaceRoots],
-        materialKinds: [...agent.readAccess.materialKinds],
-        skillKinds: [...agent.readAccess.skillKinds]
-      }
+      ]
     }))
   };
 }
@@ -46,6 +41,17 @@ const RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPT = `你负责长篇连续性账本�
 5. 六个 coverage 域和六个 chapter summary 章节必须分别逐项设置；叙事落点与伏笔触点也必须逐项判定。
 6. 逐项准备完毕后，最后单独调用 propose_long_ledger_commit，生成本章唯一的一张原子提交提案。暂存和最终提案都不直接写磁盘，不得声称尚未获批的账本已经提交。`;
 
+const RETIRED_SINGLE_CHAPTER_CATCHUP_CONTINUITY_LEDGER_SYSTEM_PROMPT = `你负责长篇连续性留存。可以为任意正文已经写完且尚无记录的章节按需补记，不要求前文章节已经记录。
+
+工作规则：
+1. 使用 list_continuity_files 查看待处理章节、已有按章记录，以及本章在“剧情设计 → 伏笔总览”中已经规划的伏笔触点候选；使用 read_continuity_file 读取既有按章文件，再用 list_setting / search_setting / read_setting（指定 domain）以及剧情和章节的 list / search / read 工具读取正文证据与相关设计。不得使用底层索引、路径、file_id 或通用文档读取。
+2. 以本章正文为事实证据，并参考上一章章末状态、接续包和相关设计资料。章末状态与下一章接续包每章必须写入；世界观与人物文件仍按实际变化创建或更新。
+3. 伏笔总览是设计源，连续性账本只能核验既有伏笔线和既有触点，绝不能自行新增伏笔线、触点或把正文中的偶然线索升级为伏笔。逐项检查 list_continuity_files 返回的候选触点，并依据正文判定 committed 或 missed；每项都必须保留对应 foreshadowing_id、beat_id 和具体正文证据。
+4. 只有本章存在既有伏笔触点候选时，才写伏笔变化 Markdown；其中逐项写明伏笔线、触点、执行结果及正文证据，并在 propose_continuity_commit 中提交完全相同的关联决策。候选为空时不得写伏笔变化文件，不得添加“本章无变化”占位，提交空决策数组即可。正文出现疑似伏笔但总览中没有对应项时，只在对话中提示用户返回剧情设计确认，不得写入账本或修改伏笔总览。
+5. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。当前状态写本章章末快照；历史轨迹优先参考叙事顺序中最近的更早章节记录；若不存在，则从现有设计资料开始整理。不要为未涉及的人物制造记录。
+6. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON。
+7. 全部文件内容准备完成后调用 propose_continuity_commit 保存本章记录。记录只供参考，不锁定正文、人物资料或剧情结构。未获用户批准前不得声称文件已保存或章节已经记录。`;
+
 const RETIRED_TEXT_FILE_CONTINUITY_LEDGER_SYSTEM_PROMPT = `你负责长篇连续性留存。只处理正文已经写完的连续下一章，不得跳章提交。
 
 工作规则：
@@ -55,6 +61,18 @@ const RETIRED_TEXT_FILE_CONTINUITY_LEDGER_SYSTEM_PROMPT = `你负责长篇连续
 4. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。当前状态写本章章末快照；历史轨迹必须读取该人物上一份已提交记录，在其基础上累积追加本章变化，使人物阶段映射最新文件时仍能看到截至本章的完整轨迹。不要为未涉及的人物制造记录。
 5. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON、ID 清单或内部审计结构。
 6. 全部文件内容准备完成后调用 propose_continuity_commit 登记内部归档。客户端会等待所有文件卡获批保存，再自动锁定本章正文与连续性文件版本；不会出现第二张归档审批卡。未获用户批准前不得声称文件已保存或章节已经归档。`;
+
+const RETIRED_BATCH_ALL_CHAPTERS_CONTINUITY_LEDGER_SYSTEM_PROMPT = `你负责长篇连续性留存。可以为任意正文已经写完且尚无记录的章节按需补记，不要求前文章节已经记录。多张未记录章卡可以在同一次对话里批量追记，不必让用户一章一章提交。
+
+工作规则：
+1. 使用 list_continuity_files 查看待处理章节、已有按章记录、pending_catchup 追记建议，以及本章在“剧情设计 → 伏笔总览”中已经规划的伏笔触点候选；使用 read_continuity_file 读取既有按章文件，再用 list_setting / search_setting / read_setting（指定 domain）以及剧情和章节的 list / search / read 工具读取正文证据与相关设计。不得使用底层索引、路径、file_id 或通用文档读取。未选中具体章卡时，写入和提交必须带 chapter_card_id。
+2. 单章补记时，以本章正文为事实证据，并参考上一章章末状态、接续包和相关设计资料。章末状态与下一章接续包每章必须写入；世界观与人物文件仍按实际变化创建或更新。
+3. 若 pending_catchup 有多张未记录章，按用户“批量提交所有章节”或等价要求一次追记：先按叙事顺序 read_chapter 读完全部未记录正文，并参考最近一份已记录章的章末状态与接续包（若有）。suggested_record=brief 的前文只写简短章末状态与接续包，不创建人物当前状态/历史或世界观揭露；suggested_record=full 的最后一张写完整账本，人物历史从已读前文累积到本章。不要对每张前文再做一遍完整核验。
+4. 伏笔总览是设计源，连续性账本只能核验既有伏笔线和既有触点，绝不能自行新增伏笔线、触点或把正文中的偶然线索升级为伏笔。逐项检查 list_continuity_files 返回的候选触点，并依据正文判定 committed 或 missed；每项都必须保留对应 foreshadowing_id、beat_id 和具体正文证据。前文简记时，该章若有伏笔候选仍须判定并写伏笔变化。
+5. 只有本章存在既有伏笔触点候选时，才写伏笔变化 Markdown；其中逐项写明伏笔线、触点、执行结果及正文证据，并在 propose_continuity_commit 中提交完全相同的关联决策。候选为空时不得写伏笔变化文件，不得添加“本章无变化”占位，提交空决策数组即可。正文出现疑似伏笔但总览中没有对应项时，只在对话中提示用户返回剧情设计确认，不得写入账本或修改伏笔总览。
+6. 只有正文确实出现新的世界观揭露时，才用 create_continuity_file 创建本章世界观揭露文件；对每个实际涉及且状态发生或需要承接的人物，创建本章人物当前状态与历史轨迹两个文件。当前状态写本章章末快照；历史轨迹优先参考叙事顺序中最近的更早章节记录；若不存在，则从现有设计资料开始整理。不要为未涉及的人物制造记录。批量追记的前文不要创建这些可选文件。
+7. 文件不存在时先 create_continuity_file，再用 write_continuity_file 写入；已有非空文件必须先完整读取，再用 edit_continuity_file 精确编辑。所有内容均为便于人阅读的 Markdown，不写 JSON。
+8. 全部文件内容准备完成后，为每一张待记录章分别调用 propose_continuity_commit 保存记录；批量追记时在同一轮对话里连续提交，不要让用户逐章再点一次。记录只供参考，不锁定正文、人物资料或剧情结构。未获用户批准前不得声称文件已保存或章节已经记录。`;
 
 const RETIRED_COMMITTED_LOCK_CHAPTER_WRITER_SYSTEM_PROMPT = `你是长篇单章写作智能体，负责依据运行时锁定的当前章卡创作、整体重写或局部修改这一章的小说正文。模型只使用业务 ID，不索取或复述文件路径、file_id 与 revision。
 
@@ -72,7 +90,7 @@ const RETIRED_COMMITTED_LOCK_CHAPTER_WRITER_SYSTEM_PROMPT = `你是长篇单章�
 6. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文获批保存后，由连续性账本智能体读取正文并独立生成、归档相关连续性文件。`;
 
 describe("LongAgentConfigStore", () => {
-  it("returns five independent defaults without creating a file", async () => {
+  it("returns four independent defaults without creating a file", async () => {
     const { store } = await createStore();
     const settings = await store.list();
     expect(settings.workspaceType).toBe("long");
@@ -87,7 +105,6 @@ describe("LongAgentConfigStore", () => {
     const agent = input.agents.find(({ id }) => id === "setting")!;
     agent.systemPrompt = "自定义长篇人物提示词";
     agent.welcomeShortcuts[1] = "追踪本章人物状态";
-    agent.readAccess.materialKinds = ["character"];
 
     const saved = await store.save(input);
     const resolved = await store.resolve("setting");
@@ -98,9 +115,13 @@ describe("LongAgentConfigStore", () => {
       )
     ) as Record<string, unknown>;
 
-    expect(saved.agents).toHaveLength(5);
+    expect(saved.agents).toHaveLength(4);
     expect(resolved.systemPrompt).toBe("自定义长篇人物提示词");
-    expect(resolved.readAccess.materialKinds).toEqual(["character"]);
+    expect(resolved.readAccess).toEqual(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
+        ({ id }) => id === "setting"
+      )!.readAccess
+    );
     expect(resolved.writeAccess).toEqual(
       DEFAULT_LONG_AGENT_SETTINGS.agents.find(
         ({ id }) => id === "setting"
@@ -108,6 +129,7 @@ describe("LongAgentConfigStore", () => {
     );
     expect(JSON.stringify(disk)).not.toContain("writeAccess");
     expect(JSON.stringify(disk)).not.toContain("capabilities");
+    expect(JSON.stringify(disk)).not.toContain("readAccess");
   });
 
   it("resets one role without changing the other four roles", async () => {
@@ -270,6 +292,62 @@ describe("LongAgentConfigStore", () => {
     )!;
     expect(upgraded.systemPrompt).toContain("能力范围：");
     expect(upgraded.systemPrompt).toContain("get_long_chapter_readiness");
+    expect(upgraded.systemPrompt).toContain("write_chapter_draft");
+    expect(upgraded.systemPrompt).toContain(
+      "固定上下文已包含世界观与人物目录"
+    );
+    expect(upgraded.systemPrompt).toContain(
+      "同一写手智能体和同一对话历史"
+    );
+    expect(upgraded.systemPrompt).not.toContain("每章独立的写手运行");
+
+    draft.systemPrompt = `你是长篇写手智能体，统一负责正文规划、连续章节调度，以及当前锁定章卡的小说正文写作。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
+
+能力范围：
+1. 可以查看和搜索世界观、人物、剧情设计、正文目录及既有章节，并结合关联素材和技能回答正文规划、衔接与一致性问题，或据此创作当前章。
+2. 可以检查当前或指定章节是否已有非空正文，并据此判断写作进度。
+3. 可以按单章、当前剧情点连续章节或当前卷形成串行写作调度提案。
+4. 每张章卡对应一个独立的 Markdown 正文文件；当运行时锁定了当前章时，可以为该章空白正文首次写入完整小说正文，也可以按用户明确要求整体重写或局部修改当前章。已有连续性记录仍可自由修订。
+5. 写作产物只限当前锁定章的小说正文；不创建章节结构，不处理未锁定的其它章节正文，也不编写连续性文件。
+
+操作要求：
+1. 当前上下文足以回答或创作时可以直接处理；需要核验写作依据、章节顺序或既有正文时，使用 list_setting / search_setting / read_setting（指定 domain）、剧情和章节的 list / search / read 工具按需查询，不使用底层工作区索引或通用文档读取。不得把未读取内容当成事实。
+2. 搜索结果和当前页面快照只用于定位与理解。需要检查章节正文状态时，使用 get_long_chapter_readiness；该检查不写入正文，也不创建连续性记录。
+3. 需要启动连续多章写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。调度提案获批后只启动每章独立的写手运行；正文保存后直接推进下一章，不自动启动或等待连续性记录。
+4. 当前章正文为空时可使用 write_chapter_draft 首次写入；整体重写已有正文或局部修改前，必须通过 read_chapter（mode=full）完整读取当前章。整体重写已有正文时使用 write_chapter_draft，并明确允许覆盖；局部修改使用 edit_chapter_draft，对完整读取后的唯一原文片段进行替换。每次写入工具调用只能提交运行时锁定的当前章。
+5. 已有连续性记录只作为写作参考，不限制正文整体重写或局部修改；不得擅自改写连续性文件。
+6. content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明、工具参数、人物状态或交接内容。
+7. 所有正文写入和编辑都只形成会话 diff 审批卡；以工具和审批卡返回的状态为准，不得声称尚未获批的正文已经保存。
+8. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文保存后写作流程可直接推进下一章；连续性记录由用户之后按需触发。`;
+    await store.save(input);
+    expect(
+      (await store.list()).agents.find(({ id }) => id === "draft")!
+        .systemPrompt
+    ).toContain("同一写手智能体和同一对话历史");
+
+    draft.systemPrompt = `你是长篇写手智能体，统一负责正文规划、连续章节调度，以及当前锁定章卡的小说正文写作。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
+
+能力范围：
+1. 可以查看和搜索世界观、人物、剧情设计、正文目录及既有章节，并结合关联素材和技能回答正文规划、衔接与一致性问题，或据此创作当前章。
+2. 可以检查当前或指定章节是否已有非空正文，并据此判断写作进度。
+3. 可以按单章、当前剧情点连续章节或当前卷形成串行写作调度提案。
+4. 每张章卡对应一个独立的 Markdown 正文文件；当运行时锁定了当前章时，可以为该章空白正文首次写入完整小说正文，也可以按用户明确要求整体重写或局部修改当前章。已有连续性记录仍可自由修订。
+5. 写作产物只限当前锁定章的小说正文；不创建章节结构，不处理未锁定的其它章节正文，也不编写连续性文件。
+
+操作要求：
+1. 当前上下文足以回答或创作时可以直接处理；固定上下文已包含世界观与人物目录以及长篇结构导航。需要核验写作依据、章节顺序或既有正文时，使用 list_setting / search_setting / read_setting（指定 domain）、剧情和章节的 list / search / read 工具按需查询；目录已完整列出世界观或人物时，不要仅为重复取得同一列表而调用 list_setting。不使用底层工作区索引或通用文档读取。不得把未读取内容当成事实。
+2. 搜索结果和当前页面快照只用于定位与理解。需要检查章节正文状态时，使用 get_long_chapter_readiness；该检查不写入正文，也不创建连续性记录。
+3. 需要启动连续多章写作时使用 propose_long_chapter_dispatch，按正文完成进度从第一张空白章卡开始提议单章、当前剧情点连续章节或当前卷；不得跨过空白前章。调度提案获批后只启动每章独立的写手运行；正文保存后直接推进下一章，不自动启动或等待连续性记录。
+4. 当前章正文为空时可使用 write_chapter_draft 首次写入；整体重写已有正文或局部修改前，必须通过 read_chapter（mode=full）完整读取当前章。整体重写已有正文时使用 write_chapter_draft，并明确允许覆盖；局部修改使用 edit_chapter_draft，对完整读取后的唯一原文片段进行替换。每次写入工具调用只能提交运行时锁定的当前章。
+5. 已有连续性记录只作为写作参考，不限制正文整体重写或局部修改；不得擅自改写连续性文件。
+6. content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明、工具参数、人物状态或交接内容。
+7. 所有正文写入和编辑都只形成会话 diff 审批卡；以工具和审批卡返回的状态为准，不得声称尚未获批的正文已经保存。
+8. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文保存后写作流程可直接推进下一章；连续性记录由用户之后按需触发。`;
+    await store.save(input);
+    expect(
+      (await store.list()).agents.find(({ id }) => id === "draft")!
+        .systemPrompt
+    ).toContain("同一写手智能体和同一对话历史");
 
     draft.systemPrompt = "自定义正文统筹提示词";
     await store.save(input);
@@ -279,58 +357,116 @@ describe("LongAgentConfigStore", () => {
     ).toBe("自定义正文统筹提示词");
   });
 
-  it("upgrades the retired chapter-writer role without replacing customization", async () => {
-    const { store } = await createStore();
-    const input = editableDefaults();
-    const writer = input.agents.find(
-      ({ id }) => id === "expert_section_writer"
-    )!;
-    writer.systemPrompt = `你是长篇单章写手。每次只处理运行时锁定的当前章卡，模型只使用业务 ID，不索取或复述文件路径、file_id 与 revision。
+  it("merges a legacy chapter-writer profile into the unified writer", async () => {
+    const { root, store } = await createStore();
+    const path = join(root, "config", "long-workspace-agents.json");
+    await mkdir(join(root, "config"), { recursive: true });
+    const defaults = editableDefaults();
+    const draft = defaults.agents.find(({ id }) => id === "draft")!;
+    await writeFile(
+      path,
+      `${JSON.stringify(
+        {
+          version: 1,
+          workspaceType: "long",
+          agents: [
+            defaults.agents.find(({ id }) => id === "setting")!,
+            defaults.agents.find(({ id }) => id === "plot_design")!,
+            {
+              ...draft,
+              systemPrompt: `你负责长篇正文统筹。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
 
 工作规则：
-1. 使用世界观、人物和剧情各自的 list / search / read 工具查询写作依据；使用 list_chapters、search_chapters、read_chapter 查询正文，不使用底层工作区索引或通用文档读取。
-2. 每张章卡对应一个独立的 Markdown 正文文件，章节结构及空白正文文件由剧情设计的 create_plot_design 创建，创建时不得初始化正文。当前章正文为空时使用 write_chapter_draft 首次写入；已有正文的整体重写必须先 read_chapter mode=full，并使用 write_chapter_draft 且明确允许覆盖；局部修改必须先完整读取，再使用 edit_chapter_draft 做唯一原文片段替换。每次工具调用只能提交运行时锁定的当前章；content 只放完整小说正文，不得混入相邻章节、章节标题、分析过程、写作说明或参数。
-3. 搜索命中和当前页面快照只用于定位与理解，写入或编辑前必须通过 read_chapter mode=full 建立完整读取依据。
-4. 所有正文创建、写入和编辑都形成与世界观、人物、剧情相同的会话 diff 审批卡；不得声称尚未获批的正文已经保存。
-5. 本智能体唯一的写作产物是当前章小说正文。不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。
-6. 正文获批保存后，由连续性账本智能体读取正文并独立生成章末人物状态、交接文档、下一章接续包与连续性提交；不得替连续性账本提前完成或宣称已完成这些工作。`;
-    writer.welcomeShortcuts = [
-      "写当前章",
-      "续写当前章",
-      "检查本章连续性"
-    ];
-    await store.save(input);
+1. 使用 list_worldbuilding / search_worldbuilding / read_worldbuilding、list_characters / search_characters / read_character、list_plot_design / search_plot_design / read_plot_design 查询写作依据；不要使用底层工作区索引或通用文档读取。
+2. 使用 list_chapters、search_chapters 和 read_chapter 查询正文目录与既有正文。
+3. 需要批量推进时，只能按未提交章卡的连续顺序，使用 propose_long_chapter_dispatch 提议启动单章、当前剧情点连续章节或当前卷；不得调度整本、并行或跳章。
+4. 正文、世界观、人物和剧情的搜索命中都只用于定位；需要准确引用时必须使用相应 read 工具完整读取。
+5. 调度提案只启动后续单章写作，不代表正文已经创建、写入、编辑或获批。`
+            },
+            {
+              id: "expert_section_writer",
+              systemPrompt: RETIRED_COMMITTED_LOCK_CHAPTER_WRITER_SYSTEM_PROMPT,
+              welcomeShortcuts: [
+                "写当前章",
+                "续写当前章",
+                "检查本章连续性"
+              ],
+              readAccess: {
+                workspaceRoots: [
+                  "worldbuilding",
+                  "character_design",
+                  "plot_design",
+                  "draft",
+                  "continuity_ledger"
+                ],
+                materialKinds: ["character", "plot", "draft", "other"],
+                skillKinds: ["general", "plot", "style", "other"]
+              }
+            },
+            defaults.agents.find(({ id }) => id === "continuity_ledger")!
+          ]
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
 
-    const upgraded = (await store.list()).agents.find(
-      ({ id }) => id === "expert_section_writer"
-    )!;
-    expect(upgraded.systemPrompt).toContain(
-      "本智能体唯一的写作产物是当前章小说正文"
+    const merged = (await store.list()).agents.find(({ id }) => id === "draft")!;
+    expect(merged.systemPrompt).toBe(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(({ id }) => id === "draft")!
+        .systemPrompt
     );
-    expect(upgraded.systemPrompt).toContain(
-      "不得编写、草拟、补全或修改章末人物状态、交接文档"
-    );
-    expect(upgraded.welcomeShortcuts).toEqual([
+    expect(merged.welcomeShortcuts).toEqual([
       "写当前章",
       "续写当前章",
-      "检查本章正文"
+      "规划下一章"
     ]);
-
-    writer.systemPrompt = RETIRED_COMMITTED_LOCK_CHAPTER_WRITER_SYSTEM_PROMPT;
-    await store.save(input);
     expect(
-      (await store.list()).agents.find(
-        ({ id }) => id === "expert_section_writer"
-      )!.systemPrompt
-    ).toContain("已有连续性记录仍可自由修订");
+      (await store.list()).agents.some(
+        ({ id }) => (id as string) === "expert_section_writer"
+      )
+    ).toBe(false);
 
-    writer.systemPrompt = "自定义单章提示词";
-    writer.welcomeShortcuts = ["自定义一", "自定义二", "自定义三"];
-    await store.save(input);
+    await writeFile(
+      path,
+      `${JSON.stringify(
+        {
+          version: 1,
+          workspaceType: "long",
+          agents: [
+            defaults.agents.find(({ id }) => id === "setting")!,
+            defaults.agents.find(({ id }) => id === "plot_design")!,
+            {
+              ...draft,
+              systemPrompt: "自定义正文统筹提示词"
+            },
+            {
+              id: "expert_section_writer",
+              systemPrompt: "自定义单章提示词",
+              welcomeShortcuts: ["自定义一", "自定义二", "自定义三"],
+              readAccess: {
+                workspaceRoots: ["draft"],
+                materialKinds: ["draft"],
+                skillKinds: ["style"]
+              }
+            },
+            defaults.agents.find(({ id }) => id === "continuity_ledger")!
+          ]
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
     const customized = (await store.list()).agents.find(
-      ({ id }) => id === "expert_section_writer"
+      ({ id }) => id === "draft"
     )!;
-    expect(customized.systemPrompt).toBe("自定义单章提示词");
+    expect(customized.systemPrompt).toContain("【用户原正文统筹提示词】");
+    expect(customized.systemPrompt).toContain("自定义正文统筹提示词");
+    expect(customized.systemPrompt).toContain("【用户原单章写手提示词】");
+    expect(customized.systemPrompt).toContain("自定义单章提示词");
     expect(customized.welcomeShortcuts).toEqual([
       "自定义一",
       "自定义二",
@@ -368,15 +504,59 @@ describe("LongAgentConfigStore", () => {
       )!.systemPrompt
     );
 
-    const customizedPrompt =
-      `${RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPT}\n\n` +
-      "自定义补充：保留本地核验步骤。";
-    continuity.systemPrompt = customizedPrompt;
+    continuity.systemPrompt =
+      RETIRED_SINGLE_CHAPTER_CATCHUP_CONTINUITY_LEDGER_SYSTEM_PROMPT;
     await store.save(input);
     expect(
       (await store.list()).agents.find(({ id }) => id === "continuity_ledger")!
         .systemPrompt
-    ).toBe(customizedPrompt);
+    ).toBe(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
+        ({ id }) => id === "continuity_ledger"
+      )!.systemPrompt
+    );
+
+    continuity.systemPrompt =
+      RETIRED_BATCH_ALL_CHAPTERS_CONTINUITY_LEDGER_SYSTEM_PROMPT;
+    continuity.welcomeShortcuts = [
+      "提交当前章",
+      "批量提交所有章节",
+      "检查连续性"
+    ];
+    await store.save(input);
+    const upgradedBatch = (await store.list()).agents.find(
+      ({ id }) => id === "continuity_ledger"
+    )!;
+    expect(upgradedBatch.systemPrompt).toBe(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
+        ({ id }) => id === "continuity_ledger"
+      )!.systemPrompt
+    );
+    expect(upgradedBatch.welcomeShortcuts).toEqual([
+      "提交当前章",
+      "批量提交所有未提交章节",
+      "检查连续性"
+    ]);
+
+    const customizedPrompt =
+      `${RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPT}\n\n` +
+      "自定义补充：保留本地核验步骤。";
+    continuity.systemPrompt = customizedPrompt;
+    continuity.welcomeShortcuts = [
+      "提交当前章",
+      "自定义批量提交",
+      "检查连续性"
+    ];
+    await store.save(input);
+    const customized = (await store.list()).agents.find(
+      ({ id }) => id === "continuity_ledger"
+    )!;
+    expect(customized.systemPrompt).toBe(customizedPrompt);
+    expect(customized.welcomeShortcuts).toEqual([
+      "提交当前章",
+      "自定义批量提交",
+      "检查连续性"
+    ]);
   });
 
   it("merges legacy worldbuilding and character profiles into setting", async () => {
@@ -414,7 +594,6 @@ describe("LongAgentConfigStore", () => {
             },
             plot,
             defaults.agents.find(({ id }) => id === "draft")!,
-            defaults.agents.find(({ id }) => id === "expert_section_writer")!,
             defaults.agents.find(({ id }) => id === "continuity_ledger")!
           ]
         },
@@ -438,6 +617,44 @@ describe("LongAgentConfigStore", () => {
       "worldbuilding",
       "character_design"
     ]);
+  });
+
+  it("strips legacy read access overrides and resolves builtin read access", async () => {
+    const { root, store } = await createStore();
+    const path = join(root, "config", "long-workspace-agents.json");
+    await mkdir(join(root, "config"), { recursive: true });
+    const defaults = editableDefaults();
+    await writeFile(
+      path,
+      `${JSON.stringify(
+        {
+          version: 1,
+          workspaceType: "long",
+          agents: defaults.agents.map((agent) => ({
+            ...agent,
+            readAccess: {
+              workspaceRoots: ["draft"],
+              materialKinds: ["draft"],
+              skillKinds: ["style"]
+            }
+          }))
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const settings = await store.list();
+    for (const agent of settings.agents) {
+      expect(agent.readAccess).toEqual(
+        DEFAULT_LONG_AGENT_SETTINGS.agents.find(({ id }) => id === agent.id)!
+          .readAccess
+      );
+    }
+
+    await store.save(editableDefaults());
+    expect(await readFile(path, "utf8")).not.toContain("readAccess");
   });
 
   it("does not silently overwrite a malformed settings file", async () => {

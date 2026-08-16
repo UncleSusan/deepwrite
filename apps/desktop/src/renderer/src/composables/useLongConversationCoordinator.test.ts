@@ -13,7 +13,10 @@ import {
   useLongConversationCoordinator,
   type LongConversationCoordinatorOptions
 } from "./useLongConversationCoordinator";
-import type { LongWorkspaceSelection } from "../types/longWorkspace";
+import type {
+  LongWorkspaceRendererApi,
+  LongWorkspaceSelection
+} from "../types/longWorkspace";
 import type { LibraryAttachmentBuildResult } from "../utils/libraryAttachments";
 
 const BOOK_ID = "long-book-one";
@@ -122,9 +125,11 @@ function controllerFixture() {
   const approvalMode = ref<"request-approval" | "auto-approve">(
     "request-approval"
   );
-  const sendLongMessage = vi.fn(async () => {
-    draft.value = "";
-  });
+  const sendLongMessage = vi.fn(
+    async (_context?: LongWorkspaceRuntimeContext) => {
+      draft.value = "";
+    }
+  );
   const newConversation = vi.fn(() => {
     sessionId.value = "session-new";
     draft.value = "";
@@ -384,6 +389,53 @@ describe("useLongConversationCoordinator", () => {
     expect(test.buildAttachments).toHaveBeenCalledOnce();
     expect(test.filterReadableAttachments).toHaveBeenCalledOnce();
     expect(test.conversation.sendLongMessage).toHaveBeenCalledOnce();
+  });
+
+  it("injects AGENTS.md into the long runtime context before sending", async () => {
+    const test = createHarness();
+    const readAgentsMd = vi.fn(async () => ({
+      bookId: BOOK_ID,
+      content: "# 长篇上下文\n\n## 正文阶段\n写当前章。",
+      truncated: false
+    }));
+    test.options.workspace.api = vi.fn(() =>
+      ({
+        readAgentsMd
+      }) as unknown as LongWorkspaceRendererApi
+    );
+
+    await test.coordinator.sendLongMessage();
+
+    expect(readAgentsMd).toHaveBeenCalledWith({ bookId: BOOK_ID });
+    expect(test.conversation.sendLongMessage).toHaveBeenCalledOnce();
+    const [context] = test.conversation.sendLongMessage.mock.calls[0]!;
+    expect(context).toMatchObject({
+      bookId: BOOK_ID,
+      agentsMd: "# 长篇上下文\n\n## 正文阶段\n写当前章。"
+    });
+  });
+
+  it("still sends when AGENTS.md cannot be read and warns that it was not injected", async () => {
+    const test = createHarness();
+    const readAgentsMd = vi.fn(async () => {
+      throw new Error("工作区未就绪");
+    });
+    test.options.workspace.api = vi.fn(() =>
+      ({
+        readAgentsMd
+      }) as unknown as LongWorkspaceRendererApi
+    );
+
+    await test.coordinator.sendLongMessage();
+
+    expect(readAgentsMd).toHaveBeenCalledWith({ bookId: BOOK_ID });
+    expect(test.notifications.warning).toHaveBeenCalledWith(
+      "长篇上下文未注入：工作区未就绪"
+    );
+    expect(test.conversation.sendLongMessage).toHaveBeenCalledOnce();
+    const [context] = test.conversation.sendLongMessage.mock.calls[0]!;
+    expect(context).toMatchObject({ bookId: BOOK_ID });
+    expect(context).not.toHaveProperty("agentsMd");
   });
 
   it("rejects a second send while the first preflight is pending", async () => {

@@ -392,13 +392,30 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
     ).toBeDefined();
 
+    activeSelection.value = selection("plot_design", {
+      files: [{ role: "content", label: "全书故事线", file: worldFile }]
+    });
+    expect(coordinator.activeLongRuntimeContext.value).toMatchObject({
+      activeRoot: "plot_design",
+      activeAgentId: "plot_design"
+    });
+    expect(
+      coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
+    ).toBeDefined();
+
     activeSelection.value = selection("draft", {
       chapterCardId: "chapter_one",
       preferredRole: "body"
     });
     expect(coordinator.activeLongChapterWriterEnabled.value).toBe(true);
+    expect(coordinator.activeLongAgentProfile.value?.id).toBe("draft");
+    expect(
+      coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
+    ).toBeDefined();
+
+    activeSelection.value = selection("continuity_ledger");
     expect(coordinator.activeLongAgentProfile.value?.id).toBe(
-      "expert_section_writer"
+      "continuity_ledger"
     );
     expect(
       coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory

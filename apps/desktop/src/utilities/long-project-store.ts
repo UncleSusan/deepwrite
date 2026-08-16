@@ -23,7 +23,10 @@ import {
   LONG_BOOK_LINE_FILE_ID,
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
+  DEFAULT_LONG_AGENTS_MD,
   DEFAULT_LONG_CHARACTER_TYPES,
+  LONG_AGENTS_MD_MAX_CHARACTERS,
+  LONG_AGENTS_MD_PATH,
   LONG_WORKSPACE_INDEX_FILE_ID,
   LONG_WORKSPACE_INDEX_PATH,
   LongBookIdSchema,
@@ -58,6 +61,7 @@ import {
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
+  longAgentsMdCharacterCount,
   longStoryPlotBodyFileId,
   longWorldbuildingContentPath,
   longWorldbuildingFileId,
@@ -121,6 +125,7 @@ const BOOK_LINE_PATH = "long/plot/book-line.md";
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_INDEX_BYTES = 32 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;
+const MAX_AGENTS_MD_BYTES = LONG_AGENTS_MD_MAX_CHARACTERS * 4;
 const MAX_LEDGER_RECORD_BYTES = 128 * 1024 * 1024;
 const MAX_READ_PAGE_CHARACTERS = 256 * 1024;
 const MAX_SEARCH_FILE_IDS = 1_000_000;
@@ -454,6 +459,8 @@ async function commitLongProjectTransaction(
         ? MAX_MANIFEST_BYTES
         : path === LONG_WORKSPACE_INDEX_PATH
           ? MAX_INDEX_BYTES
+          : path === LONG_AGENTS_MD_PATH
+            ? MAX_AGENTS_MD_BYTES
           : path.startsWith("long/ledger/") && path.endsWith(".json")
             ? MAX_LEDGER_RECORD_BYTES
             : MAX_DOCUMENT_BYTES;
@@ -653,6 +660,13 @@ export class LongProjectStore {
         });
         operations.push(
           {
+            path: LONG_AGENTS_MD_PATH,
+            content: await readAgentsMdContentOrDefault(
+              source.projectDirectory
+            ),
+            expectedSha256: null
+          },
+          {
             path: LONG_WORKSPACE_INDEX_PATH,
             content: indexContent,
             expectedSha256: null
@@ -721,6 +735,11 @@ export class LongProjectStore {
               content: document.content,
               expectedSha256: null as null
             })),
+            {
+              path: LONG_AGENTS_MD_PATH,
+              content: DEFAULT_LONG_AGENTS_MD,
+              expectedSha256: null
+            },
             {
               path: LONG_WORKSPACE_INDEX_PATH,
               content: serializeJson(index),
@@ -816,6 +835,13 @@ export class LongProjectStore {
               expectedSha256: null as null
             })),
             {
+              path: LONG_AGENTS_MD_PATH,
+              content: normalizeAgentsMdContent(
+                bundle.agentsMd ?? DEFAULT_LONG_AGENTS_MD
+              ),
+              expectedSha256: null
+            },
+            {
               path: LONG_WORKSPACE_INDEX_PATH,
               content: serializeJson(index),
               expectedSha256: null
@@ -868,6 +894,11 @@ export class LongProjectStore {
             content: document.content,
             expectedSha256: null as null
           })),
+          {
+            path: LONG_AGENTS_MD_PATH,
+            content: DEFAULT_LONG_AGENTS_MD,
+            expectedSha256: null
+          },
           {
             path: LONG_WORKSPACE_INDEX_PATH,
             content: serializeJson(index),
@@ -1096,6 +1127,59 @@ export class LongProjectStore {
         nextOffset: page.nextOffset,
         totalCharacters: page.totalCharacters
       };
+    });
+  }
+
+  async readAgentsMd(
+    projectDirectory: string
+  ): Promise<{ content: string; truncated: boolean }> {
+    const canonical = await secureDirectory(projectDirectory, "长篇项目目录");
+    return await this.runExclusive(canonical, async () => {
+      await this.loadProject(canonical);
+      const existing = await tryReadAgentsMdFile(canonical);
+      if (!existing) {
+        const content = DEFAULT_LONG_AGENTS_MD;
+        await commitLongProjectTransaction({
+          projectRoot: canonical,
+          operations: [
+            {
+              path: LONG_AGENTS_MD_PATH,
+              content,
+              expectedSha256: null
+            }
+          ],
+          maxFileBytes: MAX_LEDGER_RECORD_BYTES
+        });
+        return { content, truncated: false };
+      }
+      return sliceAgentsMdContent(existing.content);
+    });
+  }
+
+  async writeAgentsMd(
+    projectDirectory: string,
+    content: string
+  ): Promise<void> {
+    const canonical = await secureDirectory(projectDirectory, "长篇项目目录");
+    return await this.runExclusive(canonical, async () => {
+      await this.loadProject(canonical);
+      if (longAgentsMdCharacterCount(content) > LONG_AGENTS_MD_MAX_CHARACTERS) {
+        throw new Error(
+          `长篇上下文超过 ${LONG_AGENTS_MD_MAX_CHARACTERS} 个字符上限。`
+        );
+      }
+      const existing = await tryReadAgentsMdFile(canonical);
+      await commitLongProjectTransaction({
+        projectRoot: canonical,
+        operations: [
+          {
+            path: LONG_AGENTS_MD_PATH,
+            content,
+            expectedSha256: existing?.sha256 ?? null
+          }
+        ],
+        maxFileBytes: MAX_LEDGER_RECORD_BYTES
+      });
     });
   }
 
@@ -3173,6 +3257,11 @@ export class LongProjectStore {
             content: "",
             expectedSha256: null as null
           })),
+        {
+          path: LONG_AGENTS_MD_PATH,
+          content: DEFAULT_LONG_AGENTS_MD,
+          expectedSha256: null as null
+        },
         {
           path: LONG_WORKSPACE_INDEX_PATH,
           content: indexContent,
@@ -6273,6 +6362,48 @@ function encodeUtf8Strict(content: string): Buffer {
   return bytes;
 }
 
+function sliceAgentsMdContent(content: string): {
+  content: string;
+  truncated: boolean;
+} {
+  const characters = Array.from(content);
+  if (characters.length <= LONG_AGENTS_MD_MAX_CHARACTERS) {
+    return { content, truncated: false };
+  }
+  return {
+    content: characters.slice(0, LONG_AGENTS_MD_MAX_CHARACTERS).join(""),
+    truncated: true
+  };
+}
+
+function normalizeAgentsMdContent(content: string): string {
+  return sliceAgentsMdContent(content).content;
+}
+
+async function tryReadAgentsMdFile(
+  projectDirectory: string
+): Promise<SecureTextFile | null> {
+  try {
+    return await readSecureTextFile(
+      projectDirectory,
+      LONG_AGENTS_MD_PATH,
+      MAX_AGENTS_MD_BYTES
+    );
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) return null;
+    throw error;
+  }
+}
+
+async function readAgentsMdContentOrDefault(
+  projectDirectory: string
+): Promise<string> {
+  const existing = await tryReadAgentsMdFile(projectDirectory);
+  return existing
+    ? sliceAgentsMdContent(existing.content).content
+    : DEFAULT_LONG_AGENTS_MD;
+}
+
 function createCachedPagedTextFile(
   disk: SecureTextFile
 ): CachedPagedTextFile {
@@ -6572,7 +6703,7 @@ async function readNoFollowFile(
 }
 
 function validateStoreFilePath(path: string): void {
-  if (path === MANIFEST_PATH) return;
+  if (path === MANIFEST_PATH || path === LONG_AGENTS_MD_PATH) return;
   const parsed = LongProjectRelativePathSchema.parse(path);
   if (
     parsed !== path ||

@@ -316,6 +316,7 @@ const currentSelectionFile = computed<LongWorkspaceSelectionFile | undefined>(
       selection.plotPointId &&
       activePlotPointTab.value === "storyline"
     ) {
+      if (explicitlySelectedFile) return explicitlySelectedFile;
       const item = selection.storyPlots?.find(
         ({ id }) => id === activeStoryPlotId.value
       );

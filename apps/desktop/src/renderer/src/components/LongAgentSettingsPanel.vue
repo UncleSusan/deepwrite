@@ -7,10 +7,7 @@ import {
   type LongAgentId,
   type LongAgentSettings,
   type LongAgentSettingsInput,
-  type LongAgentSettingsInputAgent,
-  type LongWorkspaceRoot,
-  type MaterialKind,
-  type SkillKind
+  type LongWorkspaceRoot
 } from "@deepwrite/contracts";
 import { computed, ref, watch } from "vue";
 import { uiMessage } from "../ui-feedback";
@@ -18,7 +15,6 @@ import { uiMessage } from "../ui-feedback";
 interface ReadOption<T extends string> {
   id: T;
   label: string;
-  description: string;
 }
 
 const props = defineProps<{
@@ -37,8 +33,7 @@ const emit = defineEmits<{
 const AGENT_META = [
   { id: "setting", eyebrow: "设定", label: "设定" },
   { id: "plot_design", eyebrow: "结构", label: "剧情设计" },
-  { id: "draft", eyebrow: "正文", label: "正文统筹" },
-  { id: "expert_section_writer", eyebrow: "正文", label: "单章写手" },
+  { id: "draft", eyebrow: "正文", label: "写手" },
   { id: "continuity_ledger", eyebrow: "连续性", label: "连续性账本" }
 ] as const satisfies readonly {
   id: LongAgentId;
@@ -73,21 +68,6 @@ const WORKSPACE_OPTIONS = [
     description: "已提交事实、摘要、决策与审计记录"
   }
 ] as const satisfies readonly ReadOption<LongWorkspaceRoot>[];
-
-const MATERIAL_OPTIONS = [
-  { id: "character", label: "人物素材", description: "人物设定类素材" },
-  { id: "gimmick", label: "卖点素材", description: "题材卖点与创意钩子" },
-  { id: "plot", label: "剧情素材", description: "剧情结构与桥段参考" },
-  { id: "draft", label: "正文素材", description: "正文片段与行文参考" },
-  { id: "other", label: "其他素材", description: "未归入以上分类的素材" }
-] as const satisfies readonly ReadOption<MaterialKind>[];
-
-const SKILL_OPTIONS = [
-  { id: "general", label: "通用技能", description: "跨阶段可复用的通用能力" },
-  { id: "plot", label: "剧情技能", description: "设定、剧情与结构设计能力" },
-  { id: "style", label: "文风技能", description: "正文行文与风格执行能力" },
-  { id: "other", label: "其他技能", description: "未归入以上分类的技能" }
-] as const satisfies readonly ReadOption<SkillKind>[];
 
 const activeAgentId = ref<LongAgentId>(LONG_AGENT_IDS[0]);
 const draftAgents = ref<LongAgentSettingsInput["agents"]>([]);
@@ -130,59 +110,12 @@ watch(
             agent.welcomeShortcuts[0],
             agent.welcomeShortcuts[1],
             agent.welcomeShortcuts[2]
-          ],
-          readAccess: {
-            workspaceRoots: [...agent.readAccess.workspaceRoots],
-            materialKinds: [...agent.readAccess.materialKinds],
-            skillKinds: [...agent.readAccess.skillKinds]
-          }
+          ]
         }))
       : [];
   },
   { immediate: true, deep: true }
 );
-
-function isRequiredWorkspaceRoot(root: LongWorkspaceRoot): boolean {
-  return immutableProfile.value.writeAccess.workspaceRoots.includes(root);
-}
-
-function isReadAccessChecked(
-  scope: keyof LongAgentSettingsInputAgent["readAccess"],
-  id: string
-): boolean {
-  const values = activeAgent.value?.readAccess[scope] as
-    | readonly string[]
-    | undefined;
-  return values?.includes(id) ?? false;
-}
-
-function patchReadAccess(
-  scope: keyof LongAgentSettingsInputAgent["readAccess"],
-  id: string,
-  checked: boolean
-): void {
-  const agent = activeAgent.value;
-  if (!agent || formDisabled.value) return;
-  if (
-    scope === "workspaceRoots" &&
-    !checked &&
-    isRequiredWorkspaceRoot(id as LongWorkspaceRoot)
-  ) {
-    return;
-  }
-  const values = new Set(agent.readAccess[scope] as readonly string[]);
-  if (checked) values.add(id);
-  else values.delete(id);
-  Object.assign(agent.readAccess, { [scope]: [...values] });
-}
-
-function handleCheckboxChange(
-  scope: keyof LongAgentSettingsInputAgent["readAccess"],
-  id: string,
-  event: Event
-): void {
-  patchReadAccess(scope, id, (event.target as HTMLInputElement).checked);
-}
 
 function resetActiveAgent(): void {
   if (formDisabled.value) return;
@@ -200,12 +133,7 @@ function resetActiveAgent(): void {
       builtin.welcomeShortcuts[0],
       builtin.welcomeShortcuts[1],
       builtin.welcomeShortcuts[2]
-    ],
-    readAccess: {
-      workspaceRoots: [...builtin.readAccess.workspaceRoots],
-      materialKinds: [...builtin.readAccess.materialKinds],
-      skillKinds: [...builtin.readAccess.skillKinds]
-    }
+    ]
   };
   uiMessage.info("当前长篇智能体已恢复内置值；点击保存后生效。");
 }
@@ -220,23 +148,18 @@ function saveSettings(): void {
       uiMessage.warning("每个长篇智能体的三个欢迎快捷按钮都不能为空");
       return null;
     }
-    const requiredRoots = getDefaultLongAgentProfile(
-      id
-    ).writeAccess.workspaceRoots;
-    const workspaceRoots = new Set(agent.readAccess.workspaceRoots);
-    requiredRoots.forEach((root) => workspaceRoots.add(root));
     return {
       id,
       systemPrompt: agent.systemPrompt,
-      welcomeShortcuts: [shortcuts[0]!, shortcuts[1]!, shortcuts[2]!],
-      readAccess: {
-        workspaceRoots: [...workspaceRoots],
-        materialKinds: [...agent.readAccess.materialKinds],
-        skillKinds: [...agent.readAccess.skillKinds]
-      }
+      welcomeShortcuts: [shortcuts[0]!, shortcuts[1]!, shortcuts[2]!] as [
+        string,
+        string,
+        string
+      ]
     };
   }).filter(
-    (agent): agent is LongAgentSettingsInputAgent => agent !== null
+    (agent): agent is LongAgentSettingsInput["agents"][number] =>
+      agent !== null
   );
   if (agents.length !== LONG_AGENT_IDS.length) return;
   const parsed = LongAgentSettingsInputSchema.safeParse({
@@ -337,102 +260,26 @@ function saveSettings(): void {
         </div>
       </section>
 
-      <section class="settings-card">
-        <div class="section-heading">
-          <div>
-            <h4>读取范围</h4>
-            <p>读权限可以收窄或扩展；与固定写权限重合的根节点不可取消。</p>
-          </div>
-        </div>
-
-        <fieldset>
-          <legend>长篇工作区</legend>
-          <div class="option-grid">
-            <label
-              v-for="option in WORKSPACE_OPTIONS"
-              :key="option.id"
-              class="read-option"
-              :class="{ 'is-locked': isRequiredWorkspaceRoot(option.id) }"
-            >
-              <input
-                type="checkbox"
-                :checked="
-                  isRequiredWorkspaceRoot(option.id) ||
-                  isReadAccessChecked('workspaceRoots', option.id)
-                "
-                :disabled="formDisabled || isRequiredWorkspaceRoot(option.id)"
-                @change="
-                  handleCheckboxChange('workspaceRoots', option.id, $event)
-                "
-              />
-              <span>
-                <strong>
-                  {{ option.label }}
-                  <em v-if="isRequiredWorkspaceRoot(option.id)">必需</em>
-                </strong>
-                <small>{{ option.description }}</small>
-              </span>
-            </label>
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend>素材库</legend>
-          <div class="option-grid">
-            <label
-              v-for="option in MATERIAL_OPTIONS"
-              :key="option.id"
-              class="read-option"
-            >
-              <input
-                type="checkbox"
-                :checked="isReadAccessChecked('materialKinds', option.id)"
-                :disabled="formDisabled"
-                @change="
-                  handleCheckboxChange('materialKinds', option.id, $event)
-                "
-              />
-              <span>
-                <strong>{{ option.label }}</strong>
-                <small>{{ option.description }}</small>
-              </span>
-            </label>
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend>技能库</legend>
-          <div class="option-grid">
-            <label
-              v-for="option in SKILL_OPTIONS"
-              :key="option.id"
-              class="read-option"
-            >
-              <input
-                type="checkbox"
-                :checked="isReadAccessChecked('skillKinds', option.id)"
-                :disabled="formDisabled"
-                @change="
-                  handleCheckboxChange('skillKinds', option.id, $event)
-                "
-              />
-              <span>
-                <strong>{{ option.label }}</strong>
-                <small>{{ option.description }}</small>
-              </span>
-            </label>
-          </div>
-        </fieldset>
-      </section>
-
       <section class="settings-card immutable-card">
         <div class="section-heading">
           <div>
-            <h4>写入与工具边界</h4>
-            <p>以下边界由应用内置并在 Main 与工具层强制校验，不能通过设置扩大。</p>
+            <h4>读取、写入与工具边界</h4>
+            <p>以下边界由应用内置并在 Main 与工具层强制校验，不能通过设置修改。</p>
           </div>
           <span>固定</span>
         </div>
+        <p class="immutable-label">
+          读取范围：四个阶段均可读取设定、剧情、正文与连续性账本，互相可读；素材与技能读取范围由内置决定
+        </p>
+        <div class="immutable-list">
+          <span
+            v-for="option in WORKSPACE_OPTIONS"
+            :key="`read:${option.id}`"
+          >
+            {{ option.label }}
+          </span>
+        </div>
+        <p class="immutable-label">写入与可用工具</p>
         <div class="immutable-list">
           <span
             v-for="root in immutableProfile.writeAccess.workspaceRoots"
@@ -610,60 +457,11 @@ input[type="text"]:focus {
   color: var(--text-secondary);
 }
 
-fieldset {
-  margin: 14px 0 0;
-  padding: 0;
-  border: 0;
-}
-
-legend {
-  margin-bottom: 8px;
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.option-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.read-option {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 9px;
-  align-items: start;
-  padding: 10px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 9px;
-  background: var(--surface-main);
-}
-
-.read-option.is-locked {
-  background: var(--surface-muted);
-}
-
-.read-option span,
-.read-option strong,
-.read-option small {
-  display: block;
-}
-
-.read-option strong {
-  color: var(--text-primary);
-}
-
-.read-option small {
-  margin-top: 3px;
+.immutable-label {
+  margin: 10px 0 8px;
   color: var(--text-tertiary);
-  line-height: 1.4;
-}
-
-.read-option em {
-  margin-left: 5px;
-  color: var(--accent);
-  font-size: 11px;
-  font-style: normal;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .immutable-list {
@@ -723,10 +521,6 @@ input:disabled {
   .agent-nav {
     position: static;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .option-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

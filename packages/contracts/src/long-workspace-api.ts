@@ -32,7 +32,10 @@ import {
   LongWorkspaceIndexSnapshotSchema,
   LongWorkspaceNavigationSnapshotSchema,
   LongWorkspaceRootSchema,
-  LONG_WORKSPACE_ROOT_TO_AGENT_ID
+  LONG_AGENTS_MD_MAX_CHARACTERS,
+  LONG_WORKSPACE_ROOT_TO_AGENT_ID,
+  longAgentAcceptsWorldbuildingDirectory,
+  longAgentsMdCharacterCount
 } from "./long-workspace";
 
 export const LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS = 20_000;
@@ -457,7 +460,11 @@ export const LongWorkspaceRuntimeContextSchema = z
     worldbuildingDirectory: LongWorldbuildingDirectorySnapshotSchema.optional(),
     worldbuildingFocus: LongWorldbuildingFocusSnapshotSchema.optional(),
     characterFocus: LongCharacterFocusSnapshotSchema.optional(),
-    plotFocus: LongPlotFocusSnapshotSchema.optional()
+    plotFocus: LongPlotFocusSnapshotSchema.optional(),
+    agentsMd: z
+      .string()
+      .max(LONG_AGENTS_MD_MAX_CHARACTERS * 2)
+      .optional()
   })
   .strict()
   .superRefine((value, context) => {
@@ -478,27 +485,12 @@ export const LongWorkspaceRuntimeContextSchema = z
     }
     const expectedRootAgent =
       LONG_WORKSPACE_ROOT_TO_AGENT_ID[value.activeRoot];
-    const agentMatchesRoot =
-      value.activeAgentId === expectedRootAgent ||
-      (value.activeRoot === "draft" &&
-        value.activeAgentId === "expert_section_writer");
-    if (!agentMatchesRoot) {
+    if (value.activeAgentId !== expectedRootAgent) {
       context.addIssue({
         code: "custom",
         path: ["activeAgentId"],
         message:
           "Long runtime agent must match the active workspace root."
-      });
-    }
-    if (
-      value.activeAgentId === "expert_section_writer" &&
-      value.activeChapterCardId === undefined
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["activeChapterCardId"],
-        message:
-          "Chapter-writer runs require an active chapter."
       });
     }
     if (
@@ -526,13 +518,13 @@ export const LongWorkspaceRuntimeContextSchema = z
     }
     if (
       value.worldbuildingDirectory !== undefined &&
-      value.activeAgentId !== "setting"
+      !longAgentAcceptsWorldbuildingDirectory(value.activeAgentId)
     ) {
       context.addIssue({
         code: "custom",
         path: ["worldbuildingDirectory"],
         message:
-          "Long worldbuilding directory may only be provided to the setting agent."
+          "Long worldbuilding directory may only be provided to the setting, plot-design, or draft agent."
       });
     }
     if (
@@ -625,6 +617,17 @@ export const LongWorkspaceRuntimeContextSchema = z
             "Long plot focus arc must belong to the focused volume."
         });
       }
+    }
+    if (
+      value.agentsMd !== undefined &&
+      longAgentsMdCharacterCount(value.agentsMd) > LONG_AGENTS_MD_MAX_CHARACTERS
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["agentsMd"],
+        message:
+          "Long runtime AGENTS.md context exceeds the maximum character count."
+      });
     }
     if (value.plotFocus?.chapterCardId !== undefined) {
       const focusedChapterCard = value.navigation.chapterCards.find(
@@ -1325,6 +1328,65 @@ export type LongWriteDocumentResult = z.infer<
   typeof LongWriteDocumentResultSchema
 >;
 
+function refineLongAgentsMdContent(
+  content: string,
+  context: z.RefinementCtx,
+  path: Array<string | number> = ["content"]
+): void {
+  if (longAgentsMdCharacterCount(content) > LONG_AGENTS_MD_MAX_CHARACTERS) {
+    context.addIssue({
+      code: "custom",
+      path,
+      message: "Long AGENTS.md exceeds the maximum character count."
+    });
+  }
+}
+
+export const LongReadAgentsMdInputSchema = z
+  .object({
+    bookId: LongBookIdSchema
+  })
+  .strict();
+export type LongReadAgentsMdInput = z.infer<
+  typeof LongReadAgentsMdInputSchema
+>;
+
+export const LongReadAgentsMdResultSchema = z
+  .object({
+    bookId: LongBookIdSchema,
+    content: z.string().max(LONG_AGENTS_MD_MAX_CHARACTERS * 2),
+    truncated: z.boolean()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    refineLongAgentsMdContent(value.content, context);
+  });
+export type LongReadAgentsMdResult = z.infer<
+  typeof LongReadAgentsMdResultSchema
+>;
+
+export const LongWriteAgentsMdInputSchema = z
+  .object({
+    bookId: LongBookIdSchema,
+    content: z.string().max(LONG_AGENTS_MD_MAX_CHARACTERS * 2)
+  })
+  .strict()
+  .superRefine((value, context) => {
+    refineLongAgentsMdContent(value.content, context);
+  });
+export type LongWriteAgentsMdInput = z.infer<
+  typeof LongWriteAgentsMdInputSchema
+>;
+
+export const LongWriteAgentsMdResultSchema = z
+  .object({
+    bookId: LongBookIdSchema
+  })
+  .strict();
+export type LongWriteAgentsMdResult = z.infer<
+  typeof LongWriteAgentsMdResultSchema
+>;
+
 export const LongWorkspaceIndexResultSchema = z
   .object({
     bookId: LongBookIdSchema,
@@ -1501,6 +1563,16 @@ export const LongWriteDocumentCommandEnvelopeSchema =
     type: z.literal("long.writeDocument"),
     payload: LongWriteDocumentInputSchema
   });
+export const LongReadAgentsMdCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.readAgentsMd"),
+    payload: LongReadAgentsMdInputSchema
+  });
+export const LongWriteAgentsMdCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long.writeAgentsMd"),
+    payload: LongWriteAgentsMdInputSchema
+  });
 export const LongPreviewOperationsCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.previewOperations"),
@@ -1555,6 +1627,8 @@ export const LongWorkspaceCommandEnvelopeSchema = z.discriminatedUnion(
     LongReadDocumentCommandEnvelopeSchema,
     LongSearchCommandEnvelopeSchema,
     LongWriteDocumentCommandEnvelopeSchema,
+    LongReadAgentsMdCommandEnvelopeSchema,
+    LongWriteAgentsMdCommandEnvelopeSchema,
     LongPreviewOperationsCommandEnvelopeSchema,
     LongApplyOperationsCommandEnvelopeSchema,
     LongWriteChapterCommandEnvelopeSchema,

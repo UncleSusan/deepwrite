@@ -507,7 +507,7 @@ describe("Agent Utility prompt forwarding", () => {
         type: "long.chapter_write_proposal",
         payload: {
           ...payloadBase,
-          agentId: "expert_section_writer",
+          agentId: "draft",
           batch: {
             baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",

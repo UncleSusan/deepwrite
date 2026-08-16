@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  DEEPWRITE_FREE_MODEL_BASE_URL,
   DEEPWRITE_FREE_MODEL_REFRESH_INTERVAL_MS,
   DeepWriteFreeModelCatalogStore,
   parseDeepWriteFreeModelManifest
@@ -11,7 +10,10 @@ import {
 
 const temporaryRoots: string[] = [];
 
-function manifest(modelId = "openrouter/free"): Record<string, unknown> {
+function manifest(
+  modelId = "vendor/writer-v1",
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
   return {
     schemaVersion: 1,
     revision: "2026-07-20.1",
@@ -21,16 +23,17 @@ function manifest(modelId = "openrouter/free"): Record<string, unknown> {
       {
         id: "deepwrite-free-writing",
         label: "DeepWrite 免费模型",
-        provider: "openrouter",
+        provider: "custom",
         modelId,
         api: "openai-completions",
-        baseUrl: DEEPWRITE_FREE_MODEL_BASE_URL,
+        baseUrl: "https://example.test/v1",
         reasoning: false,
         defaultThinkingLevel: "off",
         thinkingLevelOptions: ["minimal", "low", "medium", "high", "xhigh", "max"],
         temperatureOptions: [0.1, 0.7, 1],
         enabled: true,
-        sort: 10
+        sort: 10,
+        ...overrides
       }
     ],
     defaultModelId: "deepwrite-free-writing"
@@ -48,7 +51,7 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-"));
     temporaryRoots.push(root);
     let now = 1_000;
-    let modelId = "vendor/writer-v1:free";
+    let modelId = "vendor/writer-v1";
     let requests = 0;
     const store = new DeepWriteFreeModelCatalogStore(root, {
       appVersion: "1.0.0",
@@ -60,23 +63,23 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     });
 
     await store.initialize();
-    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v1:free");
+    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v1");
     expect(requests).toBe(1);
 
-    modelId = "vendor/writer-v2:free";
+    modelId = "vendor/writer-v2";
     now += DEEPWRITE_FREE_MODEL_REFRESH_INTERVAL_MS - 1;
-    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v1:free");
+    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v1");
     expect(requests).toBe(1);
 
     now += 1;
-    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v2:free");
+    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v2");
     expect(requests).toBe(2);
   });
 
   it("supports a user-forced refresh before the daily interval expires", async () => {
     const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-forced-"));
     temporaryRoots.push(root);
-    let modelId = "vendor/writer-v1:free";
+    let modelId = "vendor/writer-v1";
     let requests = 0;
     const store = new DeepWriteFreeModelCatalogStore(root, {
       appVersion: "1.0.0",
@@ -87,10 +90,10 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     });
 
     await store.initialize();
-    modelId = "vendor/writer-v2:free";
+    modelId = "vendor/writer-v2";
     const refreshed = await store.refreshCatalog();
 
-    expect(refreshed.models[0]?.modelId).toBe("vendor/writer-v2:free");
+    expect(refreshed.models[0]?.modelId).toBe("vendor/writer-v2");
     expect(requests).toBe(2);
   });
 
@@ -104,7 +107,7 @@ describe("DeepWriteFreeModelCatalogStore", () => {
         if (!online) {
           throw new Error("offline");
         }
-        return new Response(JSON.stringify(manifest("vendor/cached:free")));
+        return new Response(JSON.stringify(manifest("vendor/cached")));
       }
     });
 
@@ -112,7 +115,7 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     online = false;
 
     await expect(store.refreshCatalog()).rejects.toThrow(/offline/u);
-    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/cached:free");
+    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/cached");
   });
 
   it("keeps the last validated cache when a later startup cannot reach the public-data service", async () => {
@@ -120,7 +123,7 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     temporaryRoots.push(root);
     const first = new DeepWriteFreeModelCatalogStore(root, {
       appVersion: "1.0.0",
-      fetcher: async () => new Response(JSON.stringify(manifest("vendor/cached:free")))
+      fetcher: async () => new Response(JSON.stringify(manifest("vendor/cached")))
     });
     await first.initialize();
 
@@ -132,26 +135,30 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     });
     await offline.initialize();
 
-    expect((await offline.getCatalog()).models[0]?.modelId).toBe("vendor/cached:free");
+    expect((await offline.getCatalog()).models[0]?.modelId).toBe("vendor/cached");
   });
 
-  it("accepts a remote key without exposing it in the catalog models", () => {
-    const redirected = manifest();
-    (redirected.models as Array<Record<string, unknown>>)[0]!.baseUrl =
-      "https://example.invalid/v1";
-    expect(() => parseDeepWriteFreeModelManifest(redirected, "1.0.0")).toThrow(
-      /固定的 OpenRouter API 地址/u
+  it("uses the remote model configuration without extra provider or model-id limits", () => {
+    const catalog = parseDeepWriteFreeModelManifest(
+      manifest("vendor/paid-model", {
+        provider: "deepseek",
+        api: "openai-responses",
+        baseUrl: "https://example.invalid/v1",
+        apiKey: "remote-secret"
+      }),
+      "1.0.0"
     );
 
-    const withKey = manifest();
-    (withKey.models as Array<Record<string, unknown>>)[0]!.apiKey = "remote-secret";
-    const catalog = parseDeepWriteFreeModelManifest(withKey, "1.0.0");
+    expect(catalog.models[0]).toMatchObject({
+      id: "deepwrite-free-writing",
+      provider: "deepseek",
+      modelId: "vendor/paid-model",
+      api: "openai-responses",
+      baseUrl: "https://example.invalid/v1",
+      managedBy: "deepwrite-free"
+    });
     expect(catalog.apiKeys).toEqual({ "deepwrite-free-writing": "remote-secret" });
     expect(catalog.models[0]).not.toHaveProperty("apiKey");
-
-    expect(() =>
-      parseDeepWriteFreeModelManifest(manifest("vendor/paid-model"), "1.0.0")
-    ).toThrow(/免费模型 ID/u);
   });
 
   it("does not write remote keys into the manifest cache", async () => {

@@ -10,7 +10,7 @@ type LongWritingProposalEvent = Extract<
 export interface LongWritingProposalExpectation {
   bookId: string;
   chapterCardId: string;
-  agentId: "expert_section_writer" | "continuity_ledger";
+  agentId: "draft" | "continuity_ledger";
 }
 
 /**
@@ -29,7 +29,7 @@ export function matchesLongWritingProposalExpectation(
   }
   return (
     (event.type === "long.chapter_write_proposal" &&
-      expectation.agentId === "expert_section_writer" &&
+      expectation.agentId === "draft" &&
       event.payload.file.chapterCardId === expectation.chapterCardId) ||
     (event.type === "long.ledger_commit_proposal" &&
       expectation.agentId === "continuity_ledger" &&

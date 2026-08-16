@@ -316,7 +316,7 @@ function chapterEvent() {
       "long.chapter_write_proposal",
       {
         ...proposalBase,
-        agentId: "expert_section_writer" as const,
+        agentId: "draft" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -966,6 +966,119 @@ describe("long workspace proposal approval", () => {
     );
     expect(test.notifications.error).not.toHaveBeenCalled();
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+  });
+
+  it("finalizes two text-file continuity commits from the same run in order", async () => {
+    const test = harness();
+    const latest = await test.getWorkspaceIndex();
+    test.getWorkspaceIndex.mockResolvedValue({
+      ...latest,
+      workspaceIndex: {
+        ...latest.workspaceIndex,
+        plot: {
+          chapterCards: [
+            { id: "chapter_one", title: "第一章" },
+            { id: "chapter_two", title: "第二章" }
+          ]
+        },
+        chapters: [
+          ...latest.workspaceIndex.chapters,
+          {
+            chapterCardId: "chapter_two",
+            body: {
+              id: longChapterBodyFileId("chapter_two"),
+              path: longChapterFilePath("chapter_two", "body.md"),
+              revision: fileRevision,
+              updatedAt: "2026-07-26T11:00:00.000Z"
+            },
+            card: {
+              id: longChapterCardFileId("chapter_two"),
+              path: longChapterFilePath("chapter_two", "card.md"),
+              revision: fileRevision,
+              updatedAt: "2026-07-26T11:00:00.000Z"
+            },
+            characterState: {
+              id: longChapterCharacterStateFileId("chapter_two"),
+              path: longChapterFilePath("chapter_two", "character-state.md"),
+              revision: fileRevision,
+              updatedAt: "2026-07-26T11:00:00.000Z"
+            },
+            handoff: {
+              id: longChapterHandoffFileId("chapter_two"),
+              path: longChapterFilePath("chapter_two", "handoff.md"),
+              revision: fileRevision,
+              updatedAt: "2026-07-26T11:00:00.000Z"
+            },
+            foreshadowingChanges: {
+              id: longChapterForeshadowingChangesFileId("chapter_two"),
+              path: longChapterContinuityFilePath(
+                "chapter_two",
+                "foreshadowing-changes.md"
+              ),
+              revision: fileRevision,
+              updatedAt: "2026-07-26T11:00:00.000Z"
+            },
+            worldReveals: null,
+            characterContinuity: [],
+            commitId: null
+          }
+        ]
+      }
+    });
+
+    await test.controller.handleEvent(textFilesLedgerEvent());
+    await test.controller.handleEvent(
+      systemEvent(
+        createEnvelope(
+          "long.ledger_commit_proposal",
+          {
+            ...proposalBase,
+            agentId: "continuity_ledger" as const,
+            toolCallId: "tool_text_files_commit_two",
+            input: {
+              mode: "text_files" as const,
+              bookId: proposalBase.bookId,
+              chapterCardId: "chapter_two",
+              chapterFileRevisions: { body: fileRevision },
+              continuityFileRevisions: [
+                {
+                  fileId: longChapterCharacterStateFileId("chapter_two"),
+                  revision: fileRevision
+                },
+                {
+                  fileId: longChapterHandoffFileId("chapter_two"),
+                  revision: fileRevision
+                }
+              ],
+              foreshadowingBeatDecisions: {},
+              commitMessage: "留存第二章连续性文本",
+              baseWorkspaceRevision: 7,
+              baseProjectRevision: 11
+            }
+          },
+          { id: "event_text_files_ledger_two", context: envelopeContext }
+        )
+      )
+    );
+
+    expect(test.commitChapter).toHaveBeenCalledTimes(2);
+    expect(test.commitChapter).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        chapterCardId: "chapter_one",
+        baseWorkspaceRevision: 9,
+        baseProjectRevision: 13
+      })
+    );
+    expect(test.commitChapter).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        chapterCardId: "chapter_two",
+        baseWorkspaceRevision: 9,
+        baseProjectRevision: 13
+      })
+    );
+    expect(test.notifications.error).not.toHaveBeenCalled();
   });
 
   it("waits for an empty-file creation before previewing its separate write", async () => {

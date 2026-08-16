@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CommandEnvelopeSchema,
   CreateLongBookInputSchema,
+  LONG_AGENTS_MD_MAX_CHARACTERS,
   LongReadDocumentInputSchema,
   LongReadDocumentResultSchema,
   LongRenameBookInputSchema,
@@ -9,6 +10,9 @@ import {
   LongUpdateBindingsInputSchema,
   LongWorkspaceRuntimeContextSchema,
   LongWorkspaceCommandEnvelopeSchema,
+  LongReadAgentsMdInputSchema,
+  LongReadAgentsMdResultSchema,
+  LongWriteAgentsMdInputSchema,
   createEnvelope
 } from "./index";
 
@@ -71,14 +75,24 @@ describe("long workspace API contracts", () => {
     expect(
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
-          activeAgentId: "expert_section_writer",
+          activeAgentId: "draft",
           activeChapterCardId: "chapter_api"
         })
       )
     ).toMatchObject({
       activeRoot: "draft",
-      activeAgentId: "expert_section_writer",
+      activeAgentId: "draft",
       activeChapterCardId: "chapter_api"
+    });
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeAgentId: "draft"
+        })
+      )
+    ).toMatchObject({
+      activeRoot: "draft",
+      activeAgentId: "draft"
     });
     expect(() =>
       LongWorkspaceRuntimeContextSchema.parse(
@@ -89,13 +103,6 @@ describe("long workspace API contracts", () => {
         })
       )
     ).toThrow(/agent.*root/iu);
-    expect(() =>
-      LongWorkspaceRuntimeContextSchema.parse(
-        runtimeContext({
-          activeAgentId: "expert_section_writer"
-        })
-      )
-    ).toThrow(/active chapter/iu);
     const ledgerRootContext = LongWorkspaceRuntimeContextSchema.parse(
       runtimeContext({
         activeRoot: "continuity_ledger",
@@ -123,6 +130,46 @@ describe("long workspace API contracts", () => {
         })
       )
     ).toThrow(/navigation revision/iu);
+  });
+
+  it("accepts AGENTS.md context for every long agent and rejects oversized snapshots", () => {
+    const content = "# 长篇上下文\n\n## 世界观阶段\n说明";
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          agentsMd: content
+        })
+      ).agentsMd
+    ).toBe(content);
+    expect(
+      LongReadAgentsMdResultSchema.parse({
+        bookId: "longbook_api",
+        content,
+        truncated: false
+      })
+    ).toMatchObject({ truncated: false });
+    expect(
+      LongWriteAgentsMdInputSchema.parse({
+        bookId: "longbook_api",
+        content
+      })
+    ).toMatchObject({ bookId: "longbook_api" });
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          agentsMd: "汉".repeat(LONG_AGENTS_MD_MAX_CHARACTERS + 1)
+        })
+      )
+    ).toThrow(/AGENTS\.md/iu);
+    expect(() =>
+      LongWriteAgentsMdInputSchema.parse({
+        bookId: "longbook_api",
+        content: "汉".repeat(LONG_AGENTS_MD_MAX_CHARACTERS + 1)
+      })
+    ).toThrow(/AGENTS\.md/iu);
+    expect(
+      LongReadAgentsMdInputSchema.parse({ bookId: "longbook_api" })
+    ).toEqual({ bookId: "longbook_api" });
   });
 
   it("bounds worldbuilding focus and keeps it exclusive to the worldbuilding agent", () => {
@@ -187,7 +234,7 @@ describe("long workspace API contracts", () => {
     ).toThrow(/maximum character count/iu);
   });
 
-  it("accepts a lightweight worldbuilding directory only for the setting agent", () => {
+  it("accepts a lightweight worldbuilding directory for setting, plot-design, and draft agents", () => {
     const worldbuildingDirectory = {
       categories: [
         {
@@ -232,9 +279,27 @@ describe("long workspace API contracts", () => {
         })
       )
     ).toMatchObject({ worldbuildingDirectory });
-    expect(() =>
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          worldbuildingDirectory
+        })
+      )
+    ).toMatchObject({ worldbuildingDirectory });
+    expect(
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({ worldbuildingDirectory })
+      )
+    ).toMatchObject({ worldbuildingDirectory });
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "continuity_ledger",
+          activeAgentId: "continuity_ledger",
+          worldbuildingDirectory
+        })
       )
     ).toThrow(/worldbuilding directory/iu);
   });
@@ -538,6 +603,16 @@ describe("long workspace API contracts", () => {
       },
       { id: "cmd_long_rename" }
     );
+    const readAgentsMd = createEnvelope(
+      "long.readAgentsMd",
+      { bookId: "longbook_api" },
+      { id: "cmd_long_read_agents_md" }
+    );
+    const writeAgentsMd = createEnvelope(
+      "long.writeAgentsMd",
+      { bookId: "longbook_api", content: "# 长篇上下文" },
+      { id: "cmd_long_write_agents_md" }
+    );
 
     expect(LongWorkspaceCommandEnvelopeSchema.parse(create).type).toBe(
       "long.createBook"
@@ -563,5 +638,11 @@ describe("long workspace API contracts", () => {
       "long.updateBindings"
     );
     expect(CommandEnvelopeSchema.parse(rename).type).toBe("long.rename");
+    expect(LongWorkspaceCommandEnvelopeSchema.parse(readAgentsMd).type).toBe(
+      "long.readAgentsMd"
+    );
+    expect(CommandEnvelopeSchema.parse(writeAgentsMd).type).toBe(
+      "long.writeAgentsMd"
+    );
   });
 });

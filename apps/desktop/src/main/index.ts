@@ -69,12 +69,14 @@ import {
   LongOpenBookResultSchema,
   LongPreviewOperationsResultSchema,
   LongReadDocumentResultSchema,
+  LongReadAgentsMdResultSchema,
   LongRemoveBookResultSchema,
   LongRollbackLastCommitResultSchema,
   LongSearchResultSchema,
   LongWorkspaceIndexResultSchema,
   LongWriteChapterResultSchema,
   LongWriteDocumentResultSchema,
+  LongWriteAgentsMdResultSchema,
   ModelConnectionTestResultSchema,
   OfficialModelBalanceSchema,
   ModelSettingsSchema,
@@ -1860,8 +1862,10 @@ function registerIpc(): void {
         command.type === "long.updateBindings" ||
         command.type === "long.getWorkspaceIndex" ||
         command.type === "long.readDocument" ||
+        command.type === "long.readAgentsMd" ||
         command.type === "long.search" ||
         command.type === "long.writeDocument" ||
+        command.type === "long.writeAgentsMd" ||
         command.type === "long.previewOperations" ||
         command.type === "long.applyOperations" ||
         command.type === "long.writeChapter" ||
@@ -1896,11 +1900,17 @@ function registerIpc(): void {
             case "long.readDocument":
               payload = LongReadDocumentResultSchema.parse(result.payload);
               break;
+            case "long.readAgentsMd":
+              payload = LongReadAgentsMdResultSchema.parse(result.payload);
+              break;
             case "long.search":
               payload = LongSearchResultSchema.parse(result.payload);
               break;
             case "long.writeDocument":
               payload = LongWriteDocumentResultSchema.parse(result.payload);
+              break;
+            case "long.writeAgentsMd":
+              payload = LongWriteAgentsMdResultSchema.parse(result.payload);
               break;
             case "long.previewOperations":
               payload = LongPreviewOperationsResultSchema.parse(
@@ -2008,7 +2018,7 @@ function registerIpc(): void {
         command.type === "rendererState.remove"
       ) {
         try {
-          const result = await supervisor.requestCommand("core", command, 15_000);
+          const result = await supervisor.requestCommand("core", command, 60_000);
           if (result.status === "rejected") return result;
           return {
             status: "accepted",

@@ -9,8 +9,8 @@ import {
 import { dirname, join } from "node:path";
 import { RendererStateKeySchema } from "@deepwrite/contracts";
 
-export const DEFAULT_RENDERER_STATE_MAX_ITEM_BYTES = 4 * 1024 * 1024;
-export const DEFAULT_RENDERER_STATE_MAX_TOTAL_BYTES = 32 * 1024 * 1024;
+export const DEFAULT_RENDERER_STATE_MAX_ITEM_BYTES = 8 * 1024 * 1024;
+export const DEFAULT_RENDERER_STATE_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 
 interface RendererStateDiskDocument {
   readonly version: 1;
@@ -96,6 +96,9 @@ function assertJsonCompatible(
     }
   } else {
     for (const [key, child] of Object.entries(value)) {
+      // JSON.stringify omits undefined properties. Treat them as absent so
+      // conversation patches like `proposedText: undefined` can still persist.
+      if (child === undefined) continue;
       assertJsonCompatible(child, `${path}.${key}`, ancestors);
     }
   }

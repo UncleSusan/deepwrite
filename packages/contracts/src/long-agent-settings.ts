@@ -5,7 +5,6 @@ import {
   LONG_AGENT_IDS,
   LongAgentIdSchema,
   LongAgentProfileSchema,
-  LongAgentReadAccessSchema,
   getDefaultLongAgentProfile,
   type LongAgentId,
   type LongAgentProfile
@@ -53,6 +52,16 @@ function validateImmutableLongAgentFields(
       });
     }
     if (
+      JSON.stringify(agent.readAccess) !==
+      JSON.stringify(builtin.readAccess)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["agents", index, "readAccess"],
+        message: `Long agent read access is immutable: ${agent.id}`
+      });
+    }
+    if (
       JSON.stringify(agent.writeAccess) !==
       JSON.stringify(builtin.writeAccess)
     ) {
@@ -83,24 +92,9 @@ export const LongAgentSettingsInputAgentSchema = z
   .object({
     id: LongAgentIdSchema,
     systemPrompt: LongAgentProfileSchema.shape.systemPrompt,
-    welcomeShortcuts: LongAgentProfileSchema.shape.welcomeShortcuts,
-    readAccess: LongAgentReadAccessSchema
+    welcomeShortcuts: LongAgentProfileSchema.shape.welcomeShortcuts
   })
-  .strict()
-  .superRefine((agent, context) => {
-    const builtin = getDefaultLongAgentProfile(agent.id);
-    builtin.writeAccess.workspaceRoots.forEach((root, index) => {
-      if (!agent.readAccess.workspaceRoots.includes(root)) {
-        context.addIssue({
-          code: "custom",
-          path: ["readAccess", "workspaceRoots"],
-          message:
-            `Long agent ${agent.id} must retain read access to immutable write root ` +
-            `${root} (write root index ${index}).`
-        });
-      }
-    });
-  });
+  .strict();
 export type LongAgentSettingsInputAgent = z.infer<
   typeof LongAgentSettingsInputAgentSchema
 >;

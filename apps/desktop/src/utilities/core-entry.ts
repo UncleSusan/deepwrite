@@ -34,12 +34,14 @@ import {
   LongOpenBookResultSchema,
   LongPreviewOperationsResultSchema,
   LongReadDocumentResultSchema,
+  LongReadAgentsMdResultSchema,
   LongRemoveBookResultSchema,
   LongRollbackLastCommitResultSchema,
   LongSearchResultSchema,
   LongWorkspaceIndexResultSchema,
   LongWriteChapterResultSchema,
   LongWriteDocumentResultSchema,
+  LongWriteAgentsMdResultSchema,
   RendererStateLoadResultSchema,
   RendererStateMutationResultSchema,
   UnregisterCatalogProjectResultSchema,
@@ -305,6 +307,15 @@ async function handleCatalogCommand(
         )
       };
     }
+    if (command.type === "long.readAgentsMd") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongReadAgentsMdResultSchema.parse(
+          await longWorkspaceService.readAgentsMd(command.payload)
+        )
+      };
+    }
     if (command.type === "long.search") {
       return {
         status: "accepted",
@@ -320,6 +331,15 @@ async function handleCatalogCommand(
         requestId: command.id,
         payload: LongWriteDocumentResultSchema.parse(
           await longWorkspaceService.writeDocument(command.payload)
+        )
+      };
+    }
+    if (command.type === "long.writeAgentsMd") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongWriteAgentsMdResultSchema.parse(
+          await longWorkspaceService.writeAgentsMd(command.payload)
         )
       };
     }

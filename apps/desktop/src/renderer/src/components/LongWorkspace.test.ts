@@ -982,12 +982,12 @@ describe("long-form renderer vertical slice", () => {
     expect(proposalSource).not.toContain("workspace.editor_mutation");
   });
 
-  it("runs approved chapter, arc, and volume plans as fresh serial agent sessions", () => {
+  it("runs approved chapter, arc, and volume plans through the shared writer conversation", () => {
     expect(writingWorkflowSource).toContain(
       "writingOrchestrator.startDispatch(event)"
     );
-    expect(writingWorkflowSource).toContain("conversation.newConversation()");
-    expect(writingWorkflowSource).toContain('agentId: "expert_section_writer"');
+    expect(writingWorkflowSource).not.toContain("conversation.newConversation()");
+    expect(writingWorkflowSource).toContain('agentId: "draft"');
     expect(writingWorkflowSource).not.toContain("startFreshLongContinuityLedger");
     expect(writingWorkflowSource).toContain("resolveLiveChapterReadiness");
     expect(writingWorkflowSource).toContain("refreshSaveBarrier");
@@ -1042,7 +1042,8 @@ describe("long-form renderer vertical slice", () => {
     expect(cancelSource).toContain(
       "conversation.cancelPendingGeneration()"
     );
-    expect(cancelSource.indexOf("conversation.newConversation()")).toBeLessThan(
+    expect(cancelSource).not.toContain("conversation.newConversation()");
+    expect(cancelSource.indexOf("conversation.stopGeneration()")).toBeLessThan(
       cancelSource.indexOf("await stopPromise")
     );
     expect(writingOrchestratorSource).toContain(
@@ -1240,12 +1241,12 @@ describe("long-form renderer vertical slice", () => {
     );
   });
 
-  it("shares plot-design history across every plot workspace while preserving other isolation", () => {
+  it("shares plot-design and draft history across chapters while preserving other isolation", () => {
     expect(writingWorkflowSource).toContain(
       'activeRoot: LongWorkspaceRuntimeContext["activeRoot"]'
     );
     expect(writingWorkflowSource).toContain(
-      'agentId === "plot_design" ? undefined : chapterCardId'
+      'agentId === "plot_design" || agentId === "draft"'
     );
     expect(writingWorkflowSource).toContain(
       'conversationChapterCardId ?? "__book__"'

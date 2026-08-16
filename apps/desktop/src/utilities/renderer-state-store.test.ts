@@ -12,7 +12,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   RendererStateCapacityError,
   RendererStateSerializationError,
-  RendererStateStore
+  RendererStateStore,
+  DEFAULT_RENDERER_STATE_MAX_ITEM_BYTES,
+  DEFAULT_RENDERER_STATE_MAX_TOTAL_BYTES
 } from "./renderer-state-store";
 
 const roots: string[] = [];
@@ -116,6 +118,14 @@ describe("RendererStateStore", () => {
     await expect(
       store.save("conversation-history:circular", circular)
     ).rejects.toBeInstanceOf(RendererStateSerializationError);
+
+    await store.save("conversation-history:omitted-undefined", {
+      ok: true,
+      proposedText: undefined
+    });
+    await expect(
+      store.load("conversation-history:omitted-undefined")
+    ).resolves.toEqual({ ok: true });
   });
 
   it("enforces per-item and aggregate byte limits without replacing valid state", async () => {
@@ -165,5 +175,10 @@ describe("RendererStateStore", () => {
         "conversation-history:recovered"
       )
     ).resolves.toEqual({ revision: 1 });
+  });
+
+  it("keeps evaluation-sized conversation envelopes under the default limits", () => {
+    expect(DEFAULT_RENDERER_STATE_MAX_ITEM_BYTES).toBe(8 * 1024 * 1024);
+    expect(DEFAULT_RENDERER_STATE_MAX_TOTAL_BYTES).toBe(64 * 1024 * 1024);
   });
 });

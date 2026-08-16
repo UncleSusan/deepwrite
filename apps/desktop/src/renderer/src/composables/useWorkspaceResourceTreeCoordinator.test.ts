@@ -422,6 +422,13 @@ describe("useWorkspaceResourceTreeCoordinator", () => {
         }),
         leftTreeKey: "continuity:snapshot:file:file_snapshot",
         branchKey: "continuity:snapshot"
+      },
+      {
+        value: selection("chapter:chapter_one", "draft", {
+          chapterCardId: "chapter_one"
+        }),
+        leftTreeKey: "chapter:chapter_one",
+        branchKey: "chapter:chapter_one"
       }
     ];
 

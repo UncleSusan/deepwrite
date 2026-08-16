@@ -42,13 +42,34 @@ function defaultSettings(): LongAgentTeamSettings {
   return cloneSettings(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
 }
 
+function collectSubagents(
+  source: Record<string, unknown> | undefined,
+  usedNames: Set<string>,
+  suffix: string
+): ShortAgentSubagentDefinition[] {
+  const merged: ShortAgentSubagentDefinition[] = [];
+  const subagents = Array.isArray(source?.subagents) ? source.subagents : [];
+  for (const raw of subagents) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const definition = cloneDefinition(raw as ShortAgentSubagentDefinition);
+    let name = definition.name;
+    if (usedNames.has(name) && suffix) {
+      name = `${definition.name}${suffix}`;
+      definition.name = name;
+    }
+    usedNames.add(name);
+    merged.push(definition);
+  }
+  return merged;
+}
+
 function migrateLegacyLongAgentTeams(
   settings: LongAgentTeamSettingsInput | Record<string, unknown>
 ): Record<string, unknown> {
   const teams = Array.isArray((settings as { teams?: unknown }).teams)
     ? ((settings as { teams: unknown[] }).teams)
     : [];
-  const records = teams.filter(
+  let records = teams.filter(
     (team): team is Record<string, unknown> =>
       Boolean(team) && typeof team === "object" && !Array.isArray(team)
   );
@@ -56,43 +77,50 @@ function migrateLegacyLongAgentTeams(
   const character = records.find(
     (team) => team.parentAgentId === "character_design"
   );
-  if (!world && !character) {
-    return settings as Record<string, unknown>;
+  if (world || character) {
+    const remaining = records.filter(
+      (team) =>
+        team.parentAgentId !== "worldbuilding" &&
+        team.parentAgentId !== "character_design" &&
+        team.parentAgentId !== "setting"
+    );
+    const usedNames = new Set<string>();
+    const merged = [
+      ...collectSubagents(world, usedNames, "（世界观）"),
+      ...collectSubagents(character, usedNames, "（人物）")
+    ];
+    records = [
+      { parentAgentId: "setting", subagents: merged },
+      ...remaining
+    ];
   }
-  const remaining = records.filter(
-    (team) =>
-      team.parentAgentId !== "worldbuilding" &&
-      team.parentAgentId !== "character_design" &&
-      team.parentAgentId !== "setting"
+  const writer = records.find(
+    (team) => team.parentAgentId === "expert_section_writer"
   );
-  const usedNames = new Set<string>();
-  const merged: ShortAgentSubagentDefinition[] = [];
-  for (const source of [world, character]) {
-    const suffix =
-      source?.parentAgentId === "worldbuilding"
-        ? "（世界观）"
-        : source?.parentAgentId === "character_design"
-          ? "（人物）"
-          : "";
-    const subagents = Array.isArray(source?.subagents) ? source.subagents : [];
-    for (const raw of subagents) {
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-      const definition = cloneDefinition(raw as ShortAgentSubagentDefinition);
-      let name = definition.name;
-      if (usedNames.has(name)) {
-        name = `${definition.name}${suffix}`;
-        definition.name = name;
-      }
-      usedNames.add(name);
-      merged.push(definition);
-    }
+  if (writer) {
+    const draft = records.find((team) => team.parentAgentId === "draft");
+    const remaining = records.filter(
+      (team) =>
+        team.parentAgentId !== "expert_section_writer" &&
+        team.parentAgentId !== "draft"
+    );
+    const usedNames = new Set<string>();
+    const merged = [
+      ...collectSubagents(draft, usedNames, ""),
+      ...collectSubagents(writer, usedNames, "（单章写手）")
+    ];
+    records = [
+      ...remaining.filter((team) => team.parentAgentId !== "continuity_ledger"),
+      { parentAgentId: "draft", subagents: merged },
+      ...remaining.filter((team) => team.parentAgentId === "continuity_ledger")
+    ];
+  }
+  if (!world && !character && !writer) {
+    return settings as Record<string, unknown>;
   }
   return {
     ...(settings as Record<string, unknown>),
-    teams: [
-      { parentAgentId: "setting", subagents: merged },
-      ...remaining
-    ]
+    teams: records
   };
 }
 

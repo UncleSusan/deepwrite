@@ -178,6 +178,8 @@ function createHarness() {
       treeDeletion,
       volumeCreation,
       dialogOpen: longStructureDialogOpen,
+      agentsMd: shallowRef<string | null>(null),
+      agentsMdPending: shallowRef(false),
       syncBookOptions
     },
     longLifecycle: {

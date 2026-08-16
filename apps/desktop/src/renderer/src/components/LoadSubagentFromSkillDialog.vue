@@ -71,11 +71,7 @@ function skillStageForParent(
   if (parentAgentId === "expert_draft_coordinator" || parentAgentId === "draft") {
     return "draft";
   }
-  if (
-    parentAgentId === "character_design" ||
-    parentAgentId === "plot_design" ||
-    parentAgentId === "expert_section_writer"
-  ) {
+  if (parentAgentId === "character_design" || parentAgentId === "plot_design") {
     return parentAgentId;
   }
   return null;

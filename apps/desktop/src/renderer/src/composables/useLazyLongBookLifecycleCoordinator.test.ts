@@ -52,6 +52,8 @@ function createContext(): LongBookLifecycleCoordinatorOptions {
       rollbackDialogOpen: ref(false),
       rollbackCommitId: ref(null),
       structureDialogOpen: ref(false),
+      structureAgentsMd: ref<string | null>(null),
+      structureAgentsMdPending: ref(false),
       bindingsDialogMode: ref(null),
       exportTarget: shallowRef(null),
       bookRenameTarget: shallowRef(null),
@@ -126,6 +128,7 @@ function createCoordinatorStub(
     updateLongBookBindings: vi.fn(async () => undefined),
     closeLongBookRemovalDialog: vi.fn(),
     confirmLongBookRemoval: vi.fn(async () => undefined),
+    saveLongAgentsMd: vi.fn(async () => undefined),
     drain: vi.fn(async () => undefined),
     dispose: vi.fn(async () => undefined),
     ...overrides

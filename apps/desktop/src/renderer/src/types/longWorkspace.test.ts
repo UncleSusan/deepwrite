@@ -388,6 +388,30 @@ describe("long workspace chapter navigation", () => {
     ).toBe(bookId);
   });
 
+  it("opens a chapter from the workspace index when book navigation is stale", () => {
+    const { summary, workspaceIndex } = fixture(null);
+    summary.navigation.volumes = [];
+    summary.navigation.chapterCards = [];
+    workspaceIndex.plot.chapterCards[0] = {
+      ...workspaceIndex.plot.chapterCards[0]!,
+      title: "第一章"
+    };
+
+    const selection = createLongChapterSelection(
+      summary,
+      workspaceIndex,
+      "chapter_one"
+    );
+
+    expect(selection).toMatchObject({
+      key: "chapter:chapter_one",
+      root: "draft",
+      chapterCardId: "chapter_one",
+      title: "第一章"
+    });
+    expect(selection?.files[0]?.file.id).toBe("file_chapter_body");
+  });
+
   it("keeps only the body editable before continuity generates projections", () => {
     const { summary, workspaceIndex } = fixture(null);
     const selection = createLongChapterSelection(

@@ -3,6 +3,8 @@ import {
   BookSchema,
   CatalogProjectManifestSchema,
   DEFAULT_LONG_AGENT_PROFILES,
+  DEFAULT_LONG_AGENTS_MD,
+  LONG_AGENTS_MD_PATH,
   LONG_BOOK_LINE_FILE_ID,
   LONG_WORKSPACE_INDEX_FILE_ID,
   LONG_WORKSPACE_INDEX_PATH,
@@ -30,8 +32,10 @@ import {
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
   longWorldbuildingFileId,
+  longAgentAcceptsWorldbuildingDirectory,
   resolveLongAgentIdForRoot
 } from "./index";
+import { longAgentAcceptsWorldbuildingDirectory as rendererLongAgentAcceptsWorldbuildingDirectory } from "./renderer";
 
 const now = "2026-07-26T10:00:00.000Z";
 const revision = "v1:0:00000000";
@@ -306,6 +310,16 @@ function longBook() {
 }
 
 describe("independent long-form workspace contracts", () => {
+  it("ships a default AGENTS.md that explains the five long-form stages", () => {
+    expect(LONG_AGENTS_MD_PATH).toBe("AGENTS.md");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain("# 长篇上下文");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain("## 世界观阶段");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain("## 人物阶段");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain("## 剧情点阶段");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain("## 正文阶段");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain("## 持续性账本阶段");
+  });
+
   it("parses a full index, lightweight navigation, book and manifest without joining existing unions", () => {
     const book = LongBookSchema.parse(longBook());
     const navigation = createLongWorkspaceNavigationSnapshot(
@@ -910,11 +924,11 @@ describe("independent long-form workspace contracts", () => {
   it("defines a long-only agent profile without widening shared agent schemas", () => {
     const profile = LongAgentProfileSchema.parse({
       workspaceType: "long",
-      id: "expert_section_writer",
-      label: "单章写手",
-      description: "一次只处理一张章卡及其三个正文文件。",
-      systemPrompt: "根据章卡编写正文、人物状态和交接文档。",
-      welcomeShortcuts: ["写当前章", "续写当前章", "检查本章连续性"],
+      id: "draft",
+      label: "写手",
+      description: "规划正文进度，并撰写或修改当前章正文。",
+      systemPrompt: "根据章卡规划并编写当前章小说正文。",
+      welcomeShortcuts: ["写当前章", "续写当前章", "规划下一章"],
       readAccess: {
         workspaceRoots: ["plot_design", "draft", "continuity_ledger"],
         materialKinds: ["draft"],
@@ -922,11 +936,11 @@ describe("independent long-form workspace contracts", () => {
       },
       writeAccess: {
         workspaceRoots: ["draft"],
-        capabilities: ["write_chapter_files"]
+        capabilities: ["write_chapter_files", "dispatch_chapter_writer"]
       }
     });
 
-    expect(profile.id).toBe("expert_section_writer");
+    expect(profile.id).toBe("draft");
     expect(WorkspaceTypeSchema.safeParse(profile.workspaceType).success).toBe(
       false
     );
@@ -939,14 +953,19 @@ describe("independent long-form workspace contracts", () => {
       "setting",
       "plot_design",
       "draft",
-      "expert_section_writer",
       "continuity_ledger"
     ]);
     expect(resolveLongAgentIdForRoot("worldbuilding")).toBe("setting");
     expect(resolveLongAgentIdForRoot("character_design")).toBe("setting");
     expect(resolveLongAgentIdForRoot("draft")).toBe("draft");
-    expect(resolveLongAgentIdForRoot("draft", true)).toBe(
-      "expert_section_writer"
+    expect(longAgentAcceptsWorldbuildingDirectory("setting")).toBe(true);
+    expect(longAgentAcceptsWorldbuildingDirectory("plot_design")).toBe(true);
+    expect(longAgentAcceptsWorldbuildingDirectory("draft")).toBe(true);
+    expect(longAgentAcceptsWorldbuildingDirectory("continuity_ledger")).toBe(
+      false
+    );
+    expect(rendererLongAgentAcceptsWorldbuildingDirectory).toBe(
+      longAgentAcceptsWorldbuildingDirectory
     );
     const settingProfile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "setting"
@@ -984,35 +1003,67 @@ describe("independent long-form workspace contracts", () => {
     expect(settingProfile.systemPrompt).not.toContain("bookId");
     expect(settingProfile.systemPrompt).not.toContain("路径");
     expect(settingProfile.systemPrompt).toContain("不接管或锁定人物文档");
+    expect(settingProfile.systemPrompt).toContain("长篇结构导航");
+    expect(settingProfile.systemPrompt).toContain("不得修改剧情结构");
     const plotProfile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "plot_design"
     )!;
     expect(plotProfile.systemPrompt).toContain("list_plot_design");
     expect(plotProfile.systemPrompt).toContain("search_plot_design");
     expect(plotProfile.systemPrompt).toContain("read_plot_design");
+    expect(plotProfile.systemPrompt).toContain(
+      "读取剧情点会一次返回概要、挂到该剧情点的全部故事事件正文"
+    );
     expect(plotProfile.systemPrompt).toContain("create_plot_design");
     expect(plotProfile.systemPrompt).toContain("write_plot_design");
     expect(plotProfile.systemPrompt).toContain("edit_plot_design");
     expect(plotProfile.systemPrompt).toContain("伏笔线与伏笔触点继续完全使用");
     expect(plotProfile.systemPrompt).toContain("连续性记录只供参考");
     expect(plotProfile.systemPrompt).toContain("不锁定剧情结构");
+    expect(plotProfile.systemPrompt).toContain("固定上下文已包含世界观与人物目录");
+    expect(plotProfile.systemPrompt).toContain(
+      "不要仅为重复取得同一列表而调用 list_setting"
+    );
     expect(plotProfile.systemPrompt).not.toContain("get_long_workspace_index");
     expect(plotProfile.systemPrompt).not.toContain("fileId");
     const writerProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "expert_section_writer"
+      ({ id }) => id === "draft"
     )!;
+    expect(writerProfile.label).toBe("写手智能体");
+    expect(writerProfile.writeAccess.capabilities).toEqual([
+      "query_structure",
+      "dispatch_chapter_writer",
+      "write_chapter_files"
+    ]);
+    expect(writerProfile.systemPrompt).toContain(
+      "固定上下文已包含世界观与人物目录"
+    );
+    expect(writerProfile.systemPrompt).toContain(
+      "不要仅为重复取得同一列表而调用 list_setting"
+    );
     expect(writerProfile.systemPrompt).toContain(
       "每张章卡对应一个独立的 Markdown 正文文件"
     );
+    expect(writerProfile.systemPrompt).toContain("write_chapter_draft");
+    expect(writerProfile.systemPrompt).toContain("edit_chapter_draft");
     expect(writerProfile.systemPrompt).toContain(
-      "每次工具调用只能提交运行时锁定的当前章"
+      "propose_long_chapter_dispatch"
+    );
+    expect(writerProfile.systemPrompt).toContain(
+      "同一写手智能体和同一对话历史"
+    );
+    expect(writerProfile.systemPrompt).not.toContain(
+      "每章独立的写手运行"
+    );
+    expect(writerProfile.systemPrompt).toContain(
+      "每次写入工具调用只能提交运行时锁定的当前章"
     );
     expect(writerProfile.systemPrompt).toContain(
       "content 只放完整小说正文"
     );
     expect(writerProfile.systemPrompt).toContain("会话 diff 审批卡");
     expect(writerProfile.systemPrompt).toContain(
-      "本智能体唯一的写作产物是当前章小说正文"
+      "写作产物只限当前锁定章的小说正文"
     );
     expect(writerProfile.systemPrompt).toContain(
       "不得编写、草拟、补全或修改章末人物状态、交接文档"
@@ -1023,7 +1074,7 @@ describe("independent long-form workspace contracts", () => {
     expect(writerProfile.welcomeShortcuts).toEqual([
       "写当前章",
       "续写当前章",
-      "检查本章正文"
+      "规划下一章"
     ]);
     const continuityProfile = DEFAULT_LONG_AGENT_PROFILES.find(
       ({ id }) => id === "continuity_ledger"
@@ -1034,6 +1085,14 @@ describe("independent long-form workspace contracts", () => {
     expect(continuityProfile.systemPrompt).toContain("write_continuity_file");
     expect(continuityProfile.systemPrompt).toContain("edit_continuity_file");
     expect(continuityProfile.systemPrompt).toContain("propose_continuity_commit");
+    expect(continuityProfile.systemPrompt).toContain("pending_catchup");
+    expect(continuityProfile.systemPrompt).toContain("批量提交所有未提交章节");
+    expect(continuityProfile.systemPrompt).toContain("suggested_record=brief");
+    expect(continuityProfile.welcomeShortcuts).toEqual([
+      "提交当前章",
+      "批量提交所有未提交章节",
+      "检查连续性"
+    ]);
     expect(continuityProfile.systemPrompt).not.toContain("set_long_ledger_");
     expect(continuityProfile.systemPrompt).not.toContain(
       "propose_long_ledger_commit"

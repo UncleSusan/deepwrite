@@ -4,7 +4,7 @@ import source from "./LongStructureManager.vue?raw";
 describe("LongStructureManager", () => {
   it("manages worldbuilding categories and text-only character types", () => {
     expect(source).toContain("结构管理");
-    expect(source).toContain("管理世界观分类、人物类型和长篇功能配置");
+    expect(source).toContain("管理世界观分类、人物类型、功能配置和长篇上下文");
     expect(source).toContain("props.snapshot.worldbuilding");
     expect(source).toContain("builder.createWorldbuilding");
     expect(source).toContain("builder.updateWorldbuilding");
@@ -34,9 +34,18 @@ describe("LongStructureManager", () => {
   });
 
   it("replaces narrative management with worldbuilding feature settings", () => {
-    expect(source).toContain('type StructurePanel = "foundation" | "features"');
+    expect(source).toContain('type StructurePanel = "foundation" | "features" | "agents"');
     expect(source).toContain('label: "基础结构"');
     expect(source).toContain('label: "功能配置"');
+    expect(source).toContain('label: "长篇上下文"');
+    expect(source.indexOf('label: "长篇上下文"')).toBeLessThan(
+      source.indexOf('label: "基础结构"')
+    );
+    expect(source.indexOf('label: "基础结构"')).toBeLessThan(
+      source.indexOf('label: "功能配置"')
+    );
+    expect(source).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
+    expect(source).not.toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
     expect(source).toContain("世界观条目样式");
     expect(source).toContain("人物与连续性条目样式");
     expect(source).toContain("剧情设计条目样式");
@@ -60,6 +69,10 @@ describe("LongStructureManager", () => {
     expect(source).not.toContain('label: "剧情点"');
     expect(source).not.toContain('label: "章卡"');
     expect(source).not.toContain("功能配置项暂时为空");
+    expect(source).toContain('id="long-structure-panel-content-agents"');
+    expect(source).toContain('aria-label="长篇上下文"');
+    expect(source).toContain('"saveAgentsMd"');
+    expect(source).toContain("flushAgentsMdIfNeeded");
   });
 
   it("waits for durable completion and preserves form drafts on failure", () => {

@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DEFAULT_LONG_AGENTS_MD,
+  LONG_AGENTS_MD_PATH,
   LONG_BOOK_LINE_FILE_ID,
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
@@ -98,6 +100,47 @@ afterEach(async () => {
 });
 
 describe("LongProjectStore", () => {
+  it("initializes AGENTS.md, lazily restores missing files, and copies it on duplicate", async () => {
+    const { parent, projectStore, created } = await createFixture("agents-md");
+    const agentsPath = join(created.projectDirectory, LONG_AGENTS_MD_PATH);
+    await expect(readFile(agentsPath, "utf8")).resolves.toBe(
+      DEFAULT_LONG_AGENTS_MD
+    );
+    await expect(
+      projectStore.readAgentsMd(created.projectDirectory)
+    ).resolves.toEqual({
+      content: DEFAULT_LONG_AGENTS_MD,
+      truncated: false
+    });
+
+    const custom = "# 长篇上下文\n\n自定义说明";
+    await projectStore.writeAgentsMd(created.projectDirectory, custom);
+    await expect(
+      projectStore.readAgentsMd(created.projectDirectory)
+    ).resolves.toEqual({ content: custom, truncated: false });
+
+    await unlink(agentsPath);
+    await expect(
+      projectStore.readAgentsMd(created.projectDirectory)
+    ).resolves.toEqual({
+      content: DEFAULT_LONG_AGENTS_MD,
+      truncated: false
+    });
+    await expect(readFile(agentsPath, "utf8")).resolves.toBe(
+      DEFAULT_LONG_AGENTS_MD
+    );
+
+    await projectStore.writeAgentsMd(created.projectDirectory, custom);
+    const duplicated = await projectStore.duplicateBook(
+      parent,
+      created.projectDirectory,
+      "副本"
+    );
+    await expect(
+      projectStore.readAgentsMd(duplicated.projectDirectory)
+    ).resolves.toEqual({ content: custom, truncated: false });
+  });
+
   it("defaults new long books to right-side item layouts and persists changes", async () => {
     const { projectStore, created } = await createFixture(
       "worldbuilding-item-layout"
