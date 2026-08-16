@@ -2,15 +2,17 @@
   "schemaVersion": 1,
   "enabled": true,
   "channel": "stable",
-  "version": "1.2.1",
-  "title": "DeepWrite 1.2.1",
-  "publishedAt": "2026-08-08T13:48:13+08:00",
+  "version": "1.2.6",
+  "title": "DeepWrite 1.2.6",
+  "publishedAt": "2026-08-16T15:09:06+08:00",
   "releaseNotes": [
-    "提高长篇提案队列验证的事件顺序稳定性",
-    "提高大规模长篇文件搜索验证的稳定性"
+    "完善长篇工作区、写作流程、智能体上下文与审批追踪",
+    "新增技能市场、外部技能导入和远程公共数据配置",
+    "增加云备份、GLM-5.3、Grok 4.5/4.6 等模型支持与 Token 用量上报",
+    "修复长篇设置和章节列表类型问题，并同步三栏布局测试"
   ],
   "mandatory": false,
   "minimumSupportedVersion": "1.0.0",
-  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.2.1",
+  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.2.6",
   "feedUrl": "https://github.com/swjybky/deepwrite/releases/latest/download"
 }
