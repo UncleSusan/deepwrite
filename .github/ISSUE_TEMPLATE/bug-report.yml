@@ -1,0 +1,30 @@
+name: bug报告
+description: 用于报告bug，反馈问题
+title: "【问题反馈】"
+labels: ["bug"]
+assignees: []
+body:
+  - type: textarea
+    attributes:
+      label: 问题描述
+      description: 清晰描述bug表现
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 复现步骤
+      description: 重现该问题的具体操作步骤
+      placeholder: |
+        1. xxx
+        2. xxx
+        3. xxx
+    validations:
+      required: true
+
+  - type: checkboxes
+    attributes:
+      label: 你愿意提交 PR 吗？
+      description: 这不是必需的，但我们很乐意在贡献过程中为您提供指导，特别是如果你已经很好地理解了如何实现修复
+      options:
+        - label: 是的，我愿意提交 PR
