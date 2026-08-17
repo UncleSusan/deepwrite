@@ -31,7 +31,7 @@ describe("AgentConversation diff styles", () => {
     );
 
     expect(transitionSuppressionRule).toMatch(/transition:\s*none/);
-    expect(editorLoadingRule).toMatch(/grid-column:\s*2/);
+    expect(editorLoadingRule).toMatch(/grid-column:\s*3/);
     expect(editorLoadingRule).toMatch(/min-width:\s*0/);
     expect(editorLoadingRule).toMatch(/min-height:\s*0/);
   });

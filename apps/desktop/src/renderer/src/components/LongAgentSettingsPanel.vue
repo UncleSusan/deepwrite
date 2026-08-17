@@ -15,6 +15,7 @@ import { uiMessage } from "../ui-feedback";
 interface ReadOption<T extends string> {
   id: T;
   label: string;
+  description: string;
 }
 
 const props = defineProps<{

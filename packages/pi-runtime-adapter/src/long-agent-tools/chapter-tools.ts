@@ -30,7 +30,8 @@ import {
   formatChapterList,
   formatChapterRead,
   formatChapterReadiness,
-  formatChapterSearch
+  formatChapterSearch,
+  type ChapterListItem
 } from "./formatting";
 import type { LongAgentToolDetails } from "./index";
 
@@ -182,27 +183,29 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
           const limit = params.limit ?? 50;
           const start = (page - 1) * limit;
           const ordered = orderedLongChapterCards(index);
-          const items = ordered.slice(start, start + limit).map((card) => {
-            const chapter = index.chapters.find(
-              ({ chapterCardId }) => chapterCardId === card.id
-            );
-            if (!chapter) {
-              throw new Error(`Chapter files are missing for ${card.id}.`);
-            }
-            const overlay = chapterBodyOverlay.get(chapter.body.id);
-            return {
-              chapter_card_id: card.id,
-              title: card.title,
-              narrative_order: card.narrativeOrder,
-              body_status: overlay
-                ? overlay.content.trim()
-                  ? "written"
-                  : "empty"
-                : chapter.bodyStatus,
-              record_status: chapter.commitId ? "recorded" : "unrecorded",
-              active: workspace.activeChapterCardId === card.id
-            };
-          });
+          const items: ChapterListItem[] = ordered
+            .slice(start, start + limit)
+            .map((card) => {
+              const chapter = index.chapters.find(
+                ({ chapterCardId }) => chapterCardId === card.id
+              );
+              if (!chapter) {
+                throw new Error(`Chapter files are missing for ${card.id}.`);
+              }
+              const overlay = chapterBodyOverlay.get(chapter.body.id);
+              return {
+                chapter_card_id: card.id,
+                title: card.title,
+                narrative_order: card.narrativeOrder,
+                body_status: overlay
+                  ? overlay.content.trim()
+                    ? "written"
+                    : "empty"
+                  : chapter.bodyStatus,
+                record_status: chapter.commitId ? "recorded" : "unrecorded",
+                active: workspace.activeChapterCardId === card.id
+              };
+            });
           return textResult(
             formatChapterList({
               page,
