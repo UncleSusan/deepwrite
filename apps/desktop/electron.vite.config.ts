@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import vue from "@vitejs/plugin-vue";
-import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import { defineConfig } from "electron-vite";
+import { dependencies } from './package.json'
 
 const workspaceRoot = resolve(__dirname, "../..");
 const appRoot = resolve(__dirname);
@@ -33,11 +34,10 @@ const rendererAliases = [
 export default defineConfig({
   main: {
     envDir: workspaceRoot,
-    plugins: [externalizeDepsPlugin()],
     resolve: { alias: aliases },
     build: {
       rollupOptions: {
-        external: ["electron"],
+        external: ["electron", ...Object.keys(dependencies)],
         input: {
           index: resolve(appRoot, "src/main/index.ts"),
           "utilities/core-entry": resolve(appRoot, "src/utilities/core-entry.ts"),
@@ -48,11 +48,10 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     resolve: { alias: aliases },
     build: {
       rollupOptions: {
-        external: ["electron"],
+        external: ["electron", ...Object.keys(dependencies)],
         input: { index: resolve(appRoot, "src/preload/index.ts") },
         output: { format: "cjs", entryFileNames: "[name].js" }
       }
