@@ -15,6 +15,9 @@ import {
   CatalogReadDocumentInputSchema,
   CatalogReadDocumentResultSchema,
   CatalogSnapshotSchema,
+  ChatAssistantProjectConfigSchema,
+  ChatAssistantProjectConfigListSchema,
+  ChatAssistantProjectRefSchema,
   CommandResultSchema,
   CreateLibraryEntryInputSchema,
   CreateDraftSectionInputSchema,
@@ -211,6 +214,8 @@ import {
   type ExternalSkillSourceKind,
   type GeneralSettings,
   type GeneralSettingsSnapshot,
+  type ChatAssistantProjectConfig,
+  type ChatAssistantProjectRef,
   type ModelConnectionTestResult,
   type ImportLegacyLibraryResult,
   type LearningImitationSettings,
@@ -1369,6 +1374,66 @@ async function queryModelUsage(
   );
 }
 
+async function getChatAssistantProjectConfig(
+  rawProject: ChatAssistantProjectRef
+): Promise<ChatAssistantProjectConfig> {
+  const project = ChatAssistantProjectRefSchema.parse(rawProject);
+  const id = browserId("cmd_chat_assistant_project_config_get");
+  return ChatAssistantProjectConfigSchema.parse(
+    await invokeCommand<ChatAssistantProjectConfig>(
+      createEnvelope("chatAssistantProjectConfig.get", project, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
+async function listChatAssistantProjectConfigs(): Promise<ChatAssistantProjectRef[]> {
+  const id = browserId("cmd_chat_assistant_project_config_list");
+  return ChatAssistantProjectConfigListSchema.parse(
+    await invokeCommand<ChatAssistantProjectRef[]>(
+      createEnvelope("chatAssistantProjectConfig.list", {}, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
+async function saveChatAssistantProjectConfig(
+  rawProject: ChatAssistantProjectRef,
+  rawSystemPrompt: string
+): Promise<ChatAssistantProjectConfig> {
+  const project = ChatAssistantProjectRefSchema.parse(rawProject);
+  const systemPrompt = String(rawSystemPrompt);
+  const id = browserId("cmd_chat_assistant_project_config_save");
+  return ChatAssistantProjectConfigSchema.parse(
+    await invokeCommand<ChatAssistantProjectConfig>(
+      createEnvelope(
+        "chatAssistantProjectConfig.save",
+        { project, systemPrompt },
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
+async function resetChatAssistantProjectConfig(
+  rawProject: ChatAssistantProjectRef
+): Promise<ChatAssistantProjectConfig> {
+  const project = ChatAssistantProjectRefSchema.parse(rawProject);
+  const id = browserId("cmd_chat_assistant_project_config_reset");
+  return ChatAssistantProjectConfigSchema.parse(
+    await invokeCommand<ChatAssistantProjectConfig>(
+      createEnvelope("chatAssistantProjectConfig.reset", project, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
 async function listWorkspaceAgents(
   workspaceType: "short"
 ): Promise<ShortWorkspaceAgentSettings>;
@@ -2015,6 +2080,12 @@ const api: DeepWriteApi = {
   },
   modelUsage: {
     query: queryModelUsage
+  },
+  chatAssistantProjectConfig: {
+    list: listChatAssistantProjectConfigs,
+    get: getChatAssistantProjectConfig,
+    save: saveChatAssistantProjectConfig,
+    reset: resetChatAssistantProjectConfig
   },
   workspaceAgents: {
     list: listWorkspaceAgents,

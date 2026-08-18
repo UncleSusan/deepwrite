@@ -17,6 +17,7 @@ const roots: string[] = [];
 const NOW = "2026-08-11T08:00:00.000Z";
 const EXPIRES = "2026-09-10T08:00:00.000Z";
 const TOKEN = "dw_user_obviously-invalid-test-token";
+const REPLACEMENT_TOKEN = "dw_user_obviously-invalid-replacement-token";
 
 async function temporaryRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "deepwrite-marketplace-client-"));
@@ -46,9 +47,9 @@ function user() {
   };
 }
 
-function authResponse(): Response {
+function authResponse(token = TOKEN): Response {
   return Response.json({
-    data: { user: user(), token: TOKEN, expires_at: EXPIRES }
+    data: { user: user(), token, expires_at: EXPIRES }
   });
 }
 
@@ -262,6 +263,105 @@ describe("MarketplaceClient", () => {
     await expect(
       stat(join(root, "config", "marketplace-session.json"))
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("preserves the login endpoint error instead of reporting an expired session", async () => {
+    const root = await temporaryRoot();
+    const client = new MarketplaceClient(root, {
+      baseUrl: "https://relay.example.test",
+      fetcher: async () =>
+        Response.json(
+          {
+            error: {
+              code: "invalid_credentials",
+              message: "用户名或密码不正确"
+            }
+          },
+          { status: 401 }
+        ),
+      secureStorage: encryptedStorage,
+      now: () => Date.parse(NOW)
+    });
+
+    await expect(
+      client.login({
+        username: "writer-test",
+        password: "obviously-invalid-test-password"
+      })
+    ).rejects.toMatchObject({
+      code: "invalid_credentials",
+      message: "用户名或密码不正确",
+      status: 401
+    });
+  });
+
+  it("does not let a stale 401 clear a newer login session", async () => {
+    const root = await temporaryRoot();
+    let loginCount = 0;
+    let resolveStaleRequest: ((response: Response) => void) | undefined;
+    let markStaleRequestStarted: (() => void) | undefined;
+    const staleRequestStarted = new Promise<void>((resolve) => {
+      markStaleRequestStarted = resolve;
+    });
+    const staleResponse = new Promise<Response>((resolve) => {
+      resolveStaleRequest = resolve;
+    });
+    let listAuthorization = "";
+    const client = new MarketplaceClient(root, {
+      baseUrl: "https://relay.example.test",
+      fetcher: async (url, init) => {
+        if (url.endsWith("/auth/login")) {
+          loginCount += 1;
+          return authResponse(loginCount === 1 ? TOKEN : REPLACEMENT_TOKEN);
+        }
+        if (url.endsWith("/me")) {
+          markStaleRequestStarted?.();
+          return staleResponse;
+        }
+        listAuthorization = new Headers(init?.headers).get("Authorization") ?? "";
+        return Response.json({
+          data: {
+            items: [],
+            page: 1,
+            page_size: 20,
+            total: 0,
+            total_pages: 0
+          }
+        });
+      },
+      secureStorage: encryptedStorage,
+      now: () => Date.parse(NOW)
+    });
+
+    await client.login({
+      username: "writer-test",
+      password: "obviously-invalid-test-password"
+    });
+    const staleSessionRequest = client.session();
+    await staleRequestStarted;
+    await client.login({
+      username: "writer-test",
+      password: "obviously-invalid-replacement-password"
+    });
+    resolveStaleRequest?.(
+      Response.json(
+        { error: { code: "user_unauthorized", message: "会话无效" } },
+        { status: 401 }
+      )
+    );
+
+    await expect(staleSessionRequest).resolves.toMatchObject({
+      authenticated: true
+    });
+    await client.list();
+    expect(listAuthorization).toBe(`Bearer ${REPLACEMENT_TOKEN}`);
+    const stored = await readFile(
+      join(root, "config", "marketplace-session.json"),
+      "utf8"
+    );
+    expect(stored).toContain(
+      Buffer.from(`encrypted:${REPLACEMENT_TOKEN}`).toString("base64")
+    );
   });
 
   it("flags HTTP transport and rejects malformed marketplace responses", async () => {

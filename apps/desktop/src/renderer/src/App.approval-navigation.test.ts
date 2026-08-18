@@ -26,7 +26,10 @@ describe("accepted approval navigation wiring", () => {
       "await context.longWorkspace.refresh(target.bookId)"
     );
     expect(appSource).toContain("resolveLongApprovalNavigation(");
-    expect(appSource).toContain("rightCollapsed.value = false");
+    expect(appSource).toContain("revealTextPane();");
+    expect(appSource).toContain(
+      'generalSettings.value.workspacePaneLayout === "agent-editor"'
+    );
     expect(lazyCoordinatorSource).toContain(
       '() => import("./useApprovalNavigationCoordinator")'
     );

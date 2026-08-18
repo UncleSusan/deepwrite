@@ -26,7 +26,12 @@ function editableDefaults(): LongAgentSettingsInput {
         agent.welcomeShortcuts[0],
         agent.welcomeShortcuts[1],
         agent.welcomeShortcuts[2]
-      ]
+      ],
+      readAccess: {
+        workspaceRoots: [...agent.readAccess.workspaceRoots],
+        materialKinds: [...agent.readAccess.materialKinds],
+        skillKinds: [...agent.readAccess.skillKinds]
+      }
     }))
   };
 }
@@ -99,12 +104,46 @@ describe("LongAgentConfigStore", () => {
     );
   });
 
-  it("persists only configurable fields and resolves the runtime profile", async () => {
+  it("hydrates catalog scopes for settings saved by the fixed-scope release", async () => {
+    const { root, store } = await createStore();
+    const path = join(root, "config", "long-workspace-agents.json");
+    await mkdir(join(root, "config"), { recursive: true });
+    const defaults = editableDefaults();
+    await writeFile(
+      path,
+      `${JSON.stringify(
+        {
+          version: 1,
+          workspaceType: "long",
+          agents: defaults.agents.map(
+            ({ readAccess: _readAccess, ...agent }) => agent
+          )
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const settings = await store.list();
+    expect(
+      settings.agents.map(({ id, readAccess }) => ({ id, readAccess }))
+    ).toEqual(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.map(({ id, readAccess }) => ({
+        id,
+        readAccess
+      }))
+    );
+  });
+
+  it("persists configurable fields and resolves the runtime catalog scopes", async () => {
     const { root, store } = await createStore();
     const input = editableDefaults();
     const agent = input.agents.find(({ id }) => id === "setting")!;
     agent.systemPrompt = "自定义长篇人物提示词";
     agent.welcomeShortcuts[1] = "追踪本章人物状态";
+    agent.readAccess.materialKinds = ["character", "plot"];
+    agent.readAccess.skillKinds = ["general"];
 
     const saved = await store.save(input);
     const resolved = await store.resolve("setting");
@@ -117,11 +156,13 @@ describe("LongAgentConfigStore", () => {
 
     expect(saved.agents).toHaveLength(4);
     expect(resolved.systemPrompt).toBe("自定义长篇人物提示词");
-    expect(resolved.readAccess).toEqual(
-      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
+    expect(resolved.readAccess).toEqual({
+      workspaceRoots: DEFAULT_LONG_AGENT_SETTINGS.agents.find(
         ({ id }) => id === "setting"
-      )!.readAccess
-    );
+      )!.readAccess.workspaceRoots,
+      materialKinds: ["character", "plot"],
+      skillKinds: ["general"]
+    });
     expect(resolved.writeAccess).toEqual(
       DEFAULT_LONG_AGENT_SETTINGS.agents.find(
         ({ id }) => id === "setting"
@@ -129,7 +170,7 @@ describe("LongAgentConfigStore", () => {
     );
     expect(JSON.stringify(disk)).not.toContain("writeAccess");
     expect(JSON.stringify(disk)).not.toContain("capabilities");
-    expect(JSON.stringify(disk)).not.toContain("readAccess");
+    expect(JSON.stringify(disk)).toContain("readAccess");
   });
 
   it("resets one role without changing the other four roles", async () => {
@@ -619,7 +660,7 @@ describe("LongAgentConfigStore", () => {
     ]);
   });
 
-  it("strips legacy read access overrides and resolves builtin read access", async () => {
+  it("restores fixed workspace roots while preserving legacy catalog scopes", async () => {
     const { root, store } = await createStore();
     const path = join(root, "config", "long-workspace-agents.json");
     await mkdir(join(root, "config"), { recursive: true });
@@ -647,14 +688,24 @@ describe("LongAgentConfigStore", () => {
 
     const settings = await store.list();
     for (const agent of settings.agents) {
-      expect(agent.readAccess).toEqual(
+      expect(agent.readAccess.workspaceRoots).toEqual(
         DEFAULT_LONG_AGENT_SETTINGS.agents.find(({ id }) => id === agent.id)!
-          .readAccess
+          .readAccess.workspaceRoots
       );
+      expect(agent.readAccess.materialKinds).toEqual(["draft"]);
+      expect(agent.readAccess.skillKinds).toEqual(["style"]);
     }
 
-    await store.save(editableDefaults());
-    expect(await readFile(path, "utf8")).not.toContain("readAccess");
+    await store.save({
+      workspaceType: "long",
+      agents: settings.agents.map((agent) => ({
+        id: agent.id,
+        systemPrompt: agent.systemPrompt,
+        welcomeShortcuts: agent.welcomeShortcuts,
+        readAccess: agent.readAccess
+      }))
+    });
+    expect(await readFile(path, "utf8")).toContain('"materialKinds": [');
   });
 
   it("does not silently overwrite a malformed settings file", async () => {

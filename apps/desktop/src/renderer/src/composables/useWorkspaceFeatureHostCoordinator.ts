@@ -146,6 +146,7 @@ export function useWorkspaceFeatureHostCoordinator(
           autoSaveEnabled: settingsStore.editorAutoSaveEnabled,
           language: settingsStore.generalSettings.language,
           showInMenuBar: settingsStore.generalSettings.showInMenuBar,
+          workspacePaneLayout: settingsStore.generalSettings.workspacePaneLayout,
           workspaceAgentSettings: settingsStore.workspaceAgentSettings,
           longAgentSettings: settingsStore.longAgentSettings,
           workspaceAgentLoading: settingsStore.workspaceAgentLoading,

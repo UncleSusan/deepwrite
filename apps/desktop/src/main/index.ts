@@ -32,6 +32,9 @@ import {
   CatalogIndexSnapshotSchema,
   CatalogReadDocumentResultSchema,
   CatalogSnapshotSchema,
+  ChatAssistantProjectConfigSchema,
+  ChatAssistantProjectConfigListSchema,
+  ChatAssistantRuntimeContextSchema,
   CommandEnvelopeSchema,
   DeleteCatalogProjectResultSchema,
   DeleteBookResultSchema,
@@ -105,6 +108,7 @@ import {
   type AppAlertSnapshot,
   type CommandResult,
   type GeneralSettings,
+  type ChatAssistantRuntimeContext,
   type ModelUsageModelSnapshot,
   type ModelUsageModule,
   type SessionPromptCommandPayload,
@@ -120,6 +124,7 @@ import {
 import { AppearanceConfigStore } from "./appearance-config-store";
 import { AgentTeamConfigStore } from "./agent-team-config-store";
 import { GeneralSettingsStore } from "./general-settings-store";
+import { ChatAssistantProjectConfigStore } from "./chat-assistant-project-config-store";
 import { ModelConfigStore } from "./model-config-store";
 import { listRemoteModels } from "./list-remote-models";
 import {
@@ -192,6 +197,7 @@ let softwareTokenUsageReporter: SoftwareTokenUsageReporter | undefined;
 let agentTeamConfigStore: AgentTeamConfigStore | undefined;
 let appearanceConfigStore: AppearanceConfigStore | undefined;
 let generalSettingsStore: GeneralSettingsStore | undefined;
+let chatAssistantProjectConfigStore: ChatAssistantProjectConfigStore | undefined;
 let learningImitationConfigStore: LearningImitationConfigStore | undefined;
 let libraryAgentConfigStore: LibraryAgentConfigStore | undefined;
 let longAgentConfigStore: LongAgentConfigStore | undefined;
@@ -653,6 +659,124 @@ function requireModelUsageStore(): ModelUsageStore {
   return modelUsageStore;
 }
 
+function requireChatAssistantProjectConfigStore(): ChatAssistantProjectConfigStore {
+  if (!chatAssistantProjectConfigStore) {
+    throw new Error("聊天助手项目配置存储尚未初始化。");
+  }
+  return chatAssistantProjectConfigStore;
+}
+
+async function requireCorePayload(
+  supervisor: UtilitySupervisor,
+  type: "catalog.index" | "catalog.snapshot" | "long.list",
+  schema: { parse(value: unknown): unknown }
+): Promise<unknown> {
+  const id = createId(`cmd_chat_assistant_${type.replaceAll(".", "_")}`);
+  const command = CommandEnvelopeSchema.parse(
+    createEnvelope(type, {}, { id, correlationId: id })
+  );
+  const result = await supervisor.requestCommand("core", command, 60_000);
+  if (result.status === "rejected") {
+    throw new Error(result.error.message);
+  }
+  return schema.parse(result.payload);
+}
+
+function chatAssistantUsageStart(days: number): string {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  if (days > 1) date.setDate(date.getDate() - (days - 1));
+  return date.toISOString();
+}
+
+async function resolveChatAssistantRuntimeContext(
+  supervisor: UtilitySupervisor,
+  payload: SessionPromptCommandPayload
+): Promise<ChatAssistantRuntimeContext> {
+  const request = payload.chatAssistant ?? { mode: "normal" as const };
+  const [catalog, longList, settings, today, sevenDays, thirtyDays, all] =
+    await Promise.all([
+      requireCorePayload(supervisor, "catalog.index", CatalogIndexSnapshotSchema),
+      requireCorePayload(supervisor, "long.list", LongListBooksResultSchema),
+      requireModelConfigStore().list(),
+      requireModelUsageStore().query({ startAt: chatAssistantUsageStart(1) }),
+      requireModelUsageStore().query({ startAt: chatAssistantUsageStart(7) }),
+      requireModelUsageStore().query({ startAt: chatAssistantUsageStart(30) }),
+      requireModelUsageStore().query()
+    ]);
+  const modelSettings = ModelSettingsSchema.parse(settings);
+  const base = {
+    software: {
+      name: "DeepWrite" as const,
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      currentTime: new Date().toISOString(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    },
+    catalog: CatalogIndexSnapshotSchema.parse(catalog),
+    longBooks: LongListBooksResultSchema.parse(longList).books,
+    models: modelSettings.models.map((model) => ({
+      id: model.id,
+      label: model.label,
+      provider: model.provider,
+      modelId: model.modelId,
+      api: model.api,
+      reasoning: model.reasoning,
+      defaultThinkingLevel: model.defaultThinkingLevel,
+      thinkingLevelOptions: model.thinkingLevelOptions,
+      temperatureOptions: model.temperatureOptions,
+      credentialConfigured: model.hasApiKey,
+      ...(model.managedBy ? { managedBy: model.managedBy } : {}),
+      ...(model.status !== undefined ? { status: model.status } : {}),
+      ...(model.discount !== undefined ? { discount: model.discount } : {}),
+      ...(model.input !== undefined ? { input: model.input } : {}),
+      ...(model.output !== undefined ? { output: model.output } : {}),
+      ...(model.cache !== undefined ? { cache: model.cache } : {})
+    })),
+    defaultModelId: modelSettings.defaultModelId,
+    usage: {
+      today: ModelUsageDashboardSchema.parse(today),
+      "7d": ModelUsageDashboardSchema.parse(sevenDays),
+      "30d": ModelUsageDashboardSchema.parse(thirtyDays),
+      all: ModelUsageDashboardSchema.parse(all)
+    }
+  };
+  if (request.mode === "normal") {
+    return ChatAssistantRuntimeContextSchema.parse({ ...base, mode: "normal" });
+  }
+  const config = await requireChatAssistantProjectConfigStore().get(request.project);
+  if (request.project.projectType === "long") {
+    const projectBook = base.longBooks.find(
+      (book) => book.id === request.project.projectId
+    );
+    if (!projectBook) throw new Error("所选长篇项目不存在或暂时不可用，请刷新后重试。");
+    return ChatAssistantRuntimeContextSchema.parse({
+      ...base,
+      mode: "project",
+      project: request.project,
+      projectPrompt: config.systemPrompt,
+      projectBook
+    });
+  }
+  const snapshot = CatalogSnapshotSchema.parse(
+    await requireCorePayload(supervisor, "catalog.snapshot", CatalogSnapshotSchema)
+  );
+  const projectBook = snapshot.books.find(
+    (book) =>
+      book.id === request.project.projectId &&
+      book.bookType === request.project.projectType
+  );
+  if (!projectBook) throw new Error("所选创作项目不存在或暂时不可用，请刷新后重试。");
+  return ChatAssistantRuntimeContextSchema.parse({
+    ...base,
+    mode: "project",
+    project: request.project,
+    projectPrompt: config.systemPrompt,
+    projectBook
+  });
+}
+
 function usageRuntimeKey(runtime: Pick<AgentRuntimeRef, "provider" | "model">): string {
   return `${runtime.provider}\u0000${runtime.model}`;
 }
@@ -695,6 +819,7 @@ function createUsageModelSnapshot(
 }
 
 function usageModuleForPrompt(payload: SessionPromptCommandPayload): ModelUsageModule {
+  if (payload.mode === "chat-assistant") return "assistant-chat";
   const context = payload.workspaceContext;
   if (!context) return "unknown";
   if (context.shortWorkspace) return "short-writing";
@@ -2861,6 +2986,49 @@ function registerIpc(): void {
         }
       }
 
+      if (
+        command.type === "chatAssistantProjectConfig.list" ||
+        command.type === "chatAssistantProjectConfig.get" ||
+        command.type === "chatAssistantProjectConfig.save" ||
+        command.type === "chatAssistantProjectConfig.reset"
+      ) {
+        try {
+          const store = requireChatAssistantProjectConfigStore();
+          const payload =
+            command.type === "chatAssistantProjectConfig.list"
+              ? await store.list()
+              : command.type === "chatAssistantProjectConfig.get"
+              ? await store.get(command.payload)
+              : command.type === "chatAssistantProjectConfig.save"
+                ? await store.save(
+                    command.payload.project,
+                    command.payload.systemPrompt
+                  )
+                : await store.reset(command.payload);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload:
+              command.type === "chatAssistantProjectConfig.list"
+                ? ChatAssistantProjectConfigListSchema.parse(payload)
+                : ChatAssistantProjectConfigSchema.parse(payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "chat_assistant_project_config.failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "处理聊天助手项目配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
       if (command.type === "session.abort") {
         try {
           const internalCommand = CommandEnvelopeSchema.parse(
@@ -2905,6 +3073,13 @@ function registerIpc(): void {
       if (command.type === "session.prompt") {
         try {
           const runtimeConfig = await requireModelConfigStore().resolve(command.payload.modelId);
+          const chatAssistantRuntimeContext =
+            command.payload.mode === "chat-assistant"
+              ? await resolveChatAssistantRuntimeContext(
+                  supervisor,
+                  command.payload
+                )
+              : undefined;
           const shortWorkspace = command.payload.workspaceContext?.shortWorkspace;
           const scriptWorkspace = command.payload.workspaceContext?.scriptWorkspace;
           const longWorkspace = command.payload.workspaceContext?.longWorkspace;
@@ -2988,6 +3163,9 @@ function registerIpc(): void {
                 ...(thinkingLevel ? { thinkingLevel } : {}),
                 ...(temperature !== undefined ? { temperature } : {}),
                 ...(runtimeConfig ? { runtimeConfig } : {}),
+                ...(chatAssistantRuntimeContext
+                  ? { chatAssistantRuntimeContext }
+                  : {}),
                 ...(agentProfile
                   ? scriptWorkspace
                     ? { scriptAgentProfile: agentProfile }
@@ -3040,7 +3218,13 @@ function registerIpc(): void {
                 usageContext,
                 ...(longWorkspace
                   ? { resourceId: longWorkspace.bookId }
-                  : {})
+                  : chatAssistantRuntimeContext?.mode === "project" &&
+                      chatAssistantRuntimeContext.project.projectType === "long"
+                    ? {
+                        resourceId:
+                          chatAssistantRuntimeContext.project.projectId
+                      }
+                    : {})
               });
             }
             pendingUsageContexts.delete(command.context.correlationId);
@@ -3222,6 +3406,9 @@ if (!hasSingleInstanceLock) {
     workspaceDirectoryStore = new WorkspaceDirectoryStore(userDataPath);
     appearanceConfigStore = new AppearanceConfigStore(userDataPath);
     generalSettingsStore = new GeneralSettingsStore(userDataPath);
+    chatAssistantProjectConfigStore = new ChatAssistantProjectConfigStore(
+      userDataPath
+    );
     await workspaceDirectoryStore.initializeDefault(app.getPath("documents"));
     await loadAndSyncNativeAppearanceChrome();
     syncGeneralSettings(

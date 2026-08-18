@@ -26,6 +26,7 @@ import {
   pinnableResourceNodes,
   PINNED_RESOURCE_STORAGE_KEY
 } from "../utils/pinnedResources";
+import { createTransientScrollbarController } from "../utils/transientScrollbar";
 
 const props = defineProps<{
   sections: ResourceTreeSection[];
@@ -45,6 +46,7 @@ const emit = defineEmits<{
   collapse: [];
   createBook: [];
   openDialog: [mode: DialogMode];
+  openChatAssistant: [];
   openAgentTeams: [];
   openMarketplace: [];
   openCloudBackup: [];
@@ -87,6 +89,7 @@ const updateState = ref<UpdateState>({
   canInstall: false
 });
 let unsubscribeUpdates: (() => void) | undefined;
+const sidebarScrollbar = createTransientScrollbarController();
 
 const updateChecking = computed(() => updateState.value.status === "checking");
 const updateDownloading = computed(() => updateState.value.status === "downloading");
@@ -194,6 +197,11 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
   accountMenuOpen.value = false;
 }
 
+function handleSidebarScroll(event: Event): void {
+  const element = event.currentTarget;
+  if (element instanceof HTMLElement) sidebarScrollbar.reveal(element);
+}
+
 onMounted(() => {
   document.addEventListener("pointerdown", handleDocumentPointerDown);
   document.addEventListener("keydown", handleDocumentKeydown);
@@ -207,6 +215,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
   document.removeEventListener("keydown", handleDocumentKeydown);
   unsubscribeUpdates?.();
+  sidebarScrollbar.dispose();
 });
 
 const newBookItem = {
@@ -216,16 +225,17 @@ const newBookItem = {
   shortcut: "Ctrl N"
 } as const;
 
-type PrimaryFeatureId = DialogMode | "agent-teams";
+type PrimaryFeatureId = DialogMode | "chat-assistant" | "agent-teams";
 
 const navItems: Array<{
   id: PrimaryFeatureId;
   label: string;
-  icon: "directory" | "model" | "wand" | "brain";
+  icon: "directory" | "model" | "wand" | "message" | "brain";
 }> = [
   { id: "directory", label: "工作目录", icon: "directory" },
   { id: "models", label: "模型配置", icon: "model" },
-  { id: "agent-teams", label: "智能体团队", icon: "brain" }
+  { id: "agent-teams", label: "智能体团队", icon: "brain" },
+  { id: "chat-assistant", label: "聊天", icon: "message" }
 ];
 
 function loadPinnedResourceIds(): string[] {
@@ -273,7 +283,7 @@ const moreFeatures: Array<{
 }> = [
   { id: "imitation", label: "短篇学习仿写", description: "学习范文并生成同类短篇", icon: "wand" },
   { id: "skill-marketplace", label: "技能广场", description: "发现、安装与发布写作技能", icon: "globe" },
-  { id: "cloud-backup", label: "云端备份", description: "用本机密钥备份创作空间与资料库", icon: "archive" },
+  { id: "cloud-backup", label: "云端备份", description: "备份创作空间和资料", icon: "archive" },
   { id: "runtime", label: "运行设置", description: "智能体与工具边界", icon: "model" }
 ];
 
@@ -302,6 +312,10 @@ function activateNav(id: "create-book" | PrimaryFeatureId): void {
   }
   if (id === "agent-teams") {
     emit("openAgentTeams");
+    return;
+  }
+  if (id === "chat-assistant") {
+    emit("openChatAssistant");
     return;
   }
   emit("openDialog", id);
@@ -373,7 +387,10 @@ watch(
       </button>
     </nav>
 
-    <div class="sidebar-scroll">
+    <div
+      class="sidebar-scroll transient-scrollbar"
+      @scroll.passive="handleSidebarScroll"
+    >
       <nav class="primary-nav scrollable-primary-nav" aria-label="主要功能">
         <button
           v-for="item in navItems"

@@ -36,7 +36,7 @@ DeepWrite provides role-specific agents for short-form creation:
 - Manuscript Expert: oversee structure, review drafts, and polish the final text
 - Section Writer: write around the current chapter while keeping plot, characters, and voice consistent
 
-Each agent can have its own system prompt, welcome shortcuts, model, and material access scope. You can also assemble sub-agent teams under a main agent so complex tasks can be handled by different roles together.
+Each agent can have its own system prompt, welcome shortcuts, model, and material access scope. Long-form stages always share full access to settings, plot, draft, and continuity content, while their readable material and skill types remain configurable per agent. You can also assemble sub-agent teams under a main agent so complex tasks can be handled by different roles together.
 
 ### Reviewable manuscript edits
 

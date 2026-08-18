@@ -151,9 +151,10 @@ describe("general settings coordinator", () => {
 
     coordinator.updateLanguage("zh-CN");
     coordinator.updateShowInMenuBar(false);
+    coordinator.updateWorkspacePaneLayout("editor-agent");
     await coordinator.drain();
 
-    expect(snapshots).toHaveLength(2);
+    expect(snapshots).toHaveLength(3);
     expect(snapshots[0]).toMatchObject({
       language: "zh-CN",
       showInMenuBar: true
@@ -161,6 +162,11 @@ describe("general settings coordinator", () => {
     expect(snapshots[1]).toMatchObject({
       language: "zh-CN",
       showInMenuBar: false
+    });
+    expect(snapshots[2]).toMatchObject({
+      language: "zh-CN",
+      showInMenuBar: false,
+      workspacePaneLayout: "editor-agent"
     });
   });
 
@@ -197,6 +203,7 @@ describe("general settings coordinator", () => {
     await coordinator.drain();
 
     expect(settings.value).toEqual({
+      ...createDefaultGeneralSettings(),
       permissionMode: "request-approval",
       autoSave: false,
       language: "zh-CN",

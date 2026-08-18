@@ -122,9 +122,17 @@ describe("long workspace editor crash recovery", () => {
 
   it("never exposes stale text as editable when a revision reload fails", () => {
     expect(editorSource).toContain("const dirty =");
-    expect(editorSource).toContain("loaded: dirty,");
+    expect(editorSource).toContain("refreshingJustSavedDocument");
     expect(editorSource).toContain(
-      "Clean revision refreshes stay"
+      "loaded: dirty || refreshingJustSavedDocument"
+    );
+    expect(editorSource).toContain(
+      "`loading` still makes the textarea read-only"
+    );
+    expect(editorSource).toContain("state?.loading");
+    expect(editorSource).toContain(':busy="isDocumentContentBusy"');
+    expect(editorSource).toContain(
+      ':readonly="currentReadOnly || isDocumentContentBusy"'
     );
     expect(editorSource).toMatch(
       /catch \(error: unknown\)[\s\S]*loaded: false,[\s\S]*loadError: message/

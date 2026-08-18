@@ -35,6 +35,12 @@ export const WorkspaceFeatureModules = defineAsyncComponent(
 export const WorkspaceDialogLayer = defineAsyncComponent(
   () => import("./WorkspaceDialogLayer.vue")
 );
+export const AgentConversation = defineAsyncComponent(
+  () => import("./AgentConversation.vue")
+);
+export const ChatAssistantOverlay = defineAsyncComponent(
+  () => import("../features/chat-assistant/ChatAssistantOverlay.vue")
+);
 
 export const BookResourceDialog = defineAsyncComponent(
   () => import("./BookResourceDialog.vue")

@@ -100,15 +100,25 @@ let output = "";
 try {
   const result = await new Promise((resolveResult) => {
     let timedOut = false;
-    const child = spawn(executable, [`--user-data-dir=${smokeUserData}`], {
-      cwd: appDir,
-      env: {
-        ...process.env,
-        DEEPWRITE_SMOKE: "1",
-        ELECTRON_DISABLE_SECURITY_WARNINGS: "true"
-      },
-      stdio: ["ignore", "pipe", "pipe"]
-    });
+    const child = spawn(
+      executable,
+      [
+        `--user-data-dir=${smokeUserData}`,
+        // The hidden smoke instance must not wait for an interactive macOS
+        // Keychain prompt. Its isolated profile contains no persisted secrets.
+        ...(targetPlatform === "mac" ? ["--use-mock-keychain"] : []),
+        "--password-store=basic"
+      ],
+      {
+        cwd: appDir,
+        env: {
+          ...process.env,
+          DEEPWRITE_SMOKE: "1",
+          ELECTRON_DISABLE_SECURITY_WARNINGS: "true"
+        },
+        stdio: ["ignore", "pipe", "pipe"]
+      }
+    );
     child.stdout.on("data", (chunk) => {
       output += chunk.toString();
     });

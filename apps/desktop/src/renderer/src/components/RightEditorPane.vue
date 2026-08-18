@@ -28,6 +28,7 @@ import {
 } from "../utils/boundedTextHistory";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
 import { parseSkillFrontmatter } from "../utils/skillFrontmatter";
+import { createTransientScrollbarController } from "../utils/transientScrollbar";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 import MarkdownContent from "./MarkdownContent.vue";
@@ -50,10 +51,13 @@ const props = defineProps<{
   showDeleteSection?: boolean;
   canDeleteSection?: boolean;
   deleteSectionLabel?: string | undefined;
+  rightPane?: boolean;
+  rightPaneCollapsed?: boolean;
 }>();
 
 const emit = defineEmits<{
   collapse: [];
+  toggleRight: [];
   save: [payload: { id: string; title: string; content: string }];
   liveChange: [payload: { id: string; title: string; content: string }];
   insertSelection: [reference: EditorTextReference];
@@ -93,14 +97,24 @@ interface EditorSearchMatch {
   end: number;
 }
 
+interface EditorViewportSnapshot {
+  documentKey: string;
+  scrollTop: number;
+  selectionStart: number;
+  selectionEnd: number;
+  selectionDirection: "forward" | "backward" | "none";
+}
+
 const textHistory = createBoundedTextHistory();
 const historyVersion = ref(0);
+let pendingSaveViewport: EditorViewportSnapshot | null = null;
 let pendingEditorInput: {
   selectionBefore: TextSelectionRange;
   inputType: string;
   timestamp: number;
 } | null = null;
 const activeScrollMemoryKey = computed(() => editorScrollMemoryKey(props.document));
+const documentScrollbar = createTransientScrollbarController();
 
 watch(
   activeScrollMemoryKey,
@@ -421,6 +435,44 @@ function handleEditorKeydown(event: KeyboardEvent): void {
   }
 }
 
+function captureEditorViewport(): EditorViewportSnapshot | null {
+  const input = editorInput.value;
+  if (!input || viewMode.value !== "edit") return null;
+  return {
+    documentKey: activeScrollMemoryKey.value,
+    scrollTop: input.scrollTop,
+    selectionStart: input.selectionStart,
+    selectionEnd: input.selectionEnd,
+    selectionDirection: input.selectionDirection
+  };
+}
+
+async function restoreEditorViewport(
+  snapshot: EditorViewportSnapshot | null
+): Promise<void> {
+  if (!snapshot) return;
+  await nextTick();
+  if (
+    viewMode.value !== "edit" ||
+    activeScrollMemoryKey.value !== snapshot.documentKey
+  ) {
+    return;
+  }
+  const input = editorInput.value;
+  if (!input) return;
+  input.setSelectionRange(
+    snapshot.selectionStart,
+    snapshot.selectionEnd,
+    snapshot.selectionDirection
+  );
+  input.scrollTop = snapshot.scrollTop;
+  rememberEditorScrollPosition(
+    snapshot.documentKey,
+    "edit",
+    snapshot.scrollTop
+  );
+}
+
 function save(): void {
   if (props.document.readOnly || props.locked || props.saving) {
     return;
@@ -433,8 +485,26 @@ function save(): void {
     );
     return;
   }
+  pendingSaveViewport = captureEditorViewport();
   emit("save", { id: props.document.id, title: title.value, content: content.value });
+  const snapshot = pendingSaveViewport;
+  void restoreEditorViewport(snapshot).then(() => {
+    if (!props.saving && pendingSaveViewport === snapshot) {
+      pendingSaveViewport = null;
+    }
+  });
 }
+
+watch(
+  () => props.saving,
+  (saving, wasSaving) => {
+    if (saving || !wasSaving || !pendingSaveViewport) return;
+    const snapshot = pendingSaveViewport;
+    pendingSaveViewport = null;
+    void restoreEditorViewport(snapshot);
+  },
+  { flush: "post" }
+);
 
 function closeSelectionAction(): void {
   selectionAction.value = null;
@@ -464,6 +534,7 @@ async function restoreDocumentScroll(
 function handleDocumentScroll(event: Event): void {
   const scroller = event.currentTarget;
   if (!(scroller instanceof HTMLElement)) return;
+  documentScrollbar.reveal(scroller);
   rememberEditorScrollPosition(
     activeScrollMemoryKey.value,
     viewMode.value,
@@ -714,6 +785,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   rememberCurrentDocumentScroll();
+  documentScrollbar.dispose();
   globalThis.removeEventListener("pointerdown", handleWindowPointerDown, true);
 });
 </script>
@@ -740,10 +812,20 @@ onBeforeUnmount(() => {
           {{ document.readOnly ? "只读" : locked ? (lockedLabel ?? "智能体运行中 · 暂停编辑") : saving ? "正在保存到本机" : dirty ? (autoSaveEnabled ? "等待自动保存" : "有未应用修改") : persistedDocument ? "已保存到本机" : "本次运行已应用" }}
         </span>
         <button
+          v-if="rightPane !== false"
           class="icon-button"
           type="button"
           aria-label="收起文本内容栏"
           @click="emit('collapse')"
+        >
+          <AppIcon name="panel-right" :size="18" />
+        </button>
+        <button
+          v-else-if="rightPaneCollapsed"
+          class="icon-button"
+          type="button"
+          aria-label="展开智能体栏"
+          @click="emit('toggleRight')"
         >
           <AppIcon name="panel-right" :size="18" />
         </button>
@@ -1013,7 +1095,7 @@ onBeforeUnmount(() => {
         v-if="viewMode === 'edit'"
         ref="editorInput"
         :value="content"
-        class="document-editor"
+        class="document-editor transient-scrollbar"
         :readonly="document.readOnly || locked"
         :maxlength="contentMaxLength"
         aria-label="文本内容编辑器"
@@ -1027,7 +1109,7 @@ onBeforeUnmount(() => {
       <article
         v-else
         ref="documentPreview"
-        class="document-preview"
+        class="document-preview transient-scrollbar"
         @scroll="handleDocumentScroll"
       >
         <MarkdownContent v-if="content.trim()" :content="content" />
@@ -1053,6 +1135,7 @@ onBeforeUnmount(() => {
         class="save-button"
         type="button"
         :disabled="document.readOnly || locked || saving || !dirty || contentExceedsLimit"
+        @mousedown.prevent
         @click="save"
       >
         <AppIcon name="save" :size="14" />

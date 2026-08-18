@@ -17,6 +17,7 @@ import {
   createDefaultCreativePlotStages,
   createShortWorkspaceContentRevision,
   type AgentProviderRuntimeConfig,
+  type ChatAssistantRuntimeContext,
   type LongWorkspaceRuntimeContext,
   type ScriptWorkspaceAgentProfile,
   type ScriptWorkspaceSnapshot,
@@ -43,6 +44,53 @@ const providerRuntime = {
   model: "deepseek-chat",
   mode: "provider" as const
 };
+
+function normalChatContext(): ChatAssistantRuntimeContext {
+  const generatedAt = "2026-08-17T08:00:00.000Z";
+  const totals = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+    requestCount: 0
+  };
+  const dashboard = {
+    generatedAt,
+    totals,
+    trendGranularity: "day" as const,
+    trend: [],
+    models: [],
+    modules: [],
+    recentCalls: []
+  };
+  return {
+    mode: "normal",
+    software: {
+      name: "DeepWrite",
+      version: "1.2.3",
+      platform: "darwin",
+      arch: "arm64",
+      currentTime: generatedAt,
+      timezone: "Asia/Shanghai"
+    },
+    catalog: {
+      schemaVersion: 1,
+      revision: 0,
+      creativePlotStages: createDefaultCreativePlotStages(),
+      books: [],
+      materials: [],
+      materialGroups: [],
+      skills: [],
+      skillGroups: [],
+      updatedAt: generatedAt
+    },
+    longBooks: [],
+    models: [],
+    defaultModelId: "",
+    usage: { today: dashboard, "7d": dashboard, "30d": dashboard, all: dashboard }
+  };
+}
 
 function scriptAgentProfile(): ScriptWorkspaceAgentProfile {
   const profile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
@@ -246,6 +294,91 @@ async function captureToolPayload(
 }
 
 describe("DeepWrite Pi runtime adapter", () => {
+  it("isolates chat-assistant prompts, tools and cached history from workspace agents", async () => {
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+    const sessionId = "session_shared_chat_boundary";
+
+    for (const [runId, prompt] of [
+      ["run_chat_1", "你好，只聊聊天"],
+      ["run_chat_2", "继续刚才的话题"]
+    ] as const) {
+      for await (const _event of runtime.start({
+        runId,
+        sessionId,
+        prompt,
+        mode: "chat-assistant",
+        chatAssistantRuntimeContext: normalChatContext(),
+        thinkingLevel: "off"
+      })) {
+        // Consume the isolated chat turn before inspecting the cache.
+      }
+    }
+
+    for await (const _event of runtime.start({
+      runId: "run_workspace_same_session",
+      sessionId,
+      prompt: "分析当前内容",
+      thinkingLevel: "off",
+      workspaceContext: {
+        activeResource: {
+          id: "workspace_resource",
+          domain: "creation",
+          title: "工作区文稿",
+          path: ["工作区文稿"],
+          source: "live-editor",
+          content: "这段内容不能进入聊天助手。"
+        }
+      }
+    })) {
+      // Consume a workspace turn with the same session id.
+    }
+
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          {
+            state: {
+              systemPrompt: string;
+              tools: Array<{ name: string }>;
+              messages: Array<{ role?: string; content?: unknown }>;
+            };
+          }
+        >;
+      }
+    ).conversationAgents;
+    expect([...cache.keys()]).toEqual(
+      expect.arrayContaining([
+        `${sessionId}:chat-assistant:normal`,
+        `${sessionId}:default`
+      ])
+    );
+
+    const chat = cache.get(`${sessionId}:chat-assistant:normal`)!;
+    expect(chat.state.tools.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "list_creation_projects",
+        "get_creation_project_summary",
+        "query_model_configs",
+        "query_model_usage"
+      ])
+    );
+    expect(chat.state.tools.map(({ name }) => name)).not.toEqual(
+      expect.arrayContaining(["read_workspace_content", "edit_text"])
+    );
+    expect(chat.state.systemPrompt).toContain("普通聊天模式");
+    expect(chat.state.systemPrompt).not.toContain("本地创作协作智能体");
+    const chatUserMessages = chat.state.messages.filter(
+      (message) => message.role === "user"
+    );
+    expect(chatUserMessages.map((message) => message.content)).toEqual([
+      "你好，只聊聊天",
+      "继续刚才的话题"
+    ]);
+    expect(JSON.stringify(chatUserMessages)).not.toContain("sessionId");
+    expect(JSON.stringify(chatUserMessages)).not.toContain("工作区文稿");
+  });
+
   it("injects immutable screenplay rules only for script workspace runs", () => {
     const scriptWorkspace = screenplayWorkspace();
     const scriptProfile = scriptAgentProfile();

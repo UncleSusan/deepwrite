@@ -26,19 +26,22 @@ describe("long agent settings UI", () => {
     );
   });
 
-  it("only edits prompts and shortcuts", () => {
+  it("edits prompts, shortcuts and catalog read scopes", () => {
     expect(longPanelSource).toContain("LongAgentSettingsInputSchema.safeParse");
-    expect(longPanelSource).not.toContain("readAccess");
+    expect(longPanelSource).toContain("readAccess.materialKinds");
+    expect(longPanelSource).toContain("readAccess.skillKinds");
     expect(longPanelSource).toContain("系统提示词");
     expect(longPanelSource).toContain("欢迎快捷按钮");
+    expect(longPanelSource).toContain("素材库");
+    expect(longPanelSource).toContain("技能库");
     expect(longPanelSource).not.toContain("v-model=\"activeAgent.writeAccess");
     expect(longPanelSource).not.toContain("patchWriteAccess");
   });
 
   it("shows fixed full read access and immutable write boundaries", () => {
     expect(longPanelSource).not.toContain("isRequiredWorkspaceRoot");
-    expect(longPanelSource).toContain("读取、写入与工具边界");
-    expect(longPanelSource).toContain("不能通过设置修改");
+    expect(longPanelSource).toContain("阶段读取、写入与工具边界");
+    expect(longPanelSource).toContain("阶段互读与写入边界由应用内置");
     expect(longPanelSource).toContain("互相可读");
   });
 
@@ -48,7 +51,9 @@ describe("long agent settings UI", () => {
     expect(workspacePanelSource).not.toContain("readAccess.workspace");
     expect(workspacePanelSource).toContain("创作空间各阶段始终可按需读取");
     expect(longPanelSource).not.toContain("<legend>长篇工作区</legend>");
-    expect(longPanelSource).not.toContain("readAccess.workspaceRoots");
+    expect(longPanelSource).not.toContain(
+      "handleCheckboxChange('workspaceRoots'"
+    );
   });
 
   it("uses global theme surfaces and remains responsive in narrow windows", () => {

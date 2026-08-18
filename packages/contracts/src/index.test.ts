@@ -209,6 +209,73 @@ describe("DeepWrite desktop contracts", () => {
     });
   });
 
+  it("keeps chat-assistant prompts isolated from workspace and write context", () => {
+    const accepted = createEnvelope(
+      "session.prompt",
+      {
+        sessionId: "session_chat_1",
+        message: "聊聊今天的计划",
+        mode: "chat-assistant" as const,
+        thinkingLevel: "medium" as const
+      },
+      { id: "cmd_chat", context: { sessionId: "session_chat_1" } }
+    );
+    expect(CommandEnvelopeSchema.parse(accepted)).toMatchObject({
+      payload: { mode: "chat-assistant" }
+    });
+
+    const project = createEnvelope(
+      "session.prompt",
+      {
+        sessionId: "session_chat_project",
+        message: "核对第一章伏笔",
+        mode: "chat-assistant" as const,
+        chatAssistant: {
+          mode: "project" as const,
+          project: { projectType: "long" as const, projectId: "book-1" }
+        }
+      },
+      { id: "cmd_chat_project", context: { sessionId: "session_chat_project" } }
+    );
+    expect(CommandEnvelopeSchema.parse(project)).toMatchObject({
+      payload: {
+        chatAssistant: {
+          mode: "project",
+          project: { projectType: "long", projectId: "book-1" }
+        }
+      }
+    });
+
+    const invalidProject = createEnvelope(
+      "session.prompt",
+      {
+        sessionId: "session_chat_project",
+        message: "缺少项目",
+        mode: "chat-assistant" as const,
+        chatAssistant: { mode: "project" as const }
+      },
+      { id: "cmd_chat_project_invalid", context: { sessionId: "session_chat_project" } }
+    );
+    expect(() => CommandEnvelopeSchema.parse(invalidProject)).toThrow();
+
+    for (const forbidden of [
+      { workspaceContext: {} },
+      { writeApprovalMode: "request-approval" as const }
+    ]) {
+      const envelope = createEnvelope(
+        "session.prompt",
+        {
+          sessionId: "session_chat_1",
+          message: "不要读取工作区",
+          mode: "chat-assistant" as const,
+          ...forbidden
+        },
+        { id: "cmd_chat_forbidden", context: { sessionId: "session_chat_1" } }
+      );
+      expect(() => CommandEnvelopeSchema.parse(envelope)).toThrow();
+    }
+  });
+
   it("accepts extracted text and base64 image prompt attachments", () => {
     const attachments = UserPromptAttachmentsSchema.parse([
       {

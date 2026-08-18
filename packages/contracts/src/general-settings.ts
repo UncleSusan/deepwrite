@@ -12,11 +12,20 @@ export type GeneralPermissionMode = z.infer<
 export const AppLanguageSchema = z.enum(["auto", "zh-CN"]);
 export type AppLanguage = z.infer<typeof AppLanguageSchema>;
 
+export const WorkspacePaneLayoutSchema = z.enum([
+  "agent-editor",
+  "editor-agent"
+]);
+export type WorkspacePaneLayout = z.infer<
+  typeof WorkspacePaneLayoutSchema
+>;
+
 export const GeneralSettingsSchema = z.object({
   permissionMode: GeneralPermissionModeSchema,
   autoSave: z.boolean(),
   language: AppLanguageSchema,
-  showInMenuBar: z.boolean()
+  showInMenuBar: z.boolean(),
+  workspacePaneLayout: WorkspacePaneLayoutSchema.default("agent-editor")
 });
 export type GeneralSettings = z.infer<typeof GeneralSettingsSchema>;
 
@@ -33,7 +42,8 @@ export function createDefaultGeneralSettings(): GeneralSettings {
     permissionMode: "auto-approve",
     autoSave: true,
     language: "auto",
-    showInMenuBar: true
+    showInMenuBar: true,
+    workspacePaneLayout: "agent-editor"
   };
 }
 

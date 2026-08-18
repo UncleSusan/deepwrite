@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import type {
   ThinkingLevel,
-  UserPromptAttachment
+  UserPromptAttachment,
+  WorkspacePaneLayout
 } from "@deepwrite/contracts";
 import type {
   AgentApprovalMode,
   EditorTextReference
 } from "../types/conversation";
 import type { AgentConversationController } from "../composables/useAgentConversation";
-import AgentConversation from "./AgentConversation.vue";
+import { AgentConversation } from "./lazyAppComponents";
 import RightEditorPane from "./RightEditorPane.vue";
 
 type AgentConversationPublicProps = InstanceType<
@@ -67,6 +68,7 @@ defineProps<{
   conversationController: AgentConversationController;
   conversationContext: WritingConversationContext;
   editor: WritingEditorViewModel;
+  paneLayout: WorkspacePaneLayout;
   rightPane: Readonly<{
     collapsed: boolean;
     minWidth: number;
@@ -112,7 +114,9 @@ const emit = defineEmits<{
 
 <template>
   <AgentConversation
+    v-if="paneLayout === 'agent-editor' || !rightPane.collapsed"
     v-bind="conversationContext"
+    :right-pane="paneLayout === 'editor-agent'"
     :messages="conversationController.messages.value"
     :conversation-history="conversationController.history.value"
     :current-session-id="conversationController.sessionId.value"
@@ -146,9 +150,12 @@ const emit = defineEmits<{
   />
 
   <RightEditorPane
-    v-if="!rightPane.collapsed"
+    v-if="paneLayout === 'editor-agent' || !rightPane.collapsed"
     v-bind="editor"
+    :right-pane="paneLayout === 'agent-editor'"
+    :right-pane-collapsed="rightPane.collapsed"
     @collapse="emit('collapse')"
+    @toggle-right="emit('toggleRight')"
     @save="emit('save', $event)"
     @live-change="emit('liveChange', $event)"
     @insert-selection="emit('insertSelection', $event)"

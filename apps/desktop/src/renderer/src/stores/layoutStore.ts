@@ -25,6 +25,7 @@ export type PrimaryFeature =
   | "directory"
   | "models"
   | "imitation"
+  | "chat-assistant"
   | "agent-teams"
   | "skill-marketplace"
   | "cloud-backup";

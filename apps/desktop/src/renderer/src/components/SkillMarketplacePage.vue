@@ -285,7 +285,10 @@ function selectDetailSection(section: DetailSkillSection): void {
 function errorMessage(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
   const cleaned = error.message
-    .replace(/^Error invoking remote method '[^']+': Error:\s*/u, "")
+    .replace(
+      /^Error invoking remote method '[^']+': (?:[A-Za-z_$][\w$]*Error|Error):\s*/u,
+      ""
+    )
     .replace(/^Error:\s*/u, "");
   return formatMarketplaceContractError(cleaned) ?? cleaned;
 }

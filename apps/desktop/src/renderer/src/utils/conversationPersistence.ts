@@ -402,3 +402,27 @@ export function createConversationPersistenceAdapter(
     }
   };
 }
+
+/**
+ * Moves one logical conversation history into another without discarding a
+ * destination that may already have been created by a newer build. The
+ * operation is deliberately idempotent so startup may safely retry it.
+ */
+export async function migrateConversationHistoryKey(
+  adapter: ConversationPersistenceAdapter | null,
+  fromLogicalKey: string,
+  toLogicalKey: string
+): Promise<void> {
+  if (!adapter || fromLogicalKey === toLogicalKey) return;
+  const fromKey = conversationHistoryPersistenceKey(fromLogicalKey);
+  const toKey = conversationHistoryPersistenceKey(toLogicalKey);
+  const legacy = await adapter.load(fromKey);
+  if (!legacy) return;
+  const current = await adapter.load(toKey);
+  const merged = mergeAgentConversationPersistenceSnapshots(current, [legacy]);
+  if (!merged) return;
+  if (!sameJsonValue(current, merged)) {
+    await adapter.save(toKey, merged);
+  }
+  await adapter.remove?.(fromKey);
+}

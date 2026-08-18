@@ -2,6 +2,7 @@ import { computed, ref, shallowRef, toRaw, watch, type Ref } from "vue";
 import type {
   AgentRuntimeRef,
   AgentUsage,
+  ChatAssistantRequestContext,
   DeepWriteApi,
   LongCharacterFileChange,
   LongWorkspaceRuntimeContext,
@@ -171,6 +172,7 @@ export interface AgentConversationController {
     attachments?: WorkspaceContextAttachments,
     promptAttachments?: UserPromptAttachment[]
   ): Promise<void>;
+  sendAssistantMessage(context?: ChatAssistantRequestContext): Promise<void>;
   sendLongMessage(
     context: LongWorkspaceRuntimeContext,
     attachments?: Pick<
@@ -3237,16 +3239,30 @@ export function useAgentConversation(
   }
 
   async function sendMessage(
-    activeDocument: WorkspaceDocument,
+    activeDocument: WorkspaceDocument | null,
     workspaceDocuments: WorkspaceDocument[] = [],
     attachments: WorkspaceContextAttachments = {},
     promptAttachments: UserPromptAttachment[] = [],
-    contextOverride?: WorkspaceRuntimeContext
+    contextOverride?: WorkspaceRuntimeContext,
+    mode: "workspace" | "chat-assistant" = "workspace",
+    chatAssistant?: ChatAssistantRequestContext
   ): Promise<void> {
     const api = options.api();
     // Vue refs wrap objects in proxies, which Electron IPC cannot structured-clone.
     // Normalize at the API boundary so callers cannot accidentally leak proxies.
     const requestAttachments = promptAttachments.map((attachment) => ({ ...attachment }));
+    const requestChatAssistant: ChatAssistantRequestContext | undefined =
+      chatAssistant?.mode === "project"
+        ? {
+            mode: "project",
+            project: {
+              projectType: chatAssistant.project.projectType,
+              projectId: chatAssistant.project.projectId
+            }
+          }
+        : chatAssistant?.mode === "normal"
+          ? { mode: "normal" }
+          : undefined;
     const content = draft.value.trim() || (requestAttachments.length ? "请阅读并分析我上传的附件。" : "");
     if (!api) {
       conversationError.value = "浏览器预览没有桌面 Agent Runtime，请使用 pnpm dev 启动客户端。";
@@ -3259,14 +3275,17 @@ export function useAgentConversation(
     const sendEpoch = epoch;
     const sendSessionId = sessionId.value;
     const attemptId = ++attemptSequence;
-    const originalLength = activeDocument.content.length;
+    const originalLength = activeDocument?.content.length ?? 0;
     const snapshotContent =
+      activeDocument &&
       (activeDocument.workspaceType === "short" || activeDocument.workspaceType === "script") &&
         activeDocument.stageId === "draft"
         ? activeDocument.content
-        : activeDocument.content.slice(0, 20_000);
-    const contextSnapshot: WorkspaceRuntimeContext =
-      contextOverride ?? {
+        : activeDocument?.content.slice(0, 20_000) ?? "";
+    const contextSnapshot: WorkspaceRuntimeContext | undefined =
+      mode === "chat-assistant"
+        ? undefined
+        : contextOverride ?? (activeDocument ? {
         activeResource: {
           id: activeDocument.id,
           domain: activeDocument.domain,
@@ -3279,24 +3298,27 @@ export function useAgentConversation(
             ? { truncated: true as const, originalLength }
             : {})
         }
-      };
-    if (attachments.attachedSkills?.length) {
+      } : undefined);
+    if (contextSnapshot && attachments.attachedSkills?.length) {
       contextSnapshot.attachedSkills = attachments.attachedSkills.map((skill) => ({
         ...skill
       }));
     }
-    if (attachments.attachedMaterials?.length) {
+    if (contextSnapshot && attachments.attachedMaterials?.length) {
       contextSnapshot.attachedMaterials = attachments.attachedMaterials.map((material) => ({
         ...material
       }));
     }
     if (!contextOverride && attachments.libraryWorkspace) {
+      if (!contextSnapshot) return;
       contextSnapshot.libraryWorkspace = LibraryAgentWorkspaceSnapshotSchema.parse(
         attachments.libraryWorkspace
       );
     }
     if (
       !contextOverride &&
+      contextSnapshot &&
+      activeDocument &&
       (activeDocument.workspaceType === "short" || activeDocument.workspaceType === "script") &&
       activeDocument.workspaceId &&
       activeDocument.workspaceTitle &&
@@ -3525,8 +3547,13 @@ export function useAgentConversation(
       const accepted = await api.session.prompt({
         sessionId: sendSessionId,
         message: content,
+        ...(mode === "chat-assistant"
+          ? { mode, ...(requestChatAssistant ? { chatAssistant: requestChatAssistant } : {}) }
+          : {}),
         ...(requestAttachments.length ? { attachments: requestAttachments } : {}),
-        writeApprovalMode: approvalModeByAttempt.get(attemptId),
+        ...(mode === "chat-assistant"
+          ? {}
+          : { writeApprovalMode: approvalModeByAttempt.get(attemptId) }),
         ...(selectedModelId.value ? { modelId: selectedModelId.value } : {}),
         ...(thinkingLevel.value === "off"
           ? {
@@ -3534,7 +3561,7 @@ export function useAgentConversation(
               ...(selectedModel ? { temperature: temperature.value } : {})
             }
           : { thinkingLevel: thinkingLevel.value }),
-        workspaceContext: contextSnapshot
+        ...(contextSnapshot ? { workspaceContext: contextSnapshot } : {})
       });
       if (
         epoch !== sendEpoch ||
@@ -3614,6 +3641,20 @@ export function useAgentConversation(
       clearIdleTimer();
       conversationError.value = messageText;
     }
+  }
+
+  async function sendAssistantMessage(
+    context: ChatAssistantRequestContext = { mode: "normal" }
+  ): Promise<void> {
+    await sendMessage(
+      null,
+      [],
+      {},
+      [],
+      undefined,
+      "chat-assistant",
+      context
+    );
   }
 
   async function sendLongMessage(
@@ -3911,6 +3952,7 @@ export function useAgentConversation(
     updateEditProposal,
     handleEvent,
     sendMessage,
+    sendAssistantMessage,
     sendLongMessage,
     stopGeneration,
     cancelPendingGeneration,

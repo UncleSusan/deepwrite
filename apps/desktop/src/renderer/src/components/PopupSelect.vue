@@ -9,6 +9,7 @@ import {
   type CSSProperties
 } from "vue";
 import { createId } from "@deepwrite/shared";
+import type { IconName } from "../types/workspace";
 import AppIcon from "./AppIcon.vue";
 
 export type PopupSelectValue = string | number;
@@ -20,6 +21,8 @@ export interface PopupSelectOption {
   disabled?: boolean;
   title?: string;
   style?: CSSProperties;
+  actionIcon?: IconName;
+  actionLabel?: string;
 }
 
 const props = withDefaults(
@@ -49,6 +52,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   "update:modelValue": [value: PopupSelectValue];
   change: [value: PopupSelectValue];
+  optionAction: [value: PopupSelectValue];
 }>();
 
 const trigger = ref<HTMLButtonElement | null>(null);
@@ -176,6 +180,14 @@ function selectOption(option: PopupSelectOption): void {
   closeMenu(true);
 }
 
+function runOptionAction(option: PopupSelectOption): void {
+  if (option.disabled || !option.actionIcon || !option.actionLabel) {
+    return;
+  }
+  emit("optionAction", option.value);
+  closeMenu();
+}
+
 function moveFocus(direction: 1 | -1): void {
   const currentIndex = optionElements.value.findIndex(
     (element) => element === document.activeElement
@@ -224,6 +236,22 @@ function handleMenuKeydown(event: KeyboardEvent): void {
     return;
   }
   if (event.key === "Tab") {
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      const row = target.closest<HTMLElement>(".popup-select-option-row");
+      const option = row?.querySelector<HTMLButtonElement>(".popup-select-option");
+      const action = row?.querySelector<HTMLButtonElement>(".popup-select-option-action");
+      if (!event.shiftKey && target === option && action && !action.disabled) {
+        event.preventDefault();
+        action.focus();
+        return;
+      }
+      if (event.shiftKey && target === action && option && !option.disabled) {
+        event.preventDefault();
+        option.focus();
+        return;
+      }
+    }
     closeMenu();
   }
 }
@@ -311,34 +339,51 @@ onBeforeUnmount(() => {
           :aria-label="accessibleLabel"
           @keydown="handleMenuKeydown"
         >
-          <button
+          <div
             v-for="(option, index) in options"
             :key="`${typeof option.value}:${option.value}`"
-            :ref="(element) => setOptionElement(element, index)"
-            class="popup-select-option"
-            :class="{
-              'is-selected': Object.is(option.value, modelValue),
-              'has-description': Boolean(option.description)
-            }"
-            type="button"
-            role="option"
-            :aria-selected="Object.is(option.value, modelValue)"
-            :disabled="option.disabled"
-            :title="option.title"
-            :style="option.style"
-            @click="selectOption(option)"
+            class="popup-select-option-row"
+            :class="{ 'has-action': Boolean(option.actionIcon && option.actionLabel) }"
+            role="presentation"
           >
-            <span class="popup-select-option-copy">
-              <span>{{ option.label }}</span>
-              <small v-if="option.description">{{ option.description }}</small>
-            </span>
-            <AppIcon
-              v-if="Object.is(option.value, modelValue)"
-              class="popup-select-check"
-              name="check"
-              :size="15"
-            />
-          </button>
+            <button
+              :ref="(element) => setOptionElement(element, index)"
+              class="popup-select-option"
+              :class="{
+                'is-selected': Object.is(option.value, modelValue),
+                'has-description': Boolean(option.description)
+              }"
+              type="button"
+              role="option"
+              :aria-selected="Object.is(option.value, modelValue)"
+              :disabled="option.disabled"
+              :title="option.title"
+              :style="option.style"
+              @click="selectOption(option)"
+            >
+              <span class="popup-select-option-copy">
+                <span>{{ option.label }}</span>
+                <small v-if="option.description">{{ option.description }}</small>
+              </span>
+              <AppIcon
+                v-if="Object.is(option.value, modelValue)"
+                class="popup-select-check"
+                name="check"
+                :size="15"
+              />
+            </button>
+            <button
+              v-if="option.actionIcon && option.actionLabel"
+              class="popup-select-option-action"
+              type="button"
+              :aria-label="option.actionLabel"
+              :title="option.actionLabel"
+              :disabled="option.disabled"
+              @click.stop="runOptionAction(option)"
+            >
+              <AppIcon :name="option.actionIcon" :size="15" />
+            </button>
+          </div>
         </div>
       </Transition>
     </Teleport>
@@ -490,6 +535,42 @@ onBeforeUnmount(() => {
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.popup-select-option-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+}
+
+.popup-select-option-row.has-action {
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
+.popup-select-option-action {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-tertiary, #8b8f94);
+  cursor: pointer;
+}
+
+.popup-select-option-action:hover:not(:disabled),
+.popup-select-option-action:focus-visible {
+  outline: 0;
+  background: var(--surface-hover, #ececea);
+  color: var(--text-primary, #17191c);
+}
+
+.popup-select-option-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .popup-select-option-copy {

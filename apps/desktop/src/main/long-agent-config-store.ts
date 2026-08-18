@@ -443,7 +443,8 @@ function cloneInputAgent(
       agent.welcomeShortcuts[0],
       agent.welcomeShortcuts[1],
       agent.welcomeShortcuts[2]
-    ]
+    ],
+    readAccess: cloneReadAccess(agent.readAccess)
   };
 }
 
@@ -473,7 +474,8 @@ function defaultsAsInput(): LongAgentSettingsInput {
         profile.welcomeShortcuts[0],
         profile.welcomeShortcuts[1],
         profile.welcomeShortcuts[2]
-      ]
+      ],
+      readAccess: cloneReadAccess(profile.readAccess)
     }))
   };
 }
@@ -539,6 +541,9 @@ function mergeSettingAgentFromLegacy(
     : characterCustomShortcuts
       ? character!.welcomeShortcuts
       : builtin.welcomeShortcuts;
+  const sources = [world, character].filter(
+    (agent): agent is LongAgentSettingsInputAgent => Boolean(agent)
+  );
   return {
     id: "setting",
     systemPrompt,
@@ -546,6 +551,24 @@ function mergeSettingAgentFromLegacy(
       welcomeShortcuts[0]!,
       welcomeShortcuts[1]!,
       welcomeShortcuts[2]!
+    ],
+    readAccess: mergeLegacyReadAccess("setting", sources)
+  };
+}
+
+function mergeLegacyReadAccess(
+  agentId: LongAgentId,
+  sources: readonly LongAgentSettingsInputAgent[]
+): LongAgentReadAccess {
+  const builtin = getDefaultLongAgentProfile(agentId).readAccess;
+  if (sources.length === 0) return cloneReadAccess(builtin);
+  return {
+    workspaceRoots: [...builtin.workspaceRoots],
+    materialKinds: [
+      ...new Set(sources.flatMap((agent) => agent.readAccess.materialKinds))
+    ],
+    skillKinds: [
+      ...new Set(sources.flatMap((agent) => agent.readAccess.skillKinds))
     ]
   };
 }
@@ -560,6 +583,8 @@ function asLegacyInputAgent(
     : [];
   if (typeof raw.systemPrompt !== "string") return undefined;
   if (shortcuts.length !== 3) return undefined;
+  const builtin = getDefaultLongAgentProfile(id).readAccess;
+  const rawReadAccess = isRecord(raw.readAccess) ? raw.readAccess : {};
   return {
     id,
     systemPrompt: raw.systemPrompt,
@@ -567,7 +592,16 @@ function asLegacyInputAgent(
       String(shortcuts[0]),
       String(shortcuts[1]),
       String(shortcuts[2])
-    ]
+    ],
+    readAccess: {
+      workspaceRoots: [...builtin.workspaceRoots],
+      materialKinds: Array.isArray(rawReadAccess.materialKinds)
+        ? (rawReadAccess.materialKinds as LongAgentReadAccess["materialKinds"])
+        : [...builtin.materialKinds],
+      skillKinds: Array.isArray(rawReadAccess.skillKinds)
+        ? (rawReadAccess.skillKinds as LongAgentReadAccess["skillKinds"])
+        : [...builtin.skillKinds]
+    }
   };
 }
 
@@ -611,6 +645,9 @@ function mergeWriterAgentFromLegacy(
     : writerCustomShortcuts
       ? writer!.welcomeShortcuts
       : builtin.welcomeShortcuts;
+  const sources = [draft, writer].filter(
+    (agent): agent is LongAgentSettingsInputAgent => Boolean(agent)
+  );
   return {
     id: "draft",
     systemPrompt,
@@ -618,7 +655,8 @@ function mergeWriterAgentFromLegacy(
       welcomeShortcuts[0]!,
       welcomeShortcuts[1]!,
       welcomeShortcuts[2]!
-    ]
+    ],
+    readAccess: mergeLegacyReadAccess("draft", sources)
   };
 }
 
@@ -665,6 +703,34 @@ function migrateLegacyLongAgentSettings(
   };
 }
 
+function normalizeReadAccess(
+  settings: Record<string, unknown>
+): Record<string, unknown> {
+  if (!Array.isArray(settings.agents)) return settings;
+  return {
+    ...settings,
+    agents: settings.agents.map((agent) => {
+      if (!isRecord(agent)) return agent;
+      const parsedId = LongAgentIdSchema.safeParse(agent.id);
+      if (!parsedId.success) return agent;
+      const builtin = getDefaultLongAgentProfile(parsedId.data).readAccess;
+      const readAccess = isRecord(agent.readAccess) ? agent.readAccess : {};
+      return {
+        ...agent,
+        readAccess: {
+          workspaceRoots: [...builtin.workspaceRoots],
+          materialKinds: Array.isArray(readAccess.materialKinds)
+            ? readAccess.materialKinds
+            : [...builtin.materialKinds],
+          skillKinds: Array.isArray(readAccess.skillKinds)
+            ? readAccess.skillKinds
+            : [...builtin.skillKinds]
+        }
+      };
+    })
+  };
+}
+
 function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
   if (raw === undefined) return defaultsAsInput();
   if (
@@ -676,18 +742,9 @@ function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
     throw new Error("长篇智能体配置版本无效，已停止加载以避免覆盖原文件。");
   }
   const { version: _version, ...rawSettings } = raw as DiskLongAgentSettings;
-  const settings = migrateLegacyLongAgentSettings(
-    rawSettings as Record<string, unknown>
+  const settings = normalizeReadAccess(
+    migrateLegacyLongAgentSettings(rawSettings as Record<string, unknown>)
   );
-  // 旧版本配置中每个智能体带有可编辑的 readAccess；读取范围已改为内置固定，
-  // 加载时静默剥离，下次保存即重写为不含 readAccess 的格式。
-  if (Array.isArray(settings.agents)) {
-    settings.agents = settings.agents.map((agent) => {
-      if (!isRecord(agent) || !("readAccess" in agent)) return agent;
-      const { readAccess: _legacyReadAccess, ...rest } = agent;
-      return rest;
-    });
-  }
   const parsed = LongAgentSettingsInputSchema.safeParse(settings);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -786,7 +843,8 @@ export class LongAgentConfigStore {
             builtin.welcomeShortcuts[0],
             builtin.welcomeShortcuts[1],
             builtin.welcomeShortcuts[2]
-          ]
+          ],
+          readAccess: cloneReadAccess(builtin.readAccess)
         };
         const index = next.agents.findIndex((agent) => agent.id === agentId);
         if (index < 0) {
@@ -850,7 +908,11 @@ export class LongAgentConfigStore {
             override.welcomeShortcuts[1],
             override.welcomeShortcuts[2]
           ],
-          readAccess: cloneReadAccess(builtin.readAccess),
+          readAccess: {
+            workspaceRoots: [...builtin.readAccess.workspaceRoots],
+            materialKinds: [...override.readAccess.materialKinds],
+            skillKinds: [...override.readAccess.skillKinds]
+          },
           writeAccess: {
             workspaceRoots: [...builtin.writeAccess.workspaceRoots],
             capabilities: [...builtin.writeAccess.capabilities]

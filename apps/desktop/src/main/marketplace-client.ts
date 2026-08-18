@@ -439,10 +439,12 @@ export class MarketplaceClient {
   async session(): Promise<MarketplaceSession> {
     await this.loadPromise;
     if (!this.token || this.isExpired()) return this.clearSession();
+    const requestedToken = this.token;
     try {
       const user = normalizeUser(
         await this.request("GET", "/market/v1/me", { authenticated: true })
       );
+      if (this.token !== requestedToken) return this.sessionSnapshot();
       this.user = user;
       return this.sessionSnapshot();
     } catch (error: unknown) {
@@ -790,11 +792,13 @@ export class MarketplaceClient {
   ): Promise<unknown> {
     await this.loadPromise;
     const headers = new Headers({ Accept: "application/json" });
+    let requestedToken: string | undefined;
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
     }
     if (options.authenticated !== false && this.token && !this.isExpired()) {
-      headers.set("Authorization", `Bearer ${this.token}`);
+      requestedToken = this.token;
+      headers.set("Authorization", `Bearer ${requestedToken}`);
     } else if (options.authenticated === true) {
       await this.clearSession();
       throw new MarketplaceClientError(
@@ -836,7 +840,29 @@ export class MarketplaceClient {
       }
     }
     if (response.status === 401) {
-      await this.clearSession();
+      const envelope =
+        typeof payload === "object" &&
+        payload !== null &&
+        !Array.isArray(payload)
+          ? (payload as Record<string, unknown>)
+          : {};
+      const rawError = envelope.error;
+      const error =
+        typeof rawError === "object" &&
+        rawError !== null &&
+        !Array.isArray(rawError)
+          ? (rawError as Record<string, unknown>)
+          : {};
+      if (options.authenticated === false) {
+        throw new MarketplaceClientError(
+          requiredString(error, "code") || "marketplace.unauthorized",
+          requiredString(error, "message") || "技能广场请求未获授权。",
+          401
+        );
+      }
+      if (requestedToken && this.token === requestedToken) {
+        await this.clearSession();
+      }
       throw new MarketplaceClientError(
         "marketplace.unauthorized",
         "技能广场登录已失效，请重新登录。",

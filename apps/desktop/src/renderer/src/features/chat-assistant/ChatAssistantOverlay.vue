@@ -1,0 +1,869 @@
+<script setup lang="ts">
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  toRef,
+  watch,
+  type CSSProperties
+} from "vue";
+import {
+  CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH,
+  type CatalogIndexSnapshot,
+  type ChatAssistantProjectRef,
+  type LongBookSummary,
+  type ThinkingLevel
+} from "@deepwrite/contracts";
+import type { AgentConversationController } from "../../composables/useAgentConversation";
+import { uiMessage } from "../../ui-feedback";
+import AppIcon from "../../components/AppIcon.vue";
+import MarkdownContent from "../../components/MarkdownContent.vue";
+import PopupSelect, {
+  type PopupSelectOption,
+  type PopupSelectValue
+} from "../../components/PopupSelect.vue";
+import ChatAssistantProcessingTrace from "./ChatAssistantProcessingTrace.vue";
+import {
+  useChatAssistantMode,
+  type ChatAssistantProjectOption
+} from "./useChatAssistantMode";
+
+const props = defineProps<{
+  active: boolean;
+  conversationForKey(
+    key: string,
+    scope?: string
+  ): AgentConversationController;
+  catalogSnapshot: CatalogIndexSnapshot | null;
+  longBooks: readonly LongBookSummary[];
+  runtimeAvailable: boolean;
+}>();
+
+const emit = defineEmits<{ minimize: [] }>();
+const assistant = useChatAssistantMode({
+  conversationForKey: props.conversationForKey,
+  catalogSnapshot: toRef(props, "catalogSnapshot"),
+  longBooks: toRef(props, "longBooks")
+});
+const controller = assistant.controller;
+const SIZE_STORAGE_KEY = "deepwrite:chat-assistant-size:v2";
+const DESKTOP_BREAKPOINT = 760;
+const WINDOW_MARGIN = 20;
+const MIN_WIDTH = 480;
+const MIN_HEIGHT = 420;
+
+interface ChatAssistantSize {
+  width: number;
+  height: number;
+}
+
+type ResizeAxis = "width" | "height" | "both";
+
+interface ResizeSession extends ChatAssistantSize {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  axis: ResizeAxis;
+}
+
+const input = ref<HTMLTextAreaElement | null>(null);
+const scroller = ref<HTMLElement | null>(null);
+const showAllHistory = ref(false);
+const viewportWidth = ref(typeof window === "undefined" ? 1440 : window.innerWidth);
+const viewportHeight = ref(typeof window === "undefined" ? 900 : window.innerHeight);
+const resizeSession = ref<ResizeSession | null>(null);
+const projectConfigOpen = ref(false);
+const projectConfigMode = ref<"add" | "edit">("add");
+const projectConfigProjectKey = ref("");
+const projectConfigPrompt = ref("");
+const projectConfigCustomized = ref(false);
+const projectConfigPending = ref(false);
+let previousUserSelect = "";
+let previousCursor = "";
+
+function defaultSize(): ChatAssistantSize {
+  return {
+    width: Math.round(viewportWidth.value * 0.44),
+    height: Math.round(viewportHeight.value * 0.88)
+  };
+}
+
+function clampSize(size: ChatAssistantSize): ChatAssistantSize {
+  const maxWidth = Math.max(1, viewportWidth.value - WINDOW_MARGIN * 2);
+  const maxHeight = Math.max(1, viewportHeight.value - WINDOW_MARGIN * 2);
+  const minWidth = Math.min(MIN_WIDTH, maxWidth);
+  const minHeight = Math.min(MIN_HEIGHT, maxHeight);
+  return {
+    width: Math.round(Math.min(maxWidth, Math.max(minWidth, size.width))),
+    height: Math.round(Math.min(maxHeight, Math.max(minHeight, size.height)))
+  };
+}
+
+function readStoredSize(): ChatAssistantSize {
+  if (typeof window === "undefined") return clampSize(defaultSize());
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(SIZE_STORAGE_KEY) ?? "null") as
+      | Partial<ChatAssistantSize>
+      | null;
+    if (Number.isFinite(stored?.width) && Number.isFinite(stored?.height)) {
+      return clampSize({ width: Number(stored?.width), height: Number(stored?.height) });
+    }
+  } catch {
+    // Ignore malformed local UI preferences and fall back to the responsive default.
+  }
+  return clampSize(defaultSize());
+}
+
+const windowSize = ref<ChatAssistantSize>(readStoredSize());
+const windowStyle = computed<CSSProperties>(() =>
+  viewportWidth.value <= DESKTOP_BREAKPOINT
+    ? {}
+    : {
+        width: `${windowSize.value.width}px`,
+        height: `${windowSize.value.height}px`
+      }
+);
+const messages = computed(() => controller.value!.messages.value);
+const history = computed(() => controller.value!.history.value);
+const visibleHistory = computed(() =>
+  showAllHistory.value ? history.value : history.value.slice(0, 3)
+);
+const currentHistory = computed(() => history.value.find((item) => item.current));
+const title = computed(() => currentHistory.value?.title || "新聊天");
+const lastAssistantMessage = computed(() =>
+  [...messages.value].reverse().find(
+    (message) => message.role === "assistant" && message.content.trim()
+  )
+);
+const hasStreamingAssistant = computed(() =>
+  messages.value.some(
+    (message) => message.role === "assistant" && message.status === "streaming"
+  )
+);
+const selectedModel = computed(() =>
+  controller.value!.configuredModels.value.find(
+    (model) => model.id === controller.value!.selectedModelId.value
+  )
+);
+const modelOptions = computed(() =>
+  controller.value!.configuredModels.value.map((model) => ({
+    value: model.id,
+    label: model.label,
+    ...(model.id === controller.value!.selectedModelId.value
+      ? { description: "当前模型" }
+      : {})
+  }))
+);
+const thinkingLabels: Record<string, string> = {
+  off: "关闭",
+  minimal: "最低",
+  low: "较低",
+  medium: "标准",
+  high: "深度",
+  xhigh: "极高",
+  max: "最高"
+};
+const thinkingOptions = computed(() => [
+  { value: "off", label: "关闭" },
+  ...(selectedModel.value?.thinkingLevelOptions ?? ["minimal", "low", "medium", "high", "xhigh", "max"])
+    .map((value) => ({ value, label: thinkingLabels[value] ?? value }))
+]);
+const canSend = computed(() => controller.value!.canSend.value);
+const canStop = computed(() => controller.value!.canStop.value);
+const effectiveCanSend = computed(
+  () => canSend.value && assistant.requestContext.value !== null
+);
+const projectTypeLabels = {
+  short: "短篇",
+  script: "剧本",
+  long: "长篇"
+} as const;
+function groupedProjectOptions(
+  candidates: readonly ChatAssistantProjectOption[]
+): PopupSelectOption[] {
+  const options: PopupSelectOption[] = [];
+  for (const type of ["short", "script", "long"] as const) {
+    const projects = candidates.filter(
+      (option) => option.project.projectType === type
+    );
+    if (!projects.length) continue;
+    options.push({
+      value: `group:${type}`,
+      label: projectTypeLabels[type],
+      disabled: true,
+      style: { fontWeight: "600", color: "var(--text-tertiary)" }
+    });
+    options.push(
+      ...projects.map((option) => ({
+        value: option.key,
+        label: option.label,
+        description: projectTypeLabels[type],
+        style: { paddingLeft: "22px" }
+      }))
+    );
+  }
+  return options;
+}
+const configuredProjectKeys = computed(
+  () => new Set(assistant.configuredProjects.value.map(
+    (project) => `${project.projectType}:${project.projectId}`
+  ))
+);
+const availableProjectOptions = computed(() =>
+  assistant.projectOptions.value.filter(
+    (option) => !configuredProjectKeys.value.has(option.key)
+  )
+);
+const projectBookOptions = computed<PopupSelectOption[]>(() => {
+  if (projectConfigMode.value === "edit") {
+    const selected = assistant.projectOptions.value.filter(
+      (option) => option.key === projectConfigProjectKey.value
+    );
+    return groupedProjectOptions(selected);
+  }
+  return groupedProjectOptions(availableProjectOptions.value);
+});
+const activeContextKey = computed(() =>
+  assistant.mode.value === "normal"
+    ? "context:normal"
+    : `context:project:${assistant.selectedProjectKey.value}`
+);
+const contextOptions = computed<PopupSelectOption[]>(() => {
+  const options: PopupSelectOption[] = [
+    { value: "context:normal", label: "普通模式" }
+  ];
+  if (assistant.configuredProjectOptions.value.length) {
+    options.push({
+      value: "context:projects",
+      label: "项目",
+      disabled: true,
+      style: { fontWeight: "600", color: "var(--text-tertiary)" }
+    });
+    options.push(...assistant.configuredProjectOptions.value.map((option) => ({
+      value: `context:project:${option.key}`,
+      label: option.label,
+      description: option.available
+        ? projectTypeLabels[option.project.projectType]
+        : "关联书籍不可用",
+      ...(option.available
+        ? { actionIcon: "edit" as const, actionLabel: `编辑项目：${option.label}` }
+        : {}),
+      style: { paddingLeft: "22px" }
+    })));
+  }
+  options.push({
+    value: "context:add-project",
+    label: "+ 添加新项目配置"
+  });
+  return options;
+});
+const projectConfigOption = computed(() =>
+  assistant.projectOptions.value.find(
+    ({ key }) => key === projectConfigProjectKey.value
+  ) ?? null
+);
+const projectConfigTitle = computed(() =>
+  projectConfigMode.value === "add" ? "添加项目" : "编辑项目"
+);
+const emptyHint = computed(() => {
+  if (assistant.mode.value === "normal") {
+    return "可查询创作空间目录、资料库、技能库、模型配置和用量，不读取正文。";
+  }
+  if (!assistant.selectedProject.value) return "请添加项目并关联一本书籍后开始聊天。";
+  if (!assistant.projectAvailable.value) return "所选项目已不存在或暂时不可用，当前无法发送。";
+  return `当前只读查询：${assistant.selectedProjectOption.value?.label ?? "所选项目"}`;
+});
+
+function focusInput(): void {
+  void nextTick(() => input.value?.focus());
+}
+
+async function send(): Promise<void> {
+  if (!effectiveCanSend.value) return;
+  await assistant.sendAssistantMessage();
+}
+
+function handleInput(event: Event): void {
+  controller.value!.draft.value = (event.target as HTMLTextAreaElement).value;
+}
+
+function handleKeydown(event: KeyboardEvent): void {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  void send();
+}
+
+function updateThinking(value: PopupSelectValue): void {
+  controller.value!.selectThinkingLevel(value as ThinkingLevel);
+}
+
+function updateModel(value: PopupSelectValue): void {
+  controller.value!.selectModel(String(value));
+}
+
+function updateContext(value: PopupSelectValue): void {
+  const key = String(value);
+  if (key === "context:add-project") {
+    openAddProject();
+    return;
+  }
+  if (key === "context:normal") {
+    if (!assistant.setMode("normal")) {
+      uiMessage.info("当前回复完成或停止后，才能切换聊天上下文");
+    }
+    return;
+  }
+  const prefix = "context:project:";
+  if (!key.startsWith(prefix)) return;
+  const projectKey = key.slice(prefix.length);
+  if (!assistant.selectProject(projectKey) || !assistant.setMode("project")) {
+    uiMessage.info("当前回复完成或停止后，才能切换聊天上下文");
+  }
+}
+
+async function loadProjectConfigFor(
+  project: ChatAssistantProjectRef
+): Promise<void> {
+  projectConfigPending.value = true;
+  try {
+    const config = await assistant.loadProjectConfig(project);
+    projectConfigPrompt.value = config.systemPrompt;
+    projectConfigCustomized.value = config.customized;
+  } catch (cause) {
+    uiMessage.error(cause instanceof Error ? cause.message : "读取项目配置失败");
+  } finally {
+    projectConfigPending.value = false;
+  }
+}
+
+function openAddProject(): void {
+  if (!availableProjectOptions.value.length) {
+    uiMessage.info(
+      assistant.projectOptions.value.length
+        ? "当前书籍都已添加为聊天项目"
+        : "当前没有可关联的短篇、剧本或长篇书籍"
+    );
+    return;
+  }
+  projectConfigMode.value = "add";
+  projectConfigProjectKey.value = "";
+  projectConfigPrompt.value = "";
+  projectConfigCustomized.value = false;
+  projectConfigOpen.value = true;
+}
+
+async function openEditProject(value: PopupSelectValue): Promise<void> {
+  const contextKey = String(value);
+  const prefix = "context:project:";
+  if (!contextKey.startsWith(prefix)) return;
+  const projectKey = contextKey.slice(prefix.length);
+  const option = assistant.configuredProjectOptions.value.find(
+    (candidate) => candidate.key === projectKey
+  );
+  if (!option?.available) {
+    uiMessage.info("当前没有可编辑的关联项目");
+    return;
+  }
+  projectConfigMode.value = "edit";
+  projectConfigProjectKey.value = projectKey;
+  projectConfigPrompt.value = "";
+  projectConfigCustomized.value = false;
+  projectConfigOpen.value = true;
+  await loadProjectConfigFor(option.project);
+}
+
+function updateProjectAssociation(value: PopupSelectValue): void {
+  if (projectConfigMode.value !== "add" || projectConfigPending.value) return;
+  const key = String(value);
+  const option = assistant.projectOptions.value.find(
+    (candidate) => candidate.key === key
+  );
+  if (!option) return;
+  projectConfigProjectKey.value = key;
+  void loadProjectConfigFor(option.project);
+}
+
+async function saveProjectConfig(): Promise<void> {
+  const option = projectConfigOption.value;
+  if (!option) {
+    uiMessage.warning("请选择要关联的书籍");
+    return;
+  }
+  const prompt = projectConfigPrompt.value.trim();
+  if (!prompt) {
+    uiMessage.warning("项目提示词不能为空");
+    return;
+  }
+  if (prompt.length > CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH) {
+    uiMessage.warning(`项目提示词不能超过 ${CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH} 个字符`);
+    return;
+  }
+  projectConfigPending.value = true;
+  try {
+    const config = await assistant.saveProjectConfig(prompt, option.project);
+    projectConfigPrompt.value = config.systemPrompt;
+    projectConfigCustomized.value = config.customized;
+    if (projectConfigMode.value === "add") {
+      await assistant.refreshConfiguredProjects();
+      assistant.selectProject(option.key);
+      assistant.setMode("project");
+    }
+    projectConfigOpen.value = false;
+    uiMessage.success(
+      projectConfigMode.value === "add" ? "项目已添加" : "项目配置已保存"
+    );
+  } catch (cause) {
+    uiMessage.error(cause instanceof Error ? cause.message : "保存项目配置失败");
+  } finally {
+    projectConfigPending.value = false;
+  }
+}
+
+async function resetProjectConfig(): Promise<void> {
+  const option = projectConfigOption.value;
+  if (!option) {
+    uiMessage.warning("请先选择关联书籍");
+    return;
+  }
+  projectConfigPending.value = true;
+  try {
+    const config = await assistant.resetProjectConfig(option.project);
+    projectConfigPrompt.value = config.systemPrompt;
+    projectConfigCustomized.value = config.customized;
+    uiMessage.success("已恢复默认项目提示词");
+  } catch (cause) {
+    uiMessage.error(cause instanceof Error ? cause.message : "恢复默认配置失败");
+  } finally {
+    projectConfigPending.value = false;
+  }
+}
+
+function newConversation(): void {
+  controller.value!.newConversation();
+  showAllHistory.value = false;
+  focusInput();
+}
+
+function selectConversation(sessionId: string): void {
+  if (!controller.value!.selectConversation(sessionId)) {
+    uiMessage.info("当前回复完成或停止后，才能切换聊天记录");
+    return;
+  }
+  showAllHistory.value = false;
+  focusInput();
+}
+
+async function copyLastReply(): Promise<void> {
+  const content = lastAssistantMessage.value?.content.trim();
+  if (!content) return;
+  try {
+    await navigator.clipboard.writeText(content);
+    uiMessage.success("已复制最后一条回复");
+  } catch {
+    uiMessage.error("复制失败，请稍后重试");
+  }
+}
+
+function formatHistoryTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "";
+  const elapsedDays = Math.floor((Date.now() - timestamp) / 86_400_000);
+  if (elapsedDays <= 0) return "今天";
+  return `${elapsedDays} 天`;
+}
+
+function persistSize(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(windowSize.value));
+  } catch {
+    // A blocked storage API should not prevent resizing for the current session.
+  }
+}
+
+function stopResize(): void {
+  if (!resizeSession.value) return;
+  resizeSession.value = null;
+  window.removeEventListener("pointermove", handleResizeMove);
+  window.removeEventListener("pointerup", stopResize);
+  window.removeEventListener("pointercancel", stopResize);
+  document.body.style.userSelect = previousUserSelect;
+  document.body.style.cursor = previousCursor;
+  persistSize();
+}
+
+function handleResizeMove(event: PointerEvent): void {
+  const session = resizeSession.value;
+  if (!session || event.pointerId !== session.pointerId) return;
+  windowSize.value = clampSize({
+    width:
+      session.axis === "height"
+        ? session.width
+        : session.width + session.startX - event.clientX,
+    height:
+      session.axis === "width"
+        ? session.height
+        : session.height + session.startY - event.clientY
+  });
+}
+
+function startResize(event: PointerEvent, axis: ResizeAxis): void {
+  if (viewportWidth.value <= DESKTOP_BREAKPOINT || event.button !== 0) return;
+  event.preventDefault();
+  resizeSession.value = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    axis,
+    ...windowSize.value
+  };
+  previousUserSelect = document.body.style.userSelect;
+  previousCursor = document.body.style.cursor;
+  document.body.style.userSelect = "none";
+  document.body.style.cursor =
+    axis === "width" ? "ew-resize" : axis === "height" ? "ns-resize" : "nwse-resize";
+  window.addEventListener("pointermove", handleResizeMove);
+  window.addEventListener("pointerup", stopResize);
+  window.addEventListener("pointercancel", stopResize);
+}
+
+function handleResizeKeydown(event: KeyboardEvent, axis: ResizeAxis): void {
+  if (viewportWidth.value <= DESKTOP_BREAKPOINT) return;
+  const step = event.shiftKey ? 32 : 16;
+  let nextSize: ChatAssistantSize | null = null;
+  if (event.key === "ArrowLeft" && axis !== "height") {
+    nextSize = { ...windowSize.value, width: windowSize.value.width + step };
+  } else if (event.key === "ArrowRight" && axis !== "height") {
+    nextSize = { ...windowSize.value, width: windowSize.value.width - step };
+  } else if (event.key === "ArrowUp" && axis !== "width") {
+    nextSize = { ...windowSize.value, height: windowSize.value.height + step };
+  } else if (event.key === "ArrowDown" && axis !== "width") {
+    nextSize = { ...windowSize.value, height: windowSize.value.height - step };
+  }
+  if (!nextSize) return;
+  event.preventDefault();
+  windowSize.value = clampSize(nextSize);
+  persistSize();
+}
+
+function handleViewportResize(): void {
+  viewportWidth.value = window.innerWidth;
+  viewportHeight.value = window.innerHeight;
+  windowSize.value = clampSize(windowSize.value);
+}
+
+onMounted(() => {
+  viewportWidth.value = window.innerWidth;
+  viewportHeight.value = window.innerHeight;
+  windowSize.value = readStoredSize();
+  window.addEventListener("resize", handleViewportResize);
+});
+
+onBeforeUnmount(() => {
+  stopResize();
+  window.removeEventListener("resize", handleViewportResize);
+});
+
+watch(
+  () => props.active,
+  (active) => {
+    if (active) focusInput();
+  },
+  { immediate: true }
+);
+watch(
+  () => controller.value!.conversationError.value,
+  (message) => {
+    if (message) uiMessage.error(message);
+  }
+);
+watch(
+  () => assistant.projectAvailable.value,
+  (available, previous) => {
+    if (previous && !available && assistant.mode.value === "project") {
+      uiMessage.error("所选项目已删除或不可用，请重新选择项目");
+    }
+  }
+);
+watch(
+  () => [messages.value.length, lastAssistantMessage.value?.content.length ?? 0],
+  () => {
+    void nextTick(() => scroller.value?.scrollTo({ top: scroller.value.scrollHeight }));
+  }
+);
+</script>
+
+<template>
+  <section
+    class="chat-assistant-window"
+    :style="windowStyle"
+    role="dialog"
+    aria-modal="false"
+    aria-label="独立聊天助手"
+    @keydown.esc.stop.prevent="emit('minimize')"
+  >
+    <div
+      class="chat-assistant-resize-edge is-left"
+      role="separator"
+      aria-label="调整聊天窗口宽度"
+      aria-orientation="vertical"
+      tabindex="0"
+      @pointerdown="startResize($event, 'width')"
+      @keydown="handleResizeKeydown($event, 'width')"
+    />
+    <div
+      class="chat-assistant-resize-edge is-top"
+      role="separator"
+      aria-label="调整聊天窗口高度"
+      aria-orientation="horizontal"
+      tabindex="0"
+      @pointerdown="startResize($event, 'height')"
+      @keydown="handleResizeKeydown($event, 'height')"
+    />
+    <div
+      class="chat-assistant-resize-edge is-top-left"
+      role="separator"
+      aria-label="同时调整聊天窗口宽高"
+      tabindex="0"
+      @pointerdown="startResize($event, 'both')"
+      @keydown="handleResizeKeydown($event, 'both')"
+    />
+    <header class="chat-assistant-header">
+      <div class="chat-assistant-header-main">
+        <strong :title="title">{{ title }}</strong>
+        <PopupSelect
+          class="chat-assistant-context-select"
+          :model-value="activeContextKey"
+          :options="contextOptions"
+          accessible-label="切换聊天上下文"
+          variant="compact"
+          size="small"
+          :disabled="assistant.isBusy.value || projectConfigPending"
+          :menu-min-width="260"
+          :menu-z-index="100"
+          @update:model-value="updateContext"
+          @option-action="openEditProject"
+        />
+      </div>
+      <div class="chat-assistant-header-actions">
+        <button type="button" aria-label="新建聊天" :disabled="controller.isBusy.value" @click="newConversation">
+          <AppIcon name="plus" :size="18" />
+        </button>
+        <button type="button" aria-label="复制最后一条回复" :disabled="!lastAssistantMessage" @click="copyLastReply">
+          <AppIcon name="copy" :size="18" />
+        </button>
+        <button type="button" aria-label="最小化聊天助手" @click="emit('minimize')">
+          <AppIcon name="minus" :size="18" />
+        </button>
+      </div>
+    </header>
+
+    <div ref="scroller" class="chat-assistant-content" aria-live="polite">
+      <div v-if="messages.length" class="chat-assistant-messages">
+        <article v-for="message in messages" :key="message.id" class="chat-assistant-message" :class="`is-${message.role}`">
+          <div v-if="message.role === 'user'" class="chat-assistant-user-copy">{{ message.content }}</div>
+          <div v-else class="chat-assistant-reply">
+            <ChatAssistantProcessingTrace :message="message" />
+            <MarkdownContent v-if="message.content" :content="message.content" />
+            <span v-else-if="message.status === 'streaming'" class="chat-assistant-waiting">正在组织回复…</span>
+            <span v-if="message.status === 'error'" class="sr-only">回复失败</span>
+          </div>
+        </article>
+        <div v-if="controller.isBusy.value && !hasStreamingAssistant" class="chat-assistant-waiting">正在连接模型…</div>
+      </div>
+
+      <section v-else class="chat-assistant-home">
+        <div class="chat-assistant-home-spacer" />
+        <div v-if="history.length" class="chat-assistant-recent">
+          <span>最近聊天</span>
+          <button v-for="item in visibleHistory" :key="item.sessionId" type="button" @click="selectConversation(item.sessionId)">
+            <strong>{{ item.title }}</strong>
+            <time :datetime="item.updatedAt">{{ formatHistoryTime(item.updatedAt) }}</time>
+          </button>
+          <button v-if="history.length > 3 && !showAllHistory" class="chat-assistant-view-all" type="button" @click="showAllHistory = true">查看全部</button>
+        </div>
+        <div v-else class="chat-assistant-empty">
+          <AppIcon name="message" :size="28" />
+          <strong>开始一段新聊天</strong>
+          <span>{{ emptyHint }}</span>
+        </div>
+      </section>
+    </div>
+
+    <footer class="chat-assistant-composer">
+      <textarea
+        ref="input"
+        :value="controller.draft.value"
+        :placeholder="runtimeAvailable ? '给聊天助手发送消息' : '浏览器预览不可发送，请启动桌面客户端'"
+        :disabled="!runtimeAvailable || controller.isBusy.value"
+        rows="1"
+        @input="handleInput"
+        @keydown="handleKeydown"
+      />
+      <div class="chat-assistant-toolbar">
+        <button class="chat-assistant-placeholder-action" type="button" disabled title="附件功能后续开放" aria-label="附件功能后续开放">
+          <AppIcon name="plus" :size="19" />
+        </button>
+        <span class="chat-assistant-toolbar-spacer" />
+        <PopupSelect
+          :model-value="controller.selectedModelId.value"
+          :options="modelOptions"
+          accessible-label="聊天模型"
+          placeholder="默认模型"
+          variant="compact"
+          size="small"
+          align="end"
+          :disabled="modelOptions.length === 0"
+          :menu-min-width="220"
+          :menu-z-index="95"
+          @update:model-value="updateModel"
+        />
+        <PopupSelect
+          :model-value="controller.thinkingLevel.value"
+          :options="thinkingOptions"
+          accessible-label="思考等级"
+          variant="compact"
+          size="small"
+          align="end"
+          :menu-z-index="95"
+          @update:model-value="updateThinking"
+        />
+        <button class="chat-assistant-placeholder-action" type="button" disabled title="语音功能后续开放" aria-label="语音功能后续开放">
+          <AppIcon name="mic" :size="18" />
+        </button>
+        <button v-if="canStop" class="chat-assistant-send is-stop" type="button" aria-label="停止生成" @click="controller.stopGeneration()">
+          <AppIcon name="stop" :size="15" />
+        </button>
+        <button v-else class="chat-assistant-send" type="button" aria-label="发送消息" :disabled="!effectiveCanSend" @click="send">
+          <AppIcon name="arrow-up" :size="19" />
+        </button>
+      </div>
+    </footer>
+
+    <div
+      v-if="projectConfigOpen"
+      class="chat-assistant-config-backdrop"
+      @mousedown.self="!projectConfigPending && (projectConfigOpen = false)"
+      @keydown.esc.stop.prevent="!projectConfigPending && (projectConfigOpen = false)"
+    >
+      <section class="chat-assistant-config-dialog" role="dialog" aria-modal="true" aria-label="项目配置">
+        <header>
+          <div>
+            <strong>{{ projectConfigTitle }}</strong>
+            <span>配置项目提示词和关联书籍</span>
+          </div>
+          <button type="button" aria-label="关闭项目配置" :disabled="projectConfigPending" @click="projectConfigOpen = false">×</button>
+        </header>
+        <label for="chat-assistant-project-book">关联书籍</label>
+        <PopupSelect
+          id="chat-assistant-project-book"
+          :model-value="projectConfigProjectKey"
+          :options="projectBookOptions"
+          accessible-label="关联书籍"
+          placeholder="选择短篇、剧本或长篇书籍"
+          :disabled="projectConfigMode === 'edit' || projectConfigPending"
+          :menu-min-width="320"
+          :menu-z-index="130"
+          @update:model-value="updateProjectAssociation"
+        />
+        <p class="chat-assistant-project-lock-hint">
+          {{ projectConfigMode === "edit" ? "关联书籍已锁定，不可更换；后续项目记忆将始终归属这本书。" : "书籍关联在项目保存后锁定，后续不可更换。" }}
+        </p>
+        <label for="chat-assistant-project-prompt">项目提示词</label>
+        <textarea
+          id="chat-assistant-project-prompt"
+          v-model="projectConfigPrompt"
+          :maxlength="CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH"
+          :disabled="projectConfigPending || !projectConfigOption"
+          rows="10"
+        />
+        <div class="chat-assistant-config-meta">
+          <span>{{ projectConfigCustomized ? "当前使用自定义提示词" : "当前使用默认提示词" }}</span>
+          <span>{{ projectConfigPrompt.length }} / {{ CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH }}</span>
+        </div>
+        <p>此内容会追加到固定系统底座，不能覆盖只读、脱敏或工具边界。</p>
+        <footer>
+          <button type="button" class="is-secondary" :disabled="projectConfigPending || !projectConfigOption" @click="resetProjectConfig">恢复默认</button>
+          <span />
+          <button type="button" class="is-secondary" :disabled="projectConfigPending" @click="projectConfigOpen = false">取消</button>
+          <button type="button" class="is-primary" :disabled="projectConfigPending || !projectConfigOption" @click="saveProjectConfig">保存</button>
+        </footer>
+      </section>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.chat-assistant-window { position: fixed; right: 20px; bottom: 20px; z-index: 90; width: min(44vw, calc(100vw - 40px)); min-width: 480px; max-width: calc(100vw - 40px); height: min(88vh, calc(100vh - 40px)); min-height: 420px; max-height: calc(100vh - 40px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; color: var(--text-primary); background: var(--surface-main); border: 1px solid var(--theme-line); border-radius: 28px; box-shadow: 0 24px 70px color-mix(in srgb, #000 20%, transparent); }
+.chat-assistant-resize-edge { position: absolute; z-index: 3; outline: 0; }
+.chat-assistant-resize-edge.is-left { top: 20px; bottom: 20px; left: 0; width: 8px; cursor: ew-resize; }
+.chat-assistant-resize-edge.is-top { top: 0; right: 20px; left: 20px; height: 8px; cursor: ns-resize; }
+.chat-assistant-resize-edge.is-top-left { top: 0; left: 0; z-index: 4; width: 24px; height: 24px; cursor: nwse-resize; }
+.chat-assistant-resize-edge:focus-visible { background: var(--accent-soft); }
+.chat-assistant-header { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--theme-line-soft); }
+.chat-assistant-header-main { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.chat-assistant-header-main > strong { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.05rem; }
+.chat-assistant-header-actions { display: flex; align-items: center; gap: 6px; }
+.chat-assistant-context-select { max-width: 190px; }
+.chat-assistant-context-select :deep(.popup-select-trigger) { max-width: 190px; padding: 0 11px; background: var(--surface-raised); border: 1px solid var(--theme-line-soft); border-radius: 999px; box-shadow: 0 2px 8px color-mix(in srgb, #000 4%, transparent); }
+.chat-assistant-context-select :deep(.popup-select-label) { overflow: hidden; text-overflow: ellipsis; }
+.chat-assistant-header-actions { flex: none; }
+.chat-assistant-header-actions button, .chat-assistant-placeholder-action { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; color: var(--text-secondary); background: transparent; border: 0; border-radius: 10px; }
+.chat-assistant-header-actions button:not(:disabled):hover { color: var(--text-primary); background: var(--surface-hover); }
+.chat-assistant-header button:disabled, .chat-assistant-placeholder-action:disabled { opacity: 0.42; }
+.chat-assistant-content { min-height: 0; overflow-y: auto; padding: 22px 30px; }
+.chat-assistant-messages { width: min(720px, 100%); margin: 0 auto; display: grid; gap: 20px; }
+.chat-assistant-message { min-width: 0; }
+.chat-assistant-message.is-user { display: flex; justify-content: flex-end; }
+.chat-assistant-user-copy { max-width: 78%; padding: 10px 14px; white-space: pre-wrap; line-height: 1.65; background: var(--surface-selected); border-radius: 16px 16px 4px 16px; }
+.chat-assistant-reply { line-height: 1.72; }
+.chat-assistant-waiting { color: var(--text-tertiary); }
+.chat-assistant-home { min-height: 100%; display: grid; grid-template-rows: minmax(80px, 1fr) auto; }
+.chat-assistant-home-spacer { min-height: 80px; }
+.chat-assistant-recent { display: grid; gap: 4px; padding-bottom: 20px; }
+.chat-assistant-recent > span { margin-bottom: 10px; color: var(--text-tertiary); }
+.chat-assistant-recent > button { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; padding: 10px 0; color: var(--text-secondary); text-align: left; background: transparent; border: 0; border-radius: 8px; }
+.chat-assistant-recent > button:hover { color: var(--text-primary); }
+.chat-assistant-recent strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.chat-assistant-recent time { flex: none; color: var(--text-tertiary); }
+.chat-assistant-view-all { justify-content: flex-start !important; color: var(--text-tertiary) !important; }
+.chat-assistant-empty { align-self: end; display: grid; justify-items: center; gap: 8px; padding-bottom: 40px; color: var(--text-tertiary); text-align: center; }
+.chat-assistant-empty strong { color: var(--text-secondary); }
+.chat-assistant-composer { position: relative; margin: 0 12px 12px; padding: 10px 12px 8px; background: var(--surface-raised); border: 1px solid var(--theme-line); border-radius: 22px; box-shadow: 0 8px 24px color-mix(in srgb, #000 7%, transparent); }
+.chat-assistant-composer textarea { display: block; width: 100%; min-height: 42px; max-height: 150px; resize: none; padding: 8px 10px; color: var(--text-primary); font: inherit; line-height: 1.5; background: transparent; border: 0; outline: 0; }
+.chat-assistant-composer textarea::placeholder { color: var(--text-tertiary); }
+.chat-assistant-toolbar { display: flex; align-items: center; gap: 7px; }
+.chat-assistant-toolbar-spacer { flex: 1; }
+.chat-assistant-send { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; color: var(--surface-main); background: var(--text-primary); border: 0; border-radius: 50%; }
+.chat-assistant-send:disabled { opacity: 0.35; }
+.chat-assistant-send.is-stop { color: var(--text-primary); background: var(--surface-selected); }
+.chat-assistant-config-backdrop { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, #000 35%, transparent); }
+.chat-assistant-config-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 40px)); overflow: auto; padding: 22px; color: var(--text-primary); background: var(--surface-raised); border: 1px solid var(--theme-line); border-radius: 18px; box-shadow: 0 24px 70px color-mix(in srgb, #000 28%, transparent); }
+.chat-assistant-config-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.chat-assistant-config-dialog > header > div { display: grid; gap: 4px; }
+.chat-assistant-config-dialog > header span, .chat-assistant-config-dialog > p, .chat-assistant-config-meta { color: var(--text-tertiary); font-size: 0.82rem; }
+.chat-assistant-config-dialog > header button { width: 32px; height: 32px; color: var(--text-secondary); background: transparent; border: 0; border-radius: 9px; font-size: 1.35rem; }
+.chat-assistant-config-dialog > header button:hover { background: var(--surface-hover); }
+.chat-assistant-config-dialog > label { display: block; margin-bottom: 8px; color: var(--text-secondary); }
+.chat-assistant-project-lock-hint { margin: 8px 0 18px !important; }
+.chat-assistant-config-dialog > textarea { width: 100%; min-height: 240px; resize: vertical; padding: 12px 14px; color: var(--text-primary); background: var(--surface-main); border: 1px solid var(--theme-line); border-radius: 12px; outline: 0; font: inherit; line-height: 1.6; }
+.chat-assistant-config-dialog > textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chat-assistant-config-meta { display: flex; justify-content: space-between; gap: 16px; margin-top: 7px; }
+.chat-assistant-config-dialog > p { margin: 14px 0 0; line-height: 1.5; }
+.chat-assistant-config-dialog > footer { display: flex; align-items: center; gap: 9px; margin-top: 20px; }
+.chat-assistant-config-dialog > footer > span { flex: 1; }
+.chat-assistant-config-dialog > footer button { min-height: 36px; padding: 0 14px; border-radius: 10px; font: inherit; }
+.chat-assistant-config-dialog > footer .is-secondary { color: var(--text-secondary); background: var(--surface-main); border: 1px solid var(--theme-line); }
+.chat-assistant-config-dialog > footer .is-primary { color: var(--surface-main); background: var(--text-primary); border: 1px solid var(--text-primary); }
+.chat-assistant-config-dialog > footer button:disabled { opacity: 0.45; }
+@media (max-width: 760px) {
+  .chat-assistant-window { inset: 12px; width: auto; min-width: 0; max-width: none; height: auto; min-height: 0; max-height: none; border-radius: 22px; }
+  .chat-assistant-resize-edge { display: none; }
+  .chat-assistant-header { align-items: flex-start; padding: 12px 16px; }
+  .chat-assistant-header-main > strong { width: 100%; max-width: none; }
+  .chat-assistant-content { padding: 18px; }
+  .chat-assistant-user-copy { max-width: 90%; }
+}
+</style>

@@ -11,7 +11,8 @@ import type {
   LongWorkspaceOperationBatch,
   LongWriteDocumentResult,
   ThinkingLevel,
-  UserPromptAttachment
+  UserPromptAttachment,
+  WorkspacePaneLayout
 } from "@deepwrite/contracts";
 import type { AgentConversationController } from "../composables/useAgentConversation";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
@@ -56,6 +57,7 @@ const props = defineProps<{
   editorLockedReason: string | undefined;
   loading: boolean;
   leftCollapsed: boolean;
+  paneLayout: WorkspacePaneLayout;
   rightPane: Readonly<{
     collapsed: boolean;
     minWidth: number;
@@ -237,7 +239,11 @@ onBeforeUnmount(() => {
 
 <template>
   <template v-if="book">
-    <div class="long-agent-column" aria-label="长篇创作空间">
+    <div
+      v-show="paneLayout === 'agent-editor' || !rightPane.collapsed"
+      class="long-agent-column"
+      aria-label="长篇创作空间"
+    >
       <button
         v-if="leftCollapsed && !(conversationController && agentProfile)"
         class="icon-button long-workspace-expand-sidebar"
@@ -287,6 +293,7 @@ onBeforeUnmount(() => {
         :long-workspace-index="workspaceIndex"
         :left-collapsed="leftCollapsed"
         :right-collapsed="rightPane.collapsed"
+        :right-pane="paneLayout === 'editor-agent'"
         @new-conversation="emit('newConversation')"
         @select-conversation="emit('selectConversation', $event)"
         @send="emit('send', $event)"
@@ -392,7 +399,7 @@ onBeforeUnmount(() => {
     </div>
     <template v-if="workspaceIndex">
       <LongWorkspaceEditor
-        v-show="!rightPane.collapsed"
+        v-show="paneLayout === 'editor-agent' || !rightPane.collapsed"
         :ref="captureEditorPort"
         :book-id="book.id"
         :selection="selection"
@@ -400,9 +407,12 @@ onBeforeUnmount(() => {
         :latest-commit="latestCommit"
         :locked="editorLocked"
         :locked-reason="editorLockedReason"
+        :right-pane="paneLayout === 'agent-editor'"
+        :right-pane-collapsed="rightPane.collapsed"
         @saved="emit('saved', $event)"
         @context-change="emit('contextChange', $event)"
         @collapse="emit('collapseRight')"
+        @toggle-right="emit('toggleRight')"
         @rollback="emit('rollback')"
         @select-character="forwardSelectCharacter"
         @select-plot-point="emit('selectPlotPoint', $event)"
@@ -421,7 +431,7 @@ onBeforeUnmount(() => {
       />
     </template>
     <div
-      v-else-if="!rightPane.collapsed"
+      v-else-if="paneLayout === 'editor-agent' || !rightPane.collapsed"
       class="long-workspace-editor-loading-state"
       aria-live="polite"
     >

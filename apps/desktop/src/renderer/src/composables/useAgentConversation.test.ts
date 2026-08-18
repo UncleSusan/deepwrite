@@ -648,7 +648,8 @@ function createDeferredApi(): {
             permissionMode: "request-approval" as const,
             autoSave: false,
             language: "auto" as const,
-            showInMenuBar: true
+            showInMenuBar: true,
+            workspacePaneLayout: "agent-editor" as const
           }
         };
       },
@@ -801,6 +802,57 @@ afterEach(() => {
 });
 
 describe("agent conversation controller", () => {
+  it("submits chat-assistant messages without workspace or write context", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({ api: () => deferred.api });
+    controller.draft.value = "只聊这个问题";
+
+    const sending = controller.sendAssistantMessage();
+    expect(deferred.prompts).toEqual([
+      expect.objectContaining({
+        mode: "chat-assistant",
+        message: "只聊这个问题"
+      })
+    ]);
+    expect(deferred.prompts[0]).not.toHaveProperty("workspaceContext");
+    expect(deferred.prompts[0]).not.toHaveProperty("writeApprovalMode");
+
+    deferred.resolveAccepted(0, {
+      sessionId: controller.sessionId.value,
+      runId: "run_chat_assistant",
+      acceptedAt: "2026-08-17T08:00:00.000Z",
+      runtime
+    });
+    await sending;
+    controller.dispose();
+  });
+
+  it("normalizes reactive project context before sending it through IPC", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({ api: () => deferred.api });
+    const project = reactive({ projectType: "short" as const, projectId: "book-1" });
+    controller.draft.value = "查询人物设定";
+
+    const sending = controller.sendAssistantMessage({
+      mode: "project",
+      project
+    });
+    expect(deferred.prompts[0]?.chatAssistant).toEqual({
+      mode: "project",
+      project: { projectType: "short", projectId: "book-1" }
+    });
+    expect(() => structuredClone(deferred.prompts[0]?.chatAssistant)).not.toThrow();
+
+    deferred.resolveAccepted(0, {
+      sessionId: controller.sessionId.value,
+      runId: "run_project_chat_assistant",
+      acceptedAt: "2026-08-17T08:00:00.000Z",
+      runtime
+    });
+    await sending;
+    controller.dispose();
+  });
+
   it("adds and replaces edit proposals with deep-cloned diff state", () => {
     const controller = useAgentConversation({ api: () => undefined });
     controller.messages.value = [{

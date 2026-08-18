@@ -60,7 +60,8 @@ export class GeneralSettingsStore {
         permissionMode,
         autoSave: candidate.autoSave,
         language: candidate.language,
-        showInMenuBar: candidate.showInMenuBar
+        showInMenuBar: candidate.showInMenuBar,
+        workspacePaneLayout: candidate.workspacePaneLayout
       });
       if (!parsed.success) {
         return GeneralSettingsSnapshotSchema.parse({

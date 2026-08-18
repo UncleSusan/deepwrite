@@ -833,7 +833,9 @@ describe("long-form renderer vertical slice", () => {
     expect(appSource).toContain(
       '@resize-start="startPaneResize(\'right\', $event)"'
     );
-    expect(longWorkspaceModuleSource).toContain('v-show="!rightPane.collapsed"');
+    expect(longWorkspaceModuleSource).toContain(
+      "paneLayout === 'editor-agent' || !rightPane.collapsed"
+    );
   });
 
   it("wires left-tree collection actions through the existing structure pipeline", () => {

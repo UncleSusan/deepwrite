@@ -19,6 +19,11 @@ describe("SkillMarketplacePage", () => {
     expect(source).toContain("用户名、密码和会话令牌在传输中可能被窃听");
   });
 
+  it("removes Electron and marketplace error wrappers from visible feedback", () => {
+    expect(source).toContain("[A-Za-z_$][\\w$]*Error");
+    expect(source).toContain("Error invoking remote method");
+  });
+
   it("supports all browse filters, details, optimistic likes and safe Markdown", () => {
     expect(source).toContain("contentTypeOptions");
     expect(source).toContain("kindOptions");

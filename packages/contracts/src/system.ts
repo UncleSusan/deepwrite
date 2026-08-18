@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  ChatAssistantProjectConfigGetCommandEnvelopeSchema,
+  ChatAssistantProjectConfigListCommandEnvelopeSchema,
+  ChatAssistantProjectConfigResetCommandEnvelopeSchema,
+  ChatAssistantProjectConfigSaveCommandEnvelopeSchema
+} from "./chat-assistant";
 import { EnvelopeBaseSchema, type Envelope } from "./envelope";
 import {
   AgentAbortCommandEnvelopeSchema,
@@ -330,6 +336,10 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   AppearanceSaveCommandEnvelopeSchema,
   GeneralSettingsListCommandEnvelopeSchema,
   GeneralSettingsSaveCommandEnvelopeSchema,
+  ChatAssistantProjectConfigListCommandEnvelopeSchema,
+  ChatAssistantProjectConfigGetCommandEnvelopeSchema,
+  ChatAssistantProjectConfigSaveCommandEnvelopeSchema,
+  ChatAssistantProjectConfigResetCommandEnvelopeSchema,
   ExportLongManuscriptCommandEnvelopeSchema,
   ExportShortManuscriptCommandEnvelopeSchema,
   AgentPromptCommandEnvelopeSchema,

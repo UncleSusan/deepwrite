@@ -42,6 +42,7 @@ import {
   type AgentUsage,
   type AgentUsageObservationStatus,
   type AgentWriteApprovalMode,
+  type ChatAssistantRuntimeContext,
   type LearningImitationAgentProfile,
   type LibraryAgentProfile,
   type LongAgentProfile,
@@ -49,6 +50,7 @@ import {
   type LongWorkspaceRuntimeContext,
   longAgentAcceptsWorldbuildingDirectory,
   type ScriptWorkspaceAgentProfile,
+  type SessionMode,
   type ShortAgentSubagentDefinition,
   type ShortWorkspaceAgentProfile,
   type SubagentActivity,
@@ -102,6 +104,8 @@ import {
 } from "./ollama-tool-schema-compat";
 import { enforceProviderToolSchemaCompatibility } from "./provider-tool-schema-compat";
 import { findDeepWriteRuntimeModel } from "./runtime-model-catalog";
+import { buildChatAssistantSystemPrompt } from "./chat-assistant";
+import { buildChatAssistantTools } from "./chat-assistant-tools";
 
 export {
   buildLongWorkspaceTools,
@@ -119,7 +123,9 @@ export interface AgentRunInput {
   runId: string;
   sessionId: string;
   prompt: string;
+  mode?: SessionMode;
   attachments?: UserPromptAttachment[];
+  chatAssistantRuntimeContext?: ChatAssistantRuntimeContext;
   writeApprovalMode?: AgentWriteApprovalMode;
   thinkingLevel?: ConfiguredThinkingLevel;
   temperature?: number;
@@ -925,7 +931,18 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
               : {})
           })
         : [];
-    let tools: AgentTool[] = subagentAuthoring
+    let tools: AgentTool[] = input.mode === "chat-assistant"
+      ? input.chatAssistantRuntimeContext
+        ? buildChatAssistantTools({
+            runId: input.runId,
+            sessionId: input.sessionId,
+            context: input.chatAssistantRuntimeContext,
+            ...(input.longCommandExecutor
+              ? { longCommandExecutor: input.longCommandExecutor }
+              : {})
+          })
+        : []
+      : subagentAuthoring
       ? buildSubagentAuthoringTools(subagentAuthoring)
       : learningImitation && input.learningImitationProfile
       ? buildLearningImitationTools(
@@ -1007,7 +1024,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       if (spawnTool) tools = [...tools, spawnTool];
     }
     const agentKey = `${input.sessionId}:${
-      subagentAuthoring
+      input.mode === "chat-assistant"
+        ? input.chatAssistantRuntimeContext?.mode === "project"
+          ? `chat-assistant:project:${input.chatAssistantRuntimeContext.project.projectType}:${input.chatAssistantRuntimeContext.project.projectId}`
+          : "chat-assistant:normal"
+        : subagentAuthoring
         ? `subagent-authoring:${subagentAuthoring.parentAgentId}`
         : input.learningImitationProfile
         ? `learning-imitation:${input.learningImitationProfile.id}`
@@ -1291,7 +1312,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       // Plot-design and draft turns also receive their latest structure
       // snapshots; tools and the system prompt are still refreshed before every run.
       const persistInitialRuntimeContext = agent.state.messages.length === 0;
-      const runtimeUserContent = persistInitialRuntimeContext
+      const runtimeUserContent = input.mode === "chat-assistant"
+        ? buildRawUserMessage(input).content
+        : persistInitialRuntimeContext
         ? buildRuntimeUserMessageContent(input)
         : longAgentRefreshesDesignContextOnLaterTurns(
               input.longAgentProfile?.id
@@ -2598,6 +2621,12 @@ export function buildEffectiveSystemPrompt(
   basePrompt: string,
   input: AgentRunInput
 ): string {
+  if (input.mode === "chat-assistant") {
+    if (!input.chatAssistantRuntimeContext) {
+      throw new Error("Chat assistant runtime context is unavailable.");
+    }
+    return buildChatAssistantSystemPrompt(input.chatAssistantRuntimeContext);
+  }
   const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
   if (subagentAuthoring) {
     return [
@@ -3359,6 +3388,11 @@ export function buildRawUserMessage(input: AgentRunInput, timestamp = Date.now()
 }
 
 function buildLocalThinking(input: AgentRunInput): string {
+  if (input.mode === "chat-assistant") {
+    return input.chatAssistantRuntimeContext?.mode === "project"
+      ? "正在结合当前项目结构与只读查询工具核对信息。"
+      : "正在结合 DeepWrite 当前状态与只读查询工具组织回复。";
+  }
   const title = input.workspaceContext?.activeResource?.title ?? "未命名资源";
   const selectedProfile =
     input.scriptAgentProfile ??
@@ -3370,6 +3404,16 @@ function buildLocalThinking(input: AgentRunInput): string {
 }
 
 function buildLocalWritingResponse(input: AgentRunInput): string {
+  if (input.mode === "chat-assistant") {
+    const request = input.prompt.replace(/\s+/g, " ").slice(0, 220);
+    return [
+      `${input.chatAssistantRuntimeContext?.mode === "project" ? "项目" : "普通"}聊天助手的本地 Faux 流式链路已就绪。`,
+      "",
+      `我收到了你的消息：${request}`,
+      "",
+      "当前是用于验证客户端聊天链路的本地模型。只读工具已按当前模式装配；不会修改任何项目或配置。配置真实模型后，可以继续正式交流。"
+    ].join("\n");
+  }
   const active = input.workspaceContext?.activeResource;
   const request = input.prompt.replace(/\s+/g, " ").slice(0, 220);
   const activeLabel = active ? `《${active.title}》` : "当前创作资源";

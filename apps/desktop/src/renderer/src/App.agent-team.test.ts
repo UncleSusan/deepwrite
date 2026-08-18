@@ -71,7 +71,9 @@ describe("App agent-team integration", () => {
     expect(featureModulesSource).toContain(
       'class="learning-imitation-main-view"'
     );
-    expect(source).toContain(':active-primary-feature="activePrimaryFeature"');
+    expect(source).toContain(
+      ":active-primary-feature=\"chatAssistant.active.value ? 'chat-assistant' : activePrimaryFeature\""
+    );
   });
 
   it("loads and saves long teams independently in both failure directions", () => {

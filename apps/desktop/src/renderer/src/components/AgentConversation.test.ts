@@ -7,6 +7,18 @@ import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 
 describe("AgentConversation edit proposal placement", () => {
+  it("moves right-pane collapse controls with the selected layout", () => {
+    expect(conversationSource).toContain("rightPane?: boolean");
+    expect(conversationSource).toContain('aria-label="收起智能体栏"');
+    expect(conversationSource).toContain("rightCollapsed && !rightPane");
+    expect(writingWorkspaceSource).toContain(
+      ':right-pane="paneLayout === \'editor-agent\'"'
+    );
+    expect(writingWorkspaceSource).toContain(
+      ':right-pane-collapsed="rightPane.collapsed"'
+    );
+  });
+
   it("shows target navigation only for accepted approval cards and relays it", () => {
     expect(proposalCardSource).toContain(
       "v-if=\"proposal.status === 'accepted'\""

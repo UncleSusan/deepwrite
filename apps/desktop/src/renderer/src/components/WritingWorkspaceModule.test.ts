@@ -1,13 +1,27 @@
 import { describe, expect, it } from "vitest";
 import appSource from "../WorkspaceShell.vue?raw";
+import lazyComponentsSource from "./lazyAppComponents.ts?raw";
 import source from "./WritingWorkspaceModule.vue?raw";
 
 describe("WritingWorkspaceModule boundary", () => {
   it("owns the default short and script conversation/editor surface", () => {
     expect(source).toContain("<AgentConversation");
+    expect(source).toContain(
+      'import { AgentConversation } from "./lazyAppComponents"'
+    );
+    expect(source).not.toContain(
+      'import AgentConversation from "./AgentConversation.vue"'
+    );
+    expect(lazyComponentsSource).toContain(
+      '() => import("./AgentConversation.vue")'
+    );
     expect(source).toContain("<RightEditorPane");
     expect(source).toContain('class="pane-resizer pane-resizer-right"');
-    expect(source).toContain('v-if="!rightPane.collapsed"');
+    expect(source).toContain("paneLayout: WorkspacePaneLayout");
+    expect(source).toContain("paneLayout === 'agent-editor' || !rightPane.collapsed");
+    expect(source).toContain("paneLayout === 'editor-agent' || !rightPane.collapsed");
+    expect(source).toContain(':right-pane="paneLayout === \'editor-agent\'"');
+    expect(source).toContain(':right-pane="paneLayout === \'agent-editor\'"');
     expect(appSource).toContain("<WritingWorkspaceModule");
     expect(appSource).toContain("activeFeature === 'conversation'");
     expect(appSource).not.toContain("<RightEditorPane");

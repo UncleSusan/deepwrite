@@ -2,7 +2,8 @@ import {
   createDefaultGeneralSettings,
   type DeepWriteApi,
   type GeneralPermissionMode,
-  type GeneralSettings
+  type GeneralSettings,
+  type WorkspacePaneLayout
 } from "@deepwrite/contracts";
 import type { Ref } from "vue";
 import { saveGeneralPreferences } from "../utils/generalPreferences";
@@ -174,6 +175,11 @@ export function useGeneralSettingsCoordinator(
     queueSave();
   }
 
+  function updateWorkspacePaneLayout(layout: WorkspacePaneLayout): void {
+    applyLocalPatch({ workspacePaneLayout: layout });
+    queueSave();
+  }
+
   async function drain(): Promise<void> {
     await saveChain;
   }
@@ -192,7 +198,8 @@ export function useGeneralSettingsCoordinator(
     updateAutoSave,
     updateLanguage,
     updatePermissionMode,
-    updateShowInMenuBar
+    updateShowInMenuBar,
+    updateWorkspacePaneLayout
   };
 }
 

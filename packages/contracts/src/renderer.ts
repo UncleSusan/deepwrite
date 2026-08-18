@@ -9,6 +9,7 @@ export type * from "./appearance";
 export type * from "./app-alert";
 export type * from "./agent-team";
 export type * from "./catalog";
+export type * from "./chat-assistant";
 export type * from "./cloud-backup";
 export type * from "./envelope";
 export type * from "./expert-draft";
@@ -39,6 +40,9 @@ export type * from "./update";
 export type * from "./workspace";
 export type * from "./workspace-directory";
 
+export {
+  CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH
+} from "./chat-assistant-base";
 export {
   APPEARANCE_FONT_SIZE_LIMITS,
   AppearanceEditorFontFamilySchema,

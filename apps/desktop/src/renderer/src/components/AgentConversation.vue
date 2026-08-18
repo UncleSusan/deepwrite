@@ -40,6 +40,7 @@ import {
 } from "../utils/composerReferences";
 import { createEditorReferenceAttachment } from "../utils/editorTextReferences";
 import { writeToolText } from "../utils/agentWriteToolPreview";
+import { createTransientScrollbarController } from "../utils/transientScrollbar";
 import AppIcon from "./AppIcon.vue";
 import AgentEditProposalCard from "./AgentEditProposalCard.vue";
 import LongProposalReview from "./LongProposalReview.vue";
@@ -80,13 +81,17 @@ const props = withDefaults(
     longWorkspaceIndex?: LongWorkspaceIndexSnapshot | null;
     leftCollapsed: boolean;
     rightCollapsed: boolean;
+    rightPane?: boolean;
   }>(),
   {
     allowLiveEditReview: false,
     longProposalItems: () => [],
-    longWorkspaceIndex: null
+    longWorkspaceIndex: null,
+    rightPane: false
   }
 );
+
+const conversationScrollbar = createTransientScrollbarController();
 
 const emit = defineEmits<{
   "update:draft": [value: string];
@@ -276,6 +281,7 @@ function handleConversationWheel(event: WheelEvent): void {
 function handleConversationScroll(): void {
   const element = scroller.value;
   if (!element) return;
+  conversationScrollbar.reveal(element);
   const nextScrollTop = element.scrollTop;
   if (
     hasActiveConversationResponse() &&
@@ -661,6 +667,7 @@ onBeforeUnmount(() => {
     globalThis.cancelAnimationFrame(conversationNavigatorFrame);
   }
   conversationNavigatorResizeObserver?.disconnect();
+  conversationScrollbar.dispose();
 });
 
 const referenceOptions = computed(() =>
@@ -1641,10 +1648,19 @@ function copyMessageLabel(message: ChatMessage): string {
           新建对话
         </button>
         <button
-          v-if="rightCollapsed"
+          v-if="rightCollapsed && !rightPane"
           class="icon-button"
           type="button"
           aria-label="展开文本内容栏"
+          @click="emit('toggleRight')"
+        >
+          <AppIcon name="panel-right" :size="18" />
+        </button>
+        <button
+          v-if="rightPane"
+          class="icon-button"
+          type="button"
+          aria-label="收起智能体栏"
           @click="emit('toggleRight')"
         >
           <AppIcon name="panel-right" :size="18" />
@@ -1655,7 +1671,7 @@ function copyMessageLabel(message: ChatMessage): string {
     <div class="conversation-scroll-shell">
       <section
         ref="scroller"
-        class="conversation-scroll"
+        class="conversation-scroll transient-scrollbar"
         aria-live="polite"
         @wheel.passive="handleConversationWheel"
         @scroll.passive="handleConversationScroll"

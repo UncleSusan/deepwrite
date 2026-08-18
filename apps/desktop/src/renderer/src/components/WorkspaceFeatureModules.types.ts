@@ -12,6 +12,7 @@ import type {
   ModelUsageDashboard,
   OfficialModelBalance,
   SkillLibrary,
+  WorkspacePaneLayout,
   WorkspaceAgentSettings,
   WorkspaceAgentTeamSettings
 } from "@deepwrite/contracts";
@@ -25,6 +26,7 @@ export interface SettingsFeatureModule {
   autoSaveEnabled: boolean;
   language: AppLanguage;
   showInMenuBar: boolean;
+  workspacePaneLayout: WorkspacePaneLayout;
   workspaceAgentSettings: readonly WorkspaceAgentSettings[];
   longAgentSettings: LongAgentSettings | null;
   workspaceAgentLoading: boolean;

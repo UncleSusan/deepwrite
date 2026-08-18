@@ -9,6 +9,18 @@ import dialogLayerSource from "./WorkspaceDialogLayer.vue?raw";
 import dialogCoordinatorSource from "../composables/useWorkspaceDialogModuleCoordinator.ts?raw";
 
 describe("RightEditorPane expert draft navigation", () => {
+  it("expands a collapsed right-side agent when the editor is centered", () => {
+    expect(source).toContain("rightPaneCollapsed?: boolean");
+    expect(source).toContain('aria-label="展开智能体栏"');
+    expect(source).toContain("emit('toggleRight')");
+    expect(writingWorkspaceSource).toContain(
+      ':right-pane="paneLayout === \'agent-editor\'"'
+    );
+    expect(writingWorkspaceSource).toContain(
+      '@toggle-right="emit(\'toggleRight\')"'
+    );
+  });
+
   it("shows automatic save status while preserving an immediate save action", () => {
     expect(source).toContain('autoSaveEnabled ? "等待自动保存"');
     expect(source).toContain('autoSaveEnabled ? "本机文稿 · 更改后自动保存"');
@@ -75,6 +87,13 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain('restoreDocumentScroll(nextScrollMemoryKey, "edit")');
     expect(source).toContain('@scroll="handleDocumentScroll"');
     expect(source).toContain("scroller.scrollTop = recalledEditorScrollPosition(key, view)");
+  });
+
+  it("preserves the active text viewport when a manual save refreshes the document", () => {
+    expect(source).toContain("pendingSaveViewport = captureEditorViewport()");
+    expect(source).toContain("input.scrollTop = snapshot.scrollTop");
+    expect(source).toContain("activeScrollMemoryKey.value !== snapshot.documentKey");
+    expect(source).toContain("@mousedown.prevent");
   });
 
   it("routes the short-story tab add button through a named confirmation dialog", () => {

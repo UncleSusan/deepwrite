@@ -36,6 +36,16 @@ describe("SettingsPage", () => {
     expect(source).toContain("emit('updateShowInMenuBar'");
   });
 
+  it("offers both persisted creative-workspace pane layouts", () => {
+    expect(source).toContain("<strong>页面布局</strong>");
+    expect(source).toContain('value: "agent-editor"');
+    expect(source).toContain('value: "editor-agent"');
+    expect(source).toContain("目录｜智能体｜文本内容");
+    expect(source).toContain("目录｜文本内容｜智能体");
+    expect(source).toContain(':model-value="workspacePaneLayout"');
+    expect(source).toContain("emit('updateWorkspacePaneLayout'");
+  });
+
   it("keeps the language selector from squeezing its label column", () => {
     expect(source).toContain('class="settings-item settings-select-item"');
     expect(source).toContain(".settings-select-item { flex-wrap: wrap; }");

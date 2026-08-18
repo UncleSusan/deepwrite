@@ -47,7 +47,7 @@ function updateTitle(event: Event): void {
 <template>
   <section
     class="long-manuscript-editor long-editor-writing-surface"
-    :class="{ 'is-readonly': readOnly || busy }"
+    :class="{ 'is-readonly': readOnly }"
     aria-label="章节正文编辑区"
   >
     <div class="long-document-meta-row">

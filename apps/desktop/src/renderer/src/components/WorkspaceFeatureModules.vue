@@ -12,6 +12,7 @@ import type {
   ModelConfigInput,
   ModelSettingsInput,
   ModelUsageQueryInput,
+  WorkspacePaneLayout,
   WorkspaceAgentSettingsInput,
   WorkspaceAgentTeamSettingsInput
 } from "@deepwrite/contracts";
@@ -45,6 +46,7 @@ const emit = defineEmits<{
   updateAutoSave: [enabled: boolean];
   updateLanguage: [language: AppLanguage];
   updateShowInMenuBar: [enabled: boolean];
+  updateWorkspacePaneLayout: [layout: WorkspacePaneLayout];
   saveWorkspaceAgents: [settings: WorkspaceAgentSettingsInput];
   retryLongAgents: [];
   saveLongAgents: [settings: LongAgentSettingsInput];
@@ -80,6 +82,7 @@ const emit = defineEmits<{
     :auto-save-enabled="module.autoSaveEnabled"
     :language="module.language"
     :show-in-menu-bar="module.showInMenuBar"
+    :workspace-pane-layout="module.workspacePaneLayout"
     :workspace-agent-settings="module.workspaceAgentSettings"
     :long-agent-settings="module.longAgentSettings"
     :workspace-agent-loading="module.workspaceAgentLoading"
@@ -111,6 +114,7 @@ const emit = defineEmits<{
     @update-auto-save="emit('updateAutoSave', $event)"
     @update-language="emit('updateLanguage', $event)"
     @update-show-in-menu-bar="emit('updateShowInMenuBar', $event)"
+    @update-workspace-pane-layout="emit('updateWorkspacePaneLayout', $event)"
     @save-workspace-agents="emit('saveWorkspaceAgents', $event)"
     @retry-long-agents="emit('retryLongAgents')"
     @save-long-agents="emit('saveLongAgents', $event)"

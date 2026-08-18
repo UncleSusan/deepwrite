@@ -18,7 +18,12 @@ function editableDefaults() {
         string,
         string,
         string
-      ]
+      ],
+      readAccess: {
+        workspaceRoots: [...agent.readAccess.workspaceRoots],
+        materialKinds: [...agent.readAccess.materialKinds],
+        skillKinds: [...agent.readAccess.skillKinds]
+      }
     }))
   };
 }
@@ -31,43 +36,60 @@ describe("long agent settings contracts", () => {
     expect(DEFAULT_LONG_AGENT_SETTINGS.agents).toHaveLength(4);
   });
 
-  it("allows prompts and shortcuts to be customized", () => {
+  it("allows prompts, shortcuts and catalog read types to be customized", () => {
     const input = editableDefaults();
     const agent = input.agents.find(({ id }) => id === "setting")!;
     agent.systemPrompt = "先核对世界规则，再提出最小修改。";
     agent.welcomeShortcuts[0] = "检查当前世界规则";
+    agent.readAccess.materialKinds = ["character", "plot"];
+    agent.readAccess.skillKinds = ["general", "plot"];
 
-    expect(LongAgentSettingsInputSchema.parse(input)).toMatchObject({
-      workspaceType: "long",
+    const parsed = LongAgentSettingsInputSchema.parse(input);
+    expect(parsed.workspaceType).toBe("long");
+    expect(parsed.agents.find(({ id }) => id === "setting")).toMatchObject({
+      id: "setting",
+      systemPrompt: "先核对世界规则，再提出最小修改。",
+      readAccess: {
+        materialKinds: ["character", "plot"],
+        skillKinds: ["general", "plot"]
+      }
+    });
+  });
+
+  it("rejects input that narrows the fixed workspace read access", () => {
+    const input = editableDefaults();
+    input.agents.find(
+      ({ id }) => id === "plot_design"
+    )!.readAccess.workspaceRoots = ["plot_design"];
+
+    expect(() => LongAgentSettingsInputSchema.parse(input)).toThrow(
+      /builtin workspace read access/
+    );
+  });
+
+  it("allows public catalog scopes but rejects workspace scope changes", () => {
+    const settings = structuredClone(DEFAULT_LONG_AGENT_SETTINGS);
+    const agent = settings.agents.find(({ id }) => id === "plot_design")!;
+    agent.readAccess.materialKinds = ["plot"];
+    agent.readAccess.skillKinds = ["general", "plot"];
+
+    expect(LongAgentSettingsSchema.parse(settings)).toMatchObject({
       agents: expect.arrayContaining([
         expect.objectContaining({
-          id: "setting",
-          systemPrompt: "先核对世界规则，再提出最小修改。"
+          id: "plot_design",
+          readAccess: {
+            workspaceRoots: expect.any(Array),
+            materialKinds: ["plot"],
+            skillKinds: ["general", "plot"]
+          }
         })
       ])
     });
-  });
 
-  it("rejects input that still carries a configurable read access override", () => {
-    const input = editableDefaults();
-    Object.assign(input.agents.find(({ id }) => id === "plot_design")!, {
-      readAccess: {
-        workspaceRoots: ["plot_design"],
-        materialKinds: [],
-        skillKinds: []
-      }
-    });
-
-    expect(() => LongAgentSettingsInputSchema.parse(input)).toThrow();
-  });
-
-  it("rejects public settings that try to narrow immutable read access", () => {
-    const settings = structuredClone(DEFAULT_LONG_AGENT_SETTINGS);
-    const agent = settings.agents.find(({ id }) => id === "plot_design")!;
     agent.readAccess.workspaceRoots = ["plot_design"];
 
     expect(() => LongAgentSettingsSchema.parse(settings)).toThrow(
-      /read access is immutable/
+      /workspace read access is immutable/
     );
     expect(
       getDefaultLongAgentProfile("plot_design").readAccess.workspaceRoots

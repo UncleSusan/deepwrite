@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EnvelopeBaseSchema } from "./envelope";
-import { AgentUsageSchema } from "./session";
+import { AgentUsageSchema } from "./agent-usage";
 import { ModelManagedBySchema } from "./models";
 
 export const MODEL_USAGE_MODULES = [
@@ -11,6 +11,7 @@ export const MODEL_USAGE_MODULES = [
   "material-library",
   "learning-imitation",
   "subagent-authoring",
+  "assistant-chat",
   "model-test",
   "unknown"
 ] as const;

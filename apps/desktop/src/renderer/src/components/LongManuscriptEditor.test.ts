@@ -47,4 +47,23 @@ describe("LongManuscriptEditor", () => {
       "baseProjectRevision: state.projectRevision"
     );
   });
+
+  it("keeps the current text viewport after a manual save", () => {
+    expect(editorSource).toContain("const viewport = captureCurrentEditorViewport()");
+    expect(editorSource).toContain("await restoreCurrentEditorViewport(viewport)");
+    expect(editorSource).toContain("input.scrollTop = snapshot.scrollTop");
+    expect(editorSource).toContain("currentEditorViewportKey() !== snapshot.documentKey");
+    expect(editorSource).toContain("props.workspaceIndex?.revision");
+  });
+
+  it("does not flash a read-only background or loading placeholder while refreshing a save", () => {
+    expect(source).toContain(`:class="{ 'is-readonly': readOnly }"`);
+    expect(source).not.toContain(`:class="{ 'is-readonly': readOnly || busy }"`);
+    expect(editorSource).toContain("refreshingJustSavedDocument");
+    expect(editorSource).toContain("loaded: dirty || refreshingJustSavedDocument");
+    expect(editorSource).toContain("'is-readonly': currentReadOnly");
+    expect(editorSource).not.toContain(
+      "'is-readonly': currentReadOnly || isDocumentContentBusy"
+    );
+  });
 });

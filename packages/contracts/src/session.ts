@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { AgentUsageSchema } from "./agent-usage";
+import { ChatAssistantRequestContextSchema } from "./chat-assistant-base";
+import type { ChatAssistantRuntimeContext } from "./chat-assistant";
 import { EnvelopeBaseSchema, type Envelope } from "./envelope";
 import { SHORT_WORKSPACE_FILE_MAX_CHARACTERS } from "./expert-draft";
 import { MaterialStageIdSchema, SkillStageIdSchema } from "./catalog";
@@ -425,15 +428,45 @@ export const UserPromptAttachmentsSchema = z
     }
   });
 
+export const SessionModeSchema = z.enum(["workspace", "chat-assistant"]);
+export type SessionMode = z.infer<typeof SessionModeSchema>;
+
 export const SessionPromptCommandPayloadSchema = z.object({
   sessionId: z.string().min(1),
   message: z.string().trim().min(1).max(20_000),
+  mode: SessionModeSchema.optional(),
   attachments: UserPromptAttachmentsSchema.optional(),
   modelId: z.string().min(1).max(120).optional(),
   thinkingLevel: ThinkingLevelSchema.optional(),
   temperature: TemperatureSchema.optional(),
   writeApprovalMode: AgentWriteApprovalModeSchema.optional(),
+  chatAssistant: ChatAssistantRequestContextSchema.optional(),
   workspaceContext: WorkspaceRuntimeContextSchema.optional()
+}).superRefine((value, context) => {
+  if (value.mode !== "chat-assistant") {
+    if (value.chatAssistant !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["chatAssistant"],
+        message: "Chat assistant context requires chat-assistant mode."
+      });
+    }
+    return;
+  }
+  if (value.workspaceContext !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["workspaceContext"],
+      message: "Chat assistant sessions cannot receive workspace context."
+    });
+  }
+  if (value.writeApprovalMode !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["writeApprovalMode"],
+      message: "Chat assistant sessions cannot request write approval."
+    });
+  }
 });
 export type SessionPromptCommandPayload = z.infer<typeof SessionPromptCommandPayloadSchema>;
 
@@ -505,7 +538,32 @@ export const SessionAbortCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: SessionAbortCommandPayloadSchema
 }).superRefine(validateAbortCommandContext);
 
+/**
+ * Main fully parses the authoritative snapshot before creating agent.prompt.
+ * This internal transport guard deliberately validates only the discriminator
+ * needed for cross-process matching, while preserving the already-validated
+ * snapshot without making Renderer load the large catalog/usage schema graph.
+ */
+const ChatAssistantRuntimeContextTransportSchema = z.custom<
+  ChatAssistantRuntimeContext
+>((value) => {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { mode?: unknown; project?: unknown };
+  if (candidate.mode === "normal") return true;
+  if (candidate.mode !== "project") return false;
+  const project = candidate.project;
+  return Boolean(
+    project &&
+      typeof project === "object" &&
+      typeof (project as { projectId?: unknown }).projectId === "string" &&
+      ["short", "script", "long"].includes(
+        String((project as { projectType?: unknown }).projectType)
+      )
+  );
+});
+
 export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema.extend({
+  chatAssistantRuntimeContext: ChatAssistantRuntimeContextTransportSchema.optional(),
   runtimeConfig: AgentProviderRuntimeConfigSchema.optional(),
   agentProfile: ShortWorkspaceAgentProfileSchema.optional(),
   scriptAgentProfile: ScriptWorkspaceAgentProfileSchema.optional(),
@@ -521,6 +579,42 @@ export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema
   libraryAgentProfile: LibraryAgentProfileSchema.optional(),
   learningImitationProfile: LearningImitationAgentProfileSchema.optional()
 }).superRefine((value, context) => {
+  if (value.mode === "chat-assistant") {
+    const requestedMode = value.chatAssistant?.mode ?? "normal";
+    if (!value.chatAssistantRuntimeContext) {
+      context.addIssue({
+        code: "custom",
+        path: ["chatAssistantRuntimeContext"],
+        message: "Chat assistant runs require an authoritative runtime context."
+      });
+    } else if (value.chatAssistantRuntimeContext.mode !== requestedMode) {
+      context.addIssue({
+        code: "custom",
+        path: ["chatAssistantRuntimeContext", "mode"],
+        message: "Chat assistant runtime mode must match the requested mode."
+      });
+    } else if (
+      requestedMode === "project" &&
+      value.chatAssistant?.mode === "project" &&
+      value.chatAssistantRuntimeContext.mode === "project" &&
+      (value.chatAssistant.project.projectId !==
+        value.chatAssistantRuntimeContext.project.projectId ||
+        value.chatAssistant.project.projectType !==
+          value.chatAssistantRuntimeContext.project.projectType)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["chatAssistantRuntimeContext", "project"],
+        message: "Chat assistant runtime project must match the requested project."
+      });
+    }
+  } else if (value.chatAssistantRuntimeContext !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["chatAssistantRuntimeContext"],
+      message: "Chat assistant runtime context requires chat-assistant mode."
+    });
+  }
   const shortWorkspace = value.workspaceContext?.shortWorkspace;
   const scriptWorkspace = value.workspaceContext?.scriptWorkspace;
   const longWorkspace = value.workspaceContext?.longWorkspace;
@@ -820,14 +914,8 @@ export const AgentThinkingDeltaPayloadSchema = AgentEventIdentitySchema.extend({
 });
 export type AgentThinkingDeltaPayload = z.infer<typeof AgentThinkingDeltaPayloadSchema>;
 
-export const AgentUsageSchema = z.object({
-  inputTokens: z.number().int().nonnegative(),
-  outputTokens: z.number().int().nonnegative(),
-  cacheReadTokens: z.number().int().nonnegative(),
-  cacheWriteTokens: z.number().int().nonnegative(),
-  totalTokens: z.number().int().nonnegative()
-});
-export type AgentUsage = z.infer<typeof AgentUsageSchema>;
+export { AgentUsageSchema } from "./agent-usage";
+export type { AgentUsage } from "./agent-usage";
 
 export const AgentUsageObservationStatusSchema = z.enum([
   "completed",

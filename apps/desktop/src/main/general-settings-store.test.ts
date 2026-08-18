@@ -34,13 +34,14 @@ describe("GeneralSettingsStore", () => {
     });
   });
 
-  it("persists permission, save, language, and menu-bar preferences", async () => {
+  it("persists all general preferences including the workspace layout", async () => {
     const { root, store } = await createStore();
     const settings = {
       permissionMode: "auto-approve" as const,
       autoSave: true,
       language: "zh-CN" as const,
-      showInMenuBar: false
+      showInMenuBar: false,
+      workspacePaneLayout: "editor-agent" as const
     };
 
     await expect(store.save(settings)).resolves.toEqual({
@@ -56,6 +57,33 @@ describe("GeneralSettingsStore", () => {
         await readFile(join(root, "config", "general-settings.json"), "utf8")
       )
     ).toEqual({ version: 1, ...settings });
+  });
+
+  it("defaults the workspace layout without discarding legacy v1 preferences", async () => {
+    const { root, store } = await createStore();
+    const configDirectory = join(root, "config");
+    await mkdir(configDirectory);
+    await writeFile(
+      join(configDirectory, "general-settings.json"),
+      JSON.stringify({
+        version: 1,
+        permissionMode: "request-approval",
+        autoSave: false,
+        language: "zh-CN",
+        showInMenuBar: false
+      })
+    );
+
+    await expect(store.list()).resolves.toEqual({
+      persisted: true,
+      settings: {
+        permissionMode: "request-approval",
+        autoSave: false,
+        language: "zh-CN",
+        showInMenuBar: false,
+        workspacePaneLayout: "agent-editor"
+      }
+    });
   });
 
   it("falls back safely when the disk settings are malformed", async () => {

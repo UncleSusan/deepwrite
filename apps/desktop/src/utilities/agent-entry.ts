@@ -640,6 +640,7 @@ bootUtility("agent", {
         runId,
         sessionId: command.payload.sessionId,
         prompt: command.payload.message,
+        ...(command.payload.mode ? { mode: command.payload.mode } : {}),
         ...(command.payload.attachments?.length
           ? { attachments: command.payload.attachments }
           : {}),
@@ -655,6 +656,12 @@ bootUtility("agent", {
         ...(command.payload.runtimeConfig
           ? { runtimeConfig: command.payload.runtimeConfig }
           : {}),
+        ...(command.payload.chatAssistantRuntimeContext
+          ? {
+              chatAssistantRuntimeContext:
+                command.payload.chatAssistantRuntimeContext
+            }
+          : {}),
         ...(command.payload.agentProfile
           ? { agentProfile: command.payload.agentProfile }
           : {}),
@@ -664,7 +671,10 @@ bootUtility("agent", {
         ...(command.payload.longAgentProfile
           ? { longAgentProfile: command.payload.longAgentProfile }
           : {}),
-        ...(command.payload.longAgentProfile && context
+        ...((command.payload.longAgentProfile ||
+          (command.payload.chatAssistantRuntimeContext?.mode === "project" &&
+            command.payload.chatAssistantRuntimeContext.project.projectType ===
+              "long")) && context
           ? { longCommandExecutor: createLongCommandExecutor(context) }
           : {}),
         ...(command.payload.subagentDefinitions

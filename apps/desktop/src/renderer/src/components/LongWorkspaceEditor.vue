@@ -66,10 +66,13 @@ const props = defineProps<{
   latestCommit?: LongLedgerCommitIndexEntry | undefined;
   locked?: boolean;
   lockedReason?: string | undefined;
+  rightPane?: boolean;
+  rightPaneCollapsed?: boolean;
 }>();
 
 const emit = defineEmits<{
   collapse: [];
+  toggleRight: [];
   saved: [result: LongWriteDocumentResult];
   contextChange: [
     context: {
@@ -262,6 +265,15 @@ const currentMatchIndex = ref(-1);
 const searchAnchor = ref(0);
 const textHistory = createBoundedTextHistory();
 const historyVersion = ref(0);
+interface EditorViewportSnapshot {
+  documentKey: string;
+  fileRevision: string | undefined;
+  scrollTop: number;
+  selectionStart: number;
+  selectionEnd: number;
+  selectionDirection: "forward" | "backward" | "none";
+}
+let pendingSaveViewport: EditorViewportSnapshot | null = null;
 let pendingEditorInput: {
   selectionBefore: TextSelectionRange;
   inputType: string;
@@ -2674,6 +2686,11 @@ function initializeLoadingState(
   const dirty = existing
     ? existing.loaded && existing.content !== existing.savedContent
     : false;
+  const refreshingJustSavedDocument = Boolean(
+    pendingSaveViewport &&
+      pendingSaveViewport.documentKey === currentEditorViewportKey() &&
+      currentSelectionFile.value?.file.id === file.id
+  );
   replaceDocumentState(key, {
     bookId,
     file,
@@ -2683,9 +2700,10 @@ function initializeLoadingState(
     projectRevision: existing?.projectRevision ?? 0,
     loading: true,
     saving: false,
-    // Keep dirty drafts editable/saveable. Clean revision refreshes stay
-    // visible for UX but must not remain editable against the new CAS baseline.
-    loaded: dirty,
+    // Keep the just-saved editor mounted while its new CAS baseline is read.
+    // `loading` still makes the textarea read-only, without flashing a loading
+    // placeholder or swapping the editor background during the refresh.
+    loaded: dirty || refreshingJustSavedDocument,
     loadError: null
   });
 }
@@ -3200,10 +3218,66 @@ function runExclusiveSave(task: () => Promise<boolean>): Promise<boolean> {
   return pending;
 }
 
+function currentEditorViewportKey(): string {
+  return [
+    props.bookId,
+    props.selection?.key ?? "",
+    currentSelectionFile.value?.file.id ?? "",
+    activeWorldbuildingItemId.value ?? "",
+    activeBookLineVolumeId.value ?? "",
+    activeBookLineContentTab.value,
+    props.selection?.plotPointId ?? "",
+    activePlotPointTab.value,
+    activeStoryPlotId.value ?? "",
+    props.selection?.chapterCardId ?? ""
+  ].join("\u0000");
+}
+
+function captureCurrentEditorViewport(): EditorViewportSnapshot | null {
+  const input = editorInput.value;
+  if (!input || viewMode.value !== "edit") return null;
+  return {
+    documentKey: currentEditorViewportKey(),
+    fileRevision: currentSelectionFile.value?.file.revision,
+    scrollTop: input.scrollTop,
+    selectionStart: input.selectionStart,
+    selectionEnd: input.selectionEnd,
+    selectionDirection: input.selectionDirection
+  };
+}
+
+async function restoreCurrentEditorViewport(
+  snapshot: EditorViewportSnapshot | null
+): Promise<void> {
+  if (!snapshot) return;
+  await nextTick();
+  if (
+    viewMode.value !== "edit" ||
+    currentEditorViewportKey() !== snapshot.documentKey
+  ) {
+    return;
+  }
+  const input = editorInput.value;
+  if (!input) return;
+  input.setSelectionRange(
+    snapshot.selectionStart,
+    snapshot.selectionEnd,
+    snapshot.selectionDirection
+  );
+  input.scrollTop = snapshot.scrollTop;
+}
+
 async function saveCurrentDocument(): Promise<void> {
+  const viewport = captureCurrentEditorViewport();
+  pendingSaveViewport = viewport;
   if (currentIsStructuredText.value) {
+    let saved = true;
     if (!currentReadOnly.value && currentDirty.value) {
-      await saveAllChanges();
+      saved = await saveAllChanges();
+    }
+    await restoreCurrentEditorViewport(viewport);
+    if (!saved && pendingSaveViewport === viewport) {
+      pendingSaveViewport = null;
     }
     return;
   }
@@ -3213,11 +3287,16 @@ async function saveCurrentDocument(): Promise<void> {
     currentReadOnly.value ||
     !currentDirty.value
   ) {
+    pendingSaveViewport = null;
     return;
   }
-  await runExclusiveSave(() =>
+  const saved = await runExclusiveSave(() =>
     saveDocumentState(stateKey(selectedFile.file.id), true)
   );
+  await restoreCurrentEditorViewport(viewport);
+  if (!saved && pendingSaveViewport === viewport) {
+    pendingSaveViewport = null;
+  }
 }
 
 /**
@@ -3706,6 +3785,26 @@ watch(
 );
 
 watch(
+  () => props.workspaceIndex?.revision,
+  () => {
+    const snapshot = pendingSaveViewport;
+    if (!snapshot) return;
+    if (currentEditorViewportKey() !== snapshot.documentKey) {
+      pendingSaveViewport = null;
+      return;
+    }
+    if (
+      currentSelectionFile.value?.file.revision !== snapshot.fileRevision
+    ) {
+      return;
+    }
+    pendingSaveViewport = null;
+    void restoreCurrentEditorViewport(snapshot);
+  },
+  { flush: "post" }
+);
+
+watch(
   () =>
     [
       props.bookId,
@@ -3739,7 +3838,12 @@ watch(
           }
         : null
     );
-    void loadSelectedDocument();
+    const snapshot = pendingSaveViewport;
+    void loadSelectedDocument().finally(() => {
+      if (!snapshot || pendingSaveViewport !== snapshot) return;
+      pendingSaveViewport = null;
+      void restoreCurrentEditorViewport(snapshot);
+    });
   },
   { immediate: true }
 );
@@ -3873,10 +3977,20 @@ onBeforeUnmount(() => {
             </span>
           </span>
           <button
+            v-if="rightPane !== false"
             class="long-editor-collapse-button"
             type="button"
             aria-label="收起长篇编辑栏"
             @click="emit('collapse')"
+          >
+            <AppIcon name="panel-right" :size="18" />
+          </button>
+          <button
+            v-else-if="rightPaneCollapsed"
+            class="long-editor-collapse-button"
+            type="button"
+            aria-label="展开智能体栏"
+            @click="emit('toggleRight')"
           >
             <AppIcon name="panel-right" :size="18" />
           </button>
@@ -4498,7 +4612,7 @@ onBeforeUnmount(() => {
                 v-else-if="currentStoryPlot"
                 class="long-story-plot-writing-surface"
                 :class="{
-                  'is-readonly': currentReadOnly || isDocumentContentBusy
+                  'is-readonly': currentReadOnly
                 }"
               >
                 <input
@@ -4798,7 +4912,7 @@ onBeforeUnmount(() => {
           "
           class="long-editor-writing-surface"
           :class="{
-            'is-readonly': currentReadOnly || isDocumentContentBusy
+            'is-readonly': currentReadOnly
           }"
         >
           <div
@@ -5175,6 +5289,7 @@ onBeforeUnmount(() => {
             currentSaving ||
             workspaceSavePending
           "
+          @mousedown.prevent
           @click="saveCurrentDocument"
         >
           <AppIcon name="save" :size="14" />

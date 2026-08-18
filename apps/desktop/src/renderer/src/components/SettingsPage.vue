@@ -19,6 +19,7 @@ import {
   type ModelUsageDashboard,
   type ModelUsageQueryInput,
   type OfficialModelBalance,
+  type WorkspacePaneLayout,
   type WorkspaceAgentSettings,
   type WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
@@ -70,6 +71,7 @@ const props = defineProps<{
   autoSaveEnabled: boolean;
   language: AppLanguage;
   showInMenuBar: boolean;
+  workspacePaneLayout: WorkspacePaneLayout;
   workspaceAgentSettings: readonly WorkspaceAgentSettings[];
   longAgentSettings: LongAgentSettings | null;
   workspaceAgentLoading: boolean;
@@ -104,6 +106,7 @@ const emit = defineEmits<{
   updateAutoSave: [enabled: boolean];
   updateLanguage: [language: AppLanguage];
   updateShowInMenuBar: [enabled: boolean];
+  updateWorkspacePaneLayout: [layout: WorkspacePaneLayout];
   saveWorkspaceAgents: [settings: WorkspaceAgentSettingsInput];
   retryLongAgents: [];
   saveLongAgents: [settings: LongAgentSettingsInput];
@@ -211,6 +214,13 @@ const appearanceModes: Array<{ id: AppearanceMode; label: string }> = [
 const languageOptions: Array<{ value: AppLanguage; label: string }> = [
   { value: "auto", label: "自动检测（简体中文）" },
   { value: "zh-CN", label: "简体中文" }
+];
+const workspacePaneLayoutOptions: Array<{
+  value: WorkspacePaneLayout;
+  label: string;
+}> = [
+  { value: "agent-editor", label: "目录｜智能体｜文本内容" },
+  { value: "editor-agent", label: "目录｜文本内容｜智能体" }
 ];
 const uiFontOptions = listAppearanceUiFontFamilyOptions().map((option) => ({
   value: option.value,
@@ -508,6 +518,18 @@ async function importThemeFile(event: Event): Promise<void> {
               <span class="settings-item-text"><strong>自动保存</strong><small>文稿发生变化并停止输入片刻后，自动保存到本机</small></span>
               <span class="settings-toggle"><input type="checkbox" :checked="autoSaveEnabled" @change="emit('updateAutoSave', ($event.target as HTMLInputElement).checked)" /></span>
             </label>
+            <div class="settings-item settings-select-item">
+              <span class="settings-item-text"><strong>页面布局</strong><small>调整创作空间中智能体与文本内容的位置</small></span>
+              <PopupSelect
+                class="general-select-control"
+                :model-value="workspacePaneLayout"
+                :options="workspacePaneLayoutOptions"
+                accessible-label="选择创作空间页面布局"
+                align="end"
+                :menu-min-width="238"
+                @update:model-value="emit('updateWorkspacePaneLayout', String($event) as WorkspacePaneLayout)"
+              />
+            </div>
             <div class="settings-item settings-select-item">
               <span class="settings-item-text"><strong>语言</strong><small>应用 UI 语言；当前版本提供简体中文</small></span>
               <PopupSelect

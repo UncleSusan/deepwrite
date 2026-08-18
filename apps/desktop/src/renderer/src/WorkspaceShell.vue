@@ -43,6 +43,7 @@ import WritingWorkspaceModule from "./components/WritingWorkspaceModule.vue";
 import { registerWorkspaceSystemEventRoutes } from "./events/registerWorkspaceSystemEventRoutes";
 import { systemEventCenter } from "./events/systemEventCenter";
 import {
+  ChatAssistantOverlay,
   LongWorkspaceModule,
   WorkspaceDialogLayer,
   WorkspaceFeatureModules
@@ -88,6 +89,7 @@ import { useWorkspaceResourceCoordinator } from "./composables/useWorkspaceResou
 import { useWorkspaceResourceTreeCoordinator } from "./composables/useWorkspaceResourceTreeCoordinator";
 import { useWorkspaceDialogModuleCoordinator } from "./composables/useWorkspaceDialogModuleCoordinator";
 import { useWorkspaceFeatureHostCoordinator } from "./composables/useWorkspaceFeatureHostCoordinator";
+import { useChatAssistant } from "./features/chat-assistant/useChatAssistant";
 import { uiMessage } from "./ui-feedback";
 import { resourceSections } from "./data/demoWorkspace";
 import {
@@ -369,7 +371,8 @@ const {
   updateAutoSave: updateEditorAutoSave,
   updateLanguage: updateAppLanguage,
   updatePermissionMode,
-  updateShowInMenuBar
+  updateShowInMenuBar,
+  updateWorkspacePaneLayout
 } = useGeneralSettingsCoordinator({
   settings: generalSettings,
   autoSaveEnabled: editorAutoSaveEnabled,
@@ -385,6 +388,12 @@ const {
   resumeAutomaticAgentEdits: resumeRecoveredAutomaticAgentEditsIfNeeded,
   notifications: uiMessage
 });
+
+function revealTextPane(): void {
+  if (generalSettings.value.workspacePaneLayout === "agent-editor") {
+    layoutStore.setPaneCollapsed("right", false);
+  }
+}
 const catalogMutationPending = ref(false);
 const createBookDialogOpen = ref(false);
 const bookTransferDialogMode = ref<BookTransferDialogMode | null>(null);
@@ -467,7 +476,7 @@ const {
   prepareProjectsForDuplicate: prepareLibraryProjectsForDuplicate,
   selectDocument(documentId, revealEditor) {
     selectedResourceId.value = documentId;
-    if (revealEditor) rightCollapsed.value = false;
+    if (revealEditor) revealTextPane();
   },
   async navigateToDocumentResource(documentId) {
     const targetNode = findResourceNodeIn(resourceTreeSections.value, documentId);
@@ -903,7 +912,7 @@ const {
   emptyDocument: EMPTY_WORKSPACE_DOCUMENT,
   showConversation,
   revealEditor: () => {
-    rightCollapsed.value = false;
+    revealTextPane();
   },
   notifications: uiMessage
 });
@@ -999,7 +1008,7 @@ const {
     },
     showConversation,
     revealEditor: () => {
-      rightCollapsed.value = false;
+      revealTextPane();
     }
   },
   editorRevisions: {
@@ -1146,7 +1155,7 @@ const {
     synchronizeSelectedResourceForLayout:
       synchronizeSelectedLongResourceForLayout,
     revealEditor: () => {
-      rightCollapsed.value = false;
+      revealTextPane();
     }
   },
   notifications: uiMessage
@@ -1572,6 +1581,11 @@ const {
 
 conversationForKey("general");
 
+const chatAssistant = useChatAssistant({
+  ensureModelSettingsLoaded: loadModelSettings,
+  persistenceAdapter: conversationPersistenceAdapter
+});
+
 const {
   activeConversation: activeLongConversation,
   availableMaterialReferences: activeLongMaterialReferences,
@@ -1926,7 +1940,7 @@ async function handleResourceAction(payload: ResourceSectionActionPayload): Prom
       );
       if (target) {
         selectedResourceId.value = target.id;
-        rightCollapsed.value = false;
+        revealTextPane();
       }
       const libraryLabel = payload.domain === "material" ? "素材" : "技能";
       if (result.failures.length === 0) {
@@ -2164,7 +2178,7 @@ const approvalNavigation = useLazyApprovalNavigationCoordinator({
       },
       showConversation,
       expandRightPane() {
-        rightCollapsed.value = false;
+        revealTextPane();
       },
       afterUpdate: nextTick,
       info: (message) => uiMessage.info(message)
@@ -2315,7 +2329,7 @@ function navigateToWorkspaceStage(
   if (!sourceConversation || !target) return;
   selectedResourceId.value = target.id;
   activeCreationResourceId.value = target.id;
-  rightCollapsed.value = false;
+  revealTextPane();
 }
 
 function startWorkspaceSystemEvents(): () => void {
@@ -2489,6 +2503,7 @@ onBeforeUnmount(() => {
     @update-auto-save="updateEditorAutoSave"
     @update-language="updateAppLanguage"
     @update-show-in-menu-bar="updateShowInMenuBar"
+    @update-workspace-pane-layout="updateWorkspacePaneLayout"
     @save-workspace-agents="saveWorkspaceAgentSettings"
     @retry-long-agents="loadLongAgentSettings"
     @save-long-agents="saveLongAgentSettings"
@@ -2510,7 +2525,13 @@ onBeforeUnmount(() => {
     v-else
     ref="desktopShell"
     class="desktop-shell"
-    :class="shellClasses"
+    :class="[
+      shellClasses,
+      {
+        'is-editor-agent-layout':
+          generalSettings.workspacePaneLayout === 'editor-agent'
+      }
+    ]"
     :style="shellStyle"
     data-testid="desktop-shell"
   >
@@ -2520,12 +2541,13 @@ onBeforeUnmount(() => {
       :selected-id="selectedResourceId"
       :imitation-running="learningImitationRunning"
       :library-entry-clipboard-domain="libraryEntryClipboardDomain"
-      :active-primary-feature="activePrimaryFeature"
+      :active-primary-feature="chatAssistant.active.value ? 'chat-assistant' : activePrimaryFeature"
       :marketplace-display-name="marketplaceDisplayName"
       :long-tree-actions-disabled="longBookActionPending"
       @collapse="leftCollapsed = true"
       @create-book="openCreateBookDialog"
       @open-dialog="openWorkspaceDialog"
+      @open-chat-assistant="chatAssistant.open"
       @open-agent-teams="openAgentTeams"
       @open-marketplace="openMarketplace"
       @open-cloud-backup="openCloudBackup"
@@ -2587,6 +2609,7 @@ onBeforeUnmount(() => {
         :loading="longWorkspaceLoading"
         :left-collapsed="leftCollapsed"
         :right-pane="writingRightPaneViewModel"
+        :pane-layout="generalSettings.workspacePaneLayout"
         @update:draft="updateLongComposerDraft"
         @editor-port-change="updateLongWorkspaceEditorPort"
         @expand-left="leftCollapsed = false"
@@ -2639,6 +2662,7 @@ onBeforeUnmount(() => {
         :conversation-context="writingConversationContext"
         :editor="writingEditorViewModel"
         :right-pane="writingRightPaneViewModel"
+        :pane-layout="generalSettings.workspacePaneLayout"
         @update:draft="updateComposerDraft"
         @new-conversation="newConversation"
         @select-conversation="selectConversation"
@@ -2683,6 +2707,18 @@ onBeforeUnmount(() => {
       />
 
   </div>
+
+  <Teleport to="body">
+    <ChatAssistantOverlay
+      v-if="chatAssistant.visible.value"
+      active
+      :conversation-for-key="conversationForKey"
+      :catalog-snapshot="catalogSnapshot"
+      :long-books="longBooks"
+      :runtime-available="hasDesktopRuntime"
+      @minimize="chatAssistant.minimize"
+    />
+  </Teleport>
 
   <WorkspaceDialogLayer
     v-if="workspaceDialogModule"

@@ -105,6 +105,10 @@ ol {
   background: transparent;
 }
 
+.transient-scrollbar:not(.is-scrollbar-active)::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
 .desktop-shell {
   position: relative;
   display: grid;
@@ -358,6 +362,21 @@ html[data-platform="darwin"] .desktop-shell {
 .long-workspace-editor-loading-state strong {
   color: var(--text-primary);
   font-size: 1rem;
+}
+
+.desktop-shell.is-editor-agent-layout > .conversation-pane,
+.desktop-shell.is-editor-agent-layout > .long-agent-column {
+  grid-row: 1;
+  grid-column: 3;
+  border-left: 1px solid var(--line);
+}
+
+.desktop-shell.is-editor-agent-layout > .editor-pane,
+.desktop-shell.is-editor-agent-layout > .long-workspace-editor,
+.desktop-shell.is-editor-agent-layout > .long-workspace-editor-loading-state {
+  grid-row: 1;
+  grid-column: 2;
+  border-left: 0;
 }
 
 .long-workspace-loading-state strong {
