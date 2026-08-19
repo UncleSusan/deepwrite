@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import conversationSource from "./AgentConversation.vue?raw";
+import messageListSource from "./ConversationMessageList.vue?raw";
 import editProposalSource from "./AgentEditProposalCard.vue?raw";
 import source from "./LongProposalReview.vue?raw";
 
@@ -10,11 +11,11 @@ describe("LongProposalReview content file cards", () => {
     expect(source).toContain("approval-target-button");
     expect(source).toContain("跳转到目标文件");
     expect(source).toContain("emit('locate', item.event.id)");
-    expect(conversationSource).toContain(
+    expect(messageListSource).toContain(
       "@locate=\"emit('locateLongProposal', $event)\""
     );
     expect(
-      conversationSource.match(
+      messageListSource.match(
         /@locate="emit\('locateLongProposal', \$event\)"/g
       )
     ).toHaveLength(2);
@@ -47,7 +48,7 @@ describe("LongProposalReview content file cards", () => {
       "edit-review-button is-accept"
     ]) {
       expect(source).toContain(className);
-      expect(`${conversationSource}\n${editProposalSource}`).toContain(className);
+      expect(`${conversationSource}\n${messageListSource}\n${editProposalSource}`).toContain(className);
     }
     expect(source).not.toContain("worldbuilding-file-card");
     expect(source).not.toContain("long.ledger_commit_proposal");

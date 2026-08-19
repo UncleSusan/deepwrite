@@ -18,7 +18,7 @@ describe("IPC command requestId handling", () => {
 
   it("preload surfaces rejected IPC errors instead of masking them as requestId mismatches", () => {
     const source = readFileSync(
-      new URL("../preload/index.ts", import.meta.url),
+      new URL("../preload/invoke.ts", import.meta.url),
       "utf8"
     );
     expect(source).toContain("const expectedRequestId = command.id");
@@ -32,9 +32,16 @@ describe("IPC command requestId handling", () => {
   });
 
   it("routes screenplay creation through preload, main, and the core utility", () => {
-    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const catalogSource = readFileSync(
+      new URL("./ipc/catalog-commands.ts", import.meta.url),
+      "utf8"
+    );
+    const sessionSource = readFileSync(
+      new URL("./ipc/session-commands.ts", import.meta.url),
+      "utf8"
+    );
     const preloadSource = readFileSync(
-      new URL("../preload/index.ts", import.meta.url),
+      new URL("../preload/catalog-api.ts", import.meta.url),
       "utf8"
     );
     const coreSource = readFileSync(
@@ -44,26 +51,29 @@ describe("IPC command requestId handling", () => {
 
     expect(preloadSource).toContain("async function createScriptBook");
     expect(preloadSource).toContain('"catalog.createScriptBook"');
-    expect(mainSource).toContain('"catalog.createScriptBookAtPath"');
-    expect(mainSource).toContain("ScriptBookSchema.parse(result.payload)");
+    expect(catalogSource).toContain('"catalog.createScriptBookAtPath"');
+    expect(catalogSource).toContain("ScriptBookSchema.parse(result.payload)");
     expect(coreSource).toContain(
       'command.type === "catalog.createScriptBookAtPath"'
     );
     expect(coreSource).toContain("catalogStore.createScriptBook(");
-    expect(mainSource).toContain(
+    expect(sessionSource).toContain(
       "command.payload.workspaceContext?.scriptWorkspace"
     );
-    expect(mainSource).toContain("creativeWorkspaceType");
-    expect(mainSource).toContain(
+    expect(sessionSource).toContain("creativeWorkspaceType");
+    expect(sessionSource).toContain(
       "creativeWorkspace,\n                creativeWorkspaceType"
     );
-    expect(mainSource).toContain("{ scriptAgentProfile: agentProfile }");
+    expect(sessionSource).toContain("{ scriptAgentProfile: agentProfile }");
   });
 
   it("routes idempotent draft-section batches through preload, main, and core", () => {
-    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const catalogSource = readFileSync(
+      new URL("./ipc/catalog-commands.ts", import.meta.url),
+      "utf8"
+    );
     const preloadSource = readFileSync(
-      new URL("../preload/index.ts", import.meta.url),
+      new URL("../preload/catalog-api.ts", import.meta.url),
       "utf8"
     );
     const coreSource = readFileSync(
@@ -73,10 +83,10 @@ describe("IPC command requestId handling", () => {
 
     expect(preloadSource).toContain("async function createDraftSections");
     expect(preloadSource).toContain('"catalog.createDraftSections"');
-    expect(mainSource).toContain(
+    expect(catalogSource).toContain(
       'command.type === "catalog.createDraftSections"'
     );
-    expect(mainSource).toContain(
+    expect(catalogSource).toContain(
       "CreateDraftSectionsResultSchema.parse(result.payload)"
     );
     expect(coreSource).toContain(
@@ -85,25 +95,35 @@ describe("IPC command requestId handling", () => {
   });
 
   it("routes remote model listing through preload and main", () => {
-    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const modelSource = readFileSync(
+      new URL("./ipc/model-commands.ts", import.meta.url),
+      "utf8"
+    );
     const preloadSource = readFileSync(
+      new URL("../preload/session-models-api.ts", import.meta.url),
+      "utf8"
+    );
+    const preloadFacadeSource = readFileSync(
       new URL("../preload/index.ts", import.meta.url),
       "utf8"
     );
 
     expect(preloadSource).toContain("async function listRemoteModels");
     expect(preloadSource).toContain('"models.listRemote"');
-    expect(preloadSource).toContain("listRemote: listRemoteModels");
-    expect(mainSource).toContain('command.type === "models.listRemote"');
-    expect(mainSource).toContain("resolveDraftApiKey(");
-    expect(mainSource).toContain("listRemoteModels({");
-    expect(mainSource).toContain("RemoteModelListResultSchema.parse({ models })");
+    expect(preloadFacadeSource).toContain("listRemote: listRemoteModels");
+    expect(modelSource).toContain('command.type === "models.listRemote"');
+    expect(modelSource).toContain("resolveDraftApiKey(");
+    expect(modelSource).toContain("listRemoteModels({");
+    expect(modelSource).toContain("RemoteModelListResultSchema.parse({ models })");
   });
 
   it("routes metadata index and on-demand document reads through every boundary", () => {
-    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const catalogSource = readFileSync(
+      new URL("./ipc/catalog-commands.ts", import.meta.url),
+      "utf8"
+    );
     const preloadSource = readFileSync(
-      new URL("../preload/index.ts", import.meta.url),
+      new URL("../preload/catalog-api.ts", import.meta.url),
       "utf8"
     );
     const apiSource = readFileSync(
@@ -127,10 +147,10 @@ describe("IPC command requestId handling", () => {
     expect(preloadSource).toContain("async function readCatalogDocument");
     expect(preloadSource).toContain('"catalog.index"');
     expect(preloadSource).toContain('"catalog.readDocument"');
-    expect(mainSource).toContain('command.type === "catalog.index"');
-    expect(mainSource).toContain('command.type === "catalog.readDocument"');
-    expect(mainSource).toContain("CatalogIndexSnapshotSchema.parse(result.payload)");
-    expect(mainSource).toContain("CatalogReadDocumentResultSchema.parse(result.payload)");
+    expect(catalogSource).toContain('command.type === "catalog.index"');
+    expect(catalogSource).toContain('command.type === "catalog.readDocument"');
+    expect(catalogSource).toContain("CatalogIndexSnapshotSchema.parse(result.payload)");
+    expect(catalogSource).toContain("CatalogReadDocumentResultSchema.parse(result.payload)");
     expect(coreSource).toContain("await catalogStore.indexSnapshot()");
     expect(coreSource).toContain("await catalogStore.readDocument(command.payload)");
     expect(initialization).toContain("await existingFolderStore.indexSnapshot()");
@@ -140,10 +160,12 @@ describe("IPC command requestId handling", () => {
   });
 
   it("bounds editor index, reads, saves, and snapshots instead of waiting forever", () => {
-    const mainSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-    const catalogForwarding = mainSource.slice(
-      mainSource.indexOf('command.type === "catalog.index"'),
-      mainSource.indexOf('if (command.type === "models.list")')
+    const catalogSource = readFileSync(
+      new URL("./ipc/catalog-commands.ts", import.meta.url),
+      "utf8"
+    );
+    const catalogForwarding = catalogSource.slice(
+      catalogSource.indexOf('command.type === "catalog.index"')
     );
 
     expect(catalogForwarding).toContain("catalogCommandTimeoutMs(command.type)");

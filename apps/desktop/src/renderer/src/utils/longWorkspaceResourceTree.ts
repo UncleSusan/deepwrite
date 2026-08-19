@@ -489,7 +489,8 @@ export function projectLongWorkspaceNavigation(
           ...(chapters[0] ? { chapterCardId: chapters[0].id } : {}),
           chapterCardTabs: chapters.map((chapter) => ({
             id: chapter.id,
-            label: chapter.title
+            label: chapter.title,
+            narrativeOrder: chapter.narrativeOrder
           })),
           title: chapters[0]?.title ?? volume.title,
           breadcrumbs: [

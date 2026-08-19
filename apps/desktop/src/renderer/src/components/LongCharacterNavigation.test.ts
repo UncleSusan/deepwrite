@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import source from "./LongCharacterNavigation.vue?raw";
 import editorSource from "./LongWorkspaceEditor.vue?raw";
+import editorSessionSource from "../composables/useLongEditorDocumentSession.ts?raw";
+import editorDeleteSource from "../composables/useLongEditorDeleteDialogs.ts?raw";
 
 describe("LongCharacterNavigation", () => {
   it("owns both configured character navigation layouts", () => {
@@ -46,8 +48,8 @@ describe("LongCharacterNavigation", () => {
     expect(editorSource).toContain('@select-character="requestSelectCharacter"');
     expect(editorSource).toContain('@create-character="emit(\'createCharacter\')"');
     expect(editorSource).toContain('@delete-character="openNavigationDelete"');
-    expect(editorSource).toContain("async function loadWorkspaceDocument(");
-    expect(editorSource).toContain('emit(\n    "deleteStructure"');
+    expect(editorSessionSource).toContain("async function loadWorkspaceDocument(");
+    expect(editorDeleteSource).toContain("emitDeleteStructure");
   });
 
   it("projects only navigation metadata instead of sibling body state", () => {

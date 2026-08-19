@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import appSource from "./WorkspaceShell.vue?raw";
 import editorSource from "./components/LongWorkspaceEditor.vue?raw";
+import editorStructureSource from "./composables/useLongEditorStructureSelection.ts?raw";
 import coordinatorSource from "./composables/useApprovalNavigationCoordinator.ts?raw";
 import lazyCoordinatorSource from "./composables/useLazyApprovalNavigationCoordinator.ts?raw";
 import resourceTreeSource from "./composables/useWorkspaceResourceTreeCoordinator.ts?raw";
@@ -43,7 +44,7 @@ describe("accepted approval navigation wiring", () => {
       "function preferredLongResourceIdForSelection("
     );
     expect(resourceTreeSource).toContain('selection.key.startsWith("chapter:")');
-    expect(editorSource).toContain(
+    expect(editorStructureSource).toContain(
       "if (explicitlySelectedFile) return explicitlySelectedFile;"
     );
     expect(appSource).toContain(
@@ -58,13 +59,13 @@ describe("accepted approval navigation wiring", () => {
   });
 
   it("lets the long editor focus exact files and structured targets", () => {
-    expect(editorSource).toContain("async function focusFile(fileId: string)");
-    expect(editorSource).toContain(
+    expect(editorStructureSource).toContain("async function focusFile(fileId: string)");
+    expect(editorStructureSource).toContain(
       "async function focusTarget(target: LongApprovalEditorFocus)"
     );
-    expect(editorSource).toContain("selectWorldbuildingItem(item.id)");
-    expect(editorSource).toContain('selectPlotPointTab("storyline")');
-    expect(editorSource).toContain("foreshadowingWorkspace.value?.focusTarget(");
+    expect(editorStructureSource).toContain("selectWorldbuildingItem(item.id)");
+    expect(editorStructureSource).toContain('selectPlotPointTab("storyline")');
+    expect(editorStructureSource).toContain("foreshadowingWorkspace.value?.focusTarget(");
     expect(editorSource).toContain("defineExpose({");
   });
 });

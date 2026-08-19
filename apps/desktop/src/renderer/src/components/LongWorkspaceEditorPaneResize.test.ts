@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import resizeSource from "../composables/useLongEditorPaneResize.ts?raw";
 import source from "./LongWorkspaceEditor.vue?raw";
 
 describe("LongWorkspaceEditor internal pane resizing", () => {
@@ -23,15 +24,15 @@ describe("LongWorkspaceEditor internal pane resizing", () => {
   });
 
   it("clamps, persists, reconciles, and cleans up resize state", () => {
-    expect(source).toContain("LONG_EDITOR_LIST_MIN_WIDTH");
-    expect(source).toContain("LONG_EDITOR_LIST_MAX_WIDTH");
-    expect(source).toContain("containerWidth * LONG_EDITOR_DEFAULT_LIST_RATIO");
-    expect(source).toContain("saveLongEditorPanePreferences(window.localStorage");
-    expect(source).toContain("new ResizeObserver");
-    expect(source).toContain('window.addEventListener("resize", reconcileLongEditorPaneWidths)');
-    expect(source).toContain('window.removeEventListener("pointermove", handleLongEditorPaneResizeMove)');
-    expect(source).toContain("entryListResizeObserver?.disconnect()");
-    expect(source).toContain("storyPlotListResizeObserver?.disconnect()");
+    expect(resizeSource).toContain("LONG_EDITOR_LIST_MIN_WIDTH");
+    expect(resizeSource).toContain("LONG_EDITOR_LIST_MAX_WIDTH");
+    expect(resizeSource).toContain("containerWidth * LONG_EDITOR_DEFAULT_LIST_RATIO");
+    expect(resizeSource).toContain("saveLongEditorPanePreferences(window.localStorage");
+    expect(resizeSource).toContain("new ResizeObserver");
+    expect(resizeSource).toContain('window.addEventListener("resize", reconcileLongEditorPaneWidths)');
+    expect(resizeSource).toContain('window.removeEventListener("pointermove", handleLongEditorPaneResizeMove)');
+    expect(resizeSource).toContain("entryListResizeObserver?.disconnect()");
+    expect(resizeSource).toContain("storyPlotListResizeObserver?.disconnect()");
   });
 
   it("uses pixel grid variables and hides vertical handles in stacked layouts", () => {

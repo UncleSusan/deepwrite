@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
+import { resolveRendererStyles } from "./tools/resolve-renderer-styles.mjs";
 
 export default defineConfig({
   plugins: [
@@ -14,13 +14,7 @@ export default defineConfig({
       },
       load(id) {
         if (id !== "\0virtual:deepwrite-renderer-styles") return null;
-        const source = readFileSync(
-          new URL(
-            "./apps/desktop/src/renderer/src/styles.css",
-            import.meta.url
-          ),
-          "utf8"
-        );
+        const source = resolveRendererStyles();
         return `export default ${JSON.stringify(source)};`;
       }
     }

@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { resolveRendererStyles } from "../../../../tools/resolve-renderer-styles.mjs";
 
-const styles = readFileSync(new URL("../renderer/src/styles.css", import.meta.url), "utf8");
+const styles = resolveRendererStyles();
 
 function cssRule(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

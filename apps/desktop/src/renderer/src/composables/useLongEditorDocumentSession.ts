@@ -1,0 +1,1018 @@
+import { computed, nextTick, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
+import {
+  type LongArcId,
+  type LongFileId,
+  type LongFileRevision,
+  type LongReadDocumentResult,
+  type LongWorkspaceFileReference,
+  type LongWriteDocumentResult
+} from "@deepwrite/contracts";
+import { uiMessage } from "../ui-feedback";
+import {
+  isEditableLongFile,
+  resolveLongWorkspaceApi,
+  type LongWorkspaceSelection,
+  type LongWorkspaceSelectionFile
+} from "../types/longWorkspace";
+import type { LongEditorRecoveryRecord } from "./useLongEditorRecovery";
+
+export interface LongDocumentState {
+  bookId: string;
+  file: LongWorkspaceFileReference;
+  content: string;
+  savedContent: string;
+  workspaceRevision: number;
+  projectRevision: number;
+  loading: boolean;
+  saving: boolean;
+  loaded: boolean;
+  loadError: string | null;
+}
+
+export interface LongVolumeOutlineDraft {
+  content: string;
+  savedContent: string;
+  saving: boolean;
+}
+
+interface EditorViewportSnapshot {
+  documentKey: string;
+  fileRevision: string | undefined;
+  scrollTop: number;
+  selectionStart: number;
+  selectionEnd: number;
+  selectionDirection: "forward" | "backward" | "none";
+}
+
+const DOCUMENT_PAGE_CHARACTERS = 256 * 1024;
+
+export function useLongEditorDocumentSession(options: {
+  props: {
+    bookId: string;
+    selection: LongWorkspaceSelection | null;
+    locked?: boolean;
+  };
+  emit: {
+    (
+      event: "saved",
+      result: LongWriteDocumentResult
+    ): void;
+    (
+      event: "contextChange",
+      context: {
+        bookId: string;
+        fileId: LongFileId;
+        fileRevision: LongFileRevision;
+      } | null
+    ): void;
+  };
+  documentStates: Ref<Record<string, LongDocumentState>>;
+  volumeOutlineDrafts: Ref<Record<string, LongVolumeOutlineDraft>>;
+  plotPointSummaryDrafts: Ref<Record<string, LongVolumeOutlineDraft>>;
+  currentSelectionFile: ComputedRef<LongWorkspaceSelectionFile | undefined>;
+  currentReadOnly: ComputedRef<boolean>;
+  currentDirty: ComputedRef<boolean>;
+  currentIsStructuredText: ComputedRef<boolean>;
+  currentIsWorldbuildingList: ComputedRef<boolean>;
+  currentStaleRecovery: ComputedRef<LongEditorRecoveryRecord | null>;
+  viewMode: Ref<"edit" | "preview">;
+  editorInput: Ref<HTMLTextAreaElement | null>;
+  activeWorldbuildingItemId: Ref<string | null>;
+  activeBookLineVolumeId: Ref<string | null>;
+  activeBookLineContentTab: Ref<"outline" | "foreshadowing">;
+  activePlotPointTab: Ref<"summary" | "storyline" | "foreshadowing">;
+  activeStoryPlotId: Ref<string | null>;
+  workspaceRevision: () => number | undefined;
+  saveVolumeOutline: (volumeId: string) => Promise<boolean>;
+  savePlotPointContent: (
+    plotPointId: LongArcId,
+    field?: "summary"
+  ) => Promise<boolean>;
+  readRecoveryRecord: (
+    bookId: string,
+    fileId: LongFileId
+  ) => LongEditorRecoveryRecord | null;
+  clearRecoveryRecordForKey: (
+    key: string,
+    bookId: string,
+    fileId: string
+  ) => void;
+  removeStaleRecoveryState: (key: string) => void;
+  persistRecoveryForKey: (key: string) => void;
+  staleRecoveryByKey: Ref<Record<string, LongEditorRecoveryRecord>>;
+}): {
+  heldSelectionFile: Ref<LongWorkspaceSelectionFile | null>;
+  workspaceSavePending: Ref<boolean>;
+  currentState: ComputedRef<LongDocumentState | undefined>;
+  isDocumentSwitchPending: ComputedRef<boolean>;
+  displayDocumentState: ComputedRef<LongDocumentState | undefined>;
+  showEditorLoading: ComputedRef<boolean>;
+  showEditorLoadError: ComputedRef<boolean>;
+  stateKey: (fileId: string, bookId?: string) => string;
+  replaceDocumentState: (key: string, state: LongDocumentState) => void;
+  loadWorkspaceDocument: (
+    selectedFile: LongWorkspaceSelectionFile,
+    force?: boolean
+  ) => Promise<void>;
+  loadSelectedDocument: (force?: boolean) => Promise<void>;
+  prefetchWorldbuildingSelectionFiles: () => Promise<void>;
+  prefetchActiveSelectionFiles: () => Promise<void>;
+  restoreStaleRecovery: () => void;
+  copyStaleRecovery: () => Promise<void>;
+  ensureDocumentsLoaded: (
+    files: LongWorkspaceSelectionFile[]
+  ) => Promise<boolean>;
+  saveDocumentState: (
+    key: string,
+    announceSuccess: boolean
+  ) => Promise<boolean>;
+  saveCurrentDocument: () => Promise<void>;
+  saveAllChanges: () => Promise<boolean>;
+  synchronizeProjectRevisions: (
+    workspaceRevision: number,
+    projectRevision: number
+  ) => void;
+  synchronizeProjectRevisionsIfClean: (
+    bookId: string,
+    workspaceRevision: number,
+    projectRevision: number,
+    includeVolumeDrafts?: boolean
+  ) => boolean;
+} {
+  const { props, emit } = options;
+  const { documentStates } = options;
+  const heldSelectionFile = ref<LongWorkspaceSelectionFile | null>(null);
+  const workspaceSavePending = ref(false);
+  const requestClockByFile = new Map<string, number>();
+  const inflightDocumentLoads = new Map<string, Promise<void>>();
+  let requestClock = 0;
+  let activeSavePromise: Promise<boolean> | null = null;
+  let pendingSaveViewport: EditorViewportSnapshot | null = null;
+  let worldbuildingPrefetchRequest = 0;
+  let selectionPrefetchRequest = 0;
+
+  function stateKey(fileId: string, bookId = props.bookId): string {
+    return `${bookId}\u0000${fileId}`;
+  }
+
+  const currentState = computed<LongDocumentState | undefined>(() => {
+    const selectedFile = options.currentSelectionFile.value;
+    return selectedFile
+      ? documentStates.value[stateKey(selectedFile.file.id)]
+      : undefined;
+  });
+  const isDocumentSwitchPending = computed(() => {
+    const target = options.currentSelectionFile.value;
+    if (!target) return false;
+    const targetState = documentStates.value[stateKey(target.file.id)];
+    if (targetState?.loaded || Boolean(targetState?.content)) return false;
+    const held = heldSelectionFile.value;
+    if (!held || held.file.id === target.file.id) return false;
+    const heldState = documentStates.value[stateKey(held.file.id)];
+    return Boolean(heldState?.loaded || heldState?.content);
+  });
+  const displayDocumentState = computed<LongDocumentState | undefined>(() => {
+    if (isDocumentSwitchPending.value && heldSelectionFile.value) {
+      return documentStates.value[stateKey(heldSelectionFile.value.file.id)];
+    }
+    return currentState.value;
+  });
+  const showEditorLoading = computed(() => {
+    if (isDocumentSwitchPending.value) return false;
+    const state = currentState.value;
+    return Boolean(state?.loading && !state.loaded && !state.content);
+  });
+  const showEditorLoadError = computed(() => {
+    if (isDocumentSwitchPending.value) return false;
+    const state = currentState.value;
+    return Boolean(state?.loadError && !state.loaded && !state.content);
+  });
+
+  function replaceDocumentState(key: string, state: LongDocumentState): void {
+    documentStates.value = {
+      ...documentStates.value,
+      [key]: state
+    };
+  }
+
+  function currentEditorViewportKey(): string {
+    return [
+      props.bookId,
+      props.selection?.key ?? "",
+      options.currentSelectionFile.value?.file.id ?? "",
+      options.activeWorldbuildingItemId.value ?? "",
+      options.activeBookLineVolumeId.value ?? "",
+      options.activeBookLineContentTab.value,
+      props.selection?.plotPointId ?? "",
+      options.activePlotPointTab.value,
+      options.activeStoryPlotId.value ?? "",
+      props.selection?.chapterCardId ?? ""
+    ].join("\u0000");
+  }
+
+  function captureCurrentEditorViewport(): EditorViewportSnapshot | null {
+    const input = options.editorInput.value;
+    if (!input || options.viewMode.value !== "edit") return null;
+    return {
+      documentKey: currentEditorViewportKey(),
+      fileRevision: options.currentSelectionFile.value?.file.revision,
+      scrollTop: input.scrollTop,
+      selectionStart: input.selectionStart,
+      selectionEnd: input.selectionEnd,
+      selectionDirection: input.selectionDirection
+    };
+  }
+
+  async function restoreCurrentEditorViewport(
+    snapshot: EditorViewportSnapshot | null
+  ): Promise<void> {
+    if (!snapshot) return;
+    await nextTick();
+    if (
+      options.viewMode.value !== "edit" ||
+      currentEditorViewportKey() !== snapshot.documentKey
+    ) {
+      return;
+    }
+    const input = options.editorInput.value;
+    if (!input) return;
+    input.setSelectionRange(
+      snapshot.selectionStart,
+      snapshot.selectionEnd,
+      snapshot.selectionDirection
+    );
+    input.scrollTop = snapshot.scrollTop;
+  }
+
+  function initializeLoadingState(
+    key: string,
+    bookId: string,
+    file: LongWorkspaceFileReference
+  ): void {
+    const existing = documentStates.value[key];
+    const dirty = existing
+      ? existing.loaded && existing.content !== existing.savedContent
+      : false;
+    const refreshingJustSavedDocument = Boolean(
+      pendingSaveViewport &&
+        pendingSaveViewport.documentKey === currentEditorViewportKey() &&
+        options.currentSelectionFile.value?.file.id === file.id
+    );
+    replaceDocumentState(key, {
+      bookId,
+      file,
+      content: existing?.content ?? "",
+      savedContent: existing?.savedContent ?? "",
+      workspaceRevision: existing?.workspaceRevision ?? 0,
+      projectRevision: existing?.projectRevision ?? 0,
+      loading: true,
+      saving: false,
+      // Keep the just-saved editor mounted while its new CAS baseline is read.
+      // `loading` still makes the textarea read-only, without flashing a loading
+      // placeholder or swapping the editor background during the refresh.
+      loaded: dirty || refreshingJustSavedDocument,
+      loadError: null
+    });
+  }
+
+  function assertSameReadSnapshot(
+    first: LongReadDocumentResult,
+    next: LongReadDocumentResult
+  ): void {
+    if (
+      first.file.id !== next.file.id ||
+      first.file.revision !== next.file.revision ||
+      first.workspaceRevision !== next.workspaceRevision ||
+      first.projectRevision !== next.projectRevision ||
+      first.totalCharacters !== next.totalCharacters
+    ) {
+      throw new Error("长篇文件在分页读取期间发生变化，请重新打开。");
+    }
+  }
+
+  async function loadWorkspaceDocument(
+    selectedFile: LongWorkspaceSelectionFile,
+    force = false
+  ): Promise<void> {
+    const bookId = props.bookId;
+    const api = resolveLongWorkspaceApi();
+    if (!api) {
+      uiMessage.warning("当前环境未连接长篇工作区，请使用桌面客户端。");
+      return;
+    }
+
+    const key = stateKey(selectedFile.file.id, bookId);
+    const existing = documentStates.value[key];
+    if (
+      !force &&
+      existing?.loaded &&
+      !existing.loading &&
+      (existing.file.revision === selectedFile.file.revision ||
+        existing.content !== existing.savedContent)
+    ) {
+      return;
+    }
+    const inflight = inflightDocumentLoads.get(key);
+    if (
+      !force &&
+      inflight &&
+      existing?.file.revision === selectedFile.file.revision
+    ) {
+      await inflight;
+      return;
+    }
+    const ownRequest = ++requestClock;
+    requestClockByFile.set(key, ownRequest);
+    initializeLoadingState(key, bookId, selectedFile.file);
+
+    let loadPromise: Promise<void> | null = null;
+    loadPromise = (async () => {
+      try {
+        let offset = 0;
+        const contentChunks: string[] = [];
+        let firstPage: LongReadDocumentResult | undefined;
+        while (true) {
+          const page = await api.readDocument({
+            bookId,
+            fileId: selectedFile.file.id,
+            offset,
+            maxCharacters: DOCUMENT_PAGE_CHARACTERS
+          });
+          if (requestClockByFile.get(key) !== ownRequest) return;
+          if (page.file.id !== selectedFile.file.id) {
+            throw new Error("长篇文档读取结果与所选文件不一致。");
+          }
+          if (firstPage) {
+            assertSameReadSnapshot(firstPage, page);
+          } else {
+            firstPage = page;
+          }
+          contentChunks.push(page.content);
+          if (page.nextOffset === null) break;
+          if (page.nextOffset <= offset) {
+            throw new Error("长篇文档分页游标无效。");
+          }
+          offset = page.nextOffset;
+        }
+
+        if (!firstPage || requestClockByFile.get(key) !== ownRequest) return;
+        const content = contentChunks.join("");
+        // `locked` is a transient write barrier (proposal approval / send
+        // preflight), not a property of the document. Recovery still needs to be
+        // discovered while that barrier is active so it is not silently skipped
+        // until a later remount.
+        const editable =
+          !selectedFile.readOnly && isEditableLongFile(firstPage.file);
+        const recovery = editable
+          ? options.readRecoveryRecord(bookId, firstPage.file.id)
+          : null;
+        const recoveryMatchesDisk =
+          recovery?.baseRevision === firstPage.file.revision;
+        const recoveredContent =
+          recoveryMatchesDisk && recovery.content !== content
+            ? recovery.content
+            : content;
+        const latestState = documentStates.value[key];
+        replaceDocumentState(key, {
+          bookId,
+          file: firstPage.file,
+          content: recoveredContent,
+          savedContent: content,
+          // Another document save can advance the shared CAS baseline while this
+          // file is being paged in. Never regress to the older read baseline.
+          workspaceRevision: Math.max(
+            firstPage.workspaceRevision,
+            latestState?.workspaceRevision ?? 0
+          ),
+          projectRevision: Math.max(
+            firstPage.projectRevision,
+            latestState?.projectRevision ?? 0
+          ),
+          loading: false,
+          saving: false,
+          loaded: true,
+          loadError: null
+        });
+        if (recovery?.content === content) {
+          options.clearRecoveryRecordForKey(key, bookId, firstPage.file.id);
+        } else if (recoveryMatchesDisk) {
+          options.removeStaleRecoveryState(key);
+          uiMessage.info(
+            `已恢复“${props.selection?.title ?? firstPage.file.path}”的本机未保存内容。`
+          );
+        } else if (recovery) {
+          options.staleRecoveryByKey.value = {
+            ...options.staleRecoveryByKey.value,
+            [key]: recovery
+          };
+          uiMessage.warning(
+            "检测到基于旧版本的长篇恢复副本：磁盘内容未被覆盖，副本已保留供你核对。"
+          );
+        } else {
+          options.removeStaleRecoveryState(key);
+        }
+        if (
+          props.bookId === bookId &&
+          options.currentSelectionFile.value?.file.id === firstPage.file.id
+        ) {
+          emit("contextChange", {
+            bookId,
+            fileId: firstPage.file.id,
+            fileRevision: firstPage.file.revision
+          });
+        }
+      } catch (error: unknown) {
+        const latest = documentStates.value[key];
+        if (requestClockByFile.get(key) === ownRequest && latest) {
+          const message =
+            error instanceof Error ? error.message : "读取长篇文件失败。";
+          replaceDocumentState(key, {
+            ...latest,
+            loading: false,
+            // Preserve any previously shown text, but never keep it editable after
+            // a failed refresh against a newer CAS baseline.
+            loaded: false,
+            loadError: message
+          });
+          uiMessage.error(message);
+        }
+      } finally {
+        if (inflightDocumentLoads.get(key) === loadPromise) {
+          inflightDocumentLoads.delete(key);
+        }
+      }
+    })();
+    inflightDocumentLoads.set(key, loadPromise);
+    await loadPromise;
+  }
+
+  async function loadSelectedDocument(force = false): Promise<void> {
+    const selectedFile = options.currentSelectionFile.value;
+    if (!selectedFile) return;
+    await loadWorkspaceDocument(selectedFile, force);
+  }
+
+  async function prefetchWorldbuildingSelectionFiles(): Promise<void> {
+    if (!options.currentIsWorldbuildingList.value) return;
+    const selection = props.selection;
+    if (!selection?.files.length) return;
+    const request = ++worldbuildingPrefetchRequest;
+    const bookId = props.bookId;
+    const selectionKey = selection.key;
+    const files = [...selection.files];
+    await Promise.all(
+      files.map(async (file) => {
+        if (
+          request !== worldbuildingPrefetchRequest ||
+          props.bookId !== bookId ||
+          props.selection?.key !== selectionKey
+        ) {
+          return;
+        }
+        await loadWorkspaceDocument(file);
+      })
+    );
+  }
+
+  async function prefetchActiveSelectionFiles(): Promise<void> {
+    // Worldbuilding list has its own prefetch. Avoid unbounded sibling character
+    // prefetches: only warm the files belonging to the active selection.
+    if (options.currentIsWorldbuildingList.value) return;
+    const selection = props.selection;
+    if (!selection?.files.length) return;
+    const request = ++selectionPrefetchRequest;
+    const bookId = props.bookId;
+    const selectionKey = selection.key;
+    const characterId = selection.characterId ?? null;
+    const files = [...selection.files];
+    await Promise.all(
+      files.map(async (file) => {
+        if (
+          request !== selectionPrefetchRequest ||
+          props.bookId !== bookId ||
+          props.selection?.key !== selectionKey ||
+          (characterId !== null &&
+            (props.selection?.characterId ?? null) !== characterId)
+        ) {
+          return;
+        }
+        await loadWorkspaceDocument(file);
+      })
+    );
+  }
+
+  function restoreStaleRecovery(): void {
+    const selectedFile = options.currentSelectionFile.value;
+    const state = currentState.value;
+    const recovery = options.currentStaleRecovery.value;
+    if (
+      !selectedFile ||
+      !state ||
+      !recovery ||
+      options.currentReadOnly.value ||
+      state.loading ||
+      recovery.bookId !== state.bookId ||
+      recovery.fileId !== state.file.id
+    ) {
+      return;
+    }
+    const key = stateKey(state.file.id, state.bookId);
+    replaceDocumentState(key, {
+      ...state,
+      content: recovery.content
+    });
+    options.removeStaleRecoveryState(key);
+    if (recovery.content === state.savedContent) {
+      options.clearRecoveryRecordForKey(key, state.bookId, state.file.id);
+    } else {
+      // This explicit action rebases only the local recovery record. The next
+      // disk save still uses the freshly-read disk CAS revisions in `state`.
+      options.persistRecoveryForKey(key);
+    }
+    uiMessage.info("已载入恢复副本供你核对；磁盘文件尚未被修改。");
+  }
+
+  async function copyStaleRecovery(): Promise<void> {
+    const recovery = options.currentStaleRecovery.value;
+    if (!recovery) return;
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("当前环境不支持剪贴板");
+      }
+      await navigator.clipboard.writeText(recovery.content);
+      uiMessage.success("恢复副本已复制到剪贴板。");
+    } catch {
+      uiMessage.warning("无法写入剪贴板；你仍可载入恢复副本后手工复制。");
+    }
+  }
+
+  async function ensureDocumentsLoaded(
+    files: LongWorkspaceSelectionFile[]
+  ): Promise<boolean> {
+    if (!files.length) return true;
+    await Promise.all(files.map((file) => loadWorkspaceDocument(file)));
+    return files.every((file) => {
+      const state = documentStates.value[stateKey(file.file.id)];
+      return Boolean(state?.loaded || state?.content);
+    });
+  }
+
+  async function saveDocumentState(
+    key: string,
+    announceSuccess: boolean
+  ): Promise<boolean> {
+    const api = resolveLongWorkspaceApi();
+    const state = documentStates.value[key];
+    if (
+      !api ||
+      !state ||
+      state.loading ||
+      state.saving ||
+      state.content === state.savedContent
+    ) {
+      if (!api) {
+        uiMessage.warning("当前环境未连接长篇工作区，请使用桌面客户端。");
+      }
+      return Boolean(api && state && !state.loading && !state.saving);
+    }
+
+    const bookId = state.bookId;
+    const submittedContent = state.content;
+    replaceDocumentState(key, { ...state, saving: true });
+    try {
+      const result = await api.writeDocument({
+        bookId,
+        fileId: state.file.id,
+        content: submittedContent,
+        baseRevision: state.file.revision,
+        baseWorkspaceRevision: state.workspaceRevision,
+        baseProjectRevision: state.projectRevision
+      });
+      const latest = documentStates.value[key];
+      if (!latest) return false;
+      const bookKeyPrefix = `${bookId}\u0000`;
+      documentStates.value = Object.fromEntries(
+        Object.entries(documentStates.value).map(([stateKeyValue, value]) => [
+          stateKeyValue,
+          stateKeyValue.startsWith(bookKeyPrefix)
+            ? {
+                ...value,
+                ...(stateKeyValue === key
+                  ? {
+                      file: result.file,
+                      savedContent: submittedContent,
+                      saving: false,
+                      loaded: true,
+                      loadError: null
+                    }
+                  : {}),
+                workspaceRevision: result.workspaceRevision,
+                projectRevision: result.projectRevision
+              }
+            : value
+        ])
+      );
+      emit("saved", result);
+      if (
+        props.bookId === bookId &&
+        options.currentSelectionFile.value?.file.id === result.file.id
+      ) {
+        emit("contextChange", {
+          bookId,
+          fileId: result.file.id,
+          fileRevision: result.file.revision
+        });
+      }
+      const savedState = documentStates.value[key];
+      if (savedState?.content === savedState?.savedContent) {
+        options.clearRecoveryRecordForKey(key, bookId, result.file.id);
+      } else if (savedState) {
+        options.persistRecoveryForKey(key);
+      }
+      if (announceSuccess) {
+        if (savedState?.content === savedState?.savedContent) {
+          uiMessage.success(
+            `已保存“${props.selection?.title ?? state.file.path}”`
+          );
+        } else {
+          uiMessage.info("已保存提交时版本；保存期间的新修改仍待保存。");
+        }
+      }
+      return true;
+    } catch (error: unknown) {
+      const latest = documentStates.value[key];
+      if (latest) {
+        replaceDocumentState(key, { ...latest, saving: false });
+      }
+      const message =
+        error instanceof Error ? error.message : "保存长篇文件失败。";
+      if (/revision|冲突|conflict/iu.test(message)) {
+        uiMessage.warning(
+          "文件已在其他位置更新，本次修改未覆盖磁盘内容；请保留当前文本并重新打开后合并。"
+        );
+      } else {
+        uiMessage.error(message);
+      }
+      return false;
+    }
+  }
+
+  function runExclusiveSave(task: () => Promise<boolean>): Promise<boolean> {
+    if (activeSavePromise) return activeSavePromise;
+    workspaceSavePending.value = true;
+    const pending = task().finally(() => {
+      workspaceSavePending.value = false;
+      if (activeSavePromise === pending) {
+        activeSavePromise = null;
+      }
+    });
+    activeSavePromise = pending;
+    return pending;
+  }
+
+  async function saveCurrentDocument(): Promise<void> {
+    const viewport = captureCurrentEditorViewport();
+    pendingSaveViewport = viewport;
+    if (options.currentIsStructuredText.value) {
+      let saved = true;
+      if (!options.currentReadOnly.value && options.currentDirty.value) {
+        saved = await saveAllChanges();
+      }
+      await restoreCurrentEditorViewport(viewport);
+      if (!saved && pendingSaveViewport === viewport) {
+        pendingSaveViewport = null;
+      }
+      return;
+    }
+    const selectedFile = options.currentSelectionFile.value;
+    if (
+      !selectedFile ||
+      options.currentReadOnly.value ||
+      !options.currentDirty.value
+    ) {
+      pendingSaveViewport = null;
+      return;
+    }
+    const saved = await runExclusiveSave(() =>
+      saveDocumentState(stateKey(selectedFile.file.id), true)
+    );
+    await restoreCurrentEditorViewport(viewport);
+    if (!saved && pendingSaveViewport === viewport) {
+      pendingSaveViewport = null;
+    }
+  }
+
+  /**
+   * App.vue calls this before changing books or unmounting the long editor.
+   * Writes are sequential because each CAS write advances the shared workspace
+   * and project revisions consumed by the next dirty document.
+   */
+  async function saveAllChanges(): Promise<boolean> {
+    if (activeSavePromise && !(await activeSavePromise)) {
+      return false;
+    }
+    const bookPrefix = `${props.bookId}\u0000`;
+    const dirtyKeys = Object.entries(documentStates.value)
+      .filter(
+        ([key, state]) =>
+          key.startsWith(bookPrefix) &&
+          state.loaded &&
+          state.content !== state.savedContent
+      )
+      .map(([key]) => key);
+    const dirtyVolumeIds = Object.entries(options.volumeOutlineDrafts.value)
+      .filter(
+        ([, draft]) =>
+          !draft.saving && draft.content !== draft.savedContent
+      )
+      .map(([volumeId]) => volumeId);
+    const dirtyPlotPointSummaryIds = Object.entries(
+      options.plotPointSummaryDrafts.value
+    )
+      .filter(
+        ([, draft]) =>
+          !draft.saving && draft.content !== draft.savedContent
+      )
+      .map(([plotPointId]) => plotPointId as LongArcId);
+    if (
+      !dirtyKeys.length &&
+      !dirtyVolumeIds.length &&
+      !dirtyPlotPointSummaryIds.length
+    ) {
+      return true;
+    }
+
+    const saved = await runExclusiveSave(async () => {
+      for (const key of dirtyKeys) {
+        if (!(await saveDocumentState(key, false))) {
+          return false;
+        }
+      }
+      for (const volumeId of dirtyVolumeIds) {
+        if (!(await options.saveVolumeOutline(volumeId))) {
+          return false;
+        }
+      }
+      for (const plotPointId of dirtyPlotPointSummaryIds) {
+        if (!(await options.savePlotPointContent(plotPointId, "summary"))) {
+          return false;
+        }
+      }
+      // Editing remains available during an asynchronous save. A keystroke
+      // after a file's submitted snapshot must keep navigation blocked instead
+      // of being mistaken for part of the successful write.
+      return !Object.entries(documentStates.value).some(
+        ([key, state]) =>
+          key.startsWith(bookPrefix) &&
+          state.loaded &&
+          state.content !== state.savedContent
+      ) &&
+        !Object.values(options.volumeOutlineDrafts.value).some(
+          (draft) => draft.content !== draft.savedContent
+        ) &&
+        !Object.values(options.plotPointSummaryDrafts.value).some(
+          (draft) => draft.content !== draft.savedContent
+        );
+    });
+    if (saved) {
+      const savedCount =
+        dirtyKeys.length +
+        dirtyVolumeIds.length +
+        dirtyPlotPointSummaryIds.length;
+      uiMessage.success(
+        `离开前已自动保存 ${savedCount} 项长篇修改`
+      );
+    } else {
+      uiMessage.warning("长篇修改尚未保存，已取消切换以保留当前内容。");
+    }
+    return saved;
+  }
+
+  function synchronizeProjectRevisions(
+    workspaceRevision: number,
+    projectRevision: number
+  ): void {
+    if (
+      !synchronizeProjectRevisionsIfClean(
+        props.bookId,
+        workspaceRevision,
+        projectRevision,
+        false
+      )
+    ) {
+      throw new Error("存在未保存的长篇文档，不能刷新项目版本基线。");
+    }
+  }
+
+  function synchronizeProjectRevisionsIfClean(
+    bookId: string,
+    workspaceRevision: number,
+    projectRevision: number,
+    includeVolumeDrafts = true
+  ): boolean {
+    // A ref can briefly outlive a book switch until Vue applies the new props.
+    // Treat an inactive book as a no-op; `false` is reserved for a dirty current
+    // book so App.vue only shows a conflict warning for real unsaved content.
+    if (bookId !== props.bookId) return true;
+    const prefix = `${bookId}\u0000`;
+    const currentBookStates = Object.entries(documentStates.value).filter(
+      ([key]) => key.startsWith(prefix)
+    );
+    if (
+      includeVolumeDrafts &&
+      (Object.values(options.volumeOutlineDrafts.value).some(
+        (draft) =>
+          !draft.saving && draft.content !== draft.savedContent
+      ) ||
+        Object.values(options.plotPointSummaryDrafts.value).some(
+          (draft) =>
+            !draft.saving && draft.content !== draft.savedContent
+        ))
+    ) {
+      return false;
+    }
+    if (
+      currentBookStates.every(
+        ([, state]) =>
+          state.workspaceRevision === workspaceRevision &&
+          state.projectRevision === projectRevision
+      )
+    ) {
+      return true;
+    }
+    if (
+      currentBookStates.some(
+        ([, state]) => state.loaded && state.content !== state.savedContent
+      )
+    ) {
+      return false;
+    }
+    documentStates.value = Object.fromEntries(
+      Object.entries(documentStates.value).map(([key, state]) => [
+        key,
+        key.startsWith(prefix)
+          ? {
+              ...state,
+              workspaceRevision,
+              projectRevision
+            }
+          : state
+      ])
+    );
+    return true;
+  }
+
+  watch(
+    () => props.bookId,
+    () => {
+      heldSelectionFile.value = null;
+    },
+    { flush: "sync" }
+  );
+
+  watch(
+    () =>
+      [
+        props.bookId,
+        options.currentSelectionFile.value?.file.id,
+        currentState.value?.loaded,
+        currentState.value?.content,
+        currentState.value?.loading
+      ] as const,
+    () => {
+      const target = options.currentSelectionFile.value;
+      if (!target) {
+        heldSelectionFile.value = null;
+        return;
+      }
+      const state = documentStates.value[stateKey(target.file.id)];
+      if (state?.loaded || Boolean(state?.content)) {
+        heldSelectionFile.value = target;
+        return;
+      }
+      const held = heldSelectionFile.value;
+      if (held) {
+        const heldState = documentStates.value[stateKey(held.file.id)];
+        if (heldState?.loaded || Boolean(heldState?.content)) {
+          return;
+        }
+      }
+      heldSelectionFile.value = target;
+    },
+    { immediate: true, flush: "sync" }
+  );
+
+  watch(
+    () =>
+      [
+        props.bookId,
+        props.selection?.key,
+        options.currentIsWorldbuildingList.value,
+        (props.selection?.worldbuildingItems ?? []).map(({ id }) => id).join("\u0000")
+      ] as const,
+    () => {
+      if (options.currentIsWorldbuildingList.value) {
+        selectionPrefetchRequest += 1;
+        void prefetchWorldbuildingSelectionFiles();
+        return;
+      }
+      worldbuildingPrefetchRequest += 1;
+    },
+    { immediate: true }
+  );
+
+  watch(
+    () => options.workspaceRevision(),
+    () => {
+      const snapshot = pendingSaveViewport;
+      if (!snapshot) return;
+      if (currentEditorViewportKey() !== snapshot.documentKey) {
+        pendingSaveViewport = null;
+        return;
+      }
+      if (
+        options.currentSelectionFile.value?.file.revision !== snapshot.fileRevision
+      ) {
+        return;
+      }
+      pendingSaveViewport = null;
+      void restoreCurrentEditorViewport(snapshot);
+    },
+    { flush: "post" }
+  );
+
+  watch(
+    () =>
+      [
+        props.bookId,
+        props.selection?.key,
+        props.selection?.characterId ?? null,
+        props.selection?.files.map(({ file }) => file.id).join("\u0000") ?? ""
+      ] as const,
+    () => {
+      if (options.currentIsWorldbuildingList.value) return;
+      void prefetchActiveSelectionFiles();
+    },
+    { immediate: true }
+  );
+
+  watch(
+    () =>
+      [
+        props.bookId,
+        options.currentSelectionFile.value?.file.id,
+        options.currentSelectionFile.value?.file.revision
+      ] as const,
+    () => {
+      const selectedFile = options.currentSelectionFile.value;
+      emit(
+        "contextChange",
+        selectedFile
+          ? {
+              bookId: props.bookId,
+              fileId: selectedFile.file.id,
+              fileRevision: selectedFile.file.revision
+            }
+          : null
+      );
+      const snapshot = pendingSaveViewport;
+      void loadSelectedDocument().finally(() => {
+        if (!snapshot || pendingSaveViewport !== snapshot) return;
+        pendingSaveViewport = null;
+        void restoreCurrentEditorViewport(snapshot);
+      });
+    },
+    { immediate: true }
+  );
+
+  onBeforeUnmount(() => {
+    worldbuildingPrefetchRequest += 1;
+    selectionPrefetchRequest += 1;
+    requestClockByFile.clear();
+    inflightDocumentLoads.clear();
+  });
+
+  return {
+    heldSelectionFile,
+    workspaceSavePending,
+    currentState,
+    isDocumentSwitchPending,
+    displayDocumentState,
+    showEditorLoading,
+    showEditorLoadError,
+    stateKey,
+    replaceDocumentState,
+    loadWorkspaceDocument,
+    loadSelectedDocument,
+    prefetchWorldbuildingSelectionFiles,
+    prefetchActiveSelectionFiles,
+    restoreStaleRecovery,
+    copyStaleRecovery,
+    ensureDocumentsLoaded,
+    saveDocumentState,
+    saveCurrentDocument,
+    saveAllChanges,
+    synchronizeProjectRevisions,
+    synchronizeProjectRevisionsIfClean
+  };
+}

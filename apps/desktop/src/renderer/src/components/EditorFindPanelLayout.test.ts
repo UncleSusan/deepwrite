@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import longEditorSource from "./LongWorkspaceEditor.vue?raw";
+import longEditorSource from "./LongEditorFindReplaceBar.vue?raw";
 
 describe("editor find panel layout", () => {
   it("anchors long-editor panels to their complete toolbar instead of the button group", () => {

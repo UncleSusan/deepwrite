@@ -11,7 +11,7 @@ import plotManagerSource from "./LongPlotStructureManager.vue?raw";
 import rollbackDialogSource from "./LongRollbackDialog.vue?raw";
 import structureDialogSource from "./LongStructureDialog.vue?raw";
 import structureManagerSource from "./LongStructureManager.vue?raw";
-import workspaceEditorSource from "./LongWorkspaceEditor.vue?raw";
+import workspaceEditorSource from "./LongEditorDeleteDialogs.vue?raw";
 
 describe("long-form dialog backdrops", () => {
   it("reuse the same backdrop treatment as short-form dialogs", () => {

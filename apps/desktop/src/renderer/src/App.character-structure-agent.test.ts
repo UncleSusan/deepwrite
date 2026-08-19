@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import appSource from "./WorkspaceShell.vue?raw";
-import coordinatorSource from "./composables/useProposalCoordinator.ts?raw";
+import applyReviewSource from "./composables/proposal-coordinator/apply-review.ts?raw";
+import characterStructureLaneSource from "./composables/proposal-coordinator/character-structure-lane.ts?raw";
+import queueSource from "./composables/proposal-coordinator/queue.ts?raw";
 
 describe("App character structure agent approvals", () => {
   it("stages character file and structure proposals through the shared review flow", () => {
+    const coordinatorSource = [
+      characterStructureLaneSource,
+      applyReviewSource,
+      queueSource
+    ].join("\n");
     expect(coordinatorSource).toContain('mutationTarget?.kind === "character-structure"');
     expect(coordinatorSource).toContain('mutationTarget?.kind === "character-file"');
     expect(coordinatorSource).toContain("characterStructureTarget: {");

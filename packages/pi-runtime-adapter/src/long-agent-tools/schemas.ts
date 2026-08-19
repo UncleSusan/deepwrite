@@ -76,7 +76,10 @@ export const plotItemKindParameter = literalUnion([
   "event",
   "connection",
   "placement"
-] as const);
+] as const, {
+  description:
+    "剧情结构类型。章卡必须使用 chapter；chapter_card 不是 kind，chapter_card_id 只是章卡业务 ID 字段。"
+});
 export const textParameter = Type.String({ maxLength: 200_000 });
 export const shortTextParameter = Type.String({ maxLength: 4_000 });
 export const aliasesParameter = Type.Array(

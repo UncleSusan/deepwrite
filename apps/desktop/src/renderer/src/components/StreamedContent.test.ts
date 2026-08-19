@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import conversationSource from "./AgentConversation.vue?raw";
+import conversationSource from "./ConversationMessageList.vue?raw";
 import streamedContentSource from "./StreamedContent.vue?raw";
 import streamingTextSource from "./StreamingText.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";

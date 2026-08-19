@@ -6,6 +6,7 @@ import { computed, ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import facadeSource from "./useLazyLongStructureTransactionsCoordinator.ts?raw";
 import heavySource from "./useLongStructureTransactionsCoordinator.ts?raw";
+import syncSource from "./long-structure-transactions/sync.ts?raw";
 import {
   useLazyLongStructureTransactionsCoordinator,
   type LongStructureTransactionsCoordinatorModule
@@ -184,8 +185,8 @@ describe("useLazyLongStructureTransactionsCoordinator", () => {
     expect(heavySource).toContain(
       'import("../types/longStructureMutations")'
     );
-    expect(heavySource).toContain(
-      'await import("../utils/longWorldbuildingSync")'
+    expect(syncSource).toContain(
+      'await import("../../utils/longWorldbuildingSync")'
     );
   });
 

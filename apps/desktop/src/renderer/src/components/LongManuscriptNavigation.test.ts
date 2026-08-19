@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import documentSessionSource from "../composables/useLongEditorDocumentSession.ts?raw";
+import structureSelectionSource from "../composables/useLongEditorStructureSelection.ts?raw";
 import source from "./LongManuscriptNavigation.vue?raw";
 import editorSource from "./LongWorkspaceEditor.vue?raw";
 
@@ -12,6 +14,9 @@ describe("LongManuscriptNavigation", () => {
     expect(source).toContain('aria-label="章卡列表"');
     expect(source).toContain("actionMenuId");
     expect(source).toContain("runMenuAction");
+    expect(source).toContain("const orderedItems = computed");
+    expect(source).toContain("orderLongChapterNavigationItems(props.items)");
+    expect(source).toContain('v-for="(chapter, index) in orderedItems"');
   });
 
   it("emits structure intent without applying mutations itself", () => {
@@ -29,13 +34,18 @@ describe("LongManuscriptNavigation", () => {
     expect(source).not.toContain('type: "chapter.reorder"');
   });
 
-  it("keeps reordering and deletion orchestration in the parent", () => {
+  it("keeps navigation wiring in the parent and orchestration in editor composables", () => {
     expect(editorSource.match(/<LongManuscriptNavigation/gu)).toHaveLength(2);
     expect(editorSource).toContain('@delete-chapter="openChapterCardDelete"');
     expect(editorSource).toContain('@reorder-chapter="reorderChapterCard"');
-    expect(editorSource).toContain('type: "chapter.reorder"');
-    expect(editorSource).toContain('emit(\n    "deleteStructure"');
-    expect(editorSource).toContain("async function saveCurrentDocument(");
+    expect(structureSelectionSource).toContain('type: "chapter.reorder"');
+    expect(editorSource).toContain(
+      "emitDeleteStructure: (input, completion) => {"
+    );
+    expect(editorSource).toContain(
+      'emit("deleteStructure", input, completion);'
+    );
+    expect(documentSessionSource).toContain("async function saveCurrentDocument(");
   });
 
   it("closes its own action menu without leaking menu state to the editor", () => {

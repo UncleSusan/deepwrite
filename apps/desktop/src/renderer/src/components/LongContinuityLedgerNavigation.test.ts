@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import source from "./LongContinuityLedgerNavigation.vue?raw";
 import editorSource from "./LongWorkspaceEditor.vue?raw";
+import editorSessionSource from "../composables/useLongEditorDocumentSession.ts?raw";
 
 describe("LongContinuityLedgerNavigation", () => {
   it("owns both configured continuity navigation layouts", () => {
@@ -41,7 +42,7 @@ describe("LongContinuityLedgerNavigation", () => {
     expect(editorSource).toContain("currentUsesRightContinuityList");
     expect(editorSource).toContain("currentContinuityNavigationItems");
     expect(editorSource).toContain('@select-file="selectWorkspaceFile"');
-    expect(editorSource).toContain("async function loadWorkspaceDocument(");
-    expect(editorSource).toContain("async function saveCurrentDocument(");
+    expect(editorSessionSource).toContain("async function loadWorkspaceDocument(");
+    expect(editorSessionSource).toContain("async function saveCurrentDocument(");
   });
 });

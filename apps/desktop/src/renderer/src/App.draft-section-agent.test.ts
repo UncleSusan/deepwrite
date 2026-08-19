@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import source from "./WorkspaceShell.vue?raw";
-import coordinatorSource from "./composables/useProposalCoordinator.ts?raw";
+import applyReviewSource from "./composables/proposal-coordinator/apply-review.ts?raw";
+import draftSectionLaneSource from "./composables/proposal-coordinator/draft-section-lane.ts?raw";
+import provisionalSource from "./composables/proposal-coordinator/provisional.ts?raw";
+import queueSource from "./composables/proposal-coordinator/queue.ts?raw";
 import structureSource from "./composables/useShortWorkspaceStructureCoordinator.ts?raw";
 
 describe("App agent chapter-file creation", () => {
@@ -20,6 +23,12 @@ describe("App agent chapter-file creation", () => {
   });
 
   it("stages one structural proposal and atomically persists its chapters", () => {
+    const coordinatorSource = [
+      draftSectionLaneSource,
+      provisionalSource,
+      applyReviewSource,
+      queueSource
+    ].join("\n");
     expect(coordinatorSource).toContain(
       'mutationTarget?.kind === "expert-draft-section-creation"'
     );

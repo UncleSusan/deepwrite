@@ -10,65 +10,34 @@ import {
 } from "vue";
 import type {
   LongExecutionStatus,
-  LongForeshadowingBeatType,
-  LongForeshadowingStatus,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
-import {
-  createLongStructureMutationBuilder,
-  type LongStructureMutationBuilder
-} from "../types/longStructureMutations";
 import type { LongStructureMutationCompletion } from "../types/longWorkspace";
 import AppIcon from "./AppIcon.vue";
-import PopupSelect, {
-  type PopupSelectOption,
-  type PopupSelectValue
-} from "./PopupSelect.vue";
-
-type WorkspaceMode = "overview" | "volume" | "plotPoint";
-type PlannedSpan = "local" | "within_volume" | "cross_volume";
-type FilterValue = "all" | LongForeshadowingStatus;
-type SpanFilterValue = "all" | PlannedSpan;
-type FormKind = "thread" | "beat";
-type FormMode = "create" | "edit";
-type MutationSurface = "form" | "delete" | "background";
-
-type SnapshotThread =
-  LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number];
-type SnapshotBeat = SnapshotThread["beats"][number];
-
-interface ForeshadowingBeat extends SnapshotBeat {
-  volumeId?: string | null;
-  arcId?: string | null;
-}
-
-interface ForeshadowingThread extends Omit<SnapshotThread, "beats"> {
-  hiddenTruth?: string;
-  plannedSpan?: PlannedSpan;
-  beats: ForeshadowingBeat[];
-}
-
-interface ThreadDraft {
-  id: string | null;
-  title: string;
-  coreQuestion: string;
-  hiddenTruth: string;
-  expectedReaderEffect: string;
-  plannedSpan: PlannedSpan;
-  status: "planned" | "abandoned";
-}
-
-interface BeatDraft {
-  id: string | null;
-  threadId: string;
-  type: LongForeshadowingBeatType;
-  volumeId: string;
-  arcId: string;
-  plannedScope: string;
-  note: string;
-}
+import ForeshadowingDeleteDialog from "./ForeshadowingDeleteDialog.vue";
+import ForeshadowingEditorDialog from "./ForeshadowingEditorDialog.vue";
+import ForeshadowingFilterBar from "./ForeshadowingFilterBar.vue";
+import {
+  beatTypeLabels,
+  lifecycleLabels,
+  spanLabels,
+  useForeshadowingFilters,
+  type FilterValue,
+  type ForeshadowingBeat,
+  type ForeshadowingThread,
+  type SpanFilterValue,
+  type WorkspaceMode
+} from "../composables/useForeshadowingFilters";
+import {
+  useForeshadowingMutations,
+  type BeatDraft,
+  type DeleteTarget,
+  type FormKind,
+  type FormMode,
+  type ThreadDraft
+} from "../composables/useForeshadowingMutations";
 
 interface BeatItem {
   thread: ForeshadowingThread;
@@ -81,17 +50,6 @@ interface VolumeSummarySection {
   description: string;
   items: BeatItem[];
 }
-
-type DeleteTarget =
-  | {
-      kind: "thread";
-      thread: ForeshadowingThread;
-    }
-  | {
-      kind: "beat";
-      thread: ForeshadowingThread;
-      beat: ForeshadowingBeat;
-    };
 
 const props = withDefaults(
   defineProps<{
@@ -113,74 +71,12 @@ const emit = defineEmits<{
   ];
 }>();
 
-const spanLabels: Record<PlannedSpan, string> = {
-  local: "剧情点内",
-  within_volume: "卷内",
-  cross_volume: "跨卷"
-};
-
-const lifecycleLabels: Record<LongForeshadowingStatus, string> = {
-  planned: "构思中",
-  open: "已埋设",
-  progressing: "发展中",
-  resolved: "已回收",
-  abandoned: "已废弃"
-};
-
-const beatTypeLabels: Record<LongForeshadowingBeatType, string> = {
-  source: "真相源头",
-  plant: "埋设",
-  reinforce: "强化",
-  misdirect: "误导",
-  partial_reveal: "部分揭示",
-  reveal: "揭示",
-  payoff: "回收",
-  aftermath: "余波"
-};
-
 const executionStatusLabels: Record<LongExecutionStatus, string> = {
   planned: "待写入",
   written: "已写入",
   committed: "已提交",
   missed: "已错过"
 };
-
-const spanOptions: readonly PopupSelectOption[] = (
-  Object.entries(spanLabels) as Array<[PlannedSpan, string]>
-).map(([value, label]) => ({ value, label }));
-
-const spanFilterOptions: readonly PopupSelectOption[] = [
-  { value: "all", label: "全部跨度" },
-  ...spanOptions
-];
-
-const lifecycleFilterOptions: readonly PopupSelectOption[] = [
-  { value: "all", label: "全部生命周期" },
-  ...(
-    Object.entries(lifecycleLabels) as Array<
-      [LongForeshadowingStatus, string]
-    >
-  ).map(([value, label]) => ({ value, label }))
-];
-
-const editableLifecycleOptions: readonly PopupSelectOption[] = [
-  {
-    value: "planned",
-    label: lifecycleLabels.planned,
-    description: "尚未由正文提交产生实际触点"
-  },
-  {
-    value: "abandoned",
-    label: lifecycleLabels.abandoned,
-    description: "保留记录，但不再继续推进"
-  }
-];
-
-const beatTypeOptions: readonly PopupSelectOption[] = (
-  Object.entries(beatTypeLabels) as Array<
-    [LongForeshadowingBeatType, string]
-  >
-).map(([value, label]) => ({ value, label }));
 
 const query = ref("");
 const lifecycleFilter = ref<FilterValue>("all");
@@ -191,15 +87,15 @@ const formOpen = ref(false);
 const formKind = ref<FormKind>("thread");
 const formMode = ref<FormMode>("create");
 const deleteTarget = ref<DeleteTarget | null>(null);
-const formDialog = ref<HTMLElement | null>(null);
-const deleteDialog = ref<HTMLElement | null>(null);
-const firstFormInput = ref<HTMLInputElement | null>(null);
-const deleteCancelButton = ref<HTMLButtonElement | null>(null);
-const pendingMutation = ref<{
-  id: number;
-  surface: MutationSurface;
+const editorDialogRef = ref<{
+  formDialog: HTMLElement | null;
+  firstFormInput: HTMLInputElement | null;
+  focusOpenedForm: () => void;
 } | null>(null);
-let mutationClock = 0;
+const deleteDialogRef = ref<{
+  deleteDialog: HTMLElement | null;
+  deleteCancelButton: HTMLButtonElement | null;
+} | null>(null);
 let previousFocus: HTMLElement | null = null;
 
 const threadDraft = reactive<ThreadDraft>(emptyThreadDraft());
@@ -229,61 +125,48 @@ function emptyBeatDraft(): BeatDraft {
   };
 }
 
-const mutationLocked = computed(
-  () => props.disabled || pendingMutation.value !== null
-);
+const {
+  volumeById,
+  arcById,
+  resolvedContextVolumeId,
+  volumeOptions,
+  arcOptions,
+  resolveBeatArcIds,
+  resolveBeatVolumeIds,
+  beatMatchesVolume,
+  beatMatchesPlotPoint,
+  threadMatchesScope,
+  derivedSpan,
+  volumeTitle,
+  arcTitle
+} = useForeshadowingFilters(props);
 
 const threads = computed(
-  () =>
-    props.snapshot.plot.foreshadowing as ForeshadowingThread[]
+  () => props.snapshot.plot.foreshadowing as ForeshadowingThread[]
 );
 
-const volumeById = computed(
-  () =>
-    new Map(
-      props.snapshot.plot.volumes.map((volume) => [
-        volume.id,
-        volume
-      ] as const)
-    )
+const firstFormInput = computed(
+  () => editorDialogRef.value?.firstFormInput ?? null
 );
 
-const arcById = computed(
-  () =>
-    new Map(
-      props.snapshot.plot.arcs.map((arc) => [arc.id, arc] as const)
-    )
-);
-
-const chapterById = computed(
-  () =>
-    new Map(
-      props.snapshot.plot.chapterCards.map((chapter) => [
-        chapter.id,
-        chapter
-      ] as const)
-    )
-);
-
-const eventById = computed(
-  () =>
-    new Map(
-      props.snapshot.plot.storyEvents.map((event) => [
-        event.id,
-        event
-      ] as const)
-    )
-);
-
-const placementById = computed(
-  () =>
-    new Map(
-      props.snapshot.plot.narrativePlacements.map((placement) => [
-        placement.id,
-        placement
-      ] as const)
-    )
-);
+const {
+  pendingMutation,
+  mutationLocked,
+  emitMutation,
+  submitForm,
+  confirmDelete
+} = useForeshadowingMutations(props, emit, {
+  threadDraft,
+  beatDraft,
+  formKind,
+  formMode,
+  formOpen,
+  deleteTarget,
+  threads,
+  firstFormInput,
+  restoreFocus,
+  isThreadLocked
+});
 
 const currentVolume = computed(() =>
   props.volumeId ? volumeById.value.get(props.volumeId) ?? null : null
@@ -292,148 +175,6 @@ const currentVolume = computed(() =>
 const currentPlotPoint = computed(() =>
   props.plotPointId ? arcById.value.get(props.plotPointId) ?? null : null
 );
-
-const resolvedContextVolumeId = computed(
-  () => props.volumeId ?? currentPlotPoint.value?.volumeId
-);
-
-const volumeOptions = computed<PopupSelectOption[]>(() => [
-  { value: "", label: "暂不指定分卷" },
-  ...[...props.snapshot.plot.volumes]
-    .sort(
-      (left, right) =>
-        left.order - right.order || left.id.localeCompare(right.id)
-    )
-    .map((volume) => ({
-      value: volume.id,
-      label: volume.title
-    }))
-]);
-
-const arcOptions = computed<PopupSelectOption[]>(() => {
-  const scopedVolumeId =
-    props.mode === "overview" ? undefined : resolvedContextVolumeId.value;
-  return [
-    { value: "", label: "暂不指定剧情点" },
-    ...[...props.snapshot.plot.arcs]
-      .filter((arc) => !scopedVolumeId || arc.volumeId === scopedVolumeId)
-      .sort((left, right) => {
-        const leftVolume = volumeById.value.get(left.volumeId)?.order ?? 0;
-        const rightVolume = volumeById.value.get(right.volumeId)?.order ?? 0;
-        return (
-          leftVolume - rightVolume ||
-          left.order - right.order ||
-          left.id.localeCompare(right.id)
-        );
-      })
-      .map((arc) => ({
-        value: arc.id,
-        label: `${volumeTitle(arc.volumeId)} · ${arc.title}`
-      }))
-  ];
-});
-
-const threadOptions = computed<PopupSelectOption[]>(() =>
-  threads.value.map((thread) => ({
-    value: thread.id,
-    label: thread.title
-  }))
-);
-
-function unique(values: Array<string | null | undefined>): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))];
-}
-
-function resolveBeatArcIds(beat: ForeshadowingBeat): string[] {
-  if (beat.arcId) return [beat.arcId];
-
-  const chapterId =
-    beat.chapterCardId ??
-    (beat.placementId
-      ? placementById.value.get(beat.placementId)?.chapterCardId
-      : undefined);
-  const chapterArcId = chapterId
-    ? chapterById.value.get(chapterId)?.primaryArcId
-    : undefined;
-  if (chapterArcId) return [chapterArcId];
-
-  const eventArcIds = beat.eventId
-    ? unique(eventById.value.get(beat.eventId)?.arcIds ?? [])
-    : [];
-  return beat.volumeId
-    ? eventArcIds.filter(
-        (arcId) => arcById.value.get(arcId)?.volumeId === beat.volumeId
-      )
-    : eventArcIds;
-}
-
-function resolveBeatVolumeIds(beat: ForeshadowingBeat): string[] {
-  if (beat.arcId) {
-    const arcVolumeId = arcById.value.get(beat.arcId)?.volumeId;
-    return arcVolumeId ? [arcVolumeId] : [];
-  }
-  if (beat.volumeId) return [beat.volumeId];
-
-  const arcVolumeIds = resolveBeatArcIds(beat).map(
-    (arcId) => arcById.value.get(arcId)?.volumeId
-  );
-  if (arcVolumeIds.some(Boolean)) return unique(arcVolumeIds);
-
-  const chapterId =
-    beat.chapterCardId ??
-    (beat.placementId
-      ? placementById.value.get(beat.placementId)?.chapterCardId
-      : undefined);
-  const chapterVolumeId = chapterId
-    ? chapterById.value.get(chapterId)?.volumeId
-    : undefined;
-  return chapterVolumeId ? [chapterVolumeId] : [];
-}
-
-function beatMatchesVolume(
-  beat: ForeshadowingBeat,
-  volumeId: string | undefined
-): boolean {
-  return Boolean(
-    volumeId && resolveBeatVolumeIds(beat).includes(volumeId)
-  );
-}
-
-function beatMatchesPlotPoint(
-  beat: ForeshadowingBeat,
-  plotPointId: string | undefined
-): boolean {
-  return Boolean(
-    plotPointId && resolveBeatArcIds(beat).includes(plotPointId)
-  );
-}
-
-function threadMatchesScope(thread: ForeshadowingThread): boolean {
-  if (props.mode === "overview") return true;
-  if (props.mode === "volume") {
-    return thread.beats.some((beat) =>
-      beatMatchesVolume(beat, resolvedContextVolumeId.value)
-    );
-  }
-  return thread.beats.some((beat) =>
-    beatMatchesPlotPoint(beat, props.plotPointId)
-  );
-}
-
-function derivedSpan(thread: ForeshadowingThread): PlannedSpan {
-  if (thread.plannedSpan) return thread.plannedSpan;
-  const volumeIds = unique(
-    thread.beats.flatMap((beat) => resolveBeatVolumeIds(beat))
-  );
-  if (volumeIds.length > 1) return "cross_volume";
-  const arcIds = unique(
-    thread.beats.flatMap((beat) => resolveBeatArcIds(beat))
-  );
-  if (arcIds.length > 1) return "within_volume";
-  return volumeIds.length === 1 && arcIds.length === 0
-    ? "within_volume"
-    : "local";
-}
 
 function threadSearchText(thread: ForeshadowingThread): string {
   return [
@@ -621,19 +362,6 @@ const workspaceDescription = computed(() => {
   return "集中管理伏笔线的完整生命周期；每个触点仍锚定在卷或剧情点中。";
 });
 
-const formTitle = computed(() => {
-  const action = formMode.value === "create" ? "新建" : "编辑";
-  return `${action}${formKind.value === "thread" ? "伏笔线" : "伏笔触点"}`;
-});
-
-const deleteTitle = computed(() => {
-  const target = deleteTarget.value;
-  if (!target) return "确认删除";
-  return target.kind === "thread"
-    ? `删除伏笔线“${target.thread.title}”`
-    : `删除“${target.thread.title}”的${beatTypeLabels[target.beat.type]}触点`;
-});
-
 watch(
   () => [
     props.mode,
@@ -653,14 +381,6 @@ watch(
   },
   { immediate: true }
 );
-
-function volumeTitle(volumeId: string): string {
-  return volumeById.value.get(volumeId)?.title ?? `缺失分卷（${volumeId}）`;
-}
-
-function arcTitle(arcId: string): string {
-  return arcById.value.get(arcId)?.title ?? `缺失剧情点（${arcId}）`;
-}
 
 function beatContextLabel(beat: ForeshadowingBeat): string {
   const arcIds = resolveBeatArcIds(beat);
@@ -737,58 +457,6 @@ async function focusTarget(
 
 defineExpose({ focusTarget });
 
-function setLifecycleFilter(value: PopupSelectValue): void {
-  if (
-    value === "all" ||
-    Object.prototype.hasOwnProperty.call(lifecycleLabels, value)
-  ) {
-    lifecycleFilter.value = value as FilterValue;
-  }
-}
-
-function setSpanFilter(value: PopupSelectValue): void {
-  if (
-    value === "all" ||
-    Object.prototype.hasOwnProperty.call(spanLabels, value)
-  ) {
-    spanFilter.value = value as SpanFilterValue;
-  }
-}
-
-function setThreadSpan(value: PopupSelectValue): void {
-  if (Object.prototype.hasOwnProperty.call(spanLabels, value)) {
-    threadDraft.plannedSpan = value as PlannedSpan;
-  }
-}
-
-function setThreadStatus(value: PopupSelectValue): void {
-  if (value === "planned" || value === "abandoned") {
-    threadDraft.status = value;
-  }
-}
-
-function setBeatThread(value: PopupSelectValue): void {
-  if (typeof value === "string") beatDraft.threadId = value;
-}
-
-function setBeatType(value: PopupSelectValue): void {
-  if (Object.prototype.hasOwnProperty.call(beatTypeLabels, value)) {
-    beatDraft.type = value as LongForeshadowingBeatType;
-  }
-}
-
-function setBeatVolume(value: PopupSelectValue): void {
-  if (typeof value !== "string") return;
-  beatDraft.volumeId = value;
-  if (value) beatDraft.arcId = "";
-}
-
-function setBeatArc(value: PopupSelectValue): void {
-  if (typeof value !== "string") return;
-  beatDraft.arcId = value;
-  if (value) beatDraft.volumeId = "";
-}
-
 function rememberFocus(): void {
   previousFocus =
     document.activeElement instanceof HTMLElement
@@ -805,15 +473,7 @@ function restoreFocus(): void {
 }
 
 function focusOpenedForm(): void {
-  void nextTick(() => {
-    const firstEnabledControl =
-      formDialog.value?.querySelector<HTMLElement>(
-        "fieldset input:not(:disabled), fieldset textarea:not(:disabled), fieldset button:not(:disabled)"
-      );
-    (firstEnabledControl ?? formDialog.value)?.focus({
-      preventScroll: true
-    });
-  });
+  editorDialogRef.value?.focusOpenedForm();
 }
 
 function openCreateThread(): void {
@@ -922,7 +582,7 @@ function requestDeleteThread(thread: ForeshadowingThread): void {
   rememberFocus();
   deleteTarget.value = { kind: "thread", thread };
   void nextTick(() =>
-    deleteCancelButton.value?.focus({ preventScroll: true })
+    deleteDialogRef.value?.deleteCancelButton?.focus({ preventScroll: true })
   );
 }
 
@@ -938,7 +598,7 @@ function requestDeleteBeat(
   rememberFocus();
   deleteTarget.value = { kind: "beat", thread, beat };
   void nextTick(() =>
-    deleteCancelButton.value?.focus({ preventScroll: true })
+    deleteDialogRef.value?.deleteCancelButton?.focus({ preventScroll: true })
   );
 }
 
@@ -959,149 +619,6 @@ function closeDelete(): void {
   if (mutationLocked.value) return;
   deleteTarget.value = null;
   restoreFocus();
-}
-
-function finishMutation(
-  requestId: number,
-  outcome: "succeeded" | "failed" | "applied-refresh-failed"
-): void {
-  const pending = pendingMutation.value;
-  if (!pending || pending.id !== requestId) return;
-  pendingMutation.value = null;
-  if (outcome === "failed") return;
-  if (pending.surface === "form") {
-    formOpen.value = false;
-  } else if (pending.surface === "delete") {
-    deleteTarget.value = null;
-  }
-  restoreFocus();
-}
-
-function emitMutation(
-  build: (builder: LongStructureMutationBuilder) => LongWorkspaceOperationBatch,
-  surface: MutationSurface
-): boolean {
-  if (mutationLocked.value) return false;
-  try {
-    const batch = build(createLongStructureMutationBuilder(props.snapshot));
-    const requestId = ++mutationClock;
-    pendingMutation.value = { id: requestId, surface };
-    emit("mutation", batch, {
-      succeed: () => finishMutation(requestId, "succeeded"),
-      fail: () => finishMutation(requestId, "failed"),
-      appliedButRefreshFailed: () =>
-        finishMutation(requestId, "applied-refresh-failed")
-    });
-    return true;
-  } catch (error: unknown) {
-    uiMessage.warning(
-      error instanceof Error ? error.message : "无法生成伏笔结构变更。"
-    );
-    return false;
-  }
-}
-
-function submitThread(): void {
-  const title = threadDraft.title.trim();
-  if (!title) {
-    uiMessage.warning("请输入伏笔线名称。");
-    firstFormInput.value?.focus({ preventScroll: true });
-    return;
-  }
-
-  emitMutation((builder) => {
-    const input = {
-      title,
-      coreQuestion: threadDraft.coreQuestion,
-      hiddenTruth: threadDraft.hiddenTruth,
-      expectedReaderEffect: threadDraft.expectedReaderEffect,
-      plannedSpan: threadDraft.plannedSpan,
-      status:
-        formMode.value === "create" ? ("planned" as const) : threadDraft.status
-    };
-    if (formMode.value === "create") {
-      return builder.createForeshadowing(input);
-    }
-    if (!threadDraft.id) throw new Error("缺少待编辑伏笔线的稳定 ID。");
-    const originalThread = threads.value.find(
-      (thread) => thread.id === threadDraft.id
-    );
-    if (originalThread && isThreadLocked(originalThread)) {
-      return builder.updateForeshadowing(threadDraft.id, {
-        ...(originalThread.hiddenTruth === undefined
-          ? { hiddenTruth: threadDraft.hiddenTruth }
-          : {}),
-        ...(originalThread.plannedSpan === undefined
-          ? { plannedSpan: threadDraft.plannedSpan }
-          : {}),
-        status: threadDraft.status
-      });
-    }
-    return builder.updateForeshadowing(threadDraft.id, input);
-  }, "form");
-}
-
-function submitBeat(): void {
-  if (!beatDraft.threadId) {
-    uiMessage.warning("请选择所属伏笔线。");
-    return;
-  }
-  const originalBeat =
-    formMode.value === "edit" && beatDraft.id
-      ? threads.value
-          .flatMap((thread) => thread.beats)
-          .find((beat) => beat.id === beatDraft.id)
-      : undefined;
-  const hasLegacyAnchor = Boolean(
-    originalBeat?.eventId ||
-      originalBeat?.placementId ||
-      originalBeat?.chapterCardId
-  );
-  if (
-    !beatDraft.volumeId &&
-    !beatDraft.arcId &&
-    !beatDraft.plannedScope.trim() &&
-    !hasLegacyAnchor
-  ) {
-    uiMessage.warning("请选择分卷或剧情点，或填写计划范围。");
-    return;
-  }
-
-  emitMutation((builder) => {
-    const input = {
-      threadId: beatDraft.threadId,
-      type: beatDraft.type,
-      volumeId: beatDraft.arcId ? null : beatDraft.volumeId || null,
-      arcId: beatDraft.arcId || null,
-      plannedScope: beatDraft.plannedScope,
-      note: beatDraft.note
-    };
-    if (formMode.value === "create") {
-      return builder.createForeshadowingBeat(input);
-    }
-    if (!beatDraft.id) throw new Error("缺少待编辑触点的稳定 ID。");
-    return builder.updateForeshadowingBeat(beatDraft.id, input);
-  }, "form");
-}
-
-function submitForm(): void {
-  if (formKind.value === "thread") {
-    submitThread();
-  } else {
-    submitBeat();
-  }
-}
-
-function confirmDelete(): void {
-  const target = deleteTarget.value;
-  if (!target) return;
-  emitMutation(
-    (builder) =>
-      target.kind === "thread"
-        ? builder.deleteForeshadowing(target.thread.id, true)
-        : builder.deleteForeshadowingBeat(target.beat.id),
-    "delete"
-  );
 }
 
 function activateSummaryItem(item: BeatItem): void {
@@ -1151,7 +668,7 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
       closeForm();
       return;
     }
-    trapFocus(event, formDialog.value);
+    trapFocus(event, editorDialogRef.value?.formDialog ?? null);
     return;
   }
   if (deleteTarget.value) {
@@ -1159,7 +676,7 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
       closeDelete();
       return;
     }
-    trapFocus(event, deleteDialog.value);
+    trapFocus(event, deleteDialogRef.value?.deleteDialog ?? null);
   }
 }
 
@@ -1224,36 +741,15 @@ onBeforeUnmount(() =>
           <dd>{{ overviewStats.plannedBeats }}</dd>
         </div>
       </dl>
-      <div class="overview-filters">
-        <label class="search-field">
-          <AppIcon name="search" :size="15" />
-          <input
-            v-model="query"
-            type="search"
-            autocomplete="off"
-            placeholder="搜索名称、问题、真相或触点"
-            aria-label="搜索伏笔"
-          />
-        </label>
-        <PopupSelect
-          :model-value="lifecycleFilter"
-          :options="lifecycleFilterOptions"
-          accessible-label="按生命周期筛选伏笔"
-          variant="compact"
-          size="small"
-          :disabled="mutationLocked"
-          @update:model-value="setLifecycleFilter"
-        />
-        <PopupSelect
-          :model-value="spanFilter"
-          :options="spanFilterOptions"
-          accessible-label="按跨度筛选伏笔"
-          variant="compact"
-          size="small"
-          :disabled="mutationLocked"
-          @update:model-value="setSpanFilter"
-        />
-      </div>
+      <ForeshadowingFilterBar
+        :query="query"
+        :lifecycle-filter="lifecycleFilter"
+        :span-filter="spanFilter"
+        :disabled="mutationLocked"
+        @update:query="query = $event"
+        @update:lifecycle-filter="lifecycleFilter = $event"
+        @update:span-filter="spanFilter = $event"
+      />
     </section>
 
     <section
@@ -1554,268 +1050,32 @@ onBeforeUnmount(() =>
       </main>
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="formOpen"
-        class="dialog-backdrop foreshadow-dialog-overlay"
-        @mousedown.self="closeForm"
-      >
-        <section
-          ref="formDialog"
-          class="foreshadow-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="foreshadow-form-title"
-          tabindex="-1"
-        >
-          <form @submit.prevent="submitForm">
-            <header class="dialog-header">
-              <div>
-                <span>{{ formMode === "create" ? "CREATE" : "EDIT" }}</span>
-                <h3 id="foreshadow-form-title">{{ formTitle }}</h3>
-              </div>
-              <button
-                type="button"
-                aria-label="关闭伏笔编辑弹窗"
-                :disabled="mutationLocked"
-                @click="closeForm"
-              >
-                <AppIcon name="close" :size="16" />
-              </button>
-            </header>
+    <ForeshadowingEditorDialog
+      ref="editorDialogRef"
+      :open="formOpen"
+      :form-kind="formKind"
+      :form-mode="formMode"
+      :thread-draft="threadDraft"
+      :beat-draft="beatDraft"
+      :threads="threads"
+      :volume-options="volumeOptions"
+      :arc-options="arcOptions"
+      :editing-thread="editingThread"
+      :editing-committed-thread="editingCommittedThread"
+      :mutation-locked="mutationLocked"
+      :pending="pendingMutation?.surface === 'form'"
+      @close="closeForm"
+      @submit="submitForm"
+    />
 
-            <fieldset class="dialog-body" :disabled="mutationLocked">
-              <template v-if="formKind === 'thread'">
-                <p
-                  v-if="editingCommittedThread"
-                  class="committed-backfill-note"
-                >
-                  已提交触点仍锁定原有核心信息；这里只能补填旧项目中此前不存在的隐藏真相或计划跨度。
-                </p>
-                <label class="form-field">
-                  <span>伏笔线名称</span>
-                  <input
-                    ref="firstFormInput"
-                    v-model="threadDraft.title"
-                    :disabled="editingCommittedThread"
-                    maxlength="256"
-                    autocomplete="off"
-                    placeholder="例如：师父与旧城火灾的关系"
-                    required
-                  />
-                </label>
-                <div
-                  class="form-grid"
-                  :class="{ 'is-single': formMode === 'create' }"
-                >
-                  <label class="form-field">
-                    <span>计划跨度</span>
-                    <PopupSelect
-                      :model-value="threadDraft.plannedSpan"
-                      :options="spanOptions"
-                      :disabled="
-                        editingCommittedThread &&
-                        editingThread?.plannedSpan !== undefined
-                      "
-                      accessible-label="选择伏笔计划跨度"
-                      :menu-z-index="2600"
-                      @update:model-value="setThreadSpan"
-                    />
-                  </label>
-                  <label v-if="formMode === 'edit'" class="form-field">
-                    <span>生命周期</span>
-                    <PopupSelect
-                      :model-value="threadDraft.status"
-                      :options="editableLifecycleOptions"
-                      accessible-label="选择伏笔生命周期"
-                      :menu-z-index="2600"
-                      @update:model-value="setThreadStatus"
-                    />
-                  </label>
-                </div>
-                <label class="form-field">
-                  <span>核心问题</span>
-                  <textarea
-                    v-model="threadDraft.coreQuestion"
-                    :disabled="editingCommittedThread"
-                    rows="3"
-                    maxlength="200000"
-                    placeholder="读者会持续追问什么？"
-                  />
-                </label>
-                <label class="form-field">
-                  <span>隐藏真相</span>
-                  <textarea
-                    v-model="threadDraft.hiddenTruth"
-                    :disabled="
-                      editingCommittedThread &&
-                      editingThread?.hiddenTruth !== undefined
-                    "
-                    rows="4"
-                    maxlength="200000"
-                    placeholder="作者掌握、但暂时不直接告诉读者的答案"
-                  />
-                </label>
-                <label class="form-field">
-                  <span>预期读者效果</span>
-                  <textarea
-                    v-model="threadDraft.expectedReaderEffect"
-                    :disabled="editingCommittedThread"
-                    rows="3"
-                    maxlength="200000"
-                    placeholder="希望读者产生怎样的怀疑、误判或恍然大悟"
-                  />
-                </label>
-              </template>
-
-              <template v-else>
-                <label class="form-field">
-                  <span>所属伏笔线</span>
-                  <PopupSelect
-                    :model-value="beatDraft.threadId"
-                    :options="threadOptions"
-                    accessible-label="选择触点所属伏笔线"
-                    :menu-z-index="2600"
-                    @update:model-value="setBeatThread"
-                  />
-                </label>
-                <label class="form-field">
-                  <span>触点作用</span>
-                  <PopupSelect
-                    :model-value="beatDraft.type"
-                    :options="beatTypeOptions"
-                    accessible-label="选择伏笔触点作用"
-                    :menu-z-index="2600"
-                    @update:model-value="setBeatType"
-                  />
-                </label>
-                <div class="form-grid">
-                  <label class="form-field">
-                    <span>分卷待落点</span>
-                    <PopupSelect
-                      :model-value="beatDraft.volumeId"
-                      :options="volumeOptions"
-                      accessible-label="选择触点所属分卷"
-                      :menu-z-index="2600"
-                      @update:model-value="setBeatVolume"
-                    />
-                    <small>选择剧情点后，这里会自动清空。</small>
-                  </label>
-                  <label class="form-field">
-                    <span>剧情点</span>
-                    <PopupSelect
-                      :model-value="beatDraft.arcId"
-                      :options="arcOptions"
-                      accessible-label="选择触点所属剧情点"
-                      :menu-z-index="2600"
-                      @update:model-value="setBeatArc"
-                    />
-                    <small>精确到剧情点时只保存剧情点锚点。</small>
-                  </label>
-                </div>
-                <label class="form-field">
-                  <span>计划范围</span>
-                  <input
-                    v-model="beatDraft.plannedScope"
-                    maxlength="1000"
-                    autocomplete="off"
-                    placeholder="尚未确定具体落点时，可填写阶段或范围"
-                  />
-                </label>
-                <label class="form-field">
-                  <span>呈现说明</span>
-                  <textarea
-                    v-model="beatDraft.note"
-                    rows="4"
-                    maxlength="4000"
-                    placeholder="读者实际看到什么，以及希望形成什么判断"
-                  />
-                </label>
-              </template>
-            </fieldset>
-
-            <footer class="dialog-actions">
-              <button
-                type="button"
-                :disabled="mutationLocked"
-                @click="closeForm"
-              >
-                取消
-              </button>
-              <button
-                class="primary-button"
-                type="submit"
-                :disabled="mutationLocked"
-              >
-                {{
-                  pendingMutation?.surface === "form"
-                    ? "保存中…"
-                    : formMode === "create"
-                      ? "创建"
-                      : "保存修改"
-                }}
-              </button>
-            </footer>
-          </form>
-        </section>
-      </div>
-    </Teleport>
-
-    <Teleport to="body">
-      <div
-        v-if="deleteTarget"
-        class="dialog-backdrop foreshadow-dialog-overlay"
-        @mousedown.self="closeDelete"
-      >
-        <section
-          ref="deleteDialog"
-          class="foreshadow-dialog delete-dialog"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="foreshadow-delete-title"
-          aria-describedby="foreshadow-delete-description"
-          tabindex="-1"
-        >
-          <header class="dialog-header">
-            <div>
-              <span>DELETE</span>
-              <h3 id="foreshadow-delete-title">{{ deleteTitle }}</h3>
-            </div>
-          </header>
-          <div class="dialog-body">
-            <p id="foreshadow-delete-description" class="delete-copy">
-              {{
-                deleteTarget.kind === "thread"
-                  ? "这会同时删除该伏笔线下全部尚未提交的触点，保存后无法从当前界面恢复。"
-                  : "这会删除该触点，其他卷和剧情点中的同一伏笔线不会被删除。"
-              }}
-            </p>
-          </div>
-          <footer class="dialog-actions">
-            <button
-              ref="deleteCancelButton"
-              type="button"
-              :disabled="mutationLocked"
-              @click="closeDelete"
-            >
-              取消
-            </button>
-            <button
-              class="danger-button"
-              type="button"
-              :disabled="mutationLocked"
-              @click="confirmDelete"
-            >
-              {{
-                pendingMutation?.surface === "delete"
-                  ? "删除中…"
-                  : "确认删除"
-              }}
-            </button>
-          </footer>
-        </section>
-      </div>
-    </Teleport>
+    <ForeshadowingDeleteDialog
+      ref="deleteDialogRef"
+      :target="deleteTarget"
+      :mutation-locked="mutationLocked"
+      :pending="pendingMutation?.surface === 'delete'"
+      @close="closeDelete"
+      @confirm="confirmDelete"
+    />
   </section>
 </template>
 
@@ -1871,8 +1131,7 @@ onBeforeUnmount(() =>
 
 .foreshadow-header-actions,
 .detail-actions,
-.beat-actions,
-.dialog-actions {
+.beat-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -1891,8 +1150,7 @@ button {
 
 .primary-button,
 .thread-detail-header button,
-.beat-empty button,
-.dialog-actions button {
+.beat-empty button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1968,46 +1226,6 @@ button:disabled {
   margin: 0;
   font-size: 0.928571rem;
   font-weight: 680;
-}
-
-.overview-filters {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 7px;
-}
-
-.search-field {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  min-width: 9rem;
-  height: 32px;
-  gap: 7px;
-  padding: 0 9px;
-  border: 1px solid var(--theme-line);
-  border-radius: 8px;
-  background: var(--surface-main);
-  color: var(--text-tertiary);
-}
-
-.search-field:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--theme-line));
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
-.search-field input {
-  flex: 1 1 auto;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 0.75rem;
-}
-
-.search-field input::placeholder {
-  color: var(--text-tertiary);
 }
 
 .volume-summary {
@@ -2541,164 +1759,6 @@ button:disabled {
   background: var(--surface-muted);
 }
 
-.foreshadow-dialog-overlay {
-  z-index: 2400;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.foreshadow-dialog {
-  width: min(620px, 94vw);
-  max-height: min(820px, 92vh);
-  overflow-y: auto;
-  border: 1px solid var(--theme-line);
-  border-radius: 14px;
-  background: var(--surface-raised);
-  box-shadow: 0 22px 70px
-    color-mix(in srgb, var(--text-primary) 20%, transparent);
-  color: var(--text-primary);
-}
-
-.foreshadow-dialog form {
-  display: grid;
-}
-
-.dialog-header,
-.dialog-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 15px;
-}
-
-.dialog-header {
-  border-bottom: 1px solid var(--theme-line-soft);
-  background: var(--surface-muted);
-}
-
-.dialog-header > div {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.dialog-header span {
-  color: var(--accent);
-  font-size: 0.607143rem;
-  font-weight: 720;
-  letter-spacing: 0.1em;
-}
-
-.dialog-header h3 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.dialog-header > button {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.dialog-body {
-  display: grid;
-  min-inline-size: 0;
-  gap: 12px;
-  margin: 0;
-  padding: 15px;
-  border: 0;
-}
-
-.committed-backfill-note {
-  margin: 0;
-  padding: 9px 10px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 8px;
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-  font-size: 0.785714rem;
-  line-height: 1.55;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.form-grid.is-single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.form-field {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.form-field input,
-.form-field textarea {
-  width: 100%;
-  min-width: 0;
-  padding: 8px 9px;
-  border: 1px solid var(--theme-line);
-  border-radius: 8px;
-  outline: 0;
-  background: var(--surface-main);
-  color: var(--text-primary);
-  font-weight: 400;
-  line-height: 1.5;
-}
-
-.form-field textarea {
-  resize: vertical;
-}
-
-.form-field input:focus,
-.form-field textarea:focus {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--theme-line));
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
-.form-field small {
-  color: var(--text-tertiary);
-  font-size: 0.642857rem;
-  font-weight: 400;
-}
-
-.dialog-actions {
-  justify-content: flex-end;
-  border-top: 1px solid var(--theme-line-soft);
-  background: var(--surface-muted);
-}
-
-.delete-dialog {
-  width: min(470px, 94vw);
-}
-
-.delete-copy {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.785714rem;
-  line-height: 1.65;
-}
-
-.danger-button {
-  border-color: var(--danger) !important;
-  background: var(--danger) !important;
-  color: #ffffff !important;
-  font-weight: 620;
-}
-
 @container (max-width: 38rem) {
   .foreshadow-header {
     padding: 14px;
@@ -2710,14 +1770,6 @@ button:disabled {
 
   .overview-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .overview-filters {
-    flex-wrap: wrap;
-  }
-
-  .search-field {
-    flex-basis: 100%;
   }
 
   .volume-summary {
@@ -2773,20 +1825,6 @@ button:disabled {
 
   .beat-section > header {
     align-items: flex-start;
-  }
-}
-
-@media (max-width: 560px), (max-height: 680px) {
-  .foreshadow-dialog-overlay {
-    padding: 8px;
-  }
-
-  .foreshadow-dialog {
-    max-height: calc(100vh - 16px);
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
   }
 }
 

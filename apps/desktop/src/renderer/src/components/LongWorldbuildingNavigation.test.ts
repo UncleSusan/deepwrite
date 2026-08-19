@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import editorSource from "./LongWorkspaceEditor.vue?raw";
+import editorSessionSource from "../composables/useLongEditorDocumentSession.ts?raw";
 import source from "./LongWorldbuildingNavigation.vue?raw";
 
 describe("LongWorldbuildingNavigation", () => {
@@ -48,7 +49,7 @@ describe("LongWorldbuildingNavigation", () => {
     expect(editorSource).toContain(
       '@delete-item="openWorldbuildingItemDelete"'
     );
-    expect(editorSource).toContain("async function loadWorkspaceDocument(");
+    expect(editorSessionSource).toContain("async function loadWorkspaceDocument(");
   });
 
   it("projects navigation metadata without subscribing to every item body", () => {

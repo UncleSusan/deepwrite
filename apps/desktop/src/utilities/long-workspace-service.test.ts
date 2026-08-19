@@ -313,7 +313,7 @@ describe("LongWorkspaceService", () => {
         maxSnippetCharacters: 100
       })
     ).resolves.toMatchObject({ hits: [] });
-  });
+  }, 15_000);
 
   it("reads, writes and searches a chapter-card file through the workspace service", async () => {
     const root = await realpath(

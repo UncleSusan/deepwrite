@@ -12,6 +12,7 @@ import lazyShortBookLifecycleSource from "./composables/useLazyShortBookLifecycl
 import longBookLifecycleSource from "./composables/useLongBookLifecycleCoordinator.ts?raw";
 import longRollbackSource from "./composables/useLongRollbackCoordinator.ts?raw";
 import longStructureTransactionsSource from "./composables/useLongStructureTransactionsCoordinator.ts?raw";
+import longStructureTransactionsSyncSource from "./composables/long-structure-transactions/sync.ts?raw";
 import resourceSource from "./composables/useWorkspaceResourceCoordinator.ts?raw";
 import resourceTreeSource from "./composables/useWorkspaceResourceTreeCoordinator.ts?raw";
 import shortConversationSource from "./composables/useShortConversationCoordinator.ts?raw";
@@ -90,7 +91,7 @@ describe("App performance boundaries", () => {
     expect(shortStructureSource).toContain(
       "async function confirmCreateExpertSection("
     );
-    expect(longStructureTransactionsSource).toContain(
+    expect(longStructureTransactionsSyncSource).toContain(
       "async function executeLongStructureMutation("
     );
     expect(longBookLifecycleSource).toContain("function createLongBook(");
@@ -184,8 +185,8 @@ describe("App performance boundaries", () => {
     expect(longStructureTransactionsSource).toContain(
       'import("../types/longStructureMutations")'
     );
-    expect(longStructureTransactionsSource).toContain(
-      'await import("../utils/longWorldbuildingSync")'
+    expect(longStructureTransactionsSyncSource).toContain(
+      'await import("../../utils/longWorldbuildingSync")'
     );
     expect(shortBookLifecycleSource).toContain(
       'from "../utils/shortManuscriptExport"'

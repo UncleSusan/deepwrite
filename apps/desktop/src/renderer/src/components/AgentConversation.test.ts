@@ -2,9 +2,18 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error Loaded as source text by the Vitest-only virtual module.
 import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
+import messageListSource from "./ConversationMessageList.vue?raw";
+import composerSource from "./ConversationComposer.vue?raw";
 import proposalCardSource from "./AgentEditProposalCard.vue?raw";
 import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
+import scrollFollowSource from "../composables/useConversationScrollFollow.ts?raw";
+import attachmentsSource from "../composables/useConversationAttachments.ts?raw";
+import composerLogicSource from "../composables/useConversationComposer.ts?raw";
+import presentationSource from "./conversationToolPresentation.ts?raw";
+
+const conversationUi = `${conversationSource}\n${messageListSource}`;
+const composerAll = `${composerSource}\n${composerLogicSource}`;
 
 describe("AgentConversation edit proposal placement", () => {
   it("moves right-pane collapse controls with the selected layout", () => {
@@ -27,11 +36,11 @@ describe("AgentConversation edit proposal placement", () => {
     expect(proposalCardSource).toContain('aria-label="跳转到目标文件"');
     expect(proposalCardSource).toContain(">\n            跳转到目标文件\n");
     expect(proposalCardSource).toContain("emit('locate', {");
-    expect(conversationSource).toContain(
+    expect(messageListSource).toContain(
       "@locate=\"emit('locateEditProposal', $event)\""
     );
     expect(
-      conversationSource.match(
+      messageListSource.match(
         /@locate="emit\('locateEditProposal', \$event\)"/g
       )
     ).toHaveLength(2);
@@ -41,26 +50,26 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("places structured long proposals in the matching assistant turn", () => {
-    expect(conversationSource).toContain("longProposalItemsForMessage");
-    expect(conversationSource).toContain("<LongProposalReview");
+    expect(presentationSource).toContain("longProposalItemsForMessage");
+    expect(messageListSource).toContain("<LongProposalReview");
     expect(conversationSource).toContain("approveLongProposal");
     expect(conversationSource).toContain("rejectLongProposal");
     expect(conversationSource).toContain("retryLongProposalPreview");
   });
 
   it("renders approvals in the live timeline before later streaming responses", () => {
-    const messageBodyStart = conversationSource.indexOf(
+    const messageBodyStart = messageListSource.indexOf(
       '<div class="message-body">'
     );
-    const liveTimelineStart = conversationSource.indexOf(
+    const liveTimelineStart = messageListSource.indexOf(
       "processingDisplayItems(message, true)",
       messageBodyStart
     );
-    const liveProposalStart = conversationSource.indexOf(
+    const liveProposalStart = messageListSource.indexOf(
       "<AgentEditProposalCard",
       liveTimelineStart
     );
-    const liveLongProposalStart = conversationSource.indexOf(
+    const liveLongProposalStart = messageListSource.indexOf(
       "<LongProposalReview",
       liveProposalStart
     );
@@ -68,9 +77,9 @@ describe("AgentConversation edit proposal placement", () => {
     expect(liveTimelineStart).toBeGreaterThan(messageBodyStart);
     expect(liveProposalStart).toBeGreaterThan(liveTimelineStart);
     expect(liveLongProposalStart).toBeGreaterThan(liveProposalStart);
-    expect(conversationSource).toContain("function liveTimelineItems");
-    expect(conversationSource).toContain("approval.toolCallIds.includes(item.tool.id)");
-    expect(conversationSource).toContain("position: anchorIndex * 2 + 1");
+    expect(presentationSource).toContain("function liveTimelineItems");
+    expect(presentationSource).toContain("approval.toolCallIds.includes(item.tool.id)");
+    expect(presentationSource).toContain("position: anchorIndex * 2 + 1");
   });
 
   it("allows every explicitly enabled agent proposal to save while streaming", () => {
@@ -115,16 +124,16 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("keeps edit proposals above the completed response actions", () => {
-    const messageBodyStart = conversationSource.indexOf('<div class="message-body">');
-    const responseStart = conversationSource.indexOf(
+    const messageBodyStart = messageListSource.indexOf('<div class="message-body">');
+    const responseStart = messageListSource.indexOf(
       'v-else-if="visibleResponse(message)"',
       messageBodyStart
     );
-    const proposalsStart = conversationSource.indexOf(
+    const proposalsStart = messageListSource.indexOf(
       'class="approval-card-stack"',
       responseStart
     );
-    const actionsStart = conversationSource.indexOf(
+    const actionsStart = messageListSource.indexOf(
       'class="message-actions"',
       proposalsStart
     );
@@ -133,19 +142,19 @@ describe("AgentConversation edit proposal placement", () => {
     expect(responseStart).toBeGreaterThan(messageBodyStart);
     expect(proposalsStart).toBeGreaterThan(responseStart);
     expect(actionsStart).toBeGreaterThan(proposalsStart);
-    expect(conversationSource).toContain("message.status !== 'streaming'");
-    expect(conversationSource).toContain("approvalItemsForMessage(message)");
+    expect(messageListSource).toContain("message.status !== 'streaming'");
+    expect(messageListSource).toContain("approvalItemsForMessage(message)");
   });
 
   it("does not rewrite the conversation scroll position for status-only proposal updates", () => {
-    const tailFollowStart = conversationSource.indexOf(
+    const tailFollowStart = scrollFollowSource.indexOf(
       "function scheduleConversationTailFollow"
     );
-    const tailFollowEnd = conversationSource.indexOf(
-      "\nwatch(",
+    const tailFollowEnd = scrollFollowSource.indexOf(
+      "\n  function resetScrollForSession",
       tailFollowStart
     );
-    const tailFollow = conversationSource.slice(
+    const tailFollow = scrollFollowSource.slice(
       tailFollowStart,
       tailFollowEnd
     );
@@ -162,16 +171,16 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("locks tail following for the rest of a response after any upward scroll", () => {
-    expect(conversationSource).toContain("const tailFollowLockedForResponse = ref(false)");
-    expect(conversationSource).toContain("function lockConversationTailForCurrentResponse");
-    expect(conversationSource).toContain("if (event.deltaY < 0)");
-    expect(conversationSource).toContain(
+    expect(scrollFollowSource).toContain("const tailFollowLockedForResponse = ref(false)");
+    expect(scrollFollowSource).toContain("function lockConversationTailForCurrentResponse");
+    expect(scrollFollowSource).toContain("if (event.deltaY < 0)");
+    expect(scrollFollowSource).toContain(
       "nextScrollTop < lastConversationScrollTop - 1"
     );
-    expect(conversationSource).toContain(
+    expect(scrollFollowSource).toContain(
       "followsConversationTail.value = !tailFollowLockedForResponse.value"
     );
-    expect(conversationSource).toContain('@wheel.passive="handleConversationWheel"');
+    expect(messageListSource).toContain('@wheel.passive="handleConversationWheel"');
 
     const responseResetStart = conversationSource.indexOf("() => props.responding");
     const responseResetEnd = conversationSource.indexOf(
@@ -195,12 +204,12 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("uses distinct composer placeholders for creative space and library agents", () => {
-    expect(conversationSource).toContain("composerPlaceholder");
-    expect(conversationSource).toContain("随心输入，输入 / 调用技能，输入 @ 引用素材");
-    expect(conversationSource).toContain(
+    expect(composerLogicSource).toContain("composerPlaceholder");
+    expect(composerLogicSource).toContain("随心输入，输入 / 调用技能，输入 @ 引用素材");
+    expect(composerLogicSource).toContain(
       "输入 / 加载方法技能，输入 @ 引用当前库或同分组其它库的技能"
     );
-    expect(conversationSource).toContain(
+    expect(composerLogicSource).toContain(
       "输入 / 加载方法技能，输入 @ 引用当前库或同分组其它库的素材"
     );
   });
@@ -218,39 +227,39 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("scrolls the active slash or mention option into view when using arrow keys", () => {
-    expect(conversationSource).toContain("function scrollActiveReferenceOptionIntoView");
-    expect(conversationSource).toContain(
+    expect(composerLogicSource).toContain("function scrollActiveReferenceOptionIntoView");
+    expect(composerLogicSource).toContain(
       "composer-reference-option-${activeReferenceIndex.value}"
     );
-    expect(conversationSource).toContain('scrollIntoView({ block: "nearest" })');
+    expect(composerLogicSource).toContain('scrollIntoView({ block: "nearest" })');
 
-    const keydownStart = conversationSource.indexOf("function handleKeydown");
-    const keydownEnd = conversationSource.indexOf("const welcomeContent", keydownStart);
-    const keydownBlock = conversationSource.slice(keydownStart, keydownEnd);
+    const keydownStart = composerLogicSource.indexOf("function handleKeydown");
+    const keydownEnd = composerLogicSource.indexOf("return {", keydownStart);
+    const keydownBlock = composerLogicSource.slice(keydownStart, keydownEnd);
     expect(keydownBlock).toContain('event.key === "ArrowDown" || event.key === "ArrowUp"');
     expect(keydownBlock).toContain("scrollActiveReferenceOptionIntoView()");
   });
 
   it("renders a hover copy action and timestamp below both user and assistant messages", () => {
-    expect(conversationSource).toContain('<div class="message-content">');
-    expect(conversationSource).toContain(
+    expect(messageListSource).toContain('<div class="message-content">');
+    expect(messageListSource).toContain(
       'v-if="message.content && message.status !== \'streaming\'"'
     );
-    expect(conversationSource).toContain(':aria-label="copyMessageLabel(message)"');
-    expect(conversationSource).toContain(
+    expect(messageListSource).toContain(':aria-label="copyMessageLabel(message)"');
+    expect(messageListSource).toContain(
       'return message.role === "assistant" ? "复制回复" : "复制消息";'
     );
 
-    const actionsStart = conversationSource.indexOf('class="message-actions"');
-    const userTimeStart = conversationSource.indexOf(
+    const actionsStart = messageListSource.indexOf('class="message-actions"');
+    const userTimeStart = messageListSource.indexOf(
       '<span v-if="message.role === \'user\'">{{ formatTime(message.createdAt) }}</span>',
       actionsStart
     );
-    const copyButtonStart = conversationSource.indexOf(
+    const copyButtonStart = messageListSource.indexOf(
       ':aria-label="copyMessageLabel(message)"',
       actionsStart
     );
-    const assistantTimeStart = conversationSource.indexOf(
+    const assistantTimeStart = messageListSource.indexOf(
       '<span v-if="message.role === \'assistant\'">{{ formatTime(message.createdAt) }}</span>',
       actionsStart
     );
@@ -280,7 +289,7 @@ describe("AgentConversation edit proposal placement", () => {
     expect(conversationSource).toContain(
       'class="conversation-turn-navigator-panel"'
     );
-    expect(conversationSource).not.toContain(
+    expect(conversationUi).not.toContain(
       'class="conversation-turn-navigator-header"'
     );
     expect(conversationSource).toContain(
@@ -289,43 +298,43 @@ describe("AgentConversation edit proposal placement", () => {
     expect(conversationSource).toContain(
       "@click=\"scrollToConversationTurn(turn.id)\""
     );
-    expect(conversationSource).toContain(
+    expect(messageListSource).toContain(
       ':data-conversation-message-id="message.id"'
     );
     expect(conversationSource).toContain("activeConversationTurnId");
-    expect(conversationSource).not.toContain("role=\"scrollbar\"");
+    expect(conversationUi).not.toContain("role=\"scrollbar\"");
   });
 
   it("shows multiple independently clickable editor references inside the composer", () => {
-    expect(conversationSource).toContain('class="composer-editor-reference-list"');
-    expect(conversationSource).toContain('v-for="editorReference in editorReferences"');
-    expect(conversationSource).toContain('class="composer-editor-reference"');
-    expect(conversationSource).toContain("{{ editorReference.label }}");
-    expect(conversationSource).toContain(
+    expect(composerSource).toContain('class="composer-editor-reference-list"');
+    expect(composerSource).toContain('v-for="editorReference in editorReferences"');
+    expect(composerSource).toContain('class="composer-editor-reference"');
+    expect(composerSource).toContain("{{ editorReference.label }}");
+    expect(composerSource).toContain(
       "emit('locateEditorReference', editorReference)"
     );
-    expect(conversationSource).toContain(
-      "props.editorReferences.map(createEditorReferenceAttachment)"
+    expect(composerLogicSource).toContain(
+      "options.editorReferences().map(createEditorReferenceAttachment)"
     );
-    expect(conversationSource).toContain(
+    expect(composerSource).toContain(
       "emit('removeEditorReference', editorReference.id)"
     );
-    expect(conversationSource).toContain('emit("clearEditorReferences")');
+    expect(composerSource).toContain('emit("clearEditorReferences")');
   });
 
   it("adds pasted clipboard files through the existing attachment flow", () => {
-    expect(conversationSource).toContain("function handleComposerPaste");
-    expect(conversationSource).toContain(
+    expect(attachmentsSource).toContain("function handleComposerPaste");
+    expect(attachmentsSource).toContain(
       "promptAttachmentFilesFromClipboard(event.clipboardData)"
     );
-    expect(conversationSource).toContain("void addAttachmentFiles(files)");
-    expect(conversationSource).toContain('@paste="handleComposerPaste"');
+    expect(attachmentsSource).toContain("void addAttachmentFiles(files)");
+    expect(composerSource).toContain('@paste="handleComposerPaste"');
   });
 
   it("only lists configured models in the composer model selector", () => {
     expect(conversationSource).toContain("props.models.map");
-    expect(conversationSource).toContain('placeholder="选择模型"');
-    expect(conversationSource).not.toContain('{ value: "", label: "DeepWrite Faux" }');
+    expect(composerSource).toContain('placeholder="选择模型"');
+    expect(composerAll).not.toContain('{ value: "", label: "DeepWrite Faux" }');
   });
 
   it("offers configured thinking levels even when non-thinking parameters were configured last", () => {
@@ -338,9 +347,9 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("labels and classifies the physical expert-draft tools", () => {
-    const labelsStart = conversationSource.indexOf("function workspaceToolLabel");
-    const labelsEnd = conversationSource.indexOf("function hasProcessing", labelsStart);
-    const labels = conversationSource.slice(labelsStart, labelsEnd);
+    const labelsStart = presentationSource.indexOf("function workspaceToolLabel");
+    const labelsEnd = presentationSource.indexOf("function hasProcessing", labelsStart);
+    const labels = presentationSource.slice(labelsStart, labelsEnd);
     expect(labels).toContain('create_draft_sections: "创建章节文件"');
     expect(labels).toContain('read_draft_sections: "读取正文章节"');
     expect(labels).toContain('write_draft_section: "写入正文章节"');
@@ -360,14 +369,14 @@ describe("AgentConversation edit proposal placement", () => {
       'create_worldbuilding_items: "创建世界观文件"'
     );
 
-    const writeStart = conversationSource.indexOf("const WRITE_TOOL_NAMES");
-    const directStart = conversationSource.indexOf(
+    const writeStart = presentationSource.indexOf("const WRITE_TOOL_NAMES");
+    const directStart = presentationSource.indexOf(
       "const DIRECT_WRITE_TOOL_NAMES",
       writeStart
     );
-    const writeNames = conversationSource.slice(writeStart, directStart);
-    const directEnd = conversationSource.indexOf("function isWriteTool", directStart);
-    const directWriteNames = conversationSource.slice(directStart, directEnd);
+    const writeNames = presentationSource.slice(writeStart, directStart);
+    const directEnd = presentationSource.indexOf("function isWriteTool", directStart);
+    const directWriteNames = presentationSource.slice(directStart, directEnd);
     expect(writeNames).toContain('"write_draft_section"');
     expect(writeNames).toContain('"create_draft_sections"');
     expect(writeNames).toContain('"replace_draft_section_text"');
@@ -383,17 +392,17 @@ describe("AgentConversation edit proposal placement", () => {
     expect(directWriteNames).toContain('"delete_draft_section"');
     expect(directWriteNames).toContain('"write_worldbuilding_file"');
     expect(directWriteNames).not.toContain('"replace_draft_section_text"');
-    expect(conversationSource).not.toContain("initialize_expert_draft");
-    expect(conversationSource).toContain(
+    expect(presentationSource).not.toContain("initialize_expert_draft");
+    expect(messageListSource).toContain(
       "writeToolText(item.tool).length.toLocaleString('zh-CN')"
     );
-    expect(conversationSource).toContain('"write_chapter_draft"');
-    expect(conversationSource).toContain('"edit_chapter_draft"');
-    expect(conversationSource).toContain(
+    expect(presentationSource).toContain('"write_chapter_draft"');
+    expect(presentationSource).toContain('"edit_chapter_draft"');
+    expect(messageListSource).toContain(
       'import { writeToolText } from "../utils/agentWriteToolPreview"'
     );
-    expect(conversationSource).toContain("待审阅文本生成中");
-    expect(conversationSource).toContain("当前章正文待审核");
+    expect(presentationSource).toContain("待审阅文本生成中");
+    expect(presentationSource).toContain("当前章正文待审核");
     expect(proposalCardSource).toContain(
       "接受后将把当前章正文保存到该章节独立的 Markdown 文件。"
     );
@@ -401,12 +410,12 @@ describe("AgentConversation edit proposal placement", () => {
       'import { writeToolText } from "../utils/agentWriteToolPreview"'
     );
     expect(subagentSource).toContain("当前章正文待审核");
-    expect(conversationSource).toContain('return "正在创建文件"');
+    expect(presentationSource).toContain('return "正在创建文件"');
   });
 
   it("renders subagent runs via a shared collapsed card list", () => {
-    expect(conversationSource).toContain("import SubagentRunList from");
-    expect(conversationSource).toContain("<SubagentRunList");
+    expect(messageListSource).toContain("import SubagentRunList from");
+    expect(messageListSource).toContain("<SubagentRunList");
     expect(subagentSource).toContain('class="subagent-run-list"');
     expect(subagentSource).toContain('class="subagent-run-card"');
     expect(subagentSource).toContain("v-for=\"run in runs\"");
@@ -439,25 +448,25 @@ describe("AgentConversation edit proposal placement", () => {
     );
     expect(subagentSource).toContain("item.tool.resultSummary");
     expect(subagentSource).toContain("run.summary");
-    expect(conversationSource).toContain('tool.name === "spawn_subagent"');
+    expect(presentationSource).toContain('tool.name === "spawn_subagent"');
     expect(subagentSource).not.toContain("subagent-run-modal");
   });
 
   it("nests completed subagent runs inside the processed disclosure only", () => {
-    expect(conversationSource).toContain("hasProcessingDisclosure(message)");
-    expect(conversationSource).toContain(
+    expect(messageListSource).toContain("hasProcessingDisclosure(message)");
+    expect(presentationSource).toContain(
       "hasProcessing(message) || Boolean(message.subagentRuns?.length)"
     );
 
-    const disclosureStart = conversationSource.indexOf(
+    const disclosureStart = messageListSource.indexOf(
       'v-else-if="message.role === \'assistant\' && hasProcessingDisclosure(message)"'
     );
-    const nestedSubagentStart = conversationSource.indexOf(
+    const nestedSubagentStart = messageListSource.indexOf(
       "message.subagentRuns?.length && message.status !== 'streaming'",
       disclosureStart
     );
-    const disclosureEnd = conversationSource.indexOf("</details>", nestedSubagentStart);
-    const streamingSubagentStart = conversationSource.indexOf(
+    const disclosureEnd = messageListSource.indexOf("</details>", nestedSubagentStart);
+    const streamingSubagentStart = messageListSource.indexOf(
       "message.subagentRuns?.length && message.status === 'streaming'",
       disclosureEnd
     );
@@ -469,13 +478,13 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("shows retry countdowns in the existing processing areas", () => {
-    expect(conversationSource).toContain("function retryStatusLabel");
-    expect(conversationSource).toContain("网络波动，${remainingSeconds}s 后重试${suffix}");
-    expect(conversationSource).toContain("正在重试${suffix}");
-    expect(conversationSource).toContain(
+    expect(presentationSource).toContain("function retryStatusLabel");
+    expect(presentationSource).toContain("网络波动，${remainingSeconds}s 后重试${suffix}");
+    expect(presentationSource).toContain("正在重试${suffix}");
+    expect(messageListSource).toContain(
       "hasProcessing(message) || message.retry || message.processingStartedAt"
     );
-    expect(conversationSource).not.toContain("retry-error");
+    expect(conversationUi).not.toContain("retry-error");
 
     expect(subagentSource).toContain("function subagentRetryStatus");
     expect(subagentSource).toContain("网络波动，${seconds}s 后重试（${progress}）");
@@ -502,12 +511,12 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("labels a run as model queueing after ten seconds without model output", () => {
-    expect(conversationSource).toContain("const MODEL_QUEUE_LABEL_DELAY_MS = 10_000");
-    expect(conversationSource).toContain("function hasFirstModelOutput");
-    expect(conversationSource).toContain("end - start >= MODEL_QUEUE_LABEL_DELAY_MS");
-    expect(conversationSource).toContain("!hasFirstModelOutput(message)");
-    expect(conversationSource).toContain("模型排队中 · 已等待 ${seconds}s");
-    expect(conversationSource).toContain("message.content || message.thinking");
-    expect(conversationSource).toContain("message.toolCalls?.length || message.subagentRuns?.length");
+    expect(presentationSource).toContain("const MODEL_QUEUE_LABEL_DELAY_MS = 10_000");
+    expect(presentationSource).toContain("function hasFirstModelOutput");
+    expect(presentationSource).toContain("end - start >= MODEL_QUEUE_LABEL_DELAY_MS");
+    expect(presentationSource).toContain("!hasFirstModelOutput(message)");
+    expect(presentationSource).toContain("模型排队中 · 已等待 ${seconds}s");
+    expect(presentationSource).toContain("message.content || message.thinking");
+    expect(presentationSource).toContain("message.toolCalls?.length || message.subagentRuns?.length");
   });
 });

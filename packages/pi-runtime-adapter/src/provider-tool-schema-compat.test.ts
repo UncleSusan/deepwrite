@@ -14,6 +14,46 @@ describe("provider tool schema compatibility", () => {
     );
   });
 
+  it("publishes TypeBox string literal unions as provider-friendly enums", () => {
+    const schema = Type.Object({
+      kind: Type.Optional(
+        Type.Union([
+          Type.Literal("book_line"),
+          Type.Literal("chapter"),
+          Type.Literal("placement")
+        ], {
+          description: "章卡使用 chapter。"
+        })
+      )
+    });
+    const normalized = normalizeProviderToolParameterSchema(
+      "list_plot_design",
+      schema
+    ) as {
+      properties: { kind: Record<string, unknown> };
+    };
+
+    expect(normalized.properties.kind).toEqual({
+      type: "string",
+      enum: ["book_line", "chapter", "placement"],
+      description: "章卡使用 chapter。"
+    });
+    expect(normalized).not.toBe(schema);
+    expect(schema.properties.kind).toHaveProperty("anyOf");
+    expect(schema.properties.kind).not.toHaveProperty("enum");
+  });
+
+  it("leaves non-literal semantic unions unchanged", () => {
+    const schema = Type.Object({
+      id: Type.Union([
+        Type.String({ pattern: "^chapter_" }),
+        Type.String({ pattern: "^ref:" })
+      ])
+    });
+
+    expect(normalizeProviderToolParameterSchema("read", schema)).toBe(schema);
+  });
+
   it.each(["anyOf", "oneOf", "allOf"] as const)(
     "adds an object root to an object-only %s schema without mutating it",
     (keyword) => {

@@ -100,6 +100,7 @@ export interface LongWorkspaceSelection {
   chapterCardTabs?: Array<{
     id: LongChapterCardId;
     label: string;
+    narrativeOrder?: number;
   }>;
   title: string;
   breadcrumbs: string[];
@@ -522,7 +523,8 @@ export function createLongChapterCardVolumeSelection(
     );
   const chapterCardTabs = chapterCards.map((chapter) => ({
     id: chapter.id,
-    label: chapter.title || chapter.id
+    label: chapter.title || chapter.id,
+    narrativeOrder: chapter.narrativeOrder
   }));
   const chapterCard =
     chapterCards.find(({ id }) => id === preferredChapterCardId) ??

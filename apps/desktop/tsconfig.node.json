@@ -14,6 +14,7 @@
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/utilities/**/*.ts",
-    "src/extras/**/*.ts"
+    "src/extras/**/*.ts",
+    "../../tools/resolve-renderer-styles.d.ts"
   ]
 }

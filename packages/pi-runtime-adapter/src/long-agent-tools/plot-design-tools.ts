@@ -52,6 +52,76 @@ import {
 } from "./shared";
 import type { LongToolContext } from "./context";
 
+const PLOT_MUTATION_OPERATION_TYPE_ALIASES = {
+  create_foreshadow_thread: "foreshadowing.create"
+} as const;
+
+const PLOT_ITEM_KIND_ALIASES = {
+  chapter_card: "chapter"
+} as const;
+
+function preparePlotItemKindArguments<T>(args: unknown): T {
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    return args as T;
+  }
+  const input = args as Record<string, unknown>;
+  let prepared: Record<string, unknown> | undefined;
+  const canonicalKind =
+    typeof input.kind === "string"
+      ? PLOT_ITEM_KIND_ALIASES[
+          input.kind as keyof typeof PLOT_ITEM_KIND_ALIASES
+        ]
+      : undefined;
+  if (canonicalKind) {
+    prepared = { ...input, kind: canonicalKind };
+  }
+  for (const key of ["target", "item"] as const) {
+    const nested = input[key];
+    if (!nested || typeof nested !== "object" || Array.isArray(nested)) continue;
+    const candidate = nested as Record<string, unknown>;
+    const nestedKind =
+      typeof candidate.kind === "string"
+        ? PLOT_ITEM_KIND_ALIASES[
+            candidate.kind as keyof typeof PLOT_ITEM_KIND_ALIASES
+          ]
+        : undefined;
+    if (!nestedKind) continue;
+    prepared ??= { ...input };
+    prepared[key] = { ...candidate, kind: nestedKind };
+  }
+  return (prepared ?? args) as T;
+}
+
+function preparePlotMutationArguments(
+  args: unknown
+): Static<typeof LONG_PLOT_MUTATION_PARAMETERS> {
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    return args as Static<typeof LONG_PLOT_MUTATION_PARAMETERS>;
+  }
+  const input = args as Record<string, unknown>;
+  if (!Array.isArray(input.operations)) {
+    return args as Static<typeof LONG_PLOT_MUTATION_PARAMETERS>;
+  }
+  let changed = false;
+  const operations = input.operations.map((operation) => {
+    if (!operation || typeof operation !== "object" || Array.isArray(operation)) {
+      return operation;
+    }
+    const candidate = operation as Record<string, unknown>;
+    if (typeof candidate.type !== "string") return operation;
+    const canonicalType =
+      PLOT_MUTATION_OPERATION_TYPE_ALIASES[
+        candidate.type as keyof typeof PLOT_MUTATION_OPERATION_TYPE_ALIASES
+      ];
+    if (!canonicalType) return operation;
+    changed = true;
+    return { ...candidate, type: canonicalType };
+  });
+  return (changed ? { ...input, operations } : args) as Static<
+    typeof LONG_PLOT_MUTATION_PARAMETERS
+  >;
+}
+
 export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
   const { input, workspace, profile, readableRoots, writableRoots, capabilities, isPlotDesignAgent, execute, loadIndex, formLongMutationProposal, nextQuerySequence, fullyReadPlotItems, storyPlotOverlay, chapterCardOverlay, readWholeWorldbuildingDocument } = ctx;
   const tools: AgentTool[] = [];
@@ -478,13 +548,14 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         name: "list_plot_design",
         label: "列出剧情设计",
         description:
-          "一次列出全部剧情结构类型；指定 kind 时列出该类型的全部条目。按行段落返回稳定业务 ID、标题和关联摘要，不显示文件或版本信息。可用 volume_id / arc_id / chapter_card_id 筛选。若只要某个剧情点的故事事件正文或关联伏笔，直接 read_plot_design 该剧情点即可，不必再列出后逐条读取。伏笔不在本工具中，继续使用现有伏笔结构工具。",
+          "一次列出全部剧情结构类型；指定 kind 时列出该类型的全部条目。章卡对应 kind=chapter，不能使用 chapter_card；chapter_card_id 只是章卡业务 ID 字段。按行段落返回稳定业务 ID、标题和关联摘要，不显示文件或版本信息。可用 volume_id / arc_id / chapter_card_id 筛选。若只要某个剧情点的故事事件正文或关联伏笔，直接 read_plot_design 该剧情点即可，不必再列出后逐条读取。伏笔不在本工具中，继续使用现有伏笔结构工具。",
         parameters: strictObject({
           kind: Type.Optional(plotItemKindParameter),
           volume_id: Type.Optional(stableIdParameter("volume")),
           arc_id: Type.Optional(stableIdParameter("arc")),
           chapter_card_id: Type.Optional(stableIdParameter("chapter"))
         }),
+        prepareArguments: preparePlotItemKindArguments,
         execute: async (_toolCallId, params, signal) => {
           const { index } = await loadIndex(signal);
           if (!params.kind) {
@@ -541,13 +612,14 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         name: "search_plot_design",
         label: "搜索剧情设计",
         description:
-          "搜索全书故事线及非伏笔剧情结构，返回可交给 read_plot_design 的业务目标和少量上下文。若目标是剧情点，直接读取该剧情点即可同时得到其故事事件正文、故事情节正文和关联伏笔，不必再逐条读取。",
+          "搜索全书故事线及非伏笔剧情结构，返回可交给 read_plot_design 的业务目标和少量上下文。章卡对应 kind=chapter，不能使用 chapter_card。若目标是剧情点，直接读取该剧情点即可同时得到其故事事件正文、故事情节正文和关联伏笔，不必再逐条读取。",
         parameters: strictObject({
           query: Type.String({ minLength: 1, maxLength: 256 }),
           kind: Type.Optional(plotItemKindParameter),
           page: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
         }),
+        prepareArguments: preparePlotItemKindArguments,
         execute: async (_toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
           const query = params.query.normalize("NFC").toLocaleLowerCase();
@@ -670,6 +742,7 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
           target: LONG_PLOT_ITEM_TARGET_PARAMETER,
           mode: Type.Optional(worldbuildingReadModeParameter)
         }),
+        prepareArguments: preparePlotItemKindArguments,
         execute: async (_toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
           const mode = params.mode ?? "full";
@@ -907,6 +980,7 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         description:
           "一次创建一个非伏笔剧情条目并返回稳定业务 ID（叙事落点可用 placements 一次批量创建多个，只形成一张审批卡）。创建只建立结构条目（故事情节与章卡同时建立空正文文件），不在创建时初始化内容；故事情节必须通过 arc_id 挂载到既有剧情点；章卡必须指定 volume_id，primary_arc_id 可为 null，非空时必须属于同一分卷。创建提案通过预检后，故事情节与章卡可在本轮继续读取并用 write_plot_design 写入；同一轮的后续提案会按先后顺序等待前序提案获批，并基于最新工作区重新预览。伏笔线和伏笔触点继续使用现有结构提案工具。",
         parameters: LONG_PLOT_CREATE_PARAMETERS,
+        prepareArguments: preparePlotItemKindArguments,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
@@ -1134,6 +1208,7 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         description:
           "完整覆盖全书故事线、一个既有非伏笔剧情条目的内容字段，或故事情节/章卡的整篇正文。已有连续性记录只作历史参考，不限制大幅修改。既有目标必须先用 read_plot_design mode=full 完整读取，并明确 allow_overwrite_existing=true；读取剧情点（mode=full）也会同时建立其下故事事件与故事情节的完整读取凭据，不必再分别读取。本轮刚创建的空白故事情节或章卡可直接一次性写入，无需再次读取或确认覆盖。局部修改应使用 edit_plot_design。故事情节与章卡正文一次性整篇写入，不要分段多次写入。",
         parameters: LONG_PLOT_WRITE_PARAMETERS,
+        prepareArguments: preparePlotItemKindArguments,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
@@ -1358,6 +1433,7 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         description:
           "在已用 read_plot_design mode=full 完整读取的目标上做局部修改。读取剧情点（mode=full）后可直接局部修改该剧情点及其下故事事件、故事情节，不必再分别读取。全书故事线、故事情节与章卡正文按唯一原文片段替换；已有连续性记录不限制局部或大幅修改；其余结构化剧情条目只更新明确给出的内容字段。",
         parameters: LONG_PLOT_EDIT_PARAMETERS,
+        prepareArguments: preparePlotItemKindArguments,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
@@ -1596,7 +1672,7 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
           profile.id === "setting"
             ? "提交世界观分类与已有条目的重命名、删除和排序，以及人物重命名、别名、移动到现有人物类型、删除和排序。此工具不能创建列表条目或人物，也不能写入正文；创建必须使用 create_setting，正文必须使用 write_setting 或 edit_setting。提案只进入审阅队列，不直接写磁盘。"
             : profile.id === "plot_design"
-              ? "提交既有分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点的重命名、关联、移动、删除、排序，以及全部伏笔线/伏笔触点变更。连续性记录只作参考，不锁定这些结构；删除已有记录的章卡会在危险确认后级联清理该章正文与记录。章卡必须属于分卷，剧情点关联可为 null；非空时必须与章卡属于同一分卷。所有结构操作会在生成审批前基于当前有效索引预检；预检失败不会生成审批卡。同一轮的多个有效提案会按先后顺序等待前序提案处理，并基于最新工作区重新预览。非伏笔条目创建必须使用 create_plot_design，内容写入必须使用 write_plot_design 或 edit_plot_design。提案只进入审阅队列，不直接写磁盘。"
+              ? "提交既有分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点的重命名、关联、移动、删除、排序，以及全部伏笔线/伏笔触点变更。创建伏笔线时 operations[].type 必须精确使用 foreshadowing.create；创建伏笔触点时必须精确使用 foreshadowingBeat.create，不得自造 snake_case 操作类型。连续性记录只作参考，不锁定这些结构；删除已有记录的章卡会在危险确认后级联清理该章正文与记录。章卡必须属于分卷，剧情点关联可为 null；非空时必须与章卡属于同一分卷。所有结构操作会在生成审批前基于当前有效索引预检；预检失败不会生成审批卡。同一轮的多个有效提案会按先后顺序等待前序提案处理，并基于最新工作区重新预览。非伏笔条目创建必须使用 create_plot_design，内容写入必须使用 write_plot_design 或 edit_plot_design。提案只进入审阅队列，不直接写磁盘。"
             : "按显式领域操作提交当前长篇的结构变更提案。伏笔线可分别填写 hiddenTruth 与 plannedSpan，伏笔触点可用 volumeId 或 arcId 设置卷级/剧情点计划锚点。运行时锁定项目版本、生成新实体与文件信息并计算文档内容修订；只能更新逻辑文档目标，不能传路径或文件修订。提案只进入审阅队列，不直接写磁盘。",
         parameters:
           profile.id === "setting"
@@ -1604,6 +1680,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             : profile.id === "plot_design"
               ? LONG_PLOT_MUTATION_PARAMETERS
               : LONG_MUTATION_PARAMETERS,
+        ...(profile.id === "plot_design"
+          ? { prepareArguments: preparePlotMutationArguments }
+          : {}),
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           throwIfAborted(signal);

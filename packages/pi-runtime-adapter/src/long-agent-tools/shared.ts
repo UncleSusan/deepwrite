@@ -1,6 +1,11 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { createHash } from "node:crypto";
-import { Type, type Static, type TSchema } from "typebox";
+import {
+  Type,
+  type Static,
+  type TSchema,
+  type TSchemaOptions
+} from "typebox";
 import {
   LongWorkspaceOperationError,
   createEmptyLongMarkdownFileReference,
@@ -87,6 +92,7 @@ export function defineTool<T extends TSchema>(definition: {
   label: string;
   description: string;
   parameters: T;
+  prepareArguments?: AgentTool<T, LongAgentToolDetails>["prepareArguments"];
   execute: (
     toolCallId: string,
     params: Static<T>,
@@ -100,13 +106,22 @@ export function defineTool<T extends TSchema>(definition: {
     description: definition.description,
     parameters: definition.parameters,
     execute: definition.execute,
+    ...(definition.prepareArguments
+      ? { prepareArguments: definition.prepareArguments }
+      : {}),
     ...(definition.executionMode ? { executionMode: definition.executionMode } : {})
   };
 }
 
-export function literalUnion<T extends string>(values: readonly T[]) {
-  if (values.length === 1) return Type.Literal(values[0]!);
-  return Type.Union(values.map((value) => Type.Literal(value)));
+export function literalUnion<T extends string>(
+  values: readonly T[],
+  options: TSchemaOptions = {}
+) {
+  if (values.length === 1) return Type.Literal(values[0]!, options);
+  return Type.Union(
+    values.map((value) => Type.Literal(value)),
+    options
+  );
 }
 
 

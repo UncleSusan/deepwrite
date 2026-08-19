@@ -2,11 +2,15 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { LongChapterCardId } from "@deepwrite/contracts";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
+import {
+  orderLongChapterNavigationItems
+} from "../utils/orderLongChapterNavigationItems";
 import AppIcon from "./AppIcon.vue";
 
 export interface LongManuscriptNavigationItem {
   id: LongChapterCardId;
   label: string;
+  narrativeOrder?: number;
 }
 
 const props = defineProps<{
@@ -29,8 +33,12 @@ const emit = defineEmits<{
 }>();
 
 const actionMenuId = ref<LongChapterCardId | null>(null);
+const orderedItems = computed(() =>
+  orderLongChapterNavigationItems(props.items)
+);
 const activeChapter = computed(
-  () => props.items.find(({ id }) => id === props.activeChapterId) ?? null
+  () =>
+    orderedItems.value.find(({ id }) => id === props.activeChapterId) ?? null
 );
 
 function toggleActionMenu(chapterCardId: LongChapterCardId): void {
@@ -82,7 +90,7 @@ onBeforeUnmount(() => {
       @wheel="handleHorizontalOverflowWheel"
     >
       <button
-        v-for="chapter in items"
+        v-for="chapter in orderedItems"
         :key="chapter.id"
         class="section-tab"
         :class="{ 'is-active': activeChapterId === chapter.id }"
@@ -131,7 +139,7 @@ onBeforeUnmount(() => {
     <header>
       <div>
         <strong>章卡</strong>
-        <span>{{ items.length }}</span>
+        <span>{{ orderedItems.length }}</span>
       </div>
       <div class="long-entry-list-actions">
         <button
@@ -155,7 +163,7 @@ onBeforeUnmount(() => {
     </header>
     <div class="long-story-plot-list" role="list">
       <article
-        v-for="(chapter, index) in items"
+        v-for="(chapter, index) in orderedItems"
         :key="chapter.id"
         class="long-story-plot-card"
         :class="{
@@ -195,7 +203,7 @@ onBeforeUnmount(() => {
             class="long-story-plot-action-menu"
             :class="{
               'opens-upward':
-                index >= 2 && index >= items.length - 2
+                index >= 2 && index >= orderedItems.length - 2
             }"
             role="menu"
             @keydown.esc.stop="actionMenuId = null"
@@ -214,7 +222,7 @@ onBeforeUnmount(() => {
               class="long-story-plot-action-menu-item"
               type="button"
               role="menuitem"
-              :disabled="locked || index === items.length - 1"
+              :disabled="locked || index === orderedItems.length - 1"
               @click.stop="runMenuAction(chapter.id, 'down')"
             >
               <AppIcon
