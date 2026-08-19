@@ -26,9 +26,13 @@ describe("long agent team contracts", () => {
   it("validates independent list and save commands", () => {
     expect(
       CommandEnvelopeSchema.parse(
-        createEnvelope("longAgentTeams.list", {}, {
-          id: "cmd_long_agent_teams_list"
-        })
+        createEnvelope(
+          "longAgentTeams.list",
+          {},
+          {
+            id: "cmd_long_agent_teams_list"
+          }
+        )
       ).type
     ).toBe("longAgentTeams.list");
     expect(
@@ -36,7 +40,9 @@ describe("long agent team contracts", () => {
         createEnvelope(
           "longAgentTeams.save",
           DEFAULT_LONG_AGENT_TEAM_SETTINGS,
-          { id: "cmd_long_agent_teams_save" }
+          {
+            id: "cmd_long_agent_teams_save"
+          }
         )
       ).type
     ).toBe("longAgentTeams.save");

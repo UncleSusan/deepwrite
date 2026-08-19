@@ -30,7 +30,8 @@ export function resolveModelRunSettings(
     throw new Error("所选思考等级不在当前模型配置中，请重新选择。");
   }
 
-  const thinkingLevel = requested.thinkingLevel ?? runtimeConfig?.defaultThinkingLevel;
+  const thinkingLevel =
+    requested.thinkingLevel ?? runtimeConfig?.defaultThinkingLevel;
   if (
     runtimeConfig &&
     thinkingLevel === "off" &&
@@ -40,9 +41,10 @@ export function resolveModelRunSettings(
     throw new Error("所选温度不在当前模型配置中，请重新选择。");
   }
 
-  const temperature = runtimeConfig && thinkingLevel === "off"
-    ? requested.temperature ?? runtimeConfig.temperatureOptions[1]
-    : undefined;
+  const temperature =
+    runtimeConfig && thinkingLevel === "off"
+      ? (requested.temperature ?? runtimeConfig.temperatureOptions[1])
+      : undefined;
 
   return {
     ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),

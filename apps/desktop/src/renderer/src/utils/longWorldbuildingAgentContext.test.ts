@@ -26,9 +26,7 @@ function page(
   content: string,
   totalCharacters = Array.from(content).length
 ): LongReadDocumentResult {
-  const visible = Array.from(content)
-    .slice(0, input.maxCharacters)
-    .join("");
+  const visible = Array.from(content).slice(0, input.maxCharacters).join("");
   const end = input.offset + Array.from(visible).length;
   return {
     bookId: input.bookId,
@@ -167,9 +165,9 @@ describe("long worldbuilding agent context", () => {
       overview: { content: "势力围绕港务权和雾潮资源竞争。" }
     });
     expect(readDocument).toHaveBeenCalledTimes(2);
-    expect(readDocument.mock.calls.map(([input]) => input.maxCharacters)).toEqual(
-      expect.arrayContaining([12_000, 8_000])
-    );
+    expect(
+      readDocument.mock.calls.map(([input]) => input.maxCharacters)
+    ).toEqual(expect.arrayContaining([12_000, 8_000]));
   });
 
   it("captures only the active stage for a text category", async () => {

@@ -40,10 +40,7 @@ function file(
 function foreshadowingFile() {
   return {
     id: longChapterForeshadowingChangesFileId(CHAPTER_ID),
-    path: longChapterContinuityFilePath(
-      CHAPTER_ID,
-      "foreshadowing-changes.md"
-    ),
+    path: longChapterContinuityFilePath(CHAPTER_ID, "foreshadowing-changes.md"),
     revision: FILE_REVISION,
     updatedAt: NOW
   };
@@ -75,9 +72,7 @@ function workspaceIndex(revision = 7): LongWorkspaceIndexSnapshot {
     characters: [],
     characterFiles: [],
     plot: {
-      volumes: [
-        { id: VOLUME_ID, title: "第一卷", order: 1, summary: "" }
-      ],
+      volumes: [{ id: VOLUME_ID, title: "第一卷", order: 1, summary: "" }],
       arcs: [],
       chapterCards: [
         {
@@ -236,10 +231,12 @@ function dispatchEvent(
   >;
 }
 
-function createHarness(options: {
-  conversation?: AgentConversationController;
-  refreshResult?: boolean;
-} = {}) {
+function createHarness(
+  options: {
+    conversation?: AgentConversationController;
+    refreshResult?: boolean;
+  } = {}
+) {
   const summary = ref<LongBookSummary | null>(bookSummary());
   const index = ref<LongWorkspaceIndexSnapshot | null>(workspaceIndex());
   const activeBookId = ref<string | null>(BOOK_ID);
@@ -362,7 +359,9 @@ function createHarness(options: {
   };
 }
 
-async function startPlan(test: ReturnType<typeof createHarness>): Promise<void> {
+async function startPlan(
+  test: ReturnType<typeof createHarness>
+): Promise<void> {
   const event = dispatchEvent();
   await test.coordinator.workspaceProposals.handleEvent(event);
   await test.coordinator.approveProposal(event.id);
@@ -517,9 +516,9 @@ describe("long writing workflow coordinator", () => {
   it("publishes the save barrier in refresh, editor-sync, book-list order", async () => {
     const test = createHarness();
 
-    await expect(
-      test.coordinator.refreshSaveBarrier(BOOK_ID)
-    ).resolves.toBe(true);
+    await expect(test.coordinator.refreshSaveBarrier(BOOK_ID)).resolves.toBe(
+      true
+    );
 
     expect(test.order).toEqual(["refresh", "sync", "list"]);
     expect(test.synchronizeEditorRevisions).toHaveBeenCalledWith(7, 11);
@@ -633,7 +632,9 @@ describe("long writing workflow coordinator", () => {
 
     expect(workflowOnly.conversations.has(workflowConversationKey)).toBe(true);
     expect(workflowOnly.remove).not.toHaveBeenCalled();
-    expect(workflowOnly.coordinator.writingOrchestrator.active.value).toBe(false);
+    expect(workflowOnly.coordinator.writingOrchestrator.active.value).toBe(
+      false
+    );
     expect(workflowOnly.revisionRequirement.value).toBeNull();
     expect(
       workflowOnly.coordinator.workspaceProposals.itemsForBook(BOOK_ID)
@@ -647,9 +648,9 @@ describe("long writing workflow coordinator", () => {
       projectRevision: 12
     };
     await startPlan(conversationsOnly);
-    const targetConversationKeys = [...conversationsOnly.conversations.keys()].filter(
-      (key) => key.startsWith(`long:${encodeURIComponent(BOOK_ID)}:`)
-    );
+    const targetConversationKeys = [
+      ...conversationsOnly.conversations.keys()
+    ].filter((key) => key.startsWith(`long:${encodeURIComponent(BOOK_ID)}:`));
 
     conversationsOnly.coordinator.disposeBookConversations(BOOK_ID);
     conversationsOnly.coordinator.disposeBookConversations(BOOK_ID);
@@ -719,9 +720,9 @@ describe("long writing workflow coordinator", () => {
         sessionId: conversation.sessionId.value
       }
     });
-    expect(
-      test.coordinator.workspaceProposals.itemsForBook(BOOK_ID)
-    ).toEqual([]);
+    expect(test.coordinator.workspaceProposals.itemsForBook(BOOK_ID)).toEqual(
+      []
+    );
 
     pendingStop.resolve(true);
     await stopping;

@@ -19,56 +19,66 @@ export function toSubagentRuntimeEvents(
     runtime: progressRuntime
   };
   if (progress.type === "started") {
-    return [{
-      type: "subagent.started",
-      runId: input.runId,
-      sessionId: input.sessionId,
-      payload: { ...base, task: progress.task }
-    }];
+    return [
+      {
+        type: "subagent.started",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: { ...base, task: progress.task }
+      }
+    ];
   }
   if (progress.type === "activity") {
-    return [{
-      type: "subagent.activity",
-      runId: input.runId,
-      sessionId: input.sessionId,
-      payload: { ...base, activity: progress.activity }
-    }];
+    return [
+      {
+        type: "subagent.activity",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: { ...base, activity: progress.activity }
+      }
+    ];
   }
   if (progress.type === "completed") {
-    return [{
-      type: "subagent.completed",
-      runId: input.runId,
-      sessionId: input.sessionId,
-      payload: {
-        ...base,
-        status: progress.status,
-        summary: progress.summary,
-        ...(progress.errorMessage ? { errorMessage: progress.errorMessage } : {}),
-        ...(progress.usage ? { usage: progress.usage } : {})
+    return [
+      {
+        type: "subagent.completed",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: {
+          ...base,
+          status: progress.status,
+          summary: progress.summary,
+          ...(progress.errorMessage
+            ? { errorMessage: progress.errorMessage }
+            : {}),
+          ...(progress.usage ? { usage: progress.usage } : {})
+        }
       }
-    }];
+    ];
   }
 
   if (progress.type === "usage_observed") {
-    return [{
-      type: "agent.usage_observed",
-      runId: input.runId,
-      sessionId: input.sessionId,
-      payload: {
-        observationId: progress.observationId,
-        observedAt: progress.observedAt,
-        messageId: progress.messageId,
-        turnId: progress.turnId,
-        attempt: progress.attempt,
-        status: progress.status,
-        hadToolCall: progress.hadToolCall,
-        usage: progress.usage,
-        runtime: progress.runtime,
-        parentToolCallId: progress.parentToolCallId,
-        subagentRunId: progress.subagentRunId,
-        subagentId: progress.subagentId
+    return [
+      {
+        type: "agent.usage_observed",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: {
+          observationId: progress.observationId,
+          observedAt: progress.observedAt,
+          messageId: progress.messageId,
+          turnId: progress.turnId,
+          attempt: progress.attempt,
+          status: progress.status,
+          hadToolCall: progress.hadToolCall,
+          usage: progress.usage,
+          runtime: progress.runtime,
+          parentToolCallId: progress.parentToolCallId,
+          subagentRunId: progress.subagentRunId,
+          subagentId: progress.subagentId
+        }
       }
-    }];
+    ];
   }
 
   if (progress.type !== "child_tool_details") return [];

@@ -14,8 +14,12 @@ describe("external skill import UI", () => {
 
   it("shows the action only for writable skill libraries", () => {
     expect(treeSource).toContain("从其他 skills 加载");
-    expect(treeSource).toContain("libraryDomain === 'skill' && !node.readOnly && !node.unavailable");
-    expect(treeSource).toContain("activateResourceNodeAction('import-external-skills')");
+    expect(treeSource).toContain(
+      "libraryDomain === 'skill' && !node.readOnly && !node.unavailable"
+    );
+    expect(treeSource).toContain(
+      "activateResourceNodeAction('import-external-skills')"
+    );
   });
 
   it("imports through the selected library and preserves complete content", () => {

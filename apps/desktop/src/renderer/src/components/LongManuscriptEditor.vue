@@ -28,11 +28,9 @@ const emit = defineEmits<{
 
 const editorElement = ref<HTMLTextAreaElement | null>(null);
 
-watch(
-  editorElement,
-  (element) => emit("editorElementChange", element),
-  { flush: "post" }
-);
+watch(editorElement, (element) => emit("editorElementChange", element), {
+  flush: "post"
+});
 
 onBeforeUnmount(() => emit("editorElementChange", null));
 
@@ -58,9 +56,7 @@ function updateTitle(event: Event): void {
       <span v-if="committedNotice" class="long-committed-content-notice">
         {{ committedNotice }}
       </span>
-      <span v-else-if="readOnly" class="long-readonly-badge">
-        只读内容
-      </span>
+      <span v-else-if="readOnly" class="long-readonly-badge"> 只读内容 </span>
     </div>
 
     <input

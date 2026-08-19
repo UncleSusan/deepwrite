@@ -44,10 +44,7 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
 </script>
 
 <template>
-  <DialogHost
-    v-if="module"
-    :active-dialog="module.kind"
-  >
+  <DialogHost v-if="module" :active-dialog="module.kind">
     <BookResourceDialog
       v-if="module.kind === 'book-resource'"
       :mode="module.mode"
@@ -71,10 +68,14 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       :book="module.book"
       :pending="module.pending"
       @close="emit('closePlotStructure')"
-      @mutation="(mutation, completion) =>
-        emit('plotStructureMutation', mutation, completion)"
-      @character-mutation="(mutation, completion) =>
-        emit('characterStructureMutation', mutation, completion)"
+      @mutation="
+        (mutation, completion) =>
+          emit('plotStructureMutation', mutation, completion)
+      "
+      @character-mutation="
+        (mutation, completion) =>
+          emit('characterStructureMutation', mutation, completion)
+      "
     />
 
     <CharacterItemDialog
@@ -177,12 +178,16 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       :snapshot="module.snapshot"
       :pending="module.pending"
       @close="emit('closeLongStructure')"
-      @mutation="(batch, completion) =>
-        emit('longStructureMutation', batch, completion)"
-      @save-agents-md="(content, completion) =>
-        emit('saveLongAgentsMd', content, completion)"
-      @sync-worldbuilding="(payload, completion) =>
-        emit('syncLongWorldbuilding', payload, completion)"
+      @mutation="
+        (batch, completion) => emit('longStructureMutation', batch, completion)
+      "
+      @save-agents-md="
+        (content, completion) => emit('saveLongAgentsMd', content, completion)
+      "
+      @sync-worldbuilding="
+        (payload, completion) =>
+          emit('syncLongWorldbuilding', payload, completion)
+      "
     />
 
     <CreateLongCharacterDialog

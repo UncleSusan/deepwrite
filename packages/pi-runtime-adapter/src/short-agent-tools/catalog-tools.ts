@@ -9,10 +9,7 @@ import {
   type LoadSkillCandidate
 } from "../resolve-attached-skill";
 import { defineTool, literalUnion } from "./schema";
-import {
-  textResult,
-  type BuildWritingWorkspaceToolsInput
-} from "./shared";
+import { textResult, type BuildWritingWorkspaceToolsInput } from "./shared";
 
 export function buildQueryLinkedMaterialEntriesTool(
   input: BuildWritingWorkspaceToolsInput
@@ -24,10 +21,16 @@ export function buildQueryLinkedMaterialEntriesTool(
     description:
       "列出、搜索或读取本轮显式附加且位于当前智能体读取范围内的素材。未显式附加的素材不会被读取。",
     parameters: Type.Object({
-      mode: Type.Union([Type.Literal("list"), Type.Literal("search"), Type.Literal("read")]),
+      mode: Type.Union([
+        Type.Literal("list"),
+        Type.Literal("search"),
+        Type.Literal("read")
+      ]),
       query: Type.Optional(Type.String({ maxLength: 300 })),
       entry_name: Type.Optional(Type.String({ maxLength: 240 })),
-      material_kind: Type.Optional(literalUnion(allowedKinds.length ? allowedKinds : SHORT_MATERIAL_KINDS))
+      material_kind: Type.Optional(
+        literalUnion(allowedKinds.length ? allowedKinds : SHORT_MATERIAL_KINDS)
+      )
     }),
     execute: async (_toolCallId, params) => {
       const items = (input.attachedMaterials ?? []).filter(
@@ -52,21 +55,30 @@ export function buildQueryLinkedMaterialEntriesTool(
         return textResult(
           found.length
             ? found
-                .map((item) => `- ${item.title}${item.kind ? ` [${item.kind}]` : ""}: ${item.content.slice(0, 220)}`)
+                .map(
+                  (item) =>
+                    `- ${item.title}${item.kind ? ` [${item.kind}]` : ""}: ${item.content.slice(0, 220)}`
+                )
                 .join("\n")
             : "已附加素材中没有匹配条目。"
         );
       }
       return textResult(
         scoped.length
-          ? scoped.map((item) => `- ${item.title}${item.kind ? ` [${item.kind}]` : ""}`).join("\n")
+          ? scoped
+              .map(
+                (item) => `- ${item.title}${item.kind ? ` [${item.kind}]` : ""}`
+              )
+              .join("\n")
           : "本轮没有附加当前智能体可读的素材。"
       );
     }
   });
 }
 
-export function buildLoadSkillTool(input: BuildWritingWorkspaceToolsInput): AgentTool {
+export function buildLoadSkillTool(
+  input: BuildWritingWorkspaceToolsInput
+): AgentTool {
   const allowedKinds = input.profile.readAccess.skill;
   return defineTool({
     name: "load_skill",

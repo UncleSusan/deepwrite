@@ -67,7 +67,9 @@ describe("renderer state contracts", () => {
       )
     ];
 
-    expect(commands.map((command) => CommandEnvelopeSchema.parse(command).type)).toEqual([
+    expect(
+      commands.map((command) => CommandEnvelopeSchema.parse(command).type)
+    ).toEqual([
       "rendererState.load",
       "rendererState.save",
       "rendererState.remove"
@@ -89,7 +91,10 @@ describe("renderer state contracts", () => {
     });
     expect(
       RendererStateLoadResultSchema.parse({ found: true, value: null })
-    ).toEqual({ found: true, value: null });
+    ).toEqual({
+      found: true,
+      value: null
+    });
     expect(
       RendererStateLoadResultSchema.safeParse({ found: true }).success
     ).toBe(false);

@@ -221,7 +221,7 @@ const RETIRED_PLOT_DESIGN_SYSTEM_PROMPTS: readonly string[] = [
 
 操作要求：
 1. 当前上下文足以回答时可以直接处理；固定上下文已包含世界观与人物目录以及长篇结构导航。需要了解整体结构或其它剧情内容时，使用 list_plot_design、search_plot_design 和 read_plot_design 按需核验；目录已完整列出世界观或人物时，不要仅为重复取得同一列表而调用 list_setting。涉及世界规则或人物正文时，使用 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character）查询，世界观与人物内容只读。不得把未读取内容当成事实。
-2. 读取剧情内容使用 read_plot_design。搜索结果和当前页面快照只用于定位与理解；整体重写或局部修改前必须以 mode=full 完整读取目标。
+2. 读取剧情内容使用 read_plot_design。读取剧情点会一次返回概要、挂到该剧情点的全部故事事件正文、该剧情点下全部故事情节正文，以及关联伏笔（如有），不必再分别读取这些内容。搜索结果和当前页面快照只用于定位与理解；整体重写或局部修改前必须以 mode=full 完整读取目标。
 3. 创建分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点使用 create_plot_design。除叙事落点可一次批量创建多个外，一次只创建一个条目；故事情节与章卡创建时只建立空正文文件，不在创建参数中写初始化正文。
 4. 故事情节必须通过 arc_id 挂载到既有剧情点；章卡必须指定 volume_id，primary_arc_id 可为 null，非空时必须属于同一分卷。创建或移动章卡时先核对分卷与可选剧情点归属；跨卷绑定不得提交工具或生成审批卡，可改绑到目标卷剧情点或设为 null。为本轮刚创建的空白故事情节或章卡写正文时，可直接使用 write_plot_design 一次性写入全文；正文提案会按文件修订等待前序创建提案获批，不得把待审创建说成已经落盘。覆盖已有正文前必须完整读取并明确允许覆盖。局部修改使用 edit_plot_design，对唯一原文片段进行替换，不要把一篇正文拆成多次整体写入。已有连续性记录继续保留为历史参考，不妨碍标题、结构或正文大改。
 5. 非伏笔条目的重命名、关联、移动、删除和排序使用 propose_long_mutation。同一运行形成多个有效提案时，客户端会按先后依赖等待前序提案处理，并基于最新工作区重新预览；不得把待审提案说成已经落盘。连续性记录不限制章卡或其它剧情结构的后续修改。该工具不创建非伏笔条目，也不写其正文。伏笔线与伏笔触点继续完全使用 propose_long_mutation 进行创建和全部结构变更。
@@ -511,8 +511,7 @@ function mergeSettingAgentFromLegacy(
 ): LongAgentSettingsInputAgent {
   const builtin = getDefaultLongAgentProfile("setting");
   const worldRetired =
-    !world ||
-    RETIRED_WORLDBUILDING_SYSTEM_PROMPTS.includes(world.systemPrompt);
+    !world || RETIRED_WORLDBUILDING_SYSTEM_PROMPTS.includes(world.systemPrompt);
   const characterRetired =
     !character ||
     RETIRED_CHARACTER_DESIGN_SYSTEM_PROMPTS.includes(character.systemPrompt);
@@ -526,7 +525,9 @@ function mergeSettingAgentFromLegacy(
           world && !worldRetired ? world.systemPrompt : "（沿用内置）",
           "",
           "【用户原人物提示词】",
-          character && !characterRetired ? character.systemPrompt : "（沿用内置）"
+          character && !characterRetired
+            ? character.systemPrompt
+            : "（沿用内置）"
         ].join("\n");
   const worldCustomShortcuts =
     world &&
@@ -631,15 +632,13 @@ function mergeWriterAgentFromLegacy(
     draft &&
     draft.welcomeShortcuts.join("\0") !==
       ["规划下一章", "检查章卡顺序", "准备单章写作"].join("\0") &&
-    draft.welcomeShortcuts.join("\0") !==
-      builtin.welcomeShortcuts.join("\0");
+    draft.welcomeShortcuts.join("\0") !== builtin.welcomeShortcuts.join("\0");
   const writerCustomShortcuts =
     Boolean(writer) &&
     !usesRetiredExpertSectionWriterShortcuts(writer!.welcomeShortcuts) &&
     writer!.welcomeShortcuts.join("\0") !==
       ["写当前章", "续写当前章", "检查本章正文"].join("\0") &&
-    writer!.welcomeShortcuts.join("\0") !==
-      builtin.welcomeShortcuts.join("\0");
+    writer!.welcomeShortcuts.join("\0") !== builtin.welcomeShortcuts.join("\0");
   const welcomeShortcuts = draftCustomShortcuts
     ? draft!.welcomeShortcuts
     : writerCustomShortcuts
@@ -682,7 +681,9 @@ function migrateLegacyLongAgentSettings(
       ...remaining
     ];
   }
-  const writerRaw = agents.find((agent) => agent.id === "expert_section_writer");
+  const writerRaw = agents.find(
+    (agent) => agent.id === "expert_section_writer"
+  );
   if (writerRaw) {
     const draftRaw = agents.find((agent) => agent.id === "draft");
     const remaining = agents.filter(
@@ -761,9 +762,7 @@ function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
       const builtin = getDefaultLongAgentProfile(agent.id);
       if (
         (agent.id === "setting" &&
-          (RETIRED_WORLDBUILDING_SYSTEM_PROMPTS.includes(
-            agent.systemPrompt
-          ) ||
+          (RETIRED_WORLDBUILDING_SYSTEM_PROMPTS.includes(agent.systemPrompt) ||
             RETIRED_CHARACTER_DESIGN_SYSTEM_PROMPTS.includes(
               agent.systemPrompt
             ))) ||
@@ -772,9 +771,7 @@ function parseDiskSettings(raw: unknown): LongAgentSettingsInput {
         (agent.id === "draft" &&
           RETIRED_DRAFT_SYSTEM_PROMPTS.includes(agent.systemPrompt)) ||
         (agent.id === "continuity_ledger" &&
-          RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPTS.includes(
-            agent.systemPrompt
-          ))
+          RETIRED_CONTINUITY_LEDGER_SYSTEM_PROMPTS.includes(agent.systemPrompt))
       ) {
         cloned.systemPrompt = builtin.systemPrompt;
       }
@@ -890,9 +887,7 @@ export class LongAgentConfigStore {
     await atomicWriteJson(this.settingsPath, disk);
   }
 
-  private toPublicSettings(
-    input: LongAgentSettingsInput
-  ): LongAgentSettings {
+  private toPublicSettings(input: LongAgentSettingsInput): LongAgentSettings {
     const byId = new Map(input.agents.map((agent) => [agent.id, agent]));
     return LongAgentSettingsSchema.parse({
       workspaceType: "long",

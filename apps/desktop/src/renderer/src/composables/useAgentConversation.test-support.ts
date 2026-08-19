@@ -22,7 +22,7 @@ import {
   type ModelSettings,
   type SessionAbortCommandPayload,
   type SessionPromptAcceptedPayload,
-  type SessionPromptCommandPayload,
+  type SessionPromptCommandPayload
 } from "@deepwrite/contracts";
 import {
   mergeAgentConversationPersistenceSnapshots,
@@ -57,30 +57,33 @@ function shortStageTitle(stageId: string): string {
     ? "人物"
     : stageId === "draft"
       ? "正文"
-      : plotStages.find(({ id }) => id === stageId)?.title ?? stageId;
+      : (plotStages.find(({ id }) => id === stageId)?.title ?? stageId);
 }
 
 function createShortWorkspaceDocuments(): WorkspaceDocument[] {
-  const stages: WorkspaceDocument[] = SHORT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
-    id: `short_${stageId}`,
-    domain: "creation",
-    title: shortStageTitle(stageId),
-    eyebrow: "短篇创作",
-    path: ["雨夜来信", shortStageTitle(stageId)],
-    format: "设定" as const,
-    content: `${stageId} 的实时内容`,
-    workspaceId: "short_story_1",
-    workspaceType: "short",
-    workspaceTitle: "雨夜来信",
-    workspaceCategories: ["都市", "悬疑"],
-    stageId,
-    ...(stageId === "character_design"
-      ? {}
-      : {
-          plotStageDescription: plotStages.find(({ id }) => id === stageId)!.description,
-          plotStageOrder: plotStages.findIndex(({ id }) => id === stageId)
-        })
-  }));
+  const stages: WorkspaceDocument[] = SHORT_WORKSPACE_TEXT_STAGE_IDS.map(
+    (stageId) => ({
+      id: `short_${stageId}`,
+      domain: "creation",
+      title: shortStageTitle(stageId),
+      eyebrow: "短篇创作",
+      path: ["雨夜来信", shortStageTitle(stageId)],
+      format: "设定" as const,
+      content: `${stageId} 的实时内容`,
+      workspaceId: "short_story_1",
+      workspaceType: "short",
+      workspaceTitle: "雨夜来信",
+      workspaceCategories: ["都市", "悬疑"],
+      stageId,
+      ...(stageId === "character_design"
+        ? {}
+        : {
+            plotStageDescription: plotStages.find(({ id }) => id === stageId)!
+              .description,
+            plotStageOrder: plotStages.findIndex(({ id }) => id === stageId)
+          })
+    })
+  );
   const draftFiles: WorkspaceDocument[] = ["intro", "section-1"].flatMap(
     (sectionId, index) => {
       const title = index === 0 ? "导语" : "第一节";
@@ -124,26 +127,29 @@ function createShortWorkspaceDocuments(): WorkspaceDocument[] {
 }
 
 function createScriptWorkspaceDocuments(): WorkspaceDocument[] {
-  const stages: WorkspaceDocument[] = SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
-    id: `script_${stageId}`,
-    domain: "creation",
-    title: shortStageTitle(stageId),
-    eyebrow: "剧本创作",
-    path: ["雨夜剧本", shortStageTitle(stageId)],
-    format: "设定" as const,
-    content: `${stageId} 的剧本实时内容`,
-    workspaceId: "script_story_1",
-    workspaceType: "script",
-    workspaceTitle: "雨夜剧本",
-    workspaceCategories: ["悬疑"],
-    stageId,
-    ...(stageId === "character_design"
-      ? {}
-      : {
-          plotStageDescription: plotStages.find(({ id }) => id === stageId)!.description,
-          plotStageOrder: plotStages.findIndex(({ id }) => id === stageId)
-        })
-  }));
+  const stages: WorkspaceDocument[] = SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map(
+    (stageId) => ({
+      id: `script_${stageId}`,
+      domain: "creation",
+      title: shortStageTitle(stageId),
+      eyebrow: "剧本创作",
+      path: ["雨夜剧本", shortStageTitle(stageId)],
+      format: "设定" as const,
+      content: `${stageId} 的剧本实时内容`,
+      workspaceId: "script_story_1",
+      workspaceType: "script",
+      workspaceTitle: "雨夜剧本",
+      workspaceCategories: ["悬疑"],
+      stageId,
+      ...(stageId === "character_design"
+        ? {}
+        : {
+            plotStageDescription: plotStages.find(({ id }) => id === stageId)!
+              .description,
+            plotStageOrder: plotStages.findIndex(({ id }) => id === stageId)
+          })
+    })
+  );
   const common = {
     domain: "creation" as const,
     eyebrow: "剧本创作",
@@ -223,7 +229,11 @@ function createDeferredApi(): {
   const api: DeepWriteApi = {
     system: {
       async health() {
-        return { status: "ok", checkedAt: new Date().toISOString(), workers: [] };
+        return {
+          status: "ok",
+          checkedAt: new Date().toISOString(),
+          workers: []
+        };
       }
     },
     updates: {
@@ -612,13 +622,19 @@ function createDeferredApi(): {
     },
     learningImitationSettings: {
       async list() {
-        throw new Error("Learning imitation settings are not used by conversation tests.");
+        throw new Error(
+          "Learning imitation settings are not used by conversation tests."
+        );
       },
       async save() {
-        throw new Error("Learning imitation settings are not used by conversation tests.");
+        throw new Error(
+          "Learning imitation settings are not used by conversation tests."
+        );
       },
       async reset() {
-        throw new Error("Learning imitation settings are not used by conversation tests.");
+        throw new Error(
+          "Learning imitation settings are not used by conversation tests."
+        );
       }
     },
     workspaceDirectory: {
@@ -659,7 +675,9 @@ function createDeferredApi(): {
     },
     manuscript: {
       async exportLong() {
-        throw new Error("Long manuscript export is not used by conversation tests.");
+        throw new Error(
+          "Long manuscript export is not used by conversation tests."
+        );
       },
       async exportShort() {
         throw new Error("Manuscript export is not used by conversation tests.");
@@ -838,7 +856,7 @@ export {
   shortStageTitle,
   storedConversation,
   useAgentConversation,
-  vi,
+  vi
 };
 export type {
   AgentConversationPersistenceRecord,
@@ -850,5 +868,5 @@ export type {
   SessionPromptAcceptedPayload,
   SessionPromptCommandPayload,
   UseAgentConversationOptions,
-  WorkspaceDocument,
+  WorkspaceDocument
 };

@@ -67,10 +67,7 @@ export const LongWorldbuildingFileProposalPayloadSchema =
       value.batch.documentWrites.map(({ fileId }) => fileId)
     );
     for (const [index, file] of value.files.entries()) {
-      if (
-        file.operation !== "create" &&
-        !proposedFileIds.has(file.fileId)
-      ) {
+      if (file.operation !== "create" && !proposedFileIds.has(file.fileId)) {
         context.addIssue({
           code: "custom",
           path: ["files", index, "fileId"],
@@ -78,10 +75,7 @@ export const LongWorldbuildingFileProposalPayloadSchema =
             "Worldbuilding write and edit changes must have a document write proposal."
         });
       }
-      if (
-        file.operation === "create" &&
-        file.beforeRevision !== null
-      ) {
+      if (file.operation === "create" && file.beforeRevision !== null) {
         context.addIssue({
           code: "custom",
           path: ["files", index, "beforeRevision"],
@@ -100,16 +94,11 @@ export const LONG_CHARACTER_DOCUMENTS = [
   "current_state",
   "history"
 ] as const;
-export const LongCharacterDocumentSchema = z.enum(
-  LONG_CHARACTER_DOCUMENTS
-);
-export type LongCharacterDocument = z.infer<
-  typeof LongCharacterDocumentSchema
->;
+export const LongCharacterDocumentSchema = z.enum(LONG_CHARACTER_DOCUMENTS);
+export type LongCharacterDocument = z.infer<typeof LongCharacterDocumentSchema>;
 
 /** Stage-level overview is proposed alongside character file changes. */
-export const LONG_CHARACTER_OVERVIEW_CHANGE_ID =
-  "characters_overview" as const;
+export const LONG_CHARACTER_OVERVIEW_CHANGE_ID = "characters_overview" as const;
 export const LONG_CHARACTER_FILE_CHANGE_DOCUMENTS = [
   ...LONG_CHARACTER_DOCUMENTS,
   "overview"
@@ -179,10 +168,7 @@ export const LongCharacterFileProposalPayloadSchema =
       value.batch.documentWrites.map(({ fileId }) => fileId)
     );
     for (const [index, file] of value.files.entries()) {
-      if (
-        file.operation !== "create" &&
-        !proposedFileIds.has(file.fileId)
-      ) {
+      if (file.operation !== "create" && !proposedFileIds.has(file.fileId)) {
         context.addIssue({
           code: "custom",
           path: ["files", index, "fileId"],
@@ -211,9 +197,7 @@ export const LONG_CONTINUITY_FILE_ROLES = [
   "chapter_end_state",
   "handoff"
 ] as const;
-export const LongContinuityFileRoleSchema = z.enum(
-  LONG_CONTINUITY_FILE_ROLES
-);
+export const LongContinuityFileRoleSchema = z.enum(LONG_CONTINUITY_FILE_ROLES);
 export type LongContinuityFileRole = z.infer<
   typeof LongContinuityFileRoleSchema
 >;
@@ -241,8 +225,7 @@ export const LongContinuityFileChangeSchema = z
       context.addIssue({
         code: "custom",
         path: ["characterId"],
-        message:
-          "Only character continuity roles may carry a character id."
+        message: "Only character continuity roles may carry a character id."
       });
     }
     if ((file.operation === "create") !== (file.beforeRevision === null)) {
@@ -444,9 +427,7 @@ export const LongChapterBodyChangeSchema = z
     nextRevision: LongFileRevisionSchema
   })
   .strict();
-export type LongChapterBodyChange = z.infer<
-  typeof LongChapterBodyChangeSchema
->;
+export type LongChapterBodyChange = z.infer<typeof LongChapterBodyChangeSchema>;
 
 export const LongChapterWriteProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({
@@ -494,11 +475,7 @@ export type LongLedgerCommitProposalPayload = z.infer<
   typeof LongLedgerCommitProposalPayloadSchema
 >;
 
-export const LongWritingScopeSchema = z.enum([
-  "chapter",
-  "arc",
-  "volume"
-]);
+export const LongWritingScopeSchema = z.enum(["chapter", "arc", "volume"]);
 export type LongWritingScope = z.infer<typeof LongWritingScopeSchema>;
 
 export const LongChapterTripletRoleSchema = z.enum([
@@ -524,9 +501,7 @@ export const LongChapterReadinessSchema = z
     chapterCardId: LongChapterCardIdSchema,
     title: z.string().trim().min(1).max(256),
     status: LongChapterReadinessStatusSchema,
-    missingFiles: z
-      .array(LongChapterTripletRoleSchema)
-      .max(3)
+    missingFiles: z.array(LongChapterTripletRoleSchema).max(3)
   })
   .strict()
   .superRefine((value, context) => {
@@ -553,9 +528,7 @@ export const LongChapterReadinessSchema = z
       });
     }
   });
-export type LongChapterReadiness = z.infer<
-  typeof LongChapterReadinessSchema
->;
+export type LongChapterReadiness = z.infer<typeof LongChapterReadinessSchema>;
 
 export const LongChapterDispatchProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({

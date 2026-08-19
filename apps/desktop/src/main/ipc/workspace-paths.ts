@@ -44,9 +44,9 @@ export async function chooseWorkspaceDirectory(options: {
 
 export async function requireSelectedWorkspaceDirectory(options: {
   requireWorkspaceDirectoryStore: () => WorkspaceDirectoryStore;
-  chooseWorkspaceDirectory: () => Promise<
-    ReturnType<typeof WorkspaceDirectorySettingsSchema.parse> | null
-  >;
+  chooseWorkspaceDirectory: () => Promise<ReturnType<
+    typeof WorkspaceDirectorySettingsSchema.parse
+  > | null>;
 }): Promise<string | null> {
   const current = await options.requireWorkspaceDirectoryStore().list();
   if (current.path) {

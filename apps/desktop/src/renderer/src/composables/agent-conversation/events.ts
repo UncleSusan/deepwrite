@@ -1,9 +1,7 @@
 import { AgentEvaluationSnapshotSchema } from "@deepwrite/contracts";
 import type { SystemEventEnvelope } from "@deepwrite/contracts";
 import type { AgentConversationContext } from "./context";
-import {
-  rememberBounded
-} from "./shared";
+import { rememberBounded } from "./shared";
 import {
   flushPendingAgentTextDelta,
   queueAgentTextDelta,
@@ -26,7 +24,10 @@ import {
 import { rememberRunApprovalMode } from "./approvals";
 import type { SubagentEventEnvelope } from "./types";
 
-export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnvelope): void {
+export function handleEvent(
+  ctx: AgentConversationContext,
+  event: SystemEventEnvelope
+): void {
   if (!isAgentEvent(event) || event.payload.sessionId !== ctx.sessionId.value) {
     return;
   }
@@ -67,13 +68,22 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
     if (ctx.pendingAttemptId.value === null) {
       return;
     }
-    const observedRunId = ctx.observedRunByAttempt.get(ctx.pendingAttemptId.value);
+    const observedRunId = ctx.observedRunByAttempt.get(
+      ctx.pendingAttemptId.value
+    );
     if (observedRunId && observedRunId !== runId) {
-      failProtocol(ctx, observedRunId, "同一次请求收到了多个运行标识。", ctx.runtime.value ?? undefined);
+      failProtocol(
+        ctx,
+        observedRunId,
+        "同一次请求收到了多个运行标识。",
+        ctx.runtime.value ?? undefined
+      );
       return;
     }
     ctx.observedRunByAttempt.set(ctx.pendingAttemptId.value, runId);
-    const pendingMode = ctx.approvalModeByAttempt.get(ctx.pendingAttemptId.value);
+    const pendingMode = ctx.approvalModeByAttempt.get(
+      ctx.pendingAttemptId.value
+    );
     if (pendingMode) rememberRunApprovalMode(ctx, runId, pendingMode);
     ctx.activeRunId.value = runId;
   }
@@ -103,7 +113,8 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
   }
 
   if (event.type === "agent.evaluation_snapshot") {
-    const message = ensureAssistantMessage(ctx,
+    const message = ensureAssistantMessage(
+      ctx,
       runId,
       event.payload.messageId,
       event.payload.runtime,
@@ -141,10 +152,17 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
 
   if (event.type === "tool.call_stream") {
     if (!acceptsRetryActivity(ctx, runId, event.timestamp)) return;
-    const message = ensureActivityMessage(ctx, runId, event.payload.runtime, event.timestamp);
+    const message = ensureActivityMessage(
+      ctx,
+      runId,
+      event.payload.runtime,
+      event.timestamp
+    );
     message.processingStartedAt ??= event.timestamp;
     let toolCall = event.payload.toolCallId
-      ? message.toolCalls?.find((candidate) => candidate.id === event.payload.toolCallId)
+      ? message.toolCalls?.find(
+          (candidate) => candidate.id === event.payload.toolCallId
+        )
       : undefined;
     if (!toolCall) {
       const streamCandidate = message.toolCalls?.find(
@@ -209,9 +227,15 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
 
   if (event.type === "tool.call_requested") {
     if (!acceptsRetryActivity(ctx, runId, event.timestamp)) return;
-    const message = ensureActivityMessage(ctx, runId, event.payload.runtime, event.timestamp);
+    const message = ensureActivityMessage(
+      ctx,
+      runId,
+      event.payload.runtime,
+      event.timestamp
+    );
     if (event.payload.toolName === "spawn_subagent") {
-      ensurePendingSubagentRunForTool(ctx,
+      ensurePendingSubagentRunForTool(
+        ctx,
         message,
         event.payload.toolCallId,
         event.payload.args,
@@ -230,12 +254,17 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
       ];
     }
     message.processingStartedAt ??= event.timestamp;
-    const existing = message.toolCalls?.find(
-      (toolCall) => toolCall.id === event.payload.toolCallId
-    ) ?? [...(message.toolCalls ?? [])].reverse().find(
-      (toolCall) =>
-        toolCall.status === "preparing" && toolCall.name === event.payload.toolName
-    );
+    const existing =
+      message.toolCalls?.find(
+        (toolCall) => toolCall.id === event.payload.toolCallId
+      ) ??
+      [...(message.toolCalls ?? [])]
+        .reverse()
+        .find(
+          (toolCall) =>
+            toolCall.status === "preparing" &&
+            toolCall.name === event.payload.toolName
+        );
     if (existing) {
       const previousId = existing.id;
       existing.id = event.payload.toolCallId;
@@ -257,9 +286,12 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
         requestedAt: event.timestamp
       });
     }
-    if (!message.processingSteps?.some(
-      (step) => step.type === "tool" && step.toolCallId === event.payload.toolCallId
-    )) {
+    if (
+      !message.processingSteps?.some(
+        (step) =>
+          step.type === "tool" && step.toolCallId === event.payload.toolCallId
+      )
+    ) {
       (message.processingSteps ??= []).push({
         id: event.id,
         type: "tool",
@@ -272,7 +304,12 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
 
   if (event.type === "tool.execution_completed") {
     if (!acceptsRetryActivity(ctx, runId, event.timestamp)) return;
-    const message = ensureActivityMessage(ctx, runId, event.payload.runtime, event.timestamp);
+    const message = ensureActivityMessage(
+      ctx,
+      runId,
+      event.payload.runtime,
+      event.timestamp
+    );
     if (event.payload.toolName === "spawn_subagent") {
       const subagentRun = message.subagentRuns?.find(
         (candidate) => candidate.parentToolCallId === event.payload.toolCallId
@@ -287,7 +324,9 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
       }
     }
     const tools = message.tools ?? [];
-    const existingTool = tools.find((tool) => tool.id === event.payload.toolCallId);
+    const existingTool = tools.find(
+      (tool) => tool.id === event.payload.toolCallId
+    );
     if (existingTool) {
       existingTool.status = event.payload.isError ? "error" : "completed";
       existingTool.summary = event.payload.resultSummary;
@@ -316,9 +355,12 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
       };
       (message.toolCalls ??= []).push(toolCall);
     }
-    if (!message.processingSteps?.some(
-      (step) => step.type === "tool" && step.toolCallId === event.payload.toolCallId
-    )) {
+    if (
+      !message.processingSteps?.some(
+        (step) =>
+          step.type === "tool" && step.toolCallId === event.payload.toolCallId
+      )
+    ) {
       (message.processingSteps ??= []).push({
         id: event.id,
         type: "tool",
@@ -336,7 +378,8 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
 
   if (event.type === "agent.message_completed") {
     if (!acceptsRetryActivity(ctx, runId, event.timestamp)) return;
-    const message = ensureAssistantMessage(ctx,
+    const message = ensureAssistantMessage(
+      ctx,
       runId,
       event.payload.messageId,
       event.payload.runtime,
@@ -371,7 +414,8 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
         });
       }
     }
-    finalizeRunningSubagents(ctx,
+    finalizeRunningSubagents(
+      ctx,
       message,
       "error",
       event.timestamp,
@@ -406,9 +450,7 @@ export function handleEvent(ctx: AgentConversationContext, event: SystemEventEnv
   finishRun(ctx, runId);
 }
 
-export function isAgentEvent(
-  event: SystemEventEnvelope
-): event is Extract<
+export function isAgentEvent(event: SystemEventEnvelope): event is Extract<
   SystemEventEnvelope,
   {
     type:
@@ -444,7 +486,9 @@ export function isAgentEvent(
   );
 }
 
-export function isSubagentEvent(event: SystemEventEnvelope): event is SubagentEventEnvelope {
+export function isSubagentEvent(
+  event: SystemEventEnvelope
+): event is SubagentEventEnvelope {
   return (
     event.type === "subagent.started" ||
     event.type === "subagent.activity" ||

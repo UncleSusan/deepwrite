@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
-import type { CloudBackupItem, CloudBackupItemKind } from "@deepwrite/contracts";
+import type {
+  CloudBackupItem,
+  CloudBackupItemKind
+} from "@deepwrite/contracts";
 
 const SKIP_NAMES = new Set([".DS_Store", "Thumbs.db"]);
 
@@ -48,7 +51,9 @@ function catalogKind(domain: string): CloudBackupItemKind | null {
   }
 }
 
-async function readJsonObject(path: string): Promise<Record<string, unknown> | null> {
+async function readJsonObject(
+  path: string
+): Promise<Record<string, unknown> | null> {
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
     return isRecord(parsed) ? parsed : null;
@@ -86,7 +91,10 @@ export async function collectProjectFiles(
       return;
     }
     for (const entry of entries) {
-      if (SKIP_NAMES.has(entry.name) || entry.name.startsWith(".deepwrite-project-")) {
+      if (
+        SKIP_NAMES.has(entry.name) ||
+        entry.name.startsWith(".deepwrite-project-")
+      ) {
         continue;
       }
       const fullPath = join(directory, entry.name);
@@ -108,13 +116,18 @@ export async function collectProjectFiles(
   }
 
   await walk(root);
-  files.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  files.sort((left, right) =>
+    left.relativePath.localeCompare(right.relativePath)
+  );
   return files;
 }
 
 export function hashProjectFiles(
   files: ReadonlyArray<{ relativePath: string; data: Buffer }>
-): { hash: string; sizeBytes: number } {
+): {
+  hash: string;
+  sizeBytes: number;
+} {
   const digest = createHash("sha256");
   let sizeBytes = 0;
   for (const file of files) {
@@ -136,7 +149,9 @@ async function loadProject(
 ): Promise<LocalBackupProject | null> {
   const files = await collectProjectFiles(projectDirectory);
   if (files.length === 0) return null;
-  const manifest = await readJsonObject(join(projectDirectory, "deepwrite.json"));
+  const manifest = await readJsonObject(
+    join(projectDirectory, "deepwrite.json")
+  );
   const { hash, sizeBytes } = hashProjectFiles(files);
   return {
     kind,
@@ -152,16 +167,26 @@ async function loadProject(
 export async function listLocalBackupProjects(
   userDataPath: string
 ): Promise<LocalBackupProject[]> {
-  const catalog = await readJsonObject(join(userDataPath, "catalog-registry.json"));
-  const longCatalog = await readJsonObject(join(userDataPath, "long-project-registry.json"));
+  const catalog = await readJsonObject(
+    join(userDataPath, "catalog-registry.json")
+  );
+  const longCatalog = await readJsonObject(
+    join(userDataPath, "long-project-registry.json")
+  );
   const projects: LocalBackupProject[] = [];
   const seen = new Set<string>();
 
-  const catalogProjects = Array.isArray(catalog?.projects) ? catalog.projects : [];
+  const catalogProjects = Array.isArray(catalog?.projects)
+    ? catalog.projects
+    : [];
   for (const raw of catalogProjects) {
     if (!isRecord(raw)) continue;
     const item = raw as unknown as RegistryProject;
-    if (typeof item.id !== "string" || typeof item.projectDirectory !== "string") continue;
+    if (
+      typeof item.id !== "string" ||
+      typeof item.projectDirectory !== "string"
+    )
+      continue;
     const kind = catalogKind(String(item.domain));
     if (!kind) continue;
     const key = `${kind}:${item.id}`;
@@ -172,15 +197,25 @@ export async function listLocalBackupProjects(
     projects.push(loaded);
   }
 
-  const longProjects = Array.isArray(longCatalog?.projects) ? longCatalog.projects : [];
+  const longProjects = Array.isArray(longCatalog?.projects)
+    ? longCatalog.projects
+    : [];
   for (const raw of longProjects) {
     if (!isRecord(raw)) continue;
     const item = raw as unknown as LongRegistryProject;
-    if (typeof item.bookId !== "string" || typeof item.projectDirectory !== "string") continue;
+    if (
+      typeof item.bookId !== "string" ||
+      typeof item.projectDirectory !== "string"
+    )
+      continue;
     if (item.deletion) continue;
     const key = `long-book:${item.bookId}`;
     if (seen.has(key)) continue;
-    const loaded = await loadProject("long-book", item.bookId, item.projectDirectory);
+    const loaded = await loadProject(
+      "long-book",
+      item.bookId,
+      item.projectDirectory
+    );
     if (!loaded) continue;
     seen.add(key);
     projects.push(loaded);

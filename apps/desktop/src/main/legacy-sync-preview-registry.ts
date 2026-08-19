@@ -21,7 +21,10 @@ export class LegacySyncPreviewRegistry {
   } {
     const now = this.now();
     for (const [previewId, registration] of this.entries) {
-      if (registration.expiresAt <= now || registration.webContentsId === input.webContentsId) {
+      if (
+        registration.expiresAt <= now ||
+        registration.webContentsId === input.webContentsId
+      ) {
         this.entries.delete(previewId);
       }
     }
@@ -31,9 +34,16 @@ export class LegacySyncPreviewRegistry {
     return { previewId, expiresAt };
   }
 
-  resolve(previewId: string, webContentsId: number): LegacySyncPreviewRegistration {
+  resolve(
+    previewId: string,
+    webContentsId: number
+  ): LegacySyncPreviewRegistration {
     const registration = this.entries.get(previewId);
-    if (!registration || registration.expiresAt <= this.now() || registration.webContentsId !== webContentsId) {
+    if (
+      !registration ||
+      registration.expiresAt <= this.now() ||
+      registration.webContentsId !== webContentsId
+    ) {
       this.entries.delete(previewId);
       throw new Error("旧版本同步预览已失效，请重新选择压缩包。");
     }
@@ -46,7 +56,8 @@ export class LegacySyncPreviewRegistry {
 
   clearForWebContents(webContentsId: number): void {
     for (const [previewId, registration] of this.entries) {
-      if (registration.webContentsId === webContentsId) this.entries.delete(previewId);
+      if (registration.webContentsId === webContentsId)
+        this.entries.delete(previewId);
     }
   }
 }

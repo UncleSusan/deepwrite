@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch
+} from "vue";
 import {
   LONG_BOOK_GENRES,
   SCRIPT_BOOK_GENRES,
@@ -79,9 +87,17 @@ const title = ref("");
 const workspaceType = ref<"short" | "script" | "long">("short");
 const genre = ref<string>("世情");
 const workspaceTypeOptions = [
-  { value: "short", label: "短篇", description: "人物、剧情、导语、大纲与正文" },
+  {
+    value: "short",
+    label: "短篇",
+    description: "人物、剧情、导语、大纲与正文"
+  },
   { value: "script", label: "剧本", description: "人物、剧情、大纲与分集正文" },
-  { value: "long", label: "长篇", description: "世界观、人物、情节、正文与连续性" }
+  {
+    value: "long",
+    label: "长篇",
+    description: "世界观、人物、情节、正文与连续性"
+  }
 ] as const;
 const genreOptions = computed<readonly string[]>(() =>
   workspaceType.value === "long"
@@ -114,15 +130,22 @@ const titleInput = ref<HTMLInputElement | null>(null);
 const workspaceMaterials = computed(() => props.materials);
 const workspaceSkills = computed(() => props.skills);
 const materialById = computed(
-  () => new Map(workspaceMaterials.value.map((material) => [material.id, material] as const))
+  () =>
+    new Map(
+      workspaceMaterials.value.map(
+        (material) => [material.id, material] as const
+      )
+    )
 );
 const skillById = computed(
-  () => new Map(workspaceSkills.value.map((skill) => [skill.id, skill] as const))
+  () =>
+    new Map(workspaceSkills.value.map((skill) => [skill.id, skill] as const))
 );
 
 function materialCandidates(kind: MaterialKind): MaterialLibrary[] {
   return workspaceMaterials.value.filter(
-    (material) => material.materialKind === kind || material.materialKind === "mixed"
+    (material) =>
+      material.materialKind === kind || material.materialKind === "mixed"
   );
 }
 
@@ -130,7 +153,9 @@ function skillCandidates(kind: SkillKind): SkillLibrary[] {
   return workspaceSkills.value.filter((skill) => skill.skillKind === kind);
 }
 
-function materialKindDescription(kind: (typeof MATERIAL_KINDS)[number]): string {
+function materialKindDescription(
+  kind: (typeof MATERIAL_KINDS)[number]
+): string {
   if (workspaceType.value === "long") {
     if (kind.id === "plot") return "长线情节与结构参考";
     if (kind.id === "other") return "自定义长篇素材";
@@ -151,7 +176,10 @@ function skillKindDescription(kind: (typeof SKILL_KINDS)[number]): string {
 }
 
 function workspaceTypeLabel(): string {
-  return workspaceTypeOptions.find((option) => option.value === workspaceType.value)?.label ?? "短篇";
+  return (
+    workspaceTypeOptions.find((option) => option.value === workspaceType.value)
+      ?.label ?? "短篇"
+  );
 }
 
 function emptyMaterialLinks(): Record<MaterialKind, string[]> {
@@ -181,7 +209,10 @@ function materialGroupLinks(
   for (const { id: kind } of MATERIAL_KINDS) {
     const libraryId = group.members[kind];
     const library = libraryId ? materialById.value.get(libraryId) : undefined;
-    if (library && (library.materialKind === kind || library.materialKind === "mixed")) {
+    if (
+      library &&
+      (library.materialKind === kind || library.materialKind === "mixed")
+    ) {
       links[kind] = [library.id];
     }
   }
@@ -214,10 +245,14 @@ const availableSkillGroups = computed(() =>
   )
 );
 const selectedMaterialGroup = computed(() =>
-  availableMaterialGroups.value.find((group) => group.id === selectedMaterialGroupId.value)
+  availableMaterialGroups.value.find(
+    (group) => group.id === selectedMaterialGroupId.value
+  )
 );
 const selectedSkillGroup = computed(() =>
-  availableSkillGroups.value.find((group) => group.id === selectedSkillGroupId.value)
+  availableSkillGroups.value.find(
+    (group) => group.id === selectedSkillGroupId.value
+  )
 );
 
 function materialLibraryLabel(library: MaterialLibrary): string {
@@ -232,7 +267,9 @@ function skillLibraryLabel(library: SkillLibrary): string {
   return library.isBuiltin ? `${library.title} · 官方` : library.title;
 }
 
-function materialSelectOptions(kind: MaterialKind): Array<{ value: string; label: string }> {
+function materialSelectOptions(
+  kind: MaterialKind
+): Array<{ value: string; label: string }> {
   return [
     { value: "", label: "不关联" },
     ...materialCandidates(kind).map((library) => ({
@@ -242,7 +279,9 @@ function materialSelectOptions(kind: MaterialKind): Array<{ value: string; label
   ];
 }
 
-function skillSelectOptions(kind: SkillKind): Array<{ value: string; label: string }> {
+function skillSelectOptions(
+  kind: SkillKind
+): Array<{ value: string; label: string }> {
   return [
     { value: "", label: "不绑定" },
     ...skillCandidates(kind).map((library) => ({
@@ -254,11 +293,17 @@ function skillSelectOptions(kind: SkillKind): Array<{ value: string; label: stri
 
 const materialGroupOptions = computed(() => [
   { value: "", label: "不关联" },
-  ...availableMaterialGroups.value.map((group) => ({ value: group.id, label: group.title }))
+  ...availableMaterialGroups.value.map((group) => ({
+    value: group.id,
+    label: group.title
+  }))
 ]);
 const skillGroupOptions = computed(() => [
   { value: "", label: "不绑定" },
-  ...availableSkillGroups.value.map((group) => ({ value: group.id, label: group.title }))
+  ...availableSkillGroups.value.map((group) => ({
+    value: group.id,
+    label: group.title
+  }))
 ]);
 
 function selectedMaterialLinks(): Record<MaterialKind, string[]> {
@@ -268,7 +313,9 @@ function selectedMaterialLinks(): Record<MaterialKind, string[]> {
   return Object.fromEntries(
     MATERIAL_KINDS.map(({ id }) => {
       const selectedId = selectedMaterialIds[id];
-      const valid = selectedId && materialCandidates(id).some((library) => library.id === selectedId);
+      const valid =
+        selectedId &&
+        materialCandidates(id).some((library) => library.id === selectedId);
       return [id, valid ? [selectedId] : []];
     })
   ) as Record<MaterialKind, string[]>;
@@ -281,7 +328,9 @@ function selectedSkillLinks(): Record<SkillKind, string[]> {
   return Object.fromEntries(
     SKILL_KINDS.map(({ id }) => {
       const selectedId = selectedSkillIds[id];
-      const valid = selectedId && skillCandidates(id).some((library) => library.id === selectedId);
+      const valid =
+        selectedId &&
+        skillCandidates(id).some((library) => library.id === selectedId);
       return [id, valid ? [selectedId] : []];
     })
   ) as Record<SkillKind, string[]>;
@@ -361,13 +410,19 @@ watch(
 );
 
 watch(availableMaterialGroups, (groups) => {
-  if (selectedMaterialGroupId.value && !groups.some((group) => group.id === selectedMaterialGroupId.value)) {
+  if (
+    selectedMaterialGroupId.value &&
+    !groups.some((group) => group.id === selectedMaterialGroupId.value)
+  ) {
     selectedMaterialGroupId.value = "";
   }
 });
 
 watch(availableSkillGroups, (groups) => {
-  if (selectedSkillGroupId.value && !groups.some((group) => group.id === selectedSkillGroupId.value)) {
+  if (
+    selectedSkillGroupId.value &&
+    !groups.some((group) => group.id === selectedSkillGroupId.value)
+  ) {
     selectedSkillGroupId.value = "";
   }
 });
@@ -395,8 +450,18 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
       >
         <header>
           <div>
-            <span class="dialog-eyebrow">创作空间 · {{ workspaceTypeLabel() }}</span>
-            <h2 id="create-book-title">新建{{ workspaceType === "long" ? "长篇作品" : workspaceType === "script" ? "剧本" : "短篇书籍" }}</h2>
+            <span class="dialog-eyebrow"
+              >创作空间 · {{ workspaceTypeLabel() }}</span
+            >
+            <h2 id="create-book-title">
+              新建{{
+                workspaceType === "long"
+                  ? "长篇作品"
+                  : workspaceType === "script"
+                    ? "剧本"
+                    : "短篇书籍"
+              }}
+            </h2>
           </div>
           <button
             class="dialog-close"
@@ -409,10 +474,20 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           </button>
         </header>
 
-        <form class="dialog-content create-short-book-form" @submit.prevent="submit">
-          <section class="create-short-book-basics" aria-labelledby="create-workspace-type-heading">
+        <form
+          class="dialog-content create-short-book-form"
+          @submit.prevent="submit"
+        >
+          <section
+            class="create-short-book-basics"
+            aria-labelledby="create-workspace-type-heading"
+          >
             <h3 id="create-workspace-type-heading">创作类型</h3>
-            <div class="create-short-binding-modes create-workspace-type-options" role="tablist" aria-label="创作类型">
+            <div
+              class="create-short-binding-modes create-workspace-type-options"
+              role="tablist"
+              aria-label="创作类型"
+            >
               <button
                 v-for="option in workspaceTypeOptions"
                 :key="option.value"
@@ -425,12 +500,18 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 :disabled="submitting"
                 @click="workspaceType = option.value"
               >
-                <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
+                <span
+                  ><strong>{{ option.label }}</strong
+                  ><small>{{ option.description }}</small></span
+                >
               </button>
             </div>
           </section>
 
-          <section class="create-short-book-basics" aria-labelledby="create-short-basics-heading">
+          <section
+            class="create-short-book-basics"
+            aria-labelledby="create-short-basics-heading"
+          >
             <h3 id="create-short-basics-heading">书籍信息</h3>
             <label class="create-short-book-field">
               <span>书名</span>
@@ -440,13 +521,21 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 type="text"
                 :maxlength="workspaceType === 'long' ? 256 : 80"
                 autocomplete="off"
-                :placeholder="workspaceType === 'long' ? '请输入长篇书名' : '请输入书名'"
+                :placeholder="
+                  workspaceType === 'long' ? '请输入长篇书名' : '请输入书名'
+                "
                 :disabled="submitting"
               />
             </label>
 
             <fieldset class="create-short-genre-field">
-              <legend>{{ workspaceType === "long" ? "长篇题材" : `${workspaceType === "script" ? "剧本" : "短篇"}分类` }}</legend>
+              <legend>
+                {{
+                  workspaceType === "long"
+                    ? "长篇题材"
+                    : `${workspaceType === "script" ? "剧本" : "短篇"}分类`
+                }}
+              </legend>
               <div class="create-short-genre-options">
                 <label
                   v-for="option in genreOptions"
@@ -467,16 +556,25 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </fieldset>
           </section>
 
-          <section class="create-short-binding-panel" aria-labelledby="create-short-skill-heading">
+          <section
+            class="create-short-binding-panel"
+            aria-labelledby="create-short-skill-heading"
+          >
             <div class="create-short-binding-heading">
-              <span class="create-short-binding-icon"><AppIcon name="library" :size="17" /></span>
+              <span class="create-short-binding-icon"
+                ><AppIcon name="library" :size="17"
+              /></span>
               <div>
                 <h3 id="create-short-skill-heading">绑定技能库</h3>
                 <p>智能体只会按当前阶段和读取范围加载已绑定技能。</p>
               </div>
             </div>
 
-            <div class="create-short-binding-modes" role="radiogroup" aria-label="技能库绑定方式">
+            <div
+              class="create-short-binding-modes"
+              role="radiogroup"
+              aria-label="技能库绑定方式"
+            >
               <label :class="{ 'is-selected': skillBindingMode === 'single' }">
                 <input
                   v-model="skillBindingMode"
@@ -500,8 +598,15 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </label>
             </div>
 
-            <div v-if="skillBindingMode === 'single'" class="create-short-kind-grid">
-              <label v-for="kind in SKILL_KINDS" :key="kind.id" class="create-short-kind-field">
+            <div
+              v-if="skillBindingMode === 'single'"
+              class="create-short-kind-grid"
+            >
+              <label
+                v-for="kind in SKILL_KINDS"
+                :key="kind.id"
+                class="create-short-kind-field"
+              >
                 <span>
                   <strong>{{ kind.label }}</strong>
                   <small>{{ skillKindDescription(kind) }}</small>
@@ -513,7 +618,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   size="large"
                   :disabled="loading || submitting"
                   :menu-min-width="260"
-                  @update:model-value="selectedSkillIds[kind.id] = String($event)"
+                  @update:model-value="
+                    selectedSkillIds[kind.id] = String($event)
+                  "
                 />
               </label>
             </div>
@@ -534,25 +641,41 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 <span v-for="kind in SKILL_KINDS" :key="kind.id">
                   <small>{{ kind.label }}</small>
                   <strong>
-                    {{ skillById.get(selectedSkillGroup.members[kind.id] ?? "")?.title ?? "未配置" }}
+                    {{
+                      skillById.get(selectedSkillGroup.members[kind.id] ?? "")
+                        ?.title ?? "未配置"
+                    }}
                   </strong>
                 </span>
               </div>
-              <p v-else class="create-short-stable-hint">选择分组后，会一次绑定其中已配置的各类技能库。</p>
+              <p v-else class="create-short-stable-hint">
+                选择分组后，会一次绑定其中已配置的各类技能库。
+              </p>
             </div>
           </section>
 
-          <section class="create-short-binding-panel" aria-labelledby="create-short-material-heading">
+          <section
+            class="create-short-binding-panel"
+            aria-labelledby="create-short-material-heading"
+          >
             <div class="create-short-binding-heading">
-              <span class="create-short-binding-icon"><AppIcon name="archive" :size="17" /></span>
+              <span class="create-short-binding-icon"
+                ><AppIcon name="archive" :size="17"
+              /></span>
               <div>
                 <h3 id="create-short-material-heading">关联素材库</h3>
                 <p>按用途选择素材库；未选择的分类可在创作空间中稍后补充。</p>
               </div>
             </div>
 
-            <div class="create-short-binding-modes" role="radiogroup" aria-label="素材库关联方式">
-              <label :class="{ 'is-selected': materialBindingMode === 'single' }">
+            <div
+              class="create-short-binding-modes"
+              role="radiogroup"
+              aria-label="素材库关联方式"
+            >
+              <label
+                :class="{ 'is-selected': materialBindingMode === 'single' }"
+              >
                 <input
                   v-model="materialBindingMode"
                   type="radio"
@@ -563,7 +686,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </label>
               <label
                 :class="{ 'is-selected': materialBindingMode === 'group' }"
-                :title="availableMaterialGroups.length ? '' : '暂无可用素材分组'"
+                :title="
+                  availableMaterialGroups.length ? '' : '暂无可用素材分组'
+                "
               >
                 <input
                   v-model="materialBindingMode"
@@ -575,8 +700,15 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </label>
             </div>
 
-            <div v-if="materialBindingMode === 'single'" class="create-short-kind-grid">
-              <label v-for="kind in MATERIAL_KINDS" :key="kind.id" class="create-short-kind-field">
+            <div
+              v-if="materialBindingMode === 'single'"
+              class="create-short-kind-grid"
+            >
+              <label
+                v-for="kind in MATERIAL_KINDS"
+                :key="kind.id"
+                class="create-short-kind-field"
+              >
                 <span>
                   <strong>{{ kind.label }}</strong>
                   <small>{{ materialKindDescription(kind) }}</small>
@@ -588,7 +720,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   size="large"
                   :disabled="loading || submitting"
                   :menu-min-width="260"
-                  @update:model-value="selectedMaterialIds[kind.id] = String($event)"
+                  @update:model-value="
+                    selectedMaterialIds[kind.id] = String($event)
+                  "
                 />
               </label>
             </div>
@@ -605,27 +739,57 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   @update:model-value="selectedMaterialGroupId = String($event)"
                 />
               </label>
-              <div v-if="selectedMaterialGroup" class="create-short-group-members">
+              <div
+                v-if="selectedMaterialGroup"
+                class="create-short-group-members"
+              >
                 <span v-for="kind in MATERIAL_KINDS" :key="kind.id">
                   <small>{{ kind.label }}</small>
                   <strong>
-                    {{ materialById.get(selectedMaterialGroup.members[kind.id] ?? "")?.title ?? "未配置" }}
+                    {{
+                      materialById.get(
+                        selectedMaterialGroup.members[kind.id] ?? ""
+                      )?.title ?? "未配置"
+                    }}
                   </strong>
                 </span>
               </div>
-              <p v-else class="create-short-stable-hint">选择分组后，会一次关联其中已配置的各类素材库。</p>
+              <p v-else class="create-short-stable-hint">
+                选择分组后，会一次关联其中已配置的各类素材库。
+              </p>
             </div>
           </section>
 
           <div class="dialog-actions create-short-book-actions">
-            <span v-if="loading" class="dialog-action-status" aria-live="polite">
+            <span
+              v-if="loading"
+              class="dialog-action-status"
+              aria-live="polite"
+            >
               正在加载素材库和技能库目录…
             </span>
-            <button class="dialog-secondary-button" type="button" :disabled="submitting" @click="requestClose">
+            <button
+              class="dialog-secondary-button"
+              type="button"
+              :disabled="submitting"
+              @click="requestClose"
+            >
               取消
             </button>
-            <button class="dialog-primary-button" type="submit" :disabled="loading || submitting">
-              {{ submitting ? "创建中…" : workspaceType === "long" ? "创建长篇" : workspaceType === "script" ? "创建剧本" : "创建书籍" }}
+            <button
+              class="dialog-primary-button"
+              type="submit"
+              :disabled="loading || submitting"
+            >
+              {{
+                submitting
+                  ? "创建中…"
+                  : workspaceType === "long"
+                    ? "创建长篇"
+                    : workspaceType === "script"
+                      ? "创建剧本"
+                      : "创建书籍"
+              }}
             </button>
           </div>
         </form>

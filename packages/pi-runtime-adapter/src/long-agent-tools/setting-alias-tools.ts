@@ -23,31 +23,36 @@ import {
 import { buildCharacterSettingTools } from "./setting-character-tools";
 
 export function buildSettingAliasTools(ctx: LongToolContext): AgentTool[] {
-  const { loadIndex, fullyReadCharacterDocuments, characterDocumentOverlay } = ctx;
+  const { loadIndex, fullyReadCharacterDocuments, characterDocumentOverlay } =
+    ctx;
   const tools: AgentTool[] = [];
   const worldbuildingTools = buildWorldbuildingSettingTools(ctx);
   const characterTools = buildCharacterSettingTools(ctx);
-  const worldbuildingQueryTools = worldbuildingTools.filter((tool) =>
-    tool.name === "list_worldbuilding" ||
-    tool.name === "search_worldbuilding" ||
-    tool.name === "read_worldbuilding"
+  const worldbuildingQueryTools = worldbuildingTools.filter(
+    (tool) =>
+      tool.name === "list_worldbuilding" ||
+      tool.name === "search_worldbuilding" ||
+      tool.name === "read_worldbuilding"
   );
-  const worldbuildingMutationTools = worldbuildingTools.filter((tool) =>
-    tool.name === "create_worldbuilding_file" ||
-    tool.name === "write_worldbuilding_file" ||
-    tool.name === "edit_worldbuilding_file"
+  const worldbuildingMutationTools = worldbuildingTools.filter(
+    (tool) =>
+      tool.name === "create_worldbuilding_file" ||
+      tool.name === "write_worldbuilding_file" ||
+      tool.name === "edit_worldbuilding_file"
   );
-  const characterQueryTools = characterTools.filter((tool) =>
-    tool.name === "list_characters" ||
-    tool.name === "search_characters" ||
-    tool.name === "read_character"
+  const characterQueryTools = characterTools.filter(
+    (tool) =>
+      tool.name === "list_characters" ||
+      tool.name === "search_characters" ||
+      tool.name === "read_character"
   );
-  const characterMutationTools = characterTools.filter((tool) =>
-    tool.name === "create_character" ||
-    tool.name === "write_character_file" ||
-    tool.name === "edit_character_file" ||
-    tool.name === "write_character_overview" ||
-    tool.name === "edit_character_overview"
+  const characterMutationTools = characterTools.filter(
+    (tool) =>
+      tool.name === "create_character" ||
+      tool.name === "write_character_file" ||
+      tool.name === "edit_character_file" ||
+      tool.name === "write_character_overview" ||
+      tool.name === "edit_character_overview"
   );
   const callNamedTool = (
     collection: readonly AgentTool[],
@@ -191,7 +196,10 @@ export function buildSettingAliasTools(ctx: LongToolContext): AgentTool[] {
             }
             const { index, projectRevision } = await loadIndex(signal);
             const mode = params.mode ?? "full";
-            const target = resolveCharacterOverviewTarget(index, characterDocumentOverlay);
+            const target = resolveCharacterOverviewTarget(
+              index,
+              characterDocumentOverlay
+            );
             const result = target.overlay
               ? { content: target.overlay.content, file: target.file }
               : await readWholeCharacterDocument(
@@ -225,9 +233,7 @@ export function buildSettingAliasTools(ctx: LongToolContext): AgentTool[] {
             return textResult(
               [
                 "【人物概览】",
-                mode === "preview"
-                  ? "预览（不建立整体覆盖凭据）："
-                  : "正文：",
+                mode === "preview" ? "预览（不建立整体覆盖凭据）：" : "正文：",
                 "",
                 visible || "（正文为空）"
               ].join("\n")
@@ -298,7 +304,9 @@ export function buildSettingAliasTools(ctx: LongToolContext): AgentTool[] {
             );
           }
           if (params.domain !== "character") {
-            throw new Error("create_setting requires domain=worldbuilding or domain=character.");
+            throw new Error(
+              "create_setting requires domain=worldbuilding or domain=character."
+            );
           }
           return callNamedTool(
             characterMutationTools,

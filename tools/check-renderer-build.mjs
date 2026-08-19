@@ -3,7 +3,9 @@ import { access, readdir, readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const rendererOut = fileURLToPath(new URL("../apps/desktop/out/renderer/", import.meta.url));
+const rendererOut = fileURLToPath(
+  new URL("../apps/desktop/out/renderer/", import.meta.url)
+);
 const indexPath = join(rendererOut, "index.html");
 const APP_READY_JS_BUDGET_BYTES = 1_000_000;
 const APP_READY_BASELINE_BYTES = 2_504_722;
@@ -22,7 +24,9 @@ const hasJavaScript = assets.some((asset) => asset.endsWith(".js"));
 const hasCss = assets.some((asset) => asset.endsWith(".css"));
 
 if (!html.includes("DeepWrite") || !hasScript || !hasJavaScript || !hasCss) {
-  console.error("Renderer build does not contain the expected DeepWrite HTML, JavaScript, and CSS assets.");
+  console.error(
+    "Renderer build does not contain the expected DeepWrite HTML, JavaScript, and CSS assets."
+  );
   process.exit(1);
 }
 
@@ -34,7 +38,9 @@ function resolveHtmlAsset(assetPath) {
   const normalizedPath = normalize(assetPath.replace(/^\.\//, ""));
   const resolvedPath = join(rendererOut, normalizedPath);
   if (!resolvedPath.startsWith(rendererOut)) {
-    throw new Error(`Renderer asset escaped its output directory: ${assetPath}`);
+    throw new Error(
+      `Renderer asset escaped its output directory: ${assetPath}`
+    );
   }
   return resolvedPath;
 }
@@ -48,22 +54,24 @@ const modulePreloads = [...html.matchAll(/<link\b[^>]*>/gi)]
   .filter((source) => source.endsWith(".js"));
 
 if (scriptSources.length !== 1) {
-  console.error(`Expected one Renderer module entry, found ${scriptSources.length}.`);
+  console.error(
+    `Expected one Renderer module entry, found ${scriptSources.length}.`
+  );
   process.exit(1);
 }
 
 const entryPath = resolveHtmlAsset(scriptSources[0]);
 const entrySource = await readFile(entryPath, "utf8");
 const dependencyTableMatch = entrySource.match(
-  /\.f\s*\|\|\s*\([^)]*?\.f\s*=\s*(\[[^\]]*\])\s*\)/,
+  /\.f\s*\|\|\s*\([^)]*?\.f\s*=\s*(\[[^\]]*\])\s*\)/
 );
 const shellImportMatch = entrySource.match(
-  /import\([`"'](\.\/WorkspaceShell-[^`"']+\.js)[`"']\)\s*,\s*__vite__mapDeps\(\[([\d,\s]+)\]\)/,
+  /import\([`"'](\.\/WorkspaceShell-[^`"']+\.js)[`"']\)\s*,\s*__vite__mapDeps\(\[([\d,\s]+)\]\)/
 );
 
 if (!dependencyTableMatch || !shellImportMatch) {
   console.error(
-    "Unable to identify the async WorkspaceShell preload graph; Renderer performance budget cannot be verified.",
+    "Unable to identify the async WorkspaceShell preload graph; Renderer performance budget cannot be verified."
   );
   process.exit(1);
 }
@@ -81,39 +89,51 @@ const shellDependencyIndices = shellImportMatch[2]
   .map((value) => Number.parseInt(value.trim(), 10));
 const shellDependencies = shellDependencyIndices
   .map((index) => dependencyTable[index])
-  .filter((assetPath) => typeof assetPath === "string" && assetPath.endsWith(".js"))
+  .filter(
+    (assetPath) => typeof assetPath === "string" && assetPath.endsWith(".js")
+  )
   .map((assetPath) => join(dirname(entryPath), assetPath));
 
-const strictInitialPaths = [...new Set([...scriptSources, ...modulePreloads].map(resolveHtmlAsset))];
-const appReadyPaths = [...new Set([...strictInitialPaths, ...shellDependencies])];
+const strictInitialPaths = [
+  ...new Set([...scriptSources, ...modulePreloads].map(resolveHtmlAsset))
+];
+const appReadyPaths = [
+  ...new Set([...strictInitialPaths, ...shellDependencies])
+];
 
 async function measureJavaScript(paths) {
   const files = await Promise.all(paths.map((path) => readFile(path)));
   return {
     rawBytes: files.reduce((total, contents) => total + contents.byteLength, 0),
-    gzipBytes: files.reduce((total, contents) => total + gzipSync(contents).byteLength, 0),
+    gzipBytes: files.reduce(
+      (total, contents) => total + gzipSync(contents).byteLength,
+      0
+    )
   };
 }
 
 const strictInitial = await measureJavaScript(strictInitialPaths);
 const appReady = await measureJavaScript(appReadyPaths);
-const reductionPercent = (1 - appReady.rawBytes / APP_READY_BASELINE_BYTES) * 100;
+const reductionPercent =
+  (1 - appReady.rawBytes / APP_READY_BASELINE_BYTES) * 100;
 
 console.log(
   `Renderer JS: strict initial ${strictInitial.rawBytes.toLocaleString("en-US")} B raw / ${strictInitial.gzipBytes.toLocaleString("en-US")} B gzip; ` +
     `app-ready ${appReady.rawBytes.toLocaleString("en-US")} B raw / ${appReady.gzipBytes.toLocaleString("en-US")} B gzip ` +
-    `(${reductionPercent.toFixed(1)}% below baseline).`,
+    `(${reductionPercent.toFixed(1)}% below baseline).`
 );
 
 if (appReady.rawBytes >= APP_READY_JS_BUDGET_BYTES) {
   console.error(
-    `Renderer app-ready JavaScript exceeds the ${APP_READY_JS_BUDGET_BYTES.toLocaleString("en-US")} B budget.`,
+    `Renderer app-ready JavaScript exceeds the ${APP_READY_JS_BUDGET_BYTES.toLocaleString("en-US")} B budget.`
   );
   process.exit(1);
 }
 
 if (reductionPercent < 40) {
-  console.error("Renderer app-ready JavaScript has not reached the required 40% reduction.");
+  console.error(
+    "Renderer app-ready JavaScript has not reached the required 40% reduction."
+  );
   process.exit(1);
 }
 

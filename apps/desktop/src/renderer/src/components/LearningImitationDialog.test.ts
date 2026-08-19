@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import source from "./LearningImitationDialog.vue?raw";
 
 describe("LearningImitationDialog", () => {
@@ -11,7 +12,7 @@ describe("LearningImitationDialog", () => {
     expect(source).toContain("result.plot_learning.plotRefineSkill");
     expect(source).toContain("result.style_learning.body");
     expect(source).toContain('accessible-label="选择学习仿写模型"');
-    expect(source).toContain('import PopupSelect');
+    expect(source).toContain("import PopupSelect");
     expect(source).not.toContain("<select");
   });
 
@@ -23,7 +24,7 @@ describe("LearningImitationDialog", () => {
   it("uploads full-text TXT, Markdown, PDF and Word documents through the learning reader", () => {
     expect(source).toContain('from "../utils/learningDocumentFiles"');
     expect(source).toContain("await readLearningDocumentFile(file)");
-    expect(source).toContain(":accept=\"LEARNING_DOCUMENT_ACCEPT\"");
+    expect(source).toContain(':accept="LEARNING_DOCUMENT_ACCEPT"');
     expect(source).toContain("LEARNING_DOCUMENT_SUPPORTED_LABEL");
     expect(source).toContain("LEARNING_IMITATION_MAX_DOCUMENTS");
   });
@@ -60,16 +61,18 @@ describe("LearningImitationDialog", () => {
     expect(source).toContain("automaticPersistRequests");
     expect(source).toContain("localCatalogSnapshot");
     expect(source).toContain("await api.catalog.snapshot()");
-    expect(source).toContain("automaticPersistRequests.get(stageId)?.fingerprint");
+    expect(source).toContain(
+      "automaticPersistRequests.get(stageId)?.fingerprint"
+    );
     expect(source).toContain("automaticPersistRequests.delete(stageId)");
-    expect(source).toContain("automaticPersistFingerprints.set(stageId, request.fingerprint)");
+    expect(source).toContain(
+      "automaticPersistFingerprints.set(stageId, request.fingerprint)"
+    );
     expect(source).toContain('props.approvalMode !== "auto-approve"');
     expect(source).toContain("props.controller.lastCompletedRunId.value");
     expect(source).toContain("props.controller.lastCompletedStage.value");
     expect(source).toContain('persistStage("overwrite", stageId, true)');
-    expect(source).toContain(
-      "尚未选择完整目标库，结果预览已保留。"
-    );
+    expect(source).toContain("尚未选择完整目标库，结果预览已保留。");
   });
 
   it("stays mounted as a workspace page and explains that navigation keeps the controller running", () => {
@@ -85,8 +88,13 @@ describe("LearningImitationDialog", () => {
       'class="learning-running-footer" :class="{ \'is-idle\': !isBusy }"'
     );
     expect(source).toContain(':disabled="!isBusy"');
-    expect(source).toContain(".learning-running-footer button:disabled { visibility: hidden; }");
-    expect(source).not.toContain('v-if="isBusy" class="learning-running-footer"');
+    expectSourceToContain(
+      source,
+      ".learning-running-footer button:disabled { visibility: hidden; }"
+    );
+    expect(source).not.toContain(
+      'v-if="isBusy" class="learning-running-footer"'
+    );
   });
 
   it("uses the standard neutral primary action for creating a new learning session", () => {
@@ -100,7 +108,9 @@ describe("LearningImitationDialog", () => {
       source.indexOf('{{ saving ? "落盘中…" : "确认落盘" }}') - 240,
       source.indexOf('{{ saving ? "落盘中…" : "确认落盘" }}') + 80
     );
-    expect(persistAction).toContain('class="learning-primary-button is-confirm"');
+    expect(persistAction).toContain(
+      'class="learning-primary-button is-confirm"'
+    );
   });
 
   it("routes temporary feedback through uiMessage and points prompt editing to settings", () => {

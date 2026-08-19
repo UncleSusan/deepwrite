@@ -8,7 +8,7 @@ import {
   type SubagentAuthoringDraft,
   type SubagentAuthoringOutputMode,
   type SubagentAuthoringParentAgentId,
-  type SubagentAuthoringRuntimeContext,
+  type SubagentAuthoringRuntimeContext
 } from "@deepwrite/contracts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { uiMessage } from "../ui-feedback";
@@ -40,10 +40,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  generate: [payload: {
-    context: SubagentAuthoringRuntimeContext;
-    modelId: string;
-  }];
+  generate: [
+    payload: {
+      context: SubagentAuthoringRuntimeContext;
+      modelId: string;
+    }
+  ];
   stop: [];
   confirm: [draft: SubagentAuthoringDraft];
 }>();
@@ -68,7 +70,10 @@ watch(
 function skillStageForParent(
   parentAgentId: SubagentAuthoringParentAgentId
 ): SkillStageId | null {
-  if (parentAgentId === "expert_draft_coordinator" || parentAgentId === "draft") {
+  if (
+    parentAgentId === "expert_draft_coordinator" ||
+    parentAgentId === "draft"
+  ) {
     return "draft";
   }
   if (parentAgentId === "character_design" || parentAgentId === "plot_design") {
@@ -83,7 +88,11 @@ const skillOptions = computed<SubagentAuthoringSkillOption[]>(() => {
   for (const library of props.skills) {
     for (const entry of library.entries) {
       if (!entry.body.trim()) continue;
-      if (preferredStage && !showAllStages.value && entry.stageId !== preferredStage) {
+      if (
+        preferredStage &&
+        !showAllStages.value &&
+        entry.stageId !== preferredStage
+      ) {
         continue;
       }
       options.push({
@@ -105,7 +114,9 @@ const modelOptions = computed<PopupSelectOption[]>(() =>
 );
 
 const selectedSkills = computed(() =>
-  skillOptions.value.filter((skill) => selectedSkillIds.value.includes(skill.id))
+  skillOptions.value.filter((skill) =>
+    selectedSkillIds.value.includes(skill.id)
+  )
 );
 
 const canGenerate = computed(
@@ -128,7 +139,9 @@ function toggleSkill(skillId: string): void {
   if (props.generating) return;
   const index = selectedSkillIds.value.indexOf(skillId);
   if (index >= 0) {
-    selectedSkillIds.value = selectedSkillIds.value.filter((id) => id !== skillId);
+    selectedSkillIds.value = selectedSkillIds.value.filter(
+      (id) => id !== skillId
+    );
     return;
   }
   if (selectedSkillIds.value.length >= SUBAGENT_AUTHORING_MAX_SKILLS) {
@@ -231,7 +244,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             <span class="dialog-eyebrow">智能体团队 · 技能转子智能体</span>
             <h2 id="load-subagent-skill-title">从技能库加载</h2>
             <p>
-              为「{{ parentAgentLabel }}」从技能库生成子智能体草稿。请先确认产出方式，再由带工具的小智能体整理提示词。
+              为「{{
+                parentAgentLabel
+              }}」从技能库生成子智能体草稿。请先确认产出方式，再由带工具的小智能体整理提示词。
             </p>
           </div>
           <button
@@ -250,7 +265,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             <div class="section-heading">
               <strong>1. 选择技能</strong>
               <label class="show-all">
-                <input v-model="showAllStages" type="checkbox" :disabled="generating" />
+                <input
+                  v-model="showAllStages"
+                  type="checkbox"
+                  :disabled="generating"
+                />
                 查看全部阶段
               </label>
             </div>
@@ -285,7 +304,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </p>
             <div class="mode-options" role="radiogroup" aria-label="产出方式">
               <label
-                v-for="mode in (['write', 'handoff'] as const)"
+                v-for="mode in ['write', 'handoff'] as const"
                 :key="mode"
                 :class="{ 'is-selected': outputMode === mode }"
               >
@@ -297,8 +316,12 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   :disabled="generating"
                 />
                 <span>
-                  <strong>{{ SUBAGENT_AUTHORING_OUTPUT_MODE_LABELS[mode] }}</strong>
-                  <em v-if="mode === 'write'">子智能体用写入 / 替换工具改文档，交接摘要只说明改动。</em>
+                  <strong>{{
+                    SUBAGENT_AUTHORING_OUTPUT_MODE_LABELS[mode]
+                  }}</strong>
+                  <em v-if="mode === 'write'"
+                    >子智能体用写入 / 替换工具改文档，交接摘要只说明改动。</em
+                  >
                   <em v-else>子智能体只交回结论与要点，不直接改文档。</em>
                 </span>
               </label>
@@ -339,17 +362,29 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </button>
             </div>
             <div class="authoring-status-slot" aria-live="polite">
-              <p v-if="statusText && !error" class="status-text" :title="statusText">
+              <p
+                v-if="statusText && !error"
+                class="status-text"
+                :title="statusText"
+              >
                 {{ statusText }}
               </p>
             </div>
           </section>
 
-          <section v-if="draft || draftName" class="authoring-section draft-section">
+          <section
+            v-if="draft || draftName"
+            class="authoring-section draft-section"
+          >
             <strong>4. 确认草稿</strong>
             <label class="form-field">
               <span>名称</span>
-              <input v-model="draftName" type="text" :disabled="generating" maxlength="80" />
+              <input
+                v-model="draftName"
+                type="text"
+                :disabled="generating"
+                maxlength="80"
+              />
             </label>
             <label class="form-field">
               <span>能力说明</span>
@@ -373,7 +408,12 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         </div>
 
         <footer class="dialog-actions">
-          <button type="button" class="secondary-button" :disabled="generating" @click="requestClose">
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="generating"
+            @click="requestClose"
+          >
             取消
           </button>
           <button

@@ -20,7 +20,9 @@
   border: 1px solid var(--theme-line);
   border-radius: 15px;
   background: var(--surface-main);
-  box-shadow: 0 24px 70px rgba(27, 29, 31, 0.2), 0 2px 8px rgba(27, 29, 31, 0.08);
+  box-shadow:
+    0 24px 70px rgba(27, 29, 31, 0.2),
+    0 2px 8px rgba(27, 29, 31, 0.08);
 }
 
 .workspace-dialog.is-model-config {

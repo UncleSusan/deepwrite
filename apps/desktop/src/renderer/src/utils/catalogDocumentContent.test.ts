@@ -14,9 +14,7 @@ type WorkspaceDocumentPatch = {
   [Key in keyof WorkspaceDocument]?: WorkspaceDocument[Key] | undefined;
 };
 
-function document(
-  patch: WorkspaceDocumentPatch = {}
-): WorkspaceDocument {
+function document(patch: WorkspaceDocumentPatch = {}): WorkspaceDocument {
   return {
     id: "workspace-document",
     domain: "creation",
@@ -164,7 +162,9 @@ describe("catalog document content mapping", () => {
       catalogContentLoaded: true
     });
 
-    const context = catalogSnapshotWithDocumentContents(snapshot, [loadedEntry]);
+    const context = catalogSnapshotWithDocumentContents(snapshot, [
+      loadedEntry
+    ]);
 
     expect(context.materials[0]?.entries[0]?.body).toBe("已加载素材正文");
     expect(snapshot.materials[0]?.entries[0]?.body).toBe("");

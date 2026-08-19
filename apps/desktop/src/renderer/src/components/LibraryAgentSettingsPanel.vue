@@ -81,7 +81,9 @@ const activeProfile = computed(() =>
 );
 
 const activeSkillDraft = computed(() =>
-  activeDraft.value?.readAccess.skills.find((skill) => skill.id === activeSkillId.value)
+  activeDraft.value?.readAccess.skills.find(
+    (skill) => skill.id === activeSkillId.value
+  )
 );
 
 const domainCopy = computed(() => DOMAIN_COPY[props.domain]);
@@ -178,10 +180,13 @@ function removeActiveSkill(): void {
     uiMessage.warning("至少需要保留一条可用技能");
     return;
   }
-  const index = draft.readAccess.skills.findIndex((skill) => skill.id === activeSkillId.value);
+  const index = draft.readAccess.skills.findIndex(
+    (skill) => skill.id === activeSkillId.value
+  );
   if (index < 0) return;
   draft.readAccess.skills.splice(index, 1);
-  activeSkillId.value = draft.readAccess.skills[Math.max(0, index - 1)]?.id ?? "";
+  activeSkillId.value =
+    draft.readAccess.skills[Math.max(0, index - 1)]?.id ?? "";
 }
 
 function validateSkills(skills: readonly LibraryAgentSkill[]): string | null {
@@ -213,7 +218,9 @@ function saveSettings(): void {
     const draft =
       profile.domain === props.domain
         ? activeDraft.value
-        : draftAgents.value.find((candidate) => candidate.domain === profile.domain);
+        : draftAgents.value.find(
+            (candidate) => candidate.domain === profile.domain
+          );
     if (!draft) {
       return {
         domain: profile.domain,
@@ -247,7 +254,10 @@ function resetSettings(): void {
 </script>
 
 <template>
-  <section class="library-agent-settings" :aria-labelledby="`${domain}-library-agent-title`">
+  <section
+    class="library-agent-settings"
+    :aria-labelledby="`${domain}-library-agent-title`"
+  >
     <header class="panel-header">
       <div>
         <span class="panel-kicker">{{ domainCopy.eyebrow }}</span>
@@ -257,7 +267,10 @@ function resetSettings(): void {
           当前环境仅支持查看；保存和恢复默认设置需要使用 DeepWrite 桌面端。
         </p>
       </div>
-      <span v-if="hasUnsavedChanges && settings && activeDraft" class="prompt-state">
+      <span
+        v-if="hasUnsavedChanges && settings && activeDraft"
+        class="prompt-state"
+      >
         未保存
       </span>
     </header>
@@ -286,7 +299,10 @@ function resetSettings(): void {
       </nav>
 
       <div class="settings-editor">
-        <section v-if="activeTabId === 'system-prompt'" class="settings-card prompt-card">
+        <section
+          v-if="activeTabId === 'system-prompt'"
+          class="settings-card prompt-card"
+        >
           <div class="section-heading">
             <div>
               <h4>系统提示词</h4>
@@ -313,7 +329,8 @@ function resetSettings(): void {
             <div>
               <h4>可用技能</h4>
               <p>
-                逐条配置方法技能。智能体通过 load_skill 按名称加载正文，机制与创作空间一致；这些技能与左侧资源树中的技能库分类无关。
+                逐条配置方法技能。智能体通过 load_skill
+                按名称加载正文，机制与创作空间一致；这些技能与左侧资源树中的技能库分类无关。
               </p>
             </div>
             <button
@@ -381,7 +398,9 @@ function resetSettings(): void {
                 <button
                   type="button"
                   class="danger-button"
-                  :disabled="formDisabled || activeDraft.readAccess.skills.length <= 1"
+                  :disabled="
+                    formDisabled || activeDraft.readAccess.skills.length <= 1
+                  "
                   @click="removeActiveSkill"
                 >
                   删除当前技能
@@ -731,7 +750,8 @@ function resetSettings(): void {
 .danger-button {
   min-height: 32px;
   padding: 6px 11px;
-  border: 1px solid color-mix(in srgb, var(--danger, #c44) 35%, var(--theme-line));
+  border: 1px solid
+    color-mix(in srgb, var(--danger, #c44) 35%, var(--theme-line));
   border-radius: 8px;
   background: color-mix(in srgb, var(--danger, #c44) 8%, var(--surface-main));
   color: var(--danger, #a33);

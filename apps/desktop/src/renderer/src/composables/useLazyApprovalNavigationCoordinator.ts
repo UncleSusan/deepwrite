@@ -1,9 +1,8 @@
 import type { ApprovalNavigationTarget } from "../utils/approvalNavigation";
 import type { ApprovalNavigationCoordinatorContext } from "./useApprovalNavigationCoordinator";
 
-type ApprovalNavigationCoordinatorModule = typeof import(
-  "./useApprovalNavigationCoordinator"
-);
+type ApprovalNavigationCoordinatorModule =
+  typeof import("./useApprovalNavigationCoordinator");
 type ApprovalNavigationCoordinator = ReturnType<
   ApprovalNavigationCoordinatorModule["useApprovalNavigationCoordinator"]
 >;
@@ -32,9 +31,7 @@ export function useLazyApprovalNavigationCoordinator(
   let disposed = false;
   let disposePromise: Promise<void> | null = null;
 
-  async function ensureCoordinator(): Promise<
-    ApprovalNavigationCoordinator | null
-  > {
+  async function ensureCoordinator(): Promise<ApprovalNavigationCoordinator | null> {
     if (disposed) return null;
     if (!coordinatorPromise) {
       const attempt = load().then(({ useApprovalNavigationCoordinator }) => {

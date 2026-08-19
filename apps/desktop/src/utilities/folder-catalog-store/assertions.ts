@@ -1,4 +1,9 @@
-import type { Book, CatalogSnapshot, CreateScriptBookInput, CreateShortBookInput } from "@deepwrite/contracts";
+import type {
+  Book,
+  CatalogSnapshot,
+  CreateScriptBookInput,
+  CreateShortBookInput
+} from "@deepwrite/contracts";
 import {
   CATALOG_PROJECT_DOMAINS,
   FolderCatalogConflictError,
@@ -13,10 +18,7 @@ import {
 export function assertBookLibraryReferences(
   book: Pick<
     Book,
-    | "title"
-    | "bookType"
-    | "linkedMaterialIdsByKind"
-    | "linkedSkillIdsByKind"
+    "title" | "bookType" | "linkedMaterialIdsByKind" | "linkedSkillIdsByKind"
   >,
   snapshot: Pick<CatalogSnapshot, "materials" | "skills">
 ): void {
@@ -30,7 +32,9 @@ export function assertBookLibraryReferences(
     for (const materialId of materialIds) {
       const material = materials.get(materialId);
       if (!material) {
-        throw new Error(`书籍「${book.title}」关联了不存在的素材库：${materialId}`);
+        throw new Error(
+          `书籍「${book.title}」关联了不存在的素材库：${materialId}`
+        );
       }
       if (material.materialKind !== "mixed" && material.materialKind !== kind) {
         throw new Error(`素材库「${material.title}」不能关联到 ${kind} 分类。`);
@@ -41,7 +45,9 @@ export function assertBookLibraryReferences(
     for (const skillId of skillIds) {
       const skill = skills.get(skillId);
       if (!skill) {
-        throw new Error(`书籍「${book.title}」绑定了不存在的技能库：${skillId}`);
+        throw new Error(
+          `书籍「${book.title}」绑定了不存在的技能库：${skillId}`
+        );
       }
       if (skill.skillKind !== kind) {
         throw new Error(`技能库「${skill.title}」不能绑定到 ${kind} 分类。`);
@@ -59,8 +65,12 @@ export function assertBaseRevision(
   }
 }
 
-export function assertUniqueGroupMembers(libraryIds: Array<string | undefined>): void {
-  const selected = libraryIds.filter((libraryId): libraryId is string => Boolean(libraryId));
+export function assertUniqueGroupMembers(
+  libraryIds: Array<string | undefined>
+): void {
+  const selected = libraryIds.filter((libraryId): libraryId is string =>
+    Boolean(libraryId)
+  );
   if (new Set(selected).size !== selected.length) {
     throw new Error("同一个资料库不能在一个分组中绑定到多个分类。");
   }
@@ -78,7 +88,8 @@ export function assertLibraryNotInAnotherGroup(
 ): void {
   const existing = groups.find(
     (group) =>
-      group.id !== currentGroupId && Object.values(group.members).includes(libraryId)
+      group.id !== currentGroupId &&
+      Object.values(group.members).includes(libraryId)
   );
   if (existing) {
     throw new Error(
@@ -144,7 +155,9 @@ export function libraryProjectDomain(
   return domain === "material" ? "material-library" : "skill-library";
 }
 
-export function parseUnregisterDomain(value: unknown): FolderCatalogUnregisterDomain {
+export function parseUnregisterDomain(
+  value: unknown
+): FolderCatalogUnregisterDomain {
   if (
     value !== "book" &&
     value !== "material" &&
@@ -163,7 +176,9 @@ export function parseDeletableProjectDomain(
   value: unknown
 ): "book" | FolderCatalogLibraryDomain {
   if (value !== "book" && value !== "material" && value !== "skill") {
-    throw new Error("deletable project domain must be book, material, or skill.");
+    throw new Error(
+      "deletable project domain must be book, material, or skill."
+    );
   }
   return value;
 }
@@ -202,7 +217,9 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function isFolderDomain(value: unknown): value is FolderCatalogProjectDomain {
+export function isFolderDomain(
+  value: unknown
+): value is FolderCatalogProjectDomain {
   return (
     typeof value === "string" &&
     (CATALOG_PROJECT_DOMAINS as readonly string[]).includes(value)

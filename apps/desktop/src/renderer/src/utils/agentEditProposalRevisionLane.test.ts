@@ -144,7 +144,9 @@ describe("agent edit proposal revision lane", () => {
       durableRevision: "R0",
       generation: 3
     });
-    expect(readyAutomaticAgentEditProposalGeneration(stagedV3.lane)).toBeUndefined();
+    expect(
+      readyAutomaticAgentEditProposalGeneration(stagedV3.lane)
+    ).toBeUndefined();
   });
 
   it("uses generation and token CAS and drains the latest auto proposal after V1", () => {
@@ -211,7 +213,9 @@ describe("agent edit proposal revision lane", () => {
       approvalMode: "request-approval",
       proposedRevision: "R2"
     });
-    expect(readyAutomaticAgentEditProposalGeneration(completed.lane)).toBeUndefined();
+    expect(
+      readyAutomaticAgentEditProposalGeneration(completed.lane)
+    ).toBeUndefined();
   });
 
   it("prevents a stale UI action from approving a coalesced newer generation", () => {

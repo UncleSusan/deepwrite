@@ -247,10 +247,7 @@ function fixtureWorldbuildingIndex(): LongWorkspaceIndexSnapshot {
             order: 2,
             file: file(
               longWorldbuildingItemFileId("worlditem_blood"),
-              longWorldbuildingItemContentPath(
-                "world_magic",
-                "worlditem_blood"
-              )
+              longWorldbuildingItemContentPath("world_magic", "worlditem_blood")
             )
           }
         ]
@@ -341,10 +338,10 @@ function committedFixtureIndex(): LongWorkspaceIndexSnapshot {
   index.chapters[0]!.commitId = "commit_one";
   index.ledger.committedThroughChapterId = "chapter_one";
   index.ledger.commits = [
-      {
-        id: "commit_one",
-        mode: "structured",
-        sequence: 1,
+    {
+      id: "commit_one",
+      mode: "structured",
+      sequence: 1,
       chapterCardId: "chapter_one",
       committedAt: NOW,
       reversible: true,
@@ -456,7 +453,7 @@ export {
   toolByName,
   twoWrittenChaptersIndex,
   vi,
-  workspace,
+  workspace
 };
 export type {
   AgentTool,
@@ -466,5 +463,5 @@ export type {
   LongCommandExecutor,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceRoot,
-  LongWorkspaceRuntimeContext,
+  LongWorkspaceRuntimeContext
 };

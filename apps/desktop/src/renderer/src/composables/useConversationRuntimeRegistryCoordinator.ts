@@ -11,9 +11,7 @@ import type {
   ConversationPersistenceAdapter,
   ConversationPersistenceOptions
 } from "../stores/conversationStore";
-import {
-  RUN_PREFERENCES_PERSISTENCE_KEY
-} from "../stores/conversationStore";
+import { RUN_PREFERENCES_PERSISTENCE_KEY } from "../stores/conversationStore";
 import type {
   AgentModelSelection,
   AgentRunPreferences,
@@ -47,9 +45,7 @@ export interface ConversationRuntimeRegistryStorePort {
   scopeForKey(key: string): string | undefined;
   setControllerScope(key: string, scope: string): boolean;
   listControllers(): AgentConversationController[];
-  controllerEntries(): Iterable<
-    readonly [string, AgentConversationController]
-  >;
+  controllerEntries(): Iterable<readonly [string, AgentConversationController]>;
   setSessionAgentModelSelection(
     selection: AgentModelSelection | undefined,
     options?: {
@@ -70,10 +66,7 @@ export interface ConversationRuntimeRegistryStorePort {
     options?: { persist?: boolean }
   ): boolean;
   schedulePersistence<Value>(key: string, value: Value): void;
-  schedulePersistenceFactory(
-    key: string,
-    valueFactory: () => unknown
-  ): void;
+  schedulePersistenceFactory(key: string, valueFactory: () => unknown): void;
   loadPersistence<Value>(key: string): Promise<Value | undefined>;
   removePersistence(key: string): Promise<void>;
   hydratePreferences(): Promise<void>;
@@ -87,9 +80,7 @@ export interface ConversationRuntimeRegistryCoordinatorOptions {
   createController(
     hooks: ConversationControllerPersistenceHooks
   ): AgentConversationController;
-  resumeRecovered(
-    conversations: readonly AgentConversationController[]
-  ): void;
+  resumeRecovered(conversations: readonly AgentConversationController[]): void;
   notifications: ConversationRuntimeRegistryNotifications;
 }
 
@@ -116,15 +107,12 @@ export function useConversationRuntimeRegistryCoordinator(
 
   options.store.configurePersistenceAdapter(options.persistenceAdapter, {
     onError: () => {
-      warnPersistenceOnce(
-        "历史对话暂时无法保存到本机，本次运行中仍可继续切换"
-      );
+      warnPersistenceOnce("历史对话暂时无法保存到本机，本次运行中仍可继续切换");
     }
   });
 
   function trackHydrate<Value>(operation: Promise<Value>): Promise<Value> {
-    let tracked!: Promise<Value>;
-    tracked = operation.then(
+    const tracked = operation.then(
       (value) => {
         inFlightHydrates.delete(tracked);
         return value;
@@ -263,18 +251,11 @@ export function useConversationRuntimeRegistryCoordinator(
       }
     } catch {
       if (controllerIsCurrent(key, conversation, generation)) {
-        warnPersistenceOnce(
-          "历史对话暂时无法读取，本次运行仍可正常使用"
-        );
+        warnPersistenceOnce("历史对话暂时无法读取，本次运行仍可正常使用");
       }
     } finally {
       conversation.releasePersistenceEmits();
-      applyConversationRuntimeSettings(
-        key,
-        scope,
-        conversation,
-        generation
-      );
+      applyConversationRuntimeSettings(key, scope, conversation, generation);
     }
   }
 
@@ -295,8 +276,7 @@ export function useConversationRuntimeRegistryCoordinator(
     }
 
     const persistenceKey = conversationHistoryPersistenceKey(key);
-    let created!: AgentConversationController;
-    created = options.createController({
+    const created = options.createController({
       onPersistenceChange: () => {
         if (!controllerIsCurrent(key, created)) return;
         options.store.schedulePersistenceFactory(
@@ -304,8 +284,7 @@ export function useConversationRuntimeRegistryCoordinator(
           created.capturePersistenceSnapshot
         );
       },
-      onPersistenceRemove: () =>
-        options.store.removePersistence(persistenceKey)
+      onPersistenceRemove: () => options.store.removePersistence(persistenceKey)
     });
     options.store.registerController(key, scope, created, {
       applyPreferences: false
@@ -314,13 +293,7 @@ export function useConversationRuntimeRegistryCoordinator(
       const generation = lifecycleGeneration;
       created.holdPersistenceEmits();
       void trackHydrate(
-        hydrateConversation(
-          key,
-          scope,
-          persistenceKey,
-          created,
-          generation
-        )
+        hydrateConversation(key, scope, persistenceKey, created, generation)
       );
     } else {
       applyConversationRuntimeSettings(key, scope, created);

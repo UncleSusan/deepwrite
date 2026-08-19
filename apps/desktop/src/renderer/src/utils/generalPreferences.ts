@@ -1,4 +1,5 @@
-export const GENERAL_PREFERENCES_STORAGE_KEY = "deepwrite:general-preferences:v1";
+export const GENERAL_PREFERENCES_STORAGE_KEY =
+  "deepwrite:general-preferences:v1";
 
 export interface GeneralPreferences {
   autoSave: boolean;
@@ -13,7 +14,9 @@ interface GeneralPreferencesStorage {
   setItem(key: string, value: string): void;
 }
 
-export function parseGeneralPreferences(storedValue: string | null): GeneralPreferences {
+export function parseGeneralPreferences(
+  storedValue: string | null
+): GeneralPreferences {
   if (!storedValue) return { ...DEFAULT_GENERAL_PREFERENCES };
   try {
     const parsed: unknown = JSON.parse(storedValue);
@@ -36,7 +39,9 @@ export function loadGeneralPreferences(
   storage: Pick<GeneralPreferencesStorage, "getItem">
 ): GeneralPreferences {
   try {
-    return parseGeneralPreferences(storage.getItem(GENERAL_PREFERENCES_STORAGE_KEY));
+    return parseGeneralPreferences(
+      storage.getItem(GENERAL_PREFERENCES_STORAGE_KEY)
+    );
   } catch {
     return { ...DEFAULT_GENERAL_PREFERENCES };
   }

@@ -58,12 +58,7 @@ export interface AgentEditProposal {
   title: string;
   summary: string;
   status:
-    | "pending"
-    | "accepting"
-    | "accepted"
-    | "rejected"
-    | "conflict"
-    | "error";
+    "pending" | "accepting" | "accepted" | "rejected" | "conflict" | "error";
   baseRevision: string;
   proposedRevision: string;
   proposedText?: string | undefined;
@@ -176,10 +171,7 @@ export interface AgentToolTrace {
 }
 
 export type AgentSubagentRunStatus =
-  | "running"
-  | "completed"
-  | "error"
-  | "stopped";
+  "running" | "completed" | "error" | "stopped";
 
 export interface AgentRetryMetadata {
   state: "scheduled" | "trying";

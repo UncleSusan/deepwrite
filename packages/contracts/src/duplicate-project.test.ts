@@ -29,13 +29,19 @@ describe("project duplicate contracts", () => {
   it("includes catalog and long duplicate commands in the system union", () => {
     expect(
       CommandEnvelopeSchema.parse(
-        createEnvelope("catalog.duplicateProject", {
-          domain: "book",
-          projectId: "book-1"
-        }, { id: "duplicate-catalog" })
+        createEnvelope(
+          "catalog.duplicateProject",
+          {
+            domain: "book",
+            projectId: "book-1"
+          },
+          { id: "duplicate-catalog" }
+        )
       ).type
     ).toBe("catalog.duplicateProject");
-    expect(LongDuplicateBookInputSchema.parse({ bookId: "longbook_one" })).toEqual({
+    expect(
+      LongDuplicateBookInputSchema.parse({ bookId: "longbook_one" })
+    ).toEqual({
       bookId: "longbook_one"
     });
     expect(

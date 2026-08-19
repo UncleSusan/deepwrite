@@ -45,10 +45,7 @@ export type LearningImitationRunStatus =
   | "error";
 
 export type LearningImitationMessageStatus =
-  | "streaming"
-  | "completed"
-  | "stopped"
-  | "error";
+  "streaming" | "completed" | "stopped" | "error";
 
 export interface LearningImitationChatMessage {
   id: string;
@@ -64,10 +61,7 @@ export interface LearningImitationChatMessage {
 }
 
 export type LearningImitationToolStatus =
-  | "preparing"
-  | "running"
-  | "completed"
-  | "error";
+  "preparing" | "running" | "completed" | "error";
 
 export interface LearningImitationToolState {
   id: string;
@@ -112,7 +106,10 @@ export interface LearningImitationController {
   error: Readonly<Ref<string | null>>;
   isBusy: ComputedRef<boolean>;
   canStop: ComputedRef<boolean>;
-  setConfiguredModels(models: readonly ModelConfig[], defaultModelId?: string): void;
+  setConfiguredModels(
+    models: readonly ModelConfig[],
+    defaultModelId?: string
+  ): void;
   addDocuments(nextDocuments: readonly LearningImitationDocument[]): boolean;
   removeDocument(documentId: string): boolean;
   clearDocuments(): boolean;
@@ -150,7 +147,9 @@ function fallbackId(prefix: string): string {
   return createId(prefix);
 }
 
-function cloneDocument(document: LearningImitationDocument): LearningImitationDocument {
+function cloneDocument(
+  document: LearningImitationDocument
+): LearningImitationDocument {
   return { ...document };
 }
 
@@ -162,7 +161,9 @@ function cloneResult(result: LearningImitationResult): LearningImitationResult {
   };
 }
 
-function isRuntimeEvent(event: SystemEventEnvelope): event is LearningImitationRuntimeEvent {
+function isRuntimeEvent(
+  event: SystemEventEnvelope
+): event is LearningImitationRuntimeEvent {
   return (
     event.type === "agent.turn_started" ||
     event.type === "agent.retry_scheduled" ||
@@ -178,7 +179,9 @@ function isRuntimeEvent(event: SystemEventEnvelope): event is LearningImitationR
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message.trim() ? error.message : fallback;
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : fallback;
 }
 
 export function useLearningImitation(
@@ -205,10 +208,11 @@ export function useLearningImitation(
   const lastCompletedStage = ref<LearningImitationStageId | null>(null);
   const status = ref<LearningImitationRunStatus>("idle");
   const error = ref<string | null>(null);
-  const isBusy = computed(() =>
-    status.value === "starting" ||
-    status.value === "running" ||
-    status.value === "stopping"
+  const isBusy = computed(
+    () =>
+      status.value === "starting" ||
+      status.value === "running" ||
+      status.value === "stopping"
   );
   const canStop = computed(() => isBusy.value);
 
@@ -233,7 +237,10 @@ export function useLearningImitation(
   ): void {
     configuredModelIds.clear();
     models.forEach((model) => configuredModelIds.add(model.id));
-    if (selectedModelId.value && configuredModelIds.has(selectedModelId.value)) {
+    if (
+      selectedModelId.value &&
+      configuredModelIds.has(selectedModelId.value)
+    ) {
       return;
     }
     selectedModelId.value =
@@ -251,7 +258,9 @@ export function useLearningImitation(
     nextDocuments: readonly LearningImitationDocument[]
   ): boolean {
     if (isBusy.value) {
-      return setMutationError("学习任务运行中，不能修改本次运行使用的样本文档。");
+      return setMutationError(
+        "学习任务运行中，不能修改本次运行使用的样本文档。"
+      );
     }
     try {
       documents.value = LearningImitationDocumentsSchema.parse([
@@ -267,7 +276,9 @@ export function useLearningImitation(
 
   function removeDocument(documentId: string): boolean {
     if (isBusy.value) {
-      return setMutationError("学习任务运行中，不能移除本次运行使用的样本文档。");
+      return setMutationError(
+        "学习任务运行中，不能移除本次运行使用的样本文档。"
+      );
     }
     documents.value = documents.value.filter(
       (document) => document.id !== documentId
@@ -278,7 +289,9 @@ export function useLearningImitation(
 
   function clearDocuments(): boolean {
     if (isBusy.value) {
-      return setMutationError("学习任务运行中，不能清空本次运行使用的样本文档。");
+      return setMutationError(
+        "学习任务运行中，不能清空本次运行使用的样本文档。"
+      );
     }
     documents.value = [];
     error.value = null;
@@ -338,12 +351,14 @@ export function useLearningImitation(
   ): LearningImitationChatMessage | undefined {
     const stageId = runningStage.value;
     if (!stageId) return undefined;
-    const existing = [...messages.value].reverse().find(
-      (message) =>
-        message.role === "assistant" &&
-        message.runId === runId &&
-        (!messageId || message.messageId === messageId)
-    );
+    const existing = [...messages.value]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === "assistant" &&
+          message.runId === runId &&
+          (!messageId || message.messageId === messageId)
+      );
     if (existing) return existing;
     const created: LearningImitationChatMessage = {
       id: createId("learning_imitation_message"),
@@ -412,7 +427,8 @@ export function useLearningImitation(
     finishedRunIds.add(runId);
     const timestamp = now();
     for (const chatMessage of messages.value) {
-      if (chatMessage.runId !== runId || chatMessage.status !== "streaming") continue;
+      if (chatMessage.runId !== runId || chatMessage.status !== "streaming")
+        continue;
       chatMessage.status =
         nextStatus === "completed"
           ? "completed"
@@ -440,7 +456,8 @@ export function useLearningImitation(
     observedRunId = null;
     stopRequested = false;
     status.value = nextStatus;
-    error.value = nextStatus === "error" ? message ?? "学习任务运行失败。" : null;
+    error.value =
+      nextStatus === "error" ? (message ?? "学习任务运行失败。") : null;
   }
 
   async function requestAbort(runId: string): Promise<boolean> {
@@ -494,7 +511,11 @@ export function useLearningImitation(
     if (!modelId) {
       return setMutationError("请先在模型设置中配置并选择模型。");
     }
-    if (modelId && configuredModelIds.size && !configuredModelIds.has(modelId)) {
+    if (
+      modelId &&
+      configuredModelIds.size &&
+      !configuredModelIds.has(modelId)
+    ) {
       return setMutationError("所选模型已不在当前模型列表中，请重新选择。");
     }
 
@@ -523,8 +544,7 @@ export function useLearningImitation(
         sessionId: sessionId.value,
         message: prompt,
         modelId,
-        writeApprovalMode:
-          startOptions.writeApprovalMode ?? "request-approval",
+        writeApprovalMode: startOptions.writeApprovalMode ?? "request-approval",
         workspaceContext: {
           learningImitation: {
             stageId,
@@ -533,7 +553,10 @@ export function useLearningImitation(
           }
         }
       });
-      if (pendingAttemptId !== attemptId && !finishedRunIds.has(accepted.runId)) {
+      if (
+        pendingAttemptId !== attemptId &&
+        !finishedRunIds.has(accepted.runId)
+      ) {
         return false;
       }
       if (accepted.sessionId !== sessionId.value) {
@@ -544,12 +567,14 @@ export function useLearningImitation(
       }
       if (finishedRunIds.has(accepted.runId)) return true;
       if (!bindRun(accepted.runId)) return false;
-      const userMessage = [...messages.value].reverse().find(
-        (message) =>
-          message.role === "user" &&
-          message.stageId === stageId &&
-          message.runId === undefined
-      );
+      const userMessage = [...messages.value]
+        .reverse()
+        .find(
+          (message) =>
+            message.role === "user" &&
+            message.stageId === stageId &&
+            message.runId === undefined
+        );
       if (userMessage) userMessage.runId = accepted.runId;
       if (stopRequested) {
         status.value = "stopping";
@@ -600,7 +625,10 @@ export function useLearningImitation(
     if (!bindRun(runId)) return;
     rememberHandledEvent(event.id);
 
-    if (event.type === "agent.turn_started" || event.type === "agent.retry_scheduled") {
+    if (
+      event.type === "agent.turn_started" ||
+      event.type === "agent.retry_scheduled"
+    ) {
       return;
     }
 
@@ -679,7 +707,10 @@ export function useLearningImitation(
           event.payload.update
         );
       } catch (cause: unknown) {
-        const message = errorMessage(cause, "学习结果超过可保存范围，已保留此前预览。");
+        const message = errorMessage(
+          cause,
+          "学习结果超过可保存范围，已保留此前预览。"
+        );
         error.value = message;
         if (tool) {
           tool.status = "error";

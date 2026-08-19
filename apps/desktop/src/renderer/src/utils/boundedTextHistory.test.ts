@@ -193,9 +193,7 @@ describe("bounded text history", () => {
 
   it("counts whitespace without allocating a filtered document copy", () => {
     expect(
-      countNonWhitespaceCharacters(
-        "甲 乙\t丙\n丁\u00a0戊\u3000己\ufeff庚"
-      )
+      countNonWhitespaceCharacters("甲 乙\t丙\n丁\u00a0戊\u3000己\ufeff庚")
     ).toBe(7);
   });
 });

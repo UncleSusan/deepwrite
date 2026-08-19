@@ -1,11 +1,5 @@
 <script setup lang="ts">
-import {
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  watch
-} from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type {
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
@@ -39,10 +33,7 @@ const emit = defineEmits<{
     payload: { sourceBookId: string; sourceTitle: string },
     completion: LongStructureMutationCompletion
   ];
-  saveAgentsMd: [
-    content: string,
-    completion: LongStructureMutationCompletion
-  ];
+  saveAgentsMd: [content: string, completion: LongStructureMutationCompletion];
 }>();
 
 const dialogElement = ref<HTMLElement | null>(null);
@@ -144,9 +135,7 @@ watch(
 );
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() =>
-  document.removeEventListener("keydown", handleKeydown)
-);
+onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>

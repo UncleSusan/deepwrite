@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../test-utils/sourceText";
 import source from "./WorkspaceShell.vue?raw";
 import featureModulesSource from "./components/WorkspaceFeatureModules.vue?raw";
 import featureHostSource from "./composables/useWorkspaceFeatureHostCoordinator.ts?raw";
@@ -30,7 +31,7 @@ describe("App agent-team integration", () => {
     expect(coordinatorSource).toContain("api.agentTeams.save(settings)");
     expect(source).toContain('@save-agent-team="saveAgentTeamSettings"');
     expect(featureModulesSource).toContain(
-      '@save="emit(\'saveAgentTeam\', $event)"'
+      "@save=\"emit('saveAgentTeam', $event)\""
     );
     expect(source).not.toContain(':agent-team-settings="agentTeamSettings"');
   });
@@ -38,21 +39,17 @@ describe("App agent-team integration", () => {
   it("retains controller state without retaining inactive feature DOM", () => {
     expect(source).not.toContain("<KeepAlive>");
     expect(featureModulesSource).toContain(
-      'v-else-if="module.kind === \'agent-team\'"'
+      "v-else-if=\"module.kind === 'agent-team'\""
     );
-    expect(source).toContain('v-if="activeFeature === \'conversation\'"');
+    expect(source).toContain("v-if=\"activeFeature === 'conversation'\"");
     expect(featureModulesSource).not.toContain("v-show=");
     expect(featureHostSource).toContain("!settingsStore.agentTeamLoaded");
     expect(featureModulesSource).toContain(':load-error="module.loadError"');
-    expect(featureModulesSource).toContain(
-      '@retry="emit(\'retryAgentTeam\')"'
-    );
+    expect(featureModulesSource).toContain("@retry=\"emit('retryAgentTeam')\"");
   });
 
   it("returns to the writing workspace when a resource or conversation is selected", () => {
-    expect(featureHostSource).toContain(
-      "function showConversation(): void"
-    );
+    expect(featureHostSource).toContain("function showConversation(): void");
     expect(featureHostSource).toContain(
       'options.view.workspaceMain.value = "conversation"'
     );
@@ -71,7 +68,8 @@ describe("App agent-team integration", () => {
     expect(featureModulesSource).toContain(
       'class="learning-imitation-main-view"'
     );
-    expect(source).toContain(
+    expectSourceToContain(
+      source,
       ":active-primary-feature=\"chatAssistant.active.value ? 'chat-assistant' : activePrimaryFeature\""
     );
   });
@@ -90,7 +88,9 @@ describe("App agent-team integration", () => {
     expect(coordinatorSource).toContain(
       "settingsStore.ensureLongAgentTeamsLoaded"
     );
-    expect(featureModulesSource).toContain(':long-loading="module.longLoading"');
+    expect(featureModulesSource).toContain(
+      ':long-loading="module.longLoading"'
+    );
     expect(featureModulesSource).toContain(':long-saving="module.longSaving"');
     expect(featureModulesSource).toContain(
       ':long-load-error="module.longLoadError"'
@@ -140,7 +140,9 @@ describe("App agent-team integration", () => {
     expect(featureHostSource).toContain(
       "options.loaders.ensureLongAgentSettingsLoaded()"
     );
-    expect(lifecycleSource).not.toContain("loadShortAndScriptAgentTeamSettings");
+    expect(lifecycleSource).not.toContain(
+      "loadShortAndScriptAgentTeamSettings"
+    );
     expect(lifecycleSource).not.toContain("loadLearningImitationSettings");
     expect(lifecycleSource).not.toContain("loadWorkspaceDirectory");
     expect(

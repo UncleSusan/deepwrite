@@ -34,12 +34,12 @@ function createDependencies(order: string[] = []) {
     navigateToWorkspaceStage: vi.fn(() => order.push("navigation")),
     allConversations: vi.fn(() => [conversation]),
     scheduleQueuedAgentEdits: vi.fn((predicate) => {
-      expect(predicate({ sessionId: "session-current", runId: "run-current" })).toBe(
-        true
-      );
-      expect(predicate({ sessionId: "session-other", runId: "run-current" })).toBe(
-        false
-      );
+      expect(
+        predicate({ sessionId: "session-current", runId: "run-current" })
+      ).toBe(true);
+      expect(
+        predicate({ sessionId: "session-other", runId: "run-current" })
+      ).toBe(false);
       order.push("queued-edits");
     }),
     onAsyncError: vi.fn()
@@ -82,29 +82,23 @@ describe("workspace system event routes", () => {
         payload: { agentId: "plot_design" }
       }
     ],
-    [
-      "world",
-      { type: "long.worldbuilding_file_proposal", payload: {} }
-    ],
-    [
-      "character",
-      { type: "long.character_file_proposal", payload: {} }
-    ],
+    ["world", { type: "long.worldbuilding_file_proposal", payload: {} }],
+    ["character", { type: "long.character_file_proposal", payload: {} }],
     ["draft", { type: "long.chapter_write_proposal", payload: {} }]
-  ])("routes a %s proposal only through its specialized staging path", (
-    expectedRoute,
-    proposal
-  ) => {
-    const center = createSystemEventCenter();
-    const order: string[] = [];
-    const { dependencies } = createDependencies(order);
-    registerWorkspaceSystemEventRoutes(center, dependencies);
+  ])(
+    "routes a %s proposal only through its specialized staging path",
+    (expectedRoute, proposal) => {
+      const center = createSystemEventCenter();
+      const order: string[] = [];
+      const { dependencies } = createDependencies(order);
+      registerWorkspaceSystemEventRoutes(center, dependencies);
 
-    center.publish(event(proposal));
+      center.publish(event(proposal));
 
-    expect(order).toContain(expectedRoute);
-    expect(dependencies.handleLongWorkspaceProposal).not.toHaveBeenCalled();
-  });
+      expect(order).toContain(expectedRoute);
+      expect(dependencies.handleLongWorkspaceProposal).not.toHaveBeenCalled();
+    }
+  );
 
   it("reports rejected async proposal handlers without interrupting delivery", async () => {
     const center = createSystemEventCenter();

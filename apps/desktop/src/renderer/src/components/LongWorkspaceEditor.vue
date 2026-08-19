@@ -1,12 +1,5 @@
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  watch
-} from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   type LongLedgerCommitIndexEntry,
   type LongArcId,
@@ -18,18 +11,14 @@ import {
   type LongWorkspaceOperationBatch,
   type LongWriteDocumentResult
 } from "@deepwrite/contracts";
-import { uiMessage } from "../ui-feedback";
 import { LONG_EDITOR_LIST_MIN_WIDTH } from "../utils/longEditorPanePreferences";
 import { countNonWhitespaceCharacters } from "../utils/boundedTextHistory";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
 import {
   isEditableLongFile,
   type LongStructureMutationCompletion,
-  type LongWorkspaceFileRole,
-  type LongWorkspaceSelection,
-  type LongWorkspaceSelectionFile
+  type LongWorkspaceSelection
 } from "../types/longWorkspace";
-import type { LongApprovalEditorFocus } from "../utils/approvalNavigation";
 import AppIcon from "./AppIcon.vue";
 import LongCharacterNavigation from "./LongCharacterNavigation.vue";
 import LongContinuityLedgerNavigation from "./LongContinuityLedgerNavigation.vue";
@@ -184,10 +173,7 @@ const currentEmptyCollection = computed<{
   action: "character" | "plotPoint" | "chapterCard";
 } | null>(() => {
   const selection = props.selection;
-  if (
-    currentIsCharacterGroup.value &&
-    selection?.characterTabs?.length === 0
-  ) {
+  if (currentIsCharacterGroup.value && selection?.characterTabs?.length === 0) {
     return {
       icon: "user",
       title: `还没有${selection.title}`,
@@ -307,8 +293,7 @@ const currentStructureTitleReadOnly = computed(() => {
 });
 const orderedBookLineVolumes = computed(() =>
   [...(props.workspaceIndex?.plot.volumes ?? [])].sort(
-    (left, right) =>
-      left.order - right.order || left.id.localeCompare(right.id)
+    (left, right) => left.order - right.order || left.id.localeCompare(right.id)
   )
 );
 const currentBookLineVolume = computed(
@@ -329,8 +314,8 @@ const currentChapterCard = computed(
       ({ id }) => id === props.selection?.chapterCardId
     ) ?? null
 );
-const currentNavigationDeleteTarget = computed<LongNavigationDeleteTarget | null>(
-  () => {
+const currentNavigationDeleteTarget =
+  computed<LongNavigationDeleteTarget | null>(() => {
     const index = props.workspaceIndex;
     const selection = props.selection;
     if (!index || !selection) return null;
@@ -393,14 +378,13 @@ const currentNavigationDeleteTarget = computed<LongNavigationDeleteTarget | null
       };
     }
     return null;
-  }
-);
+  });
 const currentVolumeOutlineDraft = computed(() => {
   const volumeId =
     currentIsBookLineWorkspace.value &&
     activeBookLineContentTab.value === "outline"
-    ? currentBookLineVolume.value?.id
-    : undefined;
+      ? currentBookLineVolume.value?.id
+      : undefined;
   return volumeId ? volumeOutlineDrafts.value[volumeId] : undefined;
 });
 const currentPlotPointDraft = computed(() => {
@@ -414,10 +398,10 @@ const currentChapterCardCommitted = computed(() => {
   const chapterCardId = currentChapterCard.value?.id;
   return Boolean(
     chapterCardId &&
-      props.workspaceIndex?.chapters.some(
-        (entry) =>
-          entry.chapterCardId === chapterCardId && entry.commitId !== null
-      )
+    props.workspaceIndex?.chapters.some(
+      (entry) =>
+        entry.chapterCardId === chapterCardId && entry.commitId !== null
+    )
   );
 });
 
@@ -470,42 +454,34 @@ const currentIsForeshadowingView = computed(
     currentIsVolumeForeshadowing.value ||
     currentIsPlotPointForeshadowing.value
 );
-const currentForeshadowingMode = computed<
-  "overview" | "volume" | "plotPoint"
->(() =>
+const currentForeshadowingMode = computed<"overview" | "volume" | "plotPoint">(
+  () =>
     currentIsForeshadowingWorkspace.value
       ? "overview"
       : currentIsVolumeForeshadowing.value
         ? "volume"
         : "plotPoint"
 );
-const currentForeshadowingVolumeId = computed(
-  () => {
-    if (currentIsVolumeForeshadowing.value) {
-      return currentBookLineVolume.value?.id;
-    }
-    if (currentIsPlotPointForeshadowing.value) {
-      return currentPlotPoint.value?.volumeId;
-    }
-    return undefined;
+const currentForeshadowingVolumeId = computed(() => {
+  if (currentIsVolumeForeshadowing.value) {
+    return currentBookLineVolume.value?.id;
   }
-);
+  if (currentIsPlotPointForeshadowing.value) {
+    return currentPlotPoint.value?.volumeId;
+  }
+  return undefined;
+});
 const currentIsChapterCardContent = computed(
-  () =>
-    currentIsChapterCardWorkspace.value &&
-    currentChapterCard.value !== null
+  () => currentIsChapterCardWorkspace.value && currentChapterCard.value !== null
 );
 const currentIsStructuredText = computed(
   () => currentIsVolumeOutline.value || currentIsPlotPointSummary.value
 );
-const currentStoryPlots = computed(
-  () => props.selection?.storyPlots ?? []
-);
+const currentStoryPlots = computed(() => props.selection?.storyPlots ?? []);
 const currentStoryPlot = computed(
   () =>
-    currentStoryPlots.value.find(
-      ({ id }) => id === activeStoryPlotId.value
-    ) ?? null
+    currentStoryPlots.value.find(({ id }) => id === activeStoryPlotId.value) ??
+    null
 );
 const pendingStoryPlotDelete = computed(
   () =>
@@ -515,10 +491,7 @@ const pendingStoryPlotDelete = computed(
 );
 const isDocumentContentBusy = computed(() => {
   if (isDocumentSwitchPending.value) return true;
-  if (
-    currentIsStructuredText.value ||
-    currentIsForeshadowingView.value
-  ) {
+  if (currentIsStructuredText.value || currentIsForeshadowingView.value) {
     return false;
   }
   const state = currentState.value;
@@ -528,44 +501,39 @@ const currentReadOnly = computed(() => {
   const selectedFile = currentSelectionFile.value;
   return Boolean(
     props.locked ||
-      selectedFile?.readOnly ||
-      (selectedFile && !isEditableLongFile(selectedFile.file))
+    selectedFile?.readOnly ||
+    (selectedFile && !isEditableLongFile(selectedFile.file))
   );
 });
-const currentDirty = computed(
-  () => {
-    if (currentIsVolumeForeshadowing.value) {
-      const volumeId = currentBookLineVolume.value?.id;
-      const draft = volumeId
-        ? volumeOutlineDrafts.value[volumeId]
-        : undefined;
-      return Boolean(draft && draft.content !== draft.savedContent);
-    }
-    if (currentIsPlotPointForeshadowing.value) {
-      const plotPointId = currentPlotPoint.value?.id;
-      const summaryDraft = plotPointId
-        ? plotPointSummaryDrafts.value[plotPointId]
-        : undefined;
-      return Boolean(
-        summaryDraft && summaryDraft.content !== summaryDraft.savedContent
-      );
-    }
-    if (currentIsStructuredText.value) {
-      const draft =
-        currentPlotPointDraft.value ??
-        currentVolumeOutlineDraft.value;
-      return Boolean(draft && draft.content !== draft.savedContent);
-    }
-    return (
-      Boolean(currentState.value?.loaded) &&
-      currentState.value?.content !== currentState.value?.savedContent
+const currentDirty = computed(() => {
+  if (currentIsVolumeForeshadowing.value) {
+    const volumeId = currentBookLineVolume.value?.id;
+    const draft = volumeId ? volumeOutlineDrafts.value[volumeId] : undefined;
+    return Boolean(draft && draft.content !== draft.savedContent);
+  }
+  if (currentIsPlotPointForeshadowing.value) {
+    const plotPointId = currentPlotPoint.value?.id;
+    const summaryDraft = plotPointId
+      ? plotPointSummaryDrafts.value[plotPointId]
+      : undefined;
+    return Boolean(
+      summaryDraft && summaryDraft.content !== summaryDraft.savedContent
     );
   }
-);
+  if (currentIsStructuredText.value) {
+    const draft =
+      currentPlotPointDraft.value ?? currentVolumeOutlineDraft.value;
+    return Boolean(draft && draft.content !== draft.savedContent);
+  }
+  return (
+    Boolean(currentState.value?.loaded) &&
+    currentState.value?.content !== currentState.value?.savedContent
+  );
+});
 const currentStaleRecovery = computed<LongEditorRecoveryRecord | null>(() => {
   const selectedFile = currentSelectionFile.value;
   return selectedFile
-    ? staleRecoveryByKey.value[stateKey(selectedFile.file.id)] ?? null
+    ? (staleRecoveryByKey.value[stateKey(selectedFile.file.id)] ?? null)
     : null;
 });
 const currentStaleRecoveryPreview = computed(() => {
@@ -579,8 +547,7 @@ const currentIsWorldbuildingList = computed(
 );
 const currentWorldbuildingItemLayout = computed(
   () =>
-    props.workspaceIndex?.featureSettings.worldbuildingItemLayout ??
-    "top-tabs"
+    props.workspaceIndex?.featureSettings.worldbuildingItemLayout ?? "top-tabs"
 );
 const currentUsesLeftTreeWorldbuilding = computed(
   () =>
@@ -607,7 +574,8 @@ const currentPlotItemLayout = computed(
 );
 const currentUsesLeftTreeCharacter = computed(
   () =>
-    currentIsCharacterGroup.value && currentSharedItemLayout.value === "left-tree"
+    currentIsCharacterGroup.value &&
+    currentSharedItemLayout.value === "left-tree"
 );
 const currentUsesLeftTreePlot = computed(
   () =>
@@ -623,11 +591,13 @@ const currentUsesLeftTreeContinuity = computed(
 );
 const currentUsesTopCharacterTabs = computed(
   () =>
-    currentIsCharacterGroup.value && currentSharedItemLayout.value === "top-tabs"
+    currentIsCharacterGroup.value &&
+    currentSharedItemLayout.value === "top-tabs"
 );
 const currentUsesRightCharacterList = computed(
   () =>
-    currentIsCharacterGroup.value && currentSharedItemLayout.value === "right-list"
+    currentIsCharacterGroup.value &&
+    currentSharedItemLayout.value === "right-list"
 );
 const currentCharacterNavigationItems = computed(
   () => props.selection?.characterTabs ?? []
@@ -641,7 +611,8 @@ const currentUsesTopPlotTabs = computed(
 );
 const currentUsesRightBookLineList = computed(
   () =>
-    currentIsBookLineWorkspace.value && currentPlotItemLayout.value === "right-list"
+    currentIsBookLineWorkspace.value &&
+    currentPlotItemLayout.value === "right-list"
 );
 const currentUsesRightPlotPointList = computed(
   () =>
@@ -741,20 +712,20 @@ const currentDocumentTitle = computed(
       : undefined) ??
     (currentIsBookLineWorkspace.value
       ? "全书总纲"
-      : props.selection?.title ?? "")
+      : (props.selection?.title ?? ""))
 );
 const currentDocumentFormat = computed(() =>
   currentIsChapterCardContent.value
     ? "章卡内容"
     : currentIsPlotPointStoryline.value
-        ? "故事情节"
-        : currentIsPlotPointSummary.value
-          ? "概要"
-          : currentIsVolumeOutline.value
-            ? "卷纲"
-            : currentIsBookLineWorkspace.value
-              ? "全书总纲"
-              : currentSelectionFile.value?.label ?? ""
+      ? "故事情节"
+      : currentIsPlotPointSummary.value
+        ? "概要"
+        : currentIsVolumeOutline.value
+          ? "卷纲"
+          : currentIsBookLineWorkspace.value
+            ? "全书总纲"
+            : (currentSelectionFile.value?.label ?? "")
 );
 const currentSaving = computed(
   () =>
@@ -762,9 +733,9 @@ const currentSaving = computed(
     structureTitleSaving.value ||
     Boolean(
       currentPlotPointDraft.value?.saving ??
-        currentVolumeOutlineDraft.value?.saving ??
-        currentState.value?.saving ??
-        false
+      currentVolumeOutlineDraft.value?.saving ??
+      currentState.value?.saving ??
+      false
     )
 );
 const documentEyebrow = computed(() => {
@@ -785,27 +756,25 @@ const documentEyebrow = computed(() => {
 const canUseTextTools = computed(
   () =>
     !currentIsForeshadowingView.value &&
-    (Boolean(currentState.value?.loaded) ||
-      currentIsStructuredText.value) &&
+    (Boolean(currentState.value?.loaded) || currentIsStructuredText.value) &&
     Boolean(
       !currentIsWorldbuildingList.value ||
-        currentWorldbuildingListState.value.error ||
-        currentSelectionFile.value
+      currentWorldbuildingListState.value.error ||
+      currentSelectionFile.value
     ) &&
-    Boolean(
-      !currentIsPlotPointStoryline.value || currentStoryPlot.value
-    )
+    Boolean(!currentIsPlotPointStoryline.value || currentStoryPlot.value)
 );
-const hasUnsavedChanges = computed(() =>
-  Object.values(documentStates.value).some(
-    (state) => state.loaded && state.content !== state.savedContent
-  ) ||
-  Object.values(volumeOutlineDrafts.value).some(
-    (draft) => draft.content !== draft.savedContent
-  ) ||
-  Object.values(plotPointSummaryDrafts.value).some(
-    (draft) => draft.content !== draft.savedContent
-  )
+const hasUnsavedChanges = computed(
+  () =>
+    Object.values(documentStates.value).some(
+      (state) => state.loaded && state.content !== state.savedContent
+    ) ||
+    Object.values(volumeOutlineDrafts.value).some(
+      (draft) => draft.content !== draft.savedContent
+    ) ||
+    Object.values(plotPointSummaryDrafts.value).some(
+      (draft) => draft.content !== draft.savedContent
+    )
 );
 
 function updateVisibleContent(content: string): void {
@@ -960,8 +929,6 @@ const {
 
 const structureHost = {} as LongEditorStructureHost;
 const {
-  activeRole,
-  activeFileId,
   activeWorldbuildingItemId,
   pendingWorldbuildingItemId,
   pendingWorldbuildingOverview,
@@ -970,7 +937,6 @@ const {
   pendingStoryPlotDeleteId,
   storyPlotActionMenuId,
   pendingCharacterId,
-  pendingRole,
   pendingFileId,
   foreshadowingWorkspace,
   activeBookLineVolumeId,
@@ -1002,13 +968,11 @@ const {
   closeStoryPlotActionMenu,
   reorderChapterCard,
   runStoryPlotMenuAction,
-  resetCharacterNameDraft,
   saveCharacterName,
   handleCharacterNameKeydown,
   resetStructureTitleDraft,
   saveStructureTitle,
   handleStructureTitleKeydown,
-  selectRole,
   selectWorkspaceFile,
   focusFile,
   focusTarget,
@@ -1030,7 +994,6 @@ const {
 });
 
 const {
-  heldSelectionFile,
   workspaceSavePending,
   currentState,
   isDocumentSwitchPending,
@@ -1090,10 +1053,7 @@ watch(
 
 const historyHost = {
   updateVisibleContent,
-  scrollEditorToRange: (
-    input: HTMLTextAreaElement,
-    start: number
-  ): void => {
+  scrollEditorToRange: (input: HTMLTextAreaElement, start: number): void => {
     findApi.scrollEditorToRange(input, start);
   }
 };
@@ -1123,7 +1083,8 @@ const {
   characterCount,
   stateKey,
   updateVisibleContent: (content) => historyHost.updateVisibleContent(content),
-  scrollEditorToRange: (input, start) => historyHost.scrollEditorToRange(input, start),
+  scrollEditorToRange: (input, start) =>
+    historyHost.scrollEditorToRange(input, start),
   clearRecoveryRecordForKey,
   scheduleRecoveryWrite
 });
@@ -1219,11 +1180,7 @@ defineExpose({
 });
 
 watch(
-  () =>
-    [
-      props.bookId,
-      props.workspaceIndex?.revision
-    ] as const,
+  () => [props.bookId, props.workspaceIndex?.revision] as const,
   () => {
     if (volumeDraftBookId !== props.bookId) {
       volumeDraftBookId = props.bookId;
@@ -1240,8 +1197,7 @@ watch(
       const existing = volumeOutlineDrafts.value[volume.id];
       next[volume.id] =
         existing &&
-        (existing.saving ||
-          existing.content !== existing.savedContent)
+        (existing.saving || existing.content !== existing.savedContent)
           ? existing
           : {
               content: volume.summary,
@@ -1321,9 +1277,7 @@ watch(
     ] as const,
   () => {
     const items = currentWorldbuildingItems.value;
-    if (
-      !items.some(({ id }) => id === pendingWorldbuildingDeleteId.value)
-    ) {
+    if (!items.some(({ id }) => id === pendingWorldbuildingDeleteId.value)) {
       pendingWorldbuildingDeleteId.value = null;
     }
   },
@@ -1369,33 +1323,30 @@ onBeforeUnmount(() => {
             class="long-editor-save-state"
             :class="{ 'is-dirty': currentDirty }"
           >
-            <AppIcon
-              :name="currentDirty ? 'save' : 'check'"
-              :size="13"
-            />
+            <AppIcon :name="currentDirty ? 'save' : 'check'" :size="13" />
             <span>
               {{
                 currentIsForeshadowingView
                   ? locked
-                    ? lockedReason ?? "编辑暂时锁定"
+                    ? (lockedReason ?? "编辑暂时锁定")
                     : currentDirty
                       ? "关联文本有未保存修改"
                       : "伏笔数据已同步"
                   : !currentSelectionFile && !currentIsStructuredText
-                  ? "已选择工作区上下文"
-                  : locked
-                    ? lockedReason ?? "编辑暂时锁定"
-                    : currentSelectionFile?.readOnly
-                      ? "只读记录"
-                      : isDocumentSwitchPending || currentState?.loading
-                        ? "正在读取"
-                        : currentSaving
-                          ? "正在保存到本机"
-                          : currentDirty
-                            ? "有未保存修改"
-                            : currentState?.loaded || currentIsStructuredText
-                              ? "已保存到本机"
-                              : "等待读取"
+                    ? "已选择工作区上下文"
+                    : locked
+                      ? (lockedReason ?? "编辑暂时锁定")
+                      : currentSelectionFile?.readOnly
+                        ? "只读记录"
+                        : isDocumentSwitchPending || currentState?.loading
+                          ? "正在读取"
+                          : currentSaving
+                            ? "正在保存到本机"
+                            : currentDirty
+                              ? "有未保存修改"
+                              : currentState?.loaded || currentIsStructuredText
+                                ? "已保存到本机"
+                                : "等待读取"
               }}
             </span>
           </span>
@@ -1485,9 +1436,7 @@ onBeforeUnmount(() => {
           class="long-worldbuilding-remove"
           type="button"
           aria-label="删除当前分卷"
-          :title="
-            currentBookLineVolume ? '删除当前分卷' : '请先选择一个分卷'
-          "
+          :title="currentBookLineVolume ? '删除当前分卷' : '请先选择一个分卷'"
           :disabled="locked || !currentNavigationDeleteTarget"
           @click="openNavigationDelete"
         >
@@ -1572,10 +1521,7 @@ onBeforeUnmount(() => {
         @delete-item="openWorldbuildingItemDelete"
       />
 
-      <div
-        v-if="!currentIsForeshadowingWorkspace"
-        class="long-editor-toolbar"
-      >
+      <div v-if="!currentIsForeshadowingWorkspace" class="long-editor-toolbar">
         <div
           v-if="currentIsBookLineWorkspace && currentBookLineVolume"
           class="long-editor-file-tabs"
@@ -1596,12 +1542,9 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="tab"
-            :aria-selected="
-              activeBookLineContentTab === 'foreshadowing'
-            "
+            :aria-selected="activeBookLineContentTab === 'foreshadowing'"
             :class="{
-              'is-active':
-                activeBookLineContentTab === 'foreshadowing'
+              'is-active': activeBookLineContentTab === 'foreshadowing'
             }"
             @click="selectBookLineContentTab('foreshadowing')"
           >
@@ -1688,10 +1631,7 @@ onBeforeUnmount(() => {
           class="long-toolbar-separator"
         />
         <div
-          v-if="
-            !currentIsForeshadowingView &&
-            !currentIsPlotPointStoryline
-          "
+          v-if="!currentIsForeshadowingView && !currentIsPlotPointStoryline"
           class="long-editor-view-tabs"
           role="tablist"
           aria-label="文本视图"
@@ -1718,17 +1658,11 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <span
-          v-if="
-            !currentIsForeshadowingView &&
-            !currentIsPlotPointStoryline
-          "
+          v-if="!currentIsForeshadowingView && !currentIsPlotPointStoryline"
           class="long-toolbar-separator"
         />
         <div
-          v-if="
-            !currentIsForeshadowingView &&
-            !currentIsPlotPointStoryline
-          "
+          v-if="!currentIsForeshadowingView && !currentIsPlotPointStoryline"
           ref="editorToolsElement"
           class="long-editor-text-tools"
           role="group"
@@ -1885,9 +1819,7 @@ onBeforeUnmount(() => {
         >
           <header class="long-story-plot-header">
             <div class="long-story-plot-heading">
-              <h2>
-                {{ currentPlotPoint?.title ?? "当前剧情点" }} · 故事情节
-              </h2>
+              <h2>{{ currentPlotPoint?.title ?? "当前剧情点" }} · 故事情节</h2>
             </div>
             <div class="long-story-plot-header-actions">
               <button
@@ -1943,10 +1875,7 @@ onBeforeUnmount(() => {
             />
 
             <main class="long-story-plot-detail" aria-label="故事情节正文">
-              <div
-                v-if="showEditorLoading"
-                class="long-editor-loading"
-              >
+              <div v-if="showEditorLoading" class="long-editor-loading">
                 <span class="long-loading-dot" />
                 <span>正在读取文件内容…</span>
               </div>
@@ -1969,15 +1898,11 @@ onBeforeUnmount(() => {
                 <input
                   :value="currentStoryPlot.title"
                   class="long-story-plot-title-input"
-                  :readonly="
-                    currentReadOnly || locked || isDocumentContentBusy
-                  "
+                  :readonly="currentReadOnly || locked || isDocumentContentBusy"
                   maxlength="256"
                   autocomplete="off"
                   aria-label="故事情节名称"
-                  @change="
-                    updateStoryPlotTitle(currentStoryPlot.id, $event)
-                  "
+                  @change="updateStoryPlotTitle(currentStoryPlot.id, $event)"
                 />
                 <div class="long-story-plot-text-toolbar">
                   <div
@@ -2038,16 +1963,13 @@ onBeforeUnmount(() => {
                     <button
                       class="long-format-button"
                       :class="{
-                        'is-active':
-                          findPanelOpen && findPanelMode === 'find'
+                        'is-active': findPanelOpen && findPanelMode === 'find'
                       }"
                       type="button"
                       aria-label="查找"
                       title="查找（⌘/Ctrl+F）"
                       :disabled="!canUseTextTools"
-                      :aria-pressed="
-                        findPanelOpen && findPanelMode === 'find'
-                      "
+                      :aria-pressed="findPanelOpen && findPanelMode === 'find'"
                       @mousedown.prevent
                       @click="toggleFindPanel('find')"
                     >
@@ -2111,9 +2033,7 @@ onBeforeUnmount(() => {
                     v-if="currentVisibleContent.trim()"
                     :content="currentVisibleContent"
                   />
-                  <p v-else class="is-empty">
-                    暂无故事情节正文
-                  </p>
+                  <p v-else class="is-empty">暂无故事情节正文</p>
                 </article>
               </div>
               <div v-else class="long-story-plot-detail-empty">
@@ -2124,10 +2044,7 @@ onBeforeUnmount(() => {
             </main>
           </div>
         </section>
-        <div
-          v-else-if="showEditorLoading"
-          class="long-editor-loading"
-        >
+        <div v-else-if="showEditorLoading" class="long-editor-loading">
           <span class="long-loading-dot" />
           <span>正在读取文件内容…</span>
         </div>
@@ -2241,9 +2158,7 @@ onBeforeUnmount(() => {
                 type="button"
                 :disabled="locked"
                 @click="
-                  openWorldbuildingItemDelete(
-                    currentWorldbuildingItem.id
-                  )
+                  openWorldbuildingItemDelete(currentWorldbuildingItem.id)
                 "
               >
                 删除条目
@@ -2326,9 +2241,9 @@ onBeforeUnmount(() => {
                       ? "暂无概要"
                       : currentIsChapterCardContent
                         ? "暂无章卡内容"
-                      : currentIsVolumeOutline
-                        ? "暂无卷纲"
-                        : "暂无正文"
+                        : currentIsVolumeOutline
+                          ? "暂无卷纲"
+                          : "暂无正文"
                 }}
               </p>
             </article>
@@ -2354,17 +2269,14 @@ onBeforeUnmount(() => {
         <div v-else class="long-editor-unavailable">
           <AppIcon
             :name="
-              selection.key.startsWith('character-group:')
-                ? 'user'
-                : 'file'
+              selection.key.startsWith('character-group:') ? 'user' : 'file'
             "
             :size="22"
           />
           <strong>{{ selection.title }}</strong>
           <span>
             {{
-              selection.description ??
-              "选择该目录中的文件后将在这里加载内容。"
+              selection.description ?? "选择该目录中的文件后将在这里加载内容。"
             }}
           </span>
         </div>
@@ -2422,7 +2334,12 @@ onBeforeUnmount(() => {
               <span>{{ orderedBookLineVolumes.length + 1 }}</span>
             </div>
             <div v-if="!currentReadOnly" class="long-entry-list-actions">
-              <button type="button" aria-label="新建分卷" title="新建分卷" @click="requestCreateVolume">
+              <button
+                type="button"
+                aria-label="新建分卷"
+                title="新建分卷"
+                @click="requestCreateVolume"
+              >
                 <AppIcon name="plus" :size="14" />
               </button>
               <button
@@ -2436,8 +2353,17 @@ onBeforeUnmount(() => {
             </div>
           </header>
           <div class="long-story-plot-list" role="list">
-            <article class="long-story-plot-card" :class="{ 'is-active': activeBookLineVolumeId === null }" role="listitem">
-              <button class="long-story-plot-card-main" type="button" :aria-pressed="activeBookLineVolumeId === null" @click="selectBookLineOverview">
+            <article
+              class="long-story-plot-card"
+              :class="{ 'is-active': activeBookLineVolumeId === null }"
+              role="listitem"
+            >
+              <button
+                class="long-story-plot-card-main"
+                type="button"
+                :aria-pressed="activeBookLineVolumeId === null"
+                @click="selectBookLineOverview"
+              >
                 <span class="long-story-plot-card-order">—</span>
                 <span class="long-story-plot-card-title">全书总纲</span>
               </button>
@@ -2449,9 +2375,19 @@ onBeforeUnmount(() => {
               :class="{ 'is-active': activeBookLineVolumeId === volume.id }"
               role="listitem"
             >
-              <button class="long-story-plot-card-main" type="button" :aria-pressed="activeBookLineVolumeId === volume.id" :title="volume.title" @click="selectBookLineVolume(volume.id)">
-                <span class="long-story-plot-card-order">{{ volume.order }}</span>
-                <span class="long-story-plot-card-title">{{ volume.title }}</span>
+              <button
+                class="long-story-plot-card-main"
+                type="button"
+                :aria-pressed="activeBookLineVolumeId === volume.id"
+                :title="volume.title"
+                @click="selectBookLineVolume(volume.id)"
+              >
+                <span class="long-story-plot-card-order">{{
+                  volume.order
+                }}</span>
+                <span class="long-story-plot-card-title">{{
+                  volume.title
+                }}</span>
               </button>
             </article>
           </div>
@@ -2467,10 +2403,21 @@ onBeforeUnmount(() => {
               <span>{{ selection.plotPointTabs?.length ?? 0 }}</span>
             </div>
             <div v-if="!currentReadOnly" class="long-entry-list-actions">
-              <button type="button" aria-label="新增剧情点" title="新增剧情点" :disabled="locked" @click="emit('createPlotPoint')">
+              <button
+                type="button"
+                aria-label="新增剧情点"
+                title="新增剧情点"
+                :disabled="locked"
+                @click="emit('createPlotPoint')"
+              >
                 <AppIcon name="plus" :size="14" />
               </button>
-              <button type="button" aria-label="删除当前剧情点" :disabled="locked || !currentNavigationDeleteTarget" @click="openNavigationDelete">
+              <button
+                type="button"
+                aria-label="删除当前剧情点"
+                :disabled="locked || !currentNavigationDeleteTarget"
+                @click="openNavigationDelete"
+              >
                 <AppIcon name="minus" :size="14" />
               </button>
             </div>
@@ -2483,9 +2430,17 @@ onBeforeUnmount(() => {
               :class="{ 'is-active': selection.plotPointId === plotPoint.id }"
               role="listitem"
             >
-              <button class="long-story-plot-card-main" type="button" :aria-pressed="selection.plotPointId === plotPoint.id" :title="plotPoint.label" @click="emit('selectPlotPoint', plotPoint.id)">
+              <button
+                class="long-story-plot-card-main"
+                type="button"
+                :aria-pressed="selection.plotPointId === plotPoint.id"
+                :title="plotPoint.label"
+                @click="emit('selectPlotPoint', plotPoint.id)"
+              >
                 <span class="long-story-plot-card-order">{{ index + 1 }}</span>
-                <span class="long-story-plot-card-title">{{ plotPoint.label }}</span>
+                <span class="long-story-plot-card-title">{{
+                  plotPoint.label
+                }}</span>
               </button>
             </article>
           </div>
@@ -2528,27 +2483,27 @@ onBeforeUnmount(() => {
           {{
             currentIsForeshadowingView
               ? locked
-                ? lockedReason ?? "编辑暂时锁定"
+                ? (lockedReason ?? "编辑暂时锁定")
                 : "结构修改会直接保存到本机"
               : currentIsPlotPointStoryline
                 ? locked
-                  ? lockedReason ?? "编辑暂时锁定"
+                  ? (lockedReason ?? "编辑暂时锁定")
                   : currentDirty
                     ? "本机文稿 · 有未保存修改"
                     : currentStoryPlot
                       ? "结构修改会直接保存到本机"
                       : "选择情节后可编辑正文"
-              : locked
-              ? lockedReason ?? "编辑暂时锁定 · 防止版本冲突"
-              : currentSaving
-                ? "正在原子保存本机文稿"
-                : currentReadOnly
-                  ? "本机文稿 · 只读"
-                  : currentDirty
-                    ? "本机文稿 · 有未保存修改"
-                    : currentState?.loaded || currentIsStructuredText
-                      ? "本机文稿 · 已保存"
-                      : "本机文稿 · 等待读取"
+                : locked
+                  ? (lockedReason ?? "编辑暂时锁定 · 防止版本冲突")
+                  : currentSaving
+                    ? "正在原子保存本机文稿"
+                    : currentReadOnly
+                      ? "本机文稿 · 只读"
+                      : currentDirty
+                        ? "本机文稿 · 有未保存修改"
+                        : currentState?.loaded || currentIsStructuredText
+                          ? "本机文稿 · 已保存"
+                          : "本机文稿 · 等待读取"
           }}
         </span>
         <span class="long-footer-spacer" />
@@ -2582,7 +2537,9 @@ onBeforeUnmount(() => {
 
     <LongEditorDeleteDialogs
       v-model:worldbuilding-delete-dialog="worldbuildingDeleteDialog"
-      v-model:worldbuilding-delete-cancel-button="worldbuildingDeleteCancelButton"
+      v-model:worldbuilding-delete-cancel-button="
+        worldbuildingDeleteCancelButton
+      "
       v-model:navigation-delete-dialog="navigationDeleteDialog"
       v-model:navigation-delete-cancel-button="navigationDeleteCancelButton"
       :pending-story-plot-delete="pendingStoryPlotDelete"
@@ -2624,8 +2581,7 @@ onBeforeUnmount(() => {
 }
 
 .long-workspace-editor.is-foreshadowing-overview {
-  grid-template-rows:
-    minmax(50px, auto) minmax(0, 1fr) minmax(36px, auto);
+  grid-template-rows: minmax(50px, auto) minmax(0, 1fr) minmax(36px, auto);
 }
 
 :global(html[data-platform="darwin"] .long-workspace-editor) {
@@ -2635,14 +2591,14 @@ onBeforeUnmount(() => {
 }
 
 :global(
-  html[data-platform="darwin"]
-    .long-workspace-editor.is-foreshadowing-overview
+  html[data-platform="darwin"] .long-workspace-editor.is-foreshadowing-overview
 ) {
-  grid-template-rows:
-    minmax(52px, auto) minmax(0, 1fr) minmax(36px, auto);
+  grid-template-rows: minmax(52px, auto) minmax(0, 1fr) minmax(36px, auto);
 }
 
-:global(html[data-platform="darwin"] .long-workspace-editor.has-navigation-tabs) {
+:global(
+  html[data-platform="darwin"] .long-workspace-editor.has-navigation-tabs
+) {
   grid-template-rows:
     minmax(52px, auto) minmax(42px, auto) minmax(40px, auto)
     minmax(0, 1fr) minmax(36px, auto);
@@ -2902,7 +2858,9 @@ onBeforeUnmount(() => {
 }
 
 .long-editor-document.is-entry-right-list
-  > :not(.long-entry-list-pane):not(.long-editor-recovery):not(.long-editor-internal-resizer) {
+  > :not(.long-entry-list-pane):not(.long-editor-recovery):not(
+    .long-editor-internal-resizer
+  ) {
   grid-row: 1;
   grid-column: 1;
   min-width: 0;
@@ -3003,22 +2961,14 @@ onBeforeUnmount(() => {
 
 .long-readonly-badge {
   border-color: color-mix(in srgb, var(--warning) 28%, var(--theme-line));
-  background: color-mix(
-    in srgb,
-    var(--warning) 10%,
-    var(--surface-raised)
-  );
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-raised));
   color: var(--warning);
 }
 
 .long-committed-content-notice {
   min-width: 0;
   border-color: color-mix(in srgb, var(--accent) 24%, var(--theme-line));
-  background: color-mix(
-    in srgb,
-    var(--accent) 8%,
-    var(--surface-raised)
-  );
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-raised));
   color: var(--text-secondary);
   line-height: 1.45;
   white-space: normal;
@@ -3152,15 +3102,11 @@ onBeforeUnmount(() => {
   top: 12px;
   right: 12px;
   width: min(360px, calc(100% - 24px));
-  border: 1px solid
-    color-mix(in srgb, var(--accent) 32%, var(--theme-line));
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--theme-line));
   border-radius: 11px;
-  background: color-mix(
-    in srgb,
-    var(--surface-raised) 96%,
-    var(--accent-soft)
-  );
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--text-primary) 14%, transparent);
+  background: color-mix(in srgb, var(--surface-raised) 96%, var(--accent-soft));
+  box-shadow: 0 12px 32px
+    color-mix(in srgb, var(--text-primary) 14%, transparent);
   color: var(--text-primary);
 }
 

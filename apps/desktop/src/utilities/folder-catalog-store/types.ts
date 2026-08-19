@@ -42,12 +42,18 @@ export const DEFAULT_MAX_SNAPSHOT_CONTENT_BYTES = 256 * 1024 * 1024;
 export const DEFAULT_MAX_DRAFT_RECOVERY_BYTES = 128 * 1024 * 1024;
 
 export const FolderBookProjectManifestSchema = BookProjectManifestSchema;
-export const FolderCurrentBookProjectManifestSchema = CurrentBookProjectManifestSchema;
-export const FolderLegacyBookProjectManifestSchema = LegacyBookProjectManifestSchema;
-export const FolderMaterialProjectManifestSchema = MaterialLibraryProjectManifestSchema;
-export const FolderSkillProjectManifestSchema = SkillLibraryProjectManifestSchema;
-export const FolderMaterialGroupProjectManifestSchema = MaterialGroupProjectManifestSchema;
-export const FolderSkillGroupProjectManifestSchema = SkillGroupProjectManifestSchema;
+export const FolderCurrentBookProjectManifestSchema =
+  CurrentBookProjectManifestSchema;
+export const FolderLegacyBookProjectManifestSchema =
+  LegacyBookProjectManifestSchema;
+export const FolderMaterialProjectManifestSchema =
+  MaterialLibraryProjectManifestSchema;
+export const FolderSkillProjectManifestSchema =
+  SkillLibraryProjectManifestSchema;
+export const FolderMaterialGroupProjectManifestSchema =
+  MaterialGroupProjectManifestSchema;
+export const FolderSkillGroupProjectManifestSchema =
+  SkillGroupProjectManifestSchema;
 export const FolderCatalogProjectManifestSchema = CatalogProjectManifestSchema;
 
 export type FolderBookProjectManifest = BookProjectManifest;
@@ -126,7 +132,9 @@ export interface FolderCatalogStoreContext {
   readonly registryBackupPath: string;
   readonly projectsRoot: string;
   readonly draftRecoveryPath: string;
-  readonly defaultProjectParents: Readonly<Record<FolderCatalogProjectDomain, string>>;
+  readonly defaultProjectParents: Readonly<
+    Record<FolderCatalogProjectDomain, string>
+  >;
   readonly initialSnapshot: CatalogSnapshot | undefined;
   readonly now: () => string;
   readonly maxManifestBytes: number;

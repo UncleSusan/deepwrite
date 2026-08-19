@@ -8,7 +8,6 @@ import {
   contentSha256,
   list,
   record,
-  serializeJson,
   splitTextByUtf8Bytes,
   stringValue,
   type WarningCollector
@@ -71,11 +70,8 @@ export function appendMigrationEvidenceCategories(
     });
   });
   const availableCategories = 10_000 - worldbuilding.length;
-  const payloadBudget =
-    MAX_MIGRATION_EVIDENCE_DOCUMENT_BYTES - 16 * 1024;
-  const renderStandalone = (
-    block: (typeof blocks)[number]
-  ): string =>
+  const payloadBudget = MAX_MIGRATION_EVIDENCE_DOCUMENT_BYTES - 16 * 1024;
+  const renderStandalone = (block: (typeof blocks)[number]): string =>
     [
       `# ${block.title}`,
       "",
@@ -93,9 +89,10 @@ export function appendMigrationEvidenceCategories(
     content: string,
     seed: string
   ): void => {
-    const categoryId = `world_migration-evidence-${contentSha256(
-      seed
-    ).slice(0, 24)}`;
+    const categoryId = `world_migration-evidence-${contentSha256(seed).slice(
+      0,
+      24
+    )}`;
     worldbuilding.push({
       id: categoryId,
       title: categoryTitle.slice(0, 256),

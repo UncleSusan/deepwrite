@@ -110,10 +110,7 @@ export function authorizeMainInternalCommand(
       "The internal command book does not match its bound resource."
     );
   }
-  if (
-    !run.promptRequestId ||
-    message.parentRequestId !== run.promptRequestId
-  ) {
+  if (!run.promptRequestId || message.parentRequestId !== run.promptRequestId) {
     return denied(
       "main.parent_request_mismatch",
       "The internal command is not attached to the prompt that created its run."

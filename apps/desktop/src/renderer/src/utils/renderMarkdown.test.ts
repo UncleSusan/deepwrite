@@ -6,12 +6,16 @@ describe("renderMarkdown", () => {
     const output = renderMarkdown("## 结果\n\n- 第一项\n- `main`\n\n**完成**");
 
     expect(output).toContain("<h2>结果</h2>");
-    expect(output).toContain("<ul><li>第一项</li><li><code>main</code></li></ul>");
+    expect(output).toContain(
+      "<ul><li>第一项</li><li><code>main</code></li></ul>"
+    );
     expect(output).toContain("<strong>完成</strong>");
   });
 
   it("escapes arbitrary html while keeping safe links", () => {
-    const output = renderMarkdown('<img src=x onerror=alert(1)> [文档](https://example.com)');
+    const output = renderMarkdown(
+      "<img src=x onerror=alert(1)> [文档](https://example.com)"
+    );
 
     expect(output).not.toContain("<img");
     expect(output).toContain("&lt;img");
@@ -19,7 +23,9 @@ describe("renderMarkdown", () => {
   });
 
   it("renders Markdown thematic breaks", () => {
-    expect(renderMarkdown("上文\n\n---\n\n下文")).toBe("<p>上文</p><hr><p>下文</p>");
+    expect(renderMarkdown("上文\n\n---\n\n下文")).toBe(
+      "<p>上文</p><hr><p>下文</p>"
+    );
     expect(renderMarkdown("* * *\n___")).toBe("<hr><hr>");
   });
 
@@ -36,8 +42,12 @@ describe("renderMarkdown", () => {
     expect(output).toContain('<th class="align-left">编号</th>');
     expect(output).toContain('<th class="align-center">伏笔</th>');
     expect(output).toContain('<th class="align-right">铺设细节</th>');
-    expect(output).toContain('<td class="align-center"><strong>手腕针孔</strong></td>');
-    expect(output).toContain('<td class="align-center"><code>鞋底|异物</code></td>');
+    expect(output).toContain(
+      '<td class="align-center"><strong>手腕针孔</strong></td>'
+    );
+    expect(output).toContain(
+      '<td class="align-center"><code>鞋底|异物</code></td>'
+    );
   });
 
   it("keeps escaped pipes inside table cells and escapes arbitrary html", () => {

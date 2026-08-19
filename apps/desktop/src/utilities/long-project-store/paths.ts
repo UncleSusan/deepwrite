@@ -107,23 +107,25 @@ export function indexedFileSlots(
     },
     ...index.worldbuilding.flatMap((category) =>
       category.format === "text"
-        ? [{
-            reference: category.file,
-            expectedPath: longWorldbuildingContentPath(category.id),
-            compatiblePaths: [
-              legacyWorldbuildingPath(category.id)
-            ],
-            kind: "markdown" as const
-          }]
+        ? [
+            {
+              reference: category.file,
+              expectedPath: longWorldbuildingContentPath(category.id),
+              compatiblePaths: [legacyWorldbuildingPath(category.id)],
+              kind: "markdown" as const
+            }
+          ]
         : [
             ...(category.overview
-              ? [{
-                  reference: category.overview,
-                  expectedPath: longWorldbuildingOverviewContentPath(
-                    category.id
-                  ),
-                  kind: "markdown" as const
-                }]
+              ? [
+                  {
+                    reference: category.overview,
+                    expectedPath: longWorldbuildingOverviewContentPath(
+                      category.id
+                    ),
+                    kind: "markdown" as const
+                  }
+                ]
               : []),
             ...category.items.map((item) => ({
               reference: item.file,
@@ -139,11 +141,13 @@ export function indexedFileSlots(
           ]
     ),
     ...(index.characterOverview
-      ? [{
-          reference: index.characterOverview,
-          expectedPath: LONG_CHARACTER_OVERVIEW_PATH,
-          kind: "markdown" as const
-        }]
+      ? [
+          {
+            reference: index.characterOverview,
+            expectedPath: LONG_CHARACTER_OVERVIEW_PATH,
+            kind: "markdown" as const
+          }
+        ]
       : []),
     ...index.characterFiles.flatMap((entry) => [
       {
@@ -180,10 +184,7 @@ export function indexedFileSlots(
       },
       {
         reference: entry.characterState,
-        expectedPath: chapterPath(
-          entry.chapterCardId,
-          "character-state.md"
-        ),
+        expectedPath: chapterPath(entry.chapterCardId, "character-state.md"),
         kind: "markdown" as const
       },
       {
@@ -200,14 +201,16 @@ export function indexedFileSlots(
         kind: "markdown" as const
       },
       ...(entry.worldReveals
-        ? [{
-            reference: entry.worldReveals,
-            expectedPath: longChapterContinuityFilePath(
-              entry.chapterCardId,
-              "world-reveals.md"
-            ),
-            kind: "markdown" as const
-          }]
+        ? [
+            {
+              reference: entry.worldReveals,
+              expectedPath: longChapterContinuityFilePath(
+                entry.chapterCardId,
+                "world-reveals.md"
+              ),
+              kind: "markdown" as const
+            }
+          ]
         : []),
       ...entry.characterContinuity.flatMap((continuity) => [
         {
@@ -252,10 +255,7 @@ export function isCompatibleRolePath(slot: IndexedFileSlot): boolean {
   }
   if (slot.kind === "json") return false;
   const parts = slot.reference.path.split("/");
-  if (
-    slot.expectedPath.startsWith("long/characters/") &&
-    parts.length === 4
-  ) {
+  if (slot.expectedPath.startsWith("long/characters/") && parts.length === 4) {
     return (
       parts[0] === "long" &&
       parts[1] === "characters" &&
@@ -263,10 +263,7 @@ export function isCompatibleRolePath(slot: IndexedFileSlot): boolean {
       parts[3] === basename(slot.expectedPath)
     );
   }
-  if (
-    slot.expectedPath.startsWith("long/chapters/") &&
-    parts.length === 4
-  ) {
+  if (slot.expectedPath.startsWith("long/chapters/") && parts.length === 4) {
     return (
       parts[0] === "long" &&
       parts[1] === "chapters" &&
@@ -274,10 +271,7 @@ export function isCompatibleRolePath(slot: IndexedFileSlot): boolean {
       parts[3] === basename(slot.expectedPath)
     );
   }
-  if (
-    slot.expectedPath.startsWith("long/story-plots/") &&
-    parts.length === 4
-  ) {
+  if (slot.expectedPath.startsWith("long/story-plots/") && parts.length === 4) {
     return (
       parts[0] === "long" &&
       parts[1] === "story-plots" &&

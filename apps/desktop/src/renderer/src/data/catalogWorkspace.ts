@@ -342,7 +342,9 @@ function createCatalogWorkspaceProjectionIndex(
 }
 
 function catalogNodeId(...parts: string[]): string {
-  return ["catalog", ...parts.map((part) => encodeURIComponent(part))].join(":");
+  return ["catalog", ...parts.map((part) => encodeURIComponent(part))].join(
+    ":"
+  );
 }
 
 function indexedContentBytes(
@@ -392,7 +394,9 @@ function catalogContentPresent(
   field: "contentBytes" | "overviewContentBytes" = "contentBytes"
 ): boolean {
   const contentBytes = indexedContentBytes(value, field);
-  return contentBytes === undefined ? content.trim().length > 0 : contentBytes > 0;
+  return contentBytes === undefined
+    ? content.trim().length > 0
+    : contentBytes > 0;
 }
 
 function materialEntryDocumentId(libraryId: string, entryId: string): string {
@@ -426,7 +430,9 @@ function linkedMaterialLibraryIds(book: Book): string[] {
 }
 
 function linkedSkillLibraryIds(book: Book): string[] {
-  return uniqueIds(SKILL_KINDS.flatMap((kind) => book.linkedSkillIdsByKind[kind]));
+  return uniqueIds(
+    SKILL_KINDS.flatMap((kind) => book.linkedSkillIdsByKind[kind])
+  );
 }
 
 function inferWorkspaceStageId(
@@ -456,8 +462,9 @@ function createBookDocument(
 ): WorkspaceDocument {
   const stageLabel =
     stageId === "character_design"
-      ? characterItem?.title ?? (book.characterStructure.format === "list" ? "概览" : "人物")
-      : plotStage?.title ?? document.title;
+      ? (characterItem?.title ??
+        (book.characterStructure.format === "list" ? "概览" : "人物"))
+      : (plotStage?.title ?? document.title);
   const path = plotStage
     ? [book.title, "剧情", plotStage.title]
     : stageId === "character_design"
@@ -492,7 +499,9 @@ function createBookDocument(
     ...(stageId === "character_design"
       ? {
           shortAgentId: "character_design" as const,
-          characterFileKind: characterItem ? "item" as const : "overview" as const,
+          characterFileKind: characterItem
+            ? ("item" as const)
+            : ("overview" as const),
           ...(characterItem
             ? {
                 characterItemId: characterItem.id,
@@ -574,18 +583,15 @@ function createBookProjection(book: Book): {
   const projected = book.documents
     .filter((document) => {
       return (
-        !plotStageIds.has(document.id) ||
-        enabledPlotStageIds.has(document.id)
+        !plotStageIds.has(document.id) || enabledPlotStageIds.has(document.id)
       );
     })
     .map((document) => {
       const characterItem = characterItems.get(document.id);
       const stageId = characterItem
-        ? "character_design" as const
+        ? ("character_design" as const)
         : inferWorkspaceStageId(document, enabledPlotStageIds);
-      const plotStage = stageId
-        ? enabledPlotStageById.get(stageId)
-        : undefined;
+      const plotStage = stageId ? enabledPlotStageById.get(stageId) : undefined;
       return {
         source: document,
         stageId,
@@ -595,9 +601,7 @@ function createBookProjection(book: Book): {
           document,
           stageId,
           plotStage,
-          plotStage
-            ? enabledPlotStageOrderById.get(plotStage.id) ?? -1
-            : -1,
+          plotStage ? (enabledPlotStageOrderById.get(plotStage.id) ?? -1) : -1,
           characterItem
         )
       };
@@ -607,10 +611,7 @@ function createBookProjection(book: Book): {
   for (const item of projected) {
     const node: ResourceTreeNode = {
       id: item.document.id,
-      label:
-        item.stageId === "character_design"
-          ? "人物"
-          : item.document.title,
+      label: item.stageId === "character_design" ? "人物" : item.document.title,
       icon: "file",
       catalogNodeType: "document",
       stageCategoryId: item.stageId ?? "other",
@@ -631,10 +632,12 @@ function createBookProjection(book: Book): {
     book.id,
     book.draft.id
   );
-  const draftDocuments = book.draft.sections.flatMap((section, sectionOrder) => [
-    createDraftFileDocument(book, section, sectionOrder, "body"),
-    createDraftFileDocument(book, section, sectionOrder, "character-state")
-  ]);
+  const draftDocuments = book.draft.sections.flatMap(
+    (section, sectionOrder) => [
+      createDraftFileDocument(book, section, sectionOrder, "body"),
+      createDraftFileDocument(book, section, sectionOrder, "character-state")
+    ]
+  );
   const draftDirectory: DraftDirectoryProjection = {
     id: draftDirectoryId,
     workspaceId: book.id,
@@ -645,7 +648,10 @@ function createBookProjection(book: Book): {
       title: section.title,
       wordCountRequirement: section.wordCountRequirement,
       bodyDocumentId: bookDocumentId(book.id, section.body.id),
-      characterStateDocumentId: bookDocumentId(book.id, section.characterState.id)
+      characterStateDocumentId: bookDocumentId(
+        book.id,
+        section.characterState.id
+      )
     }))
   };
   stageNodes.set("draft", {
@@ -709,10 +715,7 @@ function createBookProjection(book: Book): {
         targetDocumentId: character.id,
         shortAgentId: "character_design",
         characterDirectory: true,
-        children: [
-          { ...character, label: "概览" },
-          ...characterItemNodes
-        ]
+        children: [{ ...character, label: "概览" }, ...characterItemNodes]
       });
     } else {
       children.push(character);
@@ -784,7 +787,9 @@ function createMaterialLibraryNode(library: MaterialLibrary): ResourceTreeNode {
       : { projectRevision: library.projectRevision }),
     materialKind: library.materialKind,
     workspaceType: library.materialType,
-    ...(library.parentGenre.trim() ? { parentGenre: library.parentGenre.trim() } : {}),
+    ...(library.parentGenre.trim()
+      ? { parentGenre: library.parentGenre.trim() }
+      : {}),
     ...(library.subGenre.trim() ? { subGenre: library.subGenre.trim() } : {}),
     children: [
       {
@@ -799,7 +804,9 @@ function createMaterialLibraryNode(library: MaterialLibrary): ResourceTreeNode {
         catalogNodeType: "document",
         libraryId: library.id,
         workspaceType: library.materialType,
-        ...(library.materialKind === "mixed" ? {} : { materialKind: library.materialKind })
+        ...(library.materialKind === "mixed"
+          ? {}
+          : { materialKind: library.materialKind })
       },
       ...library.entries.map((entry) => ({
         id: materialEntryDocumentId(library.id, entry.id),
@@ -811,22 +818,33 @@ function createMaterialLibraryNode(library: MaterialLibrary): ResourceTreeNode {
         catalogEntryId: entry.id,
         materialKind: MATERIAL_STAGE_KINDS[entry.stageId],
         stageCategoryId: entry.stageId,
-        ...(library.parentGenre.trim() ? { parentGenre: library.parentGenre.trim() } : {}),
-        ...(library.subGenre.trim() ? { subGenre: library.subGenre.trim() } : {})
+        ...(library.parentGenre.trim()
+          ? { parentGenre: library.parentGenre.trim() }
+          : {}),
+        ...(library.subGenre.trim()
+          ? { subGenre: library.subGenre.trim() }
+          : {})
       }))
     ]
   };
 }
 
-function createMaterialDocuments(library: MaterialLibrary): WorkspaceDocument[] {
+function createMaterialDocuments(
+  library: MaterialLibrary
+): WorkspaceDocument[] {
   const typeLabel = "素材";
   const genreParts = materialGenreParts(library);
-  const overviewKind = library.materialKind === "mixed" ? undefined : library.materialKind;
+  const overviewKind =
+    library.materialKind === "mixed" ? undefined : library.materialKind;
   const overview: WorkspaceDocument = {
     id: materialOverviewDocumentId(library.id),
     domain: "material",
     title: `${library.title} · 库介绍`,
-    eyebrow: [typeLabel, ...genreParts, MATERIAL_KIND_LABELS[library.materialKind]].join(" · "),
+    eyebrow: [
+      typeLabel,
+      ...genreParts,
+      MATERIAL_KIND_LABELS[library.materialKind]
+    ].join(" · "),
     path: [library.title, "库介绍"],
     content: library.overview,
     ...catalogContentState(library, "overviewContentBytes"),
@@ -837,7 +855,9 @@ function createMaterialDocuments(library: MaterialLibrary): WorkspaceDocument[] 
       ? {}
       : { catalogProjectRevision: library.projectRevision }),
     ...(overviewKind ? { materialKind: overviewKind } : {}),
-    ...(library.parentGenre.trim() ? { parentGenre: library.parentGenre.trim() } : {}),
+    ...(library.parentGenre.trim()
+      ? { parentGenre: library.parentGenre.trim() }
+      : {}),
     ...(library.subGenre.trim() ? { subGenre: library.subGenre.trim() } : {})
   };
   return [
@@ -848,7 +868,9 @@ function createMaterialDocuments(library: MaterialLibrary): WorkspaceDocument[] 
         id: materialEntryDocumentId(library.id, entry.id),
         domain: "material" as const,
         title: entry.title,
-        eyebrow: [typeLabel, ...genreParts, MATERIAL_KIND_LABELS[kind]].join(" · "),
+        eyebrow: [typeLabel, ...genreParts, MATERIAL_KIND_LABELS[kind]].join(
+          " · "
+        ),
         path: [
           library.title,
           MATERIAL_KIND_LABELS[kind],
@@ -866,8 +888,12 @@ function createMaterialDocuments(library: MaterialLibrary): WorkspaceDocument[] 
           : { catalogProjectRevision: library.projectRevision }),
         materialKind: kind,
         stageCategoryId: entry.stageId,
-        ...(library.parentGenre.trim() ? { parentGenre: library.parentGenre.trim() } : {}),
-        ...(library.subGenre.trim() ? { subGenre: library.subGenre.trim() } : {})
+        ...(library.parentGenre.trim()
+          ? { parentGenre: library.parentGenre.trim() }
+          : {}),
+        ...(library.subGenre.trim()
+          ? { subGenre: library.subGenre.trim() }
+          : {})
       };
     })
   ];
@@ -888,7 +914,10 @@ function createMaterialKindNode(
   };
 }
 
-function missingLibraryNode(domain: "material" | "skill", libraryId: string): ResourceTreeNode {
+function missingLibraryNode(
+  domain: "material" | "skill",
+  libraryId: string
+): ResourceTreeNode {
   return {
     id: catalogNodeId(domain, "missing-library", libraryId),
     label: `已丢失的${domain === "material" ? "素材" : "技能"}库（${libraryId}）`,
@@ -901,8 +930,12 @@ function missingLibraryNode(domain: "material" | "skill", libraryId: string): Re
   };
 }
 
-function createMaterialGroupNodes(snapshot: CatalogSnapshot): ResourceTreeNode[] {
-  const librariesById = new Map(snapshot.materials.map((library) => [library.id, library]));
+function createMaterialGroupNodes(
+  snapshot: CatalogSnapshot
+): ResourceTreeNode[] {
+  const librariesById = new Map(
+    snapshot.materials.map((library) => [library.id, library])
+  );
   return snapshot.materialGroups.map((group) => {
     const seenLibraryIds = new Set<string>();
     const memberNodes = MATERIAL_KINDS.flatMap<ResourceTreeNode>((kind) => {
@@ -915,7 +948,13 @@ function createMaterialGroupNodes(snapshot: CatalogSnapshot): ResourceTreeNode[]
       const node = library
         ? createMaterialLibraryNode(library)
         : missingLibraryNode("material", libraryId);
-      return [{ ...node, categoryTag: MATERIAL_TREE_KIND_LABELS[kind], groupId: group.id }];
+      return [
+        {
+          ...node,
+          categoryTag: MATERIAL_TREE_KIND_LABELS[kind],
+          groupId: group.id
+        }
+      ];
     });
     return {
       id: catalogNodeId("material-group", group.id),
@@ -1021,7 +1060,9 @@ function createSkillDocuments(library: SkillLibrary): WorkspaceDocument[] {
 }
 
 function createSkillGroupNodes(snapshot: CatalogSnapshot): ResourceTreeNode[] {
-  const librariesById = new Map(snapshot.skills.map((library) => [library.id, library]));
+  const librariesById = new Map(
+    snapshot.skills.map((library) => [library.id, library])
+  );
   return snapshot.skillGroups.map((group) => {
     const memberNodes = SKILL_KINDS.flatMap<ResourceTreeNode>((kind) => {
       const libraryId = group.members[kind];
@@ -1032,7 +1073,9 @@ function createSkillGroupNodes(snapshot: CatalogSnapshot): ResourceTreeNode[] {
       const node = library
         ? createSkillLibraryNode(library)
         : missingLibraryNode("skill", libraryId);
-      return [{ ...node, categoryTag: SKILL_KIND_TAG_LABELS[kind], groupId: group.id }];
+      return [
+        { ...node, categoryTag: SKILL_KIND_TAG_LABELS[kind], groupId: group.id }
+      ];
     });
     return {
       id: catalogNodeId("skill-group", group.id),
@@ -1053,30 +1096,40 @@ function createSkillGroupNodes(snapshot: CatalogSnapshot): ResourceTreeNode[] {
  * editor documents. A library owned by a group is shown only inside that group;
  * dissolving or changing the group makes it return to its canonical kind.
  */
-export function projectCatalogWorkspace(snapshot: CatalogSnapshot): CatalogWorkspaceProjection {
+export function projectCatalogWorkspace(
+  snapshot: CatalogSnapshot
+): CatalogWorkspaceProjection {
   const bookProjections = snapshot.books.map(createBookProjection);
   const materialGroupNodes = createMaterialGroupNodes(snapshot);
   const groupedMaterialLibraryIds = new Set(
     snapshot.materialGroups.flatMap((group) =>
-      Object.values(group.members).filter((libraryId): libraryId is string => Boolean(libraryId))
+      Object.values(group.members).filter((libraryId): libraryId is string =>
+        Boolean(libraryId)
+      )
     )
   );
-  const materialKindNodes = MATERIAL_TREE_KIND_ORDER.flatMap<ResourceTreeNode>((kind) => {
-    const libraries = snapshot.materials.filter(
-      (library) =>
-        !groupedMaterialLibraryIds.has(library.id) &&
-        (library.materialKind === kind ||
-          (kind === "other" && library.materialKind === "mixed"))
-    );
-    return libraries.length ? [createMaterialKindNode(kind, libraries)] : [];
-  });
+  const materialKindNodes = MATERIAL_TREE_KIND_ORDER.flatMap<ResourceTreeNode>(
+    (kind) => {
+      const libraries = snapshot.materials.filter(
+        (library) =>
+          !groupedMaterialLibraryIds.has(library.id) &&
+          (library.materialKind === kind ||
+            (kind === "other" && library.materialKind === "mixed"))
+      );
+      return libraries.length ? [createMaterialKindNode(kind, libraries)] : [];
+    }
+  );
   const skillGroupNodes = createSkillGroupNodes(snapshot);
   const groupedSkillLibraryIds = new Set(
     snapshot.skillGroups.flatMap((group) =>
-      Object.values(group.members).filter((libraryId): libraryId is string => Boolean(libraryId))
+      Object.values(group.members).filter((libraryId): libraryId is string =>
+        Boolean(libraryId)
+      )
     )
   );
-  const diagnosticBookNodes: ResourceTreeNode[] = (snapshot.projectDiagnostics ?? [])
+  const diagnosticBookNodes: ResourceTreeNode[] = (
+    snapshot.projectDiagnostics ?? []
+  )
     .filter(({ kind }) => kind === "deepwrite.book")
     .map((diagnostic) => ({
       id: diagnostic.projectId,
@@ -1087,7 +1140,9 @@ export function projectCatalogWorkspace(snapshot: CatalogSnapshot): CatalogWorks
       unavailable: true,
       catalogNodeType: "book"
     }));
-  const diagnosticSkillNodes: ResourceTreeNode[] = (snapshot.projectDiagnostics ?? [])
+  const diagnosticSkillNodes: ResourceTreeNode[] = (
+    snapshot.projectDiagnostics ?? []
+  )
     .filter(({ kind }) => kind === "deepwrite.skill-library")
     .map((diagnostic) => ({
       id: diagnostic.projectId,
@@ -1099,7 +1154,9 @@ export function projectCatalogWorkspace(snapshot: CatalogSnapshot): CatalogWorks
       catalogNodeType: "library",
       libraryId: diagnostic.projectId
     }));
-  const diagnosticMaterialNodes: ResourceTreeNode[] = (snapshot.projectDiagnostics ?? [])
+  const diagnosticMaterialNodes: ResourceTreeNode[] = (
+    snapshot.projectDiagnostics ?? []
+  )
     .filter(({ kind }) => kind === "deepwrite.material-library")
     .map((diagnostic) => ({
       id: diagnostic.projectId,
@@ -1136,23 +1193,26 @@ export function projectCatalogWorkspace(snapshot: CatalogSnapshot): CatalogWorks
       id: "creation",
       label: "创作空间",
       icon: "book",
-      nodes: [...diagnosticBookNodes, ...bookProjections.map(({ node }) => node)]
+      nodes: [
+        ...diagnosticBookNodes,
+        ...bookProjections.map(({ node }) => node)
+      ]
     },
     {
       id: "skill",
       label: "技能库",
       icon: "library",
-      nodes: [
-        ...diagnosticSkillNodes,
-        ...skillGroupNodes,
-        ...skillKindNodes
-      ]
+      nodes: [...diagnosticSkillNodes, ...skillGroupNodes, ...skillKindNodes]
     },
     {
       id: "material",
       label: "素材库",
       icon: "archive",
-      nodes: [...diagnosticMaterialNodes, ...materialGroupNodes, ...materialKindNodes]
+      nodes: [
+        ...diagnosticMaterialNodes,
+        ...materialGroupNodes,
+        ...materialKindNodes
+      ]
     }
   ];
   const workspaceDocuments = [

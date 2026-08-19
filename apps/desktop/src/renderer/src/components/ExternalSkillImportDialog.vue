@@ -16,7 +16,11 @@ const emit = defineEmits<{
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="dialog-backdrop" @mousedown.self="!pending && emit('close')">
+    <div
+      v-if="open"
+      class="dialog-backdrop"
+      @mousedown.self="!pending && emit('close')"
+    >
       <section
         class="workspace-dialog external-skill-import-dialog"
         role="dialog"
@@ -41,7 +45,8 @@ const emit = defineEmits<{
 
         <div class="dialog-content">
           <p class="dialog-description">
-            导入目标为“{{ libraryTitle }}”。请选择一个 skills 总目录进行批量导入，或选择单个 SKILL.md。
+            导入目标为“{{ libraryTitle }}”。请选择一个 skills
+            总目录进行批量导入，或选择单个 SKILL.md。
           </p>
           <div class="source-options">
             <button

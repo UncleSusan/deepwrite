@@ -61,20 +61,25 @@ export type RendererStateMutationResult = z.infer<
   typeof RendererStateMutationResultSchema
 >;
 
-export const RendererStateLoadCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("rendererState.load"),
-  payload: z.object({ key: RendererStateKeySchema }).strict()
-});
+export const RendererStateLoadCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("rendererState.load"),
+    payload: z.object({ key: RendererStateKeySchema }).strict()
+  }
+);
 
-export const RendererStateSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("rendererState.save"),
-  payload: RendererStateSavePayloadSchema
-});
+export const RendererStateSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("rendererState.save"),
+    payload: RendererStateSavePayloadSchema
+  }
+);
 
-export const RendererStateRemoveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("rendererState.remove"),
-  payload: z.object({ key: RendererStateKeySchema }).strict()
-});
+export const RendererStateRemoveCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("rendererState.remove"),
+    payload: z.object({ key: RendererStateKeySchema }).strict()
+  });
 
 export interface ConversationPersistenceApi {
   load(key: string): Promise<unknown | undefined>;

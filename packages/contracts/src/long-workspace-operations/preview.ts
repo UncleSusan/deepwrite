@@ -1,65 +1,12 @@
 import { z } from "zod";
-import {
-  LongArcIdSchema,
-  LongArcSchema,
-  LongChapterCardIdSchema,
-  LongChapterCardSchema,
-  LongChapterCharacterContinuityFileIndexEntrySchema,
-  LongChapterFileIndexEntrySchema,
-  LongCharacterFileIndexEntrySchema,
-  LongCharacterGroupSchema,
-  LongCharacterIdSchema,
-  LongCharacterSchema,
-  LongCharacterTypeIdSchema,
-  LongCharacterTypeSchema,
-  LongEventConnectionIdSchema,
-  LongEventConnectionSchema,
-  LongFileIdSchema,
-  LongFileRevisionSchema,
-  LongForeshadowingBeatIdSchema,
-  LongForeshadowingBeatSchema,
-  LongForeshadowingIdSchema,
-  LongForeshadowingSchema,
-  LongMarkdownFileReferenceSchema,
-  LongNarrativePlacementIdSchema,
-  LongNarrativePlacementSchema,
-  LongProjectRelativePathSchema,
-  LongStableIdSchema,
-  LongStoryEventIdSchema,
-  LongStoryEventSchema,
-  LongStoryPlotIdSchema,
-  LongStoryPlotSchema,
-  LongVolumeIdSchema,
-  LongVolumeSchema,
-  LongWorldbuildingItemLayoutSchema,
-  LongWorkspaceIndexSnapshotSchema,
-  LongWorldbuildingCategoryIdSchema,
-  LongWorldbuildingCategorySchema,
-  LongWorldbuildingItemIdSchema,
-  LongWorldbuildingItemSchema,
-  createEmptyLongMarkdownFileReference,
-  deriveLongForeshadowingStatusFromCommittedBeats,
-  longWorldbuildingContentPath,
-  longWorldbuildingFileId,
-  longWorldbuildingItemContentPath,
-  longWorldbuildingItemFileId,
-  longWorldbuildingOverviewContentPath,
-  longWorldbuildingOverviewFileId
-} from "../long-workspace";
-import type {
-  LongForeshadowing,
-  LongForeshadowingBeat,
-  LongNarrativePlacement,
-  LongWorkspaceFileReference,
-  LongWorkspaceIndexSnapshot
-} from "../long-workspace";
+import type { LongWorkspaceIndexSnapshot } from "../long-workspace";
+import { LongWorkspaceIndexSnapshotSchema } from "../long-workspace";
 
+import { applyLongWorkspaceOperation } from "./dispatch";
 import {
-  LongDocumentWriteProposalSchema,
   LongWorkspaceImpactPreviewSchema,
   LongWorkspaceImpactSummarySchema,
   LongWorkspaceOperationBatchSchema,
-  LongWorkspaceOperationError,
   LongWorkspaceOperationResultSchema,
   type LongDocumentWriteProposal,
   type LongWorkspaceEntityChange,
@@ -70,13 +17,10 @@ import {
   type LongWorkspaceOperationBatchInput,
   type LongWorkspaceOperationResult
 } from "./impact-schema";
-import { applyLongWorkspaceOperation } from "./dispatch";
 import type { MutationState } from "./state";
 import {
   allWorkspaceFiles,
   assertCommittedFactAnchorsPreserved,
-  assertCommittedPrefixPreserved,
-  markUpdated,
   normalizeLongWorkspaceOrders,
   operationError,
   orderedChapterIds
@@ -221,12 +165,8 @@ export function workspaceEntityRecords(
   snapshot.characters.forEach((entity) => add("character", entity));
   snapshot.plot.volumes.forEach((entity) => add("volume", entity));
   snapshot.plot.arcs.forEach((entity) => add("arc", entity));
-  snapshot.plot.chapterCards.forEach((entity) =>
-    add("chapter-card", entity)
-  );
-  snapshot.plot.storyEvents.forEach((entity) =>
-    add("story-event", entity)
-  );
+  snapshot.plot.chapterCards.forEach((entity) => add("chapter-card", entity));
+  snapshot.plot.storyEvents.forEach((entity) => add("story-event", entity));
   snapshot.plot.storyPlots.forEach((entity) => add("story-plot", entity));
   snapshot.plot.eventConnections.forEach((entity) =>
     add("event-connection", entity)
@@ -239,9 +179,7 @@ export function workspaceEntityRecords(
       ...thread,
       beats: thread.beats.map(({ id }) => id)
     });
-    thread.beats.forEach((beat) =>
-      add("foreshadowing-beat", beat)
-    );
+    thread.beats.forEach((beat) => add("foreshadowing-beat", beat));
   });
   return records;
 }
@@ -273,11 +211,7 @@ export function workspaceEntityChanges(
         before: previous.value,
         after: null
       });
-    } else if (
-      previous &&
-      next &&
-      previous.serialized !== next.serialized
-    ) {
+    } else if (previous && next && previous.serialized !== next.serialized) {
       if (previous.kind !== next.kind) {
         operationError(
           "invalid_result",
@@ -318,8 +252,7 @@ export function reconcileEntityImpact(state: MutationState): void {
     [...after.entries()]
       .filter(
         ([id, value]) =>
-          before.has(id) &&
-          before.get(id)?.serialized !== value.serialized
+          before.has(id) && before.get(id)?.serialized !== value.serialized
       )
       .map(([id]) => id)
   );
@@ -381,8 +314,9 @@ export function simulateLongWorkspaceOperations(
   state.draft.revision = original.revision + 1;
   state.draft.updatedAt = batch.updatedAt;
 
-  const parsedSnapshot =
-    LongWorkspaceIndexSnapshotSchema.safeParse(state.draft);
+  const parsedSnapshot = LongWorkspaceIndexSnapshotSchema.safeParse(
+    state.draft
+  );
   if (!parsedSnapshot.success) {
     operationError(
       "invalid_result",

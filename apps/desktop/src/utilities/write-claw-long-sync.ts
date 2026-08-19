@@ -36,7 +36,9 @@ function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function sourceCounts(workspace: Record<string, unknown>): LongLegacySyncCounts {
+function sourceCounts(
+  workspace: Record<string, unknown>
+): LongLegacySyncCounts {
   const worldbuilding = record(workspace.worldbuilding);
   const characters = record(workspace.characters);
   const plot = record(workspace.plot);
@@ -73,7 +75,9 @@ function sourceMappedIds(
 } {
   const mapped = (kind: string, keys: string[]): Set<string> => {
     const table = plan.idMap[kind] ?? {};
-    return new Set(keys.map((key) => table[key]).filter((id): id is string => Boolean(id)));
+    return new Set(
+      keys.map((key) => table[key]).filter((id): id is string => Boolean(id))
+    );
   };
   const worldbuilding = record(workspace.worldbuilding);
   const characters = record(workspace.characters);
@@ -83,10 +87,17 @@ function sourceMappedIds(
     return String(category.id ?? "").trim() || `category-${index + 1}`;
   });
   const characterKeys: string[] = [];
-  for (const group of ["protagonists", "major_supporting", "minor_supporting", "passersby"]) {
+  for (const group of [
+    "protagonists",
+    "major_supporting",
+    "minor_supporting",
+    "passersby"
+  ]) {
     list(record(characters[group]).entries).forEach((value, index) => {
       const character = record(value);
-      characterKeys.push(String(character.id ?? "").trim() || `${group}-${index + 1}`);
+      characterKeys.push(
+        String(character.id ?? "").trim() || `${group}-${index + 1}`
+      );
     });
   }
   const volumeKeys = list(plot.volumes).map((value, index) => {
@@ -103,7 +114,8 @@ function sourceMappedIds(
   });
   const chapterKeys = list(plot.chapter_cards).map((value, index) => {
     const chapter = record(value);
-    const stageId = String(chapter.stage_id ?? "").trim() || `legacy-stage-${index + 1}`;
+    const stageId =
+      String(chapter.stage_id ?? "").trim() || `legacy-stage-${index + 1}`;
     return String(chapter.id ?? "").trim() || `chapter-${index + 1}:${stageId}`;
   });
   return {
@@ -140,11 +152,16 @@ export async function previewWriteClawLongSync(
   };
 }
 
-function documentMap(plan: WriteClawLongImportPlan): Map<string, WriteClawLongImportDocument> {
+function documentMap(
+  plan: WriteClawLongImportPlan
+): Map<string, WriteClawLongImportDocument> {
   return new Map(plan.documents.map((document) => [document.fileId, document]));
 }
 
-function selected(modules: readonly LongLegacySyncModule[], module: LongLegacySyncModule): boolean {
+function selected(
+  modules: readonly LongLegacySyncModule[],
+  module: LongLegacySyncModule
+): boolean {
   return modules.includes(module);
 }
 
@@ -183,7 +200,10 @@ export async function buildWriteClawLongSync(
   const skipped = { ...EMPTY_COUNTS };
   const warnings = [...source.warnings];
 
-  const addCreateDocument = (fileId: string, contentOverride?: string): void => {
+  const addCreateDocument = (
+    fileId: string,
+    contentOverride?: string
+  ): void => {
     const document = docs.get(fileId);
     if (!document) throw new Error(`旧版本同步缺少文档：${fileId}`);
     const content = contentOverride ?? document.content;
@@ -201,7 +221,9 @@ export async function buildWriteClawLongSync(
 
   if (selected(input.modules, "worldbuilding")) {
     const existingIds = new Set(input.target.worldbuilding.map(({ id }) => id));
-    const categories = plan.index.worldbuilding.filter(({ id }) => sourceIds.worldbuilding.has(id));
+    const categories = plan.index.worldbuilding.filter(({ id }) =>
+      sourceIds.worldbuilding.has(id)
+    );
     let nextOrder = input.target.worldbuilding.length + 1;
     for (const category of categories) {
       if (existingIds.has(category.id)) {
@@ -228,12 +250,17 @@ export async function buildWriteClawLongSync(
     const existingIds = new Set(input.target.characters.map(({ id }) => id));
     const groupCounts = new Map<string, number>();
     input.target.characters.forEach((character) =>
-      groupCounts.set(character.group, (groupCounts.get(character.group) ?? 0) + 1)
+      groupCounts.set(
+        character.group,
+        (groupCounts.get(character.group) ?? 0) + 1
+      )
     );
     const filesByCharacter = new Map(
       plan.index.characterFiles.map((files) => [files.characterId, files])
     );
-    for (const character of plan.index.characters.filter(({ id }) => sourceIds.characters.has(id))) {
+    for (const character of plan.index.characters.filter(({ id }) =>
+      sourceIds.characters.has(id)
+    )) {
       if (existingIds.has(character.id)) {
         skipped.characters += 1;
         importedCharacterIds.add(character.id);
@@ -264,12 +291,15 @@ export async function buildWriteClawLongSync(
       if (input.targetBookLineContent.includes(marker)) {
         skipped.outline = 1;
       } else {
-        const content = [
-          input.targetBookLineContent.trimEnd(),
-          marker,
-          `## 旧版本同步 · ${plan.manifest.title}`,
-          outlineDocument.content.trim()
-        ].filter(Boolean).join("\n\n") + "\n";
+        const content =
+          [
+            input.targetBookLineContent.trimEnd(),
+            marker,
+            `## 旧版本同步 · ${plan.manifest.title}`,
+            outlineDocument.content.trim()
+          ]
+            .filter(Boolean)
+            .join("\n\n") + "\n";
         documentWrites.push({
           proposalId: `proposal_legacy-sync-book-line-${plan.manifest.id}`,
           fileId: input.target.bookLine.id,
@@ -284,15 +314,22 @@ export async function buildWriteClawLongSync(
       }
     }
 
-    const existingVolumeIds = new Set(input.target.plot.volumes.map(({ id }) => id));
+    const existingVolumeIds = new Set(
+      input.target.plot.volumes.map(({ id }) => id)
+    );
     const availableVolumeIds = new Set(existingVolumeIds);
     let volumeOrder = input.target.plot.volumes.length + 1;
-    for (const volume of plan.index.plot.volumes.filter(({ id }) => sourceIds.volumes.has(id))) {
+    for (const volume of plan.index.plot.volumes.filter(({ id }) =>
+      sourceIds.volumes.has(id)
+    )) {
       availableVolumeIds.add(volume.id);
       if (existingVolumeIds.has(volume.id)) {
         skipped.volumes += 1;
       } else {
-        operations.push({ type: "volume.create", volume: { ...volume, order: volumeOrder++ } });
+        operations.push({
+          type: "volume.create",
+          volume: { ...volume, order: volumeOrder++ }
+        });
         imported.volumes += 1;
       }
     }
@@ -303,7 +340,9 @@ export async function buildWriteClawLongSync(
     input.target.plot.arcs.forEach((arc) =>
       arcOrders.set(arc.volumeId, (arcOrders.get(arc.volumeId) ?? 0) + 1)
     );
-    for (const arc of plan.index.plot.arcs.filter(({ id }) => sourceIds.plotPoints.has(id))) {
+    for (const arc of plan.index.plot.arcs.filter(({ id }) =>
+      sourceIds.plotPoints.has(id)
+    )) {
       if (!availableVolumeIds.has(arc.volumeId)) {
         skipped.plotPoints += 1;
         warnings.push(`剧情点“${arc.title}”缺少可同步分卷，已跳过。`);
@@ -320,17 +359,25 @@ export async function buildWriteClawLongSync(
       }
     }
 
-    const existingCharacterIds = new Set(input.target.characters.map(({ id }) => id));
+    const existingCharacterIds = new Set(
+      input.target.characters.map(({ id }) => id)
+    );
     importedCharacterIds.forEach((id) => existingCharacterIds.add(id));
-    const existingEventIds = new Set(input.target.plot.storyEvents.map(({ id }) => id));
+    const existingEventIds = new Set(
+      input.target.plot.storyEvents.map(({ id }) => id)
+    );
     let storyOrder = input.target.plot.storyEvents.length + 1;
-    for (const event of plan.index.plot.storyEvents.filter(({ id }) => sourceIds.storyEvents.has(id))) {
+    for (const event of plan.index.plot.storyEvents.filter(({ id }) =>
+      sourceIds.storyEvents.has(id)
+    )) {
       if (existingEventIds.has(event.id)) {
         skipped.storyEvents += 1;
         continue;
       }
       const arcIds = event.arcIds.filter((id) => availableArcIds.has(id));
-      const characterIds = event.characterIds.filter((id) => existingCharacterIds.has(id));
+      const characterIds = event.characterIds.filter((id) =>
+        existingCharacterIds.has(id)
+      );
       if (characterIds.length !== event.characterIds.length) {
         warnings.push(`故事事件“${event.title}”的部分人物引用未同步，已移除。`);
       }
@@ -341,15 +388,22 @@ export async function buildWriteClawLongSync(
       imported.storyEvents += 1;
     }
 
-    const existingChapterIds = new Set(input.target.plot.chapterCards.map(({ id }) => id));
+    const existingChapterIds = new Set(
+      input.target.plot.chapterCards.map(({ id }) => id)
+    );
     const chapterOrders = new Map<string, number>();
     input.target.plot.chapterCards.forEach((chapter) =>
-      chapterOrders.set(chapter.volumeId, (chapterOrders.get(chapter.volumeId) ?? 0) + 1)
+      chapterOrders.set(
+        chapter.volumeId,
+        (chapterOrders.get(chapter.volumeId) ?? 0) + 1
+      )
     );
     const filesByChapter = new Map(
       plan.index.chapters.map((files) => [files.chapterCardId, files])
     );
-    for (const chapter of plan.index.plot.chapterCards.filter(({ id }) => sourceIds.chapterCards.has(id))) {
+    for (const chapter of plan.index.plot.chapterCards.filter(({ id }) =>
+      sourceIds.chapterCards.has(id)
+    )) {
       if (existingChapterIds.has(chapter.id)) {
         skipped.chapterCards += 1;
         continue;
@@ -360,13 +414,18 @@ export async function buildWriteClawLongSync(
           !availableArcIds.has(chapter.primaryArcId))
       ) {
         skipped.chapterCards += 1;
-        warnings.push(`章卡“${chapter.title}”缺少可同步分卷或关联剧情点，已跳过。`);
+        warnings.push(
+          `章卡“${chapter.title}”缺少可同步分卷或关联剧情点，已跳过。`
+        );
         continue;
       }
       const sourceFiles = filesByChapter.get(chapter.id);
-      if (!sourceFiles) throw new Error(`旧版本同步缺少章卡文件：${chapter.id}`);
+      if (!sourceFiles)
+        throw new Error(`旧版本同步缺少章卡文件：${chapter.id}`);
       const emptyRevision = createLongFileRevision("");
-      const emptyFile = <T extends { revision: string; updatedAt: string }>(file: T): T => ({
+      const emptyFile = <T extends { revision: string; updatedAt: string }>(
+        file: T
+      ): T => ({
         ...file,
         revision: emptyRevision,
         updatedAt: input.updatedAt

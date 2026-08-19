@@ -49,7 +49,9 @@ function toolByName(tools: AgentTool[], name: string): AgentTool {
 function resultText(result: AgentToolResult<unknown>): string {
   return result.content
     .filter(
-      (item): item is Extract<(typeof result.content)[number], { type: "text" }> =>
+      (
+        item
+      ): item is Extract<(typeof result.content)[number], { type: "text" }> =>
         item.type === "text"
     )
     .map((item) => item.text)
@@ -68,7 +70,8 @@ describe("learning imitation tools", () => {
     ]);
     expect(tools.every((tool) => tool.executionMode === undefined)).toBe(true);
 
-    const writeSchema = toolByName(tools, "write_learning_result").parameters as {
+    const writeSchema = toolByName(tools, "write_learning_result")
+      .parameters as {
       properties?: {
         type?: Record<string, unknown>;
         text?: Record<string, unknown>;
@@ -242,10 +245,12 @@ describe("learning imitation tools", () => {
     const next = applyLearningImitationWrite(
       cloneEmptyLearningImitationResult(),
       "plot_learning",
-      (result.details as Extract<
-        LearningImitationToolDetails,
-        { kind: "learning-imitation-result-update" }
-      >).update
+      (
+        result.details as Extract<
+          LearningImitationToolDetails,
+          { kind: "learning-imitation-result-update" }
+        >
+      ).update
     );
     expect(next.plot_learning.plotDesignSkill).toBe(
       "先制造时间差，再揭示证词矛盾。"
@@ -280,10 +285,10 @@ describe("learning imitation tools", () => {
     expect(result.details).toMatchObject({
       kind: "learning-imitation-result-update",
       stageId: "style_learning",
-        update: {
-          mode: "replace",
-          style_skill_title: "冷峻悬疑文风",
-          style_skill_body: "用短句压缩叙事时间。"
+      update: {
+        mode: "replace",
+        style_skill_title: "冷峻悬疑文风",
+        style_skill_body: "用短句压缩叙事时间。"
       }
     });
     await expect(write.execute("write-2", { mode: "append" })).rejects.toThrow(

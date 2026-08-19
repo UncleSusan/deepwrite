@@ -27,9 +27,11 @@ describe("LongContinuityLedgerNavigation", () => {
   });
 
   it("keeps active and pending state explicit in both layouts", () => {
-    expect(source).toContain(":aria-selected=\"activeFileId === file.id\"");
-    expect(source).toContain(":aria-pressed=\"activeFileId === file.id\"");
-    expect(source.match(/:aria-busy="pendingFileId === file.id"/gu)).toHaveLength(2);
+    expect(source).toContain(':aria-selected="activeFileId === file.id"');
+    expect(source).toContain(':aria-pressed="activeFileId === file.id"');
+    expect(
+      source.match(/:aria-busy="pendingFileId === file.id"/gu)
+    ).toHaveLength(2);
     expect(source).toContain("'is-loading': pendingFileId === file.id");
   });
 
@@ -37,12 +39,18 @@ describe("LongContinuityLedgerNavigation", () => {
     expect(editorSource).toContain(
       'import LongContinuityLedgerNavigation from "./LongContinuityLedgerNavigation.vue"'
     );
-    expect(editorSource.match(/<LongContinuityLedgerNavigation/gu)).toHaveLength(2);
+    expect(
+      editorSource.match(/<LongContinuityLedgerNavigation/gu)
+    ).toHaveLength(2);
     expect(editorSource).toContain("currentUsesTopContinuityTabs");
     expect(editorSource).toContain("currentUsesRightContinuityList");
     expect(editorSource).toContain("currentContinuityNavigationItems");
     expect(editorSource).toContain('@select-file="selectWorkspaceFile"');
-    expect(editorSessionSource).toContain("async function loadWorkspaceDocument(");
-    expect(editorSessionSource).toContain("async function saveCurrentDocument(");
+    expect(editorSessionSource).toContain(
+      "async function loadWorkspaceDocument("
+    );
+    expect(editorSessionSource).toContain(
+      "async function saveCurrentDocument("
+    );
   });
 });

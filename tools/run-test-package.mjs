@@ -56,7 +56,10 @@ function parseTarget(args) {
 
 async function electronVersion() {
   const packageJson = JSON.parse(
-    await readFile(resolve(workspaceRoot, "node_modules/electron/package.json"), "utf8")
+    await readFile(
+      resolve(workspaceRoot, "node_modules/electron/package.json"),
+      "utf8"
+    )
   );
   return packageJson.version;
 }
@@ -85,10 +88,18 @@ async function buildMac(target, version) {
     appDirectory
   );
   if (target.buildMacArm64) {
-    await run(pnpmCommand, ["exec", "node", "scripts/verify-test-package.mjs", "mac", "arm64"], appDirectory);
+    await run(
+      pnpmCommand,
+      ["exec", "node", "scripts/verify-test-package.mjs", "mac", "arm64"],
+      appDirectory
+    );
   }
   if (target.buildMacX64) {
-    await run(pnpmCommand, ["exec", "node", "scripts/verify-test-package.mjs", "mac", "x64"], appDirectory);
+    await run(
+      pnpmCommand,
+      ["exec", "node", "scripts/verify-test-package.mjs", "mac", "x64"],
+      appDirectory
+    );
   }
 }
 
@@ -110,7 +121,11 @@ async function buildWindows(target, version) {
     ],
     appDirectory
   );
-  await run(pnpmCommand, ["exec", "node", "scripts/verify-test-package.mjs", "win", "x64"], appDirectory);
+  await run(
+    pnpmCommand,
+    ["exec", "node", "scripts/verify-test-package.mjs", "win", "x64"],
+    appDirectory
+  );
 }
 
 async function main() {
@@ -147,6 +162,8 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+  console.error(
+    error instanceof Error ? (error.stack ?? error.message) : String(error)
+  );
   process.exitCode = 1;
 });

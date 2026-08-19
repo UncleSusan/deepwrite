@@ -1,11 +1,4 @@
-import {
-  link,
-  mkdir,
-  mkdtemp,
-  rm,
-  symlink,
-  writeFile
-} from "node:fs/promises";
+import { link, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -50,7 +43,9 @@ describe("long continuation TXT import", () => {
       "第2章",
       "第十章"
     ]);
-    expect(preview.warnings).toContain("第一卷章节编号存在缺口，已按识别到的编号顺序导入。");
+    expect(preview.warnings).toContain(
+      "第一卷章节编号存在缺口，已按识别到的编号顺序导入。"
+    );
 
     const store = new LongProjectStore({
       now: () => "2026-08-04T00:00:00.000Z"
@@ -73,7 +68,9 @@ describe("long continuation TXT import", () => {
       index.plot.chapterCards.every(({ primaryArcId }) => primaryArcId === null)
     ).toBe(true);
     expect(index.ledger.commits).toHaveLength(2);
-    expect(index.ledger.commits.every(({ mode }) => mode === "import_checkpoint")).toBe(true);
+    expect(
+      index.ledger.commits.every(({ mode }) => mode === "import_checkpoint")
+    ).toBe(true);
     expect(index.ledger.committedThroughChapterId).toBe(
       index.plot.chapterCards[1]!.id
     );
@@ -189,11 +186,15 @@ describe("long continuation TXT import", () => {
     const mixed = join(root, "mixed");
     await mkdir(join(mixed, "第一卷"), { recursive: true });
     await writeFile(join(mixed, "第一章.txt"), "正文", "utf8");
-    await expect(scanContinuationImportSource(mixed)).rejects.toThrow("不能混放");
+    await expect(scanContinuationImportSource(mixed)).rejects.toThrow(
+      "不能混放"
+    );
 
     const nested = join(root, "nested");
     await mkdir(join(nested, "第一卷", "子目录"), { recursive: true });
-    await expect(scanContinuationImportSource(nested)).rejects.toThrow("只能直接包含");
+    await expect(scanContinuationImportSource(nested)).rejects.toThrow(
+      "只能直接包含"
+    );
 
     const linked = join(root, "linked");
     await mkdir(linked);
@@ -205,12 +206,16 @@ describe("long continuation TXT import", () => {
     const hardlinked = join(root, "hardlinked");
     await mkdir(hardlinked);
     await link(original, join(hardlinked, "第一章.txt"));
-    await expect(scanContinuationImportSource(hardlinked)).rejects.toThrow("硬链接");
+    await expect(scanContinuationImportSource(hardlinked)).rejects.toThrow(
+      "硬链接"
+    );
 
     const blank = join(root, "blank");
     await mkdir(blank);
     await writeFile(join(blank, "第一章.txt"), " \n\t", "utf8");
-    await expect(scanContinuationImportSource(blank)).rejects.toThrow("内容为空");
+    await expect(scanContinuationImportSource(blank)).rejects.toThrow(
+      "内容为空"
+    );
 
     const changed = join(root, "changed");
     const target = join(root, "target");
@@ -246,7 +251,9 @@ describe("long continuation TXT import", () => {
       genre: "其他"
     });
     expect(imported.book.workspaceIndex.ledger.commits).toEqual([]);
-    expect(imported.book.workspaceIndex.ledger.committedThroughChapterId).toBeNull();
+    expect(
+      imported.book.workspaceIndex.ledger.committedThroughChapterId
+    ).toBeNull();
     expect(imported.book.workspaceIndex.chapters[0]!.commitId).toBeNull();
   });
 

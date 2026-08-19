@@ -34,14 +34,18 @@ function compactEvaluationText(value: string): string {
 }
 
 function isUserAgentMessage(message: AgentMessage): message is UserMessage {
-  return typeof message === "object" && message !== null && message.role === "user";
+  return (
+    typeof message === "object" && message !== null && message.role === "user"
+  );
 }
 
 function isToolResultAgentMessage(
   message: AgentMessage
 ): message is ToolResultMessage {
   return (
-    typeof message === "object" && message !== null && message.role === "toolResult"
+    typeof message === "object" &&
+    message !== null &&
+    message.role === "toolResult"
   );
 }
 
@@ -62,14 +66,18 @@ function evaluationHistoryFromToolResult(
 ): AgentEvaluationHistoryMessage {
   const text = message.content
     .filter(
-      (part): part is Extract<(typeof message.content)[number], { type: "text" }> =>
+      (
+        part
+      ): part is Extract<(typeof message.content)[number], { type: "text" }> =>
         part.type === "text"
     )
     .map((part) => part.text)
     .join("\n");
   return {
     role: "tool",
-    text: compactEvaluationText(text || summarizeToolResult(message.details ?? message)),
+    text: compactEvaluationText(
+      text || summarizeToolResult(message.details ?? message)
+    ),
     ...evaluationHistoryToolFields(message.toolName, message.toolCallId),
     ...(message.isError ? { isError: true } : {})
   };
@@ -82,7 +90,9 @@ export function evaluationConversationHistory(
   const entries: AgentEvaluationHistoryMessage[] = [];
   for (const message of messages) {
     if (isUserAgentMessage(message)) {
-      const text = compactEvaluationText(evaluationContextText(message.content));
+      const text = compactEvaluationText(
+        evaluationContextText(message.content)
+      );
       if (text) entries.push({ role: "user", text });
       continue;
     }
@@ -149,9 +159,7 @@ export function buildAgentEvaluationSnapshot(
     capturedAt,
     systemPrompt,
     runtimeContext: {
-      kind: initialSessionContext
-        ? "initial-session-context"
-        : "turn-context",
+      kind: initialSessionContext ? "initial-session-context" : "turn-context",
       text: evaluationContextText(runtimeUserContent)
     },
     tools: tools.map(evaluationToolConfiguration),

@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import type {
   BookResourceDialogMode,
   CatalogResourceNodeAction,
@@ -43,13 +50,22 @@ const emit = defineEmits<{
   moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
   createLongDraftSection: [node: ResourceTreeNode];
-  longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode];
+  longDraftSectionAction: [
+    action: "move-up" | "move-down" | "delete",
+    node: ResourceTreeNode
+  ];
   createLongTreeItem: [node: ResourceTreeNode];
   longTreeItemAction: [action: LongTreeItemAction, node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
-  expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
+  expertSectionAction: [
+    action: "move-up" | "move-down",
+    node: ResourceTreeNode
+  ];
   createCharacterItem: [node: ResourceTreeNode];
-  characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
+  characterItemAction: [
+    action: "rename" | "move-up" | "move-down" | "delete",
+    node: ResourceTreeNode
+  ];
 }>();
 
 const open = ref(
@@ -86,8 +102,7 @@ const hasGroupAction = computed(
 );
 const hasBookAction = computed(
   () =>
-    props.resourceDomain === "creation" &&
-    props.node.catalogNodeType === "book"
+    props.resourceDomain === "creation" && props.node.catalogNodeType === "book"
 );
 const hasLongBookAction = computed(
   () =>
@@ -130,16 +145,16 @@ const isLongTreeItem = computed(
 );
 const isExpertDraftSection = computed(
   () =>
-    props.resourceDomain === "creation" &&
-    Boolean(props.node.expertSectionId)
+    props.resourceDomain === "creation" && Boolean(props.node.expertSectionId)
 );
 const isCharacterDirectory = computed(
-  () => props.resourceDomain === "creation" && props.node.characterDirectory === true
+  () =>
+    props.resourceDomain === "creation" &&
+    props.node.characterDirectory === true
 );
 const isCharacterItem = computed(
   () =>
-    props.resourceDomain === "creation" &&
-    Boolean(props.node.characterItemId)
+    props.resourceDomain === "creation" && Boolean(props.node.characterItemId)
 );
 const hasActionMenu = computed(
   () =>
@@ -161,19 +176,28 @@ const hasNodeAction = computed(
     isExpertDraftParent.value ||
     isCharacterDirectory.value
 );
-const canDragLibraryEntry = computed(() =>
-  libraryDomain.value !== undefined &&
-  props.node.catalogNodeType === "document" &&
-  Boolean(props.node.libraryId && props.node.catalogEntryId) &&
-  !props.node.readOnly && !props.node.unavailable
+const canDragLibraryEntry = computed(
+  () =>
+    libraryDomain.value !== undefined &&
+    props.node.catalogNodeType === "document" &&
+    Boolean(props.node.libraryId && props.node.catalogEntryId) &&
+    !props.node.readOnly &&
+    !props.node.unavailable
 );
-const dragPayload = ref<{ domain: "skill" | "material"; sourceLibraryId: string; entryId: string } | null>(null);
+const dragPayload = ref<{
+  domain: "skill" | "material";
+  sourceLibraryId: string;
+  entryId: string;
+} | null>(null);
 const isDropTarget = ref(false);
 const draftUnitLabel = computed(() =>
   props.node.workspaceType === "script" ? "剧集" : "小节"
 );
 
-function containsSelectedDescendant(node: ResourceTreeNode, selectedId: string): boolean {
+function containsSelectedDescendant(
+  node: ResourceTreeNode,
+  selectedId: string
+): boolean {
   return (node.children ?? []).some(
     (child) =>
       child.id === selectedId || containsSelectedDescendant(child, selectedId)
@@ -201,11 +225,7 @@ function isLastLongTreeItem(node: ResourceTreeNode): boolean {
 }
 
 watch(
-  () =>
-    [
-      props.selectedId,
-      props.node.children?.length ?? 0
-    ] as const,
+  () => [props.selectedId, props.node.children?.length ?? 0] as const,
   ([selectedId, childCount]) => {
     if (
       childCount > 0 &&
@@ -219,10 +239,7 @@ watch(
 );
 
 function activate(): void {
-  if (
-    props.node.unavailable &&
-    props.node.catalogNodeType === "long-book"
-  ) {
+  if (props.node.unavailable && props.node.catalogNodeType === "long-book") {
     return;
   }
   if (props.node.children?.length) {
@@ -246,9 +263,11 @@ function updateActionMenuPlacement(): void {
   if (!actionMenuOpen.value || !area || !menu) return;
 
   const scrollContainer = area.closest<HTMLElement>(".sidebar-scroll");
-  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const viewportHeight =
+    document.documentElement.clientHeight || window.innerHeight;
   const scrollBounds = scrollContainer?.getBoundingClientRect();
-  const boundaryTop = Math.max(scrollBounds?.top ?? 0, 0) + ACTION_MENU_EDGE_GAP;
+  const boundaryTop =
+    Math.max(scrollBounds?.top ?? 0, 0) + ACTION_MENU_EDGE_GAP;
   const boundaryBottom =
     Math.min(scrollBounds?.bottom ?? viewportHeight, viewportHeight) -
     ACTION_MENU_EDGE_GAP;
@@ -278,9 +297,7 @@ function exportBook(): void {
   emit("exportBook", props.node);
 }
 
-function activateLongBookAction(
-  action: LongBookResourceNodeAction
-): void {
+function activateLongBookAction(action: LongBookResourceNodeAction): void {
   const node = props.node;
   if (
     node.catalogNodeType !== "long-book" ||
@@ -306,44 +323,108 @@ function activateResourceNodeAction(action: CatalogResourceNodeAction): void {
 function startLibraryEntryDrag(event: DragEvent): void {
   const domain = libraryDomain.value;
   if (!domain || !props.node.libraryId || !props.node.catalogEntryId) return;
-  dragPayload.value = { domain, sourceLibraryId: props.node.libraryId, entryId: props.node.catalogEntryId };
-  event.dataTransfer?.setData("application/x-deepwrite-library-entry", JSON.stringify(dragPayload.value));
-  event.dataTransfer?.setData(`application/x-deepwrite-library-entry-${domain}`, "1");
+  dragPayload.value = {
+    domain,
+    sourceLibraryId: props.node.libraryId,
+    entryId: props.node.catalogEntryId
+  };
+  event.dataTransfer?.setData(
+    "application/x-deepwrite-library-entry",
+    JSON.stringify(dragPayload.value)
+  );
+  event.dataTransfer?.setData(
+    `application/x-deepwrite-library-entry-${domain}`,
+    "1"
+  );
   if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
 }
 
-function readLibraryEntryDrag(event: DragEvent): { domain: "skill" | "material"; sourceLibraryId: string; entryId: string } | null {
+function readLibraryEntryDrag(event: DragEvent): {
+  domain: "skill" | "material";
+  sourceLibraryId: string;
+  entryId: string;
+} | null {
   try {
-    const value = JSON.parse(event.dataTransfer?.getData("application/x-deepwrite-library-entry") ?? "") as typeof dragPayload.value;
-    return value && value.domain === libraryDomain.value && value.sourceLibraryId && value.entryId ? value : null;
-  } catch { return null; }
+    const value = JSON.parse(
+      event.dataTransfer?.getData("application/x-deepwrite-library-entry") ?? ""
+    ) as typeof dragPayload.value;
+    return value &&
+      value.domain === libraryDomain.value &&
+      value.sourceLibraryId &&
+      value.entryId
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function handleLibraryEntryDragOver(event: DragEvent): void {
   const source = readLibraryEntryDrag(event);
   const domain = libraryDomain.value;
-  const targetLibraryId = props.node.catalogNodeType === "library" ? props.node.libraryId : props.node.catalogNodeType === "document" ? props.node.libraryId : undefined;
+  const targetLibraryId =
+    props.node.catalogNodeType === "library"
+      ? props.node.libraryId
+      : props.node.catalogNodeType === "document"
+        ? props.node.libraryId
+        : undefined;
   const matchingDragType = domain
-    ? Array.from(event.dataTransfer?.types ?? []).includes(`application/x-deepwrite-library-entry-${domain}`)
+    ? Array.from(event.dataTransfer?.types ?? []).includes(
+        `application/x-deepwrite-library-entry-${domain}`
+      )
     : false;
-  if ((!source && !matchingDragType) || !domain || !targetLibraryId || props.node.readOnly || props.node.unavailable) return;
+  if (
+    (!source && !matchingDragType) ||
+    !domain ||
+    !targetLibraryId ||
+    props.node.readOnly ||
+    props.node.unavailable
+  )
+    return;
   event.preventDefault();
   isDropTarget.value = true;
   if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
 }
 
-function clearLibraryEntryDropTarget(): void { isDropTarget.value = false; }
+function clearLibraryEntryDropTarget(): void {
+  isDropTarget.value = false;
+}
 
 function dropLibraryEntry(event: DragEvent): void {
   const source = readLibraryEntryDrag(event);
   const domain = libraryDomain.value;
-  const targetLibraryId = props.node.catalogNodeType === "library" ? props.node.libraryId : props.node.catalogNodeType === "document" ? props.node.libraryId : undefined;
+  const targetLibraryId =
+    props.node.catalogNodeType === "library"
+      ? props.node.libraryId
+      : props.node.catalogNodeType === "document"
+        ? props.node.libraryId
+        : undefined;
   isDropTarget.value = false;
-  if (!source || !domain || !targetLibraryId || props.node.readOnly || props.node.unavailable) return;
+  if (
+    !source ||
+    !domain ||
+    !targetLibraryId ||
+    props.node.readOnly ||
+    props.node.unavailable
+  )
+    return;
   event.preventDefault();
-  const beforeEntryId = props.node.catalogNodeType === "document" ? props.node.catalogEntryId : undefined;
-  if (source.sourceLibraryId === targetLibraryId && source.entryId === beforeEntryId) return;
-  emit("moveLibraryEntry", { domain, sourceLibraryId: source.sourceLibraryId, entryId: source.entryId, targetLibraryId, ...(beforeEntryId ? { beforeEntryId } : {}) });
+  const beforeEntryId =
+    props.node.catalogNodeType === "document"
+      ? props.node.catalogEntryId
+      : undefined;
+  if (
+    source.sourceLibraryId === targetLibraryId &&
+    source.entryId === beforeEntryId
+  )
+    return;
+  emit("moveLibraryEntry", {
+    domain,
+    sourceLibraryId: source.sourceLibraryId,
+    entryId: source.entryId,
+    targetLibraryId,
+    ...(beforeEntryId ? { beforeEntryId } : {})
+  });
 }
 
 function createExpertSection(): void {
@@ -356,7 +437,9 @@ function createLongDraftSection(): void {
   emit("createLongDraftSection", props.node);
 }
 
-function longDraftSectionAction(action: "move-up" | "move-down" | "delete"): void {
+function longDraftSectionAction(
+  action: "move-up" | "move-down" | "delete"
+): void {
   actionMenuOpen.value = false;
   emit("select", props.node);
   emit("longDraftSectionAction", action, props.node);
@@ -388,7 +471,9 @@ function createCharacterItem(): void {
   emit("createCharacterItem", props.node);
 }
 
-function characterItemAction(action: "rename" | "move-up" | "move-down" | "delete"): void {
+function characterItemAction(
+  action: "rename" | "move-up" | "move-down" | "delete"
+): void {
   actionMenuOpen.value = false;
   emit("select", props.node);
   emit("characterItemAction", action, props.node);
@@ -438,7 +523,9 @@ onBeforeUnmount(() => {
       :style="{ '--tree-depth': depth }"
       :data-tree-depth="depth"
       type="button"
-      :title="node.categoryTag ? `${node.label} · ${node.categoryTag}` : node.label"
+      :title="
+        node.categoryTag ? `${node.label} · ${node.categoryTag}` : node.label
+      "
       :data-resource-id="node.id"
       :aria-expanded="node.children?.length ? open : undefined"
       :aria-label="`${node.children?.length ? `${node.selectableBranch ? '选择并' : ''}${open ? '折叠' : '展开'}` : ''}${node.label}${node.categoryTag ? `，${node.categoryTag}` : ''}`"
@@ -449,9 +536,14 @@ onBeforeUnmount(() => {
       @dragleave="clearLibraryEntryDropTarget"
       @drop="dropLibraryEntry"
     >
-      <AppIcon :name="node.icon ?? (node.children?.length ? 'folder' : 'file')" :size="15" />
+      <AppIcon
+        :name="node.icon ?? (node.children?.length ? 'folder' : 'file')"
+        :size="15"
+      />
       <span class="tree-label">{{ node.label }}</span>
-      <span v-if="node.categoryTag" class="tree-category-tag">{{ node.categoryTag }}</span>
+      <span v-if="node.categoryTag" class="tree-category-tag">{{
+        node.categoryTag
+      }}</span>
       <span v-if="node.badge" class="tree-badge">
         {{ node.badge }}
       </span>
@@ -465,7 +557,12 @@ onBeforeUnmount(() => {
     </button>
 
     <div
-      v-if="isLongTreeCollection || isLongDraftVolume || isExpertDraftParent || isCharacterDirectory"
+      v-if="
+        isLongTreeCollection ||
+        isLongDraftVolume ||
+        isExpertDraftParent ||
+        isCharacterDirectory
+      "
       class="tree-node-action-area"
     >
       <button
@@ -477,27 +574,27 @@ onBeforeUnmount(() => {
             ? '新建人物条目'
             : isLongTreeCollection
               ? `在${node.label}新增条目`
-            : isLongDraftVolume
-              ? `在${node.label}新增小节`
-              : `在${node.label}末尾新建${draftUnitLabel}`
+              : isLongDraftVolume
+                ? `在${node.label}新增小节`
+                : `在${node.label}末尾新建${draftUnitLabel}`
         "
         :title="
           isCharacterDirectory
             ? '新建人物条目'
             : isLongTreeCollection
               ? '新增条目'
-            : isLongDraftVolume
-              ? '新增小节'
-              : `新建${draftUnitLabel}`
+              : isLongDraftVolume
+                ? '新增小节'
+                : `新建${draftUnitLabel}`
         "
         @click.stop="
           isCharacterDirectory
             ? createCharacterItem()
             : isLongTreeCollection
               ? createLongTreeItem()
-            : isLongDraftVolume
-              ? createLongDraftSection()
-              : createExpertSection()
+              : isLongDraftVolume
+                ? createLongDraftSection()
+                : createExpertSection()
         "
       >
         <AppIcon name="plus" :size="16" />
@@ -629,16 +726,36 @@ onBeforeUnmount(() => {
           </button>
         </template>
         <template v-else-if="isCharacterItem">
-          <button class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="characterItemAction('rename')">
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="characterItemAction('rename')"
+          >
             <AppIcon name="edit" :size="16" /><span>修改名称</span>
           </button>
-          <button class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="characterItemAction('move-up')">
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="characterItemAction('move-up')"
+          >
             <span>↑</span><span>上移</span>
           </button>
-          <button class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="characterItemAction('move-down')">
+          <button
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="characterItemAction('move-down')"
+          >
             <span>↓</span><span>下移</span>
           </button>
-          <button class="tree-node-action-menu-item is-danger" type="button" role="menuitem" @click.stop="characterItemAction('delete')">
+          <button
+            class="tree-node-action-menu-item is-danger"
+            type="button"
+            role="menuitem"
+            @click.stop="characterItemAction('delete')"
+          >
             <AppIcon name="trash" :size="16" /><span>删除人物条目</span>
           </button>
         </template>
@@ -648,9 +765,7 @@ onBeforeUnmount(() => {
               class="tree-node-action-menu-item"
               type="button"
               role="menuitem"
-              @click.stop="
-                activateLongBookAction('manage-structure')
-              "
+              @click.stop="activateLongBookAction('manage-structure')"
             >
               <AppIcon name="settings" :size="16" />
               <span>结构管理</span>
@@ -677,9 +792,7 @@ onBeforeUnmount(() => {
               class="tree-node-action-menu-item"
               type="button"
               role="menuitem"
-              @click.stop="
-                activateLongBookAction('bind-skill')
-              "
+              @click.stop="activateLongBookAction('bind-skill')"
             >
               <AppIcon name="library" :size="16" />
               <span>技能库绑定</span>
@@ -688,9 +801,7 @@ onBeforeUnmount(() => {
               class="tree-node-action-menu-item"
               type="button"
               role="menuitem"
-              @click.stop="
-                activateLongBookAction('bind-material')
-              "
+              @click.stop="activateLongBookAction('bind-material')"
             >
               <AppIcon name="archive" :size="16" />
               <span>素材库绑定</span>
@@ -737,60 +848,60 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="hasBookAction">
           <template v-if="!node.unavailable">
-          <button
-            class="tree-node-action-menu-item"
-            type="button"
-            role="menuitem"
-            @click.stop="openBookAction('manage-structure')"
-          >
-            <AppIcon name="settings" :size="16" />
-            <span>结构管理</span>
-          </button>
-          <button
-            class="tree-node-action-menu-item"
-            type="button"
-            role="menuitem"
-            @click.stop="openBookAction('rename')"
-          >
-            <AppIcon name="edit" :size="16" />
-            <span>修改名称</span>
-          </button>
-          <button
-            class="tree-node-action-menu-item"
-            type="button"
-            role="menuitem"
-            @click.stop="openBookAction('duplicate')"
-          >
-            <AppIcon name="copy" :size="16" />
-            <span>复制</span>
-          </button>
-          <button
-            class="tree-node-action-menu-item"
-            type="button"
-            role="menuitem"
-            @click.stop="openBookAction('bind-skill')"
-          >
-            <AppIcon name="library" :size="16" />
-            <span>技能库绑定</span>
-          </button>
-          <button
-            class="tree-node-action-menu-item"
-            type="button"
-            role="menuitem"
-            @click.stop="openBookAction('bind-material')"
-          >
-            <AppIcon name="archive" :size="16" />
-            <span>素材库绑定</span>
-          </button>
-          <button
-            class="tree-node-action-menu-item"
-            type="button"
-            role="menuitem"
-            @click.stop="exportBook"
-          >
-            <AppIcon name="download" :size="16" />
-            <span>导出正文</span>
-          </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="openBookAction('manage-structure')"
+            >
+              <AppIcon name="settings" :size="16" />
+              <span>结构管理</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="openBookAction('rename')"
+            >
+              <AppIcon name="edit" :size="16" />
+              <span>修改名称</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="openBookAction('duplicate')"
+            >
+              <AppIcon name="copy" :size="16" />
+              <span>复制</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="openBookAction('bind-skill')"
+            >
+              <AppIcon name="library" :size="16" />
+              <span>技能库绑定</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="openBookAction('bind-material')"
+            >
+              <AppIcon name="archive" :size="16" />
+              <span>素材库绑定</span>
+            </button>
+            <button
+              class="tree-node-action-menu-item"
+              type="button"
+              role="menuitem"
+              @click.stop="exportBook"
+            >
+              <AppIcon name="download" :size="16" />
+              <span>导出正文</span>
+            </button>
           </template>
           <div class="tree-node-action-menu-divider" role="separator" />
           <button
@@ -813,8 +924,16 @@ onBeforeUnmount(() => {
             <span>删除</span>
           </button>
         </template>
-        <template v-else-if="node.catalogNodeType === 'library' && libraryDomain">
-          <button v-if="!node.readOnly && !node.unavailable" class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="activateResourceNodeAction('rename-library')">
+        <template
+          v-else-if="node.catalogNodeType === 'library' && libraryDomain"
+        >
+          <button
+            v-if="!node.readOnly && !node.unavailable"
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="activateResourceNodeAction('rename-library')"
+          >
             <AppIcon name="edit" :size="16" /><span>修改名称</span>
           </button>
           <button
@@ -838,7 +957,9 @@ onBeforeUnmount(() => {
             <span>新建条目</span>
           </button>
           <button
-            v-if="libraryDomain === 'skill' && !node.readOnly && !node.unavailable"
+            v-if="
+              libraryDomain === 'skill' && !node.readOnly && !node.unavailable
+            "
             class="tree-node-action-menu-item"
             type="button"
             role="menuitem"
@@ -857,7 +978,11 @@ onBeforeUnmount(() => {
             <AppIcon name="copy" :size="16" />
             <span>粘贴</span>
           </button>
-          <div v-if="pinnable" class="tree-node-action-menu-divider" role="separator" />
+          <div
+            v-if="pinnable"
+            class="tree-node-action-menu-divider"
+            role="separator"
+          />
           <button
             class="tree-node-action-menu-item is-danger"
             type="button"
@@ -909,9 +1034,19 @@ onBeforeUnmount(() => {
           </button>
         </template>
         <template
-          v-else-if="node.catalogNodeType === 'document' && node.catalogEntryId && libraryDomain"
+          v-else-if="
+            node.catalogNodeType === 'document' &&
+            node.catalogEntryId &&
+            libraryDomain
+          "
         >
-          <button v-if="!node.readOnly" class="tree-node-action-menu-item" type="button" role="menuitem" @click.stop="activateResourceNodeAction('rename-entry')">
+          <button
+            v-if="!node.readOnly"
+            class="tree-node-action-menu-item"
+            type="button"
+            role="menuitem"
+            @click.stop="activateResourceNodeAction('rename-entry')"
+          >
             <AppIcon name="edit" :size="16" /><span>修改名称</span>
           </button>
           <button
@@ -949,13 +1084,19 @@ onBeforeUnmount(() => {
         :pinnable="
           !child.unavailable &&
           !child.missing &&
-          (child.catalogNodeType === 'book' || child.catalogNodeType === 'library')
+          (child.catalogNodeType === 'book' ||
+            child.catalogNodeType === 'library')
         "
         :pinned="pinnedIds?.includes(child.id) ?? false"
         :pinned-ids="pinnedIds"
         :long-tree-actions-disabled="longTreeActionsDisabled"
-        :expert-section-move-up-disabled="Boolean(child.expertSectionId) && childIndex === 0"
-        :expert-section-move-down-disabled="Boolean(child.expertSectionId) && childIndex === node.children.length - 1"
+        :expert-section-move-up-disabled="
+          Boolean(child.expertSectionId) && childIndex === 0
+        "
+        :expert-section-move-down-disabled="
+          Boolean(child.expertSectionId) &&
+          childIndex === node.children.length - 1
+        "
         :long-draft-section-move-up-disabled="
           child.longWorkspaceSelection?.root === 'draft' &&
           Boolean(child.longWorkspaceSelection?.chapterCardId) &&
@@ -977,13 +1118,23 @@ onBeforeUnmount(() => {
         @move-library-entry="emit('moveLibraryEntry', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @create-long-draft-section="emit('createLongDraftSection', $event)"
-        @long-draft-section-action="(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)"
+        @long-draft-section-action="
+          (action, sectionNode) =>
+            emit('longDraftSectionAction', action, sectionNode)
+        "
         @create-long-tree-item="emit('createLongTreeItem', $event)"
-        @long-tree-item-action="(action, itemNode) => emit('longTreeItemAction', action, itemNode)"
+        @long-tree-item-action="
+          (action, itemNode) => emit('longTreeItemAction', action, itemNode)
+        "
         @remove-expert-section="emit('removeExpertSection', $event)"
-        @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
+        @expert-section-action="
+          (action, sectionNode) =>
+            emit('expertSectionAction', action, sectionNode)
+        "
         @create-character-item="emit('createCharacterItem', $event)"
-        @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
+        @character-item-action="
+          (action, itemNode) => emit('characterItemAction', action, itemNode)
+        "
       />
     </ul>
   </li>

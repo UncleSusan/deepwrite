@@ -10,8 +10,7 @@ const props = defineProps<{
   title: string;
   sourceKind: LongMigrationSourceKind;
   legacySchemaVersion: number;
-  committedChapterPolicy:
-    LongImportWriteClawResult["committedChapterPolicy"];
+  committedChapterPolicy: LongImportWriteClawResult["committedChapterPolicy"];
   warnings: string[];
 }>();
 
@@ -27,9 +26,7 @@ const sourceLabels: Record<LongMigrationSourceKind, string> = {
 
 const sourceLabel = computed(() => sourceLabels[props.sourceKind]);
 const legacyVersionLabel = computed(() =>
-  props.legacySchemaVersion > 0
-    ? `v${props.legacySchemaVersion}`
-    : "未知版本"
+  props.legacySchemaVersion > 0 ? `v${props.legacySchemaVersion}` : "未知版本"
 );
 
 function handleKeydown(event: KeyboardEvent): void {
@@ -39,9 +36,7 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() =>
-  document.removeEventListener("keydown", handleKeydown)
-);
+onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
@@ -105,7 +100,8 @@ onBeforeUnmount(() =>
           <section class="long-migration-source-note">
             <h3>源文件保持不变</h3>
             <p>
-              导入只会新建 DeepWrite 长篇项目，不会修改、覆盖或删除所选的旧版本源文件。
+              导入只会新建 DeepWrite
+              长篇项目，不会修改、覆盖或删除所选的旧版本源文件。
             </p>
           </section>
 
@@ -273,24 +269,12 @@ onBeforeUnmount(() =>
 }
 
 .long-migration-policy {
-  border-color: color-mix(
-    in srgb,
-    var(--accent) 22%,
-    var(--theme-line-soft)
-  );
-  background: color-mix(
-    in srgb,
-    var(--accent-soft) 62%,
-    var(--surface-raised)
-  );
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--theme-line-soft));
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface-raised));
 }
 
 .long-migration-source-note {
-  border-color: color-mix(
-    in srgb,
-    var(--success) 22%,
-    var(--theme-line-soft)
-  );
+  border-color: color-mix(in srgb, var(--success) 22%, var(--theme-line-soft));
   background: color-mix(
     in srgb,
     var(--success-soft) 72%,
@@ -299,11 +283,7 @@ onBeforeUnmount(() =>
 }
 
 .long-migration-warnings {
-  border-color: color-mix(
-    in srgb,
-    var(--warning) 26%,
-    var(--theme-line-soft)
-  );
+  border-color: color-mix(in srgb, var(--warning) 26%, var(--theme-line-soft));
   background: color-mix(
     in srgb,
     var(--warning-soft) 70%,
@@ -349,21 +329,13 @@ onBeforeUnmount(() =>
   display: flex;
   align-items: flex-start;
   gap: 7px;
-  border-color: color-mix(
-    in srgb,
-    var(--success) 24%,
-    var(--theme-line-soft)
-  );
+  border-color: color-mix(in srgb, var(--success) 24%, var(--theme-line-soft));
   background: var(--success-soft);
   color: var(--success);
 }
 
 .long-migration-complete p {
-  color: color-mix(
-    in srgb,
-    var(--success) 76%,
-    var(--text-primary)
-  );
+  color: color-mix(in srgb, var(--success) 76%, var(--text-primary));
   font-size: 0.714286rem;
   line-height: 1.55;
 }

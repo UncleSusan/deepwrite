@@ -17,7 +17,9 @@ export const DEFAULT_APPEARANCE_CODE_FONT_SIZE = 13;
 
 export const APPEARANCE_UI_FONT_FAMILIES = ["system", "sans", "yuan"] as const;
 export const AppearanceUiFontFamilySchema = z.enum(APPEARANCE_UI_FONT_FAMILIES);
-export type AppearanceUiFontFamily = z.infer<typeof AppearanceUiFontFamilySchema>;
+export type AppearanceUiFontFamily = z.infer<
+  typeof AppearanceUiFontFamilySchema
+>;
 
 export const APPEARANCE_EDITOR_FONT_FAMILIES = [
   "song",

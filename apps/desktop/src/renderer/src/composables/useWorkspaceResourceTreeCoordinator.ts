@@ -5,10 +5,7 @@ import type {
 } from "@deepwrite/contracts";
 import { computed, ref, type Ref } from "vue";
 import type { CatalogWorkspaceProjection } from "../data/catalogWorkspace";
-import type {
-  ResourceTreeNode,
-  ResourceTreeSection
-} from "../types/workspace";
+import type { ResourceTreeNode, ResourceTreeSection } from "../types/workspace";
 import {
   longBookResourceId,
   type LongWorkspaceSelection
@@ -38,13 +35,9 @@ export interface WorkspaceResourceTreeCoordinatorOptions {
   catalogProjection: Readonly<Ref<CatalogWorkspaceProjection | null>>;
   fallbackSections: readonly ResourceTreeSection[];
   longBooks: Readonly<Ref<readonly LongBookSummary[]>>;
-  longCatalogDiagnostics: Readonly<
-    Ref<readonly LongCatalogDiagnostic[]>
-  >;
+  longCatalogDiagnostics: Readonly<Ref<readonly LongCatalogDiagnostic[]>>;
   activeLongBookId: Readonly<Ref<string | null>>;
-  activeLongWorkspaceIndex: Readonly<
-    Ref<LongWorkspaceIndexSnapshot | null>
-  >;
+  activeLongWorkspaceIndex: Readonly<Ref<LongWorkspaceIndexSnapshot | null>>;
   activeLongSelection: Readonly<Ref<LongWorkspaceSelection | null>>;
   selectedResourceId: Ref<string>;
   storage(): WorkspaceResourceTreeStorage | undefined;
@@ -54,10 +47,7 @@ export interface WorkspaceResourceTreeCoordinatorOptions {
 }
 
 function collectResourceNodeIds(node: ResourceTreeNode): string[] {
-  return [
-    node.id,
-    ...(node.children?.flatMap(collectResourceNodeIds) ?? [])
-  ];
+  return [node.id, ...(node.children?.flatMap(collectResourceNodeIds) ?? [])];
 }
 
 function readStoredPreferences(
@@ -89,8 +79,9 @@ export function useWorkspaceResourceTreeCoordinator(
     readStoredPreferences(options.storage)
   );
 
-  const baseResourceSections = computed<ResourceTreeSection[]>(() =>
-    options.catalogProjection.value?.resourceSections ?? emptyResourceSections
+  const baseResourceSections = computed<ResourceTreeSection[]>(
+    () =>
+      options.catalogProjection.value?.resourceSections ?? emptyResourceSections
   );
 
   // Keep the serialized source until a Catalog projection is available. This
@@ -187,9 +178,7 @@ export function useWorkspaceResourceTreeCoordinator(
       if (!storage) throw new Error("Resource preference storage unavailable");
       storage.setItem(BOOK_RESOURCE_PREFERENCES_STORAGE_KEY, serialized);
     } catch {
-      options.notifications.warning(
-        "书籍设置暂时无法保存，但本次操作仍然有效"
-      );
+      options.notifications.warning("书籍设置暂时无法保存，但本次操作仍然有效");
     }
   }
 
@@ -253,10 +242,7 @@ export function useWorkspaceResourceTreeCoordinator(
       return longNavigationNodeId(bookId, selection.key);
     }
     if (selection.key.startsWith("plot-design:chapter-cards:")) {
-      if (
-        settings.plotItemLayout === "left-tree" &&
-        selection.chapterCardId
-      ) {
+      if (settings.plotItemLayout === "left-tree" && selection.chapterCardId) {
         return longNavigationNodeId(
           bookId,
           `plot-design:chapter-card:${selection.chapterCardId}`
@@ -293,10 +279,7 @@ export function useWorkspaceResourceTreeCoordinator(
       index,
       selection
     );
-    if (
-      resourceId &&
-      resourceTreeLookup.value.nodeById.has(resourceId)
-    ) {
+    if (resourceId && resourceTreeLookup.value.nodeById.has(resourceId)) {
       options.selectedResourceId.value = resourceId;
     }
   }

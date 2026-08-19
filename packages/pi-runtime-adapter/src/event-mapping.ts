@@ -27,11 +27,12 @@ export function toToolStreamRuntimeEvent(
   const content = streamEvent.partial.content[streamEvent.contentIndex];
   const toolCall = content?.type === "toolCall" ? content : undefined;
   const argumentsSnapshot = toolCallArgumentsSnapshot(streamEvent, toolCall);
-  const phase = streamEvent.type === "toolcall_start"
-    ? "start"
-    : streamEvent.type === "toolcall_delta"
-      ? "delta"
-      : "end";
+  const phase =
+    streamEvent.type === "toolcall_start"
+      ? "start"
+      : streamEvent.type === "toolcall_delta"
+        ? "delta"
+        : "end";
   return {
     type: "agent.tool_stream",
     runId: input.runId,
@@ -41,7 +42,8 @@ export function toToolStreamRuntimeEvent(
       ...(toolCall?.id ? { toolCallId: toolCall.id } : {}),
       ...(toolCall?.name ? { toolName: toolCall.name } : {}),
       phase,
-      argumentsDelta: streamEvent.type === "toolcall_delta" ? streamEvent.delta : "",
+      argumentsDelta:
+        streamEvent.type === "toolcall_delta" ? streamEvent.delta : "",
       ...(argumentsSnapshot !== undefined ? { argumentsSnapshot } : {}),
       ...(streamEvent.type === "toolcall_end"
         ? { args: streamEvent.toolCall.arguments }
@@ -68,12 +70,17 @@ export function serializedToolArguments(value: unknown): string | undefined {
 /** @internal Exported for protocol regression tests. */
 export function toolCallArgumentsSnapshot(
   streamEvent: ToolCallAssistantEvent,
-  toolCall: Extract<AssistantMessage["content"][number], { type: "toolCall" }> | undefined
+  toolCall:
+    | Extract<AssistantMessage["content"][number], { type: "toolCall" }>
+    | undefined
 ): string | undefined {
   const providerToolCall = toolCall as
     | (typeof toolCall & { partialJson?: unknown; partialArgs?: unknown })
     | undefined;
-  for (const candidate of [providerToolCall?.partialJson, providerToolCall?.partialArgs]) {
+  for (const candidate of [
+    providerToolCall?.partialJson,
+    providerToolCall?.partialArgs
+  ]) {
     if (typeof candidate === "string" && candidate.length > 0) {
       return candidate;
     }
@@ -122,11 +129,12 @@ export function toUsageObservedRuntimeEvent(
 ): Extract<AgentRuntimeEvent, { type: "agent.usage_observed" }> | undefined {
   const usage = normalizeUsage(message.usage);
   if (!usage) return undefined;
-  const status: AgentUsageObservationStatus = message.stopReason === "aborted"
-    ? "aborted"
-    : message.stopReason === "error" || message.errorMessage
-      ? "error"
-      : "completed";
+  const status: AgentUsageObservationStatus =
+    message.stopReason === "aborted"
+      ? "aborted"
+      : message.stopReason === "error" || message.errorMessage
+        ? "error"
+        : "completed";
   return {
     type: "agent.usage_observed",
     runId: input.runId,
@@ -153,41 +161,52 @@ export function toRuntimeEvents(
   messageId: string
 ): AgentRuntimeEvent[] {
   if (event.type === "tool_execution_update") {
-    const details = (event.partialResult as { details?: unknown } | undefined)?.details;
+    const details = (event.partialResult as { details?: unknown } | undefined)
+      ?.details;
     if (isSubagentToolProgressDetails(details)) {
-      return toSubagentRuntimeEvents(details.progress, input, runtime, messageId);
+      return toSubagentRuntimeEvents(
+        details.progress,
+        input,
+        runtime,
+        messageId
+      );
     }
     return [];
   }
 
   if (event.type === "tool_execution_start") {
-    return [{
-      type: "agent.tool_requested",
-      runId: input.runId,
-      sessionId: input.sessionId,
-      payload: {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        args: event.args,
-        runtime
+    return [
+      {
+        type: "agent.tool_requested",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: {
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          args: event.args,
+          runtime
+        }
       }
-    }];
+    ];
   }
 
   if (event.type === "tool_execution_end") {
-    const events: AgentRuntimeEvent[] = [{
-      type: "agent.tool_completed",
-      runId: input.runId,
-      sessionId: input.sessionId,
-      payload: {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        resultSummary: summarizeToolResult(event.result),
-        isError: event.isError,
-        runtime
+    const events: AgentRuntimeEvent[] = [
+      {
+        type: "agent.tool_completed",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: {
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          resultSummary: summarizeToolResult(event.result),
+          isError: event.isError,
+          runtime
+        }
       }
-    }];
-    const details = (event.result as { details?: unknown } | undefined)?.details;
+    ];
+    const details = (event.result as { details?: unknown } | undefined)
+      ?.details;
     if (isShortWorkspaceToolDetails(details)) {
       if (
         details.kind === "workspace-editor-mutation" ||
@@ -207,19 +226,18 @@ export function toRuntimeEvents(
                 : details.mutation.type === "moveItem"
                   ? `${details.mutation.title}：${details.mutation.direction === "up" ? "上移" : "下移"}`
                   : `创建：${details.mutation.title}`
-            :
-          details.kind === "workspace-expert-draft-section-creation"
-            ? details.sections
-                .map(
-                  (section, index) =>
-                    `${index + 1}. ${section.title}${section.wordCountRequirement ? `（${section.wordCountRequirement}）` : ""}`
-                )
-                .join("\n")
-            : details.kind === "workspace-expert-draft-section-rename"
-              ? `${details.previousTitle} → ${details.title}`
-              : details.kind === "workspace-expert-draft-section-deletion"
-                ? `删除：${details.title}`
-                : details.text;
+            : details.kind === "workspace-expert-draft-section-creation"
+              ? details.sections
+                  .map(
+                    (section, index) =>
+                      `${index + 1}. ${section.title}${section.wordCountRequirement ? `（${section.wordCountRequirement}）` : ""}`
+                  )
+                  .join("\n")
+              : details.kind === "workspace-expert-draft-section-rename"
+                ? `${details.previousTitle} → ${details.title}`
+                : details.kind === "workspace-expert-draft-section-deletion"
+                  ? `删除：${details.title}`
+                  : details.text;
         events.push({
           type: "workspace.editor_mutation",
           runId: input.runId,
@@ -246,41 +264,42 @@ export function toRuntimeEvents(
                       ...(details.itemId ? { itemId: details.itemId } : {})
                     }
                   }
-              : details.kind === "workspace-character-structure-mutation"
-                ? {
-                    mutationTarget: {
-                      kind: "character-structure" as const,
-                      mutation: details.mutation
+                : details.kind === "workspace-character-structure-mutation"
+                  ? {
+                      mutationTarget: {
+                        kind: "character-structure" as const,
+                        mutation: details.mutation
+                      }
                     }
-                  }
-              : details.kind === "workspace-expert-draft-section-creation"
-                ? {
-                    mutationTarget: {
-                      kind: "expert-draft-section-creation" as const,
-                      sections: details.sections,
-                      ...(details.afterSectionId
-                        ? { afterSectionId: details.afterSectionId }
-                        : {})
-                    }
-                  }
-              : details.kind === "workspace-expert-draft-section-rename"
-                ? {
-                    mutationTarget: {
-                      kind: "expert-draft-section-rename" as const,
-                      sectionId: details.sectionId,
-                      previousTitle: details.previousTitle,
-                      title: details.title
-                    }
-                  }
-              : details.kind === "workspace-expert-draft-section-deletion"
-                ? {
-                    mutationTarget: {
-                      kind: "expert-draft-section-deletion" as const,
-                      sectionId: details.sectionId,
-                      title: details.title
-                    }
-                  }
-              : {}),
+                  : details.kind === "workspace-expert-draft-section-creation"
+                    ? {
+                        mutationTarget: {
+                          kind: "expert-draft-section-creation" as const,
+                          sections: details.sections,
+                          ...(details.afterSectionId
+                            ? { afterSectionId: details.afterSectionId }
+                            : {})
+                        }
+                      }
+                    : details.kind === "workspace-expert-draft-section-rename"
+                      ? {
+                          mutationTarget: {
+                            kind: "expert-draft-section-rename" as const,
+                            sectionId: details.sectionId,
+                            previousTitle: details.previousTitle,
+                            title: details.title
+                          }
+                        }
+                      : details.kind ===
+                          "workspace-expert-draft-section-deletion"
+                        ? {
+                            mutationTarget: {
+                              kind: "expert-draft-section-deletion" as const,
+                              sectionId: details.sectionId,
+                              title: details.title
+                            }
+                          }
+                        : {}),
             baseRevision: details.baseRevision,
             summary: details.summary,
             runtime
@@ -308,55 +327,56 @@ export function toRuntimeEvents(
         type: "library.editor_mutation",
         runId: input.runId,
         sessionId: input.sessionId,
-        payload: details.kind === "library-overview-mutation"
-          ? {
-              toolCallId: event.toolCallId,
-              operation: details.operation,
-              domain: details.domain,
-              libraryId: details.libraryId,
-              documentId: details.documentId,
-              title: details.title,
-              text: details.text,
-              baseRevision: details.baseRevision,
-              ...(details.baseProjectRevision === undefined
-                ? {}
-                : { baseProjectRevision: details.baseProjectRevision }),
-              summary: details.summary,
-              runtime
-            }
-          : details.operation === "create"
-          ? {
-              toolCallId: event.toolCallId,
-              operation: details.operation,
-              domain: details.domain,
-              libraryId: details.libraryId,
-              stageId: details.stageId,
-              title: details.title,
-              text: details.text,
-              baseRevision: details.baseRevision,
-              ...(details.baseProjectRevision === undefined
-                ? {}
-                : { baseProjectRevision: details.baseProjectRevision }),
-              summary: details.summary,
-              runtime
-            }
-          : {
-              toolCallId: event.toolCallId,
-              operation: details.operation,
-              domain: details.domain,
-              libraryId: details.libraryId,
-              entryId: details.entryId,
-              documentId: details.documentId,
-              stageId: details.stageId,
-              title: details.title,
-              text: details.text,
-              baseRevision: details.baseRevision,
-              ...(details.baseProjectRevision === undefined
-                ? {}
-                : { baseProjectRevision: details.baseProjectRevision }),
-              summary: details.summary,
-              runtime
-            }
+        payload:
+          details.kind === "library-overview-mutation"
+            ? {
+                toolCallId: event.toolCallId,
+                operation: details.operation,
+                domain: details.domain,
+                libraryId: details.libraryId,
+                documentId: details.documentId,
+                title: details.title,
+                text: details.text,
+                baseRevision: details.baseRevision,
+                ...(details.baseProjectRevision === undefined
+                  ? {}
+                  : { baseProjectRevision: details.baseProjectRevision }),
+                summary: details.summary,
+                runtime
+              }
+            : details.operation === "create"
+              ? {
+                  toolCallId: event.toolCallId,
+                  operation: details.operation,
+                  domain: details.domain,
+                  libraryId: details.libraryId,
+                  stageId: details.stageId,
+                  title: details.title,
+                  text: details.text,
+                  baseRevision: details.baseRevision,
+                  ...(details.baseProjectRevision === undefined
+                    ? {}
+                    : { baseProjectRevision: details.baseProjectRevision }),
+                  summary: details.summary,
+                  runtime
+                }
+              : {
+                  toolCallId: event.toolCallId,
+                  operation: details.operation,
+                  domain: details.domain,
+                  libraryId: details.libraryId,
+                  entryId: details.entryId,
+                  documentId: details.documentId,
+                  stageId: details.stageId,
+                  title: details.title,
+                  text: details.text,
+                  baseRevision: details.baseRevision,
+                  ...(details.baseProjectRevision === undefined
+                    ? {}
+                    : { baseProjectRevision: details.baseProjectRevision }),
+                  summary: details.summary,
+                  runtime
+                }
       });
     } else if (isLearningImitationToolDetails(details)) {
       events.push({
@@ -502,20 +522,24 @@ export function toRuntimeEvents(
   if (event.type === "message_update" && isAssistantMessage(event.message)) {
     const streamEvent = event.assistantMessageEvent;
     if (streamEvent.type === "text_delta") {
-      return [{
-        type: "agent.delta",
-        runId: input.runId,
-        sessionId: input.sessionId,
-        payload: { messageId, delta: streamEvent.delta, runtime }
-      }];
+      return [
+        {
+          type: "agent.delta",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: { messageId, delta: streamEvent.delta, runtime }
+        }
+      ];
     }
     if (streamEvent.type === "thinking_delta") {
-      return [{
-        type: "agent.thinking_delta",
-        runId: input.runId,
-        sessionId: input.sessionId,
-        payload: { messageId, delta: streamEvent.delta, runtime }
-      }];
+      return [
+        {
+          type: "agent.thinking_delta",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: { messageId, delta: streamEvent.delta, runtime }
+        }
+      ];
     }
   }
 
@@ -525,23 +549,25 @@ export function toRuntimeEvents(
       event.message.stopReason === "aborted" ||
       event.message.errorMessage
     ) {
-      return [{
-        type: "agent.error",
-        runId: input.runId,
-        sessionId: input.sessionId,
-        payload: {
-          code:
-            event.message.stopReason === "aborted"
-              ? "pi_agent.aborted"
-              : "pi_agent.provider_error",
-          message:
-            event.message.errorMessage ??
-            (event.message.stopReason === "aborted"
-              ? "智能体运行已中止。"
-              : "模型返回错误终态。"),
-          runtime
+      return [
+        {
+          type: "agent.error",
+          runId: input.runId,
+          sessionId: input.sessionId,
+          payload: {
+            code:
+              event.message.stopReason === "aborted"
+                ? "pi_agent.aborted"
+                : "pi_agent.provider_error",
+            message:
+              event.message.errorMessage ??
+              (event.message.stopReason === "aborted"
+                ? "智能体运行已中止。"
+                : "模型返回错误终态。"),
+            runtime
+          }
         }
-      }];
+      ];
     }
 
     if (event.message.content.some((item) => item.type === "toolCall")) {
@@ -550,26 +576,36 @@ export function toRuntimeEvents(
 
     const thinking = readAssistantThinking(event.message);
     const usage = normalizeUsage(event.message.usage);
-    return [{
-      type: "agent.completed",
-      runId: input.runId,
-      sessionId: input.sessionId,
-      payload: {
-        messageId,
-        content: readAssistantText(event.message),
-        ...(thinking ? { thinking } : {}),
-        ...(event.message.stopReason ? { stopReason: event.message.stopReason } : {}),
-        ...(usage ? { usage } : {}),
-        runtime
+    return [
+      {
+        type: "agent.completed",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: {
+          messageId,
+          content: readAssistantText(event.message),
+          ...(thinking ? { thinking } : {}),
+          ...(event.message.stopReason
+            ? { stopReason: event.message.stopReason }
+            : {}),
+          ...(usage ? { usage } : {}),
+          runtime
+        }
       }
-    }];
+    ];
   }
 
   return [];
 }
 
-export function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
-  return typeof message === "object" && message !== null && message.role === "assistant";
+export function isAssistantMessage(
+  message: AgentMessage
+): message is AssistantMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    message.role === "assistant"
+  );
 }
 
 export function readAssistantText(message: AssistantMessage): string {
@@ -618,7 +654,9 @@ export function summarizeToolResult(result: unknown): string {
   }
 }
 
-export function normalizeUsage(usage: Usage | undefined): AgentUsage | undefined {
+export function normalizeUsage(
+  usage: Usage | undefined
+): AgentUsage | undefined {
   if (!usage) return undefined;
   const values = [
     usage.input,

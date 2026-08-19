@@ -128,11 +128,7 @@ export interface LongBookResourceNodeActionPayload {
 }
 
 export type LongTreeCollectionKind =
-  | "worldbuilding-item"
-  | "character"
-  | "volume"
-  | "plot-point"
-  | "chapter-card";
+  "worldbuilding-item" | "character" | "volume" | "plot-point" | "chapter-card";
 
 export interface LongTreeCollectionTarget {
   kind: LongTreeCollectionKind;
@@ -203,12 +199,7 @@ export interface ResourceTreeNode {
   /** Identifies a mutable long-form item rendered inside a left-tree collection. */
   longTreeItem?: LongTreeItemTarget;
   catalogNodeType?:
-    | "book"
-    | "long-book"
-    | "library"
-    | "group"
-    | "category"
-    | "document";
+    "book" | "long-book" | "library" | "group" | "category" | "document";
   libraryId?: string;
   groupId?: string;
   materialKind?: MaterialLibraryKind;

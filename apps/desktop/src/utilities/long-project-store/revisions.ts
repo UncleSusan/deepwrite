@@ -15,7 +15,9 @@ export function createLongFileRevision(
   content: string | Uint8Array
 ): LongFileRevision {
   const bytes =
-    typeof content === "string" ? encodeUtf8Strict(content) : Buffer.from(content);
+    typeof content === "string"
+      ? encodeUtf8Strict(content)
+      : Buffer.from(content);
   const hash = projectTransactionContentSha256(bytes);
   return `v2:${bytes.byteLength}:${hash}` as LongFileRevision;
 }
@@ -25,13 +27,13 @@ export function longRevisionMatchesBytes(
   content: string | Uint8Array
 ): boolean {
   const bytes =
-    typeof content === "string" ? encodeUtf8Strict(content) : Buffer.from(content);
+    typeof content === "string"
+      ? encodeUtf8Strict(content)
+      : Buffer.from(content);
   const match = /^(v1|v2):(\d+):([0-9a-f]+)$/u.exec(revision);
   if (!match || Number(match[2]) !== bytes.byteLength) return false;
   const sha256 = projectTransactionContentSha256(bytes);
-  return match[1] === "v1"
-    ? sha256.startsWith(match[3]!)
-    : sha256 === match[3];
+  return match[1] === "v1" ? sha256.startsWith(match[3]!) : sha256 === match[3];
 }
 
 export function longRevisionsMatchContent(

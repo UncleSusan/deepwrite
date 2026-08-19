@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type, type Static } from "typebox";
+import { StringEnum, Type, type Static } from "@earendil-works/pi-ai";
 import {
   EMPTY_LONG_MARKDOWN_REVISION,
   LongCommitChapterInputSchema,
@@ -20,13 +20,13 @@ import {
 import {
   continuityCreateTargetParameter,
   continuityFileTargetParameter,
+  explicitTrueParameter,
   stableIdParameter,
   strictObject,
   worldbuildingReadModeParameter
 } from "./schemas";
 import {
   defineTool,
-  literalUnion,
   nextContentRevision,
   stableHash,
   textResult
@@ -35,12 +35,26 @@ import { orderedLongChapterCards } from "./dispatch";
 import { longProposalResultSummary, type LongToolContext } from "./context";
 
 export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
-  const { input, workspace, profile, readableRoots, writableRoots, capabilities, isContinuityLedgerAgent, execute, loadIndex, formLongMutationProposal, loadActiveChapterMutationContext, readChapterBodySnapshots, chapterBodyOverlay, fullyReadContinuityDocuments, continuityDocumentOverlay, pendingDeletedContinuityKeys, readWholeChapterBody } = ctx;
+  const {
+    input,
+    workspace,
+    profile,
+    readableRoots,
+    writableRoots,
+    capabilities,
+    isContinuityLedgerAgent,
+    loadIndex,
+    formLongMutationProposal,
+    loadActiveChapterMutationContext,
+    readChapterBodySnapshots,
+    chapterBodyOverlay,
+    fullyReadContinuityDocuments,
+    continuityDocumentOverlay,
+    pendingDeletedContinuityKeys,
+    readWholeChapterBody
+  } = ctx;
   const tools: AgentTool[] = [];
-  const CONTINUITY_DOCUMENT_TITLES: Record<
-    LongContinuityFileRole,
-    string
-  > = {
+  const CONTINUITY_DOCUMENT_TITLES: Record<LongContinuityFileRole, string> = {
     foreshadowing_changes: "伏笔变化",
     world_reveals: "世界观揭露",
     character_current_state: "人物当前状态",
@@ -108,12 +122,8 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
         `${CONTINUITY_DOCUMENT_TITLES[role]} is pending deletion for this chapter.`
       );
     }
-    const overlay = findContinuityOverlay(
-      chapterCardId,
-      role,
-      characterId
-    );
-    let file: LongWorkspaceFileReference | null = null;
+    const overlay = findContinuityOverlay(chapterCardId, role, characterId);
+    let file: LongWorkspaceFileReference | null;
     if (role === "chapter_end_state") file = chapter.characterState;
     else if (role === "handoff") file = chapter.handoff;
     else if (role === "foreshadowing_changes") {
@@ -126,8 +136,8 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
       );
       file =
         role === "character_current_state"
-          ? character?.currentState ?? null
-          : character?.history ?? null;
+          ? (character?.currentState ?? null)
+          : (character?.history ?? null);
     }
     file = overlay?.file ?? file;
     if (!file) {
@@ -141,8 +151,8 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
       characterName:
         characterId === null
           ? null
-          : index.characters.find(({ id }) => id === characterId)?.name ??
-            characterId,
+          : (index.characters.find(({ id }) => id === characterId)?.name ??
+            characterId),
       file,
       ...(overlay
         ? {
@@ -159,8 +169,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
     target: Static<typeof continuityFileTargetParameter>
   ): { role: LongContinuityFileRole; characterId: string | null } => ({
     role: target.document,
-    characterId:
-      "character_id" in target ? target.character_id : null
+    characterId: "character_id" in target ? target.character_id : null
   });
 
   const chapterForeshadowingCandidates = (
@@ -243,30 +252,25 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
               const pendingDeletion = pendingDeletedContinuityKeys.has(
                 continuityOverlayKey(card.id, role, characterId)
               );
-              const overlay = findContinuityOverlay(
-                card.id,
-                role,
-                characterId
-              );
+              const overlay = findContinuityOverlay(card.id, role, characterId);
               const visibleFile = pendingDeletion
                 ? null
-                : overlay?.file ?? file;
+                : (overlay?.file ?? file);
               return {
                 document: role,
                 ...(characterId ? { character_id: characterId } : {}),
                 exists: visibleFile !== null,
-                status:
-                  pendingDeletion
-                    ? "pending_deletion"
-                    : visibleFile === null
-                      ? "not_created"
-                      : overlay
-                        ? overlay.content.trim()
-                          ? "written"
-                          : "empty"
-                        : visibleFile.revision === EMPTY_LONG_MARKDOWN_REVISION
-                          ? "empty"
-                          : "written"
+                status: pendingDeletion
+                  ? "pending_deletion"
+                  : visibleFile === null
+                    ? "not_created"
+                    : overlay
+                      ? overlay.content.trim()
+                        ? "written"
+                        : "empty"
+                      : visibleFile.revision === EMPTY_LONG_MARKDOWN_REVISION
+                        ? "empty"
+                        : "written"
               };
             };
             const characterIds = new Set(
@@ -299,8 +303,10 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
                   )
                 ];
               });
-            const foreshadowingCandidates =
-              chapterForeshadowingCandidates(index, card.id);
+            const foreshadowingCandidates = chapterForeshadowingCandidates(
+              index,
+              card.id
+            );
             const foreshadowingFile = describe(
               "foreshadowing_changes",
               chapter.foreshadowingChanges
@@ -322,28 +328,27 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
                 describe("world_reveals", chapter.worldReveals),
                 ...characterFiles
               ],
-              foreshadowing_touchpoint_candidates:
-                foreshadowingCandidates.map(
-                  ({ thread, beat, placement }) => ({
-                    foreshadowing_id: thread.id,
-                    foreshadowing_title: thread.title,
-                    foreshadowing_status: thread.status,
-                    core_question: thread.coreQuestion,
-                    hidden_truth: thread.hiddenTruth ?? null,
-                    planned_span: thread.plannedSpan ?? null,
-                    truth_event_id: thread.truthEventId,
-                    expected_reader_effect: thread.expectedReaderEffect,
-                    beat_id: beat.id,
-                    beat_type: beat.type,
-                    beat_status: beat.status,
-                    planned_scope: beat.plannedScope,
-                    note: beat.note,
-                    event_id: beat.eventId,
-                    placement_id: beat.placementId,
-                    chapter_card_id:
-                      beat.chapterCardId ?? placement?.chapterCardId ?? null
-                  })
-                )
+              foreshadowing_touchpoint_candidates: foreshadowingCandidates.map(
+                ({ thread, beat, placement }) => ({
+                  foreshadowing_id: thread.id,
+                  foreshadowing_title: thread.title,
+                  foreshadowing_status: thread.status,
+                  core_question: thread.coreQuestion,
+                  hidden_truth: thread.hiddenTruth ?? null,
+                  planned_span: thread.plannedSpan ?? null,
+                  truth_event_id: thread.truthEventId,
+                  expected_reader_effect: thread.expectedReaderEffect,
+                  beat_id: beat.id,
+                  beat_type: beat.type,
+                  beat_status: beat.status,
+                  planned_scope: beat.plannedScope,
+                  note: beat.note,
+                  event_id: beat.eventId,
+                  placement_id: beat.placementId,
+                  chapter_card_id:
+                    beat.chapterCardId ?? placement?.chapterCardId ?? null
+                })
+              )
             };
           });
           const pendingCatchup = orderedLongChapterCards(index).flatMap(
@@ -503,15 +508,11 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
         }),
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
-          const {
-            index,
-            projectRevision,
-            activeChapterCardId,
-            chapter
-          } = await loadActiveChapterMutationContext(
-            signal,
-            params.chapter_card_id
-          );
+          const { index, projectRevision, activeChapterCardId, chapter } =
+            await loadActiveChapterMutationContext(
+              signal,
+              params.chapter_card_id
+            );
           const chapterCard = index.plot.chapterCards.find(
             ({ id }) => id === activeChapterCardId
           )!;
@@ -523,11 +524,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
           if (params.target.document === "world_reveals") {
             if (
               chapter.worldReveals ||
-              findContinuityOverlay(
-                activeChapterCardId,
-                "world_reveals",
-                null
-              )
+              findContinuityOverlay(activeChapterCardId, "world_reveals", null)
             ) {
               throw new Error(
                 "The active chapter already has a world-reveals file."
@@ -587,14 +584,11 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
               ({ id }) => id === characterId
             );
             if (!character) {
-              throw new Error(
-                `Character ${characterId} does not exist.`
-              );
+              throw new Error(`Character ${characterId} does not exist.`);
             }
             if (
               chapter.characterContinuity.some(
-                ({ characterId }) =>
-                  characterId === character.id
+                ({ characterId }) => characterId === character.id
               ) ||
               findContinuityOverlay(
                 activeChapterCardId,
@@ -713,17 +707,14 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
         }),
         executionMode: "sequential",
         execute: async (_toolCallId, params, signal) => {
-          const {
-            index,
-            projectRevision,
-            activeChapterCardId
-          } = await loadActiveChapterMutationContext(
-            signal,
-            params.chapter_card_id
-          );
+          const { index, projectRevision, activeChapterCardId } =
+            await loadActiveChapterMutationContext(
+              signal,
+              params.chapter_card_id
+            );
           let operation: LongWorkspaceOperation;
           let summary: string;
-          let verifiedPendingDependency = false;
+          let verifiedPendingDependency: boolean;
           const deletedKeys: string[] = [];
           if (params.target.document === "world_reveals") {
             const target = resolveContinuityFileTarget(
@@ -742,11 +733,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
             verifiedPendingDependency =
               target.overlay?.pendingCreation === true;
             deletedKeys.push(
-              continuityOverlayKey(
-                activeChapterCardId,
-                "world_reveals",
-                null
-              )
+              continuityOverlayKey(activeChapterCardId, "world_reveals", null)
             );
           } else {
             if (!("character_id" in params.target)) {
@@ -804,16 +791,13 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
             batch,
             projectRevision,
             summary,
-            message:
-              "已形成可选连续性文件删除提案，等待客户端审阅与冲突检查。",
+            message: "已形成可选连续性文件删除提案，等待客户端审阅与冲突检查。",
             verifiedPendingDependency
           });
           if (proposal.details?.kind !== "long-mutation-proposal") {
             return proposal;
           }
-          deletedKeys.forEach((key) =>
-            pendingDeletedContinuityKeys.add(key)
-          );
+          deletedKeys.forEach((key) => pendingDeletedContinuityKeys.add(key));
           return proposal;
         }
       }),
@@ -826,7 +810,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
           chapter_card_id: Type.Optional(stableIdParameter("chapter")),
           target: continuityFileTargetParameter,
           text: Type.String({ minLength: 1, maxLength: 1_000_000 }),
-          allow_overwrite_existing: Type.Optional(Type.Literal(true)),
+          allow_overwrite_existing: Type.Optional(explicitTrueParameter),
           summary: Type.Optional(
             Type.String({ minLength: 1, maxLength: 1_000 })
           )
@@ -836,23 +820,18 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
           if (!params.text.trim()) {
             throw new Error("Continuity file text must be non-empty.");
           }
-          const {
-            index,
-            projectRevision,
-            activeChapterCardId
-          } = await loadActiveChapterMutationContext(
-            signal,
-            params.chapter_card_id
-          );
+          const { index, projectRevision, activeChapterCardId } =
+            await loadActiveChapterMutationContext(
+              signal,
+              params.chapter_card_id
+            );
           const { role, characterId } = continuityTargetFromParameter(
             params.target
           );
           if (
             role === "foreshadowing_changes" &&
-            chapterForeshadowingCandidates(
-              index,
-              activeChapterCardId
-            ).length === 0
+            chapterForeshadowingCandidates(index, activeChapterCardId)
+              .length === 0
           ) {
             throw new Error(
               "本章没有关联伏笔总览中的既有触点，不能新增伏笔变化记录。未规划线索只能在对话中提示用户返回剧情设计处理。"
@@ -878,10 +857,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
               "未写入：目标已有正文，请先调用 read_continuity_file（mode=full）完整读取。"
             );
           }
-          if (
-            live.content.trim() &&
-            params.allow_overwrite_existing !== true
-          ) {
+          if (live.content.trim() && params.allow_overwrite_existing !== true) {
             return textResult(
               "未写入：目标已有正文；局部修改请使用 edit_continuity_file，整体重写需设置 allow_overwrite_existing=true。"
             );
@@ -893,9 +869,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
               evidence.projectRevision !== projectRevision ||
               evidence.content !== live.content)
           ) {
-            throw new Error(
-              "Continuity document changed after it was read."
-            );
+            throw new Error("Continuity document changed after it was read.");
           }
           const timestamp = new Date().toISOString();
           const nextRevision = nextContentRevision(
@@ -904,11 +878,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
           );
           const summary =
             params.summary?.trim() ||
-            `写入${continuityDocumentTitle(
-              target.chapterTitle,
-              role,
-              target.characterName
-            )}`;
+            `写入${continuityDocumentTitle(target.chapterTitle, role, target.characterName)}`;
           const batch = LongWorkspaceOperationBatchSchema.parse({
             baseRevision: index.revision,
             updatedAt: timestamp,
@@ -949,30 +919,25 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
             workspaceRevision: index.revision,
             projectRevision
           });
-          return continuityProposalResult(
-            batch,
-            projectRevision,
-            summary,
-            [
-              {
-                chapterCardId: activeChapterCardId,
+          return continuityProposalResult(batch, projectRevision, summary, [
+            {
+              chapterCardId: activeChapterCardId,
+              role,
+              characterId,
+              fileId: live.file.id,
+              filePath: live.file.path,
+              title: continuityDocumentTitle(
+                target.chapterTitle,
                 role,
-                characterId,
-                fileId: live.file.id,
-                filePath: live.file.path,
-                title: continuityDocumentTitle(
-                  target.chapterTitle,
-                  role,
-                  target.characterName
-                ),
-                operation: "write",
-                beforeText: live.content,
-                afterText: params.text,
-                beforeRevision: live.file.revision,
-                nextRevision
-              }
-            ]
-          );
+                target.characterName
+              ),
+              operation: "write",
+              beforeText: live.content,
+              afterText: params.text,
+              beforeRevision: live.file.revision,
+              nextRevision
+            }
+          ]);
         }
       }),
       defineTool({
@@ -996,23 +961,18 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
         }),
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
-          const {
-            index,
-            projectRevision,
-            activeChapterCardId
-          } = await loadActiveChapterMutationContext(
-            signal,
-            params.chapter_card_id
-          );
+          const { index, projectRevision, activeChapterCardId } =
+            await loadActiveChapterMutationContext(
+              signal,
+              params.chapter_card_id
+            );
           const { role, characterId } = continuityTargetFromParameter(
             params.target
           );
           if (
             role === "foreshadowing_changes" &&
-            chapterForeshadowingCandidates(
-              index,
-              activeChapterCardId
-            ).length === 0
+            chapterForeshadowingCandidates(index, activeChapterCardId)
+              .length === 0
           ) {
             throw new Error(
               "本章没有关联伏笔总览中的既有触点，不能新增伏笔变化记录。未规划线索只能在对话中提示用户返回剧情设计处理。"
@@ -1065,11 +1025,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
           );
           const summary =
             params.summary?.trim() ||
-            `编辑${continuityDocumentTitle(
-              target.chapterTitle,
-              role,
-              target.characterName
-            )}`;
+            `编辑${continuityDocumentTitle(target.chapterTitle, role, target.characterName)}`;
           const batch = LongWorkspaceOperationBatchSchema.parse({
             baseRevision: index.revision,
             updatedAt: timestamp,
@@ -1110,30 +1066,25 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
             workspaceRevision: index.revision,
             projectRevision
           });
-          return continuityProposalResult(
-            batch,
-            projectRevision,
-            summary,
-            [
-              {
-                chapterCardId: activeChapterCardId,
+          return continuityProposalResult(batch, projectRevision, summary, [
+            {
+              chapterCardId: activeChapterCardId,
+              role,
+              characterId,
+              fileId: evidence.file.id,
+              filePath: evidence.file.path,
+              title: continuityDocumentTitle(
+                target.chapterTitle,
                 role,
-                characterId,
-                fileId: evidence.file.id,
-                filePath: evidence.file.path,
-                title: continuityDocumentTitle(
-                  target.chapterTitle,
-                  role,
-                  target.characterName
-                ),
-                operation: "edit",
-                beforeText: evidence.content,
-                afterText: content,
-                beforeRevision: evidence.file.revision,
-                nextRevision
-              }
-            ]
-          );
+                target.characterName
+              ),
+              operation: "edit",
+              beforeText: evidence.content,
+              afterText: content,
+              beforeRevision: evidence.file.revision,
+              nextRevision
+            }
+          ]);
         }
       }),
       defineTool({
@@ -1148,7 +1099,7 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
             strictObject({
               foreshadowing_id: stableIdParameter("foreshadow"),
               beat_id: stableIdParameter("beat"),
-              status: literalUnion(["committed", "missed"] as const),
+              status: StringEnum(["committed", "missed"] as const),
               evidence: Type.String({ minLength: 1, maxLength: 4_000 })
             }),
             { maxItems: 100_000 }
@@ -1156,15 +1107,11 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
         }),
         executionMode: "sequential",
         execute: async (_toolCallId, params, signal) => {
-          const {
-            index,
-            projectRevision,
-            activeChapterCardId,
-            chapter
-          } = await loadActiveChapterMutationContext(
-            signal,
-            params.chapter_card_id
-          );
+          const { index, projectRevision, activeChapterCardId, chapter } =
+            await loadActiveChapterMutationContext(
+              signal,
+              params.chapter_card_id
+            );
           if (chapter.bodyStatus !== "written") {
             throw new Error(
               "Only a chapter with saved body text can receive a continuity record."
@@ -1174,11 +1121,10 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
           if (!summary) {
             throw new Error("Continuity commit summary must be non-empty.");
           }
-          const foreshadowingCandidates =
-            chapterForeshadowingCandidates(
-              index,
-              activeChapterCardId
-            );
+          const foreshadowingCandidates = chapterForeshadowingCandidates(
+            index,
+            activeChapterCardId
+          );
           const candidateByBeatId = new Map(
             foreshadowingCandidates.map((candidate) => [
               candidate.beat.id,
@@ -1254,18 +1200,10 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
           ];
           if (
             !pendingDeletedContinuityKeys.has(
-              continuityOverlayKey(
-                activeChapterCardId,
-                "world_reveals",
-                null
-              )
+              continuityOverlayKey(activeChapterCardId, "world_reveals", null)
             ) &&
             (chapter.worldReveals ||
-              findContinuityOverlay(
-                activeChapterCardId,
-                "world_reveals",
-                null
-              ))
+              findContinuityOverlay(activeChapterCardId, "world_reveals", null))
           ) {
             targets.push({ role: "world_reveals", characterId: null });
           }
@@ -1358,15 +1296,13 @@ export function buildContinuityTools(ctx: LongToolContext): AgentTool[] {
               revision: file.revision
             })),
             foreshadowingBeatDecisions: Object.fromEntries(
-              params.foreshadowing_touchpoint_decisions.map(
-                (decision) => [
-                  decision.beat_id,
-                  {
-                    status: decision.status,
-                    note: decision.evidence.trim()
-                  }
-                ]
-              )
+              params.foreshadowing_touchpoint_decisions.map((decision) => [
+                decision.beat_id,
+                {
+                  status: decision.status,
+                  note: decision.evidence.trim()
+                }
+              ])
             ),
             commitMessage: summary,
             baseWorkspaceRevision: index.revision,

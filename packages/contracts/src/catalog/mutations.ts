@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-import {
-  DraftSectionIdSchema,
-  DraftSectionTitleSchema
-} from "../expert-draft";
+import { DraftSectionIdSchema, DraftSectionTitleSchema } from "../expert-draft";
 import { BookCharacterFormatSchema } from "./character-structure";
 import { CatalogDraftSectionSchema } from "./draft-directory";
 import {
@@ -60,9 +57,7 @@ export type CatalogReadDocumentInput = z.infer<
   typeof CatalogReadDocumentInputSchema
 >;
 
-const CatalogContentRevisionSchema = z
-  .string()
-  .regex(/^v1:\d+:[0-9a-f]{8}$/u);
+const CatalogContentRevisionSchema = z.string().regex(/^v1:\d+:[0-9a-f]{8}$/u);
 
 const CatalogReadDocumentResultSharedShape = {
   projectId: CatalogIdSchema,
@@ -190,8 +185,7 @@ export const UpdateBookInputSchema = z
       baseProjectRevision: _baseProjectRevision,
       force: _force,
       ...patch
-    }) =>
-      Object.values(patch).some((value) => value !== undefined),
+    }) => Object.values(patch).some((value) => value !== undefined),
     { message: "Book update must contain at least one changed field." }
   );
 export type UpdateBookInput = z.infer<typeof UpdateBookInputSchema>;
@@ -235,9 +229,7 @@ export const PlotStructureMutationSchema = z.discriminatedUnion("type", [
     })
     .strict()
 ]);
-export type PlotStructureMutation = z.infer<
-  typeof PlotStructureMutationSchema
->;
+export type PlotStructureMutation = z.infer<typeof PlotStructureMutationSchema>;
 
 export const MutatePlotStructureInputSchema = z
   .object({
@@ -252,7 +244,9 @@ export type MutatePlotStructureInput = z.infer<
 >;
 
 export const CharacterStructureMutationSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("setFormat"), format: BookCharacterFormatSchema }).strict(),
+  z
+    .object({ type: z.literal("setFormat"), format: BookCharacterFormatSchema })
+    .strict(),
   z
     .object({
       type: z.literal("createItem"),
@@ -354,10 +348,7 @@ export const CreateDraftSectionsInputSchema = z
     afterSectionId: DraftSectionIdSchema.optional(),
     baseProjectRevision: z.number().int().nonnegative().optional(),
     force: z.boolean().optional(),
-    sections: z
-      .array(CreateDraftSectionsSectionInputSchema)
-      .min(1)
-      .max(100)
+    sections: z.array(CreateDraftSectionsSectionInputSchema).min(1).max(100)
   })
   .strict()
   .superRefine((input, context) => {
@@ -404,9 +395,7 @@ export const CreateDraftSectionsResultSchema = z
         message: "Draft section result client ids cannot contain duplicates."
       });
     }
-    if (
-      !uniqueIds(result.sections.map(({ section }) => section.id))
-    ) {
+    if (!uniqueIds(result.sections.map(({ section }) => section.id))) {
       context.addIssue({
         code: "custom",
         path: ["sections"],
@@ -444,9 +433,7 @@ export const MoveDraftSectionInputSchema = z.object({
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
 });
-export type MoveDraftSectionInput = z.infer<
-  typeof MoveDraftSectionInputSchema
->;
+export type MoveDraftSectionInput = z.infer<typeof MoveDraftSectionInputSchema>;
 
 export const MoveDraftSectionResultSchema = z.object({
   bookId: CatalogIdSchema,
@@ -509,7 +496,10 @@ export const UpdateLibraryInputSchema = z
     domain: CatalogLibraryProjectDomainSchema,
     libraryId: CatalogIdSchema,
     title: CatalogTitleSchema.optional(),
-    overview: z.string().max(CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS).optional(),
+    overview: z
+      .string()
+      .max(CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS)
+      .optional(),
     baseProjectRevision: z.number().int().nonnegative().optional(),
     force: z.boolean().optional()
   })
@@ -684,7 +674,9 @@ export const MoveLibraryEntryResultSchema = z.object({
   targetLibraryId: CatalogIdSchema,
   entryId: CatalogIdSchema
 });
-export type MoveLibraryEntryResult = z.infer<typeof MoveLibraryEntryResultSchema>;
+export type MoveLibraryEntryResult = z.infer<
+  typeof MoveLibraryEntryResultSchema
+>;
 
 export const UnregisterCatalogProjectDomainSchema = z.enum([
   ...CATALOG_PROJECT_DOMAINS,
@@ -769,9 +761,7 @@ export const SaveLibraryEntryInputSchema = z.object({
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
 });
-export type SaveLibraryEntryInput = z.infer<
-  typeof SaveLibraryEntryInputSchema
->;
+export type SaveLibraryEntryInput = z.infer<typeof SaveLibraryEntryInputSchema>;
 
 export const CatalogLibraryEntrySchema = z.union([
   MaterialEntrySchema,

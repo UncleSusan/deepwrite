@@ -93,11 +93,13 @@ const emit = defineEmits<{
   selectThinking: [level: ThinkingLevel];
   selectTemperature: [temperature: number];
   selectApproval: [mode: AgentApprovalMode];
-  reviewEdit: [payload: {
-    runId: string;
-    proposalId: string;
-    decision: "accept" | "reject";
-  }];
+  reviewEdit: [
+    payload: {
+      runId: string;
+      proposalId: string;
+      decision: "accept" | "reject";
+    }
+  ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
   collapse: [];
   save: [payload: { id: string; title: string; content: string }];

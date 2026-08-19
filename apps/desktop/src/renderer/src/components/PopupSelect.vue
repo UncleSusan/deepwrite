@@ -65,10 +65,13 @@ const menuId = createId("popup-select");
 const selectedOption = computed(() =>
   props.options.find((option) => Object.is(option.value, props.modelValue))
 );
-const displayLabel = computed(() => selectedOption.value?.label ?? props.placeholder);
+const displayLabel = computed(
+  () => selectedOption.value?.label ?? props.placeholder
+);
 
 function setOptionElement(element: unknown, index: number): void {
-  optionElements.value[index] = element instanceof HTMLButtonElement ? element : undefined;
+  optionElements.value[index] =
+    element instanceof HTMLButtonElement ? element : undefined;
 }
 
 function firstEnabledIndex(): number {
@@ -95,12 +98,19 @@ function positionMenu(): void {
     Math.min(360, maximumWidth)
   );
   const estimatedHeight = Math.min(
-    props.options.reduce((height, option) => height + (option.description ? 58 : 41), 12),
+    props.options.reduce(
+      (height, option) => height + (option.description ? 58 : 41),
+      12
+    ),
     320
   );
-  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - gap - viewportMargin);
+  const spaceBelow = Math.max(
+    0,
+    window.innerHeight - rect.bottom - gap - viewportMargin
+  );
   const spaceAbove = Math.max(0, rect.top - gap - viewportMargin);
-  const opensUpward = spaceBelow < Math.min(estimatedHeight, 180) && spaceAbove > spaceBelow;
+  const opensUpward =
+    spaceBelow < Math.min(estimatedHeight, 180) && spaceAbove > spaceBelow;
   const availableHeight = opensUpward ? spaceAbove : spaceBelow;
   const maxHeight = Math.max(72, Math.min(320, availableHeight));
   const renderedHeight = Math.min(estimatedHeight, maxHeight);
@@ -193,7 +203,9 @@ function moveFocus(direction: 1 | -1): void {
     (element) => element === document.activeElement
   );
   const baseIndex = currentIndex >= 0 ? currentIndex : selectedEnabledIndex();
-  focusOption((baseIndex + direction + props.options.length) % props.options.length);
+  focusOption(
+    (baseIndex + direction + props.options.length) % props.options.length
+  );
 }
 
 function handleTriggerKeydown(event: KeyboardEvent): void {
@@ -239,8 +251,12 @@ function handleMenuKeydown(event: KeyboardEvent): void {
     const target = event.target;
     if (target instanceof HTMLElement) {
       const row = target.closest<HTMLElement>(".popup-select-option-row");
-      const option = row?.querySelector<HTMLButtonElement>(".popup-select-option");
-      const action = row?.querySelector<HTMLButtonElement>(".popup-select-option-action");
+      const option = row?.querySelector<HTMLButtonElement>(
+        ".popup-select-option"
+      );
+      const action = row?.querySelector<HTMLButtonElement>(
+        ".popup-select-option-action"
+      );
       if (!event.shiftKey && target === option && action && !action.disabled) {
         event.preventDefault();
         action.focus();
@@ -300,7 +316,11 @@ onBeforeUnmount(() => {
 <template>
   <span
     class="popup-select"
-    :class="[`is-${variant}`, `is-${size}`, { 'is-open': open, 'is-disabled': disabled }]"
+    :class="[
+      `is-${variant}`,
+      `is-${size}`,
+      { 'is-open': open, 'is-disabled': disabled }
+    ]"
   >
     <button
       ref="trigger"
@@ -315,7 +335,9 @@ onBeforeUnmount(() => {
       @click="toggleMenu"
       @keydown="handleTriggerKeydown"
     >
-      <span v-if="$slots.prefix" class="popup-select-prefix"><slot name="prefix" /></span>
+      <span v-if="$slots.prefix" class="popup-select-prefix"
+        ><slot name="prefix"
+      /></span>
       <span
         class="popup-select-label"
         :class="{ 'is-placeholder': !selectedOption }"
@@ -323,7 +345,11 @@ onBeforeUnmount(() => {
       >
         {{ displayLabel }}
       </span>
-      <AppIcon class="popup-select-chevron" name="chevron" :size="variant === 'compact' ? 11 : 13" />
+      <AppIcon
+        class="popup-select-chevron"
+        name="chevron"
+        :size="variant === 'compact' ? 11 : 13"
+      />
     </button>
 
     <Teleport to="body">
@@ -343,7 +369,9 @@ onBeforeUnmount(() => {
             v-for="(option, index) in options"
             :key="`${typeof option.value}:${option.value}`"
             class="popup-select-option-row"
-            :class="{ 'has-action': Boolean(option.actionIcon && option.actionLabel) }"
+            :class="{
+              'has-action': Boolean(option.actionIcon && option.actionLabel)
+            }"
             role="presentation"
           >
             <button
@@ -363,7 +391,9 @@ onBeforeUnmount(() => {
             >
               <span class="popup-select-option-copy">
                 <span>{{ option.label }}</span>
-                <small v-if="option.description">{{ option.description }}</small>
+                <small v-if="option.description">{{
+                  option.description
+                }}</small>
               </span>
               <AppIcon
                 v-if="Object.is(option.value, modelValue)"
@@ -420,7 +450,10 @@ onBeforeUnmount(() => {
   font-size: 0.785714rem;
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .popup-select.is-small .popup-select-trigger {
@@ -455,7 +488,11 @@ onBeforeUnmount(() => {
 
 .popup-select-trigger:hover:not(:disabled),
 .popup-select.is-open .popup-select-trigger {
-  border-color: color-mix(in srgb, var(--accent, #5b82b8) 55%, var(--theme-line, #d9d9d6));
+  border-color: color-mix(
+    in srgb,
+    var(--accent, #5b82b8) 55%,
+    var(--theme-line, #d9d9d6)
+  );
   background: var(--surface-hover, #f0f0ee);
 }
 
@@ -511,8 +548,13 @@ onBeforeUnmount(() => {
   padding: 6px;
   border: 1px solid var(--theme-line, #dededb);
   border-radius: 13px;
-  background: color-mix(in srgb, var(--surface-raised, #fbfbfa) 96%, transparent);
-  box-shadow: 0 18px 46px color-mix(in srgb, var(--theme-foreground) 16%, transparent),
+  background: color-mix(
+    in srgb,
+    var(--surface-raised, #fbfbfa) 96%,
+    transparent
+  );
+  box-shadow:
+    0 18px 46px color-mix(in srgb, var(--theme-foreground) 16%, transparent),
     0 3px 10px color-mix(in srgb, var(--theme-foreground) 10%, transparent);
   backdrop-filter: blur(18px) saturate(1.15);
 }
@@ -617,7 +659,9 @@ onBeforeUnmount(() => {
 
 .popup-select-menu-enter-active,
 .popup-select-menu-leave-active {
-  transition: opacity 110ms ease, transform 110ms ease;
+  transition:
+    opacity 110ms ease,
+    transform 110ms ease;
 }
 
 .popup-select-menu-enter-from,
@@ -627,7 +671,8 @@ onBeforeUnmount(() => {
 }
 
 :global(html[data-theme="dark"] .popup-select-menu) {
-  box-shadow: 0 20px 52px color-mix(in srgb, var(--theme-foreground) 38%, transparent),
+  box-shadow:
+    0 20px 52px color-mix(in srgb, var(--theme-foreground) 38%, transparent),
     0 3px 12px color-mix(in srgb, var(--theme-foreground) 28%, transparent);
 }
 </style>

@@ -6,7 +6,10 @@ import { AppAlertStore, DEFAULT_MODEL_ALERT_MESSAGES } from "./app-alert-store";
 
 const temporaryRoots: string[] = [];
 
-function manifest(desketop = ["欢迎使用 DeepWrite"], model = ["模型公告"]): unknown {
+function manifest(
+  desketop = ["欢迎使用 DeepWrite"],
+  model = ["模型公告"]
+): unknown {
   return { desketop, model };
 }
 
@@ -18,7 +21,9 @@ async function temporaryRoot(label: string): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 

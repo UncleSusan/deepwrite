@@ -1,8 +1,4 @@
-import {
-  ref,
-  watch,
-  type Ref
-} from "vue";
+import { ref, watch, type Ref } from "vue";
 
 export interface WorkspaceDraftRecoveryLifecycle {
   load(): Promise<number>;
@@ -129,10 +125,7 @@ export function useWorkspaceLifecycleCoordinator<Feature>(
       return;
     }
     const delay = hasStartedFocusRefresh
-      ? Math.max(
-          0,
-          lastFocusRefreshStartedAt + focusRefreshIntervalMs - now()
-        )
+      ? Math.max(0, lastFocusRefreshStartedAt + focusRefreshIntervalMs - now())
       : 0;
     if (delay === 0) {
       runFocusRefresh();

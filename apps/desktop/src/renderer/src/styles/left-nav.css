@@ -142,7 +142,9 @@ html[data-platform="darwin"] .sidebar-brand-row {
 }
 
 @keyframes nav-background-pulse {
-  50% { opacity: 0.35; }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .more-toggle.is-expanded {
@@ -353,7 +355,9 @@ html[data-platform="darwin"] .sidebar-brand-row {
   border: 1px solid var(--theme-line);
   border-radius: 10px;
   background: var(--surface-raised);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--theme-foreground) 13%, transparent), 0 2px 6px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--theme-foreground) 13%, transparent),
+    0 2px 6px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
 }
 
 .section-action-menu-item {
@@ -443,7 +447,8 @@ html[data-platform="darwin"] .sidebar-brand-row {
 }
 
 .tree-row:hover ~ .tree-node-action-area .tree-node-action,
-.tree-node-action-area:is(:hover, :focus-within, .is-menu-open) .tree-node-action {
+.tree-node-action-area:is(:hover, :focus-within, .is-menu-open)
+  .tree-node-action {
   opacity: 1;
 }
 
@@ -466,7 +471,9 @@ html[data-platform="darwin"] .sidebar-brand-row {
   border: 1px solid var(--theme-line);
   border-radius: 9px;
   background: var(--surface-raised);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--theme-foreground) 13%, transparent), 0 2px 6px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--theme-foreground) 13%, transparent),
+    0 2px 6px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
 }
 
 .tree-node-action-menu-item {
@@ -582,7 +589,11 @@ html[data-platform="darwin"] .sidebar-brand-row {
 
 .tree-row:hover .tree-chevron,
 .tree-row:focus-visible .tree-chevron,
-.tree-node:has(> .tree-node-action-area:is(:hover, :focus-within, .is-menu-open)) > .tree-row .tree-chevron {
+.tree-node:has(
+    > .tree-node-action-area:is(:hover, :focus-within, .is-menu-open)
+  )
+  > .tree-row
+  .tree-chevron {
   opacity: 1;
 }
 
@@ -704,7 +715,9 @@ html[data-platform="darwin"] .sidebar-brand-row {
   border: 1px solid var(--theme-line, #dededb);
   border-radius: 10px;
   background: var(--surface-raised, #fbfbf9);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--theme-foreground) 16%, transparent), 0 2px 7px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
+  box-shadow:
+    0 12px 32px color-mix(in srgb, var(--theme-foreground) 16%, transparent),
+    0 2px 7px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
 }
 
 .account-menu button {

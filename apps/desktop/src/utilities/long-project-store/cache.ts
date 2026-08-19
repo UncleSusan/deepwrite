@@ -11,12 +11,12 @@ import {
   type SecureTextFile,
   type UnicodePageAnchor
 } from "./types";
-import {
-  readSecureTextFile,
-  secureTextFileMetadataMatches
-} from "./io";
+import { readSecureTextFile, secureTextFileMetadataMatches } from "./io";
 import { isPinnedMarkdownFile, requireIndexedFileDescriptor } from "./paths";
-import { longRevisionMatchesSecureTextFile, longRevisionsMatchContent } from "./revisions";
+import {
+  longRevisionMatchesSecureTextFile,
+  longRevisionsMatchContent
+} from "./revisions";
 import type { LongProjectStoreContext } from "./store-context";
 
 export function createCachedPagedTextFile(
@@ -41,10 +41,7 @@ export function createCachedPagedTextFile(
     anchors,
     // Account for both UTF-8 bytes and the UTF-16 JS string. Sparse anchors
     // add only a small fixed overhead per 4K Unicode code points.
-    cost:
-      disk.bytes.byteLength +
-      disk.content.length * 2 +
-      anchors.length * 16
+    cost: disk.bytes.byteLength + disk.content.length * 2 + anchors.length * 16
   };
 }
 
@@ -62,9 +59,7 @@ export function codeUnitOffsetAtCharacter(
   let high = paging.anchors.length - 1;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
-    if (
-      paging.anchors[middle]!.characterOffset <= targetCharacterOffset
-    ) {
+    if (paging.anchors[middle]!.characterOffset <= targetCharacterOffset) {
       low = middle;
     } else {
       high = middle - 1;
@@ -123,10 +118,7 @@ export function sliceIndexedUnicodeCodePointRange(
   if (endCharacterOffset < startCharacterOffset) {
     throw new Error("长篇文档字符范围无效。");
   }
-  const start = codeUnitOffsetAtCharacter(
-    paging,
-    startCharacterOffset
-  );
+  const start = codeUnitOffsetAtCharacter(paging, startCharacterOffset);
   const end = codeUnitOffsetAtCharacter(paging, endCharacterOffset);
   return paging.disk.content.slice(start, end);
 }
@@ -165,9 +157,7 @@ export async function loadIndexedFile(
   const disk = await readSecureTextFile(
     loaded.projectDirectory,
     descriptor.reference.path,
-    descriptor.kind === "json"
-      ? MAX_LEDGER_RECORD_BYTES
-      : MAX_DOCUMENT_BYTES
+    descriptor.kind === "json" ? MAX_LEDGER_RECORD_BYTES : MAX_DOCUMENT_BYTES
   );
   const indexedRevisionMatchesDisk = longRevisionsMatchContent(
     descriptor.reference.revision,
@@ -194,94 +184,91 @@ export async function loadIndexedFile(
 
 export async function loadPagedIndexedFile(
   ctx: LongProjectStoreContext,
-    loaded: LoadedLongProject,
-    fileId: string
-  ): Promise<LoadedPagedIndexedFile> {
-    const descriptor = requireIndexedFileDescriptor(loaded, fileId);
-    const maxBytes =
-      descriptor.kind === "json"
-        ? MAX_LEDGER_RECORD_BYTES
-        : MAX_DOCUMENT_BYTES;
-    const cacheKey = `${loaded.projectDirectory}\u0000${descriptor.reference.path}`;
-    let paging = ctx.documentReadCache.get(cacheKey);
-    if (
-      paging &&
-      !(await secureTextFileMetadataMatches(
-        loaded.projectDirectory,
-        descriptor.reference.path,
-        maxBytes,
-        paging.disk
-      ))
-    ) {
-      removeDocumentReadCacheEntry(ctx, cacheKey, paging);
-      paging = undefined;
-    }
-    if (!paging) {
-      const disk = await readSecureTextFile(
-        loaded.projectDirectory,
-        descriptor.reference.path,
-        maxBytes
-      );
-      paging = createCachedPagedTextFile(disk);
-      insertDocumentReadCacheEntry(ctx, cacheKey, paging);
-    } else {
-      // Refresh LRU insertion order without cloning the potentially large
-      // text or byte buffer.
-      ctx.documentReadCache.delete(cacheKey);
-      ctx.documentReadCache.set(cacheKey, paging);
-    }
-    if (
-      (descriptor.kind === "json" ||
-        isPinnedMarkdownFile(loaded.index, descriptor.reference.id)) &&
-      !longRevisionMatchesSecureTextFile(
-        descriptor.reference.revision,
-        paging.disk
-      )
-    ) {
-      throw new Error(
-        `长篇已锁定文件 revision 不一致，检测到索引外修改：${descriptor.reference.path}`
-      );
-    }
-    descriptor.reference.revision = paging.disk.revision;
-    descriptor.reference.updatedAt = paging.disk.updatedAt;
-    descriptor.disk = paging.disk;
-    return {
-      ...(descriptor as LoadedIndexedFile),
-      paging
-    };
+  loaded: LoadedLongProject,
+  fileId: string
+): Promise<LoadedPagedIndexedFile> {
+  const descriptor = requireIndexedFileDescriptor(loaded, fileId);
+  const maxBytes =
+    descriptor.kind === "json" ? MAX_LEDGER_RECORD_BYTES : MAX_DOCUMENT_BYTES;
+  const cacheKey = `${loaded.projectDirectory}\u0000${descriptor.reference.path}`;
+  let paging = ctx.documentReadCache.get(cacheKey);
+  if (
+    paging &&
+    !(await secureTextFileMetadataMatches(
+      loaded.projectDirectory,
+      descriptor.reference.path,
+      maxBytes,
+      paging.disk
+    ))
+  ) {
+    removeDocumentReadCacheEntry(ctx, cacheKey, paging);
+    paging = undefined;
   }
+  if (!paging) {
+    const disk = await readSecureTextFile(
+      loaded.projectDirectory,
+      descriptor.reference.path,
+      maxBytes
+    );
+    paging = createCachedPagedTextFile(disk);
+    insertDocumentReadCacheEntry(ctx, cacheKey, paging);
+  } else {
+    // Refresh LRU insertion order without cloning the potentially large
+    // text or byte buffer.
+    ctx.documentReadCache.delete(cacheKey);
+    ctx.documentReadCache.set(cacheKey, paging);
+  }
+  if (
+    (descriptor.kind === "json" ||
+      isPinnedMarkdownFile(loaded.index, descriptor.reference.id)) &&
+    !longRevisionMatchesSecureTextFile(
+      descriptor.reference.revision,
+      paging.disk
+    )
+  ) {
+    throw new Error(
+      `长篇已锁定文件 revision 不一致，检测到索引外修改：${descriptor.reference.path}`
+    );
+  }
+  descriptor.reference.revision = paging.disk.revision;
+  descriptor.reference.updatedAt = paging.disk.updatedAt;
+  descriptor.disk = paging.disk;
+  return {
+    ...(descriptor as LoadedIndexedFile),
+    paging
+  };
+}
 
 export function insertDocumentReadCacheEntry(
   ctx: LongProjectStoreContext,
-    key: string,
-    entry: CachedPagedTextFile
-  ): void {
-    const current = ctx.documentReadCache.get(key);
-    if (current) removeDocumentReadCacheEntry(ctx, key, current);
-    if (entry.cost > DOCUMENT_READ_CACHE_MAX_COST) return;
-    ctx.documentReadCache.set(key, entry);
-    ctx.documentReadCacheCost += entry.cost;
-    while (
-      ctx.documentReadCache.size > DOCUMENT_READ_CACHE_MAX_ENTRIES ||
-      ctx.documentReadCacheCost > DOCUMENT_READ_CACHE_MAX_COST
-    ) {
-      const oldest = ctx.documentReadCache.entries().next().value as
-        | [string, CachedPagedTextFile]
-        | undefined;
-      if (!oldest) break;
-      removeDocumentReadCacheEntry(ctx, oldest[0], oldest[1]);
-    }
+  key: string,
+  entry: CachedPagedTextFile
+): void {
+  const current = ctx.documentReadCache.get(key);
+  if (current) removeDocumentReadCacheEntry(ctx, key, current);
+  if (entry.cost > DOCUMENT_READ_CACHE_MAX_COST) return;
+  ctx.documentReadCache.set(key, entry);
+  ctx.documentReadCacheCost += entry.cost;
+  while (
+    ctx.documentReadCache.size > DOCUMENT_READ_CACHE_MAX_ENTRIES ||
+    ctx.documentReadCacheCost > DOCUMENT_READ_CACHE_MAX_COST
+  ) {
+    const oldest = ctx.documentReadCache.entries().next().value as
+      [string, CachedPagedTextFile] | undefined;
+    if (!oldest) break;
+    removeDocumentReadCacheEntry(ctx, oldest[0], oldest[1]);
   }
+}
 
 export function removeDocumentReadCacheEntry(
   ctx: LongProjectStoreContext,
-    key: string,
-    entry: CachedPagedTextFile
-  ): void {
-    if (ctx.documentReadCache.get(key) !== entry) return;
-    ctx.documentReadCache.delete(key);
-    ctx.documentReadCacheCost = Math.max(
-      0,
-      ctx.documentReadCacheCost - entry.cost
-    );
-  }
+  key: string,
+  entry: CachedPagedTextFile
+): void {
+  if (ctx.documentReadCache.get(key) !== entry) return;
+  ctx.documentReadCache.delete(key);
+  ctx.documentReadCacheCost = Math.max(
+    0,
+    ctx.documentReadCacheCost - entry.cost
+  );
+}

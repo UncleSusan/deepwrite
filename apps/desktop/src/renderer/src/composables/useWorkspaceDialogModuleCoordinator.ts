@@ -95,7 +95,9 @@ export interface WorkspaceDialogShortStructureState {
 
 export interface WorkspaceDialogLongStructureState {
   characterCreation: Readonly<Ref<LongCharacterCreateTarget | null>>;
-  worldbuildingItemCreation: Readonly<Ref<LongWorldbuildingItemCreateTarget | null>>;
+  worldbuildingItemCreation: Readonly<
+    Ref<LongWorldbuildingItemCreateTarget | null>
+  >;
   plotPointCreation: Readonly<Ref<LongPlotPointCreateTarget | null>>;
   chapterCardCreation: Readonly<Ref<LongChapterCardCreateTarget | null>>;
   draftDeletion: Readonly<Ref<LongDraftSectionDeleteTarget | null>>;
@@ -104,18 +106,14 @@ export interface WorkspaceDialogLongStructureState {
   dialogOpen: Readonly<Ref<boolean>>;
   agentsMd: Readonly<Ref<string | null>>;
   agentsMdPending: Readonly<Ref<boolean>>;
-  syncBookOptions: Readonly<
-    Ref<readonly LongWorldbuildingSyncBookOption[]>
-  >;
+  syncBookOptions: Readonly<Ref<readonly LongWorldbuildingSyncBookOption[]>>;
 }
 
 export interface WorkspaceDialogLongLifecycleState {
   continuationPreview: Readonly<
     Ref<DialogModule<"continuation-import">["preview"] | null>
   >;
-  legacyPreview: Readonly<
-    Ref<DialogModule<"legacy-sync">["preview"]>
-  >;
+  legacyPreview: Readonly<Ref<DialogModule<"legacy-sync">["preview"]>>;
   legacyResult: Readonly<Ref<DialogModule<"legacy-sync">["result"]>>;
   mutationPending: Readonly<Ref<boolean>>;
   rollbackDialogOpen: Readonly<Ref<boolean>>;
@@ -137,12 +135,8 @@ export interface WorkspaceDialogShortLifecycleState {
   exportTarget: Readonly<Ref<ShortBookLifecycleTarget | null>>;
   manuscriptExportPending: Readonly<Ref<boolean>>;
   createDialogOpen: Readonly<Ref<boolean>>;
-  transferMode: Readonly<
-    Ref<DialogModule<"book-transfer">["mode"] | null>
-  >;
-  resourceMode: Readonly<
-    Ref<DialogModule<"book-resource">["mode"] | null>
-  >;
+  transferMode: Readonly<Ref<DialogModule<"book-transfer">["mode"] | null>>;
+  resourceMode: Readonly<Ref<DialogModule<"book-resource">["mode"] | null>>;
   activeBookTarget: Readonly<Ref<ShortBookLifecycleTarget | null>>;
 }
 
@@ -227,8 +221,7 @@ export function useWorkspaceDialogModuleCoordinator(
       };
     }
 
-    const continuationPreview =
-      options.longLifecycle.continuationPreview.value;
+    const continuationPreview = options.longLifecycle.continuationPreview.value;
     if (continuationPreview) {
       return {
         kind: "continuation-import",
@@ -253,8 +246,7 @@ export function useWorkspaceDialogModuleCoordinator(
       if (rollbackCommit) {
         return {
           kind: "long-rollback",
-          bookTitle:
-            options.longLifecycle.activeBookSummary.value?.title ?? "",
+          bookTitle: options.longLifecycle.activeBookSummary.value?.title ?? "",
           chapterTitle: options.longLifecycle.rollbackChapterTitle.value,
           commitSequence: rollbackCommit.sequence,
           pending: options.longLifecycle.rollbackPending.value
@@ -262,8 +254,7 @@ export function useWorkspaceDialogModuleCoordinator(
       }
     }
 
-    const characterCreation =
-      options.longStructure.characterCreation.value;
+    const characterCreation = options.longStructure.characterCreation.value;
     if (characterCreation) {
       return {
         kind: "create-long-character",
@@ -282,8 +273,7 @@ export function useWorkspaceDialogModuleCoordinator(
       };
     }
 
-    const plotPointCreation =
-      options.longStructure.plotPointCreation.value;
+    const plotPointCreation = options.longStructure.plotPointCreation.value;
     if (plotPointCreation) {
       return {
         kind: "create-long-plot-point",
@@ -292,8 +282,7 @@ export function useWorkspaceDialogModuleCoordinator(
       };
     }
 
-    const chapterCardCreation =
-      options.longStructure.chapterCardCreation.value;
+    const chapterCardCreation = options.longStructure.chapterCardCreation.value;
     if (chapterCardCreation) {
       return {
         kind: "create-long-chapter-card",
@@ -371,8 +360,7 @@ export function useWorkspaceDialogModuleCoordinator(
     if (options.longStructure.dialogOpen.value) {
       return {
         kind: "long-structure",
-        bookTitle:
-          options.longLifecycle.activeBookSummary.value?.title ?? "",
+        bookTitle: options.longLifecycle.activeBookSummary.value?.title ?? "",
         bookId: options.longLifecycle.activeBookId.value,
         agentsMd: options.longStructure.agentsMd.value,
         agentsMdPending: options.longStructure.agentsMdPending.value,
@@ -445,9 +433,7 @@ export function useWorkspaceDialogModuleCoordinator(
         ...(libraryProject.materialKind
           ? { materialKind: libraryProject.materialKind }
           : {}),
-        ...(libraryProject.entryId
-          ? { entryId: libraryProject.entryId }
-          : {}),
+        ...(libraryProject.entryId ? { entryId: libraryProject.entryId } : {}),
         ...(libraryProject.entryTitle
           ? { entryTitle: libraryProject.entryTitle }
           : {}),
@@ -458,8 +444,7 @@ export function useWorkspaceDialogModuleCoordinator(
       };
     }
 
-    const externalSkillImport =
-      options.library.externalSkillImportDialog.value;
+    const externalSkillImport = options.library.externalSkillImportDialog.value;
     if (externalSkillImport) {
       return {
         kind: "external-skill-import",

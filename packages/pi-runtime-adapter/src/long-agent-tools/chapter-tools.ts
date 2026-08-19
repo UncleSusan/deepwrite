@@ -1,5 +1,5 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Type } from "typebox";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
 import {
   LongSearchCommandEnvelopeSchema,
   LongSearchResultSchema,
@@ -9,13 +9,13 @@ import {
   type LongChapterReadiness
 } from "@deepwrite/contracts";
 import {
+  explicitTrueParameter,
   stableIdParameter,
   strictObject,
   worldbuildingReadModeParameter
 } from "./schemas";
 import {
   defineTool,
-  literalUnion,
   nextContentRevision,
   stableHash,
   textResult,
@@ -36,12 +36,15 @@ import {
 import type { LongAgentToolDetails } from "./index";
 
 export function buildChapterReadinessTools(ctx: LongToolContext): AgentTool[] {
-  const { workspace, readableRoots, capabilities, execute, loadIndex, loadChapterReadiness } = ctx;
+  const {
+    workspace,
+    readableRoots,
+    capabilities,
+    loadIndex,
+    loadChapterReadiness
+  } = ctx;
   const tools: AgentTool[] = [];
-  if (
-    capabilities.has("query_structure") &&
-    readableRoots.has("draft")
-  ) {
+  if (capabilities.has("query_structure") && readableRoots.has("draft")) {
     tools.push(
       defineTool({
         name: "get_long_chapter_readiness",
@@ -80,7 +83,24 @@ export function buildChapterReadinessTools(ctx: LongToolContext): AgentTool[] {
 }
 
 export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
-  const { input, workspace, profile, readableRoots, writableRoots, capabilities, execute, loadIndex, loadActiveChapterMutationContext, nextQuerySequence, fullyReadChapterBodies, readChapterBodySnapshots, chapterBodyOverlay, loadChapterReadiness, resolveChapterDocumentTarget, readWholeChapterBody } = ctx;
+  const {
+    input,
+    workspace,
+    profile,
+    readableRoots,
+    writableRoots,
+    capabilities,
+    execute,
+    loadIndex,
+    loadActiveChapterMutationContext,
+    nextQuerySequence,
+    fullyReadChapterBodies,
+    readChapterBodySnapshots,
+    chapterBodyOverlay,
+    loadChapterReadiness,
+    resolveChapterDocumentTarget,
+    readWholeChapterBody
+  } = ctx;
   const tools: AgentTool[] = [];
   if (
     capabilities.has("dispatch_chapter_writer") &&
@@ -94,14 +114,12 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
           "按卷序和卷内叙事顺序，为单章、当前主弧的连续章节或当前卷形成串行写作调度提案；不支持整本调度。提案由客户端依据本轮审批模式处理，获批后复用同一写手智能体和同一对话历史继续各章正文，不按章节隔离会话。",
         parameters: Type.Object({
           scope: Type.Optional(
-            literalUnion(["chapter", "arc", "volume"])
+            StringEnum(["chapter", "arc", "volume"] as const)
           ),
           chapter_card_id: Type.Optional(
             Type.String({ minLength: 3, maxLength: 160 })
           ),
-          arc_id: Type.Optional(
-            Type.String({ minLength: 3, maxLength: 160 })
-          ),
+          arc_id: Type.Optional(Type.String({ minLength: 3, maxLength: 160 })),
           volume_id: Type.Optional(
             Type.String({ minLength: 3, maxLength: 160 })
           ),
@@ -163,10 +181,7 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
     );
   }
 
-  if (
-    capabilities.has("query_structure") &&
-    readableRoots.has("draft")
-  ) {
+  if (capabilities.has("query_structure") && readableRoots.has("draft")) {
     tools.push(
       defineTool({
         name: "list_chapters",
@@ -223,7 +238,9 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
           "搜索正文阶段内容；命中同时覆盖正文、章末人物状态和接续包。按行段落返回可交给 read_chapter 的 chapter_card_id、document 和少量上下文，不包装成 JSON。",
         parameters: strictObject({
           query: Type.String({ minLength: 1, maxLength: 256 }),
-          cursor: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),
+          cursor: Type.Optional(
+            Type.String({ minLength: 1, maxLength: 2_048 })
+          ),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
           max_snippet_characters: Type.Optional(
             Type.Integer({ minimum: 40, maximum: 2_000 })
@@ -262,11 +279,32 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
               document: "body" | "character_state" | "handoff";
             }
           >(
-            index.chapters.flatMap((chapter) => [
-              [chapter.body.id, { chapterCardId: chapter.chapterCardId, document: "body" as const }],
-              [chapter.characterState.id, { chapterCardId: chapter.chapterCardId, document: "character_state" as const }],
-              [chapter.handoff.id, { chapterCardId: chapter.chapterCardId, document: "handoff" as const }]
-            ] as const)
+            index.chapters.flatMap(
+              (chapter) =>
+                [
+                  [
+                    chapter.body.id,
+                    {
+                      chapterCardId: chapter.chapterCardId,
+                      document: "body" as const
+                    }
+                  ],
+                  [
+                    chapter.characterState.id,
+                    {
+                      chapterCardId: chapter.chapterCardId,
+                      document: "character_state" as const
+                    }
+                  ],
+                  [
+                    chapter.handoff.id,
+                    {
+                      chapterCardId: chapter.chapterCardId,
+                      document: "handoff" as const
+                    }
+                  ]
+                ] as const
+            )
           );
           return textResult(
             formatChapterSearch({
@@ -274,12 +312,14 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
               hits: result.hits.flatMap((hit) => {
                 const target = chapterTargetByFileId.get(hit.fileId);
                 if (!target) return [];
-                return [{
-                  chapter_card_id: target.chapterCardId,
-                  document: target.document,
-                  title: hit.title,
-                  snippet: hit.snippet
-                }];
+                return [
+                  {
+                    chapter_card_id: target.chapterCardId,
+                    document: target.document,
+                    title: hit.title,
+                    snippet: hit.snippet
+                  }
+                ];
               }),
               next_cursor: result.nextCursor
             })
@@ -294,15 +334,18 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
         parameters: strictObject({
           chapter_card_id: Type.Optional(stableIdParameter("chapter")),
           document: Type.Optional(
-            literalUnion(["body", "character_state", "handoff"])
+            StringEnum(["body", "character_state", "handoff"] as const)
           ),
           mode: Type.Optional(worldbuildingReadModeParameter)
         }),
         execute: async (_toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
-          const chapterCardId = params.chapter_card_id ?? workspace.activeChapterCardId;
+          const chapterCardId =
+            params.chapter_card_id ?? workspace.activeChapterCardId;
           if (!chapterCardId) {
-            throw new Error("A chapter_card_id is required when no chapter is active.");
+            throw new Error(
+              "A chapter_card_id is required when no chapter is active."
+            );
           }
           const document = params.document ?? "body";
           const target = resolveChapterDocumentTarget(
@@ -344,7 +387,8 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
               title: target.chapterTitle,
               document,
               mode,
-              content: mode === "full" ? content : content.slice(0, previewLimit),
+              content:
+                mode === "full" ? content : content.slice(0, previewLimit),
               ...(truncated ? { truncated: true } : {})
             })
           );
@@ -373,12 +417,8 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
       allowOverwriteExisting = false,
       signal?: AbortSignal
     ): Promise<AgentToolResult<LongAgentToolDetails>> => {
-      const {
-        index,
-        projectRevision,
-        activeChapterCardId,
-        chapter
-      } = await loadActiveChapterMutationContext(signal);
+      const { index, projectRevision, activeChapterCardId, chapter } =
+        await loadActiveChapterMutationContext(signal);
       const chapterCard = index.plot.chapterCards.find(
         ({ id }) => id === activeChapterCardId
       )!;
@@ -491,14 +531,16 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
           "只向运行时锁定章节的独立 body.md 写入完整小说正文；已有正文必须先用 read_chapter mode=full 完整读取，并明确设置 allow_overwrite_existing=true 才能整体重写。已有连续性记录只作参考，不限制整体重写。形成会话 diff 审批卡，不直接写磁盘；不编写或修改章末人物状态与交接文档。",
         parameters: strictObject({
           content: chapterContentParameter,
-          allow_overwrite_existing: Type.Optional(Type.Literal(true)),
+          allow_overwrite_existing: Type.Optional(explicitTrueParameter),
           summary: Type.String({ minLength: 1, maxLength: 1_000 })
         }),
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const summary = params.summary.trim();
           if (!summary || !params.content.trim()) {
-            throw new Error("Chapter draft content and summary must be non-empty.");
+            throw new Error(
+              "Chapter draft content and summary must be non-empty."
+            );
           }
           return buildChapterProposal(
             toolCallId,
@@ -532,7 +574,8 @@ export function buildChapterTools(ctx: LongToolContext): AgentTool[] {
             throw new Error("Chapter edit summary must be non-empty.");
           }
           const { chapter } = await loadActiveChapterMutationContext(signal);
-          const target = chapterBodyOverlay.get(chapter.body.id)?.file ?? chapter.body;
+          const target =
+            chapterBodyOverlay.get(chapter.body.id)?.file ?? chapter.body;
           const evidence = fullyReadChapterBodies.get(target.id);
           if (!evidence || evidence.file.revision !== target.revision) {
             return textResult(

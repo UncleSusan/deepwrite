@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import source from "./LeftSidebar.vue?raw";
 
 describe("LeftSidebar account controls", () => {
@@ -6,7 +7,7 @@ describe("LeftSidebar account controls", () => {
     expect(source).toContain('@click="toggleAccountMenu"');
     expect(source).toContain('aria-label="打开设置"');
     expect(source).toContain('@click="openSettings"');
-    expect(source).not.toContain('@click="emit(\'openSettings\')"');
+    expect(source).not.toContain("@click=\"emit('openSettings')\"");
   });
 
   it("offers settings, updates and author contact without local name editing", () => {
@@ -24,7 +25,9 @@ describe("LeftSidebar account controls", () => {
     expect(source).not.toContain("USER_NAME_STORAGE_KEY");
     expect(source).not.toContain("saveUserName");
     expect(source).not.toContain("userNameDraft");
-    expect(source).toContain("如果你有任何反馈，或者想体验最新版本，请添加作者微信并加入交流群。");
+    expect(source).toContain(
+      "如果你有任何反馈，或者想体验最新版本，请添加作者微信并加入交流群。"
+    );
     expect(source).toContain("deepseekwrite");
   });
 
@@ -33,7 +36,7 @@ describe("LeftSidebar account controls", () => {
     expect(source).toContain(
       "props.marketplaceDisplayName?.trim() || DEFAULT_USER_NAME"
     );
-    expect(source).toContain("{{ displayedUserName }}");
+    expectSourceToContain(source, "{{ displayedUserName }}");
   });
 
   it("shows a background-running marker for learning imitation", () => {
@@ -70,18 +73,26 @@ describe("LeftSidebar account controls", () => {
     );
 
     expect(primaryFeatures).not.toContain('label: "短篇学习仿写"');
-    expect(moreFeatures).toContain('{ id: "imitation", label: "短篇学习仿写"');
+    expectSourceToContain(
+      moreFeatures,
+      '{ id: "imitation", label: "短篇学习仿写"'
+    );
     expect(source).toContain('emit("openDialog", "imitation")');
     expect(source).toContain("feature.id === props.activePrimaryFeature");
-    expect(source).toContain("feature.id === 'imitation' && props.imitationRunning");
+    expect(source).toContain(
+      "feature.id === 'imitation' && props.imitationRunning"
+    );
   });
 
   it("adds the skill marketplace to more features while keeping runtime settings", () => {
-    expect(source).toContain('{ id: "skill-marketplace", label: "技能广场"');
+    expectSourceToContain(
+      source,
+      '{ id: "skill-marketplace", label: "技能广场"'
+    );
     expect(source).toContain('emit("openMarketplace")');
-    expect(source).toContain('{ id: "cloud-backup", label: "云端备份"');
+    expectSourceToContain(source, '{ id: "cloud-backup", label: "云端备份"');
     expect(source).toContain('emit("openCloudBackup")');
-    expect(source).toContain('{ id: "runtime", label: "运行设置"');
+    expectSourceToContain(source, '{ id: "runtime", label: "运行设置"');
     expect(source).not.toContain('{ id: "history", label: "版本历史"');
     expect(source).not.toContain('{ id: "search", label: "全局检索"');
     expect(source).not.toContain('{ id: "transfer", label: "导入与导出"');
@@ -89,7 +100,8 @@ describe("LeftSidebar account controls", () => {
   });
 
   it("shows and locks the update dialog while macOS hands off to the installer", () => {
-    expect(source).toContain(
+    expectSourceToContain(
+      source,
       'const updateInstalling = computed(() => updateState.value.status === "installing")'
     );
     expect(source).toContain("正在安全退出并准备安装…");

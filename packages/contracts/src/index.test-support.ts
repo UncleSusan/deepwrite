@@ -164,5 +164,5 @@ export {
   resolveAppearanceEditorFontStack,
   resolveAppearanceUiFontStack,
   runtime,
-  shortWorkspaceRuntimeFixture,
+  shortWorkspaceRuntimeFixture
 };

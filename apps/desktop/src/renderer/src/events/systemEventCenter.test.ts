@@ -5,10 +5,7 @@ import {
   type SystemEventListener
 } from "./systemEventCenter";
 
-type SystemReadyEvent = Extract<
-  SystemEventEnvelope,
-  { type: "system.ready" }
->;
+type SystemReadyEvent = Extract<SystemEventEnvelope, { type: "system.ready" }>;
 type WorkerRestartedEvent = Extract<
   SystemEventEnvelope,
   { type: "system.worker_restarted" }
@@ -121,11 +118,7 @@ describe("systemEventCenter", () => {
     center.publish(readyEvent("event-1"));
     center.publish(readyEvent("event-2"));
 
-    expect(calls).toEqual([
-      "first:event-1",
-      "first:event-2",
-      "late:event-2"
-    ]);
+    expect(calls).toEqual(["first:event-1", "first:event-2", "late:event-2"]);
   });
 
   it("isolates listener failures, reports context, and continues delivery", () => {

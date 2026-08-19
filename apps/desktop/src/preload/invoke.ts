@@ -10,7 +10,9 @@ export function browserId(prefix: string): string {
   return createId(prefix);
 }
 
-export async function invokeCommand<TPayload>(command: CommandEnvelope): Promise<TPayload> {
+export async function invokeCommand<TPayload>(
+  command: CommandEnvelope
+): Promise<TPayload> {
   const expectedRequestId = command.id;
   const result = CommandResultSchema.parse(
     await ipcRenderer.invoke(IPC_COMMAND_CHANNEL, command)

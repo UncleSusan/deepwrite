@@ -1,45 +1,5 @@
-import type { LongWorkspaceOperation } from "./operation-schema";
-import type { MutationState } from "./state";
 import {
-  LongArcIdSchema,
-  LongArcSchema,
-  LongChapterCardIdSchema,
-  LongChapterCardSchema,
-  LongChapterCharacterContinuityFileIndexEntrySchema,
-  LongChapterFileIndexEntrySchema,
-  LongCharacterFileIndexEntrySchema,
-  LongCharacterGroupSchema,
-  LongCharacterIdSchema,
-  LongCharacterSchema,
-  LongCharacterTypeIdSchema,
-  LongCharacterTypeSchema,
-  LongEventConnectionIdSchema,
-  LongEventConnectionSchema,
-  LongFileIdSchema,
-  LongFileRevisionSchema,
-  LongForeshadowingBeatIdSchema,
-  LongForeshadowingBeatSchema,
-  LongForeshadowingIdSchema,
-  LongForeshadowingSchema,
-  LongMarkdownFileReferenceSchema,
-  LongNarrativePlacementIdSchema,
-  LongNarrativePlacementSchema,
-  LongProjectRelativePathSchema,
-  LongStableIdSchema,
-  LongStoryEventIdSchema,
-  LongStoryEventSchema,
-  LongStoryPlotIdSchema,
-  LongStoryPlotSchema,
-  LongVolumeIdSchema,
-  LongVolumeSchema,
-  LongWorldbuildingItemLayoutSchema,
-  LongWorkspaceIndexSnapshotSchema,
-  LongWorldbuildingCategoryIdSchema,
-  LongWorldbuildingCategorySchema,
-  LongWorldbuildingItemIdSchema,
-  LongWorldbuildingItemSchema,
   createEmptyLongMarkdownFileReference,
-  deriveLongForeshadowingStatusFromCommittedBeats,
   longWorldbuildingContentPath,
   longWorldbuildingFileId,
   longWorldbuildingItemContentPath,
@@ -47,55 +7,23 @@ import {
   longWorldbuildingOverviewContentPath,
   longWorldbuildingOverviewFileId
 } from "../long-workspace";
-import type {
-  LongForeshadowing,
-  LongForeshadowingBeat,
-  LongNarrativePlacement,
-  LongWorkspaceFileReference,
-  LongWorkspaceIndexSnapshot
-} from "../long-workspace";
+import type { LongWorkspaceOperation } from "./operation-schema";
+import type { MutationState } from "./state";
 
 import {
   addFileCreateIntent,
   addFileDeleteIntent,
-  allWorkspaceFiles,
-  assertAnchoredValue,
-  assertBeatIsMutable,
-  assertChapterIsMutable,
   assertExactOrder,
-  assertFrozenOrderPrefix,
   assertNewEntityId,
-  assertPlacementIsMutable,
-  chapterOrderMap,
-  concreteChapterIdForBeat,
   ensureFilesAvailable,
-  eventParticipatesInCommittedFacts,
-  findBeat,
   findEntityIndex,
-  idsByGroupAndOrder,
-  insertBeforeId,
   markCreated,
   markDeleted,
   markUpdated,
-  normalizeLongWorkspaceOrders,
   operationError,
-  orderedIdsByOrder,
   registerProvisionalId,
-  retargetBeatPlanningAnchorsToChapter,
-  updateOrdersById,
-  volumeOrderMap
+  updateOrdersById
 } from "./state";
-import {
-  deleteArc,
-  deleteChapter,
-  deleteCharacter,
-  deleteForeshadowingBeat,
-  deleteForeshadowingThread,
-  deleteNarrativePlacement,
-  deleteStoryEvent,
-  deleteStoryPlot,
-  deleteVolume
-} from "./cascade";
 
 export function applyWorldbuildingOperation(
   state: MutationState,
@@ -136,9 +64,7 @@ export function applyWorldbuildingOperation(
         category.format === "text"
           ? [category.file]
           : [
-              ...(category.overview
-                ? [category.overview]
-                : []),
+              ...(category.overview ? [category.overview] : []),
               ...category.items.map(({ file }) => file)
             ];
       ensureFilesAvailable(state, categoryFiles);
@@ -151,11 +77,7 @@ export function applyWorldbuildingOperation(
         )
       );
       markCreated(state, category.id);
-      registerProvisionalId(
-        state,
-        operation.provisionalId,
-        category.id
-      );
+      registerProvisionalId(state, operation.provisionalId, category.id);
       break;
     }
     case "worldbuilding.update": {
@@ -249,12 +171,14 @@ export function applyWorldbuildingOperation(
             format: "list",
             contentAuthority: "files",
             overview,
-            items: [{
-              id: itemId,
-              title: "原文本内容",
-              order: 1,
-              file
-            }]
+            items: [
+              {
+                id: itemId,
+                title: "原文本内容",
+                order: 1,
+                file
+              }
+            ]
           };
         }
       } else if (operation.patch.title !== undefined) {
@@ -289,13 +213,14 @@ export function applyWorldbuildingOperation(
       break;
     }
     case "worldbuildingItem.create": {
-      const category = workspace.worldbuilding[
-        findEntityIndex(
-          workspace.worldbuilding,
-          operation.categoryId,
-          "Worldbuilding category"
-        )
-      ]!;
+      const category =
+        workspace.worldbuilding[
+          findEntityIndex(
+            workspace.worldbuilding,
+            operation.categoryId,
+            "Worldbuilding category"
+          )
+        ]!;
       if (category.format !== "list") {
         operationError(
           "invalid_reference",
@@ -315,42 +240,47 @@ export function applyWorldbuildingOperation(
       );
       markCreated(state, operation.item.id);
       markUpdated(state, category.id);
-      registerProvisionalId(
-        state,
-        operation.provisionalId,
-        operation.item.id
-      );
+      registerProvisionalId(state, operation.provisionalId, operation.item.id);
       break;
     }
     case "worldbuildingItem.update": {
-      const category = workspace.worldbuilding[
-        findEntityIndex(
-          workspace.worldbuilding,
-          operation.categoryId,
-          "Worldbuilding category"
-        )
-      ]!;
+      const category =
+        workspace.worldbuilding[
+          findEntityIndex(
+            workspace.worldbuilding,
+            operation.categoryId,
+            "Worldbuilding category"
+          )
+        ]!;
       if (category.format !== "list") {
-        operationError("invalid_reference", "Worldbuilding category is not a list.");
+        operationError(
+          "invalid_reference",
+          "Worldbuilding category is not a list."
+        );
       }
-      const item = category.items[
-        findEntityIndex(category.items, operation.id, "Worldbuilding item")
-      ]!;
+      const item =
+        category.items[
+          findEntityIndex(category.items, operation.id, "Worldbuilding item")
+        ]!;
       Object.assign(item, operation.patch);
       markUpdated(state, item.id);
       markUpdated(state, category.id);
       break;
     }
     case "worldbuildingItem.delete": {
-      const category = workspace.worldbuilding[
-        findEntityIndex(
-          workspace.worldbuilding,
-          operation.categoryId,
-          "Worldbuilding category"
-        )
-      ]!;
+      const category =
+        workspace.worldbuilding[
+          findEntityIndex(
+            workspace.worldbuilding,
+            operation.categoryId,
+            "Worldbuilding category"
+          )
+        ]!;
       if (category.format !== "list") {
-        operationError("invalid_reference", "Worldbuilding category is not a list.");
+        operationError(
+          "invalid_reference",
+          "Worldbuilding category is not a list."
+        );
       }
       const itemIndex = findEntityIndex(
         category.items,
@@ -369,15 +299,19 @@ export function applyWorldbuildingOperation(
       break;
     }
     case "worldbuildingItem.reorder": {
-      const category = workspace.worldbuilding[
-        findEntityIndex(
-          workspace.worldbuilding,
-          operation.categoryId,
-          "Worldbuilding category"
-        )
-      ]!;
+      const category =
+        workspace.worldbuilding[
+          findEntityIndex(
+            workspace.worldbuilding,
+            operation.categoryId,
+            "Worldbuilding category"
+          )
+        ]!;
       if (category.format !== "list") {
-        operationError("invalid_reference", "Worldbuilding category is not a list.");
+        operationError(
+          "invalid_reference",
+          "Worldbuilding category is not a list."
+        );
       }
       assertExactOrder(
         category.items.map(({ id }) => id),

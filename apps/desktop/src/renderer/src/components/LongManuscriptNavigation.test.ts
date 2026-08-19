@@ -45,7 +45,9 @@ describe("LongManuscriptNavigation", () => {
     expect(editorSource).toContain(
       'emit("deleteStructure", input, completion);'
     );
-    expect(documentSessionSource).toContain("async function saveCurrentDocument(");
+    expect(documentSessionSource).toContain(
+      "async function saveCurrentDocument("
+    );
   });
 
   it("closes its own action menu without leaking menu state to the editor", () => {

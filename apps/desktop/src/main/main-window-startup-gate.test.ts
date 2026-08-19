@@ -31,8 +31,12 @@ describe("main window startup gate", () => {
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
     const startup = source.slice(source.indexOf("const hasSingleInstanceLock"));
     const registerIpcIndex = startup.indexOf("registerIpc();");
-    const createWindowIndex = startup.indexOf("mainWindow = createMainWindow();");
-    const markReadyIndex = startup.indexOf("mainWindowStartupGate.markReady();");
+    const createWindowIndex = startup.indexOf(
+      "mainWindow = createMainWindow();"
+    );
+    const markReadyIndex = startup.indexOf(
+      "mainWindowStartupGate.markReady();"
+    );
 
     expect(startup).toContain(
       'app.on("second-instance", () => {\n    mainWindowStartupGate.requestShow();'

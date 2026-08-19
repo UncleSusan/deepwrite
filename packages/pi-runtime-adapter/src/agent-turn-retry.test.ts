@@ -20,7 +20,7 @@ import {
   type AgentTurnRetrySchedule
 } from "./agent-turn-retry";
 
-const model: Model<any> = {
+const model: Model<"openai-completions"> = {
   id: "retry-test-model",
   name: "Retry Test Model",
   api: "openai-completions",
@@ -63,7 +63,9 @@ function assistantMessage(
 function responseStream(message: AssistantMessage) {
   const stream = createAssistantMessageEventStream();
   if (message.stopReason === "pending") {
-    throw new Error("A pending assistant message is not a terminal test response.");
+    throw new Error(
+      "A pending assistant message is not a terminal test response."
+    );
   }
   if (message.stopReason === "error" || message.stopReason === "aborted") {
     stream.push({ type: "error", reason: message.stopReason, error: message });
@@ -164,11 +166,13 @@ describe("agent turn retry coordinator", () => {
 
     expect(calls).toBe(3);
     expect(slept).toEqual([2_000, 5_000]);
-    expect(attempts.map(({ turnId, attempt, maxAttempts }) => ({
-      turnId,
-      attempt,
-      maxAttempts
-    }))).toEqual([
+    expect(
+      attempts.map(({ turnId, attempt, maxAttempts }) => ({
+        turnId,
+        attempt,
+        maxAttempts
+      }))
+    ).toEqual([
       { turnId: "run_retry:turn:1", attempt: 1, maxAttempts: 6 },
       { turnId: "run_retry:turn:1", attempt: 2, maxAttempts: 6 },
       { turnId: "run_retry:turn:1", attempt: 3, maxAttempts: 6 }
@@ -193,8 +197,9 @@ describe("agent turn retry coordinator", () => {
       { attempt: 2, stopReason: "error" },
       { attempt: 3, stopReason: "stop" }
     ]);
-    expect(contexts.map((context) => context.messages.map((message) => message.role)))
-      .toEqual([["user"], ["user"], ["user"]]);
+    expect(
+      contexts.map((context) => context.messages.map((message) => message.role))
+    ).toEqual([["user"], ["user"], ["user"]]);
     expect(agent.state.messages.map((message) => message.role)).toEqual([
       "user",
       "assistant"

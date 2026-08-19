@@ -1,7 +1,4 @@
-import type {
-  AgentToolTrace,
-  ChatMessage
-} from "../../types/conversation";
+import type { AgentToolTrace, ChatMessage } from "../../types/conversation";
 
 export type ChatAssistantTraceItem =
   | {

@@ -1,7 +1,4 @@
-import type {
-  Book,
-  DeepWriteApi
-} from "@deepwrite/contracts";
+import type { Book, DeepWriteApi } from "@deepwrite/contracts";
 import { ref, shallowRef, type Ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -156,7 +153,9 @@ function createHarness(options: HarnessOptions = {}) {
   });
   const selectedDraftFileKinds = ref<
     Record<string, "body" | "character-state">
-  >({ [directory.id]: "body" });
+  >({
+    [directory.id]: "body"
+  });
   const mutationPending = ref(false);
   const savingDocumentIds = ref<ReadonlySet<string>>(new Set());
   const acceptingDocumentIds = ref<ReadonlySet<string>>(new Set());
@@ -169,10 +168,7 @@ function createHarness(options: HarnessOptions = {}) {
   const activeExpertSectionId = ref<string | undefined>(
     directory.sections[0]?.id
   );
-  const conversationEntries = new Map<
-    string,
-    { isBusy: Ref<boolean> }
-  >();
+  const conversationEntries = new Map<string, { isBusy: Ref<boolean> }>();
   const resourceNodes = new Map<string, ResourceTreeNode>();
   const draftNode: ResourceTreeNode = {
     id: directory.id,
@@ -188,7 +184,8 @@ function createHarness(options: HarnessOptions = {}) {
     }))
   };
   resourceNodes.set(draftNode.id, draftNode);
-  for (const child of draftNode.children ?? []) resourceNodes.set(child.id, child);
+  for (const child of draftNode.children ?? [])
+    resourceNodes.set(child.id, child);
   const resourceSections = ref<readonly ResourceTreeSection[]>([
     { id: "creation", label: "创作", icon: "book", nodes: [draftNode] }
   ]);
@@ -510,7 +507,9 @@ describe("useShortWorkspaceStructureCoordinator", () => {
     };
 
     const removal = harness.coordinator.confirmRemoveExpertSection();
-    await waitFor(() => harness.apiMocks.deleteDraftSection.mock.calls.length === 1);
+    await waitFor(
+      () => harness.apiMocks.deleteDraftSection.mock.calls.length === 1
+    );
     const disposal = harness.coordinator.dispose();
     let disposed = false;
     void disposal.then(() => {

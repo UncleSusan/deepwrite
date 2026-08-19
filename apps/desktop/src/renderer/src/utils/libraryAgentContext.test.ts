@@ -72,7 +72,9 @@ function snapshot(): CatalogSnapshot {
   };
 }
 
-function document(overrides: Partial<WorkspaceDocument> = {}): WorkspaceDocument {
+function document(
+  overrides: Partial<WorkspaceDocument> = {}
+): WorkspaceDocument {
   return {
     id: "catalog:material-entry:material-1:entry-1",
     domain: "material",
@@ -130,7 +132,9 @@ describe("buildLibraryAgentWorkspaceContext", () => {
       stageCategoryId: "outline",
       readOnly: true
     });
-    const result = buildLibraryAgentWorkspaceContext(snapshot(), active, [active]);
+    const result = buildLibraryAgentWorkspaceContext(snapshot(), active, [
+      active
+    ]);
 
     expect(result?.readOnly).toBe(true);
     expect(result?.entries[0]?.readOnly).toBe(true);
@@ -146,11 +150,7 @@ describe("buildLibraryAgentWorkspaceContext", () => {
       content: ""
     };
     expect(
-      buildLibraryAgentWorkspaceContext(
-        snapshot(),
-        creationDocument,
-        []
-      )
+      buildLibraryAgentWorkspaceContext(snapshot(), creationDocument, [])
     ).toBeUndefined();
   });
 
@@ -233,7 +233,9 @@ describe("buildLibraryAgentWorkspaceContext", () => {
     const result = buildLibraryAgentWorkspaceContext(catalog, active, [active]);
     const background = result?.entries.find(({ id }) => id === "entry-2");
 
-    expect(background?.content).toHaveLength(LIBRARY_AGENT_ENTRY_MAX_CHARACTERS);
+    expect(background?.content).toHaveLength(
+      LIBRARY_AGENT_ENTRY_MAX_CHARACTERS
+    );
     expect(background).toMatchObject({
       truncated: true,
       originalLength: backgroundBody.length
@@ -322,7 +324,10 @@ describe("buildLibraryEntryComposerReferences", () => {
       content: "另一条",
       path: ["人物素材", "乙"]
     });
-    const context = buildLibraryAgentWorkspaceContext(catalog, active, [active, peer]);
+    const context = buildLibraryAgentWorkspaceContext(catalog, active, [
+      active,
+      peer
+    ]);
 
     expect(buildLibraryEntryComposerReferences(context)).toEqual([
       {
@@ -367,7 +372,9 @@ describe("buildLibraryEntryComposerReferences", () => {
       updatedAt: now
     });
     const active = document();
-    const context = buildLibraryAgentWorkspaceContext(catalog, active, [active]);
+    const context = buildLibraryAgentWorkspaceContext(catalog, active, [
+      active
+    ]);
 
     expect(buildLibraryEntryComposerReferences(context)).toEqual(
       expect.arrayContaining([
@@ -391,7 +398,9 @@ describe("buildLibraryEntryComposerReferences", () => {
       stageCategoryId: "outline",
       readOnly: true
     });
-    const context = buildLibraryAgentWorkspaceContext(snapshot(), active, [active]);
+    const context = buildLibraryAgentWorkspaceContext(snapshot(), active, [
+      active
+    ]);
 
     expect(buildLibraryEntryComposerReferences(context)).toEqual([]);
   });

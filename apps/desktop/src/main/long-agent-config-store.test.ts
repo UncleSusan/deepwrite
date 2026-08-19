@@ -148,10 +148,7 @@ describe("LongAgentConfigStore", () => {
     const saved = await store.save(input);
     const resolved = await store.resolve("setting");
     const disk = JSON.parse(
-      await readFile(
-        join(root, "config", "long-workspace-agents.json"),
-        "utf8"
-      )
+      await readFile(join(root, "config", "long-workspace-agents.json"), "utf8")
     ) as Record<string, unknown>;
 
     expect(saved.agents).toHaveLength(4);
@@ -164,9 +161,8 @@ describe("LongAgentConfigStore", () => {
       skillKinds: ["general"]
     });
     expect(resolved.writeAccess).toEqual(
-      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
-        ({ id }) => id === "setting"
-      )!.writeAccess
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(({ id }) => id === "setting")!
+        .writeAccess
     );
     expect(JSON.stringify(disk)).not.toContain("writeAccess");
     expect(JSON.stringify(disk)).not.toContain("capabilities");
@@ -183,12 +179,9 @@ describe("LongAgentConfigStore", () => {
     await store.save(input);
 
     const reset = await store.reset("setting");
-    expect(
-      reset.agents.find(({ id }) => id === "setting")!.systemPrompt
-    ).toBe(
-      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
-        ({ id }) => id === "setting"
-      )!.systemPrompt
+    expect(reset.agents.find(({ id }) => id === "setting")!.systemPrompt).toBe(
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(({ id }) => id === "setting")!
+        .systemPrompt
     );
     expect(
       reset.agents.find(({ id }) => id === "plot_design")!.systemPrompt
@@ -198,9 +191,7 @@ describe("LongAgentConfigStore", () => {
   it("upgrades only the retired worldbuilding builtin prompt", async () => {
     const { store } = await createStore();
     const input = editableDefaults();
-    const worldbuilding = input.agents.find(
-      ({ id }) => id === "setting"
-    )!;
+    const worldbuilding = input.agents.find(({ id }) => id === "setting")!;
     worldbuilding.systemPrompt =
       "你负责长篇世界观。先查询现有结构和相关正文，再提出可审阅的结构或文档变更；不得凭空覆盖未读取的设定。";
     await store.save(input);
@@ -209,9 +200,8 @@ describe("LongAgentConfigStore", () => {
       (await store.list()).agents.find(({ id }) => id === "setting")!
         .systemPrompt
     ).toBe(
-      DEFAULT_LONG_AGENT_SETTINGS.agents.find(
-        ({ id }) => id === "setting"
-      )!.systemPrompt
+      DEFAULT_LONG_AGENT_SETTINGS.agents.find(({ id }) => id === "setting")!
+        .systemPrompt
     );
 
     worldbuilding.systemPrompt = `你负责长篇世界观。模型只使用世界观业务标识：
@@ -244,9 +234,7 @@ describe("LongAgentConfigStore", () => {
   it("upgrades the retired character builtin prompt without replacing customization", async () => {
     const { store } = await createStore();
     const input = editableDefaults();
-    const character = input.agents.find(
-      ({ id }) => id === "setting"
-    )!;
+    const character = input.agents.find(({ id }) => id === "setting")!;
     character.systemPrompt = `你负责长篇人物设计。模型只使用人物业务标识：
 - 每名人物以 character_id 唯一定位；人物内容按 core_profile、relationships、current_state、history 四种 document 区分。
 - 人物设计阶段另有一份手动维护的概览，用于统计全部人物的 character_id、姓名、分组、别名与一句话定位。
@@ -314,6 +302,34 @@ describe("LongAgentConfigStore", () => {
     ).toBe("自定义剧情提示词");
   });
 
+  it("upgrades the immediately previous plot builtin after foreshadowing reads are added", async () => {
+    const { store } = await createStore();
+    const input = editableDefaults();
+    const plot = input.agents.find(({ id }) => id === "plot_design")!;
+    const newPrompt = plot.systemPrompt;
+    plot.systemPrompt = newPrompt
+      .replace(
+        "- 伏笔线使用 foreshadowing_id，伏笔触点使用 beat_id；读取统一使用剧情三件套，写入只使用 propose_long_mutation。其余实现细节由工具内部处理，不要索取、推断或复述。",
+        "- 伏笔线与伏笔触点沿用独立的现有结构工具；其余实现细节由工具内部处理，不要索取、推断或复述。"
+      )
+      .replace(
+        /1\. 当前上下文足以回答时可以直接处理；固定上下文已包含世界观与人物目录、长篇结构导航，以及伏笔页最多 100 条轻量目录和当前焦点。.*?不得把未读取内容当成事实。/u,
+        "1. 当前上下文足以回答时可以直接处理；固定上下文已包含世界观与人物目录以及长篇结构导航。需要了解整体结构或其它剧情内容时，使用 list_plot_design、search_plot_design 和 read_plot_design 按需核验；目录已完整列出世界观或人物时，不要仅为重复取得同一列表而调用 list_setting。涉及世界规则或人物正文时，使用 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character）查询，世界观与人物内容只读。不得把未读取内容当成事实。"
+      )
+      .replace(
+        /2\. 读取全部剧情内容（包括伏笔线与伏笔触点）使用 read_plot_design。.*?完整读取目标。/u,
+        "2. 读取剧情内容使用 read_plot_design。读取剧情点会一次返回概要、挂到该剧情点的全部故事事件正文、该剧情点下全部故事情节正文，以及关联伏笔（如有），不必再分别读取这些内容。搜索结果和当前页面快照只用于定位与理解；整体重写或局部修改前必须以 mode=full 完整读取目标。"
+      );
+    expect(plot.systemPrompt).not.toBe(newPrompt);
+
+    await store.save(input);
+
+    expect(
+      (await store.list()).agents.find(({ id }) => id === "plot_design")!
+        .systemPrompt
+    ).toBe(newPrompt);
+  });
+
   it("upgrades the retired draft coordinator prompt without replacing customization", async () => {
     const { store } = await createStore();
     const input = editableDefaults();
@@ -334,12 +350,8 @@ describe("LongAgentConfigStore", () => {
     expect(upgraded.systemPrompt).toContain("能力范围：");
     expect(upgraded.systemPrompt).toContain("get_long_chapter_readiness");
     expect(upgraded.systemPrompt).toContain("write_chapter_draft");
-    expect(upgraded.systemPrompt).toContain(
-      "固定上下文已包含世界观与人物目录"
-    );
-    expect(upgraded.systemPrompt).toContain(
-      "同一写手智能体和同一对话历史"
-    );
+    expect(upgraded.systemPrompt).toContain("固定上下文已包含世界观与人物目录");
+    expect(upgraded.systemPrompt).toContain("同一写手智能体和同一对话历史");
     expect(upgraded.systemPrompt).not.toContain("每章独立的写手运行");
 
     draft.systemPrompt = `你是长篇写手智能体，统一负责正文规划、连续章节调度，以及当前锁定章卡的小说正文写作。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
@@ -362,8 +374,7 @@ describe("LongAgentConfigStore", () => {
 8. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文保存后写作流程可直接推进下一章；连续性记录由用户之后按需触发。`;
     await store.save(input);
     expect(
-      (await store.list()).agents.find(({ id }) => id === "draft")!
-        .systemPrompt
+      (await store.list()).agents.find(({ id }) => id === "draft")!.systemPrompt
     ).toContain("同一写手智能体和同一对话历史");
 
     draft.systemPrompt = `你是长篇写手智能体，统一负责正文规划、连续章节调度，以及当前锁定章卡的小说正文写作。模型只使用世界观、人物、剧情和章节的业务 ID，不索取或复述文件路径、file_id 与 revision。
@@ -386,15 +397,13 @@ describe("LongAgentConfigStore", () => {
 8. 不得编写、草拟、补全或修改章末人物状态、交接文档、下一章接续包及连续性事实，也不得在回复摘要中夹带这些内容。正文保存后写作流程可直接推进下一章；连续性记录由用户之后按需触发。`;
     await store.save(input);
     expect(
-      (await store.list()).agents.find(({ id }) => id === "draft")!
-        .systemPrompt
+      (await store.list()).agents.find(({ id }) => id === "draft")!.systemPrompt
     ).toContain("同一写手智能体和同一对话历史");
 
     draft.systemPrompt = "自定义正文统筹提示词";
     await store.save(input);
     expect(
-      (await store.list()).agents.find(({ id }) => id === "draft")!
-        .systemPrompt
+      (await store.list()).agents.find(({ id }) => id === "draft")!.systemPrompt
     ).toBe("自定义正文统筹提示词");
   });
 
@@ -427,11 +436,7 @@ describe("LongAgentConfigStore", () => {
             {
               id: "expert_section_writer",
               systemPrompt: RETIRED_COMMITTED_LOCK_CHAPTER_WRITER_SYSTEM_PROMPT,
-              welcomeShortcuts: [
-                "写当前章",
-                "续写当前章",
-                "检查本章连续性"
-              ],
+              welcomeShortcuts: ["写当前章", "续写当前章", "检查本章连续性"],
               readAccess: {
                 workspaceRoots: [
                   "worldbuilding",
@@ -453,7 +458,9 @@ describe("LongAgentConfigStore", () => {
       "utf8"
     );
 
-    const merged = (await store.list()).agents.find(({ id }) => id === "draft")!;
+    const merged = (await store.list()).agents.find(
+      ({ id }) => id === "draft"
+    )!;
     expect(merged.systemPrompt).toBe(
       DEFAULT_LONG_AGENT_SETTINGS.agents.find(({ id }) => id === "draft")!
         .systemPrompt
@@ -533,8 +540,7 @@ describe("LongAgentConfigStore", () => {
       )!.systemPrompt
     );
 
-    continuity.systemPrompt =
-      RETIRED_TEXT_FILE_CONTINUITY_LEDGER_SYSTEM_PROMPT;
+    continuity.systemPrompt = RETIRED_TEXT_FILE_CONTINUITY_LEDGER_SYSTEM_PROMPT;
     await store.save(input);
     expect(
       (await store.list()).agents.find(({ id }) => id === "continuity_ledger")!

@@ -92,8 +92,12 @@ const encryptedStorage = {
 describe("MarketplaceClient", () => {
   it("joins the configured base, never reuses the public-data key, and encrypts sessions", async () => {
     const root = await temporaryRoot();
-    vi.stubEnv("MAIN_VITE_DEEPWRITE_PUBLIC_DATA_API_KEY", "must-not-cross-boundary");
-    const requests: Array<{ url: string; headers: Headers; body?: string }> = [];
+    vi.stubEnv(
+      "MAIN_VITE_DEEPWRITE_PUBLIC_DATA_API_KEY",
+      "must-not-cross-boundary"
+    );
+    const requests: Array<{ url: string; headers: Headers; body?: string }> =
+      [];
     const fetcher = async (url: string, init?: RequestInit) => {
       requests.push({
         url,
@@ -126,7 +130,9 @@ describe("MarketplaceClient", () => {
     );
     expect(stored).not.toContain(TOKEN);
     expect(stored).not.toContain("invalid-test-password");
-    expect(stored).toContain(Buffer.from(`encrypted:${TOKEN}`).toString("base64"));
+    expect(stored).toContain(
+      Buffer.from(`encrypted:${TOKEN}`).toString("base64")
+    );
   });
 
   it("keeps the token in memory only when secure storage is unavailable", async () => {
@@ -148,7 +154,9 @@ describe("MarketplaceClient", () => {
     expect(session).toMatchObject({ authenticated: true, persistent: false });
     await expect(
       stat(join(root, "config", "marketplace-session.json"))
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
   it("serializes a local skill group as nested skill libraries", async () => {
@@ -262,7 +270,9 @@ describe("MarketplaceClient", () => {
     expect(await reopened.session()).toMatchObject({ authenticated: false });
     await expect(
       stat(join(root, "config", "marketplace-session.json"))
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
   it("preserves the login endpoint error instead of reporting an expired session", async () => {
@@ -318,7 +328,8 @@ describe("MarketplaceClient", () => {
           markStaleRequestStarted?.();
           return staleResponse;
         }
-        listAuthorization = new Headers(init?.headers).get("Authorization") ?? "";
+        listAuthorization =
+          new Headers(init?.headers).get("Authorization") ?? "";
         return Response.json({
           data: {
             items: [],
@@ -515,7 +526,9 @@ describe("MarketplaceClient", () => {
             }
           });
         }
-        expect(url).toContain("/market/v1/skill-content/skill/remote-skill/download");
+        expect(url).toContain(
+          "/market/v1/skill-content/skill/remote-skill/download"
+        );
         operations.push("download-count");
         return Response.json(
           { error: { code: "temporary_failure", message: "计数暂不可用" } },
@@ -529,7 +542,10 @@ describe("MarketplaceClient", () => {
       installPackage: async (input) => {
         operations.push("local-install");
         return {
-          source: { contentType: input.source.contentType, id: input.source.contentId },
+          source: {
+            contentType: input.source.contentType,
+            id: input.source.contentId
+          },
           version: input.source.version,
           title: input.title,
           alreadyInstalled: false,

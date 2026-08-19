@@ -44,7 +44,11 @@ function customizedInput(prefix: string): LibraryAgentSettingsInput {
       readAccess: {
         skills: agent.readAccess.skills.map((skill, index) =>
           index === 0
-            ? { ...skill, name: `${prefix}-skill`, content: `${prefix}-content` }
+            ? {
+                ...skill,
+                name: `${prefix}-skill`,
+                content: `${prefix}-content`
+              }
             : { ...skill }
         )
       }
@@ -65,7 +69,9 @@ function byDomain<T extends { domain: LibraryAgentDomain }>(
 
 afterEach(async () => {
   await Promise.all(
-    [...temporaryRoots].map((root) => rm(root, { recursive: true, force: true }))
+    [...temporaryRoots].map((root) =>
+      rm(root, { recursive: true, force: true })
+    )
   );
   temporaryRoots.clear();
 });
@@ -146,7 +152,9 @@ describe("LibraryAgentConfigStore", () => {
     );
 
     const settings = await store.list();
-    expect(byDomain(settings.agents, "material").systemPrompt).toBe("legacy:material");
+    expect(byDomain(settings.agents, "material").systemPrompt).toBe(
+      "legacy:material"
+    );
     expect(byDomain(settings.agents, "material").readAccess).toEqual(
       byDomain(DEFAULT_LIBRARY_AGENT_PROFILES, "material").readAccess
     );

@@ -165,7 +165,9 @@ function catalogFixture(): CatalogSnapshot {
 
 afterEach(async () => {
   await Promise.all(
-    [...temporaryRoots].map((root) => rm(root, { recursive: true, force: true }))
+    [...temporaryRoots].map((root) =>
+      rm(root, { recursive: true, force: true })
+    )
   );
   temporaryRoots.clear();
 });
@@ -204,8 +206,6 @@ export {
   tmpdir,
   utimes,
   writeFile,
-  writeJson,
+  writeJson
 };
-export type {
-  CatalogSnapshot,
-};
+export type { CatalogSnapshot };

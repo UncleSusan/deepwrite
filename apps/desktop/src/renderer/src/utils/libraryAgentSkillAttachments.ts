@@ -5,11 +5,12 @@ import {
 } from "@deepwrite/contracts";
 import type { WorkspaceRuntimeContext } from "@deepwrite/contracts";
 
-type AttachedSkill = NonNullable<WorkspaceRuntimeContext["attachedSkills"]>[number];
+type AttachedSkill = NonNullable<
+  WorkspaceRuntimeContext["attachedSkills"]
+>[number];
 
 export type LibraryAgentSkillAttachmentDiagnosticCode =
-  | "content-truncated"
-  | "capacity-exceeded";
+  "content-truncated" | "capacity-exceeded";
 
 export interface LibraryAgentSkillAttachmentDiagnostic {
   code: LibraryAgentSkillAttachmentDiagnosticCode;
@@ -92,12 +93,14 @@ export function buildLibraryAgentSkillAttachments(
     });
   }
 
-  const attachedSkills: AttachedSkill[] = configuredSkills.slice(0, itemLimit).map((skill) => ({
-    id: `library-agent-skill:${skill.id}`,
-    title: skill.name,
-    content: truncateContent(skill, contentLimit, diagnostics),
-    source: "attached-skill" as const
-  }));
+  const attachedSkills: AttachedSkill[] = configuredSkills
+    .slice(0, itemLimit)
+    .map((skill) => ({
+      id: `library-agent-skill:${skill.id}`,
+      title: skill.name,
+      content: truncateContent(skill, contentLimit, diagnostics),
+      source: "attached-skill" as const
+    }));
 
   return {
     attachedSkills,

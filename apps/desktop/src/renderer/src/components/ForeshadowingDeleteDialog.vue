@@ -83,18 +83,28 @@ defineExpose({ deleteDialog, deleteCancelButton });
 </template>
 
 <style scoped>
-button { border: 0; font: inherit; }
-.foreshadow-dialog-overlay { z-index: 2400; overflow-y: auto; padding: 16px; }
+button {
+  border: 0;
+  font: inherit;
+}
+.foreshadow-dialog-overlay {
+  z-index: 2400;
+  overflow-y: auto;
+  padding: 16px;
+}
 .foreshadow-dialog {
   width: min(620px, 94vw);
   overflow-y: auto;
   border: 1px solid var(--theme-line);
   border-radius: 14px;
   background: var(--surface-raised);
-  box-shadow: 0 22px 70px color-mix(in srgb, var(--text-primary) 20%, transparent);
+  box-shadow: 0 22px 70px
+    color-mix(in srgb, var(--text-primary) 20%, transparent);
   color: var(--text-primary);
 }
-.delete-dialog { width: min(470px, 94vw); }
+.delete-dialog {
+  width: min(470px, 94vw);
+}
 .dialog-header,
 .dialog-actions {
   display: flex;
@@ -103,16 +113,29 @@ button { border: 0; font: inherit; }
   gap: 12px;
   padding: 13px 15px;
 }
-.dialog-header { border-bottom: 1px solid var(--theme-line-soft); background: var(--surface-muted); }
+.dialog-header {
+  border-bottom: 1px solid var(--theme-line-soft);
+  background: var(--surface-muted);
+}
 .dialog-header span {
   color: var(--accent);
   font-size: 0.607143rem;
   font-weight: 720;
   letter-spacing: 0.1em;
 }
-.dialog-header h3 { margin: 0; font-size: 1rem; }
-.dialog-body { padding: 15px; }
-.delete-copy { margin: 0; color: var(--text-secondary); font-size: 0.785714rem; line-height: 1.65; }
+.dialog-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.dialog-body {
+  padding: 15px;
+}
+.delete-copy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+  line-height: 1.65;
+}
 .dialog-actions {
   justify-content: flex-end;
   border-top: 1px solid var(--theme-line-soft);
@@ -130,8 +153,14 @@ button { border: 0; font: inherit; }
   color: var(--text-secondary);
   cursor: pointer;
 }
-button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
-button:disabled { cursor: not-allowed; opacity: 0.45; }
+button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 .danger-button {
   border-color: var(--danger) !important;
   background: var(--danger) !important;

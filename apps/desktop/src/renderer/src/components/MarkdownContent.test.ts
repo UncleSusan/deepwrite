@@ -5,13 +5,17 @@ import messageSource from "./MessageMarkdown.vue?raw";
 
 describe("MarkdownContent", () => {
   it("owns the shared safe Markdown rendering path", () => {
-    expect(source).toContain('import { renderMarkdown } from "../utils/renderMarkdown"');
+    expect(source).toContain(
+      'import { renderMarkdown } from "../utils/renderMarkdown"'
+    );
     expect(source).toContain('class="markdown-content"');
     expect(source).toContain('v-html="html"');
   });
 
   it("is also reused by conversation messages", () => {
-    expect(messageSource).toContain('import MarkdownContent from "./MarkdownContent.vue"');
+    expect(messageSource).toContain(
+      'import MarkdownContent from "./MarkdownContent.vue"'
+    );
     expect(messageSource).toContain('class="message-markdown"');
   });
 

@@ -66,9 +66,7 @@ export function createSystemEventCenter(
 ): SystemEventCenter {
   const subscriptions = new Map<symbol, Subscription>();
 
-  function addSubscription(
-    subscription: Subscription
-  ): UnsubscribeSystemEvent {
+  function addSubscription(subscription: Subscription): UnsubscribeSystemEvent {
     const subscriptionId = Symbol("system-event-subscription");
     subscriptions.set(subscriptionId, subscription);
     return createUnsubscribe(subscriptions, subscriptionId);

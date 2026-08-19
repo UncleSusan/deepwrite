@@ -220,9 +220,7 @@ function rehashLedgerMutation(
   bundle: LongPortableExportBundle,
   mutate: (record: Record<string, unknown>) => void
 ): void {
-  const ledgerFile = bundle.files.find(
-    ({ kind }) => kind === "ledger-record"
-  )!;
+  const ledgerFile = bundle.files.find(({ kind }) => kind === "ledger-record")!;
   const record = JSON.parse(ledgerFile.content) as Record<string, unknown>;
   mutate(record);
   ledgerFile.content = serializeJson(record);
@@ -232,8 +230,9 @@ function rehashLedgerMutation(
     ledgerFile.revision as never;
   const indexText = serializeJson(bundle.index.value);
   bundle.index.sha256 = sha256(indexText);
-  bundle.manifest.value.workspaceIndexFile.revision =
-    revision(indexText) as never;
+  bundle.manifest.value.workspaceIndexFile.revision = revision(
+    indexText
+  ) as never;
   bundle.manifest.sha256 = sha256(serializeJson(bundle.manifest.value));
 }
 
@@ -324,11 +323,10 @@ describe("long portable import parser", () => {
     delete legacyLedger.projection;
     const legacyIndexContent = serializeJson(legacy.index.value);
     legacy.index.sha256 = sha256(legacyIndexContent);
-    legacy.manifest.value.workspaceIndexFile.revision =
-      revision(legacyIndexContent) as never;
-    legacy.manifest.sha256 = sha256(
-      serializeJson(legacy.manifest.value)
-    );
+    legacy.manifest.value.workspaceIndexFile.revision = revision(
+      legacyIndexContent
+    ) as never;
+    legacy.manifest.sha256 = sha256(serializeJson(legacy.manifest.value));
 
     const parsed = parseLongPortableExportBundle(legacy);
 
@@ -371,11 +369,10 @@ describe("long portable import parser", () => {
 
     const legacyIndexContent = serializeJson(legacy.index.value);
     legacy.index.sha256 = sha256(legacyIndexContent);
-    legacy.manifest.value.workspaceIndexFile.revision =
-      revision(legacyIndexContent) as never;
-    legacy.manifest.sha256 = sha256(
-      serializeJson(legacy.manifest.value)
-    );
+    legacy.manifest.value.workspaceIndexFile.revision = revision(
+      legacyIndexContent
+    ) as never;
+    legacy.manifest.sha256 = sha256(serializeJson(legacy.manifest.value));
 
     const parsed = parseLongPortableExportBundle(legacy);
     const migrated = parsed.index.value.worldbuilding[0]!;
@@ -393,8 +390,7 @@ describe("long portable import parser", () => {
     });
     expect(
       parsed.files.find(
-        ({ id }) =>
-          id === longWorldbuildingItemFileId("worlditem_legacy_rule")
+        ({ id }) => id === longWorldbuildingItemFileId("worlditem_legacy_rule")
       )
     ).toMatchObject({
       content: "逆潮每十年出现一次。"
@@ -430,9 +426,7 @@ describe("long portable import parser", () => {
     const pathCollision = structuredClone(portableImportFixture());
     pathCollision.files[1]!.path =
       pathCollision.files[0]!.path.toLocaleUpperCase("en-US");
-    expect(() => parseLongPortableExportBundle(pathCollision)).toThrow(
-      /重复/u
-    );
+    expect(() => parseLongPortableExportBundle(pathCollision)).toThrow(/重复/u);
   });
 
   it("rejects a fully rehashed record that no longer matches its index", () => {
@@ -517,8 +511,8 @@ describe("long portable import parser", () => {
     rehashLedgerMutation(inventedPreviousCommit, (record) => {
       record.previousChapterCommitId = "commit_forged";
     });
-    expect(() =>
-      parseLongPortableExportBundle(inventedPreviousCommit)
-    ).toThrow(/回滚前态/u);
+    expect(() => parseLongPortableExportBundle(inventedPreviousCommit)).toThrow(
+      /回滚前态/u
+    );
   });
 });

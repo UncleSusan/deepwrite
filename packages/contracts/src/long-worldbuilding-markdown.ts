@@ -90,9 +90,7 @@ export function parseLongWorldbuildingMarkdownList(
     if (index >= lines.length) break;
     const marker = ITEM_MARKER_PATTERN.exec(lines[index]!.trim());
     if (!marker) {
-      throw new Error(
-        `Unexpected worldbuilding content at line ${index + 1}.`
-      );
+      throw new Error(`Unexpected worldbuilding content at line ${index + 1}.`);
     }
     const id = marker[1]!;
     const titleLine = lines[index + 1];

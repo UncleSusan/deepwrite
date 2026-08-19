@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import sidebarSource from "./LeftSidebar.vue?raw";
 import source from "./TreeSection.vue?raw";
 
 describe("TreeSection resource actions", () => {
   it("offers legacy library import from the skill and material add menus", () => {
     expect(source).toContain('id: "import-legacy-library"');
-    expect(source).toContain('label: `导入旧版${resourceName}`');
+    expect(source).toContain("label: `导入旧版${resourceName}`");
     expect(source).toContain('icon: "archive"');
   });
 
   it("uses unified creation, opening, and importing entries", () => {
     expect(source).toContain('props.section.id === "creation" ? "新建作品"');
     expect(source).not.toContain('id: "create-long-book"');
-    expect(source).toContain('id: props.section.id === "creation" ? "choose-open-book" : "import"');
+    expect(source).toContain(
+      'id: props.section.id === "creation" ? "choose-open-book" : "import"'
+    );
     expect(source).toContain('"打开已有作品"');
     expect(source).toContain('id: "choose-import-book"');
     expect(source).toContain('label: "导入作品"');
@@ -44,27 +47,36 @@ describe("TreeSection resource actions", () => {
     expect(sidebarSource).toContain(
       "createLongDraftSection: [node: ResourceTreeNode]"
     );
-    expect(sidebarSource.match(/@create-long-draft-section=/gu)).toHaveLength(2);
+    expect(sidebarSource.match(/@create-long-draft-section=/gu)).toHaveLength(
+      2
+    );
   });
 
   it("forwards long draft section move and delete actions through the sidebar tree", () => {
-    expect(source).toContain(
+    expectSourceToContain(
+      source,
       'longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode]'
     );
-    expect(source).toContain(
+    expectSourceToContain(
+      source,
       "@long-draft-section-action=\"(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)\""
     );
-    expect(sidebarSource).toContain(
+    expectSourceToContain(
+      sidebarSource,
       'longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode]'
     );
-    expect(sidebarSource.match(/@long-draft-section-action=/gu)).toHaveLength(2);
+    expect(sidebarSource.match(/@long-draft-section-action=/gu)).toHaveLength(
+      2
+    );
   });
 
   it("forwards draft section ordering actions through the normal resource tree", () => {
-    expect(source).toContain(
+    expectSourceToContain(
+      source,
       'expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode]'
     );
-    expect(source).toContain(
+    expectSourceToContain(
+      source,
       "@expert-section-action=\"(action, sectionNode) => emit('expertSectionAction', action, sectionNode)\""
     );
     expect(sidebarSource.match(/@expert-section-action=/gu)).toHaveLength(2);

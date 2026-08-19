@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import lazyComponentsSource from "./lazyAppComponents.ts?raw";
-import {
-  WORKSPACE_DIALOG_KINDS
-} from "./WorkspaceDialogLayer.types";
+import { WORKSPACE_DIALOG_KINDS } from "./WorkspaceDialogLayer.types";
 import typesSource from "./WorkspaceDialogLayer.types.ts?raw";
 import source from "./WorkspaceDialogLayer.vue?raw";
 
@@ -61,7 +60,7 @@ describe("WorkspaceDialogLayer boundary", () => {
 
   it("does not instantiate a host or dialog branch without a module", () => {
     expect(source).toContain("module: WorkspaceDialogModule | null");
-    expect(source).toContain("<DialogHost\n    v-if=\"module\"");
+    expectSourceToContain(source, '<DialogHost v-if="module"');
     expect(source).toContain(':active-dialog="module.kind"');
     expect(source).not.toContain("v-show");
     expect(source).not.toContain("KeepAlive");
@@ -90,9 +89,7 @@ describe("WorkspaceDialogLayer boundary", () => {
     expect(source).toContain(
       "emit('syncLongWorldbuilding', payload, completion)"
     );
-    expect(source).toContain(
-      "emit('saveLongAgentsMd', content, completion)"
-    );
+    expect(source).toContain("emit('saveLongAgentsMd', content, completion)");
     expect(typesSource).toContain(
       "completion: LongStructureMutationCompletion"
     );

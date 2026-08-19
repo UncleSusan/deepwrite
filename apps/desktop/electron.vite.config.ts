@@ -1,14 +1,20 @@
 import { resolve } from "node:path";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "electron-vite";
-import { dependencies } from './package.json'
+import { dependencies } from "./package.json";
 
 const workspaceRoot = resolve(__dirname, "../..");
 const appRoot = resolve(__dirname);
 
 const aliases = {
-  "@deepwrite/contracts": resolve(workspaceRoot, "packages/contracts/src/index.ts"),
-  "@deepwrite/pi-runtime-adapter": resolve(workspaceRoot, "packages/pi-runtime-adapter/src/index.ts"),
+  "@deepwrite/contracts": resolve(
+    workspaceRoot,
+    "packages/contracts/src/index.ts"
+  ),
+  "@deepwrite/pi-runtime-adapter": resolve(
+    workspaceRoot,
+    "packages/pi-runtime-adapter/src/index.ts"
+  ),
   "@deepwrite/shared": resolve(workspaceRoot, "packages/shared/src/index.ts")
 };
 
@@ -23,7 +29,10 @@ const rendererAliases = [
   },
   {
     find: "@deepwrite/pi-runtime-adapter",
-    replacement: resolve(workspaceRoot, "packages/pi-runtime-adapter/src/index.ts")
+    replacement: resolve(
+      workspaceRoot,
+      "packages/pi-runtime-adapter/src/index.ts"
+    )
   },
   {
     find: "@deepwrite/shared",
@@ -40,9 +49,18 @@ export default defineConfig({
         external: ["electron", ...Object.keys(dependencies)],
         input: {
           index: resolve(appRoot, "src/main/index.ts"),
-          "utilities/core-entry": resolve(appRoot, "src/utilities/core-entry.ts"),
-          "utilities/agent-entry": resolve(appRoot, "src/utilities/agent-entry.ts"),
-          "utilities/tool-entry": resolve(appRoot, "src/utilities/tool-entry.ts")
+          "utilities/core-entry": resolve(
+            appRoot,
+            "src/utilities/core-entry.ts"
+          ),
+          "utilities/agent-entry": resolve(
+            appRoot,
+            "src/utilities/agent-entry.ts"
+          ),
+          "utilities/tool-entry": resolve(
+            appRoot,
+            "src/utilities/tool-entry.ts"
+          )
         }
       }
     }

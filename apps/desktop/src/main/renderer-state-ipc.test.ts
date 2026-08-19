@@ -1,18 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../test-utils/sourceText";
 
 describe("renderer state IPC wiring", () => {
   it("exposes an asynchronous conversation persistence API without renderer serialization", () => {
     const preloadSource = readFileSync(
-      new URL("../preload/extras-api.ts", import.meta.url),
-      "utf8"
-    );
-    const preloadFacadeSource = readFileSync(
       new URL("../preload/index.ts", import.meta.url),
       "utf8"
     );
     const apiContractSource = readFileSync(
-      new URL("../../../../packages/contracts/src/preload-api.ts", import.meta.url),
+      new URL(
+        "../../../../packages/contracts/src/preload-api.ts",
+        import.meta.url
+      ),
       "utf8"
     );
     const persistenceFunctions = preloadSource.slice(
@@ -23,7 +23,7 @@ describe("renderer state IPC wiring", () => {
     expect(apiContractSource).toContain(
       "conversationPersistence?: ConversationPersistenceApi"
     );
-    expect(preloadFacadeSource).toContain("conversationPersistence: {");
+    expect(preloadSource).toContain("conversationPersistence: {");
     expect(preloadSource).toContain('"rendererState.load"');
     expect(preloadSource).toContain('"rendererState.save"');
     expect(preloadSource).toContain('"rendererState.remove"');
@@ -33,19 +33,25 @@ describe("renderer state IPC wiring", () => {
   });
 
   it("forwards renderer state commands through main to the core utility", () => {
-    const rendererStateSource = readFileSync(
-      new URL("./ipc/renderer-state-commands.ts", import.meta.url),
+    const mainSource = readFileSync(
+      new URL("./index.ts", import.meta.url),
       "utf8"
     );
     const coreSource = readFileSync(
       new URL("../utilities/core-entry.ts", import.meta.url),
       "utf8"
     );
+    const forwarding = mainSource.slice(
+      mainSource.indexOf('command.type === "rendererState.load"'),
+      mainSource.indexOf('command.type === "catalog.snapshot"')
+    );
 
-    expect(rendererStateSource).toContain('command.type === "rendererState.load"');
-    expect(rendererStateSource).toContain('supervisor.requestCommand("core", command, 60_000)');
-    expect(rendererStateSource).toContain("RendererStateLoadResultSchema.parse");
-    expect(rendererStateSource).toContain("RendererStateMutationResultSchema.parse");
+    expectSourceToContain(
+      forwarding,
+      'supervisor.requestCommand("core", command, 60_000)'
+    );
+    expect(forwarding).toContain("RendererStateLoadResultSchema.parse");
+    expect(forwarding).toContain("RendererStateMutationResultSchema.parse");
     expect(coreSource).toContain(
       "const rendererStateStore = new RendererStateStore(resolvedUserDataPath)"
     );

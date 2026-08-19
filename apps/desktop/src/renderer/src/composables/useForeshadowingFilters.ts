@@ -10,7 +10,8 @@ export type WorkspaceMode = "overview" | "volume" | "plotPoint";
 export type PlannedSpan = "local" | "within_volume" | "cross_volume";
 export type FilterValue = "all" | LongForeshadowingStatus;
 export type SpanFilterValue = "all" | PlannedSpan;
-type SnapshotThread = LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number];
+type SnapshotThread =
+  LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number];
 type SnapshotBeat = SnapshotThread["beats"][number];
 
 export interface ForeshadowingBeat extends SnapshotBeat {
@@ -60,9 +61,9 @@ export const spanFilterOptions: readonly PopupSelectOption[] = [
 
 export const lifecycleFilterOptions: readonly PopupSelectOption[] = [
   { value: "all", label: "全部生命周期" },
-  ...(Object.entries(lifecycleLabels) as Array<[LongForeshadowingStatus, string]>).map(
-    ([value, label]) => ({ value, label })
-  )
+  ...(
+    Object.entries(lifecycleLabels) as Array<[LongForeshadowingStatus, string]>
+  ).map(([value, label]) => ({ value, label }))
 ];
 
 export const editableLifecycleOptions: readonly PopupSelectOption[] = [
@@ -89,29 +90,55 @@ export function useForeshadowingFilters(props: {
   plotPointId?: string | undefined;
 }) {
   const volumeById = computed(
-    () => new Map(props.snapshot.plot.volumes.map((volume) => [volume.id, volume] as const))
+    () =>
+      new Map(
+        props.snapshot.plot.volumes.map(
+          (volume) => [volume.id, volume] as const
+        )
+      )
   );
   const arcById = computed(
     () => new Map(props.snapshot.plot.arcs.map((arc) => [arc.id, arc] as const))
   );
   const chapterById = computed(
-    () => new Map(props.snapshot.plot.chapterCards.map((chapter) => [chapter.id, chapter] as const))
+    () =>
+      new Map(
+        props.snapshot.plot.chapterCards.map(
+          (chapter) => [chapter.id, chapter] as const
+        )
+      )
   );
   const eventById = computed(
-    () => new Map(props.snapshot.plot.storyEvents.map((event) => [event.id, event] as const))
+    () =>
+      new Map(
+        props.snapshot.plot.storyEvents.map(
+          (event) => [event.id, event] as const
+        )
+      )
   );
   const placementById = computed(
     () =>
-      new Map(props.snapshot.plot.narrativePlacements.map((placement) => [placement.id, placement] as const))
+      new Map(
+        props.snapshot.plot.narrativePlacements.map(
+          (placement) => [placement.id, placement] as const
+        )
+      )
   );
   const resolvedContextVolumeId = computed(
-    () => props.volumeId ?? (props.plotPointId ? arcById.value.get(props.plotPointId)?.volumeId : undefined)
+    () =>
+      props.volumeId ??
+      (props.plotPointId
+        ? arcById.value.get(props.plotPointId)?.volumeId
+        : undefined)
   );
 
   const volumeOptions = computed<PopupSelectOption[]>(() => [
     { value: "", label: "暂不指定分卷" },
     ...[...props.snapshot.plot.volumes]
-      .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+      .sort(
+        (left, right) =>
+          left.order - right.order || left.id.localeCompare(right.id)
+      )
       .map((volume) => ({ value: volume.id, label: volume.title }))
   ]);
 
@@ -139,7 +166,9 @@ export function useForeshadowingFilters(props: {
   });
 
   function unique(values: Array<string | null | undefined>): string[] {
-    return [...new Set(values.filter((value): value is string => Boolean(value)))];
+    return [
+      ...new Set(values.filter((value): value is string => Boolean(value)))
+    ];
   }
 
   function resolveBeatArcIds(beat: ForeshadowingBeat): string[] {
@@ -195,7 +224,9 @@ export function useForeshadowingFilters(props: {
     beat: ForeshadowingBeat,
     plotPointId: string | undefined
   ): boolean {
-    return Boolean(plotPointId && resolveBeatArcIds(beat).includes(plotPointId));
+    return Boolean(
+      plotPointId && resolveBeatArcIds(beat).includes(plotPointId)
+    );
   }
 
   function threadMatchesScope(thread: ForeshadowingThread): boolean {
@@ -216,9 +247,13 @@ export function useForeshadowingFilters(props: {
       thread.beats.flatMap((beat) => resolveBeatVolumeIds(beat))
     );
     if (volumeIds.length > 1) return "cross_volume";
-    const arcIds = unique(thread.beats.flatMap((beat) => resolveBeatArcIds(beat)));
+    const arcIds = unique(
+      thread.beats.flatMap((beat) => resolveBeatArcIds(beat))
+    );
     if (arcIds.length > 1) return "within_volume";
-    return volumeIds.length === 1 && arcIds.length === 0 ? "within_volume" : "local";
+    return volumeIds.length === 1 && arcIds.length === 0
+      ? "within_volume"
+      : "local";
   }
 
   function volumeTitle(volumeId: string): string {

@@ -188,17 +188,23 @@ const visibleSections = computed(() => {
 
 const activeLabel = computed(() => {
   for (const section of sections) {
-    const found = section.categories.find((category) => category.id === activeCategory.value);
+    const found = section.categories.find(
+      (category) => category.id === activeCategory.value
+    );
     if (found) return found.label;
   }
   return "常规";
 });
 
 const editingScheme = computed<ColorScheme>(() =>
-  appearance.state.mode === "system" ? appearance.resolvedScheme.value : appearance.state.mode
+  appearance.state.mode === "system"
+    ? appearance.resolvedScheme.value
+    : appearance.state.mode
 );
 const editingTheme = computed(() => appearance.state[editingScheme.value]);
-const themeSectionTitle = computed(() => editingScheme.value === "light" ? "浅色主题" : "深色主题");
+const themeSectionTitle = computed(() =>
+  editingScheme.value === "light" ? "浅色主题" : "深色主题"
+);
 const themePresetOptions = computed(() => [
   ...(editingTheme.value.preset === "custom"
     ? [{ value: "custom", label: "自定义", disabled: true }]
@@ -227,11 +233,13 @@ const uiFontOptions = listAppearanceUiFontFamilyOptions().map((option) => ({
   label: option.label,
   style: { fontFamily: option.stack }
 }));
-const editorFontOptions = listAppearanceEditorFontFamilyOptions().map((option) => ({
-  value: option.value,
-  label: option.label,
-  style: { fontFamily: option.stack }
-}));
+const editorFontOptions = listAppearanceEditorFontFamilyOptions().map(
+  (option) => ({
+    value: option.value,
+    label: option.label,
+    style: { fontFamily: option.stack }
+  })
+);
 
 async function selectCategory(id: string): Promise<void> {
   if (id === "appearance" && !appearanceReady.value) {
@@ -263,7 +271,10 @@ function applyThemePreset(value: string | number): void {
   appearance.applyPreset(editingScheme.value, String(value));
 }
 
-function updateTheme<K extends keyof ThemeConfig>(key: K, value: ThemeConfig[K]): void {
+function updateTheme<K extends keyof ThemeConfig>(
+  key: K,
+  value: ThemeConfig[K]
+): void {
   appearance.updateTheme(editingScheme.value, { [key]: value });
 }
 
@@ -304,7 +315,10 @@ function commitColor(key: ThemeColorKey, event: Event): void {
   applyColor(key, input.value);
 }
 
-function parseFontSize(key: ThemeFontSizeKey, input: HTMLInputElement): number | null {
+function parseFontSize(
+  key: ThemeFontSizeKey,
+  input: HTMLInputElement
+): number | null {
   if (input.value.trim() === "") return null;
   const value = Number(input.value);
   const limits = FONT_SIZE_LIMITS[key];
@@ -373,7 +387,9 @@ async function importThemeFile(event: Event): Promise<void> {
     appearance.importTheme(target, parsed.theme);
     uiMessage.success(`已导入${target === "light" ? "浅色" : "深色"}主题`);
   } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "无法读取主题文件");
+    uiMessage.error(
+      error instanceof Error ? error.message : "无法读取主题文件"
+    );
   }
 }
 </script>
@@ -392,7 +408,11 @@ async function importThemeFile(event: Event): Promise<void> {
       </div>
 
       <nav class="settings-nav" aria-label="设置分类">
-        <div v-for="section in visibleSections" :key="section.id" class="settings-section">
+        <div
+          v-for="section in visibleSections"
+          :key="section.id"
+          class="settings-section"
+        >
           <strong class="settings-section-label">{{ section.label }}</strong>
           <button
             v-for="category in section.categories"
@@ -407,7 +427,9 @@ async function importThemeFile(event: Event): Promise<void> {
             <span>{{ category.label }}</span>
           </button>
         </div>
-        <p v-if="!visibleSections.length" class="settings-search-empty">没有匹配的设置</p>
+        <p v-if="!visibleSections.length" class="settings-search-empty">
+          没有匹配的设置
+        </p>
       </nav>
     </aside>
 
@@ -496,30 +518,79 @@ async function importThemeFile(event: Event): Promise<void> {
           @load="emit('loadOfficialModels')"
           @save-token="emit('saveOfficialToken', $event)"
           @clear-token="emit('clearOfficialToken')"
-          @set-model-enabled="emit('setOfficialModelEnabled', $event.modelId, $event.enabled)"
+          @set-model-enabled="
+            emit('setOfficialModelEnabled', $event.modelId, $event.enabled)
+          "
         />
 
-        <section v-else-if="activeCategory === 'general'" class="settings-group">
+        <section
+          v-else-if="activeCategory === 'general'"
+          class="settings-group"
+        >
           <h2 class="settings-group-title">权限</h2>
-          <div class="settings-card" role="radiogroup" aria-label="智能体默认审批方式">
+          <div
+            class="settings-card"
+            role="radiogroup"
+            aria-label="智能体默认审批方式"
+          >
             <label class="settings-item">
-              <span class="settings-item-text"><strong>请求批准</strong><small>智能体修改或写入正文前，需要由你确认。</small></span>
-              <span class="settings-toggle"><input type="radio" name="general-permission-mode" :checked="permissionMode === 'request-approval'" aria-label="请求批准" @change="emit('updatePermissionMode', 'request-approval')" /></span>
+              <span class="settings-item-text"
+                ><strong>请求批准</strong
+                ><small>智能体修改或写入正文前，需要由你确认。</small></span
+              >
+              <span class="settings-toggle"
+                ><input
+                  type="radio"
+                  name="general-permission-mode"
+                  :checked="permissionMode === 'request-approval'"
+                  aria-label="请求批准"
+                  @change="emit('updatePermissionMode', 'request-approval')"
+              /></span>
             </label>
             <label class="settings-item">
-              <span class="settings-item-text"><strong>替我审批</strong><small>智能体产生写入后立即自动批准，并在后台串行保存。自动审批可能会出错。</small></span>
-              <span class="settings-toggle"><input type="radio" name="general-permission-mode" :checked="permissionMode === 'auto-approve'" aria-label="替我审批" @change="emit('updatePermissionMode', 'auto-approve')" /></span>
+              <span class="settings-item-text"
+                ><strong>替我审批</strong
+                ><small
+                  >智能体产生写入后立即自动批准，并在后台串行保存。自动审批可能会出错。</small
+                ></span
+              >
+              <span class="settings-toggle"
+                ><input
+                  type="radio"
+                  name="general-permission-mode"
+                  :checked="permissionMode === 'auto-approve'"
+                  aria-label="替我审批"
+                  @change="emit('updatePermissionMode', 'auto-approve')"
+              /></span>
             </label>
           </div>
 
           <h2 class="settings-group-title">常规</h2>
           <div class="settings-card">
             <label class="settings-item">
-              <span class="settings-item-text"><strong>自动保存</strong><small>文稿发生变化并停止输入片刻后，自动保存到本机</small></span>
-              <span class="settings-toggle"><input type="checkbox" :checked="autoSaveEnabled" @change="emit('updateAutoSave', ($event.target as HTMLInputElement).checked)" /></span>
+              <span class="settings-item-text"
+                ><strong>自动保存</strong
+                ><small
+                  >文稿发生变化并停止输入片刻后，自动保存到本机</small
+                ></span
+              >
+              <span class="settings-toggle"
+                ><input
+                  type="checkbox"
+                  :checked="autoSaveEnabled"
+                  @change="
+                    emit(
+                      'updateAutoSave',
+                      ($event.target as HTMLInputElement).checked
+                    )
+                  "
+              /></span>
             </label>
             <div class="settings-item settings-select-item">
-              <span class="settings-item-text"><strong>页面布局</strong><small>调整创作空间中智能体与文本内容的位置</small></span>
+              <span class="settings-item-text"
+                ><strong>页面布局</strong
+                ><small>调整创作空间中智能体与文本内容的位置</small></span
+              >
               <PopupSelect
                 class="general-select-control"
                 :model-value="workspacePaneLayout"
@@ -527,11 +598,19 @@ async function importThemeFile(event: Event): Promise<void> {
                 accessible-label="选择创作空间页面布局"
                 align="end"
                 :menu-min-width="238"
-                @update:model-value="emit('updateWorkspacePaneLayout', String($event) as WorkspacePaneLayout)"
+                @update:model-value="
+                  emit(
+                    'updateWorkspacePaneLayout',
+                    String($event) as WorkspacePaneLayout
+                  )
+                "
               />
             </div>
             <div class="settings-item settings-select-item">
-              <span class="settings-item-text"><strong>语言</strong><small>应用 UI 语言；当前版本提供简体中文</small></span>
+              <span class="settings-item-text"
+                ><strong>语言</strong
+                ><small>应用 UI 语言；当前版本提供简体中文</small></span
+              >
               <PopupSelect
                 class="general-select-control"
                 :model-value="language"
@@ -539,14 +618,33 @@ async function importThemeFile(event: Event): Promise<void> {
                 accessible-label="选择应用语言"
                 align="end"
                 :menu-min-width="210"
-                @update:model-value="emit('updateLanguage', String($event) as AppLanguage)"
+                @update:model-value="
+                  emit('updateLanguage', String($event) as AppLanguage)
+                "
               />
             </div>
-            <label class="settings-item"><span class="settings-item-text"><strong>在菜单栏中显示</strong><small>关闭主窗口后，仍在菜单栏中保留应用图标</small></span><span class="settings-toggle"><input type="checkbox" :checked="showInMenuBar" @change="emit('updateShowInMenuBar', ($event.target as HTMLInputElement).checked)" /></span></label>
+            <label class="settings-item"
+              ><span class="settings-item-text"
+                ><strong>在菜单栏中显示</strong
+                ><small>关闭主窗口后，仍在菜单栏中保留应用图标</small></span
+              ><span class="settings-toggle"
+                ><input
+                  type="checkbox"
+                  :checked="showInMenuBar"
+                  @change="
+                    emit(
+                      'updateShowInMenuBar',
+                      ($event.target as HTMLInputElement).checked
+                    )
+                  " /></span
+            ></label>
           </div>
         </section>
 
-        <section v-else-if="activeCategory === 'appearance'" class="appearance-group">
+        <section
+          v-else-if="activeCategory === 'appearance'"
+          class="appearance-group"
+        >
           <h2 class="appearance-heading">主题</h2>
           <div class="theme-mode-grid" role="radiogroup" aria-label="外观主题">
             <button
@@ -559,12 +657,14 @@ async function importThemeFile(event: Event): Promise<void> {
               :aria-checked="appearance.state.mode === mode.id"
               @click="selectMode(mode.id)"
             >
-              <span class="theme-preview" :class="`is-${mode.id}`" aria-hidden="true">
+              <span
+                class="theme-preview"
+                :class="`is-${mode.id}`"
+                aria-hidden="true"
+              >
                 <span class="preview-top-line" />
                 <span class="preview-sub-line" />
-                <span class="preview-window">
-                  <i /><i /><i />
-                </span>
+                <span class="preview-window"> <i /><i /><i /> </span>
               </span>
               <strong>{{ mode.label }}</strong>
             </button>
@@ -574,7 +674,13 @@ async function importThemeFile(event: Event): Promise<void> {
             <div class="theme-config-header">
               <h2>{{ themeSectionTitle }}</h2>
               <div class="theme-config-actions">
-                <input ref="importInput" class="theme-file-input" type="file" accept="application/json,.json" @change="importThemeFile" />
+                <input
+                  ref="importInput"
+                  class="theme-file-input"
+                  type="file"
+                  accept="application/json,.json"
+                  @change="importThemeFile"
+                />
                 <button type="button" @click="openImport">导入</button>
                 <button type="button" @click="copyTheme">复制主题</button>
                 <PopupSelect
@@ -587,7 +693,9 @@ async function importThemeFile(event: Event): Promise<void> {
                   :menu-min-width="188"
                   @update:model-value="applyThemePreset"
                 >
-                  <template #prefix><span class="preset-badge">Aa</span></template>
+                  <template #prefix
+                    ><span class="preset-badge">Aa</span></template
+                  >
                 </PopupSelect>
               </div>
             </div>
@@ -607,7 +715,12 @@ async function importThemeFile(event: Event): Promise<void> {
                     :value="editingTheme.accent.toLowerCase()"
                     aria-label="选择强调色"
                     @click.stop
-                    @input="applyColor('accent', ($event.target as HTMLInputElement).value)"
+                    @input="
+                      applyColor(
+                        'accent',
+                        ($event.target as HTMLInputElement).value
+                      )
+                    "
                   />
                 </span>
                 <input
@@ -625,7 +738,10 @@ async function importThemeFile(event: Event): Promise<void> {
               <div
                 class="color-control"
                 :class="{ 'is-light': editingScheme === 'light' }"
-                :style="{ backgroundColor: editingTheme.background, color: editingTheme.foreground }"
+                :style="{
+                  backgroundColor: editingTheme.background,
+                  color: editingTheme.foreground
+                }"
                 @click="openColorPicker('background')"
               >
                 <span class="color-swatch" aria-hidden="true">
@@ -636,7 +752,12 @@ async function importThemeFile(event: Event): Promise<void> {
                     :value="editingTheme.background.toLowerCase()"
                     aria-label="选择背景色"
                     @click.stop
-                    @input="applyColor('background', ($event.target as HTMLInputElement).value)"
+                    @input="
+                      applyColor(
+                        'background',
+                        ($event.target as HTMLInputElement).value
+                      )
+                    "
                   />
                 </span>
                 <input
@@ -654,7 +775,10 @@ async function importThemeFile(event: Event): Promise<void> {
               <div
                 class="color-control"
                 :class="{ 'is-light': editingScheme === 'light' }"
-                :style="{ backgroundColor: editingTheme.foreground, color: editingTheme.background }"
+                :style="{
+                  backgroundColor: editingTheme.foreground,
+                  color: editingTheme.background
+                }"
                 @click="openColorPicker('foreground')"
               >
                 <span class="color-swatch" aria-hidden="true">
@@ -665,7 +789,12 @@ async function importThemeFile(event: Event): Promise<void> {
                     :value="editingTheme.foreground.toLowerCase()"
                     aria-label="选择前景色"
                     @click.stop
-                    @input="applyColor('foreground', ($event.target as HTMLInputElement).value)"
+                    @input="
+                      applyColor(
+                        'foreground',
+                        ($event.target as HTMLInputElement).value
+                      )
+                    "
                   />
                 </span>
                 <input
@@ -681,20 +810,56 @@ async function importThemeFile(event: Event): Promise<void> {
             <div class="theme-setting-row">
               <label for="ui-font-size">UI 字号</label>
               <div class="font-size-control">
-                <input id="ui-font-size" type="number" :min="FONT_SIZE_LIMITS.uiFontSize.min" :max="FONT_SIZE_LIMITS.uiFontSize.max" step="0.5" :value="editingTheme.uiFontSize" :placeholder="String(editingTheme.uiFontSize)" inputmode="decimal" required aria-label="UI 字号（像素）" @input="previewFontSize('uiFontSize', $event)" @change="commitFontSize('uiFontSize', $event)" />
+                <input
+                  id="ui-font-size"
+                  type="number"
+                  :min="FONT_SIZE_LIMITS.uiFontSize.min"
+                  :max="FONT_SIZE_LIMITS.uiFontSize.max"
+                  step="0.5"
+                  :value="editingTheme.uiFontSize"
+                  :placeholder="String(editingTheme.uiFontSize)"
+                  inputmode="decimal"
+                  required
+                  aria-label="UI 字号（像素）"
+                  @input="previewFontSize('uiFontSize', $event)"
+                  @change="commitFontSize('uiFontSize', $event)"
+                />
                 <span>px</span>
               </div>
             </div>
             <div class="theme-setting-row">
               <label for="code-font-size">代码字号</label>
               <div class="font-size-control is-code">
-                <input id="code-font-size" type="number" :min="FONT_SIZE_LIMITS.codeFontSize.min" :max="FONT_SIZE_LIMITS.codeFontSize.max" step="0.5" :value="editingTheme.codeFontSize" :placeholder="String(editingTheme.codeFontSize)" inputmode="decimal" required aria-label="代码字号（像素）" @input="previewFontSize('codeFontSize', $event)" @change="commitFontSize('codeFontSize', $event)" />
+                <input
+                  id="code-font-size"
+                  type="number"
+                  :min="FONT_SIZE_LIMITS.codeFontSize.min"
+                  :max="FONT_SIZE_LIMITS.codeFontSize.max"
+                  step="0.5"
+                  :value="editingTheme.codeFontSize"
+                  :placeholder="String(editingTheme.codeFontSize)"
+                  inputmode="decimal"
+                  required
+                  aria-label="代码字号（像素）"
+                  @input="previewFontSize('codeFontSize', $event)"
+                  @change="commitFontSize('codeFontSize', $event)"
+                />
                 <span>px</span>
               </div>
             </div>
             <label class="theme-setting-row is-toggle">
               <span>半透明侧边栏</span>
-              <span class="settings-toggle"><input type="checkbox" :checked="editingTheme.translucentSidebar" @change="updateTheme('translucentSidebar', ($event.target as HTMLInputElement).checked)" /></span>
+              <span class="settings-toggle"
+                ><input
+                  type="checkbox"
+                  :checked="editingTheme.translucentSidebar"
+                  @change="
+                    updateTheme(
+                      'translucentSidebar',
+                      ($event.target as HTMLInputElement).checked
+                    )
+                  "
+              /></span>
             </label>
           </div>
 
@@ -736,7 +901,11 @@ async function importThemeFile(event: Event): Promise<void> {
         </section>
 
         <section v-else class="settings-group">
-          <div class="settings-card"><p class="settings-placeholder">「{{ activeLabel }}」设置项待配置。</p></div>
+          <div class="settings-card">
+            <p class="settings-placeholder">
+              「{{ activeLabel }}」设置项待配置。
+            </p>
+          </div>
         </section>
       </div>
     </main>
@@ -769,109 +938,500 @@ async function importThemeFile(event: Event): Promise<void> {
   -webkit-app-region: drag;
 }
 
-:global(html[data-platform="darwin"] .settings-sidebar) :is(button, input, a, .settings-nav) {
+:global(html[data-platform="darwin"] .settings-sidebar)
+  :is(button, input, a, .settings-nav) {
   -webkit-app-region: no-drag;
 }
 
-:global(html[data-translucent-sidebar="true"] .settings-sidebar) { backdrop-filter: blur(22px) saturate(1.25); }
+:global(html[data-translucent-sidebar="true"] .settings-sidebar) {
+  backdrop-filter: blur(22px) saturate(1.25);
+}
 
-.settings-back, .settings-category, .theme-config-actions button {
+.settings-back,
+.settings-category,
+.theme-config-actions button {
   border: 0;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
 }
 
-.settings-back { display: flex; align-items: center; gap: 8px; width: fit-content; padding: 5px 8px; border-radius: 7px; font-size: 0.928571rem; font-weight: 560; }
-.settings-back:hover, .settings-category:hover { background: var(--surface-hover); color: var(--text-primary); }
-.settings-back :deep(svg) { transform: rotate(180deg); }
+.settings-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 0.928571rem;
+  font-weight: 560;
+}
+.settings-back:hover,
+.settings-category:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.settings-back :deep(svg) {
+  transform: rotate(180deg);
+}
 
-.settings-search { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: var(--surface-muted); color: var(--text-tertiary); }
-.settings-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 0.928571rem; }
-.settings-search input::placeholder { color: var(--text-tertiary); }
-.settings-nav { display: flex; flex-direction: column; gap: 18px; }
-.settings-section { display: flex; flex-direction: column; gap: 2px; }
-.settings-section-label { padding: 0 8px 6px; color: var(--text-tertiary); font-size: 0.821429rem; font-weight: 620; letter-spacing: .03em; }
-.settings-category { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px 8px; border-radius: 7px; font-size: 0.964286rem; font-weight: 540; text-align: left; }
-.settings-category.is-active { background: var(--surface-selected); color: var(--text-primary); }
-.settings-category-spacer { width: 15px; }
-.settings-search-empty { padding: 16px 8px; color: var(--text-tertiary); font-size: 0.928571rem; }
+.settings-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-tertiary);
+}
+.settings-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.928571rem;
+}
+.settings-search input::placeholder {
+  color: var(--text-tertiary);
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-section-label {
+  padding: 0 8px 6px;
+  color: var(--text-tertiary);
+  font-size: 0.821429rem;
+  font-weight: 620;
+  letter-spacing: 0.03em;
+}
+.settings-category {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 0.964286rem;
+  font-weight: 540;
+  text-align: left;
+}
+.settings-category.is-active {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+.settings-category-spacer {
+  width: 15px;
+}
+.settings-search-empty {
+  padding: 16px 8px;
+  color: var(--text-tertiary);
+  font-size: 0.928571rem;
+}
 
-.settings-content { overflow-y: auto; padding: 52px clamp(42px, 7vw, 112px) 80px; }
-.settings-content-inner { width: min(100%, 1060px); margin: 0 auto; }
-.settings-title { margin: 0 0 60px; color: var(--text-primary); font-size: 2.57143rem; font-weight: 520; letter-spacing: -.035em; }
-.settings-group { max-width: 760px; }
-.settings-group-title, .appearance-heading { margin: 0 0 14px; color: var(--text-primary); font-size: 1.07143rem; font-weight: 640; }
-.settings-card { display: flex; flex-direction: column; margin-bottom: 28px; padding: 6px 0; border: 1px solid var(--theme-line-soft); border-radius: 13px; background: var(--surface-raised); }
-.settings-item { display: flex; align-items: center; gap: 16px; padding: 14px 18px; cursor: pointer; }
-.settings-item:not(:last-child) { border-bottom: 1px solid var(--theme-line-soft); }
-.settings-item-text { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
-.settings-item-text strong { color: var(--text-primary); font-size: 1rem; font-weight: 590; }
-.settings-item-text small { color: var(--text-secondary); font-size: 0.892857rem; line-height: 1.45; }
+.settings-content {
+  overflow-y: auto;
+  padding: 52px clamp(42px, 7vw, 112px) 80px;
+}
+.settings-content-inner {
+  width: min(100%, 1060px);
+  margin: 0 auto;
+}
+.settings-title {
+  margin: 0 0 60px;
+  color: var(--text-primary);
+  font-size: 2.57143rem;
+  font-weight: 520;
+  letter-spacing: -0.035em;
+}
+.settings-group {
+  max-width: 760px;
+}
+.settings-group-title,
+.appearance-heading {
+  margin: 0 0 14px;
+  color: var(--text-primary);
+  font-size: 1.07143rem;
+  font-weight: 640;
+}
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 28px;
+  padding: 6px 0;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 13px;
+  background: var(--surface-raised);
+}
+.settings-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  cursor: pointer;
+}
+.settings-item:not(:last-child) {
+  border-bottom: 1px solid var(--theme-line-soft);
+}
+.settings-item-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.settings-item-text strong {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 590;
+}
+.settings-item-text small {
+  color: var(--text-secondary);
+  font-size: 0.892857rem;
+  line-height: 1.45;
+}
 
-.settings-toggle input { position: relative; width: 42px; height: 24px; margin: 0; appearance: none; border-radius: 12px; background: var(--surface-selected); cursor: pointer; transition: background-color 150ms ease; }
-.settings-toggle input::after { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-main); box-shadow: 0 1px 3px rgb(0 0 0 / .22); content: ""; transition: transform 150ms ease; }
-.settings-toggle input:checked { background: var(--accent); }
-.settings-toggle input:checked::after { transform: translateX(18px); }
-.settings-select { padding: 5px 10px; border: 1px solid var(--theme-line); border-radius: 7px; background: var(--surface-raised); color: var(--text-primary); cursor: pointer; }
-.settings-select-item { flex-wrap: wrap; }
-.settings-select-item .settings-item-text { min-width: min(240px, 100%); }
+.settings-toggle input {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  border-radius: 12px;
+  background: var(--surface-selected);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.settings-toggle input::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface-main);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
+  content: "";
+  transition: transform 150ms ease;
+}
+.settings-toggle input:checked {
+  background: var(--accent);
+}
+.settings-toggle input:checked::after {
+  transform: translateX(18px);
+}
+.settings-select {
+  padding: 5px 10px;
+  border: 1px solid var(--theme-line);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.settings-select-item {
+  flex-wrap: wrap;
+}
+.settings-select-item .settings-item-text {
+  min-width: min(240px, 100%);
+}
 .general-select-control {
   width: 210px;
   min-width: 160px;
   max-width: 210px;
   flex: 0 1 210px;
 }
-.settings-placeholder { padding: 24px 18px; color: var(--text-secondary); font-size: 0.964286rem; }
+.settings-placeholder {
+  padding: 24px 18px;
+  color: var(--text-secondary);
+  font-size: 0.964286rem;
+}
 
-.appearance-group { width: 100%; }
-.appearance-font-group { margin-top: 40px; }
-.theme-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-bottom: 40px; }
-.theme-mode-option { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
-.theme-mode-option strong { display: block; padding-top: 11px; font-size: 1.14286rem; font-weight: 590; }
-.theme-mode-option.is-active { color: var(--text-primary); }
-.theme-preview { position: relative; display: block; height: 150px; overflow: hidden; border: 1px solid var(--theme-line); border-radius: 15px; background: #f3f3f3; transition: box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease; }
-.theme-mode-option:hover .theme-preview { transform: translateY(-2px); box-shadow: 0 10px 28px rgb(0 0 0 / .08); }
-.theme-mode-option.is-active .theme-preview { border: 2px solid var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.theme-preview.is-dark { background: #5b5b5b; }
-.theme-preview.is-system { background: linear-gradient(90deg, #f2f2f2 0 50%, #555 50%); }
-.preview-top-line, .preview-sub-line { position: absolute; left: 50%; height: 7px; border-radius: 5px; background: #c9c9c9; transform: translateX(-50%); }
-.preview-top-line { top: 32px; width: 44%; }
-.preview-sub-line { top: 48px; width: 62%; height: 5px; opacity: .7; }
-.theme-preview.is-dark .preview-top-line, .theme-preview.is-dark .preview-sub-line { background: #aaa; }
-.preview-window { position: absolute; right: 9%; bottom: -4px; left: 9%; height: 88px; padding: 18px 13px; border-radius: 13px 13px 0 0; background: rgb(255 255 255 / .94); box-shadow: 0 -1px 0 rgb(0 0 0 / .08); }
-.theme-preview.is-system .preview-window { background: linear-gradient(90deg, rgb(255 255 255 / .95) 0 50%, #303030 50%); }
-.preview-window i { display: block; width: 38%; height: 7px; margin-bottom: 11px; border-radius: 5px; background: #d9d9d9; }
-.preview-window i:nth-child(2) { width: 62%; }.preview-window i:nth-child(3) { width: 78%; }
+.appearance-group {
+  width: 100%;
+}
+.appearance-font-group {
+  margin-top: 40px;
+}
+.theme-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  margin-bottom: 40px;
+}
+.theme-mode-option {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.theme-mode-option strong {
+  display: block;
+  padding-top: 11px;
+  font-size: 1.14286rem;
+  font-weight: 590;
+}
+.theme-mode-option.is-active {
+  color: var(--text-primary);
+}
+.theme-preview {
+  position: relative;
+  display: block;
+  height: 150px;
+  overflow: hidden;
+  border: 1px solid var(--theme-line);
+  border-radius: 15px;
+  background: #f3f3f3;
+  transition:
+    box-shadow 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+.theme-mode-option:hover .theme-preview {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.08);
+}
+.theme-mode-option.is-active .theme-preview {
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.theme-preview.is-dark {
+  background: #5b5b5b;
+}
+.theme-preview.is-system {
+  background: linear-gradient(90deg, #f2f2f2 0 50%, #555 50%);
+}
+.preview-top-line,
+.preview-sub-line {
+  position: absolute;
+  left: 50%;
+  height: 7px;
+  border-radius: 5px;
+  background: #c9c9c9;
+  transform: translateX(-50%);
+}
+.preview-top-line {
+  top: 32px;
+  width: 44%;
+}
+.preview-sub-line {
+  top: 48px;
+  width: 62%;
+  height: 5px;
+  opacity: 0.7;
+}
+.theme-preview.is-dark .preview-top-line,
+.theme-preview.is-dark .preview-sub-line {
+  background: #aaa;
+}
+.preview-window {
+  position: absolute;
+  right: 9%;
+  bottom: -4px;
+  left: 9%;
+  height: 88px;
+  padding: 18px 13px;
+  border-radius: 13px 13px 0 0;
+  background: rgb(255 255 255 / 0.94);
+  box-shadow: 0 -1px 0 rgb(0 0 0 / 0.08);
+}
+.theme-preview.is-system .preview-window {
+  background: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 0.95) 0 50%,
+    #303030 50%
+  );
+}
+.preview-window i {
+  display: block;
+  width: 38%;
+  height: 7px;
+  margin-bottom: 11px;
+  border-radius: 5px;
+  background: #d9d9d9;
+}
+.preview-window i:nth-child(2) {
+  width: 62%;
+}
+.preview-window i:nth-child(3) {
+  width: 78%;
+}
 
-.theme-config-card { border: 1px solid var(--theme-line-soft); border-radius: 17px; background: var(--surface-raised); box-shadow: 0 1px 3px color-mix(in srgb, var(--theme-foreground) 4%, transparent); }
-.theme-config-header, .theme-setting-row { display: flex; align-items: center; min-height: 62px; padding: 0 22px; border-bottom: 1px solid var(--theme-line-soft); }
-.theme-config-header { justify-content: space-between; gap: 24px; min-height: 70px; }
-.theme-config-header h2 { margin: 0; font-size: 1.14286rem; font-weight: 640; }
-.theme-config-actions { display: flex; align-items: center; gap: 8px; }
-.theme-config-actions > button { padding: 8px 10px; font-size: 1rem; font-weight: 560; }
-.theme-config-actions > button:hover { color: var(--text-primary); }
-.theme-file-input { display: none; }
-.preset-select-control { min-width: 188px; }
-.preset-badge { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--theme-line); border-radius: 8px; color: var(--accent); font-size: 1.21429rem; font-weight: 650; }
-.theme-setting-row { justify-content: space-between; gap: 32px; font-size: 1.07143rem; font-weight: 580; }
-.theme-setting-row:last-child { border-bottom: 0; }
-.color-control { display: flex; align-items: center; width: 190px; height: 38px; padding: 0 10px; border: 1px solid rgb(127 127 127 / .18); border-radius: 11px; cursor: pointer; }
-.color-swatch { position: relative; display: grid; place-items: center; width: 22px; height: 22px; overflow: hidden; border: 1px solid currentColor; border-radius: 50%; flex-shrink: 0; }
-.color-control input[type="color"] { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); padding: 0; border: 0; border-radius: 0; background: transparent; cursor: pointer; opacity: 1; }
-.color-control input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-.color-control input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 0; }
-.color-control input:not([type="color"]) { width: 110px; margin-left: 8px; border: 0; outline: 0; background: transparent; color: inherit; font-size: 1rem; font-weight: 570; text-transform: uppercase; cursor: text; }
-.font-size-control { display: flex; align-items: center; width: 112px; padding: 0 11px; border: 1px solid var(--theme-line); border-radius: 10px; background: var(--surface-main); color: var(--text-tertiary); }
-.font-size-control:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.font-size-control input { width: 100%; min-width: 0; padding: 8px 0; border: 0; outline: 0; background: transparent; color: var(--text-secondary); font-size: 0.964286rem; font-weight: 570; }
-.font-size-control span { padding-left: 7px; font-size: 0.857143rem; }
-.font-size-control.is-code input { font-family: var(--code-font); }
+.theme-config-card {
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 17px;
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px
+    color-mix(in srgb, var(--theme-foreground) 4%, transparent);
+}
+.theme-config-header,
+.theme-setting-row {
+  display: flex;
+  align-items: center;
+  min-height: 62px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--theme-line-soft);
+}
+.theme-config-header {
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 70px;
+}
+.theme-config-header h2 {
+  margin: 0;
+  font-size: 1.14286rem;
+  font-weight: 640;
+}
+.theme-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.theme-config-actions > button {
+  padding: 8px 10px;
+  font-size: 1rem;
+  font-weight: 560;
+}
+.theme-config-actions > button:hover {
+  color: var(--text-primary);
+}
+.theme-file-input {
+  display: none;
+}
+.preset-select-control {
+  min-width: 188px;
+}
+.preset-badge {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--theme-line);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 1.21429rem;
+  font-weight: 650;
+}
+.theme-setting-row {
+  justify-content: space-between;
+  gap: 32px;
+  font-size: 1.07143rem;
+  font-weight: 580;
+}
+.theme-setting-row:last-child {
+  border-bottom: 0;
+}
+.color-control {
+  display: flex;
+  align-items: center;
+  width: 190px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgb(127 127 127 / 0.18);
+  border-radius: 11px;
+  cursor: pointer;
+}
+.color-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.color-control input[type="color"] {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  opacity: 1;
+}
+.color-control input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.color-control input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 0;
+}
+.color-control input:not([type="color"]) {
+  width: 110px;
+  margin-left: 8px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 570;
+  text-transform: uppercase;
+  cursor: text;
+}
+.font-size-control {
+  display: flex;
+  align-items: center;
+  width: 112px;
+  padding: 0 11px;
+  border: 1px solid var(--theme-line);
+  border-radius: 10px;
+  background: var(--surface-main);
+  color: var(--text-tertiary);
+}
+.font-size-control:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.font-size-control input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.964286rem;
+  font-weight: 570;
+}
+.font-size-control span {
+  padding-left: 7px;
+  font-size: 0.857143rem;
+}
+.font-size-control.is-code input {
+  font-family: var(--code-font);
+}
 
 @media (max-width: 1100px) {
-  .settings-page { grid-template-columns: 230px 1fr; }
-  .settings-content { padding-right: 36px; padding-left: 36px; }
-  .theme-preview { height: 125px; }
-  .theme-config-header { align-items: flex-start; flex-direction: column; padding-top: 16px; padding-bottom: 16px; }
+  .settings-page {
+    grid-template-columns: 230px 1fr;
+  }
+  .settings-content {
+    padding-right: 36px;
+    padding-left: 36px;
+  }
+  .theme-preview {
+    height: 125px;
+  }
+  .theme-config-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
 }
 </style>

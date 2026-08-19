@@ -127,7 +127,9 @@ interface HarnessOverrides {
     LongBookLifecycleCoordinatorOptions["conversations"]
   >;
   readonly catalog?: Partial<LongBookLifecycleCoordinatorOptions["catalog"]>;
-  readonly manuscript?: Partial<LongBookLifecycleCoordinatorOptions["manuscript"]>;
+  readonly manuscript?: Partial<
+    LongBookLifecycleCoordinatorOptions["manuscript"]
+  >;
 }
 
 function createHarness(overrides: HarnessOverrides = {}) {
@@ -260,11 +262,14 @@ function createHarness(overrides: HarnessOverrides = {}) {
   };
   const manuscript = {
     available: vi.fn(() => true),
-    createInput: vi.fn(async ({ title, sections }) => ({
-      title,
-      sections: [...sections],
-      files: []
-    }) as ExportLongManuscriptInput),
+    createInput: vi.fn(
+      async ({ title, sections }) =>
+        ({
+          title,
+          sections: [...sections],
+          files: []
+        }) as ExportLongManuscriptInput
+    ),
     exportLong: vi.fn(async () => ({ status: "cancelled" }) as const),
     ...overrides.manuscript
   };
@@ -327,7 +332,13 @@ describe("useLongBookLifecycleCoordinator", () => {
 
     await test.coordinator.createLongBook({ title: "第二部长篇" } as never);
 
-    expect(events).toEqual(["save", "api", "activate", "book-list", "directory"]);
+    expect(events).toEqual([
+      "save",
+      "api",
+      "activate",
+      "book-list",
+      "directory"
+    ]);
     expect(test.state.createBookDialogOpen.value).toBe(false);
     expect(test.state.selectedResourceId.value).toBe(`long-book:${BOOK_B}`);
     expect(test.state.rollbackDialogOpen.value).toBe(false);
@@ -389,9 +400,9 @@ describe("useLongBookLifecycleCoordinator", () => {
     await renaming;
 
     expect(test.state.bookRenameTarget.value).toBe(laterTarget);
-    expect(test.state.longBooks.value.find(({ id }) => id === BOOK_A)?.title).toBe(
-      "新名称 A"
-    );
+    expect(
+      test.state.longBooks.value.find(({ id }) => id === BOOK_A)?.title
+    ).toBe("新名称 A");
     expect(test.notifications.success).not.toHaveBeenCalled();
   });
 
@@ -417,7 +428,9 @@ describe("useLongBookLifecycleCoordinator", () => {
   });
 
   it("refreshes the active book before bindings CAS and synchronizes returned revisions", async () => {
-    const updateBindings = vi.fn(async () => openedBook(BOOK_A, 10, "绑定长篇"));
+    const updateBindings = vi.fn(async () =>
+      openedBook(BOOK_A, 10, "绑定长篇")
+    );
     const test = createHarness({ api: { updateBindings } });
     vi.mocked(test.session.refreshActiveWorkspace).mockImplementationOnce(
       async () => {
@@ -438,10 +451,9 @@ describe("useLongBookLifecycleCoordinator", () => {
       linkedMaterialIdsByKind: {},
       linkedSkillIdsByKind: {}
     });
-    expect(test.editorRevisions.synchronizeProjectRevisions).toHaveBeenCalledWith(
-      10,
-      10
-    );
+    expect(
+      test.editorRevisions.synchronizeProjectRevisions
+    ).toHaveBeenCalledWith(10, 10);
     expect(test.state.bindingsDialogMode.value).toBeNull();
   });
 
@@ -639,9 +651,7 @@ describe("useLongBookLifecycleCoordinator", () => {
   it("loads AGENTS.md when opening structure management and saves it without a structure mutation", async () => {
     const test = createHarness();
 
-    await test.coordinator.handleLongBookAction(
-      bookAction("manage-structure")
-    );
+    await test.coordinator.handleLongBookAction(bookAction("manage-structure"));
 
     expect(test.api.readAgentsMd).toHaveBeenCalledWith({ bookId: BOOK_A });
     expect(test.state.structureDialogOpen.value).toBe(true);

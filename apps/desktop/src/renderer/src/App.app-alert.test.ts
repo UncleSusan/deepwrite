@@ -15,14 +15,18 @@ describe("App remote alerts", () => {
     );
     expect(source).toContain("useSettingsFeatureCoordinator({");
     expect(coordinatorSource).toContain("await api.get()");
-    expect(settingsSource).toContain("官方模型已经上线！直连厂商！软件整体用量越多，折扣会越大！");
+    expect(settingsSource).toContain(
+      "官方模型已经上线！直连厂商！软件整体用量越多，折扣会越大！"
+    );
     expect(featureHostSource).toContain(
       "alertMessages: settingsStore.modelAlertMessages"
     );
     expect(featureModulesSource).toContain(
       ':model-alert-messages="module.alertMessages"'
     );
-    expect(source).toContain('@open-official-models="openOfficialModelsSettings"');
+    expect(source).toContain(
+      '@open-official-models="openOfficialModelsSettings"'
+    );
     expect(featureHostSource).toContain(
       'issueBackground(() => openSettings("official-models"))'
     );
@@ -40,9 +44,7 @@ describe("App remote alerts", () => {
     expect(coordinatorSource).toContain("api.acknowledgeDesktop(revision)");
     expect(dialogCoordinatorSource).toContain('kind: "startup-alert"');
     expect(dialogLayerSource).toContain("<StartupAlertDialog");
-    expect(dialogLayerSource).toContain(
-      "@close=\"emit('closeStartupAlert')\""
-    );
+    expect(dialogLayerSource).toContain("@close=\"emit('closeStartupAlert')\"");
     expect(source).toContain('@close-startup-alert="closeStartupAlert"');
   });
 

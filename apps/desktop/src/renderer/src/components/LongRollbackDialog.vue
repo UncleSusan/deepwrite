@@ -22,9 +22,7 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() =>
-  document.removeEventListener("keydown", handleKeydown)
-);
+onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
@@ -56,7 +54,8 @@ onBeforeUnmount(() =>
           }}），并按该提交记录恢复相关人物、剧情与账本文件。
         </p>
         <p class="long-rollback-note">
-          仅允许回滚当前最后一次且标记为可回滚的提交。若项目版本已变化，操作会因 CAS 冲突停止，不会覆盖新内容。
+          仅允许回滚当前最后一次且标记为可回滚的提交。若项目版本已变化，操作会因
+          CAS 冲突停止，不会覆盖新内容。
         </p>
 
         <footer>

@@ -59,14 +59,8 @@ export interface LongWritingWorkflowState {
 
 export interface LongWritingConversationRegistry {
   byKey: Map<string, AgentConversationController>;
-  getOrCreate(
-    key: string,
-    scope: string
-  ): AgentConversationController;
-  remove(
-    key: string,
-    options?: { clearPersistence?: boolean }
-  ): void;
+  getOrCreate(key: string, scope: string): AgentConversationController;
+  remove(key: string, options?: { clearPersistence?: boolean }): void;
   active(): AgentConversationController | null;
 }
 
@@ -104,9 +98,7 @@ export interface LongWritingWorkflowCoordinatorContext {
   ensureAgentSettingsLoaded(): Promise<boolean>;
   approvalMode(): AgentRunSettings["approvalMode"];
   removeAgentRunPreferences(scope: string): void;
-  navigateToAcceptedProposal(
-    item: LongWorkspaceProposalItem
-  ): Promise<boolean>;
+  navigateToAcceptedProposal(item: LongWorkspaceProposalItem): Promise<boolean>;
   notifications: LongWritingWorkflowNotifications;
 }
 
@@ -191,10 +183,7 @@ export function useLongWritingWorkflowCoordinator(
   function conversationForProposalEvent(
     event:
       | LongWorkspaceProposalEvent
-      | Extract<
-          SystemEventEnvelope,
-          { type: "long.chapter_write_proposal" }
-        >
+      | Extract<SystemEventEnvelope, { type: "long.chapter_write_proposal" }>
   ): AgentConversationController | undefined {
     const prefix = `long:${encodeURIComponent(event.payload.bookId)}:`;
     for (const [key, conversation] of context.conversations.byKey) {
@@ -450,9 +439,8 @@ export function useLongWritingWorkflowCoordinator(
       throw new Error("启动章节智能体前，长篇工作区已经切换。");
     }
     const profile =
-      state.agentSettings.value.agents.find(
-        ({ id }) => id === input.agentId
-      ) ?? getDefaultLongAgentProfile(input.agentId);
+      state.agentSettings.value.agents.find(({ id }) => id === input.agentId) ??
+      getDefaultLongAgentProfile(input.agentId);
     const conversation = context.conversations.getOrCreate(
       conversationKey(
         summary.id,
@@ -583,11 +571,7 @@ export function useLongWritingWorkflowCoordinator(
   ): Promise<void> {
     const summary = state.activeBookSummary.value;
     const workspaceIndex = state.workspaceIndex.value;
-    if (
-      !summary ||
-      !workspaceIndex ||
-      summary.id !== event.payload.bookId
-    ) {
+    if (!summary || !workspaceIndex || summary.id !== event.payload.bookId) {
       throw new Error("该单章调度提案不属于当前活动长篇。");
     }
     if (
@@ -599,8 +583,7 @@ export function useLongWritingWorkflowCoordinator(
       );
     }
     if (
-      nextWritableLongChapterId(workspaceIndex) !==
-      event.payload.chapterCardId
+      nextWritableLongChapterId(workspaceIndex) !== event.payload.chapterCardId
     ) {
       throw new Error("串行写作计划不再从连续下一章开始，请重新生成提案。");
     }
@@ -642,8 +625,7 @@ export function useLongWritingWorkflowCoordinator(
     if (
       expected.length !== event.payload.chapters.length ||
       expected.some(
-        ({ id }, index) =>
-          event.payload.chapters[index]?.chapterCardId !== id
+        ({ id }, index) => event.payload.chapters[index]?.chapterCardId !== id
       )
     ) {
       throw new Error("串行写作章序与当前卷/剧情点不一致，请重新生成提案。");
@@ -753,9 +735,7 @@ export function useLongWritingWorkflowCoordinator(
     writingOrchestrator.cancel();
     if (expectation) {
       const activeRoot =
-        expectation.agentId === "draft"
-          ? "draft"
-          : "continuity_ledger";
+        expectation.agentId === "draft" ? "draft" : "continuity_ledger";
       const conversation = context.conversations.byKey.get(
         conversationKey(
           expectation.bookId,
@@ -870,8 +850,8 @@ export function useLongWritingWorkflowCoordinator(
       .find(({ event }) => event.id === eventId);
     const quarantineContinuitySession = Boolean(
       item &&
-        item.event.payload.agentId === "continuity_ledger" &&
-        canApproveProposal(item.event)
+      item.event.payload.agentId === "continuity_ledger" &&
+      canApproveProposal(item.event)
     );
     if (workspaceProposals.reject(bookId, eventId)) {
       if (quarantineContinuitySession && item) {

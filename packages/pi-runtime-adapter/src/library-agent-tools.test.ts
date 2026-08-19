@@ -23,7 +23,9 @@ function profile(domain: LibraryAgentDomain): LibraryAgentProfile {
 }
 
 function materialWorkspace(
-  overrides: Partial<Extract<LibraryAgentWorkspaceSnapshot, { domain: "material" }>> = {}
+  overrides: Partial<
+    Extract<LibraryAgentWorkspaceSnapshot, { domain: "material" }>
+  > = {}
 ): Extract<LibraryAgentWorkspaceSnapshot, { domain: "material" }> {
   return {
     domain: "material",
@@ -44,9 +46,8 @@ function materialWorkspace(
         stageId: "pacing",
         title: "迟到的汽笛",
         content: "汽笛迟到了七分钟。共同片段。",
-        revision: createShortWorkspaceContentRevision(
-          "汽笛迟到了七分钟。共同片段。"
-        ),
+        revision:
+          createShortWorkspaceContentRevision("汽笛迟到了七分钟。共同片段。"),
         readOnly: false
       },
       {
@@ -55,9 +56,8 @@ function materialWorkspace(
         stageId: "plot_refine",
         title: "暗房反转",
         content: "共同片段。暗房里显出了照片。",
-        revision: createShortWorkspaceContentRevision(
-          "共同片段。暗房里显出了照片。"
-        ),
+        revision:
+          createShortWorkspaceContentRevision("共同片段。暗房里显出了照片。"),
         readOnly: false
       }
     ],
@@ -66,7 +66,9 @@ function materialWorkspace(
 }
 
 function skillWorkspace(
-  overrides: Partial<Extract<LibraryAgentWorkspaceSnapshot, { domain: "skill" }>> = {}
+  overrides: Partial<
+    Extract<LibraryAgentWorkspaceSnapshot, { domain: "skill" }>
+  > = {}
 ): Extract<LibraryAgentWorkspaceSnapshot, { domain: "skill" }> {
   return {
     domain: "skill",
@@ -76,7 +78,8 @@ function skillWorkspace(
     kind: "style",
     overviewDocumentId: "skill:skill-library-1:overview",
     overview: "正文与分节写作方法。",
-    overviewRevision: createShortWorkspaceContentRevision("正文与分节写作方法。"),
+    overviewRevision:
+      createShortWorkspaceContentRevision("正文与分节写作方法。"),
     readOnly: false,
     activeEntryId: "skill-entry-1",
     projectRevision: 3,
@@ -87,9 +90,8 @@ function skillWorkspace(
         stageId: "expert_section_writer",
         title: "悬疑分节写法",
         content: "先建立疑问，再用人物行动推进。",
-        revision: createShortWorkspaceContentRevision(
-          "先建立疑问，再用人物行动推进。"
-        ),
+        revision:
+          createShortWorkspaceContentRevision("先建立疑问，再用人物行动推进。"),
         readOnly: false
       }
     ],
@@ -106,7 +108,9 @@ function toolByName(tools: AgentTool[], name: string): AgentTool {
 function resultText(result: AgentToolResult<unknown>): string {
   return result.content
     .filter(
-      (item): item is Extract<(typeof result.content)[number], { type: "text" }> =>
+      (
+        item
+      ): item is Extract<(typeof result.content)[number], { type: "text" }> =>
         item.type === "text"
     )
     .map((item) => item.text)
@@ -130,14 +134,15 @@ describe("library agent tools", () => {
     expect(skill.map((tool) => tool.name)).toEqual(
       LIBRARY_AGENT_TOOL_MANIFEST.skill
     );
-    expect(material.slice(0, 4).every((tool) => tool.executionMode === undefined)).toBe(
-      true
-    );
+    expect(
+      material.slice(0, 4).every((tool) => tool.executionMode === undefined)
+    ).toBe(true);
     expect(
       material.slice(4).every((tool) => tool.executionMode === "sequential")
     ).toBe(true);
 
-    const editSchema = toolByName(material, "edit_material_entry").parameters as {
+    const editSchema = toolByName(material, "edit_material_entry")
+      .parameters as {
       properties?: { mode?: Record<string, unknown> };
     };
     expect(editSchema.properties?.mode).toMatchObject({
@@ -172,17 +177,28 @@ describe("library agent tools", () => {
         }
       ]
     });
-    const tools = buildLibraryAgentTools({ workspace, profile: profile("material") });
-    const list = await toolByName(tools, "list_material_entries").execute("list-1", {
-      stage_id: "pacing"
+    const tools = buildLibraryAgentTools({
+      workspace,
+      profile: profile("material")
     });
+    const list = await toolByName(tools, "list_material_entries").execute(
+      "list-1",
+      {
+        stage_id: "pacing"
+      }
+    );
     const ambiguous = await toolByName(tools, "read_material_entry").execute(
       "read-1",
-      { name: "迟到的汽笛" }
+      {
+        name: "迟到的汽笛"
+      }
     );
     const selected = await toolByName(tools, "read_material_entry").execute(
       "read-2",
-      { name: "迟到的汽笛", stage_id: "intro" }
+      {
+        name: "迟到的汽笛",
+        stage_id: "intro"
+      }
     );
 
     expect(resultText(list)).toContain("当前快照 1 条");
@@ -206,7 +222,11 @@ describe("library agent tools", () => {
     });
     const searched = await toolByName(tools, "search_material_entries").execute(
       "search-1",
-      { query: "七分钟", context_chars: 10, max_matches: 5 }
+      {
+        query: "七分钟",
+        context_chars: 10,
+        max_matches: 5
+      }
     );
     const allowed = await edit.execute("edit-2", {
       entry_id: "material-entry-1",
@@ -219,7 +239,9 @@ describe("library agent tools", () => {
       body: "不能追加。"
     });
 
-    expect(resultText(blocked)).toContain("请先调用 read_material_entry 或 search_material_entries");
+    expect(resultText(blocked)).toContain(
+      "请先调用 read_material_entry 或 search_material_entries"
+    );
     expect(resultText(searched)).toContain("L1:C");
     expect(resultText(searched)).toContain("七分钟");
     expect(allowed.details).toMatchObject({
@@ -269,9 +291,8 @@ describe("library agent tools", () => {
     expect(second.details).toMatchObject({
       kind: "library-entry-mutation",
       text: "汽笛迟到了十一分钟。共同片段。",
-      baseRevision: createShortWorkspaceContentRevision(
-        "汽笛迟到了九分钟。共同片段。"
-      )
+      baseRevision:
+        createShortWorkspaceContentRevision("汽笛迟到了九分钟。共同片段。")
     });
     expect(firstDetails.baseRevision).toBe(
       createShortWorkspaceContentRevision("汽笛迟到了七分钟。共同片段。")
@@ -426,9 +447,12 @@ describe("library agent tools", () => {
       LibraryAgentToolDetails,
       { kind: "library-entry-mutation"; operation: "create" }
     >;
-    const read = await toolByName(tools, "read_skill_entry").execute("read-new", {
-      name: "去 AI 味检查"
-    });
+    const read = await toolByName(tools, "read_skill_entry").execute(
+      "read-new",
+      {
+        name: "去 AI 味检查"
+      }
+    );
 
     expect(details).toMatchObject({
       operation: "create",
@@ -461,7 +485,11 @@ describe("library agent tools", () => {
       groupId: "material-group-1",
       groupTitle: "雾港素材组",
       readableLibraries: [
-        { libraryId: "material-library-1", title: "雾港素材", kind: "character" },
+        {
+          libraryId: "material-library-1",
+          title: "雾港素材",
+          kind: "character"
+        },
         { libraryId: "material-plot", title: "剧情素材", kind: "plot" }
       ],
       entries: [
@@ -492,33 +520,45 @@ describe("library agent tools", () => {
       profile: profile("material")
     });
 
-    const list = await toolByName(tools, "list_material_entries").execute("list-group", {});
-    const peerRead = await toolByName(tools, "read_material_entry").execute("read-peer", {
-      name: "节奏钩子",
-      library_id: "material-plot"
-    });
-    const peerReadByBareId = await toolByName(tools, "read_material_entry").execute(
-      "read-peer-bare",
+    const list = await toolByName(tools, "list_material_entries").execute(
+      "list-group",
+      {}
+    );
+    const peerRead = await toolByName(tools, "read_material_entry").execute(
+      "read-peer",
       {
-        entry_id: "plot-entry-1",
-        stage_id: "pacing",
+        name: "节奏钩子",
         library_id: "material-plot"
       }
     );
-    const peerReadByBareIdAlone = await toolByName(tools, "read_material_entry").execute(
-      "read-peer-bare-alone",
-      { entry_id: "plot-entry-1" }
+    const peerReadByBareId = await toolByName(
+      tools,
+      "read_material_entry"
+    ).execute("read-peer-bare", {
+      entry_id: "plot-entry-1",
+      stage_id: "pacing",
+      library_id: "material-plot"
+    });
+    const peerReadByBareIdAlone = await toolByName(
+      tools,
+      "read_material_entry"
+    ).execute("read-peer-bare-alone", { entry_id: "plot-entry-1" });
+    const peerEdit = await toolByName(tools, "edit_material_entry").execute(
+      "edit-peer",
+      {
+        entry_id: "material-plot/plot-entry-1",
+        mode: "append",
+        body: "不应写入"
+      }
     );
-    const peerEdit = await toolByName(tools, "edit_material_entry").execute("edit-peer", {
-      entry_id: "material-plot/plot-entry-1",
-      mode: "append",
-      body: "不应写入"
-    });
-    const created = await toolByName(tools, "create_material_entry").execute("create-current", {
-      stage_id: "character",
-      title: "新人物",
-      body: "只写入当前库。"
-    });
+    const created = await toolByName(tools, "create_material_entry").execute(
+      "create-current",
+      {
+        stage_id: "character",
+        title: "新人物",
+        body: "只写入当前库。"
+      }
+    );
 
     expect(resultText(list)).toContain("雾港素材组");
     expect(resultText(list)).toContain("节奏钩子");
@@ -526,7 +566,9 @@ describe("library agent tools", () => {
     expect(resultText(peerRead)).toContain("同组剧情素材。");
     expect(resultText(peerRead)).toContain("同分组只读");
     expect(resultText(peerReadByBareId)).toContain("同组剧情素材。");
-    expect(resultText(peerReadByBareId)).toContain("entry_id：material-plot/plot-entry-1");
+    expect(resultText(peerReadByBareId)).toContain(
+      "entry_id：material-plot/plot-entry-1"
+    );
     expect(resultText(peerReadByBareIdAlone)).toContain("同组剧情素材。");
     expect(resultText(peerEdit)).toContain("同分组其它库");
     expect(created.details).toMatchObject({
@@ -542,7 +584,11 @@ describe("library agent tools", () => {
       groupId: "material-group-1",
       groupTitle: "雾港素材组",
       readableLibraries: [
-        { libraryId: "material-library-1", title: "雾港素材", kind: "character" },
+        {
+          libraryId: "material-library-1",
+          title: "雾港素材",
+          kind: "character"
+        },
         { libraryId: "material-plot", title: "剧情素材", kind: "plot" },
         { libraryId: "material-gimmick", title: "梗素材", kind: "gimmick" }
       ],
@@ -587,16 +633,18 @@ describe("library agent tools", () => {
 
     const ambiguous = await toolByName(tools, "read_material_entry").execute(
       "read-ambiguous",
-      { entry_id: "shared-entry" }
-    );
-    const disambiguated = await toolByName(tools, "read_material_entry").execute(
-      "read-disambiguated",
       {
-        entry_id: "shared-entry",
-        library_id: "material-gimmick",
-        stage_id: "gimmick"
+        entry_id: "shared-entry"
       }
     );
+    const disambiguated = await toolByName(
+      tools,
+      "read_material_entry"
+    ).execute("read-disambiguated", {
+      entry_id: "shared-entry",
+      library_id: "material-gimmick",
+      stage_id: "gimmick"
+    });
 
     expect(resultText(ambiguous)).toContain("匹配到多个条目");
     expect(resultText(ambiguous)).toContain("material-plot/shared-entry");
@@ -620,7 +668,9 @@ describe("library agent tools", () => {
     });
     const load = toolByName(tools, "load_skill");
 
-    const loaded = await load.execute("load-configured", { name: configured.name });
+    const loaded = await load.execute("load-configured", {
+      name: configured.name
+    });
     expect(resultText(loaded)).toContain(configured.content.slice(0, 20));
 
     const fuzzy = await load.execute("load-fuzzy", { name: "创建" });

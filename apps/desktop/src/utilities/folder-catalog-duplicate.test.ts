@@ -79,7 +79,9 @@ describe("FolderCatalogStore duplicateProject", () => {
     expect(copy.genre).toBe(source.genre);
     expect(copy.characterStructure).toEqual(source.characterStructure);
     expect(copy.plotStages).toEqual(source.plotStages);
-    expect(copy.linkedMaterialIdsByKind).toEqual(source.linkedMaterialIdsByKind);
+    expect(copy.linkedMaterialIdsByKind).toEqual(
+      source.linkedMaterialIdsByKind
+    );
     expect(copy.linkedSkillIdsByKind).toEqual(source.linkedSkillIdsByKind);
     expect(copy.documents).toEqual(source.documents);
     expect(copy.draft).toEqual(source.draft);

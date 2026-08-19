@@ -23,16 +23,38 @@ describe("chat assistant processing trace", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       toolCalls: [secondTool, firstTool],
       processingSteps: [
-        { id: "step_1", type: "thinking", content: "先分析", createdAt: "2026-01-01T00:00:01.000Z" },
-        { id: "step_2", type: "tool", toolCallId: "first", createdAt: "2026-01-01T00:00:02.000Z" },
-        { id: "step_3", type: "thinking", content: "再分析", createdAt: "2026-01-01T00:00:03.000Z" },
-        { id: "step_4", type: "tool", toolCallId: "second", createdAt: "2026-01-01T00:00:04.000Z" }
+        {
+          id: "step_1",
+          type: "thinking",
+          content: "先分析",
+          createdAt: "2026-01-01T00:00:01.000Z"
+        },
+        {
+          id: "step_2",
+          type: "tool",
+          toolCallId: "first",
+          createdAt: "2026-01-01T00:00:02.000Z"
+        },
+        {
+          id: "step_3",
+          type: "thinking",
+          content: "再分析",
+          createdAt: "2026-01-01T00:00:03.000Z"
+        },
+        {
+          id: "step_4",
+          type: "tool",
+          toolCallId: "second",
+          createdAt: "2026-01-01T00:00:04.000Z"
+        }
       ]
     };
 
     expect(
       chatAssistantProcessingTraceItems(message).map((item) =>
-        item.type === "thinking" ? `thinking:${item.content}` : `tool:${item.tool.id}`
+        item.type === "thinking"
+          ? `thinking:${item.content}`
+          : `tool:${item.tool.id}`
       )
     ).toEqual([
       "thinking:先分析",

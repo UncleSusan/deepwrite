@@ -14,11 +14,7 @@ function editableDefaults() {
     agents: DEFAULT_LONG_AGENT_SETTINGS.agents.map((agent) => ({
       id: agent.id,
       systemPrompt: agent.systemPrompt,
-      welcomeShortcuts: [...agent.welcomeShortcuts] as [
-        string,
-        string,
-        string
-      ],
+      welcomeShortcuts: [...agent.welcomeShortcuts] as [string, string, string],
       readAccess: {
         workspaceRoots: [...agent.readAccess.workspaceRoots],
         materialKinds: [...agent.readAccess.materialKinds],

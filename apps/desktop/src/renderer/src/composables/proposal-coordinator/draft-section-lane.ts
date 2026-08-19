@@ -48,18 +48,19 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
 
   const queueAgentEdit: ProposalLaneContext["queueAgentEdit"] = (...args) =>
     ctx.queueAgentEdit(...args);
-  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (...args) =>
-    ctx.removeQueuedAgentEdit(...args);
-  const rememberProvisionalExpertSectionMapping: ProposalLaneContext["rememberProvisionalExpertSectionMapping"] = (...args) =>
-    ctx.rememberProvisionalExpertSectionMapping(...args);
-  const resolveProvisionalExpertSectionId: ProposalLaneContext["resolveProvisionalExpertSectionId"] = (...args) =>
-    ctx.resolveProvisionalExpertSectionId(...args);
-  const remapProvisionalExpertSectionFileProposals: ProposalLaneContext["remapProvisionalExpertSectionFileProposals"] = (...args) =>
-    ctx.remapProvisionalExpertSectionFileProposals(...args);
-  const pauseDependentProvisionalFileProposals: ProposalLaneContext["pauseDependentProvisionalFileProposals"] = (...args) =>
-    ctx.pauseDependentProvisionalFileProposals(...args);
-  const conflictDependentProvisionalFileProposals: ProposalLaneContext["conflictDependentProvisionalFileProposals"] = (...args) =>
-    ctx.conflictDependentProvisionalFileProposals(...args);
+  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (
+    ...args
+  ) => ctx.removeQueuedAgentEdit(...args);
+  const rememberProvisionalExpertSectionMapping: ProposalLaneContext["rememberProvisionalExpertSectionMapping"] =
+    (...args) => ctx.rememberProvisionalExpertSectionMapping(...args);
+  const resolveProvisionalExpertSectionId: ProposalLaneContext["resolveProvisionalExpertSectionId"] =
+    (...args) => ctx.resolveProvisionalExpertSectionId(...args);
+  const remapProvisionalExpertSectionFileProposals: ProposalLaneContext["remapProvisionalExpertSectionFileProposals"] =
+    (...args) => ctx.remapProvisionalExpertSectionFileProposals(...args);
+  const pauseDependentProvisionalFileProposals: ProposalLaneContext["pauseDependentProvisionalFileProposals"] =
+    (...args) => ctx.pauseDependentProvisionalFileProposals(...args);
+  const conflictDependentProvisionalFileProposals: ProposalLaneContext["conflictDependentProvisionalFileProposals"] =
+    (...args) => ctx.conflictDependentProvisionalFileProposals(...args);
 
   function expectedDraftSectionCreationBaseRevision(
     proposal: AgentEditProposal
@@ -89,9 +90,8 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
       )
     );
     while (acceptedDraftSectionCreationRevisions.size > 2_000) {
-      const oldest = acceptedDraftSectionCreationRevisions.keys().next().value as
-        | string
-        | undefined;
+      const oldest = acceptedDraftSectionCreationRevisions.keys().next()
+        .value as string | undefined;
       if (!oldest) break;
       acceptedDraftSectionCreationRevisions.delete(oldest);
     }
@@ -131,7 +131,8 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
       };
       if (document.draftFileKind === "body") {
         section.title = document.title;
-        section.wordCountRequirement = document.expertWordCountRequirement ?? "";
+        section.wordCountRequirement =
+          document.expertWordCountRequirement ?? "";
         section.hasBody = true;
       } else {
         section.hasCharacterState = true;
@@ -222,7 +223,8 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
       currentProjectRevision: book.projectRevision
     });
     if (commitPlan.mode === "conflict") {
-      const message = "正文目录已发生变化，未创建章节，请基于最新目录重新生成。";
+      const message =
+        "正文目录已发生变化，未创建章节，请基于最新目录重新生成。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "conflict",
         statusMessage: message
@@ -244,12 +246,13 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
       uiMessage.warning(message);
       return;
     }
-    const existingTitles = new Set(directory.sections.map((section) => section.title));
+    const existingTitles = new Set(
+      directory.sections.map((section) => section.title)
+    );
     const duplicateTitle = requiresIdempotentRecoveryProbe
       ? undefined
-      : target.sections.find((section) =>
-          existingTitles.has(section.title)
-        )?.title;
+      : target.sections.find((section) => existingTitles.has(section.title))
+          ?.title;
     if (duplicateTitle) {
       const message = `正文目录已存在同名章节“${duplicateTitle}”，未重复创建。`;
       conversation.updateEditProposal(request.runId, request.proposalId, {
@@ -269,7 +272,9 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
     if (
       !requiresIdempotentRecoveryProbe &&
       resolvedAfterSectionId &&
-      !directory.sections.some((section) => section.id === resolvedAfterSectionId)
+      !directory.sections.some(
+        (section) => section.id === resolvedAfterSectionId
+      )
     ) {
       const message = "指定的章节插入位置已不存在，未创建章节。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
@@ -298,7 +303,6 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
         : "正在校验目录版本并创建空白章节文件…"
     });
     setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
-    let createdCount = 0;
     let lastCreatedSectionId: string | undefined;
     const createdMapping = new Map<string, string>();
     try {
@@ -319,7 +323,7 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
             : {})
         }))
       });
-      createdCount = created.sections.length;
+      const createdCount = created.sections.length;
       for (const result of created.sections) {
         lastCreatedSectionId = result.section.id;
         createdMapping.set(result.clientSectionId, result.section.id);
@@ -489,7 +493,8 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
     const expectedDirectoryRevision =
       expectedDraftSectionCreationBaseRevision(proposal);
     if (currentDirectoryRevision !== expectedDirectoryRevision) {
-      const message = "正文目录已发生变化，未修改章节名称，请基于最新目录重新生成。";
+      const message =
+        "正文目录已发生变化，未修改章节名称，请基于最新目录重新生成。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "conflict",
         statusMessage: message
@@ -774,7 +779,8 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
     const expectedDirectoryRevision =
       expectedDraftSectionCreationBaseRevision(proposal);
     if (currentDirectoryRevision !== expectedDirectoryRevision) {
-      const message = "正文目录已发生变化，未删除章节，请基于最新目录重新生成。";
+      const message =
+        "正文目录已发生变化，未删除章节，请基于最新目录重新生成。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "conflict",
         statusMessage: message
@@ -872,8 +878,7 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
     } catch (error: unknown) {
       await loadCatalogSnapshot();
       const conflict = isCatalogConflict(error);
-      const message =
-        error instanceof Error ? error.message : "删除章节失败。";
+      const message = error instanceof Error ? error.message : "删除章节失败。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: conflict ? "conflict" : "error",
         statusMessage: message
@@ -909,7 +914,11 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
           )
         )
       );
-      if (!directory || !book || currentRevision !== expectedDirectoryRevision) {
+      if (
+        !directory ||
+        !book ||
+        currentRevision !== expectedDirectoryRevision
+      ) {
         const message =
           "正文目录版本已变化，本次章节创建未进入审阅，也没有改动现有文件。";
         sourceConversation.markToolConflict(
@@ -1020,8 +1029,7 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
         return true;
       }
       if (section.title !== mutationTarget.previousTitle) {
-        const message =
-          `章节「${mutationTarget.previousTitle}」的当前标题已变化，本次改名未进入审阅。`;
+        const message = `章节「${mutationTarget.previousTitle}」的当前标题已变化，本次改名未进入审阅。`;
         sourceConversation.markToolConflict(
           event.payload.runId,
           event.payload.toolCallId,
@@ -1061,7 +1069,10 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
       if (existing?.toolCallIds.includes(event.payload.toolCallId)) return true;
 
       const proposedText = event.payload.text;
-      const diff = buildAgentTextDiff(mutationTarget.previousTitle, mutationTarget.title);
+      const diff = buildAgentTextDiff(
+        mutationTarget.previousTitle,
+        mutationTarget.title
+      );
       const proposal: AgentEditProposal = {
         id: proposalId,
         laneId: proposalId,
@@ -1145,8 +1156,7 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
         return true;
       }
       if (section.title !== mutationTarget.title) {
-        const message =
-          `章节「${mutationTarget.title}」的当前标题已变化，本次删除未进入审阅。`;
+        const message = `章节「${mutationTarget.title}」的当前标题已变化，本次删除未进入审阅。`;
         sourceConversation.markToolConflict(
           event.payload.runId,
           event.payload.toolCallId,

@@ -34,8 +34,7 @@ const MIGRATION_EVIDENCE_CATEGORY_PREFIX = "world_migration-evidence-";
  */
 export function useLazyLongStructureTransactionsCoordinator(
   context: LongStructureTransactionsCoordinatorOptions,
-  loadModule: LongStructureTransactionsCoordinatorModuleLoader =
-    loadLongStructureTransactionsCoordinatorModule
+  loadModule: LongStructureTransactionsCoordinatorModuleLoader = loadLongStructureTransactionsCoordinatorModule
 ): LongStructureTransactionsCoordinator {
   const { state } = context;
   const longWorldbuildingSyncBookOptions = computed<
@@ -131,8 +130,7 @@ export function useLazyLongStructureTransactionsCoordinator(
     requestId = dialogIntentEpoch,
     targetGuard: Guard = () => true
   ): Guard {
-    return () =>
-      !disposed && dialogIntentEpoch === requestId && targetGuard();
+    return () => !disposed && dialogIntentEpoch === requestId && targetGuard();
   }
 
   function captureActiveBookGuard(): Guard {
@@ -144,12 +142,11 @@ export function useLazyLongStructureTransactionsCoordinator(
     const bookId = state.activeBookId.value;
     const index = state.workspaceIndex.value;
     return () =>
-      state.activeBookId.value === bookId && state.workspaceIndex.value === index;
+      state.activeBookId.value === bookId &&
+      state.workspaceIndex.value === index;
   }
 
-  function captureRefTargetGuard<Value>(
-    targetRef: Ref<Value | null>
-  ): Guard {
+  function captureRefTargetGuard<Value>(targetRef: Ref<Value | null>): Guard {
     const target = targetRef.value;
     return () => target !== null && targetRef.value === target;
   }

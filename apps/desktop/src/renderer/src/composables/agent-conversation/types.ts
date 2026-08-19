@@ -130,11 +130,20 @@ export interface AgentConversationController {
   canSendAttachments: Readonly<Ref<boolean>>;
   canStop: Readonly<Ref<boolean>>;
   acceptsRunEvent(sessionId: string, runId: string): boolean;
-  approvalModeForRun(sessionId: string, runId: string): AgentApprovalMode | undefined;
+  approvalModeForRun(
+    sessionId: string,
+    runId: string
+  ): AgentApprovalMode | undefined;
   markToolConflict(runId: string, toolCallId: string, summary: string): void;
-  getEditProposal(runId: string, proposalId: string): AgentEditProposal | undefined;
+  getEditProposal(
+    runId: string,
+    proposalId: string
+  ): AgentEditProposal | undefined;
   listEditProposals(runId: string): AgentEditProposal[];
-  upsertEditProposal(runId: string, proposal: AgentEditProposal): AgentEditProposal;
+  upsertEditProposal(
+    runId: string,
+    proposal: AgentEditProposal
+  ): AgentEditProposal;
   updateEditProposal(
     runId: string,
     proposalId: string,

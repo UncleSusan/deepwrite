@@ -93,10 +93,9 @@ function setBeatArc(value: PopupSelectValue): void {
 
 function focusOpenedForm(): void {
   void nextTick(() => {
-    const firstEnabledControl =
-      formDialog.value?.querySelector<HTMLElement>(
-        "fieldset input:not(:disabled), fieldset textarea:not(:disabled), fieldset button:not(:disabled)"
-      );
+    const firstEnabledControl = formDialog.value?.querySelector<HTMLElement>(
+      "fieldset input:not(:disabled), fieldset textarea:not(:disabled), fieldset button:not(:disabled)"
+    );
     (firstEnabledControl ?? formDialog.value)?.focus({
       preventScroll: true
     });
@@ -139,10 +138,7 @@ defineExpose({ formDialog, firstFormInput, focusOpenedForm });
 
           <fieldset class="dialog-body" :disabled="mutationLocked">
             <template v-if="formKind === 'thread'">
-              <p
-                v-if="editingCommittedThread"
-                class="committed-backfill-note"
-              >
+              <p v-if="editingCommittedThread" class="committed-backfill-note">
                 已提交触点仍锁定原有核心信息；这里只能补填旧项目中此前不存在的隐藏真相或计划跨度。
               </p>
               <label class="form-field">
@@ -316,9 +312,19 @@ defineExpose({ formDialog, firstFormInput, focusOpenedForm });
 </template>
 
 <style scoped>
-button, input, textarea { font: inherit; }
-button { border: 0; }
-.foreshadow-dialog-overlay { z-index: 2400; overflow-y: auto; padding: 16px; }
+button,
+input,
+textarea {
+  font: inherit;
+}
+button {
+  border: 0;
+}
+.foreshadow-dialog-overlay {
+  z-index: 2400;
+  overflow-y: auto;
+  padding: 16px;
+}
 .foreshadow-dialog {
   width: min(620px, 94vw);
   max-height: min(820px, 92vh);
@@ -326,10 +332,13 @@ button { border: 0; }
   border: 1px solid var(--theme-line);
   border-radius: 14px;
   background: var(--surface-raised);
-  box-shadow: 0 22px 70px color-mix(in srgb, var(--text-primary) 20%, transparent);
+  box-shadow: 0 22px 70px
+    color-mix(in srgb, var(--text-primary) 20%, transparent);
   color: var(--text-primary);
 }
-.foreshadow-dialog form { display: grid; }
+.foreshadow-dialog form {
+  display: grid;
+}
 .dialog-header,
 .dialog-actions {
   display: flex;
@@ -338,15 +347,25 @@ button { border: 0; }
   gap: 12px;
   padding: 13px 15px;
 }
-.dialog-header { border-bottom: 1px solid var(--theme-line-soft); background: var(--surface-muted); }
-.dialog-header > div { display: grid; min-width: 0; gap: 2px; }
+.dialog-header {
+  border-bottom: 1px solid var(--theme-line-soft);
+  background: var(--surface-muted);
+}
+.dialog-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
 .dialog-header span {
   color: var(--accent);
   font-size: 0.607143rem;
   font-weight: 720;
   letter-spacing: 0.1em;
 }
-.dialog-header h3 { margin: 0; font-size: 1rem; }
+.dialog-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
 .dialog-header > button {
   display: grid;
   place-items: center;
@@ -357,7 +376,14 @@ button { border: 0; }
   color: var(--text-secondary);
   cursor: pointer;
 }
-.dialog-body { display: grid; min-inline-size: 0; gap: 12px; margin: 0; padding: 15px; border: 0; }
+.dialog-body {
+  display: grid;
+  min-inline-size: 0;
+  gap: 12px;
+  margin: 0;
+  padding: 15px;
+  border: 0;
+}
 .committed-backfill-note {
   margin: 0;
   padding: 9px 10px;
@@ -368,8 +394,14 @@ button { border: 0; }
   font-size: 0.785714rem;
   line-height: 1.55;
 }
-.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.form-grid.is-single { grid-template-columns: minmax(0, 1fr); }
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.form-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
 .form-field {
   display: grid;
   min-width: 0;
@@ -391,13 +423,19 @@ button { border: 0; }
   font-weight: 400;
   line-height: 1.5;
 }
-.form-field textarea { resize: vertical; }
+.form-field textarea {
+  resize: vertical;
+}
 .form-field input:focus,
 .form-field textarea:focus {
   border-color: color-mix(in srgb, var(--accent) 58%, var(--theme-line));
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
-.form-field small { color: var(--text-tertiary); font-size: 0.642857rem; font-weight: 400; }
+.form-field small {
+  color: var(--text-tertiary);
+  font-size: 0.642857rem;
+  font-weight: 400;
+}
 .dialog-actions {
   justify-content: flex-end;
   border-top: 1px solid var(--theme-line-soft);
@@ -423,16 +461,28 @@ button { border: 0; }
   color: var(--accent-contrast, #ffffff);
   font-weight: 620;
 }
-button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
 .primary-button:hover:not(:disabled) {
   background: var(--neutral-solid);
   color: var(--accent-contrast, #ffffff);
   filter: brightness(1.08);
 }
-button:disabled { cursor: not-allowed; opacity: 0.45; }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 @media (max-width: 560px), (max-height: 680px) {
-  .foreshadow-dialog-overlay { padding: 8px; }
-  .foreshadow-dialog { max-height: calc(100vh - 16px); }
-  .form-grid { grid-template-columns: 1fr; }
+  .foreshadow-dialog-overlay {
+    padding: 8px;
+  }
+  .foreshadow-dialog {
+    max-height: calc(100vh - 16px);
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

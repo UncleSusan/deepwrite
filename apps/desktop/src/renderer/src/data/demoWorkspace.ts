@@ -1,4 +1,7 @@
-import type { ResourceTreeSection, WorkspaceDocument } from "../types/workspace";
+import type {
+  ResourceTreeSection,
+  WorkspaceDocument
+} from "../types/workspace";
 
 export const resourceSections: ResourceTreeSection[] = [
   {
@@ -20,9 +23,17 @@ export const resourceSections: ResourceTreeSection[] = [
             children: [
               { id: "short-mist:worldbuilding", label: "世界观", icon: "file" },
               { id: "short-mist:plot_design", label: "剧情设计", icon: "file" },
-              { id: "short-mist:intro_design", label: "导语设计", icon: "file" },
+              {
+                id: "short-mist:intro_design",
+                label: "导语设计",
+                icon: "file"
+              },
               { id: "short-mist:plot_refine", label: "剧情细化", icon: "file" },
-              { id: "short-mist:narrative_perspective", label: "叙事视角", icon: "file" },
+              {
+                id: "short-mist:narrative_perspective",
+                label: "叙事视角",
+                icon: "file"
+              },
               { id: "short-mist:outline", label: "大纲", icon: "file" }
             ]
           },
@@ -56,7 +67,9 @@ export const resourceSections: ResourceTreeSection[] = [
             id: "plot",
             label: "剧情",
             icon: "sparkles",
-            children: [{ id: "doc-main-outline", label: "主线大纲", icon: "file" }]
+            children: [
+              { id: "doc-main-outline", label: "主线大纲", icon: "file" }
+            ]
           },
           {
             id: "draft",
@@ -193,7 +206,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "短篇 · 剧情",
     path: ["雾港回声", "剧情", "导语设计"],
     format: "设定",
-    content: "第七声汽笛响起前，林默在失踪名单的最后一行看见了自己的名字。落款日期，是明天。"
+    content:
+      "第七声汽笛响起前，林默在失踪名单的最后一行看见了自己的名字。落款日期，是明天。"
   },
   {
     id: "short-mist:plot_refine",
@@ -222,7 +236,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "短篇 · 剧情",
     path: ["雾港回声", "剧情", "叙事视角"],
     format: "设定",
-    content: "第三人称限知，以林默为主要视角；只呈现他能感知或合理推断的信息，苏遥隐瞒的事实通过行为与对白间接显露。"
+    content:
+      "第三人称限知，以林默为主要视角；只呈现他能感知或合理推断的信息，苏遥隐瞒的事实通过行为与对白间接显露。"
   },
   {
     id: "short-mist:outline",
@@ -299,7 +314,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "世界观",
     path: ["雾港来信", "世界观", "灰潮规则"],
     format: "设定",
-    content: "灰潮每隔十三年出现一次。潮汐期间，所有钟表每天会慢七分钟，海上的回声会先于声音抵达。"
+    content:
+      "灰潮每隔十三年出现一次。潮汐期间，所有钟表每天会慢七分钟，海上的回声会先于声音抵达。"
   },
   {
     id: "doc-lin-mo",
@@ -308,7 +324,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "人物档案",
     path: ["雾港来信", "人物", "林默"],
     format: "设定",
-    content: "29 岁，灯塔临时记录员。习惯把重要信息抄写两遍，对七年前姐姐的失踪保持沉默。"
+    content:
+      "29 岁，灯塔临时记录员。习惯把重要信息抄写两遍，对七年前姐姐的失踪保持沉默。"
   },
   {
     id: "doc-su-yao",
@@ -317,7 +334,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "人物档案",
     path: ["雾港来信", "人物", "苏遥"],
     format: "设定",
-    content: "27 岁，地方报纸摄影记者。对港区旧建筑十分熟悉，随身携带一台无法正常显影的胶片相机。"
+    content:
+      "27 岁，地方报纸摄影记者。对港区旧建筑十分熟悉，随身携带一台无法正常显影的胶片相机。"
   },
   {
     id: "doc-main-outline",
@@ -326,7 +344,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "剧情",
     path: ["雾港来信", "剧情", "主线大纲"],
     format: "设定",
-    content: "第一幕：林默回到雾港接管灯塔记录工作。\n\n第二幕：失踪名单与延迟七分钟的城市时间逐渐重合。\n\n第三幕：灰潮抵达，灯塔真正的用途被揭开。"
+    content:
+      "第一幕：林默回到雾港接管灯塔记录工作。\n\n第二幕：失踪名单与延迟七分钟的城市时间逐渐重合。\n\n第三幕：灰潮抵达，灯塔真正的用途被揭开。"
   },
   {
     id: "continuity-ledger",
@@ -336,7 +355,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     path: ["雾港来信", "状态账本"],
     format: "账本",
     readOnly: true,
-    content: "• 林默已在第一章抵达雾港。\n• 苏遥知道旧港地下通道入口。\n• 第二章结尾，林默第一次看到失踪名单。"
+    content:
+      "• 林默已在第一章抵达雾港。\n• 苏遥知道旧港地下通道入口。\n• 第二章结尾，林默第一次看到失踪名单。"
   },
   {
     id: "skill-continue",
@@ -346,7 +366,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     path: ["官方通用技能库", "正文", "自然续写"],
     format: "技能",
     readOnly: true,
-    content: "保持当前叙事视角、语体、节奏和人物认知边界，续写 800—1200 字。不得提前揭示大纲中尚未发生的事实。"
+    content:
+      "保持当前叙事视角、语体、节奏和人物认知边界，续写 800—1200 字。不得提前揭示大纲中尚未发生的事实。"
   },
   {
     id: "skill-polish",
@@ -356,7 +377,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     path: ["官方通用技能库", "正文", "文本润色"],
     format: "技能",
     readOnly: true,
-    content: "在不改变情节事实与人物动机的前提下，压缩重复表达，增强动词准确度，并保持作者原有句式倾向。"
+    content:
+      "在不改变情节事实与人物动机的前提下，压缩重复表达，增强动词准确度，并保持作者原有句式倾向。"
   },
   {
     id: "skill-structure",
@@ -366,7 +388,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     path: ["官方通用技能库", "剧情", "结构诊断"],
     format: "技能",
     readOnly: true,
-    content: "从目标、阻力、转折、代价四个维度诊断当前章节，只指出结构问题，不直接重写正文。"
+    content:
+      "从目标、阻力、转折、代价四个维度诊断当前章节，只指出结构问题，不直接重写正文。"
   },
   {
     id: "skill-suspense",
@@ -375,7 +398,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "我的技能库",
     path: ["我的技能库", "悬疑", "悬疑节奏增强"],
     format: "技能",
-    content: "检查线索出现的间隔，确保每个新答案同时制造一个更具体的问题；避免连续两段使用相同强度的异常信号。"
+    content:
+      "检查线索出现的间隔，确保每个新答案同时制造一个更具体的问题；避免连续两段使用相同强度的异常信号。"
   },
   {
     id: "skill-dialogue",
@@ -384,7 +408,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "我的技能库",
     path: ["我的技能库", "人物", "人物对白校准"],
     format: "技能",
-    content: "根据人物档案校准措辞、句长、回避方式和潜台词。输出修改后的对白，并标注每处修改所依据的人物事实。"
+    content:
+      "根据人物档案校准措辞、句长、回避方式和潜台词。输出修改后的对白，并标注每处修改所依据的人物事实。"
   },
   {
     id: "material-fog",
@@ -393,7 +418,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "雾港素材库",
     path: ["雾港素材库", "意象", "海雾意象"],
     format: "素材",
-    content: "雾吞没声音的边缘；玻璃上迟迟不落的水珠；远处灯光被拉成一条温吞的伤口。"
+    content:
+      "雾吞没声音的边缘；玻璃上迟迟不落的水珠；远处灯光被拉成一条温吞的伤口。"
   },
   {
     id: "material-lighthouse",
@@ -402,7 +428,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "雾港素材库",
     path: ["雾港素材库", "考据", "灯塔考据"],
     format: "素材",
-    content: "传统菲涅尔透镜由同心环形棱镜构成，可以在减轻重量的同时汇聚光线。值守日志通常记录能见度、风向与灯器状态。"
+    content:
+      "传统菲涅尔透镜由同心环形棱镜构成，可以在减轻重量的同时汇聚光线。值守日志通常记录能见度、风向与灯器状态。"
   },
   {
     id: "material-night",
@@ -420,7 +447,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
     eyebrow: "写作摘录",
     path: ["写作摘录", "场景", "夜景描写"],
     format: "素材",
-    content: "夜色不是落下来的，而是从街巷深处慢慢漫出来，先淹没台阶，再爬上每一扇紧闭的窗。"
+    content:
+      "夜色不是落下来的，而是从街巷深处慢慢漫出来，先淹没台阶，再爬上每一扇紧闭的窗。"
   },
   {
     id: "material-dialogue",
@@ -433,6 +461,8 @@ export const workspaceDocuments: WorkspaceDocument[] = [
   }
 ];
 
-export function findWorkspaceDocument(id: string): WorkspaceDocument | undefined {
+export function findWorkspaceDocument(
+  id: string
+): WorkspaceDocument | undefined {
   return workspaceDocuments.find((document) => document.id === id);
 }

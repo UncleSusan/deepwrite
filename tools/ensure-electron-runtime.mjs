@@ -38,7 +38,9 @@ export async function inspectElectronRuntime(
   const expectedExecutable = expectedElectronExecutable();
   let configuredExecutable;
   try {
-    configuredExecutable = (await readFile(join(packageDirectory, "path.txt"), "utf8")).trim();
+    configuredExecutable = (
+      await readFile(join(packageDirectory, "path.txt"), "utf8")
+    ).trim();
   } catch {
     return {
       healthy: false,
@@ -67,7 +69,9 @@ export async function inspectElectronRuntime(
     };
   }
   try {
-    const installedVersion = (await readFile(join(distDirectory, "version"), "utf8"))
+    const installedVersion = (
+      await readFile(join(distDirectory, "version"), "utf8")
+    )
       .trim()
       .replace(/^v/u, "");
     if (installedVersion !== packageJson.version) {
@@ -78,7 +82,10 @@ export async function inspectElectronRuntime(
         reason: `Electron 二进制版本为 ${installedVersion}，依赖版本为 ${packageJson.version}`
       };
     }
-    await access(executable, process.platform === "win32" ? constants.F_OK : constants.X_OK);
+    await access(
+      executable,
+      process.platform === "win32" ? constants.F_OK : constants.X_OK
+    );
   } catch {
     return {
       healthy: false,
@@ -154,7 +161,9 @@ async function main() {
   );
 }
 
-const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
+const invokedPath = process.argv[1]
+  ? pathToFileURL(resolve(process.argv[1])).href
+  : "";
 if (invokedPath === import.meta.url) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));

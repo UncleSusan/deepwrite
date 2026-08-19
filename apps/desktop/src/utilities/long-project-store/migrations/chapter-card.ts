@@ -15,7 +15,11 @@ import {
   unknownRecord
 } from "../io";
 import { chapterPath } from "../paths";
-import { createLongFileRevision, longRevisionMatchesBytes, longRevisionsMatchContent } from "../revisions";
+import {
+  createLongFileRevision,
+  longRevisionMatchesBytes,
+  longRevisionsMatchContent
+} from "../revisions";
 import {
   MANIFEST_PATH,
   MAX_DOCUMENT_BYTES,
@@ -276,7 +280,8 @@ export async function migrateLegacyChapterBodyStatus(input: {
   const rawChapters = rawIndex.chapters.map(unknownRecord);
   if (
     rawChapters.every(
-      (chapter) => chapter?.bodyStatus === "empty" || chapter?.bodyStatus === "written"
+      (chapter) =>
+        chapter?.bodyStatus === "empty" || chapter?.bodyStatus === "written"
     )
   ) {
     return false;
@@ -295,7 +300,9 @@ export async function migrateLegacyChapterBodyStatus(input: {
         disk.bytes
       )
     ) {
-      throw new Error(`章节正文 revision 与实际文件不一致：${chapter.chapterCardId}。`);
+      throw new Error(
+        `章节正文 revision 与实际文件不一致：${chapter.chapterCardId}。`
+      );
     }
     chapter.bodyStatus = disk.content.trim() ? "written" : "empty";
   }

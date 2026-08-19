@@ -12,18 +12,22 @@ describe("LongWorkspaceModule boundary", () => {
     expect(source).toContain('class="long-agent-column"');
     expect(source).toContain('class="pane-resizer pane-resizer-right"');
     expect(source).toContain("paneLayout: WorkspacePaneLayout");
-    expect(source).toContain("paneLayout === 'agent-editor' || !rightPane.collapsed");
-    expect(source).toContain("paneLayout === 'editor-agent' || !rightPane.collapsed");
+    expect(source).toContain(
+      "paneLayout === 'agent-editor' || !rightPane.collapsed"
+    );
+    expect(source).toContain(
+      "paneLayout === 'editor-agent' || !rightPane.collapsed"
+    );
     expect(source).toContain('v-if="!rightPane.collapsed"');
     expect(source).toContain(':right-pane-collapsed="rightPane.collapsed"');
     expect(editorSource).toContain('aria-label="展开智能体栏"');
     expect(editorSource).toContain("emit('toggleRight')");
     expect(shellSource).toContain(':right-pane="writingRightPaneViewModel"');
     expect(shellSource).toContain(
-      '@resize-start="startPaneResize(\'right\', $event)"'
+      "@resize-start=\"startPaneResize('right', $event)\""
     );
     expect(shellSource).toContain(
-      '@resize-keydown="handleResizeKeydown(\'right\', $event)"'
+      "@resize-keydown=\"handleResizeKeydown('right', $event)\""
     );
   });
 
@@ -44,15 +48,15 @@ describe("LongWorkspaceModule boundary", () => {
   });
 
   it("preserves the inner editor port and multi-argument event contracts", () => {
-    expect(source).toContain('editorPortChange: [port: LongWorkspaceEditorPort | null]');
+    expect(source).toContain(
+      "editorPortChange: [port: LongWorkspaceEditorPort | null]"
+    );
     expect(source).toContain(':ref="captureEditorPort"');
     expect(source).toContain('emit("editorPortChange", null)');
     expect(shellSource).toContain(
       '@editor-port-change="updateLongWorkspaceEditorPort"'
     );
-    expect(source).toContain(
-      'emit("renameStructureTitle", input, completion)'
-    );
+    expect(source).toContain('emit("renameStructureTitle", input, completion)');
     expect(source).toContain('emit("mutation", batch, completion)');
   });
 });

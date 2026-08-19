@@ -12,12 +12,7 @@ import {
   type ThinkingLevel,
   type UserPromptAttachment
 } from "@deepwrite/contracts";
-import {
-  computed,
-  nextTick,
-  watch,
-  type Ref
-} from "vue";
+import { computed, nextTick, watch, type Ref } from "vue";
 import type {
   AgentConversationController,
   AgentRunSettings
@@ -29,6 +24,7 @@ import {
 } from "../data/catalogWorkspace";
 import type { ComposerReferenceOption } from "../types/conversation";
 import type {
+  LongForeshadowingFocus,
   LongWorkspaceRendererApi,
   LongWorkspaceSelection
 } from "../types/longWorkspace";
@@ -69,6 +65,7 @@ interface LongMessageSendTarget {
   thinkingLevel: ThinkingLevel;
   temperature: number;
   approvalMode: AgentRunSettings["approvalMode"];
+  foreshadowingFocusSignature: string;
 }
 
 export interface LongConversationCoordinatorOptions {
@@ -78,13 +75,9 @@ export interface LongConversationCoordinatorOptions {
     workspaceIndex: Readonly<Ref<LongWorkspaceIndexSnapshot | null>>;
     selection: Readonly<Ref<LongWorkspaceSelection | null>>;
     fileContext: Readonly<Ref<LongConversationFileContext | null>>;
-    activeRoot: Readonly<
-      Ref<LongWorkspaceRuntimeContext["activeRoot"]>
-    >;
+    activeRoot: Readonly<Ref<LongWorkspaceRuntimeContext["activeRoot"]>>;
     activeAgentProfile: Readonly<Ref<LongAgentProfile | null>>;
-    activeRuntimeContext: Readonly<
-      Ref<LongWorkspaceRuntimeContext | null>
-    >;
+    activeRuntimeContext: Readonly<Ref<LongWorkspaceRuntimeContext | null>>;
     sendPreflightPending: Ref<boolean>;
     agentLoadError: Readonly<Ref<string | null>>;
   };
@@ -95,10 +88,7 @@ export interface LongConversationCoordinatorOptions {
       activeRoot: LongWorkspaceRuntimeContext["activeRoot"],
       chapterCardId?: string
     ): string;
-    conversationForKey(
-      key: string,
-      scope: string
-    ): AgentConversationController;
+    conversationForKey(key: string, scope: string): AgentConversationController;
     synchronizeSessionModelSelection(
       conversation: AgentConversationController
     ): void;
@@ -112,6 +102,7 @@ export interface LongConversationCoordinatorOptions {
     ensureAgentSettingsLoaded(): Promise<boolean>;
     saveActiveEditorChanges(): Promise<boolean>;
     refreshActiveWorkspace(bookId: string): Promise<boolean>;
+    captureForeshadowingFocus(): LongForeshadowingFocus;
     api(): LongWorkspaceRendererApi | undefined;
   };
   catalog: {
@@ -283,13 +274,15 @@ export function useLongConversationCoordinator(
     const bookId = options.state.activeBookSummary.value?.id;
     return bookId ? `long:${bookId}` : null;
   });
-  const activeConversation = computed<AgentConversationController | null>(() => {
-    const key = activeConversationKey.value;
-    const scope = activeConversationScope.value;
-    return key && scope
-      ? options.runtime.conversationForKey(key, scope)
-      : null;
-  });
+  const activeConversation = computed<AgentConversationController | null>(
+    () => {
+      const key = activeConversationKey.value;
+      const scope = activeConversationScope.value;
+      return key && scope
+        ? options.runtime.conversationForKey(key, scope)
+        : null;
+    }
+  );
   const availableSkillReferences = computed(() =>
     longSkillReferences(
       options.catalog.indexSnapshot.value,
@@ -334,7 +327,9 @@ export function useLongConversationCoordinator(
   const stopSemanticInvalidation = watch(
     activeSemanticSignature,
     invalidateSendTarget,
-    { flush: "sync" }
+    {
+      flush: "sync"
+    }
   );
   const stopConversationError = watch(
     () => activeConversation.value?.conversationError.value ?? null,
@@ -345,6 +340,17 @@ export function useLongConversationCoordinator(
 
   function currentSemanticSignature(): string {
     return activeSemanticSignature.value;
+  }
+
+  function currentForeshadowingFocusSignature(): string {
+    if (
+      options.state.activeRoot.value !== "plot_design" ||
+      options.state.selection.value?.key !== "plot-design:foreshadowing"
+    ) {
+      return "";
+    }
+    const focus = options.workspace.captureForeshadowingFocus();
+    return `${focus.threadId ?? ""}\u0000${focus.beatId ?? ""}`;
   }
 
   function captureSendTarget(): LongMessageSendTarget | null {
@@ -393,7 +399,8 @@ export function useLongConversationCoordinator(
       selectedModelId: conversation.selectedModelId.value,
       thinkingLevel: conversation.thinkingLevel.value,
       temperature: conversation.temperature.value,
-      approvalMode: options.settings.permissionMode()
+      approvalMode: options.settings.permissionMode(),
+      foreshadowingFocusSignature: currentForeshadowingFocusSignature()
     };
   }
 
@@ -429,6 +436,8 @@ export function useLongConversationCoordinator(
       target.conversation.thinkingLevel.value === target.thinkingLevel &&
       target.conversation.temperature.value === target.temperature &&
       options.settings.permissionMode() === target.approvalMode &&
+      currentForeshadowingFocusSignature() ===
+        target.foreshadowingFocusSignature &&
       (matchOptions.includeDraft === false ||
         target.conversation.draft.value === target.draft)
     );
@@ -516,8 +525,7 @@ export function useLongConversationCoordinator(
       return Promise.resolve();
     }
     options.state.sendPreflightPending.value = true;
-    let operation!: Promise<void>;
-    operation = (async () => {
+    const operation = (async () => {
       try {
         await nextTick();
         if (!confirmSendTarget(target)) return;
@@ -553,9 +561,7 @@ export function useLongConversationCoordinator(
             target.chapterCardId ||
           (baseRuntimeContext.activeFileId ?? null) !== target.fileId
         ) {
-          options.notifications.info(
-            "长篇上下文已切换，本次发送已取消。"
-          );
+          options.notifications.info("长篇上下文已切换，本次发送已取消。");
           return;
         }
 
@@ -567,9 +573,8 @@ export function useLongConversationCoordinator(
             return;
           }
           try {
-            const { buildLongWorldbuildingFocusSnapshot } = await import(
-              "../utils/longWorldbuildingAgentContext"
-            );
+            const { buildLongWorldbuildingFocusSnapshot } =
+              await import("../utils/longWorldbuildingAgentContext");
             if (!confirmSendTarget(target)) return;
             const worldbuildingFocus =
               await buildLongWorldbuildingFocusSnapshot({
@@ -600,9 +605,8 @@ export function useLongConversationCoordinator(
             return;
           }
           try {
-            const { buildLongCharacterFocusSnapshot } = await import(
-              "../utils/longCharacterAgentContext"
-            );
+            const { buildLongCharacterFocusSnapshot } =
+              await import("../utils/longCharacterAgentContext");
             if (!confirmSendTarget(target)) return;
             const characterFocus = await buildLongCharacterFocusSnapshot({
               bookId: target.bookId,
@@ -628,13 +632,15 @@ export function useLongConversationCoordinator(
         }
 
         if (target.activeRoot === "plot_design") {
-          const { buildLongPlotFocusSnapshot } = await import(
-            "../utils/longPlotAgentContext"
-          );
+          const { buildLongPlotFocusSnapshot } =
+            await import("../utils/longPlotAgentContext");
           if (!confirmSendTarget(target)) return;
           const plotFocus = buildLongPlotFocusSnapshot({
             selection: options.state.selection.value,
-            navigation: baseRuntimeContext.navigation
+            navigation: baseRuntimeContext.navigation,
+            foreshadowing:
+              options.state.workspaceIndex.value?.plot.foreshadowing ?? [],
+            foreshadowingFocus: options.workspace.captureForeshadowingFocus()
           });
           if (plotFocus) {
             runtimeContext = { ...baseRuntimeContext, plotFocus };
@@ -668,15 +674,12 @@ export function useLongConversationCoordinator(
         const summary = options.state.activeBookSummary.value;
         const profile = options.state.activeAgentProfile.value;
         if (!summary || summary.id !== target.bookId || !profile) {
-          options.notifications.info(
-            "长篇资源上下文已切换，本次发送已取消。"
-          );
+          options.notifications.info("长篇资源上下文已切换，本次发送已取消。");
           return;
         }
-        const documentsLoaded =
-          await options.catalog.ensureDocumentsLoaded(
-            options.catalog.documentsForProfile(summary, profile)
-          );
+        const documentsLoaded = await options.catalog.ensureDocumentsLoaded(
+          options.catalog.documentsForProfile(summary, profile)
+        );
         if (!confirmSendTarget(target)) return;
         if (!documentsLoaded) return;
 
@@ -685,10 +688,7 @@ export function useLongConversationCoordinator(
           ? options.catalog.buildAttachments(summary, contextSnapshot, profile)
           : null;
         const readableAttachments = attachmentResult
-          ? options.catalog.filterReadableAttachments(
-              attachmentResult,
-              profile
-            )
+          ? options.catalog.filterReadableAttachments(attachmentResult, profile)
           : { attachedSkills: [], attachedMaterials: [] };
         if (
           attachmentResult &&
@@ -771,9 +771,7 @@ export function useLongConversationCoordinator(
     synchronizeActiveRunPreferences(conversation);
   }
 
-  function selectApprovalMode(
-    mode: AgentRunSettings["approvalMode"]
-  ): void {
+  function selectApprovalMode(mode: AgentRunSettings["approvalMode"]): void {
     if (disposed || modelPreferenceBlocked()) return;
     const conversation = activeConversation.value;
     if (!conversation) return;

@@ -46,7 +46,8 @@ export const ScriptWorkspaceStageIdSchema = z.union([
   z.literal("draft"),
   CreativePlotStageIdSchema
 ]);
-export type ScriptWorkspaceStageId = "character_design" | "draft" | CreativePlotStageId;
+export type ScriptWorkspaceStageId =
+  "character_design" | "draft" | CreativePlotStageId;
 export const ScriptWorkspaceTextStageIdSchema = z.union([
   z.literal("character_design"),
   CreativePlotStageIdSchema
@@ -61,9 +62,7 @@ export const SCRIPT_WORKSPACE_AGENT_IDS = [
   "expert_draft_coordinator"
 ] as const;
 
-export const ScriptWorkspaceAgentIdSchema = z.enum(
-  SCRIPT_WORKSPACE_AGENT_IDS
-);
+export const ScriptWorkspaceAgentIdSchema = z.enum(SCRIPT_WORKSPACE_AGENT_IDS);
 export type ScriptWorkspaceAgentId = z.infer<
   typeof ScriptWorkspaceAgentIdSchema
 >;
@@ -86,7 +85,12 @@ export const SCRIPT_MATERIAL_KINDS = [
 export const ScriptMaterialKindSchema = z.enum(SCRIPT_MATERIAL_KINDS);
 export type ScriptMaterialKind = z.infer<typeof ScriptMaterialKindSchema>;
 
-export const SCRIPT_SKILL_KINDS = ["general", "plot", "style", "other"] as const;
+export const SCRIPT_SKILL_KINDS = [
+  "general",
+  "plot",
+  "style",
+  "other"
+] as const;
 export const ScriptSkillKindSchema = z.enum(SCRIPT_SKILL_KINDS);
 export type ScriptSkillKind = z.infer<typeof ScriptSkillKindSchema>;
 
@@ -217,7 +221,8 @@ export const DEFAULT_SCRIPT_WORKSPACE_AGENT_SYSTEM_PROMPTS: Record<
 > = {
   character_design: DEFAULT_SCRIPT_CHARACTER_DESIGN_SYSTEM_PROMPT,
   plot_design: DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT,
-  expert_draft_coordinator: DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT
+  expert_draft_coordinator:
+    DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT
 };
 
 function uniqueEnumValuesSchema<T extends string>(
@@ -252,10 +257,12 @@ const UniqueScriptSkillKindsSchema = uniqueEnumValuesSchema(
   "skill kind"
 );
 
-export const ScriptAgentReadAccessSchema = z.object({
-  material: UniqueScriptMaterialKindsSchema,
-  skill: UniqueScriptSkillKindsSchema
-}).strict();
+export const ScriptAgentReadAccessSchema = z
+  .object({
+    material: UniqueScriptMaterialKindsSchema,
+    skill: UniqueScriptSkillKindsSchema
+  })
+  .strict();
 export type ScriptAgentReadAccess = z.infer<typeof ScriptAgentReadAccessSchema>;
 
 export const DEFAULT_SCRIPT_AGENT_READ_ACCESS: Record<
@@ -310,7 +317,8 @@ export const ScriptWorkspaceStageSnapshotSchema = z
       context.addIssue({
         code: "custom",
         path: ["originalLength"],
-        message: "A truncated stage must report an originalLength larger than content."
+        message:
+          "A truncated stage must report an originalLength larger than content."
       });
     }
     if (value.truncated !== true && value.originalLength !== undefined) {
@@ -473,11 +481,15 @@ export const ScriptWorkspaceSnapshotSchema = z
           "Script text stages must contain character design followed by configured plot stages."
       });
     }
-    if (value.activeStageId !== "draft" && !stageIds.includes(value.activeStageId)) {
+    if (
+      value.activeStageId !== "draft" &&
+      !stageIds.includes(value.activeStageId)
+    ) {
       context.addIssue({
         code: "custom",
         path: ["activeStageId"],
-        message: "Active stage must be present in the script workspace snapshot."
+        message:
+          "Active stage must be present in the script workspace snapshot."
       });
     }
 
@@ -559,7 +571,10 @@ export const DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS = {
     "按照剧情结构写当前剧集",
     "审阅并统一修订当前剧本"
   ]
-} as const satisfies Record<ScriptWorkspaceAgentId, ScriptAgentWelcomeShortcuts>;
+} as const satisfies Record<
+  ScriptWorkspaceAgentId,
+  ScriptAgentWelcomeShortcuts
+>;
 
 export const ScriptWorkspaceAgentProfileSchema = z.object({
   id: ScriptWorkspaceAgentIdSchema,
@@ -573,34 +588,38 @@ export type ScriptWorkspaceAgentProfile = z.infer<
   typeof ScriptWorkspaceAgentProfileSchema
 >;
 
-export const DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES: readonly ScriptWorkspaceAgentProfile[] = [
-  {
-    id: "character_design",
-    label: "剧本人物",
-    description: "创建、补全和修改可供场面调度、行动与对白直接使用的人物设计。",
-    systemPrompt: DEFAULT_SCRIPT_CHARACTER_DESIGN_SYSTEM_PROMPT,
-    welcomeShortcuts: [...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.character_design],
-    readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.character_design
-  },
-  {
-    id: "plot_design",
-    label: "剧本剧情",
-    description: "负责当前作品动态配置的全部剧情结构阶段。",
-    systemPrompt: DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT,
-    welcomeShortcuts: [...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.plot_design],
-    readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.plot_design
-  },
-  {
-    id: "expert_draft_coordinator",
-    label: "剧本正文专家",
-    description: "统一负责剧集结构、全剧创作、当前剧集写作与跨集修订。",
-    systemPrompt: DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
-    welcomeShortcuts: [
-      ...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
-    ],
-    readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.expert_draft_coordinator
-  }
-];
+export const DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES: readonly ScriptWorkspaceAgentProfile[] =
+  [
+    {
+      id: "character_design",
+      label: "剧本人物",
+      description:
+        "创建、补全和修改可供场面调度、行动与对白直接使用的人物设计。",
+      systemPrompt: DEFAULT_SCRIPT_CHARACTER_DESIGN_SYSTEM_PROMPT,
+      welcomeShortcuts: [
+        ...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.character_design
+      ],
+      readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.character_design
+    },
+    {
+      id: "plot_design",
+      label: "剧本剧情",
+      description: "负责当前作品动态配置的全部剧情结构阶段。",
+      systemPrompt: DEFAULT_SCRIPT_PLOT_DESIGN_SYSTEM_PROMPT,
+      welcomeShortcuts: [...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.plot_design],
+      readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.plot_design
+    },
+    {
+      id: "expert_draft_coordinator",
+      label: "剧本正文专家",
+      description: "统一负责剧集结构、全剧创作、当前剧集写作与跨集修订。",
+      systemPrompt: DEFAULT_SCRIPT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+      welcomeShortcuts: [
+        ...DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
+      ],
+      readAccess: DEFAULT_SCRIPT_AGENT_READ_ACCESS.expert_draft_coordinator
+    }
+  ];
 
 function validateCompleteScriptAgentSet(
   agents: readonly { id: ScriptWorkspaceAgentId }[],
@@ -656,7 +675,8 @@ export type ScriptWorkspaceAgentSettingsInput = z.infer<
   typeof ScriptWorkspaceAgentSettingsInputSchema
 >;
 
-export const DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS: ScriptWorkspaceAgentSettings = {
-  workspaceType: "script",
-  agents: [...DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES]
-};
+export const DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS: ScriptWorkspaceAgentSettings =
+  {
+    workspaceType: "script",
+    agents: [...DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES]
+  };

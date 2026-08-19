@@ -27,7 +27,9 @@ export function buildSwitchStorylineStageTool(
     description: `切换${workspaceKindLabel(input)}剧情父节点下的当前子方向；只改变选中项，不写入内容。`,
     parameters: Type.Object({ target_stage_id: literalUnion(plotStages) }),
     execute: async (_toolCallId, params) => {
-      const stageId = String(params.target_stage_id) as (typeof plotStages)[number];
+      const stageId = String(
+        params.target_stage_id
+      ) as (typeof plotStages)[number];
       if (!plotStages.includes(stageId)) {
         return textResult(
           `当前${workspaceKindLabel(input)}没有剧情方向「${stageId}」。`
@@ -60,12 +62,13 @@ function editorMutationResult(
   }
   stageBodies.set(stageId, text);
   stageRevisions.set(stageId, createShortWorkspaceContentRevision(text));
-  const resultSummary = input.writeApprovalMode === "auto-approve"
-    ? summary.replace(
-        "，等待用户审阅。",
-        "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
-      )
-    : summary;
+  const resultSummary =
+    input.writeApprovalMode === "auto-approve"
+      ? summary.replace(
+          "，等待用户审阅。",
+          "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
+        )
+      : summary;
   return textResult(resultSummary, {
     kind: "workspace-editor-mutation",
     workspaceId: input.workspace.id,
@@ -82,9 +85,9 @@ export function buildWriteWorkspaceEditorTool(
   stageRevisions: Map<ShortWorkspaceStageId, string>,
   currentStage: () => ShortWorkspaceStageId
 ): AgentTool {
-  const allowedTargets: ShortWorkspaceStageId[] = writableStageIds(input).filter(
-    (stageId) => stageId !== "draft"
-  );
+  const allowedTargets: ShortWorkspaceStageId[] = writableStageIds(
+    input
+  ).filter((stageId) => stageId !== "draft");
   return defineTool({
     name: "write_workspace_editor",
     label: "写入当前文本编辑框",

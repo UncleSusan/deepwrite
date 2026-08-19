@@ -1,101 +1,26 @@
 import type { LongWorkspaceOperation } from "./operation-schema";
 import type { MutationState } from "./state";
-import {
-  LongArcIdSchema,
-  LongArcSchema,
-  LongChapterCardIdSchema,
-  LongChapterCardSchema,
-  LongChapterCharacterContinuityFileIndexEntrySchema,
-  LongChapterFileIndexEntrySchema,
-  LongCharacterFileIndexEntrySchema,
-  LongCharacterGroupSchema,
-  LongCharacterIdSchema,
-  LongCharacterSchema,
-  LongCharacterTypeIdSchema,
-  LongCharacterTypeSchema,
-  LongEventConnectionIdSchema,
-  LongEventConnectionSchema,
-  LongFileIdSchema,
-  LongFileRevisionSchema,
-  LongForeshadowingBeatIdSchema,
-  LongForeshadowingBeatSchema,
-  LongForeshadowingIdSchema,
-  LongForeshadowingSchema,
-  LongMarkdownFileReferenceSchema,
-  LongNarrativePlacementIdSchema,
-  LongNarrativePlacementSchema,
-  LongProjectRelativePathSchema,
-  LongStableIdSchema,
-  LongStoryEventIdSchema,
-  LongStoryEventSchema,
-  LongStoryPlotIdSchema,
-  LongStoryPlotSchema,
-  LongVolumeIdSchema,
-  LongVolumeSchema,
-  LongWorldbuildingItemLayoutSchema,
-  LongWorkspaceIndexSnapshotSchema,
-  LongWorldbuildingCategoryIdSchema,
-  LongWorldbuildingCategorySchema,
-  LongWorldbuildingItemIdSchema,
-  LongWorldbuildingItemSchema,
-  createEmptyLongMarkdownFileReference,
-  deriveLongForeshadowingStatusFromCommittedBeats,
-  longWorldbuildingContentPath,
-  longWorldbuildingFileId,
-  longWorldbuildingItemContentPath,
-  longWorldbuildingItemFileId,
-  longWorldbuildingOverviewContentPath,
-  longWorldbuildingOverviewFileId
-} from "../long-workspace";
-import type {
-  LongForeshadowing,
-  LongForeshadowingBeat,
-  LongNarrativePlacement,
-  LongWorkspaceFileReference,
-  LongWorkspaceIndexSnapshot
-} from "../long-workspace";
 
+import { deleteArc, deleteChapter, deleteVolume } from "./cascade";
 import {
   addFileCreateIntent,
   addFileDeleteIntent,
-  allWorkspaceFiles,
-  assertAnchoredValue,
   assertBeatIsMutable,
   assertChapterIsMutable,
   assertExactOrder,
-  assertFrozenOrderPrefix,
   assertNewEntityId,
-  assertPlacementIsMutable,
-  chapterOrderMap,
   concreteChapterIdForBeat,
   ensureFilesAvailable,
   eventParticipatesInCommittedFacts,
-  findBeat,
   findEntityIndex,
-  idsByGroupAndOrder,
   insertBeforeId,
   markCreated,
-  markDeleted,
   markUpdated,
-  normalizeLongWorkspaceOrders,
   operationError,
-  orderedIdsByOrder,
   registerProvisionalId,
   retargetBeatPlanningAnchorsToChapter,
-  updateOrdersById,
-  volumeOrderMap
+  updateOrdersById
 } from "./state";
-import {
-  deleteArc,
-  deleteChapter,
-  deleteCharacter,
-  deleteForeshadowingBeat,
-  deleteForeshadowingThread,
-  deleteNarrativePlacement,
-  deleteStoryEvent,
-  deleteStoryPlot,
-  deleteVolume
-} from "./cascade";
 
 export function applyVolumeChapterOperation(
   state: MutationState,
@@ -104,11 +29,7 @@ export function applyVolumeChapterOperation(
   const workspace = state.draft;
   switch (operation.type) {
     case "volume.create": {
-      assertNewEntityId(
-        workspace.plot.volumes,
-        operation.volume.id,
-        "Volume"
-      );
+      assertNewEntityId(workspace.plot.volumes, operation.volume.id, "Volume");
       workspace.plot.volumes.push(structuredClone(operation.volume));
       markCreated(state, operation.volume.id);
       registerProvisionalId(
@@ -121,11 +42,7 @@ export function applyVolumeChapterOperation(
     case "volume.update": {
       const volume =
         workspace.plot.volumes[
-          findEntityIndex(
-            workspace.plot.volumes,
-            operation.id,
-            "Volume"
-          )
+          findEntityIndex(workspace.plot.volumes, operation.id, "Volume")
         ]!;
       Object.assign(volume, operation.patch);
       markUpdated(state, volume.id);
@@ -156,11 +73,7 @@ export function applyVolumeChapterOperation(
       assertNewEntityId(workspace.plot.arcs, operation.arc.id, "Arc");
       workspace.plot.arcs.push(structuredClone(operation.arc));
       markCreated(state, operation.arc.id);
-      registerProvisionalId(
-        state,
-        operation.provisionalId,
-        operation.arc.id
-      );
+      registerProvisionalId(state, operation.provisionalId, operation.arc.id);
       break;
     }
     case "arc.update": {
@@ -233,10 +146,7 @@ export function applyVolumeChapterOperation(
               return;
             }
             assertBeatIsMutable(beat, "move with its planning arc");
-            const concreteChapterId = concreteChapterIdForBeat(
-              workspace,
-              beat
-            );
+            const concreteChapterId = concreteChapterIdForBeat(workspace, beat);
             beat.volumeId =
               followsMovedEvent && concreteChapterId !== null
                 ? null
@@ -308,18 +218,14 @@ export function applyVolumeChapterOperation(
         operation.files.characterState,
         operation.files.handoff,
         operation.files.foreshadowingChanges,
-        ...(operation.files.worldReveals
-          ? [operation.files.worldReveals]
-          : []),
+        ...(operation.files.worldReveals ? [operation.files.worldReveals] : []),
         ...operation.files.characterContinuity.flatMap((character) => [
           character.currentState,
           character.history
         ])
       ];
       ensureFilesAvailable(state, files);
-      workspace.plot.chapterCards.push(
-        structuredClone(operation.chapterCard)
-      );
+      workspace.plot.chapterCards.push(structuredClone(operation.chapterCard));
       workspace.chapters.push(structuredClone(operation.files));
       files.forEach((file) =>
         addFileCreateIntent(
@@ -401,10 +307,7 @@ export function applyVolumeChapterOperation(
       });
       const target = workspace.plot.chapterCards
         .filter(({ volumeId }) => volumeId === operation.toVolumeId)
-        .sort(
-          (left, right) =>
-            left.narrativeOrder - right.narrativeOrder
-        );
+        .sort((left, right) => left.narrativeOrder - right.narrativeOrder);
       const orderedIds = insertBeforeId(
         target.map(({ id }) => id),
         chapter.id,
@@ -425,10 +328,7 @@ export function applyVolumeChapterOperation(
     case "chapter.reorder": {
       const target = workspace.plot.chapterCards
         .filter(({ volumeId }) => volumeId === operation.volumeId)
-        .sort(
-          (left, right) =>
-            left.narrativeOrder - right.narrativeOrder
-        );
+        .sort((left, right) => left.narrativeOrder - right.narrativeOrder);
       assertExactOrder(
         target.map(({ id }) => id),
         operation.orderedIds,
@@ -450,16 +350,17 @@ export function applyVolumeChapterOperation(
         operation.chapterCardId,
         "create world-reveals continuity for"
       );
-      const chapterFiles = workspace.chapters[
-        findEntityIndex(
-          workspace.chapters.map((entry) => ({
-            ...entry,
-            id: entry.chapterCardId
-          })),
-          operation.chapterCardId,
-          "Chapter file index"
-        )
-      ]!;
+      const chapterFiles =
+        workspace.chapters[
+          findEntityIndex(
+            workspace.chapters.map((entry) => ({
+              ...entry,
+              id: entry.chapterCardId
+            })),
+            operation.chapterCardId,
+            "Chapter file index"
+          )
+        ]!;
       if (chapterFiles.worldReveals) {
         operationError(
           "already_exists",
@@ -481,16 +382,17 @@ export function applyVolumeChapterOperation(
         operation.chapterCardId,
         "delete world-reveals continuity from"
       );
-      const chapterFiles = workspace.chapters[
-        findEntityIndex(
-          workspace.chapters.map((entry) => ({
-            ...entry,
-            id: entry.chapterCardId
-          })),
-          operation.chapterCardId,
-          "Chapter file index"
-        )
-      ]!;
+      const chapterFiles =
+        workspace.chapters[
+          findEntityIndex(
+            workspace.chapters.map((entry) => ({
+              ...entry,
+              id: entry.chapterCardId
+            })),
+            operation.chapterCardId,
+            "Chapter file index"
+          )
+        ]!;
       if (!chapterFiles.worldReveals) {
         operationError(
           "not_found",
@@ -511,21 +413,18 @@ export function applyVolumeChapterOperation(
         operation.chapterCardId,
         "create character continuity for"
       );
-      findEntityIndex(
-        workspace.characters,
-        operation.characterId,
-        "Character"
-      );
-      const chapterFiles = workspace.chapters[
-        findEntityIndex(
-          workspace.chapters.map((entry) => ({
-            ...entry,
-            id: entry.chapterCardId
-          })),
-          operation.chapterCardId,
-          "Chapter file index"
-        )
-      ]!;
+      findEntityIndex(workspace.characters, operation.characterId, "Character");
+      const chapterFiles =
+        workspace.chapters[
+          findEntityIndex(
+            workspace.chapters.map((entry) => ({
+              ...entry,
+              id: entry.chapterCardId
+            })),
+            operation.chapterCardId,
+            "Chapter file index"
+          )
+        ]!;
       if (
         chapterFiles.characterContinuity.some(
           ({ characterId }) => characterId === operation.characterId
@@ -558,16 +457,17 @@ export function applyVolumeChapterOperation(
         operation.chapterCardId,
         "delete character continuity from"
       );
-      const chapterFiles = workspace.chapters[
-        findEntityIndex(
-          workspace.chapters.map((entry) => ({
-            ...entry,
-            id: entry.chapterCardId
-          })),
-          operation.chapterCardId,
-          "Chapter file index"
-        )
-      ]!;
+      const chapterFiles =
+        workspace.chapters[
+          findEntityIndex(
+            workspace.chapters.map((entry) => ({
+              ...entry,
+              id: entry.chapterCardId
+            })),
+            operation.chapterCardId,
+            "Chapter file index"
+          )
+        ]!;
       const continuityIndex = chapterFiles.characterContinuity.findIndex(
         ({ characterId }) => characterId === operation.characterId
       );

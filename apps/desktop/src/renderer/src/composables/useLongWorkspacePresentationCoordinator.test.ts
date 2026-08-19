@@ -15,11 +15,7 @@ import {
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import { createPinia, setActivePinia, storeToRefs } from "pinia";
-import {
-  ref,
-  shallowRef,
-  triggerRef
-} from "vue";
+import { ref, shallowRef, triggerRef } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { useConversationStore } from "../stores/conversationStore";
 import type {
@@ -93,9 +89,7 @@ function workspaceIndex(): LongWorkspaceIndexSnapshot {
     characters: [],
     characterFiles: [],
     plot: {
-      volumes: [
-        { id: "volume_one", title: "第一卷", order: 1, summary: "" }
-      ],
+      volumes: [{ id: "volume_one", title: "第一卷", order: 1, summary: "" }],
       arcs: [],
       chapterCards: [
         {
@@ -204,10 +198,7 @@ function commit(
     sourceRevision: 3,
     placementIds: [],
     foreshadowingBeatIds: [],
-    recordFile: file(
-      `file_${id}:ledger`,
-      `long/ledger/${id}.json`
-    )
+    recordFile: file(`file_${id}:ledger`, `long/ledger/${id}.json`)
   };
 }
 
@@ -223,13 +214,14 @@ function createHarness() {
   );
   const fileContext = shallowRef<LongWorkspaceFileContext | null>(null);
   const contextReady = ref(false);
-  const agentSettings = shallowRef(structuredClone(DEFAULT_LONG_AGENT_SETTINGS));
+  const agentSettings = shallowRef(
+    structuredClone(DEFAULT_LONG_AGENT_SETTINGS)
+  );
   const rollbackCommitId = ref<string | null>(null);
   const rollbackPending = ref(false);
   const refreshStatus = shallowRef<LongWorkspaceRefreshStatus | null>(null);
-  const revisionRequirement = shallowRef<
-    LongWorkspaceRevisionSyncRequirement | null
-  >(null);
+  const revisionRequirement =
+    shallowRef<LongWorkspaceRevisionSyncRequirement | null>(null);
   const sendPreflightPending = ref(false);
   const proposalApprovalPending = ref(false);
   const documents = shallowRef<readonly WorkspaceDocument[]>([]);
@@ -238,9 +230,10 @@ function createHarness() {
     LongWorkspacePresentationConversationState
   >();
   const scopeMap = new Map<string, string>();
-  const controllers = shallowRef<
-    ReadonlyMap<string, LongWorkspacePresentationConversationState>
-  >(controllerMap);
+  const controllers =
+    shallowRef<ReadonlyMap<string, LongWorkspacePresentationConversationState>>(
+      controllerMap
+    );
   const scopesByKey = shallowRef<ReadonlyMap<string, string>>(scopeMap);
   const acceptingDocumentIds = ref(new Set<string>());
   const acceptingWorkspaceIds = ref(new Set<string>());
@@ -338,13 +331,8 @@ describe("useLongWorkspacePresentationCoordinator", () => {
   });
 
   it("builds a guarded runtime context and enables only the eligible chapter writer", () => {
-    const {
-      coordinator,
-      activeSelection,
-      fileContext,
-      contextReady,
-      index
-    } = createHarness();
+    const { coordinator, activeSelection, fileContext, contextReady, index } =
+      createHarness();
     expect(coordinator.activeLongRuntimeContext.value).toBeNull();
 
     const worldCategory = index.worldbuilding[0];
@@ -366,7 +354,9 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       activeRoot: "worldbuilding",
       activeAgentId: "setting"
     });
-    expect(coordinator.activeLongRuntimeContext.value?.activeFileId).toBeUndefined();
+    expect(
+      coordinator.activeLongRuntimeContext.value?.activeFileId
+    ).toBeUndefined();
     expect(
       coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
     ).toBeDefined();
@@ -471,21 +461,17 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       complete: true
     };
     expect(
-      coordinator.filterLongReadableAttachmentsForProfile(
-        attachments,
-        profile
-      )
+      coordinator.filterLongReadableAttachmentsForProfile(attachments, profile)
     ).toEqual({
       attachedSkills: [attachments.attachedSkills[0]],
       attachedMaterials: [attachments.attachedMaterials[0]]
     });
     expect(
-      coordinator.buildLongReadableAttachmentsForProfile(
-        summary,
-        null,
-        profile
-      )
-    ).toEqual({ attachedSkills: [], attachedMaterials: [] });
+      coordinator.buildLongReadableAttachmentsForProfile(summary, null, profile)
+    ).toEqual({
+      attachedSkills: [],
+      attachedMaterials: []
+    });
 
     documents.value = [
       document("unbound", { domain: "skill", libraryId: "skill_other" }),
@@ -503,12 +489,8 @@ describe("useLongWorkspacePresentationCoordinator", () => {
   });
 
   it("indexes an unordered ledger and resolves rollback chapter titles", () => {
-    const {
-      coordinator,
-      activeIndex,
-      rollbackCommitId,
-      index
-    } = createHarness();
+    const { coordinator, activeIndex, rollbackCommitId, index } =
+      createHarness();
     const first = commit("commit_first", 1, "chapter_one");
     const second = commit("commit_second", 2, "chapter_two");
     activeIndex.value = {
@@ -543,7 +525,10 @@ describe("useLongWorkspacePresentationCoordinator", () => {
 
     const busy = ref(true);
     const pendingEditReview = ref(false);
-    const controller = { isBusy: busy, hasPendingEditReview: pendingEditReview };
+    const controller = {
+      isBusy: busy,
+      hasPendingEditReview: pendingEditReview
+    };
     controllerMap.set("conversation", controller);
     scopeMap.set("conversation", `long:${BOOK_ID}`);
     triggerRef(controllers);
@@ -604,7 +589,9 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       "pending-review",
       `long:${BOOK_ID}`,
       pendingReviewController,
-      { applyPreferences: false }
+      {
+        applyPreferences: false
+      }
     );
 
     const harness = createHarness();

@@ -52,9 +52,30 @@ function fixture(): CatalogSnapshot {
         subGenre: "",
         overview: "这段库说明不能成为附件",
         entries: [
-          { id: "entry-character", stageId: "character", title: "人物条目", body: "人物素材正文", createdAt: NOW, updatedAt: NOW },
-          { id: "entry-plot", stageId: "pacing", title: "剧情条目", body: "剧情素材正文", createdAt: NOW, updatedAt: NOW },
-          { id: "entry-empty", stageId: "draft_excerpt", title: "空正文条目", body: "  \n", createdAt: NOW, updatedAt: NOW }
+          {
+            id: "entry-character",
+            stageId: "character",
+            title: "人物条目",
+            body: "人物素材正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "entry-plot",
+            stageId: "pacing",
+            title: "剧情条目",
+            body: "剧情素材正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "entry-empty",
+            stageId: "draft_excerpt",
+            title: "空正文条目",
+            body: "  \n",
+            createdAt: NOW,
+            updatedAt: NOW
+          }
         ],
         createdAt: NOW,
         updatedAt: NOW
@@ -68,7 +89,14 @@ function fixture(): CatalogSnapshot {
         subGenre: "",
         overview: "",
         entries: [
-          { id: "entry-unbound", stageId: "other", title: "不能出现", body: "未绑定", createdAt: NOW, updatedAt: NOW }
+          {
+            id: "entry-unbound",
+            stageId: "other",
+            title: "不能出现",
+            body: "未绑定",
+            createdAt: NOW,
+            updatedAt: NOW
+          }
         ],
         createdAt: NOW,
         updatedAt: NOW
@@ -84,8 +112,22 @@ function fixture(): CatalogSnapshot {
         overview: "这段技能库说明不能成为附件",
         isBuiltin: false,
         entries: [
-          { id: "skill-entry", stageId: "draft", title: "文风执行", body: "技能正文", createdAt: NOW, updatedAt: NOW },
-          { id: "skill-empty", stageId: "expert_section_writer", title: "空技能", body: "", createdAt: NOW, updatedAt: NOW }
+          {
+            id: "skill-entry",
+            stageId: "draft",
+            title: "文风执行",
+            body: "技能正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "skill-empty",
+            stageId: "expert_section_writer",
+            title: "空技能",
+            body: "",
+            createdAt: NOW,
+            updatedAt: NOW
+          }
         ],
         createdAt: NOW,
         updatedAt: NOW
@@ -98,7 +140,14 @@ function fixture(): CatalogSnapshot {
         overview: "",
         isBuiltin: false,
         entries: [
-          { id: "skill-unbound-entry", stageId: "outline", title: "不能出现", body: "未绑定", createdAt: NOW, updatedAt: NOW }
+          {
+            id: "skill-unbound-entry",
+            stageId: "outline",
+            title: "不能出现",
+            body: "未绑定",
+            createdAt: NOW,
+            updatedAt: NOW
+          }
         ],
         createdAt: NOW,
         updatedAt: NOW
@@ -216,19 +265,29 @@ describe("library attachments", () => {
   it("resolves only bound non-empty entries and assigns runtime kinds", () => {
     const result = buildLibraryAttachments(fixture(), "book-1");
 
-    expect(result.attachedMaterials.map(({ title, kind }) => [title, kind])).toEqual([
+    expect(
+      result.attachedMaterials.map(({ title, kind }) => [title, kind])
+    ).toEqual([
       ["综合素材 · 人物条目", "character"],
       ["综合素材 · 剧情条目", "plot"]
     ]);
-    expect(result.attachedSkills.map(({ title, kind }) => [title, kind])).toEqual([
-      ["文风技能 · 文风执行", "style"]
-    ]);
-    expect(result.attachedMaterials.every((item) => item.id.includes("material-mixed"))).toBe(true);
+    expect(
+      result.attachedSkills.map(({ title, kind }) => [title, kind])
+    ).toEqual([["文风技能 · 文风执行", "style"]]);
+    expect(
+      result.attachedMaterials.every((item) =>
+        item.id.includes("material-mixed")
+      )
+    ).toBe(true);
     expect(result.attachedMaterials[0]?.id).toContain("entry-character");
     expect(result.attachedSkills[0]?.id).toContain("skill-style");
     expect(result.attachedSkills[0]?.id).toContain("skill-entry");
-    expect(result.attachedMaterials.some((item) => item.content.includes("库说明"))).toBe(false);
-    expect(result.attachedSkills.some((item) => item.content.includes("库说明"))).toBe(false);
+    expect(
+      result.attachedMaterials.some((item) => item.content.includes("库说明"))
+    ).toBe(false);
+    expect(
+      result.attachedSkills.some((item) => item.content.includes("库说明"))
+    ).toBe(false);
     expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
       "library-not-found",
       "library-kind-mismatch",
@@ -280,7 +339,9 @@ describe("library attachments", () => {
     });
 
     const result = buildLibraryAttachments(snapshot, "book-1");
-    expect(result.attachedSkills).toHaveLength(MAX_LIBRARY_ATTACHMENTS_PER_DOMAIN);
+    expect(result.attachedSkills).toHaveLength(
+      MAX_LIBRARY_ATTACHMENTS_PER_DOMAIN
+    );
     expect(result.omittedAttachments).toEqual([
       {
         domain: "skill",
@@ -302,7 +363,9 @@ describe("library attachments", () => {
     );
     expect(result.complete).toBe(false);
     expect(() =>
-      WorkspaceRuntimeContextSchema.parse({ attachedSkills: result.attachedSkills })
+      WorkspaceRuntimeContextSchema.parse({
+        attachedSkills: result.attachedSkills
+      })
     ).not.toThrow();
   });
 
@@ -361,7 +424,9 @@ describe("library attachments", () => {
     );
     expect(result.complete).toBe(false);
     expect(() =>
-      WorkspaceRuntimeContextSchema.parse({ attachedSkills: result.attachedSkills })
+      WorkspaceRuntimeContextSchema.parse({
+        attachedSkills: result.attachedSkills
+      })
     ).not.toThrow();
   });
 
@@ -374,7 +439,10 @@ describe("library attachments", () => {
       complete: false
     });
     expect(result.diagnostics).toEqual([
-      expect.objectContaining({ code: "book-not-found", bookId: "missing-book" })
+      expect.objectContaining({
+        code: "book-not-found",
+        bookId: "missing-book"
+      })
     ]);
   });
 });

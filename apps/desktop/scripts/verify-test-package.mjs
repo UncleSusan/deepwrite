@@ -9,17 +9,20 @@ const appDir = resolve(scriptDir, "..");
 const releaseDir = join(appDir, "release");
 const [targetPlatform, targetArch] = process.argv.slice(2);
 
-if (
-  !(
-    (targetPlatform === "mac" && (targetArch === "arm64" || targetArch === "x64")) ||
-    (targetPlatform === "win" && targetArch === "x64")
-  )
-) {
-  console.error("Usage: node scripts/verify-test-package.mjs <mac arm64|mac x64|win x64>");
+if (!(
+  (targetPlatform === "mac" &&
+    (targetArch === "arm64" || targetArch === "x64")) ||
+  (targetPlatform === "win" && targetArch === "x64")
+)) {
+  console.error(
+    "Usage: node scripts/verify-test-package.mjs <mac arm64|mac x64|win x64>"
+  );
   process.exit(1);
 }
 
-const packageJson = JSON.parse(await readFile(join(appDir, "package.json"), "utf8"));
+const packageJson = JSON.parse(
+  await readFile(join(appDir, "package.json"), "utf8")
+);
 const extension = targetPlatform === "mac" ? "dmg" : "exe";
 const artifact = join(
   releaseDir,
@@ -36,7 +39,9 @@ if (targetPlatform === "mac") {
     maxBuffer: 10 * 1024 * 1024
   });
   if (verification.status !== 0) {
-    throw new Error(`DMG verification failed:\n${verification.stderr || verification.stdout}`);
+    throw new Error(
+      `DMG verification failed:\n${verification.stderr || verification.stdout}`
+    );
   }
 
   const appBundle = join(
@@ -60,13 +65,22 @@ if (targetPlatform === "mac") {
     );
   }
 
-  const signatureDetails = spawnSync("codesign", ["-d", "--verbose=4", appBundle], {
-    encoding: "utf8",
-    maxBuffer: 10 * 1024 * 1024
-  });
+  const signatureDetails = spawnSync(
+    "codesign",
+    ["-d", "--verbose=4", appBundle],
+    {
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024
+    }
+  );
   const signatureOutput = `${signatureDetails.stdout || ""}\n${signatureDetails.stderr || ""}`;
-  if (signatureDetails.status !== 0 || !signatureOutput.includes("Signature=adhoc")) {
-    throw new Error(`Expected an ad-hoc signed app bundle:\n${signatureOutput}`);
+  if (
+    signatureDetails.status !== 0 ||
+    !signatureOutput.includes("Signature=adhoc")
+  ) {
+    throw new Error(
+      `Expected an ad-hoc signed app bundle:\n${signatureOutput}`
+    );
   }
 }
 
@@ -94,7 +108,9 @@ const executable =
     : join(releaseDir, "win-unpacked", "DeepWrite.exe");
 await stat(executable);
 
-const smokeUserData = await mkdtemp(join(tmpdir(), "deepwrite-packaged-smoke-"));
+const smokeUserData = await mkdtemp(
+  join(tmpdir(), "deepwrite-packaged-smoke-")
+);
 let output = "";
 
 try {
@@ -159,7 +175,9 @@ try {
     summary.agent?.runtime?.mode !== "local-faux" ||
     summary.agent?.completed !== true
   ) {
-    throw new Error(`Packaged app returned an invalid smoke summary: ${JSON.stringify(summary)}`);
+    throw new Error(
+      `Packaged app returned an invalid smoke summary: ${JSON.stringify(summary)}`
+    );
   }
 
   console.log(

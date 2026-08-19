@@ -19,17 +19,30 @@ try {
   await access(resolve(appDir, "out/main/index.js"));
   await access(electronBinary);
 } catch {
-  console.error("Desktop build or Electron binary is missing. Run `pnpm build` first.");
+  console.error(
+    "Desktop build or Electron binary is missing. Run `pnpm build` first."
+  );
   process.exit(1);
 }
 
 const hasDisplay = Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
-const hasXvfb = spawnSync("sh", ["-c", "command -v xvfb-run"], { encoding: "utf8" }).status === 0;
-const smokeUserData = await mkdtemp(join(tmpdir(), "deepwrite-electron-smoke-"));
+const hasXvfb =
+  spawnSync("sh", ["-c", "command -v xvfb-run"], { encoding: "utf8" })
+    .status === 0;
+const smokeUserData = await mkdtemp(
+  join(tmpdir(), "deepwrite-electron-smoke-")
+);
 const command = !hasDisplay && hasXvfb ? "xvfb-run" : electronBinary;
-const args = !hasDisplay && hasXvfb
-  ? ["-a", electronBinary, ".", "--no-sandbox", `--user-data-dir=${smokeUserData}`]
-  : [".", "--no-sandbox", `--user-data-dir=${smokeUserData}`];
+const args =
+  !hasDisplay && hasXvfb
+    ? [
+        "-a",
+        electronBinary,
+        ".",
+        "--no-sandbox",
+        `--user-data-dir=${smokeUserData}`
+      ]
+    : [".", "--no-sandbox", `--user-data-dir=${smokeUserData}`];
 
 const child = spawn(command, args, {
   cwd: appDir,
@@ -67,8 +80,13 @@ child.on("close", async (code) => {
   }
 
   const summary = JSON.parse(marker.slice("DEEPWRITE_SMOKE_OK ".length));
-  if (summary.health?.status !== "ok" || summary.health?.workers?.length !== 3) {
-    console.error(`Electron smoke returned unhealthy utilities: ${JSON.stringify(summary)}`);
+  if (
+    summary.health?.status !== "ok" ||
+    summary.health?.workers?.length !== 3
+  ) {
+    console.error(
+      `Electron smoke returned unhealthy utilities: ${JSON.stringify(summary)}`
+    );
     process.exit(1);
   }
 
@@ -79,9 +97,13 @@ child.on("close", async (code) => {
     summary.agent?.thinkingDeltaCount < 1 ||
     summary.agent?.completed !== true
   ) {
-    console.error(`Electron smoke returned an invalid agent summary: ${JSON.stringify(summary)}`);
+    console.error(
+      `Electron smoke returned an invalid agent summary: ${JSON.stringify(summary)}`
+    );
     process.exit(1);
   }
 
-  console.log("Electron smoke passed: utilities are healthy and Pi/Faux thinking + text streamed to completion.");
+  console.log(
+    "Electron smoke passed: utilities are healthy and Pi/Faux thinking + text streamed to completion."
+  );
 });

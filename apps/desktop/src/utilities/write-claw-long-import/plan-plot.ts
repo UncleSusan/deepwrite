@@ -48,12 +48,7 @@ const EVENT_CONNECTION_TYPES = new Set([
   "enables",
   "conceals"
 ]);
-const STORY_TIME_MODES = new Set([
-  "exact",
-  "relative",
-  "sequence",
-  "unknown"
-]);
+const STORY_TIME_MODES = new Set(["exact", "relative", "sequence", "unknown"]);
 const NARRATIVE_MODES = new Set([
   "scene",
   "flashback",
@@ -147,11 +142,7 @@ export function legacyExecutionDecision(
 ): "committed" | "missed" | null {
   const value = stringValue(raw).trim();
   if (value === "missed") return "missed";
-  if (
-    value === "committed" ||
-    value === "completed" ||
-    value === "executed"
-  ) {
+  if (value === "committed" || value === "completed" || value === "executed") {
     return "committed";
   }
   return null;
@@ -255,12 +246,7 @@ export function buildImportedPlot(
       raw: arc,
       sourceIndex,
       legacyId: stringValue(arc.id).trim() || `arc-${sourceIndex + 1}`,
-      id: ids.allocate(
-        "arc",
-        "arc",
-        arc.id,
-        `arc-${sourceIndex + 1}`
-      ),
+      id: ids.allocate("arc", "arc", arc.id, `arc-${sourceIndex + 1}`),
       volumeId: resolvedVolumeId ?? volumes[0]!.id,
       sourceOrder: positiveNumber(arc.order, sourceIndex + 1)
     };
@@ -395,8 +381,7 @@ export function buildImportedPlot(
   let committedChapterCount = 0;
   let preservedLedgerChapterCount = 0;
   for (const row of chapterRows) {
-    const narrativeOrder =
-      (narrativeOrderByVolume.get(row.volumeId) ?? 0) + 1;
+    const narrativeOrder = (narrativeOrderByVolume.get(row.volumeId) ?? 0) + 1;
     narrativeOrderByVolume.set(row.volumeId, narrativeOrder);
     const rawChapter = record(rawChapters[row.stageId]);
     const characterNames = uniqueMappedReferences(
@@ -501,10 +486,7 @@ export function buildImportedPlot(
       ),
       foreshadowingChanges: documents.add(
         longChapterForeshadowingChangesFileId(row.id),
-        longChapterContinuityFilePath(
-          row.id,
-          "foreshadowing-changes.md"
-        ),
+        longChapterContinuityFilePath(row.id, "foreshadowing-changes.md"),
         ""
       ),
       worldReveals: null,
@@ -617,8 +599,7 @@ export function buildImportedPlot(
   const beforeAdjacency = new Map<string, Set<string>>();
   list(plot.event_links).forEach((rawConnection, sourceIndex) => {
     const connection = record(rawConnection);
-    const sourcePath =
-      `long_workspace.json.plot.event_links[${sourceIndex}]`;
+    const sourcePath = `long_workspace.json.plot.event_links[${sourceIndex}]`;
     let sourceEventId = ids.resolve("event", connection.source_event_id);
     let targetEventId = ids.resolve("event", connection.target_event_id);
     let type = stringValue(connection.type ?? connection.kind).trim();
@@ -639,16 +620,10 @@ export function buildImportedPlot(
       { simultaneous: "same_time" },
       { warnings, sourcePath: `${sourcePath}.type` }
     );
-    if (
-      !sourceEventId ||
-      !targetEventId ||
-      sourceEventId === targetEventId
-    ) {
+    if (!sourceEventId || !targetEventId || sourceEventId === targetEventId) {
       warnings.add("部分事件连接引用无效或自引用，已跳过。");
       warnings.preserveDecision(
-        !sourceEventId || !targetEventId
-          ? "unresolved-reference"
-          : "drop",
+        !sourceEventId || !targetEventId ? "unresolved-reference" : "drop",
         sourcePath,
         !sourceEventId || !targetEventId
           ? "连接端点引用的旧版事件不存在，连接已跳过。"
@@ -697,12 +672,7 @@ export function buildImportedPlot(
       sourceEventId,
       targetEventId,
       type: type as
-        | "before"
-        | "same_time"
-        | "overlaps"
-        | "causes"
-        | "enables"
-        | "conceals",
+        "before" | "same_time" | "overlaps" | "causes" | "enables" | "conceals",
       note: clipped(
         connection.note ?? connection.description,
         MAX_SHORT_TEXT,
@@ -715,8 +685,7 @@ export function buildImportedPlot(
   const rawPlacements = list(plot.narrative_placements);
   const placementRows = rawPlacements.flatMap((rawPlacement, sourceIndex) => {
     const placement = record(rawPlacement);
-    const sourcePath =
-      `long_workspace.json.plot.narrative_placements[${sourceIndex}]`;
+    const sourcePath = `long_workspace.json.plot.narrative_placements[${sourceIndex}]`;
     const eventId = ids.resolve("event", placement.event_id);
     const chapterCardId =
       ids.resolve("chapter", placement.chapter_card_id) ??
@@ -765,56 +734,56 @@ export function buildImportedPlot(
   const placementOrderByChapter = new Map<string, number>();
   const narrativePlacements: LongWorkspaceIndexSnapshot["plot"]["narrativePlacements"] =
     placementRows.map((row) => {
-    const orderInChapter =
-      (placementOrderByChapter.get(row.chapterCardId) ?? 0) + 1;
-    placementOrderByChapter.set(row.chapterCardId, orderInChapter);
-    return {
-      id: row.id,
-      eventId: row.eventId,
-      chapterCardId: row.chapterCardId,
-      orderInChapter,
-      mode: enumValue(
-        row.raw.mode ?? row.raw.kind,
-        NARRATIVE_MODES,
-        "scene",
-        { live: "scene" },
-        {
+      const orderInChapter =
+        (placementOrderByChapter.get(row.chapterCardId) ?? 0) + 1;
+      placementOrderByChapter.set(row.chapterCardId, orderInChapter);
+      return {
+        id: row.id,
+        eventId: row.eventId,
+        chapterCardId: row.chapterCardId,
+        orderInChapter,
+        mode: enumValue(
+          row.raw.mode ?? row.raw.kind,
+          NARRATIVE_MODES,
+          "scene",
+          { live: "scene" },
+          {
+            warnings,
+            sourcePath: `long_workspace.json.plot.narrative_placements[${row.sourceIndex}].mode`
+          }
+        ) as
+          | "scene"
+          | "flashback"
+          | "retelling"
+          | "clue"
+          | "misdirection"
+          | "reveal"
+          | "dream"
+          | "prophecy",
+        disclosure: enumValue(
+          row.raw.disclosure,
+          DISCLOSURE_LEVELS,
+          "hint",
+          {},
+          {
+            warnings,
+            sourcePath: `long_workspace.json.plot.narrative_placements[${row.sourceIndex}].disclosure`
+          }
+        ) as "hint" | "partial" | "full" | "false",
+        writingPrompt: clipped(
+          row.raw.note ?? row.raw.intended_knowledge,
+          MAX_SHORT_TEXT,
           warnings,
-          sourcePath: `long_workspace.json.plot.narrative_placements[${row.sourceIndex}].mode`
-        }
-      ) as
-        | "scene"
-        | "flashback"
-        | "retelling"
-        | "clue"
-        | "misdirection"
-        | "reveal"
-        | "dream"
-        | "prophecy",
-      disclosure: enumValue(
-        row.raw.disclosure,
-        DISCLOSURE_LEVELS,
-        "hint",
-        {},
-        {
+          `叙事落点 ${row.sourceIndex + 1} 写作提示`
+        ),
+        status: executionStatus(
+          row.raw.execution_status ?? row.raw.status,
           warnings,
-          sourcePath: `long_workspace.json.plot.narrative_placements[${row.sourceIndex}].disclosure`
-        }
-      ) as "hint" | "partial" | "full" | "false",
-      writingPrompt: clipped(
-        row.raw.note ?? row.raw.intended_knowledge,
-        MAX_SHORT_TEXT,
-        warnings,
-        `叙事落点 ${row.sourceIndex + 1} 写作提示`
-      ),
-      status: executionStatus(
-        row.raw.execution_status ?? row.raw.status,
-        warnings,
-        `long_workspace.json.plot.narrative_placements[${row.sourceIndex}].execution_status`
-      ),
-      commitId: null
-    };
-  });
+          `long_workspace.json.plot.narrative_placements[${row.sourceIndex}].execution_status`
+        ),
+        commitId: null
+      };
+    });
   const placementByLegacyId = new Map<string, (typeof placementRows)[number]>();
   placementRows.forEach((row) => {
     if (!placementByLegacyId.has(row.legacyId)) {
@@ -824,8 +793,7 @@ export function buildImportedPlot(
 
   const legacyBeatStatusById = new Map<string, unknown>();
   const foreshadowing: LongWorkspaceIndexSnapshot["plot"]["foreshadowing"] =
-    list(plot.foreshadowing).map(
-    (rawThread, threadIndex) => {
+    list(plot.foreshadowing).map((rawThread, threadIndex) => {
       const thread = record(rawThread);
       const threadId = ids.allocate(
         "foreshadowing",
@@ -839,132 +807,117 @@ export function buildImportedPlot(
         warnings,
         `伏笔 ${threadIndex + 1} 标题`
       );
-      const beats = list(thread.beats)
-        .map((rawBeat, beatIndex) => {
-          const beat = record(rawBeat);
-          const beatSourcePath =
-            `long_workspace.json.plot.foreshadowing[${threadIndex}].beats[${beatIndex}]`;
-          const legacyPlacementId = stringValue(beat.placement_id).trim();
-          const placement = placementByLegacyId.get(legacyPlacementId);
-          if (legacyPlacementId && !placement) {
-            warnings.preserveDecision(
-              "unresolved-reference",
-              `${beatSourcePath}.placement_id`,
-              "伏笔节拍引用的旧版叙事落点不存在；将继续尝试独立事件或章卡引用。",
-              beat.placement_id
-            );
-          }
-          const placementId = placement?.id ?? null;
-          const directEventId = ids.resolve("event", beat.event_id);
-          if (
-            !placement &&
-            stringValue(beat.event_id).trim() &&
-            !directEventId
-          ) {
-            warnings.preserveDecision(
-              "unresolved-reference",
-              `${beatSourcePath}.event_id`,
-              "伏笔节拍引用的旧版事件不存在。",
-              beat.event_id
-            );
-          }
-          const eventId = placement?.eventId ?? directEventId ?? null;
-          const directChapterId = ids.resolve(
-            "chapter",
-            beat.chapter_card_id
+      const beats = list(thread.beats).map((rawBeat, beatIndex) => {
+        const beat = record(rawBeat);
+        const beatSourcePath = `long_workspace.json.plot.foreshadowing[${threadIndex}].beats[${beatIndex}]`;
+        const legacyPlacementId = stringValue(beat.placement_id).trim();
+        const placement = placementByLegacyId.get(legacyPlacementId);
+        if (legacyPlacementId && !placement) {
+          warnings.preserveDecision(
+            "unresolved-reference",
+            `${beatSourcePath}.placement_id`,
+            "伏笔节拍引用的旧版叙事落点不存在；将继续尝试独立事件或章卡引用。",
+            beat.placement_id
           );
-          const stageChapterId = currentChapterIdByLegacyStage.get(
-            stringValue(beat.chapter_stage_id).trim()
+        }
+        const placementId = placement?.id ?? null;
+        const directEventId = ids.resolve("event", beat.event_id);
+        if (!placement && stringValue(beat.event_id).trim() && !directEventId) {
+          warnings.preserveDecision(
+            "unresolved-reference",
+            `${beatSourcePath}.event_id`,
+            "伏笔节拍引用的旧版事件不存在。",
+            beat.event_id
           );
-          if (
-            !placement &&
-            !directChapterId &&
-            !stageChapterId &&
-            (stringValue(beat.chapter_card_id).trim() ||
-              stringValue(beat.chapter_stage_id).trim())
-          ) {
-            warnings.preserveDecision(
-              "unresolved-reference",
-              `${beatSourcePath}.chapter_card_id`,
-              "伏笔节拍引用的旧版章卡或章节阶段不存在。",
-              {
-                chapter_card_id: beat.chapter_card_id,
-                chapter_stage_id: beat.chapter_stage_id
-              }
-            );
-          }
-          const chapterCardId =
-            placement?.chapterCardId ??
-            directChapterId ??
-            stageChapterId ??
-            null;
-          let plannedScope = clipped(
-            beat.target_scope,
-            1_000,
+        }
+        const eventId = placement?.eventId ?? directEventId ?? null;
+        const directChapterId = ids.resolve("chapter", beat.chapter_card_id);
+        const stageChapterId = currentChapterIdByLegacyStage.get(
+          stringValue(beat.chapter_stage_id).trim()
+        );
+        if (
+          !placement &&
+          !directChapterId &&
+          !stageChapterId &&
+          (stringValue(beat.chapter_card_id).trim() ||
+            stringValue(beat.chapter_stage_id).trim())
+        ) {
+          warnings.preserveDecision(
+            "unresolved-reference",
+            `${beatSourcePath}.chapter_card_id`,
+            "伏笔节拍引用的旧版章卡或章节阶段不存在。",
+            {
+              chapter_card_id: beat.chapter_card_id,
+              chapter_stage_id: beat.chapter_stage_id
+            }
+          );
+        }
+        const chapterCardId =
+          placement?.chapterCardId ?? directChapterId ?? stageChapterId ?? null;
+        let plannedScope = clipped(
+          beat.target_scope,
+          1_000,
+          warnings,
+          `伏笔节拍 ${beatIndex + 1} 范围`
+        );
+        if (
+          !eventId &&
+          !placementId &&
+          !chapterCardId &&
+          !plannedScope.trim()
+        ) {
+          plannedScope = `旧版未指定范围：${threadTitle}`;
+        }
+        const beatId = ids.allocate(
+          "beat",
+          "beat",
+          beat.id,
+          `foreshadow-${threadIndex + 1}-beat-${beatIndex + 1}`
+        );
+        legacyBeatStatusById.set(beatId, beat.status ?? beat.execution_status);
+        return {
+          id: beatId,
+          type: enumValue(
+            beat.kind ?? beat.type,
+            BEAT_TYPES,
+            "plant",
+            {
+              resolve: "payoff",
+              resolution: "payoff",
+              consequence: "aftermath"
+            },
+            {
+              warnings,
+              sourcePath: `${beatSourcePath}.type`
+            }
+          ) as
+            | "source"
+            | "plant"
+            | "reinforce"
+            | "misdirect"
+            | "partial_reveal"
+            | "reveal"
+            | "payoff"
+            | "aftermath",
+          order: beatIndex + 1,
+          eventId,
+          placementId,
+          chapterCardId,
+          plannedScope,
+          note: clipped(
+            beat.intended_knowledge ?? beat.note,
+            MAX_SHORT_TEXT,
             warnings,
-            `伏笔节拍 ${beatIndex + 1} 范围`
-          );
-          if (
-            !eventId &&
-            !placementId &&
-            !chapterCardId &&
-            !plannedScope.trim()
-          ) {
-            plannedScope = `旧版未指定范围：${threadTitle}`;
-          }
-          const beatId = ids.allocate(
-              "beat",
-              "beat",
-              beat.id,
-              `foreshadow-${threadIndex + 1}-beat-${beatIndex + 1}`
-            );
-          legacyBeatStatusById.set(
-            beatId,
-            beat.status ?? beat.execution_status
-          );
-          return {
-            id: beatId,
-            type: enumValue(
-              beat.kind ?? beat.type,
-              BEAT_TYPES,
-              "plant",
-              {
-                resolve: "payoff",
-                resolution: "payoff",
-                consequence: "aftermath"
-              },
-              {
-                warnings,
-                sourcePath: `${beatSourcePath}.type`
-              }
-            ) as
-              | "source"
-              | "plant"
-              | "reinforce"
-              | "misdirect"
-              | "partial_reveal"
-              | "reveal"
-              | "payoff"
-              | "aftermath",
-            order: beatIndex + 1,
-            eventId,
-            placementId,
-            chapterCardId,
-            plannedScope,
-            note: clipped(
-              beat.intended_knowledge ?? beat.note,
-              MAX_SHORT_TEXT,
-              warnings,
-              `伏笔节拍 ${beatIndex + 1} 说明`
-            ),
-            status: executionStatus(
-              beat.status,
-              warnings,
-              `${beatSourcePath}.status`
-            ),
-            commitId: null
-          };
-        });
+            `伏笔节拍 ${beatIndex + 1} 说明`
+          ),
+          status: executionStatus(
+            beat.status,
+            warnings,
+            `${beatSourcePath}.status`
+          ),
+          commitId: null
+        };
+      });
       const truthEventId = ids.resolve("event", thread.truth_event_id);
       if (stringValue(thread.truth_event_id).trim() && !truthEventId) {
         warnings.preserveDecision(
@@ -1002,26 +955,24 @@ export function buildImportedPlot(
         ) as "planned" | "open" | "progressing" | "resolved" | "abandoned",
         beats
       };
-    }
-  );
+    });
 
-  const legacyCommits: LongWorkspaceIndexSnapshot["ledger"]["commits"] =
-    [];
+  const legacyCommits: LongWorkspaceIndexSnapshot["ledger"]["commits"] = [];
   for (const thread of foreshadowing) {
     if (thread.status !== "abandoned") {
-      thread.status =
-        deriveLongForeshadowingStatusFromCommittedBeats(thread.beats);
+      thread.status = deriveLongForeshadowingStatusFromCommittedBeats(
+        thread.beats
+      );
     }
   }
   if (committedChapterRows.length > 0) {
     const committedIds = new Set(
       committedChapterRows.map(({ chapterCardId }) => chapterCardId)
     );
-    const prefixIsContiguous = chapterCards.every(
-      (chapter, index) =>
-        index < committedChapterRows.length
-          ? committedIds.has(chapter.id)
-          : !committedIds.has(chapter.id)
+    const prefixIsContiguous = chapterCards.every((chapter, index) =>
+      index < committedChapterRows.length
+        ? committedIds.has(chapter.id)
+        : !committedIds.has(chapter.id)
     );
     if (!prefixIsContiguous) {
       throw new Error(
@@ -1073,15 +1024,13 @@ export function buildImportedPlot(
       }
 
       const placements = narrativePlacements.filter(
-        ({ chapterCardId }) =>
-          chapterCardId === committedRow.chapterCardId
+        ({ chapterCardId }) => chapterCardId === committedRow.chapterCardId
       );
       const placementChanges = placements.map((placement) => {
         const raw = placementRawById.get(placement.id);
         const decision =
-          legacyExecutionDecision(
-            raw?.execution_status ?? raw?.status
-          ) ?? "missed";
+          legacyExecutionDecision(raw?.execution_status ?? raw?.status) ??
+          "missed";
         placement.status = decision;
         placement.commitId = commitId;
         return {
@@ -1142,9 +1091,7 @@ export function buildImportedPlot(
           const after =
             before === "abandoned"
               ? "abandoned"
-              : deriveLongForeshadowingStatusFromCommittedBeats(
-                  thread.beats
-                );
+              : deriveLongForeshadowingStatusFromCommittedBeats(thread.beats);
           thread.status = after;
           return {
             foreshadowingId: thread.id,
@@ -1187,8 +1134,7 @@ export function buildImportedPlot(
         "json"
       );
       const chapterFile = chapterFiles.find(
-        ({ chapterCardId }) =>
-          chapterCardId === committedRow.chapterCardId
+        ({ chapterCardId }) => chapterCardId === committedRow.chapterCardId
       )!;
       chapterFile.commitId = commitId;
       legacyCommits.push({

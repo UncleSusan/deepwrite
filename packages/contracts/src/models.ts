@@ -25,7 +25,10 @@ export const ReasoningLevelSchema = z
   });
 export type ReasoningLevel = z.infer<typeof ReasoningLevelSchema>;
 
-export const ThinkingLevelSchema = z.union([z.literal("off"), ReasoningLevelSchema]);
+export const ThinkingLevelSchema = z.union([
+  z.literal("off"),
+  ReasoningLevelSchema
+]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
 export const ThinkingLevelOptionsSchema = z
@@ -74,90 +77,109 @@ export const ModelApiSchema = z.enum([
 ]);
 export type ModelApi = z.infer<typeof ModelApiSchema>;
 
+export const ToolSchemaProfileSchema = z.enum(["native", "portable"]);
+export type ToolSchemaProfile = z.infer<typeof ToolSchemaProfileSchema>;
+
 export const ModelManagedBySchema = z.enum([
   "deepwrite-free",
   "deepwrite-official"
 ]);
 export type ModelManagedBy = z.infer<typeof ModelManagedBySchema>;
 
-const ModelIdentitySchema = z.object({
-  id: z.string().trim().min(1).max(120),
-  label: z.string().trim().min(1).max(120),
-  provider: z.string().trim().min(1).max(120),
-  modelId: z.string().trim().min(1).max(240),
-  /** Optional provider-side routing id when it differs from the public model id. */
-  requestModelId: z.string().trim().min(1).max(240).optional(),
-  /** Whether an OpenAI-compatible endpoint accepts the newer developer message role. */
-  supportsDeveloperRole: z.boolean().optional(),
-  api: ModelApiSchema,
-  baseUrl: z.union([z.literal(""), z.url().max(2_000)]),
-  reasoning: z.boolean(),
-  defaultThinkingLevel: ThinkingLevelSchema,
-  thinkingLevelOptions: ThinkingLevelOptionsSchema,
-  temperatureOptions: TemperatureOptionsSchema,
-  managedBy: ModelManagedBySchema.optional(),
-  /** Remote official-catalog availability: 0 = available, 1 = unavailable. */
-  status: z.union([z.literal(0), z.literal(1)]).optional(),
-  /** Current billing multiplier (for example 0.65 means 6.5折). */
-  discount: z.number().finite().positive().max(1).optional(),
-  /** Official input price in CNY per million tokens. */
-  input: z.number().finite().nonnegative().optional(),
-  /** Official output price in CNY per million tokens. */
-  output: z.number().finite().nonnegative().optional(),
-  /** Official cache price in CNY per million tokens. */
-  cache: z.number().finite().nonnegative().optional()
-}).superRefine((value, context) => {
-  if (!value.reasoning && value.defaultThinkingLevel !== "off") {
-    context.addIssue({
-      code: "custom",
-      path: ["defaultThinkingLevel"],
-      message: "A model without reasoning support must default thinking to off."
-    });
-  }
-  if (
-    value.reasoning &&
-    !value.thinkingLevelOptions.includes(value.defaultThinkingLevel as ReasoningLevel)
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["defaultThinkingLevel"],
-      message: "Default thinking level must be one of the configured options."
-    });
-  }
-});
+const ModelIdentitySchema = z
+  .object({
+    id: z.string().trim().min(1).max(120),
+    label: z.string().trim().min(1).max(120),
+    provider: z.string().trim().min(1).max(120),
+    modelId: z.string().trim().min(1).max(240),
+    /** Optional provider-side routing id when it differs from the public model id. */
+    requestModelId: z.string().trim().min(1).max(240).optional(),
+    /** Whether an OpenAI-compatible endpoint accepts the newer developer message role. */
+    supportsDeveloperRole: z.boolean().optional(),
+    /** Optional override for provider-facing tool schema complexity. */
+    toolSchemaProfile: ToolSchemaProfileSchema.optional(),
+    api: ModelApiSchema,
+    baseUrl: z.union([z.literal(""), z.url().max(2_000)]),
+    reasoning: z.boolean(),
+    defaultThinkingLevel: ThinkingLevelSchema,
+    thinkingLevelOptions: ThinkingLevelOptionsSchema,
+    temperatureOptions: TemperatureOptionsSchema,
+    managedBy: ModelManagedBySchema.optional(),
+    /** Remote official-catalog availability: 0 = available, 1 = unavailable. */
+    status: z.union([z.literal(0), z.literal(1)]).optional(),
+    /** Current billing multiplier (for example 0.65 means 6.5折). */
+    discount: z.number().finite().positive().max(1).optional(),
+    /** Official input price in CNY per million tokens. */
+    input: z.number().finite().nonnegative().optional(),
+    /** Official output price in CNY per million tokens. */
+    output: z.number().finite().nonnegative().optional(),
+    /** Official cache price in CNY per million tokens. */
+    cache: z.number().finite().nonnegative().optional()
+  })
+  .superRefine((value, context) => {
+    if (!value.reasoning && value.defaultThinkingLevel !== "off") {
+      context.addIssue({
+        code: "custom",
+        path: ["defaultThinkingLevel"],
+        message:
+          "A model without reasoning support must default thinking to off."
+      });
+    }
+    if (
+      value.reasoning &&
+      !value.thinkingLevelOptions.includes(
+        value.defaultThinkingLevel as ReasoningLevel
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["defaultThinkingLevel"],
+        message: "Default thinking level must be one of the configured options."
+      });
+    }
+  });
 
-export const ModelConfigSchema = ModelIdentitySchema.and(z.object({
-  hasApiKey: z.boolean()
-}));
+export const ModelConfigSchema = ModelIdentitySchema.and(
+  z.object({
+    hasApiKey: z.boolean()
+  })
+);
 export type ModelConfig = z.infer<typeof ModelConfigSchema>;
 
-export const ModelConfigInputSchema = ModelIdentitySchema.and(z.object({
-  apiKey: z.string().trim().max(16_000).optional(),
-  clearApiKey: z.boolean().optional()
-}));
+export const ModelConfigInputSchema = ModelIdentitySchema.and(
+  z.object({
+    apiKey: z.string().trim().max(16_000).optional(),
+    clearApiKey: z.boolean().optional()
+  })
+);
 export type ModelConfigInput = z.infer<typeof ModelConfigInputSchema>;
 
-export const ModelSettingsSchema = z.object({
-  models: z.array(ModelConfigSchema).max(100),
-  defaultModelId: z.string().max(120),
-  deepwriteFreeModels: z.array(ModelConfigSchema).max(50).optional(),
-  deepwriteFreeDefaultModelId: z.string().max(120).optional(),
-  deepwriteFreeMessage: z.string().max(500).optional(),
-  deepwriteOfficialModels: z.array(ModelConfigSchema).max(50).optional(),
-  deepwriteOfficialEnabledModelIds: z.array(z.string().max(120)).max(50).optional(),
-  deepwriteOfficialTokenConfigured: z.boolean().optional()
-}).superRefine((value, context) => {
-  if (
-    value.defaultModelId &&
-    !value.models.some((model) => model.id === value.defaultModelId)
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["defaultModelId"],
-      message: "Default model must reference an existing model."
-    });
-  }
-});
+export const ModelSettingsSchema = z
+  .object({
+    models: z.array(ModelConfigSchema).max(100),
+    defaultModelId: z.string().max(120),
+    deepwriteFreeModels: z.array(ModelConfigSchema).max(50).optional(),
+    deepwriteFreeDefaultModelId: z.string().max(120).optional(),
+    deepwriteFreeMessage: z.string().max(500).optional(),
+    deepwriteOfficialModels: z.array(ModelConfigSchema).max(50).optional(),
+    deepwriteOfficialEnabledModelIds: z
+      .array(z.string().max(120))
+      .max(50)
+      .optional(),
+    deepwriteOfficialTokenConfigured: z.boolean().optional()
+  })
+  .superRefine((value, context) => {
+    if (
+      value.defaultModelId &&
+      !value.models.some((model) => model.id === value.defaultModelId)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["defaultModelId"],
+        message: "Default model must reference an existing model."
+      });
+    }
+  });
 export type ModelSettings = z.infer<typeof ModelSettingsSchema>;
 
 export const OfficialModelBalanceSchema = z.object({
@@ -179,35 +201,41 @@ export const OfficialModelBalanceSchema = z.object({
 });
 export type OfficialModelBalance = z.infer<typeof OfficialModelBalanceSchema>;
 
-export const ModelSettingsInputSchema = z.object({
-  models: z.array(ModelConfigInputSchema).max(100),
-  defaultModelId: z.string().max(120)
-}).superRefine((value, context) => {
-  const ids = new Set<string>();
-  value.models.forEach((model, index) => {
-    if (ids.has(model.id)) {
+export const ModelSettingsInputSchema = z
+  .object({
+    models: z.array(ModelConfigInputSchema).max(100),
+    defaultModelId: z.string().max(120)
+  })
+  .superRefine((value, context) => {
+    const ids = new Set<string>();
+    value.models.forEach((model, index) => {
+      if (ids.has(model.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["models", index, "id"],
+          message: "Model ids must be unique."
+        });
+      }
+      ids.add(model.id);
+    });
+    if (value.defaultModelId && !ids.has(value.defaultModelId)) {
       context.addIssue({
         code: "custom",
-        path: ["models", index, "id"],
-        message: "Model ids must be unique."
+        path: ["defaultModelId"],
+        message: "Default model must reference an existing model."
       });
     }
-    ids.add(model.id);
   });
-  if (value.defaultModelId && !ids.has(value.defaultModelId)) {
-    context.addIssue({
-      code: "custom",
-      path: ["defaultModelId"],
-      message: "Default model must reference an existing model."
-    });
-  }
-});
 export type ModelSettingsInput = z.infer<typeof ModelSettingsInputSchema>;
 
-export const AgentProviderRuntimeConfigSchema = ModelIdentitySchema.and(z.object({
-  apiKey: z.string().max(16_000)
-}));
-export type AgentProviderRuntimeConfig = z.infer<typeof AgentProviderRuntimeConfigSchema>;
+export const AgentProviderRuntimeConfigSchema = ModelIdentitySchema.and(
+  z.object({
+    apiKey: z.string().max(16_000)
+  })
+);
+export type AgentProviderRuntimeConfig = z.infer<
+  typeof AgentProviderRuntimeConfigSchema
+>;
 
 /**
  * Kept local to the model-test contract to avoid a `models -> session -> models`
@@ -232,47 +260,56 @@ export const ModelConnectionTestResultSchema = z.object({
   /** Present when the provider returned token accounting for this test call. */
   usage: ModelConnectionTestUsageSchema.optional()
 });
-export type ModelConnectionTestResult = z.infer<typeof ModelConnectionTestResultSchema>;
+export type ModelConnectionTestResult = z.infer<
+  typeof ModelConnectionTestResultSchema
+>;
 
 export const ModelsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("models.list"),
   payload: z.object({})
 });
 
-export const ModelsRefreshFreeCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("models.refreshFree"),
-  payload: z.object({})
-});
+export const ModelsRefreshFreeCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("models.refreshFree"),
+    payload: z.object({})
+  }
+);
 
-export const ModelsRefreshOfficialCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("models.refreshOfficial"),
-  payload: z.object({})
-});
+export const ModelsRefreshOfficialCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("models.refreshOfficial"),
+    payload: z.object({})
+  });
 
-export const ModelsQueryOfficialBalanceCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("models.queryOfficialBalance"),
-  payload: z.object({})
-});
+export const ModelsQueryOfficialBalanceCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("models.queryOfficialBalance"),
+    payload: z.object({})
+  });
 
-export const ModelsSaveOfficialTokenCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("models.saveOfficialToken"),
-  payload: z.object({
-    apiKey: z.string().trim().min(1).max(16_000)
-  })
-});
+export const ModelsSaveOfficialTokenCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("models.saveOfficialToken"),
+    payload: z.object({
+      apiKey: z.string().trim().min(1).max(16_000)
+    })
+  });
 
-export const ModelsClearOfficialTokenCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("models.clearOfficialToken"),
-  payload: z.object({})
-});
+export const ModelsClearOfficialTokenCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("models.clearOfficialToken"),
+    payload: z.object({})
+  });
 
-export const ModelsSetOfficialModelEnabledCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("models.setOfficialModelEnabled"),
-  payload: z.object({
-    modelId: z.string().trim().min(1).max(120),
-    enabled: z.boolean()
-  })
-});
+export const ModelsSetOfficialModelEnabledCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("models.setOfficialModelEnabled"),
+    payload: z.object({
+      modelId: z.string().trim().min(1).max(120),
+      enabled: z.boolean()
+    })
+  });
 
 export const ModelsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("models.save"),

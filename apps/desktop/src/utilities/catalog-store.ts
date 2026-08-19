@@ -138,8 +138,7 @@ function draftCharacterStateTitle(sectionTitle: string): string {
 function isReservedDraftDocumentId(documentId: string): boolean {
   return (
     documentId.startsWith("draft-section:") &&
-    (documentId.endsWith(":body") ||
-      documentId.endsWith(":character-state"))
+    (documentId.endsWith(":body") || documentId.endsWith(":character-state"))
   );
 }
 
@@ -165,7 +164,9 @@ function normalizeTimestamp(value: unknown, fallback: string): string {
     return fallback;
   }
   const timestamp = new Date(value);
-  return Number.isFinite(timestamp.getTime()) ? timestamp.toISOString() : fallback;
+  return Number.isFinite(timestamp.getTime())
+    ? timestamp.toISOString()
+    : fallback;
 }
 
 function normalizeLibraryType(value: unknown): LibraryType {
@@ -195,7 +196,12 @@ function fallbackMaterialEntryTitle(
 ): string {
   const firstLine = body
     .split(/\r?\n/u)
-    .map((line) => line.trim().replace(/^#+\s*/u, "").trim())
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^#+\s*/u, "")
+        .trim()
+    )
     .find(Boolean);
   if (firstLine) {
     return firstLine.slice(0, 40);
@@ -222,11 +228,13 @@ function normalizeMaterialEntry(
 ): MaterialEntry | undefined {
   const item = asRecord(raw);
   const body = typeof raw === "string" ? raw : asString(item.body);
-  const explicitTitle = typeof raw === "string" ? "" : asString(item.title).trim();
+  const explicitTitle =
+    typeof raw === "string" ? "" : asString(item.title).trim();
   if (!body.trim() && !explicitTitle && !asString(item.id).trim()) {
     return undefined;
   }
-  const title = explicitTitle || fallbackMaterialEntryTitle(stageId, body, index);
+  const title =
+    explicitTitle || fallbackMaterialEntryTitle(stageId, body, index);
   const createdAt = normalizeTimestamp(item.created_at, fallbackTimestamp);
   const updatedAt = normalizeTimestamp(item.updated_at, createdAt);
   return {
@@ -293,7 +301,8 @@ export function normalizeLegacyMaterialLibrary(
   if (!isRecord(raw)) {
     return undefined;
   }
-  const id = asString(raw.id).trim() || stableLegacyId("material", index, raw.title);
+  const id =
+    asString(raw.id).trim() || stableLegacyId("material", index, raw.title);
   const createdAt = normalizeTimestamp(raw.created_at, importedAt);
   const updatedAt = normalizeTimestamp(raw.updated_at, createdAt);
   const rawKind = asString(raw.material_kind).trim();
@@ -324,7 +333,8 @@ function normalizeSkillEntry(
 ): SkillEntry | undefined {
   const item = asRecord(raw);
   const body = typeof raw === "string" ? raw : asString(item.body);
-  const explicitTitle = typeof raw === "string" ? "" : asString(item.title).trim();
+  const explicitTitle =
+    typeof raw === "string" ? "" : asString(item.title).trim();
   if (!body.trim() && !explicitTitle && !asString(item.id).trim()) {
     return undefined;
   }
@@ -374,7 +384,9 @@ function normalizeSkillEntries(
   for (const targetStageId of SKILL_STAGE_IDS) {
     const normalizedTarget = SkillStageIdSchema.parse(targetStageId);
     for (const sourceStageId of SKILL_STAGE_SOURCES[normalizedTarget]) {
-      for (const [index, value] of legacyEntryValues(stages[sourceStageId]).entries()) {
+      for (const [index, value] of legacyEntryValues(
+        stages[sourceStageId]
+      ).entries()) {
         const entry = normalizeSkillEntry(
           value,
           skillId,
@@ -432,7 +444,8 @@ export function normalizeLegacySkillLibrary(
   if (!isRecord(raw)) {
     return undefined;
   }
-  const id = asString(raw.id).trim() || stableLegacyId("skill", index, raw.title);
+  const id =
+    asString(raw.id).trim() || stableLegacyId("skill", index, raw.title);
   const createdAt = normalizeTimestamp(raw.created_at, importedAt);
   const updatedAt = normalizeTimestamp(raw.updated_at, createdAt);
   const rawKind = asString(raw.skill_kind).trim();
@@ -506,10 +519,9 @@ function libraryContentFingerprint(
     .digest("hex");
 }
 
-function mergeEntries<T extends { id: string; stageId: string; title: string; body: string }>(
-  target: T[],
-  incoming: readonly T[]
-): void {
+function mergeEntries<
+  T extends { id: string; stageId: string; title: string; body: string }
+>(target: T[], incoming: readonly T[]): void {
   const ids = new Set(target.map(({ id }) => id));
   const contentKeys = new Set(target.map(entryContentKey));
   for (const entry of incoming) {
@@ -555,20 +567,22 @@ function mergeMaterialLibraries(
         incoming.entries
       );
       if (!selected && fingerprint) {
-        selected = byContent.get(fingerprint)?.find(
-          (candidate) =>
-            candidate.materialType === incoming.materialType &&
-            libraryContentFingerprint(
-              candidate.materialType,
-              candidate.entries
-            ) === fingerprint &&
-            (candidate.id.startsWith("recovered-material-") ||
-              incoming.id.startsWith("recovered-material-")) &&
-            recoveryTitlesMatch(candidate.title, incoming.title) &&
-            (candidate.materialKind === incoming.materialKind ||
-              candidate.materialKind === "mixed" ||
-              incoming.materialKind === "mixed")
-        );
+        selected = byContent
+          .get(fingerprint)
+          ?.find(
+            (candidate) =>
+              candidate.materialType === incoming.materialType &&
+              libraryContentFingerprint(
+                candidate.materialType,
+                candidate.entries
+              ) === fingerprint &&
+              (candidate.id.startsWith("recovered-material-") ||
+                incoming.id.startsWith("recovered-material-")) &&
+              recoveryTitlesMatch(candidate.title, incoming.title) &&
+              (candidate.materialKind === incoming.materialKind ||
+                candidate.materialKind === "mixed" ||
+                incoming.materialKind === "mixed")
+          );
       }
 
       if (selected) {
@@ -618,19 +632,26 @@ function mergeSkillLibraries(
     aliasesByRoot.set(source.root, aliases);
     for (const incoming of source.skills) {
       let selected = byId.get(incoming.id);
-      const fingerprint = libraryContentFingerprint(incoming.skillType, incoming.entries);
+      const fingerprint = libraryContentFingerprint(
+        incoming.skillType,
+        incoming.entries
+      );
       if (!selected && fingerprint) {
-        selected = byContent.get(fingerprint)?.find(
-          (candidate) =>
-            candidate.skillType === incoming.skillType &&
-            libraryContentFingerprint(candidate.skillType, candidate.entries) ===
-              fingerprint &&
-            (candidate.id.startsWith("recovered-skill-") ||
-              incoming.id.startsWith("recovered-skill-")) &&
-            recoveryTitlesMatch(candidate.title, incoming.title) &&
-            candidate.skillKind === incoming.skillKind &&
-            candidate.isBuiltin === incoming.isBuiltin
-        );
+        selected = byContent
+          .get(fingerprint)
+          ?.find(
+            (candidate) =>
+              candidate.skillType === incoming.skillType &&
+              libraryContentFingerprint(
+                candidate.skillType,
+                candidate.entries
+              ) === fingerprint &&
+              (candidate.id.startsWith("recovered-skill-") ||
+                incoming.id.startsWith("recovered-skill-")) &&
+              recoveryTitlesMatch(candidate.title, incoming.title) &&
+              candidate.skillKind === incoming.skillKind &&
+              candidate.isBuiltin === incoming.isBuiltin
+          );
       }
 
       if (selected) {
@@ -885,12 +906,13 @@ async function loadLegacySource(
     parseJson(preferencesText, join(resolvedRoot, LEGACY_PREFERENCES_FILE))
   );
   const materials = uniqueById(
-    (Array.isArray(materialsPayload.materials) ? materialsPayload.materials : []).flatMap(
-      (value, index) => {
-        const material = normalizeLegacyMaterialLibrary(value, index, importedAt);
-        return material ? [material] : [];
-      }
-    )
+    (Array.isArray(materialsPayload.materials)
+      ? materialsPayload.materials
+      : []
+    ).flatMap((value, index) => {
+      const material = normalizeLegacyMaterialLibrary(value, index, importedAt);
+      return material ? [material] : [];
+    })
   );
   const skills = uniqueById(
     (Array.isArray(skillsPayload.skills) ? skillsPayload.skills : []).flatMap(
@@ -1033,7 +1055,9 @@ async function importMissingLegacySources(
     )
   ];
   const covered = new Set(coveredRoots);
-  const missingRoots = normalizedConfiguredRoots.filter((root) => !covered.has(root));
+  const missingRoots = normalizedConfiguredRoots.filter(
+    (root) => !covered.has(root)
+  );
   if (missingRoots.length === 0) {
     return undefined;
   }
@@ -1061,9 +1085,14 @@ async function importMissingLegacySources(
     mergedMaterials.aliasesByRoot
   );
   const skillGroups = mergeSkillGroups(sources, mergedSkills.aliasesByRoot);
-  const newlyCoveredRoots = missingImport.sourceRoots ?? [missingImport.sourceRoot];
+  const newlyCoveredRoots = missingImport.sourceRoots ?? [
+    missingImport.sourceRoot
+  ];
   const sourceRoots = [
-    ...new Set([...coveredRoots, ...newlyCoveredRoots.map((root) => resolve(root))])
+    ...new Set([
+      ...coveredRoots,
+      ...newlyCoveredRoots.map((root) => resolve(root))
+    ])
   ];
   const fingerprint = createHash("sha256")
     .update(existingImport.fingerprint)
@@ -1147,7 +1176,9 @@ function normalizeLinkedSkillIds(
 }
 
 function assertCatalogReferences(snapshot: CatalogSnapshot): void {
-  const materials = new Map(snapshot.materials.map((material) => [material.id, material]));
+  const materials = new Map(
+    snapshot.materials.map((material) => [material.id, material])
+  );
   const skills = new Map(snapshot.skills.map((skill) => [skill.id, skill]));
 
   for (const book of snapshot.books) {
@@ -1155,10 +1186,17 @@ function assertCatalogReferences(snapshot: CatalogSnapshot): void {
       for (const materialId of book.linkedMaterialIdsByKind[kind]) {
         const material = materials.get(materialId);
         if (!material) {
-          throw new Error(`书籍「${book.title}」关联了不存在的素材库：${materialId}`);
+          throw new Error(
+            `书籍「${book.title}」关联了不存在的素材库：${materialId}`
+          );
         }
-        if (material.materialKind !== "mixed" && material.materialKind !== kind) {
-          throw new Error(`素材库「${material.title}」不能关联到 ${kind} 分类。`);
+        if (
+          material.materialKind !== "mixed" &&
+          material.materialKind !== kind
+        ) {
+          throw new Error(
+            `素材库「${material.title}」不能关联到 ${kind} 分类。`
+          );
         }
       }
     }
@@ -1166,7 +1204,9 @@ function assertCatalogReferences(snapshot: CatalogSnapshot): void {
       for (const skillId of book.linkedSkillIdsByKind[kind]) {
         const skill = skills.get(skillId);
         if (!skill) {
-          throw new Error(`书籍「${book.title}」绑定了不存在的技能库：${skillId}`);
+          throw new Error(
+            `书籍「${book.title}」绑定了不存在的技能库：${skillId}`
+          );
         }
         if (skill.skillKind !== kind) {
           throw new Error(`技能库「${skill.title}」不能绑定到 ${kind} 分类。`);
@@ -1221,7 +1261,8 @@ function createDefaultDocuments(
 
 function mergeLegacyCreativePlotStages(
   ...groups: ReadonlyArray<
-    ReadonlyArray<{ id: string; title: string; description: string }> | undefined
+    | ReadonlyArray<{ id: string; title: string; description: string }>
+    | undefined
   >
 ): NonNullable<CatalogSnapshot["creativePlotStages"]> {
   const definitions = new Map(
@@ -1356,7 +1397,9 @@ export class CatalogStore {
   async updateBook(rawInput: UpdateBookInput): Promise<Book> {
     const input = UpdateBookInputSchema.parse(rawInput);
     const next = await this.commit((draft) => {
-      const book = draft.books.find((candidate) => candidate.id === input.bookId);
+      const book = draft.books.find(
+        (candidate) => candidate.id === input.bookId
+      );
       if (!book) {
         throw new Error("书籍不存在或已被删除。");
       }
@@ -1389,12 +1432,12 @@ export class CatalogStore {
     );
   }
 
-  async mutatePlotStructure(
-    rawInput: MutatePlotStructureInput
-  ): Promise<Book> {
+  async mutatePlotStructure(rawInput: MutatePlotStructureInput): Promise<Book> {
     const input = MutatePlotStructureInputSchema.parse(rawInput);
     const next = await this.commit((draft) => {
-      const book = draft.books.find((candidate) => candidate.id === input.bookId);
+      const book = draft.books.find(
+        (candidate) => candidate.id === input.bookId
+      );
       if (!book) throw new Error("书籍不存在或已被删除。");
       const now = this.now();
       const mutation = input.mutation;
@@ -1555,7 +1598,9 @@ export class CatalogStore {
       const book = draft.books.find(({ id }) => id === input.bookId);
       if (!book) throw new Error("书籍不存在或已被删除。");
       const now = this.now();
-      const overview = book.documents.find(({ id }) => id === "character_design");
+      const overview = book.documents.find(
+        ({ id }) => id === "character_design"
+      );
       if (!overview) throw new Error("人物结构缺少人物概览文件。");
       const mutation = input.mutation;
       if (mutation.type === "setFormat") {
@@ -1589,9 +1634,13 @@ export class CatalogStore {
           )) {
             const document = book.documents.find(({ id }) => id === item.id);
             if (!document) throw new Error(`人物条目 ${item.id} 缺少文件。`);
-            sections.push(`# ${item.title}\n\n${document.content.trim()}`.trim());
+            sections.push(
+              `# ${item.title}\n\n${document.content.trim()}`.trim()
+            );
           }
-          const ids = new Set(book.characterStructure.items.map(({ id }) => id));
+          const ids = new Set(
+            book.characterStructure.items.map(({ id }) => id)
+          );
           book.documents = book.documents.filter(({ id }) => !ids.has(id));
           overview.content = sections.join("\n\n").trim();
           overview.title = "人物设计";
@@ -1631,7 +1680,9 @@ export class CatalogStore {
           if (index < 0) throw new Error("人物条目已删除或不存在。");
           if (mutation.type === "updateItem") {
             items[index] = { ...items[index]!, title: mutation.title };
-            const document = book.documents.find(({ id }) => id === mutation.itemId);
+            const document = book.documents.find(
+              ({ id }) => id === mutation.itemId
+            );
             if (!document) throw new Error("人物条目文件不存在。");
             document.title = mutation.title;
             document.updatedAt = now;
@@ -1643,7 +1694,9 @@ export class CatalogStore {
             [items[index], items[target]] = [items[target]!, items[index]!];
           } else {
             items.splice(index, 1);
-            book.documents = book.documents.filter(({ id }) => id !== mutation.itemId);
+            book.documents = book.documents.filter(
+              ({ id }) => id !== mutation.itemId
+            );
           }
         }
         book.characterStructure = {
@@ -1676,7 +1729,9 @@ export class CatalogStore {
   async saveDocument(rawInput: SaveDocumentInput): Promise<CatalogDocument> {
     const input = SaveDocumentInputSchema.parse(rawInput);
     const next = await this.commit((draft) => {
-      const book = draft.books.find((candidate) => candidate.id === input.bookId);
+      const book = draft.books.find(
+        (candidate) => candidate.id === input.bookId
+      );
       if (!book) {
         throw new Error("书籍不存在或已被删除。");
       }
@@ -1706,7 +1761,9 @@ export class CatalogStore {
           section.updatedAt = now;
           book.draft.updatedAt = now;
         } else if (section?.characterState.id === input.documentId) {
-          section.characterState.title = draftCharacterStateTitle(section.title);
+          section.characterState.title = draftCharacterStateTitle(
+            section.title
+          );
           section.characterState.content = input.content;
           section.characterState.updatedAt = now;
           section.updatedAt = now;

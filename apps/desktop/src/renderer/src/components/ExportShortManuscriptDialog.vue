@@ -24,9 +24,24 @@ const formats: ReadonlyArray<{
   description: string;
   icon: IconName;
 }> = [
-  { id: "docx", label: "DOCX 文档", description: "适合继续排版、编辑和打印", icon: "file" },
-  { id: "txt", label: "TXT 纯文本", description: "通用兼容，适合阅读和备份", icon: "file" },
-  { id: "epub", label: "EPUB 电子书", description: "适合手机和电子书阅读器", icon: "book" }
+  {
+    id: "docx",
+    label: "DOCX 文档",
+    description: "适合继续排版、编辑和打印",
+    icon: "file"
+  },
+  {
+    id: "txt",
+    label: "TXT 纯文本",
+    description: "通用兼容，适合阅读和备份",
+    icon: "file"
+  },
+  {
+    id: "epub",
+    label: "EPUB 电子书",
+    description: "适合手机和电子书阅读器",
+    icon: "book"
+  }
 ];
 
 watch(
@@ -64,7 +79,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <header>
           <div>
             <span class="dialog-eyebrow">{{ bookTitle }}</span>
-            <h2 id="export-manuscript-title">导出{{ workspaceType === "script" ? "剧集正文" : "正文" }}</h2>
+            <h2 id="export-manuscript-title">
+              导出{{ workspaceType === "script" ? "剧集正文" : "正文" }}
+            </h2>
           </div>
           <button
             class="dialog-close"
@@ -72,11 +89,20 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             aria-label="关闭"
             :disabled="submitting"
             @click="requestClose"
-          >×</button>
+          >
+            ×
+          </button>
         </header>
 
-        <form class="dialog-content export-manuscript-content" @submit.prevent="submit">
-          <div class="export-manuscript-notice" role="note" aria-label="导出范围提醒">
+        <form
+          class="dialog-content export-manuscript-content"
+          @submit.prevent="submit"
+        >
+          <div
+            class="export-manuscript-notice"
+            role="note"
+            aria-label="导出范围提醒"
+          >
             <span class="export-manuscript-notice-icon">
               <AppIcon name="download" :size="18" />
             </span>
@@ -114,7 +140,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   <strong>{{ format.label }}</strong>
                   <small>{{ format.description }}</small>
                 </span>
-                <span class="export-manuscript-format-check" aria-hidden="true">✓</span>
+                <span class="export-manuscript-format-check" aria-hidden="true"
+                  >✓</span
+                >
               </label>
             </div>
           </fieldset>
@@ -125,7 +153,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               type="button"
               :disabled="submitting"
               @click="requestClose"
-            >取消</button>
+            >
+              取消
+            </button>
             <button
               class="dialog-primary-button"
               type="submit"
@@ -159,7 +189,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
   padding: 13px 14px;
   border: 1px solid color-mix(in srgb, var(--accent, #7c5c3e) 24%, transparent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--accent, #7c5c3e) 8%, var(--surface-raised, #fff));
+  background: color-mix(
+    in srgb,
+    var(--accent, #7c5c3e) 8%,
+    var(--surface-raised, #fff)
+  );
 }
 
 .export-manuscript-notice-icon {
@@ -219,18 +253,30 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
   border-radius: 11px;
   background: var(--surface-raised, #fff);
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .export-manuscript-format-card:hover {
-  border-color: color-mix(in srgb, var(--accent, #7c5c3e) 45%, var(--theme-line, #dededb));
+  border-color: color-mix(
+    in srgb,
+    var(--accent, #7c5c3e) 45%,
+    var(--theme-line, #dededb)
+  );
   background: var(--surface-hover, #f7f7f5);
 }
 
 .export-manuscript-format-card.is-selected {
   border-color: var(--accent, #7c5c3e);
-  background: color-mix(in srgb, var(--accent, #7c5c3e) 7%, var(--surface-raised, #fff));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #7c5c3e) 18%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--accent, #7c5c3e) 7%,
+    var(--surface-raised, #fff)
+  );
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--accent, #7c5c3e) 18%, transparent);
 }
 
 .export-manuscript-format-card input {

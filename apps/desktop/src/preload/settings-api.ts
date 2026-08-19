@@ -1,24 +1,59 @@
 import {
-  AppearanceSettingsSchema, AppearanceSettingsSnapshotSchema, ExportLongManuscriptInputSchema,
-  ExportLongManuscriptResultSchema, ExportShortManuscriptInputSchema, ExportShortManuscriptResultSchema,
-  GeneralSettingsSchema, GeneralSettingsSnapshotSchema, LearningImitationSettingsInputSchema,
-  LearningImitationSettingsSchema, LearningImitationStageIdSchema, LibraryAgentDomainSchema,
-  LibraryAgentSettingsInputSchema, LibraryAgentSettingsSchema, LongAgentIdSchema,
-  LongAgentSettingsInputSchema, LongAgentSettingsSchema, LongAgentTeamSettingsInputSchema,
-  LongAgentTeamSettingsSchema, ScriptWorkspaceAgentIdSchema, ShortWorkspaceAgentIdSchema,
-  WorkspaceAgentSettingsInputSchema, WorkspaceAgentSettingsSchema, WorkspaceAgentTeamSettingsInputSchema,
-  WorkspaceAgentTeamSettingsSchema, WorkspaceDirectorySettingsSchema, WorkspaceTypeSchema,
+  AppearanceSettingsSchema,
+  AppearanceSettingsSnapshotSchema,
+  ExportLongManuscriptInputSchema,
+  ExportLongManuscriptResultSchema,
+  ExportShortManuscriptInputSchema,
+  ExportShortManuscriptResultSchema,
+  GeneralSettingsSchema,
+  GeneralSettingsSnapshotSchema,
+  LearningImitationSettingsInputSchema,
+  LearningImitationSettingsSchema,
+  LearningImitationStageIdSchema,
+  LibraryAgentDomainSchema,
+  LibraryAgentSettingsInputSchema,
+  LibraryAgentSettingsSchema,
+  LongAgentIdSchema,
+  LongAgentSettingsInputSchema,
+  LongAgentSettingsSchema,
+  LongAgentTeamSettingsInputSchema,
+  LongAgentTeamSettingsSchema,
+  ScriptWorkspaceAgentIdSchema,
+  ShortWorkspaceAgentIdSchema,
+  WorkspaceAgentSettingsInputSchema,
+  WorkspaceAgentSettingsSchema,
+  WorkspaceAgentTeamSettingsInputSchema,
+  WorkspaceAgentTeamSettingsSchema,
+  WorkspaceDirectorySettingsSchema,
+  WorkspaceTypeSchema,
   createEnvelope,
-  type AppearanceSettings, type AppearanceSettingsSnapshot,
-  type ExportLongManuscriptInput, type ExportLongManuscriptResult, type ExportShortManuscriptInput,
-  type ExportShortManuscriptResult, type GeneralSettings, type GeneralSettingsSnapshot,
-  type LearningImitationSettings, type LearningImitationSettingsInput, type LearningImitationStageId,
-  type LibraryAgentDomain, type LibraryAgentSettings, type LibraryAgentSettingsInput,
-  type LongAgentId, type LongAgentSettings, type LongAgentSettingsInput,
-  type LongAgentTeamSettings, type LongAgentTeamSettingsInput, type ScriptWorkspaceAgentId,
-  type ShortWorkspaceAgentId, type WorkspaceAgentSettings, type WorkspaceAgentSettingsInput,
-  type WorkspaceAgentTeamSettings, type WorkspaceAgentTeamSettingsInput, type WorkspaceDirectorySettings,
-  type WorkspaceType,
+  type AppearanceSettings,
+  type AppearanceSettingsSnapshot,
+  type ExportLongManuscriptInput,
+  type ExportLongManuscriptResult,
+  type ExportShortManuscriptInput,
+  type ExportShortManuscriptResult,
+  type GeneralSettings,
+  type GeneralSettingsSnapshot,
+  type LearningImitationSettings,
+  type LearningImitationSettingsInput,
+  type LearningImitationStageId,
+  type LibraryAgentDomain,
+  type LibraryAgentSettings,
+  type LibraryAgentSettingsInput,
+  type LongAgentId,
+  type LongAgentSettings,
+  type LongAgentSettingsInput,
+  type LongAgentTeamSettings,
+  type LongAgentTeamSettingsInput,
+  type ScriptWorkspaceAgentId,
+  type ShortWorkspaceAgentId,
+  type WorkspaceAgentSettings,
+  type WorkspaceAgentSettingsInput,
+  type WorkspaceAgentTeamSettings,
+  type WorkspaceAgentTeamSettingsInput,
+  type WorkspaceDirectorySettings,
+  type WorkspaceType
 } from "@deepwrite/contracts";
 
 import { browserId, invokeCommand } from "./invoke";
@@ -63,9 +98,7 @@ export async function saveLongAgents(
 export async function resetLongAgents(
   rawAgentId?: LongAgentId
 ): Promise<LongAgentSettings> {
-  const agentId = rawAgentId
-    ? LongAgentIdSchema.parse(rawAgentId)
-    : undefined;
+  const agentId = rawAgentId ? LongAgentIdSchema.parse(rawAgentId) : undefined;
   const id = browserId("cmd_long_agents_reset");
   return LongAgentSettingsSchema.parse(
     await invokeCommand<LongAgentSettings>(
@@ -81,10 +114,14 @@ export async function listLongAgentTeams(): Promise<LongAgentTeamSettings> {
   const id = browserId("cmd_long_agent_teams_list");
   return LongAgentTeamSettingsSchema.parse(
     await invokeCommand<LongAgentTeamSettings>(
-      createEnvelope("longAgentTeams.list", {}, {
-        id,
-        correlationId: id
-      })
+      createEnvelope(
+        "longAgentTeams.list",
+        {},
+        {
+          id,
+          correlationId: id
+        }
+      )
     )
   );
 }
@@ -137,7 +174,10 @@ export async function saveWorkspaceAgents(
   const id = browserId("cmd_workspace_agents_save");
   return WorkspaceAgentSettingsSchema.parse(
     await invokeCommand<WorkspaceAgentSettings>(
-      createEnvelope("workspaceAgents.save", settings, { id, correlationId: id })
+      createEnvelope("workspaceAgents.save", settings, {
+        id,
+        correlationId: id
+      })
     )
   );
 }
@@ -157,19 +197,22 @@ export async function resetWorkspaceAgents(
     workspaceType === "script"
       ? {
           workspaceType,
-          ...(agentId ? { agentId: ScriptWorkspaceAgentIdSchema.parse(agentId) } : {})
+          ...(agentId
+            ? { agentId: ScriptWorkspaceAgentIdSchema.parse(agentId) }
+            : {})
         }
       : {
           workspaceType,
-          ...(agentId ? { agentId: ShortWorkspaceAgentIdSchema.parse(agentId) } : {})
+          ...(agentId
+            ? { agentId: ShortWorkspaceAgentIdSchema.parse(agentId) }
+            : {})
         };
   return WorkspaceAgentSettingsSchema.parse(
     await invokeCommand<WorkspaceAgentSettings>(
-      createEnvelope(
-        "workspaceAgents.reset",
-        payload,
-        { id, correlationId: id }
-      )
+      createEnvelope("workspaceAgents.reset", payload, {
+        id,
+        correlationId: id
+      })
     )
   );
 }
@@ -217,7 +260,11 @@ export async function listLearningImitationSettings(): Promise<LearningImitation
   const id = browserId("cmd_learning_imitation_settings_list");
   return LearningImitationSettingsSchema.parse(
     await invokeCommand<LearningImitationSettings>(
-      createEnvelope("learningImitationSettings.list", {}, { id, correlationId: id })
+      createEnvelope(
+        "learningImitationSettings.list",
+        {},
+        { id, correlationId: id }
+      )
     )
   );
 }

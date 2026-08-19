@@ -1,4 +1,7 @@
-import type { StreamFn, ThinkingLevel as PiThinkingLevel } from "@earendil-works/pi-agent-core";
+import type {
+  StreamFn,
+  ThinkingLevel as PiThinkingLevel
+} from "@earendil-works/pi-agent-core";
 import {
   type Api,
   type Context,
@@ -11,20 +14,25 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
+import {
+  getBuiltinModels,
+  getBuiltinProviders
+} from "@earendil-works/pi-ai/providers/all";
 import type {
   AgentProviderRuntimeConfig,
   ThinkingLevel as ConfiguredThinkingLevel
 } from "@deepwrite/contracts";
 import {
-  applyOllamaToolSchemaCompatibility,
+  applyProviderToolSchemaCompatibility,
   isOllamaProviderName,
   type ProviderRuntimeCompatibilityOptions
-} from "./ollama-tool-schema-compat";
+} from "./portable-tool-schema";
 import { enforceProviderToolSchemaCompatibility } from "./provider-tool-schema-compat";
 import { findDeepWriteRuntimeModel } from "./runtime-model-catalog";
 
-function providerStreams(api: AgentProviderRuntimeConfig["api"]): ProviderStreams {
+function providerStreams(
+  api: AgentProviderRuntimeConfig["api"]
+): ProviderStreams {
   if (api === "openai-completions") {
     return openAICompletionsApi();
   }
@@ -37,7 +45,9 @@ function providerStreams(api: AgentProviderRuntimeConfig["api"]): ProviderStream
   return googleGenerativeAIApi();
 }
 
-function findBuiltinModel(config: AgentProviderRuntimeConfig): Model<Api> | undefined {
+function findBuiltinModel(
+  config: AgentProviderRuntimeConfig
+): Model<Api> | undefined {
   const provider = getBuiltinProviders().find(
     (candidate) => candidate.toLowerCase() === config.provider.toLowerCase()
   );
@@ -83,7 +93,9 @@ function resolveOpenAICompletionsCompat(
   return Object.keys(compat).length > 0 ? compat : undefined;
 }
 
-export function toPiThinkingLevel(level: ConfiguredThinkingLevel): PiThinkingLevel {
+export function toPiThinkingLevel(
+  level: ConfiguredThinkingLevel
+): PiThinkingLevel {
   if (
     level === "off" ||
     level === "minimal" ||
@@ -110,7 +122,8 @@ export function buildProviderRuntime(
   streamFn: StreamFn;
 } {
   const builtin = findBuiltinModel(config);
-  const baseUrl = config.baseUrl || (builtin?.api === config.api ? builtin.baseUrl : "");
+  const baseUrl =
+    config.baseUrl || (builtin?.api === config.api ? builtin.baseUrl : "");
   if (!baseUrl) {
     throw new Error("当前模型不在 Pi 内置目录中，请填写 API 地址后再试。");
   }
@@ -178,29 +191,31 @@ export function buildProviderRuntime(
     requestModel: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions
-  ) => streams.streamSimple(
-    requestModel,
-    applyOllamaToolSchemaCompatibility(
-      enforceProviderToolSchemaCompatibility(context),
-      config.provider,
-      compatibility.ollamaToolSchemaProfile
-    ),
-    {
-      ...options,
-      ...(mandatoryZaiThinkingFallback
-        ? { reasoning: mandatoryZaiThinkingFallback }
-        : {}),
-      ...(effectiveTemperature !== undefined
-        ? { temperature: effectiveTemperature }
-        : {}),
-      ...(config.apiKey
-        ? { apiKey: config.apiKey }
-        : isOllamaProvider
-          ? { apiKey: "ollama" }
-          : options?.apiKey
-            ? { apiKey: options.apiKey }
-            : {})
-    }
-  );
+  ) =>
+    streams.streamSimple(
+      requestModel,
+      applyProviderToolSchemaCompatibility(
+        enforceProviderToolSchemaCompatibility(context),
+        config.provider,
+        config.toolSchemaProfile,
+        compatibility.portableToolSchemaProfile
+      ),
+      {
+        ...options,
+        ...(mandatoryZaiThinkingFallback
+          ? { reasoning: mandatoryZaiThinkingFallback }
+          : {}),
+        ...(effectiveTemperature !== undefined
+          ? { temperature: effectiveTemperature }
+          : {}),
+        ...(config.apiKey
+          ? { apiKey: config.apiKey }
+          : isOllamaProvider
+            ? { apiKey: "ollama" }
+            : options?.apiKey
+              ? { apiKey: options.apiKey }
+              : {})
+      }
+    );
   return { model, streamFn: streamFn as StreamFn };
 }

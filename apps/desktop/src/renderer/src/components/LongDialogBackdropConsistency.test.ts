@@ -36,9 +36,17 @@ describe("long-form dialog backdrops", () => {
   });
 
   it("suspends the parent structure dialog while its child modal owns focus", () => {
-    expect(structureDialogSource).toContain("const childModalActive = ref(false)");
-    expect(structureDialogSource).toContain('@modal-active-change="childModalActive = $event"');
-    expect(structureDialogSource).toContain(":role=\"childModalActive ? undefined : 'dialog'\"");
-    expect(structureDialogSource).toContain(".long-structure-dialog.is-suspended");
+    expect(structureDialogSource).toContain(
+      "const childModalActive = ref(false)"
+    );
+    expect(structureDialogSource).toContain(
+      '@modal-active-change="childModalActive = $event"'
+    );
+    expect(structureDialogSource).toContain(
+      ":role=\"childModalActive ? undefined : 'dialog'\""
+    );
+    expect(structureDialogSource).toContain(
+      ".long-structure-dialog.is-suspended"
+    );
   });
 });

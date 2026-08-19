@@ -58,10 +58,12 @@ const emit = defineEmits<{
   retry: [];
   save: [settings: WorkspaceAgentTeamSettingsInput];
   saveLong: [settings: LongAgentTeamSettingsInput];
-  authoringGenerate: [payload: {
-    context: SubagentAuthoringRuntimeContext;
-    modelId: string;
-  }];
+  authoringGenerate: [
+    payload: {
+      context: SubagentAuthoringRuntimeContext;
+      modelId: string;
+    }
+  ];
   authoringStop: [];
   authoringReset: [];
 }>();
@@ -94,10 +96,7 @@ const editingSubagentId = ref<string | null>(null);
 let generatedIdSequence = 0;
 
 const formDisabled = computed(
-  () =>
-    props.loading ||
-    props.saving ||
-    !props.runtimeAvailable
+  () => props.loading || props.saving || !props.runtimeAvailable
 );
 
 const activeParentMeta = computed(
@@ -166,7 +165,9 @@ function modelDefaults(model: ModelConfig | undefined): {
 function thinkingOptionsFor(
   subagent: ShortAgentSubagentDefinition
 ): PopupSelectOption[] {
-  const model = subagent.modelId ? modelById.value.get(subagent.modelId) : undefined;
+  const model = subagent.modelId
+    ? modelById.value.get(subagent.modelId)
+    : undefined;
   if (!model) {
     return [
       { value: "off", label: thinkingLabel("off") },
@@ -188,7 +189,9 @@ function thinkingOptionsFor(
 function temperatureOptionsFor(
   subagent: ShortAgentSubagentDefinition
 ): PopupSelectOption[] {
-  const model = subagent.modelId ? modelById.value.get(subagent.modelId) : undefined;
+  const model = subagent.modelId
+    ? modelById.value.get(subagent.modelId)
+    : undefined;
   return (model?.temperatureOptions ?? [0.1, 0.7, 1]).map((value) => ({
     value,
     label: `温度 ${value}`
@@ -250,12 +253,16 @@ function nextSubagentId(): string {
 }
 
 function addSubagent(
-  draft?: Partial<Pick<ShortAgentSubagentDefinition, "name" | "description" | "systemPrompt">>
+  draft?: Partial<
+    Pick<ShortAgentSubagentDefinition, "name" | "description" | "systemPrompt">
+  >
 ): void {
   const team = activeTeam.value;
   if (!team || formDisabled.value) return;
   if (team.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT) {
-    uiMessage.warning(`每个主智能体最多配置 ${SHORT_AGENT_SUBAGENT_MAX_COUNT} 个子智能体`);
+    uiMessage.warning(
+      `每个主智能体最多配置 ${SHORT_AGENT_SUBAGENT_MAX_COUNT} 个子智能体`
+    );
     return;
   }
   const id = nextSubagentId();
@@ -275,7 +282,9 @@ function openLoadFromSkill(): void {
   if (formDisabled.value) return;
   if (!activeTeam.value) return;
   if (activeTeam.value.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT) {
-    uiMessage.warning(`每个主智能体最多配置 ${SHORT_AGENT_SUBAGENT_MAX_COUNT} 个子智能体`);
+    uiMessage.warning(
+      `每个主智能体最多配置 ${SHORT_AGENT_SUBAGENT_MAX_COUNT} 个子智能体`
+    );
     return;
   }
   if (!activeSkills.value.length) {
@@ -340,7 +349,9 @@ function setSubagentThinkingLevel(
       current === undefined ||
       !options.some((option) => Object.is(option.value, current))
     ) {
-      subagent.temperature = Number(options[1]?.value ?? options[0]?.value ?? 0.7);
+      subagent.temperature = Number(
+        options[1]?.value ?? options[0]?.value ?? 0.7
+      );
     }
   }
 }
@@ -409,7 +420,9 @@ function validationMessage(
       if (!subagent.systemPrompt.trim()) return "子智能体系统提示词不能为空";
       if (subagent.modelMode === "custom") {
         if (!subagent.modelId?.trim()) return "单独配置模型时必须选择模型";
-        const model = props.models.find((candidate) => candidate.id === subagent.modelId);
+        const model = props.models.find(
+          (candidate) => candidate.id === subagent.modelId
+        );
         if (!model) {
           return `子智能体「${subagent.name.trim() || "未命名"}」所选模型不存在，请重新选择`;
         }
@@ -449,36 +462,34 @@ function saveSettings(): void {
     workspaceType === "script"
       ? SCRIPT_WORKSPACE_AGENT_IDS
       : SHORT_WORKSPACE_AGENT_IDS;
-  const teams = parentAgentIds.map(
-    (parentAgentId) => {
-      const team = draftTeams.value.find(
-        (candidate) => candidate.parentAgentId === parentAgentId
-      );
-      return {
-        parentAgentId,
-        subagents: (team?.subagents ?? []).map((subagent) => ({
-          id: subagent.id,
-          name: subagent.name.trim(),
-          description: subagent.description.trim(),
-          systemPrompt: subagent.systemPrompt.trim(),
-          enabled: subagent.enabled,
-          modelMode: subagent.modelMode ?? "inherit",
-          ...(subagent.modelMode === "custom" && subagent.modelId
-            ? {
-                modelId: subagent.modelId.trim(),
-                ...(subagent.thinkingLevel !== undefined
-                  ? { thinkingLevel: subagent.thinkingLevel }
-                  : {}),
-                ...(subagent.thinkingLevel === "off" &&
-                subagent.temperature !== undefined
-                  ? { temperature: subagent.temperature }
-                  : {})
-              }
-            : {})
-        }))
-      };
-    }
-  );
+  const teams = parentAgentIds.map((parentAgentId) => {
+    const team = draftTeams.value.find(
+      (candidate) => candidate.parentAgentId === parentAgentId
+    );
+    return {
+      parentAgentId,
+      subagents: (team?.subagents ?? []).map((subagent) => ({
+        id: subagent.id,
+        name: subagent.name.trim(),
+        description: subagent.description.trim(),
+        systemPrompt: subagent.systemPrompt.trim(),
+        enabled: subagent.enabled,
+        modelMode: subagent.modelMode ?? "inherit",
+        ...(subagent.modelMode === "custom" && subagent.modelId
+          ? {
+              modelId: subagent.modelId.trim(),
+              ...(subagent.thinkingLevel !== undefined
+                ? { thinkingLevel: subagent.thinkingLevel }
+                : {}),
+              ...(subagent.thinkingLevel === "off" &&
+              subagent.temperature !== undefined
+                ? { temperature: subagent.temperature }
+                : {})
+            }
+          : {})
+      }))
+    };
+  });
   const message = validationMessage(teams);
   if (message) {
     uiMessage.warning(message);
@@ -489,7 +500,9 @@ function saveSettings(): void {
     teams
   });
   if (!parsed.success) {
-    uiMessage.warning(parsed.error.issues[0]?.message ?? "智能体团队配置不完整");
+    uiMessage.warning(
+      parsed.error.issues[0]?.message ?? "智能体团队配置不完整"
+    );
     return;
   }
   emit("save", parsed.data);
@@ -589,7 +602,10 @@ function saveSettings(): void {
     </div>
 
     <div v-else class="team-layout">
-      <nav class="parent-agent-tabs" :aria-label="`${activeWorkspaceType === 'script' ? '剧本' : '短篇'}主智能体`">
+      <nav
+        class="parent-agent-tabs"
+        :aria-label="`${activeWorkspaceType === 'script' ? '剧本' : '短篇'}主智能体`"
+      >
         <button
           v-for="agent in visibleParentAgents"
           :key="agent.id"
@@ -600,7 +616,10 @@ function saveSettings(): void {
           @click="selectParentAgent(agent.id)"
         >
           {{ agent.label }}
-          <span>{{ draftTeams.find((team) => team.parentAgentId === agent.id)?.subagents.length ?? 0 }}</span>
+          <span>{{
+            draftTeams.find((team) => team.parentAgentId === agent.id)
+              ?.subagents.length ?? 0
+          }}</span>
         </button>
       </nav>
 
@@ -615,7 +634,10 @@ function saveSettings(): void {
             <button
               type="button"
               class="secondary-button"
-              :disabled="formDisabled || activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT"
+              :disabled="
+                formDisabled ||
+                activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT
+              "
               @click="openLoadFromSkill"
             >
               <AppIcon name="wand" :size="15" />
@@ -624,7 +646,10 @@ function saveSettings(): void {
             <button
               type="button"
               class="secondary-button"
-              :disabled="formDisabled || activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT"
+              :disabled="
+                formDisabled ||
+                activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT
+              "
               @click="addSubagent()"
             >
               <AppIcon name="plus" :size="15" />
@@ -652,11 +677,21 @@ function saveSettings(): void {
                   <span :class="{ 'is-disabled': !subagent.enabled }">
                     {{ subagent.enabled ? "已启用" : "已停用" }}
                   </span>
-                  <span class="model-badge">{{ subagentModelSummary(subagent) }}</span>
+                  <span class="model-badge">{{
+                    subagentModelSummary(subagent)
+                  }}</span>
                 </div>
-                <p>{{ subagent.description || "补充能力说明，让主智能体知道何时调用它。" }}</p>
+                <p>
+                  {{
+                    subagent.description ||
+                    "补充能力说明，让主智能体知道何时调用它。"
+                  }}
+                </p>
               </div>
-              <label class="enable-toggle" :title="subagent.enabled ? '停用' : '启用'">
+              <label
+                class="enable-toggle"
+                :title="subagent.enabled ? '停用' : '启用'"
+              >
                 <input
                   type="checkbox"
                   :checked="subagent.enabled"
@@ -688,8 +723,14 @@ function saveSettings(): void {
             <div v-if="editingSubagentId === subagent.id" class="subagent-form">
               <div class="form-field">
                 <span>模型配置</span>
-                <div class="model-mode-options" role="radiogroup" aria-label="子智能体模型配置">
-                  <label :class="{ 'is-selected': subagent.modelMode !== 'custom' }">
+                <div
+                  class="model-mode-options"
+                  role="radiogroup"
+                  aria-label="子智能体模型配置"
+                >
+                  <label
+                    :class="{ 'is-selected': subagent.modelMode !== 'custom' }"
+                  >
                     <input
                       type="radio"
                       :name="`subagent-model-mode-${subagent.id}`"
@@ -700,7 +741,9 @@ function saveSettings(): void {
                     />
                     跟随主智能体
                   </label>
-                  <label :class="{ 'is-selected': subagent.modelMode === 'custom' }">
+                  <label
+                    :class="{ 'is-selected': subagent.modelMode === 'custom' }"
+                  >
                     <input
                       type="radio"
                       :name="`subagent-model-mode-${subagent.id}`"
@@ -712,7 +755,10 @@ function saveSettings(): void {
                     单独配置模型
                   </label>
                 </div>
-                <div v-if="subagent.modelMode === 'custom'" class="model-run-settings">
+                <div
+                  v-if="subagent.modelMode === 'custom'"
+                  class="model-run-settings"
+                >
                   <PopupSelect
                     class="model-select"
                     :model-value="subagent.modelId ?? ''"
@@ -723,9 +769,13 @@ function saveSettings(): void {
                     :disabled="formDisabled || modelOptions.length === 0"
                     :menu-min-width="260"
                     :menu-z-index="1200"
-                    @update:model-value="setSubagentModelId(subagent, String($event))"
+                    @update:model-value="
+                      setSubagentModelId(subagent, String($event))
+                    "
                   >
-                    <template #prefix><AppIcon name="model" :size="14" /></template>
+                    <template #prefix
+                      ><AppIcon name="model" :size="14"
+                    /></template>
                   </PopupSelect>
                   <PopupSelect
                     class="model-select"
@@ -737,9 +787,16 @@ function saveSettings(): void {
                     :disabled="formDisabled || !subagent.modelId"
                     :menu-min-width="200"
                     :menu-z-index="1200"
-                    @update:model-value="setSubagentThinkingLevel(subagent, String($event) as ThinkingLevel)"
+                    @update:model-value="
+                      setSubagentThinkingLevel(
+                        subagent,
+                        String($event) as ThinkingLevel
+                      )
+                    "
                   >
-                    <template #prefix><AppIcon name="brain" :size="14" /></template>
+                    <template #prefix
+                      ><AppIcon name="brain" :size="14"
+                    /></template>
                   </PopupSelect>
                   <PopupSelect
                     v-if="subagent.thinkingLevel === 'off'"
@@ -752,9 +809,13 @@ function saveSettings(): void {
                     :disabled="formDisabled || !subagent.modelId"
                     :menu-min-width="180"
                     :menu-z-index="1200"
-                    @update:model-value="setSubagentTemperature(subagent, Number($event))"
+                    @update:model-value="
+                      setSubagentTemperature(subagent, Number($event))
+                    "
                   >
-                    <template #prefix><AppIcon name="temperature" :size="14" /></template>
+                    <template #prefix
+                      ><AppIcon name="temperature" :size="14"
+                    /></template>
                   </PopupSelect>
                   <p v-if="modelOptions.length === 0" class="model-empty-hint">
                     暂无可用模型，请先在「模型配置」中添加。
@@ -793,8 +854,14 @@ function saveSettings(): void {
                 />
               </label>
               <div class="form-meta">
-                <span>ID：<code>{{ subagent.id }}</code></span>
-                <button type="button" :disabled="formDisabled" @click="finishEditing">
+                <span
+                  >ID：<code>{{ subagent.id }}</code></span
+                >
+                <button
+                  type="button"
+                  :disabled="formDisabled"
+                  @click="finishEditing"
+                >
                   完成编辑
                 </button>
               </div>
@@ -803,7 +870,11 @@ function saveSettings(): void {
         </div>
 
         <footer class="panel-actions">
-          <span>当前主智能体 {{ activeTeam.subagents.length }}/{{ SHORT_AGENT_SUBAGENT_MAX_COUNT }}</span>
+          <span
+            >当前主智能体 {{ activeTeam.subagents.length }}/{{
+              SHORT_AGENT_SUBAGENT_MAX_COUNT
+            }}</span
+          >
           <button
             type="button"
             class="primary-button"
@@ -821,7 +892,9 @@ function saveSettings(): void {
       :open="loadFromSkillOpen"
       :parent-agent-id="activeParentAgentId"
       :parent-agent-label="activeParentDisplayLabel"
-      :existing-subagent-names="(activeTeam?.subagents ?? []).map((item) => item.name)"
+      :existing-subagent-names="
+        (activeTeam?.subagents ?? []).map((item) => item.name)
+      "
       :skills="activeSkills"
       :models="models"
       :preferred-model-id="preferredModelId ?? null"
@@ -843,7 +916,9 @@ function saveSettings(): void {
   color: var(--text-primary);
 }
 
-.panel-header { margin-bottom: 18px; }
+.panel-header {
+  margin-bottom: 18px;
+}
 .panel-kicker,
 .team-heading > div > span {
   color: var(--text-tertiary);
@@ -852,7 +927,11 @@ function saveSettings(): void {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.panel-header h2 { margin: 4px 0 5px; font-size: 1.57143rem; font-weight: 650; }
+.panel-header h2 {
+  margin: 4px 0 5px;
+  font-size: 1.57143rem;
+  font-weight: 650;
+}
 .panel-header p,
 .team-heading p,
 .subagent-copy p,
@@ -862,8 +941,13 @@ function saveSettings(): void {
   font-size: 0.892857rem;
   line-height: 1.55;
 }
-.inheritance-note { margin-top: 7px !important; }
-.runtime-note { margin-top: 5px !important; color: var(--warning-text, #8a6731) !important; }
+.inheritance-note {
+  margin-top: 7px !important;
+}
+.runtime-note {
+  margin-top: 5px !important;
+  color: var(--warning-text, #8a6731) !important;
+}
 
 .workspace-tabs {
   display: flex;
@@ -888,9 +972,18 @@ function saveSettings(): void {
   font: inherit;
   font-weight: 600;
 }
-.workspace-tab.is-active { background: var(--surface-raised); color: var(--text-primary); box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); }
-.workspace-tab:disabled { color: var(--text-tertiary); }
-.workspace-tab small { font-size: 0.714286rem; font-weight: 520; }
+.workspace-tab.is-active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+.workspace-tab:disabled {
+  color: var(--text-tertiary);
+}
+.workspace-tab small {
+  font-size: 0.714286rem;
+  font-weight: 520;
+}
 
 .panel-state,
 .empty-team {
@@ -901,10 +994,23 @@ function saveSettings(): void {
   color: var(--text-secondary);
   text-align: center;
 }
-.panel-load-error strong { display: block; margin-bottom: 6px; color: var(--text-primary); }
-.panel-load-error p { margin: 0 0 14px; color: var(--text-secondary); }
-.panel-load-error .secondary-button { margin: 0 auto; }
-.empty-team strong { display: block; margin-bottom: 5px; color: var(--text-primary); }
+.panel-load-error strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+.panel-load-error p {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+}
+.panel-load-error .secondary-button {
+  margin: 0 auto;
+}
+.empty-team strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-primary);
+}
 
 .team-layout {
   display: grid;
@@ -937,13 +1043,40 @@ function saveSettings(): void {
   font-weight: 590;
   cursor: pointer;
 }
-.parent-agent-tab:hover { background: var(--surface-hover); color: var(--text-primary); }
-.parent-agent-tab.is-active { background: var(--surface-raised); color: var(--text-primary); box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); }
-.parent-agent-tab span { min-width: 22px; padding: 2px 6px; border-radius: 999px; background: var(--surface-selected); color: var(--text-tertiary); font-size: 0.75rem; text-align: center; }
+.parent-agent-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.parent-agent-tab.is-active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+.parent-agent-tab span {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-selected);
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  text-align: center;
+}
 
-.team-editor { min-width: 0; }
-.team-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
-.team-heading h3 { margin: 3px 0 4px; font-size: 1.28571rem; font-weight: 640; }
+.team-editor {
+  min-width: 0;
+}
+.team-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+}
+.team-heading h3 {
+  margin: 3px 0 4px;
+  font-size: 1.28571rem;
+  font-weight: 640;
+}
 .team-heading-actions {
   display: flex;
   flex-wrap: wrap;
@@ -964,8 +1097,16 @@ function saveSettings(): void {
   font-weight: 600;
   cursor: pointer;
 }
-.secondary-button { flex: none; padding: 8px 11px; background: var(--surface-raised); color: var(--text-primary); }
-.secondary-button:hover:not(:disabled), .form-meta button:hover:not(:disabled) { background: var(--surface-hover); }
+.secondary-button {
+  flex: none;
+  padding: 8px 11px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+.secondary-button:hover:not(:disabled),
+.form-meta button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
 .primary-button {
   padding: 9px 14px;
   border-color: color-mix(in srgb, var(--theme-foreground) 18%, #15171a);
@@ -976,17 +1117,62 @@ function saveSettings(): void {
   border-color: color-mix(in srgb, var(--theme-foreground) 12%, #0f1113);
   background: color-mix(in srgb, var(--theme-foreground) 12%, #0f1113);
 }
-button:disabled { cursor: not-allowed; opacity: 0.5; }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 
-.subagent-list { display: flex; flex-direction: column; gap: 10px; }
-.subagent-card { overflow: hidden; border: 1px solid var(--theme-line-soft); border-radius: 12px; background: var(--surface-raised); }
-.subagent-card.is-editing { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.subagent-summary { display: flex; align-items: center; gap: 9px; padding: 13px 14px; }
-.subagent-copy { flex: 1; min-width: 0; }
-.subagent-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
-.subagent-title-row strong { overflow: hidden; font-size: 1rem; font-weight: 630; text-overflow: ellipsis; white-space: nowrap; }
-.subagent-title-row span { flex: none; padding: 2px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 0.714286rem; font-weight: 620; }
-.subagent-title-row span.is-disabled { background: var(--surface-selected); color: var(--text-tertiary); }
+.subagent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.subagent-card {
+  overflow: hidden;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+.subagent-card.is-editing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.subagent-summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 14px;
+}
+.subagent-copy {
+  flex: 1;
+  min-width: 0;
+}
+.subagent-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.subagent-title-row strong {
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 630;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subagent-title-row span {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.714286rem;
+  font-weight: 620;
+}
+.subagent-title-row span.is-disabled {
+  background: var(--surface-selected);
+  color: var(--text-tertiary);
+}
 .subagent-title-row .model-badge {
   max-width: 240px;
   overflow: hidden;
@@ -995,19 +1181,74 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.subagent-copy p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.icon-button { width: 32px; height: 32px; padding: 0; background: transparent; color: var(--text-secondary); }
-.icon-button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
-.icon-button.is-danger:hover:not(:disabled) { border-color: var(--danger, #d65353); background: color-mix(in srgb, var(--danger, #d65353) 12%, transparent); color: var(--danger, #d65353); }
+.subagent-copy p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.icon-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.icon-button.is-danger:hover:not(:disabled) {
+  border-color: var(--danger, #d65353);
+  background: color-mix(in srgb, var(--danger, #d65353) 12%, transparent);
+  color: var(--danger, #d65353);
+}
 
-.enable-toggle input { position: relative; width: 38px; height: 22px; margin: 0; appearance: none; border-radius: 12px; background: var(--surface-selected); cursor: pointer; transition: background-color 150ms ease; }
-.enable-toggle input::after { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface-main); box-shadow: 0 1px 3px rgb(0 0 0 / 0.22); content: ""; transition: transform 150ms ease; }
-.enable-toggle input:checked { background: var(--accent); }
-.enable-toggle input:checked::after { transform: translateX(16px); }
+.enable-toggle input {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  appearance: none;
+  border-radius: 12px;
+  background: var(--surface-selected);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.enable-toggle input::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface-main);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
+  content: "";
+  transition: transform 150ms ease;
+}
+.enable-toggle input:checked {
+  background: var(--accent);
+}
+.enable-toggle input:checked::after {
+  transform: translateX(16px);
+}
 
-.subagent-form { display: grid; gap: 12px; padding: 15px; border-top: 1px solid var(--theme-line-soft); background: var(--surface-muted); }
-.form-field { display: grid; gap: 6px; }
-.form-field > span { color: var(--text-secondary); font-size: 0.821429rem; font-weight: 620; }
+.subagent-form {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border-top: 1px solid var(--theme-line-soft);
+  background: var(--surface-muted);
+}
+.form-field {
+  display: grid;
+  gap: 6px;
+}
+.form-field > span {
+  color: var(--text-secondary);
+  font-size: 0.821429rem;
+  font-weight: 620;
+}
 .form-field input,
 .form-field textarea {
   width: 100%;
@@ -1021,12 +1262,30 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   line-height: 1.55;
   resize: vertical;
 }
-.form-field input { min-height: 38px; padding: 8px 10px; }
-.form-field textarea { padding: 9px 10px; }
-.description-input { min-height: 76px; }
-.prompt-input { min-height: 180px; font-family: var(--code-font); font-size: 0.892857rem; }
-.form-field input:focus, .form-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.form-field input::placeholder, .form-field textarea::placeholder { color: var(--text-tertiary); }
+.form-field input {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+.form-field textarea {
+  padding: 9px 10px;
+}
+.description-input {
+  min-height: 76px;
+}
+.prompt-input {
+  min-height: 180px;
+  font-family: var(--code-font);
+  font-size: 0.892857rem;
+}
+.form-field input:focus,
+.form-field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.form-field input::placeholder,
+.form-field textarea::placeholder {
+  color: var(--text-tertiary);
+}
 .model-mode-options {
   display: flex;
   flex-wrap: wrap;
@@ -1062,7 +1321,9 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-.model-select { width: 100%; }
+.model-select {
+  width: 100%;
+}
 .model-run-settings {
   display: grid;
   gap: 8px;
@@ -1073,26 +1334,80 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   font-size: 0.785714rem;
   line-height: 1.45;
 }
-.form-meta { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text-tertiary); font-size: 0.75rem; }
-.form-meta code { overflow-wrap: anywhere; color: var(--text-secondary); }
-.form-meta button { flex: none; padding: 7px 10px; background: var(--surface-raised); color: var(--text-primary); font-size: 0.821429rem; }
+.form-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+.form-meta code {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
+.form-meta button {
+  flex: none;
+  padding: 7px 10px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 0.821429rem;
+}
 
-.panel-actions { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--theme-line-soft); }
-.panel-actions > span { color: var(--text-tertiary); font-size: 0.821429rem; }
+.panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--theme-line-soft);
+}
+.panel-actions > span {
+  color: var(--text-tertiary);
+  font-size: 0.821429rem;
+}
 
 @media (max-width: 900px) {
-  .team-layout { grid-template-columns: 1fr; }
-  .parent-agent-tabs { position: static; flex-direction: row; overflow-x: auto; }
-  .parent-agent-tab { flex: 1 0 104px; }
+  .team-layout {
+    grid-template-columns: 1fr;
+  }
+  .parent-agent-tabs {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .parent-agent-tab {
+    flex: 1 0 104px;
+  }
 }
 
 @media (max-width: 680px) {
-  .workspace-tabs { overflow-x: auto; }
-  .workspace-tab { min-width: 96px; }
-  .team-heading, .panel-actions { align-items: stretch; flex-direction: column; }
-  .secondary-button, .primary-button { width: 100%; }
-  .subagent-summary { align-items: flex-start; flex-wrap: wrap; }
-  .subagent-copy { flex-basis: calc(100% - 50px); }
-  .form-meta { align-items: flex-start; flex-direction: column; }
+  .workspace-tabs {
+    overflow-x: auto;
+  }
+  .workspace-tab {
+    min-width: 96px;
+  }
+  .team-heading,
+  .panel-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .secondary-button,
+  .primary-button {
+    width: 100%;
+  }
+  .subagent-summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .subagent-copy {
+    flex-basis: calc(100% - 50px);
+  }
+  .form-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

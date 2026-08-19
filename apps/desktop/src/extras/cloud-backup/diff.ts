@@ -50,7 +50,8 @@ export function diffBackupItems(
   for (const key of [...keys].sort()) {
     const local = localByKey.get(key);
     const remote = remoteByKey.get(key);
-    const source = direction === "upload" ? local ?? remote : remote ?? local;
+    const source =
+      direction === "upload" ? (local ?? remote) : (remote ?? local);
     if (!source) continue;
     const change = toChange(source, resolveChange(direction, local, remote));
     if (change) changes.push(change);
@@ -67,7 +68,8 @@ export function countChanges(changes: readonly CloudBackupChange[]): {
 } {
   return {
     added: changes.filter((change) => change.change === "add").length,
-    overwritten: changes.filter((change) => change.change === "overwrite").length,
+    overwritten: changes.filter((change) => change.change === "overwrite")
+      .length,
     kept: changes.filter((change) => change.change === "keep").length,
     dropped: changes.filter((change) => change.change === "drop").length
   };

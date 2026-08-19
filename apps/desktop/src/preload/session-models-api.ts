@@ -1,15 +1,36 @@
 import {
-  ChatAssistantProjectConfigListSchema, ChatAssistantProjectConfigSchema, ChatAssistantProjectRefSchema,
-  ModelConfigInputSchema, ModelConnectionTestResultSchema, ModelSettingsInputSchema,
-  ModelSettingsSchema, ModelUsageDashboardSchema, ModelUsageQueryInputSchema,
-  OfficialModelBalanceSchema, RemoteModelListInputSchema, RemoteModelListResultSchema,
-  SessionAbortAcceptedPayloadSchema, SessionAbortCommandPayloadSchema, SessionPromptAcceptedPayloadSchema,
-  SessionPromptCommandPayloadSchema, createEnvelope,
-  type ChatAssistantProjectConfig, type ChatAssistantProjectRef, type DeepWriteApi,
-  type ModelConfigInput, type ModelConnectionTestResult, type ModelSettings,
-  type ModelSettingsInput, type ModelUsageDashboard, type ModelUsageQueryInput,
-  type RemoteModelListInput, type RemoteModelListResult, type SessionAbortAcceptedPayload,
-  type SessionAbortCommandPayload, type SessionPromptAcceptedPayload, type SessionPromptCommandPayload,
+  ChatAssistantProjectConfigListSchema,
+  ChatAssistantProjectConfigSchema,
+  ChatAssistantProjectRefSchema,
+  ModelConfigInputSchema,
+  ModelConnectionTestResultSchema,
+  ModelSettingsInputSchema,
+  ModelSettingsSchema,
+  ModelUsageDashboardSchema,
+  ModelUsageQueryInputSchema,
+  OfficialModelBalanceSchema,
+  RemoteModelListInputSchema,
+  RemoteModelListResultSchema,
+  SessionAbortAcceptedPayloadSchema,
+  SessionAbortCommandPayloadSchema,
+  SessionPromptAcceptedPayloadSchema,
+  SessionPromptCommandPayloadSchema,
+  createEnvelope,
+  type ChatAssistantProjectConfig,
+  type ChatAssistantProjectRef,
+  type DeepWriteApi,
+  type ModelConfigInput,
+  type ModelConnectionTestResult,
+  type ModelSettings,
+  type ModelSettingsInput,
+  type ModelUsageDashboard,
+  type ModelUsageQueryInput,
+  type RemoteModelListInput,
+  type RemoteModelListResult,
+  type SessionAbortAcceptedPayload,
+  type SessionAbortCommandPayload,
+  type SessionPromptAcceptedPayload,
+  type SessionPromptCommandPayload
 } from "@deepwrite/contracts";
 
 import { browserId, invokeCommand } from "./invoke";
@@ -33,7 +54,9 @@ export async function prompt(
     )
   );
   if (accepted.sessionId !== payload.sessionId) {
-    throw new Error("Agent acceptance sessionId does not match the prompt request.");
+    throw new Error(
+      "Agent acceptance sessionId does not match the prompt request."
+    );
   }
   return accepted;
 }
@@ -88,12 +111,18 @@ export async function queryOfficialModelBalance() {
   const id = browserId("cmd_models_query_official_balance");
   return OfficialModelBalanceSchema.parse(
     await invokeCommand(
-      createEnvelope("models.queryOfficialBalance", {}, { id, correlationId: id })
+      createEnvelope(
+        "models.queryOfficialBalance",
+        {},
+        { id, correlationId: id }
+      )
     )
   );
 }
 
-export async function saveOfficialModelToken(rawApiKey: string): Promise<ModelSettings> {
+export async function saveOfficialModelToken(
+  rawApiKey: string
+): Promise<ModelSettings> {
   const apiKey = rawApiKey.trim();
   if (!apiKey || apiKey.length > 16_000) {
     throw new Error("请输入有效的官方令牌。");
@@ -101,7 +130,11 @@ export async function saveOfficialModelToken(rawApiKey: string): Promise<ModelSe
   const id = browserId("cmd_models_save_official_token");
   return ModelSettingsSchema.parse(
     await invokeCommand<ModelSettings>(
-      createEnvelope("models.saveOfficialToken", { apiKey }, { id, correlationId: id })
+      createEnvelope(
+        "models.saveOfficialToken",
+        { apiKey },
+        { id, correlationId: id }
+      )
     )
   );
 }
@@ -115,16 +148,25 @@ export async function clearOfficialModelToken(): Promise<ModelSettings> {
   );
 }
 
-export async function setOfficialModelEnabled(modelId: string, enabled: boolean): Promise<ModelSettings> {
+export async function setOfficialModelEnabled(
+  modelId: string,
+  enabled: boolean
+): Promise<ModelSettings> {
   const id = browserId("cmd_models_set_official_enabled");
   return ModelSettingsSchema.parse(
     await invokeCommand<ModelSettings>(
-      createEnvelope("models.setOfficialModelEnabled", { modelId, enabled }, { id, correlationId: id })
+      createEnvelope(
+        "models.setOfficialModelEnabled",
+        { modelId, enabled },
+        { id, correlationId: id }
+      )
     )
   );
 }
 
-export async function saveModels(rawSettings: ModelSettingsInput): Promise<ModelSettings> {
+export async function saveModels(
+  rawSettings: ModelSettingsInput
+): Promise<ModelSettings> {
   const settings = ModelSettingsInputSchema.parse(rawSettings);
   const id = browserId("cmd_models_save");
   return ModelSettingsSchema.parse(
@@ -134,7 +176,9 @@ export async function saveModels(rawSettings: ModelSettingsInput): Promise<Model
   );
 }
 
-export async function testModel(rawModel: ModelConfigInput): Promise<ModelConnectionTestResult> {
+export async function testModel(
+  rawModel: ModelConfigInput
+): Promise<ModelConnectionTestResult> {
   const model = ModelConfigInputSchema.parse(rawModel);
   const id = browserId("cmd_models_test");
   return ModelConnectionTestResultSchema.parse(
@@ -183,14 +227,20 @@ export async function getChatAssistantProjectConfig(
   );
 }
 
-export async function listChatAssistantProjectConfigs(): Promise<ChatAssistantProjectRef[]> {
+export async function listChatAssistantProjectConfigs(): Promise<
+  ChatAssistantProjectRef[]
+> {
   const id = browserId("cmd_chat_assistant_project_config_list");
   return ChatAssistantProjectConfigListSchema.parse(
     await invokeCommand<ChatAssistantProjectRef[]>(
-      createEnvelope("chatAssistantProjectConfig.list", {}, {
-        id,
-        correlationId: id
-      })
+      createEnvelope(
+        "chatAssistantProjectConfig.list",
+        {},
+        {
+          id,
+          correlationId: id
+        }
+      )
     )
   );
 }
@@ -237,7 +287,9 @@ export const modelUsage: DeepWriteApi["modelUsage"] = {
   query: queryModelUsage
 };
 
-export const chatAssistantProjectConfig: NonNullable<DeepWriteApi["chatAssistantProjectConfig"]> = {
+export const chatAssistantProjectConfig: NonNullable<
+  DeepWriteApi["chatAssistantProjectConfig"]
+> = {
   list: listChatAssistantProjectConfigs,
   get: getChatAssistantProjectConfig,
   save: saveChatAssistantProjectConfig,

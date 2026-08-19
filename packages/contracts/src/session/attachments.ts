@@ -9,7 +9,11 @@ export const PROMPT_IMAGE_ATTACHMENTS_MAX_BYTES = 25 * 1024 * 1024;
 const PromptAttachmentBaseSchema = z.object({
   id: z.string().min(1).max(120),
   name: z.string().trim().min(1).max(240),
-  size: z.number().int().nonnegative().max(25 * 1024 * 1024)
+  size: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(25 * 1024 * 1024)
 });
 
 export const PromptTextAttachmentSchema = PromptAttachmentBaseSchema.extend({
@@ -21,7 +25,8 @@ export const PromptTextAttachmentSchema = PromptAttachmentBaseSchema.extend({
 }).superRefine((value, context) => {
   if (
     value.truncated === true &&
-    (value.originalLength === undefined || value.originalLength <= value.content.length)
+    (value.originalLength === undefined ||
+      value.originalLength <= value.content.length)
   ) {
     context.addIssue({
       code: "custom",
@@ -49,7 +54,7 @@ export type PromptImageMediaType = z.infer<typeof PromptImageMediaTypeSchema>;
 
 function decodedBase64ByteLength(value: string): number {
   const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
-  return Math.floor(value.length * 3 / 4) - padding;
+  return Math.floor((value.length * 3) / 4) - padding;
 }
 
 export const PromptImageAttachmentSchema = PromptAttachmentBaseSchema.extend({
@@ -59,7 +64,10 @@ export const PromptImageAttachmentSchema = PromptAttachmentBaseSchema.extend({
     .string()
     .min(1)
     .max(Math.ceil(PROMPT_IMAGE_ATTACHMENT_MAX_BYTES / 3) * 4 + 4)
-    .regex(/^[A-Za-z0-9+/]+={0,2}$/, "Image attachment data must be base64 encoded.")
+    .regex(
+      /^[A-Za-z0-9+/]+={0,2}$/,
+      "Image attachment data must be base64 encoded."
+    )
 }).superRefine((value, context) => {
   if (value.size > PROMPT_IMAGE_ATTACHMENT_MAX_BYTES) {
     context.addIssue({

@@ -19,14 +19,18 @@ export function registerUpdateAlertIpc(options: {
   getUpdateService: () => UpdateService | undefined;
   getAppAlertStore: () => AppAlertStore | undefined;
 }): void {
-  const requireUpdateService = (event: Electron.IpcMainInvokeEvent): UpdateService => {
+  const requireUpdateService = (
+    event: Electron.IpcMainInvokeEvent
+  ): UpdateService => {
     const mainWindow = options.getMainWindow();
     if (
       !mainWindow ||
       mainWindow.isDestroyed() ||
       event.sender !== mainWindow.webContents
     ) {
-      throw new Error("IPC update request sender is not the active DeepWrite window.");
+      throw new Error(
+        "IPC update request sender is not the active DeepWrite window."
+      );
     }
     const updateService = options.getUpdateService();
     if (!updateService) throw new Error("更新服务尚未初始化。");
@@ -53,14 +57,20 @@ export function registerUpdateAlertIpc(options: {
       mainWindow.isDestroyed() ||
       event.sender !== mainWindow.webContents
     ) {
-      throw new Error("IPC app alert request sender is not the active DeepWrite window.");
+      throw new Error(
+        "IPC app alert request sender is not the active DeepWrite window."
+      );
     }
     const appAlertStore = options.getAppAlertStore();
     if (!appAlertStore) throw new Error("提醒服务尚未初始化。");
     return appAlertStore;
   };
-  ipcMain.handle(APP_ALERT_GET_CHANNEL, async (event): Promise<AppAlertSnapshot> =>
-    AppAlertSnapshotSchema.parse(await requireAppAlertStore(event).getSnapshot())
+  ipcMain.handle(
+    APP_ALERT_GET_CHANNEL,
+    async (event): Promise<AppAlertSnapshot> =>
+      AppAlertSnapshotSchema.parse(
+        await requireAppAlertStore(event).getSnapshot()
+      )
   );
   ipcMain.handle(
     APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL,

@@ -1,4 +1,11 @@
-import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onScopeDispose,
+  ref,
+  shallowRef,
+  watch
+} from "vue";
 import { defineStore } from "pinia";
 import {
   RIGHT_PANE_MAX_WIDTH,
@@ -194,7 +201,7 @@ export const useLayoutStore = defineStore("layout", () => {
     key = activeRightPanePreferenceKey.value
   ): number {
     return key
-      ? rightPanePreferences.value.widths[key] ?? initialRightPaneWidth
+      ? (rightPanePreferences.value.widths[key] ?? initialRightPaneWidth)
       : initialRightPaneWidth;
   }
 
@@ -254,7 +261,10 @@ export const useLayoutStore = defineStore("layout", () => {
       widths: { ...rightPanePreferences.value.widths, [key]: width }
     };
     rightPanePreferences.value = nextPreferences;
-    return saveRightPanePreferences(currentWindow.localStorage, nextPreferences);
+    return saveRightPanePreferences(
+      currentWindow.localStorage,
+      nextPreferences
+    );
   }
 
   function reconcilePaneWidths(): void {
@@ -308,8 +318,7 @@ export const useLayoutStore = defineStore("layout", () => {
     const direction = event.key === "ArrowLeft" ? -1 : 1;
     const currentWidth =
       side === "left" ? leftPaneWidth.value : rightPaneWidth.value;
-    const nextWidth =
-      currentWidth + direction * (side === "left" ? 12 : -12);
+    const nextWidth = currentWidth + direction * (side === "left" ? 12 : -12);
     setPaneWidth(side, nextWidth);
     if (side === "right" && rightPaneWidth.value !== currentWidth) {
       persistActiveRightPaneWidth(rightPaneWidth.value);

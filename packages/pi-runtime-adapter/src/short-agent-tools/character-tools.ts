@@ -80,7 +80,11 @@ export function buildCharacterTools(
     const revision = createShortWorkspaceContentRevision(text);
     if (target.itemId) {
       const item = sharedState.characterItems.get(target.itemId)!;
-      sharedState.characterItems.set(target.itemId, { ...item, content: text, revision });
+      sharedState.characterItems.set(target.itemId, {
+        ...item,
+        content: text,
+        revision
+      });
     } else {
       stageBodies.set("character_design", text);
       stageRevisions.set("character_design", revision);
@@ -101,25 +105,32 @@ export function buildCharacterTools(
     defineTool({
       name: "list_characters",
       label: "列出人物",
-      description: "列出当前人物结构格式、人物概览和有序人物条目，只返回业务 ID 与标题。",
+      description:
+        "列出当前人物结构格式、人物概览和有序人物条目，只返回业务 ID 与标题。",
       parameters: Type.Object({}),
       execute: async () =>
-        textResult(JSON.stringify(
-          isList
-            ? {
-                format: "list",
-                overview: { title: "概览" },
-                items: orderedItems().map(({ id, title }) => ({ item_id: id, title }))
-              }
-            : { format: "text", title: "人物" },
-          null,
-          2
-        ))
+        textResult(
+          JSON.stringify(
+            isList
+              ? {
+                  format: "list",
+                  overview: { title: "概览" },
+                  items: orderedItems().map(({ id, title }) => ({
+                    item_id: id,
+                    title
+                  }))
+                }
+              : { format: "text", title: "人物" },
+            null,
+            2
+          )
+        )
     }),
     defineTool({
       name: "search_characters",
       label: "搜索人物",
-      description: "搜索人物文本、概览和条目正文，返回 item_id、标题及少量上下文。",
+      description:
+        "搜索人物文本、概览和条目正文，返回 item_id、标题及少量上下文。",
       parameters: Type.Object({
         query: Type.String({ minLength: 1, maxLength: 256 }),
         max_matches: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
@@ -127,7 +138,10 @@ export function buildCharacterTools(
       execute: async (_id, params) => {
         const query = String(params.query);
         const sources = [
-          { title: isList ? "概览" : "人物", content: stageBodies.get("character_design") ?? "" },
+          {
+            title: isList ? "概览" : "人物",
+            content: stageBodies.get("character_design") ?? ""
+          },
           ...(isList
             ? orderedItems().map((item) => ({
                 item_id: item.id,
@@ -142,9 +156,12 @@ export function buildCharacterTools(
           const index = source.content.indexOf(query);
           if (index < 0) continue;
           hits.push({
-            ...( "item_id" in source ? { item_id: source.item_id } : {}),
+            ...("item_id" in source ? { item_id: source.item_id } : {}),
             title: source.title,
-            snippet: source.content.slice(Math.max(0, index - 100), index + query.length + 100)
+            snippet: source.content.slice(
+              Math.max(0, index - 100),
+              index + query.length + 100
+            )
           });
           if (hits.length >= max) break;
         }
@@ -159,7 +176,9 @@ export function buildCharacterTools(
         "mode=preview 返回首尾摘要，mode=full 分页返回正文。按 next_offset 连续读完所有页后才建立编辑凭据。",
       parameters: Type.Object({
         item_id: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-        mode: Type.Optional(Type.Union([Type.Literal("preview"), Type.Literal("full")])),
+        mode: Type.Optional(
+          Type.Union([Type.Literal("preview"), Type.Literal("full")])
+        ),
         offset: Type.Optional(Type.Integer({ minimum: 0 })),
         max_characters: Type.Optional(
           Type.Integer({
@@ -169,20 +188,26 @@ export function buildCharacterTools(
         )
       }),
       execute: async (_id, params) => {
-        const target = resolveTarget(params.item_id ? String(params.item_id) : undefined);
+        const target = resolveTarget(
+          params.item_id ? String(params.item_id) : undefined
+        );
         const mode = params.mode ?? "full";
         if (mode === "preview") {
           const visible =
             target.content.length > 480
               ? `${target.content.slice(0, 240)}\n\n……\n\n${target.content.slice(-240)}`
               : target.content;
-          return textResult(`【${target.title}】\n\n${visible || "（正文为空）"}`);
+          return textResult(
+            `【${target.title}】\n\n${visible || "（正文为空）"}`
+          );
         }
         const requestedOffset = Number(params.offset ?? 0);
         const page = readShortDocumentPage(
           target.content,
           requestedOffset,
-          Number(params.max_characters ?? SHORT_DOCUMENT_PAGE_DEFAULT_CHARACTERS)
+          Number(
+            params.max_characters ?? SHORT_DOCUMENT_PAGE_DEFAULT_CHARACTERS
+          )
         );
         if (requestedOffset > page.totalCharacters) {
           return textResult(
@@ -194,7 +219,7 @@ export function buildCharacterTools(
         }
         return textResult(
           `【${target.title}】\n${renderShortDocumentPageMetadata(page)}\n\n` +
-          `${page.content || "（正文为空）"}`
+            `${page.content || "（正文为空）"}`
         );
       }
     })
@@ -205,8 +230,11 @@ export function buildCharacterTools(
     defineTool({
       name: "create_character_file",
       label: "创建人物文件",
-      description: "创建一个空白人物 Markdown 条目并返回稳定 item_id；随后可立即写入。",
-      parameters: Type.Object({ title: Type.String({ minLength: 1, maxLength: 256 }) }),
+      description:
+        "创建一个空白人物 Markdown 条目并返回稳定 item_id；随后可立即写入。",
+      parameters: Type.Object({
+        title: Type.String({ minLength: 1, maxLength: 256 })
+      }),
       executionMode: "sequential",
       execute: async (_id, params) => {
         const title = String(params.title).trim();
@@ -253,12 +281,18 @@ export function buildCharacterTools(
       }),
       executionMode: "sequential",
       execute: async (_id, params) => {
-        const target = resolveTarget(params.item_id ? String(params.item_id) : undefined);
+        const target = resolveTarget(
+          params.item_id ? String(params.item_id) : undefined
+        );
         if (target.content.trim() && !fullyRead.has(target.documentId)) {
-          return textResult("未写入：目标已有正文，请先用 read_character（mode=full）完整读取。");
+          return textResult(
+            "未写入：目标已有正文，请先用 read_character（mode=full）完整读取。"
+          );
         }
         if (target.content.trim() && params.allow_overwrite_existing !== true) {
-          return textResult("未写入：整体重写已有正文需设置 allow_overwrite_existing=true。");
+          return textResult(
+            "未写入：整体重写已有正文需设置 allow_overwrite_existing=true。"
+          );
         }
         return updateTarget(
           target,
@@ -273,23 +307,46 @@ export function buildCharacterTools(
       description: "在完整读取的人物概览或条目中按唯一原文片段精确替换。",
       parameters: Type.Object({
         item_id: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-        replacements: Type.Array(Type.Object({
-          original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
-          new_text: Type.String({ maxLength: 20_000 })
-        }), { minItems: 1, maxItems: 20 })
+        replacements: Type.Array(
+          Type.Object({
+            original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
+            new_text: Type.String({ maxLength: 20_000 })
+          }),
+          { minItems: 1, maxItems: 20 }
+        )
       }),
       executionMode: "sequential",
       execute: async (_id, params) => {
-        const target = resolveTarget(params.item_id ? String(params.item_id) : undefined);
+        const target = resolveTarget(
+          params.item_id ? String(params.item_id) : undefined
+        );
         if (!fullyRead.has(target.documentId)) {
-          return textResult("未编辑：请先用 read_character（mode=full）完整读取目标内容。");
+          return textResult(
+            "未编辑：请先用 read_character（mode=full）完整读取目标内容。"
+          );
         }
-        const result = replaceText(target.content, params.replacements as Array<{ original_text: string; new_text: string }>);
-        if (result.error || result.next === undefined) return textResult(`未编辑：${result.error}`);
-        return updateTarget(target, result.next, `已生成“${target.title}”的局部变更，等待用户审阅。`);
+        const result = replaceText(
+          target.content,
+          params.replacements as Array<{
+            original_text: string;
+            new_text: string;
+          }>
+        );
+        if (result.error || result.next === undefined)
+          return textResult(`未编辑：${result.error}`);
+        return updateTarget(
+          target,
+          result.next,
+          `已生成“${target.title}”的局部变更，等待用户审阅。`
+        );
       }
     }),
-    ...buildCharacterStructureMutationTools(input, sharedState, stageRevisions, fullyRead)
+    ...buildCharacterStructureMutationTools(
+      input,
+      sharedState,
+      stageRevisions,
+      fullyRead
+    )
   );
   return tools;
 }
@@ -300,7 +357,13 @@ export function buildCharacterStructureMutationTools(
   stageRevisions: Map<ShortWorkspaceStageId, string>,
   fullyRead: Map<string, string>
 ): AgentTool[] {
-  const proposal = (mutation: Extract<ShortWorkspaceToolDetails, { kind: "workspace-character-structure-mutation" }>["mutation"], summary: string) =>
+  const proposal = (
+    mutation: Extract<
+      ShortWorkspaceToolDetails,
+      { kind: "workspace-character-structure-mutation" }
+    >["mutation"],
+    summary: string
+  ) =>
     textResult(summary, {
       kind: "workspace-character-structure-mutation",
       workspaceId: input.workspace.id,
@@ -314,7 +377,10 @@ export function buildCharacterStructureMutationTools(
       name: "rename_character_item",
       label: "修改人物名称",
       description: "修改人物条目标题，不改正文。",
-      parameters: Type.Object({ item_id: Type.String({ minLength: 1, maxLength: 512 }), title: Type.String({ minLength: 1, maxLength: 256 }) }),
+      parameters: Type.Object({
+        item_id: Type.String({ minLength: 1, maxLength: 512 }),
+        title: Type.String({ minLength: 1, maxLength: 256 })
+      }),
       executionMode: "sequential",
       execute: async (_id, params) => {
         const item = sharedState.characterItems.get(String(params.item_id));
@@ -331,14 +397,20 @@ export function buildCharacterStructureMutationTools(
           throw new Error("已存在同名人物条目。");
         }
         sharedState.characterItems.set(item.id, { ...item, title });
-        return proposal({ type: "updateItem", itemId: item.id, previousTitle, title }, `已生成人物条目改名提案：${previousTitle} → ${title}`);
+        return proposal(
+          { type: "updateItem", itemId: item.id, previousTitle, title },
+          `已生成人物条目改名提案：${previousTitle} → ${title}`
+        );
       }
     }),
     defineTool({
       name: "move_character_item",
       label: "移动人物条目",
       description: "将人物条目上移或下移一位。",
-      parameters: Type.Object({ item_id: Type.String({ minLength: 1, maxLength: 512 }), direction: Type.Union([Type.Literal("up"), Type.Literal("down")]) }),
+      parameters: Type.Object({
+        item_id: Type.String({ minLength: 1, maxLength: 512 }),
+        direction: Type.Union([Type.Literal("up"), Type.Literal("down")])
+      }),
       executionMode: "sequential",
       execute: async (_id, params) => {
         const itemId = String(params.item_id);
@@ -347,25 +419,50 @@ export function buildCharacterStructureMutationTools(
         const index = sharedState.characterItemOrder.indexOf(itemId);
         const direction = params.direction as "up" | "down";
         const target = direction === "up" ? index - 1 : index + 1;
-        if (target < 0 || target >= sharedState.characterItemOrder.length) throw new Error("人物条目已经位于列表边界。");
-        [sharedState.characterItemOrder[index], sharedState.characterItemOrder[target]] = [sharedState.characterItemOrder[target]!, sharedState.characterItemOrder[index]!];
-        return proposal({ type: "moveItem", itemId, direction, title: item.title }, `已生成人物条目“${item.title}”的排序提案。`);
+        if (target < 0 || target >= sharedState.characterItemOrder.length)
+          throw new Error("人物条目已经位于列表边界。");
+        [
+          sharedState.characterItemOrder[index],
+          sharedState.characterItemOrder[target]
+        ] = [
+          sharedState.characterItemOrder[target]!,
+          sharedState.characterItemOrder[index]!
+        ];
+        return proposal(
+          { type: "moveItem", itemId, direction, title: item.title },
+          `已生成人物条目“${item.title}”的排序提案。`
+        );
       }
     }),
     defineTool({
       name: "delete_character_file",
       label: "删除人物文件",
       description: "删除已完整读取的人物条目及正文；人物概览不能删除。",
-      parameters: Type.Object({ item_id: Type.String({ minLength: 1, maxLength: 512 }) }),
+      parameters: Type.Object({
+        item_id: Type.String({ minLength: 1, maxLength: 512 })
+      }),
       executionMode: "sequential",
       execute: async (_id, params) => {
         const itemId = String(params.item_id);
         const item = sharedState.characterItems.get(itemId);
         if (!item) throw new Error("人物条目不存在。");
-        if (!fullyRead.has(itemId)) return textResult("未删除：请先用 read_character（mode=full）完整读取该人物条目。");
+        if (!fullyRead.has(itemId))
+          return textResult(
+            "未删除：请先用 read_character（mode=full）完整读取该人物条目。"
+          );
         sharedState.characterItems.delete(itemId);
-        sharedState.characterItemOrder = sharedState.characterItemOrder.filter((id) => id !== itemId);
-        return proposal({ type: "deleteItem", itemId, title: item.title, deletedText: item.content }, `已生成人物条目“${item.title}”的删除提案，等待用户审阅。`);
+        sharedState.characterItemOrder = sharedState.characterItemOrder.filter(
+          (id) => id !== itemId
+        );
+        return proposal(
+          {
+            type: "deleteItem",
+            itemId,
+            title: item.title,
+            deletedText: item.content
+          },
+          `已生成人物条目“${item.title}”的删除提案，等待用户审阅。`
+        );
       }
     })
   ];

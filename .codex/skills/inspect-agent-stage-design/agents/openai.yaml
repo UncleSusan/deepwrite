@@ -1,6 +1,0 @@
-interface:
-  display_name: "查看智能体阶段设计"
-  short_description: "只读追踪指定阶段的提示词、工具 schema 与上下文注入链路"
-  default_prompt: "使用 $inspect-agent-stage-design 查看指定阶段的智能体设计，并以文本列出实际有效提示词、工具与上下文链路。"
-policy:
-  allow_implicit_invocation: true

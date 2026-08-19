@@ -20,12 +20,12 @@ describe("script agent-team contracts", () => {
     expect(settings.teams.map(({ parentAgentId }) => parentAgentId)).toEqual(
       SCRIPT_WORKSPACE_AGENT_IDS
     );
-    expect(settings.teams.every(({ subagents }) => subagents.length === 0)).toBe(
-      true
-    );
     expect(
-      WorkspaceAgentTeamSettingsSchema.parse(settings).workspaceType
-    ).toBe("script");
+      settings.teams.every(({ subagents }) => subagents.length === 0)
+    ).toBe(true);
+    expect(WorkspaceAgentTeamSettingsSchema.parse(settings).workspaceType).toBe(
+      "script"
+    );
     expect(
       ScriptAgentTeamSettingsInputSchema.parse(settings).workspaceType
     ).toBe("script");
@@ -46,11 +46,9 @@ describe("script agent-team contracts", () => {
     ).toBe("script");
     expect(
       AgentTeamsSaveCommandEnvelopeSchema.parse(
-        createEnvelope(
-          "agentTeams.save",
-          DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
-          { id: "script_team_save" }
-        )
+        createEnvelope("agentTeams.save", DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS, {
+          id: "script_team_save"
+        })
       ).payload.workspaceType
     ).toBe("script");
   });

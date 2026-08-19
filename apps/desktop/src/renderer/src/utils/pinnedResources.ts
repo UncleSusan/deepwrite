@@ -19,7 +19,9 @@ export function pinnableResourceNodes(
     return flattenResourceNodes(section.nodes).filter(
       (node) =>
         (node.catalogNodeType === "book" && !node.unavailable) ||
-        (node.catalogNodeType === "library" && !node.missing && !node.unavailable) ||
+        (node.catalogNodeType === "library" &&
+          !node.missing &&
+          !node.unavailable) ||
         (node.catalogNodeType === undefined && topLevel.has(node))
     );
   });
@@ -42,9 +44,9 @@ export function parsePinnedResourceIds(
     const validIds = new Set(
       pinnableResourceNodes(sections).map((node) => node.id)
     );
-    return [...new Set(value.filter((id): id is string => typeof id === "string"))].filter((id) =>
-      validIds.has(id)
-    );
+    return [
+      ...new Set(value.filter((id): id is string => typeof id === "string"))
+    ].filter((id) => validIds.has(id));
   } catch {
     return [];
   }
@@ -56,7 +58,9 @@ export function collectPinnedResourceNodes(
 ): ResourceTreeNode[] {
   const nodesById = new Map(
     sections.flatMap((section) =>
-      flattenResourceNodes(section.nodes).map((node) => [node.id, node] as const)
+      flattenResourceNodes(section.nodes).map(
+        (node) => [node.id, node] as const
+      )
     )
   );
   return pinnedIds.flatMap((id) => {

@@ -18,8 +18,12 @@ describe("short manuscript export UI wiring", () => {
     expect(appSource).not.toContain('kind: "export-short"');
     expect(dialogCoordinatorSource).toContain('kind: "export-short"');
     expect(dialogLayerSource).toContain("<ExportShortManuscriptDialog");
-    expect(dialogLayerSource).toContain(':workspace-type="module.workspaceType"');
-    expect(dialogLayerSource).toContain("@export=\"emit('exportShort', $event)\"");
+    expect(dialogLayerSource).toContain(
+      ':workspace-type="module.workspaceType"'
+    );
+    expect(dialogLayerSource).toContain(
+      "@export=\"emit('exportShort', $event)\""
+    );
     expect(lazyLifecycleSource).toContain(
       'return import("./useShortBookLifecycleCoordinator")'
     );

@@ -59,11 +59,7 @@ async function readFocusText(
     offset: 0,
     maxCharacters: maximum
   });
-  if (
-    page.bookId !== bookId ||
-    page.file.id !== fileId ||
-    page.offset !== 0
-  ) {
+  if (page.bookId !== bookId || page.file.id !== fileId || page.offset !== 0) {
     throw new Error("长篇人物阶段读取结果与当前选择不一致。");
   }
   return snapshotText(page, maximum);
@@ -108,10 +104,7 @@ export async function buildLongCharacterFocusSnapshot(input: {
     };
   }
 
-  if (
-    !selection.characterId ||
-    !selection.characterGroup
-  ) {
+  if (!selection.characterId || !selection.characterGroup) {
     return undefined;
   }
   const active = selection.files.find(({ file }) => file.id === activeFileId);

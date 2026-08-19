@@ -7,7 +7,12 @@ import {
 import { buildLibraryAgentSkillAttachments } from "./libraryAgentSkillAttachments";
 
 function skills(
-  entries: Array<{ id: string; name: string; description?: string; content: string }>
+  entries: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    content: string;
+  }>
 ): LibraryAgentSkill[] {
   return entries.map((entry) => ({
     id: entry.id,
@@ -35,19 +40,17 @@ describe("buildLibraryAgentSkillAttachments", () => {
       "介绍步骤",
       "创建步骤"
     ]);
-    expect(result.attachedSkills.every((item) => item.source === "attached-skill")).toBe(true);
+    expect(
+      result.attachedSkills.every((item) => item.source === "attached-skill")
+    ).toBe(true);
   });
 
   it("uses default builtin skill sets for both library domains", () => {
-    expect(DEFAULT_SKILL_LIBRARY_AGENT_SKILLS.map((skill) => skill.name)).toEqual([
-      "初始化库介绍",
-      "创建一个技能",
-      "整理一个技能"
-    ]);
-    expect(DEFAULT_MATERIAL_LIBRARY_AGENT_SKILLS.map((skill) => skill.name)).toEqual([
-      "初始化库介绍",
-      "创建一个素材",
-      "整理一个素材"
-    ]);
+    expect(
+      DEFAULT_SKILL_LIBRARY_AGENT_SKILLS.map((skill) => skill.name)
+    ).toEqual(["初始化库介绍", "创建一个技能", "整理一个技能"]);
+    expect(
+      DEFAULT_MATERIAL_LIBRARY_AGENT_SKILLS.map((skill) => skill.name)
+    ).toEqual(["初始化库介绍", "创建一个素材", "整理一个素材"]);
   });
 });

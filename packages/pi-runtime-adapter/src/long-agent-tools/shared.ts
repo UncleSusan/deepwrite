@@ -1,11 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { Static, TSchema } from "@earendil-works/pi-ai";
 import { createHash } from "node:crypto";
-import {
-  Type,
-  type Static,
-  type TSchema,
-  type TSchemaOptions
-} from "typebox";
 import {
   LongWorkspaceOperationError,
   createEmptyLongMarkdownFileReference,
@@ -38,6 +33,7 @@ import {
   type LongWorkspaceRoot
 } from "@deepwrite/contracts";
 import { LONG_MUTATION_PARAMETERS } from "./schemas";
+import { piStrictToolSampling } from "../pi-tool-schema";
 import { chapterVolumeConflictMessage } from "./formatting";
 import type { LongAgentToolDetails, LongCommandExecutor } from "./index";
 
@@ -92,7 +88,6 @@ export function defineTool<T extends TSchema>(definition: {
   label: string;
   description: string;
   parameters: T;
-  prepareArguments?: AgentTool<T, LongAgentToolDetails>["prepareArguments"];
   execute: (
     toolCallId: string,
     params: Static<T>,
@@ -105,25 +100,13 @@ export function defineTool<T extends TSchema>(definition: {
     label: definition.label,
     description: definition.description,
     parameters: definition.parameters,
+    ...piStrictToolSampling(definition.parameters),
     execute: definition.execute,
-    ...(definition.prepareArguments
-      ? { prepareArguments: definition.prepareArguments }
-      : {}),
-    ...(definition.executionMode ? { executionMode: definition.executionMode } : {})
+    ...(definition.executionMode
+      ? { executionMode: definition.executionMode }
+      : {})
   };
 }
-
-export function literalUnion<T extends string>(
-  values: readonly T[],
-  options: TSchemaOptions = {}
-) {
-  if (values.length === 1) return Type.Literal(values[0]!, options);
-  return Type.Union(
-    values.map((value) => Type.Literal(value)),
-    options
-  );
-}
-
 
 function abortError(): Error {
   const error = new Error("Long workspace query was aborted.");
@@ -151,7 +134,9 @@ export function requireAccepted(result: CommandResult): unknown {
   return result.payload;
 }
 
-export function rootForOperation(operation: LongWorkspaceOperation): LongWorkspaceRoot {
+export function rootForOperation(
+  operation: LongWorkspaceOperation
+): LongWorkspaceRoot {
   const prefix = operation.type.split(".", 1)[0];
   if (prefix === "worldbuilding" || prefix === "worldbuildingItem") {
     return "worldbuilding";
@@ -196,7 +181,10 @@ export function filePathBelongsToRoot(
 }
 
 function addFile(
-  map: Map<string, { root: LongWorkspaceRoot; file: LongWorkspaceFileReference }>,
+  map: Map<
+    string,
+    { root: LongWorkspaceRoot; file: LongWorkspaceFileReference }
+  >,
   root: LongWorkspaceRoot,
   file: LongWorkspaceFileReference
 ): void {
@@ -262,9 +250,7 @@ export function collectOperationFiles(
     return operation.category.format === "text"
       ? [operation.category.file]
       : [
-          ...(operation.category.overview
-            ? [operation.category.overview]
-            : []),
+          ...(operation.category.overview ? [operation.category.overview] : []),
           ...operation.category.items.map(({ file }) => file)
         ];
   }
@@ -326,9 +312,7 @@ function allEntityIds(index: LongWorkspaceIndexSnapshot): Set<string> {
   return new Set([
     ...index.worldbuilding.map(({ id }) => id),
     ...index.worldbuilding.flatMap((category) =>
-      category.format === "list"
-        ? category.items.map(({ id }) => id)
-        : []
+      category.format === "list" ? category.items.map(({ id }) => id) : []
     ),
     ...index.characters.map(({ id }) => id),
     ...index.plot.volumes.map(({ id }) => id),
@@ -381,7 +365,9 @@ function resolveEntityReference(
       throw new Error(`Unknown long mutation client reference: ${value}`);
     }
     if (!resolved.startsWith(`${prefix}_`)) {
-      throw new Error(`Long mutation client reference ${value} has the wrong entity type.`);
+      throw new Error(
+        `Long mutation client reference ${value} has the wrong entity type.`
+      );
     }
     return resolved;
   }
@@ -405,10 +391,7 @@ export function maxOrder(values: readonly number[]): number {
   return values.length === 0 ? 0 : Math.max(...values);
 }
 
-function incrementCounter(
-  counters: Map<string, number>,
-  key: string
-): number {
+function incrementCounter(counters: Map<string, number>, key: string): number {
   const next = (counters.get(key) ?? 0) + 1;
   counters.set(key, next);
   return next;
@@ -481,10 +464,7 @@ export function buildRuntimeOperations(input: {
   for (const chapter of input.index.plot.chapterCards) {
     chapterOrders.set(
       chapter.volumeId,
-      Math.max(
-        chapterOrders.get(chapter.volumeId) ?? 0,
-        chapter.narrativeOrder
-      )
+      Math.max(chapterOrders.get(chapter.volumeId) ?? 0, chapter.narrativeOrder)
     );
   }
   let storyOrder = maxOrder(
@@ -518,10 +498,8 @@ export function buildRuntimeOperations(input: {
     resolveEntityReference(value, prefix, clientReferences);
   const refs = (values: readonly string[], prefix: string) =>
     values.map((value) => ref(value, prefix));
-  const optionalRef = (
-    value: string | null | undefined,
-    prefix: string
-  ) => resolveOptionalReference(value, prefix, clientReferences);
+  const optionalRef = (value: string | null | undefined, prefix: string) =>
+    resolveOptionalReference(value, prefix, clientReferences);
 
   return {
     clientReferences,
@@ -787,10 +765,7 @@ export function buildRuntimeOperations(input: {
               ),
               foreshadowingChanges: createEmptyLongMarkdownFileReference(
                 longChapterForeshadowingChangesFileId(id),
-                longChapterContinuityFilePath(
-                  id,
-                  "foreshadowing-changes.md"
-                ),
+                longChapterContinuityFilePath(id, "foreshadowing-changes.md"),
                 input.timestamp
               ),
               worldReveals: null,
@@ -851,10 +826,7 @@ export function buildRuntimeOperations(input: {
               storyOrder,
               location: operation.location ?? "",
               arcIds: refs(operation.arcIds ?? [], "arc"),
-              characterIds: refs(
-                operation.characterIds ?? [],
-                "character"
-              )
+              characterIds: refs(operation.characterIds ?? [], "character")
             }
           };
         case "event.update":
@@ -942,9 +914,7 @@ export function buildRuntimeOperations(input: {
               ...(patch.targetEventId
                 ? { targetEventId: ref(patch.targetEventId, "event") }
                 : {}),
-              ...(connectionType !== undefined
-                ? { type: connectionType }
-                : {})
+              ...(connectionType !== undefined ? { type: connectionType } : {})
             }
           };
         }
@@ -955,20 +925,14 @@ export function buildRuntimeOperations(input: {
           };
 
         case "placement.create": {
-          const chapterCardId = ref(
-            operation.chapterCardId,
-            "chapter"
-          );
+          const chapterCardId = ref(operation.chapterCardId, "chapter");
           return {
             type: operation.type,
             placement: {
               id: generatedId!,
               eventId: ref(operation.eventId, "event"),
               chapterCardId,
-              orderInChapter: incrementCounter(
-                placementOrders,
-                chapterCardId
-              ),
+              orderInChapter: incrementCounter(placementOrders, chapterCardId),
               mode: operation.mode,
               disclosure: operation.disclosure,
               writingPrompt: operation.writingPrompt ?? "",
@@ -997,10 +961,7 @@ export function buildRuntimeOperations(input: {
           return {
             type: operation.type,
             id: ref(operation.id, "placement"),
-            toChapterCardId: ref(
-              operation.toChapterCardId,
-              "chapter"
-            ),
+            toChapterCardId: ref(operation.toChapterCardId, "chapter"),
             ...(operation.beforePlacementId
               ? {
                   beforePlacementId: ref(
@@ -1076,10 +1037,7 @@ export function buildRuntimeOperations(input: {
               order: incrementCounter(beatOrders, threadId),
               ...(operation.volumeId !== undefined
                 ? {
-                    volumeId: optionalRef(
-                      operation.volumeId,
-                      "volume"
-                    )
+                    volumeId: optionalRef(operation.volumeId, "volume")
                   }
                 : {}),
               ...(operation.arcId !== undefined
@@ -1126,18 +1084,12 @@ export function buildRuntimeOperations(input: {
                 : {}),
               ...(placementId !== undefined
                 ? {
-                    placementId: optionalRef(
-                      placementId,
-                      "placement"
-                    )
+                    placementId: optionalRef(placementId, "placement")
                   }
                 : {}),
               ...(chapterCardId !== undefined
                 ? {
-                    chapterCardId: optionalRef(
-                      chapterCardId,
-                      "chapter"
-                    )
+                    chapterCardId: optionalRef(chapterCardId, "chapter")
                   }
                 : {})
             }
@@ -1155,10 +1107,7 @@ export function buildRuntimeOperations(input: {
             toThreadId: ref(operation.toThreadId, "foreshadow"),
             ...(operation.beforeBeatId
               ? {
-                  beforeBeatId: ref(
-                    operation.beforeBeatId,
-                    "beat"
-                  )
+                  beforeBeatId: ref(operation.beforeBeatId, "beat")
                 }
               : {})
           };
@@ -1180,9 +1129,7 @@ export function nextContentRevision(
   if (!/^(?:v1|v2):\d+:[0-9a-f]+$/u.test(currentRevision)) {
     throw new Error("The current long document has an invalid revision.");
   }
-  return `v2:${new TextEncoder().encode(content).byteLength}:${stableHash(
-    content
-  )}`;
+  return `v2:${new TextEncoder().encode(content).byteLength}:${stableHash(content)}`;
 }
 
 export function resolveDocumentUpdateTarget(
@@ -1277,10 +1224,7 @@ export function buildRuntimeDocumentWrites(input: {
       input.index,
       input.clientReferences
     );
-    if (
-      target.root === "draft" ||
-      !input.writableRoots.has(target.root)
-    ) {
+    if (target.root === "draft" || !input.writableRoots.has(target.root)) {
       throw new Error(
         "Document update proposal is outside the agent's write roots."
       );
@@ -1294,17 +1238,12 @@ export function buildRuntimeDocumentWrites(input: {
     const expectedRevision =
       input.liveRevisions.get(target.file.id) ?? target.file.revision;
     return {
-      proposalId: `proposal_${stableHash(
-        `${input.idSeed}:document:${updateIndex}`
-      ).slice(0, 24)}`,
+      proposalId: `proposal_${stableHash(`${input.idSeed}:document:${updateIndex}`).slice(0, 24)}`,
       fileId: target.file.id,
       content: update.content,
       mode: "replace" as const,
       expectedRevision,
-      nextRevision: nextContentRevision(
-        expectedRevision,
-        update.content
-      ),
+      nextRevision: nextContentRevision(expectedRevision, update.content),
       updatedAt: input.timestamp,
       reason: update.reason.trim()
     };

@@ -22,7 +22,10 @@ export const LONG_WORKSPACE_ROOT_LABELS = {
   draft: "正文",
   continuity_ledger: "连续性账本"
 } as const;
-export const LONG_WORKSPACE_ROOT_DESCRIPTIONS: Record<LongWorkspaceRoot, string> = {
+export const LONG_WORKSPACE_ROOT_DESCRIPTIONS: Record<
+  LongWorkspaceRoot,
+  string
+> = {
   worldbuilding: "维护世界规则、势力、地理、历史、术语、境界与物品。",
   character_design: "维护人物核心档案与关系，查看最新状态和历史轨迹。",
   plot_design: "维护全书故事线、分卷、剧情点与章节卡。",
@@ -94,9 +97,7 @@ export function projectLongWorkspaceNavigation(
   const reconcile = (
     selection: LongWorkspaceSelection
   ): LongWorkspaceSelection | undefined =>
-    index
-      ? reconcileLongWorkspaceSelection(book, index, selection)
-      : selection;
+    index ? reconcileLongWorkspaceSelection(book, index, selection) : selection;
 
   const characterCountByGroup = new Map<LongCharacterGroup, number>();
   for (const character of book.navigation.characters) {
@@ -132,8 +133,7 @@ export function projectLongWorkspaceNavigation(
     );
   }
   const sortedVolumes = [...book.navigation.volumes].sort(
-    (left, right) =>
-      left.order - right.order || left.id.localeCompare(right.id)
+    (left, right) => left.order - right.order || left.id.localeCompare(right.id)
   );
   const worldbuildingUsesLeftTree =
     index?.featureSettings.worldbuildingItemLayout === "left-tree";
@@ -168,9 +168,7 @@ export function projectLongWorkspaceNavigation(
           files: [],
           preferredRole: "content",
           description:
-            category.format === "list"
-              ? "列表型世界设定。"
-              : "文本型世界设定。"
+            category.format === "list" ? "列表型世界设定。" : "文本型世界设定。"
         };
         const selection = reconcile(baseSelection);
         const indexedCategory = index?.worldbuilding.find(
@@ -300,12 +298,7 @@ export function projectLongWorkspaceNavigation(
               ...baseSelection,
               characterId: character.id,
               title: character.name,
-              breadcrumbs: [
-                book.title,
-                "人物设计",
-                group.title,
-                character.name
-              ]
+              breadcrumbs: [book.title, "人物设计", group.title, character.name]
             });
             return characterSelection
               ? [
@@ -410,23 +403,17 @@ export function projectLongWorkspaceNavigation(
     breadcrumbs: [book.title, "剧情设计", "伏笔总览"],
     files: [],
     preferredRole: "book-line",
-    description:
-      "集中管理伏笔线，并查看各卷、各剧情点中的伏笔触点。"
+    description: "集中管理伏笔线，并查看各卷、各剧情点中的伏笔触点。"
   });
-  const plotPointVolumeChildren: ResourceTreeNode[] = sortedVolumes
-    .map((volume) => {
+  const plotPointVolumeChildren: ResourceTreeNode[] = sortedVolumes.map(
+    (volume) => {
       const plotPointCount = arcCountByVolume.get(volume.id) ?? 0;
       const baseSelection: LongWorkspaceSelection = {
         key: `plot-design:plot-points:${volume.id}`,
         root: "plot_design",
         plotPointVolumeId: volume.id,
         title: volume.title,
-        breadcrumbs: [
-          book.title,
-          "剧情设计",
-          "剧情点",
-          volume.title
-        ],
+        breadcrumbs: [book.title, "剧情设计", "剧情点", volume.title],
         files: [],
         preferredRole: "book-line",
         description: `${volume.title}共有 ${plotPointCount} 个剧情点。`
@@ -476,80 +463,81 @@ export function projectLongWorkspaceNavigation(
             }
           : {})
       });
-    });
+    }
+  );
 
-  const chapterCardManagementChildren: ResourceTreeNode[] =
-    sortedVolumes
-      .map((volume) => {
-        const chapters = chaptersByVolume.get(volume.id) ?? [];
-        const fallbackSelection: LongWorkspaceSelection = {
-          key: `plot-design:chapter-cards:${volume.id}`,
-          root: "plot_design",
-          chapterCardVolumeId: volume.id,
-          ...(chapters[0] ? { chapterCardId: chapters[0].id } : {}),
-          chapterCardTabs: chapters.map((chapter) => ({
-            id: chapter.id,
-            label: chapter.title,
-            narrativeOrder: chapter.narrativeOrder
-          })),
-          title: chapters[0]?.title ?? volume.title,
-          breadcrumbs: [
-            book.title,
-            "剧情设计",
-            "章卡",
-            volume.title,
-            ...(chapters[0] ? [chapters[0].title] : [])
-          ],
-          files: [],
-          preferredRole: "book-line",
-          description: chapters.length
-            ? `${volume.title} · ${chapters[0]!.title}`
-            : `${volume.title}还没有章卡，请使用右侧章卡标签栏的加号新建。`
-        };
-        const selection =
-          (index
-            ? createLongChapterCardVolumeSelection(book, index, volume.id)
-            : undefined) ?? fallbackSelection;
-        const children =
-          plotUsesLeftTree && index
-            ? chapters.flatMap((chapter) => {
-                const chapterSelection = createLongChapterCardVolumeSelection(
-                  book,
-                  index,
-                  volume.id,
-                  chapter.id
-                );
-                return chapterSelection
-                  ? [
-                      node(chapterSelection, {
-                        nodeKey: `plot-design:chapter-card:${chapter.id}`,
-                        icon: "file",
-                        label: chapter.title,
-                        longTreeItem: {
-                          kind: "chapter-card",
-                          id: chapter.id,
-                          parentId: volume.id
-                        }
-                      })
-                    ]
-                  : [];
-              })
-            : undefined;
-        return node(selection, {
-          icon: "folder",
-          label: volume.title,
-          badge: `${chapters.length} 章`,
-          ...(children ? { children } : {}),
-          ...(plotUsesLeftTree
-            ? {
-                longTreeCollection: {
-                  kind: "chapter-card" as const,
-                  parentId: volume.id
-                }
+  const chapterCardManagementChildren: ResourceTreeNode[] = sortedVolumes.map(
+    (volume) => {
+      const chapters = chaptersByVolume.get(volume.id) ?? [];
+      const fallbackSelection: LongWorkspaceSelection = {
+        key: `plot-design:chapter-cards:${volume.id}`,
+        root: "plot_design",
+        chapterCardVolumeId: volume.id,
+        ...(chapters[0] ? { chapterCardId: chapters[0].id } : {}),
+        chapterCardTabs: chapters.map((chapter) => ({
+          id: chapter.id,
+          label: chapter.title,
+          narrativeOrder: chapter.narrativeOrder
+        })),
+        title: chapters[0]?.title ?? volume.title,
+        breadcrumbs: [
+          book.title,
+          "剧情设计",
+          "章卡",
+          volume.title,
+          ...(chapters[0] ? [chapters[0].title] : [])
+        ],
+        files: [],
+        preferredRole: "book-line",
+        description: chapters.length
+          ? `${volume.title} · ${chapters[0]!.title}`
+          : `${volume.title}还没有章卡，请使用右侧章卡标签栏的加号新建。`
+      };
+      const selection =
+        (index
+          ? createLongChapterCardVolumeSelection(book, index, volume.id)
+          : undefined) ?? fallbackSelection;
+      const children =
+        plotUsesLeftTree && index
+          ? chapters.flatMap((chapter) => {
+              const chapterSelection = createLongChapterCardVolumeSelection(
+                book,
+                index,
+                volume.id,
+                chapter.id
+              );
+              return chapterSelection
+                ? [
+                    node(chapterSelection, {
+                      nodeKey: `plot-design:chapter-card:${chapter.id}`,
+                      icon: "file",
+                      label: chapter.title,
+                      longTreeItem: {
+                        kind: "chapter-card",
+                        id: chapter.id,
+                        parentId: volume.id
+                      }
+                    })
+                  ]
+                : [];
+            })
+          : undefined;
+      return node(selection, {
+        icon: "folder",
+        label: volume.title,
+        badge: `${chapters.length} 章`,
+        ...(children ? { children } : {}),
+        ...(plotUsesLeftTree
+          ? {
+              longTreeCollection: {
+                kind: "chapter-card" as const,
+                parentId: volume.id
               }
-            : {})
-        });
+            }
+          : {})
       });
+    }
+  );
 
   const plotChildren: ResourceTreeNode[] = [
     ...(bookLineSelection
@@ -610,35 +598,35 @@ export function projectLongWorkspaceNavigation(
     )
   ];
 
-  const draftChildren = sortedVolumes
-    .map<ResourceTreeNode>((volume) => {
-      const chapters = (chaptersByVolume.get(volume.id) ?? [])
-        .flatMap<ResourceTreeNode>((chapter) => {
-          const selection = index
-            ? createLongChapterSelection(book, index, chapter.id)
-            : {
-                key: `chapter:${chapter.id}`,
-                root: "draft" as const,
-                chapterCardId: chapter.id,
-                title: chapter.title,
-                breadcrumbs: [book.title, "正文", volume.title, chapter.title],
-                files: [],
-                preferredRole: "body" as const
-              };
-          return selection ? [node(selection, { icon: "edit" })] : [];
-        });
-      return {
-        id: longNavigationNodeId(book.id, `volume:${volume.id}`),
-        label: volume.title,
-        icon: "folder",
-        badge: `${chapters.length} 章`,
-        workspaceType: "long",
-        longBookId: book.id,
-        catalogNodeType: "category",
-        longDraftVolumeId: volume.id,
-        ...(chapters.length ? { children: chapters } : {})
-      };
+  const draftChildren = sortedVolumes.map<ResourceTreeNode>((volume) => {
+    const chapters = (
+      chaptersByVolume.get(volume.id) ?? []
+    ).flatMap<ResourceTreeNode>((chapter) => {
+      const selection = index
+        ? createLongChapterSelection(book, index, chapter.id)
+        : {
+            key: `chapter:${chapter.id}`,
+            root: "draft" as const,
+            chapterCardId: chapter.id,
+            title: chapter.title,
+            breadcrumbs: [book.title, "正文", volume.title, chapter.title],
+            files: [],
+            preferredRole: "body" as const
+          };
+      return selection ? [node(selection, { icon: "edit" })] : [];
     });
+    return {
+      id: longNavigationNodeId(book.id, `volume:${volume.id}`),
+      label: volume.title,
+      icon: "folder",
+      badge: `${chapters.length} 章`,
+      workspaceType: "long",
+      longBookId: book.id,
+      catalogNodeType: "category",
+      longDraftVolumeId: volume.id,
+      ...(chapters.length ? { children: chapters } : {})
+    };
+  });
 
   const continuityPendingChildren: ResourceTreeNode[] = [];
   const continuityRecordChildren: ResourceTreeNode[] = [];

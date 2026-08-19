@@ -5,10 +5,7 @@ import {
 import type { AgentEditProposal } from "../types/conversation";
 
 export type AgentEditAcceptance =
-  | "ready"
-  | "already-applied"
-  | "conflict"
-  | "missing-proposed-text";
+  "ready" | "already-applied" | "conflict" | "missing-proposed-text";
 
 export function agentEditProposalId(
   runId: string,

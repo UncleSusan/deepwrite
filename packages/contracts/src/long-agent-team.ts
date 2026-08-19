@@ -1,7 +1,5 @@
 import { z } from "zod";
-import {
-  ShortAgentSubagentDefinitionsSchema
-} from "./agent-team";
+import { ShortAgentSubagentDefinitionsSchema } from "./agent-team";
 import { EnvelopeBaseSchema } from "./envelope";
 import {
   LONG_AGENT_IDS,
@@ -45,20 +43,15 @@ function validateCompleteLongAgentTeams(
 export const LongAgentTeamSettingsSchema = z
   .object({
     workspaceType: z.literal("long"),
-    teams: z
-      .array(LongAgentTeamSchema)
-      .length(LONG_AGENT_IDS.length)
+    teams: z.array(LongAgentTeamSchema).length(LONG_AGENT_IDS.length)
   })
   .strict()
   .superRefine((value, context) =>
     validateCompleteLongAgentTeams(value.teams, context)
   );
-export type LongAgentTeamSettings = z.infer<
-  typeof LongAgentTeamSettingsSchema
->;
+export type LongAgentTeamSettings = z.infer<typeof LongAgentTeamSettingsSchema>;
 
-export const LongAgentTeamSettingsInputSchema =
-  LongAgentTeamSettingsSchema;
+export const LongAgentTeamSettingsInputSchema = LongAgentTeamSettingsSchema;
 export type LongAgentTeamSettingsInput = z.infer<
   typeof LongAgentTeamSettingsInputSchema
 >;

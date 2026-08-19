@@ -14,8 +14,6 @@ import {
   LongCharacterTypeSchema,
   LongEventConnectionIdSchema,
   LongEventConnectionSchema,
-  LongFileIdSchema,
-  LongFileRevisionSchema,
   LongForeshadowingBeatIdSchema,
   LongForeshadowingBeatSchema,
   LongForeshadowingIdSchema,
@@ -23,62 +21,42 @@ import {
   LongMarkdownFileReferenceSchema,
   LongNarrativePlacementIdSchema,
   LongNarrativePlacementSchema,
-  LongProjectRelativePathSchema,
-  LongStableIdSchema,
   LongStoryEventIdSchema,
   LongStoryEventSchema,
   LongStoryPlotIdSchema,
   LongStoryPlotSchema,
   LongVolumeIdSchema,
   LongVolumeSchema,
-  LongWorldbuildingItemLayoutSchema,
-  LongWorkspaceIndexSnapshotSchema,
   LongWorldbuildingCategoryIdSchema,
   LongWorldbuildingCategorySchema,
   LongWorldbuildingItemIdSchema,
-  LongWorldbuildingItemSchema,
-  createEmptyLongMarkdownFileReference,
-  deriveLongForeshadowingStatusFromCommittedBeats,
-  longWorldbuildingContentPath,
-  longWorldbuildingFileId,
-  longWorldbuildingItemContentPath,
-  longWorldbuildingItemFileId,
-  longWorldbuildingOverviewContentPath,
-  longWorldbuildingOverviewFileId
-} from "../long-workspace";
-import type {
-  LongForeshadowing,
-  LongForeshadowingBeat,
-  LongNarrativePlacement,
-  LongWorkspaceFileReference,
-  LongWorkspaceIndexSnapshot
+  LongWorldbuildingItemSchema
 } from "../long-workspace";
 
 import {
-  DeleteControlShape,
-  FeatureSettingsUpdatePatchSchema,
-  LongProvisionalIdSchema,
-  OptionalProvisionalIdShape,
-  WorldbuildingUpdatePatchSchema,
-  CharacterUpdatePatchSchema,
-  CharacterTypeUpdatePatchSchema,
-  VolumeUpdatePatchSchema,
   ArcUpdatePatchSchema,
   ChapterCardUpdatePatchSchema,
-  StoryEventUpdatePatchSchema,
+  CharacterTypeUpdatePatchSchema,
+  CharacterUpdatePatchSchema,
+  DeleteControlShape,
   EventConnectionUpdatePatchSchema,
-  NarrativePlacementUpdatePatchSchema,
-  ForeshadowingUpdatePatchSchema,
+  FeatureSettingsUpdatePatchSchema,
   ForeshadowingBeatUpdatePatchSchema,
-  OperationTextSchema,
-  OperationShortTextSchema,
+  ForeshadowingUpdatePatchSchema,
+  NarrativePlacementUpdatePatchSchema,
   OperationTitleSchema,
-  OperationTimestampSchema,
+  OptionalProvisionalIdShape,
+  StoryEventUpdatePatchSchema,
+  VolumeUpdatePatchSchema,
+  WorldbuildingUpdatePatchSchema,
   nonEmptyPatch,
   uniqueIdArray
 } from "./schema-helpers";
 
-export { LongProvisionalIdSchema, type LongProvisionalId } from "./schema-helpers";
+export {
+  LongProvisionalIdSchema,
+  type LongProvisionalId
+} from "./schema-helpers";
 
 export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
   z
@@ -219,10 +197,7 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("character.reorder"),
       group: LongCharacterGroupSchema,
-      orderedIds: uniqueIdArray(
-        LongCharacterIdSchema,
-        "character reorder id"
-      )
+      orderedIds: uniqueIdArray(LongCharacterIdSchema, "character reorder id")
     })
     .strict(),
 
@@ -326,10 +301,7 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("chapter.reorder"),
       volumeId: LongVolumeIdSchema,
-      orderedIds: uniqueIdArray(
-        LongChapterCardIdSchema,
-        "chapter reorder id"
-      )
+      orderedIds: uniqueIdArray(LongChapterCardIdSchema, "chapter reorder id")
     })
     .strict(),
   z
@@ -352,8 +324,7 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
       characterId: LongCharacterIdSchema,
       currentState:
         LongChapterCharacterContinuityFileIndexEntrySchema.shape.currentState,
-      history:
-        LongChapterCharacterContinuityFileIndexEntrySchema.shape.history
+      history: LongChapterCharacterContinuityFileIndexEntrySchema.shape.history
     })
     .strict(),
   z
@@ -419,10 +390,7 @@ export const LongWorkspaceOperationSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("storyPlot.reorder"),
       arcId: LongArcIdSchema,
-      orderedIds: uniqueIdArray(
-        LongStoryPlotIdSchema,
-        "story-plot reorder id"
-      )
+      orderedIds: uniqueIdArray(LongStoryPlotIdSchema, "story-plot reorder id")
     })
     .strict(),
 

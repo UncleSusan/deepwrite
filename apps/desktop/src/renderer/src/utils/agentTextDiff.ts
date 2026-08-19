@@ -1,4 +1,7 @@
-import type { AgentTextDiffHunk, AgentTextDiffLine } from "../types/conversation";
+import type {
+  AgentTextDiffHunk,
+  AgentTextDiffLine
+} from "../types/conversation";
 
 export interface AgentTextDiffOptions {
   contextLines?: number;
@@ -28,7 +31,11 @@ const MAX_MYERS_EDIT_DISTANCE = 2_000;
 const MAX_MYERS_TRACE_CELLS = 1_000_000;
 const MAX_MYERS_WORK = 2_000_000;
 
-function normalizeLimit(value: number | undefined, fallback: number, minimum: number): number {
+function normalizeLimit(
+  value: number | undefined,
+  fallback: number,
+  minimum: number
+): number {
   if (value === undefined || !Number.isFinite(value)) {
     return fallback;
   }
@@ -52,7 +59,10 @@ function mapValue(map: Map<number, number>, key: number): number {
  * fast even when unchanged text is long. A caller can safely fall back to a
  * coarse replacement when this returns undefined.
  */
-function buildMyersOperations(before: string[], after: string[]): DiffOperation[] | undefined {
+function buildMyersOperations(
+  before: string[],
+  after: string[]
+): DiffOperation[] | undefined {
   if (before.length === 0) {
     return after.map((text) => ({ type: "addition", text }));
   }
@@ -65,7 +75,7 @@ function buildMyersOperations(before: string[], after: string[]): DiffOperation[
     MAX_MYERS_EDIT_DISTANCE
   );
   const trace: Array<Map<number, number>> = [];
-  let frontier = new Map<number, number>([[1, 0]]);
+  const frontier = new Map<number, number>([[1, 0]]);
   let work = 0;
 
   for (let distance = 0; distance <= maxDistance; distance += 1) {
@@ -190,8 +200,12 @@ function publicLine(line: NumberedDiffLine): AgentTextDiffLine {
   return {
     type: line.type,
     text: line.text,
-    ...(line.oldLineNumber === undefined ? {} : { oldLineNumber: line.oldLineNumber }),
-    ...(line.newLineNumber === undefined ? {} : { newLineNumber: line.newLineNumber })
+    ...(line.oldLineNumber === undefined
+      ? {}
+      : { oldLineNumber: line.oldLineNumber }),
+    ...(line.newLineNumber === undefined
+      ? {}
+      : { newLineNumber: line.newLineNumber })
   };
 }
 
@@ -213,7 +227,10 @@ function hunkFromRange(
   };
 }
 
-function buildHunks(lines: NumberedDiffLine[], contextLines: number): AgentTextDiffHunk[] {
+function buildHunks(
+  lines: NumberedDiffLine[],
+  contextLines: number
+): AgentTextDiffHunk[] {
   const ranges: Array<{ start: number; end: number }> = [];
   for (let index = 0; index < lines.length; index += 1) {
     if (lines[index]?.type === "context") {
@@ -263,7 +280,10 @@ function representativeLineIndex(hunk: AgentTextDiffHunk): number {
   return changed < 0 ? 0 : changed;
 }
 
-function sampleHunk(hunk: AgentTextDiffHunk, quota: number): AgentTextDiffHunk[] {
+function sampleHunk(
+  hunk: AgentTextDiffHunk,
+  quota: number
+): AgentTextDiffHunk[] {
   if (hunk.lines.length <= quota) {
     return [hunk];
   }
@@ -277,7 +297,9 @@ function sampleHunk(hunk: AgentTextDiffHunk, quota: number): AgentTextDiffHunk[]
     } else {
       for (let slot = 0; slot < quota; slot += 1) {
         selected.add(
-          changedIndices[Math.round((slot * (changedIndices.length - 1)) / (quota - 1))]!
+          changedIndices[
+            Math.round((slot * (changedIndices.length - 1)) / (quota - 1))
+          ]!
         );
       }
     }
@@ -286,8 +308,12 @@ function sampleHunk(hunk: AgentTextDiffHunk, quota: number): AgentTextDiffHunk[]
     const contextIndices = hunk.lines
       .flatMap((line, index) => (line.type === "context" ? [index] : []))
       .sort((left, right) => {
-        const leftDistance = Math.min(...changedIndices.map((index) => Math.abs(index - left)));
-        const rightDistance = Math.min(...changedIndices.map((index) => Math.abs(index - right)));
+        const leftDistance = Math.min(
+          ...changedIndices.map((index) => Math.abs(index - left))
+        );
+        const rightDistance = Math.min(
+          ...changedIndices.map((index) => Math.abs(index - right))
+        );
         return leftDistance - rightDistance || left - right;
       });
     for (const index of contextIndices) {
@@ -374,8 +400,14 @@ function buildCoarseDiff(
       .map((text) => ({ type: "addition" as const, text })),
     ...contextAfter.map((text) => ({ type: "context" as const, text }))
   ];
-  const numbered = numberOperations(operations, contextBeforeStart, contextBeforeStart);
-  const hunks = numbered.length ? [hunkFromRange(numbered, 0, numbered.length)] : [];
+  const numbered = numberOperations(
+    operations,
+    contextBeforeStart,
+    contextBeforeStart
+  );
+  const hunks = numbered.length
+    ? [hunkFromRange(numbered, 0, numbered.length)]
+    : [];
   const limited = limitHunks(hunks, maxRenderedLines);
   return {
     additions: afterMiddleLength,
@@ -396,7 +428,11 @@ export function buildAgentTextDiff(
     return { additions: 0, deletions: 0, hunks: [], truncated: false };
   }
 
-  const contextLines = normalizeLimit(options.contextLines, DEFAULT_CONTEXT_LINES, 0);
+  const contextLines = normalizeLimit(
+    options.contextLines,
+    DEFAULT_CONTEXT_LINES,
+    0
+  );
   const maxRenderedLines = normalizeLimit(
     options.maxRenderedLines,
     DEFAULT_MAX_RENDERED_LINES,
@@ -418,7 +454,8 @@ export function buildAgentTextDiff(
   while (
     suffixLength < before.length - prefixLength &&
     suffixLength < after.length - prefixLength &&
-    before[before.length - suffixLength - 1] === after[after.length - suffixLength - 1]
+    before[before.length - suffixLength - 1] ===
+      after[after.length - suffixLength - 1]
   ) {
     suffixLength += 1;
   }
@@ -442,16 +479,26 @@ export function buildAgentTextDiff(
     .slice(contextBeforeStart, prefixLength)
     .map((text) => ({ type: "context", text }));
   const trailingContext: DiffOperation[] = before
-    .slice(before.length - suffixLength, before.length - suffixLength + contextLines)
+    .slice(
+      before.length - suffixLength,
+      before.length - suffixLength + contextLines
+    )
     .map((text) => ({ type: "context", text }));
   const numbered = numberOperations(
     [...leadingContext, ...middleOperations, ...trailingContext],
     contextBeforeStart,
     contextBeforeStart
   );
-  const additions = middleOperations.filter((operation) => operation.type === "addition").length;
-  const deletions = middleOperations.filter((operation) => operation.type === "deletion").length;
-  const limited = limitHunks(buildHunks(numbered, contextLines), maxRenderedLines);
+  const additions = middleOperations.filter(
+    (operation) => operation.type === "addition"
+  ).length;
+  const deletions = middleOperations.filter(
+    (operation) => operation.type === "deletion"
+  ).length;
+  const limited = limitHunks(
+    buildHunks(numbered, contextLines),
+    maxRenderedLines
+  );
   return {
     additions,
     deletions,

@@ -61,7 +61,10 @@ describe("marketplace contracts", () => {
   it("validates page-based marketplace list requests and responses", () => {
     expect(
       MarketplaceListFilterSchema.parse({ page: 2, pageSize: 20 })
-    ).toEqual({ page: 2, pageSize: 20 });
+    ).toEqual({
+      page: 2,
+      pageSize: 20
+    });
     expect(() =>
       MarketplaceListFilterSchema.parse({ page: 0, pageSize: 20 })
     ).toThrow();
@@ -129,12 +132,13 @@ describe("marketplace contracts", () => {
         }
       ]
     });
-    const command = CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema.parse(
-      createEnvelope("catalog.installMarketplaceSkillContent", payload, {
-        id: "marketplace-install-test",
-        correlationId: "marketplace-install-test"
-      })
-    );
+    const command =
+      CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema.parse(
+        createEnvelope("catalog.installMarketplaceSkillContent", payload, {
+          id: "marketplace-install-test",
+          correlationId: "marketplace-install-test"
+        })
+      );
     expect(command.type).toBe("catalog.installMarketplaceSkillContent");
   });
 

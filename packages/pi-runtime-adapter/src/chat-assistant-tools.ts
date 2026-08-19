@@ -1,5 +1,10 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Type, type Static, type TSchema } from "typebox";
+import {
+  StringEnum,
+  Type,
+  type Static,
+  type TSchema
+} from "@earendil-works/pi-ai";
 import {
   LongSearchCommandEnvelopeSchema,
   LongSearchResultSchema,
@@ -13,6 +18,7 @@ import {
   buildLongWorkspaceTools,
   type LongCommandExecutor
 } from "./long-agent-tools";
+import { piStrictToolSampling } from "./pi-tool-schema";
 
 type ReadOnlyDetails = { kind: "none" };
 
@@ -35,14 +41,23 @@ function defineTool<T extends TSchema>(definition: {
     signal?: AbortSignal
   ) => Promise<AgentToolResult<ReadOnlyDetails>>;
 }): AgentTool<T, ReadOnlyDetails> {
-  return definition;
+  return {
+    ...definition,
+    ...piStrictToolSampling(definition.parameters)
+  };
 }
 
 function normalizedQuery(value: unknown): string {
-  return String(value ?? "").trim().toLocaleLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLocaleLowerCase();
 }
 
-function page<Value>(values: readonly Value[], cursor: unknown, limit: unknown) {
+function page<Value>(
+  values: readonly Value[],
+  cursor: unknown,
+  limit: unknown
+) {
   const offset = Math.max(0, Number.parseInt(String(cursor ?? "0"), 10) || 0);
   const size = Math.min(100, Math.max(1, Number(limit ?? 30)));
   return {
@@ -78,12 +93,12 @@ function librarySummaries(
   context: ChatAssistantRuntimeContext,
   domain: "material" | "skill"
 ) {
-  const libraries = domain === "material" ? context.catalog.materials : context.catalog.skills;
+  const libraries =
+    domain === "material" ? context.catalog.materials : context.catalog.skills;
   return libraries.map((library) => ({
     library_id: library.id,
     title: library.title,
-    kind:
-      "materialKind" in library ? library.materialKind : library.skillKind,
+    kind: "materialKind" in library ? library.materialKind : library.skillKind,
     library_type:
       "materialType" in library ? library.materialType : library.skillType,
     entry_count: library.entries.length,
@@ -100,7 +115,7 @@ function buildNormalTools(context: ChatAssistantRuntimeContext): AgentTool[] {
     parameters: Type.Object({
       query: Type.Optional(Type.String({ maxLength: 200 })),
       project_type: Type.Optional(
-        Type.Union([Type.Literal("short"), Type.Literal("script"), Type.Literal("long")])
+        StringEnum(["short", "script", "long"] as const)
       ),
       cursor: Type.Optional(Type.String({ maxLength: 32 })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
@@ -120,12 +135,14 @@ function buildNormalTools(context: ChatAssistantRuntimeContext): AgentTool[] {
     label: "查看项目摘要",
     description: "读取指定创作项目的结构摘要和阶段目录；普通模式不返回正文。",
     parameters: Type.Object({
-      project_type: Type.Union([Type.Literal("short"), Type.Literal("script"), Type.Literal("long")]),
+      project_type: StringEnum(["short", "script", "long"] as const),
       project_id: Type.String({ minLength: 1, maxLength: 512 })
     }),
     execute: async (_id, params) => {
       if (params.project_type === "long") {
-        const book = context.longBooks.find((candidate) => candidate.id === params.project_id);
+        const book = context.longBooks.find(
+          (candidate) => candidate.id === params.project_id
+        );
         if (!book) return textResult("未找到指定长篇项目。");
         return jsonResult({
           project_type: "long",
@@ -201,8 +218,13 @@ function buildNormalTools(context: ChatAssistantRuntimeContext): AgentTool[] {
           library_id: Type.String({ minLength: 1, maxLength: 512 })
         }),
         execute: async (_id, params) => {
-          const libraries = domain === "material" ? context.catalog.materials : context.catalog.skills;
-          const library = libraries.find((candidate) => candidate.id === params.library_id);
+          const libraries =
+            domain === "material"
+              ? context.catalog.materials
+              : context.catalog.skills;
+          const library = libraries.find(
+            (candidate) => candidate.id === params.library_id
+          );
           if (!library) return textResult(`未找到指定${domainLabel}库。`);
           return jsonResult({
             library_id: library.id,
@@ -232,7 +254,8 @@ function buildNormalTools(context: ChatAssistantRuntimeContext): AgentTool[] {
   const modelTool = defineTool({
     name: "query_model_configs",
     label: "查询模型配置",
-    description: "查询已配置模型的脱敏信息。不会返回 API Key、Base URL、请求路由或其它凭据。",
+    description:
+      "查询已配置模型的脱敏信息。不会返回 API Key、Base URL、请求路由或其它凭据。",
     parameters: Type.Object({
       model_id: Type.Optional(Type.String({ minLength: 1, maxLength: 120 }))
     }),
@@ -247,23 +270,25 @@ function buildNormalTools(context: ChatAssistantRuntimeContext): AgentTool[] {
   const usageTool = defineTool({
     name: "query_model_usage",
     label: "查询模型用量",
-    description: "查询发送本轮消息前生成的模型用量汇总；当前尚未完成的调用不包含在内。",
+    description:
+      "查询发送本轮消息前生成的模型用量汇总；当前尚未完成的调用不包含在内。",
     parameters: Type.Object({
-      period: Type.Union([
-        Type.Literal("today"),
-        Type.Literal("7d"),
-        Type.Literal("30d"),
-        Type.Literal("all")
-      ]),
-      model_config_ids: Type.Optional(Type.Array(Type.String({ maxLength: 120 }), { maxItems: 100 })),
-      modules: Type.Optional(Type.Array(Type.String({ maxLength: 120 }), { maxItems: 20 }))
+      period: StringEnum(["today", "7d", "30d", "all"] as const),
+      model_config_ids: Type.Optional(
+        Type.Array(Type.String({ maxLength: 120 }), { maxItems: 100 })
+      ),
+      modules: Type.Optional(
+        Type.Array(Type.String({ maxLength: 120 }), { maxItems: 20 })
+      )
     }),
     execute: async (_id, params) => {
       const dashboard = context.usage[params.period];
       const modelIds = params.model_config_ids?.length
         ? new Set(params.model_config_ids)
         : undefined;
-      const modules = params.modules?.length ? new Set(params.modules) : undefined;
+      const modules = params.modules?.length
+        ? new Set(params.modules)
+        : undefined;
       return jsonResult({
         period: params.period,
         generated_at: dashboard.generatedAt,
@@ -329,7 +354,8 @@ function buildShortProjectTools(book: Book): AgentTool[] {
   const listTool = defineTool({
     name: "list_workspace_content",
     label: "列出项目阶段",
-    description: "列出当前短篇或剧本的阶段、人物文件和正文小节目录，不返回正文。",
+    description:
+      "列出当前短篇或剧本的阶段、人物文件和正文小节目录，不返回正文。",
     parameters: Type.Object({}),
     execute: async () =>
       jsonResult({
@@ -337,7 +363,10 @@ function buildShortProjectTools(book: Book): AgentTool[] {
         project_type: book.bookType,
         title: book.title,
         plot_stages: book.plotStages,
-        stage_documents: book.documents.map((item) => ({ id: item.id, title: item.title })),
+        stage_documents: book.documents.map((item) => ({
+          id: item.id,
+          title: item.title
+        })),
         characters:
           book.characterStructure.format === "list"
             ? book.characterStructure.items
@@ -375,7 +404,10 @@ function buildShortProjectTools(book: Book): AgentTool[] {
             title: source.title,
             kind: source.kind,
             offset: index,
-            snippet: source.content.slice(Math.max(0, index - 80), index + query.length + 80)
+            snippet: source.content.slice(
+              Math.max(0, index - 80),
+              index + query.length + 80
+            )
           });
           cursor = index + Math.max(1, query.length);
         }
@@ -387,21 +419,30 @@ function buildShortProjectTools(book: Book): AgentTool[] {
   const readTool = defineTool({
     name: "read_workspace_content",
     label: "读取项目内容",
-    description: "按目录返回的 document_id 分页读取当前锁定项目的阶段、人物或正文文件。",
+    description:
+      "按目录返回的 document_id 分页读取当前锁定项目的阶段、人物或正文文件。",
     parameters: Type.Object({
       document_id: Type.String({ minLength: 1, maxLength: 512 }),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
-      max_characters: Type.Optional(Type.Integer({ minimum: 1, maximum: 32_768 }))
+      max_characters: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 32_768 })
+      )
     }),
     execute: async (_id, params) => {
-      const source = sources.find((candidate) => candidate.id === params.document_id);
+      const source = sources.find(
+        (candidate) => candidate.id === params.document_id
+      );
       if (!source) return textResult("指定文档不属于当前项目或不存在。");
       return jsonResult({
         project_id: book.id,
         document_id: source.id,
         title: source.title,
         kind: source.kind,
-        ...readPage(source.content, Number(params.offset ?? 0), Number(params.max_characters ?? 12_000))
+        ...readPage(
+          source.content,
+          Number(params.offset ?? 0),
+          Number(params.max_characters ?? 12_000)
+        )
       });
     }
   });
@@ -420,11 +461,14 @@ function buildShortProjectTools(book: Book): AgentTool[] {
     name: "search_characters",
     label: "搜索人物",
     description: "按姓名或人物正文搜索当前项目人物。",
-    parameters: Type.Object({ query: Type.String({ minLength: 1, maxLength: 300 }) }),
+    parameters: Type.Object({
+      query: Type.String({ minLength: 1, maxLength: 300 })
+    }),
     execute: async (_id, params) => {
       const query = normalizedQuery(params.query);
       const matches = characters.filter((character) => {
-        const body = sources.find((source) => source.id === character.id)?.content ?? "";
+        const body =
+          sources.find((source) => source.id === character.id)?.content ?? "";
         return (
           character.title.toLocaleLowerCase().includes(query) ||
           body.toLocaleLowerCase().includes(query)
@@ -440,7 +484,9 @@ function buildShortProjectTools(book: Book): AgentTool[] {
     parameters: Type.Object({
       character_id: Type.String({ minLength: 1, maxLength: 512 }),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
-      max_characters: Type.Optional(Type.Integer({ minimum: 1, maximum: 32_768 }))
+      max_characters: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 32_768 })
+      )
     }),
     execute: async (_id, params) => {
       if (!characters.some((item) => item.id === params.character_id)) {
@@ -452,7 +498,11 @@ function buildShortProjectTools(book: Book): AgentTool[] {
         project_id: book.id,
         character_id: params.character_id,
         title: source.title,
-        ...readPage(source.content, Number(params.offset ?? 0), Number(params.max_characters ?? 12_000))
+        ...readPage(
+          source.content,
+          Number(params.offset ?? 0),
+          Number(params.max_characters ?? 12_000)
+        )
       });
     }
   });
@@ -462,24 +512,41 @@ function buildShortProjectTools(book: Book): AgentTool[] {
     description: "分页读取当前项目指定正文小节的正文或人物状态文件。",
     parameters: Type.Object({
       section_id: Type.String({ minLength: 1, maxLength: 512 }),
-      file: Type.Union([Type.Literal("body"), Type.Literal("character_state")]),
+      file: StringEnum(["body", "character_state"] as const),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
-      max_characters: Type.Optional(Type.Integer({ minimum: 1, maximum: 32_768 }))
+      max_characters: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 32_768 })
+      )
     }),
     execute: async (_id, params) => {
-      const section = book.draft.sections.find((item) => item.id === params.section_id);
+      const section = book.draft.sections.find(
+        (item) => item.id === params.section_id
+      );
       if (!section) return textResult("指定正文小节不属于当前项目。");
-      const document = params.file === "body" ? section.body : section.characterState;
+      const document =
+        params.file === "body" ? section.body : section.characterState;
       return jsonResult({
         project_id: book.id,
         section_id: section.id,
         title: section.title,
         file: params.file,
-        ...readPage(document.content, Number(params.offset ?? 0), Number(params.max_characters ?? 12_000))
+        ...readPage(
+          document.content,
+          Number(params.offset ?? 0),
+          Number(params.max_characters ?? 12_000)
+        )
       });
     }
   });
-  return [listTool, searchTool, readTool, listCharacters, searchCharacters, readCharacter, readDraft];
+  return [
+    listTool,
+    searchTool,
+    readTool,
+    listCharacters,
+    searchCharacters,
+    readCharacter,
+    readDraft
+  ];
 }
 
 const LONG_QUERY_TOOL_NAMES = new Set([
@@ -523,7 +590,8 @@ function buildLongProjectTools(input: {
     defineTool({
       name: "search_continuity_files",
       label: "搜索连续性文件",
-      description: "只在当前锁定长篇的连续性阶段搜索，结果不会暴露路径或底层文件标识。",
+      description:
+        "只在当前锁定长篇的连续性阶段搜索，结果不会暴露路径或底层文件标识。",
       parameters: Type.Object({
         query: Type.String({ minLength: 1, maxLength: 256 }),
         cursor: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),

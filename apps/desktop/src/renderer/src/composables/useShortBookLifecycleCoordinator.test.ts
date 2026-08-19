@@ -177,8 +177,12 @@ function createHarness(options: HarnessOptions = {}) {
   });
 
   const apiMocks = {
-    createShortBook: vi.fn(async () => fixtureBook("created-short", 1, "新短篇")),
-    createScriptBook: vi.fn(async () => fixtureBook("created-script", 1, "新剧本")),
+    createShortBook: vi.fn(async () =>
+      fixtureBook("created-short", 1, "新短篇")
+    ),
+    createScriptBook: vi.fn(async () =>
+      fixtureBook("created-script", 1, "新剧本")
+    ),
     updateBook: vi.fn(async (input: { bookId: string; title?: string }) => {
       const current = books.get(input.bookId) ?? fixtureBook(input.bookId);
       const updated = {
@@ -208,9 +212,7 @@ function createHarness(options: HarnessOptions = {}) {
   };
   const refresh = vi.fn(async () => options.refreshResult ?? true);
   const refreshWorkspaceDirectory = vi.fn(async () => undefined);
-  const prepareBookMutation = vi.fn(
-    async () => options.prepareResult ?? true
-  );
+  const prepareBookMutation = vi.fn(async () => options.prepareResult ?? true);
   const duplicateBook = vi.fn(async () => undefined);
   const openStructure = vi.fn(async () => true);
   const stopBookRuns = vi.fn(async () => undefined);
@@ -454,7 +456,9 @@ describe("useShortBookLifecycleCoordinator", () => {
       projectId: string;
       deleted: boolean;
     }>();
-    harness.apiMocks.deleteProject.mockImplementationOnce(() => deletion.promise);
+    harness.apiMocks.deleteProject.mockImplementationOnce(
+      () => deletion.promise
+    );
     const operation = harness.coordinator.deleteBook("book-1");
     await waitFor(() => harness.apiMocks.deleteProject.mock.calls.length === 1);
     harness.selectedResourceId.value = "user-selected-other-resource";
@@ -467,8 +471,12 @@ describe("useShortBookLifecycleCoordinator", () => {
     expect(harness.removeRunPreferences).toHaveBeenCalledWith("book:book-1");
     expect(harness.drafts.value["body-1"]).toBeUndefined();
     expect(harness.drafts.value.untouched).toBeDefined();
-    expect(harness.selectedExpertSectionIds.value["draft-directory-1"]).toBeUndefined();
-    expect(harness.selectedDraftFileKinds.value["draft-directory-1"]).toBeUndefined();
+    expect(
+      harness.selectedExpertSectionIds.value["draft-directory-1"]
+    ).toBeUndefined();
+    expect(
+      harness.selectedDraftFileKinds.value["draft-directory-1"]
+    ).toBeUndefined();
     expect(harness.selectedResourceId.value).toBe(
       "user-selected-other-resource"
     );
@@ -519,7 +527,9 @@ describe("useShortBookLifecycleCoordinator", () => {
       projectId: string;
       deleted: boolean;
     }>();
-    harness.apiMocks.deleteProject.mockImplementationOnce(() => deletion.promise);
+    harness.apiMocks.deleteProject.mockImplementationOnce(
+      () => deletion.promise
+    );
     const operation = harness.coordinator.deleteBook("book-1");
     await waitFor(() => harness.apiMocks.deleteProject.mock.calls.length === 1);
     const disposal = harness.coordinator.dispose();
@@ -570,7 +580,9 @@ describe("useShortBookLifecycleCoordinator", () => {
     const harness = createHarness();
     harness.exportBookTarget.value = harness.target;
     const hydration = deferred<boolean>();
-    harness.ensureDocumentsLoaded.mockImplementationOnce(() => hydration.promise);
+    harness.ensureDocumentsLoaded.mockImplementationOnce(
+      () => hydration.promise
+    );
     const staleExport = harness.coordinator.exportBookManuscript("docx");
     const newer = fixtureTarget({ requestId: 2, label: "新导出目标" });
     harness.dialogIntent.value = 2;
@@ -607,10 +619,16 @@ describe("useShortBookLifecycleCoordinator", () => {
     const target = fixtureTarget({ projectRevision: undefined });
     const harness = createHarness({ book: null, target, mode: "rename" });
     harness.legacy.hasBook.mockReturnValue(true);
-    await harness.coordinator.renameBook({ bookId: "book-1", label: "旧项目新名" });
+    await harness.coordinator.renameBook({
+      bookId: "book-1",
+      label: "旧项目新名"
+    });
     expect(harness.legacy.rename).toHaveBeenCalledWith(target, "旧项目新名");
 
-    const bindingsTarget = fixtureTarget({ requestId: 2, projectRevision: undefined });
+    const bindingsTarget = fixtureTarget({
+      requestId: 2,
+      projectRevision: undefined
+    });
     harness.showDialog(bindingsTarget, "bind-material");
     await harness.coordinator.updateBookBindings({
       bookId: "book-1",
@@ -625,7 +643,10 @@ describe("useShortBookLifecycleCoordinator", () => {
     });
     expect(harness.legacy.updateBindings).toHaveBeenCalledTimes(1);
 
-    const removeTarget = fixtureTarget({ requestId: 3, projectRevision: undefined });
+    const removeTarget = fixtureTarget({
+      requestId: 3,
+      projectRevision: undefined
+    });
     harness.showDialog(removeTarget, "remove");
     await harness.coordinator.removeBook("book-1");
     expect(harness.legacy.remove).toHaveBeenCalledTimes(1);

@@ -4,7 +4,9 @@ import { writeToolText } from "./agentWriteToolPreview";
 describe("writeToolText", () => {
   it("prefers completed write-tool text and content", () => {
     expect(writeToolText({ args: { text: "整章正文" } })).toBe("整章正文");
-    expect(writeToolText({ args: { content: "待审阅正文" } })).toBe("待审阅正文");
+    expect(writeToolText({ args: { content: "待审阅正文" } })).toBe(
+      "待审阅正文"
+    );
   });
 
   it("joins every completed replacement instead of only the first", () => {
@@ -29,7 +31,8 @@ describe("writeToolText", () => {
   });
 
   it("keeps accumulating later replacement new_text while arguments stream", () => {
-    const first = '{"replacements":[{"original_text":"旧A","new_text":"新A正在写';
+    const first =
+      '{"replacements":[{"original_text":"旧A","new_text":"新A正在写';
     expect(writeToolText({ argumentsText: first })).toBe("新A正在写");
 
     const firstClosed =
@@ -37,14 +40,18 @@ describe("writeToolText", () => {
     expect(writeToolText({ argumentsText: firstClosed })).toBe("新A\n\n");
 
     const secondPartial = `${firstClosed}新B还在写`;
-    expect(writeToolText({ argumentsText: secondPartial })).toBe("新A\n\n新B还在写");
-    expect(writeToolText({ argumentsText: secondPartial }).length).toBeGreaterThan(
-      writeToolText({ argumentsText: firstClosed }).length
+    expect(writeToolText({ argumentsText: secondPartial })).toBe(
+      "新A\n\n新B还在写"
     );
+    expect(
+      writeToolText({ argumentsText: secondPartial }).length
+    ).toBeGreaterThan(writeToolText({ argumentsText: firstClosed }).length);
 
     const completed =
       '{"replacements":[{"original_text":"旧A","new_text":"新A"},{"original_text":"旧B","new_text":"新B"},{"original_text":"旧C","new_text":"新C"}]}';
-    expect(writeToolText({ argumentsText: completed })).toBe("新A\n\n新B\n\n新C");
+    expect(writeToolText({ argumentsText: completed })).toBe(
+      "新A\n\n新B\n\n新C"
+    );
   });
 
   it("decodes escaped characters inside streamed replacements", () => {
@@ -58,6 +65,8 @@ describe("writeToolText", () => {
 
   it("falls back to empty text when no write payload is present", () => {
     expect(writeToolText({})).toBe("");
-    expect(writeToolText({ argumentsText: '{"section_id":"section-1"' })).toBe("");
+    expect(writeToolText({ argumentsText: '{"section_id":"section-1"' })).toBe(
+      ""
+    );
   });
 });

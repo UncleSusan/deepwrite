@@ -18,7 +18,10 @@ export type ToolCallAssistantEvent = Extract<
  */
 export function interceptToolCallStream(
   sourceStreamFn: StreamFn,
-  onToolCallEvent: (event: ToolCallAssistantEvent, assistantTurnIndex: number) => void
+  onToolCallEvent: (
+    event: ToolCallAssistantEvent,
+    assistantTurnIndex: number
+  ) => void
 ): StreamFn {
   let assistantTurnIndex = 0;
   return async (model, context, options) => {

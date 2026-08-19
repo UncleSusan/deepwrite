@@ -32,10 +32,7 @@ import {
 
 const props = defineProps<{
   active: boolean;
-  conversationForKey(
-    key: string,
-    scope?: string
-  ): AgentConversationController;
+  conversationForKey(key: string, scope?: string): AgentConversationController;
   catalogSnapshot: CatalogIndexSnapshot | null;
   longBooks: readonly LongBookSummary[];
   runtimeAvailable: boolean;
@@ -71,8 +68,12 @@ interface ResizeSession extends ChatAssistantSize {
 const input = ref<HTMLTextAreaElement | null>(null);
 const scroller = ref<HTMLElement | null>(null);
 const showAllHistory = ref(false);
-const viewportWidth = ref(typeof window === "undefined" ? 1440 : window.innerWidth);
-const viewportHeight = ref(typeof window === "undefined" ? 900 : window.innerHeight);
+const viewportWidth = ref(
+  typeof window === "undefined" ? 1440 : window.innerWidth
+);
+const viewportHeight = ref(
+  typeof window === "undefined" ? 900 : window.innerHeight
+);
 const resizeSession = ref<ResizeSession | null>(null);
 const projectConfigOpen = ref(false);
 const projectConfigMode = ref<"add" | "edit">("add");
@@ -104,11 +105,14 @@ function clampSize(size: ChatAssistantSize): ChatAssistantSize {
 function readStoredSize(): ChatAssistantSize {
   if (typeof window === "undefined") return clampSize(defaultSize());
   try {
-    const stored = JSON.parse(window.localStorage.getItem(SIZE_STORAGE_KEY) ?? "null") as
-      | Partial<ChatAssistantSize>
-      | null;
+    const stored = JSON.parse(
+      window.localStorage.getItem(SIZE_STORAGE_KEY) ?? "null"
+    ) as Partial<ChatAssistantSize> | null;
     if (Number.isFinite(stored?.width) && Number.isFinite(stored?.height)) {
-      return clampSize({ width: Number(stored?.width), height: Number(stored?.height) });
+      return clampSize({
+        width: Number(stored?.width),
+        height: Number(stored?.height)
+      });
     }
   } catch {
     // Ignore malformed local UI preferences and fall back to the responsive default.
@@ -130,12 +134,14 @@ const history = computed(() => controller.value!.history.value);
 const visibleHistory = computed(() =>
   showAllHistory.value ? history.value : history.value.slice(0, 3)
 );
-const currentHistory = computed(() => history.value.find((item) => item.current));
+const currentHistory = computed(() =>
+  history.value.find((item) => item.current)
+);
 const title = computed(() => currentHistory.value?.title || "新聊天");
 const lastAssistantMessage = computed(() =>
-  [...messages.value].reverse().find(
-    (message) => message.role === "assistant" && message.content.trim()
-  )
+  [...messages.value]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.content.trim())
 );
 const hasStreamingAssistant = computed(() =>
   messages.value.some(
@@ -167,8 +173,16 @@ const thinkingLabels: Record<string, string> = {
 };
 const thinkingOptions = computed(() => [
   { value: "off", label: "关闭" },
-  ...(selectedModel.value?.thinkingLevelOptions ?? ["minimal", "low", "medium", "high", "xhigh", "max"])
-    .map((value) => ({ value, label: thinkingLabels[value] ?? value }))
+  ...(
+    selectedModel.value?.thinkingLevelOptions ?? [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  ).map((value) => ({ value, label: thinkingLabels[value] ?? value }))
 ]);
 const canSend = computed(() => controller.value!.canSend.value);
 const canStop = computed(() => controller.value!.canStop.value);
@@ -207,9 +221,12 @@ function groupedProjectOptions(
   return options;
 }
 const configuredProjectKeys = computed(
-  () => new Set(assistant.configuredProjects.value.map(
-    (project) => `${project.projectType}:${project.projectId}`
-  ))
+  () =>
+    new Set(
+      assistant.configuredProjects.value.map(
+        (project) => `${project.projectType}:${project.projectId}`
+      )
+    )
 );
 const availableProjectOptions = computed(() =>
   assistant.projectOptions.value.filter(
@@ -241,17 +258,22 @@ const contextOptions = computed<PopupSelectOption[]>(() => {
       disabled: true,
       style: { fontWeight: "600", color: "var(--text-tertiary)" }
     });
-    options.push(...assistant.configuredProjectOptions.value.map((option) => ({
-      value: `context:project:${option.key}`,
-      label: option.label,
-      description: option.available
-        ? projectTypeLabels[option.project.projectType]
-        : "关联书籍不可用",
-      ...(option.available
-        ? { actionIcon: "edit" as const, actionLabel: `编辑项目：${option.label}` }
-        : {}),
-      style: { paddingLeft: "22px" }
-    })));
+    options.push(
+      ...assistant.configuredProjectOptions.value.map((option) => ({
+        value: `context:project:${option.key}`,
+        label: option.label,
+        description: option.available
+          ? projectTypeLabels[option.project.projectType]
+          : "关联书籍不可用",
+        ...(option.available
+          ? {
+              actionIcon: "edit" as const,
+              actionLabel: `编辑项目：${option.label}`
+            }
+          : {}),
+        style: { paddingLeft: "22px" }
+      }))
+    );
   }
   options.push({
     value: "context:add-project",
@@ -259,10 +281,11 @@ const contextOptions = computed<PopupSelectOption[]>(() => {
   });
   return options;
 });
-const projectConfigOption = computed(() =>
-  assistant.projectOptions.value.find(
-    ({ key }) => key === projectConfigProjectKey.value
-  ) ?? null
+const projectConfigOption = computed(
+  () =>
+    assistant.projectOptions.value.find(
+      ({ key }) => key === projectConfigProjectKey.value
+    ) ?? null
 );
 const projectConfigTitle = computed(() =>
   projectConfigMode.value === "add" ? "添加项目" : "编辑项目"
@@ -271,8 +294,10 @@ const emptyHint = computed(() => {
   if (assistant.mode.value === "normal") {
     return "可查询创作空间目录、资料库、技能库、模型配置和用量，不读取正文。";
   }
-  if (!assistant.selectedProject.value) return "请添加项目并关联一本书籍后开始聊天。";
-  if (!assistant.projectAvailable.value) return "所选项目已不存在或暂时不可用，当前无法发送。";
+  if (!assistant.selectedProject.value)
+    return "请添加项目并关联一本书籍后开始聊天。";
+  if (!assistant.projectAvailable.value)
+    return "所选项目已不存在或暂时不可用，当前无法发送。";
   return `当前只读查询：${assistant.selectedProjectOption.value?.label ?? "所选项目"}`;
 });
 
@@ -332,7 +357,9 @@ async function loadProjectConfigFor(
     projectConfigPrompt.value = config.systemPrompt;
     projectConfigCustomized.value = config.customized;
   } catch (cause) {
-    uiMessage.error(cause instanceof Error ? cause.message : "读取项目配置失败");
+    uiMessage.error(
+      cause instanceof Error ? cause.message : "读取项目配置失败"
+    );
   } finally {
     projectConfigPending.value = false;
   }
@@ -397,7 +424,9 @@ async function saveProjectConfig(): Promise<void> {
     return;
   }
   if (prompt.length > CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH) {
-    uiMessage.warning(`项目提示词不能超过 ${CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH} 个字符`);
+    uiMessage.warning(
+      `项目提示词不能超过 ${CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH} 个字符`
+    );
     return;
   }
   projectConfigPending.value = true;
@@ -415,7 +444,9 @@ async function saveProjectConfig(): Promise<void> {
       projectConfigMode.value === "add" ? "项目已添加" : "项目配置已保存"
     );
   } catch (cause) {
-    uiMessage.error(cause instanceof Error ? cause.message : "保存项目配置失败");
+    uiMessage.error(
+      cause instanceof Error ? cause.message : "保存项目配置失败"
+    );
   } finally {
     projectConfigPending.value = false;
   }
@@ -434,7 +465,9 @@ async function resetProjectConfig(): Promise<void> {
     projectConfigCustomized.value = config.customized;
     uiMessage.success("已恢复默认项目提示词");
   } catch (cause) {
-    uiMessage.error(cause instanceof Error ? cause.message : "恢复默认配置失败");
+    uiMessage.error(
+      cause instanceof Error ? cause.message : "恢复默认配置失败"
+    );
   } finally {
     projectConfigPending.value = false;
   }
@@ -477,7 +510,10 @@ function formatHistoryTime(value: string): string {
 function persistSize(): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(windowSize.value));
+    window.localStorage.setItem(
+      SIZE_STORAGE_KEY,
+      JSON.stringify(windowSize.value)
+    );
   } catch {
     // A blocked storage API should not prevent resizing for the current session.
   }
@@ -523,7 +559,11 @@ function startResize(event: PointerEvent, axis: ResizeAxis): void {
   previousCursor = document.body.style.cursor;
   document.body.style.userSelect = "none";
   document.body.style.cursor =
-    axis === "width" ? "ew-resize" : axis === "height" ? "ns-resize" : "nwse-resize";
+    axis === "width"
+      ? "ew-resize"
+      : axis === "height"
+        ? "ns-resize"
+        : "nwse-resize";
   window.addEventListener("pointermove", handleResizeMove);
   window.addEventListener("pointerup", stopResize);
   window.addEventListener("pointercancel", stopResize);
@@ -588,9 +628,14 @@ watch(
   }
 );
 watch(
-  () => [messages.value.length, lastAssistantMessage.value?.content.length ?? 0],
+  () => [
+    messages.value.length,
+    lastAssistantMessage.value?.content.length ?? 0
+  ],
   () => {
-    void nextTick(() => scroller.value?.scrollTo({ top: scroller.value.scrollHeight }));
+    void nextTick(() =>
+      scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
+    );
   }
 );
 </script>
@@ -648,13 +693,27 @@ watch(
         />
       </div>
       <div class="chat-assistant-header-actions">
-        <button type="button" aria-label="新建聊天" :disabled="controller.isBusy.value" @click="newConversation">
+        <button
+          type="button"
+          aria-label="新建聊天"
+          :disabled="controller.isBusy.value"
+          @click="newConversation"
+        >
           <AppIcon name="plus" :size="18" />
         </button>
-        <button type="button" aria-label="复制最后一条回复" :disabled="!lastAssistantMessage" @click="copyLastReply">
+        <button
+          type="button"
+          aria-label="复制最后一条回复"
+          :disabled="!lastAssistantMessage"
+          @click="copyLastReply"
+        >
           <AppIcon name="copy" :size="18" />
         </button>
-        <button type="button" aria-label="最小化聊天助手" @click="emit('minimize')">
+        <button
+          type="button"
+          aria-label="最小化聊天助手"
+          @click="emit('minimize')"
+        >
           <AppIcon name="minus" :size="18" />
         </button>
       </div>
@@ -662,27 +721,62 @@ watch(
 
     <div ref="scroller" class="chat-assistant-content" aria-live="polite">
       <div v-if="messages.length" class="chat-assistant-messages">
-        <article v-for="message in messages" :key="message.id" class="chat-assistant-message" :class="`is-${message.role}`">
-          <div v-if="message.role === 'user'" class="chat-assistant-user-copy">{{ message.content }}</div>
+        <article
+          v-for="message in messages"
+          :key="message.id"
+          class="chat-assistant-message"
+          :class="`is-${message.role}`"
+        >
+          <div v-if="message.role === 'user'" class="chat-assistant-user-copy">
+            {{ message.content }}
+          </div>
           <div v-else class="chat-assistant-reply">
             <ChatAssistantProcessingTrace :message="message" />
-            <MarkdownContent v-if="message.content" :content="message.content" />
-            <span v-else-if="message.status === 'streaming'" class="chat-assistant-waiting">正在组织回复…</span>
-            <span v-if="message.status === 'error'" class="sr-only">回复失败</span>
+            <MarkdownContent
+              v-if="message.content"
+              :content="message.content"
+            />
+            <span
+              v-else-if="message.status === 'streaming'"
+              class="chat-assistant-waiting"
+              >正在组织回复…</span
+            >
+            <span v-if="message.status === 'error'" class="sr-only"
+              >回复失败</span
+            >
           </div>
         </article>
-        <div v-if="controller.isBusy.value && !hasStreamingAssistant" class="chat-assistant-waiting">正在连接模型…</div>
+        <div
+          v-if="controller.isBusy.value && !hasStreamingAssistant"
+          class="chat-assistant-waiting"
+        >
+          正在连接模型…
+        </div>
       </div>
 
       <section v-else class="chat-assistant-home">
         <div class="chat-assistant-home-spacer" />
         <div v-if="history.length" class="chat-assistant-recent">
           <span>最近聊天</span>
-          <button v-for="item in visibleHistory" :key="item.sessionId" type="button" @click="selectConversation(item.sessionId)">
+          <button
+            v-for="item in visibleHistory"
+            :key="item.sessionId"
+            type="button"
+            @click="selectConversation(item.sessionId)"
+          >
             <strong>{{ item.title }}</strong>
-            <time :datetime="item.updatedAt">{{ formatHistoryTime(item.updatedAt) }}</time>
+            <time :datetime="item.updatedAt">{{
+              formatHistoryTime(item.updatedAt)
+            }}</time>
           </button>
-          <button v-if="history.length > 3 && !showAllHistory" class="chat-assistant-view-all" type="button" @click="showAllHistory = true">查看全部</button>
+          <button
+            v-if="history.length > 3 && !showAllHistory"
+            class="chat-assistant-view-all"
+            type="button"
+            @click="showAllHistory = true"
+          >
+            查看全部
+          </button>
         </div>
         <div v-else class="chat-assistant-empty">
           <AppIcon name="message" :size="28" />
@@ -696,14 +790,24 @@ watch(
       <textarea
         ref="input"
         :value="controller.draft.value"
-        :placeholder="runtimeAvailable ? '给聊天助手发送消息' : '浏览器预览不可发送，请启动桌面客户端'"
+        :placeholder="
+          runtimeAvailable
+            ? '给聊天助手发送消息'
+            : '浏览器预览不可发送，请启动桌面客户端'
+        "
         :disabled="!runtimeAvailable || controller.isBusy.value"
         rows="1"
         @input="handleInput"
         @keydown="handleKeydown"
       />
       <div class="chat-assistant-toolbar">
-        <button class="chat-assistant-placeholder-action" type="button" disabled title="附件功能后续开放" aria-label="附件功能后续开放">
+        <button
+          class="chat-assistant-placeholder-action"
+          type="button"
+          disabled
+          title="附件功能后续开放"
+          aria-label="附件功能后续开放"
+        >
           <AppIcon name="plus" :size="19" />
         </button>
         <span class="chat-assistant-toolbar-spacer" />
@@ -730,13 +834,32 @@ watch(
           :menu-z-index="95"
           @update:model-value="updateThinking"
         />
-        <button class="chat-assistant-placeholder-action" type="button" disabled title="语音功能后续开放" aria-label="语音功能后续开放">
+        <button
+          class="chat-assistant-placeholder-action"
+          type="button"
+          disabled
+          title="语音功能后续开放"
+          aria-label="语音功能后续开放"
+        >
           <AppIcon name="mic" :size="18" />
         </button>
-        <button v-if="canStop" class="chat-assistant-send is-stop" type="button" aria-label="停止生成" @click="controller.stopGeneration()">
+        <button
+          v-if="canStop"
+          class="chat-assistant-send is-stop"
+          type="button"
+          aria-label="停止生成"
+          @click="controller.stopGeneration()"
+        >
           <AppIcon name="stop" :size="15" />
         </button>
-        <button v-else class="chat-assistant-send" type="button" aria-label="发送消息" :disabled="!effectiveCanSend" @click="send">
+        <button
+          v-else
+          class="chat-assistant-send"
+          type="button"
+          aria-label="发送消息"
+          :disabled="!effectiveCanSend"
+          @click="send"
+        >
           <AppIcon name="arrow-up" :size="19" />
         </button>
       </div>
@@ -746,15 +869,29 @@ watch(
       v-if="projectConfigOpen"
       class="chat-assistant-config-backdrop"
       @mousedown.self="!projectConfigPending && (projectConfigOpen = false)"
-      @keydown.esc.stop.prevent="!projectConfigPending && (projectConfigOpen = false)"
+      @keydown.esc.stop.prevent="
+        !projectConfigPending && (projectConfigOpen = false)
+      "
     >
-      <section class="chat-assistant-config-dialog" role="dialog" aria-modal="true" aria-label="项目配置">
+      <section
+        class="chat-assistant-config-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="项目配置"
+      >
         <header>
           <div>
             <strong>{{ projectConfigTitle }}</strong>
             <span>配置项目提示词和关联书籍</span>
           </div>
-          <button type="button" aria-label="关闭项目配置" :disabled="projectConfigPending" @click="projectConfigOpen = false">×</button>
+          <button
+            type="button"
+            aria-label="关闭项目配置"
+            :disabled="projectConfigPending"
+            @click="projectConfigOpen = false"
+          >
+            ×
+          </button>
         </header>
         <label for="chat-assistant-project-book">关联书籍</label>
         <PopupSelect
@@ -769,7 +906,11 @@ watch(
           @update:model-value="updateProjectAssociation"
         />
         <p class="chat-assistant-project-lock-hint">
-          {{ projectConfigMode === "edit" ? "关联书籍已锁定，不可更换；后续项目记忆将始终归属这本书。" : "书籍关联在项目保存后锁定，后续不可更换。" }}
+          {{
+            projectConfigMode === "edit"
+              ? "关联书籍已锁定，不可更换；后续项目记忆将始终归属这本书。"
+              : "书籍关联在项目保存后锁定，后续不可更换。"
+          }}
         </p>
         <label for="chat-assistant-project-prompt">项目提示词</label>
         <textarea
@@ -780,15 +921,43 @@ watch(
           rows="10"
         />
         <div class="chat-assistant-config-meta">
-          <span>{{ projectConfigCustomized ? "当前使用自定义提示词" : "当前使用默认提示词" }}</span>
-          <span>{{ projectConfigPrompt.length }} / {{ CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH }}</span>
+          <span>{{
+            projectConfigCustomized
+              ? "当前使用自定义提示词"
+              : "当前使用默认提示词"
+          }}</span>
+          <span
+            >{{ projectConfigPrompt.length }} /
+            {{ CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH }}</span
+          >
         </div>
         <p>此内容会追加到固定系统底座，不能覆盖只读、脱敏或工具边界。</p>
         <footer>
-          <button type="button" class="is-secondary" :disabled="projectConfigPending || !projectConfigOption" @click="resetProjectConfig">恢复默认</button>
+          <button
+            type="button"
+            class="is-secondary"
+            :disabled="projectConfigPending || !projectConfigOption"
+            @click="resetProjectConfig"
+          >
+            恢复默认
+          </button>
           <span />
-          <button type="button" class="is-secondary" :disabled="projectConfigPending" @click="projectConfigOpen = false">取消</button>
-          <button type="button" class="is-primary" :disabled="projectConfigPending || !projectConfigOption" @click="saveProjectConfig">保存</button>
+          <button
+            type="button"
+            class="is-secondary"
+            :disabled="projectConfigPending"
+            @click="projectConfigOpen = false"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="is-primary"
+            :disabled="projectConfigPending || !projectConfigOption"
+            @click="saveProjectConfig"
+          >
+            保存
+          </button>
         </footer>
       </section>
     </div>
@@ -796,74 +965,404 @@ watch(
 </template>
 
 <style scoped>
-.chat-assistant-window { position: fixed; right: 20px; bottom: 20px; z-index: 90; width: min(44vw, calc(100vw - 40px)); min-width: 480px; max-width: calc(100vw - 40px); height: min(88vh, calc(100vh - 40px)); min-height: 420px; max-height: calc(100vh - 40px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; color: var(--text-primary); background: var(--surface-main); border: 1px solid var(--theme-line); border-radius: 28px; box-shadow: 0 24px 70px color-mix(in srgb, #000 20%, transparent); }
-.chat-assistant-resize-edge { position: absolute; z-index: 3; outline: 0; }
-.chat-assistant-resize-edge.is-left { top: 20px; bottom: 20px; left: 0; width: 8px; cursor: ew-resize; }
-.chat-assistant-resize-edge.is-top { top: 0; right: 20px; left: 20px; height: 8px; cursor: ns-resize; }
-.chat-assistant-resize-edge.is-top-left { top: 0; left: 0; z-index: 4; width: 24px; height: 24px; cursor: nwse-resize; }
-.chat-assistant-resize-edge:focus-visible { background: var(--accent-soft); }
-.chat-assistant-header { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--theme-line-soft); }
-.chat-assistant-header-main { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.chat-assistant-header-main > strong { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.05rem; }
-.chat-assistant-header-actions { display: flex; align-items: center; gap: 6px; }
-.chat-assistant-context-select { max-width: 190px; }
-.chat-assistant-context-select :deep(.popup-select-trigger) { max-width: 190px; padding: 0 11px; background: var(--surface-raised); border: 1px solid var(--theme-line-soft); border-radius: 999px; box-shadow: 0 2px 8px color-mix(in srgb, #000 4%, transparent); }
-.chat-assistant-context-select :deep(.popup-select-label) { overflow: hidden; text-overflow: ellipsis; }
-.chat-assistant-header-actions { flex: none; }
-.chat-assistant-header-actions button, .chat-assistant-placeholder-action { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; color: var(--text-secondary); background: transparent; border: 0; border-radius: 10px; }
-.chat-assistant-header-actions button:not(:disabled):hover { color: var(--text-primary); background: var(--surface-hover); }
-.chat-assistant-header button:disabled, .chat-assistant-placeholder-action:disabled { opacity: 0.42; }
-.chat-assistant-content { min-height: 0; overflow-y: auto; padding: 22px 30px; }
-.chat-assistant-messages { width: min(720px, 100%); margin: 0 auto; display: grid; gap: 20px; }
-.chat-assistant-message { min-width: 0; }
-.chat-assistant-message.is-user { display: flex; justify-content: flex-end; }
-.chat-assistant-user-copy { max-width: 78%; padding: 10px 14px; white-space: pre-wrap; line-height: 1.65; background: var(--surface-selected); border-radius: 16px 16px 4px 16px; }
-.chat-assistant-reply { line-height: 1.72; }
-.chat-assistant-waiting { color: var(--text-tertiary); }
-.chat-assistant-home { min-height: 100%; display: grid; grid-template-rows: minmax(80px, 1fr) auto; }
-.chat-assistant-home-spacer { min-height: 80px; }
-.chat-assistant-recent { display: grid; gap: 4px; padding-bottom: 20px; }
-.chat-assistant-recent > span { margin-bottom: 10px; color: var(--text-tertiary); }
-.chat-assistant-recent > button { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; padding: 10px 0; color: var(--text-secondary); text-align: left; background: transparent; border: 0; border-radius: 8px; }
-.chat-assistant-recent > button:hover { color: var(--text-primary); }
-.chat-assistant-recent strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.chat-assistant-recent time { flex: none; color: var(--text-tertiary); }
-.chat-assistant-view-all { justify-content: flex-start !important; color: var(--text-tertiary) !important; }
-.chat-assistant-empty { align-self: end; display: grid; justify-items: center; gap: 8px; padding-bottom: 40px; color: var(--text-tertiary); text-align: center; }
-.chat-assistant-empty strong { color: var(--text-secondary); }
-.chat-assistant-composer { position: relative; margin: 0 12px 12px; padding: 10px 12px 8px; background: var(--surface-raised); border: 1px solid var(--theme-line); border-radius: 22px; box-shadow: 0 8px 24px color-mix(in srgb, #000 7%, transparent); }
-.chat-assistant-composer textarea { display: block; width: 100%; min-height: 42px; max-height: 150px; resize: none; padding: 8px 10px; color: var(--text-primary); font: inherit; line-height: 1.5; background: transparent; border: 0; outline: 0; }
-.chat-assistant-composer textarea::placeholder { color: var(--text-tertiary); }
-.chat-assistant-toolbar { display: flex; align-items: center; gap: 7px; }
-.chat-assistant-toolbar-spacer { flex: 1; }
-.chat-assistant-send { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; color: var(--surface-main); background: var(--text-primary); border: 0; border-radius: 50%; }
-.chat-assistant-send:disabled { opacity: 0.35; }
-.chat-assistant-send.is-stop { color: var(--text-primary); background: var(--surface-selected); }
-.chat-assistant-config-backdrop { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, #000 35%, transparent); }
-.chat-assistant-config-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 40px)); overflow: auto; padding: 22px; color: var(--text-primary); background: var(--surface-raised); border: 1px solid var(--theme-line); border-radius: 18px; box-shadow: 0 24px 70px color-mix(in srgb, #000 28%, transparent); }
-.chat-assistant-config-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
-.chat-assistant-config-dialog > header > div { display: grid; gap: 4px; }
-.chat-assistant-config-dialog > header span, .chat-assistant-config-dialog > p, .chat-assistant-config-meta { color: var(--text-tertiary); font-size: 0.82rem; }
-.chat-assistant-config-dialog > header button { width: 32px; height: 32px; color: var(--text-secondary); background: transparent; border: 0; border-radius: 9px; font-size: 1.35rem; }
-.chat-assistant-config-dialog > header button:hover { background: var(--surface-hover); }
-.chat-assistant-config-dialog > label { display: block; margin-bottom: 8px; color: var(--text-secondary); }
-.chat-assistant-project-lock-hint { margin: 8px 0 18px !important; }
-.chat-assistant-config-dialog > textarea { width: 100%; min-height: 240px; resize: vertical; padding: 12px 14px; color: var(--text-primary); background: var(--surface-main); border: 1px solid var(--theme-line); border-radius: 12px; outline: 0; font: inherit; line-height: 1.6; }
-.chat-assistant-config-dialog > textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.chat-assistant-config-meta { display: flex; justify-content: space-between; gap: 16px; margin-top: 7px; }
-.chat-assistant-config-dialog > p { margin: 14px 0 0; line-height: 1.5; }
-.chat-assistant-config-dialog > footer { display: flex; align-items: center; gap: 9px; margin-top: 20px; }
-.chat-assistant-config-dialog > footer > span { flex: 1; }
-.chat-assistant-config-dialog > footer button { min-height: 36px; padding: 0 14px; border-radius: 10px; font: inherit; }
-.chat-assistant-config-dialog > footer .is-secondary { color: var(--text-secondary); background: var(--surface-main); border: 1px solid var(--theme-line); }
-.chat-assistant-config-dialog > footer .is-primary { color: var(--surface-main); background: var(--text-primary); border: 1px solid var(--text-primary); }
-.chat-assistant-config-dialog > footer button:disabled { opacity: 0.45; }
+.chat-assistant-window {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 90;
+  width: min(44vw, calc(100vw - 40px));
+  min-width: 480px;
+  max-width: calc(100vw - 40px);
+  height: min(88vh, calc(100vh - 40px));
+  min-height: 420px;
+  max-height: calc(100vh - 40px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--surface-main);
+  border: 1px solid var(--theme-line);
+  border-radius: 28px;
+  box-shadow: 0 24px 70px color-mix(in srgb, #000 20%, transparent);
+}
+.chat-assistant-resize-edge {
+  position: absolute;
+  z-index: 3;
+  outline: 0;
+}
+.chat-assistant-resize-edge.is-left {
+  top: 20px;
+  bottom: 20px;
+  left: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+.chat-assistant-resize-edge.is-top {
+  top: 0;
+  right: 20px;
+  left: 20px;
+  height: 8px;
+  cursor: ns-resize;
+}
+.chat-assistant-resize-edge.is-top-left {
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 24px;
+  height: 24px;
+  cursor: nwse-resize;
+}
+.chat-assistant-resize-edge:focus-visible {
+  background: var(--accent-soft);
+}
+.chat-assistant-header {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--theme-line-soft);
+}
+.chat-assistant-header-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-assistant-header-main > strong {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.05rem;
+}
+.chat-assistant-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-assistant-context-select {
+  max-width: 190px;
+}
+.chat-assistant-context-select :deep(.popup-select-trigger) {
+  max-width: 190px;
+  padding: 0 11px;
+  background: var(--surface-raised);
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px color-mix(in srgb, #000 4%, transparent);
+}
+.chat-assistant-context-select :deep(.popup-select-label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-assistant-header-actions {
+  flex: none;
+}
+.chat-assistant-header-actions button,
+.chat-assistant-placeholder-action {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+}
+.chat-assistant-header-actions button:not(:disabled):hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+.chat-assistant-header button:disabled,
+.chat-assistant-placeholder-action:disabled {
+  opacity: 0.42;
+}
+.chat-assistant-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 30px;
+}
+.chat-assistant-messages {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 20px;
+}
+.chat-assistant-message {
+  min-width: 0;
+}
+.chat-assistant-message.is-user {
+  display: flex;
+  justify-content: flex-end;
+}
+.chat-assistant-user-copy {
+  max-width: 78%;
+  padding: 10px 14px;
+  white-space: pre-wrap;
+  line-height: 1.65;
+  background: var(--surface-selected);
+  border-radius: 16px 16px 4px 16px;
+}
+.chat-assistant-reply {
+  line-height: 1.72;
+}
+.chat-assistant-waiting {
+  color: var(--text-tertiary);
+}
+.chat-assistant-home {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: minmax(80px, 1fr) auto;
+}
+.chat-assistant-home-spacer {
+  min-height: 80px;
+}
+.chat-assistant-recent {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 20px;
+}
+.chat-assistant-recent > span {
+  margin-bottom: 10px;
+  color: var(--text-tertiary);
+}
+.chat-assistant-recent > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  padding: 10px 0;
+  color: var(--text-secondary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+.chat-assistant-recent > button:hover {
+  color: var(--text-primary);
+}
+.chat-assistant-recent strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.chat-assistant-recent time {
+  flex: none;
+  color: var(--text-tertiary);
+}
+.chat-assistant-view-all {
+  justify-content: flex-start !important;
+  color: var(--text-tertiary) !important;
+}
+.chat-assistant-empty {
+  align-self: end;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding-bottom: 40px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.chat-assistant-empty strong {
+  color: var(--text-secondary);
+}
+.chat-assistant-composer {
+  position: relative;
+  margin: 0 12px 12px;
+  padding: 10px 12px 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--theme-line);
+  border-radius: 22px;
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 7%, transparent);
+}
+.chat-assistant-composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  max-height: 150px;
+  resize: none;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  font: inherit;
+  line-height: 1.5;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+.chat-assistant-composer textarea::placeholder {
+  color: var(--text-tertiary);
+}
+.chat-assistant-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.chat-assistant-toolbar-spacer {
+  flex: 1;
+}
+.chat-assistant-send {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: var(--surface-main);
+  background: var(--text-primary);
+  border: 0;
+  border-radius: 50%;
+}
+.chat-assistant-send:disabled {
+  opacity: 0.35;
+}
+.chat-assistant-send.is-stop {
+  color: var(--text-primary);
+  background: var(--surface-selected);
+}
+.chat-assistant-config-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, #000 35%, transparent);
+}
+.chat-assistant-config-dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 22px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--theme-line);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px color-mix(in srgb, #000 28%, transparent);
+}
+.chat-assistant-config-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.chat-assistant-config-dialog > header > div {
+  display: grid;
+  gap: 4px;
+}
+.chat-assistant-config-dialog > header span,
+.chat-assistant-config-dialog > p,
+.chat-assistant-config-meta {
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+}
+.chat-assistant-config-dialog > header button {
+  width: 32px;
+  height: 32px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  font-size: 1.35rem;
+}
+.chat-assistant-config-dialog > header button:hover {
+  background: var(--surface-hover);
+}
+.chat-assistant-config-dialog > label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+.chat-assistant-project-lock-hint {
+  margin: 8px 0 18px !important;
+}
+.chat-assistant-config-dialog > textarea {
+  width: 100%;
+  min-height: 240px;
+  resize: vertical;
+  padding: 12px 14px;
+  color: var(--text-primary);
+  background: var(--surface-main);
+  border: 1px solid var(--theme-line);
+  border-radius: 12px;
+  outline: 0;
+  font: inherit;
+  line-height: 1.6;
+}
+.chat-assistant-config-dialog > textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.chat-assistant-config-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 7px;
+}
+.chat-assistant-config-dialog > p {
+  margin: 14px 0 0;
+  line-height: 1.5;
+}
+.chat-assistant-config-dialog > footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 20px;
+}
+.chat-assistant-config-dialog > footer > span {
+  flex: 1;
+}
+.chat-assistant-config-dialog > footer button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font: inherit;
+}
+.chat-assistant-config-dialog > footer .is-secondary {
+  color: var(--text-secondary);
+  background: var(--surface-main);
+  border: 1px solid var(--theme-line);
+}
+.chat-assistant-config-dialog > footer .is-primary {
+  color: var(--surface-main);
+  background: var(--text-primary);
+  border: 1px solid var(--text-primary);
+}
+.chat-assistant-config-dialog > footer button:disabled {
+  opacity: 0.45;
+}
 @media (max-width: 760px) {
-  .chat-assistant-window { inset: 12px; width: auto; min-width: 0; max-width: none; height: auto; min-height: 0; max-height: none; border-radius: 22px; }
-  .chat-assistant-resize-edge { display: none; }
-  .chat-assistant-header { align-items: flex-start; padding: 12px 16px; }
-  .chat-assistant-header-main > strong { width: 100%; max-width: none; }
-  .chat-assistant-content { padding: 18px; }
-  .chat-assistant-user-copy { max-width: 90%; }
+  .chat-assistant-window {
+    inset: 12px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    border-radius: 22px;
+  }
+  .chat-assistant-resize-edge {
+    display: none;
+  }
+  .chat-assistant-header {
+    align-items: flex-start;
+    padding: 12px 16px;
+  }
+  .chat-assistant-header-main > strong {
+    width: 100%;
+    max-width: none;
+  }
+  .chat-assistant-content {
+    padding: 18px;
+  }
+  .chat-assistant-user-copy {
+    max-width: 90%;
+  }
 }
 </style>

@@ -12,7 +12,9 @@ const temporaryRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -130,7 +132,9 @@ describe("AppearanceConfigStore", () => {
   });
 
   it("defaults missing font families from legacy appearance files", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-appearance-legacy-font-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-appearance-legacy-font-")
+    );
     temporaryRoots.push(root);
     const userData = join(root, "user-data");
     const store = new AppearanceConfigStore(userData);
@@ -138,12 +142,16 @@ describe("AppearanceConfigStore", () => {
     await mkdir(join(userData, "config"), { recursive: true });
     await writeFile(
       join(userData, "config", "appearance.json"),
-      `${JSON.stringify({
-        version: 1,
-        mode: "dark",
-        light: defaults.light,
-        dark: defaults.dark
-      }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          version: 1,
+          mode: "dark",
+          light: defaults.light,
+          dark: defaults.dark
+        },
+        null,
+        2
+      )}\n`,
       "utf8"
     );
 

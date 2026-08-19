@@ -73,7 +73,10 @@ export const ShortAgentSubagentDefinitionSchema = z
         path: ["thinkingLevel"],
         message: "单独配置模型时必须选择思考等级。"
       });
-    } else if (value.thinkingLevel === "off" && value.temperature === undefined) {
+    } else if (
+      value.thinkingLevel === "off" &&
+      value.temperature === undefined
+    ) {
       context.addIssue({
         code: "custom",
         path: ["temperature"],
@@ -232,8 +235,7 @@ export type ScriptAgentTeamSettings = z.infer<
   typeof ScriptAgentTeamSettingsSchema
 >;
 
-export const ScriptAgentTeamSettingsInputSchema =
-  ScriptAgentTeamSettingsSchema;
+export const ScriptAgentTeamSettingsInputSchema = ScriptAgentTeamSettingsSchema;
 export type ScriptAgentTeamSettingsInput = z.infer<
   typeof ScriptAgentTeamSettingsInputSchema
 >;

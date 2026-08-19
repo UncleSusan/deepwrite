@@ -9,7 +9,9 @@ const temporaryRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -23,7 +25,13 @@ function legacyBook() {
       revision: 3,
       worldbuilding: {
         categories: [
-          { id: "rules", name: "旧版规则", format: "text", text: "潮汐决定时间。", items: [] }
+          {
+            id: "rules",
+            name: "旧版规则",
+            format: "text",
+            text: "潮汐决定时间。",
+            items: []
+          }
         ]
       },
       characters: {
@@ -46,8 +54,18 @@ function legacyBook() {
       },
       plot: {
         book_line: "林舟寻找被抹去的历史。",
-        volumes: [{ id: "volume-1", name: "潮起", outline: "发现逆潮", order: 1 }],
-        arcs: [{ id: "arc-1", volume_id: "volume-1", name: "失忆", outline: "追查线索", order: 1 }],
+        volumes: [
+          { id: "volume-1", name: "潮起", outline: "发现逆潮", order: 1 }
+        ],
+        arcs: [
+          {
+            id: "arc-1",
+            volume_id: "volume-1",
+            name: "失忆",
+            outline: "追查线索",
+            order: 1
+          }
+        ],
         chapter_cards: [
           {
             id: "chapter-1",
@@ -70,7 +88,13 @@ function legacyBook() {
             character_ids: ["hero"]
           }
         ],
-        event_links: [{ source_event_id: "event-1", target_event_id: "event-1", type: "before" }],
+        event_links: [
+          {
+            source_event_id: "event-1",
+            target_event_id: "event-1",
+            type: "before"
+          }
+        ],
         narrative_placements: [{ id: "placement-1" }],
         foreshadowing: [{ id: "thread-1", title: "不应导入" }]
       },
@@ -100,7 +124,10 @@ async function fixture() {
     userDataPath: join(root, "user-data"),
     now: () => FIXED_NOW
   });
-  const target = await service.create(books, { title: "当前书", genre: "其他" });
+  const target = await service.create(books, {
+    title: "当前书",
+    genre: "其他"
+  });
   return { service, sourcePath, target };
 }
 
@@ -127,7 +154,9 @@ describe("Write Claw selective long sync", () => {
     });
     expect(first.imported).toEqual(preview.counts);
 
-    const snapshot = await service.getWorkspaceIndex({ bookId: target.book.id });
+    const snapshot = await service.getWorkspaceIndex({
+      bookId: target.book.id
+    });
     expect(snapshot.workspaceIndex.worldbuilding).toHaveLength(8);
     expect(snapshot.workspaceIndex.characters).toHaveLength(1);
     expect(snapshot.workspaceIndex.plot.volumes).toHaveLength(2);
@@ -142,12 +171,13 @@ describe("Write Claw selective long sync", () => {
     const chapterFiles = snapshot.workspaceIndex.chapters.find(
       ({ chapterCardId }) => chapterCardId === importedChapter.id
     )!;
-    const read = (fileId: string) => service.readDocument({
-      bookId: target.book.id,
-      fileId,
-      offset: 0,
-      maxCharacters: 262_144
-    });
+    const read = (fileId: string) =>
+      service.readDocument({
+        bookId: target.book.id,
+        fileId,
+        offset: 0,
+        maxCharacters: 262_144
+      });
     expect((await read(chapterFiles.body.id)).content).toBe("");
     expect((await read(chapterFiles.characterState.id)).content).toBe("");
     expect((await read(chapterFiles.handoff.id)).content).toBe("");
@@ -160,7 +190,9 @@ describe("Write Claw selective long sync", () => {
       expectedProjectRevision: first.projectRevision,
       modules: ["worldbuilding", "characters", "plot"]
     });
-    expect(Object.values(second.imported).every((count) => count === 0)).toBe(true);
+    expect(Object.values(second.imported).every((count) => count === 0)).toBe(
+      true
+    );
     expect(second.skipped).toEqual(preview.counts);
   });
 
@@ -174,8 +206,12 @@ describe("Write Claw selective long sync", () => {
       expectedProjectRevision: target.summary.projectRevision,
       modules: ["plot"]
     });
-    const snapshot = await service.getWorkspaceIndex({ bookId: target.book.id });
+    const snapshot = await service.getWorkspaceIndex({
+      bookId: target.book.id
+    });
     expect(snapshot.workspaceIndex.characters).toHaveLength(0);
-    expect(snapshot.workspaceIndex.plot.storyEvents[0]?.characterIds).toEqual([]);
+    expect(snapshot.workspaceIndex.plot.storyEvents[0]?.characterIds).toEqual(
+      []
+    );
   });
 });

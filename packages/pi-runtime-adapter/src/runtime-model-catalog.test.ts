@@ -9,9 +9,9 @@ describe("DeepWrite runtime model catalog", () => {
   });
 
   it("prefers the longest matching prefix", () => {
-    expect(findDeepWriteRuntimeModel("deepseek-v4-flash-0731-preview")?.id).toBe(
-      "deepseek-v4-flash-0731"
-    );
+    expect(
+      findDeepWriteRuntimeModel("deepseek-v4-flash-0731-preview")?.id
+    ).toBe("deepseek-v4-flash-0731");
   });
 
   it("keeps prefix matching case-insensitive", () => {

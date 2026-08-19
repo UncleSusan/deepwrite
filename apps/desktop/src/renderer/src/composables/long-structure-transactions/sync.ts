@@ -1,20 +1,38 @@
-import type { LongWorkspaceIndexSnapshot, LongWorkspaceOperationBatch } from "@deepwrite/contracts";
-import { replaceLongBookSummary, type LongStructureMutationCompletion } from "../../types/longWorkspace";
+import type {
+  LongWorkspaceIndexSnapshot,
+  LongWorkspaceOperationBatch
+} from "@deepwrite/contracts";
+import {
+  replaceLongBookSummary,
+  type LongStructureMutationCompletion
+} from "../../types/longWorkspace";
 import type { LongStructureLease } from "./lease";
 import type { LongStructureMutationLease } from "./types";
 
 export function createLongStructureSync(
   host: LongStructureLease,
-  loadLongStructureMutationModule: () => Promise<typeof import("../../types/longStructureMutations")>
+  loadLongStructureMutationModule: () => Promise<
+    typeof import("../../types/longStructureMutations")
+  >
 ) {
   const {
-    uiMessage, resources, session, state, resolveLongWorkspaceApi, isDisposed,
-    captureLongStructureMutationTarget, mutationIsCurrent,
-    assertCurrentLongStructureMutationTarget, withMutation
+    uiMessage,
+    resources,
+    session,
+    state,
+    resolveLongWorkspaceApi,
+    isDisposed,
+    captureLongStructureMutationTarget,
+    mutationIsCurrent,
+    assertCurrentLongStructureMutationTarget,
+    withMutation
   } = host;
   const {
-    longBooks, activeBookId: activeLongBookId, activeBookSummary: activeLongBookSummary,
-    workspaceIndex: activeLongWorkspaceIndex, selection: activeLongSelection,
+    longBooks,
+    activeBookId: activeLongBookId,
+    activeBookSummary: activeLongBookSummary,
+    workspaceIndex: activeLongWorkspaceIndex,
+    selection: activeLongSelection,
     structureDialogOpen: longStructureDialogOpen
   } = state;
   const {
@@ -71,14 +89,20 @@ export function createLongStructureSync(
             throw new Error("无法同步最新长篇结构，本次修改未保存。");
           }
           if (!mutationIsCurrent(lease)) return;
-          const latestTarget = captureLongStructureMutationTarget(lease.target.bookId);
+          const latestTarget = captureLongStructureMutationTarget(
+            lease.target.bookId
+          );
           const latestIndex = latestTarget?.index;
           if (!latestTarget || !latestIndex) {
             throw new Error("活动长篇已切换，本次世界观同步未保存。");
           }
-          const source = await api.getWorkspaceIndex({ bookId: payload.sourceBookId });
+          const source = await api.getWorkspaceIndex({
+            bookId: payload.sourceBookId
+          });
           assertCurrentLongStructureMutationTarget(
-            latestTarget, lease, "活动长篇或结构已切换，本次世界观同步未保存。"
+            latestTarget,
+            lease,
+            "活动长篇或结构已切换，本次世界观同步未保存。"
           );
           if (source.bookId !== payload.sourceBookId) {
             throw new Error("来源长篇工作区读取结果不一致。");
@@ -90,24 +114,39 @@ export function createLongStructureSync(
             throw new Error("所选长篇没有可同步的世界观分类。");
           }
           const contents = await loadSourceWorldbuildingContents(
-            (input) => api.readDocument(input), payload.sourceBookId, sourceCategories
+            (input) => api.readDocument(input),
+            payload.sourceBookId,
+            sourceCategories
           );
           assertCurrentLongStructureMutationTarget(
-            latestTarget, lease, "活动长篇或结构已切换，本次世界观同步未保存。"
+            latestTarget,
+            lease,
+            "活动长篇或结构已切换，本次世界观同步未保存。"
           );
           const plan = await buildLongWorldbuildingSyncBatch({
-            target: latestIndex, source: source.workspaceIndex, contents
+            target: latestIndex,
+            source: source.workspaceIndex,
+            contents
           });
           assertCurrentLongStructureMutationTarget(
-            latestTarget, lease, "活动长篇或结构已切换，本次世界观同步未保存。"
+            latestTarget,
+            lease,
+            "活动长篇或结构已切换，本次世界观同步未保存。"
           );
-          await executeLongStructureMutation(lease, plan.batch, completion, {
-            saveEditor: false,
-            successMessage: `已从「${payload.sourceTitle}」同步世界观（${plan.createdCategoryCount} 个分类）`
-          }, latestIndex);
+          await executeLongStructureMutation(
+            lease,
+            plan.batch,
+            completion,
+            {
+              saveEditor: false,
+              successMessage: `已从「${payload.sourceTitle}」同步世界观（${plan.createdCategoryCount} 个分类）`
+            },
+            latestIndex
+          );
         } catch (error: unknown) {
           if (isDisposed()) return;
-          const message = error instanceof Error ? error.message : "同步世界观失败。";
+          const message =
+            error instanceof Error ? error.message : "同步世界观失败。";
           completion.fail(message);
           uiMessage.error(message);
         }
@@ -145,7 +184,10 @@ export function createLongStructureSync(
       completion.fail("当前长篇串行写作计划尚未完成。");
       return;
     }
-    if (options.saveEditor !== false && !(await saveActiveLongEditorChanges())) {
+    if (
+      options.saveEditor !== false &&
+      !(await saveActiveLongEditorChanges())
+    ) {
       if (mutationIsCurrent(lease)) completion.fail("当前长篇修改尚未保存。");
       return;
     }
@@ -164,7 +206,12 @@ export function createLongStructureSync(
       const latestSummary = activeLongBookSummary.value;
       const latestTarget = captureLongStructureMutationTarget(expectedBookId);
       const latestIndex = latestTarget?.index;
-      if (!latestSummary || !latestTarget || !latestIndex || latestSummary.id !== expectedBookId) {
+      if (
+        !latestSummary ||
+        !latestTarget ||
+        !latestIndex ||
+        latestSummary.id !== expectedBookId
+      ) {
         throw new Error("活动长篇已切换，本次结构修改未保存。");
       }
       const baseProjectRevision =
@@ -182,7 +229,10 @@ export function createLongStructureSync(
         batch: effectiveBatch
       });
       assertCurrentLongStructureMutationTarget(latestTarget, lease);
-      if (preview.bookId !== expectedBookId || preview.projectRevision !== baseProjectRevision) {
+      if (
+        preview.bookId !== expectedBookId ||
+        preview.projectRevision !== baseProjectRevision
+      ) {
         throw new Error("长篇结构已更新，请基于最新结构重新修改。");
       }
       assertCurrentLongStructureMutationTarget(latestTarget, lease);
@@ -203,13 +253,20 @@ export function createLongStructureSync(
       ) {
         throw new Error("活动长篇已切换，无法发布结构保存结果。");
       }
-      longBooks.value = replaceLongBookSummary(longBooks.value, applyResult.summary);
+      longBooks.value = replaceLongBookSummary(
+        longBooks.value,
+        applyResult.summary
+      );
       const refreshed = await refreshLongWritingSaveBarrier(expectedBookId);
       if (isDisposed()) return;
       if (!refreshed) {
         longStructureDialogOpen.value = false;
-        completion.appliedButRefreshFailed("结构修改已保存，但界面未能同步最新结构。");
-        uiMessage.warning("结构修改已保存，但界面未能同步最新结构；请重新打开长篇设置。");
+        completion.appliedButRefreshFailed(
+          "结构修改已保存，但界面未能同步最新结构。"
+        );
+        uiMessage.warning(
+          "结构修改已保存，但界面未能同步最新结构；请重新打开长篇设置。"
+        );
         return;
       }
       if (updatesItemLayout) {
@@ -217,11 +274,13 @@ export function createLongStructureSync(
       }
       completion.succeed();
       uiMessage.success(
-        options.successMessage ?? `已直接保存 ${effectiveBatch.operations.length} 项长篇结构修改`
+        options.successMessage ??
+          `已直接保存 ${effectiveBatch.operations.length} 项长篇结构修改`
       );
     } catch (error: unknown) {
       if (isDisposed()) return;
-      const message = error instanceof Error ? error.message : "保存长篇结构修改失败。";
+      const message =
+        error instanceof Error ? error.message : "保存长篇结构修改失败。";
       if (lease.applied) {
         longStructureDialogOpen.value = false;
         completion.appliedButRefreshFailed(message);

@@ -58,14 +58,10 @@ export function useLazyLearningImitationController(options: {
     active = true;
     const loadGeneration = generation;
     const pending = (async () => {
-      const { useLearningImitation } = await (
-        options.loadModule?.() ?? import("./useLearningImitation")
-      );
+      const { useLearningImitation } = await (options.loadModule?.() ??
+        import("./useLearningImitation"));
       const loaded = useLearningImitation({ api: options.api });
-      loaded.setConfiguredModels(
-        configuredModels,
-        configuredDefaultModelId
-      );
+      loaded.setConfiguredModels(configuredModels, configuredDefaultModelId);
       if (!active || generation !== loadGeneration) {
         loaded.dispose();
         throw cancelledLoadError("Learning imitation");
@@ -118,9 +114,8 @@ export function useLazySubagentAuthoringController(options: {
     active = true;
     const loadGeneration = generation;
     const pending = (async () => {
-      const { useSubagentAuthoring } = await (
-        options.loadModule?.() ?? import("./useSubagentAuthoring")
-      );
+      const { useSubagentAuthoring } = await (options.loadModule?.() ??
+        import("./useSubagentAuthoring"));
       const loaded = useSubagentAuthoring({ api: options.api });
       if (!active || generation !== loadGeneration) {
         throw cancelledLoadError("Subagent authoring");

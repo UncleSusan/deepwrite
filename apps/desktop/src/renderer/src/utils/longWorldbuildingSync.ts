@@ -36,7 +36,9 @@ export interface BuildLongWorldbuildingSyncBatchInput {
   contents: LongWorldbuildingContentByFileId;
   updatedAt?: string;
   createId?: (prefix: string) => string;
-  createFileRevision?: (content: string) => LongFileRevision | Promise<LongFileRevision>;
+  createFileRevision?: (
+    content: string
+  ) => LongFileRevision | Promise<LongFileRevision>;
 }
 
 export interface LongWorldbuildingSyncBatchPlan {

@@ -23,15 +23,13 @@ export type {
   LongStructureTransactionsState
 } from "./long-structure-transactions/types";
 
-let longStructureMutationModulePromise:
-  | Promise<typeof import("../types/longStructureMutations")>
-  | null = null;
+let longStructureMutationModulePromise: Promise<
+  typeof import("../types/longStructureMutations")
+> | null = null;
 
 function loadLongStructureMutationModule() {
-  return (
-    longStructureMutationModulePromise ??=
-      import("../types/longStructureMutations")
-  );
+  return (longStructureMutationModulePromise ??=
+    import("../types/longStructureMutations"));
 }
 
 /**
@@ -122,11 +120,19 @@ export function useLongStructureTransactionsCoordinator(
     await lease.runTracked(async () => {
       const bookId = node.longBookId;
       const chapterCardId = node.longWorkspaceSelection?.chapterCardId;
-      if (!bookId || !chapterCardId || node.longWorkspaceSelection?.root !== "draft") {
+      if (
+        !bookId ||
+        !chapterCardId ||
+        node.longWorkspaceSelection?.root !== "draft"
+      ) {
         options.notifications.warning("当前小节尚未准备好。");
         return;
       }
-      if (session.blockWritingPlan(action === "delete" ? "删除小节" : "调整小节顺序")) {
+      if (
+        session.blockWritingPlan(
+          action === "delete" ? "删除小节" : "调整小节顺序"
+        )
+      ) {
         return;
       }
       if (state.activeBookId.value !== bookId) {
@@ -137,7 +143,9 @@ export function useLongStructureTransactionsCoordinator(
       }
       if (lease.isDisposed()) return;
       const index = state.workspaceIndex.value;
-      const chapter = index?.plot.chapterCards.find(({ id }) => id === chapterCardId);
+      const chapter = index?.plot.chapterCards.find(
+        ({ id }) => id === chapterCardId
+      );
       if (state.activeBookId.value !== bookId || !index || !chapter) {
         options.notifications.warning("该小节已不存在，请刷新后重试。");
         return;
@@ -152,45 +160,51 @@ export function useLongStructureTransactionsCoordinator(
         };
         return;
       }
-      await lease.withMutation(bookId, (message) => options.notifications.info(message), async (mutationLease) => {
-        if (mutationLease.target.index !== index) {
-          options.notifications.warning("活动长篇或结构已切换，本次调整已取消。");
-          return;
-        }
-        let batch: LongWorkspaceOperationBatch;
-        try {
-          const { createLongStructureMutationBuilder } =
-            await loadLongStructureMutationModule();
-          lease.assertCurrentLongStructureMutationTarget(
-            mutationLease.target,
+      await lease.withMutation(
+        bookId,
+        (message) => options.notifications.info(message),
+        async (mutationLease) => {
+          if (mutationLease.target.index !== index) {
+            options.notifications.warning(
+              "活动长篇或结构已切换，本次调整已取消。"
+            );
+            return;
+          }
+          let batch: LongWorkspaceOperationBatch;
+          try {
+            const { createLongStructureMutationBuilder } =
+              await loadLongStructureMutationModule();
+            lease.assertCurrentLongStructureMutationTarget(
+              mutationLease.target,
+              mutationLease,
+              "活动长篇或结构已切换，本次调整已取消。"
+            );
+            batch = createLongStructureMutationBuilder(index).reorderChapter(
+              chapterCardId,
+              action === "move-up" ? "up" : "down"
+            );
+          } catch (error: unknown) {
+            if (lease.isDisposed()) return;
+            options.notifications.warning(
+              error instanceof Error ? error.message : "无法调整小节顺序。"
+            );
+            return;
+          }
+          await sync.executeLongStructureMutation(
             mutationLease,
-            "活动长篇或结构已切换，本次调整已取消。"
+            batch,
+            NOOP_COMPLETION,
+            {
+              saveEditor: false,
+              successMessage:
+                action === "move-up"
+                  ? `已上移小节“${chapter.title}”`
+                  : `已下移小节“${chapter.title}”`
+            },
+            index
           );
-          batch = createLongStructureMutationBuilder(index).reorderChapter(
-            chapterCardId,
-            action === "move-up" ? "up" : "down"
-          );
-        } catch (error: unknown) {
-          if (lease.isDisposed()) return;
-          options.notifications.warning(
-            error instanceof Error ? error.message : "无法调整小节顺序。"
-          );
-          return;
         }
-        await sync.executeLongStructureMutation(
-          mutationLease,
-          batch,
-          NOOP_COMPLETION,
-          {
-            saveEditor: false,
-            successMessage:
-              action === "move-up"
-                ? `已上移小节“${chapter.title}”`
-                : `已下移小节“${chapter.title}”`
-          },
-          index
-        );
-      });
+      );
     });
   }
 

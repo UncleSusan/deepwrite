@@ -42,7 +42,9 @@ function manifest(label = "官方模型-DeepSeekFlash正式版本"): unknown {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -91,32 +93,35 @@ describe("DeepWrite official remote model manifest", () => {
         expect(new Headers(init?.headers).get("Authorization")).toBe(
           "Bearer itk-mxai-invalid-placeholder"
         );
-        return new Response(JSON.stringify({
-          code: 200,
-          success: true,
-          message: "",
-          data: {
-            queried_at: "2026-07-06T18:04:00+08:00",
-            account_balance: 800000,
-            account_balance_yuan: 80,
-            key_quota_remaining: 400000,
-            key_quota_remaining_yuan: 40,
-            quota_per_unit: 10000,
-            keys: [
-              {
-                key_suffix: "a1b2",
-                unlimited: false,
-                granted_quota: 500000,
-                granted_yuan: 50,
-                remain_quota: 400000,
-                remain_yuan: 40,
-                used_quota: 100000,
-                used_yuan: 10
-              },
-              { used_quota: 50000, used_yuan: 5 }
-            ]
-          }
-        }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            code: 200,
+            success: true,
+            message: "",
+            data: {
+              queried_at: "2026-07-06T18:04:00+08:00",
+              account_balance: 800000,
+              account_balance_yuan: 80,
+              key_quota_remaining: 400000,
+              key_quota_remaining_yuan: 40,
+              quota_per_unit: 10000,
+              keys: [
+                {
+                  key_suffix: "a1b2",
+                  unlimited: false,
+                  granted_quota: 500000,
+                  granted_yuan: 50,
+                  remain_quota: 400000,
+                  remain_yuan: 40,
+                  used_quota: 100000,
+                  used_yuan: 10
+                },
+                { used_quota: 50000, used_yuan: 5 }
+              ]
+            }
+          }),
+          { status: 200 }
+        );
       }
       return new Response(JSON.stringify(manifest()), { status: 200 });
     });
@@ -209,11 +214,12 @@ describe("DeepWrite official remote model manifest", () => {
     const root = await mkdtemp(join(tmpdir(), "deepwrite-official-catalog-"));
     temporaryRoots.push(root);
     let currentManifest = manifest();
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(currentManifest), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      })
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(currentManifest), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
     );
     const store = new DeepWriteOfficialModelCatalogStore(root, { fetcher });
     await store.initialize();

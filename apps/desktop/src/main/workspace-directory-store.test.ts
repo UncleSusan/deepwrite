@@ -8,13 +8,17 @@ const temporaryRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
 describe("WorkspaceDirectoryStore", () => {
   it("defaults a first-time user to the system documents directory", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-workspace-directory-default-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-workspace-directory-default-")
+    );
     temporaryRoots.push(root);
     const documents = join(root, "Documents");
     const userData = join(root, "user-data");
@@ -25,11 +29,15 @@ describe("WorkspaceDirectoryStore", () => {
     expect(initialized).toEqual({ path: canonicalDocuments });
 
     const reloaded = new WorkspaceDirectoryStore(userData);
-    await expect(reloaded.list()).resolves.toEqual({ path: canonicalDocuments });
+    await expect(reloaded.list()).resolves.toEqual({
+      path: canonicalDocuments
+    });
   });
 
   it("keeps an existing workspace directory when initializing the default", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-workspace-directory-existing-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-workspace-directory-existing-")
+    );
     temporaryRoots.push(root);
     const existing = join(root, "已有工作区");
     const documents = join(root, "Documents");
@@ -46,7 +54,9 @@ describe("WorkspaceDirectoryStore", () => {
   });
 
   it("starts unset and persists freely switchable directories", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-workspace-directory-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-workspace-directory-")
+    );
     temporaryRoots.push(root);
     const first = join(root, "工作区一");
     const second = join(root, "工作区二");
@@ -57,14 +67,18 @@ describe("WorkspaceDirectoryStore", () => {
     const canonicalFirst = await realpath(first);
     const canonicalSecond = await realpath(second);
     await expect(store.save(first)).resolves.toEqual({ path: canonicalFirst });
-    await expect(store.save(second)).resolves.toEqual({ path: canonicalSecond });
+    await expect(store.save(second)).resolves.toEqual({
+      path: canonicalSecond
+    });
 
     const reloaded = new WorkspaceDirectoryStore(join(root, "user-data"));
     await expect(reloaded.list()).resolves.toEqual({ path: canonicalSecond });
   });
 
   it("rejects files as workspace directories", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-workspace-directory-file-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-workspace-directory-file-")
+    );
     temporaryRoots.push(root);
     const file = join(root, "not-a-folder.txt");
     await writeFile(file, "x", "utf8");

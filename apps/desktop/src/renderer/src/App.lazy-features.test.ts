@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../test-utils/sourceText";
 import source from "./WorkspaceShell.vue?raw";
 import learningSource from "./components/LearningImitationDialog.vue?raw";
 import dialogLayerSource from "./components/WorkspaceDialogLayer.vue?raw";
@@ -8,9 +9,7 @@ import featureHostSource from "./composables/useWorkspaceFeatureHostCoordinator.
 
 describe("App lazy feature mounting", () => {
   it("keeps only the default writing surface in the eager component imports", () => {
-    expect(source).toContain(
-      'from "./components/lazyAppComponents"'
-    );
+    expect(source).toContain('from "./components/lazyAppComponents"');
     expect(lazyComponentsSource).toContain("defineAsyncComponent");
     expect(lazyComponentsSource).toContain(
       '() => import("./SettingsPage.vue")'
@@ -39,13 +38,13 @@ describe("App lazy feature mounting", () => {
   });
 
   it("loads model settings and workspace directory as separate features", () => {
-    expect(featureModulesSource).toContain('<WorkspaceDirectoryFeature\n');
-    expect(featureModulesSource).toContain('<ModelSettingsFeature\n');
+    expect(featureModulesSource).toContain("<WorkspaceDirectoryFeature\n");
+    expect(featureModulesSource).toContain("<ModelSettingsFeature\n");
     expect(source).toContain("<WorkspaceFeatureModules");
     expect(source).not.toContain("<WorkspaceDirectoryFeature");
     expect(source).not.toContain("<ModelSettingsFeature");
     expect(featureModulesSource).not.toContain(
-      ':mode="workspaceMainView === \'directory\' ? \'directory\' : \'models\'"'
+      ":mode=\"workspaceMainView === 'directory' ? 'directory' : 'models'\""
     );
   });
 
@@ -55,26 +54,26 @@ describe("App lazy feature mounting", () => {
       "const workspaceFeatureModule = computed"
     );
     expect(featureModulesSource).toContain(
-      'v-else-if="module.kind === \'marketplace\'"'
+      "v-else-if=\"module.kind === 'marketplace'\""
     );
     expect(featureModulesSource).toContain(
-      'v-else-if="module.kind === \'cloud-backup\'"'
+      "v-else-if=\"module.kind === 'cloud-backup'\""
     );
-    expect(source).toContain('v-if="activeFeature === \'long-workspace\'"');
+    expect(source).toContain("v-if=\"activeFeature === 'long-workspace'\"");
     expect(source).not.toContain("<KeepAlive>");
     expect(source).toContain(
       '<WorkspaceDialogLayer\n    v-if="workspaceDialogModule"'
     );
-    expect(dialogLayerSource).toContain('<DialogHost\n    v-if="module"');
+    expectSourceToContain(dialogLayerSource, '<DialogHost v-if="module"');
     expect(dialogLayerSource).toContain(':active-dialog="module.kind"');
     expect(dialogLayerSource).toContain(
-      '<BookResourceDialog\n      v-if="module.kind === \'book-resource\'"'
+      "<BookResourceDialog\n      v-if=\"module.kind === 'book-resource'\""
     );
     expect(dialogLayerSource).toContain(
-      '<CreateBookDialog\n      v-else-if="module.kind === \'create-book\'"'
+      "<CreateBookDialog\n      v-else-if=\"module.kind === 'create-book'\""
     );
     expect(dialogLayerSource).toContain(
-      '<SaveConflictDialog\n      v-else-if="module.kind === \'save-conflict\'"'
+      "<SaveConflictDialog\n      v-else-if=\"module.kind === 'save-conflict'\""
     );
     expect(source).not.toContain("<BookResourceDialog\n");
     expect(source).not.toContain('v-show="workspaceMainView');

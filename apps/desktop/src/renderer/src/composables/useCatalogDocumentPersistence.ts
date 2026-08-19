@@ -15,10 +15,7 @@ import type {
   EnsureCatalogDocumentsOptions,
   InvalidateCatalogDocumentOptions
 } from "./useCatalogDocumentLoader";
-import type {
-  EditorDraftState,
-  WorkspaceDocument
-} from "../types/workspace";
+import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
 import {
   captureWorkspaceDocumentBaselines,
   rebaseDraftsForMatchingDocuments,
@@ -491,8 +488,10 @@ export function useCatalogDocumentPersistence(
       projectRevision,
       saved.id
     );
-    const currentProjectRevision =
-      catalog.findLibrary(domain, libraryId)?.projectRevision;
+    const currentProjectRevision = catalog.findLibrary(
+      domain,
+      libraryId
+    )?.projectRevision;
     if (synchronized) return currentProjectRevision;
     if (currentProjectRevision === undefined) return projectRevision;
     if (projectRevision === undefined) return currentProjectRevision;
@@ -623,8 +622,8 @@ export function useCatalogDocumentPersistence(
         const currentDraft = nextDrafts[payload.id];
         const hasNewerDraft = Boolean(
           currentDraft &&
-            (currentDraft.title !== payload.title ||
-              currentDraft.content !== payload.content)
+          (currentDraft.title !== payload.title ||
+            currentDraft.content !== payload.content)
         );
         if (currentDraft && hasNewerDraft) {
           nextDrafts[payload.id] = {
@@ -687,8 +686,8 @@ export function useCatalogDocumentPersistence(
     try {
       const projectRevision = force
         ? document.catalogProjectRevision
-        : editorDrafts.value[payload.id]?.baseProjectRevision ??
-          document.catalogProjectRevision;
+        : (editorDrafts.value[payload.id]?.baseProjectRevision ??
+          document.catalogProjectRevision);
       const saved = await currentApi.saveDocument({
         bookId: document.workspaceId,
         documentId: document.catalogDocumentId,
@@ -718,9 +717,7 @@ export function useCatalogDocumentPersistence(
       );
       const projectDocumentIds = new Set(
         documents.value.flatMap((candidate) =>
-          candidate.workspaceId === document.workspaceId
-            ? [candidate.id]
-            : []
+          candidate.workspaceId === document.workspaceId ? [candidate.id] : []
         )
       );
       const hasAnotherDirtyProjectDraft = Object.entries(
@@ -750,7 +747,9 @@ export function useCatalogDocumentPersistence(
       restoreDraftAfterSaveFailure(document, payload);
       if (isCatalogConflict(error)) await openSaveConflict(document, payload);
       else {
-        uiMessage.error(error instanceof Error ? error.message : "保存文稿失败。");
+        uiMessage.error(
+          error instanceof Error ? error.message : "保存文稿失败。"
+        );
       }
       return false;
     } finally {
@@ -784,8 +783,8 @@ export function useCatalogDocumentPersistence(
     try {
       const projectRevision = force
         ? document.catalogProjectRevision
-        : editorDrafts.value[payload.id]?.baseProjectRevision ??
-          document.catalogProjectRevision;
+        : (editorDrafts.value[payload.id]?.baseProjectRevision ??
+          document.catalogProjectRevision);
       const saved = await currentApi.saveLibraryEntry({
         domain: document.domain,
         libraryId: document.libraryId,
@@ -841,9 +840,7 @@ export function useCatalogDocumentPersistence(
     const currentApi = api();
     const force = saveOptions.force ?? false;
     if (payload.content.length > CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS) {
-      uiMessage.warning(
-        "素材库或技能库介绍最多 40,000 字，请精简内容后再保存"
-      );
+      uiMessage.warning("素材库或技能库介绍最多 40,000 字，请精简内容后再保存");
       return false;
     }
     if (
@@ -859,8 +856,8 @@ export function useCatalogDocumentPersistence(
     try {
       const projectRevision = force
         ? document.catalogProjectRevision
-        : editorDrafts.value[payload.id]?.baseProjectRevision ??
-          document.catalogProjectRevision;
+        : (editorDrafts.value[payload.id]?.baseProjectRevision ??
+          document.catalogProjectRevision);
       const updated = await currentApi.updateLibrary({
         domain: document.domain,
         libraryId: document.libraryId,
@@ -1022,15 +1019,13 @@ export function useCatalogDocumentPersistence(
             })
           : document.catalogLibraryField === "overview" &&
               document.libraryId &&
-              (document.domain === "material" ||
-                document.domain === "skill")
+              (document.domain === "material" || document.domain === "skill")
             ? await saveCatalogLibraryOverview(document, conflict.payload, {
                 force: true
               })
             : document.catalogEntryId &&
                 document.libraryId &&
-                (document.domain === "material" ||
-                  document.domain === "skill")
+                (document.domain === "material" || document.domain === "skill")
               ? await saveCatalogLibraryEntry(document, conflict.payload, {
                   force: true
                 })
@@ -1082,13 +1077,7 @@ export function useCatalogDocumentPersistence(
       projectRevision: number | undefined
     ) =>
       trackOperation(
-        () =>
-          applySavedLibraryEntry(
-            domain,
-            libraryId,
-            saved,
-            projectRevision
-          ),
+        () => applySavedLibraryEntry(domain, libraryId, saved, projectRevision),
         undefined
       ),
     applyUpdatedCatalogLibrary: (
@@ -1107,12 +1096,7 @@ export function useCatalogDocumentPersistence(
     ) =>
       trackOperation(
         () =>
-          applyCreatedLibraryEntry(
-            domain,
-            libraryId,
-            created,
-            projectRevision
-          ),
+          applyCreatedLibraryEntry(domain, libraryId, created, projectRevision),
         undefined
       ),
     isCatalogConflict,

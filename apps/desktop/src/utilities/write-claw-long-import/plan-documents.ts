@@ -2,11 +2,7 @@ import type {
   LongFileRevision,
   LongWorkspaceFileReference
 } from "@deepwrite/contracts";
-import {
-  contentSha256,
-  safeUnicode,
-  type WarningCollector
-} from "./normalize";
+import { contentSha256, safeUnicode, type WarningCollector } from "./normalize";
 import type { WriteClawLongImportDocument } from "./types";
 
 const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;

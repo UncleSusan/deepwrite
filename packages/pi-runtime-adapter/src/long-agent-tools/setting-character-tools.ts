@@ -1,33 +1,79 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import {
-  LONG_CHARACTER_OVERVIEW_CHANGE_ID, LongSearchCommandEnvelopeSchema, LongSearchResultSchema,
-  LongWorkspaceOperationBatchSchema, createEmptyLongMarkdownFileReference, createEnvelope,
-  longCharacterCoreProfileFileId, longCharacterCurrentStateFileId, longCharacterFilePath,
-  longCharacterHistoryFileId, longCharacterRelationshipsFileId, type LongCharacterFileChange,
-  type LongSearchResult, type LongWorkspaceIndexSnapshot, type LongWorkspaceOperation,
+  LONG_CHARACTER_OVERVIEW_CHANGE_ID,
+  LongSearchCommandEnvelopeSchema,
+  LongSearchResultSchema,
+  LongWorkspaceOperationBatchSchema,
+  createEmptyLongMarkdownFileReference,
+  createEnvelope,
+  longCharacterCoreProfileFileId,
+  longCharacterCurrentStateFileId,
+  longCharacterFilePath,
+  longCharacterHistoryFileId,
+  longCharacterRelationshipsFileId,
+  type LongCharacterFileChange,
+  type LongSearchResult,
+  type LongWorkspaceIndexSnapshot,
+  type LongWorkspaceOperation,
   type LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
 import {
-  aliasesParameter, characterDocumentParameter, characterTypeIdParameter, stableIdParameter,
-  strictObject, titleParameter, worldbuildingReadModeParameter
+  aliasesParameter,
+  characterDocumentParameter,
+  characterTypeIdParameter,
+  stableIdParameter,
+  strictObject,
+  titleParameter,
+  worldbuildingReadModeParameter
 } from "./schemas";
 import { formatCharacterList } from "./formatting";
-import { defineTool, maxOrder, nextContentRevision, stableEntityId, stableHash, textResult } from "./shared";
+import {
+  defineTool,
+  maxOrder,
+  nextContentRevision,
+  stableEntityId,
+  stableHash,
+  textResult
+} from "./shared";
 import { longProposalResultSummary, type LongToolContext } from "./context";
 import {
-  readWholeCharacterDocument, resolveCharacterDocumentTarget, resolveCharacterOverviewTarget
+  readWholeCharacterDocument,
+  resolveCharacterDocumentTarget,
+  resolveCharacterOverviewTarget
 } from "./setting-worldbuilding-tools";
 
 export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
-  const { input, workspace, profile, readableRoots, writableRoots, capabilities, isSettingAgent, isPlotDesignAgent, isDraftWritingAgent, isContinuityLedgerAgent, execute, loadIndex, nextQuerySequence, fullyReadCharacterDocuments, characterDocumentOverlay } = ctx;
+  const {
+    input,
+    workspace,
+    profile,
+    readableRoots,
+    writableRoots,
+    capabilities,
+    isSettingAgent,
+    isPlotDesignAgent,
+    isDraftWritingAgent,
+    isContinuityLedgerAgent,
+    execute,
+    loadIndex,
+    nextQuerySequence,
+    fullyReadCharacterDocuments,
+    characterDocumentOverlay
+  } = ctx;
   const CHARACTER_DOCUMENT_TITLES = {
-    core_profile: "核心档案", relationships: "人物关系", current_state: "当前状态", history: "历史轨迹"
+    core_profile: "核心档案",
+    relationships: "人物关系",
+    current_state: "当前状态",
+    history: "历史轨迹"
   } as const;
   const assertCharacterDocumentIsDirectlyWritable = (
     index: LongWorkspaceIndexSnapshot,
     document: keyof typeof CHARACTER_DOCUMENT_TITLES
-  ) => { void index; void document; };
+  ) => {
+    void index;
+    void document;
+  };
   const characterQueryTools: AgentTool[] = [];
   if (
     (isSettingAgent ||
@@ -73,7 +119,9 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
               type_title:
                 index.characterTypes.find(
                   ({ id }) => id === candidate.characterGroup
-                )?.title ?? candidate.characterGroup ?? "主要配角",
+                )?.title ??
+                candidate.characterGroup ??
+                "主要配角",
               aliases: candidate.aliases ?? []
             });
           }
@@ -279,7 +327,8 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
             if (
               (params.type_id && target.type_id !== params.type_id) ||
               (params.document && target.document !== params.document)
-            ) return [];
+            )
+              return [];
             return [
               {
                 character_id: target.character_id,
@@ -295,9 +344,7 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
             JSON.stringify({
               hits,
               next_page:
-                result.nextCursor === null || page >= 100
-                  ? null
-                  : page + 1
+                result.nextCursor === null || page >= 100 ? null : page + 1
             })
           );
         }
@@ -355,9 +402,7 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
           return textResult(
             [
               `【${target.characterName} / ${CHARACTER_DOCUMENT_TITLES[params.document]}】`,
-              mode === "preview"
-                ? "预览（不建立整体覆盖凭据）："
-                : "正文：",
+              mode === "preview" ? "预览（不建立整体覆盖凭据）：" : "正文：",
               "",
               visible || "（正文为空）",
               ...(target.overlay?.pendingCreation
@@ -440,8 +485,7 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
             index.characters.some((character) => character.name === name) ||
             [...characterDocumentOverlay.values()].some(
               (candidate) =>
-                candidate.pendingCreation &&
-                candidate.characterName === name
+                candidate.pendingCreation && candidate.characterName === name
             )
           ) {
             throw new Error(
@@ -481,11 +525,14 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
               id: characterId,
               name,
               group: params.type_id,
-              order: maxOrder(
-                index.characters
-                  .filter(({ group }) => group === params.type_id)
-                  .map(({ order }) => order)
-              ) + pendingInGroup + 1,
+              order:
+                maxOrder(
+                  index.characters
+                    .filter(({ group }) => group === params.type_id)
+                    .map(({ order }) => order)
+                ) +
+                pendingInGroup +
+                1,
               aliases: params.aliases ?? []
             },
             files: {
@@ -612,18 +659,20 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
             baseRevision: index.revision,
             updatedAt: timestamp,
             operations: [],
-            documentWrites: [{
-              proposalId: `proposal_${stableHash(
-                `${workspace.bookId}:${input.runId}:${toolCallId}`
-              ).slice(0, 24)}`,
-              fileId: live.file.id,
-              content: params.text,
-              mode: "replace",
-              expectedRevision: live.file.revision,
-              nextRevision,
-              updatedAt: timestamp,
-              reason: summary
-            }]
+            documentWrites: [
+              {
+                proposalId: `proposal_${stableHash(
+                  `${workspace.bookId}:${input.runId}:${toolCallId}`
+                ).slice(0, 24)}`,
+                fileId: live.file.id,
+                content: params.text,
+                mode: "replace",
+                expectedRevision: live.file.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }
+            ]
           });
           const nextFile = {
             ...live.file,
@@ -705,12 +754,13 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
           let content = evidence.content;
           for (const replacement of params.replacements) {
             const first = content.indexOf(replacement.original_text);
-            const second = first < 0
-              ? -1
-              : content.indexOf(
-                  replacement.original_text,
-                  first + replacement.original_text.length
-                );
+            const second =
+              first < 0
+                ? -1
+                : content.indexOf(
+                    replacement.original_text,
+                    first + replacement.original_text.length
+                  );
             if (first < 0 || second >= 0) {
               return textResult(
                 `未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`
@@ -733,18 +783,20 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
             baseRevision: index.revision,
             updatedAt: timestamp,
             operations: [],
-            documentWrites: [{
-              proposalId: `proposal_${stableHash(
-                `${workspace.bookId}:${input.runId}:${toolCallId}`
-              ).slice(0, 24)}`,
-              fileId: evidence.file.id,
-              content,
-              mode: "replace",
-              expectedRevision: evidence.file.revision,
-              nextRevision,
-              updatedAt: timestamp,
-              reason: summary
-            }]
+            documentWrites: [
+              {
+                proposalId: `proposal_${stableHash(
+                  `${workspace.bookId}:${input.runId}:${toolCallId}`
+                ).slice(0, 24)}`,
+                fileId: evidence.file.id,
+                content,
+                mode: "replace",
+                expectedRevision: evidence.file.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }
+            ]
           });
           const nextFile = {
             ...evidence.file,
@@ -798,7 +850,10 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
-          const target = resolveCharacterOverviewTarget(index, characterDocumentOverlay);
+          const target = resolveCharacterOverviewTarget(
+            index,
+            characterDocumentOverlay
+          );
           const live = target.overlay
             ? { file: target.file, content: target.overlay.content }
             : await readWholeCharacterDocument(
@@ -837,18 +892,20 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
             baseRevision: index.revision,
             updatedAt: timestamp,
             operations: [],
-            documentWrites: [{
-              proposalId: `proposal_${stableHash(
-                `${workspace.bookId}:${input.runId}:${toolCallId}`
-              ).slice(0, 24)}`,
-              fileId: live.file.id,
-              content: params.text,
-              mode: "replace",
-              expectedRevision: live.file.revision,
-              nextRevision,
-              updatedAt: timestamp,
-              reason: summary
-            }]
+            documentWrites: [
+              {
+                proposalId: `proposal_${stableHash(
+                  `${workspace.bookId}:${input.runId}:${toolCallId}`
+                ).slice(0, 24)}`,
+                fileId: live.file.id,
+                content: params.text,
+                mode: "replace",
+                expectedRevision: live.file.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }
+            ]
           });
           const nextFile = {
             ...live.file,
@@ -906,7 +963,10 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
         executionMode: "sequential",
         execute: async (toolCallId, params) => {
           const { index, projectRevision } = await loadIndex();
-          const target = resolveCharacterOverviewTarget(index, characterDocumentOverlay);
+          const target = resolveCharacterOverviewTarget(
+            index,
+            characterDocumentOverlay
+          );
           const evidence = fullyReadCharacterDocuments.get(target.file.id);
           if (
             !evidence ||
@@ -921,12 +981,13 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
           let content = evidence.content;
           for (const replacement of params.replacements) {
             const first = content.indexOf(replacement.original_text);
-            const second = first < 0
-              ? -1
-              : content.indexOf(
-                  replacement.original_text,
-                  first + replacement.original_text.length
-                );
+            const second =
+              first < 0
+                ? -1
+                : content.indexOf(
+                    replacement.original_text,
+                    first + replacement.original_text.length
+                  );
             if (first < 0 || second >= 0) {
               return textResult(
                 `未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`
@@ -947,18 +1008,20 @@ export function buildCharacterSettingTools(ctx: LongToolContext): AgentTool[] {
             baseRevision: index.revision,
             updatedAt: timestamp,
             operations: [],
-            documentWrites: [{
-              proposalId: `proposal_${stableHash(
-                `${workspace.bookId}:${input.runId}:${toolCallId}`
-              ).slice(0, 24)}`,
-              fileId: evidence.file.id,
-              content,
-              mode: "replace",
-              expectedRevision: evidence.file.revision,
-              nextRevision,
-              updatedAt: timestamp,
-              reason: summary
-            }]
+            documentWrites: [
+              {
+                proposalId: `proposal_${stableHash(
+                  `${workspace.bookId}:${input.runId}:${toolCallId}`
+                ).slice(0, 24)}`,
+                fileId: evidence.file.id,
+                content,
+                mode: "replace",
+                expectedRevision: evidence.file.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }
+            ]
           });
           const nextFile = {
             ...evidence.file,

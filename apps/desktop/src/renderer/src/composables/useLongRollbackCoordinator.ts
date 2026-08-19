@@ -105,14 +105,8 @@ interface AuthoritativeRollbackState {
 export function useLongRollbackCoordinator(
   options: LongRollbackCoordinatorOptions
 ): LongRollbackCoordinator {
-  const {
-    catalog,
-    navigation,
-    notifications,
-    scheduler,
-    session,
-    state
-  } = options;
+  const { catalog, navigation, notifications, scheduler, session, state } =
+    options;
 
   let disposed = false;
   let disposePromise: Promise<void> | null = null;
@@ -170,7 +164,10 @@ export function useLongRollbackCoordinator(
   }
 
   function rejectChangedTarget(candidate: LongRollbackTarget): void {
-    if (!requestCanPublish(candidate) || !targetMatchesExternalState(candidate)) {
+    if (
+      !requestCanPublish(candidate) ||
+      !targetMatchesExternalState(candidate)
+    ) {
       return;
     }
     cancelCurrentTarget(candidate);
@@ -205,7 +202,8 @@ export function useLongRollbackCoordinator(
   }
 
   function acquirePendingLease(): PendingLease | null {
-    if (disposed || ownedPendingLease || state.rollbackPending.value) return null;
+    if (disposed || ownedPendingLease || state.rollbackPending.value)
+      return null;
     const lease: PendingLease = {
       requestId: ++pendingRequestClock,
       pending: state.rollbackPending

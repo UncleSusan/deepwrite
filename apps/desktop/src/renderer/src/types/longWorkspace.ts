@@ -34,20 +34,13 @@ export type LongWorkspaceFileRole =
   | "ledger-record";
 
 export type LongContinuityView =
-  | "inbox"
-  | "snapshot"
-  | "execution"
-  | "knowledge"
-  | "history";
+  "inbox" | "snapshot" | "execution" | "knowledge" | "history";
 
 export function longCharacterGroupLabel(
   group: LongCharacterGroup,
   characterTypes: readonly LongCharacterType[] = DEFAULT_LONG_CHARACTER_TYPES
 ): string {
-  return (
-    characterTypes.find(({ id }) => id === group)?.title ??
-    group
-  );
+  return characterTypes.find(({ id }) => id === group)?.title ?? group;
 }
 
 export interface LongWorkspaceSelectionFile {
@@ -55,6 +48,11 @@ export interface LongWorkspaceSelectionFile {
   label: string;
   file: LongWorkspaceFileReference;
   readOnly?: boolean;
+}
+
+export interface LongForeshadowingFocus {
+  threadId: string | null;
+  beatId: string | null;
 }
 
 /**
@@ -126,7 +124,8 @@ export interface LongStructureMutationCompletion {
 
 export type LongWorkspaceRendererApi = DeepWriteApi["long"];
 
-export function resolveLongWorkspaceApi(): LongWorkspaceRendererApi | undefined {
+export function resolveLongWorkspaceApi():
+  LongWorkspaceRendererApi | undefined {
   return window.deepwrite?.long;
 }
 
@@ -153,9 +152,7 @@ export function isEditableLongFile(
   return file.path.toLowerCase().endsWith(".md");
 }
 
-export function isLongMigrationEvidenceCategoryId(
-  categoryId: string
-): boolean {
+export function isLongMigrationEvidenceCategoryId(categoryId: string): boolean {
   return categoryId.startsWith("world_migration-evidence-");
 }
 
@@ -237,8 +234,7 @@ export function latestCommittedContinuityChapter(
     );
     const hasMarkdownProjection =
       commit.mode === "text_files" ||
-      chapter?.foreshadowingChanges.revision !==
-        EMPTY_LONG_MARKDOWN_REVISION;
+      chapter?.foreshadowingChanges.revision !== EMPTY_LONG_MARKDOWN_REVISION;
     if (chapter && hasMarkdownProjection && predicate(chapter)) {
       return chapter;
     }
@@ -358,8 +354,7 @@ export function createLongCharacterGroupSelection(
     label: character.name
   }));
   const character =
-    characters.find(({ id }) => id === preferredCharacterId) ??
-    characters[0];
+    characters.find(({ id }) => id === preferredCharacterId) ?? characters[0];
   const baseSelection = {
     key: `character-group:${group}`,
     root: "character_design" as const,
@@ -399,12 +394,7 @@ export function createLongCharacterGroupSelection(
     ...baseSelection,
     characterId: character.id,
     title: character.name,
-    breadcrumbs: [
-      summary.title,
-      "人物设计",
-      groupLabel,
-      character.name
-    ],
+    breadcrumbs: [summary.title, "人物设计", groupLabel, character.name],
     files: characterDesignSelectionFiles(workspaceIndex, entry),
     description: latestMappedChapter
       ? "人物设计文件可继续编辑；按章连续性记录仅作为只读参考。"
@@ -431,8 +421,7 @@ export function createLongPlotPointVolumeSelection(
     label: plotPoint.title
   }));
   const plotPoint =
-    plotPoints.find(({ id }) => id === preferredPlotPointId) ??
-    plotPoints[0];
+    plotPoints.find(({ id }) => id === preferredPlotPointId) ?? plotPoints[0];
   const baseSelection = {
     key: `plot-design:plot-points:${volume.id}`,
     root: "plot_design" as const,
@@ -449,9 +438,7 @@ export function createLongPlotPointVolumeSelection(
       description: `${volume.title}还没有剧情点，请使用左侧分卷旁的加号新建。`
     };
   }
-  const entry = workspaceIndex.plot.arcs.find(
-    ({ id }) => id === plotPoint.id
-  );
+  const entry = workspaceIndex.plot.arcs.find(({ id }) => id === plotPoint.id);
   if (!entry) return undefined;
   const storyPlots = [...(workspaceIndex.plot.storyPlots ?? [])]
     .filter((storyPlot) => storyPlot.arcId === plotPoint.id)
@@ -515,12 +502,11 @@ export function createLongChapterCardVolumeSelection(
       (chapter) =>
         chapter.volumeId === volumeId && !navigationIds.has(chapter.id)
     )
-  ]
-    .sort(
-      (left, right) =>
-        left.narrativeOrder - right.narrativeOrder ||
-        left.id.localeCompare(right.id)
-    );
+  ].sort(
+    (left, right) =>
+      left.narrativeOrder - right.narrativeOrder ||
+      left.id.localeCompare(right.id)
+  );
   const chapterCardTabs = chapterCards.map((chapter) => ({
     id: chapter.id,
     label: chapter.title || chapter.id,
@@ -679,7 +665,9 @@ export function createLongContinuitySelection(
   );
   const characterContinuityFiles = [...(entry.characterContinuity ?? [])]
     .sort((left, right) =>
-      (characterNameById.get(left.characterId) ?? left.characterId).localeCompare(
+      (
+        characterNameById.get(left.characterId) ?? left.characterId
+      ).localeCompare(
         characterNameById.get(right.characterId) ?? right.characterId,
         "zh-CN"
       )
@@ -722,8 +710,7 @@ export function createLongContinuitySelection(
         readOnly: true
       },
       ...(importCheckpoint ? [] : characterContinuityFiles),
-      ...(entry.worldReveals
-        && !importCheckpoint
+      ...(entry.worldReveals && !importCheckpoint
         ? [
             {
               role: "world-reveals" as const,
@@ -733,19 +720,17 @@ export function createLongContinuitySelection(
             }
           ]
         : []),
-      ...(
-        !importCheckpoint && entry.foreshadowingChanges.revision !==
-        EMPTY_LONG_MARKDOWN_REVISION
-          ? [
-              {
-                role: "foreshadowing-changes" as const,
-                label: "伏笔变化",
-                file: entry.foreshadowingChanges,
-                readOnly: true
-              }
-            ]
-          : []
-      ),
+      ...(!importCheckpoint &&
+      entry.foreshadowingChanges.revision !== EMPTY_LONG_MARKDOWN_REVISION
+        ? [
+            {
+              role: "foreshadowing-changes" as const,
+              label: "伏笔变化",
+              file: entry.foreshadowingChanges,
+              readOnly: true
+            }
+          ]
+        : []),
       ...(importCheckpoint
         ? []
         : [
@@ -767,8 +752,8 @@ export function createLongContinuitySelection(
     description: importCheckpoint
       ? "续写导入检查点仅表示历史正文已封存，不代表已经生成连续性事实、章末状态或接续包。"
       : committed
-      ? "按章保留正文证据、人物状态与历史、世界观揭露、既有伏笔触点变化、章末状态和接续包。"
-      : "待处理章节；伏笔只核验总览中已关联本章的既有触点，没有候选时不生成伏笔记录。"
+        ? "按章保留正文证据、人物状态与历史、世界观揭露、既有伏笔触点变化、章末状态和接续包。"
+        : "待处理章节；伏笔只核验总览中已关联本章的既有触点，没有候选时不生成伏笔记录。"
   };
 }
 
@@ -924,8 +909,7 @@ export function reconcileLongWorkspaceSelection(
   }
   if (selection.key.startsWith("worldbuilding:")) {
     const category = workspaceIndex.worldbuilding.find(
-      ({ id }) =>
-        id === selection.key.slice("worldbuilding:".length)
+      ({ id }) => id === selection.key.slice("worldbuilding:".length)
     );
     if (!category) return undefined;
     const requestedItemId = selection.worldbuildingItemId;
@@ -934,9 +918,7 @@ export function reconcileLongWorkspaceSelection(
         ? category.items.find(({ id }) => id === requestedItemId)
         : undefined;
     const resolvedWorldbuildingItemId =
-      requestedItemId === undefined
-        ? undefined
-        : requestedItem?.id ?? null;
+      requestedItemId === undefined ? undefined : (requestedItem?.id ?? null);
     return {
       ...selection,
       ...(resolvedWorldbuildingItemId === undefined
@@ -963,14 +945,16 @@ export function reconcileLongWorkspaceSelection(
             worldbuildingItems: category.items,
             files: [
               ...(category.overview
-                ? [{
-                    role: "overview" as const,
-                    label: "概览",
-                    file: category.overview,
-                    ...(isLongMigrationEvidenceCategoryId(category.id)
-                      ? { readOnly: true }
-                      : {})
-                  }]
+                ? [
+                    {
+                      role: "overview" as const,
+                      label: "概览",
+                      file: category.overview,
+                      ...(isLongMigrationEvidenceCategoryId(category.id)
+                        ? { readOnly: true }
+                        : {})
+                    }
+                  ]
                 : []),
               ...category.items.map((item) => ({
                 role: "content" as const,
@@ -1045,12 +1029,7 @@ export function reconcileLongWorkspaceSelection(
     return {
       ...selection,
       title: character.name,
-      breadcrumbs: [
-        summary.title,
-        "人物设计",
-        groupLabel,
-        character.name
-      ],
+      breadcrumbs: [summary.title, "人物设计", groupLabel, character.name],
       files: characterDesignSelectionFiles(workspaceIndex, entry),
       description: latestMappedChapter
         ? "人物设计文件可继续编辑；按章连续性记录仅作为只读参考。"
@@ -1071,19 +1050,22 @@ export function reconcileLongWorkspaceSelection(
       commit.chapterCardId
     );
     if (!chapterSelection) return undefined;
-    return preserveRequestedLongFile({
-      ...chapterSelection,
-      key: selection.key,
-      continuityView: "history",
-      title: chapter?.title ?? `第 ${commit.sequence} 章`,
-      breadcrumbs: [
-        summary.title,
-        "连续性账本",
-        "章节记录",
-        chapter?.title ?? `第 ${commit.sequence} 章`
-      ],
-      description: `${commit.committedAt} · 按章 Markdown 连续性记录`
-    }, selection);
+    return preserveRequestedLongFile(
+      {
+        ...chapterSelection,
+        key: selection.key,
+        continuityView: "history",
+        title: chapter?.title ?? `第 ${commit.sequence} 章`,
+        breadcrumbs: [
+          summary.title,
+          "连续性账本",
+          "章节记录",
+          chapter?.title ?? `第 ${commit.sequence} 章`
+        ],
+        description: `${commit.committedAt} · 按章 Markdown 连续性记录`
+      },
+      selection
+    );
   }
   return selection;
 }

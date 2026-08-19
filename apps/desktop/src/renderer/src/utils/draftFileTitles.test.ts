@@ -18,8 +18,8 @@ describe("draft file titles", () => {
     expect(
       suggestedDraftSectionTitle("short", ["intro", "section-1", "section-3"])
     ).toBe("第四节");
-    expect(suggestedDraftSectionTitle("script", ["episode-1", "episode-2"])).toBe(
-      "第三集"
-    );
+    expect(
+      suggestedDraftSectionTitle("script", ["episode-1", "episode-2"])
+    ).toBe("第三集");
   });
 });

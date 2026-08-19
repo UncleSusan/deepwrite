@@ -34,7 +34,9 @@ describe("LongStructureManager", () => {
   });
 
   it("replaces narrative management with worldbuilding feature settings", () => {
-    expect(source).toContain('type StructurePanel = "foundation" | "features" | "agents"');
+    expect(source).toContain(
+      'type StructurePanel = "foundation" | "features" | "agents"'
+    );
     expect(source).toContain('label: "基础结构"');
     expect(source).toContain('label: "功能配置"');
     expect(source).toContain('label: "长篇上下文"');
@@ -44,8 +46,12 @@ describe("LongStructureManager", () => {
     expect(source.indexOf('label: "基础结构"')).toBeLessThan(
       source.indexOf('label: "功能配置"')
     );
-    expect(source).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
-    expect(source).not.toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+    expect(source).toContain(
+      "grid-template-columns: repeat(3, minmax(0, 1fr))"
+    );
+    expect(source).not.toContain(
+      "grid-template-columns: repeat(2, minmax(0, 1fr))"
+    );
     expect(source).toContain("世界观条目样式");
     expect(source).toContain("人物与连续性条目样式");
     expect(source).toContain("剧情设计条目样式");
@@ -83,9 +89,7 @@ describe("LongStructureManager", () => {
     expect(source).toContain(
       'succeed: () => finishMutation(requestId, "succeeded")'
     );
-    expect(source).toContain(
-      'fail: () => finishMutation(requestId, "failed")'
-    );
+    expect(source).toContain('fail: () => finishMutation(requestId, "failed")');
     expect(source).toContain("appliedButRefreshFailed");
     expect(source).toContain('if (outcome === "failed") return');
     expect(source).toContain('}, "form")');
@@ -96,7 +100,7 @@ describe("LongStructureManager", () => {
   it("uses shared themed controls and compact teleported dialogs", () => {
     expect(source).toContain("<PopupSelect");
     expect(source.match(/<Teleport to="body">/gu)).toHaveLength(3);
-    expect(source).toContain(":menu-z-index=\"2300\"");
+    expect(source).toContain(':menu-z-index="2300"');
     for (const themeToken of [
       "--surface-main",
       "--surface-raised",
@@ -125,9 +129,9 @@ describe("LongStructureManager", () => {
 
   it("publishes one prioritized child modal so its parent can suspend", () => {
     expect(source).toContain("const activeModal = computed");
-    expect(source).toContain('modalActiveChange: [active: boolean]');
-    expect(source).toContain('activeModal === \'form\'');
-    expect(source).toContain('activeModal === \'sync\'');
-    expect(source).toContain('activeModal === \'delete\'');
+    expect(source).toContain("modalActiveChange: [active: boolean]");
+    expect(source).toContain("activeModal === 'form'");
+    expect(source).toContain("activeModal === 'sync'");
+    expect(source).toContain("activeModal === 'delete'");
   });
 });

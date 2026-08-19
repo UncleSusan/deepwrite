@@ -40,7 +40,10 @@ describe("agent run preferences", () => {
     ).toEqual({ selectedModelId: "writer", thinkingLevel: "high" });
     expect(
       parseAgentModelSelection(
-        JSON.stringify({ selectedModelId: "writer", thinkingLevel: "not valid" })
+        JSON.stringify({
+          selectedModelId: "writer",
+          thinkingLevel: "not valid"
+        })
       )
     ).toBeUndefined();
     expect(parseAgentModelSelection("not-json")).toBeUndefined();
@@ -59,9 +62,15 @@ describe("agent run preferences", () => {
       shortAgentId: "expert_draft_coordinator" as const
     };
 
-    expect(agentConversationKeyForDocument(firstOther)).toBe("book-one:general");
-    expect(agentConversationKeyForDocument(secondOther)).toBe("book-two:general");
-    expect(agentConversationKeyForDocument(firstPlot)).toBe("book-one:plot_design");
+    expect(agentConversationKeyForDocument(firstOther)).toBe(
+      "book-one:general"
+    );
+    expect(agentConversationKeyForDocument(secondOther)).toBe(
+      "book-two:general"
+    );
+    expect(agentConversationKeyForDocument(firstPlot)).toBe(
+      "book-one:plot_design"
+    );
     expect(
       agentConversationKeyForDocument(
         workspaceDocument("script-one", "plot_design", "script")
@@ -160,11 +169,11 @@ describe("agent run preferences", () => {
 
     expect(
       parseAgentRunPreferences(JSON.stringify({ [scope]: preference }))
-    ).toEqual({ [scope]: preference });
+    ).toEqual({
+      [scope]: preference
+    });
     expect(
-      parseAgentRunPreferences(
-        JSON.stringify({ [`${scope}x`]: preference })
-      )
+      parseAgentRunPreferences(JSON.stringify({ [`${scope}x`]: preference }))
     ).toEqual({});
   });
 

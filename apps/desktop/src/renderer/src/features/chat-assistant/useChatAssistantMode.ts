@@ -6,12 +6,7 @@ import type {
   ChatAssistantRequestContext,
   LongBookSummary
 } from "@deepwrite/contracts";
-import {
-  computed,
-  ref,
-  shallowRef,
-  type Ref
-} from "vue";
+import { computed, ref, shallowRef, type Ref } from "vue";
 import type { AgentConversationController } from "../../composables/useAgentConversation";
 
 const MODE_STORAGE_KEY = "deepwrite:chat-assistant-mode:v1";
@@ -25,10 +20,7 @@ export interface ChatAssistantProjectOption {
 }
 
 export interface ChatAssistantModeOptions {
-  conversationForKey(
-    key: string,
-    scope?: string
-  ): AgentConversationController;
+  conversationForKey(key: string, scope?: string): AgentConversationController;
   catalogSnapshot: Readonly<Ref<CatalogIndexSnapshot | null>>;
   longBooks: Readonly<Ref<readonly LongBookSummary[]>>;
 }
@@ -106,29 +98,37 @@ export function useChatAssistantMode(options: ChatAssistantModeOptions) {
     }))
   ]);
 
-  const configuredProjectOptions = computed<readonly ChatAssistantProjectOption[]>(() =>
+  const configuredProjectOptions = computed<
+    readonly ChatAssistantProjectOption[]
+  >(() =>
     configuredProjects.value.map((project) => {
       const key = projectKey(project);
       const live = projectOptions.value.find((option) => option.key === key);
-      return live ?? {
-        key,
-        label: `已失效项目（${project.projectId}）`,
-        project,
-        available: false
-      };
+      return (
+        live ?? {
+          key,
+          label: `已失效项目（${project.projectId}）`,
+          project,
+          available: false
+        }
+      );
     })
   );
 
-  const selectedProjectKey = computed(
-    () => selectedProject.value ? projectKey(selectedProject.value) : ""
+  const selectedProjectKey = computed(() =>
+    selectedProject.value ? projectKey(selectedProject.value) : ""
   );
   const selectedProjectOption = computed(
-    () => projectOptions.value.find(({ key }) => key === selectedProjectKey.value) ?? null
+    () =>
+      projectOptions.value.find(
+        ({ key }) => key === selectedProjectKey.value
+      ) ?? null
   );
   const selectedConfiguredProjectOption = computed(
-    () => configuredProjectOptions.value.find(
-      ({ key }) => key === selectedProjectKey.value
-    ) ?? selectedProjectOption.value
+    () =>
+      configuredProjectOptions.value.find(
+        ({ key }) => key === selectedProjectKey.value
+      ) ?? selectedProjectOption.value
   );
   const projectAvailable = computed(
     () => mode.value !== "project" || selectedProjectOption.value !== null
@@ -170,9 +170,10 @@ export function useChatAssistantMode(options: ChatAssistantModeOptions) {
 
   function selectProject(key: string): boolean {
     if (isBusy.value) return false;
-    const option = configuredProjectOptions.value.find(
-      (candidate) => candidate.key === key
-    ) ?? projectOptions.value.find((candidate) => candidate.key === key);
+    const option =
+      configuredProjectOptions.value.find(
+        (candidate) => candidate.key === key
+      ) ?? projectOptions.value.find((candidate) => candidate.key === key);
     if (!option) return false;
     selectedProject.value = option.project;
     persistPreference(mode.value, selectedProject.value);
@@ -234,12 +235,16 @@ export function useChatAssistantMode(options: ChatAssistantModeOptions) {
 
   return {
     mode: mode as Readonly<Ref<ChatAssistantMode>>,
-    selectedProject: selectedProject as Readonly<Ref<ChatAssistantProjectRef | null>>,
+    selectedProject: selectedProject as Readonly<
+      Ref<ChatAssistantProjectRef | null>
+    >,
     selectedProjectKey,
     selectedProjectOption,
     selectedConfiguredProjectOption,
     projectOptions,
-    configuredProjects: configuredProjects as Readonly<Ref<readonly ChatAssistantProjectRef[]>>,
+    configuredProjects: configuredProjects as Readonly<
+      Ref<readonly ChatAssistantProjectRef[]>
+    >,
     configuredProjectOptions,
     projectAvailable,
     requestContext,

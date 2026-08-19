@@ -46,9 +46,9 @@ import { buildLearningImitationTools } from "./learning-imitation-tools";
 import { buildLibraryAgentTools } from "./library-agent-tools";
 import { buildLongWorkspaceTools } from "./long-agent-tools";
 import {
-  applyOllamaToolSchemaCompatibility,
-  resolveOllamaToolSchemaProfile
-} from "./ollama-tool-schema-compat";
+  applyProviderToolSchemaCompatibility,
+  resolvePortableToolSchemaProfile
+} from "./portable-tool-schema";
 import {
   buildDeepWriteSystemPrompt,
   buildEffectiveSystemPrompt,
@@ -119,7 +119,9 @@ class AsyncEventQueue<T> implements AsyncIterable<T> {
         if (this.closed) {
           return Promise.resolve({ value: undefined, done: true });
         }
-        return new Promise<IteratorResult<T>>((resolve) => this.waiters.push(resolve));
+        return new Promise<IteratorResult<T>>((resolve) =>
+          this.waiters.push(resolve)
+        );
       }
     };
   }
@@ -199,7 +201,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     const queue = new AsyncEventQueue<AgentRuntimeEvent>();
     const runtime = this.describe(input.runtimeConfig);
     const messageId = `${input.runId}_assistant`;
-    const ollamaToolSchemaProfile = resolveOllamaToolSchemaProfile(
+    const portableToolSchemaProfile = resolvePortableToolSchemaProfile(
       input.workspaceContext
     );
     let model: Model<Api>;
@@ -209,14 +211,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     if (input.runtimeConfig) {
       const configuredThinkingLevel =
         input.thinkingLevel ?? input.runtimeConfig.defaultThinkingLevel;
-      const effectiveTemperature = configuredThinkingLevel === "off"
-        ? input.temperature ?? input.runtimeConfig.temperatureOptions[1]
-        : undefined;
+      const effectiveTemperature =
+        configuredThinkingLevel === "off"
+          ? (input.temperature ?? input.runtimeConfig.temperatureOptions[1])
+          : undefined;
       const providerRuntime = buildProviderRuntime(
         input.runtimeConfig,
         effectiveTemperature,
         configuredThinkingLevel,
-        { ollamaToolSchemaProfile }
+        { portableToolSchemaProfile }
       );
       model = providerRuntime.model;
       streamFn = providerRuntime.streamFn;
@@ -244,7 +247,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       }
       model = fauxModel;
       streamFn = models.streamSimple.bind(models) as StreamFn;
-      effectiveThinkingLevel = toPiThinkingLevel(input.thinkingLevel ?? "medium");
+      effectiveThinkingLevel = toPiThinkingLevel(
+        input.thinkingLevel ?? "medium"
+      );
       faux.setResponses([
         fauxAssistantMessage(
           effectiveThinkingLevel === "off"
@@ -263,9 +268,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     const libraryWorkspace = input.workspaceContext?.libraryWorkspace;
     const learningImitation = input.workspaceContext?.learningImitation;
     const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
-    const imageAttachments = input.attachments?.filter(
-      (attachment) => attachment.kind === "image"
-    ) ?? [];
+    const imageAttachments =
+      input.attachments?.filter((attachment) => attachment.kind === "image") ??
+      [];
     if (imageAttachments.length && !model.input.includes("image")) {
       throw new Error(
         runtime.mode === "local-faux"
@@ -274,11 +279,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       );
     }
     const systemPrompt = buildEffectiveSystemPrompt(this.systemPrompt, input);
-    const writingToolSharedState = scriptWorkspace && input.scriptAgentProfile
-      ? createScriptWorkspaceToolSharedState(scriptWorkspace)
-      : shortWorkspace && input.agentProfile
-        ? createShortWorkspaceToolSharedState(shortWorkspace)
-        : undefined;
+    const writingToolSharedState =
+      scriptWorkspace && input.scriptAgentProfile
+        ? createScriptWorkspaceToolSharedState(scriptWorkspace)
+        : shortWorkspace && input.agentProfile
+          ? createShortWorkspaceToolSharedState(shortWorkspace)
+          : undefined;
     const buildWritingTools = (): AgentTool[] => {
       if (scriptWorkspace && input.scriptAgentProfile) {
         return buildScriptWorkspaceTools({
@@ -312,8 +318,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             profile: input.longAgentProfile,
             sessionId: input.sessionId,
             runId: input.runId,
-            writeApprovalMode:
-              input.writeApprovalMode ?? "request-approval",
+            writeApprovalMode: input.writeApprovalMode ?? "request-approval",
             attachedSkills: input.workspaceContext?.attachedSkills,
             attachedMaterials: input.workspaceContext?.attachedMaterials,
             ...(input.longCommandExecutor
@@ -321,37 +326,39 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
               : {})
           })
         : [];
-    let tools: AgentTool[] = input.mode === "chat-assistant"
-      ? input.chatAssistantRuntimeContext
-        ? buildChatAssistantTools({
-            runId: input.runId,
-            sessionId: input.sessionId,
-            context: input.chatAssistantRuntimeContext,
-            ...(input.longCommandExecutor
-              ? { longCommandExecutor: input.longCommandExecutor }
-              : {})
-          })
-        : []
-      : subagentAuthoring
-      ? buildSubagentAuthoringTools(subagentAuthoring)
-      : learningImitation && input.learningImitationProfile
-      ? buildLearningImitationTools(
-          learningImitation,
-          input.writeApprovalMode ?? "request-approval"
-        )
-      : libraryWorkspace && input.libraryAgentProfile
-        ? buildLibraryAgentTools({
-            workspace: libraryWorkspace,
-            profile: input.libraryAgentProfile,
-            writeApprovalMode: input.writeApprovalMode ?? "request-approval",
-            attachedSkills: input.workspaceContext?.attachedSkills
-          })
-      : longWorkspace && input.longAgentProfile
-        ? buildLongTools()
-      : (scriptWorkspace && input.scriptAgentProfile) ||
-          (shortWorkspace && input.agentProfile)
-        ? buildWritingTools()
-        : [];
+    let tools: AgentTool[] =
+      input.mode === "chat-assistant"
+        ? input.chatAssistantRuntimeContext
+          ? buildChatAssistantTools({
+              runId: input.runId,
+              sessionId: input.sessionId,
+              context: input.chatAssistantRuntimeContext,
+              ...(input.longCommandExecutor
+                ? { longCommandExecutor: input.longCommandExecutor }
+                : {})
+            })
+          : []
+        : subagentAuthoring
+          ? buildSubagentAuthoringTools(subagentAuthoring)
+          : learningImitation && input.learningImitationProfile
+            ? buildLearningImitationTools(
+                learningImitation,
+                input.writeApprovalMode ?? "request-approval"
+              )
+            : libraryWorkspace && input.libraryAgentProfile
+              ? buildLibraryAgentTools({
+                  workspace: libraryWorkspace,
+                  profile: input.libraryAgentProfile,
+                  writeApprovalMode:
+                    input.writeApprovalMode ?? "request-approval",
+                  attachedSkills: input.workspaceContext?.attachedSkills
+                })
+              : longWorkspace && input.longAgentProfile
+                ? buildLongTools()
+                : (scriptWorkspace && input.scriptAgentProfile) ||
+                    (shortWorkspace && input.agentProfile)
+                  ? buildWritingTools()
+                  : [];
     if (
       ((scriptWorkspace && input.scriptAgentProfile) ||
         (shortWorkspace && input.agentProfile) ||
@@ -373,13 +380,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             options?.thinkingLevel ?? config.defaultThinkingLevel ?? "medium";
           const childTemperature =
             childThinking === "off"
-              ? options?.temperature ?? config.temperatureOptions[1]
+              ? (options?.temperature ?? config.temperatureOptions[1])
               : undefined;
           const childRuntime = buildProviderRuntime(
             config,
             childTemperature,
             childThinking,
-            { ollamaToolSchemaProfile }
+            { portableToolSchemaProfile }
           );
           return {
             model: childRuntime.model,
@@ -393,8 +400,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             : buildWritingTools,
         ...(scriptWorkspace
           ? {
-              systemPromptRequirements:
-                scriptRuntimeFormatRequirements()
+              systemPromptRequirements: scriptRuntimeFormatRequirements()
             }
           : longWorkspace
             ? {
@@ -419,16 +425,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
           ? `chat-assistant:project:${input.chatAssistantRuntimeContext.project.projectType}:${input.chatAssistantRuntimeContext.project.projectId}`
           : "chat-assistant:normal"
         : subagentAuthoring
-        ? `subagent-authoring:${subagentAuthoring.parentAgentId}`
-        : input.learningImitationProfile
-        ? `learning-imitation:${input.learningImitationProfile.id}`
-        : input.libraryAgentProfile && libraryWorkspace
-          ? `library:${input.libraryAgentProfile.domain}:${libraryWorkspace.libraryId}`
-        : input.scriptAgentProfile
-          ? `script:${input.scriptAgentProfile.id}`
-          : input.longAgentProfile && longWorkspace
-            ? `long:${input.longAgentProfile.id}:${longWorkspace.bookId}`
-          : input.agentProfile?.id ?? "default"
+          ? `subagent-authoring:${subagentAuthoring.parentAgentId}`
+          : input.learningImitationProfile
+            ? `learning-imitation:${input.learningImitationProfile.id}`
+            : input.libraryAgentProfile && libraryWorkspace
+              ? `library:${input.libraryAgentProfile.domain}:${libraryWorkspace.libraryId}`
+              : input.scriptAgentProfile
+                ? `script:${input.scriptAgentProfile.id}`
+                : input.longAgentProfile && longWorkspace
+                  ? `long:${input.longAgentProfile.id}:${longWorkspace.bookId}`
+                  : (input.agentProfile?.id ?? "default")
     }`;
     let emitToolCallEvent: (
       event: ToolCallAssistantEvent,
@@ -436,7 +442,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     ) => void = () => {};
     const interceptedStreamFn = interceptToolCallStream(
       streamFn,
-      (event, assistantTurnIndex) => emitToolCallEvent(event, assistantTurnIndex)
+      (event, assistantTurnIndex) =>
+        emitToolCallEvent(event, assistantTurnIndex)
     );
     let agent = this.conversationAgents.get(agentKey);
     if (agent) {
@@ -494,7 +501,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     let currentTurnAttempt = 0;
     let currentTurnMaxAttempts = 1;
     let idleTimeout: NodeJS.Timeout | undefined;
-    let abortListener: (() => void) | undefined;
     let scheduleIdleTimeout = (): void => {};
     const retryWaitController = new AbortController();
     const pendingToolDeltas = new Map<
@@ -509,7 +515,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     let toolDeltaTimer: NodeJS.Timeout | undefined;
 
     const emit = (event: AgentRuntimeEvent): void => {
-      const terminal = event.type === "agent.completed" || event.type === "agent.error";
+      const terminal =
+        event.type === "agent.completed" || event.type === "agent.error";
       if (terminalEmitted && event.type !== "agent.evaluation_snapshot") {
         return;
       }
@@ -520,7 +527,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       }
       if (terminal) {
         const aborted =
-          event.type === "agent.error" && event.payload.code === "pi_agent.aborted";
+          event.type === "agent.error" &&
+          event.payload.code === "pi_agent.aborted";
         for (const active of activeSubagents.values()) {
           const summary = aborted
             ? "父智能体运行已中止，子智能体同步停止。"
@@ -575,7 +583,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     const emitStreamedToolEvent = (
       event: Extract<AgentRuntimeEvent, { type: "agent.tool_stream" }>
     ): void => {
-      const currentArguments = streamedToolArguments.get(event.payload.streamId) ?? "";
+      const currentArguments =
+        streamedToolArguments.get(event.payload.streamId) ?? "";
       const normalized = reconcileToolCallArguments(
         currentArguments,
         event.payload.argumentsDelta,
@@ -592,20 +601,31 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       const existing = pendingToolDeltas.get(event.payload.streamId);
       if (existing) {
         existing.payload.argumentsDelta += event.payload.argumentsDelta;
-        if (event.payload.toolCallId) existing.payload.toolCallId = event.payload.toolCallId;
-        if (event.payload.toolName) existing.payload.toolName = event.payload.toolName;
+        if (event.payload.toolCallId)
+          existing.payload.toolCallId = event.payload.toolCallId;
+        if (event.payload.toolName)
+          existing.payload.toolName = event.payload.toolName;
       } else {
         pendingToolDeltas.set(event.payload.streamId, event);
       }
       if (!toolDeltaTimer) {
-        toolDeltaTimer = setTimeout(flushToolDeltas, TOOL_STREAM_DELTA_FLUSH_MS);
+        toolDeltaTimer = setTimeout(
+          flushToolDeltas,
+          TOOL_STREAM_DELTA_FLUSH_MS
+        );
         toolDeltaTimer.unref();
       }
     };
 
     emitToolCallEvent = (event, assistantTurnIndex) => {
       emitStreamedToolEvent(
-        toToolStreamRuntimeEvent(event, input, runtime, messageId, assistantTurnIndex)
+        toToolStreamRuntimeEvent(
+          event,
+          input,
+          runtime,
+          messageId,
+          assistantTurnIndex
+        )
       );
     };
 
@@ -632,7 +652,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       queue.close();
     };
 
-    abortListener = () => {
+    const abortListener = () => {
       idleModelRequestTimedOut = false;
       retryWaitController.abort();
       agent.abort();
@@ -702,30 +722,33 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       // Plot-design and draft turns also receive their latest structure
       // snapshots; tools and the system prompt are still refreshed before every run.
       const persistInitialRuntimeContext = agent.state.messages.length === 0;
-      const runtimeUserContent = input.mode === "chat-assistant"
-        ? buildRawUserMessage(input).content
-        : persistInitialRuntimeContext
-        ? buildRuntimeUserMessageContent(input)
-        : longAgentRefreshesDesignContextOnLaterTurns(
-              input.longAgentProfile?.id
-            ) && input.workspaceContext?.longWorkspace
-          ? buildLongFollowUpTurnUserMessageContent(input)
-          : buildRawUserMessage(input).content;
+      const runtimeUserContent =
+        input.mode === "chat-assistant"
+          ? buildRawUserMessage(input).content
+          : persistInitialRuntimeContext
+            ? buildRuntimeUserMessageContent(input)
+            : longAgentRefreshesDesignContextOnLaterTurns(
+                  input.longAgentProfile?.id
+                ) && input.workspaceContext?.longWorkspace
+              ? buildLongFollowUpTurnUserMessageContent(input)
+              : buildRawUserMessage(input).content;
       const runtimeUserMessage: UserMessage = {
         role: "user",
         content: runtimeUserContent,
         timestamp: Date.now()
       };
       if (this.evaluationMode) {
-        const providerVisibleTools = applyOllamaToolSchemaCompatibility(
-          enforceProviderToolSchemaCompatibility({
-            systemPrompt,
-            messages: [],
-            tools
-          }),
-          runtime.provider,
-          ollamaToolSchemaProfile
-        ).tools ?? tools;
+        const providerVisibleTools =
+          applyProviderToolSchemaCompatibility(
+            enforceProviderToolSchemaCompatibility({
+              systemPrompt,
+              messages: [],
+              tools
+            }),
+            runtime.provider,
+            input.runtimeConfig?.toolSchemaProfile,
+            portableToolSchemaProfile
+          ).tools ?? tools;
         const evaluationTools = providerVisibleTools.map((providerTool) => {
           const executableTool = tools.find(
             (candidate) => candidate.name === providerTool.name
@@ -832,7 +855,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
           if (usageEvent) emit(usageEvent);
         },
         onEvent: (event) => {
-          if (event.type === "message_end" && isAssistantMessage(event.message)) {
+          if (
+            event.type === "message_end" &&
+            isAssistantMessage(event.message)
+          ) {
             modelRequestInFlight = false;
           } else if (event.type === "tool_execution_start") {
             modelRequestInFlight = false;
@@ -855,8 +881,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             sessionId: input.sessionId,
             payload: {
               code: "pi_agent.prompt_failed",
-              message: error instanceof Error ? error.message : "本地智能体请求失败。",
-              details: { kind: error instanceof Error ? error.name : "unknown" },
+              message:
+                error instanceof Error ? error.message : "本地智能体请求失败。",
+              details: {
+                kind: error instanceof Error ? error.name : "unknown"
+              },
               runtime
             }
           });

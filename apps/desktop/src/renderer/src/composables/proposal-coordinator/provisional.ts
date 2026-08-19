@@ -10,14 +10,13 @@ import type { AgentConversationController } from "../useAgentConversation";
 import type { ProposalLaneContext } from "./types";
 
 export function createProvisionalSectionHelpers(ctx: ProposalLaneContext) {
-  const {
-    liveWorkspaceDocuments
-  } = ctx;
+  const { liveWorkspaceDocuments } = ctx;
 
-  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (...args) =>
-    ctx.removeQueuedAgentEdit(...args);
-  const rememberAcceptedDraftSectionCreation: ProposalLaneContext["rememberAcceptedDraftSectionCreation"] = (...args) =>
-    ctx.rememberAcceptedDraftSectionCreation(...args);
+  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (
+    ...args
+  ) => ctx.removeQueuedAgentEdit(...args);
+  const rememberAcceptedDraftSectionCreation: ProposalLaneContext["rememberAcceptedDraftSectionCreation"] =
+    (...args) => ctx.rememberAcceptedDraftSectionCreation(...args);
 
   const acceptedProvisionalExpertSectionIds = new Map<
     string,
@@ -25,7 +24,10 @@ export function createProvisionalSectionHelpers(ctx: ProposalLaneContext) {
   >();
   ctx.acceptedProvisionalExpertSectionIds = acceptedProvisionalExpertSectionIds;
 
-  function provisionalExpertSectionMapKey(runId: string, workspaceId: string): string {
+  function provisionalExpertSectionMapKey(
+    runId: string,
+    workspaceId: string
+  ): string {
     return `${runId}\u0000${workspaceId}`;
   }
 
@@ -36,13 +38,13 @@ export function createProvisionalSectionHelpers(ctx: ProposalLaneContext) {
     realSectionId: string
   ): void {
     const key = provisionalExpertSectionMapKey(runId, workspaceId);
-    const map = acceptedProvisionalExpertSectionIds.get(key) ?? new Map<string, string>();
+    const map =
+      acceptedProvisionalExpertSectionIds.get(key) ?? new Map<string, string>();
     map.set(provisionalSectionId, realSectionId);
     acceptedProvisionalExpertSectionIds.set(key, map);
     while (acceptedProvisionalExpertSectionIds.size > 2_000) {
       const oldest = acceptedProvisionalExpertSectionIds.keys().next().value as
-        | string
-        | undefined;
+        string | undefined;
       if (!oldest) break;
       acceptedProvisionalExpertSectionIds.delete(oldest);
     }
@@ -66,16 +68,18 @@ export function createProvisionalSectionHelpers(ctx: ProposalLaneContext) {
     runId: string,
     provisionalSectionId: string
   ): AgentEditProposal | undefined {
-    return conversation.listEditProposals(runId).find((proposal) =>
-      Boolean(
-        proposal.draftSectionCreationTarget?.sections.some(
-          (section) => section.provisionalSectionId === provisionalSectionId
-        ) &&
+    return conversation
+      .listEditProposals(runId)
+      .find((proposal) =>
+        Boolean(
+          proposal.draftSectionCreationTarget?.sections.some(
+            (section) => section.provisionalSectionId === provisionalSectionId
+          ) &&
           (proposal.status === "pending" ||
             proposal.status === "accepting" ||
             proposal.status === "error")
-      )
-    );
+        )
+      );
   }
 
   function remapProvisionalExpertSectionFileProposals(
@@ -94,7 +98,8 @@ export function createProvisionalSectionHelpers(ctx: ProposalLaneContext) {
         continue;
       }
       for (const [provisionalSectionId, realSectionId] of mapping) {
-        const provisionalBodyId = catalogDraftBodyDocumentId(provisionalSectionId);
+        const provisionalBodyId =
+          catalogDraftBodyDocumentId(provisionalSectionId);
         const provisionalStateId =
           catalogDraftCharacterStateDocumentId(provisionalSectionId);
         const fileKind =
@@ -215,7 +220,9 @@ export function createProvisionalSectionHelpers(ctx: ProposalLaneContext) {
       const matches = [...provisionalSet].some((sectionId) => {
         const bodyId = catalogDraftBodyDocumentId(sectionId);
         const stateId = catalogDraftCharacterStateDocumentId(sectionId);
-        return proposal.documentId === bodyId || proposal.documentId === stateId;
+        return (
+          proposal.documentId === bodyId || proposal.documentId === stateId
+        );
       });
       if (!matches) continue;
       removeQueuedAgentEdit(conversation, runId, proposal.id);

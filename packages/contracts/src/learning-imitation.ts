@@ -40,35 +40,47 @@ const LearningResultTextSchema = z
   .string()
   .max(LEARNING_IMITATION_RESULT_FIELD_MAX_CHARACTERS);
 
-export const LearningImitationDocumentSchema = z.object({
-  id: z.string().trim().min(1).max(120),
-  name: z.string().trim().min(1).max(240),
-  extension: z.string().max(24),
-  mediaType: z.string().trim().min(1).max(120),
-  size: z.number().int().nonnegative().max(25 * 1024 * 1024),
-  text: z.string().trim().min(1).max(LEARNING_IMITATION_DOCUMENT_MAX_CHARACTERS),
-  charCount: z.number().int().positive().max(50_000_000),
-  truncated: z.boolean().optional(),
-  originalLength: z.number().int().positive().max(50_000_000).optional()
-}).superRefine((value, context) => {
-  if (
-    value.truncated === true &&
-    (value.originalLength === undefined || value.originalLength <= value.text.length)
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["originalLength"],
-      message: "A truncated learning document must report its original length."
-    });
-  }
-  if (value.truncated !== true && value.originalLength !== undefined) {
-    context.addIssue({
-      code: "custom",
-      path: ["originalLength"],
-      message: "An untruncated learning document must omit originalLength."
-    });
-  }
-});
+export const LearningImitationDocumentSchema = z
+  .object({
+    id: z.string().trim().min(1).max(120),
+    name: z.string().trim().min(1).max(240),
+    extension: z.string().max(24),
+    mediaType: z.string().trim().min(1).max(120),
+    size: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(25 * 1024 * 1024),
+    text: z
+      .string()
+      .trim()
+      .min(1)
+      .max(LEARNING_IMITATION_DOCUMENT_MAX_CHARACTERS),
+    charCount: z.number().int().positive().max(50_000_000),
+    truncated: z.boolean().optional(),
+    originalLength: z.number().int().positive().max(50_000_000).optional()
+  })
+  .superRefine((value, context) => {
+    if (
+      value.truncated === true &&
+      (value.originalLength === undefined ||
+        value.originalLength <= value.text.length)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message:
+          "A truncated learning document must report its original length."
+      });
+    }
+    if (value.truncated !== true && value.originalLength !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalLength"],
+        message: "An untruncated learning document must omit originalLength."
+      });
+    }
+  });
 export type LearningImitationDocument = z.infer<
   typeof LearningImitationDocumentSchema
 >;
@@ -119,7 +131,8 @@ export const LEARNING_MATERIAL_STAGE_IDS = [
   "plot_refine",
   "draft_excerpt"
 ] as const;
-export type LearningMaterialStageId = typeof LEARNING_MATERIAL_STAGE_IDS[number];
+export type LearningMaterialStageId =
+  (typeof LEARNING_MATERIAL_STAGE_IDS)[number];
 
 export const LEARNING_MATERIAL_STAGE_LABELS = {
   gimmick: "梗",
@@ -174,29 +187,33 @@ export function cloneEmptyLearningImitationResult(): LearningImitationResult {
   return structuredClone(EMPTY_LEARNING_IMITATION_RESULT);
 }
 
-export const LearningImitationWritePayloadSchema = z.object({
-  mode: z.enum(["replace", "append"]).optional(),
-  gimmick: LearningResultTextSchema.optional(),
-  character: LearningResultTextSchema.optional(),
-  pacing: LearningResultTextSchema.optional(),
-  intro: LearningResultTextSchema.optional(),
-  plot_refine: LearningResultTextSchema.optional(),
-  draft_excerpt: LearningResultTextSchema.optional(),
-  plot_design_skill: LearningResultTextSchema.optional(),
-  plot_refine_skill: LearningResultTextSchema.optional(),
-  style_skill_title: z.string().max(256).optional(),
-  style_skill_body: LearningResultTextSchema.optional()
-}).superRefine((value, context) => {
-  const hasOutput = Object.entries(value).some(
-    ([key, item]) => key !== "mode" && typeof item === "string" && item.trim().length > 0
-  );
-  if (!hasOutput) {
-    context.addIssue({
-      code: "custom",
-      message: "A learning result update must include at least one non-empty field."
-    });
-  }
-});
+export const LearningImitationWritePayloadSchema = z
+  .object({
+    mode: z.enum(["replace", "append"]).optional(),
+    gimmick: LearningResultTextSchema.optional(),
+    character: LearningResultTextSchema.optional(),
+    pacing: LearningResultTextSchema.optional(),
+    intro: LearningResultTextSchema.optional(),
+    plot_refine: LearningResultTextSchema.optional(),
+    draft_excerpt: LearningResultTextSchema.optional(),
+    plot_design_skill: LearningResultTextSchema.optional(),
+    plot_refine_skill: LearningResultTextSchema.optional(),
+    style_skill_title: z.string().max(256).optional(),
+    style_skill_body: LearningResultTextSchema.optional()
+  })
+  .superRefine((value, context) => {
+    const hasOutput = Object.entries(value).some(
+      ([key, item]) =>
+        key !== "mode" && typeof item === "string" && item.trim().length > 0
+    );
+    if (!hasOutput) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "A learning result update must include at least one non-empty field."
+      });
+    }
+  });
 export type LearningImitationWritePayload = z.infer<
   typeof LearningImitationWritePayloadSchema
 >;
@@ -212,10 +229,7 @@ export type LearningImitationRuntimeContext = z.infer<
 
 export const LearningImitationPromptInputSchema = z.object({
   id: LearningImitationStageIdSchema,
-  systemPrompt: z
-    .string()
-    .min(1)
-    .max(LEARNING_IMITATION_PROMPT_MAX_CHARACTERS)
+  systemPrompt: z.string().min(1).max(LEARNING_IMITATION_PROMPT_MAX_CHARACTERS)
 });
 export type LearningImitationPromptInput = z.infer<
   typeof LearningImitationPromptInputSchema
@@ -227,7 +241,10 @@ function validatePromptSet(
 ): void {
   const ids = prompts.map((prompt) => prompt.id);
   if (new Set(ids).size !== ids.length) {
-    context.addIssue({ code: "custom", message: "Learning prompt ids must be unique." });
+    context.addIssue({
+      code: "custom",
+      message: "Learning prompt ids must be unique."
+    });
   }
   for (const id of LEARNING_IMITATION_STAGE_IDS) {
     if (!ids.includes(id)) {
@@ -239,11 +256,13 @@ function validatePromptSet(
   }
 }
 
-export const LearningImitationSettingsInputSchema = z.object({
-  prompts: z.array(LearningImitationPromptInputSchema).length(
-    LEARNING_IMITATION_STAGE_IDS.length
-  )
-}).superRefine((value, context) => validatePromptSet(value.prompts, context));
+export const LearningImitationSettingsInputSchema = z
+  .object({
+    prompts: z
+      .array(LearningImitationPromptInputSchema)
+      .length(LEARNING_IMITATION_STAGE_IDS.length)
+  })
+  .superRefine((value, context) => validatePromptSet(value.prompts, context));
 export type LearningImitationSettingsInput = z.infer<
   typeof LearningImitationSettingsInputSchema
 >;
@@ -258,12 +277,14 @@ export type LearningImitationPromptProfile = z.infer<
   typeof LearningImitationPromptProfileSchema
 >;
 
-export const LearningImitationSettingsSchema = z.object({
-  prompts: z.array(LearningImitationPromptProfileSchema).length(
-    LEARNING_IMITATION_STAGE_IDS.length
-  ),
-  updatedAt: z.string().datetime().optional()
-}).superRefine((value, context) => validatePromptSet(value.prompts, context));
+export const LearningImitationSettingsSchema = z
+  .object({
+    prompts: z
+      .array(LearningImitationPromptProfileSchema)
+      .length(LEARNING_IMITATION_STAGE_IDS.length),
+    updatedAt: z.string().datetime().optional()
+  })
+  .superRefine((value, context) => validatePromptSet(value.prompts, context));
 export type LearningImitationSettings = z.infer<
   typeof LearningImitationSettingsSchema
 >;
@@ -271,10 +292,7 @@ export type LearningImitationSettings = z.infer<
 export const LearningImitationAgentProfileSchema = z.object({
   id: LearningImitationStageIdSchema,
   label: z.string().trim().min(1).max(80),
-  systemPrompt: z
-    .string()
-    .min(1)
-    .max(LEARNING_IMITATION_PROMPT_MAX_CHARACTERS)
+  systemPrompt: z.string().min(1).max(LEARNING_IMITATION_PROMPT_MAX_CHARACTERS)
 });
 export type LearningImitationAgentProfile = z.infer<
   typeof LearningImitationAgentProfileSchema
@@ -298,7 +316,10 @@ export const LearningImitationSettingsResetCommandEnvelopeSchema =
     payload: z.object({ stageId: LearningImitationStageIdSchema.optional() })
   });
 
-function appendLearningText(current: string, addition: string | undefined): string {
+function appendLearningText(
+  current: string,
+  addition: string | undefined
+): string {
   const next = addition?.trim() ?? "";
   if (!next) return current;
   const base = current.trim();
@@ -375,15 +396,17 @@ export function learningImitationStageHasResult(
 export function summarizeLearningImitationDocuments(
   documents: readonly LearningImitationDocument[]
 ): string {
-  return documents.map((document, index) => {
-    const firstLine = document.text
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .find(Boolean);
-    const preview = firstLine ? `；开头：${firstLine.slice(0, 80)}` : "";
-    const chunks = Math.max(1, Math.ceil(document.text.length / 12_000));
-    return `${index + 1}. ${document.name}（${document.extension || "文本"}，${document.charCount} 字，${chunks} 段）${preview}`;
-  }).join("\n");
+  return documents
+    .map((document, index) => {
+      const firstLine = document.text
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .find(Boolean);
+      const preview = firstLine ? `；开头：${firstLine.slice(0, 80)}` : "";
+      const chunks = Math.max(1, Math.ceil(document.text.length / 12_000));
+      return `${index + 1}. ${document.name}（${document.extension || "文本"}，${document.charCount} 字，${chunks} 段）${preview}`;
+    })
+    .join("\n");
 }
 
 export function formatLearningImitationCurrentResult(
@@ -394,20 +417,27 @@ export function formatLearningImitationCurrentResult(
     return LEARNING_MATERIAL_STAGE_IDS.map((key) => {
       const body = result.material_split[key].trim();
       return body ? `## ${LEARNING_MATERIAL_STAGE_LABELS[key]}\n\n${body}` : "";
-    }).filter(Boolean).join("\n\n");
+    })
+      .filter(Boolean)
+      .join("\n\n");
   }
   if (stageId === "plot_learning") {
-    return ([
-      ["剧情设计技能", result.plot_learning.plotDesignSkill],
-      ["剧情细化技能", result.plot_learning.plotRefineSkill]
-    ] as Array<[string, string]>).filter(([, body]) => body.trim()).map(
-      ([label, body]) => `## ${label}\n\n${body.trim()}`
-    ).join("\n\n");
+    return (
+      [
+        ["剧情设计技能", result.plot_learning.plotDesignSkill],
+        ["剧情细化技能", result.plot_learning.plotRefineSkill]
+      ] as Array<[string, string]>
+    )
+      .filter(([, body]) => body.trim())
+      .map(([label, body]) => `## ${label}\n\n${body.trim()}`)
+      .join("\n\n");
   }
   return [
     `## ${result.style_learning.title || "分节写手技能"}`,
     result.style_learning.body
-  ].join("\n\n").trim();
+  ]
+    .join("\n\n")
+    .trim();
 }
 
 export function renderLearningImitationSystemPrompt(

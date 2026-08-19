@@ -9,7 +9,8 @@ import {
   type ExportLongManuscriptResult
 } from "@deepwrite/contracts";
 
-const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
+const WINDOWS_RESERVED_NAMES =
+  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
 
 export function safeLongExportName(label: string, fallback = "未命名"): string {
   const safe = Array.from(
@@ -72,7 +73,10 @@ export async function writeLongManuscriptExport(
       relativeKey = `${relativeBase} (${suffix}).txt`;
     }
     usedRelativePaths.add(relativeKey);
-    const targetBase = join(parentPath, suffix === 1 ? filename : `${filename} (${suffix})`);
+    const targetBase = join(
+      parentPath,
+      suffix === 1 ? filename : `${filename} (${suffix})`
+    );
     await writeFile(`${targetBase}.txt`, `\ufeff${file.content}`, "utf8");
   }
 

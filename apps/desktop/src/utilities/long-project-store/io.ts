@@ -1,18 +1,6 @@
 import { constants as fsConstants, type BigIntStats } from "node:fs";
-import {
-  lstat,
-  mkdir,
-  open,
-  realpath
-} from "node:fs/promises";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep
-} from "node:path";
+import { lstat, mkdir, open, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { TextDecoder } from "node:util";
 import {
   LONG_AGENTS_MD_PATH,
@@ -52,9 +40,7 @@ export function serializeJson(value: unknown): string {
 }
 
 export function unknownRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value)
+  return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
@@ -63,10 +49,7 @@ export async function commitLongProjectTransaction(
   input: CommitProjectTransactionInput
 ) {
   for (const operation of input.operations) {
-    if (
-      operation.action === "delete" ||
-      operation.action === "check"
-    ) {
+    if (operation.action === "delete" || operation.action === "check") {
       continue;
     }
     const path = operation.path.trim();
@@ -77,9 +60,9 @@ export async function commitLongProjectTransaction(
           ? MAX_INDEX_BYTES
           : path === LONG_AGENTS_MD_PATH
             ? MAX_AGENTS_MD_BYTES
-          : path.startsWith("long/ledger/") && path.endsWith(".json")
-            ? MAX_LEDGER_RECORD_BYTES
-            : MAX_DOCUMENT_BYTES;
+            : path.startsWith("long/ledger/") && path.endsWith(".json")
+              ? MAX_LEDGER_RECORD_BYTES
+              : MAX_DOCUMENT_BYTES;
     const byteLength = encodeUtf8Strict(operation.content).byteLength;
     if (byteLength > maxBytes) {
       throw new Error(
@@ -93,7 +76,9 @@ export async function commitLongProjectTransaction(
   });
 }
 
-export async function readPortableBundleSource(sourcePath: string): Promise<string> {
+export async function readPortableBundleSource(
+  sourcePath: string
+): Promise<string> {
   if (!isAbsolute(sourcePath)) {
     throw new Error("长篇可移植包路径必须是绝对路径。");
   }
@@ -156,10 +141,7 @@ export async function secureTextFileMetadataMatches(
   await validateParentDirectories(projectDirectory, dirname(target));
   let handle: Awaited<ReturnType<typeof open>>;
   try {
-    handle = await open(
-      target,
-      fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW
-    );
+    handle = await open(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT") || isNodeError(error, "ELOOP")) {
       return false;
@@ -168,11 +150,7 @@ export async function secureTextFileMetadataMatches(
   }
   try {
     const info = await handle.stat({ bigint: true });
-    if (
-      !info.isFile() ||
-      info.nlink !== 1n ||
-      info.size > BigInt(maxBytes)
-    ) {
+    if (!info.isFile() || info.nlink !== 1n || info.size > BigInt(maxBytes)) {
       return false;
     }
     const canonical = await realpath(target);
@@ -207,10 +185,7 @@ export async function readNoFollowFile(
 }> {
   let handle: Awaited<ReturnType<typeof open>>;
   try {
-    handle = await open(
-      path,
-      fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW
-    );
+    handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   } catch (error: unknown) {
     if (
       error instanceof Error &&
@@ -286,7 +261,10 @@ export async function validateParentDirectories(
   }
 }
 
-export async function secureDirectory(path: string, label: string): Promise<string> {
+export async function secureDirectory(
+  path: string,
+  label: string
+): Promise<string> {
   const resolved = resolve(path);
   const info = await lstat(resolved);
   if (info.isSymbolicLink() || !info.isDirectory()) {
@@ -304,7 +282,10 @@ export async function ensureSecureDirectory(
   return await secureDirectory(resolved, label);
 }
 
-export async function requireMissing(path: string, message: string): Promise<void> {
+export async function requireMissing(
+  path: string,
+  message: string
+): Promise<void> {
   try {
     await lstat(path);
     throw new Error(message);
@@ -318,9 +299,7 @@ export function assertContained(root: string, candidate: string): void {
   const offset = relative(root, candidate);
   if (
     offset === "" ||
-    (!offset.startsWith(`..${sep}`) &&
-      offset !== ".." &&
-      !isAbsolute(offset))
+    (!offset.startsWith(`..${sep}`) && offset !== ".." && !isAbsolute(offset))
   ) {
     return;
   }

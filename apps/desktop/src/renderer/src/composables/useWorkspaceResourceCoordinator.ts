@@ -20,9 +20,7 @@ import type {
   EditorTextReference,
   EditorTextReferenceNavigation
 } from "../types/conversation";
-import type {
-  LongWorkspaceSelection
-} from "../types/longWorkspace";
+import type { LongWorkspaceSelection } from "../types/longWorkspace";
 import { reconcileLongWorkspaceSelection } from "../types/longWorkspace";
 import type {
   EditorDraftState,
@@ -195,9 +193,8 @@ export function useWorkspaceResourceCoordinator(
   function draftDirectoryForResourceId(
     resourceId: string
   ): DraftDirectoryProjection | undefined {
-    const exact = catalog.projection.value?.index.draftDirectoryById.get(
-      resourceId
-    );
+    const exact =
+      catalog.projection.value?.index.draftDirectoryById.get(resourceId);
     if (exact) return exact;
     const node = resourceNode(resourceId);
     const targetId = node?.targetDocumentId ?? resourceId;
@@ -440,8 +437,7 @@ export function useWorkspaceResourceCoordinator(
       )
       .sort(
         (left, right) =>
-          (left.characterItemOrder ?? 0) -
-          (right.characterItemOrder ?? 0)
+          (left.characterItemOrder ?? 0) - (right.characterItemOrder ?? 0)
       );
     return [
       ...(overview ? [{ id: overview.id, title: "概览" }] : []),
@@ -596,8 +592,8 @@ export function useWorkspaceResourceCoordinator(
       .find((section) => section.id === "creation")
       ?.nodes.find((node) => node.id === workspaceId);
     return document.domain === "skill"
-      ? book?.boundSkillLibraryIds?.includes(document.libraryId) ?? false
-      : book?.boundMaterialLibraryIds?.includes(document.libraryId) ?? false;
+      ? (book?.boundSkillLibraryIds?.includes(document.libraryId) ?? false)
+      : (book?.boundMaterialLibraryIds?.includes(document.libraryId) ?? false);
   });
 
   function resourceSelectionExists(
@@ -658,17 +654,14 @@ export function useWorkspaceResourceCoordinator(
       lastReconciledTreeSections = nextSections;
       const selectedMissing = Boolean(
         state.selectedResourceId.value &&
-          !resourceSelectionExists(
-            nextSections,
-            state.selectedResourceId.value
-          )
+        !resourceSelectionExists(nextSections, state.selectedResourceId.value)
       );
       const activeCreationMissing = Boolean(
         state.activeCreationResourceId.value &&
-          !resourceSelectionExists(
-            nextSections,
-            state.activeCreationResourceId.value
-          )
+        !resourceSelectionExists(
+          nextSections,
+          state.activeCreationResourceId.value
+        )
       );
       if (!selectedMissing && !activeCreationMissing) return;
       beginNavigationRequest();
@@ -701,7 +694,9 @@ export function useWorkspaceResourceCoordinator(
     }
     if (node.longBookId) {
       if (
-        !(await longNavigation.saveActiveEditorBeforeLeaving(node.longBookId)) ||
+        !(await longNavigation.saveActiveEditorBeforeLeaving(
+          node.longBookId
+        )) ||
         !navigationRequestIsCurrent(requestId)
       ) {
         return;
@@ -840,7 +835,9 @@ export function useWorkspaceResourceCoordinator(
     };
   }
 
-  function insertEditorSelectionReference(reference: EditorTextReference): void {
+  function insertEditorSelectionReference(
+    reference: EditorTextReference
+  ): void {
     const duplicate = state.pendingEditorReferences.value.some(
       (item) =>
         item.documentId === reference.documentId &&
@@ -892,7 +889,7 @@ export function useWorkspaceResourceCoordinator(
     beginNavigationRequest();
     let targetResourceId = resourceNode(reference.resourceId)
       ? reference.resourceId
-      : resourceIdForDocumentId(reference.documentId) ?? reference.documentId;
+      : (resourceIdForDocumentId(reference.documentId) ?? reference.documentId);
     if (document.draftFileKind && document.expertSectionId) {
       const directory = catalog.projection.value?.draftDirectories.find(
         (candidate) =>

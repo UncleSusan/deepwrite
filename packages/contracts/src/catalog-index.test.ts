@@ -61,7 +61,9 @@ describe("Catalog metadata index contracts", () => {
     const index = CatalogIndexSnapshotSchema.parse(catalogIndexFixture());
     const compatibleSnapshot: CatalogSnapshot = index;
 
-    expect(CatalogSnapshotSchema.parse(compatibleSnapshot).materials[0]).toMatchObject({
+    expect(
+      CatalogSnapshotSchema.parse(compatibleSnapshot).materials[0]
+    ).toMatchObject({
       overview: "",
       entries: [{ body: "" }]
     });
@@ -141,10 +143,14 @@ describe("Catalog on-demand read contracts", () => {
     const indexCommandId = "catalog-index-command";
     expect(
       CatalogCommandEnvelopeSchema.parse(
-        createEnvelope("catalog.index", {}, {
-          id: indexCommandId,
-          correlationId: indexCommandId
-        })
+        createEnvelope(
+          "catalog.index",
+          {},
+          {
+            id: indexCommandId,
+            correlationId: indexCommandId
+          }
+        )
       ).type
     ).toBe("catalog.index");
 
@@ -164,10 +170,14 @@ describe("Catalog on-demand read contracts", () => {
     ).toBe("catalog.readDocument");
     expect(
       CommandEnvelopeSchema.parse(
-        createEnvelope("catalog.index", {}, {
-          id: "system-catalog-index-command",
-          correlationId: "system-catalog-index-command"
-        })
+        createEnvelope(
+          "catalog.index",
+          {},
+          {
+            id: "system-catalog-index-command",
+            correlationId: "system-catalog-index-command"
+          }
+        )
       ).type
     ).toBe("catalog.index");
   });

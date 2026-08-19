@@ -10,20 +10,14 @@ describe("LongMigrationReportDialog", () => {
 
   it("states that the legacy source is never modified", () => {
     expect(source).toContain("源文件保持不变");
-    expect(source).toContain(
-      "不会修改、覆盖或删除所选的旧版本源文件"
-    );
+    expect(source).toContain("不会修改、覆盖或删除所选的旧版本源文件");
   });
 
   it("renders every warning or a warning-free completion summary", () => {
     expect(source).toContain('v-if="warnings.length > 0"');
-    expect(source).toContain(
-      'v-for="(warning, index) in warnings"'
-    );
+    expect(source).toContain('v-for="(warning, index) in warnings"');
     expect(source).toContain("{{ warning }}");
-    expect(source).toContain(
-      "没有需要额外留意的迁移提示"
-    );
+    expect(source).toContain("没有需要额外留意的迁移提示");
   });
 
   it("shows source metadata and exposes only a close event", () => {

@@ -13,16 +13,11 @@ import {
   LongStoryEventIdSchema,
   LongStoryPlotIdSchema,
   LongVolumeIdSchema,
-  longChapterBodyFileId,
-  longChapterCardFileId,
   longStoryPlotBodyFileId
 } from "./ids";
-import { LongCharacterGroupSchema, LongCharacterTypeIdSchema } from "./characters";
 import {
-  LongRevisionSchema,
   LongShortTextSchema,
   LongTextSchema,
-  LongTimestampSchema,
   LongTitleSchema
 } from "./primitives";
 
@@ -184,9 +179,7 @@ export const LongEventConnectionSchema = z
       });
     }
   });
-export type LongEventConnection = z.infer<
-  typeof LongEventConnectionSchema
->;
+export type LongEventConnection = z.infer<typeof LongEventConnectionSchema>;
 
 export const LONG_NARRATIVE_MODES = [
   "scene",
@@ -207,9 +200,7 @@ export const LongDisclosureLevelSchema = z.enum([
   "full",
   "false"
 ]);
-export type LongDisclosureLevel = z.infer<
-  typeof LongDisclosureLevelSchema
->;
+export type LongDisclosureLevel = z.infer<typeof LongDisclosureLevelSchema>;
 
 export const LongExecutionStatusSchema = z.enum([
   "planned",
@@ -217,16 +208,13 @@ export const LongExecutionStatusSchema = z.enum([
   "committed",
   "missed"
 ]);
-export type LongExecutionStatus = z.infer<
-  typeof LongExecutionStatusSchema
->;
+export type LongExecutionStatus = z.infer<typeof LongExecutionStatusSchema>;
 
 function validateExecutionCommit(
   value: { status: LongExecutionStatus; commitId: string | null },
   context: z.core.$RefinementCtx<unknown>
 ): void {
-  const finalized =
-    value.status === "committed" || value.status === "missed";
+  const finalized = value.status === "committed" || value.status === "missed";
   if (finalized !== (value.commitId !== null)) {
     context.addIssue({
       code: "custom",
@@ -277,12 +265,8 @@ export const LONG_FORESHADOWING_SPANS = [
   "within_volume",
   "cross_volume"
 ] as const;
-export const LongForeshadowingSpanSchema = z.enum(
-  LONG_FORESHADOWING_SPANS
-);
-export type LongForeshadowingSpan = z.infer<
-  typeof LongForeshadowingSpanSchema
->;
+export const LongForeshadowingSpanSchema = z.enum(LONG_FORESHADOWING_SPANS);
+export type LongForeshadowingSpan = z.infer<typeof LongForeshadowingSpanSchema>;
 
 export const LongForeshadowingBeatSchema = z
   .object({
@@ -335,9 +319,7 @@ export const LongForeshadowingBeatSchema = z
       });
     }
   });
-export type LongForeshadowingBeat = z.infer<
-  typeof LongForeshadowingBeatSchema
->;
+export type LongForeshadowingBeat = z.infer<typeof LongForeshadowingBeatSchema>;
 
 export const LongForeshadowingStatusSchema = z.enum([
   "planned",
@@ -351,14 +333,10 @@ export type LongForeshadowingStatus = z.infer<
 >;
 
 export function deriveLongForeshadowingStatusFromCommittedBeats(
-  beats: ReadonlyArray<
-    Pick<LongForeshadowingBeat, "status" | "type">
-  >
+  beats: ReadonlyArray<Pick<LongForeshadowingBeat, "status" | "type">>
 ): Exclude<LongForeshadowingStatus, "abandoned"> {
   const committedTypes = new Set(
-    beats
-      .filter(({ status }) => status === "committed")
-      .map(({ type }) => type)
+    beats.filter(({ status }) => status === "committed").map(({ type }) => type)
   );
   if (committedTypes.has("reveal") || committedTypes.has("payoff")) {
     return "resolved";
@@ -387,9 +365,7 @@ export const LongForeshadowingSchema = z
     beats: z.array(LongForeshadowingBeatSchema).max(10_000)
   })
   .strict();
-export type LongForeshadowing = z.infer<
-  typeof LongForeshadowingSchema
->;
+export type LongForeshadowing = z.infer<typeof LongForeshadowingSchema>;
 
 export const LongPlotIndexSchema = z
   .object({
@@ -398,12 +374,8 @@ export const LongPlotIndexSchema = z
     chapterCards: z.array(LongChapterCardSchema).max(100_000),
     storyEvents: z.array(LongStoryEventSchema).max(200_000),
     storyPlots: z.array(LongStoryPlotSchema).max(200_000).default([]),
-    eventConnections: z
-      .array(LongEventConnectionSchema)
-      .max(400_000),
-    narrativePlacements: z
-      .array(LongNarrativePlacementSchema)
-      .max(400_000),
+    eventConnections: z.array(LongEventConnectionSchema).max(400_000),
+    narrativePlacements: z.array(LongNarrativePlacementSchema).max(400_000),
     foreshadowing: z.array(LongForeshadowingSchema).max(100_000)
   })
   .strict();

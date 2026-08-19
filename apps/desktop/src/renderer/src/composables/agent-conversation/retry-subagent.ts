@@ -1,4 +1,7 @@
-import type { AgentRuntimeRef, SystemEventEnvelope } from "@deepwrite/contracts";
+import type {
+  AgentRuntimeRef,
+  SystemEventEnvelope
+} from "@deepwrite/contracts";
 import type {
   AgentRetryMetadata,
   AgentSubagentRun,
@@ -16,7 +19,10 @@ import type {
   SubagentTurnCheckpoint
 } from "./types";
 
-export function assistantMessageForRun(ctx: AgentConversationContext, runId: string): ChatMessage | undefined {
+export function assistantMessageForRun(
+  ctx: AgentConversationContext,
+  runId: string
+): ChatMessage | undefined {
   const mappedMessageId = ctx.runMessageIds.get(runId);
   return (
     (mappedMessageId
@@ -33,11 +39,18 @@ export function assistantMessageForRun(ctx: AgentConversationContext, runId: str
   );
 }
 
-export function subagentTurnKey(ctx: AgentConversationContext, runId: string, subagentRunId: string): string {
+export function subagentTurnKey(
+  ctx: AgentConversationContext,
+  runId: string,
+  subagentRunId: string
+): string {
   return `${runId}\u0000${subagentRunId}`;
 }
 
-export function clearRetryStateForRun(ctx: AgentConversationContext, runId: string): void {
+export function clearRetryStateForRun(
+  ctx: AgentConversationContext,
+  runId: string
+): void {
   ctx.turnCheckpointByRun.delete(runId);
   const message = assistantMessageForRun(ctx, runId);
   if (message?.retry) delete message.retry;
@@ -82,7 +95,8 @@ export function markRunError(
   flushPendingAgentTextDelta(ctx);
   const messageId = ctx.runMessageIds.get(runId) ?? `${runId}_assistant`;
   let message = ctx.messages.value.find(
-    (item) => item.id === messageId && item.role === "assistant" && item.runId === runId
+    (item) =>
+      item.id === messageId && item.role === "assistant" && item.runId === runId
   );
   if (!message) {
     message = {
@@ -112,11 +126,16 @@ export function markRunError(
   rememberBounded(ctx.finishedRunIds, runId);
 }
 
-export function markRunStopped(ctx: AgentConversationContext, runId: string, eventRuntime?: AgentRuntimeRef): void {
+export function markRunStopped(
+  ctx: AgentConversationContext,
+  runId: string,
+  eventRuntime?: AgentRuntimeRef
+): void {
   flushPendingAgentTextDelta(ctx);
   const messageId = ctx.runMessageIds.get(runId) ?? `${runId}_assistant`;
   let message = ctx.messages.value.find(
-    (item) => item.id === messageId && item.role === "assistant" && item.runId === runId
+    (item) =>
+      item.id === messageId && item.role === "assistant" && item.runId === runId
   );
   if (!message) {
     message = {
@@ -136,7 +155,8 @@ export function markRunStopped(ctx: AgentConversationContext, runId: string, eve
   }
   message.status = "stopped";
   const completedAt = new Date().toISOString();
-  finalizeRunningSubagents(ctx,
+  finalizeRunningSubagents(
+    ctx,
     message,
     "stopped",
     completedAt,
@@ -149,7 +169,10 @@ export function markRunStopped(ctx: AgentConversationContext, runId: string, eve
   rememberBounded(ctx.finishedRunIds, runId);
 }
 
-export function invalidateAttemptForRun(ctx: AgentConversationContext, runId: string): void {
+export function invalidateAttemptForRun(
+  ctx: AgentConversationContext,
+  runId: string
+): void {
   for (const [attemptId, observedRunId] of ctx.observedRunByAttempt) {
     if (observedRunId !== runId) {
       continue;
@@ -162,7 +185,12 @@ export function invalidateAttemptForRun(ctx: AgentConversationContext, runId: st
   }
 }
 
-export function failProtocol(ctx: AgentConversationContext, runId: string, messageText: string, eventRuntime?: AgentRuntimeRef): void {
+export function failProtocol(
+  ctx: AgentConversationContext,
+  runId: string,
+  messageText: string,
+  eventRuntime?: AgentRuntimeRef
+): void {
   markRunError(ctx, runId, messageText, eventRuntime);
   invalidateAttemptForRun(ctx, runId);
   if (ctx.activeRunId.value === runId) {
@@ -190,8 +218,16 @@ export function ensureAssistantMessage(
         message.runId === runId &&
         message.activityOnly
     );
-    if (!placeholder || ctx.messages.value.some((message) => message.id === messageId)) {
-      failProtocol(ctx, runId, "智能体为同一运行返回了不一致的消息标识。", eventRuntime);
+    if (
+      !placeholder ||
+      ctx.messages.value.some((message) => message.id === messageId)
+    ) {
+      failProtocol(
+        ctx,
+        runId,
+        "智能体为同一运行返回了不一致的消息标识。",
+        eventRuntime
+      );
       return undefined;
     }
     placeholder.id = messageId;
@@ -203,10 +239,17 @@ export function ensureAssistantMessage(
     return placeholder;
   }
 
-  const existing = ctx.messages.value.find((message) => message.id === messageId);
+  const existing = ctx.messages.value.find(
+    (message) => message.id === messageId
+  );
   if (existing) {
     if (existing.role !== "assistant" || existing.runId !== runId) {
-      failProtocol(ctx, runId, "智能体消息标识与现有消息发生冲突。", eventRuntime);
+      failProtocol(
+        ctx,
+        runId,
+        "智能体消息标识与现有消息发生冲突。",
+        eventRuntime
+      );
       return undefined;
     }
     ctx.runMessageIds.set(runId, messageId);
@@ -231,15 +274,18 @@ export function ensureAssistantMessage(
   return ctx.messages.value.find((candidate) => candidate.id === messageId)!;
 }
 
-export function retryMetadata(ctx: AgentConversationContext, input: {
-  state: AgentRetryMetadata["state"];
-  turnId: string;
-  attempt: number;
-  maxAttempts: number;
-  retryAt?: string;
-  delayMs?: number;
-  reason?: string;
-}): AgentRetryMetadata {
+export function retryMetadata(
+  ctx: AgentConversationContext,
+  input: {
+    state: AgentRetryMetadata["state"];
+    turnId: string;
+    attempt: number;
+    maxAttempts: number;
+    retryAt?: string;
+    delayMs?: number;
+    reason?: string;
+  }
+): AgentRetryMetadata {
   return {
     state: input.state,
     turnId: input.turnId,
@@ -260,7 +306,8 @@ export function restoreMessageCheckpoint(
   eventRuntime: AgentRuntimeRef,
   eventTimestamp: string
 ): ChatMessage | undefined {
-  const current = ensureAssistantMessage(ctx,
+  const current = ensureAssistantMessage(
+    ctx,
     runId,
     messageId,
     eventRuntime,
@@ -295,8 +342,14 @@ export function handleTurnStarted(
   ctx: AgentConversationContext,
   event: Extract<SystemEventEnvelope, { type: "agent.turn_started" }>
 ): void {
-  const { runId, messageId, turnId, attempt, maxAttempts, runtime: eventRuntime } =
-    event.payload;
+  const {
+    runId,
+    messageId,
+    turnId,
+    attempt,
+    maxAttempts,
+    runtime: eventRuntime
+  } = event.payload;
   const turnKey = `${runId}\u0000${turnId}`;
   let checkpoint = ctx.turnCheckpointByRun.get(runId);
 
@@ -322,7 +375,8 @@ export function handleTurnStarted(
     checkpoint.attemptStartedAt = event.timestamp;
   }
 
-  let message = ensureAssistantMessage(ctx,
+  let message = ensureAssistantMessage(
+    ctx,
     runId,
     messageId,
     eventRuntime,
@@ -330,7 +384,8 @@ export function handleTurnStarted(
   );
   if (!message) return;
   if (attempt > 1) {
-    message = restoreMessageCheckpoint(ctx,
+    message = restoreMessageCheckpoint(
+      ctx,
       runId,
       messageId,
       checkpoint,
@@ -375,7 +430,8 @@ export function handleRetryScheduled(
   ) {
     return;
   }
-  restoreMessageCheckpoint(ctx,
+  restoreMessageCheckpoint(
+    ctx,
     runId,
     messageId,
     checkpoint,
@@ -394,7 +450,11 @@ export function handleRetryScheduled(
   ctx.conversationError.value = null;
 }
 
-export function acceptsRetryActivity(ctx: AgentConversationContext, runId: string, eventTimestamp: string): boolean {
+export function acceptsRetryActivity(
+  ctx: AgentConversationContext,
+  runId: string,
+  eventTimestamp: string
+): boolean {
   const message = assistantMessageForRun(ctx, runId);
   if (!message?.retry) return true;
   if (message.retry.state === "scheduled") return false;
@@ -446,7 +506,11 @@ export function ensureActivityMessage(
   return ctx.messages.value.find((candidate) => candidate.id === message.id)!;
 }
 
-export function ensureSubagentMessage(ctx: AgentConversationContext, runId: string, createdAt: string): ChatMessage {
+export function ensureSubagentMessage(
+  ctx: AgentConversationContext,
+  runId: string,
+  createdAt: string
+): ChatMessage {
   const mappedMessageId = ctx.runMessageIds.get(runId);
   const existing = mappedMessageId
     ? ctx.messages.value.find(
@@ -483,7 +547,11 @@ export function ensureSubagentMessage(ctx: AgentConversationContext, runId: stri
   return ctx.messages.value.find((candidate) => candidate.id === message.id)!;
 }
 
-export function earlierTimestamp(ctx: AgentConversationContext, current: string, candidate: string): string {
+export function earlierTimestamp(
+  ctx: AgentConversationContext,
+  current: string,
+  candidate: string
+): string {
   const currentTime = Date.parse(current);
   const candidateTime = Date.parse(candidate);
   if (!Number.isFinite(currentTime)) return candidate;
@@ -499,7 +567,9 @@ export function ensurePendingSubagentRunForTool(
   eventRuntime: AgentRuntimeRef,
   eventTimestamp: string
 ): void {
-  if (message.subagentRuns?.some((run) => run.parentToolCallId === toolCallId)) {
+  if (
+    message.subagentRuns?.some((run) => run.parentToolCallId === toolCallId)
+  ) {
     return;
   }
   const record = isRecord(args) ? args : {};
@@ -603,7 +673,11 @@ export function handleSubagentTurnStarted(
     { type: "turn_started" }
   >
 ): void {
-  const key = subagentTurnKey(ctx, event.payload.runId, event.payload.subagentRunId);
+  const key = subagentTurnKey(
+    ctx,
+    event.payload.runId,
+    event.payload.subagentRunId
+  );
   const seenKey = `${key}\u0000${activity.turnId}`;
   let checkpoint = ctx.subagentTurnCheckpointByRun.get(key);
   if (!checkpoint || checkpoint.turnId !== activity.turnId) {
@@ -626,7 +700,8 @@ export function handleSubagentTurnStarted(
     checkpoint.attemptStartedAt = event.timestamp;
   }
   if (activity.attempt > 1) {
-    restoreSubagentCheckpoint(ctx,
+    restoreSubagentCheckpoint(
+      ctx,
       run,
       checkpoint,
       retryMetadata(ctx, {
@@ -649,7 +724,11 @@ export function handleSubagentRetryScheduled(
     { type: "retry_scheduled" }
   >
 ): void {
-  const key = subagentTurnKey(ctx, event.payload.runId, event.payload.subagentRunId);
+  const key = subagentTurnKey(
+    ctx,
+    event.payload.runId,
+    event.payload.subagentRunId
+  );
   const checkpoint = ctx.subagentTurnCheckpointByRun.get(key);
   if (
     !checkpoint ||
@@ -658,7 +737,8 @@ export function handleSubagentRetryScheduled(
   ) {
     return;
   }
-  restoreSubagentCheckpoint(ctx,
+  restoreSubagentCheckpoint(
+    ctx,
     run,
     checkpoint,
     retryMetadata(ctx, {
@@ -694,10 +774,18 @@ export function acceptsSubagentRetryActivity(
   return true;
 }
 
-export function handleSubagentEvent(ctx: AgentConversationContext, event: SubagentEventEnvelope): void {
-  const message = ensureSubagentMessage(ctx, event.payload.runId, event.timestamp);
+export function handleSubagentEvent(
+  ctx: AgentConversationContext,
+  event: SubagentEventEnvelope
+): void {
+  const message = ensureSubagentMessage(
+    ctx,
+    event.payload.runId,
+    event.timestamp
+  );
   message.processingStartedAt ??= event.timestamp;
-  const run = ensureSubagentRun(ctx,
+  const run = ensureSubagentRun(
+    ctx,
     message,
     event.payload,
     event.timestamp,
@@ -714,7 +802,7 @@ export function handleSubagentEvent(ctx: AgentConversationContext, event: Subage
     run.errorMessage =
       message.status === "stopped"
         ? "父智能体运行已停止，子任务同步停止。"
-        : message.errorMessage ?? "父智能体运行异常结束，子任务同步停止。";
+        : (message.errorMessage ?? "父智能体运行异常结束，子任务同步停止。");
   }
 
   if (event.type === "subagent.started") {
@@ -777,7 +865,8 @@ export function handleSubagentEvent(ctx: AgentConversationContext, event: Subage
       if (toolCall) {
         toolCall.name = activity.toolName;
         toolCall.args = activity.args;
-        toolCall.requestedAt = earlierTimestamp(ctx,
+        toolCall.requestedAt = earlierTimestamp(
+          ctx,
           toolCall.requestedAt,
           event.timestamp
         );
@@ -799,8 +888,7 @@ export function handleSubagentEvent(ctx: AgentConversationContext, event: Subage
                 completedAt: run.completedAt ?? event.timestamp,
                 ...(terminalStatus === "error"
                   ? {
-                      resultSummary:
-                        run.errorMessage ?? "子任务已经结束。",
+                      resultSummary: run.errorMessage ?? "子任务已经结束。",
                       isError: true
                     }
                   : {})
@@ -808,9 +896,12 @@ export function handleSubagentEvent(ctx: AgentConversationContext, event: Subage
         };
         run.toolCalls.push(toolCall);
       }
-      if (!run.processingSteps.some(
-        (step) => step.type === "tool" && step.toolCallId === activity.toolCallId
-      )) {
+      if (
+        !run.processingSteps.some(
+          (step) =>
+            step.type === "tool" && step.toolCallId === activity.toolCallId
+        )
+      ) {
         run.processingSteps.push({
           id: event.id,
           type: "tool",
@@ -831,9 +922,12 @@ export function handleSubagentEvent(ctx: AgentConversationContext, event: Subage
       };
       run.toolCalls.push(toolCall);
     }
-    if (!run.processingSteps.some(
-      (step) => step.type === "tool" && step.toolCallId === activity.toolCallId
-    )) {
+    if (
+      !run.processingSteps.some(
+        (step) =>
+          step.type === "tool" && step.toolCallId === activity.toolCallId
+      )
+    ) {
       run.processingSteps.push({
         id: event.id,
         type: "tool",

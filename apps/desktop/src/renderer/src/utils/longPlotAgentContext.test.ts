@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { LongWorkspaceNavigationSnapshot } from "@deepwrite/contracts";
+import type {
+  LongForeshadowing,
+  LongWorkspaceNavigationSnapshot
+} from "@deepwrite/contracts";
 import type { LongWorkspaceSelection } from "../types/longWorkspace";
 import { buildLongPlotFocusSnapshot } from "./longPlotAgentContext";
 
@@ -26,9 +29,7 @@ const navigation: LongWorkspaceNavigationSnapshot = {
     { id: "volume_one", title: "第一卷", order: 1 },
     { id: "volume_two", title: "第二卷", order: 2 }
   ],
-  arcs: [
-    { id: "arc_main", volumeId: "volume_one", title: "主线", order: 1 }
-  ],
+  arcs: [{ id: "arc_main", volumeId: "volume_one", title: "主线", order: 1 }],
   chapterCards: [
     {
       id: "chapter_one",
@@ -56,8 +57,35 @@ function plotSelection(
   };
 }
 
+function foreshadowingThread(index: number): LongForeshadowing {
+  return {
+    id: `foreshadow_thread_${index}`,
+    title: `伏笔线 ${index}`,
+    coreQuestion: `核心问题 ${index}`,
+    hiddenTruth: `隐藏真相 ${index}`,
+    plannedSpan: "cross_volume",
+    truthEventId: null,
+    expectedReaderEffect: `读者效果 ${index}`,
+    status: "planned",
+    beats: [
+      {
+        id: `beat_thread_${index}`,
+        type: "plant",
+        order: 1,
+        eventId: null,
+        placementId: null,
+        chapterCardId: null,
+        plannedScope: `计划范围 ${index}`,
+        note: `触点正文 ${index}`,
+        status: "planned",
+        commitId: null
+      }
+    ]
+  };
+}
+
 describe("long plot agent context", () => {
-  it("captures book-line and foreshadowing sections", () => {
+  it("captures book-line and a lightweight foreshadowing directory", () => {
     expect(
       buildLongPlotFocusSnapshot({
         selection: plotSelection({}),
@@ -70,9 +98,97 @@ describe("long plot agent context", () => {
           key: "plot-design:foreshadowing",
           title: "伏笔总览"
         }),
-        navigation
+        navigation,
+        foreshadowing: [foreshadowingThread(1)],
+        foreshadowingFocus: {
+          threadId: "foreshadow_thread_1",
+          beatId: "beat_thread_1"
+        }
       })
-    ).toEqual({ section: "foreshadowing" });
+    ).toEqual({
+      section: "foreshadowing",
+      foreshadowingDirectory: {
+        totalCount: 1,
+        omittedCount: 0,
+        entries: [
+          {
+            foreshadowingId: "foreshadow_thread_1",
+            title: "伏笔线 1",
+            status: "planned",
+            plannedSpan: "cross_volume",
+            beatCount: 1
+          }
+        ]
+      },
+      foreshadowingThreadId: "foreshadow_thread_1",
+      foreshadowingBeatId: "beat_thread_1"
+    });
+  });
+
+  it("caps the directory at 100 entries while retaining an out-of-range focus", () => {
+    const foreshadowing = Array.from({ length: 101 }, (_, index) =>
+      foreshadowingThread(index + 1)
+    );
+    const snapshot = buildLongPlotFocusSnapshot({
+      selection: plotSelection({
+        key: "plot-design:foreshadowing",
+        title: "伏笔总览"
+      }),
+      navigation,
+      foreshadowing,
+      foreshadowingFocus: {
+        threadId: "foreshadow_thread_101",
+        beatId: "beat_thread_101"
+      }
+    });
+
+    expect(snapshot?.foreshadowingDirectory).toMatchObject({
+      totalCount: 101,
+      omittedCount: 1
+    });
+    expect(snapshot?.foreshadowingDirectory?.entries).toHaveLength(100);
+    expect(snapshot?.foreshadowingDirectory?.entries.at(-1)).toMatchObject({
+      foreshadowingId: "foreshadow_thread_101"
+    });
+    expect(snapshot).not.toHaveProperty(
+      "foreshadowingDirectory.entries.0.hiddenTruth"
+    );
+    expect(snapshot).not.toHaveProperty(
+      "foreshadowingDirectory.entries.0.beats"
+    );
+  });
+
+  it("drops stale thread and beat focus ids after data refresh", () => {
+    expect(
+      buildLongPlotFocusSnapshot({
+        selection: plotSelection({
+          key: "plot-design:foreshadowing",
+          title: "伏笔总览"
+        }),
+        navigation,
+        foreshadowing: [foreshadowingThread(1)],
+        foreshadowingFocus: {
+          threadId: "foreshadow_thread_1",
+          beatId: "beat_missing"
+        }
+      })
+    ).toEqual({
+      section: "foreshadowing",
+      foreshadowingDirectory: {
+        totalCount: 1,
+        omittedCount: 0,
+        entries: [
+          {
+            foreshadowingId: "foreshadow_thread_1",
+            title: "伏笔线 1",
+            status: "planned",
+            plannedSpan: "cross_volume",
+            beatCount: 1
+          }
+        ]
+      },
+      foreshadowingThreadId: "foreshadow_thread_1"
+    });
   });
 
   it("captures the focused plot point with its volume", () => {

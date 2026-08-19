@@ -169,7 +169,9 @@ describe("long workspace API contracts", () => {
     ).toThrow(/AGENTS\.md/iu);
     expect(
       LongReadAgentsMdInputSchema.parse({ bookId: "longbook_api" })
-    ).toEqual({ bookId: "longbook_api" });
+    ).toEqual({
+      bookId: "longbook_api"
+    });
   });
 
   it("bounds worldbuilding focus and keeps it exclusive to the worldbuilding agent", () => {
@@ -381,7 +383,11 @@ describe("long workspace API contracts", () => {
         runtimeContext({
           activeRoot: "plot_design",
           activeAgentId: "plot_design",
-          plotFocus: { section: "book_line", volumeId: "volume_api", volumeTitle: "第一卷" }
+          plotFocus: {
+            section: "book_line",
+            volumeId: "volume_api",
+            volumeTitle: "第一卷"
+          }
         })
       )
     ).toThrow(/must not name a volume/iu);
@@ -419,10 +425,84 @@ describe("long workspace API contracts", () => {
         runtimeContext({
           activeRoot: "plot_design",
           activeAgentId: "plot_design",
-          plotFocus: { section: "plot_point", volumeId: "volume_api", volumeTitle: "第一卷", chapterCardId: "chapter_api", chapterCardTitle: "第一章" }
+          plotFocus: {
+            section: "plot_point",
+            volumeId: "volume_api",
+            volumeTitle: "第一卷",
+            chapterCardId: "chapter_api",
+            chapterCardTitle: "第一章"
+          }
         })
       )
     ).toThrow(/Only a chapter-card/iu);
+  });
+
+  it("validates lightweight foreshadowing directories and focused ids", () => {
+    const directory = {
+      totalCount: 1,
+      omittedCount: 0,
+      entries: [
+        {
+          foreshadowingId: "foreshadow_api",
+          title: "失踪的航海日志",
+          status: "open",
+          plannedSpan: "cross_volume",
+          beatCount: 2
+        }
+      ]
+    };
+    expect(
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: {
+            section: "foreshadowing",
+            foreshadowingDirectory: directory,
+            foreshadowingThreadId: "foreshadow_api",
+            foreshadowingBeatId: "beat_api"
+          }
+        })
+      ).plotFocus
+    ).toMatchObject({
+      section: "foreshadowing",
+      foreshadowingThreadId: "foreshadow_api",
+      foreshadowingBeatId: "beat_api"
+    });
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: { section: "foreshadowing" }
+        })
+      )
+    ).toThrow(/lightweight directory/iu);
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: {
+            section: "foreshadowing",
+            foreshadowingDirectory: directory,
+            foreshadowingThreadId: "foreshadow_missing"
+          }
+        })
+      )
+    ).toThrow(/remain in the directory/iu);
+    expect(() =>
+      LongWorkspaceRuntimeContextSchema.parse(
+        runtimeContext({
+          activeRoot: "plot_design",
+          activeAgentId: "plot_design",
+          plotFocus: {
+            section: "book_line",
+            foreshadowingDirectory: directory
+          }
+        })
+      )
+    ).toThrow(/lightweight directory/iu);
   });
 
   it("applies bounded defaults to paged reads and searches", () => {

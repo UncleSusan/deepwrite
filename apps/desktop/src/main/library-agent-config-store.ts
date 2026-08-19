@@ -29,7 +29,9 @@ function cloneSkill(skill: LibraryAgentSkill): LibraryAgentSkill {
   };
 }
 
-function cloneReadAccess(value: LibraryAgentReadAccess): LibraryAgentReadAccess {
+function cloneReadAccess(
+  value: LibraryAgentReadAccess
+): LibraryAgentReadAccess {
   return {
     skills: value.skills.map(cloneSkill)
   };
@@ -178,7 +180,9 @@ export class LibraryAgentConfigStore {
     return this.toPublicSettings(await this.readInput());
   }
 
-  async save(rawInput: LibraryAgentSettingsInput): Promise<LibraryAgentSettings> {
+  async save(
+    rawInput: LibraryAgentSettingsInput
+  ): Promise<LibraryAgentSettings> {
     const input = LibraryAgentSettingsInputSchema.parse(rawInput);
     let saved: LibraryAgentSettings | undefined;
     const operation = this.writeChain.then(async () => {

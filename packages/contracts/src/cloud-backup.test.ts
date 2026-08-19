@@ -13,7 +13,9 @@ describe("cloud backup contracts", () => {
       "DW-ABCD-2345-EFGH-WXYZ"
     );
     expect(() => CloudBackupMachineKeySchema.parse("not-a-key")).toThrow();
-    expect(() => CloudBackupMachineKeySchema.parse("DW-0000-1111-2222-3333")).toThrow();
+    expect(() =>
+      CloudBackupMachineKeySchema.parse("DW-0000-1111-2222-3333")
+    ).toThrow();
   });
 
   it("keeps the temporary quota at 100MB and requires a preview id before apply", () => {

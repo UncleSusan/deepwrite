@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  orderLongChapterNavigationItems
-} from "./orderLongChapterNavigationItems";
+import { orderLongChapterNavigationItems } from "./orderLongChapterNavigationItems";
 
 describe("orderLongChapterNavigationItems", () => {
   it("uses narrative order even when generated ids sort in the opposite order", () => {

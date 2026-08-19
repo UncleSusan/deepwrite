@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-import {
-  DraftSectionIdSchema,
-  DraftSectionTitleSchema
-} from "../expert-draft";
+import { DraftSectionIdSchema, DraftSectionTitleSchema } from "../expert-draft";
 import {
   BookSchema,
   CurrentScriptBookSchema,
@@ -82,7 +79,10 @@ function migrateCatalogSnapshotCreativePlotStages(value: unknown): unknown {
     return value;
   }
   const record = value as Record<string, unknown>;
-  if (Array.isArray(record.creativePlotStages) && record.creativePlotStages.length > 0) {
+  if (
+    Array.isArray(record.creativePlotStages) &&
+    record.creativePlotStages.length > 0
+  ) {
     return value;
   }
   const books = Array.isArray(record.books) ? record.books : [];
@@ -141,9 +141,7 @@ export const CatalogSnapshotSchema = z
     })
   )
   .superRefine((snapshot, context) => {
-    const collections: Array<
-      [string, ReadonlyArray<{ id: string }>]
-    > = [
+    const collections: Array<[string, ReadonlyArray<{ id: string }>]> = [
       ["books", snapshot.books],
       ["materials", snapshot.materials],
       ["materialGroups", snapshot.materialGroups],
@@ -211,9 +209,7 @@ export const CatalogIndexDocumentSchema = z
     updatedAt: TimestampSchema
   })
   .strict();
-export type CatalogIndexDocument = z.infer<
-  typeof CatalogIndexDocumentSchema
->;
+export type CatalogIndexDocument = z.infer<typeof CatalogIndexDocumentSchema>;
 
 const CatalogIndexDraftSectionSchema = z
   .object({
@@ -306,7 +302,8 @@ export const CatalogIndexSnapshotSchema =
     if (!compatible.success) {
       context.addIssue({
         code: "custom",
-        message: "Catalog index must remain structurally compatible with CatalogSnapshot."
+        message:
+          "Catalog index must remain structurally compatible with CatalogSnapshot."
       });
     }
   });

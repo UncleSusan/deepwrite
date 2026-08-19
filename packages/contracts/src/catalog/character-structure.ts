@@ -17,7 +17,8 @@ export type BookCharacterFormat = z.infer<typeof BookCharacterFormatSchema>;
 export const BookCharacterItemSchema = z
   .object({
     id: CatalogIdSchema.refine(
-      (value) => value !== BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID && value !== "draft",
+      (value) =>
+        value !== BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID && value !== "draft",
       { message: "Character item ids cannot use reserved document ids." }
     ),
     title: CatalogTitleSchema,
@@ -31,7 +32,9 @@ export const BookCharacterStructureSchema = z.discriminatedUnion("format", [
   z
     .object({
       format: z.literal("list"),
-      items: z.array(BookCharacterItemSchema).max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
+      items: z
+        .array(BookCharacterItemSchema)
+        .max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
     })
     .strict()
     .superRefine((structure, context) => {
@@ -49,7 +52,11 @@ export const BookCharacterStructureSchema = z.discriminatedUnion("format", [
           message: "Character items cannot contain duplicate order values."
         });
       }
-      if (!uniqueIds(structure.items.map(({ title }) => title.toLocaleLowerCase()))) {
+      if (
+        !uniqueIds(
+          structure.items.map(({ title }) => title.toLocaleLowerCase())
+        )
+      ) {
         context.addIssue({
           code: "custom",
           path: ["items"],

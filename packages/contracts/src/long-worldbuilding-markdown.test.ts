@@ -24,9 +24,7 @@ describe("long worldbuilding Markdown list", () => {
   });
 
   it("rejects unversioned, duplicate or ambiguous item content", () => {
-    expect(() =>
-      parseLongWorldbuildingMarkdownList("## 未声明格式")
-    ).toThrow();
+    expect(() => parseLongWorldbuildingMarkdownList("## 未声明格式")).toThrow();
     expect(() =>
       serializeLongWorldbuildingMarkdownList([
         { id: "worlditem_same", title: "一", content: "" },

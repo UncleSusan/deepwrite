@@ -15,7 +15,9 @@ export const AppAlertManifestSchema = z
   .strict();
 export type AppAlertManifest = z.infer<typeof AppAlertManifestSchema>;
 
-export const AppAlertDesktopRevisionSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+export const AppAlertDesktopRevisionSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/u);
 
 export const AppAlertSnapshotSchema = z.object({
   desktopMessages: z.array(AlertMessageSchema).max(20),

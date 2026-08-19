@@ -1,13 +1,12 @@
 import type { AgentApprovalMode } from "../types/conversation";
 
-type DeepReadonly<T> =
-  T extends (...args: never[]) => unknown
-    ? T
-    : T extends readonly (infer Item)[]
-      ? readonly DeepReadonly<Item>[]
-      : T extends object
-        ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
-        : T;
+type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly (infer Item)[]
+    ? readonly DeepReadonly<Item>[]
+    : T extends object
+      ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
+      : T;
 
 export interface AgentEditProposalRevisionCandidate<Proposal> {
   readonly generation: number;
@@ -23,8 +22,9 @@ export interface AgentEditProposalRevisionCandidate<Proposal> {
   readonly proposal: DeepReadonly<Proposal>;
 }
 
-export interface AgentEditProposalCommitSnapshot<Proposal>
-  extends AgentEditProposalRevisionCandidate<Proposal> {
+export interface AgentEditProposalCommitSnapshot<
+  Proposal
+> extends AgentEditProposalRevisionCandidate<Proposal> {
   /**
    * Opaque, caller-created token for matching an async persistence response.
    */
@@ -145,7 +145,10 @@ function frozenClone<T>(value: T): DeepReadonly<T> {
   return deepFreeze(structuredClone(value));
 }
 
-function deepFreeze<T>(value: T, seen = new WeakSet<object>()): DeepReadonly<T> {
+function deepFreeze<T>(
+  value: T,
+  seen = new WeakSet<object>()
+): DeepReadonly<T> {
   if (value === null || typeof value !== "object") {
     return value as DeepReadonly<T>;
   }

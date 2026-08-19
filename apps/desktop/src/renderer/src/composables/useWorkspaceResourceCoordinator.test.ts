@@ -106,12 +106,10 @@ function createHarness(
   const activeCreationResourceId = ref("");
   const rightCollapsed = ref(true);
   const showConversation = vi.fn();
-  const catalogProjection = ref<
-    WorkspaceResourceCatalogPort["projection"]["value"]
-  >(null);
-  const reconciledCatalogProjection = ref<
-    WorkspaceResourceCatalogPort["projection"]["value"]
-  >(null);
+  const catalogProjection =
+    ref<WorkspaceResourceCatalogPort["projection"]["value"]>(null);
+  const reconciledCatalogProjection =
+    ref<WorkspaceResourceCatalogPort["projection"]["value"]>(null);
   const notifications = {
     error: vi.fn(),
     info: vi.fn(),
@@ -234,9 +232,10 @@ describe("useWorkspaceResourceCoordinator", () => {
     const pending = new Map<string, Deferred<ReturnType<typeof loadResult>>>();
     let documents: readonly WorkspaceDocument[] = [];
     const harness = createHarness(async (target) => {
-      const document = typeof target === "string"
-        ? documents.find((candidate) => candidate.id === target)
-        : target;
+      const document =
+        typeof target === "string"
+          ? documents.find((candidate) => candidate.id === target)
+          : target;
       if (!document) throw new Error("Missing test document");
       const request = deferred<ReturnType<typeof loadResult>>();
       pending.set(document.id, request);
@@ -249,13 +248,17 @@ describe("useWorkspaceResourceCoordinator", () => {
     const selectingB = harness.coordinator.selectResource(harness.nodes[1]!);
     await Promise.resolve();
 
-    pending.get("document-b")!.resolve(
-      loadResult(harness.documents.value[1]!, harness.documents.value)
-    );
+    pending
+      .get("document-b")!
+      .resolve(
+        loadResult(harness.documents.value[1]!, harness.documents.value)
+      );
     await selectingB;
-    pending.get("document-a")!.resolve(
-      loadResult(harness.documents.value[0]!, harness.documents.value)
-    );
+    pending
+      .get("document-a")!
+      .resolve(
+        loadResult(harness.documents.value[0]!, harness.documents.value)
+      );
     await selectingA;
 
     expect(harness.selectedResourceId.value).toBe("resource-b");
@@ -267,9 +270,10 @@ describe("useWorkspaceResourceCoordinator", () => {
   it("invalidates pending navigation and stops selection reconciliation on dispose", async () => {
     const pending = deferred<ReturnType<typeof loadResult>>();
     const harness = createHarness(async (target) => {
-      const document = typeof target === "string"
-        ? harness.documents.value.find((candidate) => candidate.id === target)
-        : target;
+      const document =
+        typeof target === "string"
+          ? harness.documents.value.find((candidate) => candidate.id === target)
+          : target;
       if (!document) throw new Error("Missing test document");
       return pending.promise;
     });

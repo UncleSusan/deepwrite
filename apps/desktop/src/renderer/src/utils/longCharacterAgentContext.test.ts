@@ -21,9 +21,7 @@ function page(
   input: LongReadDocumentInput,
   content: string
 ): LongReadDocumentResult {
-  const visible = Array.from(content)
-    .slice(0, input.maxCharacters)
-    .join("");
+  const visible = Array.from(content).slice(0, input.maxCharacters).join("");
   return {
     bookId: input.bookId,
     file: file(input.fileId, `long/test/${input.fileId}.md`),
@@ -100,9 +98,9 @@ describe("long character agent context", () => {
       overview: { content: "- character_id=`character_lan` 林岚" },
       coreProfile: { content: "雾港巡夜人，害怕深水。" }
     });
-    expect(readDocument.mock.calls.map(([input]) => input.maxCharacters)).toEqual(
-      expect.arrayContaining([4_000, 8_000, 8_000])
-    );
+    expect(
+      readDocument.mock.calls.map(([input]) => input.maxCharacters)
+    ).toEqual(expect.arrayContaining([4_000, 8_000, 8_000]));
   });
 
   it("does not duplicate the core profile when it is active", async () => {

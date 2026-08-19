@@ -25,7 +25,9 @@ export function cloneJsonRecord<Value>(value: Value): Value {
   return JSON.parse(JSON.stringify(toRaw(value))) as Value;
 }
 
-export function cloneEditProposal(proposal: AgentEditProposal): AgentEditProposal {
+export function cloneEditProposal(
+  proposal: AgentEditProposal
+): AgentEditProposal {
   try {
     return cloneJsonRecord(proposal);
   } catch {
@@ -74,14 +76,20 @@ export function cloneEvaluationSnapshot(
 
 export function cloneMessage(message: ChatMessage): ChatMessage {
   message = toRaw(message);
-  const evaluationSnapshot = cloneEvaluationSnapshot(message.evaluationSnapshot);
+  const evaluationSnapshot = cloneEvaluationSnapshot(
+    message.evaluationSnapshot
+  );
   const { evaluationSnapshot: _ignored, ...rest } = message;
   return {
     ...rest,
     ...(evaluationSnapshot ? { evaluationSnapshot } : {}),
     ...(message.retry ? { retry: { ...message.retry } } : {}),
     ...(message.attachments
-      ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+      ? {
+          attachments: message.attachments.map((attachment) => ({
+            ...attachment
+          }))
+        }
       : {}),
     ...(message.tools
       ? { tools: message.tools.map((tool) => ({ ...tool })) }
@@ -90,7 +98,9 @@ export function cloneMessage(message: ChatMessage): ChatMessage {
       ? { toolCalls: message.toolCalls.map((toolCall) => ({ ...toolCall })) }
       : {}),
     ...(message.processingSteps
-      ? { processingSteps: message.processingSteps.map((step) => ({ ...step })) }
+      ? {
+          processingSteps: message.processingSteps.map((step) => ({ ...step }))
+        }
       : {}),
     ...(message.subagentRuns
       ? {

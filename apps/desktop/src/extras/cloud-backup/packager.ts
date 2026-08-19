@@ -32,7 +32,10 @@ export function snapshotObjectKeys(machineKey: string): {
   };
 }
 
-export function itemArchivePrefix(kind: CloudBackupItemKind, id: string): string {
+export function itemArchivePrefix(
+  kind: CloudBackupItemKind,
+  id: string
+): string {
   return `items/${kind}/${id}/`;
 }
 
@@ -69,7 +72,9 @@ export function packBackupSnapshot(
   };
 }
 
-export function parseSnapshotManifest(raw: unknown): CloudBackupSnapshotManifest {
+export function parseSnapshotManifest(
+  raw: unknown
+): CloudBackupSnapshotManifest {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("云端备份清单无效。");
   }
@@ -77,7 +82,10 @@ export function parseSnapshotManifest(raw: unknown): CloudBackupSnapshotManifest
   if (value.version !== CLOUD_BACKUP_MANIFEST_VERSION) {
     throw new Error("云端备份版本不受支持。");
   }
-  if (typeof value.machineKey !== "string" || typeof value.updatedAt !== "string") {
+  if (
+    typeof value.machineKey !== "string" ||
+    typeof value.updatedAt !== "string"
+  ) {
     throw new Error("云端备份清单无效。");
   }
   if (!Array.isArray(value.items) || typeof value.sizeBytes !== "number") {

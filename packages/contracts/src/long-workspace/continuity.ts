@@ -25,11 +25,7 @@ import {
   longChapterWorldRevealsFileId,
   longLedgerCommitFileId
 } from "./ids";
-import {
-  LongRevisionSchema,
-  LongTextSchema,
-  LongTimestampSchema
-} from "./primitives";
+import { LongRevisionSchema, LongTimestampSchema } from "./primitives";
 
 export const LongChapterCharacterContinuityFileIndexEntrySchema = z
   .object({
@@ -74,8 +70,7 @@ export const LongChapterFileIndexEntrySchema =
         ),
         entry.body.updatedAt
       )
-  }))
-  .superRefine((entry, context) => {
+  })).superRefine((entry, context) => {
     const files = [entry.body, entry.card, entry.characterState, entry.handoff];
     const expectedIds = [
       longChapterBodyFileId(entry.chapterCardId),
@@ -116,8 +111,7 @@ export const LongChapterFileIndexEntrySchema =
       context.addIssue({
         code: "custom",
         path: ["foreshadowingChanges", "path"],
-        message:
-          "Foreshadowing changes must use the chapter continuity path."
+        message: "Foreshadowing changes must use the chapter continuity path."
       });
     }
     if (entry.worldReveals) {
@@ -134,10 +128,7 @@ export const LongChapterFileIndexEntrySchema =
       }
       if (
         entry.worldReveals.path !==
-        longChapterContinuityFilePath(
-          entry.chapterCardId,
-          "world-reveals.md"
-        )
+        longChapterContinuityFilePath(entry.chapterCardId, "world-reveals.md")
       ) {
         context.addIssue({
           code: "custom",
@@ -158,27 +149,24 @@ export const LongChapterFileIndexEntrySchema =
         });
       }
       characterIds.add(character.characterId);
-      const expectedCurrentStateId =
-        longChapterCharacterCurrentStateFileId(
-          entry.chapterCardId,
-          character.characterId
-        );
+      const expectedCurrentStateId = longChapterCharacterCurrentStateFileId(
+        entry.chapterCardId,
+        character.characterId
+      );
       const expectedHistoryId = longChapterCharacterHistoryFileId(
         entry.chapterCardId,
         character.characterId
       );
-      const expectedCurrentStatePath =
-        longChapterCharacterContinuityFilePath(
-          entry.chapterCardId,
-          character.characterId,
-          "current-state.md"
-        );
-      const expectedHistoryPath =
-        longChapterCharacterContinuityFilePath(
-          entry.chapterCardId,
-          character.characterId,
-          "history.md"
-        );
+      const expectedCurrentStatePath = longChapterCharacterContinuityFilePath(
+        entry.chapterCardId,
+        character.characterId,
+        "current-state.md"
+      );
+      const expectedHistoryPath = longChapterCharacterContinuityFilePath(
+        entry.chapterCardId,
+        character.characterId,
+        "history.md"
+      );
       if (character.currentState.id !== expectedCurrentStateId) {
         context.addIssue({
           code: "custom",
@@ -257,12 +245,8 @@ export const LONG_CONTINUITY_DOMAINS = [
   "plot",
   "foreshadowing"
 ] as const;
-export const LongContinuityDomainSchema = z.enum(
-  LONG_CONTINUITY_DOMAINS
-);
-export type LongContinuityDomain = z.infer<
-  typeof LongContinuityDomainSchema
->;
+export const LongContinuityDomainSchema = z.enum(LONG_CONTINUITY_DOMAINS);
+export type LongContinuityDomain = z.infer<typeof LongContinuityDomainSchema>;
 
 export const LongContinuityFactFieldSchema = z
   .string()
@@ -277,11 +261,7 @@ export type LongContinuityFactField = z.infer<
 >;
 
 const LongContinuityEvidenceSchema = z.string().trim().min(1).max(4_000);
-const LongContinuityFactValueSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200_000);
+const LongContinuityFactValueSchema = z.string().trim().min(1).max(200_000);
 
 export const LongContinuityFactSchema = z
   .object({
@@ -295,9 +275,7 @@ export const LongContinuityFactSchema = z
     evidence: LongContinuityEvidenceSchema
   })
   .strict();
-export type LongContinuityFact = z.infer<
-  typeof LongContinuityFactSchema
->;
+export type LongContinuityFact = z.infer<typeof LongContinuityFactSchema>;
 
 function continuityFactKey(
   value: Pick<LongContinuityFact, "domain" | "subjectId" | "field">
@@ -398,10 +376,7 @@ export type LongContinuityKnowledge = z.infer<
 >;
 
 function continuityKnowledgeKey(
-  value: Pick<
-    LongContinuityKnowledge,
-    "factId" | "audienceType" | "audienceId"
-  >
+  value: Pick<LongContinuityKnowledge, "factId" | "audienceType" | "audienceId">
 ): string {
   return `${value.factId}\0${value.audienceType}\0${value.audienceId ?? ""}`;
 }
@@ -417,8 +392,7 @@ export const LongContinuityKnowledgeListSchema = z
         context.addIssue({
           code: "custom",
           path: [index],
-          message:
-            "Continuity knowledge must be unique by fact and audience."
+          message: "Continuity knowledge must be unique by fact and audience."
         });
       }
       keys.add(key);
@@ -531,9 +505,7 @@ export const LongContinuityHandoffSchema = z
     openLoops: UniqueContinuityOpenLoopIdListSchema
   })
   .strict();
-export type LongContinuityHandoff = z.infer<
-  typeof LongContinuityHandoffSchema
->;
+export type LongContinuityHandoff = z.infer<typeof LongContinuityHandoffSchema>;
 
 export const LongContinuityLatestHandoffSchema =
   LongContinuityHandoffSchema.extend({
@@ -637,6 +609,4 @@ export const LongLedgerCommitIndexSchema = z
     )
   })
   .strict();
-export type LongLedgerCommitIndex = z.infer<
-  typeof LongLedgerCommitIndexSchema
->;
+export type LongLedgerCommitIndex = z.infer<typeof LongLedgerCommitIndexSchema>;

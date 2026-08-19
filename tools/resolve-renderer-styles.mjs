@@ -6,7 +6,9 @@ const IMPORT_PATTERN = /@import\s+(?:url\()?["']([^"']+)["']\)?\s*;/;
 
 function defaultStylesEntry() {
   return resolve(
-    fileURLToPath(new URL("../apps/desktop/src/renderer/src/styles.css", import.meta.url))
+    fileURLToPath(
+      new URL("../apps/desktop/src/renderer/src/styles.css", import.meta.url)
+    )
   );
 }
 
@@ -46,6 +48,9 @@ export function resolveRendererStyles(entryPath = defaultStylesEntry()) {
   return resolved.endsWith("\n") ? resolved : `${resolved}\n`;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("resolve-renderer-styles.mjs")) {
+if (
+  import.meta.url === `file://${process.argv[1]}` ||
+  process.argv[1]?.endsWith("resolve-renderer-styles.mjs")
+) {
   process.stdout.write(resolveRendererStyles());
 }

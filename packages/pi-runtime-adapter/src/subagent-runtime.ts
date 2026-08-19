@@ -13,13 +13,15 @@ import {
   type ThinkingLevel as PiThinkingLevel
 } from "@earendil-works/pi-agent-core";
 import {
+  StringEnum,
+  Type,
   type Api,
   type AssistantMessage,
   type Model,
+  type Static,
   type Usage,
   type UserMessage
 } from "@earendil-works/pi-ai";
-import { Type, type Static } from "typebox";
 import {
   type AgentRuntimeRef,
   type AgentUsage,
@@ -33,7 +35,7 @@ import {
   type AgentTurnRetrySchedule,
   type AgentTurnRetryPolicyOptions
 } from "./agent-turn-retry";
-import { sanitizeToolSchemaForGemini } from "./short-agent-tools";
+import { piStrictToolSampling } from "./pi-tool-schema";
 
 const SUBAGENT_SUMMARY_MAX_LENGTH = 20_000;
 export const DEFAULT_SUBAGENT_TIMEOUT_MS = 10 * 60_000;
@@ -175,7 +177,10 @@ function textResult<T>(text: string, details: T): AgentToolResult<T> {
   return { content: [{ type: "text", text }], details };
 }
 
-function namespaceChildToolCallId(subagentRunId: string, toolCallId: string): string {
+function namespaceChildToolCallId(
+  subagentRunId: string,
+  toolCallId: string
+): string {
   return `${subagentRunId}:${toolCallId}`;
 }
 
@@ -261,8 +266,14 @@ function summarizeToolResult(result: unknown): string {
   }
 }
 
-function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
-  return typeof message === "object" && message !== null && message.role === "assistant";
+function isAssistantMessage(
+  message: AgentMessage
+): message is AssistantMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    message.role === "assistant"
+  );
 }
 
 /**
@@ -278,19 +289,16 @@ export function buildSubagentSystemPrompt(
   systemPromptRequirements?: string
 ): string {
   const toolLines = childTools.map((tool) => {
-    const label = "label" in tool && typeof tool.label === "string" && tool.label.trim()
-      ? tool.label.trim()
-      : tool.name;
+    const label =
+      "label" in tool && typeof tool.label === "string" && tool.label.trim()
+        ? tool.label.trim()
+        : tool.name;
     return `- ${tool.name}（${label}）`;
   });
   return [
     definition.systemPrompt.trim(),
     ...(systemPromptRequirements?.trim()
-      ? [
-          "",
-          "【本轮不可编辑的写作约束】",
-          systemPromptRequirements.trim()
-        ]
+      ? ["", "【本轮不可编辑的写作约束】", systemPromptRequirements.trim()]
       : []),
     "",
     `【当前子智能体：${definition.name} / ${definition.id}】`,
@@ -315,13 +323,13 @@ export function buildSubagentSystemPrompt(
 export function buildSpawnSubagentTool(
   input: BuildSpawnSubagentToolInput
 ): AgentTool | undefined {
-  const definitions = input.definitions.filter((definition) => definition.enabled);
+  const definitions = input.definitions.filter(
+    (definition) => definition.enabled
+  );
   if (definitions.length === 0 || (input.depth ?? 0) > 0) return undefined;
 
   const parameters = Type.Object({
-    subagent_id: Type.Union(
-      definitions.map((definition) => Type.Literal(definition.id))
-    ),
+    subagent_id: StringEnum(definitions.map((definition) => definition.id)),
     task: Type.String({ minLength: 1, maxLength: 20_000 })
   });
 
@@ -332,10 +340,12 @@ export function buildSpawnSubagentTool(
       "调用一个预先配置的子智能体完成明确、边界清晰的子任务。调用会阻塞到子智能体完成，并只返回最终交接摘要。",
       "可用子智能体：",
       ...definitions.map(
-        (definition) => `- ${definition.name} (${definition.id})：${definition.description}`
+        (definition) =>
+          `- ${definition.name} (${definition.id})：${definition.description}`
       )
     ].join("\n"),
-    parameters: sanitizeToolSchemaForGemini(parameters) as typeof parameters,
+    parameters,
+    ...piStrictToolSampling(parameters),
     executionMode: "sequential",
     execute: async (
       parentToolCallId: string,
@@ -347,23 +357,27 @@ export function buildSpawnSubagentTool(
         throw new Error("子智能体不允许递归调用 spawn_subagent。");
       }
       const subagentId = String(params.subagent_id ?? "");
-      const definition = definitions.find((candidate) => candidate.id === subagentId);
+      const definition = definitions.find(
+        (candidate) => candidate.id === subagentId
+      );
       if (!definition) {
         throw new Error(`未知或已停用的子智能体：${subagentId}`);
       }
       const task = String(params.task ?? "").trim();
       if (!task) throw new Error("子智能体任务不能为空。");
 
-      const subagentRunId = input.createRunId?.() ?? `subrun_${randomBytes(4).toString("hex")}`;
-      const configuredChildModelId = definition.modelMode === "custom"
-        ? definition.modelId?.trim()
-        : undefined;
+      const subagentRunId =
+        input.createRunId?.() ?? `subrun_${randomBytes(4).toString("hex")}`;
+      const configuredChildModelId =
+        definition.modelMode === "custom"
+          ? definition.modelId?.trim()
+          : undefined;
       const configuredChildRuntime = configuredChildModelId
         ? input.subagentRuntimeConfigs?.[configuredChildModelId]
         : undefined;
       const childRuntime = configuredChildRuntime
         ? runtimeFromConfig(configuredChildRuntime)
-        : input.parentRuntime ?? runtimeFromModel(input.model);
+        : (input.parentRuntime ?? runtimeFromModel(input.model));
       const progressBase: SubagentProgressBase = {
         parentToolCallId,
         subagentRunId,
@@ -371,7 +385,10 @@ export function buildSpawnSubagentTool(
         name: definition.name,
         runtime: childRuntime
       };
-      const emitProgress = (progress: SubagentToolProgress, text: string): void => {
+      const emitProgress = (
+        progress: SubagentToolProgress,
+        text: string
+      ): void => {
         onUpdate?.(textResult(text, { kind: "subagent-progress", progress }));
       };
 
@@ -411,20 +428,24 @@ export function buildSpawnSubagentTool(
           childStreamFn = customRuntime.streamFn;
           childThinkingLevel = customRuntime.thinkingLevel;
         }
-        const childTools = input.buildChildTools().filter(
-          (tool) => tool.name !== "load_skill" && tool.name !== "spawn_subagent"
-        );
+        const childTools = input
+          .buildChildTools()
+          .filter(
+            (tool) =>
+              tool.name !== "load_skill" && tool.name !== "spawn_subagent"
+          );
         const childStreamWithoutProviderRetries: StreamFn = (
           requestModel,
           context,
           options
-        ) => childStreamFn(requestModel, context, {
-          ...options,
-          // The visible turn coordinator owns the complete retry budget. Keep
-          // provider SDK retries disabled for inherited and custom child models
-          // as well, otherwise one child attempt can fan out into 2+ requests.
-          maxRetries: 0
-        });
+        ) =>
+          childStreamFn(requestModel, context, {
+            ...options,
+            // The visible turn coordinator owns the complete retry budget. Keep
+            // provider SDK retries disabled for inherited and custom child models
+            // as well, otherwise one child attempt can fan out into 2+ requests.
+            maxRetries: 0
+          });
         child = new Agent({
           initialState: {
             systemPrompt: buildSubagentSystemPrompt(
@@ -468,7 +489,10 @@ export function buildSpawnSubagentTool(
       let terminalError: string | undefined;
       let terminalAborted = false;
       const handleChildEvent = (event: AgentEvent): void => {
-        if (event.type === "message_update" && isAssistantMessage(event.message)) {
+        if (
+          event.type === "message_update" &&
+          isAssistantMessage(event.message)
+        ) {
           if (event.assistantMessageEvent.type === "thinking_delta") {
             emitProgress(
               {
@@ -504,7 +528,10 @@ export function buildSpawnSubagentTool(
               type: "activity",
               activity: {
                 type: "tool_requested",
-                toolCallId: namespaceChildToolCallId(subagentRunId, event.toolCallId),
+                toolCallId: namespaceChildToolCallId(
+                  subagentRunId,
+                  event.toolCallId
+                ),
                 toolName: event.toolName,
                 args: event.args
               }
@@ -515,7 +542,10 @@ export function buildSpawnSubagentTool(
         }
 
         if (event.type === "tool_execution_end") {
-          const toolCallId = namespaceChildToolCallId(subagentRunId, event.toolCallId);
+          const toolCallId = namespaceChildToolCallId(
+            subagentRunId,
+            event.toolCallId
+          );
           emitProgress(
             {
               ...progressBase,
@@ -547,10 +577,17 @@ export function buildSpawnSubagentTool(
         if (event.type === "message_end" && isAssistantMessage(event.message)) {
           if (event.message.stopReason === "aborted") {
             terminalAborted = true;
-            terminalError = event.message.errorMessage || "子智能体运行已中止。";
-          } else if (event.message.stopReason === "error" || event.message.errorMessage) {
-            terminalError = event.message.errorMessage || "子智能体模型返回错误终态。";
-          } else if (!event.message.content.some((item) => item.type === "toolCall")) {
+            terminalError =
+              event.message.errorMessage || "子智能体运行已中止。";
+          } else if (
+            event.message.stopReason === "error" ||
+            event.message.errorMessage
+          ) {
+            terminalError =
+              event.message.errorMessage || "子智能体模型返回错误终态。";
+          } else if (
+            !event.message.content.some((item) => item.type === "toolCall")
+          ) {
             terminalMessage = event.message;
           }
         }
@@ -618,8 +655,7 @@ export function buildSpawnSubagentTool(
                 {
                   ...progressBase,
                   type: "usage_observed",
-                  observationId:
-                    `${attempt.turnId}:attempt:${attempt.attempt}`,
+                  observationId: `${attempt.turnId}:attempt:${attempt.attempt}`,
                   observedAt: new Date().toISOString(),
                   messageId: `${subagentRunId}_assistant`,
                   turnId: attempt.turnId,
@@ -656,9 +692,10 @@ export function buildSpawnSubagentTool(
             }
           })
             .then((): PromptOutcome => ({ kind: "completed" }))
-            .catch(
-              (error: unknown): PromptOutcome => ({ kind: "failed", error })
-            );
+            .catch((error: unknown): PromptOutcome => ({
+              kind: "failed",
+              error
+            }));
           const outcome = await Promise.race([prompt, early]);
           if (outcome.kind === "failed") throw outcome.error;
           if (outcome.kind === "aborted") {
@@ -696,25 +733,34 @@ export function buildSpawnSubagentTool(
       }
 
       if (status === "completed") {
-        summary = readAssistantText(terminalMessage!).trim().slice(0, SUBAGENT_SUMMARY_MAX_LENGTH);
+        summary = readAssistantText(terminalMessage!)
+          .trim()
+          .slice(0, SUBAGENT_SUMMARY_MAX_LENGTH);
         if (!summary) {
           status = "error";
           errorMessage = "子智能体没有生成可交接的摘要。";
         }
       }
       if (status !== "completed") {
-        summary = `${status === "aborted" ? "子智能体执行已中止" : "子智能体执行失败"}：${errorMessage}`
-          .slice(0, SUBAGENT_SUMMARY_MAX_LENGTH);
+        summary =
+          `${status === "aborted" ? "子智能体执行已中止" : "子智能体执行失败"}：${errorMessage}`.slice(
+            0,
+            SUBAGENT_SUMMARY_MAX_LENGTH
+          );
       }
 
-      const usage = terminalMessage ? normalizeUsage(terminalMessage.usage) : undefined;
+      const usage = terminalMessage
+        ? normalizeUsage(terminalMessage.usage)
+        : undefined;
       emitProgress(
         {
           ...progressBase,
           type: "completed",
           status,
           summary,
-          ...(errorMessage ? { errorMessage: errorMessage.slice(0, 4_000) } : {}),
+          ...(errorMessage
+            ? { errorMessage: errorMessage.slice(0, 4_000) }
+            : {}),
           ...(usage ? { usage } : {})
         },
         status === "completed"

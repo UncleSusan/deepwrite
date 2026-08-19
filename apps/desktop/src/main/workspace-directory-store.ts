@@ -1,4 +1,11 @@
-import { lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  writeFile
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
   WorkspaceDirectorySettingsSchema,
@@ -18,13 +25,19 @@ export class WorkspaceDirectoryStore {
   private writeChain: Promise<void> = Promise.resolve();
 
   constructor(userDataPath: string) {
-    this.settingsPath = join(userDataPath, "config", "workspace-directory.json");
+    this.settingsPath = join(
+      userDataPath,
+      "config",
+      "workspace-directory.json"
+    );
   }
 
   async list(): Promise<WorkspaceDirectorySettings> {
     await this.writeChain;
     try {
-      const raw = JSON.parse(await readFile(this.settingsPath, "utf8")) as unknown;
+      const raw = JSON.parse(
+        await readFile(this.settingsPath, "utf8")
+      ) as unknown;
       if (
         !raw ||
         typeof raw !== "object" ||
@@ -46,7 +59,9 @@ export class WorkspaceDirectoryStore {
     }
   }
 
-  async initializeDefault(defaultPath: string): Promise<WorkspaceDirectorySettings> {
+  async initializeDefault(
+    defaultPath: string
+  ): Promise<WorkspaceDirectorySettings> {
     const current = await this.list();
     if (current.path) {
       return current;

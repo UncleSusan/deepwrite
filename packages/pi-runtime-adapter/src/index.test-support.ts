@@ -88,7 +88,12 @@ function normalChatContext(): ChatAssistantRuntimeContext {
     longBooks: [],
     models: [],
     defaultModelId: "",
-    usage: { today: dashboard, "7d": dashboard, "30d": dashboard, all: dashboard }
+    usage: {
+      today: dashboard,
+      "7d": dashboard,
+      "30d": dashboard,
+      all: dashboard
+    }
   };
 }
 
@@ -117,32 +122,32 @@ function screenplayWorkspace(): ScriptWorkspaceSnapshot {
       id: "draft",
       title: "正文",
       revision: createShortWorkspaceContentRevision("episode-1"),
-      sections: [{
-        id: "episode-1",
-        title: "第一集",
-        wordCountRequirement: "15 分钟",
-        body: {
-          documentId: "draft:episode-1:body",
+      sections: [
+        {
+          id: "episode-1",
           title: "第一集",
-          content: "",
-          revision: emptyRevision
-        },
-        characterState: {
-          documentId: "draft:episode-1:state",
-          title: "第一集 · 人物状态",
-          content: "",
-          revision: emptyRevision
+          wordCountRequirement: "15 分钟",
+          body: {
+            documentId: "draft:episode-1:body",
+            title: "第一集",
+            content: "",
+            revision: emptyRevision
+          },
+          characterState: {
+            documentId: "draft:episode-1:state",
+            title: "第一集 · 人物状态",
+            content: "",
+            revision: emptyRevision
+          }
         }
-      }]
+      ]
     },
-    stages: SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map(
-      (stageId) => ({
-        stageId,
-        title: stageId,
-        content: "",
-        revision: emptyRevision
-      })
-    )
+    stages: SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
+      stageId,
+      title: stageId,
+      content: "",
+      revision: emptyRevision
+    }))
   };
 }
 
@@ -179,11 +184,13 @@ async function captureDisabledThinkingPayload(
     model,
     {
       systemPrompt: "Reply with OK only.",
-      messages: [{
-        role: "user",
-        content: "OK",
-        timestamp: Date.now()
-      }]
+      messages: [
+        {
+          role: "user",
+          content: "OK",
+          timestamp: Date.now()
+        }
+      ]
     },
     {
       onPayload: (payload) => {
@@ -211,11 +218,13 @@ async function captureThinkingPayload(
     model,
     {
       systemPrompt: "Reply with OK only.",
-      messages: [{
-        role: "user",
-        content: "OK",
-        timestamp: Date.now()
-      }]
+      messages: [
+        {
+          role: "user",
+          content: "OK",
+          timestamp: Date.now()
+        }
+      ]
     },
     {
       reasoning: configuredLevel === "max" ? "xhigh" : configuredLevel,
@@ -278,7 +287,9 @@ async function captureToolPayload(
     model,
     {
       systemPrompt: "Use the available tool.",
-      messages: [{ role: "user", content: "Edit the text.", timestamp: Date.now() }],
+      messages: [
+        { role: "user", content: "Edit the text.", timestamp: Date.now() }
+      ],
       tools: [tool]
     },
     {
@@ -330,7 +341,7 @@ export {
   toToolStreamRuntimeEvent,
   toUsageObservedRuntimeEvent,
   toolCallMessage,
-  toolWithParameters,
+  toolWithParameters
 };
 export type {
   AgentProviderRuntimeConfig,
@@ -341,5 +352,5 @@ export type {
   LongWorkspaceRuntimeContext,
   ScriptWorkspaceAgentProfile,
   ScriptWorkspaceSnapshot,
-  ShortWorkspaceSnapshot,
+  ShortWorkspaceSnapshot
 };

@@ -8,10 +8,7 @@ import { basename } from "node:path";
 
 export const LEGACY_LIBRARY_FILE_SELECTION_PROPERTIES: NonNullable<
   OpenDialogOptions["properties"]
-> = [
-  "openFile",
-  "multiSelections"
-];
+> = ["openFile", "multiSelections"];
 
 export async function importLegacyLibraryArchives(
   archivePaths: string[],

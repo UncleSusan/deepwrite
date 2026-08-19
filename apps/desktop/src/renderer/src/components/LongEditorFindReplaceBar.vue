@@ -32,9 +32,7 @@ const findInput = defineModel<HTMLInputElement | null>("findInput", {
     ref="findPanelElement"
     class="long-editor-find-panel"
     role="dialog"
-    :aria-label="
-      findPanelMode === 'replace' ? '查找和替换' : '查找文字'
-    "
+    :aria-label="findPanelMode === 'replace' ? '查找和替换' : '查找文字'"
     @keydown.esc.stop="emit('close')"
   >
     <div class="long-editor-find-row">
@@ -53,9 +51,7 @@ const findInput = defineModel<HTMLInputElement | null>("findInput", {
             );
             emit('findInput');
           "
-          @keydown.enter.prevent="
-            emit('findMatch', $event.shiftKey ? -1 : 1)
-          "
+          @keydown.enter.prevent="emit('findMatch', $event.shiftKey ? -1 : 1)"
         />
         <span class="long-editor-find-count" aria-live="polite">
           {{ searchResultLabel }}
@@ -89,10 +85,7 @@ const findInput = defineModel<HTMLInputElement | null>("findInput", {
         <AppIcon name="close" :size="14" />
       </button>
     </div>
-    <div
-      v-if="findPanelMode === 'replace'"
-      class="long-editor-replace-row"
-    >
+    <div v-if="findPanelMode === 'replace'" class="long-editor-replace-row">
       <label class="long-editor-find-field">
         <AppIcon name="replace" :size="14" />
         <input

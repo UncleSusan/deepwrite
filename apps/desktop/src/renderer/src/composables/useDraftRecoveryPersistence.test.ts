@@ -104,9 +104,7 @@ describe("draft recovery persistence", () => {
     expect(persistence.phase.value).toBe("failed");
     expect(drafts.value.live?.title).toBe("保留的窗口草稿");
     expect(saveDraftRecovery).not.toHaveBeenCalled();
-    expect(warning).toHaveBeenCalledWith(
-      "草稿恢复文件读取失败：读取暂时失败"
-    );
+    expect(warning).toHaveBeenCalledWith("草稿恢复文件读取失败：读取暂时失败");
   });
 
   it("serializes a newer revision behind an in-flight save", async () => {

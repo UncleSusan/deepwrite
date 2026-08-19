@@ -68,10 +68,7 @@ export function createLongStructureLease(
   }
   function acquireMutation(
     expectedBookId: string | null | undefined
-  ):
-    | { lease: LongStructureMutationLease }
-    | { message: string }
-    | null {
+  ): { lease: LongStructureMutationLease } | { message: string } | null {
     if (disposed) return null;
     const target = captureLongStructureMutationTarget(expectedBookId);
     if (!target) return { message: "当前长篇结构尚未就绪。" };
@@ -169,16 +166,32 @@ export function createLongStructureLease(
     await disposePromise;
   }
   return {
-    uiMessage, resources: options.resources, session, state,
-    resolveLongWorkspaceApi: options.api, isDisposed,
-    captureLongStructureMutationTarget, mutationIsCurrent,
-    assertCurrentLongStructureMutationTarget, acquireMutation,
-    runWithMutationLease, withMutation, runTracked,
-    beginDialogRequest, dialogRequestIsCurrent, cancelDialogRequests,
-    closeLongStructureDialog, closeLongCharacterCreate,
-    closeLongWorldbuildingItemCreate, closeLongPlotPointCreate,
-    closeLongChapterCardCreate, closeLongDraftSectionDelete,
-    closeLongTreeItemDelete, closeLongVolumeCreate, drain, dispose
+    uiMessage,
+    resources: options.resources,
+    session,
+    state,
+    resolveLongWorkspaceApi: options.api,
+    isDisposed,
+    captureLongStructureMutationTarget,
+    mutationIsCurrent,
+    assertCurrentLongStructureMutationTarget,
+    acquireMutation,
+    runWithMutationLease,
+    withMutation,
+    runTracked,
+    beginDialogRequest,
+    dialogRequestIsCurrent,
+    cancelDialogRequests,
+    closeLongStructureDialog,
+    closeLongCharacterCreate,
+    closeLongWorldbuildingItemCreate,
+    closeLongPlotPointCreate,
+    closeLongChapterCardCreate,
+    closeLongDraftSectionDelete,
+    closeLongTreeItemDelete,
+    closeLongVolumeCreate,
+    drain,
+    dispose
   };
 }
 

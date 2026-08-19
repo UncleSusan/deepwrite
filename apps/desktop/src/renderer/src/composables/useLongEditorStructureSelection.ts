@@ -1,9 +1,7 @@
-import { computed, nextTick, ref, watch, type ComputedRef, type Ref } from "vue";
 import {
   createEmptyLongMarkdownFileReference,
   longStoryPlotBodyFileId,
   longStoryPlotFilePath,
-  type LongArcId,
   type LongChapterCardId,
   type LongCharacterId,
   type LongWorkspaceIndexSnapshot,
@@ -11,17 +9,23 @@ import {
   type LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
 import { createId } from "@deepwrite/shared";
-import { uiMessage } from "../ui-feedback";
-import type { LongApprovalEditorFocus } from "../utils/approvalNavigation";
 import {
-  orderLongChapterNavigationItems
-} from "../utils/orderLongChapterNavigationItems";
+  computed,
+  nextTick,
+  ref,
+  watch,
+  type ComputedRef,
+  type Ref
+} from "vue";
 import {
   type LongStructureMutationCompletion,
   type LongWorkspaceFileRole,
   type LongWorkspaceSelection,
   type LongWorkspaceSelectionFile
 } from "../types/longWorkspace";
+import { uiMessage } from "../ui-feedback";
+import type { LongApprovalEditorFocus } from "../utils/approvalNavigation";
+import { orderLongChapterNavigationItems } from "../utils/orderLongChapterNavigationItems";
 import type { LongDocumentState } from "./useLongEditorDocumentSession";
 
 export interface LongStructureTitleTarget {
@@ -61,7 +65,11 @@ export function useLongEditorStructureSelection(options: {
   };
   host: LongEditorStructureHost;
   emit: {
-    (event: "selectCharacter", characterId: LongCharacterId, done?: (accepted: boolean) => void): void;
+    (
+      event: "selectCharacter",
+      characterId: LongCharacterId,
+      done?: (accepted: boolean) => void
+    ): void;
     (event: "createCharacter"): void;
     (event: "createWorldbuildingItem"): void;
     (event: "createPlotPoint"): void;
@@ -233,15 +241,15 @@ export function useLongEditorStructureSelection(options: {
         const item = selection.worldbuildingItems?.find(
           ({ id }) => id === selectedItemId
         );
-        return explicitlySelectedFile ?? (item
-          ? selection.files.find(({ file }) => file.id === item.file.id)
-          : selection.files.find(({ role }) => role === "overview") ??
-              selection.files[0]);
+        return (
+          explicitlySelectedFile ??
+          (item
+            ? selection.files.find(({ file }) => file.id === item.file.id)
+            : (selection.files.find(({ role }) => role === "overview") ??
+              selection.files[0]))
+        );
       }
-      if (
-        selection.plotPointId &&
-        activePlotPointTab.value === "storyline"
-      ) {
+      if (selection.plotPointId && activePlotPointTab.value === "storyline") {
         if (explicitlySelectedFile) return explicitlySelectedFile;
         const item = selection.storyPlots?.find(
           ({ id }) => id === activeStoryPlotId.value
@@ -311,9 +319,7 @@ export function useLongEditorStructureSelection(options: {
       return;
     }
     const selection = props.selection;
-    const item = selection?.worldbuildingItems?.find(
-      ({ id }) => id === itemId
-    );
+    const item = selection?.worldbuildingItems?.find(({ id }) => id === itemId);
     const selectedFile = item
       ? selection?.files.find(({ file }) => file.id === item.file.id)
       : undefined;
@@ -334,7 +340,10 @@ export function useLongEditorStructureSelection(options: {
       return;
     }
     pendingWorldbuildingItemId.value = null;
-    const state = options.documentStates.value[options.stateKey(selectedFile.file.id, bookId)];
+    const state =
+      options.documentStates.value[
+        options.stateKey(selectedFile.file.id, bookId)
+      ];
     if (state?.loaded || Boolean(state?.content)) {
       activeWorldbuildingItemId.value = itemId;
     }
@@ -368,7 +377,10 @@ export function useLongEditorStructureSelection(options: {
       return;
     }
     pendingWorldbuildingOverview.value = false;
-    const state = options.documentStates.value[options.stateKey(selectedFile.file.id, bookId)];
+    const state =
+      options.documentStates.value[
+        options.stateKey(selectedFile.file.id, bookId)
+      ];
     if (state?.loaded || Boolean(state?.content)) {
       activeWorldbuildingItemId.value = null;
     }
@@ -395,7 +407,9 @@ export function useLongEditorStructureSelection(options: {
   }
 
   function selectBookLineVolume(volumeId: string): void {
-    if (!options.orderedBookLineVolumes.value.some(({ id }) => id === volumeId)) {
+    if (
+      !options.orderedBookLineVolumes.value.some(({ id }) => id === volumeId)
+    ) {
       return;
     }
     activeBookLineVolumeId.value = volumeId;
@@ -497,7 +511,10 @@ export function useLongEditorStructureSelection(options: {
       return;
     }
     pendingStoryPlotId.value = null;
-    const state = options.documentStates.value[options.stateKey(selectedFile.file.id, bookId)];
+    const state =
+      options.documentStates.value[
+        options.stateKey(selectedFile.file.id, bookId)
+      ];
     if (state?.loaded || Boolean(state?.content)) {
       activeStoryPlotId.value = storyPlotId;
     }
@@ -531,7 +548,11 @@ export function useLongEditorStructureSelection(options: {
   function addStoryPlot(): void {
     const plotPointId = options.currentPlotPoint.value?.id;
     const plots = options.currentStoryPlots.value;
-    if (!plotPointId || options.host.currentReadOnly.value || plots.length >= 200_000) {
+    if (
+      !plotPointId ||
+      options.host.currentReadOnly.value ||
+      plots.length >= 200_000
+    ) {
       if (plots.length >= 200_000) {
         uiMessage.warning("故事情节数量已达上限。");
       }
@@ -569,10 +590,7 @@ export function useLongEditorStructureSelection(options: {
     );
   }
 
-  function updateStoryPlotTitle(
-    storyPlotId: string,
-    event: Event
-  ): void {
+  function updateStoryPlotTitle(storyPlotId: string, event: Event): void {
     const title = (event.target as HTMLInputElement).value.trim();
     const current = options.currentStoryPlots.value.find(
       ({ id }) => id === storyPlotId
@@ -720,12 +738,14 @@ export function useLongEditorStructureSelection(options: {
       return;
     }
     emitWorldbuildingItemMutation(
-      [{
-        type: "worldbuildingItem.update",
-        categoryId,
-        id: itemId,
-        patch: { title }
-      }],
+      [
+        {
+          type: "worldbuildingItem.update",
+          categoryId,
+          id: itemId,
+          patch: { title }
+        }
+      ],
       () => {
         input.value = title;
       }
@@ -782,7 +802,8 @@ export function useLongEditorStructureSelection(options: {
   }
 
   function resetStructureTitleDraft(): void {
-    structureTitleDraft.value = options.host.currentStructureTitleTarget.value?.title ?? "";
+    structureTitleDraft.value =
+      options.host.currentStructureTitleTarget.value?.title ?? "";
   }
 
   function saveStructureTitle(): void {
@@ -861,7 +882,10 @@ export function useLongEditorStructureSelection(options: {
     }
     pendingRole.value = null;
     pendingFileId.value = null;
-    const state = options.documentStates.value[options.stateKey(selectedFile.file.id, bookId)];
+    const state =
+      options.documentStates.value[
+        options.stateKey(selectedFile.file.id, bookId)
+      ];
     if (state?.loaded || Boolean(state?.content)) {
       activeRole.value = selectedFile.role;
       activeFileId.value = fileId;
@@ -895,7 +919,9 @@ export function useLongEditorStructureSelection(options: {
     return currentSelectionFile.value?.file.id === fileId;
   }
 
-  async function focusTarget(target: LongApprovalEditorFocus): Promise<boolean> {
+  async function focusTarget(
+    target: LongApprovalEditorFocus
+  ): Promise<boolean> {
     if (target.bookLineVolumeId) {
       selectBookLineVolume(target.bookLineVolumeId);
     }
@@ -956,7 +982,8 @@ export function useLongEditorStructureSelection(options: {
       activeRole.value = preferredRole;
       activeFileId.value =
         props.selection?.preferredFileId ??
-        props.selection?.files.find(({ role }) => role === preferredRole)?.file.id ??
+        props.selection?.files.find(({ role }) => role === preferredRole)?.file
+          .id ??
         props.selection?.files[0]?.file.id ??
         null;
     },
@@ -1021,10 +1048,7 @@ export function useLongEditorStructureSelection(options: {
   );
 
   watch(
-    [
-      () => props.bookId,
-      () => props.selection?.key
-    ],
+    [() => props.bookId, () => props.selection?.key],
     () => {
       worldbuildingSelectionRequest += 1;
       pendingWorldbuildingItemId.value = null;
@@ -1071,7 +1095,9 @@ export function useLongEditorStructureSelection(options: {
       [
         props.bookId,
         props.selection?.key,
-        options.currentWorldbuildingItems.value.map(({ id }) => id).join("\u0000")
+        options.currentWorldbuildingItems.value
+          .map(({ id }) => id)
+          .join("\u0000")
       ] as const,
     () => {
       const items = options.currentWorldbuildingItems.value;

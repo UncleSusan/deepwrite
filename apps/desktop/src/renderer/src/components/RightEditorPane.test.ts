@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import appSource from "../WorkspaceShell.vue?raw";
 import source from "./RightEditorPane.vue?raw";
 import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
@@ -14,17 +15,20 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain('aria-label="展开智能体栏"');
     expect(source).toContain("emit('toggleRight')");
     expect(writingWorkspaceSource).toContain(
-      ':right-pane="paneLayout === \'agent-editor\'"'
+      ":right-pane=\"paneLayout === 'agent-editor'\""
     );
     expect(writingWorkspaceSource).toContain(
-      '@toggle-right="emit(\'toggleRight\')"'
+      "@toggle-right=\"emit('toggleRight')\""
     );
   });
 
   it("shows automatic save status while preserving an immediate save action", () => {
-    expect(source).toContain('autoSaveEnabled ? "等待自动保存"');
-    expect(source).toContain('autoSaveEnabled ? "本机文稿 · 更改后自动保存"');
-    expect(source).toContain('autoSaveEnabled ? "立即保存" : "应用"');
+    expectSourceToContain(source, 'autoSaveEnabled ? "等待自动保存"');
+    expectSourceToContain(
+      source,
+      'autoSaveEnabled ? "本机文稿 · 更改后自动保存"'
+    );
+    expectSourceToContain(source, 'autoSaveEnabled ? "立即保存" : "应用"');
   });
 
   it("limits material and skill entries to 40,000 characters with a footer reminder", () => {
@@ -35,8 +39,12 @@ describe("RightEditorPane expert draft navigation", () => {
   });
 
   it("shows a live, non-blocking format reason after the binding badge for skill entries", () => {
-    expect(source).toContain('import { parseSkillFrontmatter } from "../utils/skillFrontmatter"');
-    expect(source).toContain('props.document.domain !== "skill" || !props.document.catalogEntryId');
+    expect(source).toContain(
+      'import { parseSkillFrontmatter } from "../utils/skillFrontmatter"'
+    );
+    expect(source).toContain(
+      'props.document.domain !== "skill" || !props.document.catalogEntryId'
+    );
     expect(source).toContain("parseSkillFrontmatter(content.value)");
 
     const bindingBadge = source.indexOf("仅浏览 · 未绑定");
@@ -46,12 +54,19 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain('v-if="skillFormatError"');
     expect(source).toContain(':title="skillFormatError"');
     expect(source).toContain(':aria-label="skillFormatError"');
-    expect(source).not.toContain("!dirty || contentExceedsLimit || skillFormatError");
+    expect(source).not.toContain(
+      "!dirty || contentExceedsLimit || skillFormatError"
+    );
   });
 
   it("keeps library overview titles fixed while routing overview content to persistent saves", () => {
-    expect(source).toContain('props.document.catalogLibraryField === "overview"');
-    expect(source).toContain("document.draftFileKind === 'character-state' || isLibraryOverview");
+    expect(source).toContain(
+      'props.document.catalogLibraryField === "overview"'
+    );
+    expectSourceToContain(
+      source,
+      "document.draftFileKind === 'character-state' || isLibraryOverview"
+    );
     expect(source).toContain("CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS");
     expect(persistenceSource).toContain(
       "async function saveCatalogLibraryOverview("
@@ -69,8 +84,12 @@ describe("RightEditorPane expert draft navigation", () => {
 
     expect(tabsStart).toBeGreaterThan(-1);
     expect(source).toContain(':aria-label="resolvedSectionTabsLabel"');
-    expect(source).toContain('props.sectionTabsLabel ?? `正文${draftUnitLabel.value}`');
-    expect(source).toContain('props.document.workspaceType === "script" ? "剧集" : "小节"');
+    expect(source).toContain(
+      "props.sectionTabsLabel ?? `正文${draftUnitLabel.value}`"
+    );
+    expect(source).toContain(
+      'props.document.workspaceType === "script" ? "剧集" : "小节"'
+    );
     expect(source).toContain("emit('selectSection', section.id)");
     expect(source).toContain('v-if="canCreateSection"');
     expect(source).toContain(':aria-label="resolvedCreateSectionLabel"');
@@ -83,31 +102,41 @@ describe("RightEditorPane expert draft navigation", () => {
 
   it("remembers the scroll position of every section instead of reusing the previous section position", () => {
     expect(source).toContain("editorScrollMemoryKey(props.document)");
-    expect(source).toContain("rememberCurrentDocumentScroll(previousScrollMemoryKey)");
-    expect(source).toContain('restoreDocumentScroll(nextScrollMemoryKey, "edit")');
+    expect(source).toContain(
+      "rememberCurrentDocumentScroll(previousScrollMemoryKey)"
+    );
+    expect(source).toContain(
+      'restoreDocumentScroll(nextScrollMemoryKey, "edit")'
+    );
     expect(source).toContain('@scroll="handleDocumentScroll"');
-    expect(source).toContain("scroller.scrollTop = recalledEditorScrollPosition(key, view)");
+    expect(source).toContain(
+      "scroller.scrollTop = recalledEditorScrollPosition(key, view)"
+    );
   });
 
   it("preserves the active text viewport when a manual save refreshes the document", () => {
     expect(source).toContain("pendingSaveViewport = captureEditorViewport()");
     expect(source).toContain("input.scrollTop = snapshot.scrollTop");
-    expect(source).toContain("activeScrollMemoryKey.value !== snapshot.documentKey");
+    expect(source).toContain(
+      "activeScrollMemoryKey.value !== snapshot.documentKey"
+    );
     expect(source).toContain("@mousedown.prevent");
   });
 
   it("routes the short-story tab add button through a named confirmation dialog", () => {
-    expect(structureSource).toContain("async function addExpertSectionFromEditor()");
+    expect(structureSource).toContain(
+      "async function addExpertSectionFromEditor()"
+    );
     expect(structureSource).toContain('directory.workspaceType !== "short"');
     expect(structureSource).toContain("await addExpertSection(draftNode)");
     expect(structureSource).toContain("function requestCreateExpertSection(");
-    expect(structureSource).toContain("async function confirmCreateExpertSection(");
+    expect(structureSource).toContain(
+      "async function confirmCreateExpertSection("
+    );
     expect(structureSource).toContain("suggestedDraftSectionTitle(");
     expect(structureSource).toContain("title,");
     expect(structureSource).toContain("await api.createDraftSection({");
-    expect(dialogCoordinatorSource).toContain(
-      'kind: "create-expert-section"'
-    );
+    expect(dialogCoordinatorSource).toContain('kind: "create-expert-section"');
     expect(dialogLayerSource).toContain("<CreateExpertSectionDialog");
     expect(appSource).toContain('@create-section="createEditorSection"');
     expect(resourceSource).toContain(
@@ -116,12 +145,20 @@ describe("RightEditorPane expert draft navigation", () => {
   });
 
   it("routes the short-story tab remove button through the existing sidebar deletion flow", () => {
-    expect(resourceSource).toContain("const editorShowsExpertSectionTabs = computed");
-    expect(resourceSource).toContain("const showEditorDeleteSection = computed");
+    expect(resourceSource).toContain(
+      "const editorShowsExpertSectionTabs = computed"
+    );
+    expect(resourceSource).toContain(
+      "const showEditorDeleteSection = computed"
+    );
     expect(resourceSource).toContain('return "删除当前小节"');
     expect(resourceSource).toContain("(directory?.sections.length ?? 0) > 1");
-    expect(structureSource).toContain("function removeExpertSectionFromEditor()");
-    expect(structureSource).toContain("requestRemoveExpertSection(sectionNode)");
+    expect(structureSource).toContain(
+      "function removeExpertSectionFromEditor()"
+    );
+    expect(structureSource).toContain(
+      "requestRemoveExpertSection(sectionNode)"
+    );
     expect(appSource).toContain(
       "showDeleteSection: showEditorDeleteSection.value"
     );
@@ -130,8 +167,12 @@ describe("RightEditorPane expert draft navigation", () => {
   });
 
   it("reuses section tabs for list-style short character items with add and remove controls", () => {
-    expect(resourceSource).toContain("const activeCharacterItemTabs = computed");
-    expect(resourceSource).toContain('book.characterStructure.format !== "list"');
+    expect(resourceSource).toContain(
+      "const activeCharacterItemTabs = computed"
+    );
+    expect(resourceSource).toContain(
+      'book.characterStructure.format !== "list"'
+    );
     expect(resourceSource).toContain('title: "概览"');
     expect(resourceSource).toContain('? "人物条目"');
     expect(resourceSource).toContain('? "新建人物条目"');
@@ -140,7 +181,9 @@ describe("RightEditorPane expert draft navigation", () => {
       "showDeleteSection: showEditorDeleteSection.value"
     );
     expect(structureSource).toContain("function addCharacterItemFromEditor()");
-    expect(structureSource).toContain("function deleteCharacterItemFromEditor()");
+    expect(structureSource).toContain(
+      "function deleteCharacterItemFromEditor()"
+    );
     expect(appSource).toContain('@delete-section="deleteEditorSection"');
   });
 
@@ -152,8 +195,10 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain("event.preventDefault()");
     expect(source).not.toContain('@mouseup="handleEditorMouseup"');
     expect(source).not.toContain('@keyup="handleEditorKeyup"');
-    expect(source).toContain("emit(\"insertSelection\", reference)");
-    expect(source).toContain("input.setSelectionRange(range.start, range.end, \"forward\")");
+    expect(source).toContain('emit("insertSelection", reference)');
+    expect(source).toContain(
+      'input.setSelectionRange(range.start, range.end, "forward")'
+    );
   });
 
   it("provides working text undo, redo, find, and replace controls", () => {
@@ -176,8 +221,12 @@ describe("RightEditorPane expert draft navigation", () => {
   });
 
   it("renders creation, skill, and material document previews through Markdown", () => {
-    expect(source).toContain('import MarkdownContent from "./MarkdownContent.vue"');
-    expect(source).toContain('<MarkdownContent v-if="content.trim()" :content="content" />');
+    expect(source).toContain(
+      'import MarkdownContent from "./MarkdownContent.vue"'
+    );
+    expect(source).toContain(
+      '<MarkdownContent v-if="content.trim()" :content="content" />'
+    );
     expect(source).not.toContain('v-for="(paragraph, index) in paragraphs"');
   });
 });

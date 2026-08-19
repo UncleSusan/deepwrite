@@ -422,10 +422,12 @@ export interface WorkspaceDialogLayerEmits {
   closeCreateLongPlotPoint: [];
   submitCreateLongPlotPoint: [input: { title: string; summary: string }];
   closeCreateLongChapterCard: [];
-  submitCreateLongChapterCard: [input: {
-    title: string;
-    primaryArcId: string | null;
-  }];
+  submitCreateLongChapterCard: [
+    input: {
+      title: string;
+      primaryArcId: string | null;
+    }
+  ];
   closeDeleteLongDraft: [];
   confirmDeleteLongDraft: [];
   closeDeleteLongTree: [];
@@ -433,10 +435,12 @@ export interface WorkspaceDialogLayerEmits {
   closeCreateLongVolume: [];
   submitCreateLongVolume: [input: { title: string; summary: string }];
   closeLongBindings: [];
-  submitLongBindings: [payload: {
-    linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
-    linkedSkillIdsByKind: LinkedSkillIdsByKind;
-  }];
+  submitLongBindings: [
+    payload: {
+      linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
+      linkedSkillIdsByKind: LinkedSkillIdsByKind;
+    }
+  ];
   closeLongRename: [];
   submitLongRename: [title: string];
   closeLongRemoval: [];
@@ -444,22 +448,28 @@ export interface WorkspaceDialogLayerEmits {
   closeLibraryProject: [];
   createLibrary: [payload: CreateLibraryInput];
   createLibraryEntry: [payload: CreateLibraryEntryDraft];
-  renameLibrary: [payload: {
-    domain: LibraryDomain;
-    libraryId: string;
-    title: string;
-  }];
-  renameLibraryEntry: [payload: {
-    domain: LibraryDomain;
-    libraryId: string;
-    entryId: string;
-    title: string;
-  }];
-  removeLibraryEntry: [payload: {
-    domain: LibraryDomain;
-    libraryId: string;
-    entryId: string;
-  }];
+  renameLibrary: [
+    payload: {
+      domain: LibraryDomain;
+      libraryId: string;
+      title: string;
+    }
+  ];
+  renameLibraryEntry: [
+    payload: {
+      domain: LibraryDomain;
+      libraryId: string;
+      entryId: string;
+      title: string;
+    }
+  ];
+  removeLibraryEntry: [
+    payload: {
+      domain: LibraryDomain;
+      libraryId: string;
+      entryId: string;
+    }
+  ];
   closeExternalSkillImport: [];
   chooseExternalSkillImport: [sourceKind: ExternalSkillSourceKind];
   closeLibraryEntryMove: [];

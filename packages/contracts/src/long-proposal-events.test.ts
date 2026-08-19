@@ -206,16 +206,18 @@ describe("long proposal event contracts", () => {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [],
-          documentWrites: [{
-            proposalId: "proposal_chapter_one",
-            fileId: longChapterBodyFileId("chapter_one"),
-            content: "正文",
-            mode: "replace" as const,
-            expectedRevision: revision,
-            nextRevision: "v1:6:12345678",
-            updatedAt: "2026-07-26T12:00:00.000Z",
-            reason: "完成第一章"
-          }]
+          documentWrites: [
+            {
+              proposalId: "proposal_chapter_one",
+              fileId: longChapterBodyFileId("chapter_one"),
+              content: "正文",
+              mode: "replace" as const,
+              expectedRevision: revision,
+              nextRevision: "v1:6:12345678",
+              updatedAt: "2026-07-26T12:00:00.000Z",
+              reason: "完成第一章"
+            }
+          ]
         },
         baseProjectRevision: 11,
         file: {
@@ -336,10 +338,7 @@ describe("long proposal event contracts", () => {
             characterName: "林岚",
             document: "core_profile" as const,
             fileId: longCharacterCoreProfileFileId("character_lan"),
-            filePath: longCharacterFilePath(
-              "character_lan",
-              "core-profile.md"
-            ),
+            filePath: longCharacterFilePath("character_lan", "core-profile.md"),
             title: "林岚 / 核心档案",
             operation: "write" as const,
             beforeText: "",
@@ -386,15 +385,15 @@ describe("long proposal event contracts", () => {
       { id: "event-long-ledger", context }
     );
 
-    expect(LongMutationProposalEventEnvelopeSchema.parse(mutation).payload)
-      .toMatchObject({
-        bookId: "longbook_proposal",
-        baseProjectRevision: 11
-      });
     expect(
-      LongWorldbuildingFileProposalEventEnvelopeSchema.parse(
-        worldbuildingFile
-      ).payload
+      LongMutationProposalEventEnvelopeSchema.parse(mutation).payload
+    ).toMatchObject({
+      bookId: "longbook_proposal",
+      baseProjectRevision: 11
+    });
+    expect(
+      LongWorldbuildingFileProposalEventEnvelopeSchema.parse(worldbuildingFile)
+        .payload
     ).toMatchObject({
       bookId: "longbook_proposal",
       files: [
@@ -406,8 +405,7 @@ describe("long proposal event contracts", () => {
       ]
     });
     expect(
-      LongCharacterFileProposalEventEnvelopeSchema.parse(characterFile)
-        .payload
+      LongCharacterFileProposalEventEnvelopeSchema.parse(characterFile).payload
     ).toMatchObject({
       agentId: "setting",
       files: [
@@ -418,16 +416,17 @@ describe("long proposal event contracts", () => {
         }
       ]
     });
-    expect(LongChapterWriteProposalEventEnvelopeSchema.parse(chapter).payload)
-      .toMatchObject({
-        file: {
-          chapterCardId: "chapter_one",
-          afterText: "正文"
-        },
-        batch: {
-          documentWrites: [{ content: "正文" }]
-        }
-      });
+    expect(
+      LongChapterWriteProposalEventEnvelopeSchema.parse(chapter).payload
+    ).toMatchObject({
+      file: {
+        chapterCardId: "chapter_one",
+        afterText: "正文"
+      },
+      batch: {
+        documentWrites: [{ content: "正文" }]
+      }
+    });
     expect(
       LongChapterDispatchProposalEventEnvelopeSchema.parse(dispatch).payload
     ).toMatchObject({
@@ -443,21 +442,22 @@ describe("long proposal event contracts", () => {
       workspaceRevision: 7,
       projectRevision: 11
     });
-    expect(LongLedgerCommitProposalEventEnvelopeSchema.parse(ledger).payload.input)
-      .toMatchObject({
-        chapterCardId: "chapter_one",
-        fileUpdates: []
-      });
-    expect([
-      mutation,
-      worldbuildingFile,
-      characterFile,
-      dispatch,
-      chapter,
-      ledger
-    ].map(
-      (event) => SystemEventEnvelopeSchema.parse(event).type
-    )).toEqual([
+    expect(
+      LongLedgerCommitProposalEventEnvelopeSchema.parse(ledger).payload.input
+    ).toMatchObject({
+      chapterCardId: "chapter_one",
+      fileUpdates: []
+    });
+    expect(
+      [
+        mutation,
+        worldbuildingFile,
+        characterFile,
+        dispatch,
+        chapter,
+        ledger
+      ].map((event) => SystemEventEnvelopeSchema.parse(event).type)
+    ).toEqual([
       "long.mutation_proposal",
       "long.worldbuilding_file_proposal",
       "long.character_file_proposal",
@@ -477,16 +477,18 @@ describe("long proposal event contracts", () => {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [],
-          documentWrites: [{
-            proposalId: "proposal_chapter_mismatch",
-            fileId: longChapterBodyFileId("chapter_one"),
-            content: "不匹配的正文",
-            mode: "replace" as const,
-            expectedRevision: revision,
-            nextRevision: revision,
-            updatedAt: "2026-07-26T12:00:00.000Z",
-            reason: "错误正文"
-          }]
+          documentWrites: [
+            {
+              proposalId: "proposal_chapter_mismatch",
+              fileId: longChapterBodyFileId("chapter_one"),
+              content: "不匹配的正文",
+              mode: "replace" as const,
+              expectedRevision: revision,
+              nextRevision: revision,
+              updatedAt: "2026-07-26T12:00:00.000Z",
+              reason: "错误正文"
+            }
+          ]
         },
         baseProjectRevision: 11,
         file: {

@@ -1,9 +1,7 @@
-import { mkdir, rename, stat, unlink } from "node:fs/promises";
-import { join } from "node:path";
 import {
   BookSchema,
-  CatalogIndexBookSchema,
   CATALOG_DRAFT_DIRECTORY_ID,
+  CatalogIndexBookSchema,
   type Book,
   type BookProjectDocumentManifest,
   type BookProjectDraftSectionManifest,
@@ -13,8 +11,11 @@ import {
   type SkillLibrary,
   type SkillLibraryGroup
 } from "@deepwrite/contracts";
-import { projectTransactionFileIdentity } from "../project-transaction";
 import { randomHex8 } from "@deepwrite/shared";
+import { mkdir, rename, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { projectTransactionFileIdentity } from "../project-transaction";
+import { domainForKind, kindForDomain } from "./assertions";
 import {
   migrateLegacyBookProject,
   migrateV2BookProject,
@@ -36,7 +37,6 @@ import {
   uniqueRelativeMarkdownPath,
   uniqueRelativeMarkdownPathWithSuffix
 } from "./paths-io";
-import { domainForKind, kindForDomain } from "./assertions";
 import {
   FolderCatalogProjectManifestSchema,
   FolderCurrentBookProjectManifestSchema,
@@ -78,7 +78,9 @@ export function manifestContentItems(
   return [];
 }
 
-export function assertManifestUniqueness(manifest: FolderCatalogProjectManifest): void {
+export function assertManifestUniqueness(
+  manifest: FolderCatalogProjectManifest
+): void {
   const items = manifestContentItems(manifest);
   if (new Set(items.map(({ id }) => id)).size !== items.length) {
     throw new Error("Project manifest content ids must be unique.");
@@ -114,14 +116,19 @@ export async function assertManifestContentFilesUnique(
   }
 }
 
-export function emptyContentMetadata(updatedAt: string): CatalogContentMetadata {
+export function emptyContentMetadata(
+  updatedAt: string
+): CatalogContentMetadata {
   return {
     contentBytes: 0,
     contentStamp: `manifest-v1:0:${updatedAt}`
   };
 }
 
-export function manifestContentStamp(content: string, updatedAt: string): string {
+export function manifestContentStamp(
+  content: string,
+  updatedAt: string
+): string {
   return `manifest-v1:${Buffer.byteLength(content, "utf8")}:${updatedAt}`;
 }
 
@@ -202,10 +209,8 @@ export function indexBookFromManifest(
     documents: book.documents.map((document) => ({
       ...document,
       content: "",
-      ...(
-        contentMetadataById.get(document.id) ??
-        emptyContentMetadata(document.updatedAt)
-      )
+      ...(contentMetadataById.get(document.id) ??
+        emptyContentMetadata(document.updatedAt))
     })),
     draft: {
       ...book.draft,
@@ -214,19 +219,15 @@ export function indexBookFromManifest(
         body: {
           ...section.body,
           content: "",
-          ...(
-            contentMetadataById.get(section.body.id) ??
+          ...(contentMetadataById.get(section.body.id) ??
             (sectionIndex === 0 ? legacyDraftMetadata : undefined) ??
-            emptyContentMetadata(section.body.updatedAt)
-          )
+            emptyContentMetadata(section.body.updatedAt))
         },
         characterState: {
           ...section.characterState,
           content: "",
-          ...(
-            contentMetadataById.get(section.characterState.id) ??
-            emptyContentMetadata(section.characterState.updatedAt)
-          )
+          ...(contentMetadataById.get(section.characterState.id) ??
+            emptyContentMetadata(section.characterState.updatedAt))
         }
       }))
     }
@@ -265,10 +266,8 @@ export function indexResourceFromManifest(
           stageId: entry.stageId,
           title: entry.title,
           body: "",
-          ...(
-            contentMetadataById.get(entry.id) ??
-            emptyContentMetadata(entry.updatedAt)
-          ),
+          ...(contentMetadataById.get(entry.id) ??
+            emptyContentMetadata(entry.updatedAt)),
           createdAt: entry.createdAt,
           updatedAt: entry.updatedAt
         })),
@@ -297,10 +296,8 @@ export function indexResourceFromManifest(
           stageId: entry.stageId,
           title: entry.title,
           body: "",
-          ...(
-            contentMetadataById.get(entry.id) ??
-            emptyContentMetadata(entry.updatedAt)
-          ),
+          ...(contentMetadataById.get(entry.id) ??
+            emptyContentMetadata(entry.updatedAt)),
           createdAt: entry.createdAt,
           updatedAt: entry.updatedAt,
           ...(entry.marketplaceSource
@@ -377,12 +374,12 @@ export async function hydrateResource(
         plotStages: manifest.plotStages,
         projectRevision: manifest.revision,
         documents: manifest.documents.map((document, index) => ({
-            id: document.id,
-            title: document.title,
-            content: contents[index]!,
-            createdAt: document.createdAt,
-            updatedAt: document.updatedAt
-          })),
+          id: document.id,
+          title: document.title,
+          content: contents[index]!,
+          createdAt: document.createdAt,
+          updatedAt: document.updatedAt
+        })),
         draft: {
           id: manifest.draft.id,
           title: manifest.draft.title,
@@ -431,13 +428,13 @@ export async function hydrateResource(
         overview: manifest.overview,
         projectRevision: manifest.revision,
         entries: manifest.entries.map((entry, index) => ({
-            id: entry.id,
-            stageId: entry.stageId,
-            title: entry.title,
-            body: contents[index]!,
-            createdAt: entry.createdAt,
-            updatedAt: entry.updatedAt
-          })),
+          id: entry.id,
+          stageId: entry.stageId,
+          title: entry.title,
+          body: contents[index]!,
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt
+        })),
         createdAt: manifest.createdAt,
         updatedAt: manifest.updatedAt
       };
@@ -461,25 +458,25 @@ export async function hydrateResource(
           : {}),
         projectRevision: manifest.revision,
         entries: manifest.entries.map((entry, index) => ({
-            id: entry.id,
-            stageId: entry.stageId,
-            title: entry.title,
-            body: contents[index]!,
-            createdAt: entry.createdAt,
-            updatedAt: entry.updatedAt,
-            ...(entry.marketplaceSource
-              ? { marketplaceSource: entry.marketplaceSource }
-              : {}),
-            ...(entry.sourceCommonSkillId === undefined
-              ? {}
-              : { sourceCommonSkillId: entry.sourceCommonSkillId }),
-            ...(entry.sourceSkillId === undefined
-              ? {}
-              : { sourceSkillId: entry.sourceSkillId }),
-            ...(entry.sourceSkillEntryId === undefined
-              ? {}
-              : { sourceSkillEntryId: entry.sourceSkillEntryId })
-          })),
+          id: entry.id,
+          stageId: entry.stageId,
+          title: entry.title,
+          body: contents[index]!,
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt,
+          ...(entry.marketplaceSource
+            ? { marketplaceSource: entry.marketplaceSource }
+            : {}),
+          ...(entry.sourceCommonSkillId === undefined
+            ? {}
+            : { sourceCommonSkillId: entry.sourceCommonSkillId }),
+          ...(entry.sourceSkillId === undefined
+            ? {}
+            : { sourceSkillId: entry.sourceSkillId }),
+          ...(entry.sourceSkillEntryId === undefined
+            ? {}
+            : { sourceSkillEntryId: entry.sourceSkillEntryId })
+        })),
         createdAt: manifest.createdAt,
         updatedAt: manifest.updatedAt
       };
@@ -563,10 +560,7 @@ export function findManifestDocument(
     const document = manifest.documents.find(({ id }) => id === documentId);
     if (document) return document;
     if (manifest.schemaVersion === 1) return undefined;
-    const draftDocument = findDraftDocumentManifest(
-      manifest.draft,
-      documentId
-    );
+    const draftDocument = findDraftDocumentManifest(manifest.draft, documentId);
     if (!draftDocument) return undefined;
     const section = manifest.draft.sections[draftDocument.sectionIndex]!;
     return draftDocument.kind === "body"
@@ -652,7 +646,11 @@ export async function writeResourceContents(
       const used = new Set<string>();
       const documents: BookProjectDocumentManifest[] = [];
       for (const document of book.documents) {
-        assertTextByteLength(document.content, maxMarkdownBytes, "Markdown content");
+        assertTextByteLength(
+          document.content,
+          maxMarkdownBytes,
+          "Markdown content"
+        );
         const path = await uniqueRelativeMarkdownPath(
           projectDirectory,
           "stages",
@@ -862,200 +860,214 @@ export async function writeResourceContents(
 
 export async function writeNewResourceProject(
   store: FolderCatalogStoreContext,
-    domain: FolderCatalogProjectDomain,
-    parentDirectory: string,
-    resource: FolderCatalogResource
-  ): Promise<string> {
-    await mkdir(parentDirectory, { recursive: true, mode: 0o700 });
-    const secureParent = await secureDirectory(parentDirectory, "project parent");
-    const finalDirectory = await availableProjectDirectory(
-      secureParent,
-      resource.title
+  domain: FolderCatalogProjectDomain,
+  parentDirectory: string,
+  resource: FolderCatalogResource
+): Promise<string> {
+  await mkdir(parentDirectory, { recursive: true, mode: 0o700 });
+  const secureParent = await secureDirectory(parentDirectory, "project parent");
+  const finalDirectory = await availableProjectDirectory(
+    secureParent,
+    resource.title
+  );
+  const stagingDirectory = join(
+    secureParent,
+    `.deepwrite-project-${process.pid}-${randomHex8()}.tmp`
+  );
+  await mkdir(stagingDirectory, { mode: 0o700 });
+  let promoted = false;
+  try {
+    const manifest = await writeResourceContents(
+      stagingDirectory,
+      domain,
+      resource,
+      store.maxMarkdownBytes
     );
-    const stagingDirectory = join(
-      secureParent,
-      `.deepwrite-project-${process.pid}-${randomHex8()}.tmp`
+    await atomicWriteJson(
+      join(stagingDirectory, MANIFEST_FILE),
+      manifest,
+      store.maxManifestBytes
     );
-    await mkdir(stagingDirectory, { mode: 0o700 });
-    let promoted = false;
-    try {
-      const manifest = await writeResourceContents(
-        stagingDirectory,
-        domain,
-        resource,
-        store.maxMarkdownBytes
-      );
-      await atomicWriteJson(
-        join(stagingDirectory, MANIFEST_FILE),
-        manifest,
-        store.maxManifestBytes
-      );
-      await rename(stagingDirectory, finalDirectory);
-      promoted = true;
-      return await secureProjectRoot(finalDirectory);
-    } catch (error: unknown) {
-      await removeEmptyOrPartialProject(
-        promoted ? finalDirectory : stagingDirectory
-      );
-      throw error;
-    }
+    await rename(stagingDirectory, finalDirectory);
+    promoted = true;
+    return await secureProjectRoot(finalDirectory);
+  } catch (error: unknown) {
+    await removeEmptyOrPartialProject(
+      promoted ? finalDirectory : stagingDirectory
+    );
+    throw error;
   }
+}
 
-  /**
-   * Reads only deepwrite.json. In particular, this path must never perform a
-   * legacy migration because that migration reads the legacy draft Markdown.
-   */
+/**
+ * Reads only deepwrite.json. In particular, this path must never perform a
+ * legacy migration because that migration reads the legacy draft Markdown.
+ */
 export async function readManifestWithoutContent(
   store: FolderCatalogStoreContext,
-    rawProjectDirectory: string,
-    expectedKind?: FolderCatalogProjectManifest["kind"],
-    expectedResourceId?: string
-  ): Promise<{
-    projectDirectory: string;
-    manifest: FolderCatalogProjectManifest;
-  }> {
-    const projectDirectory = await secureProjectRoot(rawProjectDirectory);
-    const manifestPath = await secureExistingProjectPath(
-      projectDirectory,
-      MANIFEST_FILE,
-      false
+  rawProjectDirectory: string,
+  expectedKind?: FolderCatalogProjectManifest["kind"],
+  expectedResourceId?: string
+): Promise<{
+  projectDirectory: string;
+  manifest: FolderCatalogProjectManifest;
+}> {
+  const projectDirectory = await secureProjectRoot(rawProjectDirectory);
+  const manifestPath = await secureExistingProjectPath(
+    projectDirectory,
+    MANIFEST_FILE,
+    false
+  );
+  const text = await readRequiredUtf8File(
+    manifestPath,
+    store.maxManifestBytes,
+    "project manifest"
+  );
+  const manifest = FolderCatalogProjectManifestSchema.parse(
+    parseJson(text, manifestPath)
+  );
+  assertManifestUniqueness(manifest);
+  if (expectedKind && manifest.kind !== expectedKind) {
+    throw new Error(
+      `项目类型不匹配：需要 ${expectedKind}，实际为 ${manifest.kind}。`
     );
-    const text = await readRequiredUtf8File(
-      manifestPath,
-      store.maxManifestBytes,
-      "project manifest"
-    );
-    const manifest = FolderCatalogProjectManifestSchema.parse(
-      parseJson(text, manifestPath)
-    );
-    assertManifestUniqueness(manifest);
-    if (expectedKind && manifest.kind !== expectedKind) {
-      throw new Error(
-        `项目类型不匹配：需要 ${expectedKind}，实际为 ${manifest.kind}。`
-      );
-    }
-    if (expectedResourceId !== undefined && manifest.id !== expectedResourceId) {
-      throw new Error("项目标识与注册信息不一致。");
-    }
-    return { projectDirectory, manifest };
   }
+  if (expectedResourceId !== undefined && manifest.id !== expectedResourceId) {
+    throw new Error("项目标识与注册信息不一致。");
+  }
+  return { projectDirectory, manifest };
+}
 
-export async function readManifest<Kind extends FolderCatalogProjectManifest["kind"]>(
+export async function readManifest<
+  Kind extends FolderCatalogProjectManifest["kind"]
+>(
   store: FolderCatalogStoreContext,
-    projectDirectory: string,
-    expectedKind?: Kind,
-    expectedResourceId?: string
-  ): Promise<Extract<FolderCatalogProjectManifest, { kind: Kind }>> {
-    const root = await secureProjectRoot(projectDirectory);
-    const manifestPath = await secureExistingProjectPath(root, MANIFEST_FILE, false);
-    const text = await readRequiredUtf8File(
-      manifestPath,
-      store.maxManifestBytes,
-      "project manifest"
+  projectDirectory: string,
+  expectedKind?: Kind,
+  expectedResourceId?: string
+): Promise<Extract<FolderCatalogProjectManifest, { kind: Kind }>> {
+  const root = await secureProjectRoot(projectDirectory);
+  const manifestPath = await secureExistingProjectPath(
+    root,
+    MANIFEST_FILE,
+    false
+  );
+  const text = await readRequiredUtf8File(
+    manifestPath,
+    store.maxManifestBytes,
+    "project manifest"
+  );
+  let manifest = FolderCatalogProjectManifestSchema.parse(
+    parseJson(text, manifestPath)
+  );
+  assertManifestUniqueness(manifest);
+  await assertManifestContentFilesUnique(root, manifest);
+  if (expectedKind && manifest.kind !== expectedKind) {
+    throw new Error(
+      `项目类型不匹配：需要 ${expectedKind}，实际为 ${manifest.kind}。`
     );
-    let manifest = FolderCatalogProjectManifestSchema.parse(
-      parseJson(text, manifestPath)
+  }
+  if (expectedResourceId !== undefined && manifest.id !== expectedResourceId) {
+    throw new Error("项目标识与注册信息不一致。");
+  }
+  if (manifest.kind === "deepwrite.book" && manifest.schemaVersion === 1) {
+    manifest = await migrateLegacyBookProject(
+      root,
+      manifest,
+      text,
+      store.maxMarkdownBytes,
+      store.maxManifestBytes
     );
     assertManifestUniqueness(manifest);
     await assertManifestContentFilesUnique(root, manifest);
-    if (expectedKind && manifest.kind !== expectedKind) {
-      throw new Error(
-        `项目类型不匹配：需要 ${expectedKind}，实际为 ${manifest.kind}。`
-      );
-    }
-    if (expectedResourceId !== undefined && manifest.id !== expectedResourceId) {
-      throw new Error("项目标识与注册信息不一致。");
-    }
-    if (manifest.kind === "deepwrite.book" && manifest.schemaVersion === 1) {
-      manifest = await migrateLegacyBookProject(
-        root,
-        manifest,
-        text,
-        store.maxMarkdownBytes,
-        store.maxManifestBytes
-      );
-      assertManifestUniqueness(manifest);
-      await assertManifestContentFilesUnique(root, manifest);
-    }
-    else if (manifest.kind === "deepwrite.book" && manifest.schemaVersion === 2) {
-      manifest = await migrateV2BookProject(
-        root,
-        manifest,
-        text,
-        store.maxManifestBytes
-      );
-      assertManifestUniqueness(manifest);
-      await assertManifestContentFilesUnique(root, manifest);
-    }
-    else if (manifest.kind === "deepwrite.book" && manifest.schemaVersion === 3) {
-      manifest = await migrateV3BookProject(
-        root,
-        manifest,
-        text,
-        store.maxManifestBytes
-      );
-      assertManifestUniqueness(manifest);
-      await assertManifestContentFilesUnique(root, manifest);
-    }
-    if (expectedKind && manifest.kind !== expectedKind) {
-      throw new Error(
-        `项目类型不匹配：需要 ${expectedKind}，实际为 ${manifest.kind}。`
-      );
-    }
-    if (expectedResourceId !== undefined && manifest.id !== expectedResourceId) {
-      throw new Error("项目标识与注册信息不一致。");
-    }
-    return manifest as Extract<FolderCatalogProjectManifest, { kind: Kind }>;
+  } else if (
+    manifest.kind === "deepwrite.book" &&
+    manifest.schemaVersion === 2
+  ) {
+    manifest = await migrateV2BookProject(
+      root,
+      manifest,
+      text,
+      store.maxManifestBytes
+    );
+    assertManifestUniqueness(manifest);
+    await assertManifestContentFilesUnique(root, manifest);
+  } else if (
+    manifest.kind === "deepwrite.book" &&
+    manifest.schemaVersion === 3
+  ) {
+    manifest = await migrateV3BookProject(
+      root,
+      manifest,
+      text,
+      store.maxManifestBytes
+    );
+    assertManifestUniqueness(manifest);
+    await assertManifestContentFilesUnique(root, manifest);
   }
+  if (expectedKind && manifest.kind !== expectedKind) {
+    throw new Error(
+      `项目类型不匹配：需要 ${expectedKind}，实际为 ${manifest.kind}。`
+    );
+  }
+  if (expectedResourceId !== undefined && manifest.id !== expectedResourceId) {
+    throw new Error("项目标识与注册信息不一致。");
+  }
+  return manifest as Extract<FolderCatalogProjectManifest, { kind: Kind }>;
+}
 
 export async function readCurrentBookManifest(
   store: FolderCatalogStoreContext,
-    projectDirectory: string,
-    expectedResourceId?: string
-  ): Promise<FolderCurrentBookProjectManifest> {
-    const manifest = await readManifest(store,
-      projectDirectory,
-      "deepwrite.book",
-      expectedResourceId
-    );
-    if (manifest.schemaVersion !== 4) {
-      throw new Error("书籍项目未完成人物结构迁移。");
-    }
-    return manifest;
+  projectDirectory: string,
+  expectedResourceId?: string
+): Promise<FolderCurrentBookProjectManifest> {
+  const manifest = await readManifest(
+    store,
+    projectDirectory,
+    "deepwrite.book",
+    expectedResourceId
+  );
+  if (manifest.schemaVersion !== 4) {
+    throw new Error("书籍项目未完成人物结构迁移。");
   }
+  return manifest;
+}
 
 export async function readProject(
   store: FolderCatalogStoreContext,
-    rawDirectory: string,
-    expectedDomain?: FolderCatalogProjectDomain,
-    expectedResourceId?: string
-  ): Promise<OpenFolderCatalogProjectResult> {
-    const projectDirectory = await secureProjectRoot(rawDirectory);
-    const manifest = await readManifest(store,
-      projectDirectory,
-      undefined,
-      expectedResourceId
+  rawDirectory: string,
+  expectedDomain?: FolderCatalogProjectDomain,
+  expectedResourceId?: string
+): Promise<OpenFolderCatalogProjectResult> {
+  const projectDirectory = await secureProjectRoot(rawDirectory);
+  const manifest = await readManifest(
+    store,
+    projectDirectory,
+    undefined,
+    expectedResourceId
+  );
+  const domain = domainForKind(manifest.kind);
+  if (expectedDomain && domain !== expectedDomain) {
+    throw new Error(
+      `项目类型不匹配：需要 ${expectedDomain}，实际为 ${domain}。`
     );
-    const domain = domainForKind(manifest.kind);
-    if (expectedDomain && domain !== expectedDomain) {
-      throw new Error(`项目类型不匹配：需要 ${expectedDomain}，实际为 ${domain}。`);
-    }
-    const manifestBytes = Buffer.byteLength(JSON.stringify(manifest), "utf8");
-    if (manifestBytes >= store.maxProjectContentBytes) {
-      throw new Error(
-        `项目 manifest 超过 ${store.maxProjectContentBytes} 字节项目预算。`
-      );
-    }
-    const resource = await hydrateResource(
-      projectDirectory,
-      manifest,
-      store.maxMarkdownBytes,
-      store.maxProjectContentBytes - manifestBytes
-    );
-    return {
-      domain,
-      projectDirectory,
-      revision: manifest.revision,
-      resource
-    };
   }
+  const manifestBytes = Buffer.byteLength(JSON.stringify(manifest), "utf8");
+  if (manifestBytes >= store.maxProjectContentBytes) {
+    throw new Error(
+      `项目 manifest 超过 ${store.maxProjectContentBytes} 字节项目预算。`
+    );
+  }
+  const resource = await hydrateResource(
+    projectDirectory,
+    manifest,
+    store.maxMarkdownBytes,
+    store.maxProjectContentBytes - manifestBytes
+  );
+  return {
+    domain,
+    projectDirectory,
+    revision: manifest.revision,
+    resource
+  };
+}

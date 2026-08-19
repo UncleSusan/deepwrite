@@ -34,9 +34,7 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() =>
-  document.removeEventListener("keydown", handleKeydown)
-);
+onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
@@ -75,9 +73,7 @@ onBeforeUnmount(() =>
         </div>
 
         <footer>
-          <button type="button" :disabled="pending" @click="close">
-            取消
-          </button>
+          <button type="button" :disabled="pending" @click="close">取消</button>
           <button
             class="danger-button"
             type="button"

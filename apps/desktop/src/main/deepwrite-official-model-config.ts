@@ -12,15 +12,15 @@ import {
   deepWritePublicDataUrl
 } from "./deepwrite-public-data-config";
 
-export const DEEPWRITE_OFFICIAL_MODEL_CONFIG_URL =
-  deepWritePublicDataUrl("MODELDEEPWRITE.json");
+export const DEEPWRITE_OFFICIAL_MODEL_CONFIG_URL = deepWritePublicDataUrl(
+  "MODELDEEPWRITE.json"
+);
 export const DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID = "deepwrite-official-token";
 
 const OFFICIAL_PROVIDER = "deepseek-official";
 const OFFICIAL_API = "openai-completions" as const;
 export const DEEPWRITE_OFFICIAL_MODEL_BASE_URL = "https://www.moxing.pro";
-export const DEEPWRITE_OFFICIAL_BALANCE_URL =
-  `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}/v1/account/balance`;
+export const DEEPWRITE_OFFICIAL_BALANCE_URL = `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}/v1/account/balance`;
 const REMOTE_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_REMOTE_CONFIG_BYTES = 1_000_000;
 
@@ -73,7 +73,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseOfficialModel(raw: unknown): { model: ModelConfigInput; sort: number } {
+function parseOfficialModel(raw: unknown): {
+  model: ModelConfigInput;
+  sort: number;
+} {
   if (!isRecord(raw)) {
     throw new Error("远程官方模型列表中存在无效项目。");
   }
@@ -82,7 +85,8 @@ function parseOfficialModel(raw: unknown): { model: ModelConfigInput; sort: numb
   }
   if (
     "provider" in raw &&
-    (typeof raw.provider !== "string" || raw.provider.toLowerCase() !== OFFICIAL_PROVIDER)
+    (typeof raw.provider !== "string" ||
+      raw.provider.toLowerCase() !== OFFICIAL_PROVIDER)
   ) {
     throw new Error("远程官方模型 Provider 无效。");
   }
@@ -96,7 +100,10 @@ function parseOfficialModel(raw: unknown): { model: ModelConfigInput; sort: numb
     throw new Error("远程官方模型参数不符合 DeepWrite 模型格式。");
   }
   const model = parsed.data;
-  if (!model.id.startsWith("deepwrite-") || model.id.startsWith("deepwrite-free-")) {
+  if (
+    !model.id.startsWith("deepwrite-") ||
+    model.id.startsWith("deepwrite-free-")
+  ) {
     throw new Error("远程官方模型 ID 必须使用保留的 deepwrite- 前缀。");
   }
   if (model.api !== OFFICIAL_API) {
@@ -126,11 +133,14 @@ function parseOfficialModel(raw: unknown): { model: ModelConfigInput; sort: numb
       baseUrl: `${DEEPWRITE_OFFICIAL_MODEL_BASE_URL}${endpoint.pathname.replace(/\/+$/u, "")}`,
       managedBy: "deepwrite-official"
     },
-    sort: typeof raw.sort === "number" && Number.isFinite(raw.sort) ? raw.sort : 0
+    sort:
+      typeof raw.sort === "number" && Number.isFinite(raw.sort) ? raw.sort : 0
   };
 }
 
-function parseBalanceConfig(raw: unknown): DeepWriteOfficialBalanceConfig | undefined {
+function parseBalanceConfig(
+  raw: unknown
+): DeepWriteOfficialBalanceConfig | undefined {
   if (!isRecord(raw)) return undefined;
   const key = typeof raw.key === "string" ? raw.key.trim() : "";
   const rawUrl = typeof raw.url === "string" ? raw.url.trim() : "";
@@ -152,7 +162,9 @@ function parseBalanceConfig(raw: unknown): DeepWriteOfficialBalanceConfig | unde
     endpoint.password ||
     endpoint.search ||
     endpoint.hash ||
-    !["/v1/balance", "/v1/account/balance"].includes(endpoint.pathname.replace(/\/+$/u, ""))
+    !["/v1/balance", "/v1/account/balance"].includes(
+      endpoint.pathname.replace(/\/+$/u, "")
+    )
   ) {
     throw new Error("官方模型余额接口地址不在受信任范围内。");
   }
@@ -193,7 +205,7 @@ export function parseDeepWriteOfficialModelManifest(
   const availableIds = new Set(availableModels.map((model) => model.id));
   const defaultModelId = availableIds.has(requestedDefaultModelId)
     ? requestedDefaultModelId
-    : availableModels[0]?.id ?? "";
+    : (availableModels[0]?.id ?? "");
   const revision = createHash("sha256")
     .update(JSON.stringify(raw), "utf8")
     .digest("hex");
@@ -226,7 +238,8 @@ export class DeepWriteOfficialModelCatalogStore {
   private readonly now: () => number;
   private readonly configUrl: string;
   private readonly cacheLoad: Promise<void>;
-  private catalog: DeepWriteOfficialModelCatalog = structuredClone(EMPTY_CATALOG);
+  private catalog: DeepWriteOfficialModelCatalog =
+    structuredClone(EMPTY_CATALOG);
   private refreshPromise: Promise<void> | undefined;
 
   constructor(
@@ -287,13 +300,23 @@ export class DeepWriteOfficialModelCatalogStore {
     } catch {
       throw new Error("官方模型余额响应格式无效。");
     }
-    if (!response.ok || !isRecord(payload) || payload.success !== true || !isRecord(payload.data)) {
-      const message = isRecord(payload) && typeof payload.message === "string"
-        ? payload.message.trim()
-        : "";
-      throw new Error(message || `查询官方模型余额失败（HTTP ${response.status}）。`);
+    if (
+      !response.ok ||
+      !isRecord(payload) ||
+      payload.success !== true ||
+      !isRecord(payload.data)
+    ) {
+      const message =
+        isRecord(payload) && typeof payload.message === "string"
+          ? payload.message.trim()
+          : "";
+      throw new Error(
+        message || `查询官方模型余额失败（HTTP ${response.status}）。`
+      );
     }
-    const keys = Array.isArray(payload.data.keys) ? payload.data.keys : undefined;
+    const keys = Array.isArray(payload.data.keys)
+      ? payload.data.keys
+      : undefined;
     const currentKey = keys?.find(
       (item) =>
         isRecord(item) &&
@@ -301,11 +324,19 @@ export class DeepWriteOfficialModelCatalogStore {
         item.key_suffix === currentKeySuffix
     );
     const usedQuota = keys?.reduce(
-      (total, item) => total + (isRecord(item) && typeof item.used_quota === "number" ? item.used_quota : 0),
+      (total, item) =>
+        total +
+        (isRecord(item) && typeof item.used_quota === "number"
+          ? item.used_quota
+          : 0),
       0
     );
     const usedYuan = keys?.reduce(
-      (total, item) => total + (isRecord(item) && typeof item.used_yuan === "number" ? item.used_yuan : 0),
+      (total, item) =>
+        total +
+        (isRecord(item) && typeof item.used_yuan === "number"
+          ? item.used_yuan
+          : 0),
       0
     );
     return OfficialModelBalanceSchema.parse({
@@ -373,9 +404,10 @@ export class DeepWriteOfficialModelCatalogStore {
       const manifest = JSON.parse(text) as unknown;
       this.catalog = parseDeepWriteOfficialModelManifest(manifest);
       try {
-        const cachedManifest = isRecord(manifest) && isRecord(manifest.balance)
-          ? { ...manifest, balance: { url: manifest.balance.url } }
-          : manifest;
+        const cachedManifest =
+          isRecord(manifest) && isRecord(manifest.balance)
+            ? { ...manifest, balance: { url: manifest.balance.url } }
+            : manifest;
         await atomicWriteJson(this.cachePath, {
           version: 1,
           fetchedAt: new Date(this.now()).toISOString(),

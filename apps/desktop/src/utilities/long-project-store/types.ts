@@ -36,8 +36,7 @@ export const MAX_SEARCH_SCANNED_CHARACTERS = 1024 * 1024;
 export const UNICODE_PAGE_INDEX_STRIDE = 4 * 1024;
 export const DOCUMENT_READ_CACHE_MAX_COST = 128 * 1024 * 1024;
 export const DOCUMENT_READ_CACHE_MAX_ENTRIES = 8;
-export const MIGRATION_EVIDENCE_WORLD_ID_PREFIX =
-  "world_migration-evidence-";
+export const MIGRATION_EVIDENCE_WORLD_ID_PREFIX = "world_migration-evidence-";
 
 export const EMPTY_LINKED_MATERIALS = {
   character: [],
@@ -90,8 +89,7 @@ export type ImportWriteClawLongBookOptions = Omit<
 export interface ImportedWriteClawLongBook extends CreatedLongBook {
   sourceKind: WriteClawLongImportPlan["sourceKind"];
   legacySchemaVersion: number;
-  committedChapterPolicy:
-    WriteClawLongImportPlan["committedChapterPolicy"];
+  committedChapterPolicy: WriteClawLongImportPlan["committedChapterPolicy"];
   warnings: string[];
 }
 
@@ -202,16 +200,12 @@ export interface ApplyLongWorkspaceOperationsInput {
   expectedProjectRevision: number;
 }
 
-export interface ApplyLongWorkspaceOperationsResult
-  extends OpenedLongBook {
+export interface ApplyLongWorkspaceOperationsResult extends OpenedLongBook {
   operationResult: LongWorkspaceOperationResult;
   projectRevision: number;
 }
 
-export type StoreWriteLongChapterInput = Omit<
-  LongWriteChapterInput,
-  "bookId"
->;
+export type StoreWriteLongChapterInput = Omit<LongWriteChapterInput, "bookId">;
 export type LongStructuredCommitChapterInput = Extract<
   LongCommitChapterInput,
   { mode: "structured" }
@@ -239,10 +233,7 @@ export type StoreRollbackLastCommitInput = Omit<
 >;
 
 export type LongProjectConflictScope =
-  | "file"
-  | "workspace"
-  | "project"
-  | "transaction";
+  "file" | "workspace" | "project" | "transaction";
 
 export class LongProjectConflictError extends Error {
   constructor(
@@ -250,7 +241,9 @@ export class LongProjectConflictError extends Error {
     readonly expected: string | number,
     readonly actual: string | number
   ) {
-    super(`长篇项目 ${scope} revision 冲突：期望 ${expected}，实际 ${actual}。`);
+    super(
+      `长篇项目 ${scope} revision 冲突：期望 ${expected}，实际 ${actual}。`
+    );
     this.name = "LongProjectConflictError";
   }
 }

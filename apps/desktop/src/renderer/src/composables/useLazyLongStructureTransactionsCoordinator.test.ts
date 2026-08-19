@@ -172,28 +172,27 @@ function moduleFor(coordinator: LongStructureTransactionsCoordinator) {
 describe("useLazyLongStructureTransactionsCoordinator", () => {
   it("keeps the heavy coordinator and its runtime helpers behind a type-only dynamic boundary", () => {
     expect(facadeSource).toContain(
-      'import type {\n  LongStructureTransactionsCoordinator,'
+      "import type {\n  LongStructureTransactionsCoordinator,"
     );
     expect(facadeSource).not.toContain(
-      'import { useLongStructureTransactionsCoordinator }'
+      "import { useLongStructureTransactionsCoordinator }"
     );
     expect(facadeSource).toContain(
       'return import("./useLongStructureTransactionsCoordinator")'
     );
     expect(facadeSource).not.toContain('from "../types/longWorkspace"');
-    expect(facadeSource).not.toContain('from "../types/longStructureMutations"');
-    expect(heavySource).toContain(
-      'import("../types/longStructureMutations")'
+    expect(facadeSource).not.toContain(
+      'from "../types/longStructureMutations"'
     );
+    expect(heavySource).toContain('import("../types/longStructureMutations")');
     expect(syncSource).toContain(
       'await import("../../utils/longWorldbuildingSync")'
     );
   });
 
   it("projects worldbuilding book options synchronously without loading", () => {
-    const loadModule = vi.fn<
-      () => Promise<LongStructureTransactionsCoordinatorModule>
-    >();
+    const loadModule =
+      vi.fn<() => Promise<LongStructureTransactionsCoordinatorModule>>();
     const test = createContext();
     const lazy = useLazyLongStructureTransactionsCoordinator(
       test.context,
@@ -213,9 +212,8 @@ describe("useLazyLongStructureTransactionsCoordinator", () => {
   });
 
   it("closes every dialog target synchronously without loading and respects pending", () => {
-    const loadModule = vi.fn<
-      () => Promise<LongStructureTransactionsCoordinatorModule>
-    >();
+    const loadModule =
+      vi.fn<() => Promise<LongStructureTransactionsCoordinatorModule>>();
     const test = createContext();
     const lazy = useLazyLongStructureTransactionsCoordinator(
       test.context,
@@ -299,13 +297,17 @@ describe("useLazyLongStructureTransactionsCoordinator", () => {
       first.context,
       vi.fn(() => firstLoading.promise)
     );
-    const creating = firstLazy.createLongVolume({ title: "第一卷", summary: "" });
+    const creating = firstLazy.createLongVolume({
+      title: "第一卷",
+      summary: ""
+    });
     firstLazy.closeLongVolumeCreate();
     firstLoading.resolve(moduleFor(firstLoaded.coordinator));
     await creating;
     expect(firstLoaded.raw.createLongVolume).not.toHaveBeenCalled();
 
-    const secondLoading = deferred<LongStructureTransactionsCoordinatorModule>();
+    const secondLoading =
+      deferred<LongStructureTransactionsCoordinatorModule>();
     const secondLoaded = createLoadedCoordinator();
     const second = createContext();
     const secondLazy = useLazyLongStructureTransactionsCoordinator(
@@ -368,9 +370,8 @@ describe("useLazyLongStructureTransactionsCoordinator", () => {
   });
 
   it("disposes safely when unloaded, loading, or already loaded", async () => {
-    const unloadedLoader = vi.fn<
-      () => Promise<LongStructureTransactionsCoordinatorModule>
-    >();
+    const unloadedLoader =
+      vi.fn<() => Promise<LongStructureTransactionsCoordinatorModule>>();
     const unloaded = createContext();
     const unloadedLazy = useLazyLongStructureTransactionsCoordinator(
       unloaded.context,
@@ -379,7 +380,8 @@ describe("useLazyLongStructureTransactionsCoordinator", () => {
     await unloadedLazy.dispose();
     expect(unloadedLoader).not.toHaveBeenCalled();
 
-    const loadingModule = deferred<LongStructureTransactionsCoordinatorModule>();
+    const loadingModule =
+      deferred<LongStructureTransactionsCoordinatorModule>();
     const loadingLoaded = createLoadedCoordinator();
     const loadingContext = createContext();
     const loadingLazy = useLazyLongStructureTransactionsCoordinator(

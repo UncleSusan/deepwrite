@@ -1,46 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { Type } from "typebox";
-import type { Context } from "@earendil-works/pi-ai";
+import { StringEnum, Type, type Context } from "@earendil-works/pi-ai";
 import {
-  enforceProviderToolSchemaCompatibility,
-  normalizeProviderToolParameterSchema
+  assertProviderToolParameterSchema,
+  enforceProviderToolSchemaCompatibility
 } from "./provider-tool-schema-compat";
 
 describe("provider tool schema compatibility", () => {
   it("keeps object-root schemas unchanged", () => {
     const schema = Type.Object({ query: Type.String() });
-    expect(normalizeProviderToolParameterSchema("search", schema)).toBe(
-      schema
-    );
+    expect(assertProviderToolParameterSchema("search", schema)).toBe(schema);
   });
 
-  it("publishes TypeBox string literal unions as provider-friendly enums", () => {
+  it("accepts provider-friendly string enums without rewriting them", () => {
     const schema = Type.Object({
       kind: Type.Optional(
-        Type.Union([
-          Type.Literal("book_line"),
-          Type.Literal("chapter"),
-          Type.Literal("placement")
-        ], {
+        StringEnum(["book_line", "chapter", "placement"] as const, {
           description: "章卡使用 chapter。"
         })
       )
     });
-    const normalized = normalizeProviderToolParameterSchema(
-      "list_plot_design",
+    expect(assertProviderToolParameterSchema("list_plot_design", schema)).toBe(
       schema
-    ) as {
-      properties: { kind: Record<string, unknown> };
-    };
-
-    expect(normalized.properties.kind).toEqual({
+    );
+    expect(schema.properties.kind).toEqual({
       type: "string",
       enum: ["book_line", "chapter", "placement"],
       description: "章卡使用 chapter。"
     });
-    expect(normalized).not.toBe(schema);
-    expect(schema.properties.kind).toHaveProperty("anyOf");
-    expect(schema.properties.kind).not.toHaveProperty("enum");
   });
 
   it("leaves non-literal semantic unions unchanged", () => {
@@ -51,11 +37,11 @@ describe("provider tool schema compatibility", () => {
       ])
     });
 
-    expect(normalizeProviderToolParameterSchema("read", schema)).toBe(schema);
+    expect(assertProviderToolParameterSchema("read", schema)).toBe(schema);
   });
 
   it.each(["anyOf", "oneOf", "allOf"] as const)(
-    "adds an object root to an object-only %s schema without mutating it",
+    "rejects root-level %s instead of rewriting it",
     (keyword) => {
       const schema = {
         [keyword]: [
@@ -63,53 +49,58 @@ describe("provider tool schema compatibility", () => {
           { type: "object", properties: { right: { type: "string" } } }
         ]
       };
-      const normalized = normalizeProviderToolParameterSchema(
-        "object_union",
-        schema
-      );
-
-      expect(normalized).toEqual({ ...schema, type: "object" });
-      expect(normalized).not.toBe(schema);
-      expect(schema).not.toHaveProperty("type");
+      expect(() =>
+        assertProviderToolParameterSchema("object_union", {
+          ...schema,
+          type: "object"
+        })
+      ).toThrow(new RegExp(`object_union.*${keyword}`, "u"));
     }
   );
 
   it("rejects non-object and mixed-root schemas locally", () => {
     expect(() =>
-      normalizeProviderToolParameterSchema("text_tool", Type.String())
+      assertProviderToolParameterSchema("text_tool", Type.String())
     ).toThrow(/text_tool.*type: "object"/u);
     expect(() =>
-      normalizeProviderToolParameterSchema("mixed_tool", {
+      assertProviderToolParameterSchema("mixed_tool", {
         anyOf: [{ type: "object" }, { type: "string" }]
       })
     ).toThrow(/mixed_tool.*type: "object"/u);
-    expect(() => normalizeProviderToolParameterSchema("null_tool", null)).toThrow(
+    expect(() => assertProviderToolParameterSchema("null_tool", null)).toThrow(
       /null_tool.*JSON Schema/u
     );
   });
 
-  it("normalizes every tool at the provider boundary and preserves local schemas", () => {
-    const union = Type.Union([
-      Type.Object({ domain: Type.Literal("left") }),
-      Type.Object({ domain: Type.Literal("right") })
-    ]);
+  it("asserts every tool at the provider boundary without cloning it", () => {
+    const parameters = Type.Object({
+      domain: StringEnum(["left", "right"] as const)
+    });
     const context = {
       systemPrompt: "test",
       messages: [],
       tools: [
         {
-          name: "union_tool",
+          name: "portable_tool",
           description: "test",
-          parameters: union
+          parameters
         }
       ]
     } satisfies Context;
 
     const compatible = enforceProviderToolSchemaCompatibility(context);
-    expect(compatible.tools?.[0]?.parameters).toMatchObject({
-      type: "object",
-      anyOf: expect.any(Array)
-    });
-    expect(union).not.toHaveProperty("type");
+    expect(compatible).toBe(context);
+    expect(compatible.tools?.[0]?.parameters).toBe(parameters);
+  });
+
+  it("rejects const keywords anywhere in a PI-facing schema", () => {
+    expect(() =>
+      assertProviderToolParameterSchema("legacy_literal", {
+        type: "object",
+        properties: {
+          mode: { type: "string", const: "read" }
+        }
+      })
+    ).toThrow(/legacy_literal.*StringEnum/u);
   });
 });

@@ -37,7 +37,7 @@ describe("OfficialModelsPanel", () => {
     expect(source).toContain("价格");
     expect(source).toContain("formatDiscount");
     expect(source).toContain("元 / 百万 Token");
-    expect(source).toContain('row.model.status');
+    expect(source).toContain("row.model.status");
     expect(source).toContain('"不可用"');
     expect(source).toContain("启用");
     expect(source).toContain('role="switch"');

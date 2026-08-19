@@ -18,9 +18,7 @@ describe("LongCharacterNavigation", () => {
   });
 
   it("emits navigation and mutation intent without owning persistence", () => {
-    expect(source).toContain(
-      "selectCharacter: [characterId: LongCharacterId]"
-    );
+    expect(source).toContain("selectCharacter: [characterId: LongCharacterId]");
     expect(source).toContain("createCharacter: []");
     expect(source).toContain("deleteCharacter: []");
     expect(source).toContain("emit('selectCharacter', character.id)");
@@ -37,7 +35,9 @@ describe("LongCharacterNavigation", () => {
       "'is-loading': pendingCharacterId === character.id"
     );
     expect(source).toContain(':disabled="locked || !canDelete"');
-    expect(source).toContain(':aria-busy="pendingCharacterId === character.id"');
+    expect(source).toContain(
+      ':aria-busy="pendingCharacterId === character.id"'
+    );
   });
 
   it("is wired for both layouts while the parent retains orchestration", () => {
@@ -45,10 +45,16 @@ describe("LongCharacterNavigation", () => {
       'import LongCharacterNavigation from "./LongCharacterNavigation.vue"'
     );
     expect(editorSource.match(/<LongCharacterNavigation/gu)).toHaveLength(2);
-    expect(editorSource).toContain('@select-character="requestSelectCharacter"');
-    expect(editorSource).toContain('@create-character="emit(\'createCharacter\')"');
+    expect(editorSource).toContain(
+      '@select-character="requestSelectCharacter"'
+    );
+    expect(editorSource).toContain(
+      "@create-character=\"emit('createCharacter')\""
+    );
     expect(editorSource).toContain('@delete-character="openNavigationDelete"');
-    expect(editorSessionSource).toContain("async function loadWorkspaceDocument(");
+    expect(editorSessionSource).toContain(
+      "async function loadWorkspaceDocument("
+    );
     expect(editorDeleteSource).toContain("emitDeleteStructure");
   });
 
@@ -62,9 +68,7 @@ describe("LongCharacterNavigation", () => {
     );
     const projection = editorSource.slice(projectionStart, projectionEnd);
 
-    expect(projection).toContain(
-      "() => props.selection?.characterTabs ?? []"
-    );
+    expect(projection).toContain("() => props.selection?.characterTabs ?? []");
     expect(projection).not.toContain("documentStates");
     expect(projection).not.toContain("content");
     expect(projection).not.toContain("file.id");

@@ -42,7 +42,9 @@ function streamedStringFieldBounds(
   field: string,
   fromIndex: number
 ): { start: number; end: number; closed: boolean } | undefined {
-  const match = new RegExp(`"${field}"\\s*:\\s*"`).exec(source.slice(fromIndex));
+  const match = new RegExp(`"${field}"\\s*:\\s*"`).exec(
+    source.slice(fromIndex)
+  );
   if (!match) return undefined;
   const start = fromIndex + (match.index ?? 0) + match[0].length;
   let escaped = false;
@@ -75,7 +77,9 @@ function streamedStringFields(source: string, field: string): string[] {
   while (fromIndex < source.length) {
     const bounds = streamedStringFieldBounds(source, field, fromIndex);
     if (!bounds) break;
-    values.push(decodeJsonStringFragment(source.slice(bounds.start, bounds.end)));
+    values.push(
+      decodeJsonStringFragment(source.slice(bounds.start, bounds.end))
+    );
     if (!bounds.closed) break;
     fromIndex = bounds.end + 1;
   }

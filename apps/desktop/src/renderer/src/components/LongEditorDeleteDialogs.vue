@@ -22,9 +22,9 @@ defineEmits<{
 const worldbuildingDeleteDialog = defineModel<HTMLElement | undefined>(
   "worldbuildingDeleteDialog"
 );
-const worldbuildingDeleteCancelButton = defineModel<HTMLButtonElement | undefined>(
-  "worldbuildingDeleteCancelButton"
-);
+const worldbuildingDeleteCancelButton = defineModel<
+  HTMLButtonElement | undefined
+>("worldbuildingDeleteCancelButton");
 const navigationDeleteDialog = defineModel<HTMLElement | undefined>(
   "navigationDeleteDialog"
 );

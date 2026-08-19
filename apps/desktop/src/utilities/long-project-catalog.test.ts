@@ -139,10 +139,12 @@ function fakeOpened(
   return { projectDirectory, book, summary };
 }
 
-async function createFixture(options: {
-  removeDirectory?: (path: string) => Promise<void>;
-  lockHooks?: LongProjectCatalogOptions["lockHooks"];
-} = {}) {
+async function createFixture(
+  options: {
+    removeDirectory?: (path: string) => Promise<void>;
+    lockHooks?: LongProjectCatalogOptions["lockHooks"];
+  } = {}
+) {
   const root = await realpath(
     await mkdtemp(join(tmpdir(), "deepwrite-long-catalog-"))
   );
@@ -201,9 +203,7 @@ describe("LongProjectCatalog", () => {
     });
     expect(created.summary.id).toBe("longbook_catalog");
     const listed = await fixture.catalog.list();
-    expect(listed.books.map((book) => book.id)).toEqual([
-      "longbook_catalog"
-    ]);
+    expect(listed.books.map((book) => book.id)).toEqual(["longbook_catalog"]);
     expect(JSON.stringify(listed)).not.toContain("workspaceIndex");
   });
 
@@ -217,14 +217,8 @@ describe("LongProjectCatalog", () => {
     await mkdir(firstDirectory);
     await mkdir(secondDirectory);
     const openedByDirectory = new Map([
-      [
-        firstDirectory,
-        fakeOpened(firstDirectory, "longbook_catalog-first")
-      ],
-      [
-        secondDirectory,
-        fakeOpened(secondDirectory, "longbook_catalog-second")
-      ]
+      [firstDirectory, fakeOpened(firstDirectory, "longbook_catalog-first")],
+      [secondDirectory, fakeOpened(secondDirectory, "longbook_catalog-second")]
     ]);
     const projects: LongProjectAccess = {
       async createBook(parent) {
@@ -262,10 +256,7 @@ describe("LongProjectCatalog", () => {
 
     expect(
       (await firstCatalog.list()).books.map(({ id }) => id).sort()
-    ).toEqual([
-      "longbook_catalog-first",
-      "longbook_catalog-second"
-    ]);
+    ).toEqual(["longbook_catalog-first", "longbook_catalog-second"]);
   });
 
   it("does not steal an old lock while its owner pid is still alive", async () => {
@@ -424,10 +415,7 @@ describe("LongProjectCatalog", () => {
     const userDataPath = join(root, "user-data");
     await mkdir(projectDirectory);
     await mkdir(userDataPath);
-    const opened = fakeOpened(
-      projectDirectory,
-      "longbook_catalog-scale"
-    );
+    const opened = fakeOpened(projectDirectory, "longbook_catalog-scale");
     const chapterCards = Array.from({ length: 240 }, (_, index) => ({
       id: `chapter_catalog-scale-${index + 1}`,
       volumeId: "volume_default",
@@ -536,11 +524,14 @@ describe("LongProjectCatalog", () => {
   it("unregisters without deleting the project folder", async () => {
     const fixture = await createFixture();
     await fixture.catalog.openAtPath(fixture.projectDirectory);
-    expect(
-      await fixture.catalog.unregister("longbook_catalog")
-    ).toEqual({ bookId: "longbook_catalog", removed: true });
+    expect(await fixture.catalog.unregister("longbook_catalog")).toEqual({
+      bookId: "longbook_catalog",
+      removed: true
+    });
     expect((await fixture.catalog.list()).books).toHaveLength(0);
-    await expect(readFile(join(fixture.projectDirectory, "missing"))).rejects.toBeTruthy();
+    await expect(
+      readFile(join(fixture.projectDirectory, "missing"))
+    ).rejects.toBeTruthy();
   });
 
   it("reports an unavailable registered project without dropping it", async () => {
@@ -564,7 +555,9 @@ describe("LongProjectCatalog", () => {
       removeDirectory: async (path) => {
         cleanupAttempts += 1;
         if (cleanupAttempts === 1) {
-          const error = new Error("simulated cleanup failure") as NodeJS.ErrnoException;
+          const error = new Error(
+            "simulated cleanup failure"
+          ) as NodeJS.ErrnoException;
           error.code = "EACCES";
           throw error;
         }
@@ -573,9 +566,9 @@ describe("LongProjectCatalog", () => {
     });
     await fixture.catalog.openAtPath(fixture.projectDirectory);
 
-    await expect(
-      fixture.catalog.delete("longbook_catalog")
-    ).rejects.toThrow("simulated cleanup failure");
+    await expect(fixture.catalog.delete("longbook_catalog")).rejects.toThrow(
+      "simulated cleanup failure"
+    );
     expect(cleanupAttempts).toBe(1);
     await expect(lstat(fixture.projectDirectory)).rejects.toMatchObject({
       code: "ENOENT"
@@ -588,11 +581,12 @@ describe("LongProjectCatalog", () => {
     expect(recoveredList.books).toEqual([]);
     expect(recoveredList.diagnostics).toBeUndefined();
     expect(cleanupAttempts).toBe(2);
-    await expect(
-      lstat(join(fixture.root, stagedName!))
-    ).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(
-      fixture.catalog.delete("longbook_catalog")
-    ).resolves.toEqual({ bookId: "longbook_catalog", removed: false });
+    await expect(lstat(join(fixture.root, stagedName!))).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+    await expect(fixture.catalog.delete("longbook_catalog")).resolves.toEqual({
+      bookId: "longbook_catalog",
+      removed: false
+    });
   });
 });

@@ -41,20 +41,22 @@ const listCategory = LongWorldbuildingListCategorySchema.parse({
     revision: EMPTY_LONG_MARKDOWN_REVISION,
     updatedAt
   },
-  items: [{
-    id: "worlditem_faction_one",
-    title: "归墟会",
-    order: 1,
-    file: {
-      id: longWorldbuildingItemFileId("worlditem_faction_one"),
-      path: longWorldbuildingItemContentPath(
-        "world_factions",
-        "worlditem_faction_one"
-      ),
-      revision: EMPTY_LONG_MARKDOWN_REVISION,
-      updatedAt
+  items: [
+    {
+      id: "worlditem_faction_one",
+      title: "归墟会",
+      order: 1,
+      file: {
+        id: longWorldbuildingItemFileId("worlditem_faction_one"),
+        path: longWorldbuildingItemContentPath(
+          "world_factions",
+          "worlditem_faction_one"
+        ),
+        revision: EMPTY_LONG_MARKDOWN_REVISION,
+        updatedAt
+      }
     }
-  }]
+  ]
 });
 
 describe("long worldbuilding file indexing", () => {

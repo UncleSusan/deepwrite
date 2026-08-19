@@ -102,9 +102,7 @@ watch(
 );
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() =>
-  document.removeEventListener("keydown", handleKeydown)
-);
+onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
@@ -124,10 +122,7 @@ onBeforeUnmount(() =>
         tabindex="-1"
       >
         <header>
-          <span
-            class="long-removal-icon"
-            :class="{ 'is-danger': isDelete }"
-          >
+          <span class="long-removal-icon" :class="{ 'is-danger': isDelete }">
             <AppIcon :name="isDelete ? 'trash' : 'archive'" :size="20" />
           </span>
           <div>
@@ -136,10 +131,7 @@ onBeforeUnmount(() =>
           </div>
         </header>
 
-        <div
-          id="long-removal-dialog-description"
-          class="long-removal-content"
-        >
+        <div id="long-removal-dialog-description" class="long-removal-content">
           <strong :title="title">“{{ title }}”</strong>
           <template v-if="isDelete">
             <p>
@@ -272,16 +264,8 @@ onBeforeUnmount(() =>
 }
 
 .long-removal-warning.is-danger {
-  border-color: color-mix(
-    in srgb,
-    var(--danger) 30%,
-    var(--theme-line)
-  );
-  background: color-mix(
-    in srgb,
-    var(--danger-soft) 72%,
-    var(--surface-raised)
-  );
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--theme-line));
+  background: color-mix(in srgb, var(--danger-soft) 72%, var(--surface-raised));
   color: var(--danger-text) !important;
 }
 

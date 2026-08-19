@@ -26,7 +26,9 @@ describe("learning imitation contracts", () => {
       id,
       systemPrompt: `prompt:${id}`
     }));
-    expect(LearningImitationSettingsInputSchema.parse({ prompts }).prompts).toHaveLength(3);
+    expect(
+      LearningImitationSettingsInputSchema.parse({ prompts }).prompts
+    ).toHaveLength(3);
     expect(() =>
       LearningImitationSettingsInputSchema.parse({
         prompts: [prompts[0], prompts[0], prompts[2]]

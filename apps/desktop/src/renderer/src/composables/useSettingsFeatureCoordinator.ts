@@ -36,10 +36,7 @@ function errorMessage(error: unknown, fallback: string): string {
 export function useSettingsFeatureCoordinator(
   context: SettingsFeatureCoordinatorContext
 ) {
-  const {
-    settingsStore,
-    notifications: uiMessage
-  } = context;
+  const { settingsStore, notifications: uiMessage } = context;
   let modelUsageRequestSequence = 0;
   let lastPublishedModelSettings: ModelSettings | null = null;
 
@@ -121,10 +118,7 @@ export function useSettingsFeatureCoordinator(
       settingsStore.modelUsageQuery = query;
     } catch (error: unknown) {
       if (requestSequence !== modelUsageRequestSequence) return;
-      settingsStore.modelUsageError = errorMessage(
-        error,
-        "加载模型用量失败。"
-      );
+      settingsStore.modelUsageError = errorMessage(error, "加载模型用量失败。");
       uiMessage.warning(settingsStore.modelUsageError);
     } finally {
       if (requestSequence === modelUsageRequestSequence) {
@@ -244,7 +238,9 @@ export function useSettingsFeatureCoordinator(
     }
   }
 
-  async function saveModelSettings(settings: ModelSettingsInput): Promise<void> {
+  async function saveModelSettings(
+    settings: ModelSettingsInput
+  ): Promise<void> {
     const api = context.api();
     if (!api || settingsStore.modelSaving) return;
     settingsStore.modelSaving = true;
@@ -253,8 +249,7 @@ export function useSettingsFeatureCoordinator(
     try {
       const saved = await api.models.save(settings);
       applyLoadedModelSettings(saved);
-      settingsStore.modelTestMessage =
-        "模型配置已保存，并已同步到后续对话。";
+      settingsStore.modelTestMessage = "模型配置已保存，并已同步到后续对话。";
     } catch (error: unknown) {
       settingsStore.modelError = errorMessage(error, "保存模型配置失败。");
     } finally {
@@ -307,9 +302,7 @@ export function useSettingsFeatureCoordinator(
         ])
       );
     } catch (error: unknown) {
-      uiMessage.error(
-        errorMessage(error, "加载创作空间智能体设置失败。")
-      );
+      uiMessage.error(errorMessage(error, "加载创作空间智能体设置失败。"));
     }
   }
 
@@ -494,9 +487,7 @@ export function useSettingsFeatureCoordinator(
         `${domain === "skill" ? "技能库" : "素材库"}智能体已恢复默认设置。`
       );
     } catch (error: unknown) {
-      uiMessage.error(
-        errorMessage(error, "恢复资料库智能体默认设置失败。")
-      );
+      uiMessage.error(errorMessage(error, "恢复资料库智能体默认设置失败。"));
     } finally {
       settingsStore.libraryAgentSaving = false;
     }

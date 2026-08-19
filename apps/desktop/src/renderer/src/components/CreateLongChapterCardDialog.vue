@@ -124,9 +124,7 @@ watch(
 );
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() =>
-  document.removeEventListener("keydown", handleKeydown)
-);
+onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
@@ -147,7 +145,9 @@ onBeforeUnmount(() =>
         <form @submit.prevent="submit">
           <header>
             <div>
-              <span>{{ fromDraft ? "正文" : "剧情设计" }} · {{ volumeTitle }}</span>
+              <span
+                >{{ fromDraft ? "正文" : "剧情设计" }} · {{ volumeTitle }}</span
+              >
               <h2 id="create-long-chapter-card-title">新建{{ unitLabel }}</h2>
             </div>
             <button
@@ -177,10 +177,7 @@ onBeforeUnmount(() =>
               <span>关联剧情点（可选）</span>
               <PopupSelect
                 :model-value="primaryArcId"
-                :options="[
-                  { value: '', label: '不关联剧情点' },
-                  ...arcOptions
-                ]"
+                :options="[{ value: '', label: '不关联剧情点' }, ...arcOptions]"
                 :accessible-label="`选择${unitLabel}关联剧情点`"
                 :disabled="pending"
                 :menu-z-index="2500"
@@ -188,7 +185,8 @@ onBeforeUnmount(() =>
               />
             </label>
             <p v-if="fromDraft">
-              确认后会同步创建对应章卡。建议先在「剧情设计 → 章卡」中维护好章卡，再开始编写正文。
+              确认后会同步创建对应章卡。建议先在「剧情设计 →
+              章卡」中维护好章卡，再开始编写正文。
             </p>
             <p v-else>创建后可在章卡中继续补充完整内容。</p>
           </fieldset>
@@ -342,10 +340,6 @@ button:disabled {
     var(--neutral-solid) 86%,
     var(--text-primary)
   );
-  background: color-mix(
-    in srgb,
-    var(--neutral-solid) 86%,
-    var(--text-primary)
-  );
+  background: color-mix(in srgb, var(--neutral-solid) 86%, var(--text-primary));
 }
 </style>

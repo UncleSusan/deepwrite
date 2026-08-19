@@ -86,11 +86,7 @@ async function readFocusText(
     offset: 0,
     maxCharacters: maximum
   });
-  if (
-    page.bookId !== bookId ||
-    page.file.id !== fileId ||
-    page.offset !== 0
-  ) {
+  if (page.bookId !== bookId || page.file.id !== fileId || page.offset !== 0) {
     throw new Error("长篇世界观阶段读取结果与当前选择不一致。");
   }
   return snapshotText(page, maximum);
@@ -133,9 +129,7 @@ export async function buildLongWorldbuildingFocusSnapshot(input: {
     };
   }
 
-  const overviewFile = selection.files.find(
-    ({ role }) => role === "overview"
-  );
+  const overviewFile = selection.files.find(({ role }) => role === "overview");
   const activeItem = selection.worldbuildingItems?.find(
     ({ file }) => file.id === activeFileId
   );
@@ -144,12 +138,7 @@ export async function buildLongWorldbuildingFocusSnapshot(input: {
       LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS -
       LONG_WORLDBUILDING_OVERVIEW_FOCUS_MAX_CHARACTERS;
     const [stageText, overviewText] = await Promise.all([
-      readFocusText(
-        readDocument,
-        bookId,
-        activeItem.file.id,
-        stageMaximum
-      ),
+      readFocusText(readDocument, bookId, activeItem.file.id, stageMaximum),
       overviewFile
         ? readFocusText(
             readDocument,

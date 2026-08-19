@@ -67,8 +67,7 @@ export function createLibraryLane(ctx: ProposalLaneContext) {
     );
     while (acceptedLibraryMutationCounts.size > 2_000) {
       const oldest = acceptedLibraryMutationCounts.keys().next().value as
-        | string
-        | undefined;
+        string | undefined;
       if (!oldest) break;
       acceptedLibraryMutationCounts.delete(oldest);
     }
@@ -107,7 +106,9 @@ export function createLibraryLane(ctx: ProposalLaneContext) {
     const library = findCatalogLibrary(target.domain, target.libraryId);
     const readOnly =
       !library ||
-      (target.domain === "skill" && "isBuiltin" in library && library.isBuiltin);
+      (target.domain === "skill" &&
+        "isBuiltin" in library &&
+        library.isBuiltin);
     if (readOnly) {
       const message = "目标资料库已不可用或只读，无法创建条目。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
@@ -345,7 +346,9 @@ export function createLibraryLane(ctx: ProposalLaneContext) {
       deletions: diff.deletions,
       hunks: diff.hunks,
       ...(diff.truncated ? { truncated: true } : {}),
-      ...(noChanges ? { statusMessage: "资料库内容没有实际变化，无需保存。" } : {}),
+      ...(noChanges
+        ? { statusMessage: "资料库内容没有实际变化，无需保存。" }
+        : {}),
       createdAt: existing?.createdAt ?? event.timestamp,
       updatedAt: event.timestamp,
       libraryTarget: {

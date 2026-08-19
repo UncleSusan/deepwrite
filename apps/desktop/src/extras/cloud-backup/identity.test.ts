@@ -11,13 +11,19 @@ import {
 const roots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+  );
 });
 
 describe("cloud backup identity", () => {
   it("normalizes pasted keys and rejects invalid ones", () => {
-    expect(formatMachineKey("dw abcd-2345 efgh wxyz")).toBe("DW-ABCD-2345-EFGH-WXYZ");
-    expect(formatMachineKey("DWABCD2345EFGHWXYZ")).toBe("DW-ABCD-2345-EFGH-WXYZ");
+    expect(formatMachineKey("dw abcd-2345 efgh wxyz")).toBe(
+      "DW-ABCD-2345-EFGH-WXYZ"
+    );
+    expect(formatMachineKey("DWABCD2345EFGHWXYZ")).toBe(
+      "DW-ABCD-2345-EFGH-WXYZ"
+    );
     expect(() => formatMachineKey("hello")).toThrow("备份密钥格式无效");
   });
 
@@ -27,7 +33,9 @@ describe("cloud backup identity", () => {
     const store = new CloudBackupIdentityStore(root);
     const first = await store.getOrCreate(() => "2026-08-13T00:00:00.000Z");
     const second = await store.getOrCreate();
-    expect(first).toMatch(/^DW-[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}$/u);
+    expect(first).toMatch(
+      /^DW-[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}$/u
+    );
     expect(second).toBe(first);
     const saved = JSON.parse(
       await readFile(join(root, "config", "cloud-backup-identity.json"), "utf8")

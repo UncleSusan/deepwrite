@@ -10,7 +10,10 @@ import type {
 } from "@deepwrite/contracts";
 import type { CatalogWorkspaceProjection } from "../../data/catalogWorkspace";
 import type { AgentEditProposal } from "../../types/conversation";
-import type { EditorDraftState, WorkspaceDocument } from "../../types/workspace";
+import type {
+  EditorDraftState,
+  WorkspaceDocument
+} from "../../types/workspace";
 import type { AgentEditProposalCommitSnapshot } from "../../utils/agentEditProposalRevisionLane";
 import type { WorkspaceDocumentBaseline } from "../../utils/catalogSaveReconciliation";
 import type { DraftSectionCreationRevisionCursor } from "../../utils/draftSectionCreationRevision";
@@ -197,7 +200,10 @@ export interface ProposalLaneContext {
   activeCoordinatorInvocations: Set<Promise<void>>;
   activeAgentEditCommitTasks: Set<Promise<void>>;
   acceptedLibraryMutationCounts: Map<string, number>;
-  acceptedDraftSectionCreationRevisions: Map<string, DraftSectionCreationRevisionCursor>;
+  acceptedDraftSectionCreationRevisions: Map<
+    string,
+    DraftSectionCreationRevisionCursor
+  >;
   acceptedProvisionalExpertSectionIds: Map<string, Map<string, string>>;
   queueAgentEdit(
     conversation: Conv,
@@ -208,9 +214,17 @@ export interface ProposalLaneContext {
     scheduleImmediately: boolean
   ): void;
   canReviewAgentEditDuringRun(proposal: Prop): boolean;
-  removeQueuedAgentEdit(conversation: Conv, runId: string, proposalId: string): void;
+  removeQueuedAgentEdit(
+    conversation: Conv,
+    runId: string,
+    proposalId: string
+  ): void;
   blockLaterAgentEditGenerations(conversation: Conv, rejected: Prop): void;
-  latestProposalForLane(conversation: Conv, runId: string, laneId: string): Prop | undefined;
+  latestProposalForLane(
+    conversation: Conv,
+    runId: string,
+    laneId: string
+  ): Prop | undefined;
   expectedLaneDurableRevision(
     conversation: Conv,
     runId: string,
@@ -224,7 +238,11 @@ export interface ProposalLaneContext {
     currentText: string,
     currentRevision: string
   ): boolean;
-  autoApproveEditPriority(conversation: Conv, runId: string, proposalId: string): number;
+  autoApproveEditPriority(
+    conversation: Conv,
+    runId: string,
+    proposalId: string
+  ): number;
   scheduleQueuedAgentEdits(matches: (queued: QueuedAgentEdit) => boolean): void;
   hasQueuedAgentEdits(): boolean;
   invokeWhileActive(operation: () => Promise<void>): Promise<void>;
@@ -309,7 +327,10 @@ export interface ProposalLaneContext {
   ): void;
   currentExpertDraftDirectoryRevision(workspaceId: string): string | undefined;
   expectedDraftSectionCreationBaseRevision(proposal: Prop): string;
-  rememberAcceptedDraftSectionCreation(proposal: Prop, currentRevision: string): void;
+  rememberAcceptedDraftSectionCreation(
+    proposal: Prop,
+    currentRevision: string
+  ): void;
   draftSectionCreationOperationId(proposal: Prop): string;
   acceptCharacterStructureProposal(
     conversation: Conv,
@@ -333,7 +354,9 @@ export interface ProposalLaneContext {
     sourceConversation: Conv,
     runApprovalMode: NonNullable<AgentEditProposal["approvalMode"]>
   ): boolean;
-  stageLongWorldbuildingEditProposal(event: LongWorldbuildingFileMutationEvent): void;
+  stageLongWorldbuildingEditProposal(
+    event: LongWorldbuildingFileMutationEvent
+  ): void;
   acceptLongWorldbuildingFileProposal(
     conversation: Conv,
     request: Req,

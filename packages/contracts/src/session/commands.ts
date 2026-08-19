@@ -1,91 +1,79 @@
 import { z } from "zod";
-import { EnvelopeBaseSchema } from "../envelope";
-import { ChatAssistantRequestContextSchema } from "../chat-assistant-base";
+import { ShortAgentSubagentDefinitionsSchema } from "../agent-team";
 import type { ChatAssistantRuntimeContext } from "../chat-assistant";
-import { MaterialStageIdSchema, SkillStageIdSchema } from "../catalog";
+import { ChatAssistantRequestContextSchema } from "../chat-assistant-base";
+import { EnvelopeBaseSchema } from "../envelope";
+import { LearningImitationAgentProfileSchema } from "../learning-imitation";
+import { LibraryAgentProfileSchema } from "../library-agent";
+import {
+  LongAgentProfileSchema,
+  resolveLongAgentIdForRoot
+} from "../long-workspace";
 import {
   AgentProviderRuntimeConfigSchema,
   TemperatureSchema,
   ThinkingLevelSchema
 } from "../models";
 import {
-  ShortWorkspaceStageIdSchema,
-  ShortWorkspaceAgentProfileSchema,
-  resolveShortWorkspaceAgentIdForStage
-} from "../workspace";
-import {
   ScriptWorkspaceAgentProfileSchema,
   resolveScriptWorkspaceAgentIdForStage
 } from "../script-workspace";
 import {
-  LongAgentIdSchema,
-  LongAgentProfileSchema,
-  resolveLongAgentIdForRoot
-} from "../long-workspace";
-import { LongWorkspaceRuntimeContextSchema } from "../long-workspace-api";
-import {
-  LearningImitationAgentProfileSchema,
-  LearningImitationRuntimeContextSchema,
-  LearningImitationStageIdSchema,
-  LearningImitationWritePayloadSchema
-} from "../learning-imitation";
-import {
-  LibraryAgentProfileSchema,
-  LibraryAgentWorkspaceSnapshotSchema
-} from "../library-agent";
-import {
-  SubagentAuthoringDraftSchema,
-  SubagentAuthoringRuntimeContextSchema
-} from "../subagent-authoring";
-import { ShortAgentSubagentDefinitionsSchema } from "../agent-team";
+  ShortWorkspaceAgentProfileSchema,
+  resolveShortWorkspaceAgentIdForStage
+} from "../workspace";
+import { UserPromptAttachmentsSchema } from "./attachments";
 import {
   AgentRuntimeRefSchema,
   AgentWriteApprovalModeSchema,
   WorkspaceRuntimeContextSchema
 } from "./runtime";
-import { UserPromptAttachmentsSchema } from "./attachments";
 
 export const SessionModeSchema = z.enum(["workspace", "chat-assistant"]);
 export type SessionMode = z.infer<typeof SessionModeSchema>;
 
-export const SessionPromptCommandPayloadSchema = z.object({
-  sessionId: z.string().min(1),
-  message: z.string().trim().min(1).max(20_000),
-  mode: SessionModeSchema.optional(),
-  attachments: UserPromptAttachmentsSchema.optional(),
-  modelId: z.string().min(1).max(120).optional(),
-  thinkingLevel: ThinkingLevelSchema.optional(),
-  temperature: TemperatureSchema.optional(),
-  writeApprovalMode: AgentWriteApprovalModeSchema.optional(),
-  chatAssistant: ChatAssistantRequestContextSchema.optional(),
-  workspaceContext: WorkspaceRuntimeContextSchema.optional()
-}).superRefine((value, context) => {
-  if (value.mode !== "chat-assistant") {
-    if (value.chatAssistant !== undefined) {
+export const SessionPromptCommandPayloadSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    message: z.string().trim().min(1).max(20_000),
+    mode: SessionModeSchema.optional(),
+    attachments: UserPromptAttachmentsSchema.optional(),
+    modelId: z.string().min(1).max(120).optional(),
+    thinkingLevel: ThinkingLevelSchema.optional(),
+    temperature: TemperatureSchema.optional(),
+    writeApprovalMode: AgentWriteApprovalModeSchema.optional(),
+    chatAssistant: ChatAssistantRequestContextSchema.optional(),
+    workspaceContext: WorkspaceRuntimeContextSchema.optional()
+  })
+  .superRefine((value, context) => {
+    if (value.mode !== "chat-assistant") {
+      if (value.chatAssistant !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["chatAssistant"],
+          message: "Chat assistant context requires chat-assistant mode."
+        });
+      }
+      return;
+    }
+    if (value.workspaceContext !== undefined) {
       context.addIssue({
         code: "custom",
-        path: ["chatAssistant"],
-        message: "Chat assistant context requires chat-assistant mode."
+        path: ["workspaceContext"],
+        message: "Chat assistant sessions cannot receive workspace context."
       });
     }
-    return;
-  }
-  if (value.workspaceContext !== undefined) {
-    context.addIssue({
-      code: "custom",
-      path: ["workspaceContext"],
-      message: "Chat assistant sessions cannot receive workspace context."
-    });
-  }
-  if (value.writeApprovalMode !== undefined) {
-    context.addIssue({
-      code: "custom",
-      path: ["writeApprovalMode"],
-      message: "Chat assistant sessions cannot request write approval."
-    });
-  }
-});
-export type SessionPromptCommandPayload = z.infer<typeof SessionPromptCommandPayloadSchema>;
+    if (value.writeApprovalMode !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["writeApprovalMode"],
+        message: "Chat assistant sessions cannot request write approval."
+      });
+    }
+  });
+export type SessionPromptCommandPayload = z.infer<
+  typeof SessionPromptCommandPayloadSchema
+>;
 
 export const SessionPromptAcceptedPayloadSchema = z.object({
   sessionId: z.string().min(1),
@@ -93,7 +81,9 @@ export const SessionPromptAcceptedPayloadSchema = z.object({
   acceptedAt: z.string().datetime(),
   runtime: AgentRuntimeRefSchema
 });
-export type SessionPromptAcceptedPayload = z.infer<typeof SessionPromptAcceptedPayloadSchema>;
+export type SessionPromptAcceptedPayload = z.infer<
+  typeof SessionPromptAcceptedPayloadSchema
+>;
 
 export const SessionPromptCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("session.prompt"),
@@ -120,19 +110,24 @@ export const SessionAbortCommandPayloadSchema = z.object({
   sessionId: z.string().min(1),
   runId: z.string().min(1)
 });
-export type SessionAbortCommandPayload = z.infer<typeof SessionAbortCommandPayloadSchema>;
+export type SessionAbortCommandPayload = z.infer<
+  typeof SessionAbortCommandPayloadSchema
+>;
 
-export const SessionAbortAcceptedPayloadSchema = SessionAbortCommandPayloadSchema.extend({
-  abortedAt: z.string().datetime()
-});
-export type SessionAbortAcceptedPayload = z.infer<typeof SessionAbortAcceptedPayloadSchema>;
+export const SessionAbortAcceptedPayloadSchema =
+  SessionAbortCommandPayloadSchema.extend({
+    abortedAt: z.string().datetime()
+  });
+export type SessionAbortAcceptedPayload = z.infer<
+  typeof SessionAbortAcceptedPayloadSchema
+>;
 
 function validateAbortCommandContext(
   value: {
     context: { sessionId?: string | undefined; runId?: string | undefined };
     payload: SessionAbortCommandPayload;
   },
-  context: z.core.$RefinementCtx<any>
+  context: z.core.$RefinementCtx<unknown>
 ): void {
   if (value.context.sessionId !== value.payload.sessionId) {
     context.addIssue({
@@ -161,220 +156,231 @@ export const SessionAbortCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
  * needed for cross-process matching, while preserving the already-validated
  * snapshot without making Renderer load the large catalog/usage schema graph.
  */
-const ChatAssistantRuntimeContextTransportSchema = z.custom<
-  ChatAssistantRuntimeContext
->((value) => {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as { mode?: unknown; project?: unknown };
-  if (candidate.mode === "normal") return true;
-  if (candidate.mode !== "project") return false;
-  const project = candidate.project;
-  return Boolean(
-    project &&
+const ChatAssistantRuntimeContextTransportSchema =
+  z.custom<ChatAssistantRuntimeContext>((value) => {
+    if (!value || typeof value !== "object") return false;
+    const candidate = value as { mode?: unknown; project?: unknown };
+    if (candidate.mode === "normal") return true;
+    if (candidate.mode !== "project") return false;
+    const project = candidate.project;
+    return Boolean(
+      project &&
       typeof project === "object" &&
       typeof (project as { projectId?: unknown }).projectId === "string" &&
       ["short", "script", "long"].includes(
         String((project as { projectType?: unknown }).projectType)
       )
-  );
-});
+    );
+  });
 
-export const AgentPromptCommandPayloadSchema = SessionPromptCommandPayloadSchema.extend({
-  chatAssistantRuntimeContext: ChatAssistantRuntimeContextTransportSchema.optional(),
-  runtimeConfig: AgentProviderRuntimeConfigSchema.optional(),
-  agentProfile: ShortWorkspaceAgentProfileSchema.optional(),
-  scriptAgentProfile: ScriptWorkspaceAgentProfileSchema.optional(),
-  longAgentProfile: LongAgentProfileSchema.optional(),
-  subagentDefinitions: ShortAgentSubagentDefinitionsSchema.optional(),
-  /**
-   * Runtime-only map of model config id → resolved provider config for
-   * subagents that use `modelMode: "custom"`. Never persisted with teams.
-   */
-  subagentRuntimeConfigs: z
-    .record(z.string().min(1).max(120), AgentProviderRuntimeConfigSchema)
-    .optional(),
-  libraryAgentProfile: LibraryAgentProfileSchema.optional(),
-  learningImitationProfile: LearningImitationAgentProfileSchema.optional()
-}).superRefine((value, context) => {
-  if (value.mode === "chat-assistant") {
-    const requestedMode = value.chatAssistant?.mode ?? "normal";
-    if (!value.chatAssistantRuntimeContext) {
+export const AgentPromptCommandPayloadSchema =
+  SessionPromptCommandPayloadSchema.extend({
+    chatAssistantRuntimeContext:
+      ChatAssistantRuntimeContextTransportSchema.optional(),
+    runtimeConfig: AgentProviderRuntimeConfigSchema.optional(),
+    agentProfile: ShortWorkspaceAgentProfileSchema.optional(),
+    scriptAgentProfile: ScriptWorkspaceAgentProfileSchema.optional(),
+    longAgentProfile: LongAgentProfileSchema.optional(),
+    subagentDefinitions: ShortAgentSubagentDefinitionsSchema.optional(),
+    /**
+     * Runtime-only map of model config id → resolved provider config for
+     * subagents that use `modelMode: "custom"`. Never persisted with teams.
+     */
+    subagentRuntimeConfigs: z
+      .record(z.string().min(1).max(120), AgentProviderRuntimeConfigSchema)
+      .optional(),
+    libraryAgentProfile: LibraryAgentProfileSchema.optional(),
+    learningImitationProfile: LearningImitationAgentProfileSchema.optional()
+  }).superRefine((value, context) => {
+    if (value.mode === "chat-assistant") {
+      const requestedMode = value.chatAssistant?.mode ?? "normal";
+      if (!value.chatAssistantRuntimeContext) {
+        context.addIssue({
+          code: "custom",
+          path: ["chatAssistantRuntimeContext"],
+          message:
+            "Chat assistant runs require an authoritative runtime context."
+        });
+      } else if (value.chatAssistantRuntimeContext.mode !== requestedMode) {
+        context.addIssue({
+          code: "custom",
+          path: ["chatAssistantRuntimeContext", "mode"],
+          message: "Chat assistant runtime mode must match the requested mode."
+        });
+      } else if (
+        requestedMode === "project" &&
+        value.chatAssistant?.mode === "project" &&
+        value.chatAssistantRuntimeContext.mode === "project" &&
+        (value.chatAssistant.project.projectId !==
+          value.chatAssistantRuntimeContext.project.projectId ||
+          value.chatAssistant.project.projectType !==
+            value.chatAssistantRuntimeContext.project.projectType)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["chatAssistantRuntimeContext", "project"],
+          message:
+            "Chat assistant runtime project must match the requested project."
+        });
+      }
+    } else if (value.chatAssistantRuntimeContext !== undefined) {
       context.addIssue({
         code: "custom",
         path: ["chatAssistantRuntimeContext"],
-        message: "Chat assistant runs require an authoritative runtime context."
+        message: "Chat assistant runtime context requires chat-assistant mode."
       });
-    } else if (value.chatAssistantRuntimeContext.mode !== requestedMode) {
-      context.addIssue({
-        code: "custom",
-        path: ["chatAssistantRuntimeContext", "mode"],
-        message: "Chat assistant runtime mode must match the requested mode."
-      });
-    } else if (
-      requestedMode === "project" &&
-      value.chatAssistant?.mode === "project" &&
-      value.chatAssistantRuntimeContext.mode === "project" &&
-      (value.chatAssistant.project.projectId !==
-        value.chatAssistantRuntimeContext.project.projectId ||
-        value.chatAssistant.project.projectType !==
-          value.chatAssistantRuntimeContext.project.projectType)
+    }
+    const shortWorkspace = value.workspaceContext?.shortWorkspace;
+    const scriptWorkspace = value.workspaceContext?.scriptWorkspace;
+    const longWorkspace = value.workspaceContext?.longWorkspace;
+    if (
+      value.subagentDefinitions !== undefined &&
+      !(
+        (shortWorkspace && value.agentProfile) ||
+        (scriptWorkspace && value.scriptAgentProfile) ||
+        (longWorkspace && value.longAgentProfile)
+      )
     ) {
       context.addIssue({
         code: "custom",
-        path: ["chatAssistantRuntimeContext", "project"],
-        message: "Chat assistant runtime project must match the requested project."
+        path: ["subagentDefinitions"],
+        message:
+          "Subagent definitions require a short, script or long workspace and its agent profile."
       });
     }
-  } else if (value.chatAssistantRuntimeContext !== undefined) {
-    context.addIssue({
-      code: "custom",
-      path: ["chatAssistantRuntimeContext"],
-      message: "Chat assistant runtime context requires chat-assistant mode."
-    });
-  }
-  const shortWorkspace = value.workspaceContext?.shortWorkspace;
-  const scriptWorkspace = value.workspaceContext?.scriptWorkspace;
-  const longWorkspace = value.workspaceContext?.longWorkspace;
-  if (
-    value.subagentDefinitions !== undefined &&
-    !(
-      (shortWorkspace && value.agentProfile) ||
-      (scriptWorkspace && value.scriptAgentProfile) ||
-      (longWorkspace && value.longAgentProfile)
-    )
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["subagentDefinitions"],
-      message:
-        "Subagent definitions require a short, script or long workspace and its agent profile."
-    });
-  }
-  if (
-    value.subagentRuntimeConfigs !== undefined &&
-    value.subagentDefinitions === undefined
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["subagentRuntimeConfigs"],
-      message: "Subagent runtime configs require subagent definitions."
-    });
-  }
-  if (value.subagentDefinitions && value.subagentRuntimeConfigs) {
-    for (const definition of value.subagentDefinitions) {
-      if (definition.modelMode !== "custom" || !definition.modelId) continue;
-      if (!value.subagentRuntimeConfigs[definition.modelId]) {
+    if (
+      value.subagentRuntimeConfigs !== undefined &&
+      value.subagentDefinitions === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["subagentRuntimeConfigs"],
+        message: "Subagent runtime configs require subagent definitions."
+      });
+    }
+    if (value.subagentDefinitions && value.subagentRuntimeConfigs) {
+      for (const definition of value.subagentDefinitions) {
+        if (definition.modelMode !== "custom" || !definition.modelId) continue;
+        if (!value.subagentRuntimeConfigs[definition.modelId]) {
+          context.addIssue({
+            code: "custom",
+            path: ["subagentRuntimeConfigs", definition.modelId],
+            message: `Missing runtime config for subagent model: ${definition.modelId}`
+          });
+        }
+      }
+    }
+    if (Boolean(shortWorkspace) !== Boolean(value.agentProfile)) {
+      context.addIssue({
+        code: "custom",
+        path: ["agentProfile"],
+        message:
+          "Short workspace context and agent profile must be provided together."
+      });
+    }
+    if (shortWorkspace && value.agentProfile) {
+      const activeAgentId =
+        shortWorkspace.activeAgentId ??
+        resolveShortWorkspaceAgentIdForStage(shortWorkspace.activeStageId);
+      if (value.agentProfile.id !== activeAgentId) {
         context.addIssue({
           code: "custom",
-          path: ["subagentRuntimeConfigs", definition.modelId],
-          message: `Missing runtime config for subagent model: ${definition.modelId}`
+          path: ["agentProfile", "id"],
+          message:
+            "Short workspace agent profile must match the active parent agent."
         });
       }
     }
-  }
-  if (Boolean(shortWorkspace) !== Boolean(value.agentProfile)) {
-    context.addIssue({
-      code: "custom",
-      path: ["agentProfile"],
-      message: "Short workspace context and agent profile must be provided together."
-    });
-  }
-  if (shortWorkspace && value.agentProfile) {
-    const activeAgentId =
-      shortWorkspace.activeAgentId ??
-      resolveShortWorkspaceAgentIdForStage(shortWorkspace.activeStageId);
-    if (value.agentProfile.id !== activeAgentId) {
+    if (Boolean(scriptWorkspace) !== Boolean(value.scriptAgentProfile)) {
       context.addIssue({
         code: "custom",
-        path: ["agentProfile", "id"],
-        message: "Short workspace agent profile must match the active parent agent."
-      });
-    }
-  }
-  if (Boolean(scriptWorkspace) !== Boolean(value.scriptAgentProfile)) {
-    context.addIssue({
-      code: "custom",
-      path: ["scriptAgentProfile"],
-      message: "Script workspace context and agent profile must be provided together."
-    });
-  }
-  if (scriptWorkspace && value.scriptAgentProfile) {
-    const activeAgentId =
-      scriptWorkspace.activeAgentId ??
-      resolveScriptWorkspaceAgentIdForStage(scriptWorkspace.activeStageId);
-    if (value.scriptAgentProfile.id !== activeAgentId) {
-      context.addIssue({
-        code: "custom",
-        path: ["scriptAgentProfile", "id"],
-        message: "Script workspace agent profile must match the active parent agent."
-      });
-    }
-  }
-  if (Boolean(longWorkspace) !== Boolean(value.longAgentProfile)) {
-    context.addIssue({
-      code: "custom",
-      path: ["longAgentProfile"],
-      message:
-        "Long workspace context and agent profile must be provided together."
-    });
-  }
-  if (longWorkspace && value.longAgentProfile) {
-    const expectedAgentId =
-      longWorkspace.activeAgentId ??
-      resolveLongAgentIdForRoot(longWorkspace.activeRoot);
-    if (value.longAgentProfile.id !== expectedAgentId) {
-      context.addIssue({
-        code: "custom",
-        path: ["longAgentProfile", "id"],
+        path: ["scriptAgentProfile"],
         message:
-          "Long workspace agent profile must match the active long-form agent."
+          "Script workspace context and agent profile must be provided together."
       });
     }
-  }
-  if (
-    Boolean(value.workspaceContext?.learningImitation) !==
-    Boolean(value.learningImitationProfile)
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["learningImitationProfile"],
-      message: "Learning-imitation context and agent profile must be provided together."
-    });
-  }
-  if (
-    value.learningImitationProfile &&
-    value.workspaceContext?.learningImitation?.stageId !==
-      value.learningImitationProfile.id
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["learningImitationProfile", "id"],
-      message: "Learning-imitation profile must match the active stage."
-    });
-  }
-  if (
-    Boolean(value.workspaceContext?.libraryWorkspace) !==
-    Boolean(value.libraryAgentProfile)
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["libraryAgentProfile"],
-      message: "Library workspace context and agent profile must be provided together."
-    });
-  }
-  if (
-    value.libraryAgentProfile &&
-    value.workspaceContext?.libraryWorkspace?.domain !==
-      value.libraryAgentProfile.domain
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["libraryAgentProfile", "domain"],
-      message: "Library agent profile must match the active library domain."
-    });
-  }
-});
-export type AgentPromptCommandPayload = z.infer<typeof AgentPromptCommandPayloadSchema>;
+    if (scriptWorkspace && value.scriptAgentProfile) {
+      const activeAgentId =
+        scriptWorkspace.activeAgentId ??
+        resolveScriptWorkspaceAgentIdForStage(scriptWorkspace.activeStageId);
+      if (value.scriptAgentProfile.id !== activeAgentId) {
+        context.addIssue({
+          code: "custom",
+          path: ["scriptAgentProfile", "id"],
+          message:
+            "Script workspace agent profile must match the active parent agent."
+        });
+      }
+    }
+    if (Boolean(longWorkspace) !== Boolean(value.longAgentProfile)) {
+      context.addIssue({
+        code: "custom",
+        path: ["longAgentProfile"],
+        message:
+          "Long workspace context and agent profile must be provided together."
+      });
+    }
+    if (longWorkspace && value.longAgentProfile) {
+      const expectedAgentId =
+        longWorkspace.activeAgentId ??
+        resolveLongAgentIdForRoot(longWorkspace.activeRoot);
+      if (value.longAgentProfile.id !== expectedAgentId) {
+        context.addIssue({
+          code: "custom",
+          path: ["longAgentProfile", "id"],
+          message:
+            "Long workspace agent profile must match the active long-form agent."
+        });
+      }
+    }
+    if (
+      Boolean(value.workspaceContext?.learningImitation) !==
+      Boolean(value.learningImitationProfile)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["learningImitationProfile"],
+        message:
+          "Learning-imitation context and agent profile must be provided together."
+      });
+    }
+    if (
+      value.learningImitationProfile &&
+      value.workspaceContext?.learningImitation?.stageId !==
+        value.learningImitationProfile.id
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["learningImitationProfile", "id"],
+        message: "Learning-imitation profile must match the active stage."
+      });
+    }
+    if (
+      Boolean(value.workspaceContext?.libraryWorkspace) !==
+      Boolean(value.libraryAgentProfile)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["libraryAgentProfile"],
+        message:
+          "Library workspace context and agent profile must be provided together."
+      });
+    }
+    if (
+      value.libraryAgentProfile &&
+      value.workspaceContext?.libraryWorkspace?.domain !==
+        value.libraryAgentProfile.domain
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["libraryAgentProfile", "domain"],
+        message: "Library agent profile must match the active library domain."
+      });
+    }
+  });
+export type AgentPromptCommandPayload = z.infer<
+  typeof AgentPromptCommandPayloadSchema
+>;
 
 export const AgentPromptCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agent.prompt"),

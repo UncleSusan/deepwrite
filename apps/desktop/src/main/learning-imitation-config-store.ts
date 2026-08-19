@@ -195,7 +195,9 @@ export class LearningImitationConfigStore {
   ): Promise<LearningImitationAgentProfile> {
     const stageId = LearningImitationStageIdSchema.parse(rawStageId);
     const settings = await this.list();
-    const prompt = settings.prompts.find((candidate) => candidate.id === stageId);
+    const prompt = settings.prompts.find(
+      (candidate) => candidate.id === stageId
+    );
     if (!prompt) {
       throw new Error(`Missing learning imitation prompt profile: ${stageId}`);
     }

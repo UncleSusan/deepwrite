@@ -61,14 +61,17 @@ function createWritingWorkspaceToolSharedState(
     format: "text" as const
   };
   const expertSections = new Map(
-    workspace.expertDraft.sections.map((section) => [
-      section.id,
-      {
-        ...section,
-        body: { ...section.body },
-        characterState: { ...section.characterState }
-      }
-    ] as const)
+    workspace.expertDraft.sections.map(
+      (section) =>
+        [
+          section.id,
+          {
+            ...section,
+            body: { ...section.body },
+            characterState: { ...section.characterState }
+          }
+        ] as const
+    )
   );
   return {
     stageBodies: new Map<ShortWorkspaceStageId, string>(
@@ -79,16 +82,19 @@ function createWritingWorkspaceToolSharedState(
     ),
     characterItems: new Map(
       characterStructure.format === "list"
-        ? characterStructure.items.map((item) => [
-            item.id,
-            {
-              id: item.id,
-              title: item.title,
-              order: item.order,
-              content: item.content,
-              revision: item.revision
-            }
-          ] as const)
+        ? characterStructure.items.map(
+            (item) =>
+              [
+                item.id,
+                {
+                  id: item.id,
+                  title: item.title,
+                  order: item.order,
+                  content: item.content,
+                  revision: item.revision
+                }
+              ] as const
+          )
         : []
     ),
     characterItemOrder:
@@ -99,7 +105,9 @@ function createWritingWorkspaceToolSharedState(
         : [],
     pendingCharacterSeq: 0,
     expertSections,
-    expertSectionOrder: workspace.expertDraft.sections.map((section) => section.id),
+    expertSectionOrder: workspace.expertDraft.sections.map(
+      (section) => section.id
+    ),
     pendingExpertSectionTitles: new Set<string>(),
     pendingSectionSeq: 0,
     expertDraftDirectoryBaseRevision: workspace.expertDraft.revision
@@ -128,10 +136,7 @@ function buildWritingWorkspaceTools(
   // This is intentionally agent-local. A child reading a file must never grant
   // its parent permission to overwrite that file (or vice versa).
   const readExpertFileIds = new Set<string>();
-  const readExpertFileCoverage = new Map<
-    string,
-    ShortDocumentReadCoverage
-  >();
+  const readExpertFileCoverage = new Map<string, ShortDocumentReadCoverage>();
   let activeStageId = toolInput.workspace.activeStageId;
   const readTools = [
     buildReadWorkspaceContentTool(toolInput, stageBodies),
@@ -150,7 +155,11 @@ function buildWritingWorkspaceTools(
   if (toolInput.profile.id === "expert_draft_coordinator") {
     const draftTools = [
       buildWriteDraftSectionTool(toolInput, expertSections, readExpertFileIds),
-      buildReplaceDraftSectionTextTool(toolInput, expertSections, readExpertFileIds),
+      buildReplaceDraftSectionTextTool(
+        toolInput,
+        expertSections,
+        readExpertFileIds
+      ),
       buildRenameExpertDraftSectionTool(toolInput, expertSections, sharedState),
       buildDeleteExpertDraftSectionTool(toolInput, expertSections, sharedState)
     ];
@@ -176,8 +185,18 @@ function buildWritingWorkspaceTools(
     return tools;
   }
   tools.push(
-    buildWriteWorkspaceEditorTool(toolInput, stageBodies, stageRevisions, () => activeStageId),
-    buildReplaceStageTextTool(toolInput, stageBodies, stageRevisions, () => activeStageId)
+    buildWriteWorkspaceEditorTool(
+      toolInput,
+      stageBodies,
+      stageRevisions,
+      () => activeStageId
+    ),
+    buildReplaceStageTextTool(
+      toolInput,
+      stageBodies,
+      stageRevisions,
+      () => activeStageId
+    )
   );
   return tools;
 }
@@ -218,7 +237,9 @@ export function isShortWorkspaceToolDetails(
   );
 }
 
-export function assertKnownShortWorkspaceStage(stageId: string): ShortWorkspaceStageId {
+export function assertKnownShortWorkspaceStage(
+  stageId: string
+): ShortWorkspaceStageId {
   if (
     stageId !== "character_design" &&
     stageId !== "draft" &&
@@ -230,7 +251,9 @@ export function assertKnownShortWorkspaceStage(stageId: string): ShortWorkspaceS
 }
 
 export function isKnownShortMaterialKind(kind: string): boolean {
-  return SHORT_MATERIAL_KINDS.includes(kind as (typeof SHORT_MATERIAL_KINDS)[number]);
+  return SHORT_MATERIAL_KINDS.includes(
+    kind as (typeof SHORT_MATERIAL_KINDS)[number]
+  );
 }
 
 export function isKnownShortSkillKind(kind: string): boolean {

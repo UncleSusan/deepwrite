@@ -2,568 +2,503 @@ import {
   agentConversationSource,
   agentRunPreferencesSource,
   appSource,
-  bindingsSource,
-  chapterCardDialogSource,
-  characterDialogSource,
-  characterNavigationSource,
-  continuityNavigationSource,
-  conversationStoreSource,
   describe,
   dialogCoordinatorSource,
-  dialogSource,
-  editorDeleteDialogsSource,
-  editorDeleteSource,
-  editorSessionSource,
   editorSource,
-  editorStructureSource,
   expect,
   featureHostCoordinatorSource,
-  foreshadowingFiltersSource,
-  foreshadowingMutationsSource,
   it,
-  lazyLongStructureTransactionsSource,
   leftSidebarSource,
-  legacySyncSource,
   longBookLifecycleSource,
   longConversationSource,
   longRollbackSource,
-  longStructureTransactionsCreateSource,
-  longStructureTransactionsDeleteSource,
-  longStructureTransactionsFacadeSource,
-  longStructureTransactionsLeaseSource,
-  longStructureTransactionsRenameSaveSource,
   longStructureTransactionsSource,
-  longStructureTransactionsSyncSource,
-  longStructureTransactionsTreeSource,
   longWorkspaceModuleSource,
   longWorkspaceResourceTreeSource,
   longWorkspaceSessionSource,
-  longWorkspaceStoreSource,
-  longWorkspaceTypeSource,
-  manuscriptNavigationSource,
-  plotPointDialogSource,
   presentationCoordinatorSource,
   proposalSource,
-  removalSource,
   resourceTreeCoordinatorSource,
   rollbackSource,
   sectionSource,
-  structureSource,
   treeNodeSource,
   workspaceDialogLayerSource,
   workspaceSystemEventRoutesSource,
   workspaceTypeSource,
-  worldbuildingNavigationSource,
   writingOrchestratorSource,
-  writingWorkflowSource,
-  writingWorkspaceSource,
+  writingWorkflowSource
 } from "./LongWorkspace.test-support";
 
 describe("long-form renderer vertical slice: agents-writing-and-navigation", () => {
   it("projects long-form navigation into the same recursive tree used by short books", () => {
-      expect(longWorkspaceResourceTreeSource).toContain(
-        "function projectLongWorkspaceNavigation("
-      );
-      expect(longWorkspaceResourceTreeSource).toContain(
-        "longWorkspaceSelection: selection"
-      );
-      expect(resourceTreeCoordinatorSource).toContain(
-        "children: projectLongWorkspaceNavigation(book, workspaceIndex)"
-      );
-      expect(longWorkspaceResourceTreeSource).toContain(
-        "index\n      ? reconcileLongWorkspaceSelection(book, index, selection)\n      : selection"
-      );
-      expect(longWorkspaceResourceTreeSource).toContain(
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "function projectLongWorkspaceNavigation("
+    );
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "longWorkspaceSelection: selection"
+    );
+    expect(resourceTreeCoordinatorSource).toContain(
+      "children: projectLongWorkspaceNavigation(book, workspaceIndex)"
+    );
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "reconcileLongWorkspaceSelection(book, index, selection)"
+    );
+    expect(longWorkspaceResourceTreeSource).toContain(
+      "[...book.navigation.worldbuilding]"
+    );
+    expect(
+      longWorkspaceResourceTreeSource.indexOf(
         "[...book.navigation.worldbuilding]"
-      );
-      expect(
-        longWorkspaceResourceTreeSource.indexOf("[...book.navigation.worldbuilding]")
-      ).toBeLessThan(
-        longWorkspaceResourceTreeSource.indexOf("...(worldRevealSelection")
-      );
-      expect(resourceTreeCoordinatorSource).toContain("selectableBranch: true");
-      expect(resourceTreeCoordinatorSource).toContain('badge: "长篇"');
-      expect(resourceTreeCoordinatorSource).not.toContain(
-        "badge: `长篇 · ${book.genre}`"
-      );
-      expect(longStructureTransactionsSource).toContain(
-        "node.longWorkspaceSelection"
-      );
-      expect(leftSidebarSource).toContain("<TreeSection");
-      expect(leftSidebarSource).not.toContain('<slot name="long-workspace" />');
-      expect(treeNodeSource).toContain("<TreeNodeItem");
-      expect(treeNodeSource).toContain(":depth=\"depth + 1\"");
-      for (const label of [
-        "世界观",
-        "人物设计",
-        "剧情设计",
-        "正文",
-        "连续性账本"
-      ]) {
-        expect(longWorkspaceResourceTreeSource).toContain(label);
-      }
-      expect(longWorkspaceModuleSource).toContain(
-        "class=\"long-agent-column\""
-      );
-      expect(longWorkspaceModuleSource).toContain(
-        'class="pane-resizer pane-resizer-right"'
-      );
-      expect(appSource).toContain(':left-collapsed="leftCollapsed"');
-      expect(appSource).toContain(':right-pane="writingRightPaneViewModel"');
-      expect(appSource).toContain('@toggle-left="leftCollapsed = !leftCollapsed"');
-      expect(appSource).toContain('@toggle-right="rightCollapsed = !rightCollapsed"');
-      expect(appSource).toContain(
-        '@resize-start="startPaneResize(\'right\', $event)"'
-      );
-      expect(longWorkspaceModuleSource).toContain(
-        "paneLayout === 'editor-agent' || !rightPane.collapsed"
-      );
-    });
+      )
+    ).toBeLessThan(
+      longWorkspaceResourceTreeSource.indexOf("...(worldRevealSelection")
+    );
+    expect(resourceTreeCoordinatorSource).toContain("selectableBranch: true");
+    expect(resourceTreeCoordinatorSource).toContain('badge: "长篇"');
+    expect(resourceTreeCoordinatorSource).not.toContain(
+      "badge: `长篇 · ${book.genre}`"
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "node.longWorkspaceSelection"
+    );
+    expect(leftSidebarSource).toContain("<TreeSection");
+    expect(leftSidebarSource).not.toContain('<slot name="long-workspace" />');
+    expect(treeNodeSource).toContain("<TreeNodeItem");
+    expect(treeNodeSource).toContain(':depth="depth + 1"');
+    for (const label of [
+      "世界观",
+      "人物设计",
+      "剧情设计",
+      "正文",
+      "连续性账本"
+    ]) {
+      expect(longWorkspaceResourceTreeSource).toContain(label);
+    }
+    expect(longWorkspaceModuleSource).toContain('class="long-agent-column"');
+    expect(longWorkspaceModuleSource).toContain(
+      'class="pane-resizer pane-resizer-right"'
+    );
+    expect(appSource).toContain(':left-collapsed="leftCollapsed"');
+    expect(appSource).toContain(':right-pane="writingRightPaneViewModel"');
+    expect(appSource).toContain(
+      '@toggle-left="leftCollapsed = !leftCollapsed"'
+    );
+    expect(appSource).toContain(
+      '@toggle-right="rightCollapsed = !rightCollapsed"'
+    );
+    expect(appSource).toContain(
+      "@resize-start=\"startPaneResize('right', $event)\""
+    );
+    expect(longWorkspaceModuleSource).toContain(
+      "paneLayout === 'editor-agent' || !rightPane.collapsed"
+    );
+  });
 
   it("wires left-tree collection actions through the existing structure pipeline", () => {
-      expect(workspaceTypeSource).toContain("longTreeCollection?:");
-      expect(workspaceTypeSource).toContain("longTreeItem?:");
-      for (const kind of [
-        "worldbuilding-item",
-        "character",
-        "volume",
-        "plot-point",
-        "chapter-card"
-      ]) {
-        expect(workspaceTypeSource).toContain(`| "${kind}"`);
-      }
-      expect(leftSidebarSource).toContain("createLongTreeItem");
-      expect(leftSidebarSource).toContain("longTreeItemAction");
-      expect(sectionSource).toContain("createLongTreeItem");
-      expect(sectionSource).toContain("longTreeItemAction");
-      expect(appSource).toContain(
-        '@create-long-tree-item="handleCreateLongTreeItem"'
-      );
-      expect(appSource).toContain(
-        '@long-tree-item-action="handleLongTreeItemAction"'
-      );
-      expect(longStructureTransactionsSource).toContain(
-        "openLongWorldbuildingItemCreateForCategoryInternal"
-      );
-      expect(longStructureTransactionsSource).toContain(
-        "builder.reorderWorldbuildingItem("
-      );
-      expect(longStructureTransactionsSource).toContain(
-        "builder.deleteWorldbuildingItem("
-      );
-      expect(longStructureTransactionsSource).toContain(
-        "details.orderedIds[currentIndex + 1] ??\n          details.orderedIds[currentIndex - 1]"
-      );
-      expect(longStructureTransactionsSource).toContain(
-        "details.parentResourceId"
-      );
-      expect(longStructureTransactionsSource).toContain(
-        "selectCreatedLongTreeResource("
-      );
-      expect(longStructureTransactionsSource).toContain(
-        "captureNavigationSelection()"
-      );
-      expect(resourceTreeCoordinatorSource).toContain(
-        "synchronizeSelectedLongResourceForLayout("
-      );
-      expect(appSource).toContain(
-        ':long-tree-actions-disabled="longBookActionPending"'
-      );
-      expect(dialogCoordinatorSource).toContain(
-        "itemLabel: treeDeletion.label"
-      );
-      expect(workspaceDialogLayerSource).toContain(
-        ':item-label="module.itemLabel"'
-      );
-    });
+    expect(workspaceTypeSource).toContain("longTreeCollection?:");
+    expect(workspaceTypeSource).toContain("longTreeItem?:");
+    for (const kind of [
+      "worldbuilding-item",
+      "character",
+      "volume",
+      "plot-point",
+      "chapter-card"
+    ]) {
+      expect(workspaceTypeSource).toContain(`"${kind}"`);
+    }
+    expect(leftSidebarSource).toContain("createLongTreeItem");
+    expect(leftSidebarSource).toContain("longTreeItemAction");
+    expect(sectionSource).toContain("createLongTreeItem");
+    expect(sectionSource).toContain("longTreeItemAction");
+    expect(appSource).toContain(
+      '@create-long-tree-item="handleCreateLongTreeItem"'
+    );
+    expect(appSource).toContain(
+      '@long-tree-item-action="handleLongTreeItemAction"'
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "openLongWorldbuildingItemCreateForCategoryInternal"
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "builder.reorderWorldbuildingItem("
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "builder.deleteWorldbuildingItem("
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "details.orderedIds[currentIndex + 1] ??\n          details.orderedIds[currentIndex - 1]"
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "details.parentResourceId"
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "selectCreatedLongTreeResource("
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "captureNavigationSelection()"
+    );
+    expect(resourceTreeCoordinatorSource).toContain(
+      "synchronizeSelectedLongResourceForLayout("
+    );
+    expect(appSource).toContain(
+      ':long-tree-actions-disabled="longBookActionPending"'
+    );
+    expect(dialogCoordinatorSource).toContain("itemLabel: treeDeletion.label");
+    expect(workspaceDialogLayerSource).toContain(
+      ':item-label="module.itemLabel"'
+    );
+  });
 
   it("uses dedicated long agent context and approval surfaces", () => {
-      expect(presentationCoordinatorSource).toContain(
-        "const activeLongRuntimeContext"
-      );
-      expect(appSource).toContain(
-        "activeRuntimeContext: activeLongRuntimeContext"
-      );
-      expect(appSource).not.toContain(
-        "const activeLongRuntimeContext = computed"
-      );
-      expect(longConversationSource).toContain(
-        "target.conversation.sendLongMessage("
-      );
-      expect(longConversationSource).toContain(
-        "options.catalog.buildAttachments("
-      );
-      expect(longConversationSource).toContain(
-        "options.catalog.filterReadableAttachments("
-      );
-      expect(longConversationSource).toContain("profile.readAccess.skillKinds");
-      expect(longConversationSource).toContain(
-        "profile.readAccess.materialKinds"
-      );
-      expect(appSource).not.toContain("<LongProposalReview");
-      expect(agentConversationSource).toContain("<LongProposalReview");
-      expect(agentConversationSource).toContain("embedded");
-      expect(longWorkspaceModuleSource).toContain(
-        ':long-proposal-items="proposalItems"'
-      );
-      expect(appSource).toContain('@review-edit="reviewLongAgentEdit"');
-      expect(proposalSource).toContain("long.mutation_proposal");
-      expect(proposalSource).toContain("long.chapter_dispatch_proposal");
-      expect(proposalSource).not.toContain("long.chapter_write_proposal");
-      expect(appSource).toContain("stageLongDraftEditProposal,");
-      expect(workspaceSystemEventRoutesSource).toContain(
-        "dependencies.stageLongDraftEditProposal(event);"
-      );
-      expect(proposalSource).not.toContain("long.ledger_commit_proposal");
-      expect(writingWorkflowSource).toContain(
-        "canFinalizeContinuity: canApproveProposal"
-      );
-      expect(proposalSource).toContain("查看具体影响");
-      expect(proposalSource).toContain("删除实体");
-      expect(proposalSource).toContain("实体完整前后快照");
-      expect(proposalSource).toContain("entitySnapshotText(change.before)");
-      expect(proposalSource).toContain("entitySnapshotText(change.after)");
-      expect(proposalSource).not.toContain(".slice(0, 80)");
-      expect(proposalSource).toContain("long.continuity_file_proposal");
-      expect(proposalSource).not.toContain("查看提交内容");
-      expect(proposalSource).not.toContain("本章六类连续性摘要");
-      expect(proposalSource).toContain("item.approvalMode === \"auto-approve\"");
-      expect(proposalSource).toContain("自动保存中");
-      expect(writingWorkflowSource).toContain(
-        "approvalModeForEvent: proposalApprovalMode"
-      );
-      expect(writingWorkflowSource).toContain(
-        "prepareAutoApprove: prepareAutomaticProposal"
-      );
-      const approvalModeResolver =
-        writingWorkflowSource
-          .split("function proposalApprovalMode(")[1]
-          ?.split("function observeAgentEvent")[0] ?? "";
-      expect(approvalModeResolver).toContain(
-        "conversationForProposalEvent(event)?.approvalModeForRun("
-      );
-      expect(approvalModeResolver).not.toContain("continuity_ledger");
-      expect(appSource).not.toContain("function longAgentRunApprovalMode(");
-      expect(writingWorkflowSource).toContain(
-        "conversation.selectApprovalMode(context.approvalMode());"
-      );
-      expect(longConversationSource).toContain(
-        "target.conversation.selectApprovalMode(target.approvalMode);"
-      );
-      expect(appSource).toContain(
-        "permissionMode: () => generalSettings.value.permissionMode"
-      );
-      expect(writingWorkflowSource).toContain(
-        "writingOrchestrator.handleRejected(event)"
-      );
-      expect(writingWorkflowSource).toContain(
-        "workspaceProposals.quarantineSession("
-      );
-      expect(editorSource).not.toContain("LongLedgerCommitRecordSchema");
-      expect(editorSource).not.toContain("本章连续性摘要");
-      expect(editorSource).not.toContain("伏笔线状态推导");
-      expect(editorSource).not.toContain("查看原始审计记录");
-      expect(proposalSource).not.toContain("workspace.editor_mutation");
-    });
+    expect(presentationCoordinatorSource).toContain(
+      "const activeLongRuntimeContext"
+    );
+    expect(appSource).toContain(
+      "activeRuntimeContext: activeLongRuntimeContext"
+    );
+    expect(appSource).not.toContain(
+      "const activeLongRuntimeContext = computed"
+    );
+    expect(longConversationSource).toContain(
+      "target.conversation.sendLongMessage("
+    );
+    expect(longConversationSource).toContain(
+      "options.catalog.buildAttachments("
+    );
+    expect(longConversationSource).toContain(
+      "options.catalog.filterReadableAttachments("
+    );
+    expect(longConversationSource).toContain("profile.readAccess.skillKinds");
+    expect(longConversationSource).toContain(
+      "profile.readAccess.materialKinds"
+    );
+    expect(appSource).not.toContain("<LongProposalReview");
+    expect(agentConversationSource).toContain("<LongProposalReview");
+    expect(agentConversationSource).toContain("embedded");
+    expect(longWorkspaceModuleSource).toContain(
+      ':long-proposal-items="proposalItems"'
+    );
+    expect(appSource).toContain('@review-edit="reviewLongAgentEdit"');
+    expect(proposalSource).toContain("long.mutation_proposal");
+    expect(proposalSource).toContain("long.chapter_dispatch_proposal");
+    expect(proposalSource).not.toContain("long.chapter_write_proposal");
+    expect(appSource).toContain("stageLongDraftEditProposal,");
+    expect(workspaceSystemEventRoutesSource).toContain(
+      "dependencies.stageLongDraftEditProposal(event);"
+    );
+    expect(proposalSource).not.toContain("long.ledger_commit_proposal");
+    expect(writingWorkflowSource).toContain(
+      "canFinalizeContinuity: canApproveProposal"
+    );
+    expect(proposalSource).toContain("查看具体影响");
+    expect(proposalSource).toContain("删除实体");
+    expect(proposalSource).toContain("实体完整前后快照");
+    expect(proposalSource).toContain("entitySnapshotText(change.before)");
+    expect(proposalSource).toContain("entitySnapshotText(change.after)");
+    expect(proposalSource).not.toContain(".slice(0, 80)");
+    expect(proposalSource).toContain("long.continuity_file_proposal");
+    expect(proposalSource).not.toContain("查看提交内容");
+    expect(proposalSource).not.toContain("本章六类连续性摘要");
+    expect(proposalSource).toContain('item.approvalMode === "auto-approve"');
+    expect(proposalSource).toContain("自动保存中");
+    expect(writingWorkflowSource).toContain(
+      "approvalModeForEvent: proposalApprovalMode"
+    );
+    expect(writingWorkflowSource).toContain(
+      "prepareAutoApprove: prepareAutomaticProposal"
+    );
+    const approvalModeResolver =
+      writingWorkflowSource
+        .split("function proposalApprovalMode(")[1]
+        ?.split("function observeAgentEvent")[0] ?? "";
+    expect(approvalModeResolver).toContain(
+      "conversationForProposalEvent(event)?.approvalModeForRun("
+    );
+    expect(approvalModeResolver).not.toContain("continuity_ledger");
+    expect(appSource).not.toContain("function longAgentRunApprovalMode(");
+    expect(writingWorkflowSource).toContain(
+      "conversation.selectApprovalMode(context.approvalMode());"
+    );
+    expect(longConversationSource).toContain(
+      "target.conversation.selectApprovalMode(target.approvalMode);"
+    );
+    expect(appSource).toContain(
+      "permissionMode: () => generalSettings.value.permissionMode"
+    );
+    expect(writingWorkflowSource).toContain(
+      "writingOrchestrator.handleRejected(event)"
+    );
+    expect(writingWorkflowSource).toContain(
+      "workspaceProposals.quarantineSession("
+    );
+    expect(editorSource).not.toContain("LongLedgerCommitRecordSchema");
+    expect(editorSource).not.toContain("本章连续性摘要");
+    expect(editorSource).not.toContain("伏笔线状态推导");
+    expect(editorSource).not.toContain("查看原始审计记录");
+    expect(proposalSource).not.toContain("workspace.editor_mutation");
+  });
 
   it("runs approved chapter, arc, and volume plans through the shared writer conversation", () => {
-      expect(writingWorkflowSource).toContain(
-        "writingOrchestrator.startDispatch(event)"
-      );
-      expect(writingWorkflowSource).not.toContain("conversation.newConversation()");
-      expect(writingWorkflowSource).toContain('agentId: "draft"');
-      expect(writingWorkflowSource).not.toContain("startFreshLongContinuityLedger");
-      expect(writingWorkflowSource).toContain("resolveLiveChapterReadiness");
-      expect(writingWorkflowSource).toContain("refreshSaveBarrier");
-      expect(writingWorkflowSource).toContain("async function cancelWorkflow()");
-      expect(writingWorkflowSource).toContain("runExpectation = null");
-      expect(appSource).toContain(
-        '@cancel-writing-workflow="cancelLongWritingWorkflow"'
-      );
-      expect(longWorkspaceModuleSource).toContain("取消计划");
-      expect(proposalSource).toContain("主弧连续章节");
-      expect(proposalSource).toContain("当前卷章节");
-      expect(writingOrchestratorSource).toContain(
-        'phase: "awaiting_writer_approval"'
-      );
-      expect(writingOrchestratorSource).not.toContain(
-        'phase: "awaiting_ledger_approval"'
-      );
-      expect(writingOrchestratorSource).toContain(
-        'fail(error, "after_write")'
-      );
-      expect(writingOrchestratorSource).not.toContain("after_ledger");
-      expect(writingOrchestratorSource).toContain(
-        "guard: LongWritingRunGuard"
-      );
-      expect(writingOrchestratorSource).toContain(
-        "runEpoch === epoch"
-      );
-      const freshRunSource =
-        writingWorkflowSource
-          .split("async function startFreshAgentRun(")[1]
-          ?.split("async function startFreshChapterWriter(")[0] ?? "";
-      expect(
-        freshRunSource.match(/guard\.isCurrent\(\)/gu)?.length
-      ).toBeGreaterThanOrEqual(5);
-      expect(freshRunSource).toContain(
-        "context.catalog.readableAttachments(summary, profile)"
-      );
-      expect(freshRunSource).not.toContain(
-        "activeLongReadableAttachments"
-      );
-      const cancelSource =
-        writingWorkflowSource
-          .split("async function cancelWorkflow()")[1]
-          ?.split("function canApproveProposal(")[0] ?? "";
-      expect(cancelSource).toContain(
-        "conversation.sessionId.value === expectation.sessionId"
-      );
-      expect(cancelSource.indexOf("workspaceProposals.quarantineSession("))
-        .toBeLessThan(
-          cancelSource.indexOf("runExpectation = null")
-        );
-      expect(cancelSource).toContain(
-        "conversation.cancelPendingGeneration()"
-      );
-      expect(cancelSource).not.toContain("conversation.newConversation()");
-      expect(cancelSource.indexOf("conversation.stopGeneration()")).toBeLessThan(
-        cancelSource.indexOf("await stopPromise")
-      );
-      expect(writingOrchestratorSource).toContain(
-        "event.payload.agentId !== expectation.agentId"
-      );
-      expect(writingOrchestratorSource).toContain(
-        "event.payload.sessionId !== expectation.sessionId"
-      );
-      expect(writingOrchestratorSource).toContain(
-        "event.payload.runId !== expectation.runId"
-      );
-      expect(writingWorkflowSource).toContain(
-        "if (!canApproveProposal(event)) return;"
-      );
-    });
+    expect(writingWorkflowSource).toContain(
+      "writingOrchestrator.startDispatch(event)"
+    );
+    expect(writingWorkflowSource).not.toContain(
+      "conversation.newConversation()"
+    );
+    expect(writingWorkflowSource).toContain('agentId: "draft"');
+    expect(writingWorkflowSource).not.toContain(
+      "startFreshLongContinuityLedger"
+    );
+    expect(writingWorkflowSource).toContain("resolveLiveChapterReadiness");
+    expect(writingWorkflowSource).toContain("refreshSaveBarrier");
+    expect(writingWorkflowSource).toContain("async function cancelWorkflow()");
+    expect(writingWorkflowSource).toContain("runExpectation = null");
+    expect(appSource).toContain(
+      '@cancel-writing-workflow="cancelLongWritingWorkflow"'
+    );
+    expect(longWorkspaceModuleSource).toContain("取消计划");
+    expect(proposalSource).toContain("主弧连续章节");
+    expect(proposalSource).toContain("当前卷章节");
+    expect(writingOrchestratorSource).toContain(
+      'phase: "awaiting_writer_approval"'
+    );
+    expect(writingOrchestratorSource).not.toContain(
+      'phase: "awaiting_ledger_approval"'
+    );
+    expect(writingOrchestratorSource).toContain('fail(error, "after_write")');
+    expect(writingOrchestratorSource).not.toContain("after_ledger");
+    expect(writingOrchestratorSource).toContain("guard: LongWritingRunGuard");
+    expect(writingOrchestratorSource).toContain("runEpoch === epoch");
+    const freshRunSource =
+      writingWorkflowSource
+        .split("async function startFreshAgentRun(")[1]
+        ?.split("async function startFreshChapterWriter(")[0] ?? "";
+    expect(
+      freshRunSource.match(/guard\.isCurrent\(\)/gu)?.length
+    ).toBeGreaterThanOrEqual(5);
+    expect(freshRunSource).toContain(
+      "context.catalog.readableAttachments(summary, profile)"
+    );
+    expect(freshRunSource).not.toContain("activeLongReadableAttachments");
+    const cancelSource =
+      writingWorkflowSource
+        .split("async function cancelWorkflow()")[1]
+        ?.split("function canApproveProposal(")[0] ?? "";
+    expect(cancelSource).toContain(
+      "conversation.sessionId.value === expectation.sessionId"
+    );
+    expect(
+      cancelSource.indexOf("workspaceProposals.quarantineSession(")
+    ).toBeLessThan(cancelSource.indexOf("runExpectation = null"));
+    expect(cancelSource).toContain("conversation.cancelPendingGeneration()");
+    expect(cancelSource).not.toContain("conversation.newConversation()");
+    expect(cancelSource.indexOf("conversation.stopGeneration()")).toBeLessThan(
+      cancelSource.indexOf("await stopPromise")
+    );
+    expect(writingOrchestratorSource).toContain(
+      "event.payload.agentId !== expectation.agentId"
+    );
+    expect(writingOrchestratorSource).toContain(
+      "event.payload.sessionId !== expectation.sessionId"
+    );
+    expect(writingOrchestratorSource).toContain(
+      "event.payload.runId !== expectation.runId"
+    );
+    expect(writingWorkflowSource).toContain(
+      "if (!canApproveProposal(event)) return;"
+    );
+  });
 
   it("guards every plan-invalidating navigation or mutation until cancellation", () => {
-      expect(writingWorkflowSource).toContain("function blockActivePlan(");
-      for (const action of [
-        "新建长篇",
-        "打开其他长篇",
-        "导入长篇",
-        "同步旧版本",
-        "管理其他长篇的结构"
-      ]) {
-        expect(longBookLifecycleSource).toContain(
-          `workflow.blockWritingPlan("${action}"`
-        );
-      }
-      expect(longRollbackSource).toContain(
-        'options.blockWritingPlan("回滚连续性提交")'
-      );
-      expect(longStructureTransactionsSource).toContain(
-        'blockActiveLongWritingPlan("修改长篇结构")'
-      );
-      expect(longConversationSource).toContain(
-        'options.workspace.blockActiveWritingPlan("新建长篇对话")'
-      );
-      expect(longConversationSource).toContain(
-        'options.workspace.blockActiveWritingPlan("切换长篇对话")'
-      );
+    expect(writingWorkflowSource).toContain("function blockActivePlan(");
+    for (const action of [
+      "新建长篇",
+      "打开其他长篇",
+      "导入长篇",
+      "同步旧版本",
+      "管理其他长篇的结构"
+    ]) {
       expect(longBookLifecycleSource).toContain(
-        '"管理其他长篇的技能库绑定"'
+        `workflow.blockWritingPlan("${action}"`
       );
-      expect(longBookLifecycleSource).toContain(
-        '"管理其他长篇的素材库绑定"'
-      );
-      expect(longBookLifecycleSource).toContain(
-        "`修改长篇${bindingLabel}`"
-      );
-      expect(writingWorkflowSource).toContain("请先取消计划");
-      expect(longWorkspaceModuleSource).toContain(
-        "writingOrchestrator.state.value.bookId ==="
-      );
-      expect(longWorkspaceModuleSource).toContain("book.id");
-      expect(longConversationSource).toContain(
-        "if (conversation.isBusy.value)"
-      );
-      expect(longConversationSource).toContain(
-        "请先停止当前长篇回复，再新建对话。"
-      );
-      const newConversationSource =
-        featureHostCoordinatorSource
-          .split("function newConversation(): void {")[1]
-          ?.split("async function openWorkspaceDialog(")[0] ?? "";
-      expect(newConversationSource).toContain(
-        "options.view.activeLongBookId.value !== null"
-      );
-      expect(newConversationSource).not.toContain(
-        "isLongWorkspaceActive.value"
-      );
-      const newLongConversationSource =
-        longConversationSource
-          .split("function newConversation(): void {")[1]
-          ?.split("function selectConversation(")[0] ?? "";
-      expect(newLongConversationSource).toContain(
-        "options.showConversation()"
-      );
-    });
+    }
+    expect(longRollbackSource).toContain(
+      'options.blockWritingPlan("回滚连续性提交")'
+    );
+    expect(longStructureTransactionsSource).toContain(
+      'blockActiveLongWritingPlan("修改长篇结构")'
+    );
+    expect(longConversationSource).toContain(
+      'options.workspace.blockActiveWritingPlan("新建长篇对话")'
+    );
+    expect(longConversationSource).toContain(
+      'options.workspace.blockActiveWritingPlan("切换长篇对话")'
+    );
+    expect(longBookLifecycleSource).toContain('"管理其他长篇的技能库绑定"');
+    expect(longBookLifecycleSource).toContain('"管理其他长篇的素材库绑定"');
+    expect(longBookLifecycleSource).toContain("`修改长篇${bindingLabel}`");
+    expect(writingWorkflowSource).toContain("请先取消计划");
+    expect(longWorkspaceModuleSource).toContain(
+      "writingOrchestrator.state.value.bookId ==="
+    );
+    expect(longWorkspaceModuleSource).toContain("book.id");
+    expect(longConversationSource).toContain("if (conversation.isBusy.value)");
+    expect(longConversationSource).toContain(
+      "请先停止当前长篇回复，再新建对话。"
+    );
+    const newConversationSource =
+      featureHostCoordinatorSource
+        .split("function newConversation(): void {")[1]
+        ?.split("async function openWorkspaceDialog(")[0] ?? "";
+    expect(newConversationSource).toContain(
+      "options.view.activeLongBookId.value !== null"
+    );
+    expect(newConversationSource).not.toContain("isLongWorkspaceActive.value");
+    const newLongConversationSource =
+      longConversationSource
+        .split("function newConversation(): void {")[1]
+        ?.split("function selectConversation(")[0] ?? "";
+    expect(newLongConversationSource).toContain("options.showConversation()");
+  });
 
   it("keeps saved revisions atomic and pauses long-agent sends while refreshing", () => {
-      expect(longWorkspaceSessionSource).toContain(
-        "createLongWorkspaceRefreshClock()"
-      );
-      expect(longWorkspaceSessionSource).toContain(
-        "isMonotonicLongWorkspaceRefresh("
-      );
-      expect(appSource).toContain("activeLongWorkspaceContextReady");
-      expect(longWorkspaceSessionSource).toContain("state.refreshStatus.value = {");
-      expect(appSource).toContain("retryActiveLongWorkspaceRefresh");
-      expect(longWorkspaceModuleSource).toContain("长篇智能体已暂停发送");
-      expect(longWorkspaceModuleSource).toContain(
-        'v-if="refreshStatus?.error"'
-      );
-      expect(appSource).not.toContain(
-        'activeLongWorkspaceRefreshStatus.pending\n                    ? "正在同步保存后的最新工作区索引…"'
-      );
-      const sendLongMessageSource =
-        longConversationSource
-          .split("function sendLongMessage(")[1]
-          ?.split("function synchronizeActiveRunPreferences")[0] ?? "";
-      expect(sendLongMessageSource).toContain("await nextTick()");
-      expect(
-        sendLongMessageSource.match(
-          /confirmSendTarget\(target\)/gu
-        )?.length
-      ).toBeGreaterThanOrEqual(4);
-      expect(sendLongMessageSource.indexOf("saveActiveEditorChanges()")).toBeLessThan(
-        sendLongMessageSource.indexOf(
-          "refreshActiveWorkspace("
-        )
-      );
-      expect(sendLongMessageSource.indexOf(
-        "refreshActiveWorkspace("
-      )).toBeLessThan(
-        sendLongMessageSource.indexOf("activeRuntimeContext.value")
-      );
-      expect(sendLongMessageSource).toContain(
-        "target.conversation.sendLongMessage("
-      );
-      const sendTargetSource =
-        longConversationSource
-          .split("interface LongMessageSendTarget")[1]
-          ?.split("export interface LongConversationCoordinatorOptions")[0] ?? "";
-      for (const field of [
-        "bookId:",
-        "selectionKey:",
-        "preferredRole:",
-        "activeRoot:",
-        "chapterCardId:",
-        "fileId:",
-        "agentId:",
-        "conversation:",
-        "sessionId:",
-        "draft:"
-      ]) {
-        expect(sendTargetSource).toContain(field);
-      }
-      expect(appSource).toContain(':editor-locked="longEditorLocked"');
-      expect(appSource).not.toContain(
-        "const longEditorLocked = computed("
-      );
-      expect(longWorkspaceModuleSource).toContain(':locked="editorLocked"');
-      expect(presentationCoordinatorSource).toContain(
-        "agentRunScopeHasWriteBarrier(scope)"
-      );
-      expect(presentationCoordinatorSource).toContain(
-        "conversation.hasPendingEditReview.value"
-      );
-      expect(presentationCoordinatorSource).toContain(
-        "正在保存并准备发送，编辑暂时锁定"
-      );
-      expect(presentationCoordinatorSource).toContain(
-        "长篇智能体运行中 · 暂停编辑以防止版本冲突"
-      );
-      expect(editorSource).toContain("lockedReason?: string");
-      expect(editorSource).toContain(':disabled="locked"');
-      const approveSource =
-        writingWorkflowSource
-          .split("async function approveProposal(")[1]
-          ?.split("function rejectProposal(")[0] ?? "";
-      expect(approveSource).toContain(
-        "canApproveProposal(item.event)"
-      );
-      expect(approveSource).toContain(
-        "const wasPlanBound = writingOrchestrator.active.value"
-      );
-      expect(
-        approveSource.indexOf(
-          "state.proposalApprovalPending.value = true"
-        )
-      ).toBeLessThan(
-        approveSource.indexOf("await context.workspace.saveActiveEditorChanges()")
-      );
-      expect(approveSource.indexOf("await nextTick()")).toBeLessThan(
-        approveSource.indexOf("await context.workspace.saveActiveEditorChanges()")
-      );
-      expect(approveSource).toContain(
-        "canApproveProposal(currentItem.event)"
-      );
-      expect(approveSource).toContain(
-        "wasPlanBound &&"
-      );
-      expect(approveSource).toContain(
-        "!writingOrchestrator.active.value"
-      );
-      const readinessSource =
-        writingWorkflowSource
-          .split("async function resolveLiveChapterReadiness(")[1]
-          ?.split("function workflowRuntimeContext")[0] ?? "";
-      expect(readinessSource).toContain("workspace.saveActiveEditorChanges()");
-      expect(readinessSource).toContain("workspace.refreshActiveWorkspace(bookId)");
-      expect(readinessSource).not.toContain(
-        "replaceLongBookSummary(longBooks.value, result.summary)"
-      );
-    });
+    expect(longWorkspaceSessionSource).toContain(
+      "createLongWorkspaceRefreshClock()"
+    );
+    expect(longWorkspaceSessionSource).toContain(
+      "isMonotonicLongWorkspaceRefresh("
+    );
+    expect(appSource).toContain("activeLongWorkspaceContextReady");
+    expect(longWorkspaceSessionSource).toContain(
+      "state.refreshStatus.value = {"
+    );
+    expect(appSource).toContain("retryActiveLongWorkspaceRefresh");
+    expect(longWorkspaceModuleSource).toContain("长篇智能体已暂停发送");
+    expect(longWorkspaceModuleSource).toContain('v-if="refreshStatus?.error"');
+    expect(appSource).not.toContain(
+      'activeLongWorkspaceRefreshStatus.pending\n                    ? "正在同步保存后的最新工作区索引…"'
+    );
+    const sendLongMessageSource =
+      longConversationSource
+        .split("function sendLongMessage(")[1]
+        ?.split("function synchronizeActiveRunPreferences")[0] ?? "";
+    expect(sendLongMessageSource).toContain("await nextTick()");
+    expect(
+      sendLongMessageSource.match(/confirmSendTarget\(target\)/gu)?.length
+    ).toBeGreaterThanOrEqual(4);
+    expect(
+      sendLongMessageSource.indexOf("saveActiveEditorChanges()")
+    ).toBeLessThan(sendLongMessageSource.indexOf("refreshActiveWorkspace("));
+    expect(
+      sendLongMessageSource.indexOf("refreshActiveWorkspace(")
+    ).toBeLessThan(sendLongMessageSource.indexOf("activeRuntimeContext.value"));
+    expect(sendLongMessageSource).toContain(
+      "target.conversation.sendLongMessage("
+    );
+    const sendTargetSource =
+      longConversationSource
+        .split("interface LongMessageSendTarget")[1]
+        ?.split("export interface LongConversationCoordinatorOptions")[0] ?? "";
+    for (const field of [
+      "bookId:",
+      "selectionKey:",
+      "preferredRole:",
+      "activeRoot:",
+      "chapterCardId:",
+      "fileId:",
+      "agentId:",
+      "conversation:",
+      "sessionId:",
+      "draft:"
+    ]) {
+      expect(sendTargetSource).toContain(field);
+    }
+    expect(appSource).toContain(':editor-locked="longEditorLocked"');
+    expect(appSource).not.toContain("const longEditorLocked = computed(");
+    expect(longWorkspaceModuleSource).toContain(':locked="editorLocked"');
+    expect(presentationCoordinatorSource).toContain(
+      "agentRunScopeHasWriteBarrier(scope)"
+    );
+    expect(presentationCoordinatorSource).toContain(
+      "conversation.hasPendingEditReview.value"
+    );
+    expect(presentationCoordinatorSource).toContain(
+      "正在保存并准备发送，编辑暂时锁定"
+    );
+    expect(presentationCoordinatorSource).toContain(
+      "长篇智能体运行中 · 暂停编辑以防止版本冲突"
+    );
+    expect(editorSource).toContain("lockedReason?: string");
+    expect(editorSource).toContain(':disabled="locked"');
+    const approveSource =
+      writingWorkflowSource
+        .split("async function approveProposal(")[1]
+        ?.split("function rejectProposal(")[0] ?? "";
+    expect(approveSource).toContain("canApproveProposal(item.event)");
+    expect(approveSource).toContain(
+      "const wasPlanBound = writingOrchestrator.active.value"
+    );
+    expect(
+      approveSource.indexOf("state.proposalApprovalPending.value = true")
+    ).toBeLessThan(
+      approveSource.indexOf("await context.workspace.saveActiveEditorChanges()")
+    );
+    expect(approveSource.indexOf("await nextTick()")).toBeLessThan(
+      approveSource.indexOf("await context.workspace.saveActiveEditorChanges()")
+    );
+    expect(approveSource).toContain("canApproveProposal(currentItem.event)");
+    expect(approveSource).toContain("wasPlanBound &&");
+    expect(approveSource).toContain("!writingOrchestrator.active.value");
+    const readinessSource =
+      writingWorkflowSource
+        .split("async function resolveLiveChapterReadiness(")[1]
+        ?.split("function workflowRuntimeContext")[0] ?? "";
+    expect(readinessSource).toContain("workspace.saveActiveEditorChanges()");
+    expect(readinessSource).toContain(
+      "workspace.refreshActiveWorkspace(bookId)"
+    );
+    expect(readinessSource).not.toContain(
+      "replaceLongBookSummary(longBooks.value, result.summary)"
+    );
+  });
 
   it("shares plot-design and draft history across chapters while preserving other isolation", () => {
-      expect(writingWorkflowSource).toContain(
-        'activeRoot: LongWorkspaceRuntimeContext["activeRoot"]'
-      );
-      expect(writingWorkflowSource).toContain(
-        'agentId === "plot_design" || agentId === "draft"'
-      );
-      expect(writingWorkflowSource).toContain(
-        'conversationChapterCardId ?? "__book__"'
-      );
-      expect(presentationCoordinatorSource).toContain(
-        "options.long.selection.value?.chapterCardId"
-      );
-      expect(writingWorkflowSource).toContain("input.activeRoot");
-      expect(writingWorkflowSource).toContain("input.chapterCardId");
-      expect(writingWorkflowSource).toContain(
-        "const prefix = `long:${encodeURIComponent(event.payload.bookId)}:`"
-      );
-      expect(agentRunPreferencesSource).toContain(
-        "return `${document.workspaceId}:${agentId}`"
-      );
-      expect(agentRunPreferencesSource).not.toContain(
-        "longConversationKey"
-      );
-    });
+    expect(writingWorkflowSource).toContain(
+      'activeRoot: LongWorkspaceRuntimeContext["activeRoot"]'
+    );
+    expect(writingWorkflowSource).toContain(
+      'agentId === "plot_design" || agentId === "draft"'
+    );
+    expect(writingWorkflowSource).toContain(
+      'conversationChapterCardId ?? "__book__"'
+    );
+    expect(presentationCoordinatorSource).toContain(
+      "options.long.selection.value?.chapterCardId"
+    );
+    expect(writingWorkflowSource).toContain("input.activeRoot");
+    expect(writingWorkflowSource).toContain("input.chapterCardId");
+    expect(writingWorkflowSource).toContain(
+      "const prefix = `long:${encodeURIComponent(event.payload.bookId)}:`"
+    );
+    expect(agentRunPreferencesSource).toContain(
+      "return `${document.workspaceId}:${agentId}`"
+    );
+    expect(agentRunPreferencesSource).not.toContain("longConversationKey");
+  });
 
   it("requires a modal confirmation before rolling back the final commit", () => {
-      expect(editorSource).toContain("回滚最后提交");
-      expect(appSource).toContain('@rollback="openLongRollbackDialog"');
-      expect(appSource).toContain("useLazyLongRollbackCoordinator({");
-      expect(longRollbackSource).toContain("api.rollbackLastCommit({");
-      expect(longRollbackSource).toContain(
-        "await session.saveActiveEditorChanges()"
-      );
-      expect(longRollbackSource).toContain(
-        "await session.refreshActiveWorkspace(operationTarget.bookId)"
-      );
-      expect(rollbackSource).toContain('role="alertdialog"');
-      expect(rollbackSource).toContain('aria-modal="true"');
-      expect(rollbackSource).toContain("var(--surface-raised)");
-    });
+    expect(editorSource).toContain("回滚最后提交");
+    expect(appSource).toContain('@rollback="openLongRollbackDialog"');
+    expect(appSource).toContain("useLazyLongRollbackCoordinator({");
+    expect(longRollbackSource).toContain("api.rollbackLastCommit({");
+    expect(longRollbackSource).toContain(
+      "await session.saveActiveEditorChanges()"
+    );
+    expect(longRollbackSource).toContain(
+      "await session.refreshActiveWorkspace(operationTarget.bookId)"
+    );
+    expect(rollbackSource).toContain('role="alertdialog"');
+    expect(rollbackSource).toContain('aria-modal="true"');
+    expect(rollbackSource).toContain("var(--surface-raised)");
+  });
 });

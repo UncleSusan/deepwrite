@@ -12,14 +12,21 @@ import {
 import { ProjectTransactionConflictError } from "../project-transaction";
 import type { ProjectTransactionFileOperation } from "../project-transaction";
 import { loadIndexedFile } from "./cache";
-import { assertDirectlyMutableDocument, validatePortableAndCanonicalPaths } from "./integrity";
+import {
+  assertDirectlyMutableDocument,
+  validatePortableAndCanonicalPaths
+} from "./integrity";
 import {
   commitLongProjectTransaction,
   secureDirectory,
   serializeJson
 } from "./io";
 import { loadProject } from "./load-project";
-import { indexedFileSlots, requireIndexedFileReference, updateChapterBodyStatus } from "./paths";
+import {
+  indexedFileSlots,
+  requireIndexedFileReference,
+  updateChapterBodyStatus
+} from "./paths";
 import { createLongFileRevision, longRevisionsMatchContent } from "./revisions";
 import type { LongProjectStoreContext } from "./store-context";
 import {
@@ -34,278 +41,248 @@ import {
 
 export async function previewWorkspaceOperations(
   ctx: LongProjectStoreContext,
-    projectDirectory: string,
-    batchInput: LongWorkspaceOperationBatch
-  ): Promise<LongWorkspaceImpactPreview> {
-    const canonical = await secureDirectory(
-      projectDirectory,
-      "长篇项目目录"
+  projectDirectory: string,
+  batchInput: LongWorkspaceOperationBatch
+): Promise<LongWorkspaceImpactPreview> {
+  const canonical = await secureDirectory(projectDirectory, "长篇项目目录");
+  const requestedBatch = LongWorkspaceOperationBatchSchema.parse(batchInput);
+  return await ctx.runExclusive(canonical, async () => {
+    const loaded = await loadProject(ctx, canonical);
+    const batch = await materializeWorldbuildingConversionBatch(
+      loaded,
+      requestedBatch
     );
-    const requestedBatch =
-      LongWorkspaceOperationBatchSchema.parse(batchInput);
-    return await ctx.runExclusive(canonical, async () => {
-      const loaded = await loadProject(ctx, canonical);
-      const batch = await materializeWorldbuildingConversionBatch(
-        loaded,
-        requestedBatch
-      );
-      return previewLongWorkspaceOperations(loaded.index, batch);
-    });
-  }
+    return previewLongWorkspaceOperations(loaded.index, batch);
+  });
+}
 
 export async function applyWorkspaceOperations(
   ctx: LongProjectStoreContext,
-    projectDirectory: string,
-    input: ApplyLongWorkspaceOperationsInput
-  ): Promise<ApplyLongWorkspaceOperationsResult> {
-    const canonical = await secureDirectory(
-      projectDirectory,
-      "长篇项目目录"
+  projectDirectory: string,
+  input: ApplyLongWorkspaceOperationsInput
+): Promise<ApplyLongWorkspaceOperationsResult> {
+  const canonical = await secureDirectory(projectDirectory, "长篇项目目录");
+  const requestedBatch = LongWorkspaceOperationBatchSchema.parse(input.batch);
+  return await ctx.runExclusive(canonical, async () => {
+    const loaded = await loadProject(ctx, canonical);
+    if (input.expectedProjectRevision !== loaded.manifest.revision) {
+      throw new LongProjectConflictError(
+        "project",
+        input.expectedProjectRevision,
+        loaded.manifest.revision
+      );
+    }
+    const batch = await materializeWorldbuildingConversionBatch(
+      loaded,
+      requestedBatch
     );
-    const requestedBatch = LongWorkspaceOperationBatchSchema.parse(input.batch);
-    return await ctx.runExclusive(canonical, async () => {
-      const loaded = await loadProject(ctx, canonical);
-      if (input.expectedProjectRevision !== loaded.manifest.revision) {
-        throw new LongProjectConflictError(
-          "project",
-          input.expectedProjectRevision,
-          loaded.manifest.revision
-        );
+    for (const operation of batch.operations) {
+      const raw = operation as unknown as Record<string, unknown>;
+      const targetId =
+        typeof raw.id === "string"
+          ? raw.id
+          : raw.category &&
+              typeof raw.category === "object" &&
+              "id" in raw.category &&
+              typeof (raw.category as { id?: unknown }).id === "string"
+            ? (raw.category as { id: string }).id
+            : "";
+      if (targetId.startsWith(MIGRATION_EVIDENCE_WORLD_ID_PREFIX)) {
+        throw new Error("只读迁移证据不能通过长篇结构操作修改或删除。");
       }
-      const batch = await materializeWorldbuildingConversionBatch(
-        loaded,
-        requestedBatch
-      );
-      for (const operation of batch.operations) {
-        const raw = operation as unknown as Record<string, unknown>;
-        const targetId =
-          typeof raw.id === "string"
-            ? raw.id
-            : raw.category &&
-                typeof raw.category === "object" &&
-                "id" in raw.category &&
-                typeof (raw.category as { id?: unknown }).id === "string"
-              ? (raw.category as { id: string }).id
-              : "";
-        if (targetId.startsWith(MIGRATION_EVIDENCE_WORLD_ID_PREFIX)) {
-          throw new Error("只读迁移证据不能通过长篇结构操作修改或删除。");
-        }
-      }
-      const operationResult = applyLongWorkspaceOperations(
-        loaded.index,
-        batch
-      );
-      const nextIndex = operationResult.snapshot;
-      // Canonical role paths, portable uniqueness and reserved-directory
-      // boundaries are checked before any transaction is staged.
-      validatePortableAndCanonicalPaths(indexedFileSlots(nextIndex));
+    }
+    const operationResult = applyLongWorkspaceOperations(loaded.index, batch);
+    const nextIndex = operationResult.snapshot;
+    // Canonical role paths, portable uniqueness and reserved-directory
+    // boundaries are checked before any transaction is staged.
+    validatePortableAndCanonicalPaths(indexedFileSlots(nextIndex));
 
-      const proposalByFileId = new Map(
-        operationResult.documentWrites.map((proposal) => [
-          proposal.fileId,
-          proposal
-        ])
-      );
-      const fileOperations: ProjectTransactionFileOperation[] = [];
+    const proposalByFileId = new Map(
+      operationResult.documentWrites.map((proposal) => [
+        proposal.fileId,
+        proposal
+      ])
+    );
+    const fileOperations: ProjectTransactionFileOperation[] = [];
 
-      for (const intent of operationResult.fileIntents) {
-        if (intent.action === "delete") {
-          const expectedRevision = intent.file.revision;
-          const current = await loadIndexedFile(loaded, intent.file.id);
-          if (current.reference.path !== intent.file.path) {
-            throw new Error(
-              `长篇删除文件路径与当前索引不一致：${intent.file.id}`
-            );
-          }
-          if (
-            !longRevisionsMatchContent(
-              expectedRevision,
-              current.disk.revision,
-              current.disk.bytes
-            )
-          ) {
-            throw new LongProjectConflictError(
-              "file",
-              expectedRevision,
-              current.disk.revision
-            );
-          }
-          fileOperations.push({
-            action: "delete",
-            path: current.reference.path,
-            expectedSha256: current.disk.sha256
-          });
-          continue;
-        }
-        const proposal = proposalByFileId.get(intent.file.id);
-        const content = proposal?.content ?? "";
-        const actualRevision = createLongFileRevision(content);
-        if (
-          proposal &&
-          !longRevisionsMatchContent(
-            proposal.nextRevision,
-            actualRevision,
-            content
-          )
-        ) {
+    for (const intent of operationResult.fileIntents) {
+      if (intent.action === "delete") {
+        const expectedRevision = intent.file.revision;
+        const current = await loadIndexedFile(loaded, intent.file.id);
+        if (current.reference.path !== intent.file.path) {
           throw new Error(
-            `长篇新文件 revision 与提案内容不一致：${intent.file.id}`
+            `长篇删除文件路径与当前索引不一致：${intent.file.id}`
           );
         }
-        const nextFile = requireIndexedFileReference(
-          nextIndex,
-          intent.file.id
-        );
-        intent.file.revision = actualRevision;
-        intent.file.updatedAt = nextIndex.updatedAt;
-        nextFile.revision = actualRevision;
-        nextFile.updatedAt = nextIndex.updatedAt;
-        updateChapterBodyStatus(nextIndex, nextFile.id, content);
-        fileOperations.push({
-          path: intent.file.path,
-          content,
-          expectedSha256: null
-        });
-      }
-
-      for (const proposal of operationResult.documentWrites) {
-        if (proposal.mode === "create") continue;
-        assertDirectlyMutableDocument(loaded.index, proposal.fileId);
-        const currentDescriptor = loaded.files.get(proposal.fileId);
-        if (!currentDescriptor || currentDescriptor.kind !== "markdown") {
-          throw new Error(
-            `长篇文档提案目标不存在或不可写：${proposal.fileId}`
-          );
-        }
-        const current = await loadIndexedFile(loaded, proposal.fileId);
         if (
           !longRevisionsMatchContent(
-            proposal.expectedRevision,
+            expectedRevision,
             current.disk.revision,
             current.disk.bytes
           )
         ) {
           throw new LongProjectConflictError(
             "file",
-            proposal.expectedRevision,
+            expectedRevision,
             current.disk.revision
           );
         }
-        const content =
-          proposal.mode === "append"
-            ? `${current.disk.content}${proposal.content}`
-            : proposal.content;
-        const actualRevision = createLongFileRevision(content);
-        if (
-          !longRevisionsMatchContent(
-            proposal.nextRevision,
-            actualRevision,
-            content
-          )
-        ) {
-          throw new Error(
-            `长篇文档 nextRevision 与提案内容不一致：${proposal.fileId}`
-          );
-        }
-        const nextFile = requireIndexedFileReference(
-          nextIndex,
-          proposal.fileId
-        );
-        if (
-          !longRevisionsMatchContent(
-            nextFile.revision,
-            actualRevision,
-            content
-          )
-        ) {
-          throw new Error(
-            `长篇索引未包含文档提案的实际 revision：${proposal.fileId}`
-          );
-        }
-        updateChapterBodyStatus(nextIndex, nextFile.id, content);
         fileOperations.push({
+          action: "delete",
           path: current.reference.path,
-          content,
           expectedSha256: current.disk.sha256
         });
+        continue;
       }
-      const indexContent = serializeJson(nextIndex);
-      const nextManifest = LongProjectManifestSchema.parse({
-        ...loaded.manifest,
-        revision: nextIndex.revision,
-        updatedAt: nextIndex.updatedAt,
-        workspaceIndexFile: {
-          ...loaded.manifest.workspaceIndexFile,
-          revision: createLongFileRevision(indexContent),
-          updatedAt: nextIndex.updatedAt
-        }
+      const proposal = proposalByFileId.get(intent.file.id);
+      const content = proposal?.content ?? "";
+      const actualRevision = createLongFileRevision(content);
+      if (
+        proposal &&
+        !longRevisionsMatchContent(
+          proposal.nextRevision,
+          actualRevision,
+          content
+        )
+      ) {
+        throw new Error(
+          `长篇新文件 revision 与提案内容不一致：${intent.file.id}`
+        );
+      }
+      const nextFile = requireIndexedFileReference(nextIndex, intent.file.id);
+      intent.file.revision = actualRevision;
+      intent.file.updatedAt = nextIndex.updatedAt;
+      nextFile.revision = actualRevision;
+      nextFile.updatedAt = nextIndex.updatedAt;
+      updateChapterBodyStatus(nextIndex, nextFile.id, content);
+      fileOperations.push({
+        path: intent.file.path,
+        content,
+        expectedSha256: null
       });
-      try {
-        await commitLongProjectTransaction({
-          projectRoot: loaded.projectDirectory,
-          operations: [
-            ...fileOperations,
-            {
-              path: LONG_WORKSPACE_INDEX_PATH,
-              content: indexContent,
-              expectedSha256: loaded.indexDisk.sha256
-            },
-            {
-              path: MANIFEST_PATH,
-              content: serializeJson(nextManifest),
-              expectedSha256: loaded.manifestDisk.sha256
-            }
-          ],
-          maxFileBytes: MAX_LEDGER_RECORD_BYTES
-        });
-      } catch (error: unknown) {
-        if (error instanceof ProjectTransactionConflictError) {
-          throw new LongProjectConflictError(
-            "transaction",
-            error.expectedSha256 ?? "missing",
-            error.actualSha256 ?? "missing"
-          );
-        }
-        throw error;
+    }
+
+    for (const proposal of operationResult.documentWrites) {
+      if (proposal.mode === "create") continue;
+      assertDirectlyMutableDocument(loaded.index, proposal.fileId);
+      const currentDescriptor = loaded.files.get(proposal.fileId);
+      if (!currentDescriptor || currentDescriptor.kind !== "markdown") {
+        throw new Error(`长篇文档提案目标不存在或不可写：${proposal.fileId}`);
       }
-      const next = await loadProject(ctx, loaded.projectDirectory);
-      return {
-        book: next.book,
-        summary: next.summary,
-        operationResult: {
-          ...operationResult,
-          snapshot: next.index
-        },
-        projectRevision: next.manifest.revision
-      };
+      const current = await loadIndexedFile(loaded, proposal.fileId);
+      if (
+        !longRevisionsMatchContent(
+          proposal.expectedRevision,
+          current.disk.revision,
+          current.disk.bytes
+        )
+      ) {
+        throw new LongProjectConflictError(
+          "file",
+          proposal.expectedRevision,
+          current.disk.revision
+        );
+      }
+      const content =
+        proposal.mode === "append"
+          ? `${current.disk.content}${proposal.content}`
+          : proposal.content;
+      const actualRevision = createLongFileRevision(content);
+      if (
+        !longRevisionsMatchContent(
+          proposal.nextRevision,
+          actualRevision,
+          content
+        )
+      ) {
+        throw new Error(
+          `长篇文档 nextRevision 与提案内容不一致：${proposal.fileId}`
+        );
+      }
+      const nextFile = requireIndexedFileReference(nextIndex, proposal.fileId);
+      if (
+        !longRevisionsMatchContent(nextFile.revision, actualRevision, content)
+      ) {
+        throw new Error(
+          `长篇索引未包含文档提案的实际 revision：${proposal.fileId}`
+        );
+      }
+      updateChapterBodyStatus(nextIndex, nextFile.id, content);
+      fileOperations.push({
+        path: current.reference.path,
+        content,
+        expectedSha256: current.disk.sha256
+      });
+    }
+    const indexContent = serializeJson(nextIndex);
+    const nextManifest = LongProjectManifestSchema.parse({
+      ...loaded.manifest,
+      revision: nextIndex.revision,
+      updatedAt: nextIndex.updatedAt,
+      workspaceIndexFile: {
+        ...loaded.manifest.workspaceIndexFile,
+        revision: createLongFileRevision(indexContent),
+        updatedAt: nextIndex.updatedAt
+      }
     });
-  }
+    try {
+      await commitLongProjectTransaction({
+        projectRoot: loaded.projectDirectory,
+        operations: [
+          ...fileOperations,
+          {
+            path: LONG_WORKSPACE_INDEX_PATH,
+            content: indexContent,
+            expectedSha256: loaded.indexDisk.sha256
+          },
+          {
+            path: MANIFEST_PATH,
+            content: serializeJson(nextManifest),
+            expectedSha256: loaded.manifestDisk.sha256
+          }
+        ],
+        maxFileBytes: MAX_LEDGER_RECORD_BYTES
+      });
+    } catch (error: unknown) {
+      if (error instanceof ProjectTransactionConflictError) {
+        throw new LongProjectConflictError(
+          "transaction",
+          error.expectedSha256 ?? "missing",
+          error.actualSha256 ?? "missing"
+        );
+      }
+      throw error;
+    }
+    const next = await loadProject(ctx, loaded.projectDirectory);
+    return {
+      book: next.book,
+      summary: next.summary,
+      operationResult: {
+        ...operationResult,
+        snapshot: next.index
+      },
+      projectRevision: next.manifest.revision
+    };
+  });
+}
 
 export async function materializeWorldbuildingConversionBatch(
   loaded: LoadedLongProject,
   requestedBatch: LongWorkspaceOperationBatch
 ): Promise<LongWorkspaceOperationBatch> {
-  const structuralPreview = previewLongWorkspaceOperations(
-    loaded.index,
-    {
-      ...requestedBatch,
-      expectedImpact: undefined
-    }
-  );
-  const structuralResult = applyLongWorkspaceOperations(
-    loaded.index,
-    {
-      ...requestedBatch,
-      expectedImpact: structuralPreview.impact
-    }
-  );
+  const structuralPreview = previewLongWorkspaceOperations(loaded.index, {
+    ...requestedBatch,
+    expectedImpact: undefined
+  });
+  const structuralResult = applyLongWorkspaceOperations(loaded.index, {
+    ...requestedBatch,
+    expectedImpact: structuralPreview.impact
+  });
   const previousById = new Map(
     loaded.index.worldbuilding.map((category) => [category.id, category])
   );
   const documentWrites = [...requestedBatch.documentWrites];
-  const writtenFileIds = new Set(
-    documentWrites.map(({ fileId }) => fileId)
-  );
+  const writtenFileIds = new Set(documentWrites.map(({ fileId }) => fileId));
 
   for (const category of structuralResult.snapshot.worldbuilding) {
     const previous = previousById.get(category.id);
@@ -338,10 +315,7 @@ export async function materializeWorldbuildingConversionBatch(
       }
       targetFile = category.file;
       content = parts.length ? `${parts.join("\n\n")}\n` : "";
-    } else if (
-      previous.format === "text" &&
-      category.format === "list"
-    ) {
+    } else if (previous.format === "text" && category.format === "list") {
       const target = category.items[0];
       if (!target) continue;
       const source = await loadIndexedFile(loaded, previous.file.id);

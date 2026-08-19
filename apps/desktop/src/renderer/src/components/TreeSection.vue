@@ -34,24 +34,35 @@ const emit = defineEmits<{
   moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
   createLongDraftSection: [node: ResourceTreeNode];
-  longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode];
+  longDraftSectionAction: [
+    action: "move-up" | "move-down" | "delete",
+    node: ResourceTreeNode
+  ];
   createLongTreeItem: [node: ResourceTreeNode];
   longTreeItemAction: [action: LongTreeItemAction, node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
-  expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
+  expertSectionAction: [
+    action: "move-up" | "move-down",
+    node: ResourceTreeNode
+  ];
   createCharacterItem: [node: ResourceTreeNode];
-  characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
+  characterItemAction: [
+    action: "rename" | "move-up" | "move-down" | "delete",
+    node: ResourceTreeNode
+  ];
 }>();
 
 const collapsed = ref(false);
 const actionMenuOpen = ref(false);
 const actionArea = ref<HTMLElement | null>(null);
 
-const actionItems = computed<Array<{
-  id: ResourceSectionAction;
-  label: string;
-  icon: IconName;
-}>>(() => {
+const actionItems = computed<
+  Array<{
+    id: ResourceSectionAction;
+    label: string;
+    icon: IconName;
+  }>
+>(() => {
   const resourceName =
     props.section.id === "creation"
       ? "书籍"
@@ -61,7 +72,8 @@ const actionItems = computed<Array<{
   return [
     {
       id: "create",
-      label: props.section.id === "creation" ? "新建作品" : `新建${resourceName}`,
+      label:
+        props.section.id === "creation" ? "新建作品" : `新建${resourceName}`,
       icon: "plus"
     },
     ...(props.section.id === "creation"
@@ -69,7 +81,10 @@ const actionItems = computed<Array<{
       : ([{ id: "create-group", label: "新建分组", icon: "folder" }] as const)),
     {
       id: props.section.id === "creation" ? "choose-open-book" : "import",
-      label: props.section.id === "creation" ? "打开已有作品" : `打开已存在${resourceName}`,
+      label:
+        props.section.id === "creation"
+          ? "打开已有作品"
+          : `打开已存在${resourceName}`,
       icon: "folder"
     },
     ...(props.section.id === "creation"
@@ -134,7 +149,9 @@ onBeforeUnmount(() => {
         class="section-toggle"
         type="button"
         :aria-expanded="!collapsed"
-        :aria-label="collapsed ? `展开${section.label}` : `折叠${section.label}`"
+        :aria-label="
+          collapsed ? `展开${section.label}` : `折叠${section.label}`
+        "
         @click="collapsed = !collapsed"
       >
         <AppIcon :name="section.icon" :size="15" />
@@ -185,7 +202,8 @@ onBeforeUnmount(() => {
         :pinnable="
           !node.unavailable &&
           !node.missing &&
-          (node.catalogNodeType === 'book' || node.catalogNodeType === 'library')
+          (node.catalogNodeType === 'book' ||
+            node.catalogNodeType === 'library')
         "
         :pinned="pinnedIds?.includes(node.id) ?? false"
         :pinned-ids="pinnedIds"
@@ -201,13 +219,23 @@ onBeforeUnmount(() => {
         @move-library-entry="emit('moveLibraryEntry', $event)"
         @create-expert-section="emit('createExpertSection', $event)"
         @create-long-draft-section="emit('createLongDraftSection', $event)"
-        @long-draft-section-action="(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)"
+        @long-draft-section-action="
+          (action, sectionNode) =>
+            emit('longDraftSectionAction', action, sectionNode)
+        "
         @create-long-tree-item="emit('createLongTreeItem', $event)"
-        @long-tree-item-action="(action, itemNode) => emit('longTreeItemAction', action, itemNode)"
+        @long-tree-item-action="
+          (action, itemNode) => emit('longTreeItemAction', action, itemNode)
+        "
         @remove-expert-section="emit('removeExpertSection', $event)"
-        @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
+        @expert-section-action="
+          (action, sectionNode) =>
+            emit('expertSectionAction', action, sectionNode)
+        "
         @create-character-item="emit('createCharacterItem', $event)"
-        @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
+        @character-item-action="
+          (action, itemNode) => emit('characterItemAction', action, itemNode)
+        "
       />
     </ul>
   </section>

@@ -1,4 +1,8 @@
-import type { LongArcId, LongCharacterId, LongWorkspaceOperationBatch } from "@deepwrite/contracts";
+import type {
+  LongArcId,
+  LongCharacterId,
+  LongWorkspaceOperationBatch
+} from "@deepwrite/contracts";
 import type { LongStructureLease } from "./lease";
 import type { LongStructureSync } from "./sync";
 import { booleanMutationCompletion } from "./types";
@@ -6,9 +10,17 @@ import { booleanMutationCompletion } from "./types";
 export function createLongStructureRenameSave(
   host: LongStructureLease,
   sync: LongStructureSync,
-  loadLongStructureMutationModule: () => Promise<typeof import("../../types/longStructureMutations")>
+  loadLongStructureMutationModule: () => Promise<
+    typeof import("../../types/longStructureMutations")
+  >
 ) {
-  const { uiMessage, state, isDisposed, assertCurrentLongStructureMutationTarget, withMutation } = host;
+  const {
+    uiMessage,
+    state,
+    isDisposed,
+    assertCurrentLongStructureMutationTarget,
+    withMutation
+  } = host;
   const { executeLongStructureMutation } = sync;
   const { activeBookId: activeLongBookId } = state;
 
@@ -24,7 +36,9 @@ export function createLongStructureRenameSave(
       },
       async (lease) => {
         const index = lease.target.index;
-        const character = index.characters.find(({ id }) => id === input.characterId);
+        const character = index.characters.find(
+          ({ id }) => id === input.characterId
+        );
         const name = input.name.trim();
         if (!character) {
           uiMessage.warning("该人物已不存在，请刷新后重试。");
@@ -51,7 +65,9 @@ export function createLongStructureRenameSave(
           );
         } catch (error: unknown) {
           if (isDisposed()) return;
-          uiMessage.warning(error instanceof Error ? error.message : "无法修改人物姓名。");
+          uiMessage.warning(
+            error instanceof Error ? error.message : "无法修改人物姓名。"
+          );
           completion(false);
           return;
         }
@@ -98,28 +114,37 @@ export function createLongStructureRenameSave(
           const builder = createLongStructureMutationBuilder(index);
           switch (input.kind) {
             case "worldbuilding": {
-              const category = index.worldbuilding.find(({ id }) => id === input.id);
+              const category = index.worldbuilding.find(
+                ({ id }) => id === input.id
+              );
               currentTitle = category?.title;
               structureLabel = "世界观分类";
-              if (category) batch = builder.updateWorldbuilding(category.id, { title });
+              if (category)
+                batch = builder.updateWorldbuilding(category.id, { title });
               break;
             }
             case "volume": {
-              const volume = index.plot.volumes.find(({ id }) => id === input.id);
+              const volume = index.plot.volumes.find(
+                ({ id }) => id === input.id
+              );
               currentTitle = volume?.title;
               structureLabel = "分卷";
               if (volume) batch = builder.updateVolume(volume.id, { title });
               break;
             }
             case "plotPoint": {
-              const plotPoint = index.plot.arcs.find(({ id }) => id === input.id);
+              const plotPoint = index.plot.arcs.find(
+                ({ id }) => id === input.id
+              );
               currentTitle = plotPoint?.title;
               structureLabel = "剧情点";
               if (plotPoint) batch = builder.updateArc(plotPoint.id, { title });
               break;
             }
             case "chapterCard": {
-              const chapter = index.plot.chapterCards.find(({ id }) => id === input.id);
+              const chapter = index.plot.chapterCards.find(
+                ({ id }) => id === input.id
+              );
               currentTitle = chapter?.title;
               structureLabel = "章卡";
               if (chapter) batch = builder.updateChapter(chapter.id, { title });
@@ -128,7 +153,9 @@ export function createLongStructureRenameSave(
           }
         } catch (error: unknown) {
           if (isDisposed()) return;
-          uiMessage.warning(error instanceof Error ? error.message : "无法修改标题。");
+          uiMessage.warning(
+            error instanceof Error ? error.message : "无法修改标题。"
+          );
           completion(false);
           return;
         }
@@ -164,7 +191,9 @@ export function createLongStructureRenameSave(
       },
       async (lease) => {
         const index = lease.target.index;
-        const volume = index.plot.volumes.find(({ id }) => id === input.volumeId);
+        const volume = index.plot.volumes.find(
+          ({ id }) => id === input.volumeId
+        );
         if (!volume) {
           uiMessage.warning("该分卷已不存在，请刷新后重试。");
           completion(false);
@@ -175,12 +204,17 @@ export function createLongStructureRenameSave(
           const { createLongStructureMutationBuilder } =
             await loadLongStructureMutationModule();
           assertCurrentLongStructureMutationTarget(lease.target, lease);
-          batch = createLongStructureMutationBuilder(index).updateVolume(volume.id, {
-            summary: input.outline
-          });
+          batch = createLongStructureMutationBuilder(index).updateVolume(
+            volume.id,
+            {
+              summary: input.outline
+            }
+          );
         } catch (error: unknown) {
           if (isDisposed()) return;
-          uiMessage.warning(error instanceof Error ? error.message : "无法保存分卷卷纲。");
+          uiMessage.warning(
+            error instanceof Error ? error.message : "无法保存分卷卷纲。"
+          );
           completion(false);
           return;
         }
@@ -188,7 +222,10 @@ export function createLongStructureRenameSave(
           lease,
           batch,
           booleanMutationCompletion(completion),
-          { saveEditor: false, successMessage: `已保存“${volume.title}”的卷纲` },
+          {
+            saveEditor: false,
+            successMessage: `已保存“${volume.title}”的卷纲`
+          },
           index
         );
       }
@@ -207,7 +244,9 @@ export function createLongStructureRenameSave(
       },
       async (lease) => {
         const index = lease.target.index;
-        const plotPoint = index.plot.arcs.find(({ id }) => id === input.plotPointId);
+        const plotPoint = index.plot.arcs.find(
+          ({ id }) => id === input.plotPointId
+        );
         if (!plotPoint) {
           uiMessage.warning("该剧情点已不存在，请刷新后重试。");
           completion(false);
@@ -218,12 +257,17 @@ export function createLongStructureRenameSave(
           const { createLongStructureMutationBuilder } =
             await loadLongStructureMutationModule();
           assertCurrentLongStructureMutationTarget(lease.target, lease);
-          batch = createLongStructureMutationBuilder(index).updateArc(plotPoint.id, {
-            summary: input.content
-          });
+          batch = createLongStructureMutationBuilder(index).updateArc(
+            plotPoint.id,
+            {
+              summary: input.content
+            }
+          );
         } catch (error: unknown) {
           if (isDisposed()) return;
-          uiMessage.warning(error instanceof Error ? error.message : "无法保存剧情点内容。");
+          uiMessage.warning(
+            error instanceof Error ? error.message : "无法保存剧情点内容。"
+          );
           completion(false);
           return;
         }
@@ -231,14 +275,24 @@ export function createLongStructureRenameSave(
           lease,
           batch,
           booleanMutationCompletion(completion),
-          { saveEditor: false, successMessage: `已保存“${plotPoint.title}”的概要` },
+          {
+            saveEditor: false,
+            successMessage: `已保存“${plotPoint.title}”的概要`
+          },
           index
         );
       }
     );
   }
 
-  return { renameLongCharacter, renameLongStructureTitle, saveLongVolumeOutline, saveLongPlotPointContent };
+  return {
+    renameLongCharacter,
+    renameLongStructureTitle,
+    saveLongVolumeOutline,
+    saveLongPlotPointContent
+  };
 }
 
-export type LongStructureRenameSave = ReturnType<typeof createLongStructureRenameSave>;
+export type LongStructureRenameSave = ReturnType<
+  typeof createLongStructureRenameSave
+>;

@@ -31,13 +31,22 @@ function lineNumberAt(content: string, offset: number): number {
 export function createEditorTextReference(
   input: EditorTextSelectionInput
 ): EditorTextReference | undefined {
-  const start = Math.max(0, Math.min(input.document.content.length, input.start));
-  const end = Math.max(start, Math.min(input.document.content.length, input.end));
+  const start = Math.max(
+    0,
+    Math.min(input.document.content.length, input.start)
+  );
+  const end = Math.max(
+    start,
+    Math.min(input.document.content.length, input.end)
+  );
   const text = input.document.content.slice(start, end);
   if (!text.trim()) return undefined;
 
   const startLine = lineNumberAt(input.document.content, start);
-  const endLine = lineNumberAt(input.document.content, Math.max(start, end - 1));
+  const endLine = lineNumberAt(
+    input.document.content,
+    Math.max(start, end - 1)
+  );
   return {
     id: input.id,
     resourceId: input.resourceId,
@@ -58,7 +67,10 @@ export function resolveEditorTextReferenceRange(
   reference: EditorTextReference
 ): EditorTextRange {
   const expectedStart = Math.max(0, Math.min(content.length, reference.start));
-  const expectedEnd = Math.max(expectedStart, Math.min(content.length, reference.end));
+  const expectedEnd = Math.max(
+    expectedStart,
+    Math.min(content.length, reference.end)
+  );
   if (content.slice(expectedStart, expectedEnd) === reference.text) {
     return { start: expectedStart, end: expectedEnd };
   }
@@ -68,7 +80,8 @@ export function resolveEditorTextReferenceRange(
   while (candidate !== -1) {
     if (
       closestStart === -1 ||
-      Math.abs(candidate - expectedStart) < Math.abs(closestStart - expectedStart)
+      Math.abs(candidate - expectedStart) <
+        Math.abs(closestStart - expectedStart)
     ) {
       closestStart = candidate;
     }
@@ -83,7 +96,10 @@ export function resolveEditorTextReferenceRange(
 export function createEditorReferenceAttachment(
   reference: EditorTextReference
 ): UserPromptAttachment {
-  const content = reference.text.slice(0, PROMPT_TEXT_ATTACHMENT_MAX_CONTENT_LENGTH);
+  const content = reference.text.slice(
+    0,
+    PROMPT_TEXT_ATTACHMENT_MAX_CONTENT_LENGTH
+  );
   const truncated = content.length < reference.text.length;
   return PromptTextAttachmentSchema.parse({
     id: `editor_reference_${reference.id}`.slice(0, 120),
@@ -92,6 +108,8 @@ export function createEditorReferenceAttachment(
     mediaType: "text/plain; source=editor-selection",
     size: new TextEncoder().encode(content).byteLength,
     content,
-    ...(truncated ? { truncated: true, originalLength: reference.text.length } : {})
+    ...(truncated
+      ? { truncated: true, originalLength: reference.text.length }
+      : {})
   });
 }

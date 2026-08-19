@@ -73,7 +73,8 @@ function legacyDataRootsFromEnvironment(): string[] {
       const parsed = JSON.parse(encodedRoots) as unknown;
       if (Array.isArray(parsed)) {
         const roots = parsed.filter(
-          (value): value is string => typeof value === "string" && value.trim() !== ""
+          (value): value is string =>
+            typeof value === "string" && value.trim() !== ""
         );
         if (roots.length > 0) {
           return roots;
@@ -533,8 +534,12 @@ async function handleCatalogCommand(
         command.payload.domain === "book"
           ? await catalogStore.openBookProject(command.payload.projectDirectory)
           : command.payload.domain === "material"
-            ? await catalogStore.openMaterialProject(command.payload.projectDirectory)
-            : await catalogStore.openSkillProject(command.payload.projectDirectory);
+            ? await catalogStore.openMaterialProject(
+                command.payload.projectDirectory
+              )
+            : await catalogStore.openSkillProject(
+                command.payload.projectDirectory
+              );
       return {
         status: "accepted",
         requestId: command.id,
@@ -549,7 +554,9 @@ async function handleCatalogCommand(
       return {
         status: "accepted",
         requestId: command.id,
-        payload: BookSchema.parse(await catalogStore.updateBook(command.payload))
+        payload: BookSchema.parse(
+          await catalogStore.updateBook(command.payload)
+        )
       };
     }
     if (command.type === "catalog.mutatePlotStructure") {
@@ -730,9 +737,7 @@ async function handleCatalogCommand(
         error: {
           code: "renderer_state.command_failed",
           message:
-            error instanceof Error
-              ? error.message
-              : "会话历史持久化操作失败。",
+            error instanceof Error ? error.message : "会话历史持久化操作失败。",
           details: {
             kind: error instanceof Error ? error.name : "unknown"
           }

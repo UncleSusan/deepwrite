@@ -85,10 +85,11 @@ export const CatalogCreateLibraryCommandEnvelopeSchema =
     payload: CreateLibraryInputSchema
   });
 
-export const CatalogUpdateLibraryCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("catalog.updateLibrary"),
-  payload: UpdateLibraryInputSchema
-});
+export const CatalogUpdateLibraryCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.updateLibrary"),
+    payload: UpdateLibraryInputSchema
+  });
 
 export const CatalogCreateLibraryGroupCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -96,10 +97,11 @@ export const CatalogCreateLibraryGroupCommandEnvelopeSchema =
     payload: CreateLibraryGroupInputSchema
   });
 
-export const CatalogOpenProjectCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("catalog.openProject"),
-  payload: CatalogOpenProjectInputSchema
-});
+export const CatalogOpenProjectCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.openProject"),
+    payload: CatalogOpenProjectInputSchema
+  });
 
 export const CatalogImportLegacyBookCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -155,10 +157,12 @@ export const CatalogImportLegacyLibraryAtPathCommandEnvelopeSchema =
     payload: ImportLegacyLibraryAtPathInputSchema
   });
 
-export const CatalogUpdateBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("catalog.updateBook"),
-  payload: UpdateBookInputSchema
-});
+export const CatalogUpdateBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("catalog.updateBook"),
+    payload: UpdateBookInputSchema
+  }
+);
 
 export const CatalogMutatePlotStructureCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -178,15 +182,18 @@ export const CatalogUpdateLibraryGroupCommandEnvelopeSchema =
     payload: UpdateLibraryGroupInputSchema
   });
 
-export const CatalogDeleteBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("catalog.deleteBook"),
-  payload: DeleteBookInputSchema
-});
+export const CatalogDeleteBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("catalog.deleteBook"),
+    payload: DeleteBookInputSchema
+  }
+);
 
-export const CatalogSaveDocumentCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("catalog.saveDocument"),
-  payload: SaveDocumentInputSchema
-});
+export const CatalogSaveDocumentCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("catalog.saveDocument"),
+    payload: SaveDocumentInputSchema
+  });
 
 export const CatalogCreateDraftSectionCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -299,4 +306,6 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema,
   CatalogChooseExternalSkillsCommandEnvelopeSchema
 ]);
-export type CatalogCommandEnvelope = z.infer<typeof CatalogCommandEnvelopeSchema>;
+export type CatalogCommandEnvelope = z.infer<
+  typeof CatalogCommandEnvelopeSchema
+>;

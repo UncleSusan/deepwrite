@@ -94,10 +94,12 @@ describe("script workspace contracts", () => {
       skill: ["style", "general", "other"]
     });
     const legacy = structuredClone(DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS);
-    Object.assign(legacy.agents[0]!.readAccess, { workspace: ["character_design"] });
-    expect(ScriptWorkspaceAgentSettingsInputSchema.safeParse(legacy).success).toBe(
-      false
-    );
+    Object.assign(legacy.agents[0]!.readAccess, {
+      workspace: ["character_design"]
+    });
+    expect(
+      ScriptWorkspaceAgentSettingsInputSchema.safeParse(legacy).success
+    ).toBe(false);
     expect(resolveScriptWorkspaceAgentIdForStage("plot_refine")).toBe(
       "plot_design"
     );
@@ -110,8 +112,12 @@ describe("script workspace contracts", () => {
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("“△”开头");
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("OS");
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("VO");
-    expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("成对的开始/结束标记");
-    expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("write_draft_section");
+    expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain(
+      "成对的开始/结束标记"
+    );
+    expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain(
+      "write_draft_section"
+    );
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain(
       "replace_draft_section_text"
     );
@@ -125,7 +131,9 @@ describe("script workspace contracts", () => {
     const coordinator = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
       ({ id }) => id === "expert_draft_coordinator"
     )!;
-    expect(coordinator.systemPrompt).toContain(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS);
+    expect(coordinator.systemPrompt).toContain(
+      SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS
+    );
     expect(coordinator.systemPrompt).toContain("剧本唯一的正文写作智能体");
   });
 
@@ -133,7 +141,9 @@ describe("script workspace contracts", () => {
     const snapshot = ScriptWorkspaceSnapshotSchema.parse(
       scriptWorkspaceSnapshot()
     );
-    expect(snapshot.stages).toHaveLength(SCRIPT_WORKSPACE_TEXT_STAGE_IDS.length);
+    expect(snapshot.stages).toHaveLength(
+      SCRIPT_WORKSPACE_TEXT_STAGE_IDS.length
+    );
     expect(CreativeWorkspaceSnapshotSchema.parse(snapshot).id).toBe("script_1");
 
     for (const profile of DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES) {
@@ -161,9 +171,9 @@ describe("script workspace contracts", () => {
         })
       )
     };
-    expect(ScriptWorkspaceAgentSettingsInputSchema.parse(input).agents).toHaveLength(
-      3
-    );
+    expect(
+      ScriptWorkspaceAgentSettingsInputSchema.parse(input).agents
+    ).toHaveLength(3);
     expect(WorkspaceAgentSettingsInputSchema.parse(input).workspaceType).toBe(
       "script"
     );

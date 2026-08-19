@@ -3,7 +3,10 @@ import type {
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
-import type { LongTreeItemAction, ResourceTreeNode } from "../../types/workspace";
+import type {
+  LongTreeItemAction,
+  ResourceTreeNode
+} from "../../types/workspace";
 import { longNavigationNodeId } from "../../utils/longWorkspaceResourceTree";
 import type { LongStructureCreate } from "./create";
 import type { LongStructureLease } from "./lease";
@@ -39,10 +42,7 @@ export function resolveLongTreeItemDetails(
         `worldbuilding:${category.id}`
       ),
       resourceIdForItem: (id) =>
-        longNavigationNodeId(
-          bookId,
-          `worldbuilding:${category.id}:item:${id}`
-        )
+        longNavigationNodeId(bookId, `worldbuilding:${category.id}:item:${id}`)
     };
   }
   if (target.kind === "character") {
@@ -68,8 +68,7 @@ export function resolveLongTreeItemDetails(
         bookId,
         `character-group:${character.group}`
       ),
-      resourceIdForItem: (id) =>
-        longNavigationNodeId(bookId, `character:${id}`)
+      resourceIdForItem: (id) => longNavigationNodeId(bookId, `character:${id}`)
     };
   }
   if (target.kind === "volume") {
@@ -88,10 +87,7 @@ export function resolveLongTreeItemDetails(
       orderedIds: [...index.plot.volumes]
         .sort((left, right) => left.order - right.order)
         .map(({ id }) => id),
-      parentResourceId: longNavigationNodeId(
-        bookId,
-        "plot-design:book-line"
-      ),
+      parentResourceId: longNavigationNodeId(bookId, "plot-design:book-line"),
       resourceIdForItem: (id) =>
         longNavigationNodeId(bookId, `plot-design:book-line:volume:${id}`)
     };
@@ -230,7 +226,9 @@ export function createLongStructureTree(
     return { bookId, summary, index };
   }
 
-  async function handleCreateLongTreeItem(node: ResourceTreeNode): Promise<void> {
+  async function handleCreateLongTreeItem(
+    node: ResourceTreeNode
+  ): Promise<void> {
     const requestId = beginDialogRequest();
     if (requestId === null) return;
     await runTracked(async () => {

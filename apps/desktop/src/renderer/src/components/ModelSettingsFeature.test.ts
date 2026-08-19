@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import source from "./ModelSettingsFeature.vue?raw";
 
 describe("ModelSettingsFeature DeepWrite free models", () => {
   it("offers the managed provider and a remote model selector without a key field", () => {
-    expect(source).toContain('{ value: "deepwrite-free", label: "DeepWrite 免费模型" }');
+    expect(source).toContain(
+      '{ value: "deepwrite-free", label: "DeepWrite 免费模型" }'
+    );
     expect(source).toContain('accessible-label="选择 DeepWrite 免费模型"');
-    expect(source).toContain('emit(\'refreshFreeModels\')');
+    expect(source).toContain("emit('refreshFreeModels')");
     expect(source).toContain('"刷新免费模型"');
     expect(source).toContain('v-if="!isDeepWriteFreeEditor" class="is-wide"');
     expect(source).toContain("运行环境提供密钥，无需在此填写");
@@ -17,8 +20,12 @@ describe("ModelSettingsFeature DeepWrite free models", () => {
   });
 
   it("renders the editor immediately after the model being edited", () => {
-    expect(source).toContain('rows.push({ key: `model:${model.id}`, type: "model", model })');
-    expect(source).toContain('rows.push({ key: `editor:${model.id}`, type: "editor" })');
+    expect(source).toContain(
+      'rows.push({ key: `model:${model.id}`, type: "model", model })'
+    );
+    expect(source).toContain(
+      'rows.push({ key: `editor:${model.id}`, type: "editor" })'
+    );
     expect(source).toContain(
       '<template v-for="row in modelConfigRows" :key="row.key">'
     );
@@ -26,12 +33,22 @@ describe("ModelSettingsFeature DeepWrite free models", () => {
 
   it("scrolls the model editor into view after opening it", () => {
     expect(source).toContain('ref="modelConfigScrollArea"');
-    expect(source).toContain('?.scrollIntoView({ block: "nearest", behavior: "auto" })');
+    expect(source).toContain(
+      '?.scrollIntoView({ block: "nearest", behavior: "auto" })'
+    );
     expect(source.match(/scrollModelEditorIntoView\(\);/g)).toHaveLength(2);
   });
 });
 
 describe("ModelSettingsFeature provider presets", () => {
+  it("offers an explicit PI-native or portable tool schema override", () => {
+    expect(source).toContain('label: "自动（推荐）"');
+    expect(source).toContain('value: "native"');
+    expect(source).toContain('value: "portable"');
+    expect(source).toContain('accessible-label="选择工具结构兼容模式"');
+    expect(source).toContain("toolSchemaProfile: model.toolSchemaProfile");
+  });
+
   it("offers Kimi Coding with its Anthropic-compatible API endpoint", () => {
     expect(source).toContain('{ value: "kimi-coding", label: "Kimi Coding" }');
     expect(source).toContain('provider === "kimi-coding"');
@@ -55,26 +72,25 @@ describe("ModelSettingsFeature provider presets", () => {
     ["dashscope", "阿里云百炼"],
     ["zhipu", "智谱 GLM"],
     ["moonshot", "Kimi 开放平台"]
-  ])(
-    "offers the %s OpenAI-compatible provider preset",
-    (provider, label) => {
-      expect(source).toContain(`{ value: "${provider}", label: "${label}" }`);
-      expect(source).toContain(`provider === "${provider}"`);
-      expect(source).toMatch(
-        new RegExp(
-          `provider === "${provider}"[\\s\\S]{0,800}editor\\.baseUrl = "https://`
-        )
-      );
-    }
-  );
+  ])("offers the %s OpenAI-compatible provider preset", (provider, label) => {
+    expect(source).toContain(`{ value: "${provider}", label: "${label}" }`);
+    expect(source).toContain(`provider === "${provider}"`);
+    expect(source).toMatch(
+      new RegExp(
+        `provider === "${provider}"[\\s\\S]{0,800}editor\\.baseUrl = "https://`
+      )
+    );
+  });
 });
 
 describe("ModelSettingsFeature official models", () => {
   it("keeps official models selectable but hides edit and delete actions", () => {
     expect(source).toContain("DeepWrite 官方模型");
     expect(source).toContain("row.model.managedBy !== 'deepwrite-official'");
-    expect(source).toContain('requestModelId: model.requestModelId');
-    expect(source).toContain('supportsDeveloperRole: model.supportsDeveloperRole');
+    expect(source).toContain("requestModelId: model.requestModelId");
+    expect(source).toContain(
+      "supportsDeveloperRole: model.supportsDeveloperRole"
+    );
   });
 
   it("shows the official model price notice in place of the configuration note", () => {
@@ -91,9 +107,12 @@ describe("ModelSettingsFeature official models", () => {
 describe("ModelSettingsFeature remote model ids", () => {
   it("offers a fetch button beside the model id field and turns it into a selector", () => {
     expect(source).toContain('class="model-id-field"');
-    expect(source).toContain(":aria-label=\"listingRemoteModels ? '拉取中' : '拉取可用模型'\"");
-    expect(source).toContain("{{ listingRemoteModels ? \"拉取中\" : \"拉取\" }}");
-    expect(source).toContain("@click=\"fetchRemoteModels\"");
+    expectSourceToContain(
+      source,
+      ":aria-label=\"listingRemoteModels ? '拉取中' : '拉取可用模型'\""
+    );
+    expect(source).toContain('{{ listingRemoteModels ? "拉取中" : "拉取" }}');
+    expect(source).toContain('@click="fetchRemoteModels"');
     expect(source).toContain("window.deepwrite.models.listRemote({");
     expect(source).toContain('accessible-label="选择模型 ID"');
     expect(source).toContain('label: "手动输入其他模型 ID"');
@@ -105,7 +124,9 @@ describe("ModelSettingsFeature remote model ids", () => {
     expect(source).toContain("请先填写 API 地址和 API Key，再拉取可用模型。");
     expect(source).toContain("请先填写 API 地址，再拉取可用模型。");
     expect(source).toContain("请先填写 API Key，再拉取可用模型。");
-    expect(source).toContain('class="dialog-backdrop model-fetch-hint-overlay"');
+    expect(source).toContain(
+      'class="dialog-backdrop model-fetch-hint-overlay"'
+    );
     expect(source).toContain('id="model-fetch-hint-title"');
     expect(source).toContain("无法拉取模型");
     expect(source).toContain("fetchHintDialog.value = missing");
@@ -140,11 +161,16 @@ describe("ModelSettingsFeature model draft lifecycle", () => {
   it("filters managed models and free-provider options in custom scope", () => {
     expect(source).toContain('props.modelScope === "all" || !model.managedBy');
     expect(source).toContain('option.value !== "deepwrite-free"');
-    expect(source).toContain('modelScope === "custom" ? "尚未配置自定义模型"');
+    expectSourceToContain(
+      source,
+      'modelScope === "custom" ? "尚未配置自定义模型"'
+    );
   });
 
   it("merges custom drafts with hidden managed models before saving", () => {
     expect(source).toContain("mergeCustomModelSettings(");
-    expect(source).toContain("(props.modelSettings?.models ?? []).map(toModelInput)");
+    expect(source).toContain(
+      "(props.modelSettings?.models ?? []).map(toModelInput)"
+    );
   });
 });

@@ -41,7 +41,10 @@ function splitImportedNames(body) {
     .filter(Boolean)
     .map((part) => {
       const typeOnly = /^type\s+/.test(part);
-      const name = part.replace(/^type\s+/, "").split(/\s+as\s+/)[0].trim();
+      const name = part
+        .replace(/^type\s+/, "")
+        .split(/\s+as\s+/)[0]
+        .trim();
       return { name, typeOnly };
     })
     .filter((item) => item.name);
@@ -87,13 +90,20 @@ for (const file of files) {
   const importPattern = /(?:from\s+|import\s*\()\s*["']([^"']+)["']/g;
   for (const match of source.matchAll(importPattern)) {
     const specifier = match[1];
-    if (specifier && forbiddenImports.some((pattern) => pattern.test(specifier))) {
-      violations.push(`${relative(process.cwd(), file)} imports forbidden renderer module ${specifier}`);
+    if (
+      specifier &&
+      forbiddenImports.some((pattern) => pattern.test(specifier))
+    ) {
+      violations.push(
+        `${relative(process.cwd(), file)} imports forbidden renderer module ${specifier}`
+      );
     }
   }
 }
 
-const rendererExports = collectValueExports(await readFile(rendererContracts, "utf8"));
+const rendererExports = collectValueExports(
+  await readFile(rendererContracts, "utf8")
+);
 const missingContractExports = new Map();
 for (const file of files) {
   if (file.includes(".test.")) continue;

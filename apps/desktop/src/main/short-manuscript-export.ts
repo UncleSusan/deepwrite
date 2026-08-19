@@ -18,9 +18,7 @@ interface ZipEntry {
 const CRC32_TABLE = Array.from({ length: 256 }, (_, index) => {
   let value = index;
   for (let bit = 0; bit < 8; bit += 1) {
-    value = (value & 1) !== 0
-      ? 0xedb88320 ^ (value >>> 1)
-      : value >>> 1;
+    value = (value & 1) !== 0 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
   }
   return value >>> 0;
 });
@@ -146,7 +144,10 @@ function wordParagraph(value: string, style?: "Title" | "Heading1"): string {
 }
 
 export function buildDocx(input: ExportShortManuscriptInput): Buffer {
-  const validated = ExportShortManuscriptInputSchema.parse({ ...input, format: "docx" });
+  const validated = ExportShortManuscriptInputSchema.parse({
+    ...input,
+    format: "docx"
+  });
   const body = [
     wordParagraph(validated.title, "Title"),
     ...validated.sections.flatMap((section) => [
@@ -167,30 +168,45 @@ export function buildDocx(input: ExportShortManuscriptInput): Buffer {
   return createStoredZip([
     {
       name: "[Content_Types].xml",
-      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`, "utf8")
+      data: Buffer.from(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`,
+        "utf8"
+      )
     },
     {
       name: "_rels/.rels",
-      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`, "utf8")
+      data: Buffer.from(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`,
+        "utf8"
+      )
     },
     { name: "word/document.xml", data: Buffer.from(documentXml, "utf8") },
     {
       name: "word/_rels/document.xml.rels",
-      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`, "utf8")
+      data: Buffer.from(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+        "utf8"
+      )
     },
     { name: "word/styles.xml", data: Buffer.from(stylesXml, "utf8") },
     {
       name: "docProps/core.xml",
-      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEscape(validated.title)}</dc:title><dc:creator>DeepWrite</dc:creator><cp:lastModifiedBy>DeepWrite</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${timestamp}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${timestamp}</dcterms:modified></cp:coreProperties>`, "utf8")
+      data: Buffer.from(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEscape(validated.title)}</dc:title><dc:creator>DeepWrite</dc:creator><cp:lastModifiedBy>DeepWrite</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${timestamp}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${timestamp}</dcterms:modified></cp:coreProperties>`,
+        "utf8"
+      )
     },
     {
       name: "docProps/app.xml",
-      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>DeepWrite</Application><AppVersion>1.0</AppVersion></Properties>`, "utf8")
+      data: Buffer.from(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>DeepWrite</Application><AppVersion>1.0</AppVersion></Properties>`,
+        "utf8"
+      )
     }
   ]);
 }
@@ -205,13 +221,19 @@ function xhtmlParagraphs(content: string): string {
 }
 
 function epubXhtml(title: string, body: string): Buffer {
-  return Buffer.from(`<?xml version="1.0" encoding="utf-8"?>
+  return Buffer.from(
+    `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-CN" lang="zh-CN"><head><meta charset="utf-8"/><title>${xmlEscape(title)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body>${body}</body></html>`, "utf8");
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-CN" lang="zh-CN"><head><meta charset="utf-8"/><title>${xmlEscape(title)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body>${body}</body></html>`,
+    "utf8"
+  );
 }
 
 export function buildEpub(input: ExportShortManuscriptInput): Buffer {
-  const validated = ExportShortManuscriptInputSchema.parse({ ...input, format: "epub" });
+  const validated = ExportShortManuscriptInputSchema.parse({
+    ...input,
+    format: "epub"
+  });
   const identifier = `urn:uuid:${randomUUID()}`;
   const sectionItems = validated.sections.map((section, index) => ({
     section,
@@ -220,24 +242,38 @@ export function buildEpub(input: ExportShortManuscriptInput): Buffer {
   }));
   const modified = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   const manifest = sectionItems
-    .map(({ id, fileName }) => `<item id="${id}" href="${fileName}" media-type="application/xhtml+xml"/>`)
+    .map(
+      ({ id, fileName }) =>
+        `<item id="${id}" href="${fileName}" media-type="application/xhtml+xml"/>`
+    )
     .join("");
-  const spine = sectionItems.map(({ id }) => `<itemref idref="${id}"/>`).join("");
+  const spine = sectionItems
+    .map(({ id }) => `<itemref idref="${id}"/>`)
+    .join("");
   const navigation = sectionItems
-    .map(({ section, fileName }) => `<li><a href="${fileName}">${xmlEscape(section.title)}</a></li>`)
+    .map(
+      ({ section, fileName }) =>
+        `<li><a href="${fileName}">${xmlEscape(section.title)}</a></li>`
+    )
     .join("");
 
   const entries: ZipEntry[] = [
     { name: "mimetype", data: Buffer.from("application/epub+zip", "ascii") },
     {
       name: "META-INF/container.xml",
-      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`, "utf8")
+      data: Buffer.from(
+        `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`,
+        "utf8"
+      )
     },
     {
       name: "OEBPS/content.opf",
-      data: Buffer.from(`<?xml version="1.0" encoding="utf-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="zh-CN"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${identifier}</dc:identifier><dc:title>${xmlEscape(validated.title)}</dc:title><dc:language>zh-CN</dc:language><dc:creator>DeepWrite</dc:creator><meta property="dcterms:modified">${modified}</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="css" href="styles.css" media-type="text/css"/><item id="title" href="title.xhtml" media-type="application/xhtml+xml"/>${manifest}</manifest><spine><itemref idref="title"/>${spine}</spine></package>`, "utf8")
+      data: Buffer.from(
+        `<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="zh-CN"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${identifier}</dc:identifier><dc:title>${xmlEscape(validated.title)}</dc:title><dc:language>zh-CN</dc:language><dc:creator>DeepWrite</dc:creator><meta property="dcterms:modified">${modified}</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="css" href="styles.css" media-type="text/css"/><item id="title" href="title.xhtml" media-type="application/xhtml+xml"/>${manifest}</manifest><spine><itemref idref="title"/>${spine}</spine></package>`,
+        "utf8"
+      )
     },
     {
       name: "OEBPS/nav.xhtml",
@@ -248,11 +284,17 @@ export function buildEpub(input: ExportShortManuscriptInput): Buffer {
     },
     {
       name: "OEBPS/styles.css",
-      data: Buffer.from("body{font-family:serif;line-height:1.8;margin:5%;}h1{text-align:center;}h2{margin-top:1.5em;}p{text-indent:2em;margin:.7em 0;}nav ol{line-height:2;}nav a{text-decoration:none;}", "utf8")
+      data: Buffer.from(
+        "body{font-family:serif;line-height:1.8;margin:5%;}h1{text-align:center;}h2{margin-top:1.5em;}p{text-indent:2em;margin:.7em 0;}nav ol{line-height:2;}nav a{text-decoration:none;}",
+        "utf8"
+      )
     },
     {
       name: "OEBPS/title.xhtml",
-      data: epubXhtml(validated.title, `<section class="title-page"><h1>${xmlEscape(validated.title)}</h1></section>`)
+      data: epubXhtml(
+        validated.title,
+        `<section class="title-page"><h1>${xmlEscape(validated.title)}</h1></section>`
+      )
     },
     ...sectionItems.map(({ section, fileName }) => ({
       name: `OEBPS/${fileName}`,
@@ -266,7 +308,10 @@ export function buildEpub(input: ExportShortManuscriptInput): Buffer {
 }
 
 export function buildTxt(input: ExportShortManuscriptInput): Buffer {
-  const validated = ExportShortManuscriptInputSchema.parse({ ...input, format: "txt" });
+  const validated = ExportShortManuscriptInputSchema.parse({
+    ...input,
+    format: "txt"
+  });
   const content = [
     `《${validated.title}》`,
     ...validated.sections.flatMap((section) => [
@@ -293,7 +338,9 @@ export function safeManuscriptFileName(title: string): string {
       .replace(/\s+/gu, " ")
       .trim()
       .replace(/[. ]+$/gu, "")
-  ).slice(0, 80).join("");
+  )
+    .slice(0, 80)
+    .join("");
   return safe || "短篇正文";
 }
 
@@ -314,9 +361,18 @@ const FORMAT_DIALOG: Record<
   ShortManuscriptExportFormat,
   Pick<SaveDialogOptions, "title" | "filters">
 > = {
-  docx: { title: "导出正文为 DOCX", filters: [{ name: "Word 文档", extensions: ["docx"] }] },
-  txt: { title: "导出正文为 TXT", filters: [{ name: "纯文本文档", extensions: ["txt"] }] },
-  epub: { title: "导出正文为 EPUB", filters: [{ name: "EPUB 电子书", extensions: ["epub"] }] }
+  docx: {
+    title: "导出正文为 DOCX",
+    filters: [{ name: "Word 文档", extensions: ["docx"] }]
+  },
+  txt: {
+    title: "导出正文为 TXT",
+    filters: [{ name: "纯文本文档", extensions: ["txt"] }]
+  },
+  epub: {
+    title: "导出正文为 EPUB",
+    filters: [{ name: "EPUB 电子书", extensions: ["epub"] }]
+  }
 };
 
 export async function exportShortManuscript(

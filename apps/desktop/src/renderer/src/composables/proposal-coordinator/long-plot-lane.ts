@@ -1,10 +1,8 @@
 import {
-  nextTick
-} from "vue";
-import {
   LongWorkspaceOperationBatchSchema,
   type LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
+import { nextTick } from "vue";
 import type { AgentEditProposal } from "../../types/conversation";
 import {
   replaceLongBookSummary,
@@ -24,7 +22,6 @@ import type {
 
 export function createLongPlotLane(ctx: ProposalLaneContext) {
   const {
-    api,
     uiMessage,
     acceptingAgentEditWorkspaceIds,
     rememberWorkspaceMutationEvent,
@@ -38,10 +35,11 @@ export function createLongPlotLane(ctx: ProposalLaneContext) {
 
   const queueAgentEdit: ProposalLaneContext["queueAgentEdit"] = (...args) =>
     ctx.queueAgentEdit(...args);
-  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (...args) =>
-    ctx.latestProposalForLane(...args);
-  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] = (...args) =>
-    ctx.blockedAgentEditLaneMessage(...args);
+  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (
+    ...args
+  ) => ctx.latestProposalForLane(...args);
+  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] =
+    (...args) => ctx.blockedAgentEditLaneMessage(...args);
 
   function longPlotDesignProposalText(
     batch: LongWorkspaceOperationBatch

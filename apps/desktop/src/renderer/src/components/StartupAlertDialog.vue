@@ -105,7 +105,9 @@ watch(
   border-radius: 15px;
   background: var(--surface-raised);
   color: var(--text-primary);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 20%), 0 2px 8px rgb(0 0 0 / 8%);
+  box-shadow:
+    0 24px 70px rgb(0 0 0 / 20%),
+    0 2px 8px rgb(0 0 0 / 8%);
 }
 
 .startup-alert-dialog > header {
@@ -143,14 +145,14 @@ watch(
   isolation: isolate;
   overflow: hidden;
   padding: 20px 22px 22px;
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--theme-line-soft));
+  border: 1px solid
+    color-mix(in srgb, var(--accent) 24%, var(--theme-line-soft));
   border-radius: 13px;
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--accent) 12%, var(--surface-raised)),
-      color-mix(in srgb, var(--accent) 4%, var(--surface-muted))
-    );
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 12%, var(--surface-raised)),
+    color-mix(in srgb, var(--accent) 4%, var(--surface-muted))
+  );
 }
 
 .startup-alert-lead::after {

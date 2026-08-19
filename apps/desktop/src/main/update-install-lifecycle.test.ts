@@ -6,10 +6,15 @@ const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
 describe("update install lifecycle", () => {
   it("finishes the graceful shutdown before handing control to the updater", () => {
     const helperStart = source.indexOf("function beginGracefulShutdown(");
-    const helperEnd = source.indexOf("function broadcastEvent", helperStart + 1);
+    const helperEnd = source.indexOf(
+      "function broadcastEvent",
+      helperStart + 1
+    );
     const helper = source.slice(
       helperStart,
-      helperEnd === -1 ? source.indexOf("type AgentEventEnvelope", helperStart) : helperEnd
+      helperEnd === -1
+        ? source.indexOf("type AgentEventEnvelope", helperStart)
+        : helperEnd
     );
 
     expect(helperStart).toBeGreaterThanOrEqual(0);
@@ -22,7 +27,9 @@ describe("update install lifecycle", () => {
   });
 
   it("does not start a normal app quit before invoking the update installer", () => {
-    const constructorStart = source.indexOf("updateService = new UpdateService(");
+    const constructorStart = source.indexOf(
+      "updateService = new UpdateService("
+    );
     const constructorEnd = source.indexOf("appAlertStore =", constructorStart);
     const installRequest = source.slice(constructorStart, constructorEnd);
 

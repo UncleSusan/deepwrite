@@ -105,9 +105,7 @@ export async function scanIndexedFileForSearch(
           ),
           end: characterOffsetAtCodeUnit(
             paging,
-            normalizedWindow.sourceStartCodeUnit +
-              match.index +
-              match[0].length
+            normalizedWindow.sourceStartCodeUnit + match.index + match[0].length
           )
         }
       : normalizedMatchSourceRange(
@@ -128,10 +126,7 @@ export async function scanIndexedFileForSearch(
         fileId: file.reference.id,
         revision: disk.revision,
         characterLength: paging.totalCharacters,
-        scannedCharacters: Math.max(
-          1,
-          sourceRange.start - characterOffset
-        ),
+        scannedCharacters: Math.max(1, sourceRange.start - characterOffset),
         matches,
         nextMatchOffset: sourceRange.start
       };
@@ -151,10 +146,7 @@ export async function scanIndexedFileForSearch(
       preview: sliceIndexedUnicodeCodePointRange(
         paging,
         Math.max(0, sourceRange.start - contextCharacters),
-        Math.min(
-          paging.totalCharacters,
-          sourceRange.end + contextCharacters
-        )
+        Math.min(paging.totalCharacters, sourceRange.end + contextCharacters)
       )
     });
   }
@@ -177,10 +169,7 @@ export function createNormalizedSearchWindow(
     characterOffset + characterBudget
   );
   const overlap = Math.max(32, countUnicodeCodePoints(query) + 8);
-  const sourceEnd = Math.min(
-    paging.totalCharacters,
-    targetScanEnd + overlap
-  );
+  const sourceEnd = Math.min(paging.totalCharacters, targetScanEnd + overlap);
   const source = sliceIndexedUnicodeCodePointRange(
     paging,
     characterOffset,
@@ -221,10 +210,7 @@ export function createNormalizedSearchWindow(
     });
     normalizedLength += normalized.length;
     sourceCharacterCursor = sourceEndOffset;
-    if (
-      sourceStart < targetScanEnd &&
-      sourceEndOffset >= targetScanEnd
-    ) {
+    if (sourceStart < targetScanEnd && sourceEndOffset >= targetScanEnd) {
       scanEndCharacterOffset = sourceEndOffset;
     }
   }
@@ -263,7 +249,11 @@ export function escapeRegularExpression(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-export function countNewlines(text: string, start: number, end: number): number {
+export function countNewlines(
+  text: string,
+  start: number,
+  end: number
+): number {
   let count = 0;
   let cursor = text.indexOf("\n", start);
   while (cursor >= 0 && cursor < end) {

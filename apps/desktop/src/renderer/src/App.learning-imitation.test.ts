@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../test-utils/sourceText";
 import source from "./WorkspaceShell.vue?raw";
 import featureModulesSource from "./components/WorkspaceFeatureModules.vue?raw";
 import featureHostSource from "./composables/useWorkspaceFeatureHostCoordinator.ts?raw";
@@ -31,7 +32,7 @@ describe("App learning-imitation integration", () => {
     expect(featureHostSource).toContain('case "imitation":');
     expect(featureHostSource).toContain('kind: "imitation"');
     expect(featureModulesSource).toContain(
-      'v-else-if="module.kind === \'imitation\'"'
+      "v-else-if=\"module.kind === 'imitation'\""
     );
     expect(featureModulesSource).toContain(
       'class="learning-imitation-main-view"'
@@ -50,15 +51,15 @@ describe("App learning-imitation integration", () => {
   });
 
   it("surfaces rejected learning and subagent calls as floating messages", () => {
-    expect(featureHostSource).toContain(
+    expectSourceToContain(
+      featureHostSource,
       "() => options.features.learningImitation.controller.value?.error.value ?? null"
     );
-    expect(featureHostSource).toContain(
+    expectSourceToContain(
+      featureHostSource,
       "() => options.features.subagentAuthoring.controller.value?.error.value ?? null"
     );
-    expect(featureHostSource).toContain(
-      "options.notifications.error(message)"
-    );
+    expect(featureHostSource).toContain("options.notifications.error(message)");
     expect(source).toContain("notifications: uiMessage");
   });
 });

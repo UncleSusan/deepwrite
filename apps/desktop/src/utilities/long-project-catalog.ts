@@ -10,14 +10,7 @@ import {
 } from "@deepwrite/contracts";
 import { randomHex8 } from "@deepwrite/shared";
 import { constants } from "node:fs";
-import {
-  lstat,
-  mkdir,
-  open,
-  realpath,
-  rename,
-  rm
-} from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 const REGISTRY_FILE = "long-project-registry.json";
@@ -105,10 +98,7 @@ export class LongProjectCatalog {
     }
     this.registryRoot = resolve(root);
     this.registryPath = join(this.registryRoot, REGISTRY_FILE);
-    this.registryBackupPath = join(
-      this.registryRoot,
-      REGISTRY_BACKUP_FILE
-    );
+    this.registryBackupPath = join(this.registryRoot, REGISTRY_BACKUP_FILE);
     this.registryLockPath = join(this.registryRoot, REGISTRY_LOCK_FILE);
     this.projects = options.projects;
     this.now = options.now ?? (() => new Date().toISOString());
@@ -126,14 +116,9 @@ export class LongProjectCatalog {
   ): Promise<OpenLongProject> {
     return await this.mutate(async () => {
       const opened = await this.projects.createBook(parentDirectory, input);
-      try {
-        await this.registerOpened(opened);
-      } catch (error: unknown) {
-        // The newly-created project remains a valid standalone folder and can
-        // be opened explicitly later. Never delete user content on an index
-        // write failure.
-        throw error;
-      }
+      // The newly-created project remains a valid standalone folder and can
+      // be opened explicitly later if writing the catalog index fails.
+      await this.registerOpened(opened);
       return opened;
     });
   }
@@ -342,9 +327,7 @@ export class LongProjectCatalog {
     });
   }
 
-  async delete(
-    bookId: string
-  ): Promise<{ bookId: string; removed: boolean }> {
+  async delete(bookId: string): Promise<{ bookId: string; removed: boolean }> {
     const id = LongBookIdSchema.parse(bookId);
     return await this.mutate(async () => {
       const registry = await this.readRegistry();
@@ -367,7 +350,10 @@ export class LongProjectCatalog {
         opened.projectDirectory
       );
       const parent = dirname(projectDirectory);
-      if (projectDirectory === parent || basename(projectDirectory).length < 1) {
+      if (
+        projectDirectory === parent ||
+        basename(projectDirectory).length < 1
+      ) {
         throw new Error("拒绝删除不安全的长篇项目目录。");
       }
       const stagedDeletion = join(
@@ -465,28 +451,21 @@ export class LongProjectCatalog {
     const duplicateDirectory = registry.projects.find(
       (project) => resolve(project.projectDirectory) === projectDirectory
     );
-    if (
-      duplicateDirectory &&
-      duplicateDirectory.bookId !== parsed.summary.id
-    ) {
+    if (duplicateDirectory && duplicateDirectory.bookId !== parsed.summary.id) {
       throw new Error("该目录已经注册为另一个长篇项目。");
     }
     const current = registry.projects.find(
       (project) => project.bookId === parsed.summary.id
     );
     if (current?.deletion) {
-      throw new Error(
-        "相同长篇项目 ID 正在永久删除；请先重试删除完成清理。"
-      );
+      throw new Error("相同长篇项目 ID 正在永久删除；请先重试删除完成清理。");
     }
     if (
       current &&
       resolve(current.projectDirectory) !== projectDirectory &&
       (await pathExists(current.projectDirectory))
     ) {
-      throw new Error(
-        "相同长篇项目 ID 已在另一个仍然存在的文件夹中注册。"
-      );
+      throw new Error("相同长篇项目 ID 已在另一个仍然存在的文件夹中注册。");
     }
     if (current && resolve(current.projectDirectory) === projectDirectory) {
       const summary = LongBookSummarySchema.parse(parsed.summary);
@@ -503,9 +482,7 @@ export class LongProjectCatalog {
         revision: registry.revision + 1,
         updatedAt: this.now(),
         projects: registry.projects.map((project) =>
-          project.bookId === summary.id
-            ? { ...project, summary }
-            : project
+          project.bookId === summary.id ? { ...project, summary } : project
         )
       });
       return;
@@ -570,9 +547,7 @@ export class LongProjectCatalog {
     } else {
       const currentRegistry = parseRegistry(JSON.parse(current));
       if (currentRegistry.revision !== expectedRevision) {
-        throw new Error(
-          "长篇项目注册表 CAS 校验失败：版本已被其他进程更新。"
-        );
+        throw new Error("长篇项目注册表 CAS 校验失败：版本已被其他进程更新。");
       }
     }
     await atomicWriteJson(this.registryPath, parsed);
@@ -621,10 +596,7 @@ function parseRegistry(value: unknown): LongProjectRegistry {
   ) {
     throw new Error("不支持的长篇项目注册表版本。");
   }
-  if (
-    !Number.isSafeInteger(value.revision) ||
-    (value.revision as number) < 0
-  ) {
+  if (!Number.isSafeInteger(value.revision) || (value.revision as number) < 0) {
     throw new Error("长篇项目注册表版本号无效。");
   }
   if (
@@ -642,10 +614,7 @@ function parseRegistry(value: unknown): LongProjectRegistry {
     }
     const projectDirectory = candidate.projectDirectory;
     const registeredAt = candidate.registeredAt;
-    if (
-      typeof projectDirectory !== "string" ||
-      !isAbsolute(projectDirectory)
-    ) {
+    if (typeof projectDirectory !== "string" || !isAbsolute(projectDirectory)) {
       throw new Error("长篇项目目录必须是绝对路径。");
     }
     if (
@@ -663,8 +632,7 @@ function parseRegistry(value: unknown): LongProjectRegistry {
       }
       const originalProjectDirectory =
         candidate.deletion.originalProjectDirectory;
-      const stagedProjectDirectory =
-        candidate.deletion.stagedProjectDirectory;
+      const stagedProjectDirectory = candidate.deletion.stagedProjectDirectory;
       if (
         typeof originalProjectDirectory !== "string" ||
         !isAbsolute(originalProjectDirectory) ||
@@ -742,10 +710,7 @@ async function atomicWriteJson(path: string, value: unknown): Promise<void> {
   const temporary = `${path}.${process.pid}.${randomHex8()}.tmp`;
   const handle = await open(
     temporary,
-    constants.O_CREAT |
-      constants.O_EXCL |
-      constants.O_WRONLY |
-      O_NOFOLLOW,
+    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | O_NOFOLLOW,
     0o600
   );
   try {
@@ -809,11 +774,7 @@ async function ensureSafeRegistryDirectory(path: string): Promise<void> {
 async function assertSafeOptionalRegistryFile(path: string): Promise<void> {
   try {
     const details = await lstat(path);
-    if (
-      !details.isFile() ||
-      details.isSymbolicLink() ||
-      details.nlink !== 1
-    ) {
+    if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1) {
       throw new Error("长篇项目注册表不能是符号链接或硬链接。");
     }
   } catch (error: unknown) {
@@ -848,10 +809,7 @@ async function withRegistryLock<Result>(
     try {
       handle = await open(
         lockPath,
-        constants.O_CREAT |
-          constants.O_EXCL |
-          constants.O_WRONLY |
-          O_NOFOLLOW,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | O_NOFOLLOW,
         0o600
       );
     } catch (error: unknown) {
@@ -862,33 +820,24 @@ async function withRegistryLock<Result>(
       ) {
         throw error;
       }
-      const details = await lstat(lockPath).catch(
-        (lockError: unknown) => {
-          if (isMissingPathError(lockError)) return undefined;
-          throw lockError;
-        }
-      );
+      const details = await lstat(lockPath).catch((lockError: unknown) => {
+        if (isMissingPathError(lockError)) return undefined;
+        throw lockError;
+      });
       if (
         details &&
-        (!details.isFile() ||
-          details.isSymbolicLink() ||
-          details.nlink !== 1)
+        (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1)
       ) {
         throw new Error("长篇项目注册表锁文件不安全。");
       }
-      if (
-        details &&
-        Date.now() - details.mtimeMs > REGISTRY_LOCK_STALE_MS
-      ) {
+      if (details && Date.now() - details.mtimeMs > REGISTRY_LOCK_STALE_MS) {
         const owner = await readRegistryLockOwner(lockPath);
         if (!owner || !isProcessAlive(owner.pid)) {
           await hooks?.beforeStaleUnlink?.();
-          const current = await lstat(lockPath).catch(
-            (lockError: unknown) => {
-              if (isMissingPathError(lockError)) return undefined;
-              throw lockError;
-            }
-          );
+          const current = await lstat(lockPath).catch((lockError: unknown) => {
+            if (isMissingPathError(lockError)) return undefined;
+            throw lockError;
+          });
           const currentOwner = current
             ? await readRegistryLockOwner(lockPath)
             : undefined;

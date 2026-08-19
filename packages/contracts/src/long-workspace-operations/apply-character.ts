@@ -1,101 +1,21 @@
 import type { LongWorkspaceOperation } from "./operation-schema";
 import type { MutationState } from "./state";
-import {
-  LongArcIdSchema,
-  LongArcSchema,
-  LongChapterCardIdSchema,
-  LongChapterCardSchema,
-  LongChapterCharacterContinuityFileIndexEntrySchema,
-  LongChapterFileIndexEntrySchema,
-  LongCharacterFileIndexEntrySchema,
-  LongCharacterGroupSchema,
-  LongCharacterIdSchema,
-  LongCharacterSchema,
-  LongCharacterTypeIdSchema,
-  LongCharacterTypeSchema,
-  LongEventConnectionIdSchema,
-  LongEventConnectionSchema,
-  LongFileIdSchema,
-  LongFileRevisionSchema,
-  LongForeshadowingBeatIdSchema,
-  LongForeshadowingBeatSchema,
-  LongForeshadowingIdSchema,
-  LongForeshadowingSchema,
-  LongMarkdownFileReferenceSchema,
-  LongNarrativePlacementIdSchema,
-  LongNarrativePlacementSchema,
-  LongProjectRelativePathSchema,
-  LongStableIdSchema,
-  LongStoryEventIdSchema,
-  LongStoryEventSchema,
-  LongStoryPlotIdSchema,
-  LongStoryPlotSchema,
-  LongVolumeIdSchema,
-  LongVolumeSchema,
-  LongWorldbuildingItemLayoutSchema,
-  LongWorkspaceIndexSnapshotSchema,
-  LongWorldbuildingCategoryIdSchema,
-  LongWorldbuildingCategorySchema,
-  LongWorldbuildingItemIdSchema,
-  LongWorldbuildingItemSchema,
-  createEmptyLongMarkdownFileReference,
-  deriveLongForeshadowingStatusFromCommittedBeats,
-  longWorldbuildingContentPath,
-  longWorldbuildingFileId,
-  longWorldbuildingItemContentPath,
-  longWorldbuildingItemFileId,
-  longWorldbuildingOverviewContentPath,
-  longWorldbuildingOverviewFileId
-} from "../long-workspace";
-import type {
-  LongForeshadowing,
-  LongForeshadowingBeat,
-  LongNarrativePlacement,
-  LongWorkspaceFileReference,
-  LongWorkspaceIndexSnapshot
-} from "../long-workspace";
 
+import { deleteCharacter } from "./cascade";
 import {
   addFileCreateIntent,
-  addFileDeleteIntent,
-  allWorkspaceFiles,
-  assertAnchoredValue,
-  assertBeatIsMutable,
-  assertChapterIsMutable,
   assertExactOrder,
-  assertFrozenOrderPrefix,
   assertNewEntityId,
-  assertPlacementIsMutable,
-  chapterOrderMap,
-  concreteChapterIdForBeat,
   ensureFilesAvailable,
-  eventParticipatesInCommittedFacts,
-  findBeat,
   findEntityIndex,
-  idsByGroupAndOrder,
   insertBeforeId,
   markCreated,
   markDeleted,
   markUpdated,
-  normalizeLongWorkspaceOrders,
   operationError,
-  orderedIdsByOrder,
   registerProvisionalId,
-  retargetBeatPlanningAnchorsToChapter,
-  updateOrdersById,
-  volumeOrderMap
+  updateOrdersById
 } from "./state";
-import {
-  deleteArc,
-  deleteChapter,
-  deleteCharacter,
-  deleteForeshadowingBeat,
-  deleteForeshadowingThread,
-  deleteNarrativePlacement,
-  deleteStoryEvent,
-  deleteStoryPlot,
-  deleteVolume
-} from "./cascade";
 
 export function applyCharacterOperation(
   state: MutationState,
@@ -240,11 +160,7 @@ export function applyCharacterOperation(
     case "character.update": {
       const character =
         workspace.characters[
-          findEntityIndex(
-            workspace.characters,
-            operation.id,
-            "Character"
-          )
+          findEntityIndex(workspace.characters, operation.id, "Character")
         ]!;
       Object.assign(character, operation.patch);
       markUpdated(state, character.id);
@@ -262,11 +178,7 @@ export function applyCharacterOperation(
       );
       const character =
         workspace.characters[
-          findEntityIndex(
-            workspace.characters,
-            operation.id,
-            "Character"
-          )
+          findEntityIndex(workspace.characters, operation.id, "Character")
         ]!;
       character.group = operation.toGroup;
       const target = workspace.characters

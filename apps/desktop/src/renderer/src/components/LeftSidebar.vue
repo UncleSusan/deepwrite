@@ -34,10 +34,7 @@ const props = defineProps<{
   imitationRunning?: boolean;
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
   activePrimaryFeature:
-    | PrimaryFeatureId
-    | "skill-marketplace"
-    | "cloud-backup"
-    | undefined;
+    PrimaryFeatureId | "skill-marketplace" | "cloud-backup" | undefined;
   marketplaceDisplayName?: string | undefined;
   longTreeActionsDisabled?: boolean;
 }>();
@@ -60,13 +57,22 @@ const emit = defineEmits<{
   moveLibraryEntry: [payload: CatalogLibraryEntryDragPayload];
   createExpertSection: [node: ResourceTreeNode];
   createLongDraftSection: [node: ResourceTreeNode];
-  longDraftSectionAction: [action: "move-up" | "move-down" | "delete", node: ResourceTreeNode];
+  longDraftSectionAction: [
+    action: "move-up" | "move-down" | "delete",
+    node: ResourceTreeNode
+  ];
   createLongTreeItem: [node: ResourceTreeNode];
   longTreeItemAction: [action: LongTreeItemAction, node: ResourceTreeNode];
   removeExpertSection: [node: ResourceTreeNode];
-  expertSectionAction: [action: "move-up" | "move-down", node: ResourceTreeNode];
+  expertSectionAction: [
+    action: "move-up" | "move-down",
+    node: ResourceTreeNode
+  ];
   createCharacterItem: [node: ResourceTreeNode];
-  characterItemAction: [action: "rename" | "move-up" | "move-down" | "delete", node: ResourceTreeNode];
+  characterItemAction: [
+    action: "rename" | "move-up" | "move-down" | "delete",
+    node: ResourceTreeNode
+  ];
 }>();
 
 const DEFAULT_USER_NAME = "作者";
@@ -92,10 +98,14 @@ let unsubscribeUpdates: (() => void) | undefined;
 const sidebarScrollbar = createTransientScrollbarController();
 
 const updateChecking = computed(() => updateState.value.status === "checking");
-const updateDownloading = computed(() => updateState.value.status === "downloading");
-const updateInstalling = computed(() => updateState.value.status === "installing");
-const updateProgressLabel = computed(() =>
-  `${Math.round(updateState.value.percent ?? 0)}%`
+const updateDownloading = computed(
+  () => updateState.value.status === "downloading"
+);
+const updateInstalling = computed(
+  () => updateState.value.status === "installing"
+);
+const updateProgressLabel = computed(
+  () => `${Math.round(updateState.value.percent ?? 0)}%`
 );
 
 function formatBytes(value: number | undefined): string {
@@ -134,7 +144,11 @@ async function openUpdateDialog(): Promise<void> {
   }
   try {
     updateState.value = await window.deepwrite.updates.getState();
-    if (!["downloading", "downloaded", "installing"].includes(updateState.value.status)) {
+    if (
+      !["downloading", "downloaded", "installing"].includes(
+        updateState.value.status
+      )
+    ) {
       updateState.value = await window.deepwrite.updates.check();
     }
   } catch (error: unknown) {
@@ -163,7 +177,9 @@ async function installUpdate(): Promise<void> {
     await window.deepwrite!.updates.install();
   } catch (error: unknown) {
     if (updateState.value.status !== "error") {
-      uiMessage.error(error instanceof Error ? error.message : "启动更新安装失败");
+      uiMessage.error(
+        error instanceof Error ? error.message : "启动更新安装失败"
+      );
     }
   }
 }
@@ -281,10 +297,30 @@ const moreFeatures: Array<{
   description: string;
   icon: IconName;
 }> = [
-  { id: "imitation", label: "短篇学习仿写", description: "学习范文并生成同类短篇", icon: "wand" },
-  { id: "skill-marketplace", label: "技能广场", description: "发现、安装与发布写作技能", icon: "globe" },
-  { id: "cloud-backup", label: "云端备份", description: "备份创作空间和资料", icon: "archive" },
-  { id: "runtime", label: "运行设置", description: "智能体与工具边界", icon: "model" }
+  {
+    id: "imitation",
+    label: "短篇学习仿写",
+    description: "学习范文并生成同类短篇",
+    icon: "wand"
+  },
+  {
+    id: "skill-marketplace",
+    label: "技能广场",
+    description: "发现、安装与发布写作技能",
+    icon: "globe"
+  },
+  {
+    id: "cloud-backup",
+    label: "云端备份",
+    description: "备份创作空间和资料",
+    icon: "archive"
+  },
+  {
+    id: "runtime",
+    label: "运行设置",
+    description: "智能体与工具边界",
+    icon: "model"
+  }
 ];
 
 function activateMoreFeature(
@@ -328,12 +364,17 @@ function toggleResourcePin(node: ResourceTreeNode): void {
     : [...pinnedResourceIds.value, node.id];
 
   try {
-    localStorage.setItem(PINNED_RESOURCE_STORAGE_KEY, JSON.stringify(pinnedResourceIds.value));
+    localStorage.setItem(
+      PINNED_RESOURCE_STORAGE_KEY,
+      JSON.stringify(pinnedResourceIds.value)
+    );
   } catch {
     uiMessage.warning("置顶状态暂时无法保存，但本次操作仍然有效");
   }
 
-  uiMessage.success(pinned ? `已取消置顶“${node.label}”` : `已置顶“${node.label}”`);
+  uiMessage.success(
+    pinned ? `已取消置顶“${node.label}”` : `已置顶“${node.label}”`
+  );
 }
 
 function resourceDomainFor(node: ResourceTreeNode): ResourceDomain {
@@ -341,8 +382,7 @@ function resourceDomainFor(node: ResourceTreeNode): ResourceDomain {
 }
 
 watch(
-  () =>
-    pinnableResourceNodes(props.sections).map((node) => node.id),
+  () => pinnableResourceNodes(props.sections).map((node) => node.id),
   (validIds) => {
     const validIdSet = new Set(validIds);
     if (validIdSet.size === 0) {
@@ -354,7 +394,10 @@ watch(
     }
     pinnedResourceIds.value = nextIds;
     try {
-      localStorage.setItem(PINNED_RESOURCE_STORAGE_KEY, JSON.stringify(nextIds));
+      localStorage.setItem(
+        PINNED_RESOURCE_STORAGE_KEY,
+        JSON.stringify(nextIds)
+      );
     } catch {
       // The in-memory state is still kept in sync when storage is unavailable.
     }
@@ -365,11 +408,20 @@ watch(
 <template>
   <aside class="left-sidebar" aria-label="DeepWrite 导航与资源树">
     <header class="sidebar-brand-row">
-      <button class="brand-button" type="button" aria-label="DeepWrite 工作区菜单">
+      <button
+        class="brand-button"
+        type="button"
+        aria-label="DeepWrite 工作区菜单"
+      >
         <span class="brand-mark"><AppIcon name="logo" :size="19" /></span>
         <span class="brand-name">DeepWrite</span>
       </button>
-      <button class="icon-button" type="button" aria-label="收起左侧栏" @click="emit('collapse')">
+      <button
+        class="icon-button"
+        type="button"
+        aria-label="收起左侧栏"
+        @click="emit('collapse')"
+      >
         <AppIcon name="panel-left" :size="18" />
       </button>
     </header>
@@ -399,7 +451,9 @@ watch(
           :class="{ 'is-active': item.id === props.activePrimaryFeature }"
           type="button"
           :data-nav-id="item.id"
-          :aria-current="item.id === props.activePrimaryFeature ? 'page' : undefined"
+          :aria-current="
+            item.id === props.activePrimaryFeature ? 'page' : undefined
+          "
           @click="activateNav(item.id)"
         >
           <AppIcon :name="item.icon" :size="17" />
@@ -420,7 +474,11 @@ watch(
           <AppIcon class="more-toggle-chevron" name="chevron" :size="13" />
         </button>
 
-        <div v-if="moreExpanded" id="more-feature-list" class="more-feature-list">
+        <div
+          v-if="moreExpanded"
+          id="more-feature-list"
+          class="more-feature-list"
+        >
           <button
             v-for="feature in moreFeatures"
             :key="feature.id"
@@ -429,10 +487,14 @@ watch(
             type="button"
             :data-feature-id="feature.id"
             :title="feature.description"
-            :aria-current="feature.id === props.activePrimaryFeature ? 'page' : undefined"
+            :aria-current="
+              feature.id === props.activePrimaryFeature ? 'page' : undefined
+            "
             @click="activateMoreFeature(feature.id)"
           >
-            <span class="more-feature-icon"><AppIcon :name="feature.icon" :size="15" /></span>
+            <span class="more-feature-icon"
+              ><AppIcon :name="feature.icon" :size="15"
+            /></span>
             <span class="more-feature-copy">
               <strong>{{ feature.label }}</strong>
               <small>{{ feature.description }}</small>
@@ -449,12 +511,18 @@ watch(
       </nav>
 
       <div class="resource-list">
-        <section v-if="pinnedResourceNodes.length" class="resource-section pinned-resource-section">
+        <section
+          v-if="pinnedResourceNodes.length"
+          class="resource-section pinned-resource-section"
+        >
           <div class="pinned-resource-heading">
             <AppIcon name="pin" :size="15" />
             <span>置顶</span>
           </div>
-          <ul class="resource-tree pinned-resource-tree" aria-label="置顶的书籍、技能库和素材库">
+          <ul
+            class="resource-tree pinned-resource-tree"
+            aria-label="置顶的书籍、技能库和素材库"
+          >
             <TreeNodeItem
               v-for="node in pinnedResourceNodes"
               :key="node.id"
@@ -475,14 +543,28 @@ watch(
               @resource-node-action="emit('resourceNodeAction', $event)"
               @move-library-entry="emit('moveLibraryEntry', $event)"
               @create-expert-section="emit('createExpertSection', $event)"
-              @create-long-draft-section="emit('createLongDraftSection', $event)"
-              @long-draft-section-action="(action, sectionNode) => emit('longDraftSectionAction', action, sectionNode)"
+              @create-long-draft-section="
+                emit('createLongDraftSection', $event)
+              "
+              @long-draft-section-action="
+                (action, sectionNode) =>
+                  emit('longDraftSectionAction', action, sectionNode)
+              "
               @create-long-tree-item="emit('createLongTreeItem', $event)"
-              @long-tree-item-action="(action, itemNode) => emit('longTreeItemAction', action, itemNode)"
+              @long-tree-item-action="
+                (action, itemNode) =>
+                  emit('longTreeItemAction', action, itemNode)
+              "
               @remove-expert-section="emit('removeExpertSection', $event)"
-              @expert-section-action="(action, sectionNode) => emit('expertSectionAction', action, sectionNode)"
+              @expert-section-action="
+                (action, sectionNode) =>
+                  emit('expertSectionAction', action, sectionNode)
+              "
               @create-character-item="emit('createCharacterItem', $event)"
-              @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
+              @character-item-action="
+                (action, itemNode) =>
+                  emit('characterItemAction', action, itemNode)
+              "
             />
           </ul>
         </section>
@@ -505,13 +587,26 @@ watch(
           @move-library-entry="emit('moveLibraryEntry', $event)"
           @create-expert-section="emit('createExpertSection', $event)"
           @create-long-draft-section="emit('createLongDraftSection', $event)"
-          @long-draft-section-action="(action: 'move-up' | 'move-down' | 'delete', sectionNode: ResourceTreeNode) => emit('longDraftSectionAction', action, sectionNode)"
+          @long-draft-section-action="
+            (
+              action: 'move-up' | 'move-down' | 'delete',
+              sectionNode: ResourceTreeNode
+            ) => emit('longDraftSectionAction', action, sectionNode)
+          "
           @create-long-tree-item="emit('createLongTreeItem', $event)"
-          @long-tree-item-action="(action: LongTreeItemAction, itemNode: ResourceTreeNode) => emit('longTreeItemAction', action, itemNode)"
+          @long-tree-item-action="
+            (action: LongTreeItemAction, itemNode: ResourceTreeNode) =>
+              emit('longTreeItemAction', action, itemNode)
+          "
           @remove-expert-section="emit('removeExpertSection', $event)"
-          @expert-section-action="(action: 'move-up' | 'move-down', sectionNode: ResourceTreeNode) => emit('expertSectionAction', action, sectionNode)"
+          @expert-section-action="
+            (action: 'move-up' | 'move-down', sectionNode: ResourceTreeNode) =>
+              emit('expertSectionAction', action, sectionNode)
+          "
           @create-character-item="emit('createCharacterItem', $event)"
-          @character-item-action="(action, itemNode) => emit('characterItemAction', action, itemNode)"
+          @character-item-action="
+            (action, itemNode) => emit('characterItemAction', action, itemNode)
+          "
         />
       </div>
     </div>
@@ -529,11 +624,18 @@ watch(
           >
             <span class="avatar">{{ avatarInitial }}</span>
             <span class="account-copy">
-              <strong :title="displayedUserName">{{ displayedUserName }}</strong>
+              <strong :title="displayedUserName">{{
+                displayedUserName
+              }}</strong>
             </span>
           </button>
 
-          <div v-if="accountMenuOpen" id="account-menu" class="account-menu" role="menu">
+          <div
+            v-if="accountMenuOpen"
+            id="account-menu"
+            class="account-menu"
+            role="menu"
+          >
             <button type="button" role="menuitem" @click="openSettings">
               <AppIcon name="settings" :size="16" />
               <span>设置</span>
@@ -598,7 +700,11 @@ watch(
             <strong>deepseekwrite</strong>
           </div>
           <div class="dialog-actions">
-            <button class="dialog-primary-button" type="button" @click="closeProfileDialog">
+            <button
+              class="dialog-primary-button"
+              type="button"
+              @click="closeProfileDialog"
+            >
               我知道了
             </button>
           </div>
@@ -643,7 +749,9 @@ watch(
               <span>最新版本</span>
               <strong>v{{ updateState.latestVersion }}</strong>
             </div>
-            <span v-if="updateState.mandatory" class="update-required-badge">重要更新</span>
+            <span v-if="updateState.mandatory" class="update-required-badge"
+              >重要更新</span
+            >
           </div>
 
           <div v-if="updateChecking" class="update-checking" aria-live="polite">
@@ -651,7 +759,11 @@ watch(
             <span>正在检查更新…</span>
           </div>
 
-          <div v-else-if="updateInstalling" class="update-checking" aria-live="assertive">
+          <div
+            v-else-if="updateInstalling"
+            class="update-checking"
+            aria-live="assertive"
+          >
             <span class="update-spinner" aria-hidden="true" />
             <span>正在安全退出并准备安装…</span>
           </div>
@@ -660,34 +772,53 @@ watch(
             <div v-if="updateState.title" class="update-release-copy">
               <strong>{{ updateState.title }}</strong>
               <ul v-if="updateState.releaseNotes.length">
-                <li v-for="note in updateState.releaseNotes" :key="note">{{ note }}</li>
+                <li v-for="note in updateState.releaseNotes" :key="note">
+                  {{ note }}
+                </li>
               </ul>
             </div>
 
-            <div v-if="updateDownloading" class="update-progress" aria-live="polite">
+            <div
+              v-if="updateDownloading"
+              class="update-progress"
+              aria-live="polite"
+            >
               <div class="update-progress-heading">
                 <span>正在后台下载</span>
                 <strong>{{ updateProgressLabel }}</strong>
               </div>
-              <div class="update-progress-track" role="progressbar" :aria-valuenow="updateState.percent ?? 0">
+              <div
+                class="update-progress-track"
+                role="progressbar"
+                :aria-valuenow="updateState.percent ?? 0"
+              >
                 <span :style="{ width: `${updateState.percent ?? 0}%` }" />
               </div>
               <small>
-                {{ formatBytes(updateState.transferred) }} / {{ formatBytes(updateState.total) }}
+                {{ formatBytes(updateState.transferred) }} /
+                {{ formatBytes(updateState.total) }}
                 <template v-if="updateState.bytesPerSecond">
                   · {{ formatBytes(updateState.bytesPerSecond) }}/s
                 </template>
               </small>
             </div>
 
-            <p v-if="updateState.message && updateState.status !== 'error'" class="update-status-message" :data-status="updateState.status">
+            <p
+              v-if="updateState.message && updateState.status !== 'error'"
+              class="update-status-message"
+              :data-status="updateState.status"
+            >
               {{ updateState.message }}
             </p>
           </template>
 
           <div class="dialog-actions">
             <button
-              v-if="updateState.status === 'error' || updateState.status === 'not-available' || updateState.status === 'unsupported'"
+              v-if="
+                updateState.status === 'error' ||
+                updateState.status === 'not-available' ||
+                updateState.status === 'unsupported'
+              "
               class="dialog-secondary-button"
               type="button"
               :disabled="updateChecking"
@@ -720,7 +851,9 @@ watch(
               正在安装…
             </button>
             <button
-              v-else-if="!updateChecking && !updateDownloading && !updateInstalling"
+              v-else-if="
+                !updateChecking && !updateDownloading && !updateInstalling
+              "
               class="dialog-primary-button"
               type="button"
               @click="closeProfileDialog"

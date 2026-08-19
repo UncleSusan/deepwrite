@@ -77,13 +77,15 @@ export function useEditorAutoSaveCoordinator(
   function enqueue(task: () => Promise<void>): void {
     if (disposed) return;
     pendingTaskCount += 1;
-    const operation = saveChain.catch(() => undefined).then(async () => {
-      try {
-        await task();
-      } finally {
-        pendingTaskCount -= 1;
-      }
-    });
+    const operation = saveChain
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          await task();
+        } finally {
+          pendingTaskCount -= 1;
+        }
+      });
     saveChain = operation.catch((error: unknown) => {
       options.onUnexpectedError?.(error);
     });

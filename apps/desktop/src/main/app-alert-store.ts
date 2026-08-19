@@ -59,9 +59,11 @@ async function atomicWriteJson(path: string, value: unknown): Promise<void> {
 }
 
 function parseStateFile(raw: unknown): AppAlertStateFile | undefined {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return undefined;
   const record = raw as Record<string, unknown>;
-  if (record.version !== 1 || typeof record.fetchedAt !== "string") return undefined;
+  if (record.version !== 1 || typeof record.fetchedAt !== "string")
+    return undefined;
   const manifest = AppAlertManifestSchema.safeParse(record.manifest);
   if (!manifest.success) return undefined;
   const lastSeenDesktopRevision =

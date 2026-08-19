@@ -329,7 +329,10 @@ export interface LongStructureMutationBuilder {
     toVolumeId: string,
     beforeArcId?: string
   ): LongWorkspaceOperationBatch;
-  reorderArc(id: string, direction: LongOrderDirection): LongWorkspaceOperationBatch;
+  reorderArc(
+    id: string,
+    direction: LongOrderDirection
+  ): LongWorkspaceOperationBatch;
   deleteArc(id: string, cascade: boolean): LongWorkspaceOperationBatch;
 
   createChapter(input: CreateLongChapterInput): LongWorkspaceOperationBatch;
@@ -439,7 +442,9 @@ export interface LongStructureMutationBuilder {
 }
 
 function normalizedList(values: readonly string[] | undefined): string[] {
-  return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))];
+  return [
+    ...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))
+  ];
 }
 
 function assertPresent<T>(
@@ -475,7 +480,9 @@ export function moveLongOrderedId(
   }
   const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
   if (targetIndex < 0 || targetIndex >= next.length) {
-    throw new Error(`Cannot move ${id} ${direction}; it is already at the boundary.`);
+    throw new Error(
+      `Cannot move ${id} ${direction}; it is already at the boundary.`
+    );
   }
   [next[currentIndex], next[targetIndex]] = [
     next[targetIndex]!,
@@ -517,9 +524,7 @@ export function createLongStructureMutationBuilder(
   const storyEvent = (id: string) =>
     snapshot.plot.storyEvents.find((candidate) => candidate.id === id);
   const storyPlot = (id: string) =>
-    (snapshot.plot.storyPlots ?? []).find(
-      (candidate) => candidate.id === id
-    );
+    (snapshot.plot.storyPlots ?? []).find((candidate) => candidate.id === id);
   const eventConnection = (id: string) =>
     snapshot.plot.eventConnections.find((candidate) => candidate.id === id);
   const narrativePlacement = (id: string) =>
@@ -607,9 +612,7 @@ export function createLongStructureMutationBuilder(
     characterIds: readonly string[] | undefined
   ): string[] => {
     const ids = normalizedList(characterIds);
-    ids.forEach((id) =>
-      assertPresent(character(id), "Story event character")
-    );
+    ids.forEach((id) => assertPresent(character(id), "Story event character"));
     return ids;
   };
 
@@ -654,11 +657,7 @@ export function createLongStructureMutationBuilder(
     if (input.chapterCardId) {
       assertPresent(chapterCard, "Foreshadowing beat chapter");
     }
-    if (
-      volumeAnchor &&
-      arcAnchor &&
-      arcAnchor.volumeId !== volumeAnchor.id
-    ) {
+    if (volumeAnchor && arcAnchor && arcAnchor.volumeId !== volumeAnchor.id) {
       throw new Error(
         "Foreshadowing beat planning arc must belong to its planning volume."
       );
@@ -678,8 +677,7 @@ export function createLongStructureMutationBuilder(
       );
     }
     const anchoredChapter =
-      chapterCard ??
-      (placement ? chapter(placement.chapterCardId) : undefined);
+      chapterCard ?? (placement ? chapter(placement.chapterCardId) : undefined);
     if (
       volumeAnchor &&
       anchoredChapter &&
@@ -699,11 +697,7 @@ export function createLongStructureMutationBuilder(
         "Foreshadowing beat planning arc must match its concrete chapter."
       );
     }
-    if (
-      arcAnchor &&
-      event &&
-      !event.arcIds.includes(arcAnchor.id)
-    ) {
+    if (arcAnchor && event && !event.arcIds.includes(arcAnchor.id)) {
       throw new Error(
         "Foreshadowing beat planning arc must match its concrete event."
       );
@@ -912,11 +906,7 @@ export function createLongStructureMutationBuilder(
       return batch([
         {
           type: "worldbuilding.reorder",
-          orderedIds: moveLongOrderedId(
-            orderedWorldbuilding(),
-            id,
-            direction
-          )
+          orderedIds: moveLongOrderedId(orderedWorldbuilding(), id, direction)
         }
       ]);
     },
@@ -1019,11 +1009,7 @@ export function createLongStructureMutationBuilder(
       return batch([
         {
           type: "characterType.reorder",
-          orderedIds: moveLongOrderedId(
-            orderedCharacterTypes(),
-            id,
-            direction
-          )
+          orderedIds: moveLongOrderedId(orderedCharacterTypes(), id, direction)
         }
       ]);
     },
@@ -1031,7 +1017,10 @@ export function createLongStructureMutationBuilder(
     deleteCharacterType(id, moveCharactersToTypeId) {
       assertPresent(characterType(id), "Character type");
       if (moveCharactersToTypeId) {
-        assertPresent(characterType(moveCharactersToTypeId), "Target character type");
+        assertPresent(
+          characterType(moveCharactersToTypeId),
+          "Target character type"
+        );
       }
       return batch([
         {
@@ -1185,9 +1174,7 @@ export function createLongStructureMutationBuilder(
               snapshot.plot.arcs.filter(
                 (candidate) => candidate.volumeId === input.volumeId
               ).length + 1,
-            ...(input.summary !== undefined
-              ? { summary: input.summary }
-              : {}),
+            ...(input.summary !== undefined ? { summary: input.summary } : {}),
             outline: input.outline ?? ""
           }
         }
@@ -1292,10 +1279,7 @@ export function createLongStructureMutationBuilder(
           ),
           foreshadowingChanges: createEmptyLongMarkdownFileReference(
             longChapterForeshadowingChangesFileId(id),
-            longChapterContinuityFilePath(
-              id,
-              "foreshadowing-changes.md"
-            ),
+            longChapterContinuityFilePath(id, "foreshadowing-changes.md"),
             updatedAt
           ),
           worldReveals: null,
@@ -1319,7 +1303,9 @@ export function createLongStructureMutationBuilder(
         const targetArc = arc(targetArcId);
         assertPresent(targetArc, "Target primary arc");
         if (targetArc.volumeId !== targetVolumeId) {
-          throw new Error("Target primary arc must belong to the target volume.");
+          throw new Error(
+            "Target primary arc must belong to the target volume."
+          );
         }
       }
       const patch: Partial<OperationOf<"chapter.update">["patch"]> = {
@@ -1537,8 +1523,7 @@ export function createLongStructureMutationBuilder(
             chapterCardId: input.chapterCardId,
             orderInChapter:
               snapshot.plot.narrativePlacements.filter(
-                (placement) =>
-                  placement.chapterCardId === input.chapterCardId
+                (placement) => placement.chapterCardId === input.chapterCardId
               ).length + 1,
             mode: input.mode,
             disclosure: input.disclosure,
@@ -1553,8 +1538,7 @@ export function createLongStructureMutationBuilder(
     updateNarrativePlacement(id, input) {
       const current = narrativePlacement(id);
       assertPresent(current, "Narrative placement");
-      const targetChapterCardId =
-        input.chapterCardId ?? current.chapterCardId;
+      const targetChapterCardId = input.chapterCardId ?? current.chapterCardId;
       if (input.eventId !== undefined) {
         assertPresent(storyEvent(input.eventId), "Placement story event");
       }
@@ -1672,11 +1656,7 @@ export function createLongStructureMutationBuilder(
       return batch([
         {
           type: "foreshadowing.reorder",
-          orderedIds: moveLongOrderedId(
-            orderedForeshadowing(),
-            id,
-            direction
-          )
+          orderedIds: moveLongOrderedId(orderedForeshadowing(), id, direction)
         }
       ]);
     },
@@ -1717,9 +1697,7 @@ export function createLongStructureMutationBuilder(
       const current = foreshadowingBeat(id);
       assertPresent(current, "Foreshadowing beat");
       const resolvedVolumeId =
-        input.volumeId !== undefined
-          ? input.volumeId
-          : current.beat.volumeId;
+        input.volumeId !== undefined ? input.volumeId : current.beat.volumeId;
       const resolvedArcId =
         input.arcId !== undefined ? input.arcId : current.beat.arcId;
       const references = {
@@ -1728,9 +1706,7 @@ export function createLongStructureMutationBuilder(
           : {}),
         ...(resolvedArcId !== undefined ? { arcId: resolvedArcId } : {}),
         eventId:
-          input.eventId !== undefined
-            ? input.eventId
-            : current.beat.eventId,
+          input.eventId !== undefined ? input.eventId : current.beat.eventId,
         placementId:
           input.placementId !== undefined
             ? input.placementId
@@ -1750,13 +1726,9 @@ export function createLongStructureMutationBuilder(
         foreshadowing(targetThreadId),
         "Target foreshadowing thread"
       );
-      const patch: Partial<
-        OperationOf<"foreshadowingBeat.update">["patch"]
-      > = {
+      const patch: Partial<OperationOf<"foreshadowingBeat.update">["patch"]> = {
         ...(input.type !== undefined ? { type: input.type } : {}),
-        ...(input.volumeId !== undefined
-          ? { volumeId: input.volumeId }
-          : {}),
+        ...(input.volumeId !== undefined ? { volumeId: input.volumeId } : {}),
         ...(input.arcId !== undefined ? { arcId: input.arcId } : {}),
         ...(input.eventId !== undefined ? { eventId: input.eventId } : {}),
         ...(input.placementId !== undefined
@@ -1807,9 +1779,7 @@ export function createLongStructureMutationBuilder(
     },
 
     deleteForeshadowingBeat(id) {
-      return batch([
-        { type: "foreshadowingBeat.delete", id, cascade: false }
-      ]);
+      return batch([{ type: "foreshadowingBeat.delete", id, cascade: false }]);
     }
   };
 }

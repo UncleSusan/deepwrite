@@ -33,7 +33,10 @@ export const ExpertDraftSchema = z
 export type ExpertDraft = z.infer<typeof ExpertDraftSchema>;
 
 export type ExpertDraftSectionPatch = Partial<
-  Pick<ExpertDraftSection, "title" | "wordCountRequirement" | "body" | "characterState">
+  Pick<
+    ExpertDraftSection,
+    "title" | "wordCountRequirement" | "body" | "characterState"
+  >
 >;
 
 const SECTION_MARKER_PATTERN =
@@ -108,7 +111,9 @@ export function updateExpertDraftSection(
   sectionId: string,
   patch: ExpertDraftSectionPatch
 ): ExpertDraft {
-  const sectionIndex = draft.sections.findIndex((section) => section.id === sectionId);
+  const sectionIndex = draft.sections.findIndex(
+    (section) => section.id === sectionId
+  );
   if (sectionIndex < 0) return draft;
 
   const current = draft.sections[sectionIndex]!;
@@ -188,7 +193,9 @@ export function removeExpertDraftSection(
   sectionId: string
 ): ExpertDraft {
   if (draft.sections.length <= 1) return draft;
-  const nextSections = draft.sections.filter((section) => section.id !== sectionId);
+  const nextSections = draft.sections.filter(
+    (section) => section.id !== sectionId
+  );
   return nextSections.length === draft.sections.length
     ? draft
     : { sections: nextSections };
@@ -284,18 +291,7 @@ function decodeSectionMarker(line: string): ParsedSectionMarker | undefined {
 }
 
 function chineseSectionNumber(value: number): string {
-  const digits = [
-    "零",
-    "一",
-    "二",
-    "三",
-    "四",
-    "五",
-    "六",
-    "七",
-    "八",
-    "九"
-  ];
+  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
   if (value <= 10) return value === 10 ? "十" : digits[value]!;
   if (value < 20) return `十${digits[value - 10]}`;
   if (value < 100) {
@@ -320,7 +316,9 @@ function nextUnusedSectionId(usedIds: ReadonlySet<string>): string {
 }
 
 function uniqueSectionId(preferredId: string, usedIds: Set<string>): string {
-  const id = usedIds.has(preferredId) ? nextUnusedSectionId(usedIds) : preferredId;
+  const id = usedIds.has(preferredId)
+    ? nextUnusedSectionId(usedIds)
+    : preferredId;
   usedIds.add(id);
   return id;
 }
@@ -347,7 +345,9 @@ function prependBody(preamble: string, body: string): string {
   return body ? `${preamble}\n\n${body}` : preamble;
 }
 
-function parseMarkedExpertDraft(lines: readonly string[]): ExpertDraft | undefined {
+function parseMarkedExpertDraft(
+  lines: readonly string[]
+): ExpertDraft | undefined {
   const markers: LocatedSectionMarker[] = [];
   scanOutsideFences(lines, (line, lineIndex) => {
     const marker = decodeSectionMarker(line);
@@ -394,7 +394,9 @@ function parseMarkedExpertDraft(lines: readonly string[]): ExpertDraft | undefin
   return { sections };
 }
 
-function parseHeadingBasedExpertDraft(lines: readonly string[]): ExpertDraft | undefined {
+function parseHeadingBasedExpertDraft(
+  lines: readonly string[]
+): ExpertDraft | undefined {
   const headings: Array<{ lineIndex: number; title: string }> = [];
   scanOutsideFences(lines, (line, lineIndex) => {
     const title = headingTitle(line);
@@ -476,7 +478,9 @@ export function serializeExpertDraftMarkdown(draft: ExpertDraft): string {
       );
       const marker = `<!-- deepwrite:expert-draft-section id=${id} meta=${metadata} -->`;
       const title = `## ${oneLineTitle(section, index)}`;
-      const body = normalizeBodyLines(normalizedMarkdown(section.body).split("\n"));
+      const body = normalizeBodyLines(
+        normalizedMarkdown(section.body).split("\n")
+      );
       return body ? `${marker}\n${title}\n\n${body}` : `${marker}\n${title}`;
     })
     .join("\n\n");
@@ -487,7 +491,9 @@ export function renderExpertDraftManuscript(draft: ExpertDraft): string {
   return draft.sections
     .map((section, index) => {
       const title = `## ${oneLineTitle(section, index)}`;
-      const body = normalizeBodyLines(normalizedMarkdown(section.body).split("\n"));
+      const body = normalizeBodyLines(
+        normalizedMarkdown(section.body).split("\n")
+      );
       return body ? `${title}\n\n${body}` : title;
     })
     .join("\n\n");

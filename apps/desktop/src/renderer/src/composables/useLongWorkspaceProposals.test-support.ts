@@ -205,10 +205,7 @@ function worldbuildingWriteEvent() {
 
 function characterWriteEvent() {
   const fileId = longCharacterCoreProfileFileId("character_lan");
-  const filePath = longCharacterFilePath(
-    "character_lan",
-    "core-profile.md"
-  );
+  const filePath = longCharacterFilePath("character_lan", "core-profile.md");
   return systemEvent(
     createEnvelope(
       "long.character_file_proposal",
@@ -321,16 +318,18 @@ function chapterEvent() {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [],
-          documentWrites: [{
-            proposalId: "proposal_chapter_one",
-            fileId: longChapterBodyFileId("chapter_one"),
-            content: "正文",
-            mode: "replace" as const,
-            expectedRevision: fileRevision,
-            nextRevision: "v1:2:12345678",
-            updatedAt: "2026-07-26T12:00:00.000Z",
-            reason: "完成第一章"
-          }]
+          documentWrites: [
+            {
+              proposalId: "proposal_chapter_one",
+              fileId: longChapterBodyFileId("chapter_one"),
+              content: "正文",
+              mode: "replace" as const,
+              expectedRevision: fileRevision,
+              nextRevision: "v1:2:12345678",
+              updatedAt: "2026-07-26T12:00:00.000Z",
+              reason: "完成第一章"
+            }
+          ]
         },
         baseProjectRevision: 11,
         file: {
@@ -446,26 +445,24 @@ function harness(
   acceptsEvent = true,
   approvalMode: "request-approval" | "auto-approve" = "request-approval"
 ) {
-  const previewOperations = vi.fn(async (_input: {
-    bookId: string;
-    batch: LongWorkspaceOperationBatch;
-  }) => {
-    structuredClone(_input);
-    return {
-      bookId: proposalBase.bookId,
-      preview: {
-        baseRevision: _input.batch.baseRevision,
-        resultRevision: _input.batch.baseRevision + 1,
-        impact: emptyImpact,
-        entityChanges: [],
-        fileIntents: [],
-        documentWrites:
-          [] as LongWorkspaceOperationBatch["documentWrites"],
-        provisionalIdMap: {}
-      },
-      projectRevision: 13
-    };
-  });
+  const previewOperations = vi.fn(
+    async (_input: { bookId: string; batch: LongWorkspaceOperationBatch }) => {
+      structuredClone(_input);
+      return {
+        bookId: proposalBase.bookId,
+        preview: {
+          baseRevision: _input.batch.baseRevision,
+          resultRevision: _input.batch.baseRevision + 1,
+          impact: emptyImpact,
+          entityChanges: [],
+          fileIntents: [],
+          documentWrites: [] as LongWorkspaceOperationBatch["documentWrites"],
+          provisionalIdMap: {}
+        },
+        projectRevision: 13
+      };
+    }
+  );
   const applyOperations = vi.fn(async (input: unknown) => {
     structuredClone(input);
     return undefined;
@@ -509,10 +506,7 @@ function harness(
           characterId: "character_lan",
           coreProfile: {
             id: longCharacterCoreProfileFileId("character_lan"),
-            path: longCharacterFilePath(
-              "character_lan",
-              "core-profile.md"
-            ),
+            path: longCharacterFilePath("character_lan", "core-profile.md"),
             revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
@@ -553,10 +547,7 @@ function harness(
           },
           characterState: {
             id: longChapterCharacterStateFileId("chapter_one"),
-            path: longChapterFilePath(
-              "chapter_one",
-              "character-state.md"
-            ),
+            path: longChapterFilePath("chapter_one", "character-state.md"),
             revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
@@ -584,7 +575,11 @@ function harness(
     projectRevision: 13
   }));
   const readDocument = vi.fn(
-    async ({ bookId, fileId, offset = 0 }: {
+    async ({
+      bookId,
+      fileId,
+      offset = 0
+    }: {
       bookId: string;
       fileId: string;
       offset?: number;
@@ -696,11 +691,11 @@ export {
   useLongWorkspaceProposals,
   vi,
   worldbuildingFileEvent,
-  worldbuildingWriteEvent,
+  worldbuildingWriteEvent
 };
 export type {
   LongMutationProposalEvent,
   LongWorkspaceOperationBatch,
   LongWorkspaceRendererApi,
-  SystemEventEnvelope,
+  SystemEventEnvelope
 };

@@ -145,7 +145,8 @@ function isWriteTool(tool: AgentToolTrace): boolean {
 }
 
 function writeToolAction(tool: AgentToolTrace): "write" | "modify" {
-  return DIRECT_WRITE_TOOL_NAMES.has(tool.name) || /(?:write|save)/i.test(tool.name)
+  return DIRECT_WRITE_TOOL_NAMES.has(tool.name) ||
+    /(?:write|save)/i.test(tool.name)
     ? "write"
     : "modify";
 }
@@ -156,7 +157,10 @@ function writeActionLabel(action: "write" | "modify"): "写入" | "修改" {
 
 function toolKind(toolName: string): ToolKind {
   const name = toolName.toLowerCase();
-  if (WRITE_TOOL_NAMES.has(name) || /(write|edit|replace|patch|save|apply)/.test(name)) {
+  if (
+    WRITE_TOOL_NAMES.has(name) ||
+    /(write|edit|replace|patch|save|apply)/.test(name)
+  ) {
     return "write";
   }
   if (/(read|list|search|find|glob|file)/.test(name)) {
@@ -221,7 +225,9 @@ function toolLabel(tool: AgentToolTrace): string {
 }
 
 function toolGroupIsRunning(tools: AgentToolTrace[]): boolean {
-  return tools.some((tool) => tool.status === "preparing" || tool.status === "running");
+  return tools.some(
+    (tool) => tool.status === "preparing" || tool.status === "running"
+  );
 }
 
 function toolGroupLabel(tools: AgentToolTrace[]): "执行中" | "执行完成" {
@@ -234,7 +240,8 @@ function compactTrace(value: string): string {
 }
 
 function writeToolContentLabel(tool: AgentToolTrace): string {
-  return tool.name === "write_chapter_draft" || tool.name === "edit_chapter_draft"
+  return tool.name === "write_chapter_draft" ||
+    tool.name === "edit_chapter_draft"
     ? "待审阅正文"
     : "写入内容";
 }
@@ -242,7 +249,9 @@ function writeToolContentLabel(tool: AgentToolTrace): string {
 function writeToolTarget(tool: AgentToolTrace): string | undefined {
   if (!tool.args || typeof tool.args !== "object") return undefined;
   const args = tool.args as Record<string, unknown>;
-  return typeof args.target_stage_id === "string" ? args.target_stage_id : undefined;
+  return typeof args.target_stage_id === "string"
+    ? args.target_stage_id
+    : undefined;
 }
 
 function visibleToolArguments(tool: AgentToolTrace): unknown {
@@ -252,8 +261,11 @@ function visibleToolArguments(tool: AgentToolTrace): unknown {
 function formatToolPayload(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
   try {
-    const formatted = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-    return formatted.length > 3_000 ? `${formatted.slice(0, 3_000)}\n…` : formatted;
+    const formatted =
+      typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    return formatted.length > 3_000
+      ? `${formatted.slice(0, 3_000)}\n…`
+      : formatted;
   } catch {
     return String(value);
   }
@@ -294,9 +306,16 @@ function subagentDisplayItems(run: AgentSubagentRun): SubagentDisplayItem[] {
         items.push({ ...step });
         continue;
       }
-      const tool = run.toolCalls.find((candidate) => candidate.id === step.toolCallId);
+      const tool = run.toolCalls.find(
+        (candidate) => candidate.id === step.toolCallId
+      );
       if (tool) {
-        items.push({ id: step.id, type: "tool", tool, createdAt: step.createdAt });
+        items.push({
+          id: step.id,
+          type: "tool",
+          tool,
+          createdAt: step.createdAt
+        });
       }
     }
     return items;
@@ -363,7 +382,9 @@ const subagentStatusLabels: Record<AgentSubagentRun["status"], string> = {
 function subagentStatusLabel(run: AgentSubagentRun): string {
   if (run.retry?.state === "trying") return "正在重试";
   if (run.retry?.state === "scheduled") {
-    const retryAt = run.retry.retryAt ? Date.parse(run.retry.retryAt) : Number.NaN;
+    const retryAt = run.retry.retryAt
+      ? Date.parse(run.retry.retryAt)
+      : Number.NaN;
     const seconds = Number.isFinite(retryAt)
       ? Math.max(0, Math.ceil((retryAt - props.now) / 1_000))
       : Math.max(0, Math.ceil((run.retry.delayMs ?? 0) / 1_000));
@@ -381,7 +402,9 @@ function subagentRetryStatus(run: AgentSubagentRun): string | undefined {
   const progress = subagentRetryProgress(run);
   if (!run.retry || !progress) return undefined;
   if (run.retry.state === "trying") return `正在重试（${progress}）`;
-  const retryAt = run.retry.retryAt ? Date.parse(run.retry.retryAt) : Number.NaN;
+  const retryAt = run.retry.retryAt
+    ? Date.parse(run.retry.retryAt)
+    : Number.NaN;
   const seconds = Number.isFinite(retryAt)
     ? Math.max(0, Math.ceil((retryAt - props.now) / 1_000))
     : Math.max(0, Math.ceil((run.retry.delayMs ?? 0) / 1_000));
@@ -463,7 +486,9 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
         </span>
         <span class="subagent-run-meta" aria-label="子任务运行摘要">
           <span v-if="subagentDuration(run)">{{ subagentDuration(run) }}</span>
-          <span v-if="subagentRetryProgress(run)">{{ subagentRetryProgress(run) }}</span>
+          <span v-if="subagentRetryProgress(run)">{{
+            subagentRetryProgress(run)
+          }}</span>
           <span>{{ run.toolCalls.length }} 个工具</span>
           <span v-if="subagentReviewHint(message, run)" class="is-review">
             {{ subagentReviewHint(message, run) }}
@@ -490,7 +515,9 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
               class="processing-live-item processing-live-thinking"
             >
               <summary>
-                <span>{{ run.status === 'running' ? '思考中' : '思考过程' }}</span>
+                <span>{{
+                  run.status === "running" ? "思考中" : "思考过程"
+                }}</span>
                 <AppIcon name="chevron" :size="13" />
               </summary>
               <div class="processing-live-body processing-thinking">
@@ -516,7 +543,10 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
               <summary>
                 <div
                   class="tool-trace"
-                  :class="[`is-${item.tool.status}`, { 'is-write': isWriteTool(item.tool) }]"
+                  :class="[
+                    `is-${item.tool.status}`,
+                    { 'is-write': isWriteTool(item.tool) }
+                  ]"
                 >
                   <AppIcon
                     v-if="!isWriteTool(item.tool)"
@@ -529,7 +559,9 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
                       <AppIcon name="chevron" :size="13" />
                     </div>
                     <strong v-else>{{ toolLabel(item.tool) }}</strong>
-                    <span v-if="toolDetail(item.tool)">{{ toolDetail(item.tool) }}</span>
+                    <span v-if="toolDetail(item.tool)">{{
+                      toolDetail(item.tool)
+                    }}</span>
                   </div>
                 </div>
                 <AppIcon
@@ -546,17 +578,28 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
                       {{ writeToolTarget(item.tool) }}
                     </small>
                     <small>
-                      {{ writeToolText(item.tool).length.toLocaleString('zh-CN') }} 字符
+                      {{
+                        writeToolText(item.tool).length.toLocaleString("zh-CN")
+                      }}
+                      字符
                     </small>
                   </div>
                   <pre
                     class="write-tool-output"
-                    :class="{ 'is-streaming': item.tool.status === 'preparing' }"
-                  >{{ writeToolText(item.tool) || '正在等待写入内容……' }}</pre>
+                    :class="{
+                      'is-streaming': item.tool.status === 'preparing'
+                    }"
+                    >{{
+                      writeToolText(item.tool) || "正在等待写入内容……"
+                    }}</pre>
                 </div>
-                <div v-else-if="formatToolPayload(visibleToolArguments(item.tool))">
+                <div
+                  v-else-if="formatToolPayload(visibleToolArguments(item.tool))"
+                >
                   <span>调用参数</span>
-                  <pre>{{ formatToolPayload(visibleToolArguments(item.tool)) }}</pre>
+                  <pre>{{
+                    formatToolPayload(visibleToolArguments(item.tool))
+                  }}</pre>
                 </div>
                 <div v-if="item.tool.resultSummary">
                   <span>执行结果</span>
@@ -573,7 +616,10 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
                 <span>{{ toolGroupLabel(item.tools) }}</span>
                 <AppIcon name="chevron" :size="13" />
               </summary>
-              <div class="processing-live-body tool-call-list" aria-label="工具调用列表">
+              <div
+                class="processing-live-body tool-call-list"
+                aria-label="工具调用列表"
+              >
                 <details
                   v-for="tool in item.tools"
                   :key="tool.id"
@@ -584,7 +630,9 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
                       <AppIcon :name="toolIcon(tool)" :size="17" />
                       <div>
                         <strong>{{ toolLabel(tool) }}</strong>
-                        <span v-if="toolDetail(tool)">{{ toolDetail(tool) }}</span>
+                        <span v-if="toolDetail(tool)">{{
+                          toolDetail(tool)
+                        }}</span>
                       </div>
                     </div>
                     <AppIcon name="chevron" :size="13" />
@@ -592,7 +640,9 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
                   <div class="processing-live-body tool-detail">
                     <div v-if="formatToolPayload(visibleToolArguments(tool))">
                       <span>调用参数</span>
-                      <pre>{{ formatToolPayload(visibleToolArguments(tool)) }}</pre>
+                      <pre>{{
+                        formatToolPayload(visibleToolArguments(tool))
+                      }}</pre>
                     </div>
                     <div v-if="tool.resultSummary">
                       <span>执行结果</span>
@@ -613,10 +663,14 @@ function subagentUsageLabel(run: AgentSubagentRun): string | undefined {
           class="subagent-run-handoff"
           :class="{ 'is-error': run.status === 'error' }"
         >
-          <strong>{{ run.status === 'completed' ? '交接摘要' : '结束说明' }}</strong>
+          <strong>{{
+            run.status === "completed" ? "交接摘要" : "结束说明"
+          }}</strong>
           <StreamedContent v-if="run.summary" :content="run.summary" />
           <p v-if="run.errorMessage">{{ run.errorMessage }}</p>
-          <small v-if="subagentUsageLabel(run)">{{ subagentUsageLabel(run) }}</small>
+          <small v-if="subagentUsageLabel(run)">{{
+            subagentUsageLabel(run)
+          }}</small>
         </section>
       </div>
     </details>

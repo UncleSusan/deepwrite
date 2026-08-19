@@ -146,7 +146,10 @@ function createHarness(options: HarnessOptions = {}) {
     warning: vi.fn()
   };
   const findLibrary = vi.fn(
-    (domain: "material" | "skill", libraryId: string): CatalogLibrary | undefined =>
+    (
+      domain: "material" | "skill",
+      libraryId: string
+    ): CatalogLibrary | undefined =>
       domain === "material"
         ? snapshot.value.materials.find(({ id }) => id === libraryId)
         : snapshot.value.skills.find(({ id }) => id === libraryId)
@@ -448,7 +451,9 @@ describe("useCatalogLibraryTransactionsCoordinator", () => {
 
   it("refreshes and closes a group dialog after a revision conflict", async () => {
     const harness = createHarness();
-    harness.apiMocks.updateLibraryGroup.mockRejectedValue(harness.conflictError);
+    harness.apiMocks.updateLibraryGroup.mockRejectedValue(
+      harness.conflictError
+    );
     harness.coordinator.libraryGroupDialog.value = {
       domain: "material",
       groupId: "group-a"

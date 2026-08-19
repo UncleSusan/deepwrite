@@ -60,8 +60,8 @@ describe("WorkspaceFeatureModules boundary", () => {
   });
 
   it("keeps settings whole and reads authoring refs below the shell boundary", () => {
-    expect(source).toContain('v-if="module.kind === \'settings\'"');
-    expect(source).toContain(":initial-category=\"module.initialCategory\"");
+    expect(source).toContain("v-if=\"module.kind === 'settings'\"");
+    expect(source).toContain(':initial-category="module.initialCategory"');
     expect(source).toContain(
       ':authoring-generating="module.authoring.isBusy.value"'
     );

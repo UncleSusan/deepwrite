@@ -14,18 +14,12 @@ import {
 import type { AgentConversationController } from "./useAgentConversation";
 import type { CatalogProjectionReconcileResult } from "./useCatalogDocumentLoader";
 import { longBookIdFromResourceId } from "../types/longWorkspace";
-import type {
-  EditorDraftState,
-  WorkspaceDocument
-} from "../types/workspace";
+import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
 import { workspaceDocumentProvesDraftPersisted } from "../utils/catalogSaveReconciliation";
 import { hasDirtyLegacyDraftRecoveries } from "../utils/legacyDraftRecoveryDetection";
 import type { LegacyDraftRecoveryMigrationResult } from "../utils/legacyDraftRecovery";
 
-type CatalogProjectionApi = Pick<
-  DeepWriteApi["catalog"],
-  "index" | "snapshot"
->;
+type CatalogProjectionApi = Pick<DeepWriteApi["catalog"], "index" | "snapshot">;
 
 export interface CatalogWorkspaceProjectionIndexPort {
   snapshot: Readonly<ShallowRef<CatalogIndexSnapshot | null>>;
@@ -109,8 +103,9 @@ export function useCatalogWorkspaceProjectionCoordinator(
   options: CatalogWorkspaceProjectionCoordinatorOptions
 ) {
   const reconciledSnapshot = shallowRef<CatalogIndexSnapshot | null>(null);
-  const reconciledProjection =
-    shallowRef<CatalogWorkspaceProjection | null>(null);
+  const reconciledProjection = shallowRef<CatalogWorkspaceProjection | null>(
+    null
+  );
   const reconciliationVersion = ref(0);
 
   const seenDiagnosticKeys = new Set<string>();
@@ -204,14 +199,10 @@ export function useCatalogWorkspaceProjectionCoordinator(
       (key) => !warnedUnmappedLegacyRecoveryKeys.has(key)
     );
     if (newlyUnmapped.length === 0) return;
-    newlyUnmapped.forEach((key) =>
-      warnedUnmappedLegacyRecoveryKeys.add(key)
-    );
+    newlyUnmapped.forEach((key) => warnedUnmappedLegacyRecoveryKeys.add(key));
     options.notifications.warning(
       `旧版恢复稿与当前正文的磁盘版本或剧集/小节结构不一致，原恢复稿已保留，请核对当前正文目录${
-        newlyUnmapped.length > 1
-          ? `（共 ${newlyUnmapped.length} 份）`
-          : ""
+        newlyUnmapped.length > 1 ? `（共 ${newlyUnmapped.length} 份）` : ""
       }`
     );
   }
@@ -278,8 +269,7 @@ export function useCatalogWorkspaceProjectionCoordinator(
         if (!draft.dirty) return false;
         const persisted = projectedDocuments.get(documentId);
         return (
-          !persisted ||
-          !workspaceDocumentProvesDraftPersisted(persisted, draft)
+          !persisted || !workspaceDocumentProvesDraftPersisted(persisted, draft)
         );
       })
     );
@@ -346,10 +336,7 @@ export function useCatalogWorkspaceProjectionCoordinator(
 
     try {
       const projection = await options.index.ensureSnapshot(() => api.index());
-      if (
-        disposed ||
-        requestLifecycleGeneration !== lifecycleGeneration
-      ) {
+      if (disposed || requestLifecycleGeneration !== lifecycleGeneration) {
         return false;
       }
       const snapshot = options.index.snapshot.value;
@@ -417,16 +404,11 @@ export function useCatalogWorkspaceProjectionCoordinator(
       applySnapshotPair(pair, migration);
       return true;
     } catch (error: unknown) {
-      if (
-        disposed ||
-        requestLifecycleGeneration !== lifecycleGeneration
-      ) {
+      if (disposed || requestLifecycleGeneration !== lifecycleGeneration) {
         return false;
       }
       options.notifications.error(
-        error instanceof Error
-          ? error.message
-          : "加载素材库和技能库失败。"
+        error instanceof Error ? error.message : "加载素材库和技能库失败。"
       );
       return false;
     }
@@ -440,8 +422,7 @@ export function useCatalogWorkspaceProjectionCoordinator(
     }
 
     const requestLifecycleGeneration = lifecycleGeneration;
-    let operation!: Promise<boolean>;
-    operation = (async () => {
+    const operation = (async () => {
       let result = await loadSnapshotOnce(requestLifecycleGeneration);
       if (
         !disposed &&
@@ -489,10 +470,9 @@ export function useCatalogWorkspaceProjectionCoordinator(
 
   function notifyRecoveredDrafts(): void {
     if (disposed || recoveredDraftCount <= 0) return;
-    options.notifications.info(
-      `已恢复 ${recoveredDraftCount} 份未保存草稿`,
-      { duration: 1_500 }
-    );
+    options.notifications.info(`已恢复 ${recoveredDraftCount} 份未保存草稿`, {
+      duration: 1_500
+    });
   }
 
   function dispose(): void {

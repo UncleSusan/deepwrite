@@ -11,13 +11,15 @@ describe("DeleteLongDraftSectionDialog", () => {
     );
     expect(source).toContain("确认删除");
     expect(source).toContain("danger-button");
-    expect(source).toContain("role=\"alertdialog\"");
-    expect(source).toContain("<Teleport to=\"body\">");
+    expect(source).toContain('role="alertdialog"');
+    expect(source).toContain('<Teleport to="body">');
     expect(source).not.toContain("<select");
   });
 
   it("uses themed surfaces and keeps the warning out of the layout flow", () => {
-    expect(source).toContain('class="dialog-backdrop delete-long-draft-section-overlay"');
+    expect(source).toContain(
+      'class="dialog-backdrop delete-long-draft-section-overlay"'
+    );
     expect(source).not.toContain("backdrop-filter:");
     expect(source).toContain("var(--surface-raised)");
     expect(source).toContain("var(--theme-line)");

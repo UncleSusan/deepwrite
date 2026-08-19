@@ -1,7 +1,4 @@
-import type {
-  ResourceTreeNode,
-  ResourceTreeSection
-} from "../types/workspace";
+import type { ResourceTreeNode, ResourceTreeSection } from "../types/workspace";
 
 export interface ResourceTreeLookup {
   nodeById: ReadonlyMap<string, ResourceTreeNode>;

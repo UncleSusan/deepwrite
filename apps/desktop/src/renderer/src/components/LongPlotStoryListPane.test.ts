@@ -12,9 +12,7 @@ describe("LongPlotStoryListPane", () => {
     expect(parentSource).toContain(
       '@toggle-action-menu="toggleStoryPlotActionMenu"'
     );
-    expect(parentSource).toContain(
-      '@menu-action="runStoryPlotMenuAction"'
-    );
+    expect(parentSource).toContain('@menu-action="runStoryPlotMenuAction"');
     expect(source).not.toContain("resolveLongWorkspaceApi");
     expect(source).not.toContain("writeDocument");
   });

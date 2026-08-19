@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "typebox";
+import { Type } from "@earendil-works/pi-ai";
 import type {
   AgentProviderRuntimeConfig,
   WorkspaceRuntimeContext
@@ -8,10 +8,11 @@ import type {
 import { buildProviderRuntime } from "./index";
 import {
   isOllamaProviderName,
-  resolveOllamaToolSchemaProfile,
-  sanitizeOllamaToolSchema,
-  sanitizeOllamaWritingToolSchema
-} from "./ollama-tool-schema-compat";
+  resolvePortableToolSchemaProfile,
+  resolveProviderToolSchemaMode,
+  sanitizePortableToolSchema,
+  sanitizePortableWritingToolSchema
+} from "./portable-tool-schema";
 
 function workspaceContext(
   kind: "shortWorkspace" | "scriptWorkspace" | "longWorkspace"
@@ -49,7 +50,7 @@ async function captureToolParameters(
 ): Promise<Record<string, unknown>> {
   const tool = writingGrammarTool();
   const { model, streamFn } = buildProviderRuntime(config, 0.7, "off", {
-    ollamaToolSchemaProfile: profile
+    portableToolSchemaProfile: profile
   });
   let payload: unknown;
   const stream = await streamFn(
@@ -74,18 +75,18 @@ async function captureToolParameters(
   ).tools[0]!.function.parameters;
 }
 
-describe("Ollama tool schema compatibility", () => {
+describe("portable tool schema compatibility", () => {
   it("selects the writing profile only for writing workspaces", () => {
-    expect(resolveOllamaToolSchemaProfile()).toBe("default");
-    expect(resolveOllamaToolSchemaProfile({})).toBe("default");
+    expect(resolvePortableToolSchemaProfile()).toBe("default");
+    expect(resolvePortableToolSchemaProfile({})).toBe("default");
     expect(
-      resolveOllamaToolSchemaProfile(workspaceContext("shortWorkspace"))
+      resolvePortableToolSchemaProfile(workspaceContext("shortWorkspace"))
     ).toBe("writing-workspace");
     expect(
-      resolveOllamaToolSchemaProfile(workspaceContext("scriptWorkspace"))
+      resolvePortableToolSchemaProfile(workspaceContext("scriptWorkspace"))
     ).toBe("writing-workspace");
     expect(
-      resolveOllamaToolSchemaProfile(workspaceContext("longWorkspace"))
+      resolvePortableToolSchemaProfile(workspaceContext("longWorkspace"))
     ).toBe("writing-workspace");
   });
 
@@ -94,6 +95,12 @@ describe("Ollama tool schema compatibility", () => {
     expect(isOllamaProviderName(" OLLAMA ")).toBe(true);
     expect(isOllamaProviderName("custom")).toBe(false);
     expect(isOllamaProviderName("ollama-compatible")).toBe(false);
+    expect(resolveProviderToolSchemaMode("ollama")).toBe("portable");
+    expect(resolveProviderToolSchemaMode("custom")).toBe("native");
+    expect(resolveProviderToolSchemaMode("custom", "portable")).toBe(
+      "portable"
+    );
+    expect(resolveProviderToolSchemaMode("ollama", "native")).toBe("native");
   });
 
   it("keeps the default sanitizer limited to the known nested maxLength bug", () => {
@@ -109,7 +116,7 @@ describe("Ollama tool schema compatibility", () => {
         }
       }
     };
-    const sanitized = sanitizeOllamaToolSchema(schema) as typeof schema;
+    const sanitized = sanitizePortableToolSchema(schema) as typeof schema;
 
     expect(sanitized.properties.direct_text.maxLength).toBe(200_000);
     expect(sanitized.properties.nested.properties.text).not.toHaveProperty(
@@ -136,7 +143,7 @@ describe("Ollama tool schema compatibility", () => {
         }
       }
     };
-    const sanitized = sanitizeOllamaWritingToolSchema(schema) as {
+    const sanitized = sanitizePortableWritingToolSchema(schema) as {
       properties: Record<string, Record<string, unknown>>;
     };
 
@@ -151,9 +158,9 @@ describe("Ollama tool schema compatibility", () => {
     });
     expect(maxItemsParameter).not.toHaveProperty("maxItems");
     expect(maxItemsParameter).not.toHaveProperty("uniqueItems");
-    expect(maxItemsParameter.items as Record<string, unknown>).not.toHaveProperty(
-      "pattern"
-    );
+    expect(
+      maxItemsParameter.items as Record<string, unknown>
+    ).not.toHaveProperty("pattern");
     expect(sanitized).toMatchObject({
       default: {
         pattern: "literal default value",
@@ -227,6 +234,30 @@ describe("Ollama tool schema compatibility", () => {
             }
           }
         }
+      }
+    });
+
+    const portableCustomParameters = await captureToolParameters(
+      {
+        ...config,
+        provider: "custom",
+        apiKey: "test-only",
+        toolSchemaProfile: "portable"
+      },
+      "writing-workspace"
+    );
+    expect(JSON.stringify(portableCustomParameters)).not.toContain(
+      '"maxLength"'
+    );
+
+    const nativeOllamaParameters = await captureToolParameters(
+      { ...config, toolSchemaProfile: "native" },
+      "writing-workspace"
+    );
+    expect(nativeOllamaParameters).toMatchObject({
+      properties: {
+        direct_text: { maxLength: 200_000 },
+        replacements: { maxItems: 100, uniqueItems: true }
       }
     });
   });

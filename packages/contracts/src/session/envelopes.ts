@@ -79,10 +79,12 @@ export const AgentTurnStartedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: AgentTurnStartedPayloadSchema
 }).superRefine(validateAgentEventContext);
 
-export const AgentRetryScheduledEventEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("agent.retry_scheduled"),
-  payload: AgentRetryScheduledPayloadSchema
-}).superRefine(validateAgentEventContext);
+export const AgentRetryScheduledEventEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("agent.retry_scheduled"),
+    payload: AgentRetryScheduledPayloadSchema
+  }
+).superRefine(validateAgentEventContext);
 
 export const SubagentStartedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("subagent.started"),
@@ -104,10 +106,11 @@ export const AgentThinkingDeltaEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: AgentThinkingDeltaPayloadSchema
 }).superRefine(validateAgentEventContext);
 
-export const AgentMessageCompletedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("agent.message_completed"),
-  payload: AgentMessageCompletedPayloadSchema
-}).superRefine(validateAgentEventContext);
+export const AgentMessageCompletedEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("agent.message_completed"),
+    payload: AgentMessageCompletedPayloadSchema
+  }).superRefine(validateAgentEventContext);
 
 export const AgentUsageObservedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agent.usage_observed"),
@@ -119,10 +122,12 @@ export const AgentToolRequestedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: AgentToolRequestedPayloadSchema
 }).superRefine(validateAgentEventContext);
 
-export const AgentToolCallStreamEventEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("tool.call_stream"),
-  payload: AgentToolCallStreamPayloadSchema
-}).superRefine(validateAgentEventContext);
+export const AgentToolCallStreamEventEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("tool.call_stream"),
+    payload: AgentToolCallStreamPayloadSchema
+  }
+).superRefine(validateAgentEventContext);
 
 export const AgentToolCompletedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("tool.execution_completed"),
@@ -141,10 +146,11 @@ export const SubagentAuthoringDraftUpdatedEventEnvelopeSchema =
     payload: SubagentAuthoringDraftUpdatedPayloadSchema
   }).superRefine(validateAgentEventContext);
 
-export const WorkspaceEditorMutationEventEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("workspace.editor_mutation"),
-  payload: WorkspaceEditorMutationPayloadSchema
-}).superRefine(validateAgentEventContext);
+export const WorkspaceEditorMutationEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("workspace.editor_mutation"),
+    payload: WorkspaceEditorMutationPayloadSchema
+  }).superRefine(validateAgentEventContext);
 
 export const LongMutationProposalEventEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -188,15 +194,17 @@ export const LongChapterDispatchProposalEventEnvelopeSchema =
     payload: LongChapterDispatchProposalPayloadSchema
   }).superRefine(validateAgentEventContext);
 
-export const LibraryEditorMutationEventEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("library.editor_mutation"),
-  payload: LibraryEditorMutationPayloadSchema
-}).superRefine(validateAgentEventContext);
+export const LibraryEditorMutationEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("library.editor_mutation"),
+    payload: LibraryEditorMutationPayloadSchema
+  }).superRefine(validateAgentEventContext);
 
-export const WorkspaceStageSelectionEventEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("workspace.stage_selection"),
-  payload: WorkspaceStageSelectionPayloadSchema
-}).superRefine(validateAgentEventContext);
+export const WorkspaceStageSelectionEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("workspace.stage_selection"),
+    payload: WorkspaceStageSelectionPayloadSchema
+  }).superRefine(validateAgentEventContext);
 
 export const AgentErrorEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agent.error"),
@@ -208,7 +216,7 @@ function validateAgentEventContext(
     context: { sessionId?: string | undefined; runId?: string | undefined };
     payload: { sessionId: string; runId: string };
   },
-  context: z.core.$RefinementCtx<any>
+  context: z.core.$RefinementCtx<unknown>
 ): void {
   if (value.context.sessionId !== value.payload.sessionId) {
     context.addIssue({
@@ -226,7 +234,10 @@ function validateAgentEventContext(
   }
 }
 
-export type AgentMessageDeltaEventEnvelope = Envelope<AgentMessageDeltaPayload, "agent.message_delta">;
+export type AgentMessageDeltaEventEnvelope = Envelope<
+  AgentMessageDeltaPayload,
+  "agent.message_delta"
+>;
 export type AgentEvaluationSnapshotEventEnvelope = Envelope<
   AgentEvaluationSnapshotPayload,
   "agent.evaluation_snapshot"
@@ -251,18 +262,30 @@ export type SubagentCompletedEventEnvelope = Envelope<
   SubagentCompletedPayload,
   "subagent.completed"
 >;
-export type AgentThinkingDeltaEventEnvelope = Envelope<AgentThinkingDeltaPayload, "agent.thinking_delta">;
-export type AgentMessageCompletedEventEnvelope = Envelope<AgentMessageCompletedPayload, "agent.message_completed">;
+export type AgentThinkingDeltaEventEnvelope = Envelope<
+  AgentThinkingDeltaPayload,
+  "agent.thinking_delta"
+>;
+export type AgentMessageCompletedEventEnvelope = Envelope<
+  AgentMessageCompletedPayload,
+  "agent.message_completed"
+>;
 export type AgentUsageObservedEventEnvelope = Envelope<
   AgentUsageObservedPayload,
   "agent.usage_observed"
 >;
-export type AgentToolRequestedEventEnvelope = Envelope<AgentToolRequestedPayload, "tool.call_requested">;
+export type AgentToolRequestedEventEnvelope = Envelope<
+  AgentToolRequestedPayload,
+  "tool.call_requested"
+>;
 export type AgentToolCallStreamEventEnvelope = Envelope<
   AgentToolCallStreamPayload,
   "tool.call_stream"
 >;
-export type AgentToolCompletedEventEnvelope = Envelope<AgentToolCompletedPayload, "tool.execution_completed">;
+export type AgentToolCompletedEventEnvelope = Envelope<
+  AgentToolCompletedPayload,
+  "tool.execution_completed"
+>;
 export type LearningImitationResultUpdatedEventEnvelope = Envelope<
   LearningImitationResultUpdatedPayload,
   "learning_imitation.result_updated"
@@ -311,4 +334,7 @@ export type WorkspaceStageSelectionEventEnvelope = Envelope<
   WorkspaceStageSelectionPayload,
   "workspace.stage_selection"
 >;
-export type AgentErrorEventEnvelope = Envelope<AgentErrorPayload, "agent.error">;
+export type AgentErrorEventEnvelope = Envelope<
+  AgentErrorPayload,
+  "agent.error"
+>;

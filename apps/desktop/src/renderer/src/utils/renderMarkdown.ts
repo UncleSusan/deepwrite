@@ -19,9 +19,12 @@ function renderInline(value: string): string {
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
     .replace(/~~([^~\n]+)~~/g, "<del>$1</del>")
-    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label: string, url: string) => {
-      return `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
-    });
+    .replace(
+      /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      (_match, label: string, url: string) => {
+        return `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
+      }
+    );
 
   for (const [index, code] of codeTokens.entries()) {
     rendered = rendered.replace(`\u0000CODE${index}\u0000`, code);
@@ -60,7 +63,11 @@ function splitTableRow(line: string): string[] | undefined {
 
     if (character === "|" && !inCode) {
       let precedingBackslashes = 0;
-      for (let cursor = index - 1; cursor >= 0 && trimmed[cursor] === "\\"; cursor -= 1) {
+      for (
+        let cursor = index - 1;
+        cursor >= 0 && trimmed[cursor] === "\\";
+        cursor -= 1
+      ) {
         precedingBackslashes += 1;
       }
       if (precedingBackslashes % 2 === 1) {
@@ -94,7 +101,10 @@ function splitTableRow(line: string): string[] | undefined {
   return cells;
 }
 
-function parseTableDelimiter(line: string, columnCount: number): TableAlignment[] | undefined {
+function parseTableDelimiter(
+  line: string,
+  columnCount: number
+): TableAlignment[] | undefined {
   const cells = splitTableRow(line);
   if (!cells || cells.length !== columnCount) {
     return undefined;
@@ -147,7 +157,9 @@ function renderTable(
 }
 
 function isThematicBreak(line: string): boolean {
-  return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line);
+  return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(
+    line
+  );
 }
 
 export function renderMarkdown(source: string): string {
@@ -175,8 +187,12 @@ export function renderMarkdown(source: string): string {
         code.push(lines[index] ?? "");
         index += 1;
       }
-      const language = fence[1] ? ` class="language-${escapeHtml(fence[1])}"` : "";
-      blocks.push(`<pre><code${language}>${escapeHtml(code.join("\n"))}</code></pre>`);
+      const language = fence[1]
+        ? ` class="language-${escapeHtml(fence[1])}"`
+        : "";
+      blocks.push(
+        `<pre><code${language}>${escapeHtml(code.join("\n"))}</code></pre>`
+      );
       index += 1;
       continue;
     }
@@ -237,7 +253,10 @@ export function renderMarkdown(source: string): string {
     if (/^\s*\d+[.)]\s+/.test(line)) {
       flushParagraph();
       const items: string[] = [];
-      while (index < lines.length && /^\s*\d+[.)]\s+/.test(lines[index] ?? "")) {
+      while (
+        index < lines.length &&
+        /^\s*\d+[.)]\s+/.test(lines[index] ?? "")
+      ) {
         items.push(lines[index] ?? "");
         index += 1;
       }
@@ -252,7 +271,9 @@ export function renderMarkdown(source: string): string {
         quote.push((lines[index] ?? "").replace(/^>\s?/, ""));
         index += 1;
       }
-      blocks.push(`<blockquote>${quote.map(renderInline).join("<br>")}</blockquote>`);
+      blocks.push(
+        `<blockquote>${quote.map(renderInline).join("<br>")}</blockquote>`
+      );
       continue;
     }
 

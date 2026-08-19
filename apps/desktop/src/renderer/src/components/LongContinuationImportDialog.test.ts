@@ -20,9 +20,7 @@ describe("LongContinuationImportDialog", () => {
     );
     expect(longBookLifecycleSource).toContain("api.importContinuation(input)");
     expect(resourceTreeSource).toContain("createLongContinuitySelection(");
-    expect(resourceTreeSource).toContain(
-      'commit.mode === "import_checkpoint"'
-    );
+    expect(resourceTreeSource).toContain('commit.mode === "import_checkpoint"');
   });
 
   it("previews order, encoding and the non-authoritative checkpoint policy", () => {

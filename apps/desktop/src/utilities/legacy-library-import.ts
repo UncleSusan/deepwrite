@@ -30,7 +30,10 @@ export async function readLegacyLibraryArchive(
   expectedDomain: CatalogLibraryProjectDomain
 ): Promise<ImportedLegacyLibrary> {
   const expectedLabel = libraryLabel(expectedDomain);
-  const archive = await openLegacyZipArchive(path, `旧版${expectedLabel}压缩包`);
+  const archive = await openLegacyZipArchive(
+    path,
+    `旧版${expectedLabel}压缩包`
+  );
   const metadata = archive.readJsonObject("metadata.json");
   if (!metadata) {
     throw new Error(`无效的旧版${expectedLabel}压缩包：缺少 metadata.json。`);

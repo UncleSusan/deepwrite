@@ -7,7 +7,9 @@ import { readExternalSkills } from "./external-skill-import";
 const roots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true })));
+  await Promise.all(
+    roots.splice(0).map((root) => rm(root, { recursive: true }))
+  );
 });
 
 async function temporaryRoot(): Promise<string> {
@@ -41,7 +43,11 @@ describe("readExternalSkills", () => {
     await mkdir(join(root, "nested", "child"), { recursive: true });
     await mkdir(join(root, "invalid"));
     await writeFile(join(root, "first", "SKILL.md"), skill("第一项"), "utf8");
-    await writeFile(join(root, "nested", "child", "SKILL.md"), skill("嵌套项"), "utf8");
+    await writeFile(
+      join(root, "nested", "child", "SKILL.md"),
+      skill("嵌套项"),
+      "utf8"
+    );
     await writeFile(join(root, "invalid", "SKILL.md"), "not a skill", "utf8");
     await writeFile(join(root, "SKILL.md"), skill("根技能"), "utf8");
 

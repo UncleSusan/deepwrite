@@ -9,7 +9,9 @@ const roots: string[] = [];
 
 afterEach(async () => {
   const { rm } = await import("node:fs/promises");
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true })));
+  await Promise.all(
+    roots.splice(0).map((root) => rm(root, { recursive: true }))
+  );
 });
 
 async function createStore(): Promise<{

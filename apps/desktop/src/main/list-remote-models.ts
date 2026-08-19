@@ -194,7 +194,9 @@ async function readLimitedResponse(response: Response): Promise<string> {
   } finally {
     reader.releaseLock();
   }
-  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString(
+    "utf8"
+  );
 }
 
 function httpErrorMessage(status: number): string {

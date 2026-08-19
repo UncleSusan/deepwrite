@@ -1,4 +1,4 @@
-import { ref, shallowRef, type Ref, type ShallowRef } from "vue";
+import { ref, shallowRef, type Ref } from "vue";
 import { defineStore } from "pinia";
 import type {
   CloudBackupStatus,
@@ -117,8 +117,9 @@ export const useSettingsStore = defineStore("settings", () => {
   const modelUsageError = ref<string | null>(null);
   const modelUsageQuery = shallowRef<ModelUsageQueryInput>({});
 
-  const officialModelUsageDashboard =
-    shallowRef<ModelUsageDashboard | null>(null);
+  const officialModelUsageDashboard = shallowRef<ModelUsageDashboard | null>(
+    null
+  );
   const officialModelBalance = shallowRef<OfficialModelBalance | null>(null);
   const officialModelsLoading = ref(false);
   const officialModelsSaving = ref(false);
@@ -313,7 +314,8 @@ export const useSettingsStore = defineStore("settings", () => {
         break;
       }
       case "workspaceAgents":
-        workspaceAgentSettings.value = value as SettingsDomainValueMap["workspaceAgents"];
+        workspaceAgentSettings.value =
+          value as SettingsDomainValueMap["workspaceAgents"];
         break;
       case "longAgents":
         longAgentSettings.value = value as SettingsDomainValueMap["longAgents"];
@@ -322,13 +324,16 @@ export const useSettingsStore = defineStore("settings", () => {
         agentTeamSettings.value = value as SettingsDomainValueMap["agentTeams"];
         break;
       case "longAgentTeams":
-        longAgentTeamSettings.value = value as SettingsDomainValueMap["longAgentTeams"];
+        longAgentTeamSettings.value =
+          value as SettingsDomainValueMap["longAgentTeams"];
         break;
       case "libraryAgents":
-        libraryAgentSettings.value = value as SettingsDomainValueMap["libraryAgents"];
+        libraryAgentSettings.value =
+          value as SettingsDomainValueMap["libraryAgents"];
         break;
       case "learningImitation":
-        learningImitationSettings.value = value as SettingsDomainValueMap["learningImitation"];
+        learningImitationSettings.value =
+          value as SettingsDomainValueMap["learningImitation"];
         break;
       case "workspaceDirectory": {
         const settings = value as SettingsDomainValueMap["workspaceDirectory"];
@@ -337,7 +342,8 @@ export const useSettingsStore = defineStore("settings", () => {
         break;
       }
       case "cloudBackup":
-        cloudBackupStatus.value = value as SettingsDomainValueMap["cloudBackup"];
+        cloudBackupStatus.value =
+          value as SettingsDomainValueMap["cloudBackup"];
         break;
     }
   }
@@ -437,9 +443,7 @@ export const useSettingsStore = defineStore("settings", () => {
     return ensureLoaded("longAgentTeams", loader);
   }
 
-  function ensureLibraryAgentsLoaded(
-    loader: SettingsLoader<"libraryAgents">
-  ) {
+  function ensureLibraryAgentsLoaded(loader: SettingsLoader<"libraryAgents">) {
     return ensureLoaded("libraryAgents", loader);
   }
 

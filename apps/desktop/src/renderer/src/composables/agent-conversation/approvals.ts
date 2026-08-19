@@ -7,7 +7,11 @@ import { cloneEditProposal } from "./clone";
 import type { AgentConversationContext } from "./context";
 import { id } from "./shared";
 
-export function acceptsRunEvent(ctx: AgentConversationContext, eventSessionId: string, runId: string): boolean {
+export function acceptsRunEvent(
+  ctx: AgentConversationContext,
+  eventSessionId: string,
+  runId: string
+): boolean {
   if (eventSessionId !== ctx.sessionId.value || ctx.finishedRunIds.has(runId)) {
     return false;
   }
@@ -17,14 +21,21 @@ export function acceptsRunEvent(ctx: AgentConversationContext, eventSessionId: s
   if (ctx.pendingAttemptId.value === null) {
     return false;
   }
-  const observedRunId = ctx.observedRunByAttempt.get(ctx.pendingAttemptId.value);
+  const observedRunId = ctx.observedRunByAttempt.get(
+    ctx.pendingAttemptId.value
+  );
   return observedRunId === undefined || observedRunId === runId;
 }
 
-export function rememberRunApprovalMode(ctx: AgentConversationContext, runId: string, mode: AgentApprovalMode): void {
+export function rememberRunApprovalMode(
+  ctx: AgentConversationContext,
+  runId: string,
+  mode: AgentApprovalMode
+): void {
   ctx.approvalModeByRun.set(runId, mode);
   while (ctx.approvalModeByRun.size > 2_000) {
-    const oldest = ctx.approvalModeByRun.keys().next().value as string | undefined;
+    const oldest = ctx.approvalModeByRun.keys().next().value as
+      string | undefined;
     if (!oldest) break;
     ctx.approvalModeByRun.delete(oldest);
   }
@@ -85,7 +96,10 @@ export function markToolConflict(
   }
 }
 
-export function messageForEditProposal(ctx: AgentConversationContext, runId: string): ChatMessage | undefined {
+export function messageForEditProposal(
+  ctx: AgentConversationContext,
+  runId: string
+): ChatMessage | undefined {
   const mappedMessageId = ctx.runMessageIds.get(runId);
   const mapped = mappedMessageId
     ? ctx.messages.value.find(
@@ -95,12 +109,19 @@ export function messageForEditProposal(ctx: AgentConversationContext, runId: str
           message.runId === runId
       )
     : undefined;
-  return mapped ?? ctx.messages.value.find(
-    (message) => message.role === "assistant" && message.runId === runId
+  return (
+    mapped ??
+    ctx.messages.value.find(
+      (message) => message.role === "assistant" && message.runId === runId
+    )
   );
 }
 
-export function ensureEditProposalMessage(ctx: AgentConversationContext, runId: string, createdAt: string): ChatMessage {
+export function ensureEditProposalMessage(
+  ctx: AgentConversationContext,
+  runId: string,
+  createdAt: string
+): ChatMessage {
   const existing = messageForEditProposal(ctx, runId);
   if (existing) return existing;
 
@@ -133,8 +154,13 @@ export function getEditProposal(
   return proposal ? cloneEditProposal(proposal) : undefined;
 }
 
-export function listEditProposals(ctx: AgentConversationContext, runId: string): AgentEditProposal[] {
-  return (messageForEditProposal(ctx, runId)?.editProposals ?? []).map(cloneEditProposal);
+export function listEditProposals(
+  ctx: AgentConversationContext,
+  runId: string
+): AgentEditProposal[] {
+  return (messageForEditProposal(ctx, runId)?.editProposals ?? []).map(
+    cloneEditProposal
+  );
 }
 
 export function upsertEditProposal(
@@ -145,7 +171,9 @@ export function upsertEditProposal(
   const normalized = cloneEditProposal({ ...proposal, runId });
   const message = ensureEditProposalMessage(ctx, runId, normalized.createdAt);
   const proposals = message.editProposals ?? [];
-  const existingIndex = proposals.findIndex((candidate) => candidate.id === normalized.id);
+  const existingIndex = proposals.findIndex(
+    (candidate) => candidate.id === normalized.id
+  );
   if (existingIndex >= 0) {
     proposals[existingIndex] = normalized;
     message.editProposals = proposals;
@@ -162,9 +190,10 @@ export function updateEditProposal(
   patch: Partial<AgentEditProposal>
 ): AgentEditProposal | undefined {
   const message = messageForEditProposal(ctx, runId);
-  const proposalIndex = message?.editProposals?.findIndex(
-    (candidate) => candidate.id === proposalId
-  ) ?? -1;
+  const proposalIndex =
+    message?.editProposals?.findIndex(
+      (candidate) => candidate.id === proposalId
+    ) ?? -1;
   if (!message?.editProposals || proposalIndex < 0) return undefined;
 
   const existing = message.editProposals[proposalIndex]!;

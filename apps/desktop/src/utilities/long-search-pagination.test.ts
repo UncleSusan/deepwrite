@@ -1,8 +1,4 @@
-import {
-  mkdtemp,
-  realpath,
-  rm
-} from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -31,9 +27,9 @@ async function temporaryRoot(prefix: string): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) =>
-      rm(root, { recursive: true, force: true })
-    )
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -294,9 +290,10 @@ describe("LongWorkspaceService opaque search cursor", () => {
     });
     const operations = Array.from({ length: 130 }, (_, index) => {
       const characterId = `character_search-${index + 1}`;
-      const reference = (id: string, filename: Parameters<
-        typeof longCharacterFilePath
-      >[1]) =>
+      const reference = (
+        id: string,
+        filename: Parameters<typeof longCharacterFilePath>[1]
+      ) =>
         createEmptyLongMarkdownFileReference(
           id,
           longCharacterFilePath(characterId, filename),
@@ -343,7 +340,8 @@ describe("LongWorkspaceService opaque search cursor", () => {
       baseProjectRevision: 0
     });
     const opened = await service.open({ bookId: created.book.id });
-    const lastHistory = opened.book.workspaceIndex.characterFiles.at(-1)!.history;
+    const lastHistory =
+      opened.book.workspaceIndex.characterFiles.at(-1)!.history;
     const initial = await service.readDocument({
       bookId: created.book.id,
       fileId: lastHistory.id,
@@ -361,7 +359,7 @@ describe("LongWorkspaceService opaque search cursor", () => {
 
     let cursor: string | undefined;
     let searchPages = 0;
-    let hits: Awaited<ReturnType<typeof service.search>>["hits"] = [];
+    const hits: Awaited<ReturnType<typeof service.search>>["hits"] = [];
     do {
       const page = await service.search({
         bookId: created.book.id,

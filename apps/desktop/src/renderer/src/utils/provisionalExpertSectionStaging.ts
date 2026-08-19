@@ -3,9 +3,7 @@
  * (or before) the matching chapter-creation proposal is accepted.
  */
 export type ProvisionalWriteStagingMode =
-  | "provisional"
-  | "mapped-real"
-  | "unavailable";
+  "provisional" | "mapped-real" | "unavailable";
 
 export function resolveProvisionalWriteStagingMode(input: {
   hasPendingCreation: boolean;

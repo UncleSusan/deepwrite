@@ -17,10 +17,8 @@ const emit = defineEmits<{
 }>();
 
 const settingsStore = useSettingsStore();
-const {
-  cloudBackupStatus: status,
-  cloudBackupLoading: loading
-} = storeToRefs(settingsStore);
+const { cloudBackupStatus: status, cloudBackupLoading: loading } =
+  storeToRefs(settingsStore);
 const pending = ref(false);
 const remoteKey = ref("");
 const preview = ref<CloudBackupPreview | null>(null);
@@ -46,7 +44,10 @@ const apiAvailable = computed(() => Boolean(window.deepwrite?.cloudBackup));
 
 const usedPercent = computed(() => {
   if (!status.value || status.value.quotaBytes <= 0) return 0;
-  return Math.min(100, Math.round((status.value.usedBytes / status.value.quotaBytes) * 100));
+  return Math.min(
+    100,
+    Math.round((status.value.usedBytes / status.value.quotaBytes) * 100)
+  );
 });
 
 const previewGroups = computed(() => {
@@ -132,7 +133,9 @@ async function startRestore(): Promise<void> {
   if (!window.deepwrite?.cloudBackup || pending.value) return;
   pending.value = true;
   try {
-    preview.value = await window.deepwrite.cloudBackup.previewRestore(remoteKey.value);
+    preview.value = await window.deepwrite.cloudBackup.previewRestore(
+      remoteKey.value
+    );
   } catch (error: unknown) {
     uiMessage.error(errorMessage(error, "读取云端备份失败。"));
   } finally {
@@ -181,9 +184,16 @@ watch(
       <div>
         <span class="backup-eyebrow">更多功能</span>
         <h1>云端备份</h1>
-        <p>把本机创作空间、技能库和素材库备份到云端，或用另一台机器的密钥同步过来。无需登录。</p>
+        <p>
+          把本机创作空间、技能库和素材库备份到云端，或用另一台机器的密钥同步过来。无需登录。
+        </p>
       </div>
-      <button class="secondary-button" type="button" :disabled="loading" @click="refreshStatus">
+      <button
+        class="secondary-button"
+        type="button"
+        :disabled="loading"
+        @click="refreshStatus"
+      >
         {{ loading ? "刷新中…" : "刷新状态" }}
       </button>
     </header>
@@ -203,7 +213,9 @@ watch(
         <article class="backup-card">
           <span class="card-label">本机备份密钥</span>
           <strong class="machine-key">{{ status.machineKey }}</strong>
-          <p>把这串密钥发给另一台电脑，即可预览并同步这份备份。知道密钥的人都能读取对应云端数据。</p>
+          <p>
+            把这串密钥发给另一台电脑，即可预览并同步这份备份。知道密钥的人都能读取对应云端数据。
+          </p>
           <button class="primary-button" type="button" @click="copyMachineKey">
             {{ copied ? "已复制" : "复制密钥" }}
           </button>
@@ -211,13 +223,17 @@ watch(
 
         <article class="backup-card">
           <span class="card-label">用量</span>
-          <strong>{{ formatBytes(status.usedBytes) }} / {{ formatBytes(status.quotaBytes) }}</strong>
+          <strong
+            >{{ formatBytes(status.usedBytes) }} /
+            {{ formatBytes(status.quotaBytes) }}</strong
+          >
           <div class="quota-track" aria-hidden="true">
             <i :style="{ width: `${usedPercent}%` }" />
           </div>
           <p>
-            上次备份 {{ formatTime(status.lastBackupAt) }} · 本地 {{ status.localItemCount }} 项 ·
-            云端 {{ status.remoteItemCount }} 项
+            上次备份 {{ formatTime(status.lastBackupAt) }} · 本地
+            {{ status.localItemCount }} 项 · 云端
+            {{ status.remoteItemCount }} 项
           </p>
         </article>
       </section>
@@ -240,7 +256,9 @@ watch(
       <section class="backup-card action-card restore-card">
         <div>
           <h2>从其他设备同步</h2>
-          <p>输入另一台机器的备份密钥，先预览会改动哪些内容，确认后再写入本机。</p>
+          <p>
+            输入另一台机器的备份密钥，先预览会改动哪些内容，确认后再写入本机。
+          </p>
           <label>
             <span>对方备份密钥</span>
             <input
@@ -263,32 +281,72 @@ watch(
     </template>
 
     <Teleport to="body">
-      <div v-if="preview" class="backup-modal-backdrop" @mousedown.self="!pending && (preview = null)">
-        <section class="backup-modal" role="dialog" aria-modal="true" aria-label="确认同步内容">
+      <div
+        v-if="preview"
+        class="backup-modal-backdrop"
+        @mousedown.self="!pending && (preview = null)"
+      >
+        <section
+          class="backup-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="确认同步内容"
+        >
           <header>
             <div>
-              <span>{{ preview.direction === "upload" ? "备份预览" : "同步预览" }}</span>
-              <h2>{{ preview.direction === "upload" ? "确认上传到云端" : "确认写入本机" }}</h2>
+              <span>{{
+                preview.direction === "upload" ? "备份预览" : "同步预览"
+              }}</span>
+              <h2>
+                {{
+                  preview.direction === "upload"
+                    ? "确认上传到云端"
+                    : "确认写入本机"
+                }}
+              </h2>
             </div>
-            <button type="button" aria-label="关闭" :disabled="pending" @click="preview = null">×</button>
+            <button
+              type="button"
+              aria-label="关闭"
+              :disabled="pending"
+              @click="preview = null"
+            >
+              ×
+            </button>
           </header>
           <p class="modal-summary">
-            密钥 {{ preview.machineKey }} · {{ formatBytes(preview.totalBytes) }} /
+            密钥 {{ preview.machineKey }} ·
+            {{ formatBytes(preview.totalBytes) }} /
             {{ formatBytes(preview.quotaBytes) }}
           </p>
           <div class="modal-scroll">
-            <section v-for="group in previewGroups" :key="group.change" class="change-group">
+            <section
+              v-for="group in previewGroups"
+              :key="group.change"
+              class="change-group"
+            >
               <h3>{{ group.label }}（{{ group.items.length }}）</h3>
               <ul>
-                <li v-for="item in group.items" :key="`${item.kind}:${item.id}`">
+                <li
+                  v-for="item in group.items"
+                  :key="`${item.kind}:${item.id}`"
+                >
                   <strong>{{ item.title }}</strong>
-                  <small>{{ KIND_LABELS[item.kind] }} · {{ formatBytes(item.sizeBytes) }}</small>
+                  <small
+                    >{{ KIND_LABELS[item.kind] }} ·
+                    {{ formatBytes(item.sizeBytes) }}</small
+                  >
                 </li>
               </ul>
             </section>
           </div>
           <footer>
-            <button class="secondary-button" type="button" :disabled="pending" @click="preview = null">
+            <button
+              class="secondary-button"
+              type="button"
+              :disabled="pending"
+              @click="preview = null"
+            >
               取消
             </button>
             <button
@@ -297,7 +355,13 @@ watch(
               :disabled="pending"
               @click="confirmPreview"
             >
-              {{ pending ? "正在同步…" : preview.direction === "upload" ? "确认备份" : "确认同步" }}
+              {{
+                pending
+                  ? "正在同步…"
+                  : preview.direction === "upload"
+                    ? "确认备份"
+                    : "确认同步"
+              }}
             </button>
           </footer>
         </section>

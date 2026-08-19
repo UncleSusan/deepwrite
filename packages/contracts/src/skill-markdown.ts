@@ -90,7 +90,10 @@ export function parseSkillMarkdown(content: string): SkillMarkdownParseResult {
     };
   }
 
-  const body = lines.slice(closingDelimiterIndex + 1).join("\n").trim();
+  const body = lines
+    .slice(closingDelimiterIndex + 1)
+    .join("\n")
+    .trim();
   if (!body) {
     return {
       valid: false,

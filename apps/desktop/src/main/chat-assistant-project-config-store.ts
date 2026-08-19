@@ -57,7 +57,11 @@ function normalizeDisk(raw: unknown): DiskChatAssistantProjectConfig {
     return { version: 1, projects: [], prompts: {} };
   }
   const candidate = raw as Record<string, unknown>;
-  if (candidate.version !== 1 || !candidate.prompts || typeof candidate.prompts !== "object") {
+  if (
+    candidate.version !== 1 ||
+    !candidate.prompts ||
+    typeof candidate.prompts !== "object"
+  ) {
     return { version: 1, projects: [], prompts: {} };
   }
   const prompts = Object.fromEntries(
@@ -99,7 +103,9 @@ export class ChatAssistantProjectConfigStore {
     });
   }
 
-  async get(rawProject: ChatAssistantProjectRef): Promise<ChatAssistantProjectConfig> {
+  async get(
+    rawProject: ChatAssistantProjectRef
+  ): Promise<ChatAssistantProjectConfig> {
     const project = ChatAssistantProjectRefSchema.parse(rawProject);
     await this.writeChain;
     const disk = normalizeDisk(await readJson(this.path));
@@ -116,9 +122,10 @@ export class ChatAssistantProjectConfigStore {
     rawSystemPrompt: string
   ): Promise<ChatAssistantProjectConfig> {
     const project = ChatAssistantProjectRefSchema.parse(rawProject);
-    const systemPrompt = ChatAssistantProjectConfigSchema.shape.systemPrompt.parse(
-      rawSystemPrompt
-    );
+    const systemPrompt =
+      ChatAssistantProjectConfigSchema.shape.systemPrompt.parse(
+        rawSystemPrompt
+      );
     let result: ChatAssistantProjectConfig | undefined;
     const operation = this.writeChain.then(async () => {
       const disk = normalizeDisk(await readJson(this.path));
@@ -137,7 +144,9 @@ export class ChatAssistantProjectConfigStore {
     return result!;
   }
 
-  async reset(rawProject: ChatAssistantProjectRef): Promise<ChatAssistantProjectConfig> {
+  async reset(
+    rawProject: ChatAssistantProjectRef
+  ): Promise<ChatAssistantProjectConfig> {
     const project = ChatAssistantProjectRefSchema.parse(rawProject);
     let result: ChatAssistantProjectConfig | undefined;
     const operation = this.writeChain.then(async () => {

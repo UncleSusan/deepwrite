@@ -156,9 +156,7 @@ describe("useLazyLongBookLifecycleCoordinator", () => {
     expect(lazySource).not.toContain(
       'import { useLongBookLifecycleCoordinator } from "./useLongBookLifecycleCoordinator"'
     );
-    expect(lazySource).toContain(
-      'import("./useLongBookLifecycleCoordinator")'
-    );
+    expect(lazySource).toContain('import("./useLongBookLifecycleCoordinator")');
   });
 
   it("does not load for synchronous dialog closes or dispose before first use", async () => {

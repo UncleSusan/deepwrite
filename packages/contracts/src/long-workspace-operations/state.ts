@@ -1,51 +1,3 @@
-import { z } from "zod";
-import {
-  LongArcIdSchema,
-  LongArcSchema,
-  LongChapterCardIdSchema,
-  LongChapterCardSchema,
-  LongChapterCharacterContinuityFileIndexEntrySchema,
-  LongChapterFileIndexEntrySchema,
-  LongCharacterFileIndexEntrySchema,
-  LongCharacterGroupSchema,
-  LongCharacterIdSchema,
-  LongCharacterSchema,
-  LongCharacterTypeIdSchema,
-  LongCharacterTypeSchema,
-  LongEventConnectionIdSchema,
-  LongEventConnectionSchema,
-  LongFileIdSchema,
-  LongFileRevisionSchema,
-  LongForeshadowingBeatIdSchema,
-  LongForeshadowingBeatSchema,
-  LongForeshadowingIdSchema,
-  LongForeshadowingSchema,
-  LongMarkdownFileReferenceSchema,
-  LongNarrativePlacementIdSchema,
-  LongNarrativePlacementSchema,
-  LongProjectRelativePathSchema,
-  LongStableIdSchema,
-  LongStoryEventIdSchema,
-  LongStoryEventSchema,
-  LongStoryPlotIdSchema,
-  LongStoryPlotSchema,
-  LongVolumeIdSchema,
-  LongVolumeSchema,
-  LongWorldbuildingItemLayoutSchema,
-  LongWorkspaceIndexSnapshotSchema,
-  LongWorldbuildingCategoryIdSchema,
-  LongWorldbuildingCategorySchema,
-  LongWorldbuildingItemIdSchema,
-  LongWorldbuildingItemSchema,
-  createEmptyLongMarkdownFileReference,
-  deriveLongForeshadowingStatusFromCommittedBeats,
-  longWorldbuildingContentPath,
-  longWorldbuildingFileId,
-  longWorldbuildingItemContentPath,
-  longWorldbuildingItemFileId,
-  longWorldbuildingOverviewContentPath,
-  longWorldbuildingOverviewFileId
-} from "../long-workspace";
 import type {
   LongForeshadowing,
   LongForeshadowingBeat,
@@ -54,10 +6,11 @@ import type {
   LongWorkspaceIndexSnapshot
 } from "../long-workspace";
 
-import type { LongWorkspaceFileIntent, LongWorkspaceOperationErrorCode } from "./impact-schema";
+import type {
+  LongWorkspaceFileIntent,
+  LongWorkspaceOperationErrorCode
+} from "./impact-schema";
 import { LongWorkspaceOperationError } from "./impact-schema";
-import type { LongWorkspaceOperation } from "./operation-schema";
-import { OperationTimestampSchema } from "./schema-helpers";
 
 export type MutationState = {
   original: LongWorkspaceIndexSnapshot;
@@ -134,10 +87,7 @@ export function markCreated(state: MutationState, id: string): void {
 }
 
 export function markUpdated(state: MutationState, id: string): void {
-  if (
-    !state.createdEntityIds.has(id) &&
-    !state.deletedEntityIds.has(id)
-  ) {
+  if (!state.createdEntityIds.has(id) && !state.deletedEntityIds.has(id)) {
     state.updatedEntityIds.add(id);
   }
 }
@@ -315,10 +265,8 @@ export function retargetBeatPlanningAnchorsToChapter(
 ): void {
   const hasVolumeAnchor = (beat.volumeId ?? null) !== null;
   const hasArcAnchor = (beat.arcId ?? null) !== null;
-  const volumeChanged =
-    hasVolumeAnchor && beat.volumeId !== chapter.volumeId;
-  const arcChanged =
-    hasArcAnchor && beat.arcId !== chapter.primaryArcId;
+  const volumeChanged = hasVolumeAnchor && beat.volumeId !== chapter.volumeId;
+  const arcChanged = hasArcAnchor && beat.arcId !== chapter.primaryArcId;
   if (!volumeChanged && !arcChanged) return;
 
   assertBeatIsMutable(beat, action);
@@ -336,9 +284,8 @@ export function retargetBeatPlanningAnchorsToChapter(
     !event ||
     event.arcIds.some(
       (eventArcId) =>
-        state.draft.plot.arcs.find(
-          (candidate) => candidate.id === eventArcId
-        )?.volumeId === chapter.volumeId
+        state.draft.plot.arcs.find((candidate) => candidate.id === eventArcId)
+          ?.volumeId === chapter.volumeId
     );
   const eventSupportsTargetArc =
     chapter.primaryArcId !== null &&
@@ -355,9 +302,7 @@ export function retargetBeatPlanningAnchorsToChapter(
 export function volumeOrderMap(
   workspace: LongWorkspaceIndexSnapshot
 ): Map<string, number> {
-  return new Map(
-    workspace.plot.volumes.map(({ id, order }) => [id, order])
-  );
+  return new Map(workspace.plot.volumes.map(({ id, order }) => [id, order]));
 }
 
 export function chapterOrderMap(
@@ -397,8 +342,7 @@ export function normalizeLongWorkspaceOrders(
       (workspace.characterTypes.find(({ id }) => id === left.group)?.order ??
         Number.MAX_SAFE_INTEGER) -
         (workspace.characterTypes.find(({ id }) => id === right.group)?.order ??
-          Number.MAX_SAFE_INTEGER) ||
-      left.order - right.order
+          Number.MAX_SAFE_INTEGER) || left.order - right.order
   );
   const characterOrder = new Map<string, number>();
   workspace.characters.forEach((character) => {
@@ -455,8 +399,7 @@ export function normalizeLongWorkspaceOrders(
   );
   const placementOrder = new Map<string, number>();
   workspace.plot.narrativePlacements.forEach((placement) => {
-    const next =
-      (placementOrder.get(placement.chapterCardId) ?? 0) + 1;
+    const next = (placementOrder.get(placement.chapterCardId) ?? 0) + 1;
     placementOrder.set(placement.chapterCardId, next);
     placement.orderInChapter = next;
   });
@@ -628,7 +571,9 @@ export function idsByGroupAndOrder<T extends { id: string }>(
  * the committed entity itself. Only the suffix after the last committed
  * anchor in each ordered scope remains structurally mutable.
  */
-export function assertCommittedFactAnchorsPreserved(state: MutationState): void {
+export function assertCommittedFactAnchorsPreserved(
+  state: MutationState
+): void {
   // Continuity records are references only and never freeze plot structure.
   void state;
 }
@@ -644,7 +589,6 @@ export function requireCascade(
     );
   }
 }
-
 
 export function assertNewEntityId(
   values: readonly { id: string }[],

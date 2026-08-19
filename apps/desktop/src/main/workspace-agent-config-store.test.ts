@@ -35,7 +35,9 @@ import {
 const temporaryRoots = new Set<string>();
 
 async function makeTemporaryRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "deepwrite-workspace-agent-store-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "deepwrite-workspace-agent-store-")
+  );
   temporaryRoots.add(root);
   return root;
 }
@@ -103,7 +105,9 @@ function byAgentId<T extends { id: string }>(
 
 afterEach(async () => {
   await Promise.all(
-    [...temporaryRoots].map((root) => rm(root, { recursive: true, force: true }))
+    [...temporaryRoots].map((root) =>
+      rm(root, { recursive: true, force: true })
+    )
   );
   temporaryRoots.clear();
 });
@@ -116,7 +120,9 @@ describe("WorkspaceAgentConfigStore", () => {
 
     expect(settings).toEqual(DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS);
     expect(settings).not.toBe(DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS);
-    expect(settings.agents[0]).not.toBe(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]);
+    expect(settings.agents[0]).not.toBe(
+      DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]
+    );
     expect(settings.agents[0]?.readAccess).not.toBe(
       DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]?.readAccess
     );
@@ -149,19 +155,27 @@ describe("WorkspaceAgentConfigStore", () => {
     });
     await writeFile(
       join(configDirectory, "workspace-agents.json"),
-      JSON.stringify({ version: 1, workspaceType: "short", agents: legacyAgents }),
+      JSON.stringify({
+        version: 1,
+        workspaceType: "short",
+        agents: legacyAgents
+      }),
       "utf8"
     );
 
     const settings = await new WorkspaceAgentConfigStore(root).list();
     expect(settings.agents).toHaveLength(3);
-    expect(settings.agents.some(({ id }) => (id as string) === "outline")).toBe(false);
-    expect(
-      settings.agents.some(({ id }) => (id as string) === "expert_section_writer")
-    ).toBe(false);
-    expect(byAgentId(settings.agents, "plot_design").readAccess).not.toHaveProperty(
-      "workspace"
+    expect(settings.agents.some(({ id }) => (id as string) === "outline")).toBe(
+      false
     );
+    expect(
+      settings.agents.some(
+        ({ id }) => (id as string) === "expert_section_writer"
+      )
+    ).toBe(false);
+    expect(
+      byAgentId(settings.agents, "plot_design").readAccess
+    ).not.toHaveProperty("workspace");
     expect(
       byAgentId(settings.agents, "expert_draft_coordinator").readAccess
     ).not.toHaveProperty("workspace");
@@ -243,9 +257,7 @@ describe("WorkspaceAgentConfigStore", () => {
     ).toMatchObject({ version: 2, workspaceType: "script" });
 
     const resetScript = await store.reset("script", "plot_design");
-    expect(
-      byAgentId(resetScript.agents, "plot_design")
-    ).toEqual(
+    expect(byAgentId(resetScript.agents, "plot_design")).toEqual(
       byAgentId(DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES, "plot_design")
     );
     expect(
@@ -301,7 +313,8 @@ describe("WorkspaceAgentConfigStore", () => {
     await mkdir(configDirectory);
     const input = defaultInput();
     const customized = `${RETIRED_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT_V1}\n自定义要求：保留我的审阅口径。`;
-    byAgentId(input.agents, "expert_draft_coordinator").systemPrompt = customized;
+    byAgentId(input.agents, "expert_draft_coordinator").systemPrompt =
+      customized;
     await writeFile(
       join(configDirectory, "workspace-agents.json"),
       JSON.stringify({ version: 1, ...input }),
@@ -333,7 +346,9 @@ describe("WorkspaceAgentConfigStore", () => {
     expect(
       byAgentId(settings.agents, "expert_draft_coordinator").systemPrompt
     ).toContain("create_draft_sections");
-    expect(settings.agents.some(({ id }) => (id as string) === "outline")).toBe(false);
+    expect(settings.agents.some(({ id }) => (id as string) === "outline")).toBe(
+      false
+    );
   });
 
   it("upgrades the unified short draft agent prompt", async () => {
@@ -388,7 +403,11 @@ describe("WorkspaceAgentConfigStore", () => {
     const settings = await new WorkspaceAgentConfigStore(root).list();
 
     expect(settings.agents).toHaveLength(3);
-    expect(settings.agents.some(({ id }) => id === ("expert_section_writer" as never))).toBe(false);
+    expect(
+      settings.agents.some(
+        ({ id }) => id === ("expert_section_writer" as never)
+      )
+    ).toBe(false);
   });
 
   it("fills missing welcome shortcuts from builtin defaults without discarding other overrides", async () => {
@@ -396,7 +415,8 @@ describe("WorkspaceAgentConfigStore", () => {
     const configDirectory = join(root, "config");
     await mkdir(configDirectory);
     const input = defaultInput();
-    byAgentId(input.agents, "character_design").systemPrompt = "自定义人物提示词";
+    byAgentId(input.agents, "character_design").systemPrompt =
+      "自定义人物提示词";
     const legacyAgents = input.agents.map((agent) => {
       const { welcomeShortcuts: _welcomeShortcuts, ...rest } = agent;
       return rest;
@@ -416,7 +436,9 @@ describe("WorkspaceAgentConfigStore", () => {
     expect(byAgentId(settings.agents, "character_design").systemPrompt).toBe(
       "自定义人物提示词"
     );
-    expect(byAgentId(settings.agents, "character_design").welcomeShortcuts).toEqual(
+    expect(
+      byAgentId(settings.agents, "character_design").welcomeShortcuts
+    ).toEqual(
       byAgentId(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES, "character_design")
         .welcomeShortcuts
     );
@@ -457,7 +479,10 @@ describe("WorkspaceAgentConfigStore", () => {
 
     const migratedDisk = JSON.parse(
       await readFile(join(root, "config", "workspace-agents.json"), "utf8")
-    ) as { version: number; agents: ShortWorkspaceAgentSettingsInput["agents"] };
+    ) as {
+      version: number;
+      agents: ShortWorkspaceAgentSettingsInput["agents"];
+    };
     expect(migratedDisk.version).toBe(2);
     expect(migratedDisk.agents[0]?.readAccess).not.toHaveProperty("workspace");
 
@@ -470,7 +495,10 @@ describe("WorkspaceAgentConfigStore", () => {
     expect(
       byAgentId((await store.list()).agents, "expert_draft_coordinator")
         .readAccess
-    ).toEqual({ material: ["draft"], skill: ["style"] });
+    ).toEqual({
+      material: ["draft"],
+      skill: ["style"]
+    });
   });
 
   it("migrates legacy script draft resources without changing other agents", async () => {
@@ -523,9 +551,9 @@ describe("WorkspaceAgentConfigStore", () => {
     expect(byAgentId(reset.agents, "character_design").systemPrompt).toBe(
       "custom:character_design"
     );
-    expect(byAgentId(reset.agents, "expert_draft_coordinator").systemPrompt).toBe(
-      "custom:expert_draft_coordinator"
-    );
+    expect(
+      byAgentId(reset.agents, "expert_draft_coordinator").systemPrompt
+    ).toBe("custom:expert_draft_coordinator");
 
     const reloaded = await store.list();
     expect(reloaded).toEqual(reset);
@@ -590,7 +618,9 @@ describe("WorkspaceAgentConfigStore", () => {
 
     await expect(
       store.resolveForWorkspace(workspace, "short")
-    ).resolves.toMatchObject({ id: "expert_draft_coordinator" });
+    ).resolves.toMatchObject({
+      id: "expert_draft_coordinator"
+    });
     await expect(
       store.resolveForWorkspace(
         { ...workspace, activeSectionId: "missing" },

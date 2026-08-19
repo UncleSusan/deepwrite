@@ -1,12 +1,9 @@
 import type { EditorDraftState } from "../types/workspace";
 
 export function legacyBookDraftRecoveryKey(bookId: string): string {
-  return [
-    "catalog",
-    "book-document",
-    encodeURIComponent(bookId),
-    "draft"
-  ].join(":");
+  return ["catalog", "book-document", encodeURIComponent(bookId), "draft"].join(
+    ":"
+  );
 }
 
 /**

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 // @ts-expect-error Loaded as source text by the Vitest-only virtual module.
 import styles from "virtual:deepwrite-renderer-styles";
 import source from "./TreeNodeItem.vue?raw";
@@ -6,7 +7,9 @@ import source from "./TreeNodeItem.vue?raw";
 describe("TreeNodeItem actions", () => {
   it("uses the shared neutral badge style for every workspace type", () => {
     expect(source).toContain('class="tree-badge"');
-    expect(source).not.toContain("'is-script': node.workspaceType === 'script'");
+    expect(source).not.toContain(
+      "'is-script': node.workspaceType === 'script'"
+    );
   });
 
   it("places the expand chevron after number and text/list badges", () => {
@@ -44,24 +47,28 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain("longDraftSectionAction('move-up')");
     expect(source).toContain("longDraftSectionAction('move-down')");
     expect(source).toContain("longDraftSectionAction('delete')");
-    expect(source).toContain(":disabled=\"longDraftSectionMoveUpDisabled\"");
-    expect(source).toContain(":disabled=\"longDraftSectionMoveDownDisabled\"");
+    expect(source).toContain(':disabled="longDraftSectionMoveUpDisabled"');
+    expect(source).toContain(':disabled="longDraftSectionMoveDownDisabled"');
     expect(source).toContain(
       'emit("longDraftSectionAction", action, props.node)'
     );
   });
 
   it("places add on the draft parent and ordering plus delete in each section menu", () => {
-    expect(source).toContain('props.node.shortAgentId === "expert_draft_coordinator"');
+    expect(source).toContain(
+      'props.node.shortAgentId === "expert_draft_coordinator"'
+    );
     expect(source).toContain("!props.node.expertSectionId");
     expect(source).toContain("Boolean(props.node.expertSectionId)");
-    expect(source).toContain("emit(\"createExpertSection\", props.node)");
-    expect(source).toContain("emit(\"removeExpertSection\", props.node)");
+    expect(source).toContain('emit("createExpertSection", props.node)');
+    expect(source).toContain('emit("removeExpertSection", props.node)');
     expect(source).toContain("expertSectionAction('move-up')");
     expect(source).toContain("expertSectionAction('move-down')");
-    expect(source).toContain(":disabled=\"expertSectionMoveUpDisabled\"");
-    expect(source).toContain(":disabled=\"expertSectionMoveDownDisabled\"");
-    expect(source).toContain('props.node.workspaceType === "script" ? "剧集" : "小节"');
+    expect(source).toContain(':disabled="expertSectionMoveUpDisabled"');
+    expect(source).toContain(':disabled="expertSectionMoveDownDisabled"');
+    expect(source).toContain(
+      'props.node.workspaceType === "script" ? "剧集" : "小节"'
+    );
     expect(source).toContain("isCharacterDirectory");
     expect(source).toContain("`新建${draftUnitLabel}`");
     expect(source).toContain("<span>删除{{ draftUnitLabel }}</span>");
@@ -95,10 +102,10 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain("isFirstLongTreeItem(child)");
     expect(source).toContain("isLastLongTreeItem(child)");
     expect(source).toContain(
-      ":disabled=\"longTreeActionsDisabled || longTreeItemMoveUpDisabled\""
+      ':disabled="longTreeActionsDisabled || longTreeItemMoveUpDisabled"'
     );
     expect(source).toContain(
-      ":disabled=\"longTreeActionsDisabled || longTreeItemMoveDownDisabled\""
+      ':disabled="longTreeActionsDisabled || longTreeItemMoveDownDisabled"'
     );
   });
 
@@ -111,13 +118,15 @@ describe("TreeNodeItem actions", () => {
   it("hides row chevron and action icons until the row or action area is hovered", () => {
     expect(styles).toContain(".tree-row:hover .tree-chevron,");
     expect(styles).toContain(".tree-row:focus-visible .tree-chevron,");
-    expect(styles).toContain(
+    expectSourceToContain(
+      styles,
       ".tree-node:has(> .tree-node-action-area:is(:hover, :focus-within, .is-menu-open)) > .tree-row .tree-chevron"
     );
     expect(styles).toContain(
       ".tree-row:hover ~ .tree-node-action-area .tree-node-action,"
     );
-    expect(styles).toContain(
+    expectSourceToContain(
+      styles,
       ".tree-node-action-area:is(:hover, :focus-within, .is-menu-open) .tree-node-action"
     );
     expect(styles).not.toContain(".section-action { opacity: 0");
@@ -136,7 +145,9 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain(
       "menuHeight > availableBelow && availableAbove > availableBelow"
     );
-    expect(source).toContain(":class=\"{ 'opens-upward': actionMenuOpensUpward }\"");
+    expect(source).toContain(
+      ":class=\"{ 'opens-upward': actionMenuOpensUpward }\""
+    );
     expect(source).toMatch(
       /\.tree-node-action-menu\.opens-upward\s*\{\s*top:\s*auto;\s*bottom:\s*calc\(100% \+ 3px\);\s*\}/
     );
@@ -152,9 +163,9 @@ describe("TreeNodeItem actions", () => {
   });
 
   it("offers copy on library entries and paste on writable libraries", () => {
-    expect(source).toContain('activateResourceNodeAction(\'copy-entry\')');
+    expect(source).toContain("activateResourceNodeAction('copy-entry')");
     expect(source).toContain("<span>复制</span>");
-    expect(source).toContain('activateResourceNodeAction(\'paste-entry\')');
+    expect(source).toContain("activateResourceNodeAction('paste-entry')");
     expect(source).toContain("<span>粘贴</span>");
     expect(source).toContain("canPasteLibraryEntry");
     expect(source).toContain("libraryEntryClipboardDomain");
@@ -170,9 +181,7 @@ describe("TreeNodeItem actions", () => {
   });
 
   it("uses an independent action event for long-book nodes", () => {
-    expect(source).toContain(
-      'props.node.catalogNodeType === "long-book"'
-    );
+    expect(source).toContain('props.node.catalogNodeType === "long-book"');
     expect(source).toContain(
       'node: node as LongBookResourceNodeActionPayload["node"]'
     );
@@ -186,9 +195,7 @@ describe("TreeNodeItem actions", () => {
       "unregister",
       "delete"
     ]) {
-      expect(source).toContain(
-        `activateLongBookAction('${action}')`
-      );
+      expect(source).toContain(`activateLongBookAction('${action}')`);
     }
     const longActionFunction = source.slice(
       source.indexOf("function activateLongBookAction"),
@@ -207,12 +214,8 @@ describe("TreeNodeItem actions", () => {
 
   it("keeps reversible catalog actions neutral and marks disk deletion dangerous", () => {
     const longMenu = source.slice(
-      source.indexOf(
-        '<template v-else-if="hasLongBookAction">'
-      ),
-      source.indexOf(
-        '<template v-else-if="hasBookAction">'
-      )
+      source.indexOf('<template v-else-if="hasLongBookAction">'),
+      source.indexOf('<template v-else-if="hasBookAction">')
     );
     expect(longMenu).toContain("<span>结构管理</span>");
     expect(longMenu).toContain("<span>同步旧版本</span>");
@@ -222,12 +225,8 @@ describe("TreeNodeItem actions", () => {
     expect(longMenu).toContain("<span>技能库绑定</span>");
     expect(longMenu).toContain("<span>素材库绑定</span>");
     expect(longMenu).not.toContain("导出可迁移项目");
-    expect(longMenu).toContain(
-      'activateLongBookAction(\'unregister\')'
-    );
-    expect(longMenu).toContain(
-      'activateLongBookAction(\'delete\')'
-    );
+    expect(longMenu).toContain("activateLongBookAction('unregister')");
+    expect(longMenu).toContain("activateLongBookAction('delete')");
     expect(longMenu.match(/is-danger/gu)).toHaveLength(1);
   });
 

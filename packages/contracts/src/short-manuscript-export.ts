@@ -43,13 +43,16 @@ export type ExportShortManuscriptInput = z.infer<
   typeof ExportShortManuscriptInputSchema
 >;
 
-export const ExportShortManuscriptResultSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("cancelled") }),
-  z.object({
-    status: z.literal("saved"),
-    filePath: z.string().min(1)
-  })
-]);
+export const ExportShortManuscriptResultSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.object({ status: z.literal("cancelled") }),
+    z.object({
+      status: z.literal("saved"),
+      filePath: z.string().min(1)
+    })
+  ]
+);
 export type ExportShortManuscriptResult = z.infer<
   typeof ExportShortManuscriptResultSchema
 >;

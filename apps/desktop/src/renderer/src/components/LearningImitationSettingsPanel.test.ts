@@ -19,7 +19,9 @@ describe("LearningImitationSettingsPanel", () => {
   });
 
   it("uses floating feedback for transient validation", () => {
-    expect(source).toContain('uiMessage.warning("三个学习阶段的系统提示词都不能为空")');
+    expect(source).toContain(
+      'uiMessage.warning("三个学习阶段的系统提示词都不能为空")'
+    );
     expect(source).not.toContain("errorMessage");
     expect(source).not.toContain("statusMessage");
     expect(source).not.toContain("settings-error");

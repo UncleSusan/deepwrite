@@ -53,18 +53,21 @@ export function buildLocalWritingResponse(input: AgentRunInput): string {
     "- Thinking 与回复内容使用独立事件，Renderer 会绑定到同一条助手消息。",
     "- 当前是无需 API Key 的本地 Faux 模型，用于验证客户端链路和上下文边界。",
     "- 本轮没有调用写入工具，也没有修改或保存右侧文稿。",
-    input.scriptAgentProfile ?? input.agentProfile
+    (input.scriptAgentProfile ?? input.agentProfile)
       ? `- 当前已按${input.scriptAgentProfile ? "剧本" : "短篇"}阶段选择「${(input.scriptAgentProfile ?? input.agentProfile)!.label}」智能体，并装配 ${
-          input.workspaceContext?.scriptWorkspace || input.workspaceContext?.shortWorkspace
+          input.workspaceContext?.scriptWorkspace ||
+          input.workspaceContext?.shortWorkspace
             ? "阶段专属工具"
             : "通用上下文"
         }。`
       : input.libraryAgentProfile
         ? `- 当前已选择「${input.libraryAgentProfile.label}」，并且装配当前资料库读写工具与按需 load_skill。`
-      : input.longAgentProfile
-        ? `- 当前已按长篇根节点选择「${input.longAgentProfile.label}」智能体；结构与正文只会通过长篇专用工具按需读取。`
-      : "",
+        : input.longAgentProfile
+          ? `- 当前已按长篇根节点选择「${input.longAgentProfile.label}」智能体；结构与正文只会通过长篇专用工具按需读取。`
+          : "",
     "",
     "下一切片接入真实模型配置后，可以在保持同一协议的前提下生成正式续写、润色和一致性检查结果。"
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

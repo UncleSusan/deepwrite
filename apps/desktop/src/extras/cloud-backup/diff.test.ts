@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import { countChanges, diffBackupItems } from "./diff";
 import type { CloudBackupItem } from "@deepwrite/contracts";
 
-function item(
-  id: string,
-  hash: string,
-  title = id
-): CloudBackupItem {
+function item(id: string, hash: string, title = id): CloudBackupItem {
   return { kind: "book", id, title, hash, sizeBytes: 10 };
 }
 
@@ -14,14 +10,34 @@ describe("cloud backup diff", () => {
   it("classifies upload add, overwrite, keep and remote drop", () => {
     const changes = diffBackupItems(
       "upload",
-      [item("a", "1", "新书"), item("b", "2", "改过的书"), item("c", "3", "没变")],
-      [item("b", "old", "改过的书"), item("c", "3", "没变"), item("d", "4", "云端独有")]
+      [
+        item("a", "1", "新书"),
+        item("b", "2", "改过的书"),
+        item("c", "3", "没变")
+      ],
+      [
+        item("b", "old", "改过的书"),
+        item("c", "3", "没变"),
+        item("d", "4", "云端独有")
+      ]
     );
     expect(changes).toEqual([
       { kind: "book", change: "add", id: "a", title: "新书", sizeBytes: 10 },
-      { kind: "book", change: "overwrite", id: "b", title: "改过的书", sizeBytes: 10 },
+      {
+        kind: "book",
+        change: "overwrite",
+        id: "b",
+        title: "改过的书",
+        sizeBytes: 10
+      },
       { kind: "book", change: "keep", id: "c", title: "没变", sizeBytes: 10 },
-      { kind: "book", change: "drop", id: "d", title: "云端独有", sizeBytes: 10 }
+      {
+        kind: "book",
+        change: "drop",
+        id: "d",
+        title: "云端独有",
+        sizeBytes: 10
+      }
     ]);
     expect(countChanges(changes)).toEqual({
       added: 1,

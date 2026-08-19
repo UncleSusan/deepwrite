@@ -62,17 +62,23 @@ describe("SoftwareTokenUsageReporter", () => {
     const reporter = new SoftwareTokenUsageReporter(
       root,
       {
-        flush: async () => { flushes += 1; },
+        flush: async () => {
+          flushes += 1;
+        },
         query: async () => current
       },
       {
         enabled: true,
         createId: ids(INSTALLATION_ID, FIRST_REPORT_ID, SECOND_REPORT_ID),
         now: () => Date.parse("2026-08-15T08:00:00.000Z"),
-        reportUrl: "https://relay.example.test/deepwrite/v1/software-token-usage",
-        headers: () => new Headers({ Authorization: "Bearer invalid-test-key" }),
+        reportUrl:
+          "https://relay.example.test/deepwrite/v1/software-token-usage",
+        headers: () =>
+          new Headers({ Authorization: "Bearer invalid-test-key" }),
         fetcher: async (_url, init) => {
-          bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+          bodies.push(
+            JSON.parse(String(init?.body)) as Record<string, unknown>
+          );
           return new Response(null, { status: 204 });
         }
       }
@@ -111,15 +117,21 @@ describe("SoftwareTokenUsageReporter", () => {
     const bodies: Array<Record<string, unknown>> = [];
     const reporter = new SoftwareTokenUsageReporter(
       root,
-      { flush: async () => undefined, query: async () => dashboard(5, 3, 2, 1) },
+      {
+        flush: async () => undefined,
+        query: async () => dashboard(5, 3, 2, 1)
+      },
       {
         enabled: true,
         createId: ids(INSTALLATION_ID, FIRST_REPORT_ID, SECOND_REPORT_ID),
         now: () => now,
-        reportUrl: "https://relay.example.test/deepwrite/v1/software-token-usage",
+        reportUrl:
+          "https://relay.example.test/deepwrite/v1/software-token-usage",
         headers: () => new Headers(),
         fetcher: async (_url, init) => {
-          bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+          bodies.push(
+            JSON.parse(String(init?.body)) as Record<string, unknown>
+          );
           return new Response(null, { status: 204 });
         }
       }
@@ -160,7 +172,11 @@ describe("SoftwareTokenUsageReporter", () => {
       query: async () => dashboard(10, 4, 2, 1)
     };
 
-    await new SoftwareTokenUsageReporter(root, usageReader, options).reportAtStartup();
+    await new SoftwareTokenUsageReporter(
+      root,
+      usageReader,
+      options
+    ).reportAtStartup();
     const pendingState = await readFile(
       join(root, "usage", "software-token-report-v1.json"),
       "utf8"
@@ -188,10 +204,13 @@ describe("SoftwareTokenUsageReporter", () => {
         enabled: true,
         createId: ids(INSTALLATION_ID, FIRST_REPORT_ID, SECOND_REPORT_ID),
         now: () => Date.parse("2026-08-15T08:00:00.000Z"),
-        reportUrl: "https://relay.example.test/deepwrite/v1/software-token-usage",
+        reportUrl:
+          "https://relay.example.test/deepwrite/v1/software-token-usage",
         headers: () => new Headers(),
         fetcher: async (_url, init) => {
-          bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+          bodies.push(
+            JSON.parse(String(init?.body)) as Record<string, unknown>
+          );
           return new Response(null, { status: 204 });
         }
       }

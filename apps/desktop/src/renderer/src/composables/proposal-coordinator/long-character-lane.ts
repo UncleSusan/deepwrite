@@ -1,10 +1,8 @@
 import {
-  nextTick
-} from "vue";
-import {
   LongWorkspaceOperationBatchSchema,
   type LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
+import { nextTick } from "vue";
 import type { AgentEditProposal } from "../../types/conversation";
 import {
   replaceLongBookSummary,
@@ -24,9 +22,7 @@ import type {
 
 export function createLongCharacterLane(ctx: ProposalLaneContext) {
   const {
-    api,
     uiMessage,
-    documents,
     acceptingAgentEditWorkspaceIds,
     rememberWorkspaceMutationEvent,
     setAgentEditWorkspaceAccepting,
@@ -39,12 +35,14 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
 
   const queueAgentEdit: ProposalLaneContext["queueAgentEdit"] = (...args) =>
     ctx.queueAgentEdit(...args);
-  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (...args) =>
-    ctx.removeQueuedAgentEdit(...args);
-  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (...args) =>
-    ctx.latestProposalForLane(...args);
-  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] = (...args) =>
-    ctx.blockedAgentEditLaneMessage(...args);
+  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (
+    ...args
+  ) => ctx.removeQueuedAgentEdit(...args);
+  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (
+    ...args
+  ) => ctx.latestProposalForLane(...args);
+  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] =
+    (...args) => ctx.blockedAgentEditLaneMessage(...args);
 
   function longCharacterBatchForFiles(
     event: LongCharacterFileMutationEvent
@@ -167,8 +165,7 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
       existing &&
       primaryFile.beforeRevision !== existing.proposedRevision
     ) {
-      const message =
-        "人物档案的待审批版本链已经变化，本次变更未进入审批。";
+      const message = "人物档案的待审批版本链已经变化，本次变更未进入审批。";
       sourceConversation.markToolConflict(
         event.payload.runId,
         event.payload.toolCallId,
@@ -192,14 +189,12 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
               proposal.status !== "rejected" &&
               proposal.status !== "conflict"
           );
-    const generation = existing
-      ? (existing.generation ?? 1) + 1
-      : 1;
+    const generation = existing ? (existing.generation ?? 1) + 1 : 1;
     const proposalId = agentEditProposalGenerationId(laneId, generation);
     const predecessorProposalId = existing?.id ?? creationPredecessor?.id;
     const beforeRevision = isCreation
       ? `long-missing:${primaryFile.characterId}`
-      : primaryFile.beforeRevision ?? `long-missing:${primaryFile.fileId}`;
+      : (primaryFile.beforeRevision ?? `long-missing:${primaryFile.fileId}`);
     const proposedRevision = isCreation
       ? `long-character-create:${files.map(({ nextRevision }) => nextRevision).join(":")}`
       : primaryFile.nextRevision;
@@ -235,9 +230,7 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
       deletions: diff.deletions,
       hunks: diff.hunks,
       ...(diff.truncated ? { truncated: true } : {}),
-      ...(noChanges
-        ? { statusMessage: "文本没有实际变化，无需保存。" }
-        : {}),
+      ...(noChanges ? { statusMessage: "文本没有实际变化，无需保存。" } : {}),
       createdAt: event.timestamp,
       updatedAt: event.timestamp,
       longCharacterTarget: {
@@ -344,10 +337,12 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
       const latest = await api.getWorkspaceIndex({ bookId: target.bookId });
       const currentFiles = new Map([
         ...(latest.workspaceIndex.characterOverview
-          ? [[
-              latest.workspaceIndex.characterOverview.id,
-              latest.workspaceIndex.characterOverview
-            ] as const]
+          ? [
+              [
+                latest.workspaceIndex.characterOverview.id,
+                latest.workspaceIndex.characterOverview
+              ] as const
+            ]
           : []),
         ...latest.workspaceIndex.characterFiles.flatMap((entry) => [
           [entry.coreProfile.id, entry.coreProfile] as const,
@@ -451,7 +446,9 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
             : "已保存到本地 Markdown，但界面刷新失败；请手动刷新长篇工作区。"
       });
       if (!automatic) {
-        uiMessage.success(isCreation ? "已创建人物档案" : "已接受并保存人物档案");
+        uiMessage.success(
+          isCreation ? "已创建人物档案" : "已接受并保存人物档案"
+        );
       }
     } catch (error: unknown) {
       const message =

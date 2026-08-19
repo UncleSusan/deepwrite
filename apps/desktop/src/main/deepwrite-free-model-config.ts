@@ -70,7 +70,11 @@ function requiredString(
   maximumLength: number
 ): string {
   const value = record[field];
-  if (typeof value !== "string" || !value.trim() || value.length > maximumLength) {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > maximumLength
+  ) {
     throw new Error(`远程免费模型配置的 ${field} 字段无效。`);
   }
   return value.trim();
@@ -111,7 +115,9 @@ function parseRemoteModel(raw: unknown): {
   const { apiKey: rawApiKey, clearApiKey: _clearApiKey, ...modelInput } = raw;
   if (
     rawApiKey !== undefined &&
-    (typeof rawApiKey !== "string" || !rawApiKey.trim() || rawApiKey.length > 16_000)
+    (typeof rawApiKey !== "string" ||
+      !rawApiKey.trim() ||
+      rawApiKey.length > 16_000)
   ) {
     throw new Error("远程免费模型配置的 apiKey 字段无效。");
   }
@@ -126,7 +132,8 @@ function parseRemoteModel(raw: unknown): {
   if (!model.id.startsWith("deepwrite-free-")) {
     throw new Error("远程免费模型 ID 必须使用 deepwrite-free- 前缀。");
   }
-  const sort = typeof raw.sort === "number" && Number.isFinite(raw.sort) ? raw.sort : 0;
+  const sort =
+    typeof raw.sort === "number" && Number.isFinite(raw.sort) ? raw.sort : 0;
   return {
     model: {
       ...model,
@@ -174,7 +181,7 @@ export function parseDeepWriteFreeModelManifest(
   const parsedRemoteModels = raw.models
     .filter((model) => !isRecord(model) || model.enabled !== false)
     .map(parseRemoteModel)
-    .sort((left, right) => left.sort - right.sort)
+    .sort((left, right) => left.sort - right.sort);
   const parsedModels = parsedRemoteModels.map(({ model }) => model);
   const uniqueIds = new Set(parsedModels.map((model) => model.id));
   if (uniqueIds.size !== parsedModels.length) {
@@ -184,7 +191,7 @@ export function parseDeepWriteFreeModelManifest(
     typeof raw.defaultModelId === "string" ? raw.defaultModelId.trim() : "";
   const defaultModelId = uniqueIds.has(requestedDefaultModelId)
     ? requestedDefaultModelId
-    : parsedModels[0]?.id ?? "";
+    : (parsedModels[0]?.id ?? "");
   if (enabled && parsedModels.length === 0) {
     throw new Error("远程免费模型配置没有可用模型。");
   }
@@ -249,7 +256,11 @@ export class DeepWriteFreeModelCatalogStore {
     userDataPath: string,
     options: DeepWriteFreeModelCatalogStoreOptions = {}
   ) {
-    this.cachePath = join(userDataPath, "config", "deepwrite-free-models-cache.json");
+    this.cachePath = join(
+      userDataPath,
+      "config",
+      "deepwrite-free-models-cache.json"
+    );
     this.appVersion = options.appVersion ?? "0.0.0";
     this.fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
     this.now = options.now ?? Date.now;
@@ -282,7 +293,11 @@ export class DeepWriteFreeModelCatalogStore {
       return;
     }
     const now = this.now();
-    if (!force && this.lastAttemptAt > 0 && now - this.lastAttemptAt < this.refreshIntervalMs) {
+    if (
+      !force &&
+      this.lastAttemptAt > 0 &&
+      now - this.lastAttemptAt < this.refreshIntervalMs
+    ) {
       return;
     }
     this.lastAttemptAt = now;
@@ -295,7 +310,10 @@ export class DeepWriteFreeModelCatalogStore {
     }
   }
 
-  private async fetchAndCache(now: number, reportFailure: boolean): Promise<void> {
+  private async fetchAndCache(
+    now: number,
+    reportFailure: boolean
+  ): Promise<void> {
     try {
       const response = await this.fetcher(this.configUrl, {
         method: "GET",
@@ -311,7 +329,10 @@ export class DeepWriteFreeModelCatalogStore {
         throw new Error("配置文件超过大小限制");
       }
       const manifest = JSON.parse(text) as unknown;
-      const catalog = parseDeepWriteFreeModelManifest(manifest, this.appVersion);
+      const catalog = parseDeepWriteFreeModelManifest(
+        manifest,
+        this.appVersion
+      );
       this.catalog = catalog;
       const cache: RemoteModelConfigCache = {
         version: 1,
@@ -340,7 +361,10 @@ export class DeepWriteFreeModelCatalogStore {
       if (!isRecord(raw) || raw.version !== 1 || !("manifest" in raw)) {
         return;
       }
-      this.catalog = parseDeepWriteFreeModelManifest(raw.manifest, this.appVersion);
+      this.catalog = parseDeepWriteFreeModelManifest(
+        raw.manifest,
+        this.appVersion
+      );
     } catch {
       this.catalog = structuredClone(EMPTY_CATALOG);
     }

@@ -80,7 +80,10 @@ const V2ScriptBookSchema = CurrentScriptBookSchema.omit({
 
 function migrateLegacyShortBook(value: unknown): unknown {
   const legacy = LegacyShortBookSchema.safeParse(value);
-  if (!legacy.success || (value && typeof value === "object" && "draft" in value)) {
+  if (
+    !legacy.success ||
+    (value && typeof value === "object" && "draft" in value)
+  ) {
     return value;
   }
   const exactDraftIndex = legacy.data.documents.findIndex(
@@ -92,7 +95,8 @@ function migrateLegacyShortBook(value: unknown): unknown {
       : legacy.data.documents.findIndex(
           (document) => document.title === "正文编写"
         );
-  const draftDocument = draftIndex >= 0 ? legacy.data.documents[draftIndex] : undefined;
+  const draftDocument =
+    draftIndex >= 0 ? legacy.data.documents[draftIndex] : undefined;
   return {
     ...legacy.data,
     documents: legacy.data.documents.filter((_, index) => index !== draftIndex),
@@ -105,11 +109,18 @@ function migrateLegacyShortBook(value: unknown): unknown {
 }
 
 function migrateMissingPlotStages(value: unknown): unknown {
-  const parsed = z.union([V2ShortBookSchema, V2ScriptBookSchema]).safeParse(value);
-  if (!parsed.success || (value && typeof value === "object" && "plotStages" in value)) {
+  const parsed = z
+    .union([V2ShortBookSchema, V2ScriptBookSchema])
+    .safeParse(value);
+  if (
+    !parsed.success ||
+    (value && typeof value === "object" && "plotStages" in value)
+  ) {
     return value;
   }
-  const documentIds = new Set(parsed.data.documents.map((document) => document.id));
+  const documentIds = new Set(
+    parsed.data.documents.map((document) => document.id)
+  );
   const missingDocuments = DEFAULT_CREATIVE_PLOT_STAGES.filter(
     (stage) => !documentIds.has(stage.id)
   ).map((stage) => ({
@@ -155,8 +166,7 @@ export function migrateBookPlotStageEnabled(value: unknown): unknown {
       const record = stage as Record<string, unknown>;
       return {
         ...record,
-        enabled:
-          typeof record.enabled === "boolean" ? record.enabled : true
+        enabled: typeof record.enabled === "boolean" ? record.enabled : true
       };
     })
   };
@@ -209,8 +219,10 @@ export function migrateLegacyCharacterOverviewTitle(value: unknown): unknown {
     if (
       !document ||
       typeof document !== "object" ||
-      (document as { id?: unknown }).id !== BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID ||
-      (document as { title?: unknown }).title !== LEGACY_BOOK_CHARACTER_OVERVIEW_TITLE
+      (document as { id?: unknown }).id !==
+        BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID ||
+      (document as { title?: unknown }).title !==
+        LEGACY_BOOK_CHARACTER_OVERVIEW_TITLE
     ) {
       return document;
     }
@@ -247,7 +259,8 @@ export function validateCharacterStructureDocuments(
     context.addIssue({
       code: "custom",
       path: ["characterStructure"],
-      message: "Character structure must reference the character overview document."
+      message:
+        "Character structure must reference the character overview document."
     });
     return;
   }
@@ -285,7 +298,9 @@ export function validatePlotStageDocuments(
   context: z.core.$RefinementCtx<unknown>
 ): void {
   for (const [index, stage] of book.plotStages.entries()) {
-    const document = book.documents.find((candidate) => candidate.id === stage.id);
+    const document = book.documents.find(
+      (candidate) => candidate.id === stage.id
+    );
     if (!document) {
       context.addIssue({
         code: "custom",
@@ -335,10 +350,7 @@ export const ShortBookSchema = z
 export type ShortBook = z.infer<typeof ShortBookSchema>;
 
 export const ScriptBookSchema = z
-  .preprocess(
-    (value) => migrateBook(value),
-    CurrentScriptBookSchema
-  )
+  .preprocess((value) => migrateBook(value), CurrentScriptBookSchema)
   .superRefine((book, context) => {
     validateUniqueBookDocumentIds(book, context);
     validateCharacterStructureDocuments(book, context);

@@ -24,6 +24,10 @@ import {
   LongChapterCardIdSchema,
   LongFileIdSchema,
   LongFileRevisionSchema,
+  LongForeshadowingBeatIdSchema,
+  LongForeshadowingIdSchema,
+  LongForeshadowingSpanSchema,
+  LongForeshadowingStatusSchema,
   LongProjectRelativePathSchema,
   LongVolumeIdSchema,
   LongWorldbuildingCategoryIdSchema,
@@ -42,6 +46,7 @@ export const LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS = 20_000;
 export const LONG_WORLDBUILDING_OVERVIEW_FOCUS_MAX_CHARACTERS = 8_000;
 export const LONG_WORLDBUILDING_DIRECTORY_MAX_CATEGORIES = 500;
 export const LONG_WORLDBUILDING_DIRECTORY_MAX_ITEMS = 2_000;
+export const LONG_FORESHADOWING_DIRECTORY_MAX_ENTRIES = 100;
 
 const LongWorldbuildingDirectoryItemSchema = z
   .object({
@@ -116,9 +121,7 @@ export type LongWorldbuildingDirectorySnapshot = z.infer<
 
 const LongWorldbuildingFocusTextSnapshotSchema = z
   .object({
-    content: z
-      .string()
-      .max(LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS * 2),
+    content: z.string().max(LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS * 2),
     truncated: z.literal(true).optional(),
     originalLength: z.number().int().nonnegative().optional()
   })
@@ -145,10 +148,7 @@ const LongWorldbuildingFocusTextSnapshotSchema = z
           "A truncated long worldbuilding focus text must report its original length."
       });
     }
-    if (
-      value.truncated !== true &&
-      value.originalLength !== undefined
-    ) {
+    if (value.truncated !== true && value.originalLength !== undefined) {
       context.addIssue({
         code: "custom",
         path: ["originalLength"],
@@ -184,10 +184,7 @@ export const LongWorldbuildingFocusSnapshotSchema = z
           "Long worldbuilding focus stage kind must match its category format."
       });
     }
-    if (
-      value.currentStage.kind === "item" &&
-      value.overview === undefined
-    ) {
+    if (value.currentStage.kind === "item" && value.overview === undefined) {
       context.addIssue({
         code: "custom",
         path: ["overview"],
@@ -195,10 +192,7 @@ export const LongWorldbuildingFocusSnapshotSchema = z
           "A focused worldbuilding item must include its category overview."
       });
     }
-    if (
-      value.format === "text" &&
-      value.overview !== undefined
-    ) {
+    if (value.format === "text" && value.overview !== undefined) {
       context.addIssue({
         code: "custom",
         path: ["overview"],
@@ -239,7 +233,8 @@ const LongCharacterFocusTextSnapshotSchema = z
       context.addIssue({
         code: "custom",
         path: ["content"],
-        message: "Long character focus text exceeds the maximum character count."
+        message:
+          "Long character focus text exceeds the maximum character count."
       });
     }
     if (
@@ -374,6 +369,41 @@ export const LONG_PLOT_FOCUS_SECTIONS = [
   "chapter_card",
   "foreshadowing"
 ] as const;
+
+export const LongForeshadowingDirectoryEntrySchema = z
+  .object({
+    foreshadowingId: LongForeshadowingIdSchema,
+    title: z.string().trim().min(1).max(256),
+    status: LongForeshadowingStatusSchema,
+    plannedSpan: LongForeshadowingSpanSchema.optional(),
+    beatCount: z.number().int().nonnegative().max(10_000)
+  })
+  .strict();
+
+export const LongForeshadowingDirectorySnapshotSchema = z
+  .object({
+    totalCount: z.number().int().nonnegative().max(100_000),
+    omittedCount: z.number().int().nonnegative().max(100_000),
+    entries: z
+      .array(LongForeshadowingDirectoryEntrySchema)
+      .max(LONG_FORESHADOWING_DIRECTORY_MAX_ENTRIES)
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.totalCount !== value.entries.length + value.omittedCount) {
+      context.addIssue({
+        code: "custom",
+        path: ["omittedCount"],
+        message:
+          "Foreshadowing directory total must equal visible and omitted entries."
+      });
+    }
+  });
+
+export type LongForeshadowingDirectorySnapshot = z.infer<
+  typeof LongForeshadowingDirectorySnapshotSchema
+>;
+
 export const LongPlotFocusSnapshotSchema = z
   .object({
     section: z.enum(LONG_PLOT_FOCUS_SECTIONS),
@@ -382,7 +412,10 @@ export const LongPlotFocusSnapshotSchema = z
     arcId: LongArcIdSchema.optional(),
     arcTitle: z.string().trim().min(1).max(256).optional(),
     chapterCardId: LongChapterCardIdSchema.optional(),
-    chapterCardTitle: z.string().trim().min(1).max(256).optional()
+    chapterCardTitle: z.string().trim().min(1).max(256).optional(),
+    foreshadowingDirectory: LongForeshadowingDirectorySnapshotSchema.optional(),
+    foreshadowingThreadId: LongForeshadowingIdSchema.optional(),
+    foreshadowingBeatId: LongForeshadowingBeatIdSchema.optional()
   })
   .strict()
   .superRefine((value, context) => {
@@ -390,7 +423,8 @@ export const LongPlotFocusSnapshotSchema = z
       context.addIssue({
         code: "custom",
         path: ["volumeTitle"],
-        message: "Long plot focus volume id and title must be provided together."
+        message:
+          "Long plot focus volume id and title must be provided together."
       });
     }
     if (Boolean(value.arcId) !== Boolean(value.arcTitle)) {
@@ -442,6 +476,46 @@ export const LongPlotFocusSnapshotSchema = z
         message: "A book-scoped long plot focus must not name a volume."
       });
     }
+    const isForeshadowing = value.section === "foreshadowing";
+    if (isForeshadowing !== Boolean(value.foreshadowingDirectory)) {
+      context.addIssue({
+        code: "custom",
+        path: ["foreshadowingDirectory"],
+        message:
+          "Only a foreshadowing focus must include its lightweight directory."
+      });
+    }
+    if (
+      !isForeshadowing &&
+      (value.foreshadowingThreadId !== undefined ||
+        value.foreshadowingBeatId !== undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["foreshadowingThreadId"],
+        message: "Foreshadowing ids are only valid in a foreshadowing focus."
+      });
+    }
+    if (value.foreshadowingBeatId && !value.foreshadowingThreadId) {
+      context.addIssue({
+        code: "custom",
+        path: ["foreshadowingBeatId"],
+        message: "A focused foreshadowing beat requires its thread id."
+      });
+    }
+    if (
+      value.foreshadowingThreadId &&
+      !value.foreshadowingDirectory?.entries.some(
+        (entry) => entry.foreshadowingId === value.foreshadowingThreadId
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["foreshadowingThreadId"],
+        message:
+          "The focused foreshadowing thread must remain in the directory."
+      });
+    }
   });
 export type LongPlotFocusSnapshot = z.infer<typeof LongPlotFocusSnapshotSchema>;
 
@@ -483,14 +557,12 @@ export const LongWorkspaceRuntimeContextSchema = z
           "Long runtime navigation revision must match the active workspace revision."
       });
     }
-    const expectedRootAgent =
-      LONG_WORKSPACE_ROOT_TO_AGENT_ID[value.activeRoot];
+    const expectedRootAgent = LONG_WORKSPACE_ROOT_TO_AGENT_ID[value.activeRoot];
     if (value.activeAgentId !== expectedRootAgent) {
       context.addIssue({
         code: "custom",
         path: ["activeAgentId"],
-        message:
-          "Long runtime agent must match the active workspace root."
+        message: "Long runtime agent must match the active workspace root."
       });
     }
     if (
@@ -506,9 +578,7 @@ export const LongWorkspaceRuntimeContextSchema = z
           "Long runtime active chapter must exist in the navigation snapshot."
       });
     }
-    if (
-      Boolean(value.activeFileId) !== Boolean(value.activeFileRevision)
-    ) {
+    if (Boolean(value.activeFileId) !== Boolean(value.activeFileRevision)) {
       context.addIssue({
         code: "custom",
         path: ["activeFileRevision"],
@@ -569,8 +639,7 @@ export const LongWorkspaceRuntimeContextSchema = z
       context.addIssue({
         code: "custom",
         path: ["activeFileId"],
-        message:
-          "Long character focus requires the active character file."
+        message: "Long character focus requires the active character file."
       });
     }
     if (
@@ -594,8 +663,7 @@ export const LongWorkspaceRuntimeContextSchema = z
       context.addIssue({
         code: "custom",
         path: ["plotFocus", "volumeId"],
-        message:
-          "Long plot focus volume must exist in the navigation snapshot."
+        message: "Long plot focus volume must exist in the navigation snapshot."
       });
     }
     if (value.plotFocus?.arcId !== undefined) {
@@ -606,15 +674,13 @@ export const LongWorkspaceRuntimeContextSchema = z
         context.addIssue({
           code: "custom",
           path: ["plotFocus", "arcId"],
-          message:
-            "Long plot focus arc must exist in the navigation snapshot."
+          message: "Long plot focus arc must exist in the navigation snapshot."
         });
       } else if (focusedArc.volumeId !== value.plotFocus.volumeId) {
         context.addIssue({
           code: "custom",
           path: ["plotFocus", "arcId"],
-          message:
-            "Long plot focus arc must belong to the focused volume."
+          message: "Long plot focus arc must belong to the focused volume."
         });
       }
     }
@@ -708,8 +774,7 @@ export const CreateLongBookInputSchema = z
   .object({
     title: z.string().trim().min(1).max(256),
     genre: LongBookGenreSchema,
-    linkedMaterialIdsByKind:
-      LongLinkedMaterialIdsByKindInputSchema.optional(),
+    linkedMaterialIdsByKind: LongLinkedMaterialIdsByKindInputSchema.optional(),
     linkedSkillIdsByKind: LongLinkedSkillIdsByKindInputSchema.optional()
   })
   .strict();
@@ -748,11 +813,7 @@ export const LongImportWriteClawResultSchema = z
   .object({
     book: LongBookSchema,
     summary: LongBookSummarySchema,
-    sourceKind: z.enum([
-      "write-claw-zip",
-      "long-workspace-json",
-      "book-json"
-    ]),
+    sourceKind: z.enum(["write-claw-zip", "long-workspace-json", "book-json"]),
     legacySchemaVersion: z.number().int().nonnegative(),
     committedChapterPolicy: z.enum([
       "written-uncommitted",
@@ -779,9 +840,7 @@ export const LongLegacySyncModuleSchema = z.enum([
   "characters",
   "plot"
 ]);
-export type LongLegacySyncModule = z.infer<
-  typeof LongLegacySyncModuleSchema
->;
+export type LongLegacySyncModule = z.infer<typeof LongLegacySyncModuleSchema>;
 
 export const LongLegacySyncCountsSchema = z
   .object({
@@ -794,18 +853,12 @@ export const LongLegacySyncCountsSchema = z
     chapterCards: z.number().int().nonnegative()
   })
   .strict();
-export type LongLegacySyncCounts = z.infer<
-  typeof LongLegacySyncCountsSchema
->;
+export type LongLegacySyncCounts = z.infer<typeof LongLegacySyncCountsSchema>;
 
 const LongLegacySyncPreviewBaseSchema = z
   .object({
     sourceTitle: z.string().trim().min(1).max(256),
-    sourceKind: z.enum([
-      "write-claw-zip",
-      "long-workspace-json",
-      "book-json"
-    ]),
+    sourceKind: z.enum(["write-claw-zip", "long-workspace-json", "book-json"]),
     legacySchemaVersion: z.number().int().nonnegative(),
     counts: LongLegacySyncCountsSchema,
     warnings: z.array(z.string().trim().min(1).max(4_000)).max(10_000)
@@ -853,13 +906,16 @@ export type LongApplyLegacySyncInput = z.infer<
   typeof LongApplyLegacySyncInputSchema
 >;
 
-export const LongApplyLegacySyncAtPathInputSchema = z.object({
+export const LongApplyLegacySyncAtPathInputSchema = z
+  .object({
     bookId: LongBookIdSchema,
     expectedProjectRevision: z.number().int().nonnegative(),
     modules: z.array(LongLegacySyncModuleSchema).min(1).max(3),
     sourcePath: z.string().trim().min(1),
     expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/u)
-  }).strict().superRefine((value, context) => {
+  })
+  .strict()
+  .superRefine((value, context) => {
     if (new Set(value.modules).size !== value.modules.length) {
       context.addIssue({
         code: "custom",
@@ -908,7 +964,8 @@ export const LongImportPortableResultSchema = z
       context.addIssue({
         code: "custom",
         path: ["summary", "id"],
-        message: "Imported portable long book and summary must share the same id."
+        message:
+          "Imported portable long book and summary must share the same id."
       });
     }
   });
@@ -995,7 +1052,8 @@ export const LongContinuationImportScanSchema = z
       context.addIssue({
         code: "custom",
         path: ["pendingChapterTitle"],
-        message: "Continuation import pending chapter must be the final ordered chapter."
+        message:
+          "Continuation import pending chapter must be the final ordered chapter."
       });
     }
   });
@@ -1067,14 +1125,16 @@ export const LongImportContinuationResultSchema = z
       context.addIssue({
         code: "custom",
         path: ["summary", "id"],
-        message: "Imported continuation book and summary must share the same id."
+        message:
+          "Imported continuation book and summary must share the same id."
       });
     }
     if (value.checkpointCount !== Math.max(0, value.importedChapterCount - 1)) {
       context.addIssue({
         code: "custom",
         path: ["checkpointCount"],
-        message: "Continuation checkpoint count must leave exactly one pending chapter."
+        message:
+          "Continuation checkpoint count must leave exactly one pending chapter."
       });
     }
   });
@@ -1096,9 +1156,7 @@ export const LongRenameBookInputSchema = z
     title: z.string().trim().min(1).max(256)
   })
   .strict();
-export type LongRenameBookInput = z.infer<
-  typeof LongRenameBookInputSchema
->;
+export type LongRenameBookInput = z.infer<typeof LongRenameBookInputSchema>;
 
 export const LongUpdateBindingsInputSchema = z
   .object({
@@ -1131,9 +1189,7 @@ export const LongListBooksResultSchema = z
       .optional()
   })
   .strict();
-export type LongListBooksResult = z.infer<
-  typeof LongListBooksResultSchema
->;
+export type LongListBooksResult = z.infer<typeof LongListBooksResultSchema>;
 
 export const LongOpenBookAtPathInputSchema = z
   .object({
@@ -1157,9 +1213,7 @@ export const LongRemoveBookResultSchema = z
     removed: z.boolean()
   })
   .strict();
-export type LongRemoveBookResult = z.infer<
-  typeof LongRemoveBookResultSchema
->;
+export type LongRemoveBookResult = z.infer<typeof LongRemoveBookResultSchema>;
 
 export const LongOpenBookResultSchema = z
   .object({
@@ -1185,9 +1239,7 @@ export const LongReadDocumentInputSchema = z
       .default(LONG_DOCUMENT_PAGE_DEFAULT_CHARACTERS)
   })
   .strict();
-export type LongReadDocumentInput = z.infer<
-  typeof LongReadDocumentInputSchema
->;
+export type LongReadDocumentInput = z.infer<typeof LongReadDocumentInputSchema>;
 
 export const LongReadDocumentResultSchema = z
   .object({
@@ -1347,9 +1399,7 @@ export const LongReadAgentsMdInputSchema = z
     bookId: LongBookIdSchema
   })
   .strict();
-export type LongReadAgentsMdInput = z.infer<
-  typeof LongReadAgentsMdInputSchema
->;
+export type LongReadAgentsMdInput = z.infer<typeof LongReadAgentsMdInputSchema>;
 
 export const LongReadAgentsMdResultSchema = z
   .object({
@@ -1442,21 +1492,21 @@ export type LongApplyOperationsResult = z.infer<
   typeof LongApplyOperationsResultSchema
 >;
 
-export const LongCreateBookCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.createBook"),
-    payload: CreateLongBookInputSchema
-  });
+export const LongCreateBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("long.createBook"),
+  payload: CreateLongBookInputSchema
+});
 export const LongCreateBookAtPathCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.createBookAtPath"),
     payload: CreateLongBookAtPathInputSchema
   });
-export const LongDuplicateBookCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
+export const LongDuplicateBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
     type: z.literal("long.duplicateBook"),
     payload: LongDuplicateBookInputSchema
-  });
+  }
+);
 export const LongChooseLegacySyncSourceCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.chooseLegacySyncSource"),
@@ -1539,40 +1589,39 @@ export const LongUnregisterBookCommandEnvelopeSchema =
     type: z.literal("long.unregister"),
     payload: LongRemoveBookInputSchema
   });
-export const LongDeleteBookCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.delete"),
-    payload: LongRemoveBookInputSchema
-  });
+export const LongDeleteBookCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("long.delete"),
+  payload: LongRemoveBookInputSchema
+});
 export const LongGetWorkspaceIndexCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.getWorkspaceIndex"),
     payload: LongOpenBookInputSchema
   });
-export const LongReadDocumentCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.readDocument"),
-    payload: LongReadDocumentInputSchema
-  });
+export const LongReadDocumentCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("long.readDocument"),
+  payload: LongReadDocumentInputSchema
+});
 export const LongSearchCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("long.search"),
   payload: LongSearchInputSchema
 });
-export const LongWriteDocumentCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
+export const LongWriteDocumentCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
     type: z.literal("long.writeDocument"),
     payload: LongWriteDocumentInputSchema
-  });
-export const LongReadAgentsMdCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.readAgentsMd"),
-    payload: LongReadAgentsMdInputSchema
-  });
-export const LongWriteAgentsMdCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
+  }
+);
+export const LongReadAgentsMdCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("long.readAgentsMd"),
+  payload: LongReadAgentsMdInputSchema
+});
+export const LongWriteAgentsMdCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
     type: z.literal("long.writeAgentsMd"),
     payload: LongWriteAgentsMdInputSchema
-  });
+  }
+);
 export const LongPreviewOperationsCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.previewOperations"),
@@ -1583,59 +1632,56 @@ export const LongApplyOperationsCommandEnvelopeSchema =
     type: z.literal("long.applyOperations"),
     payload: LongApplyOperationsInputSchema
   });
-export const LongWriteChapterCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.writeChapter"),
-    payload: LongWriteChapterInputSchema
-  });
-export const LongCommitChapterCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
+export const LongWriteChapterCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
+  type: z.literal("long.writeChapter"),
+  payload: LongWriteChapterInputSchema
+});
+export const LongCommitChapterCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
     type: z.literal("long.commitChapter"),
     payload: LongCommitChapterInputSchema
-  });
+  }
+);
 export const LongRollbackLastCommitCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.rollbackLastCommit"),
     payload: LongRollbackLastCommitInputSchema
   });
 
-export const LongWorkspaceCommandEnvelopeSchema = z.discriminatedUnion(
-  "type",
-  [
-    LongCreateBookCommandEnvelopeSchema,
-    LongCreateBookAtPathCommandEnvelopeSchema,
-    LongDuplicateBookCommandEnvelopeSchema,
-    LongChooseLegacySyncSourceCommandEnvelopeSchema,
-    LongPreviewLegacySyncAtPathCommandEnvelopeSchema,
-    LongApplyLegacySyncCommandEnvelopeSchema,
-    LongApplyLegacySyncAtPathCommandEnvelopeSchema,
-    LongImportPortableCommandEnvelopeSchema,
-    LongImportPortableAtPathCommandEnvelopeSchema,
-    LongChooseContinuationImportSourceCommandEnvelopeSchema,
-    LongPreviewContinuationImportAtPathCommandEnvelopeSchema,
-    LongImportContinuationCommandEnvelopeSchema,
-    LongImportContinuationAtPathCommandEnvelopeSchema,
-    LongListBooksCommandEnvelopeSchema,
-    LongOpenBookCommandEnvelopeSchema,
-    LongRenameBookCommandEnvelopeSchema,
-    LongUpdateBindingsCommandEnvelopeSchema,
-    LongOpenExistingBookCommandEnvelopeSchema,
-    LongOpenBookAtPathCommandEnvelopeSchema,
-    LongUnregisterBookCommandEnvelopeSchema,
-    LongDeleteBookCommandEnvelopeSchema,
-    LongGetWorkspaceIndexCommandEnvelopeSchema,
-    LongReadDocumentCommandEnvelopeSchema,
-    LongSearchCommandEnvelopeSchema,
-    LongWriteDocumentCommandEnvelopeSchema,
-    LongReadAgentsMdCommandEnvelopeSchema,
-    LongWriteAgentsMdCommandEnvelopeSchema,
-    LongPreviewOperationsCommandEnvelopeSchema,
-    LongApplyOperationsCommandEnvelopeSchema,
-    LongWriteChapterCommandEnvelopeSchema,
-    LongCommitChapterCommandEnvelopeSchema,
-    LongRollbackLastCommitCommandEnvelopeSchema
-  ]
-);
+export const LongWorkspaceCommandEnvelopeSchema = z.discriminatedUnion("type", [
+  LongCreateBookCommandEnvelopeSchema,
+  LongCreateBookAtPathCommandEnvelopeSchema,
+  LongDuplicateBookCommandEnvelopeSchema,
+  LongChooseLegacySyncSourceCommandEnvelopeSchema,
+  LongPreviewLegacySyncAtPathCommandEnvelopeSchema,
+  LongApplyLegacySyncCommandEnvelopeSchema,
+  LongApplyLegacySyncAtPathCommandEnvelopeSchema,
+  LongImportPortableCommandEnvelopeSchema,
+  LongImportPortableAtPathCommandEnvelopeSchema,
+  LongChooseContinuationImportSourceCommandEnvelopeSchema,
+  LongPreviewContinuationImportAtPathCommandEnvelopeSchema,
+  LongImportContinuationCommandEnvelopeSchema,
+  LongImportContinuationAtPathCommandEnvelopeSchema,
+  LongListBooksCommandEnvelopeSchema,
+  LongOpenBookCommandEnvelopeSchema,
+  LongRenameBookCommandEnvelopeSchema,
+  LongUpdateBindingsCommandEnvelopeSchema,
+  LongOpenExistingBookCommandEnvelopeSchema,
+  LongOpenBookAtPathCommandEnvelopeSchema,
+  LongUnregisterBookCommandEnvelopeSchema,
+  LongDeleteBookCommandEnvelopeSchema,
+  LongGetWorkspaceIndexCommandEnvelopeSchema,
+  LongReadDocumentCommandEnvelopeSchema,
+  LongSearchCommandEnvelopeSchema,
+  LongWriteDocumentCommandEnvelopeSchema,
+  LongReadAgentsMdCommandEnvelopeSchema,
+  LongWriteAgentsMdCommandEnvelopeSchema,
+  LongPreviewOperationsCommandEnvelopeSchema,
+  LongApplyOperationsCommandEnvelopeSchema,
+  LongWriteChapterCommandEnvelopeSchema,
+  LongCommitChapterCommandEnvelopeSchema,
+  LongRollbackLastCommitCommandEnvelopeSchema
+]);
 export type LongWorkspaceCommandEnvelope = z.infer<
   typeof LongWorkspaceCommandEnvelopeSchema
 >;

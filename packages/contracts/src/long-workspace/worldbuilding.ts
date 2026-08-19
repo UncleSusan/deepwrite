@@ -60,14 +60,11 @@ export const LongWorldbuildingItemSchema = z
       context.addIssue({
         code: "custom",
         path: ["file", "id"],
-        message:
-          "Worldbuilding item file id must match its stable item id."
+        message: "Worldbuilding item file id must match its stable item id."
       });
     }
   });
-export type LongWorldbuildingItem = z.infer<
-  typeof LongWorldbuildingItemSchema
->;
+export type LongWorldbuildingItem = z.infer<typeof LongWorldbuildingItemSchema>;
 
 const LongWorldbuildingCategorySharedShape = {
   id: LongWorldbuildingCategoryIdSchema,
@@ -148,8 +145,7 @@ export const LongWorldbuildingTextCategorySchema = z
       context.addIssue({
         code: "custom",
         path: ["file", "id"],
-        message:
-          "Worldbuilding text file id must match its stable category id."
+        message: "Worldbuilding text file id must match its stable category id."
       });
     }
   });

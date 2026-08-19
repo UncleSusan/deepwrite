@@ -342,13 +342,11 @@ describe("useWorkspaceFeatureHostCoordinator", () => {
       harness.loaders.loadShortAndScriptAgentSettings
     ).toHaveBeenCalledTimes(1);
 
-    await harness.coordinator.ensureActiveFeatureDependencies(
-      "long-workspace"
-    );
+    await harness.coordinator.ensureActiveFeatureDependencies("long-workspace");
     expect(harness.loaders.loadModelSettings).toHaveBeenCalledTimes(2);
-    expect(
-      harness.loaders.ensureLongAgentSettingsLoaded
-    ).toHaveBeenCalledTimes(1);
+    expect(harness.loaders.ensureLongAgentSettingsLoaded).toHaveBeenCalledTimes(
+      1
+    );
 
     await harness.coordinator.ensureActiveFeatureDependencies("models");
     await harness.coordinator.ensureActiveFeatureDependencies("directory");
@@ -383,7 +381,9 @@ describe("useWorkspaceFeatureHostCoordinator", () => {
       }
     });
 
-    await expect(harness.coordinator.openMarketplace()).resolves.toBeUndefined();
+    await expect(
+      harness.coordinator.openMarketplace()
+    ).resolves.toBeUndefined();
     await Promise.resolve();
     expect(harness.workspaceMainView.value).toBe("marketplace");
     expect(harness.errors).toEqual([]);

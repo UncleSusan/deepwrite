@@ -63,8 +63,7 @@ function validateImmutableLongAgentFields(
       });
     }
     if (
-      JSON.stringify(agent.writeAccess) !==
-      JSON.stringify(builtin.writeAccess)
+      JSON.stringify(agent.writeAccess) !== JSON.stringify(builtin.writeAccess)
     ) {
       context.addIssue({
         code: "custom",
@@ -78,9 +77,7 @@ function validateImmutableLongAgentFields(
 export const LongAgentSettingsSchema = z
   .object({
     workspaceType: z.literal("long"),
-    agents: z
-      .array(LongAgentProfileSchema)
-      .length(LONG_AGENT_IDS.length)
+    agents: z.array(LongAgentProfileSchema).length(LONG_AGENT_IDS.length)
   })
   .strict()
   .superRefine((value, context) => {

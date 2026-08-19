@@ -69,10 +69,7 @@ const emit = defineEmits<{
     payload: { sourceBookId: string; sourceTitle: string },
     completion: LongStructureMutationCompletion
   ];
-  saveAgentsMd: [
-    content: string,
-    completion: LongStructureMutationCompletion
-  ];
+  saveAgentsMd: [content: string, completion: LongStructureMutationCompletion];
   modalActiveChange: [active: boolean];
 }>();
 const formatOptions: readonly PopupSelectOption[] = [
@@ -148,9 +145,11 @@ const syncBookSelectOptions = computed<PopupSelectOption[]>(() =>
     }))
 );
 
-const selectedSyncBook = computed(() =>
-  props.syncBookOptions.find((book) => book.id === selectedSyncBookId.value) ??
-  null
+const selectedSyncBook = computed(
+  () =>
+    props.syncBookOptions.find(
+      (book) => book.id === selectedSyncBookId.value
+    ) ?? null
 );
 
 function emptyDraft(): StructureDraft {
@@ -245,8 +244,8 @@ watch(
 const agentsMdDirty = computed(
   () => agentsMdDraft.value !== (props.agentsMd ?? "")
 );
-const agentsMdCharacterCount = computed(() =>
-  Array.from(agentsMdDraft.value).length
+const agentsMdCharacterCount = computed(
+  () => Array.from(agentsMdDraft.value).length
 );
 const agentsMdOverLimit = computed(
   () => agentsMdCharacterCount.value > LONG_AGENTS_MD_MAX_CHARACTERS
@@ -279,9 +278,7 @@ function setFormat(value: PopupSelectValue): void {
 
 function setWorldbuildingItemLayout(value: PopupSelectValue): void {
   if (
-    (value !== "top-tabs" &&
-      value !== "right-list" &&
-      value !== "left-tree") ||
+    (value !== "top-tabs" && value !== "right-list" && value !== "left-tree") ||
     value === props.snapshot.featureSettings.worldbuildingItemLayout
   ) {
     return;
@@ -295,9 +292,7 @@ function setWorldbuildingItemLayout(value: PopupSelectValue): void {
 
 function setCharacterAndContinuityItemLayout(value: PopupSelectValue): void {
   if (
-    (value !== "top-tabs" &&
-      value !== "right-list" &&
-      value !== "left-tree") ||
+    (value !== "top-tabs" && value !== "right-list" && value !== "left-tree") ||
     value === props.snapshot.featureSettings.characterAndContinuityItemLayout
   ) {
     return;
@@ -311,9 +306,7 @@ function setCharacterAndContinuityItemLayout(value: PopupSelectValue): void {
 
 function setPlotItemLayout(value: PopupSelectValue): void {
   if (
-    (value !== "top-tabs" &&
-      value !== "right-list" &&
-      value !== "left-tree") ||
+    (value !== "top-tabs" && value !== "right-list" && value !== "left-tree") ||
     value === props.snapshot.featureSettings.plotItemLayout
   ) {
     return;
@@ -393,7 +386,9 @@ function openSync(): void {
     uiMessage.warning("当前没有其他可同步的长篇书籍。");
     return;
   }
-  selectedSyncBookId.value = String(syncBookSelectOptions.value[0]?.value ?? "");
+  selectedSyncBookId.value = String(
+    syncBookSelectOptions.value[0]?.value ?? ""
+  );
   syncOpen.value = true;
 }
 
@@ -554,8 +549,7 @@ function confirmDelete(): void {
     return;
   }
   emitMutation(
-    (builder) =>
-      builder.deleteWorldbuilding(target.id, cascadeDelete.value),
+    (builder) => builder.deleteWorldbuilding(target.id, cascadeDelete.value),
     "delete"
   );
 }
@@ -628,15 +622,13 @@ defineExpose({
       <div>
         <p class="manager-eyebrow">LONG-FORM STRUCTURE</p>
         <h2>结构管理</h2>
-        <p>在这里管理世界观分类、人物类型、功能配置和长篇上下文；具体内容请在对应工作区编辑。</p>
+        <p>
+          在这里管理世界观分类、人物类型、功能配置和长篇上下文；具体内容请在对应工作区编辑。
+        </p>
       </div>
     </header>
 
-    <div
-      class="structure-panel-tabs"
-      role="tablist"
-      aria-label="结构管理分区"
-    >
+    <div class="structure-panel-tabs" role="tablist" aria-label="结构管理分区">
       <button
         v-for="panel in panelOptions"
         :id="`long-structure-panel-${panel.value}`"
@@ -817,7 +809,9 @@ defineExpose({
             </span>
           </div>
           <PopupSelect
-            :model-value="snapshot.featureSettings.characterAndContinuityItemLayout"
+            :model-value="
+              snapshot.featureSettings.characterAndContinuityItemLayout
+            "
             :options="worldbuildingItemLayoutOptions"
             accessible-label="选择人物与连续性条目样式"
             :disabled="mutationLocked"
@@ -860,7 +854,10 @@ defineExpose({
               对话时会注入给当前智能体；内容保存在本书目录的 AGENTS.md。
             </p>
           </div>
-          <span>{{ agentsMdCharacterCount }} / {{ LONG_AGENTS_MD_MAX_CHARACTERS }} 字符</span>
+          <span
+            >{{ agentsMdCharacterCount }} /
+            {{ LONG_AGENTS_MD_MAX_CHARACTERS }} 字符</span
+          >
         </div>
         <textarea
           v-model="agentsMdDraft"
@@ -881,9 +878,7 @@ defineExpose({
             "
             @click="saveAgentsMd"
           >
-            {{
-              pendingMutation?.surface === "agents" ? "保存中…" : "保存"
-            }}
+            {{ pendingMutation?.surface === "agents" ? "保存中…" : "保存" }}
           </button>
         </footer>
       </section>
@@ -1005,7 +1000,8 @@ defineExpose({
           <fieldset class="modal-body" :disabled="mutationLocked">
             <p id="long-structure-sync-description" class="sync-copy">
               同步其他长篇书籍世界观，会把对方的<strong>全部世界观数据</strong>覆盖到当前书籍，
-              <strong>包括分类结构与各分类正文</strong>。当前书籍中的可编辑世界观会被替换；
+              <strong>包括分类结构与各分类正文</strong
+              >。当前书籍中的可编辑世界观会被替换；
               迁移证据只读分类会保留。此操作不可撤销。
             </p>
             <label class="form-field">
@@ -1024,11 +1020,7 @@ defineExpose({
             </p>
           </fieldset>
           <footer class="modal-actions">
-            <button
-              type="button"
-              :disabled="mutationLocked"
-              @click="closeSync"
-            >
+            <button type="button" :disabled="mutationLocked" @click="closeSync">
               取消
             </button>
             <button
@@ -1093,7 +1085,8 @@ defineExpose({
               <p id="long-structure-delete-description" class="delete-copy">
                 删除人物类型不会删除人物文档。
                 <template v-if="deletingCharacterCount > 0">
-                  当前类型中有 {{ deletingCharacterCount }} 个人物，请选择迁移目标。
+                  当前类型中有
+                  {{ deletingCharacterCount }} 个人物，请选择迁移目标。
                 </template>
               </p>
               <label v-if="deletingCharacterCount > 0" class="form-field">
@@ -1136,12 +1129,12 @@ defineExpose({
                       ? "迁移人物并删除"
                       : "确认删除"
                   : cascadeDelete
-                  ? pendingMutation?.surface === "delete"
-                    ? "删除中…"
-                    : "确认并删除分类内容"
-                  : pendingMutation?.surface === "delete"
-                    ? "删除中…"
-                    : "确认删除"
+                    ? pendingMutation?.surface === "delete"
+                      ? "删除中…"
+                      : "确认并删除分类内容"
+                    : pendingMutation?.surface === "delete"
+                      ? "删除中…"
+                      : "确认删除"
               }}
             </button>
           </footer>
@@ -1331,7 +1324,11 @@ button:disabled {
 }
 
 .primary-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--neutral-solid) 86%, var(--text-primary));
+  border-color: color-mix(
+    in srgb,
+    var(--neutral-solid) 86%,
+    var(--text-primary)
+  );
   color: var(--accent-contrast);
   background: color-mix(in srgb, var(--neutral-solid) 86%, var(--text-primary));
 }
@@ -1382,7 +1379,11 @@ button:disabled {
 
 .row-copy code {
   color: var(--text-tertiary);
-  font: 0.72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    0.72rem/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 
 .row-actions button {

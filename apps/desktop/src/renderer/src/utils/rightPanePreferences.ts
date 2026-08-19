@@ -98,7 +98,9 @@ export function loadRightPanePreferences(
   storage: Pick<RightPanePreferencesStorage, "getItem">
 ): RightPanePreferences {
   try {
-    return parseRightPanePreferences(storage.getItem(RIGHT_PANE_PREFERENCES_STORAGE_KEY));
+    return parseRightPanePreferences(
+      storage.getItem(RIGHT_PANE_PREFERENCES_STORAGE_KEY)
+    );
   } catch {
     return { ...DEFAULT_RIGHT_PANE_PREFERENCES, widths: {} };
   }

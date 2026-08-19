@@ -90,12 +90,7 @@ export function worldItemContent(
       raw
     );
   }
-  return clipped(
-    escaped,
-    MAX_WORLD_ITEM_TEXT,
-    warnings,
-    label
-  );
+  return clipped(escaped, MAX_WORLD_ITEM_TEXT, warnings, label);
 }
 
 export function buildImportedWorldbuilding(
@@ -174,8 +169,7 @@ export function buildImportedWorldbuilding(
         title: string;
         content: string;
       }> = [];
-      let remainingContentCharacters =
-        MAX_WORLD_LIST_CONTENT_CHARACTERS;
+      let remainingContentCharacters = MAX_WORLD_LIST_CONTENT_CHARACTERS;
       const overview = worldItemContent(
         category.overview,
         warnings,
@@ -184,10 +178,7 @@ export function buildImportedWorldbuilding(
         category.overview
       ).trim();
       if (overview) {
-        const retainedOverview = overview.slice(
-          0,
-          remainingContentCharacters
-        );
+        const retainedOverview = overview.slice(0, remainingContentCharacters);
         remainingContentCharacters -= retainedOverview.length;
         markdownItems.push({
           id: ids.allocate(
@@ -201,8 +192,7 @@ export function buildImportedWorldbuilding(
         });
       }
       let rawItems = list(category.items);
-      const itemCapacity =
-        MAX_WORLD_ITEMS_PER_CATEGORY - markdownItems.length;
+      const itemCapacity = MAX_WORLD_ITEMS_PER_CATEGORY - markdownItems.length;
       if (rawItems.length > itemCapacity) {
         warnings.add(
           `世界观“${legacyCategoryId}”条目超过 ${MAX_WORLD_ITEMS_PER_CATEGORY} 项；结构保留前 ${itemCapacity} 个旧版条目，其余条目完整保存在迁移证据中。`

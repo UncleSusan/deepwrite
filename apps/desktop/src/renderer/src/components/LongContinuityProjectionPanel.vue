@@ -41,10 +41,8 @@ const facts = computed(() =>
       (fact) =>
         !props.domain ||
         fact.domain === props.domain ||
-        (props.domain === "character" &&
-          fact.domain === "relationship") ||
-        (props.domain === "plot" &&
-          fact.domain === "foreshadowing")
+        (props.domain === "character" && fact.domain === "relationship") ||
+        (props.domain === "plot" && fact.domain === "foreshadowing")
     )
     .filter((fact) => !props.subjectId || fact.subjectId === props.subjectId)
     .sort(
@@ -154,7 +152,9 @@ function chapterLabel(chapterCardId: string | null): string {
 
 function commitLabel(commitId: string | null): string {
   if (!commitId) return "尚未入账";
-  const commit = props.snapshot.ledger.commits.find(({ id }) => id === commitId);
+  const commit = props.snapshot.ledger.commits.find(
+    ({ id }) => id === commitId
+  );
   return commit ? `提交 #${commit.sequence}` : commitId;
 }
 
@@ -174,10 +174,7 @@ async function copyEvidence(fact: LongContinuityFact): Promise<void> {
 </script>
 
 <template>
-  <section
-    class="continuity-projection"
-    aria-label="连续性账本来源映射"
-  >
+  <section class="continuity-projection" aria-label="连续性账本来源映射">
     <article class="projection-card">
       <header v-if="!hideHeading" class="projection-heading">
         <div>

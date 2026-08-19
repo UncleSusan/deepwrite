@@ -26,8 +26,7 @@ function completeSettings() {
     workspaceType: "short" as const,
     teams: DEFAULT_AGENT_TEAM_SETTINGS.teams.map((team) => ({
       parentAgentId: team.parentAgentId,
-      subagents:
-        team.parentAgentId === "plot_design" ? [{ ...definition }] : []
+      subagents: team.parentAgentId === "plot_design" ? [{ ...definition }] : []
     }))
   };
 }
@@ -85,7 +84,9 @@ describe("agent-team contracts", () => {
 
   it("defaults missing modelMode to inherit and requires modelId for custom", () => {
     const legacy = completeSettings();
-    const plotTeam = legacy.teams.find((team) => team.parentAgentId === "plot_design")!;
+    const plotTeam = legacy.teams.find(
+      (team) => team.parentAgentId === "plot_design"
+    )!;
     plotTeam.subagents = [
       {
         id: "legacy_helper",
@@ -97,7 +98,8 @@ describe("agent-team contracts", () => {
     ];
     const parsed = AgentTeamSettingsInputSchema.parse(legacy);
     expect(
-      parsed.teams.find((team) => team.parentAgentId === "plot_design")?.subagents[0]
+      parsed.teams.find((team) => team.parentAgentId === "plot_design")
+        ?.subagents[0]
     ).toMatchObject({ modelMode: "inherit" });
 
     const customMissingModel = completeSettings();
@@ -140,7 +142,8 @@ describe("agent-team contracts", () => {
       }
     ];
     expect(
-      AgentTeamSettingsInputSchema.safeParse(customOffWithoutTemperature).success
+      AgentTeamSettingsInputSchema.safeParse(customOffWithoutTemperature)
+        .success
     ).toBe(false);
 
     const customOffWithTemperature = completeSettings();
@@ -162,7 +165,9 @@ describe("agent-team contracts", () => {
 
   it("rejects duplicate ids and names inside one parent team", () => {
     const duplicate = completeSettings();
-    duplicate.teams.find((team) => team.parentAgentId === "plot_design")!.subagents = [
+    duplicate.teams.find(
+      (team) => team.parentAgentId === "plot_design"
+    )!.subagents = [
       { ...definition },
       { ...definition, id: "other", name: definition.name.toUpperCase() }
     ];
@@ -215,7 +220,11 @@ describe("agent-team contracts", () => {
         subagentRunId: "sub-run-1",
         subagentId: definition.id,
         name: definition.name,
-        runtime: { provider: "local", model: "test", mode: "local-faux" as const },
+        runtime: {
+          provider: "local",
+          model: "test",
+          mode: "local-faux" as const
+        },
         activity: { type: "message_delta" as const, delta: "完成" }
       },
       {

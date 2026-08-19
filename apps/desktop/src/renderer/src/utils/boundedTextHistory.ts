@@ -196,7 +196,8 @@ function createEditAtRange(
 ): DerivedTextEdit | null {
   if (start < 0 || end < start || end > beforeContent.length) return null;
   const deletedLength = end - start;
-  const insertedLength = afterContent.length - (beforeContent.length - deletedLength);
+  const insertedLength =
+    afterContent.length - (beforeContent.length - deletedLength);
   if (
     insertedLength < 0 ||
     start + insertedLength > afterContent.length ||
@@ -277,12 +278,10 @@ function createEditByDiff(
   return derived;
 }
 
-function deriveInputEdit(change: TextInputHistoryChange): DerivedTextEdit | null {
-  const {
-    beforeContent,
-    afterContent,
-    inputType
-  } = change;
+function deriveInputEdit(
+  change: TextInputHistoryChange
+): DerivedTextEdit | null {
+  const { beforeContent, afterContent, inputType } = change;
   if (beforeContent === afterContent) return null;
   const selectionBefore = normalizeSelection(
     change.selectionBefore,
@@ -295,21 +294,24 @@ function deriveInputEdit(change: TextInputHistoryChange): DerivedTextEdit | null
   const timestamp = change.timestamp ?? Date.now();
 
   if (selectionBefore.start !== selectionBefore.end) {
-    return createEditAtRange(
-      beforeContent,
-      afterContent,
-      selectionBefore.start,
-      selectionBefore.end,
-      selectionBefore,
-      selectionAfter,
-      inputType,
-      timestamp
-    ) ?? createEditByDiff(
-      beforeContent,
-      afterContent,
-      selectionBefore,
-      selectionAfter,
-      timestamp
+    return (
+      createEditAtRange(
+        beforeContent,
+        afterContent,
+        selectionBefore.start,
+        selectionBefore.end,
+        selectionBefore,
+        selectionAfter,
+        inputType,
+        timestamp
+      ) ??
+      createEditByDiff(
+        beforeContent,
+        afterContent,
+        selectionBefore,
+        selectionAfter,
+        timestamp
+      )
     );
   }
 
@@ -322,62 +324,71 @@ function deriveInputEdit(change: TextInputHistoryChange): DerivedTextEdit | null
     inputType === "insertFromDrop" ||
     inputType === "insertFromYank"
   ) {
-    return createEditAtRange(
-      beforeContent,
-      afterContent,
-      selectionBefore.start,
-      selectionBefore.end,
-      selectionBefore,
-      selectionAfter,
-      inputType,
-      timestamp
-    ) ?? createEditByDiff(
-      beforeContent,
-      afterContent,
-      selectionBefore,
-      selectionAfter,
-      timestamp
+    return (
+      createEditAtRange(
+        beforeContent,
+        afterContent,
+        selectionBefore.start,
+        selectionBefore.end,
+        selectionBefore,
+        selectionAfter,
+        inputType,
+        timestamp
+      ) ??
+      createEditByDiff(
+        beforeContent,
+        afterContent,
+        selectionBefore,
+        selectionAfter,
+        timestamp
+      )
     );
   }
 
   if (inputType.endsWith("Backward")) {
     const start = Math.min(selectionBefore.start, selectionAfter.start);
-    return createEditAtRange(
-      beforeContent,
-      afterContent,
-      start,
-      selectionBefore.start,
-      selectionBefore,
-      selectionAfter,
-      inputType,
-      timestamp
-    ) ?? createEditByDiff(
-      beforeContent,
-      afterContent,
-      selectionBefore,
-      selectionAfter,
-      timestamp
+    return (
+      createEditAtRange(
+        beforeContent,
+        afterContent,
+        start,
+        selectionBefore.start,
+        selectionBefore,
+        selectionAfter,
+        inputType,
+        timestamp
+      ) ??
+      createEditByDiff(
+        beforeContent,
+        afterContent,
+        selectionBefore,
+        selectionAfter,
+        timestamp
+      )
     );
   }
 
   if (inputType.startsWith("delete")) {
     const deletedLength = beforeContent.length - afterContent.length;
     if (deletedLength >= 0) {
-      return createEditAtRange(
-        beforeContent,
-        afterContent,
-        selectionBefore.start,
-        selectionBefore.start + deletedLength,
-        selectionBefore,
-        selectionAfter,
-        inputType,
-        timestamp
-      ) ?? createEditByDiff(
-        beforeContent,
-        afterContent,
-        selectionBefore,
-        selectionAfter,
-        timestamp
+      return (
+        createEditAtRange(
+          beforeContent,
+          afterContent,
+          selectionBefore.start,
+          selectionBefore.start + deletedLength,
+          selectionBefore,
+          selectionAfter,
+          inputType,
+          timestamp
+        ) ??
+        createEditByDiff(
+          beforeContent,
+          afterContent,
+          selectionBefore,
+          selectionAfter,
+          timestamp
+        )
       );
     }
   }
@@ -391,7 +402,9 @@ function deriveInputEdit(change: TextInputHistoryChange): DerivedTextEdit | null
   );
 }
 
-function deriveProgrammaticEdit(change: TextHistoryChange): DerivedTextEdit | null {
+function deriveProgrammaticEdit(
+  change: TextHistoryChange
+): DerivedTextEdit | null {
   const selectionBefore = normalizeSelection(
     change.selectionBefore,
     change.beforeContent.length
@@ -472,21 +485,20 @@ function replaceTextRange(
   replacement: string
 ): string {
   return (
-    content.slice(0, start) +
-    replacement +
-    content.slice(start + removedLength)
+    content.slice(0, start) + replacement + content.slice(start + removedLength)
   );
 }
 
 export function createBoundedTextHistory(
   options: BoundedTextHistoryOptions = {}
 ): BoundedTextHistory {
-  const maxEntries = Math.max(1, Math.trunc(options.maxEntries ?? DEFAULT_MAX_ENTRIES));
+  const maxEntries = Math.max(
+    1,
+    Math.trunc(options.maxEntries ?? DEFAULT_MAX_ENTRIES)
+  );
   const maxRetainedCharacters = Math.max(
     1,
-    Math.trunc(
-      options.maxRetainedCharacters ?? DEFAULT_MAX_RETAINED_CHARACTERS
-    )
+    Math.trunc(options.maxRetainedCharacters ?? DEFAULT_MAX_RETAINED_CHARACTERS)
   );
   const coalesceWindowMs = Math.max(
     0,

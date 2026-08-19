@@ -12,14 +12,14 @@ describe("LongWorkspaceEditor continuity text-file integration", () => {
     );
     expect(source).not.toContain("<LongContinuityWorkspace");
     expect(source).toContain("<MarkdownContent");
-    expect(source).toContain(
-      `v-if="viewMode === 'edit' && !currentReadOnly"`
-    );
+    expect(source).toContain(`v-if="viewMode === 'edit' && !currentReadOnly"`);
     expect(source).toContain('class="long-document-preview"');
   });
 
   it("selects ledger entries by file id even when records share a role", () => {
-    expect(structureSource).toContain("const activeFileId = ref<string | null>(null)");
+    expect(structureSource).toContain(
+      "const activeFileId = ref<string | null>(null)"
+    );
     expect(source).toContain("<LongContinuityLedgerNavigation");
     expect(ledgerNavigationSource).toContain(':key="file.id"');
     expect(ledgerNavigationSource).toContain(
@@ -35,8 +35,12 @@ describe("LongWorkspaceEditor continuity text-file integration", () => {
     expect(resourceTreeSource).toContain('title: "待处理章节"');
     expect(resourceTreeSource).toContain('title: "章节记录"');
     expect(resourceTreeSource).not.toContain('key: "continuity-view:snapshot"');
-    expect(resourceTreeSource).not.toContain('key: "continuity-view:execution"');
-    expect(resourceTreeSource).not.toContain('key: "continuity-view:knowledge"');
+    expect(resourceTreeSource).not.toContain(
+      'key: "continuity-view:execution"'
+    );
+    expect(resourceTreeSource).not.toContain(
+      'key: "continuity-view:knowledge"'
+    );
   });
 
   it("maps ledger navigation to chapter Markdown and never selects record JSON", () => {

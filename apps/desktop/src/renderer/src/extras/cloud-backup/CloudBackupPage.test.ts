@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../../test-utils/sourceText";
 import source from "./CloudBackupPage.vue?raw";
 import appSource from "../../WorkspaceShell.vue?raw";
 import sidebarSource from "../../components/LeftSidebar.vue?raw";
@@ -12,18 +13,19 @@ describe("CloudBackupPage", () => {
     expect(source).toContain("本机备份密钥");
     expect(source).not.toContain("password");
     expect(source).not.toContain("authMode");
-    expect(sidebarSource).toContain('{ id: "cloud-backup", label: "云端备份"');
+    expectSourceToContain(
+      sidebarSource,
+      '{ id: "cloud-backup", label: "云端备份"'
+    );
     expect(sidebarSource).toContain('emit("openCloudBackup")');
     expect(appSource).toContain('@open-cloud-backup="openCloudBackup"');
     expect(featureHostSource).toContain('case "cloud-backup":');
-    expect(featureHostSource).toContain(
-      'return { kind: "cloud-backup" };'
-    );
+    expect(featureHostSource).toContain('return { kind: "cloud-backup" };');
     expect(featureHostSource).toContain(
       'options.view.workspaceMain.value = "cloud-backup"'
     );
     expect(featureModulesSource).toContain(
-      'v-else-if="module.kind === \'cloud-backup\'"'
+      "v-else-if=\"module.kind === 'cloud-backup'\""
     );
   });
 

@@ -170,9 +170,7 @@ describe("long ledger contracts", () => {
     expect(parsed).toMatchObject({
       commitMessage: "确认雨夜来信章连续性",
       chapterSummary,
-      placementChanges: [
-        { note: "正文明确写出林岚接过旧信。" }
-      ],
+      placementChanges: [{ note: "正文明确写出林岚接过旧信。" }],
       foreshadowingThreadChanges: [
         {
           foreshadowingId: "foreshadow_letter",

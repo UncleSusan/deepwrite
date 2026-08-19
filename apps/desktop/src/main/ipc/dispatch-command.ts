@@ -31,7 +31,9 @@ export async function dispatchCommand(
     return {
       status: "accepted",
       requestId: command.id,
-      payload: SystemHealthPayloadSchema.parse(await ctx.supervisor.collectHealth())
+      payload: SystemHealthPayloadSchema.parse(
+        await ctx.supervisor.collectHealth()
+      )
     };
   }
 

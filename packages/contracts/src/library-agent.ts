@@ -77,7 +77,9 @@ const UniqueLibraryAgentSkillsSchema = z
 export const LibraryAgentReadAccessSchema = z.object({
   skills: UniqueLibraryAgentSkillsSchema
 });
-export type LibraryAgentReadAccess = z.infer<typeof LibraryAgentReadAccessSchema>;
+export type LibraryAgentReadAccess = z.infer<
+  typeof LibraryAgentReadAccessSchema
+>;
 
 export const DEFAULT_SKILL_LIBRARY_AGENT_SKILLS = [
   {
@@ -275,7 +277,9 @@ function validateCompleteLibraryAgentSet(
 
 export const LibraryAgentSettingsSchema = z
   .object({
-    agents: z.array(LibraryAgentProfileSchema).length(LIBRARY_AGENT_DOMAINS.length)
+    agents: z
+      .array(LibraryAgentProfileSchema)
+      .length(LIBRARY_AGENT_DOMAINS.length)
   })
   .superRefine((value, context) =>
     validateCompleteLibraryAgentSet(value.agents, context)
@@ -349,7 +353,8 @@ const LibraryAgentEntrySnapshotBaseSchema = z
       context.addIssue({
         code: "custom",
         path: ["sourceLibraryId"],
-        message: "Peer library entries must include both sourceLibraryId and sourceLibraryTitle."
+        message:
+          "Peer library entries must include both sourceLibraryId and sourceLibraryTitle."
       });
     }
   });
@@ -369,8 +374,7 @@ export type SkillLibraryAgentEntrySnapshot = z.infer<
   typeof SkillLibraryAgentEntrySnapshotSchema
 >;
 export type LibraryAgentEntrySnapshot =
-  | MaterialLibraryAgentEntrySnapshot
-  | SkillLibraryAgentEntrySnapshot;
+  MaterialLibraryAgentEntrySnapshot | SkillLibraryAgentEntrySnapshot;
 
 export const LibraryAgentReadableLibrarySchema = z.object({
   libraryId: z.string().trim().min(1).max(512),
@@ -406,7 +410,11 @@ const LibraryAgentWorkspaceBaseSchema = z.object({
    * Libraries readable in this turn: the current library plus peer members of the
    * same group. Writes still target libraryId only.
    */
-  readableLibraries: z.array(LibraryAgentReadableLibrarySchema).min(1).max(8).optional()
+  readableLibraries: z
+    .array(LibraryAgentReadableLibrarySchema)
+    .min(1)
+    .max(8)
+    .optional()
 });
 
 export const LibraryAgentWorkspaceSnapshotSchema = z
@@ -445,7 +453,8 @@ export const LibraryAgentWorkspaceSnapshotSchema = z
       context.addIssue({
         code: "custom",
         path: ["overviewOriginalLength"],
-        message: "An untruncated library overview must omit its original length."
+        message:
+          "An untruncated library overview must omit its original length."
       });
     }
     if ((value.groupId !== undefined) !== (value.groupTitle !== undefined)) {
@@ -521,7 +530,8 @@ export const LibraryAgentWorkspaceSnapshotSchema = z
       context.addIssue({
         code: "custom",
         path: ["entries"],
-        message: "The library agent snapshot exceeds its total character budget."
+        message:
+          "The library agent snapshot exceeds its total character budget."
       });
     }
   });
@@ -529,20 +539,25 @@ export type LibraryAgentWorkspaceSnapshot = z.infer<
   typeof LibraryAgentWorkspaceSnapshotSchema
 >;
 
-export const LibraryAgentsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("libraryAgents.list"),
-  payload: z.object({})
-});
+export const LibraryAgentsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("libraryAgents.list"),
+    payload: z.object({})
+  }
+);
 
-export const LibraryAgentsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("libraryAgents.save"),
-  payload: LibraryAgentSettingsInputSchema
-});
+export const LibraryAgentsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
+  {
+    type: z.literal("libraryAgents.save"),
+    payload: LibraryAgentSettingsInputSchema
+  }
+);
 
-export const LibraryAgentsResetCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("libraryAgents.reset"),
-  payload: z.object({ domain: LibraryAgentDomainSchema.optional() })
-});
+export const LibraryAgentsResetCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("libraryAgents.reset"),
+    payload: z.object({ domain: LibraryAgentDomainSchema.optional() })
+  });
 
 export type LibraryAgentsListCommandEnvelope = z.infer<
   typeof LibraryAgentsListCommandEnvelopeSchema

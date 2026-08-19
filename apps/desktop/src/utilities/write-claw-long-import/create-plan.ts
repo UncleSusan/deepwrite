@@ -106,9 +106,7 @@ export function createWriteClawLongImportPlan(
     "书名"
   );
   const bookGenre = extractGenre(source.book, options.genre, warnings);
-  const memoryArchive = source.book
-    ? memoryArchiveMarkdown(source.book)
-    : "";
+  const memoryArchive = source.book ? memoryArchiveMarkdown(source.book) : "";
   if (memoryArchive) {
     warnings.preserve(
       "书籍记忆（旧版）",
@@ -125,9 +123,7 @@ export function createWriteClawLongImportPlan(
       "book.json.expert_draft",
       serializeJson(source.book.expert_draft)
     );
-    warnings.add(
-      "book.json 中的旧版专家正文结构已完整存入可搜索迁移证据。"
-    );
+    warnings.add("book.json 中的旧版专家正文结构已完整存入可搜索迁移证据。");
   }
   (source.evidenceFiles ?? []).forEach((file) => {
     warnings.preserve(
@@ -135,9 +131,7 @@ export function createWriteClawLongImportPlan(
       `ZIP:${file.archivePath}`,
       file.content
     );
-    warnings.add(
-      `旧版附件“${file.archivePath}”已迁入可搜索的只读证据。`
-    );
+    warnings.add(`旧版附件“${file.archivePath}”已迁入可搜索的只读证据。`);
   });
   const legacyLedger = record(workspace.ledger);
   if (Object.keys(legacyLedger).length > 0) {
@@ -154,12 +148,11 @@ export function createWriteClawLongImportPlan(
     source.book,
     warnings
   );
-  const linkedSkillIdsByKind = normalizeLegacySkillLinks(
-    source.book,
-    warnings
-  );
+  const linkedSkillIdsByKind = normalizeLegacySkillLinks(source.book, warnings);
   const hasLegacyBindings =
-    Object.values(linkedMaterialIdsByKind).some((values) => values.length > 0) ||
+    Object.values(linkedMaterialIdsByKind).some(
+      (values) => values.length > 0
+    ) ||
     Object.values(linkedSkillIdsByKind).some((values) => values.length > 0);
   if (hasLegacyBindings) {
     warnings.add(
@@ -224,11 +217,7 @@ export function createWriteClawLongImportPlan(
     })
   );
 
-  appendMigrationEvidenceCategories(
-    worldbuilding,
-    documents,
-    warnings
-  );
+  appendMigrationEvidenceCategories(worldbuilding, documents, warnings);
 
   const characterOverview = documents.add(
     LONG_CHARACTER_OVERVIEW_FILE_ID,
@@ -257,8 +246,7 @@ export function createWriteClawLongImportPlan(
     },
     chapters: chapterFiles,
     ledger: {
-      committedThroughChapterId:
-        legacyCommits.at(-1)?.chapterCardId ?? null,
+      committedThroughChapterId: legacyCommits.at(-1)?.chapterCardId ?? null,
       commits: legacyCommits
     }
   });
@@ -291,9 +279,7 @@ export function createWriteClawLongImportPlan(
     sourceKind: source.sourceKind,
     legacySchemaVersion,
     committedChapterPolicy:
-      legacyCommits.length > 0
-        ? "legacy-checkpoints"
-        : "written-uncommitted",
+      legacyCommits.length > 0 ? "legacy-checkpoints" : "written-uncommitted",
     manifest,
     index,
     documents: documents.documents,

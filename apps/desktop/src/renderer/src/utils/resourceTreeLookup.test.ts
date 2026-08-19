@@ -37,9 +37,9 @@ describe("resource tree lookup", () => {
     expect(lookup.resourceIdByDocumentId.get("state-document")).toBe(
       "draft-section"
     );
-    expect(
-      lookup.targetDocumentIdByResourceId.get("draft-directory")
-    ).toBe("body-document");
+    expect(lookup.targetDocumentIdByResourceId.get("draft-directory")).toBe(
+      "body-document"
+    );
   });
 
   it("keeps the first visible resource when duplicate targets exist", () => {

@@ -45,9 +45,7 @@ import {
   serializeLongWorldbuildingMarkdownList,
   type LongForeshadowing
 } from "@deepwrite/contracts";
-import {
-  projectTransactionContentSha256
-} from "./project-transaction";
+import { projectTransactionContentSha256 } from "./project-transaction";
 import {
   createLongFileRevision,
   deriveLongForeshadowingStatus,
@@ -93,9 +91,9 @@ function firstChapterFiles(
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) =>
-      rm(root, { recursive: true, force: true })
-    )
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -155,8 +153,6 @@ export {
   tmpdir,
   unlink,
   writeFile,
-  writeFileSync,
+  writeFileSync
 };
-export type {
-  LongForeshadowing,
-};
+export type { LongForeshadowing };

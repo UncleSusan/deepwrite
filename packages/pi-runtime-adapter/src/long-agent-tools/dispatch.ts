@@ -150,24 +150,19 @@ export function selectLongChaptersForWritingScope(
   return chapters;
 }
 
-export function classifyLongChapterReadiness(
-  input: {
-    chapterCardId: string;
-    title: string;
-    body: string;
-    characterState: string;
-    handoff: string;
-  }
-): LongChapterReadiness {
+export function classifyLongChapterReadiness(input: {
+  chapterCardId: string;
+  title: string;
+  body: string;
+  characterState: string;
+  handoff: string;
+}): LongChapterReadiness {
   const missingFiles: LongChapterReadiness["missingFiles"] = [];
   if (!input.body.trim()) missingFiles.push("body");
   return {
     chapterCardId: input.chapterCardId,
     title: input.title,
-    status:
-      missingFiles.length === 1
-        ? "empty"
-        : "ready_to_commit",
+    status: missingFiles.length === 1 ? "empty" : "ready_to_commit",
     missingFiles
   };
 }

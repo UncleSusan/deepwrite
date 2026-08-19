@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  unlink,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -72,7 +79,9 @@ function customizedScriptInput(): ScriptAgentTeamSettingsInput {
 
 afterEach(async () => {
   await Promise.all(
-    [...temporaryRoots].map((root) => rm(root, { recursive: true, force: true }))
+    [...temporaryRoots].map((root) =>
+      rm(root, { recursive: true, force: true })
+    )
   );
   temporaryRoots.clear();
 });
@@ -119,8 +128,8 @@ describe("AgentTeamConfigStore", () => {
     const settings = await new AgentTeamConfigStore(root).list();
     expect(settings.teams).toHaveLength(3);
     expect(
-      settings.teams.some(({ parentAgentId }) =>
-        (parentAgentId as string) === "outline"
+      settings.teams.some(
+        ({ parentAgentId }) => (parentAgentId as string) === "outline"
       )
     ).toBe(false);
   });
@@ -137,7 +146,9 @@ describe("AgentTeamConfigStore", () => {
     ]);
     const disk = JSON.parse(
       await readFile(join(root, "config", "agent-teams.json"), "utf8")
-    ) as { version: number };
+    ) as {
+      version: number;
+    };
     expect(disk.version).toBe(1);
   });
 
@@ -162,10 +173,7 @@ describe("AgentTeamConfigStore", () => {
     ).toMatchObject({ workspaceType: "short" });
     expect(
       JSON.parse(
-        await readFile(
-          join(root, "config", "agent-teams-script.json"),
-          "utf8"
-        )
+        await readFile(join(root, "config", "agent-teams-script.json"), "utf8")
       )
     ).toMatchObject({ workspaceType: "script" });
   });

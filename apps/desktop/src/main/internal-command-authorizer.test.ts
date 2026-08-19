@@ -59,10 +59,7 @@ function queryCommand(
 function authorizationContext(
   command: CommandEnvelope,
   overrides: Partial<
-    Pick<
-      UtilityInternalCommandAuthorizationContext,
-      "source" | "target"
-    >
+    Pick<UtilityInternalCommandAuthorizationContext, "source" | "target">
   > & {
     parentRequestId?: string;
   } = {}
@@ -72,8 +69,7 @@ function authorizationContext(
     worker: "agent",
     target: overrides.target ?? "core",
     requestId: `bridge-${command.id}`,
-    parentRequestId:
-      overrides.parentRequestId ?? PROMPT_REQUEST_ID,
+    parentRequestId: overrides.parentRequestId ?? PROMPT_REQUEST_ID,
     timeoutMs: 60_000,
     command
   };
@@ -174,11 +170,11 @@ describe("Main internal command authorizer", () => {
     }
   ])("rejects $name", ({ command, runs, code }) => {
     expect(
-      authorizeMainInternalCommand(
-        authorizationContext(command),
-        runs
-      )
-    ).toMatchObject({ authorized: false, code });
+      authorizeMainInternalCommand(authorizationContext(command), runs)
+    ).toMatchObject({
+      authorized: false,
+      code
+    });
   });
 
   it("rejects commands detached from the accepted prompt request", () => {
@@ -230,10 +226,7 @@ describe("Main internal command authorizer", () => {
       )
     );
     expect(
-      authorizeMainInternalCommand(
-        authorizationContext(write),
-        acceptedRun()
-      )
+      authorizeMainInternalCommand(authorizationContext(write), acceptedRun())
     ).toMatchObject({
       authorized: false,
       code: "main.command_not_long_query"

@@ -1,7 +1,14 @@
 import type { AgentConversationContext } from "./context";
-import { invalidateAttemptForRun, markRunError, ensureAssistantMessage } from "./retry-subagent";
+import {
+  invalidateAttemptForRun,
+  markRunError,
+  ensureAssistantMessage
+} from "./retry-subagent";
 import { STREAM_PRESENTATION_FALLBACK_MS } from "./shared";
-import type { AgentTextDeltaEventEnvelope, PendingAgentTextDelta } from "./types";
+import type {
+  AgentTextDeltaEventEnvelope,
+  PendingAgentTextDelta
+} from "./types";
 
 export function clearIdleTimer(ctx: AgentConversationContext): void {
   if (ctx.idleTimer !== undefined) {
@@ -10,45 +17,66 @@ export function clearIdleTimer(ctx: AgentConversationContext): void {
   }
 }
 
-export function scheduleIdleTimeout(ctx: AgentConversationContext, scope: {
-  expectedEpoch: number;
-  expectedSessionId: string;
-  attemptId?: number;
-  runId?: string;
-}): void {
+export function scheduleIdleTimeout(
+  ctx: AgentConversationContext,
+  scope: {
+    expectedEpoch: number;
+    expectedSessionId: string;
+    attemptId?: number;
+    runId?: string;
+  }
+): void {
   clearIdleTimer(ctx);
-  ctx.idleTimer = globalThis.setTimeout(() => {
-    if (ctx.epoch !== scope.expectedEpoch || ctx.sessionId.value !== scope.expectedSessionId) {
-      return;
-    }
-    const ownsRun = scope.runId !== undefined && ctx.activeRunId.value === scope.runId;
-    const ownsAttempt =
-      scope.attemptId !== undefined && ctx.pendingAttemptId.value === scope.attemptId;
-    if (!ownsRun && !ownsAttempt) {
-      return;
-    }
-
-    const messageText = "智能体长时间没有返回新事件，请稍后重试。";
-    if (scope.runId) {
-      markRunError(ctx, scope.runId, messageText, ctx.runtime.value ?? undefined);
-      invalidateAttemptForRun(ctx, scope.runId);
-      if (ctx.activeRunId.value === scope.runId) {
-        ctx.activeRunId.value = null;
+  ctx.idleTimer = globalThis.setTimeout(
+    () => {
+      if (
+        ctx.epoch !== scope.expectedEpoch ||
+        ctx.sessionId.value !== scope.expectedSessionId
+      ) {
+        return;
       }
-    }
-    if (scope.attemptId !== undefined && ctx.pendingAttemptId.value === scope.attemptId) {
-      ctx.pendingAttemptId.value = null;
-      ctx.observedRunByAttempt.delete(scope.attemptId);
-      ctx.approvalModeByAttempt.delete(scope.attemptId);
-    }
-    ctx.submitting.value = false;
-    ctx.stopping.value = false;
-    ctx.conversationError.value = messageText;
-    ctx.idleTimer = undefined;
-  }, ctx.options.idleTimeoutMs ?? 5 * 60_000);
+      const ownsRun =
+        scope.runId !== undefined && ctx.activeRunId.value === scope.runId;
+      const ownsAttempt =
+        scope.attemptId !== undefined &&
+        ctx.pendingAttemptId.value === scope.attemptId;
+      if (!ownsRun && !ownsAttempt) {
+        return;
+      }
+
+      const messageText = "智能体长时间没有返回新事件，请稍后重试。";
+      if (scope.runId) {
+        markRunError(
+          ctx,
+          scope.runId,
+          messageText,
+          ctx.runtime.value ?? undefined
+        );
+        invalidateAttemptForRun(ctx, scope.runId);
+        if (ctx.activeRunId.value === scope.runId) {
+          ctx.activeRunId.value = null;
+        }
+      }
+      if (
+        scope.attemptId !== undefined &&
+        ctx.pendingAttemptId.value === scope.attemptId
+      ) {
+        ctx.pendingAttemptId.value = null;
+        ctx.observedRunByAttempt.delete(scope.attemptId);
+        ctx.approvalModeByAttempt.delete(scope.attemptId);
+      }
+      ctx.submitting.value = false;
+      ctx.stopping.value = false;
+      ctx.conversationError.value = messageText;
+      ctx.idleTimer = undefined;
+    },
+    ctx.options.idleTimeoutMs ?? 5 * 60_000
+  );
 }
 
-export function clearStreamPresentationSchedule(ctx: AgentConversationContext): void {
+export function clearStreamPresentationSchedule(
+  ctx: AgentConversationContext
+): void {
   if (ctx.streamPresentationFrame !== undefined) {
     globalThis.cancelAnimationFrame?.(ctx.streamPresentationFrame);
     ctx.streamPresentationFrame = undefined;
@@ -59,9 +87,13 @@ export function clearStreamPresentationSchedule(ctx: AgentConversationContext): 
   }
 }
 
-export function applyAgentTextDelta(ctx: AgentConversationContext, pending: PendingAgentTextDelta): void {
+export function applyAgentTextDelta(
+  ctx: AgentConversationContext,
+  pending: PendingAgentTextDelta
+): void {
   const delta = pending.chunks.join("");
-  const message = ensureAssistantMessage(ctx,
+  const message = ensureAssistantMessage(
+    ctx,
     pending.runId,
     pending.messageId,
     pending.runtime,
@@ -102,14 +134,18 @@ export function applyAgentTextDelta(ctx: AgentConversationContext, pending: Pend
   }
 }
 
-export function flushPendingAgentTextDelta(ctx: AgentConversationContext): void {
+export function flushPendingAgentTextDelta(
+  ctx: AgentConversationContext
+): void {
   clearStreamPresentationSchedule(ctx);
   const pending = ctx.pendingAgentTextDelta;
   ctx.pendingAgentTextDelta = undefined;
   if (pending) applyAgentTextDelta(ctx, pending);
 }
 
-export function scheduleStreamPresentation(ctx: AgentConversationContext): void {
+export function scheduleStreamPresentation(
+  ctx: AgentConversationContext
+): void {
   if (typeof globalThis.requestAnimationFrame !== "function") {
     flushPendingAgentTextDelta(ctx);
     return;
@@ -141,7 +177,10 @@ export function scheduleStreamPresentation(ctx: AgentConversationContext): void 
   }, STREAM_PRESENTATION_FALLBACK_MS);
 }
 
-export function queueAgentTextDelta(ctx: AgentConversationContext, event: AgentTextDeltaEventEnvelope): void {
+export function queueAgentTextDelta(
+  ctx: AgentConversationContext,
+  event: AgentTextDeltaEventEnvelope
+): void {
   const { runId, messageId, runtime: eventRuntime, delta } = event.payload;
   const pending = ctx.pendingAgentTextDelta;
   const sharesPendingStep =
@@ -166,7 +205,9 @@ export function queueAgentTextDelta(ctx: AgentConversationContext, event: AgentT
   scheduleStreamPresentation(ctx);
 }
 
-export function resetTransientConversationState(ctx: AgentConversationContext): void {
+export function resetTransientConversationState(
+  ctx: AgentConversationContext
+): void {
   ctx.epoch += 1;
   clearIdleTimer(ctx);
   ctx.submitting.value = false;

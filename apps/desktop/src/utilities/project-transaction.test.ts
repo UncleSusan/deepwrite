@@ -30,9 +30,9 @@ async function temporaryProject(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map(async (root) =>
-      rm(root, { recursive: true, force: true })
-    )
+    temporaryRoots
+      .splice(0)
+      .map(async (root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -101,34 +101,32 @@ describe("project transaction", () => {
     ).resolves.toBe("第一章正文");
     await expect(
       lstat(join(root, ".deepwrite", "transaction.json"))
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
-  it(
-    "keeps imports larger than the former 512-file ceiling atomic",
-    async () => {
-      const root = await temporaryProject();
-      const operations = Array.from({ length: 520 }, (_, index) => ({
-        path: `long/bulk/file-${index}.md`,
-        content: `document-${index}`,
-        expectedSha256: null
-      }));
+  it("keeps imports larger than the former 512-file ceiling atomic", async () => {
+    const root = await temporaryProject();
+    const operations = Array.from({ length: 520 }, (_, index) => ({
+      path: `long/bulk/file-${index}.md`,
+      content: `document-${index}`,
+      expectedSha256: null
+    }));
 
-      await expect(
-        commitProjectTransaction({
-          projectRoot: root,
-          operations
-        })
-      ).resolves.toMatchObject({ files: expect.any(Array) });
-      await expect(
-        readFile(join(root, "long", "bulk", "file-0.md"), "utf8")
-      ).resolves.toBe("document-0");
-      await expect(
-        readFile(join(root, "long", "bulk", "file-519.md"), "utf8")
-      ).resolves.toBe("document-519");
-    },
-    20_000
-  );
+    await expect(
+      commitProjectTransaction({
+        projectRoot: root,
+        operations
+      })
+    ).resolves.toMatchObject({ files: expect.any(Array) });
+    await expect(
+      readFile(join(root, "long", "bulk", "file-0.md"), "utf8")
+    ).resolves.toBe("document-0");
+    await expect(
+      readFile(join(root, "long", "bulk", "file-519.md"), "utf8")
+    ).resolves.toBe("document-519");
+  }, 20_000);
 
   it("rejects a stale precondition without touching the target", async () => {
     const root = await temporaryProject();
@@ -157,24 +155,22 @@ describe("project transaction", () => {
     for (let round = 0; round < 12; round += 1) {
       const path = `shared-${round}.md`;
       await writeFile(join(root, path), "before", "utf8");
-      const attempts = ["writer-one", "writer-two"].map(
-        async (writer) => {
-          const content = `${writer}-${round}`;
-          return {
-            content,
-            result: await commitProjectTransaction({
-              projectRoot: root,
-              operations: [
-                {
-                  path,
-                  content,
-                  expectedSha256
-                }
-              ]
-            })
-          };
-        }
-      );
+      const attempts = ["writer-one", "writer-two"].map(async (writer) => {
+        const content = `${writer}-${round}`;
+        return {
+          content,
+          result: await commitProjectTransaction({
+            projectRoot: root,
+            operations: [
+              {
+                path,
+                content,
+                expectedSha256
+              }
+            ]
+          })
+        };
+      });
 
       const settled = await Promise.allSettled(attempts);
       const fulfilled = settled.filter(
@@ -190,105 +186,94 @@ describe("project transaction", () => {
       );
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      if (
-        !(rejected[0]!.reason instanceof ProjectTransactionConflictError)
-      ) {
+      if (!(rejected[0]!.reason instanceof ProjectTransactionConflictError)) {
         throw rejected[0]!.reason;
       }
-      expect(
-        fulfilled[0]!.value.result.transactionId
-      ).toMatch(/^txn-[0-9]+-[0-9a-f]{8}$/u);
+      expect(fulfilled[0]!.value.result.transactionId).toMatch(
+        /^txn-[0-9]+-[0-9a-f]{8}$/u
+      );
       await expect(readFile(join(root, path), "utf8")).resolves.toBe(
         fulfilled[0]!.value.content
       );
     }
     await expect(
       lstat(join(root, ".deepwrite", "transaction.lock"))
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
-  it(
-    "does not unlink an ABA replacement that reuses the same lock owner data",
-    async () => {
-      const root = await temporaryProject();
-      const lockPath = join(root, ".deepwrite", "transaction.lock");
-      const commit = commitProjectTransaction({
-        projectRoot: root,
-        operations: Array.from({ length: 1_000 }, (_, index) => ({
-          path: `long/aba/file-${index}.md`,
-          content: `content-${index}`,
-          expectedSha256: null
-        }))
-      }).then(
-        (value) => ({ status: "fulfilled" as const, value }),
-        (reason: unknown) => ({ status: "rejected" as const, reason })
-      );
+  it("does not unlink an ABA replacement that reuses the same lock owner data", async () => {
+    const root = await temporaryProject();
+    const lockPath = join(root, ".deepwrite", "transaction.lock");
+    const commit = commitProjectTransaction({
+      projectRoot: root,
+      operations: Array.from({ length: 1_000 }, (_, index) => ({
+        path: `long/aba/file-${index}.md`,
+        content: `content-${index}`,
+        expectedSha256: null
+      }))
+    }).then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason })
+    );
 
-      let ownerText: string | undefined;
-      for (let attempt = 0; attempt < 2_000; attempt += 1) {
-        try {
-          const candidate = await readFile(lockPath, "utf8");
-          const owner = JSON.parse(candidate) as {
-            pid?: unknown;
-            token?: unknown;
-          };
-          if (
-            typeof owner.pid === "number" &&
-            typeof owner.token === "string"
-          ) {
-            ownerText = candidate;
-            break;
-          }
-        } catch {
-          // The lock file may exist briefly before its tiny owner record is
-          // fully written. Poll until acquisition has durably published it.
-        }
-        await new Promise<void>((resolveDelay) => {
-          setTimeout(resolveDelay, 1);
-        });
-      }
-      expect(ownerText).toBeDefined();
-
-      const original = await lstat(lockPath);
-      const replacementPath = join(
-        root,
-        ".deepwrite",
-        "transaction.replacement"
-      );
-      await writeFile(replacementPath, ownerText!, {
-        encoding: "utf8",
-        flag: "wx"
-      });
-      const replacement = await lstat(replacementPath);
-      expect(`${replacement.dev}:${replacement.ino}`).not.toBe(
-        `${original.dev}:${original.ino}`
-      );
+    let ownerText: string | undefined;
+    for (let attempt = 0; attempt < 2_000; attempt += 1) {
       try {
-        await rename(replacementPath, lockPath);
-      } catch (error: unknown) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "EEXIST" && code !== "EPERM") throw error;
-        await unlink(lockPath);
-        await rename(replacementPath, lockPath);
+        const candidate = await readFile(lockPath, "utf8");
+        const owner = JSON.parse(candidate) as {
+          pid?: unknown;
+          token?: unknown;
+        };
+        if (typeof owner.pid === "number" && typeof owner.token === "string") {
+          ownerText = candidate;
+          break;
+        }
+      } catch {
+        // The lock file may exist briefly before its tiny owner record is
+        // fully written. Poll until acquisition has durably published it.
       }
+      await new Promise<void>((resolveDelay) => {
+        setTimeout(resolveDelay, 1);
+      });
+    }
+    expect(ownerText).toBeDefined();
 
-      const outcome = await commit;
-      expect(outcome.status).toBe("rejected");
-      if (outcome.status !== "rejected") {
-        throw new Error("替换事务锁后，原事务不应继续提交。");
-      }
-      expect(outcome.reason).toBeInstanceOf(Error);
-      expect((outcome.reason as Error).message).toMatch(
-        /所有者发生变化|路径替换/u
-      );
-      const remaining = await lstat(lockPath);
-      expect(`${remaining.dev}:${remaining.ino}`).toBe(
-        `${replacement.dev}:${replacement.ino}`
-      );
-      await expect(readFile(lockPath, "utf8")).resolves.toBe(ownerText);
-    },
-    30_000
-  );
+    const original = await lstat(lockPath);
+    const replacementPath = join(root, ".deepwrite", "transaction.replacement");
+    await writeFile(replacementPath, ownerText!, {
+      encoding: "utf8",
+      flag: "wx"
+    });
+    const replacement = await lstat(replacementPath);
+    expect(`${replacement.dev}:${replacement.ino}`).not.toBe(
+      `${original.dev}:${original.ino}`
+    );
+    try {
+      await rename(replacementPath, lockPath);
+    } catch (error: unknown) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST" && code !== "EPERM") throw error;
+      await unlink(lockPath);
+      await rename(replacementPath, lockPath);
+    }
+
+    const outcome = await commit;
+    expect(outcome.status).toBe("rejected");
+    if (outcome.status !== "rejected") {
+      throw new Error("替换事务锁后，原事务不应继续提交。");
+    }
+    expect(outcome.reason).toBeInstanceOf(Error);
+    expect((outcome.reason as Error).message).toMatch(
+      /所有者发生变化|路径替换/u
+    );
+    const remaining = await lstat(lockPath);
+    expect(`${remaining.dev}:${remaining.ino}`).toBe(
+      `${replacement.dev}:${replacement.ino}`
+    );
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(ownerText);
+  }, 30_000);
 
   it("reclaims a transaction lock left by a terminated process", async () => {
     const root = await temporaryProject();
@@ -324,7 +309,9 @@ describe("project transaction", () => {
     });
     await expect(
       lstat(join(root, ".deepwrite", "transaction.lock"))
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
   it("supports compare-only checks in the same atomic transaction", async () => {
@@ -497,7 +484,11 @@ describe("project transaction", () => {
     await mkdir(join(transactionRoot, "backup"), { recursive: true });
     await writeFile(join(root, "one.md"), "one-next", "utf8");
     await writeFile(join(root, "two.md"), "two-before", "utf8");
-    await writeFile(join(transactionRoot, "stage", "1.next"), "two-next", "utf8");
+    await writeFile(
+      join(transactionRoot, "stage", "1.next"),
+      "two-next",
+      "utf8"
+    );
     await writeFile(
       join(transactionRoot, "backup", "0.previous"),
       "one-before",
@@ -547,7 +538,9 @@ describe("project transaction", () => {
     );
     await expect(
       lstat(join(root, ".deepwrite", "transaction.json"))
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
   it("recovers a copied prepared transaction when some files already contain the staged contents", async () => {
@@ -632,7 +625,9 @@ describe("project transaction", () => {
     );
     await expect(
       lstat(join(root, ".deepwrite", "transaction.json"))
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
   it("rolls forward an interrupted deletion from its durable journal", async () => {
@@ -685,7 +680,9 @@ describe("project transaction", () => {
     });
     await expect(
       lstat(join(root, ".deepwrite", "transaction.json"))
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
   it("stops recovery rather than overwriting an unrelated external change", async () => {

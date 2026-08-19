@@ -20,7 +20,13 @@ function fixtureBook(): ShortBook {
     bookType: "short",
     genre: "悬疑",
     status: "editing",
-    linkedMaterialIdsByKind: { character: [], gimmick: [], plot: [], draft: [], other: [] },
+    linkedMaterialIdsByKind: {
+      character: [],
+      gimmick: [],
+      plot: [],
+      draft: [],
+      other: []
+    },
     linkedSkillIdsByKind: { general: [], plot: [], style: [], other: [] },
     characterStructure: { format: "text" },
     plotStages: createDefaultBookPlotStages({ allEnabled: true }),

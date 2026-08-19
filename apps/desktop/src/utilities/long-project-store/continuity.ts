@@ -32,12 +32,8 @@ export function assertLongContinuityMutationAuthority(
   index: LongWorkspaceIndexSnapshot,
   input: LongStructuredCommitChapterInput
 ): void {
-  const characterIds = new Set(
-    index.characters.map(({ id }) => id)
-  );
-  const worldIds = new Set(
-    index.worldbuilding.map(({ id }) => id)
-  );
+  const characterIds = new Set(index.characters.map(({ id }) => id));
+  const worldIds = new Set(index.worldbuilding.map(({ id }) => id));
   const plotIds = new Set<string>([
     index.bookId,
     ...index.plot.volumes.map(({ id }) => id),
@@ -53,9 +49,7 @@ export function assertLongContinuityMutationAuthority(
       ...thread.beats.map(({ id }) => id)
     ])
   );
-  const updatedFileIds = new Set(
-    input.fileUpdates.map(({ fileId }) => fileId)
-  );
+  const updatedFileIds = new Set(input.fileUpdates.map(({ fileId }) => fileId));
   const characterFilesById = new Map(
     index.characterFiles.map((entry) => [entry.characterId, entry] as const)
   );
@@ -145,9 +139,7 @@ export function materializeLongContinuityProjection(input: {
     const keyIndex = factIndexByKey.get(key);
     if (
       (idIndex === undefined) !== (keyIndex === undefined) ||
-      (idIndex !== undefined &&
-        keyIndex !== undefined &&
-        idIndex !== keyIndex)
+      (idIndex !== undefined && keyIndex !== undefined && idIndex !== keyIndex)
     ) {
       throw new Error(
         `连续性事实 ${mutation.factId} 不能更换事实 ID 或逻辑键。`
@@ -179,15 +171,12 @@ export function materializeLongContinuityProjection(input: {
   const knowledgeChanges: LongLedgerCommitRecord["knowledgeChanges"] = [];
   const knowledgeIndexByKey = new Map(
     projection.knowledge.map(
-      (knowledge, index) =>
-        [continuityKnowledgeKey(knowledge), index] as const
+      (knowledge, index) => [continuityKnowledgeKey(knowledge), index] as const
     )
   );
   for (const mutation of input.knowledgeMutations) {
     if (!projectedFactIds.has(mutation.factId)) {
-      throw new Error(
-        `连续性认知引用了不存在的事实：${mutation.factId}。`
-      );
+      throw new Error(`连续性认知引用了不存在的事实：${mutation.factId}。`);
     }
     const key = continuityKnowledgeKey(mutation);
     const existingIndex = knowledgeIndexByKey.get(key);
@@ -197,9 +186,7 @@ export function materializeLongContinuityProjection(input: {
       sourceChapterCardId: input.chapterCardId
     };
     const before =
-      existingIndex === undefined
-        ? null
-        : projection.knowledge[existingIndex]!;
+      existingIndex === undefined ? null : projection.knowledge[existingIndex]!;
     knowledgeChanges.push({
       before: before === null ? null : { ...before },
       after: { ...after }
@@ -214,18 +201,11 @@ export function materializeLongContinuityProjection(input: {
 
   const openLoopChanges: LongLedgerCommitRecord["openLoopChanges"] = [];
   const openLoopIndexById = new Map(
-    projection.openLoops.map(
-      (loop, index) => [loop.loopId, index] as const
-    )
+    projection.openLoops.map((loop, index) => [loop.loopId, index] as const)
   );
   for (const mutation of input.openLoopMutations) {
-    if (
-      mutation.factId !== null &&
-      !projectedFactIds.has(mutation.factId)
-    ) {
-      throw new Error(
-        `未闭合事项引用了不存在的事实：${mutation.factId}。`
-      );
+    if (mutation.factId !== null && !projectedFactIds.has(mutation.factId)) {
+      throw new Error(`未闭合事项引用了不存在的事实：${mutation.factId}。`);
     }
     const existingIndex = openLoopIndexById.get(mutation.loopId);
     const after: LongContinuityProjection["openLoops"][number] = {
@@ -234,9 +214,7 @@ export function materializeLongContinuityProjection(input: {
       sourceChapterCardId: input.chapterCardId
     };
     const before =
-      existingIndex === undefined
-        ? null
-        : projection.openLoops[existingIndex]!;
+      existingIndex === undefined ? null : projection.openLoops[existingIndex]!;
     openLoopChanges.push({
       before: before === null ? null : { ...before },
       after: { ...after }
@@ -358,25 +336,18 @@ export function rollbackLongContinuityProjection(input: {
   }
 
   const previousV3Record =
-    input.previousV3Record?.schemaVersion === 3
-      ? input.previousV3Record
-      : null;
+    input.previousV3Record?.schemaVersion === 3 ? input.previousV3Record : null;
   projection.throughCommitId = previousV3Record?.id ?? null;
   projection.latestHandoff =
     previousV3Record === null
       ? null
       : {
           ...previousV3Record.chapterOutputs.handoff,
-          mustCarry: [
-            ...previousV3Record.chapterOutputs.handoff.mustCarry
-          ],
+          mustCarry: [...previousV3Record.chapterOutputs.handoff.mustCarry],
           nextChapterConstraints: [
-            ...previousV3Record.chapterOutputs.handoff
-              .nextChapterConstraints
+            ...previousV3Record.chapterOutputs.handoff.nextChapterConstraints
           ],
-          openLoops: [
-            ...previousV3Record.chapterOutputs.handoff.openLoops
-          ],
+          openLoops: [...previousV3Record.chapterOutputs.handoff.openLoops],
           chapterCardId: previousV3Record.chapterCardId,
           commitId: previousV3Record.id
         };

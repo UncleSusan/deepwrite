@@ -109,4 +109,6 @@ export const UtilityOutboundMessageSchema = z.discriminatedUnion("kind", [
   UtilityCommandEventMessageSchema,
   UtilityInternalCommandRequestMessageSchema
 ]);
-export type UtilityOutboundMessage = z.infer<typeof UtilityOutboundMessageSchema>;
+export type UtilityOutboundMessage = z.infer<
+  typeof UtilityOutboundMessageSchema
+>;

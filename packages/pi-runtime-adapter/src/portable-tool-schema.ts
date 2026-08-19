@@ -1,4 +1,7 @@
-import type { WorkspaceRuntimeContext } from "@deepwrite/contracts";
+import type {
+  ToolSchemaProfile,
+  WorkspaceRuntimeContext
+} from "@deepwrite/contracts";
 import type { Context } from "@earendil-works/pi-ai";
 
 const GRAMMAR_REPETITION_THRESHOLD = 2_000;
@@ -41,10 +44,10 @@ const SCHEMA_ARRAY_KEYWORDS = new Set([
   "prefixItems"
 ]);
 
-export type OllamaToolSchemaProfile = "default" | "writing-workspace";
+export type PortableToolSchemaProfile = "default" | "writing-workspace";
 
 export interface ProviderRuntimeCompatibilityOptions {
-  ollamaToolSchemaProfile?: OllamaToolSchemaProfile;
+  portableToolSchemaProfile?: PortableToolSchemaProfile;
 }
 
 type SchemaKeywordFilter = (
@@ -109,9 +112,9 @@ export function isOllamaProviderName(provider: string): boolean {
   return provider.trim().toLowerCase() === "ollama";
 }
 
-export function resolveOllamaToolSchemaProfile(
+export function resolvePortableToolSchemaProfile(
   workspaceContext?: WorkspaceRuntimeContext
-): OllamaToolSchemaProfile {
+): PortableToolSchemaProfile {
   return workspaceContext?.shortWorkspace ||
     workspaceContext?.scriptWorkspace ||
     workspaceContext?.longWorkspace
@@ -119,11 +122,21 @@ export function resolveOllamaToolSchemaProfile(
     : "default";
 }
 
+export function resolveProviderToolSchemaMode(
+  provider: string,
+  configuredProfile?: ToolSchemaProfile
+): ToolSchemaProfile {
+  return (
+    configuredProfile ??
+    (isOllamaProviderName(provider) ? "portable" : "native")
+  );
+}
+
 /**
  * llama.cpp can reject nested strings whose maxLength reaches its grammar
  * repetition threshold. This provider-only clone keeps local validation intact.
  */
-export function sanitizeOllamaToolSchema(value: unknown): unknown {
+export function sanitizePortableToolSchema(value: unknown): unknown {
   return cloneToolSchema(
     value,
     (key, schemaNode, propertyDepth) =>
@@ -140,22 +153,28 @@ export function sanitizeOllamaToolSchema(value: unknown): unknown {
  * copy omits validation-only keywords that expand or destabilize tool grammars;
  * the original AgentTool schema remains authoritative during tool execution.
  */
-export function sanitizeOllamaWritingToolSchema(value: unknown): unknown {
+export function sanitizePortableWritingToolSchema(value: unknown): unknown {
   return cloneToolSchema(value, (key) =>
     WRITING_WORKSPACE_OMITTED_KEYWORDS.has(key)
   );
 }
 
-export function applyOllamaToolSchemaCompatibility(
+export function applyProviderToolSchemaCompatibility(
   context: Context,
   provider: string,
-  profile: OllamaToolSchemaProfile = "default"
+  configuredProfile?: ToolSchemaProfile,
+  profile: PortableToolSchemaProfile = "default"
 ): Context {
-  if (!isOllamaProviderName(provider) || !context.tools?.length) return context;
+  if (
+    resolveProviderToolSchemaMode(provider, configuredProfile) !== "portable" ||
+    !context.tools?.length
+  ) {
+    return context;
+  }
   const sanitize =
     profile === "writing-workspace"
-      ? sanitizeOllamaWritingToolSchema
-      : sanitizeOllamaToolSchema;
+      ? sanitizePortableWritingToolSchema
+      : sanitizePortableToolSchema;
   return {
     ...context,
     tools: context.tools.map((tool) => ({

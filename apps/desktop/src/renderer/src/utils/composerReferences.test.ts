@@ -29,7 +29,9 @@ describe("composer references", () => {
   it("replaces the active query and keeps surrounding text", () => {
     const match = findComposerReferenceMatch("请使用 /剧 完成", 6);
     expect(match).not.toBeNull();
-    expect(insertComposerReference("请使用 /剧 完成", match!, "剧情库 · 节奏设计")).toEqual({
+    expect(
+      insertComposerReference("请使用 /剧 完成", match!, "剧情库 · 节奏设计")
+    ).toEqual({
       value: "请使用 /剧情库 · 节奏设计 完成",
       caret: 15
     });

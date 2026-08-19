@@ -39,9 +39,7 @@ import {
   LEARNING_DOCUMENT_SUPPORTED_LABEL,
   readLearningDocumentFile
 } from "../utils/learningDocumentFiles";
-import PopupSelect, {
-  type PopupSelectOption
-} from "./PopupSelect.vue";
+import PopupSelect, { type PopupSelectOption } from "./PopupSelect.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -168,7 +166,9 @@ const saveDialogOpen = ref(false);
 const newSessionConfirmOpen = ref(false);
 const saving = ref(false);
 
-const selectedMaterialLibraryIds = reactive<Record<LearningMaterialKind, string>>({
+const selectedMaterialLibraryIds = reactive<
+  Record<LearningMaterialKind, string>
+>({
   character: "",
   gimmick: "",
   plot: "",
@@ -252,7 +252,8 @@ const statusLabel = computed(() => {
 });
 
 const statusTone = computed(() => {
-  if (status.value === "running" || status.value === "starting") return "running";
+  if (status.value === "running" || status.value === "starting")
+    return "running";
   if (status.value === "completed") return "success";
   if (status.value === "error") return "error";
   return "neutral";
@@ -319,7 +320,9 @@ function skillTargetOptions(kind: LearningSkillKind): PopupSelectOption[] {
 }
 
 function findSkillLibrary(libraryId: string) {
-  const persisted = skillLibraries.value.find((library) => library.id === libraryId);
+  const persisted = skillLibraries.value.find(
+    (library) => library.id === libraryId
+  );
   if (persisted) return persisted;
   const transient = transientLibraries.get(libraryId);
   return transient && "skillKind" in transient ? transient : undefined;
@@ -360,8 +363,13 @@ async function handleFiles(files: readonly File[]): Promise<void> {
     uiMessage.warning("学习任务运行中，暂不能修改本轮样本文档。");
     return;
   }
-  if (documents.value.length + files.length > LEARNING_IMITATION_MAX_DOCUMENTS) {
-    uiMessage.warning(`最多上传 ${LEARNING_IMITATION_MAX_DOCUMENTS} 个样本文档。`);
+  if (
+    documents.value.length + files.length >
+    LEARNING_IMITATION_MAX_DOCUMENTS
+  ) {
+    uiMessage.warning(
+      `最多上传 ${LEARNING_IMITATION_MAX_DOCUMENTS} 个样本文档。`
+    );
     return;
   }
   processingFiles.value = true;
@@ -716,7 +724,9 @@ async function persistStage(
               mode === "append"
                 ? appendText(existing.body, artifact.content)
                 : artifact.content,
-            ...(projectRevision === undefined ? {} : { baseProjectRevision: projectRevision })
+            ...(projectRevision === undefined
+              ? {}
+              : { baseProjectRevision: projectRevision })
           });
         } else {
           await window.deepwrite.catalog.createLibraryEntry({
@@ -725,7 +735,9 @@ async function persistStage(
             title: artifact.title,
             content: artifact.content,
             stageId: artifact.stageId,
-            ...(projectRevision === undefined ? {} : { baseProjectRevision: projectRevision })
+            ...(projectRevision === undefined
+              ? {}
+              : { baseProjectRevision: projectRevision })
           });
         }
       } else {
@@ -745,7 +757,9 @@ async function persistStage(
               mode === "append"
                 ? appendText(existing.body, artifact.content)
                 : artifact.content,
-            ...(projectRevision === undefined ? {} : { baseProjectRevision: projectRevision })
+            ...(projectRevision === undefined
+              ? {}
+              : { baseProjectRevision: projectRevision })
           });
         } else {
           await window.deepwrite.catalog.createLibraryEntry({
@@ -754,12 +768,15 @@ async function persistStage(
             title: artifact.title,
             content: artifact.content,
             stageId: artifact.stageId,
-            ...(projectRevision === undefined ? {} : { baseProjectRevision: projectRevision })
+            ...(projectRevision === undefined
+              ? {}
+              : { baseProjectRevision: projectRevision })
           });
         }
       }
       mutated = true;
-      if (projectRevision !== undefined) revisions.set(key, projectRevision + 1);
+      if (projectRevision !== undefined)
+        revisions.set(key, projectRevision + 1);
     }
     saveDialogOpen.value = false;
     await refreshLocalCatalogSnapshot();
@@ -773,7 +790,9 @@ async function persistStage(
     return true;
   } catch (cause: unknown) {
     if (mutated) await refreshLocalCatalogSnapshot();
-    uiMessage.error(cause instanceof Error ? cause.message : "学习结果落盘失败。");
+    uiMessage.error(
+      cause instanceof Error ? cause.message : "学习结果落盘失败。"
+    );
     return false;
   } finally {
     saving.value = false;
@@ -919,17 +938,11 @@ watch(status, (next, previous) => {
   if (next === "completed") {
     const runId = props.controller.lastCompletedRunId.value;
     const stageId = props.controller.lastCompletedStage.value;
-    if (
-      runId &&
-      stageId &&
-      queueAutomaticStagePersist(stageId, runId)
-    ) {
+    if (runId && stageId && queueAutomaticStagePersist(stageId, runId)) {
       activeStage.value = stageId;
       uiMessage.success("学习仿写已完成，结果已进入后台自动落盘队列。");
     } else if (props.approvalMode === "auto-approve") {
-      uiMessage.success(
-        "学习仿写已完成；尚未选择完整目标库，结果预览已保留。"
-      );
+      uiMessage.success("学习仿写已完成；尚未选择完整目标库，结果预览已保留。");
     } else {
       uiMessage.success("学习仿写已完成，结果预览已保留。");
     }
@@ -977,357 +990,497 @@ onBeforeUnmount(stopKeydownListener);
 </script>
 
 <template>
-      <section
-        class="learning-dialog"
-        aria-labelledby="learning-dialog-title"
+  <section class="learning-dialog" aria-labelledby="learning-dialog-title">
+    <header class="learning-head">
+      <div class="learning-title-block">
+        <span class="learning-eyebrow">DeepWrite · 学习中心</span>
+        <div class="learning-title-row">
+          <h2 id="learning-dialog-title">学习仿写</h2>
+          <span class="learning-status" :data-tone="statusTone">
+            <i aria-hidden="true"></i>{{ statusLabel }}
+          </span>
+        </div>
+        <p>上传 1-5 篇小说正文，拆出可复用素材，沉淀剧情方法与文风技能。</p>
+      </div>
+      <div class="learning-head-actions">
+        <button
+          type="button"
+          class="learning-quiet-button"
+          :disabled="isBusy"
+          @click="newSessionConfirmOpen = true"
+        >
+          新建学习
+        </button>
+      </div>
+    </header>
+
+    <section class="learning-source-bar" aria-label="样本文档">
+      <div class="learning-upload-copy">
+        <strong>正文样本</strong>
+        <span
+          >{{ documents.length }}/{{ LEARNING_IMITATION_MAX_DOCUMENTS }} 个文档
+          · 支持 {{ LEARNING_DOCUMENT_SUPPORTED_LABEL }}</span
+        >
+      </div>
+      <input
+        ref="fileInput"
+        class="learning-file-input"
+        type="file"
+        multiple
+        :accept="LEARNING_DOCUMENT_ACCEPT"
+        @change="onFileChange"
+      />
+      <button
+        type="button"
+        class="learning-secondary-button"
+        :disabled="
+          processingFiles ||
+          isBusy ||
+          documents.length >= LEARNING_IMITATION_MAX_DOCUMENTS
+        "
+        @click="openFilePicker"
       >
-        <header class="learning-head">
-          <div class="learning-title-block">
-            <span class="learning-eyebrow">DeepWrite · 学习中心</span>
-            <div class="learning-title-row">
-              <h2 id="learning-dialog-title">学习仿写</h2>
-              <span class="learning-status" :data-tone="statusTone">
-                <i aria-hidden="true"></i>{{ statusLabel }}
-              </span>
-            </div>
-            <p>上传 1-5 篇小说正文，拆出可复用素材，沉淀剧情方法与文风技能。</p>
+        {{ processingFiles ? "解析中…" : "+ 上传正文" }}
+      </button>
+      <ul v-if="documents.length" class="learning-document-list">
+        <li v-for="item in documents" :key="item.id">
+          <span :title="item.name">{{ item.name }}</span>
+          <small>{{ item.charCount.toLocaleString("zh-CN") }} 字</small>
+          <button
+            type="button"
+            :disabled="isBusy"
+            :aria-label="`移除 ${item.name}`"
+            @click="removeDocument(item.id)"
+          >
+            ×
+          </button>
+        </li>
+      </ul>
+      <span v-else class="learning-document-empty">尚未上传正文</span>
+    </section>
+
+    <nav class="learning-tabs" aria-label="学习仿写阶段">
+      <button
+        v-for="(stageId, index) in LEARNING_IMITATION_STAGE_IDS"
+        :key="stageId"
+        type="button"
+        :class="{ 'is-active': activeStage === stageId }"
+        @click="activeStage = stageId"
+      >
+        <span>{{ index + 1 }}</span>
+        <strong>{{ LEARNING_IMITATION_STAGE_LABELS[stageId] }}</strong>
+      </button>
+    </nav>
+
+    <div class="learning-body">
+      <main class="learning-result-pane">
+        <header class="learning-panel-head">
+          <div>
+            <span>结果预览</span>
+            <h3>{{ LEARNING_IMITATION_STAGE_LABELS[activeStage] }}</h3>
+            <p>{{ LEARNING_IMITATION_STAGE_DESCRIPTIONS[activeStage] }}</p>
           </div>
-          <div class="learning-head-actions">
-            <button
-              type="button"
-              class="learning-quiet-button"
-              :disabled="isBusy"
-              @click="newSessionConfirmOpen = true"
-            >
-              新建学习
-            </button>
-          </div>
+          <button
+            type="button"
+            class="learning-primary-button is-confirm"
+            :disabled="!activeHasResult || saving"
+            @click="prepareSave"
+          >
+            {{ saving ? "落盘中…" : "确认落盘" }}
+          </button>
         </header>
 
-        <section class="learning-source-bar" aria-label="样本文档">
-          <div class="learning-upload-copy">
-            <strong>正文样本</strong>
-            <span>{{ documents.length }}/{{ LEARNING_IMITATION_MAX_DOCUMENTS }} 个文档 · 支持 {{ LEARNING_DOCUMENT_SUPPORTED_LABEL }}</span>
-          </div>
-          <input
-            ref="fileInput"
-            class="learning-file-input"
-            type="file"
-            multiple
-            :accept="LEARNING_DOCUMENT_ACCEPT"
-            @change="onFileChange"
-          />
-          <button
-            type="button"
-            class="learning-secondary-button"
-            :disabled="processingFiles || isBusy || documents.length >= LEARNING_IMITATION_MAX_DOCUMENTS"
-            @click="openFilePicker"
-          >
-            {{ processingFiles ? "解析中…" : "+ 上传正文" }}
-          </button>
-          <ul v-if="documents.length" class="learning-document-list">
-            <li v-for="item in documents" :key="item.id">
-              <span :title="item.name">{{ item.name }}</span>
-              <small>{{ item.charCount.toLocaleString("zh-CN") }} 字</small>
-              <button
-                type="button"
-                :disabled="isBusy"
-                :aria-label="`移除 ${item.name}`"
-                @click="removeDocument(item.id)"
-              >
-                ×
-              </button>
-            </li>
-          </ul>
-          <span v-else class="learning-document-empty">尚未上传正文</span>
+        <section
+          v-if="activeStage === 'material_split'"
+          class="learning-target-strip"
+        >
+          <label v-for="kind in LEARNING_MATERIAL_KINDS" :key="kind">
+            <span>{{ MATERIAL_KIND_LABELS[kind] }}</span>
+            <PopupSelect
+              class="learning-target-select"
+              :model-value="selectedMaterialLibraryIds[kind]"
+              :options="materialTargetOptions(kind)"
+              :accessible-label="`选择${MATERIAL_KIND_LABELS[kind]}`"
+              :disabled="saving"
+              :menu-min-width="260"
+              :menu-z-index="1300"
+              @update:model-value="
+                selectedMaterialLibraryIds[kind] = String($event)
+              "
+            />
+            <input
+              v-if="selectedMaterialLibraryIds[kind] === CREATE_LIBRARY_VALUE"
+              v-model="newMaterialLibraryNames[kind]"
+              class="learning-new-library-name"
+              maxlength="80"
+              :aria-label="`新建${MATERIAL_KIND_LABELS[kind]}名称`"
+              placeholder="输入新资料库名称"
+            />
+          </label>
+          <p v-if="!populatedMaterialKinds.length">
+            AI 生成结果后，会按分类选择对应素材库。
+          </p>
+        </section>
+        <section v-else class="learning-target-strip is-single">
+          <label>
+            <span>{{
+              activeStage === "plot_learning"
+                ? SKILL_KIND_LABELS.plot
+                : SKILL_KIND_LABELS.style
+            }}</span>
+            <template v-if="activeStage === 'plot_learning'">
+              <PopupSelect
+                class="learning-target-select"
+                :model-value="selectedSkillLibraryIds.plot"
+                :options="skillTargetOptions('plot')"
+                accessible-label="选择剧情技能库"
+                :disabled="saving"
+                :menu-min-width="280"
+                :menu-z-index="1300"
+                @update:model-value="
+                  selectedSkillLibraryIds.plot = String($event)
+                "
+              />
+              <input
+                v-if="selectedSkillLibraryIds.plot === CREATE_LIBRARY_VALUE"
+                v-model="newSkillLibraryNames.plot"
+                class="learning-new-library-name"
+                maxlength="80"
+                aria-label="新建剧情技能库名称"
+                placeholder="输入新资料库名称"
+              />
+            </template>
+            <template v-else>
+              <PopupSelect
+                class="learning-target-select"
+                :model-value="selectedSkillLibraryIds.style"
+                :options="skillTargetOptions('style')"
+                accessible-label="选择文风技能库"
+                :disabled="saving"
+                :menu-min-width="280"
+                :menu-z-index="1300"
+                @update:model-value="
+                  selectedSkillLibraryIds.style = String($event)
+                "
+              />
+              <input
+                v-if="selectedSkillLibraryIds.style === CREATE_LIBRARY_VALUE"
+                v-model="newSkillLibraryNames.style"
+                class="learning-new-library-name"
+                maxlength="80"
+                aria-label="新建文风技能库名称"
+                placeholder="输入新资料库名称"
+              />
+            </template>
+          </label>
+          <p>预览可手动修订；提示词请在“设置 → 学习仿写设置”中维护。</p>
         </section>
 
-        <nav class="learning-tabs" aria-label="学习仿写阶段">
+        <div
+          v-if="activeStage === 'material_split'"
+          class="learning-material-grid"
+        >
+          <label
+            v-for="field in MATERIAL_RESULT_FIELDS"
+            :key="field.id"
+            class="learning-result-field"
+          >
+            <span>{{ field.label }}</span>
+            <textarea
+              :value="result.material_split[field.id]"
+              maxlength="200000"
+              :disabled="previewLocked"
+              placeholder="等待 AI 写入，或在任务结束后手动编辑"
+              @input="updateMaterialResult(field.id, inputValue($event))"
+            ></textarea>
+          </label>
+        </div>
+        <div
+          v-else-if="activeStage === 'plot_learning'"
+          class="learning-result-stack"
+        >
+          <label class="learning-result-field">
+            <span>剧情设计技能</span>
+            <textarea
+              :value="result.plot_learning.plotDesignSkill"
+              maxlength="200000"
+              :disabled="previewLocked"
+              placeholder="等待 AI 归纳剧情设计方法"
+              @input="updatePlotResult('plotDesignSkill', inputValue($event))"
+            ></textarea>
+          </label>
+          <label class="learning-result-field">
+            <span>剧情细化技能</span>
+            <textarea
+              :value="result.plot_learning.plotRefineSkill"
+              maxlength="200000"
+              :disabled="previewLocked"
+              placeholder="等待 AI 归纳剧情细化方法"
+              @input="updatePlotResult('plotRefineSkill', inputValue($event))"
+            ></textarea>
+          </label>
+        </div>
+        <div v-else class="learning-result-stack is-style">
+          <label class="learning-title-field">
+            <span>技能标题</span>
+            <input
+              :value="result.style_learning.title"
+              maxlength="256"
+              :disabled="previewLocked"
+              @input="updateStyleTitle(inputValue($event))"
+            />
+          </label>
+          <label class="learning-result-field">
+            <span>分节写手技能</span>
+            <textarea
+              :value="result.style_learning.body"
+              maxlength="200000"
+              :disabled="previewLocked"
+              placeholder="等待 AI 归纳句式、对白、情绪与收束规则"
+              @input="updateStyleBody(inputValue($event))"
+            ></textarea>
+          </label>
+        </div>
+      </main>
+
+      <aside class="learning-agent-pane" aria-label="学习仿写智能体">
+        <header class="learning-agent-head">
+          <div>
+            <p>
+              <strong>学习智能体</strong
+              ><small>{{
+                runningStage
+                  ? `正在执行：${LEARNING_IMITATION_STAGE_LABELS[runningStage]}`
+                  : "共享同一学习会话"
+              }}</small>
+            </p>
+          </div>
+          <PopupSelect
+            class="learning-model-select"
+            :model-value="selectedModelId"
+            :options="modelOptions"
+            accessible-label="选择学习仿写模型"
+            size="small"
+            align="end"
+            :disabled="isBusy"
+            :menu-min-width="220"
+            :menu-z-index="1300"
+            @update:model-value="selectedModelId = String($event)"
+          />
+        </header>
+
+        <div class="learning-quick-actions" aria-label="一键学习任务">
           <button
-            v-for="(stageId, index) in LEARNING_IMITATION_STAGE_IDS"
+            v-for="stageId in LEARNING_IMITATION_STAGE_IDS"
             :key="stageId"
             type="button"
-            :class="{ 'is-active': activeStage === stageId }"
-            @click="activeStage = stageId"
+            :class="{ 'is-current': activeStage === stageId }"
+            :disabled="isBusy || processingFiles || documents.length === 0"
+            @click="runStage(stageId)"
           >
-            <span>{{ index + 1 }}</span>
-            <strong>{{ LEARNING_IMITATION_STAGE_LABELS[stageId] }}</strong>
+            <span aria-hidden="true">{{
+              runningStage === stageId ? "···" : "✦"
+            }}</span>
+            <p>
+              <strong>{{
+                runningStage === stageId ? "运行中…" : PRESET_LABELS[stageId]
+              }}</strong
+              ><small>{{ PRESET_DETAILS[stageId] }}</small>
+            </p>
           </button>
-        </nav>
-
-        <div class="learning-body">
-          <main class="learning-result-pane">
-            <header class="learning-panel-head">
-              <div>
-                <span>结果预览</span>
-                <h3>{{ LEARNING_IMITATION_STAGE_LABELS[activeStage] }}</h3>
-                <p>{{ LEARNING_IMITATION_STAGE_DESCRIPTIONS[activeStage] }}</p>
-              </div>
-              <button
-                type="button"
-                class="learning-primary-button is-confirm"
-                :disabled="!activeHasResult || saving"
-                @click="prepareSave"
-              >
-                {{ saving ? "落盘中…" : "确认落盘" }}
-              </button>
-            </header>
-
-            <section v-if="activeStage === 'material_split'" class="learning-target-strip">
-              <label v-for="kind in LEARNING_MATERIAL_KINDS" :key="kind">
-                <span>{{ MATERIAL_KIND_LABELS[kind] }}</span>
-                <PopupSelect
-                  class="learning-target-select"
-                  :model-value="selectedMaterialLibraryIds[kind]"
-                  :options="materialTargetOptions(kind)"
-                  :accessible-label="`选择${MATERIAL_KIND_LABELS[kind]}`"
-                  :disabled="saving"
-                  :menu-min-width="260"
-                  :menu-z-index="1300"
-                  @update:model-value="selectedMaterialLibraryIds[kind] = String($event)"
-                />
-                <input
-                  v-if="selectedMaterialLibraryIds[kind] === CREATE_LIBRARY_VALUE"
-                  v-model="newMaterialLibraryNames[kind]"
-                  class="learning-new-library-name"
-                  maxlength="80"
-                  :aria-label="`新建${MATERIAL_KIND_LABELS[kind]}名称`"
-                  placeholder="输入新资料库名称"
-                />
-              </label>
-              <p v-if="!populatedMaterialKinds.length">AI 生成结果后，会按分类选择对应素材库。</p>
-            </section>
-            <section v-else class="learning-target-strip is-single">
-              <label>
-                <span>{{ activeStage === "plot_learning" ? SKILL_KIND_LABELS.plot : SKILL_KIND_LABELS.style }}</span>
-                <template v-if="activeStage === 'plot_learning'">
-                  <PopupSelect
-                    class="learning-target-select"
-                    :model-value="selectedSkillLibraryIds.plot"
-                    :options="skillTargetOptions('plot')"
-                    accessible-label="选择剧情技能库"
-                    :disabled="saving"
-                    :menu-min-width="280"
-                    :menu-z-index="1300"
-                    @update:model-value="selectedSkillLibraryIds.plot = String($event)"
-                  />
-                  <input
-                    v-if="selectedSkillLibraryIds.plot === CREATE_LIBRARY_VALUE"
-                    v-model="newSkillLibraryNames.plot"
-                    class="learning-new-library-name"
-                    maxlength="80"
-                    aria-label="新建剧情技能库名称"
-                    placeholder="输入新资料库名称"
-                  />
-                </template>
-                <template v-else>
-                  <PopupSelect
-                    class="learning-target-select"
-                    :model-value="selectedSkillLibraryIds.style"
-                    :options="skillTargetOptions('style')"
-                    accessible-label="选择文风技能库"
-                    :disabled="saving"
-                    :menu-min-width="280"
-                    :menu-z-index="1300"
-                    @update:model-value="selectedSkillLibraryIds.style = String($event)"
-                  />
-                  <input
-                    v-if="selectedSkillLibraryIds.style === CREATE_LIBRARY_VALUE"
-                    v-model="newSkillLibraryNames.style"
-                    class="learning-new-library-name"
-                    maxlength="80"
-                    aria-label="新建文风技能库名称"
-                    placeholder="输入新资料库名称"
-                  />
-                </template>
-              </label>
-              <p>预览可手动修订；提示词请在“设置 → 学习仿写设置”中维护。</p>
-            </section>
-
-            <div v-if="activeStage === 'material_split'" class="learning-material-grid">
-              <label
-                v-for="field in MATERIAL_RESULT_FIELDS"
-                :key="field.id"
-                class="learning-result-field"
-              >
-                <span>{{ field.label }}</span>
-                <textarea
-                  :value="result.material_split[field.id]"
-                  maxlength="200000"
-                  :disabled="previewLocked"
-                  placeholder="等待 AI 写入，或在任务结束后手动编辑"
-                  @input="updateMaterialResult(field.id, inputValue($event))"
-                ></textarea>
-              </label>
-            </div>
-            <div v-else-if="activeStage === 'plot_learning'" class="learning-result-stack">
-              <label class="learning-result-field">
-                <span>剧情设计技能</span>
-                <textarea
-                  :value="result.plot_learning.plotDesignSkill"
-                  maxlength="200000"
-                  :disabled="previewLocked"
-                  placeholder="等待 AI 归纳剧情设计方法"
-                  @input="updatePlotResult('plotDesignSkill', inputValue($event))"
-                ></textarea>
-              </label>
-              <label class="learning-result-field">
-                <span>剧情细化技能</span>
-                <textarea
-                  :value="result.plot_learning.plotRefineSkill"
-                  maxlength="200000"
-                  :disabled="previewLocked"
-                  placeholder="等待 AI 归纳剧情细化方法"
-                  @input="updatePlotResult('plotRefineSkill', inputValue($event))"
-                ></textarea>
-              </label>
-            </div>
-            <div v-else class="learning-result-stack is-style">
-              <label class="learning-title-field">
-                <span>技能标题</span>
-                <input
-                  :value="result.style_learning.title"
-                  maxlength="256"
-                  :disabled="previewLocked"
-                  @input="updateStyleTitle(inputValue($event))"
-                />
-              </label>
-              <label class="learning-result-field">
-                <span>分节写手技能</span>
-                <textarea
-                  :value="result.style_learning.body"
-                  maxlength="200000"
-                  :disabled="previewLocked"
-                  placeholder="等待 AI 归纳句式、对白、情绪与收束规则"
-                  @input="updateStyleBody(inputValue($event))"
-                ></textarea>
-              </label>
-            </div>
-          </main>
-
-          <aside class="learning-agent-pane" aria-label="学习仿写智能体">
-            <header class="learning-agent-head">
-              <div>
-                <p><strong>学习智能体</strong><small>{{ runningStage ? `正在执行：${LEARNING_IMITATION_STAGE_LABELS[runningStage]}` : "共享同一学习会话" }}</small></p>
-              </div>
-              <PopupSelect
-                class="learning-model-select"
-                :model-value="selectedModelId"
-                :options="modelOptions"
-                accessible-label="选择学习仿写模型"
-                size="small"
-                align="end"
-                :disabled="isBusy"
-                :menu-min-width="220"
-                :menu-z-index="1300"
-                @update:model-value="selectedModelId = String($event)"
-              />
-            </header>
-
-            <div class="learning-quick-actions" aria-label="一键学习任务">
-              <button
-                v-for="stageId in LEARNING_IMITATION_STAGE_IDS"
-                :key="stageId"
-                type="button"
-                :class="{ 'is-current': activeStage === stageId }"
-                :disabled="isBusy || processingFiles || documents.length === 0"
-                @click="runStage(stageId)"
-              >
-                <span aria-hidden="true">{{ runningStage === stageId ? "···" : "✦" }}</span>
-                <p><strong>{{ runningStage === stageId ? "运行中…" : PRESET_LABELS[stageId] }}</strong><small>{{ PRESET_DETAILS[stageId] }}</small></p>
-              </button>
-            </div>
-
-            <div ref="chatLog" class="learning-chat-log" aria-live="polite">
-              <div v-if="!messages.length" class="learning-chat-empty">
-                <span>✦</span>
-                <strong>准备好后选择一键任务</strong>
-                <p>切换到其他页面不会中断运行；返回这里会继续显示同一轮进度。</p>
-              </div>
-              <article
-                v-for="message in messages"
-                :key="message.id"
-                class="learning-chat-message"
-                :class="`is-${message.role}`"
-              >
-                <small>{{ message.role === "user" ? "你" : "学习智能体" }} · {{ LEARNING_IMITATION_STAGE_LABELS[message.stageId] }}</small>
-                <details v-if="message.thinking" class="learning-thinking">
-                  <summary>查看思考过程</summary>
-                  <p>{{ message.thinking }}</p>
-                </details>
-                <p>{{ message.content || (message.status === "streaming" ? "正在分析样本…" : "") }}</p>
-              </article>
-              <div v-if="tools.length" class="learning-tool-list">
-                <div v-for="tool in tools" :key="`${tool.runId}:${tool.id}`">
-                  <i :data-status="tool.status" aria-hidden="true"></i>
-                  <span>{{ toolDisplayName(tool.name) }}</span>
-                  <small>{{ tool.status === "completed" ? "完成" : tool.status === "error" ? "失败" : "执行中" }}</small>
-                </div>
-              </div>
-            </div>
-
-            <footer class="learning-agent-composer">
-              <button
-                type="button"
-                class="learning-mode-toggle"
-                :class="{ 'is-active': customInputMode }"
-                :disabled="documents.length === 0"
-                @click="customInputMode = !customInputMode"
-              >
-                {{ customInputMode ? "返回按钮模式" : "自己输入任务" }}
-              </button>
-              <div v-if="customInputMode" class="learning-custom-input">
-                <textarea
-                  v-model="customPrompt"
-                  maxlength="20000"
-                  :disabled="isBusy"
-                  placeholder="例如：重点分析这些样本如何设计前三段钩子…"
-                  @keydown.ctrl.enter.prevent="sendCustomPrompt"
-                  @keydown.meta.enter.prevent="sendCustomPrompt"
-                ></textarea>
-                <button type="button" :disabled="isBusy || !customPrompt.trim()" @click="sendCustomPrompt">发送</button>
-              </div>
-              <div class="learning-running-footer" :class="{ 'is-idle': !isBusy }">
-                <span>任务可在后台持续执行，切换页面也不会中断。</span>
-                <button
-                  type="button"
-                  :disabled="!isBusy"
-                  :aria-hidden="!isBusy"
-                  @click="stopLearning"
-                >停止</button>
-              </div>
-            </footer>
-          </aside>
         </div>
-      </section>
 
-      <div v-if="saveDialogOpen" class="learning-confirm-backdrop" @mousedown.self="saveDialogOpen = false">
-        <section class="learning-confirm-dialog" role="dialog" aria-modal="true" aria-label="确认学习结果落盘">
-          <header><div><span>写入本地资料库</span><h3>确认落盘</h3></div><button type="button" :disabled="saving" @click="saveDialogOpen = false">×</button></header>
-          <p>将“{{ LEARNING_IMITATION_STAGE_LABELS[activeStage] }}”当前预览写入已选择的目标库。</p>
-          <div class="learning-save-summary">
-            <span v-if="activeStage === 'material_split'">按人设、梗、剧情和正文分类匹配已有栏目。</span>
-            <span v-else>按阶段和技能名称匹配已有条目。</span>
+        <div ref="chatLog" class="learning-chat-log" aria-live="polite">
+          <div v-if="!messages.length" class="learning-chat-empty">
+            <span>✦</span>
+            <strong>准备好后选择一键任务</strong>
+            <p>切换到其他页面不会中断运行；返回这里会继续显示同一轮进度。</p>
           </div>
-          <p class="learning-save-note">追加会把新内容接在同栏目末尾；覆盖会替换同栏目的旧内容。尚无匹配栏目时，两种方式都会新建条目。</p>
-          <footer>
-            <button type="button" class="learning-secondary-button" :disabled="saving" @click="saveDialogOpen = false">取消</button>
-            <button type="button" class="learning-secondary-button" :disabled="saving" @click="persistStage('append')">追加落盘</button>
-            <button type="button" class="learning-primary-button" :disabled="saving" @click="persistStage('overwrite')">覆盖落盘</button>
-          </footer>
-        </section>
-      </div>
+          <article
+            v-for="message in messages"
+            :key="message.id"
+            class="learning-chat-message"
+            :class="`is-${message.role}`"
+          >
+            <small
+              >{{ message.role === "user" ? "你" : "学习智能体" }} ·
+              {{ LEARNING_IMITATION_STAGE_LABELS[message.stageId] }}</small
+            >
+            <details v-if="message.thinking" class="learning-thinking">
+              <summary>查看思考过程</summary>
+              <p>{{ message.thinking }}</p>
+            </details>
+            <p>
+              {{
+                message.content ||
+                (message.status === "streaming" ? "正在分析样本…" : "")
+              }}
+            </p>
+          </article>
+          <div v-if="tools.length" class="learning-tool-list">
+            <div v-for="tool in tools" :key="`${tool.runId}:${tool.id}`">
+              <i :data-status="tool.status" aria-hidden="true"></i>
+              <span>{{ toolDisplayName(tool.name) }}</span>
+              <small>{{
+                tool.status === "completed"
+                  ? "完成"
+                  : tool.status === "error"
+                    ? "失败"
+                    : "执行中"
+              }}</small>
+            </div>
+          </div>
+        </div>
 
-      <div v-if="newSessionConfirmOpen" class="learning-confirm-backdrop" @mousedown.self="newSessionConfirmOpen = false">
-        <section class="learning-confirm-dialog is-compact" role="alertdialog" aria-modal="true" aria-label="新建学习仿写会话">
-          <header><div><span>新建学习</span><h3>清空当前样本与预览？</h3></div><button type="button" @click="newSessionConfirmOpen = false">×</button></header>
-          <p>当前文档、三阶段结果和聊天记录会被清空。已落盘到资料库的内容不会受影响。</p>
-          <footer>
-            <button type="button" class="learning-secondary-button" @click="newSessionConfirmOpen = false">取消</button>
-            <button type="button" class="learning-primary-button is-confirm" @click="confirmNewSession">确认新建</button>
-          </footer>
-        </section>
+        <footer class="learning-agent-composer">
+          <button
+            type="button"
+            class="learning-mode-toggle"
+            :class="{ 'is-active': customInputMode }"
+            :disabled="documents.length === 0"
+            @click="customInputMode = !customInputMode"
+          >
+            {{ customInputMode ? "返回按钮模式" : "自己输入任务" }}
+          </button>
+          <div v-if="customInputMode" class="learning-custom-input">
+            <textarea
+              v-model="customPrompt"
+              maxlength="20000"
+              :disabled="isBusy"
+              placeholder="例如：重点分析这些样本如何设计前三段钩子…"
+              @keydown.ctrl.enter.prevent="sendCustomPrompt"
+              @keydown.meta.enter.prevent="sendCustomPrompt"
+            ></textarea>
+            <button
+              type="button"
+              :disabled="isBusy || !customPrompt.trim()"
+              @click="sendCustomPrompt"
+            >
+              发送
+            </button>
+          </div>
+          <div class="learning-running-footer" :class="{ 'is-idle': !isBusy }">
+            <span>任务可在后台持续执行，切换页面也不会中断。</span>
+            <button
+              type="button"
+              :disabled="!isBusy"
+              :aria-hidden="!isBusy"
+              @click="stopLearning"
+            >
+              停止
+            </button>
+          </div>
+        </footer>
+      </aside>
+    </div>
+  </section>
+
+  <div
+    v-if="saveDialogOpen"
+    class="learning-confirm-backdrop"
+    @mousedown.self="saveDialogOpen = false"
+  >
+    <section
+      class="learning-confirm-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="确认学习结果落盘"
+    >
+      <header>
+        <div>
+          <span>写入本地资料库</span>
+          <h3>确认落盘</h3>
+        </div>
+        <button
+          type="button"
+          :disabled="saving"
+          @click="saveDialogOpen = false"
+        >
+          ×
+        </button>
+      </header>
+      <p>
+        将“{{
+          LEARNING_IMITATION_STAGE_LABELS[activeStage]
+        }}”当前预览写入已选择的目标库。
+      </p>
+      <div class="learning-save-summary">
+        <span v-if="activeStage === 'material_split'"
+          >按人设、梗、剧情和正文分类匹配已有栏目。</span
+        >
+        <span v-else>按阶段和技能名称匹配已有条目。</span>
       </div>
+      <p class="learning-save-note">
+        追加会把新内容接在同栏目末尾；覆盖会替换同栏目的旧内容。尚无匹配栏目时，两种方式都会新建条目。
+      </p>
+      <footer>
+        <button
+          type="button"
+          class="learning-secondary-button"
+          :disabled="saving"
+          @click="saveDialogOpen = false"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="learning-secondary-button"
+          :disabled="saving"
+          @click="persistStage('append')"
+        >
+          追加落盘
+        </button>
+        <button
+          type="button"
+          class="learning-primary-button"
+          :disabled="saving"
+          @click="persistStage('overwrite')"
+        >
+          覆盖落盘
+        </button>
+      </footer>
+    </section>
+  </div>
+
+  <div
+    v-if="newSessionConfirmOpen"
+    class="learning-confirm-backdrop"
+    @mousedown.self="newSessionConfirmOpen = false"
+  >
+    <section
+      class="learning-confirm-dialog is-compact"
+      role="alertdialog"
+      aria-modal="true"
+      aria-label="新建学习仿写会话"
+    >
+      <header>
+        <div>
+          <span>新建学习</span>
+          <h3>清空当前样本与预览？</h3>
+        </div>
+        <button type="button" @click="newSessionConfirmOpen = false">×</button>
+      </header>
+      <p>
+        当前文档、三阶段结果和聊天记录会被清空。已落盘到资料库的内容不会受影响。
+      </p>
+      <footer>
+        <button
+          type="button"
+          class="learning-secondary-button"
+          @click="newSessionConfirmOpen = false"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="learning-primary-button is-confirm"
+          @click="confirmNewSession"
+        >
+          确认新建
+        </button>
+      </footer>
+    </section>
+  </div>
 </template>
 
 <style scoped>
@@ -1354,20 +1507,36 @@ onBeforeUnmount(stopKeydownListener);
   border-bottom: 1px solid var(--theme-line-soft);
 }
 
-.learning-title-block { min-width: 0; }
+.learning-title-block {
+  min-width: 0;
+}
 .learning-eyebrow,
 .learning-panel-head > div > span,
 .learning-confirm-dialog header span {
   color: var(--text-tertiary);
   font-size: 0.785714rem;
   font-weight: 650;
-  letter-spacing: .06em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.learning-title-row { display: flex; align-items: center; gap: 12px; margin-top: 3px; }
-.learning-title-row h2 { margin: 0; color: var(--text-primary); font-size: 1.785714rem; line-height: 1.15; }
-.learning-title-block > p { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.928571rem; }
+.learning-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 3px;
+}
+.learning-title-row h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.785714rem;
+  line-height: 1.15;
+}
+.learning-title-block > p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.928571rem;
+}
 
 .learning-status {
   display: inline-flex;
@@ -1380,16 +1549,43 @@ onBeforeUnmount(stopKeydownListener);
   font-size: 0.785714rem;
   font-weight: 650;
 }
-.learning-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); }
-.learning-status[data-tone="running"] { color: var(--accent); background: var(--accent-soft); }
-.learning-status[data-tone="running"] i { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 13%, transparent); }
-.learning-status[data-tone="success"] { color: color-mix(in srgb, var(--success) 74%, var(--text-primary)); background: color-mix(in srgb, var(--success) 15%, var(--surface-raised)); }
-.learning-status[data-tone="success"] i { background: var(--success); }
-.learning-status[data-tone="error"] { color: color-mix(in srgb, var(--danger) 74%, var(--text-primary)); background: color-mix(in srgb, var(--danger) 15%, var(--surface-raised)); }
-.learning-status[data-tone="error"] i { background: var(--danger); }
+.learning-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.learning-status[data-tone="running"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.learning-status[data-tone="running"] i {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.learning-status[data-tone="success"] {
+  color: color-mix(in srgb, var(--success) 74%, var(--text-primary));
+  background: color-mix(in srgb, var(--success) 15%, var(--surface-raised));
+}
+.learning-status[data-tone="success"] i {
+  background: var(--success);
+}
+.learning-status[data-tone="error"] {
+  color: color-mix(in srgb, var(--danger) 74%, var(--text-primary));
+  background: color-mix(in srgb, var(--danger) 15%, var(--surface-raised));
+}
+.learning-status[data-tone="error"] i {
+  background: var(--danger);
+}
 
-.learning-head-actions { display: flex; align-items: center; gap: 8px; }
-button { font: inherit; }
+.learning-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+button {
+  font: inherit;
+}
 .learning-confirm-dialog header button {
   width: 34px;
   height: 34px;
@@ -1400,7 +1596,10 @@ button { font: inherit; }
   font-size: 22px;
   cursor: pointer;
 }
-.learning-confirm-dialog header button:hover { color: var(--text-primary); background: var(--surface-hover); }
+.learning-confirm-dialog header button:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
 
 .learning-quiet-button,
 .learning-secondary-button,
@@ -1413,16 +1612,58 @@ button { font: inherit; }
   cursor: pointer;
 }
 .learning-quiet-button,
-.learning-secondary-button { color: var(--text-secondary); background: var(--surface-raised); border: 1px solid var(--theme-line); }
+.learning-secondary-button {
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px solid var(--theme-line);
+}
 .learning-quiet-button:hover,
-.learning-secondary-button:hover { border-color: var(--accent); background: var(--surface-hover); }
-.learning-primary-button { color: var(--accent-contrast, #fff); background: var(--accent); border: 1px solid var(--accent); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 18%, transparent); }
-.learning-primary-button:hover { background: color-mix(in srgb, var(--accent) 86%, #000); }
-.learning-primary-button.is-confirm { color: var(--accent-contrast, #fff); background: var(--neutral-solid); border-color: var(--neutral-solid); box-shadow: 0 5px 14px color-mix(in srgb, var(--theme-foreground) 16%, transparent); }
-.learning-primary-button.is-confirm:hover { background: color-mix(in srgb, var(--neutral-solid) 88%, var(--theme-foreground)); border-color: color-mix(in srgb, var(--neutral-solid) 88%, var(--theme-foreground)); }
-:global(html[data-theme="dark"] .learning-primary-button.is-confirm) { color: var(--accent-contrast, #fff); background: var(--accent); border-color: var(--accent); }
-:global(html[data-theme="dark"] .learning-primary-button.is-confirm:hover) { background: color-mix(in srgb, var(--accent) 86%, #000); border-color: color-mix(in srgb, var(--accent) 86%, #000); }
-button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+.learning-secondary-button:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+.learning-primary-button {
+  color: var(--accent-contrast, #fff);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.learning-primary-button:hover {
+  background: color-mix(in srgb, var(--accent) 86%, #000);
+}
+.learning-primary-button.is-confirm {
+  color: var(--accent-contrast, #fff);
+  background: var(--neutral-solid);
+  border-color: var(--neutral-solid);
+  box-shadow: 0 5px 14px
+    color-mix(in srgb, var(--theme-foreground) 16%, transparent);
+}
+.learning-primary-button.is-confirm:hover {
+  background: color-mix(
+    in srgb,
+    var(--neutral-solid) 88%,
+    var(--theme-foreground)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--neutral-solid) 88%,
+    var(--theme-foreground)
+  );
+}
+:global(html[data-theme="dark"] .learning-primary-button.is-confirm) {
+  color: var(--accent-contrast, #fff);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+:global(html[data-theme="dark"] .learning-primary-button.is-confirm:hover) {
+  background: color-mix(in srgb, var(--accent) 86%, #000);
+  border-color: color-mix(in srgb, var(--accent) 86%, #000);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 
 .learning-source-bar {
   display: flex;
@@ -1433,10 +1674,22 @@ button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
   background: var(--surface-raised);
   border-bottom: 1px solid var(--theme-line-soft);
 }
-.learning-upload-copy { flex: 0 0 auto; display: grid; gap: 2px; }
-.learning-upload-copy strong { color: var(--text-primary); font-size: 0.857143rem; }
-.learning-upload-copy span { color: var(--text-tertiary); font-size: 0.714286rem; }
-.learning-file-input { display: none; }
+.learning-upload-copy {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 2px;
+}
+.learning-upload-copy strong {
+  color: var(--text-primary);
+  font-size: 0.857143rem;
+}
+.learning-upload-copy span {
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+}
+.learning-file-input {
+  display: none;
+}
 .learning-document-list {
   min-width: 0;
   flex: 1;
@@ -1459,10 +1712,29 @@ button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
   border-radius: 9px;
   background: var(--surface-muted);
 }
-.learning-document-list li > span { overflow: hidden; color: var(--text-secondary); font-size: 0.785714rem; text-overflow: ellipsis; white-space: nowrap; }
-.learning-document-list small { color: var(--text-tertiary); font-size: 0.714286rem; white-space: nowrap; }
-.learning-document-list button { border: 0; color: var(--text-tertiary); background: transparent; cursor: pointer; }
-.learning-document-empty { flex: 1; color: var(--text-tertiary); font-size: 0.785714rem; }
+.learning-document-list li > span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.learning-document-list small {
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+  white-space: nowrap;
+}
+.learning-document-list button {
+  border: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: pointer;
+}
+.learning-document-empty {
+  flex: 1;
+  color: var(--text-tertiary);
+  font-size: 0.785714rem;
+}
 
 .learning-tabs {
   display: grid;
@@ -1484,19 +1756,72 @@ button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
   background: transparent;
   cursor: pointer;
 }
-.learning-tabs button::after { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; content: ""; background: transparent; }
-.learning-tabs button.is-active { color: var(--accent); }
-.learning-tabs button.is-active::after { background: var(--accent); }
-.learning-tabs button:hover:not(.is-active) { color: var(--text-primary); background: var(--surface-hover); }
-.learning-tabs button > span { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; color: var(--text-tertiary); background: var(--surface-muted); font-size: 0.714286rem; }
-.learning-tabs button.is-active > span { color: var(--accent-contrast, #fff); background: var(--accent); }
-.learning-tabs button strong { font-size: 0.857143rem; }
+.learning-tabs button::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  content: "";
+  background: transparent;
+}
+.learning-tabs button.is-active {
+  color: var(--accent);
+}
+.learning-tabs button.is-active::after {
+  background: var(--accent);
+}
+.learning-tabs button:hover:not(.is-active) {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+.learning-tabs button > span {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 7px;
+  color: var(--text-tertiary);
+  background: var(--surface-muted);
+  font-size: 0.714286rem;
+}
+.learning-tabs button.is-active > span {
+  color: var(--accent-contrast, #fff);
+  background: var(--accent);
+}
+.learning-tabs button strong {
+  font-size: 0.857143rem;
+}
 
-.learning-body { min-height: 0; display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(340px, .8fr); }
-.learning-result-pane { min-width: 0; min-height: 0; overflow: auto; padding: 20px 22px 24px; background: var(--surface-main); }
-.learning-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 13px; }
-.learning-panel-head h3 { margin: 3px 0 0; color: var(--text-primary); font-size: 1.285714rem; }
-.learning-panel-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.785714rem; }
+.learning-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(340px, 0.8fr);
+}
+.learning-result-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 22px 24px;
+  background: var(--surface-main);
+}
+.learning-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 13px;
+}
+.learning-panel-head h3 {
+  margin: 3px 0 0;
+  color: var(--text-primary);
+  font-size: 1.285714rem;
+}
+.learning-panel-head p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+}
 
 .learning-target-strip {
   display: grid;
@@ -1508,10 +1833,23 @@ button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
   border-radius: 12px;
   background: var(--surface-muted);
 }
-.learning-target-strip.is-single { grid-template-columns: minmax(220px, .7fr) 1fr; align-items: end; }
-.learning-target-strip label { min-width: 0; display: grid; gap: 5px; }
-.learning-target-strip label > span { color: var(--text-secondary); font-size: 0.785714rem; font-weight: 620; }
-.learning-target-select { width: 100%; }
+.learning-target-strip.is-single {
+  grid-template-columns: minmax(220px, 0.7fr) 1fr;
+  align-items: end;
+}
+.learning-target-strip label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.learning-target-strip label > span {
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+  font-weight: 620;
+}
+.learning-target-select {
+  width: 100%;
+}
 .learning-title-field input,
 .learning-new-library-name {
   width: 100%;
@@ -1525,16 +1863,41 @@ button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
   outline: none;
 }
 .learning-title-field input:focus,
-.learning-new-library-name:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.learning-target-strip p { align-self: center; margin: 0; color: var(--text-tertiary); font-size: 0.714286rem; }
+.learning-new-library-name:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.learning-target-strip p {
+  align-self: center;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+}
 
-.learning-material-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.learning-result-stack { display: grid; gap: 11px; }
-.learning-result-stack.is-style { grid-template-rows: auto minmax(300px, 1fr); }
+.learning-material-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.learning-result-stack {
+  display: grid;
+  gap: 11px;
+}
+.learning-result-stack.is-style {
+  grid-template-rows: auto minmax(300px, 1fr);
+}
 .learning-result-field,
-.learning-title-field { min-width: 0; display: grid; gap: 6px; }
+.learning-title-field {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
 .learning-result-field > span,
-.learning-title-field > span { color: var(--text-secondary); font-size: 0.785714rem; font-weight: 750; }
+.learning-title-field > span {
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+  font-weight: 750;
+}
 .learning-result-field textarea {
   width: 100%;
   min-height: 150px;
@@ -1548,95 +1911,428 @@ button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
   outline: none;
   box-sizing: border-box;
 }
-.learning-result-stack .learning-result-field textarea { min-height: 220px; }
-.learning-result-stack.is-style .learning-result-field textarea { height: 100%; min-height: 300px; }
-.learning-result-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.learning-result-field textarea:disabled { color: var(--text-secondary); background: var(--surface-muted); }
+.learning-result-stack .learning-result-field textarea {
+  min-height: 220px;
+}
+.learning-result-stack.is-style .learning-result-field textarea {
+  height: 100%;
+  min-height: 300px;
+}
+.learning-result-field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.learning-result-field textarea:disabled {
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+}
 
-.learning-agent-pane { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; background: var(--surface-muted); border-left: 1px solid var(--theme-line-soft); }
-.learning-agent-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 11px; background: var(--surface-raised); }
-.learning-agent-head > div { min-width: 0; display: flex; align-items: center; gap: 9px; }
-.learning-agent-head p { min-width: 0; display: grid; gap: 1px; margin: 0; }
-.learning-agent-head strong { color: var(--text-primary); font-size: 0.857143rem; }
-.learning-agent-head small { overflow: hidden; color: var(--text-tertiary); font-size: 0.714286rem; text-overflow: ellipsis; white-space: nowrap; }
-.learning-model-select { width: 150px; flex: 0 0 auto; }
+.learning-agent-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  background: var(--surface-muted);
+  border-left: 1px solid var(--theme-line-soft);
+}
+.learning-agent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 11px;
+  background: var(--surface-raised);
+}
+.learning-agent-head > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.learning-agent-head p {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  margin: 0;
+}
+.learning-agent-head strong {
+  color: var(--text-primary);
+  font-size: 0.857143rem;
+}
+.learning-agent-head small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.learning-model-select {
+  width: 150px;
+  flex: 0 0 auto;
+}
 
-.learning-quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0 13px 12px; border-bottom: 1px solid var(--theme-line-soft); }
-.learning-quick-actions button { min-width: 0; display: flex; align-items: center; gap: 6px; padding: 8px 7px; border: 1px solid var(--theme-line-soft); border-radius: 9px; color: var(--text-secondary); background: var(--surface-raised); text-align: left; cursor: pointer; }
+.learning-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 13px 12px;
+  border-bottom: 1px solid var(--theme-line-soft);
+}
+.learning-quick-actions button {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 7px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 9px;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  text-align: left;
+  cursor: pointer;
+}
 .learning-quick-actions button:hover:not(:disabled),
-.learning-quick-actions button.is-current { border-color: var(--accent); background: var(--accent-soft); }
-.learning-quick-actions button > span { color: var(--accent); font-size: 0.928571rem; }
-.learning-quick-actions p { min-width: 0; display: grid; gap: 1px; margin: 0; }
-.learning-quick-actions strong { overflow: hidden; font-size: 0.785714rem; text-overflow: ellipsis; white-space: nowrap; }
-.learning-quick-actions small { overflow: hidden; color: var(--text-tertiary); font-size: 0.714286rem; text-overflow: ellipsis; white-space: nowrap; }
+.learning-quick-actions button.is-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.learning-quick-actions button > span {
+  color: var(--accent);
+  font-size: 0.928571rem;
+}
+.learning-quick-actions p {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  margin: 0;
+}
+.learning-quick-actions strong {
+  overflow: hidden;
+  font-size: 0.785714rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.learning-quick-actions small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-.learning-chat-log { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 9px; padding: 14px; background: var(--surface-main); }
-.learning-chat-empty { margin: auto; max-width: 240px; display: grid; justify-items: center; gap: 6px; color: var(--text-tertiary); text-align: center; }
-.learning-chat-empty > span { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; color: var(--accent); background: var(--accent-soft); }
-.learning-chat-empty strong { color: var(--text-secondary); font-size: 0.785714rem; }
-.learning-chat-empty p { margin: 0; font-size: 0.714286rem; line-height: 1.55; }
-.learning-chat-message { max-width: 92%; padding: 9px 11px; border: 1px solid var(--theme-line-soft); border-radius: 12px 12px 12px 3px; background: var(--surface-raised); box-shadow: 0 3px 10px rgb(0 0 0 / 4%); }
-.learning-chat-message.is-user { align-self: flex-end; border-color: color-mix(in srgb, var(--accent) 28%, var(--theme-line)); border-radius: 12px 12px 3px 12px; background: var(--accent-soft); }
-.learning-chat-message > small { display: block; margin-bottom: 4px; color: var(--text-tertiary); font-size: 0.714286rem; font-weight: 700; }
+.learning-chat-log {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+  background: var(--surface-main);
+}
+.learning-chat-empty {
+  margin: auto;
+  max-width: 240px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.learning-chat-empty > span {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.learning-chat-empty strong {
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+}
+.learning-chat-empty p {
+  margin: 0;
+  font-size: 0.714286rem;
+  line-height: 1.55;
+}
+.learning-chat-message {
+  max-width: 92%;
+  padding: 9px 11px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 12px 12px 12px 3px;
+  background: var(--surface-raised);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 4%);
+}
+.learning-chat-message.is-user {
+  align-self: flex-end;
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--theme-line));
+  border-radius: 12px 12px 3px 12px;
+  background: var(--accent-soft);
+}
+.learning-chat-message > small {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+  font-weight: 700;
+}
 .learning-chat-message > p,
-.learning-thinking p { margin: 0; color: var(--text-primary); font-size: 0.857143rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.learning-thinking { margin-bottom: 5px; color: var(--text-secondary); font-size: 0.714286rem; }
-.learning-thinking summary { cursor: pointer; }
-.learning-thinking p { margin-top: 5px; color: var(--text-secondary); }
-.learning-tool-list { display: grid; gap: 5px; padding-top: 3px; }
-.learning-tool-list > div { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--theme-line-soft); border-radius: 8px; color: var(--text-secondary); background: var(--surface-raised); font-size: 0.714286rem; }
-.learning-tool-list i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); }
+.learning-thinking p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.857143rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.learning-thinking {
+  margin-bottom: 5px;
+  color: var(--text-secondary);
+  font-size: 0.714286rem;
+}
+.learning-thinking summary {
+  cursor: pointer;
+}
+.learning-thinking p {
+  margin-top: 5px;
+  color: var(--text-secondary);
+}
+.learning-tool-list {
+  display: grid;
+  gap: 5px;
+  padding-top: 3px;
+}
+.learning-tool-list > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  font-size: 0.714286rem;
+}
+.learning-tool-list i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
 .learning-tool-list i[data-status="running"],
-.learning-tool-list i[data-status="preparing"] { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
-.learning-tool-list i[data-status="completed"] { background: var(--success); }
-.learning-tool-list i[data-status="error"] { background: var(--danger); }
-.learning-tool-list small { color: var(--text-tertiary); }
+.learning-tool-list i[data-status="preparing"] {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.learning-tool-list i[data-status="completed"] {
+  background: var(--success);
+}
+.learning-tool-list i[data-status="error"] {
+  background: var(--danger);
+}
+.learning-tool-list small {
+  color: var(--text-tertiary);
+}
 
-.learning-agent-composer { padding: 9px 13px 12px; border-top: 1px solid var(--theme-line-soft); }
-.learning-mode-toggle { padding: 4px 0; border: 0; color: var(--accent); background: transparent; font-size: 0.785714rem; font-weight: 700; cursor: pointer; }
-.learning-mode-toggle.is-active { color: var(--text-primary); }
-.learning-custom-input { display: grid; grid-template-columns: 1fr auto; gap: 7px; margin-top: 5px; }
-.learning-custom-input textarea { height: 58px; resize: none; padding: 8px; border: 1px solid var(--theme-line); border-radius: 9px; color: var(--text-primary); background: var(--surface-main); font: 0.857143rem/1.45 inherit; outline: none; }
-.learning-custom-input textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.learning-agent-composer {
+  padding: 9px 13px 12px;
+  border-top: 1px solid var(--theme-line-soft);
+}
+.learning-mode-toggle {
+  padding: 4px 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font-size: 0.785714rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.learning-mode-toggle.is-active {
+  color: var(--text-primary);
+}
+.learning-custom-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  margin-top: 5px;
+}
+.learning-custom-input textarea {
+  height: 58px;
+  resize: none;
+  padding: 8px;
+  border: 1px solid var(--theme-line);
+  border-radius: 9px;
+  color: var(--text-primary);
+  background: var(--surface-main);
+  font: 0.857143rem/1.45 inherit;
+  outline: none;
+}
+.learning-custom-input textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .learning-custom-input button,
-.learning-running-footer button { padding: 0 11px; border: 0; border-radius: 8px; color: var(--accent-contrast, #fff); background: var(--accent); font-size: 0.785714rem; cursor: pointer; }
-.learning-running-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; padding: 7px 8px; border-radius: 8px; color: var(--text-secondary); background: var(--accent-soft); font-size: 0.714286rem; }
-.learning-running-footer button { min-height: 24px; background: color-mix(in srgb, var(--accent) 82%, var(--text-primary)); }
-.learning-running-footer.is-idle { background: var(--surface-muted); color: var(--text-tertiary); }
-.learning-running-footer button:disabled { visibility: hidden; }
+.learning-running-footer button {
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--accent-contrast, #fff);
+  background: var(--accent);
+  font-size: 0.785714rem;
+  cursor: pointer;
+}
+.learning-running-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: var(--accent-soft);
+  font-size: 0.714286rem;
+}
+.learning-running-footer button {
+  min-height: 24px;
+  background: color-mix(in srgb, var(--accent) 82%, var(--text-primary));
+}
+.learning-running-footer.is-idle {
+  background: var(--surface-muted);
+  color: var(--text-tertiary);
+}
+.learning-running-footer button:disabled {
+  visibility: hidden;
+}
 
-.learning-confirm-backdrop { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: rgb(0 0 0 / 38%); backdrop-filter: blur(4px); }
-.learning-confirm-dialog { width: min(480px, calc(100vw - 44px)); padding: 20px; border: 1px solid var(--theme-line); border-radius: 17px; background: var(--surface-raised); box-shadow: 0 20px 60px rgb(0 0 0 / 30%); }
-.learning-confirm-dialog.is-compact { width: min(430px, calc(100vw - 44px)); }
-.learning-confirm-dialog header { display: flex; align-items: flex-start; justify-content: space-between; }
-.learning-confirm-dialog h3 { margin: 3px 0 0; color: var(--text-primary); font-size: 1.285714rem; }
-.learning-confirm-dialog > p { margin: 14px 0 0; color: var(--text-secondary); font-size: 0.857143rem; line-height: 1.6; }
-.learning-save-summary { margin-top: 12px; padding: 10px; border-radius: 9px; color: var(--text-secondary); background: var(--surface-muted); font-size: 0.785714rem; }
-.learning-confirm-dialog .learning-save-note { color: var(--text-tertiary); font-size: 0.714286rem; }
-.learning-confirm-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.learning-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 38%);
+  backdrop-filter: blur(4px);
+}
+.learning-confirm-dialog {
+  width: min(480px, calc(100vw - 44px));
+  padding: 20px;
+  border: 1px solid var(--theme-line);
+  border-radius: 17px;
+  background: var(--surface-raised);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 30%);
+}
+.learning-confirm-dialog.is-compact {
+  width: min(430px, calc(100vw - 44px));
+}
+.learning-confirm-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.learning-confirm-dialog h3 {
+  margin: 3px 0 0;
+  color: var(--text-primary);
+  font-size: 1.285714rem;
+}
+.learning-confirm-dialog > p {
+  margin: 14px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.857143rem;
+  line-height: 1.6;
+}
+.learning-save-summary {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 9px;
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  font-size: 0.785714rem;
+}
+.learning-confirm-dialog .learning-save-note {
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+}
+.learning-confirm-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
 
 @media (max-width: 1080px) {
-  .learning-head { padding-right: 18px; padding-left: 18px; }
+  .learning-head {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
   .learning-source-bar,
-  .learning-tabs { padding-right: 18px; padding-left: 18px; }
-  .learning-body { grid-template-columns: minmax(0, 1fr) minmax(310px, 0.72fr); }
-  .learning-result-pane { padding-right: 17px; padding-left: 17px; }
-  .learning-target-strip.is-single { grid-template-columns: 1fr; align-items: stretch; }
-  .learning-quick-actions { grid-template-columns: 1fr; }
-  .learning-quick-actions button { min-height: 40px; padding-right: 10px; padding-left: 10px; }
-  .learning-quick-actions small { overflow: visible; text-overflow: clip; white-space: normal; }
+  .learning-tabs {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+  .learning-body {
+    grid-template-columns: minmax(0, 1fr) minmax(310px, 0.72fr);
+  }
+  .learning-result-pane {
+    padding-right: 17px;
+    padding-left: 17px;
+  }
+  .learning-target-strip.is-single {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .learning-quick-actions {
+    grid-template-columns: 1fr;
+  }
+  .learning-quick-actions button {
+    min-height: 40px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  .learning-quick-actions small {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
 }
 
 @media (max-height: 720px) {
-  .learning-head { padding-top: 12px; padding-bottom: 10px; }
-  .learning-title-block > p { margin-top: 4px; }
-  .learning-source-bar { min-height: 52px; padding-top: 7px; padding-bottom: 7px; }
-  .learning-tabs button { height: 40px; }
-  .learning-result-pane { padding-top: 14px; padding-bottom: 16px; }
-  .learning-agent-head { padding-top: 10px; padding-bottom: 8px; }
-  .learning-quick-actions { padding-bottom: 8px; }
-  .learning-result-field textarea { min-height: 120px; }
-  .learning-result-stack .learning-result-field textarea { min-height: 180px; }
-  .learning-result-stack.is-style .learning-result-field textarea { min-height: 220px; }
+  .learning-head {
+    padding-top: 12px;
+    padding-bottom: 10px;
+  }
+  .learning-title-block > p {
+    margin-top: 4px;
+  }
+  .learning-source-bar {
+    min-height: 52px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+  .learning-tabs button {
+    height: 40px;
+  }
+  .learning-result-pane {
+    padding-top: 14px;
+    padding-bottom: 16px;
+  }
+  .learning-agent-head {
+    padding-top: 10px;
+    padding-bottom: 8px;
+  }
+  .learning-quick-actions {
+    padding-bottom: 8px;
+  }
+  .learning-result-field textarea {
+    min-height: 120px;
+  }
+  .learning-result-stack .learning-result-field textarea {
+    min-height: 180px;
+  }
+  .learning-result-stack.is-style .learning-result-field textarea {
+    min-height: 220px;
+  }
 }
 </style>

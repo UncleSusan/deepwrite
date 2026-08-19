@@ -142,12 +142,11 @@ export class RendererStateStore {
   private statePromise: Promise<Map<string, unknown>> | undefined;
   private temporaryFileClock = 0;
 
-  constructor(
-    userDataPath: string,
-    options: RendererStateStoreOptions = {}
-  ) {
+  constructor(userDataPath: string, options: RendererStateStoreOptions = {}) {
     if (!userDataPath.trim()) {
-      throw new Error("Renderer state store requires an application data path.");
+      throw new Error(
+        "Renderer state store requires an application data path."
+      );
     }
     this.statePath = join(
       userDataPath,
@@ -211,8 +210,7 @@ export class RendererStateStore {
   private async requireState(): Promise<Map<string, unknown>> {
     if (!this.statePromise) {
       const loading = this.readState();
-      let tracked!: Promise<Map<string, unknown>>;
-      tracked = loading.catch((error: unknown) => {
+      const tracked = loading.catch((error: unknown) => {
         if (this.statePromise === tracked) this.statePromise = undefined;
         throw error;
       });

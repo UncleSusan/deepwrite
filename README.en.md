@@ -1,34 +1,40 @@
 # DeepWrite
 
-[English](./README.en.md) | [中文](./README.md)
+[English](./README.en.md) · [中文](./README.md) · [Download](https://github.com/swjybky/deepwrite/releases)
 
-> A local writing Harness Agent built for creators.
+> A local-first AI writing agent workbench for creators.
 
-DeepWrite is not a simple AI chat window. It is an agent workbench designed for long-form writing workflows. It brings models, prompts, writing skills, materials, manuscripts, and tools together in one desktop app, so the AI can understand your current work, call the right capabilities, edit real documents, and hand every change to you for review.
+DeepWrite brings models, prompts, writing skills, reference materials, manuscripts, and tools together in one desktop app. Agents can understand the context of your current work, help develop characters, plots, outlines, and prose, edit real documents through controlled tools, and hand every change to you for review.
 
-The interface follows a Codex-style workflow: manage projects and context on the left, collaborate with agents in the middle, and read or edit real content on the right. Agents can help with character design, plot development, outline planning, section writing, and manuscript edits, while you keep full control over local files and the final text.
+![DeepWrite main workspace: resource tree on the left, agent chat in the middle, and content editor on the right](./docs/images/workspace-overview.png)
 
-## Screenshots
+## Highlights
 
-![DeepWrite main workspace: resource tree on the left, agent chat in the middle, editor on the right](./全景图.png)
+- **Three-pane writing workspace**: manage projects and context, collaborate with agents, and edit real content in one view.
+- **Workflow-specific agents**: organize distinct responsibilities around characters, plots, outlines, manuscripts, and section writing.
+- **Reviewable manuscript edits**: inspect every diff before it is saved, preventing silent overwrites by agents.
+- **Local-first data**: store works as `deepwrite.json` and UTF-8 Markdown files that remain usable with Git, sync drives, and other text tools.
+- **Bring your own models**: add your preferred model services and switch models or thinking levels by agent or task.
+- **Material libraries, skill libraries, and sub-agents**: bind the right context and capabilities to each work, or assemble teams for complex tasks.
+- **Style learning**: analyze reference text in stages and reuse its writing traits in future work.
 
-## What DeepWrite Can Do
+## How It Works
 
-### A Codex-style writing workbench
+### Keep the whole writing process in view
 
-DeepWrite uses a clear three-column layout that keeps the most common writing surfaces in one view:
+Inspired by the Codex workflow, DeepWrite uses a clear three-pane layout for the surfaces you use most:
 
 - Left: works, chapters, material libraries, skill libraries, and common actions
 - Middle: agent chat, reasoning, tool execution, and edit suggestions
 - Right: characters, plots, outlines, manuscripts, materials, or skill content
 
-When you switch between writing stages or chapters, DeepWrite automatically switches the matching agent and context. Browsing materials and skills does not interrupt the current manuscript, and chapters can be opened quickly in separate tabs.
+When you switch between writing stages or chapters, DeepWrite switches to the matching agent and context. Browsing materials and skills does not interrupt the current manuscript, and chapters can be opened quickly in separate tabs.
 
-![Agent-assisted writing and manuscript editing](./智能体与正文.png)
+![Agent-assisted writing and manuscript editing](./docs/images/agent-manuscript.png)
 
-### Specialized agents for the writing process
+### Work with specialized writing agents
 
-DeepWrite provides role-specific agents for short-form creation:
+Short-form creation includes several agents with focused responsibilities:
 
 - Character Agent: design characters, relationships, motivations, and character arcs
 - Plot Agent: plan the main storyline, opening hooks, conflicts, turns, and endings
@@ -36,49 +42,49 @@ DeepWrite provides role-specific agents for short-form creation:
 - Manuscript Expert: oversee structure, review drafts, and polish the final text
 - Section Writer: write around the current chapter while keeping plot, characters, and voice consistent
 
-Each agent can have its own system prompt, welcome shortcuts, model, and material access scope. Long-form stages always share full access to settings, plot, draft, and continuity content, while their readable material and skill types remain configurable per agent. You can also assemble sub-agent teams under a main agent so complex tasks can be handled by different roles together.
+Each agent can have its own system prompt, welcome shortcuts, and model. Short-form and screenplay agents can also have configurable resource access. Long-form stages share access to settings, plot, manuscript, and continuity records while retaining per-agent controls for readable material and skill types. Main agents can also lead sub-agent teams.
 
-### Reviewable manuscript edits
+### Review before writing to disk
 
-Agents never silently overwrite your text. Writes first produce a clear diff so you can inspect additions and deletions, then accept or reject them. Only accepted changes are saved to the local project. If the manuscript has already been updated by another operation, DeepWrite keeps the newer version and avoids silent overwrites.
+Agents never silently replace your text. Each write first produces a diff so you can inspect additions and deletions, then accept or reject the proposal. Only accepted changes are saved locally. If another operation has already updated the manuscript, DeepWrite preserves the newer version instead of overwriting it.
 
-![Agent edit diffs with accept / reject actions](./diff.png)
+![Agent edit diff with accept and reject actions](./docs/images/edit-diff.png)
 
-### Local-first works and knowledge bases
-
-Works, chapters, materials, and skills are stored as `deepwrite.json` and UTF-8 Markdown files in local folders. They are not locked inside a proprietary format. You can version them with Git, sync them with cloud drives, or continue editing them in other text tools.
+### Manage local works and knowledge bases
 
 DeepWrite supports:
 
 - Creating or opening local works
 - Managing characters, plots, outlines, and multiple manuscript sections
-- Creating material and skill libraries, and maintaining Markdown entries
-- Binding specific material libraries, skill libraries, or resource groups to a work
+- Creating material and skill libraries with Markdown entries
+- Binding selected libraries, skills, or resource groups to a work
 - Importing legacy book ZIP archives into the current folder structure
-- Automatically restoring unsaved drafts and recent agent sessions
+- Restoring unsaved drafts and recent agent sessions automatically
+
+Your data stays in open local file formats instead of being locked inside the app.
 
 ### Bring your own models
 
-You can add your own API services in model settings. Currently supported:
+You can add your own API services in Model Settings. DeepWrite currently supports:
 
 - OpenAI Completions
 - OpenAI Responses
 - Anthropic Messages
 - Google Generative AI
 
-Model keys are never exposed to the renderer. Different models can have default thinking levels, and you can switch models per task during a conversation.
+Model keys are never exposed to the renderer. Each model can have a default thinking level, and you can switch models by task during a conversation.
 
-### Style learning and imitation
+### Learn and reuse writing styles
 
-With style learning, DeepWrite can analyze reference text in stages, extract reusable writing traits, and apply those results to later creation. Related models and prompts can be configured separately in settings.
+Style learning analyzes reference text in stages, extracts reusable writing traits, and applies the results to later creation. Its models and prompts can be configured separately in Settings.
 
-![Style learning interface](./学习仿写.png)
+![Style learning interface](./docs/images/style-learning.png)
 
-## Installation
+## Installation and Setup
 
-### Using installers
+### Use an installer
 
-Download the installer that matches your OS and CPU from [GitHub Releases](https://github.com/swjybky/deepwrite/releases):
+Go to [GitHub Releases](https://github.com/swjybky/deepwrite/releases) and download the test installer matching your OS and processor:
 
 | Platform | Installer |
 | --- | --- |
@@ -88,18 +94,18 @@ Download the installer that matches your OS and CPU from [GitHub Releases](https
 
 On Windows, run the `.exe` and follow the installer.
 
-On macOS, open the `.dmg` and drag DeepWrite into Applications. Current test builds use ad-hoc signing and are not notarized by Apple. After downloading via a browser, WeChat, or similar channels, macOS may show a security warning. Confirm the file source is trusted, then right-click the app and choose Open, or allow it in System Settings → Privacy & Security.
+On macOS, open the `.dmg` and drag DeepWrite into Applications. Current test builds use ad-hoc signing and are not notarized by Apple. Downloads received through a browser, WeChat, or similar channels may trigger a macOS security warning. Confirm that you trust the source, then right-click the app and choose Open, or allow it under System Settings → Privacy & Security.
 
-After the first launch, we recommend:
+After the first launch:
 
 1. Choose a local workspace directory.
 2. Add an API service in Model Settings and test the connection.
-3. Create a new work, or open an existing DeepWrite project folder.
+3. Create a work, or open an existing DeepWrite project folder.
 4. Create and bind material or skill libraries as needed.
 
 ### Run from source
 
-Development requirements:
+Requirements:
 
 - Node.js 24 or later
 - pnpm 11 or later
@@ -112,42 +118,29 @@ pnpm install
 pnpm dev
 ```
 
-Build the production version:
+Common development commands:
 
 ```bash
-pnpm build
+pnpm dev       # Start the desktop development environment
+pnpm build     # Build the production app
+pnpm verify    # Run formatting, type, boundary, test, and build checks
 ```
 
-Run the full verification suite:
+## Build Test Installers
+
+Test installers must be built on their target platform from the repository root:
 
 ```bash
-pnpm verify
+pnpm pack:test             # All test packages supported by the current host
+pnpm pack:test:win         # Windows x64
+pnpm pack:test:mac:arm64   # macOS Apple Silicon
+pnpm pack:test:mac:x64     # macOS Intel
+pnpm pack:test:mac         # Both macOS architectures
 ```
 
-## Build test installers
+Artifacts are written to `apps/desktop/release/`. The packaging flow runs the full verification suite and a production build before generating and validating installers.
 
-Test installers must be built on the matching platform from the repository root:
-
-```bash
-# All currently supported test packages
-pnpm pack:test
-
-# Windows x64
-pnpm pack:test:win
-
-# macOS Apple Silicon
-pnpm pack:test:mac:arm64
-
-# macOS Intel
-pnpm pack:test:mac:x64
-
-# Both macOS architectures
-pnpm pack:test:mac
-```
-
-Artifacts are written to `apps/desktop/release/`. The packaging flow runs type checks, boundary checks, tests, and a production build before generating and verifying installers.
-
-## Project structure
+## Project Structure
 
 ```text
 deepwrite/
@@ -157,16 +150,11 @@ deepwrite/
 │                              # Agent Runtime adapter
 ├── packages/shared/           # Shared types and utilities
 ├── tools/                     # Verification, runtime, and packaging scripts
-└── docs/                      # Architecture and phase docs
+└── docs/images/               # README and project documentation images
 ```
 
-DeepWrite uses a multi-process Electron architecture. The Renderer handles UI only, Main manages windows and secure IPC, the Core Utility handles local project I/O, the Agent Utility runs models and agents, and the Tool Utility provides a bounded surface for controlled tool execution.
-
-For more technical details, see:
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Phase status](docs/PHASE_STATUS.md)
+DeepWrite uses a multi-process Electron architecture: the Renderer handles the UI, Main manages windows and secure IPC, the Core Utility handles local project I/O, the Agent Utility runs models and agents, and the Tool Utility provides a bounded surface for controlled tool execution.
 
 ## License
 
-This project is licensed under the terms declared in [LICENSE](LICENSE).
+DeepWrite is open source under the [Apache License 2.0](./LICENSE).

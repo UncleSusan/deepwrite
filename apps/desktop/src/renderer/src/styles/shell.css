@@ -1,7 +1,9 @@
 .desktop-shell {
   position: relative;
   display: grid;
-  grid-template-columns: var(--left-pane-width) minmax(var(--center-pane-min), 1fr) var(--right-pane-width);
+  grid-template-columns:
+    var(--left-pane-width) minmax(var(--center-pane-min), 1fr)
+    var(--right-pane-width);
   width: 100vw;
   height: 100vh;
   overflow: hidden;
@@ -46,7 +48,9 @@ html[data-platform="darwin"] .desktop-shell {
   width: 1px;
   background: transparent;
   content: "";
-  transition: background-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .pane-resizer:hover::after,
@@ -74,11 +78,15 @@ html[data-platform="darwin"] .desktop-shell {
 }
 
 .desktop-shell.is-left-collapsed {
-  grid-template-columns: 0 minmax(var(--center-pane-min), 1fr) var(--right-pane-width);
+  grid-template-columns: 0 minmax(var(--center-pane-min), 1fr) var(
+      --right-pane-width
+    );
 }
 
 .desktop-shell.is-right-collapsed {
-  grid-template-columns: var(--left-pane-width) minmax(var(--center-pane-min), 1fr) 0;
+  grid-template-columns:
+    var(--left-pane-width) minmax(var(--center-pane-min), 1fr)
+    0;
 }
 
 .desktop-shell.is-left-collapsed.is-right-collapsed {

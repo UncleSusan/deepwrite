@@ -233,19 +233,23 @@ describe("long workspace resource-tree projection", () => {
   it("keeps group counts and ordered volume/chapter output", () => {
     const roots = projectLongWorkspaceNavigation(summaryFixture());
     const characters = roots.find(({ label }) => label === "人物设计");
-    expect(characters?.children?.slice(1).map(({ label, badge }) => ({ label, badge })))
-      .toEqual([
-        { label: "主角", badge: "1" },
-        { label: "配角", badge: "2" }
-      ]);
+    expect(
+      characters?.children
+        ?.slice(1)
+        .map(({ label, badge }) => ({ label, badge }))
+    ).toEqual([
+      { label: "主角", badge: "1" },
+      { label: "配角", badge: "2" }
+    ]);
 
     const plot = roots.find(({ label }) => label === "剧情设计");
     const plotPoints = plot?.children?.find(({ label }) => label === "剧情点");
-    expect(plotPoints?.children?.map(({ label, badge }) => ({ label, badge })))
-      .toEqual([
-        { label: "第一卷", badge: "2 点" },
-        { label: "第二卷", badge: "1 点" }
-      ]);
+    expect(
+      plotPoints?.children?.map(({ label, badge }) => ({ label, badge }))
+    ).toEqual([
+      { label: "第一卷", badge: "2 点" },
+      { label: "第二卷", badge: "1 点" }
+    ]);
 
     const draft = roots.find(({ label }) => label === "正文");
     expect(draft?.children?.map(({ label }) => label)).toEqual([
@@ -256,8 +260,9 @@ describe("long workspace resource-tree projection", () => {
       "第一章",
       "第二章"
     ]);
-    expect(longNavigationNodeId("longbook_tree", "chapter:chapter_one"))
-      .toBe("long-book:longbook_tree:chapter:chapter_one");
+    expect(longNavigationNodeId("longbook_tree", "chapter:chapter_one")).toBe(
+      "long-book:longbook_tree:chapter:chapter_one"
+    );
   });
 
   it("indexes repeated group and volume relationships before projection", () => {
@@ -266,7 +271,9 @@ describe("long workspace resource-tree projection", () => {
     expect(source).toContain("const chaptersByVolume = new Map");
     expect(source).not.toContain("book.navigation.characters.filter(");
     expect(source).not.toContain("book.navigation.arcs.filter(");
-    expect(source).not.toContain("book.navigation.chapterCards\n        .filter(");
+    expect(source).not.toContain(
+      "book.navigation.chapterCards\n        .filter("
+    );
   });
 
   it("projects configured collections into stable left-tree children", () => {
@@ -332,20 +339,18 @@ describe("long workspace resource-tree projection", () => {
     });
 
     const plotPoints = plot?.children?.find(({ label }) => label === "剧情点");
-    expect(plotPoints?.children?.[0]?.children?.map(({ label }) => label)).toEqual([
-      "剧情一",
-      "剧情三"
-    ]);
+    expect(
+      plotPoints?.children?.[0]?.children?.map(({ label }) => label)
+    ).toEqual(["剧情一", "剧情三"]);
     expect(plotPoints?.children?.[0]?.longTreeCollection).toEqual({
       kind: "plot-point",
       parentId: "volume_one"
     });
 
     const chapterCards = plot?.children?.find(({ label }) => label === "章卡");
-    expect(chapterCards?.children?.[0]?.children?.map(({ label }) => label)).toEqual([
-      "第一章",
-      "第二章"
-    ]);
+    expect(
+      chapterCards?.children?.[0]?.children?.map(({ label }) => label)
+    ).toEqual(["第一章", "第二章"]);
     expect(chapterCards?.children?.[0]?.longTreeCollection).toEqual({
       kind: "chapter-card",
       parentId: "volume_one"
@@ -359,9 +364,11 @@ describe("long workspace resource-tree projection", () => {
         (child) => child.readOnly && child.longTreeItem === undefined
       )
     ).toBe(true);
-    expect(pendingChapter?.children?.[0]?.longWorkspaceSelection).toMatchObject({
-      preferredFileId: "file_chapter_two:body"
-    });
+    expect(pendingChapter?.children?.[0]?.longWorkspaceSelection).toMatchObject(
+      {
+        preferredFileId: "file_chapter_two:body"
+      }
+    );
   });
 
   it("keeps an empty list parent actionable in left-tree mode", () => {

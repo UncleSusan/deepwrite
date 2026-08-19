@@ -9,50 +9,152 @@ import {
   nativeTheme,
   shell
 } from "electron";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  CatalogInstallMarketplaceSkillContentResultSchema,
+  WorkspaceAgentTeamSettingsSchema,
+  BookSchema,
+  SaveDocumentResultSchema,
+  CatalogDraftSectionSchema,
+  CreateDraftSectionsResultSchema,
+  CatalogDraftRecoverySaveResultSchema,
+  CatalogDraftRecoverySchema,
+  CatalogLibrarySchema,
+  CatalogLibraryGroupSchema,
+  CatalogLibraryEntrySchema,
+  CatalogOpenProjectResultSchema,
+  AppearanceSettingsSnapshotSchema,
+  APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL,
+  APP_ALERT_GET_CHANNEL,
+  AppAlertDesktopRevisionSchema,
+  AppAlertSnapshotSchema,
+  CatalogIndexSnapshotSchema,
+  CatalogReadDocumentResultSchema,
   CatalogSnapshotSchema,
+  ChatAssistantProjectConfigSchema,
+  ChatAssistantProjectConfigListSchema,
+  ChatAssistantRuntimeContextSchema,
   CommandEnvelopeSchema,
+  DeleteCatalogProjectResultSchema,
+  DeleteBookResultSchema,
+  DeleteDraftSectionResultSchema,
+  MoveDraftSectionResultSchema,
+  DuplicateCatalogProjectResultSchema,
+  ExportLongManuscriptResultSchema,
+  ExportShortManuscriptResultSchema,
+  ExternalSkillSelectionResultSchema,
+  GeneralSettingsSnapshotSchema,
   IPC_COMMAND_CHANNEL,
   IPC_EVENT_CHANNEL,
+  UPDATE_CHECK_CHANNEL,
+  UPDATE_DOWNLOAD_CHANNEL,
+  UPDATE_GET_STATE_CHANNEL,
+  UPDATE_INSTALL_CHANNEL,
   UPDATE_STATE_EVENT_CHANNEL,
+  LearningImitationSettingsSchema,
+  MARKETPLACE_IPC_CHANNEL,
+  MarketplaceIpcRequestSchema,
+  CatalogInstallMarketplaceSkillContentResultSchema,
+  LibraryAgentSettingsSchema,
+  LongApplyOperationsResultSchema,
+  LongApplyLegacySyncResultSchema,
+  LongAgentSettingsSchema,
+  LongAgentTeamSettingsSchema,
+  LongCommitChapterResultSchema,
+  LongImportPortableResultSchema,
+  LongChooseContinuationImportSourceResultSchema,
+  LongImportContinuationResultSchema,
+  LongPreviewContinuationImportAtPathResultSchema,
+  LongPreviewLegacySyncAtPathResultSchema,
+  LongChooseLegacySyncSourceResultSchema,
+  LongListBooksResultSchema,
+  LongOpenBookResultSchema,
+  LongPreviewOperationsResultSchema,
+  LongReadDocumentResultSchema,
+  LongReadAgentsMdResultSchema,
+  LongRemoveBookResultSchema,
+  LongRollbackLastCommitResultSchema,
+  LongSearchResultSchema,
+  LongWorkspaceIndexResultSchema,
+  LongWriteChapterResultSchema,
+  LongWriteDocumentResultSchema,
+  LongWriteAgentsMdResultSchema,
+  ModelConnectionTestResultSchema,
+  OfficialModelBalanceSchema,
+  ModelSettingsSchema,
+  RemoteModelListResultSchema,
+  RendererStateLoadResultSchema,
+  RendererStateMutationResultSchema,
+  ModelUsageDashboardSchema,
+  RemoveLibraryEntryResultSchema,
+  MoveLibraryEntryResultSchema,
+  SessionAbortAcceptedPayloadSchema,
+  SessionPromptAcceptedPayloadSchema,
+  ScriptBookSchema,
+  ShortBookSchema,
+  WorkspaceAgentSettingsSchema,
   SystemEventEnvelopeSchema,
   SystemHealthPayloadSchema,
   SystemReadyEventEnvelopeSchema,
-  SessionPromptAcceptedPayloadSchema,
+  UnregisterCatalogProjectResultSchema,
+  WorkspaceDirectorySettingsSchema,
   createDefaultAppearanceSettings,
   createDefaultGeneralSettings,
   createEnvelope,
+  type AgentProviderRuntimeConfig,
+  type AgentRuntimeRef,
   type AppearanceSettings,
+  type AppAlertSnapshot,
   type CommandResult,
   type GeneralSettings,
+  type ChatAssistantRuntimeContext,
+  type ModelUsageModelSnapshot,
+  type ModelUsageModule,
+  type SessionPromptCommandPayload,
   type SystemEventEnvelope,
+  type UpdateState,
   type UtilityWorkerName
 } from "@deepwrite/contracts";
 import { createId, nowIso } from "@deepwrite/shared";
+import {
+  LEGACY_LIBRARY_FILE_SELECTION_PROPERTIES,
+  importLegacyLibraryArchives
+} from "./legacy-library-import-batch";
 import { AppearanceConfigStore } from "./appearance-config-store";
 import { AgentTeamConfigStore } from "./agent-team-config-store";
 import { GeneralSettingsStore } from "./general-settings-store";
 import { ChatAssistantProjectConfigStore } from "./chat-assistant-project-config-store";
 import { ModelConfigStore } from "./model-config-store";
-import { ModelUsageStore } from "./model-usage-store";
+import { listRemoteModels } from "./list-remote-models";
+import {
+  createModelUsageRevisionId,
+  ModelUsageStore
+} from "./model-usage-store";
 import { SoftwareTokenUsageReporter } from "./software-token-usage-reporter";
 import { LearningImitationConfigStore } from "./learning-imitation-config-store";
 import { LibraryAgentConfigStore } from "./library-agent-config-store";
 import { LongAgentConfigStore } from "./long-agent-config-store";
 import { LongAgentTeamConfigStore } from "./long-agent-team-config-store";
 import {
+  assertModelRunSettings,
+  resolveModelRunSettings
+} from "./model-run-settings";
+import {
   applyNativeAppearanceChrome,
   resolveNativeBackgroundColor
 } from "./native-appearance-chrome";
 import { exportShortManuscript } from "./short-manuscript-export";
 import { exportLongManuscript } from "./long-manuscript-export";
-import { UtilitySupervisor } from "./supervisor";
+import { UtilityCommandTimeoutError, UtilitySupervisor } from "./supervisor";
+import {
+  catalogCommandTimeoutMessage,
+  catalogCommandTimeoutMs
+} from "./catalog-command-timeout";
 import {
   AGENT_CORE_LONG_QUERY_COMMANDS,
-  authorizeMainInternalCommand
+  authorizeMainInternalCommand,
+  type MainInternalCommandActiveRun
 } from "./internal-command-authorizer";
 import { WorkspaceAgentConfigStore } from "./workspace-agent-config-store";
 import { WorkspaceDirectoryStore } from "./workspace-directory-store";
@@ -66,21 +168,20 @@ import {
 import { ContinuationImportPreviewRegistry } from "./continuation-import-preview-registry";
 import { LegacySyncPreviewRegistry } from "./legacy-sync-preview-registry";
 import { readExternalSkills } from "./external-skill-import";
-import { importLegacyLibraryArchives } from "./legacy-library-import-batch";
-import { listRemoteModels } from "./list-remote-models";
 import { createMainWindowStartupGate } from "./main-window-startup-gate";
 import { resolveDeepWriteAppMode } from "./app-run-mode";
-import { recordUsageObservation, type UsageRunContext } from "./usage-observation";
-import { dispatchCommand } from "./ipc/dispatch-command";
-import type { ActiveRun, IpcCommandContext } from "./ipc/command-types";
-import { registerMarketplaceIpc } from "./ipc/marketplace-ipc";
-import { registerUpdateAlertIpc } from "./ipc/update-alert-ipc";
-import {
-  chooseWorkspaceDirectory,
-  requireSelectedWorkspaceDirectory,
-  workspaceGroupParent,
-  workspaceResourceParent
-} from "./ipc/workspace-paths";
+
+interface ActiveRun extends MainInternalCommandActiveRun {
+  correlationId: string;
+  runtime: AgentRuntimeRef;
+  usageContext?: UsageRunContext;
+}
+
+interface UsageRunContext {
+  module: ModelUsageModule;
+  snapshotsByConfigId: ReadonlyMap<string, ModelUsageModelSnapshot>;
+  snapshotsByRuntime: ReadonlyMap<string, ModelUsageModelSnapshot>;
+}
 
 const activeRuns = new Map<string, ActiveRun>();
 const terminalRuns = new Set<string>();
@@ -93,12 +194,14 @@ let softwareTokenUsageReporter: SoftwareTokenUsageReporter | undefined;
 let agentTeamConfigStore: AgentTeamConfigStore | undefined;
 let appearanceConfigStore: AppearanceConfigStore | undefined;
 let generalSettingsStore: GeneralSettingsStore | undefined;
-let chatAssistantProjectConfigStore: ChatAssistantProjectConfigStore | undefined;
+let chatAssistantProjectConfigStore:
+  ChatAssistantProjectConfigStore | undefined;
 let learningImitationConfigStore: LearningImitationConfigStore | undefined;
 let libraryAgentConfigStore: LibraryAgentConfigStore | undefined;
 let longAgentConfigStore: LongAgentConfigStore | undefined;
 let longAgentTeamConfigStore: LongAgentTeamConfigStore | undefined;
-let cachedAppearanceSettings: AppearanceSettings = createDefaultAppearanceSettings();
+let cachedAppearanceSettings: AppearanceSettings =
+  createDefaultAppearanceSettings();
 let cachedGeneralSettings: GeneralSettings = createDefaultGeneralSettings();
 let nativeAppearanceListenerBound = false;
 let workspaceAgentConfigStore: WorkspaceAgentConfigStore | undefined;
@@ -114,7 +217,9 @@ let installUpdateAfterShutdown = false;
 const RENDERER_DRAFT_FLUSH_GRACE_MS = 500;
 const continuationImportPreviews = new ContinuationImportPreviewRegistry();
 const legacySyncPreviews = new LegacySyncPreviewRegistry();
-const mainWindowStartupGate = createMainWindowStartupGate(() => showMainWindow());
+const mainWindowStartupGate = createMainWindowStartupGate(() =>
+  showMainWindow()
+);
 
 function broadcastEvent(event: SystemEventEnvelope): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -124,7 +229,9 @@ function broadcastEvent(event: SystemEventEnvelope): void {
   }
 }
 
-function beginGracefulShutdown(options: { installUpdate?: boolean } = {}): void {
+function beginGracefulShutdown(
+  options: { installUpdate?: boolean } = {}
+): void {
   installUpdateAfterShutdown ||= options.installUpdate === true;
   if (quitting) {
     if (shutdownComplete && installUpdateAfterShutdown && updateService) {
@@ -155,7 +262,9 @@ function beginGracefulShutdown(options: { installUpdate?: boolean } = {}): void 
         try {
           await softwareTokenUsageReporter?.reportBeforeShutdown();
         } catch {
-          console.warn("DeepWrite software token usage was not reported before shutdown.");
+          console.warn(
+            "DeepWrite software token usage was not reported before shutdown."
+          );
         }
         shutdownComplete = true;
         if (installUpdateAfterShutdown && updateService) {
@@ -237,20 +346,54 @@ function rememberTerminalRun(runId: string): void {
   }
 }
 
+function recordUsageObservation(
+  event: Extract<SystemEventEnvelope, { type: "agent.usage_observed" }>
+): void {
+  if (!modelUsageStore || event.payload.runtime.mode === "local-faux") return;
+  const activeRun = activeRuns.get(event.payload.runId);
+  const usageContext =
+    activeRun?.usageContext ??
+    pendingUsageContexts.get(event.context.correlationId);
+  const snapshot = usageSnapshotForRuntime(usageContext, event.payload.runtime);
+  void modelUsageStore
+    .record({
+      id: `v2:${event.payload.observationId}`,
+      occurredAt: event.payload.observedAt,
+      model: snapshot,
+      module: usageContext?.module ?? "unknown",
+      actor: event.payload.subagentRunId ? "subagent" : "main-agent",
+      status: event.payload.status,
+      usage: event.payload.usage
+    })
+    .catch((error: unknown) => {
+      console.warn(
+        "DeepWrite model usage record was not persisted:",
+        error instanceof Error ? error.message : "unknown error"
+      );
+    });
+}
 
-function handleUtilityEvent(event: SystemEventEnvelope, worker: UtilityWorkerName): void {
+function handleUtilityEvent(
+  event: SystemEventEnvelope,
+  worker: UtilityWorkerName
+): void {
   if (isAgentEvent(event) && worker !== "agent") {
     return;
   }
 
-  const validated = SystemEventEnvelopeSchema.parse(event) as SystemEventEnvelope;
+  const validated = SystemEventEnvelopeSchema.parse(
+    event
+  ) as SystemEventEnvelope;
   if (validated.type === "agent.usage_observed") {
-    recordUsageObservation(validated, modelUsageStore, activeRuns, pendingUsageContexts);
+    recordUsageObservation(validated);
     return;
   }
   if (isAgentEvent(validated)) {
     const runId = validated.payload.runId;
-    if (validated.type === "agent.message_completed" || validated.type === "agent.error") {
+    if (
+      validated.type === "agent.message_completed" ||
+      validated.type === "agent.error"
+    ) {
       const activeRun = activeRuns.get(runId);
       rememberTerminalRun(runId);
       activeRuns.delete(runId);
@@ -258,7 +401,9 @@ function handleUtilityEvent(event: SystemEventEnvelope, worker: UtilityWorkerNam
         activeRun?.correlationId ?? validated.context.correlationId
       );
     } else if (!terminalRuns.has(runId) && !activeRuns.has(runId)) {
-      const usageContext = pendingUsageContexts.get(validated.context.correlationId);
+      const usageContext = pendingUsageContexts.get(
+        validated.context.correlationId
+      );
       activeRuns.set(runId, {
         sessionId: validated.payload.sessionId,
         correlationId: validated.context.correlationId,
@@ -315,7 +460,10 @@ function handleUnexpectedExit(worker: UtilityWorkerName, reason: string): void {
   );
 }
 
-function handleWorkerRestarted(worker: UtilityWorkerName, reason: string): void {
+function handleWorkerRestarted(
+  worker: UtilityWorkerName,
+  reason: string
+): void {
   broadcastEvent(
     SystemEventEnvelopeSchema.parse(
       createEnvelope(
@@ -405,11 +553,7 @@ function createMainWindow(): BrowserWindow {
 
   window.webContents.once("did-finish-load", () => void announceReady(window));
   window.on("close", (event) => {
-    if (
-      cachedGeneralSettings.showInMenuBar &&
-      !quitting &&
-      !shutdownComplete
-    ) {
+    if (cachedGeneralSettings.showInMenuBar && !quitting && !shutdownComplete) {
       event.preventDefault();
       window.hide();
     }
@@ -483,6 +627,9 @@ function syncGeneralSettings(settings: GeneralSettings): void {
   syncMenuBarTray();
 }
 
+function safeErrorDetails(error: unknown): Record<string, unknown> {
+  return { kind: error instanceof Error ? error.name : "unknown" };
+}
 
 function extractCommandRequestId(rawCommand: unknown): string {
   if (
@@ -531,6 +678,235 @@ function requireChatAssistantProjectConfigStore(): ChatAssistantProjectConfigSto
     throw new Error("聊天助手项目配置存储尚未初始化。");
   }
   return chatAssistantProjectConfigStore;
+}
+
+async function requireCorePayload(
+  supervisor: UtilitySupervisor,
+  type: "catalog.index" | "catalog.snapshot" | "long.list",
+  schema: { parse(value: unknown): unknown }
+): Promise<unknown> {
+  const id = createId(`cmd_chat_assistant_${type.replaceAll(".", "_")}`);
+  const command = CommandEnvelopeSchema.parse(
+    createEnvelope(type, {}, { id, correlationId: id })
+  );
+  const result = await supervisor.requestCommand("core", command, 60_000);
+  if (result.status === "rejected") {
+    throw new Error(result.error.message);
+  }
+  return schema.parse(result.payload);
+}
+
+function chatAssistantUsageStart(days: number): string {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  if (days > 1) date.setDate(date.getDate() - (days - 1));
+  return date.toISOString();
+}
+
+async function resolveChatAssistantRuntimeContext(
+  supervisor: UtilitySupervisor,
+  payload: SessionPromptCommandPayload
+): Promise<ChatAssistantRuntimeContext> {
+  const request = payload.chatAssistant ?? { mode: "normal" as const };
+  const [catalog, longList, settings, today, sevenDays, thirtyDays, all] =
+    await Promise.all([
+      requireCorePayload(
+        supervisor,
+        "catalog.index",
+        CatalogIndexSnapshotSchema
+      ),
+      requireCorePayload(supervisor, "long.list", LongListBooksResultSchema),
+      requireModelConfigStore().list(),
+      requireModelUsageStore().query({ startAt: chatAssistantUsageStart(1) }),
+      requireModelUsageStore().query({ startAt: chatAssistantUsageStart(7) }),
+      requireModelUsageStore().query({ startAt: chatAssistantUsageStart(30) }),
+      requireModelUsageStore().query()
+    ]);
+  const modelSettings = ModelSettingsSchema.parse(settings);
+  const base = {
+    software: {
+      name: "DeepWrite" as const,
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      currentTime: new Date().toISOString(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    },
+    catalog: CatalogIndexSnapshotSchema.parse(catalog),
+    longBooks: LongListBooksResultSchema.parse(longList).books,
+    models: modelSettings.models.map((model) => ({
+      id: model.id,
+      label: model.label,
+      provider: model.provider,
+      modelId: model.modelId,
+      api: model.api,
+      reasoning: model.reasoning,
+      defaultThinkingLevel: model.defaultThinkingLevel,
+      thinkingLevelOptions: model.thinkingLevelOptions,
+      temperatureOptions: model.temperatureOptions,
+      credentialConfigured: model.hasApiKey,
+      ...(model.managedBy ? { managedBy: model.managedBy } : {}),
+      ...(model.status !== undefined ? { status: model.status } : {}),
+      ...(model.discount !== undefined ? { discount: model.discount } : {}),
+      ...(model.input !== undefined ? { input: model.input } : {}),
+      ...(model.output !== undefined ? { output: model.output } : {}),
+      ...(model.cache !== undefined ? { cache: model.cache } : {})
+    })),
+    defaultModelId: modelSettings.defaultModelId,
+    usage: {
+      today: ModelUsageDashboardSchema.parse(today),
+      "7d": ModelUsageDashboardSchema.parse(sevenDays),
+      "30d": ModelUsageDashboardSchema.parse(thirtyDays),
+      all: ModelUsageDashboardSchema.parse(all)
+    }
+  };
+  if (request.mode === "normal") {
+    return ChatAssistantRuntimeContextSchema.parse({ ...base, mode: "normal" });
+  }
+  const config = await requireChatAssistantProjectConfigStore().get(
+    request.project
+  );
+  if (request.project.projectType === "long") {
+    const projectBook = base.longBooks.find(
+      (book) => book.id === request.project.projectId
+    );
+    if (!projectBook)
+      throw new Error("所选长篇项目不存在或暂时不可用，请刷新后重试。");
+    return ChatAssistantRuntimeContextSchema.parse({
+      ...base,
+      mode: "project",
+      project: request.project,
+      projectPrompt: config.systemPrompt,
+      projectBook
+    });
+  }
+  const snapshot = CatalogSnapshotSchema.parse(
+    await requireCorePayload(
+      supervisor,
+      "catalog.snapshot",
+      CatalogSnapshotSchema
+    )
+  );
+  const projectBook = snapshot.books.find(
+    (book) =>
+      book.id === request.project.projectId &&
+      book.bookType === request.project.projectType
+  );
+  if (!projectBook)
+    throw new Error("所选创作项目不存在或暂时不可用，请刷新后重试。");
+  return ChatAssistantRuntimeContextSchema.parse({
+    ...base,
+    mode: "project",
+    project: request.project,
+    projectPrompt: config.systemPrompt,
+    projectBook
+  });
+}
+
+function usageRuntimeKey(
+  runtime: Pick<AgentRuntimeRef, "provider" | "model">
+): string {
+  return `${runtime.provider}\u0000${runtime.model}`;
+}
+
+function usageEndpointOrigin(baseUrl: string): string {
+  if (!baseUrl) return "";
+  try {
+    return new URL(baseUrl).origin;
+  } catch {
+    return "";
+  }
+}
+
+function createUsageModelSnapshot(
+  runtime: AgentRuntimeRef,
+  config?: AgentProviderRuntimeConfig
+): ModelUsageModelSnapshot {
+  const provider = config?.provider ?? runtime.provider;
+  const modelId = config?.modelId ?? runtime.model;
+  const api = config?.api;
+  const endpointOrigin = config ? usageEndpointOrigin(config.baseUrl) : "";
+  const revisionId = config
+    ? createModelUsageRevisionId(config)
+    : createHash("sha256")
+        .update(
+          JSON.stringify({ provider, modelId, api: api ?? "", endpointOrigin })
+        )
+        .digest("hex");
+  const configId =
+    config?.id ?? runtime.configId ?? `runtime:${provider}:${modelId}`;
+  return {
+    configId,
+    revisionId,
+    label: config?.label ?? modelId,
+    provider,
+    modelId,
+    ...(api ? { api } : {}),
+    ...(config?.managedBy ? { managedBy: config.managedBy } : {})
+  };
+}
+
+function usageModuleForPrompt(
+  payload: SessionPromptCommandPayload
+): ModelUsageModule {
+  if (payload.mode === "chat-assistant") return "assistant-chat";
+  const context = payload.workspaceContext;
+  if (!context) return "unknown";
+  if (context.shortWorkspace) return "short-writing";
+  if (context.scriptWorkspace) return "script-writing";
+  if (context.longWorkspace) return "long-writing";
+  if (context.libraryWorkspace) {
+    return context.libraryWorkspace.domain === "skill"
+      ? "skill-library"
+      : "material-library";
+  }
+  if (context.learningImitation) return "learning-imitation";
+  if (context.subagentAuthoring) return "subagent-authoring";
+  return "unknown";
+}
+
+function createUsageRunContext(
+  payload: SessionPromptCommandPayload,
+  runtimeConfig: AgentProviderRuntimeConfig | undefined,
+  subagentRuntimeConfigs: Readonly<Record<string, AgentProviderRuntimeConfig>>
+): UsageRunContext {
+  const snapshotsByConfigId = new Map<string, ModelUsageModelSnapshot>();
+  const snapshotsByRuntime = new Map<string, ModelUsageModelSnapshot>();
+  const add = (config: AgentProviderRuntimeConfig | undefined): void => {
+    if (!config) return;
+    const runtime: AgentRuntimeRef = {
+      provider: config.provider,
+      model: config.modelId,
+      mode: "provider",
+      configId: config.id
+    };
+    const snapshot = createUsageModelSnapshot(runtime, config);
+    snapshotsByConfigId.set(config.id, snapshot);
+    snapshotsByRuntime.set(usageRuntimeKey(runtime), snapshot);
+  };
+  add(runtimeConfig);
+  for (const config of Object.values(subagentRuntimeConfigs)) {
+    add(config);
+  }
+  return {
+    module: usageModuleForPrompt(payload),
+    snapshotsByConfigId,
+    snapshotsByRuntime
+  };
+}
+
+function usageSnapshotForRuntime(
+  context: UsageRunContext | undefined,
+  runtime: AgentRuntimeRef
+): ModelUsageModelSnapshot {
+  const byConfigId = runtime.configId
+    ? context?.snapshotsByConfigId.get(runtime.configId)
+    : undefined;
+  return (
+    byConfigId ??
+    context?.snapshotsByRuntime.get(usageRuntimeKey(runtime)) ??
+    createUsageModelSnapshot(runtime)
+  );
 }
 
 function requireWorkspaceAgentConfigStore(): WorkspaceAgentConfigStore {
@@ -618,6 +994,51 @@ async function loadAndSyncNativeAppearanceChrome(): Promise<void> {
   }
 }
 
+async function chooseWorkspaceDirectory(): Promise<ReturnType<
+  typeof WorkspaceDirectorySettingsSchema.parse
+> | null> {
+  const current = await requireWorkspaceDirectoryStore().list();
+  const selection = await dialog.showOpenDialog({
+    title: "选择 DeepWrite 工作目录",
+    defaultPath: current.path ?? app.getPath("documents"),
+    properties: ["openDirectory", "createDirectory"]
+  });
+  const selectedDirectory = selection.filePaths[0];
+  if (selection.canceled || !selectedDirectory) {
+    return null;
+  }
+  return WorkspaceDirectorySettingsSchema.parse(
+    await requireWorkspaceDirectoryStore().save(selectedDirectory)
+  );
+}
+
+async function requireSelectedWorkspaceDirectory(): Promise<string | null> {
+  const current = await requireWorkspaceDirectoryStore().list();
+  if (current.path) {
+    return current.path;
+  }
+  return (await chooseWorkspaceDirectory())?.path ?? null;
+}
+
+function workspaceResourceParent(
+  workspaceDirectory: string,
+  domain: "book" | "material" | "skill"
+): string {
+  return join(
+    workspaceDirectory,
+    domain === "book" ? "books" : domain === "material" ? "materials" : "skills"
+  );
+}
+
+function workspaceGroupParent(
+  workspaceDirectory: string,
+  domain: "material" | "skill"
+): string {
+  return join(
+    workspaceDirectory,
+    domain === "material" ? "material-groups" : "skill-groups"
+  );
+}
 
 function configureCatalogEnvironment(): string {
   const userDataPath = app.getPath("userData");
@@ -658,79 +1079,113 @@ function configureCatalogEnvironment(): string {
   return userDataPath;
 }
 
-
-function applyGeneralSettingsSnapshot(snapshot: { settings: GeneralSettings }): void {
-  syncGeneralSettings(snapshot.settings);
-}
-
-function createIpcCommandContext(
-  senderWebContentsId: number,
-  window: BrowserWindow
-): IpcCommandContext {
-  const chooseDirectory = () =>
-    chooseWorkspaceDirectory({
-      requireWorkspaceDirectoryStore,
-      getDocumentsPath: () => app.getPath("documents"),
-      dialog
-    });
-  return {
-    getMainWindow: () => window,
-    supervisor,
-    broadcastEvent,
-    dialog,
-    continuationImportPreviews,
-    legacySyncPreviews,
-    authorizeMainInternalCommand,
-    activeRuns,
-    pendingUsageContexts,
-    terminalRuns,
-    recordUsageObservation: (event) =>
-      recordUsageObservation(event, modelUsageStore, activeRuns, pendingUsageContexts),
-    requireModelConfigStore,
-    requireModelUsageStore,
-    requireChatAssistantProjectConfigStore,
-    requireWorkspaceAgentConfigStore,
-    requireAgentTeamConfigStore,
-    requireLibraryAgentConfigStore,
-    requireLongAgentConfigStore,
-    requireLongAgentTeamConfigStore,
-    requireLearningImitationConfigStore,
-    requireWorkspaceDirectoryStore,
-    requireAppearanceConfigStore,
-    requireGeneralSettingsStore,
-    exportShortManuscript,
-    exportLongManuscript,
-    listRemoteModels,
-    resolveDraftApiKey: (input) => requireModelConfigStore().resolveDraftApiKey(input),
-    readExternalSkills,
-    importLegacyLibraryArchives,
-    cachedAppearanceSettings: () => cachedAppearanceSettings,
-    syncNativeAppearanceChrome,
-    syncGeneralSettings: (settings) => applyGeneralSettingsSnapshot({ settings }),
-    requireSelectedWorkspaceDirectory: () =>
-      requireSelectedWorkspaceDirectory({
-        requireWorkspaceDirectoryStore,
-        chooseWorkspaceDirectory: chooseDirectory
-      }),
-    workspaceResourceParent,
-    workspaceGroupParent,
-    chooseWorkspaceDirectory: chooseDirectory,
-    senderWebContentsId,
-    getDocumentsPath: () => app.getPath("documents"),
-    getAppVersion: () => app.getVersion()
-  };
-}
-
 function registerIpc(): void {
-  registerUpdateAlertIpc({
-    getMainWindow: () => mainWindow,
-    getUpdateService: () => updateService,
-    getAppAlertStore: () => appAlertStore
+  const requireUpdateService = (
+    event: Electron.IpcMainInvokeEvent
+  ): UpdateService => {
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      event.sender !== mainWindow.webContents
+    ) {
+      throw new Error(
+        "IPC update request sender is not the active DeepWrite window."
+      );
+    }
+    if (!updateService) throw new Error("更新服务尚未初始化。");
+    return updateService;
+  };
+  ipcMain.handle(UPDATE_GET_STATE_CHANNEL, (event): UpdateState =>
+    requireUpdateService(event).getState()
+  );
+  ipcMain.handle(UPDATE_CHECK_CHANNEL, (event): Promise<UpdateState> =>
+    requireUpdateService(event).check()
+  );
+  ipcMain.handle(UPDATE_DOWNLOAD_CHANNEL, (event): Promise<UpdateState> =>
+    requireUpdateService(event).download()
+  );
+  ipcMain.handle(UPDATE_INSTALL_CHANNEL, (event): void => {
+    requireUpdateService(event).install();
   });
-  registerMarketplaceIpc({
-    getMainWindow: () => mainWindow,
-    getMarketplaceClient: () => marketplaceClient
-  });
+  const requireAppAlertStore = (
+    event: Electron.IpcMainInvokeEvent
+  ): AppAlertStore => {
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      event.sender !== mainWindow.webContents
+    ) {
+      throw new Error(
+        "IPC app alert request sender is not the active DeepWrite window."
+      );
+    }
+    if (!appAlertStore) throw new Error("提醒服务尚未初始化。");
+    return appAlertStore;
+  };
+  ipcMain.handle(
+    APP_ALERT_GET_CHANNEL,
+    async (event): Promise<AppAlertSnapshot> =>
+      AppAlertSnapshotSchema.parse(
+        await requireAppAlertStore(event).getSnapshot()
+      )
+  );
+  ipcMain.handle(
+    APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL,
+    async (event, rawRevision: unknown): Promise<void> => {
+      const revision = AppAlertDesktopRevisionSchema.parse(rawRevision);
+      await requireAppAlertStore(event).acknowledgeDesktop(revision);
+    }
+  );
+
+  ipcMain.handle(
+    MARKETPLACE_IPC_CHANNEL,
+    async (event, rawRequest: unknown): Promise<unknown> => {
+      if (
+        !mainWindow ||
+        mainWindow.isDestroyed() ||
+        event.sender !== mainWindow.webContents
+      ) {
+        throw new Error("技能广场 IPC 请求来源无效。");
+      }
+      if (!marketplaceClient) {
+        throw new Error("技能广场服务尚未初始化。");
+      }
+      const request = MarketplaceIpcRequestSchema.parse(rawRequest);
+      switch (request.operation) {
+        case "session":
+          return marketplaceClient.session();
+        case "register":
+          return marketplaceClient.register(request.input);
+        case "login":
+          return marketplaceClient.login(request.input);
+        case "logout":
+          return marketplaceClient.logout();
+        case "list":
+          return marketplaceClient.list(request.filter);
+        case "detail":
+          return marketplaceClient.detail(request.ref);
+        case "listMine":
+          return marketplaceClient.listMine(request.filter);
+        case "myDetail":
+          return marketplaceClient.myDetail(request.ref);
+        case "publish":
+          return marketplaceClient.publish(request.input);
+        case "update":
+          return marketplaceClient.update(request.input);
+        case "setEnabled":
+          return marketplaceClient.setEnabled(request.input);
+        case "delete":
+          return marketplaceClient.delete(request.ref);
+        case "like":
+          return marketplaceClient.like(request.input);
+        case "previewInstall":
+          return marketplaceClient.previewInstall(request.ref);
+        case "install":
+          return marketplaceClient.install(request.input);
+      }
+    }
+  );
+
   registerCloudBackupIpc(
     () => cloudBackupService,
     () => mainWindow
@@ -758,7 +1213,8 @@ function registerIpc(): void {
       if (!parsed.success) {
         const details = summarizeCommandValidationIssues(parsed.error.issues);
         const firstIssue = Array.isArray(details.issues)
-          ? (details.issues[0] as { path?: string; message?: string } | undefined)
+          ? (details.issues[0] as
+              { path?: string; message?: string } | undefined)
           : undefined;
         const issueHint =
           firstIssue?.path && firstIssue.message
@@ -779,15 +1235,2169 @@ function registerIpc(): void {
         };
       }
 
-      return dispatchCommand(
-        createIpcCommandContext(event.sender.id, mainWindow),
-        parsed.data
-      );
+      const command = parsed.data;
+      if (
+        command.type === "agent.prompt" ||
+        command.type === "agent.abort" ||
+        command.type === "agent.model_test" ||
+        command.type === "catalog.createShortBookAtPath" ||
+        command.type === "catalog.createScriptBookAtPath" ||
+        command.type === "long.createBookAtPath" ||
+        command.type === "long.previewLegacySyncAtPath" ||
+        command.type === "long.applyLegacySyncAtPath" ||
+        command.type === "long.importPortableAtPath" ||
+        command.type === "long.previewContinuationImportAtPath" ||
+        command.type === "long.importContinuationAtPath" ||
+        command.type === "long.openAtPath" ||
+        command.type === "catalog.createLibraryAtPath" ||
+        command.type === "catalog.createLibraryGroupAtPath" ||
+        command.type === "catalog.openProjectAtPath" ||
+        command.type === "catalog.importLegacyLibraryAtPath" ||
+        command.type === "catalog.installMarketplaceSkillContent"
+      ) {
+        return {
+          status: "rejected",
+          requestId: command.id,
+          error: {
+            code: "ipc.forbidden_internal_command",
+            message: "Renderer cannot invoke internal commands."
+          }
+        };
+      }
+      if (command.type === "system.health") {
+        return {
+          status: "accepted",
+          requestId: command.id,
+          payload: SystemHealthPayloadSchema.parse(
+            await supervisor.collectHealth()
+          )
+        };
+      }
+
+      if (command.type === "manuscript.exportShort") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: ExportShortManuscriptResultSchema.parse(
+              await exportShortManuscript(mainWindow, command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "manuscript.export_failed",
+              message:
+                error instanceof Error ? error.message : "导出正文失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "manuscript.exportLong") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: ExportLongManuscriptResultSchema.parse(
+              await exportLongManuscript(mainWindow, command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "manuscript.export_failed",
+              message:
+                error instanceof Error ? error.message : "导出长篇失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "workspaceDirectory.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: WorkspaceDirectorySettingsSchema.parse(
+              await requireWorkspaceDirectoryStore().list()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "workspace_directory.list_failed",
+              message:
+                error instanceof Error ? error.message : "加载工作目录失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "workspaceDirectory.choose") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: await chooseWorkspaceDirectory()
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "workspace_directory.choose_failed",
+              message:
+                error instanceof Error ? error.message : "切换工作目录失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "appearance.list") {
+        try {
+          const snapshot = AppearanceSettingsSnapshotSchema.parse(
+            await requireAppearanceConfigStore().list()
+          );
+          syncNativeAppearanceChrome(snapshot.settings);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: snapshot
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "appearance.list_failed",
+              message:
+                error instanceof Error ? error.message : "加载外观设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "appearance.save") {
+        try {
+          const snapshot = AppearanceSettingsSnapshotSchema.parse(
+            await requireAppearanceConfigStore().save(command.payload)
+          );
+          syncNativeAppearanceChrome(snapshot.settings);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: snapshot
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "appearance.save_failed",
+              message:
+                error instanceof Error ? error.message : "保存外观设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "generalSettings.list") {
+        try {
+          const snapshot = GeneralSettingsSnapshotSchema.parse(
+            await requireGeneralSettingsStore().list()
+          );
+          syncGeneralSettings(snapshot.settings);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: snapshot
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "general_settings.list_failed",
+              message:
+                error instanceof Error ? error.message : "加载常规设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "generalSettings.save") {
+        try {
+          const snapshot = GeneralSettingsSnapshotSchema.parse(
+            await requireGeneralSettingsStore().save(command.payload)
+          );
+          syncGeneralSettings(snapshot.settings);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: snapshot
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "general_settings.save_failed",
+              message:
+                error instanceof Error ? error.message : "保存常规设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "long.createBook" ||
+        command.type === "long.openExisting"
+      ) {
+        try {
+          const workspaceDirectory = await requireSelectedWorkspaceDirectory();
+          if (!workspaceDirectory) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const defaultPath = workspaceResourceParent(
+            workspaceDirectory,
+            "book"
+          );
+          let selectedPath = defaultPath;
+          if (command.type === "long.openExisting") {
+            const selection = await dialog.showOpenDialog({
+              title: "打开已有长篇项目",
+              defaultPath,
+              properties: ["openDirectory"]
+            });
+            if (selection.canceled || selection.filePaths.length === 0) {
+              return {
+                status: "accepted",
+                requestId: command.id,
+                payload: null
+              };
+            }
+            selectedPath = selection.filePaths[0]!;
+          }
+          const internalCommand = CommandEnvelopeSchema.parse(
+            command.type === "long.createBook"
+              ? createEnvelope(
+                  "long.createBookAtPath",
+                  {
+                    parentDirectory: selectedPath,
+                    input: command.payload
+                  },
+                  { id: command.id, context: command.context }
+                )
+              : createEnvelope(
+                  "long.openAtPath",
+                  { projectDirectory: selectedPath },
+                  { id: command.id, context: command.context }
+                )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongOpenBookResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.forward_failed",
+              message:
+                error instanceof Error ? error.message : "长篇目录操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "long.chooseContinuationImportSource") {
+        try {
+          const selection = await dialog.showOpenDialog(mainWindow, {
+            title: "选择续写章节文件夹",
+            defaultPath: app.getPath("documents"),
+            buttonLabel: "扫描章节",
+            properties: ["openDirectory"]
+          });
+          const sourcePath = selection.filePaths[0];
+          if (selection.canceled || !sourcePath) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "long.previewContinuationImportAtPath",
+              { sourcePath },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          const preview = LongPreviewContinuationImportAtPathResultSchema.parse(
+            result.payload
+          );
+          const { previewId, expiresAt } = continuationImportPreviews.register({
+            webContentsId: event.sender.id,
+            sourcePath,
+            sourceFingerprint: preview.sourceFingerprint
+          });
+          const { sourceFingerprint: _sourceFingerprint, ...publicPreview } =
+            preview;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongChooseContinuationImportSourceResultSchema.parse({
+              ...publicPreview,
+              previewId,
+              expiresAt: new Date(expiresAt).toISOString()
+            })
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.preview_continuation_import_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "扫描续写章节文件夹失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "long.chooseLegacySyncSource") {
+        try {
+          const selection = await dialog.showOpenDialog(mainWindow, {
+            title: "选择旧版本长篇压缩包",
+            defaultPath: app.getPath("documents"),
+            buttonLabel: "上传并预览",
+            filters: [{ name: "旧版本长篇压缩包", extensions: ["zip"] }],
+            properties: ["openFile"]
+          });
+          const sourcePath = selection.filePaths[0];
+          if (selection.canceled || !sourcePath) {
+            return { status: "accepted", requestId: command.id, payload: null };
+          }
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "long.previewLegacySyncAtPath",
+              { sourcePath },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          const preview = LongPreviewLegacySyncAtPathResultSchema.parse(
+            result.payload
+          );
+          const { previewId, expiresAt } = legacySyncPreviews.register({
+            webContentsId: event.sender.id,
+            sourcePath,
+            sourceFingerprint: preview.sourceFingerprint
+          });
+          const { sourceFingerprint: _fingerprint, ...publicPreview } = preview;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongChooseLegacySyncSourceResultSchema.parse({
+              ...publicPreview,
+              previewId,
+              expiresAt: new Date(expiresAt).toISOString()
+            })
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.preview_legacy_sync_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "读取旧版本压缩包失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "long.applyLegacySync") {
+        try {
+          const registration = legacySyncPreviews.resolve(
+            command.payload.previewId,
+            event.sender.id
+          );
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "long.applyLegacySyncAtPath",
+              {
+                bookId: command.payload.bookId,
+                expectedProjectRevision:
+                  command.payload.expectedProjectRevision,
+                modules: command.payload.modules,
+                sourcePath: registration.sourcePath,
+                expectedFingerprint: registration.sourceFingerprint
+              },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          legacySyncPreviews.consume(command.payload.previewId);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongApplyLegacySyncResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.apply_legacy_sync_failed",
+              message:
+                error instanceof Error ? error.message : "同步旧版本失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "long.importContinuation") {
+        try {
+          const registration = continuationImportPreviews.resolve(
+            command.payload.previewId,
+            event.sender.id
+          );
+          const workspaceDirectory = await requireSelectedWorkspaceDirectory();
+          if (!workspaceDirectory) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "long.importContinuationAtPath",
+              {
+                parentDirectory: workspaceResourceParent(
+                  workspaceDirectory,
+                  "book"
+                ),
+                sourcePath: registration.sourcePath,
+                expectedFingerprint: registration.sourceFingerprint,
+                title: command.payload.title,
+                genre: command.payload.genre
+              },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          continuationImportPreviews.consume(command.payload.previewId);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongImportContinuationResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.import_continuation_failed",
+              message:
+                error instanceof Error ? error.message : "续写导入失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "long.importPortable") {
+        try {
+          const workspaceDirectory = await requireSelectedWorkspaceDirectory();
+          if (!workspaceDirectory) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const selection = await dialog.showOpenDialog(mainWindow, {
+            title: "导入 DeepWrite 长篇可移植工程",
+            defaultPath: app.getPath("documents"),
+            buttonLabel: "选择并导入",
+            filters: [
+              {
+                name: "DeepWrite 长篇可移植工程",
+                extensions: ["json"]
+              }
+            ],
+            properties: ["openFile"]
+          });
+          const sourcePath = selection.filePaths[0];
+          if (selection.canceled || !sourcePath) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "long.importPortableAtPath",
+              {
+                parentDirectory: workspaceResourceParent(
+                  workspaceDirectory,
+                  "book"
+                ),
+                sourcePath
+              },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") return result;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongImportPortableResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.import_portable_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "导入长篇可移植工程失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "catalog.createShortBook" ||
+        command.type === "catalog.createScriptBook" ||
+        command.type === "catalog.createLibrary" ||
+        command.type === "catalog.createLibraryGroup" ||
+        command.type === "catalog.openProject" ||
+        command.type === "catalog.importLegacyLibrary"
+      ) {
+        try {
+          const workspaceDirectory = await requireSelectedWorkspaceDirectory();
+          if (!workspaceDirectory) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+
+          const domain =
+            command.type === "catalog.createShortBook" ||
+            command.type === "catalog.createScriptBook"
+              ? "book"
+              : command.payload.domain;
+          const defaultPath =
+            command.type === "catalog.createLibraryGroup"
+              ? workspaceGroupParent(workspaceDirectory, command.payload.domain)
+              : workspaceResourceParent(workspaceDirectory, domain);
+          let selectedPaths: string[];
+          if (
+            command.type === "catalog.createShortBook" ||
+            command.type === "catalog.createScriptBook" ||
+            command.type === "catalog.createLibrary" ||
+            command.type === "catalog.createLibraryGroup"
+          ) {
+            selectedPaths = [defaultPath];
+          } else {
+            const selection = await dialog.showOpenDialog({
+              title:
+                command.type === "catalog.importLegacyLibrary"
+                  ? `导入旧版${domain === "material" ? "素材" : "技能"}库压缩包`
+                  : domain === "book"
+                    ? "打开已有书籍"
+                    : domain === "material"
+                      ? "打开已有素材库"
+                      : "打开已有技能库",
+              defaultPath,
+              ...(command.type === "catalog.importLegacyLibrary"
+                ? {
+                    properties:
+                      command.type === "catalog.importLegacyLibrary"
+                        ? LEGACY_LIBRARY_FILE_SELECTION_PROPERTIES
+                        : (["openFile"] as const),
+                    filters: [
+                      {
+                        name: `旧版${domain === "material" ? "素材" : "技能"}库压缩包`,
+                        extensions: ["zip"]
+                      }
+                    ]
+                  }
+                : { properties: ["openDirectory"] as const })
+            });
+            if (selection.canceled || selection.filePaths.length === 0) {
+              return {
+                status: "accepted",
+                requestId: command.id,
+                payload: null
+              };
+            }
+            selectedPaths = selection.filePaths;
+          }
+
+          const selectedPath = selectedPaths[0]!;
+
+          const internalCommand = CommandEnvelopeSchema.parse(
+            command.type === "catalog.createShortBook"
+              ? createEnvelope(
+                  "catalog.createShortBookAtPath",
+                  {
+                    parentDirectory: selectedPath,
+                    input: command.payload
+                  },
+                  { id: command.id, context: command.context }
+                )
+              : command.type === "catalog.createScriptBook"
+                ? createEnvelope(
+                    "catalog.createScriptBookAtPath",
+                    {
+                      parentDirectory: selectedPath,
+                      input: command.payload
+                    },
+                    { id: command.id, context: command.context }
+                  )
+                : command.type === "catalog.createLibrary"
+                  ? createEnvelope(
+                      "catalog.createLibraryAtPath",
+                      {
+                        ...command.payload,
+                        parentDirectory: selectedPath
+                      },
+                      { id: command.id, context: command.context }
+                    )
+                  : command.type === "catalog.createLibraryGroup"
+                    ? createEnvelope(
+                        "catalog.createLibraryGroupAtPath",
+                        {
+                          parentDirectory: selectedPath,
+                          input: command.payload
+                        },
+                        { id: command.id, context: command.context }
+                      )
+                    : command.type === "catalog.openProject"
+                      ? createEnvelope(
+                          "catalog.openProjectAtPath",
+                          {
+                            projectDirectory: selectedPath,
+                            domain: command.payload.domain
+                          },
+                          { id: command.id, context: command.context }
+                        )
+                      : createEnvelope(
+                          "catalog.importLegacyLibraryAtPath",
+                          {
+                            domain: command.payload.domain,
+                            archivePath: selectedPath,
+                            parentDirectory: defaultPath
+                          },
+                          { id: command.id, context: command.context }
+                        )
+          );
+
+          if (command.type === "catalog.importLegacyLibrary") {
+            const payload = await importLegacyLibraryArchives(
+              selectedPaths,
+              async (archivePath, index) => {
+                const result = await supervisor.requestCommand(
+                  "core",
+                  createEnvelope(
+                    "catalog.importLegacyLibraryAtPath",
+                    {
+                      domain: command.payload.domain,
+                      archivePath,
+                      parentDirectory: defaultPath
+                    },
+                    {
+                      id: `${command.id}_${index + 1}`,
+                      context: command.context
+                    }
+                  ),
+                  0
+                );
+                if (result.status === "rejected") {
+                  throw new Error(result.error.message);
+                }
+                return result.payload;
+              }
+            );
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload
+            };
+          }
+
+          const result = await supervisor.requestCommand(
+            "core",
+            internalCommand,
+            0
+          );
+          if (result.status === "rejected") {
+            return result;
+          }
+          const payload =
+            command.type === "catalog.createShortBook"
+              ? ShortBookSchema.parse(result.payload)
+              : command.type === "catalog.createScriptBook"
+                ? ScriptBookSchema.parse(result.payload)
+                : command.type === "catalog.createLibrary"
+                  ? CatalogLibrarySchema.parse(result.payload)
+                  : command.type === "catalog.createLibraryGroup"
+                    ? CatalogLibraryGroupSchema.parse(result.payload)
+                    : command.type === "catalog.openProject"
+                      ? CatalogOpenProjectResultSchema.parse(result.payload)
+                      : CatalogLibrarySchema.parse(result.payload);
+          return { status: "accepted", requestId: command.id, payload };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "catalog.forward_failed",
+              message:
+                error instanceof Error ? error.message : "目录操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "long.list" ||
+        command.type === "long.open" ||
+        command.type === "long.duplicateBook" ||
+        command.type === "long.rename" ||
+        command.type === "long.updateBindings" ||
+        command.type === "long.getWorkspaceIndex" ||
+        command.type === "long.readDocument" ||
+        command.type === "long.readAgentsMd" ||
+        command.type === "long.search" ||
+        command.type === "long.writeDocument" ||
+        command.type === "long.writeAgentsMd" ||
+        command.type === "long.previewOperations" ||
+        command.type === "long.applyOperations" ||
+        command.type === "long.writeChapter" ||
+        command.type === "long.commitChapter" ||
+        command.type === "long.rollbackLastCommit" ||
+        command.type === "long.unregister" ||
+        command.type === "long.delete"
+      ) {
+        try {
+          const result = await supervisor.requestCommand("core", command, 0);
+          if (result.status === "rejected") return result;
+          let payload: unknown;
+          switch (command.type) {
+            case "long.list":
+              payload = LongListBooksResultSchema.parse(result.payload);
+              break;
+            case "long.open":
+            case "long.duplicateBook":
+            case "long.rename":
+            case "long.updateBindings":
+              payload = LongOpenBookResultSchema.parse(result.payload);
+              break;
+            case "long.getWorkspaceIndex":
+              payload = LongWorkspaceIndexResultSchema.parse(result.payload);
+              break;
+            case "long.readDocument":
+              payload = LongReadDocumentResultSchema.parse(result.payload);
+              break;
+            case "long.readAgentsMd":
+              payload = LongReadAgentsMdResultSchema.parse(result.payload);
+              break;
+            case "long.search":
+              payload = LongSearchResultSchema.parse(result.payload);
+              break;
+            case "long.writeDocument":
+              payload = LongWriteDocumentResultSchema.parse(result.payload);
+              break;
+            case "long.writeAgentsMd":
+              payload = LongWriteAgentsMdResultSchema.parse(result.payload);
+              break;
+            case "long.previewOperations":
+              payload = LongPreviewOperationsResultSchema.parse(result.payload);
+              break;
+            case "long.applyOperations":
+              payload = LongApplyOperationsResultSchema.parse(result.payload);
+              break;
+            case "long.writeChapter":
+              payload = LongWriteChapterResultSchema.parse(result.payload);
+              break;
+            case "long.commitChapter":
+              payload = LongCommitChapterResultSchema.parse(result.payload);
+              break;
+            case "long.rollbackLastCommit":
+              payload = LongRollbackLastCommitResultSchema.parse(
+                result.payload
+              );
+              break;
+            case "long.unregister":
+            case "long.delete":
+              payload = LongRemoveBookResultSchema.parse(result.payload);
+              break;
+          }
+          return { status: "accepted", requestId: command.id, payload };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long.forward_failed",
+              message:
+                error instanceof Error ? error.message : "长篇操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "catalog.chooseExternalSkills") {
+        try {
+          const selection =
+            command.payload.sourceKind === "directory"
+              ? mainWindow
+                ? await dialog.showOpenDialog(mainWindow, {
+                    title: "选择 skills 文件夹",
+                    properties: ["openDirectory"]
+                  })
+                : await dialog.showOpenDialog({
+                    title: "选择 skills 文件夹",
+                    properties: ["openDirectory"]
+                  })
+              : mainWindow
+                ? await dialog.showOpenDialog(mainWindow, {
+                    title: "选择 SKILL.md",
+                    properties: ["openFile"],
+                    filters: [{ name: "SKILL.md", extensions: ["md"] }]
+                  })
+                : await dialog.showOpenDialog({
+                    title: "选择 SKILL.md",
+                    properties: ["openFile"],
+                    filters: [{ name: "SKILL.md", extensions: ["md"] }]
+                  });
+          if (selection.canceled || selection.filePaths.length === 0) {
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: null
+            };
+          }
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: ExternalSkillSelectionResultSchema.parse(
+              await readExternalSkills(
+                command.payload.sourceKind,
+                selection.filePaths[0]!
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "catalog.choose_external_skills_failed",
+              message:
+                error instanceof Error ? error.message : "读取外部技能失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "rendererState.load" ||
+        command.type === "rendererState.save" ||
+        command.type === "rendererState.remove"
+      ) {
+        try {
+          const result = await supervisor.requestCommand(
+            "core",
+            command,
+            60_000
+          );
+          if (result.status === "rejected") return result;
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload:
+              command.type === "rendererState.load"
+                ? RendererStateLoadResultSchema.parse(result.payload)
+                : RendererStateMutationResultSchema.parse(result.payload)
+          };
+        } catch (error: unknown) {
+          const timedOut = error instanceof UtilityCommandTimeoutError;
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: timedOut
+                ? "renderer_state.command_timeout"
+                : "renderer_state.forward_failed",
+              message: timedOut
+                ? "会话历史持久化操作超时。"
+                : error instanceof Error
+                  ? error.message
+                  : "会话历史持久化操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "catalog.index" ||
+        command.type === "catalog.readDocument" ||
+        command.type === "catalog.snapshot" ||
+        command.type === "catalog.loadDraftRecovery" ||
+        command.type === "catalog.saveDraftRecovery" ||
+        command.type === "catalog.updateBook" ||
+        command.type === "catalog.mutateCharacterStructure" ||
+        command.type === "catalog.mutatePlotStructure" ||
+        command.type === "catalog.updateLibraryGroup" ||
+        command.type === "catalog.updateLibrary" ||
+        command.type === "catalog.deleteBook" ||
+        command.type === "catalog.saveDocument" ||
+        command.type === "catalog.createDraftSection" ||
+        command.type === "catalog.createDraftSections" ||
+        command.type === "catalog.deleteDraftSection" ||
+        command.type === "catalog.moveDraftSection" ||
+        command.type === "catalog.saveLibraryEntry" ||
+        command.type === "catalog.createLibraryEntry" ||
+        command.type === "catalog.removeLibraryEntry" ||
+        command.type === "catalog.moveLibraryEntry" ||
+        command.type === "catalog.unregisterProject" ||
+        command.type === "catalog.deleteProject" ||
+        command.type === "catalog.duplicateProject"
+      ) {
+        try {
+          const result = await supervisor.requestCommand(
+            "core",
+            command,
+            catalogCommandTimeoutMs(command.type)
+          );
+          if (result.status === "rejected") {
+            return result;
+          }
+          let payload: unknown;
+          switch (command.type) {
+            case "catalog.index":
+              payload = CatalogIndexSnapshotSchema.parse(result.payload);
+              break;
+            case "catalog.readDocument":
+              payload = CatalogReadDocumentResultSchema.parse(result.payload);
+              break;
+            case "catalog.snapshot":
+              payload = CatalogSnapshotSchema.parse(result.payload);
+              break;
+            case "catalog.loadDraftRecovery":
+              payload = CatalogDraftRecoverySchema.parse(result.payload);
+              break;
+            case "catalog.saveDraftRecovery":
+              payload = CatalogDraftRecoverySaveResultSchema.parse(
+                result.payload
+              );
+              break;
+            case "catalog.deleteBook":
+              payload = DeleteBookResultSchema.parse(result.payload);
+              break;
+            case "catalog.saveDocument":
+              payload = SaveDocumentResultSchema.parse(result.payload);
+              break;
+            case "catalog.createDraftSection":
+              payload = CatalogDraftSectionSchema.parse(result.payload);
+              break;
+            case "catalog.createDraftSections":
+              payload = CreateDraftSectionsResultSchema.parse(result.payload);
+              break;
+            case "catalog.deleteDraftSection":
+              payload = DeleteDraftSectionResultSchema.parse(result.payload);
+              break;
+            case "catalog.moveDraftSection":
+              payload = MoveDraftSectionResultSchema.parse(result.payload);
+              break;
+            case "catalog.saveLibraryEntry":
+            case "catalog.createLibraryEntry":
+              payload = CatalogLibraryEntrySchema.parse(result.payload);
+              break;
+            case "catalog.removeLibraryEntry":
+              payload = RemoveLibraryEntryResultSchema.parse(result.payload);
+              break;
+            case "catalog.moveLibraryEntry":
+              payload = MoveLibraryEntryResultSchema.parse(result.payload);
+              break;
+            case "catalog.updateLibrary":
+              payload = CatalogLibrarySchema.parse(result.payload);
+              break;
+            case "catalog.unregisterProject":
+              payload = UnregisterCatalogProjectResultSchema.parse(
+                result.payload
+              );
+              break;
+            case "catalog.deleteProject":
+              payload = DeleteCatalogProjectResultSchema.parse(result.payload);
+              break;
+            case "catalog.duplicateProject":
+              payload = DuplicateCatalogProjectResultSchema.parse(
+                result.payload
+              );
+              break;
+            case "catalog.updateBook":
+            case "catalog.mutateCharacterStructure":
+            case "catalog.mutatePlotStructure":
+              payload = BookSchema.parse(result.payload);
+              break;
+            case "catalog.updateLibraryGroup":
+              payload = CatalogLibraryGroupSchema.parse(result.payload);
+              break;
+          }
+          return { status: "accepted", requestId: command.id, payload };
+        } catch (error: unknown) {
+          const timedOut = error instanceof UtilityCommandTimeoutError;
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: timedOut
+                ? "catalog.command_timeout"
+                : "catalog.forward_failed",
+              message: timedOut
+                ? catalogCommandTimeoutMessage(command.type)
+                : error instanceof Error
+                  ? error.message
+                  : "目录操作失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: ModelSettingsSchema.parse(
+              await requireModelConfigStore().list()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.list_failed",
+              message:
+                error instanceof Error ? error.message : "加载模型配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.refreshFree") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: ModelSettingsSchema.parse(
+              await requireModelConfigStore().refreshFreeModels()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.refresh_free_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "刷新免费模型配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.refreshOfficial") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().refreshOfficialModels()
+          );
+          await requireModelUsageStore().syncConfiguredModels(settings.models);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.refresh_official_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "刷新官方模型配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.queryOfficialBalance") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: OfficialModelBalanceSchema.parse(
+              await requireModelConfigStore().queryOfficialBalance()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.query_official_balance_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "查询官方模型余额失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.saveOfficialToken") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().saveOfficialToken(
+              command.payload.apiKey
+            )
+          );
+          await requireModelUsageStore().syncConfiguredModels(settings.models);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.save_official_token_failed",
+              message:
+                error instanceof Error ? error.message : "保存官方令牌失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.clearOfficialToken") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().clearOfficialToken()
+          );
+          await requireModelUsageStore().syncConfiguredModels(settings.models);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.clear_official_token_failed",
+              message:
+                error instanceof Error ? error.message : "移除官方令牌失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.setOfficialModelEnabled") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().setOfficialModelEnabled(
+              command.payload.modelId,
+              command.payload.enabled
+            )
+          );
+          await requireModelUsageStore().syncConfiguredModels(settings.models);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.set_official_model_enabled_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "更新官方模型启用状态失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "modelUsage.query") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: ModelUsageDashboardSchema.parse(
+              await requireModelUsageStore().query(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "model_usage.query_failed",
+              message:
+                error instanceof Error ? error.message : "加载模型用量失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.save") {
+        try {
+          const settings = ModelSettingsSchema.parse(
+            await requireModelConfigStore().save(command.payload)
+          );
+          void requireModelUsageStore()
+            .syncConfiguredModels(settings.models)
+            .catch((error: unknown) => {
+              console.warn(
+                "DeepWrite model usage registry was not synchronized:",
+                error instanceof Error ? error.message : "unknown error"
+              );
+            });
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: settings
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.save_failed",
+              message:
+                error instanceof Error ? error.message : "保存模型配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.listRemote") {
+        try {
+          const apiKey = await requireModelConfigStore().resolveDraftApiKey({
+            ...(command.payload.id ? { id: command.payload.id } : {}),
+            ...(command.payload.apiKey
+              ? { apiKey: command.payload.apiKey }
+              : {}),
+            ...(command.payload.clearApiKey ? { clearApiKey: true } : {})
+          });
+          const models = await listRemoteModels({
+            provider: command.payload.provider,
+            api: command.payload.api,
+            baseUrl: command.payload.baseUrl,
+            apiKey
+          });
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: RemoteModelListResultSchema.parse({ models })
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.list_remote_failed",
+              message:
+                error instanceof Error ? error.message : "拉取可用模型失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "models.test") {
+        try {
+          const runtimeConfig = await requireModelConfigStore().resolveDraft(
+            command.payload.model
+          );
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "agent.model_test",
+              { runtimeConfig },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "agent",
+            internalCommand,
+            20_000
+          );
+          if (result.status === "accepted") {
+            const payload = ModelConnectionTestResultSchema.parse(
+              result.payload
+            );
+            if (payload.usage) {
+              const runtime: AgentRuntimeRef = {
+                provider: runtimeConfig.provider,
+                model: runtimeConfig.modelId,
+                mode: "provider",
+                configId: runtimeConfig.id
+              };
+              void requireModelUsageStore()
+                .record({
+                  id: `v2:model-test:${command.id}`,
+                  occurredAt: payload.testedAt,
+                  model: createUsageModelSnapshot(runtime, runtimeConfig),
+                  module: "model-test",
+                  actor: "connection-test",
+                  status: "completed",
+                  usage: payload.usage
+                })
+                .catch((error: unknown) => {
+                  console.warn(
+                    "DeepWrite model-test usage was not persisted:",
+                    error instanceof Error ? error.message : "unknown error"
+                  );
+                });
+            }
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload
+            };
+          }
+          return result;
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "models.test_failed",
+              message:
+                error instanceof Error ? error.message : "模型连接测试失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "workspaceAgents.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: WorkspaceAgentSettingsSchema.parse(
+              await requireWorkspaceAgentConfigStore().list(
+                command.payload.workspaceType
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "workspace_agents.list_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "加载创作空间智能体设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "agentTeams.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: WorkspaceAgentTeamSettingsSchema.parse(
+              await requireAgentTeamConfigStore().list(
+                command.payload.workspaceType
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "agent_teams.list_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "加载智能体团队设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "agentTeams.save") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: WorkspaceAgentTeamSettingsSchema.parse(
+              await requireAgentTeamConfigStore().save(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "agent_teams.save_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "保存智能体团队设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "workspaceAgents.save") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: WorkspaceAgentSettingsSchema.parse(
+              await requireWorkspaceAgentConfigStore().save(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "workspace_agents.save_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "保存创作空间智能体设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "workspaceAgents.reset") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: WorkspaceAgentSettingsSchema.parse(
+              await requireWorkspaceAgentConfigStore().reset(
+                command.payload.workspaceType,
+                command.payload.agentId
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "workspace_agents.reset_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "恢复创作空间默认设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgents.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentSettingsSchema.parse(
+              await requireLongAgentConfigStore().list()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agents.list_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "加载长篇智能体设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgents.save") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentSettingsSchema.parse(
+              await requireLongAgentConfigStore().save(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agents.save_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "保存长篇智能体设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgents.reset") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentSettingsSchema.parse(
+              await requireLongAgentConfigStore().reset(command.payload.agentId)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agents.reset_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "恢复长篇智能体默认设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgentTeams.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentTeamSettingsSchema.parse(
+              await requireLongAgentTeamConfigStore().list()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agent_teams.list_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "加载长篇智能体团队设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "longAgentTeams.save") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LongAgentTeamSettingsSchema.parse(
+              await requireLongAgentTeamConfigStore().save(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "long_agent_teams.save_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "保存长篇智能体团队设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "libraryAgents.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LibraryAgentSettingsSchema.parse(
+              await requireLibraryAgentConfigStore().list()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "library_agents.list_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "加载资料库智能体设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "libraryAgents.save") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LibraryAgentSettingsSchema.parse(
+              await requireLibraryAgentConfigStore().save(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "library_agents.save_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "保存资料库智能体设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "libraryAgents.reset") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LibraryAgentSettingsSchema.parse(
+              await requireLibraryAgentConfigStore().reset(
+                command.payload.domain
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "library_agents.reset_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "恢复资料库智能体默认设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "learningImitationSettings.list") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LearningImitationSettingsSchema.parse(
+              await requireLearningImitationConfigStore().list()
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "learning_imitation_settings.list_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "加载学习仿写设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "learningImitationSettings.save") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LearningImitationSettingsSchema.parse(
+              await requireLearningImitationConfigStore().save(command.payload)
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "learning_imitation_settings.save_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "保存学习仿写设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "learningImitationSettings.reset") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: LearningImitationSettingsSchema.parse(
+              await requireLearningImitationConfigStore().reset(
+                command.payload.stageId
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "learning_imitation_settings.reset_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "恢复学习仿写默认设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (
+        command.type === "chatAssistantProjectConfig.list" ||
+        command.type === "chatAssistantProjectConfig.get" ||
+        command.type === "chatAssistantProjectConfig.save" ||
+        command.type === "chatAssistantProjectConfig.reset"
+      ) {
+        try {
+          const store = requireChatAssistantProjectConfigStore();
+          const payload =
+            command.type === "chatAssistantProjectConfig.list"
+              ? await store.list()
+              : command.type === "chatAssistantProjectConfig.get"
+                ? await store.get(command.payload)
+                : command.type === "chatAssistantProjectConfig.save"
+                  ? await store.save(
+                      command.payload.project,
+                      command.payload.systemPrompt
+                    )
+                  : await store.reset(command.payload);
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload:
+              command.type === "chatAssistantProjectConfig.list"
+                ? ChatAssistantProjectConfigListSchema.parse(payload)
+                : ChatAssistantProjectConfigSchema.parse(payload)
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "chat_assistant_project_config.failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "处理聊天助手项目配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "session.abort") {
+        try {
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope("agent.abort", command.payload, {
+              id: command.id,
+              context: command.context
+            })
+          );
+          const result = await supervisor.requestCommand(
+            "agent",
+            internalCommand,
+            10_000
+          );
+          if (result.status === "accepted") {
+            const accepted = SessionAbortAcceptedPayloadSchema.parse(
+              result.payload
+            );
+            if (
+              accepted.sessionId !== command.payload.sessionId ||
+              accepted.runId !== command.payload.runId
+            ) {
+              return {
+                status: "rejected",
+                requestId: command.id,
+                error: {
+                  code: "ipc.invalid_agent_abort_result",
+                  message:
+                    "Agent abort result does not match the requested run."
+                }
+              };
+            }
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: accepted
+            };
+          }
+          return result;
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "ipc.agent_abort_failed",
+              message:
+                error instanceof Error ? error.message : "Agent abort failed.",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "session.prompt") {
+        try {
+          const runtimeConfig = await requireModelConfigStore().resolve(
+            command.payload.modelId
+          );
+          const chatAssistantRuntimeContext =
+            command.payload.mode === "chat-assistant"
+              ? await resolveChatAssistantRuntimeContext(
+                  supervisor,
+                  command.payload
+                )
+              : undefined;
+          const shortWorkspace =
+            command.payload.workspaceContext?.shortWorkspace;
+          const scriptWorkspace =
+            command.payload.workspaceContext?.scriptWorkspace;
+          const longWorkspace = command.payload.workspaceContext?.longWorkspace;
+          const libraryWorkspace =
+            command.payload.workspaceContext?.libraryWorkspace;
+          const learningImitation =
+            command.payload.workspaceContext?.learningImitation;
+          const creativeWorkspace = shortWorkspace ?? scriptWorkspace;
+          const creativeWorkspaceType = scriptWorkspace ? "script" : "short";
+          const agentProfile = creativeWorkspace
+            ? await requireWorkspaceAgentConfigStore().resolveForWorkspace(
+                creativeWorkspace,
+                creativeWorkspaceType
+              )
+            : undefined;
+          const longAgentProfile = longWorkspace
+            ? await requireLongAgentConfigStore().resolve(
+                longWorkspace.activeAgentId
+              )
+            : undefined;
+          const subagentDefinitions = agentProfile
+            ? await requireAgentTeamConfigStore().resolve(
+                creativeWorkspaceType,
+                agentProfile.id
+              )
+            : longAgentProfile
+              ? await requireLongAgentTeamConfigStore().resolve(
+                  longAgentProfile.id
+                )
+              : undefined;
+          const subagentRuntimeConfigs: Record<
+            string,
+            AgentProviderRuntimeConfig
+          > = {};
+          if (subagentDefinitions?.length) {
+            for (const definition of subagentDefinitions) {
+              if (definition.modelMode !== "custom" || !definition.modelId) {
+                continue;
+              }
+              const resolved =
+                subagentRuntimeConfigs[definition.modelId] ??
+                (await requireModelConfigStore().resolve(definition.modelId));
+              if (!resolved) {
+                throw new Error(
+                  `子智能体「${definition.name}」配置的模型不存在，请刷新模型配置后重试。`
+                );
+              }
+              assertModelRunSettings(resolved, {
+                thinkingLevel: definition.thinkingLevel,
+                temperature: definition.temperature
+              });
+              subagentRuntimeConfigs[definition.modelId] = resolved;
+            }
+          }
+          const libraryAgentProfile = libraryWorkspace
+            ? await requireLibraryAgentConfigStore().resolve(
+                libraryWorkspace.domain
+              )
+            : undefined;
+          const learningImitationProfile = learningImitation
+            ? await requireLearningImitationConfigStore().resolve(
+                learningImitation.stageId
+              )
+            : undefined;
+          const { thinkingLevel, temperature } = resolveModelRunSettings(
+            runtimeConfig,
+            {
+              thinkingLevel: command.payload.thinkingLevel,
+              temperature: command.payload.temperature
+            }
+          );
+          const {
+            thinkingLevel: _requestedThinkingLevel,
+            temperature: _requestedTemperature,
+            ...promptPayload
+          } = command.payload;
+          const usageContext = createUsageRunContext(
+            command.payload,
+            runtimeConfig,
+            subagentRuntimeConfigs
+          );
+          pendingUsageContexts.set(command.context.correlationId, usageContext);
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope(
+              "agent.prompt",
+              {
+                ...promptPayload,
+                ...(thinkingLevel ? { thinkingLevel } : {}),
+                ...(temperature !== undefined ? { temperature } : {}),
+                ...(runtimeConfig ? { runtimeConfig } : {}),
+                ...(chatAssistantRuntimeContext
+                  ? { chatAssistantRuntimeContext }
+                  : {}),
+                ...(agentProfile
+                  ? scriptWorkspace
+                    ? { scriptAgentProfile: agentProfile }
+                    : { agentProfile }
+                  : {}),
+                ...(longAgentProfile ? { longAgentProfile } : {}),
+                ...(subagentDefinitions ? { subagentDefinitions } : {}),
+                ...(Object.keys(subagentRuntimeConfigs).length > 0
+                  ? { subagentRuntimeConfigs }
+                  : {}),
+                ...(libraryAgentProfile ? { libraryAgentProfile } : {}),
+                ...(learningImitationProfile
+                  ? { learningImitationProfile }
+                  : {})
+              },
+              { id: command.id, context: command.context }
+            )
+          );
+          const result = await supervisor.requestCommand(
+            "agent",
+            internalCommand,
+            10_000
+          );
+          if (result.status === "accepted") {
+            const accepted = SessionPromptAcceptedPayloadSchema.parse(
+              result.payload
+            );
+            if (accepted.sessionId !== command.payload.sessionId) {
+              return {
+                status: "rejected",
+                requestId: command.id,
+                error: {
+                  code: "ipc.invalid_agent_acceptance",
+                  message:
+                    "Agent acceptance sessionId does not match the prompt command."
+                }
+              };
+            }
+            const provisional = [...activeRuns.entries()].find(
+              ([, run]) => run.correlationId === command.context.correlationId
+            );
+            if (provisional && provisional[0] !== accepted.runId) {
+              return {
+                status: "rejected",
+                requestId: command.id,
+                error: {
+                  code: "ipc.invalid_agent_acceptance",
+                  message:
+                    "Agent acceptance runId does not match the provisional event stream."
+                }
+              };
+            }
+            if (!terminalRuns.has(accepted.runId)) {
+              activeRuns.set(accepted.runId, {
+                sessionId: accepted.sessionId,
+                correlationId: command.context.correlationId,
+                runtime: accepted.runtime,
+                accepted: true,
+                promptRequestId: internalCommand.id,
+                usageContext,
+                ...(longWorkspace
+                  ? { resourceId: longWorkspace.bookId }
+                  : chatAssistantRuntimeContext?.mode === "project" &&
+                      chatAssistantRuntimeContext.project.projectType === "long"
+                    ? {
+                        resourceId:
+                          chatAssistantRuntimeContext.project.projectId
+                      }
+                    : {})
+              });
+            }
+            pendingUsageContexts.delete(command.context.correlationId);
+            return {
+              status: "accepted",
+              requestId: command.id,
+              payload: accepted
+            };
+          }
+          pendingUsageContexts.delete(command.context.correlationId);
+          return result;
+        } catch (error: unknown) {
+          pendingUsageContexts.delete(command.context.correlationId);
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "ipc.agent_command_failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Agent command failed.",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      throw new Error("Unreachable command variant after schema validation.");
     }
   );
 }
 
-async function runAgentSmoke(health: ReturnType<typeof SystemHealthPayloadSchema.parse>): Promise<void> {
+async function runAgentSmoke(
+  health: ReturnType<typeof SystemHealthPayloadSchema.parse>
+): Promise<void> {
   const sessionId = "session_electron_smoke";
   const commandId = createId("cmd_smoke");
   const events: SystemEventEnvelope[] = [];
@@ -797,9 +3407,16 @@ async function runAgentSmoke(health: ReturnType<typeof SystemHealthPayloadSchema
   });
 
   smokeEventTap = (event) => {
-    if (isAgentEvent(event) && "sessionId" in event.payload && event.payload.sessionId === sessionId) {
+    if (
+      isAgentEvent(event) &&
+      "sessionId" in event.payload &&
+      event.payload.sessionId === sessionId
+    ) {
       events.push(event);
-      if (event.type === "agent.message_completed" || event.type === "agent.error") {
+      if (
+        event.type === "agent.message_completed" ||
+        event.type === "agent.error"
+      ) {
         resolveTerminal?.();
       }
     }
@@ -827,7 +3444,11 @@ async function runAgentSmoke(health: ReturnType<typeof SystemHealthPayloadSchema
         },
         {
           id: commandId,
-          context: { correlationId: commandId, sessionId, resourceId: "chapter_smoke" }
+          context: {
+            correlationId: commandId,
+            sessionId,
+            resourceId: "chapter_smoke"
+          }
         }
       )
     );
@@ -844,12 +3465,20 @@ async function runAgentSmoke(health: ReturnType<typeof SystemHealthPayloadSchema
       )
     ]);
 
-    const completed = events.find((event) => event.type === "agent.message_completed");
+    const completed = events.find(
+      (event) => event.type === "agent.message_completed"
+    );
     const errors = events.filter((event) => event.type === "agent.error");
-    const deltas = events.filter((event) => event.type === "agent.message_delta");
-    const thinking = events.filter((event) => event.type === "agent.thinking_delta");
+    const deltas = events.filter(
+      (event) => event.type === "agent.message_delta"
+    );
+    const thinking = events.filter(
+      (event) => event.type === "agent.thinking_delta"
+    );
     const deltaText = deltas
-      .map((event) => event.type === "agent.message_delta" ? event.payload.delta : "")
+      .map((event) =>
+        event.type === "agent.message_delta" ? event.payload.delta : ""
+      )
       .join("");
 
     if (
@@ -858,7 +3487,8 @@ async function runAgentSmoke(health: ReturnType<typeof SystemHealthPayloadSchema
       errors.length > 0 ||
       deltas.length < 2 ||
       thinking.length < 1 ||
-      (completed.type === "agent.message_completed" && completed.payload.content !== deltaText)
+      (completed.type === "agent.message_completed" &&
+        completed.payload.content !== deltaText)
     ) {
       throw new Error("Agent smoke event assertions failed.");
     }
@@ -881,7 +3511,9 @@ async function runAgentSmoke(health: ReturnType<typeof SystemHealthPayloadSchema
 }
 
 async function announceReady(window: BrowserWindow): Promise<void> {
-  const health = SystemHealthPayloadSchema.parse(await supervisor.collectHealth());
+  const health = SystemHealthPayloadSchema.parse(
+    await supervisor.collectHealth()
+  );
   const event = SystemReadyEventEnvelopeSchema.parse(
     createEnvelope("system.ready", health, { id: createId("evt_ready") })
   ) as SystemEventEnvelope;
@@ -893,7 +3525,9 @@ async function announceReady(window: BrowserWindow): Promise<void> {
     try {
       await runAgentSmoke(health);
     } catch (error: unknown) {
-      console.error(`DEEPWRITE_SMOKE_FAIL ${error instanceof Error ? error.message : "unknown"}`);
+      console.error(
+        `DEEPWRITE_SMOKE_FAIL ${error instanceof Error ? error.message : "unknown"}`
+      );
     } finally {
       app.quit();
     }
@@ -921,12 +3555,16 @@ if (!hasSingleInstanceLock) {
       modelUsageStore
     );
     void softwareTokenUsageReporter.reportAtStartup().catch(() => {
-      console.warn("DeepWrite software token usage was not reported at startup.");
+      console.warn(
+        "DeepWrite software token usage was not reported at startup."
+      );
     });
     void modelConfigStore.initialize();
     void modelConfigStore
       .list()
-      .then((settings) => modelUsageStore?.syncConfiguredModels(settings.models))
+      .then((settings) =>
+        modelUsageStore?.syncConfiguredModels(settings.models)
+      )
       .catch((error: unknown) => {
         console.warn(
           "DeepWrite model usage registry could not initialize:",
@@ -938,7 +3576,9 @@ if (!hasSingleInstanceLock) {
     libraryAgentConfigStore = new LibraryAgentConfigStore(userDataPath);
     longAgentConfigStore = new LongAgentConfigStore(userDataPath);
     longAgentTeamConfigStore = new LongAgentTeamConfigStore(userDataPath);
-    learningImitationConfigStore = new LearningImitationConfigStore(userDataPath);
+    learningImitationConfigStore = new LearningImitationConfigStore(
+      userDataPath
+    );
     workspaceDirectoryStore = new WorkspaceDirectoryStore(userDataPath);
     appearanceConfigStore = new AppearanceConfigStore(userDataPath);
     generalSettingsStore = new GeneralSettingsStore(userDataPath);
@@ -947,9 +3587,7 @@ if (!hasSingleInstanceLock) {
     );
     await workspaceDirectoryStore.initializeDefault(app.getPath("documents"));
     await loadAndSyncNativeAppearanceChrome();
-    syncGeneralSettings(
-      (await generalSettingsStore.list()).settings
-    );
+    syncGeneralSettings((await generalSettingsStore.list()).settings);
     updateService = new UpdateService(() => {
       beginGracefulShutdown({ installUpdate: true });
     });

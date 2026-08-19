@@ -46,7 +46,8 @@ export const ShortWorkspaceStageIdSchema = z.union([
   z.literal("draft"),
   CreativePlotStageIdSchema
 ]);
-export type ShortWorkspaceStageId = "character_design" | "draft" | CreativePlotStageId;
+export type ShortWorkspaceStageId =
+  "character_design" | "draft" | CreativePlotStageId;
 export const ShortWorkspaceTextStageIdSchema = z.union([
   z.literal("character_design"),
   CreativePlotStageIdSchema
@@ -285,10 +286,12 @@ const UniqueShortSkillKindsSchema = z
     });
   });
 
-export const ShortAgentReadAccessSchema = z.object({
-  material: UniqueShortMaterialKindsSchema,
-  skill: UniqueShortSkillKindsSchema
-}).strict();
+export const ShortAgentReadAccessSchema = z
+  .object({
+    material: UniqueShortMaterialKindsSchema,
+    skill: UniqueShortSkillKindsSchema
+  })
+  .strict();
 export type ShortAgentReadAccess = z.infer<typeof ShortAgentReadAccessSchema>;
 
 /** Defaults from write-claw's short/shared/read_access.json. */
@@ -338,12 +341,14 @@ export const ShortWorkspaceStageSnapshotSchema = z
   .superRefine((value, context) => {
     if (
       value.truncated === true &&
-      (value.originalLength === undefined || value.originalLength <= value.content.length)
+      (value.originalLength === undefined ||
+        value.originalLength <= value.content.length)
     ) {
       context.addIssue({
         code: "custom",
         path: ["originalLength"],
-        message: "A truncated stage must report an originalLength larger than content."
+        message:
+          "A truncated stage must report an originalLength larger than content."
       });
     }
     if (value.truncated !== true && value.originalLength !== undefined) {
@@ -436,7 +441,8 @@ export const ExpertDraftSectionSnapshotSchema = z
       context.addIssue({
         code: "custom",
         path: ["characterState", "documentId"],
-        message: "Expert draft body and character state must use distinct files."
+        message:
+          "Expert draft body and character state must use distinct files."
       });
     }
   });
@@ -536,7 +542,9 @@ export const ShortWorkspaceSnapshotSchema = z
     }
 
     if (value.activeStageId !== "draft") {
-      const defaultAgentId = resolveShortWorkspaceAgentIdForStage(value.activeStageId);
+      const defaultAgentId = resolveShortWorkspaceAgentIdForStage(
+        value.activeStageId
+      );
       if (
         value.activeAgentId !== undefined &&
         value.activeAgentId !== defaultAgentId
@@ -582,7 +590,9 @@ export const ShortWorkspaceSnapshotSchema = z
       });
     }
   });
-export type ShortWorkspaceSnapshot = z.infer<typeof ShortWorkspaceSnapshotSchema>;
+export type ShortWorkspaceSnapshot = z.infer<
+  typeof ShortWorkspaceSnapshotSchema
+>;
 
 export const SHORT_AGENT_WELCOME_SHORTCUT_MAX_LENGTH = 120;
 
@@ -625,34 +635,37 @@ export type ShortWorkspaceAgentProfile = z.infer<
   typeof ShortWorkspaceAgentProfileSchema
 >;
 
-export const DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES: readonly ShortWorkspaceAgentProfile[] = [
-  {
-    id: "character_design",
-    label: "人物",
-    description: "创建、补全、诊断和修改可供剧情与正文直接使用的人物设计。",
-    systemPrompt: DEFAULT_SHORT_CHARACTER_DESIGN_SYSTEM_PROMPT,
-    welcomeShortcuts: [...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.character_design],
-    readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.character_design
-  },
-  {
-    id: "plot_design",
-    label: "剧情",
-    description: "负责当前作品动态配置的全部剧情结构阶段。",
-    systemPrompt: DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT,
-    welcomeShortcuts: [...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.plot_design],
-    readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.plot_design
-  },
-  {
-    id: "expert_draft_coordinator",
-    label: "正文专家编写智能体",
-    description: "统一负责正文结构、整篇创作、当前小节写作与成稿修订。",
-    systemPrompt: DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
-    welcomeShortcuts: [
-      ...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
-    ],
-    readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.expert_draft_coordinator
-  }
-];
+export const DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES: readonly ShortWorkspaceAgentProfile[] =
+  [
+    {
+      id: "character_design",
+      label: "人物",
+      description: "创建、补全、诊断和修改可供剧情与正文直接使用的人物设计。",
+      systemPrompt: DEFAULT_SHORT_CHARACTER_DESIGN_SYSTEM_PROMPT,
+      welcomeShortcuts: [
+        ...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.character_design
+      ],
+      readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.character_design
+    },
+    {
+      id: "plot_design",
+      label: "剧情",
+      description: "负责当前作品动态配置的全部剧情结构阶段。",
+      systemPrompt: DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT,
+      welcomeShortcuts: [...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.plot_design],
+      readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.plot_design
+    },
+    {
+      id: "expert_draft_coordinator",
+      label: "正文专家编写智能体",
+      description: "统一负责正文结构、整篇创作、当前小节写作与成稿修订。",
+      systemPrompt: DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+      welcomeShortcuts: [
+        ...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
+      ],
+      readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.expert_draft_coordinator
+    }
+  ];
 
 function validateCompleteAgentSet(
   agents: readonly { id: ShortWorkspaceAgentId }[],
@@ -677,7 +690,9 @@ export const ShortWorkspaceAgentSettingsSchema = z
       .array(ShortWorkspaceAgentProfileSchema)
       .length(SHORT_WORKSPACE_AGENT_IDS.length)
   })
-  .superRefine((value, context) => validateCompleteAgentSet(value.agents, context));
+  .superRefine((value, context) =>
+    validateCompleteAgentSet(value.agents, context)
+  );
 export type ShortWorkspaceAgentSettings = z.infer<
   typeof ShortWorkspaceAgentSettingsSchema
 >;
@@ -699,15 +714,18 @@ export const ShortWorkspaceAgentSettingsInputSchema = z
       .array(ShortWorkspaceAgentSettingsInputAgentSchema)
       .length(SHORT_WORKSPACE_AGENT_IDS.length)
   })
-  .superRefine((value, context) => validateCompleteAgentSet(value.agents, context));
+  .superRefine((value, context) =>
+    validateCompleteAgentSet(value.agents, context)
+  );
 export type ShortWorkspaceAgentSettingsInput = z.infer<
   typeof ShortWorkspaceAgentSettingsInputSchema
 >;
 
-export const DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS: ShortWorkspaceAgentSettings = {
-  workspaceType: "short",
-  agents: [...DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES]
-};
+export const DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS: ShortWorkspaceAgentSettings =
+  {
+    workspaceType: "short",
+    agents: [...DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES]
+  };
 
 /** Shared unions for callers that handle both isolated creative workspaces. */
 export const WorkspaceAgentIdSchema = z.union([
@@ -749,29 +767,32 @@ export type WorkspaceAgentSettingsInput = z.infer<
   typeof WorkspaceAgentSettingsInputSchema
 >;
 
-export const WorkspaceAgentsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("workspaceAgents.list"),
-  payload: z.object({ workspaceType: WorkspaceTypeSchema })
-});
+export const WorkspaceAgentsListCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("workspaceAgents.list"),
+    payload: z.object({ workspaceType: WorkspaceTypeSchema })
+  });
 
-export const WorkspaceAgentsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("workspaceAgents.save"),
-  payload: WorkspaceAgentSettingsInputSchema
-});
+export const WorkspaceAgentsSaveCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("workspaceAgents.save"),
+    payload: WorkspaceAgentSettingsInputSchema
+  });
 
-export const WorkspaceAgentsResetCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("workspaceAgents.reset"),
-  payload: z.discriminatedUnion("workspaceType", [
-    z.object({
-      workspaceType: z.literal("short"),
-      agentId: ShortWorkspaceAgentIdSchema.optional()
-    }),
-    z.object({
-      workspaceType: z.literal("script"),
-      agentId: ScriptWorkspaceAgentIdSchema.optional()
-    })
-  ])
-});
+export const WorkspaceAgentsResetCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("workspaceAgents.reset"),
+    payload: z.discriminatedUnion("workspaceType", [
+      z.object({
+        workspaceType: z.literal("short"),
+        agentId: ShortWorkspaceAgentIdSchema.optional()
+      }),
+      z.object({
+        workspaceType: z.literal("script"),
+        agentId: ScriptWorkspaceAgentIdSchema.optional()
+      })
+    ])
+  });
 
 export type WorkspaceAgentsListCommandEnvelope = z.infer<
   typeof WorkspaceAgentsListCommandEnvelopeSchema

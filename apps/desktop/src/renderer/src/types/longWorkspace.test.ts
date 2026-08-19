@@ -17,10 +17,7 @@ import {
   reconcileLongWorkspaceSelection
 } from "./longWorkspace";
 
-function file(
-  id: string,
-  path: string
-): LongWorkspaceFileReference {
+function file(id: string, path: string): LongWorkspaceFileReference {
   return {
     id,
     path,
@@ -167,13 +164,7 @@ describe("long workspace chapter navigation", () => {
       chapterCardVolumeId: "volume_one",
       chapterCardId: "chapter_two",
       title: "第二章",
-      breadcrumbs: [
-        "长篇生命周期",
-        "剧情设计",
-        "章卡",
-        "第一卷",
-        "第二章"
-      ],
+      breadcrumbs: ["长篇生命周期", "剧情设计", "章卡", "第一卷", "第二章"],
       chapterCardTabs: [
         { id: "chapter_one", label: "第一章" },
         { id: "chapter_two", label: "第二章" }
@@ -183,33 +174,23 @@ describe("long workspace chapter navigation", () => {
 
   it("binds one volume to multiple plot-point tabs", () => {
     const { summary, workspaceIndex } = fixture(null);
-    const selection = reconcileLongWorkspaceSelection(
-      summary,
-      workspaceIndex,
-      {
-        key: "plot-design:plot-points:volume_one",
-        root: "plot_design",
-        plotPointVolumeId: "volume_one",
-        plotPointId: "arc_two",
-        title: "第一卷",
-        breadcrumbs: [],
-        files: [],
-        preferredRole: "book-line"
-      }
-    );
+    const selection = reconcileLongWorkspaceSelection(summary, workspaceIndex, {
+      key: "plot-design:plot-points:volume_one",
+      root: "plot_design",
+      plotPointVolumeId: "volume_one",
+      plotPointId: "arc_two",
+      title: "第一卷",
+      breadcrumbs: [],
+      files: [],
+      preferredRole: "book-line"
+    });
 
     expect(selection).toMatchObject({
       key: "plot-design:plot-points:volume_one",
       plotPointVolumeId: "volume_one",
       plotPointId: "arc_two",
       title: "剧情点二",
-      breadcrumbs: [
-        "长篇生命周期",
-        "剧情设计",
-        "剧情点",
-        "第一卷",
-        "剧情点二"
-      ],
+      breadcrumbs: ["长篇生命周期", "剧情设计", "剧情点", "第一卷", "剧情点二"],
       plotPointTabs: [
         { id: "arc_one", label: "剧情点一" },
         { id: "arc_two", label: "剧情点二" }
@@ -226,18 +207,14 @@ describe("long workspace chapter navigation", () => {
 
   it("reconciles the dedicated foreshadowing overview without a duplicate document", () => {
     const { summary, workspaceIndex } = fixture(null);
-    const selection = reconcileLongWorkspaceSelection(
-      summary,
-      workspaceIndex,
-      {
-        key: "plot-design:foreshadowing",
-        root: "plot_design",
-        title: "伏笔总览",
-        breadcrumbs: [],
-        files: [],
-        preferredRole: "book-line"
-      }
-    );
+    const selection = reconcileLongWorkspaceSelection(summary, workspaceIndex, {
+      key: "plot-design:foreshadowing",
+      root: "plot_design",
+      title: "伏笔总览",
+      breadcrumbs: [],
+      files: [],
+      preferredRole: "book-line"
+    });
 
     expect(selection).toMatchObject({
       key: "plot-design:foreshadowing",
@@ -457,11 +434,7 @@ describe("long workspace chapter navigation", () => {
     ]);
     expect(selection?.files.every((entry) => entry.readOnly)).toBe(true);
     expect(
-      reconcileLongWorkspaceSelection(
-        summary,
-        workspaceIndex,
-        selection!
-      )
+      reconcileLongWorkspaceSelection(summary, workspaceIndex, selection!)
     ).toMatchObject({
       root: "continuity_ledger",
       chapterCardId: "chapter_one"
@@ -496,11 +469,7 @@ describe("long workspace chapter navigation", () => {
     ).toBeUndefined();
     expect(chapterCard?.description).toContain("章卡仍可自由修改");
     expect(
-      createLongContinuitySelection(
-        summary,
-        workspaceIndex,
-        "chapter_one"
-      )
+      createLongContinuitySelection(summary, workspaceIndex, "chapter_one")
     ).toMatchObject({
       key: "continuity:chapter_one",
       continuityView: "history"
@@ -543,22 +512,16 @@ describe("long workspace chapter navigation", () => {
     });
 
     expect(
-      createLongContinuitySelection(
-        summary,
-        workspaceIndex,
-        "chapter_two"
-      )
+      createLongContinuitySelection(summary, workspaceIndex, "chapter_two")
     ).toMatchObject({
       key: "continuity:chapter_two",
       chapterCardId: "chapter_two"
     });
     expect(
-      createLongContinuitySelection(
-        summary,
-        workspaceIndex,
-        "chapter_one"
-      )
-    ).toMatchObject({ chapterCardId: "chapter_one" });
+      createLongContinuitySelection(summary, workspaceIndex, "chapter_one")
+    ).toMatchObject({
+      chapterCardId: "chapter_one"
+    });
   });
 
   it("maps all per-chapter continuity text files without exposing commit JSON", () => {
@@ -637,7 +600,10 @@ describe("long workspace chapter navigation", () => {
     ] as typeof summary.navigation.characters;
     const designFiles = {
       characterId: "character_lead",
-      coreProfile: file("core", "long/characters/character_lead/core-profile.md"),
+      coreProfile: file(
+        "core",
+        "long/characters/character_lead/core-profile.md"
+      ),
       relationships: file(
         "relationships",
         "long/characters/character_lead/relationships.md"
@@ -646,7 +612,10 @@ describe("long workspace chapter navigation", () => {
         "design-state",
         "long/characters/character_lead/current-state.md"
       ),
-      history: file("design-history", "long/characters/character_lead/history.md")
+      history: file(
+        "design-history",
+        "long/characters/character_lead/history.md"
+      )
     };
     workspaceIndex.characterFiles = [
       designFiles
@@ -668,9 +637,9 @@ describe("long workspace chapter navigation", () => {
       }
     ];
 
-    expect(latestCommittedContinuityChapter(workspaceIndex)?.chapterCardId).toBe(
-      "chapter_one"
-    );
+    expect(
+      latestCommittedContinuityChapter(workspaceIndex)?.chapterCardId
+    ).toBe("chapter_one");
     const selection = createLongCharacterGroupSelection(
       summary,
       workspaceIndex,
@@ -714,18 +683,14 @@ describe("long workspace chapter navigation", () => {
   it("keeps the foreshadowing workspace as the global design overview", () => {
     const { summary, workspaceIndex } = fixture("commit_one");
     workspaceIndex.ledger.commits[0]!.mode = "text_files";
-    const selection = reconcileLongWorkspaceSelection(
-      summary,
-      workspaceIndex,
-      {
-        key: "plot-design:foreshadowing",
-        root: "plot_design",
-        title: "伏笔总览",
-        breadcrumbs: [],
-        files: [],
-        preferredRole: "book-line"
-      }
-    );
+    const selection = reconcileLongWorkspaceSelection(summary, workspaceIndex, {
+      key: "plot-design:foreshadowing",
+      root: "plot_design",
+      title: "伏笔总览",
+      breadcrumbs: [],
+      files: [],
+      preferredRole: "book-line"
+    });
     expect(selection).toMatchObject({
       title: "伏笔总览",
       files: [],
@@ -755,18 +720,14 @@ describe("long workspace chapter navigation", () => {
     );
     workspaceIndex.chapters[0]!.worldReveals = reveal;
 
-    const selection = reconcileLongWorkspaceSelection(
-      summary,
-      workspaceIndex,
-      {
-        key: "worldbuilding:reveals",
-        root: "worldbuilding",
-        title: "世界观揭露",
-        breadcrumbs: [],
-        files: [],
-        preferredRole: "world-reveals"
-      }
-    );
+    const selection = reconcileLongWorkspaceSelection(summary, workspaceIndex, {
+      key: "worldbuilding:reveals",
+      root: "worldbuilding",
+      title: "世界观揭露",
+      breadcrumbs: [],
+      files: [],
+      preferredRole: "world-reveals"
+    });
 
     expect(selection?.files).toEqual([
       {

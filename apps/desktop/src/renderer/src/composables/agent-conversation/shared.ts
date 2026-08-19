@@ -30,23 +30,37 @@ export function historyItemFor(
   conversation: AgentConversationPersistenceRecord,
   currentSessionId: string
 ): ConversationHistoryItem {
-  const firstUserMessage = conversation.messages.find((message) => message.role === "user");
+  const firstUserMessage = conversation.messages.find(
+    (message) => message.role === "user"
+  );
   const lastVisibleMessage = [...conversation.messages]
     .reverse()
     .find((message) => message.content.trim());
   return {
     sessionId: conversation.sessionId,
-    title: compactConversationText(firstUserMessage?.content ?? "未命名对话", 42),
-    preview: compactConversationText(lastVisibleMessage?.content ?? conversation.draft, 76),
+    title: compactConversationText(
+      firstUserMessage?.content ?? "未命名对话",
+      42
+    ),
+    preview: compactConversationText(
+      lastVisibleMessage?.content ?? conversation.draft,
+      76
+    ),
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     messageCount: conversation.messages.length,
-    turnCount: conversation.messages.filter((message) => message.role === "user").length,
+    turnCount: conversation.messages.filter(
+      (message) => message.role === "user"
+    ).length,
     current: conversation.sessionId === currentSessionId
   };
 }
 
-export function rememberBounded(set: Set<string>, value: string, limit = 2_000): void {
+export function rememberBounded(
+  set: Set<string>,
+  value: string,
+  limit = 2_000
+): void {
   set.add(value);
   while (set.size > limit) {
     const oldest = set.values().next().value as string | undefined;

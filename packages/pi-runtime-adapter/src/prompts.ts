@@ -153,11 +153,11 @@ export function buildEffectiveSystemPrompt(
         ? "设定只使用本次固定上下文或工具返回的业务 ID 定位内容：世界观用 category_id / item_id，人物用 character_id / document。设定内容的查询、搜索和读取使用 list_setting / search_setting / read_setting，并指定 domain=worldbuilding 或 domain=character；其它阶段内容用各自阶段的 list / search / read 工具只读查阅。固定上下文目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。目录标注存在省略项或需要核验本轮结构变更时再调用列表工具。长篇结构导航已写入固定上下文，仅供对照剧情框架；不得把剧情正文写入本轮固定上下文，也不得修改剧情结构。工具会处理其余实现细节，不得索取、猜测或复述。未读取正文不得当成事实。"
         : longProfile.id === "plot_design"
           ? "剧情设计只使用本次固定上下文或工具返回的业务 ID 定位内容：全书故事线用 book_line，分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点用各自稳定业务 ID。查询、搜索和读取使用 list_plot_design / search_plot_design / read_plot_design。世界观与人物目录已写入本轮固定上下文；条目正文仍须通过 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character）按需读取。目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。不得把设定正文或 fileId 写入本轮固定上下文。不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
-        : longProfile.id === "draft"
-          ? "写手只使用本次固定上下文或工具返回的业务 ID 定位内容：世界观用 category_id / item_id，人物用 character_id / document，剧情与章节用各自稳定业务 ID。查询、搜索和读取使用 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character），以及剧情和章节的 list / search / read 工具。世界观、人物目录与长篇结构导航已写入本轮固定上下文；条目正文仍须按需读取。目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。不得把设定正文、剧情正文或 fileId 写入本轮固定上下文。不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
-        : longProfile.id === "continuity_ledger"
-          ? "连续性账本只使用 list_setting / search_setting / read_setting（指定 domain）以及剧情和正文各阶段的 list / search / read 工具及其业务 ID；不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
-          : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
+          : longProfile.id === "draft"
+            ? "写手只使用本次固定上下文或工具返回的业务 ID 定位内容：世界观用 category_id / item_id，人物用 character_id / document，剧情与章节用各自稳定业务 ID。查询、搜索和读取使用 list_setting / search_setting / read_setting（指定 domain=worldbuilding 或 domain=character），以及剧情和章节的 list / search / read 工具。世界观、人物目录与长篇结构导航已写入本轮固定上下文；条目正文仍须按需读取。目录已经完整列出目标时，不要仅为重复取得同一列表而调用 list_setting。不得把设定正文、剧情正文或 fileId 写入本轮固定上下文。不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
+            : longProfile.id === "continuity_ledger"
+              ? "连续性账本只使用 list_setting / search_setting / read_setting（指定 domain）以及剧情和正文各阶段的 list / search / read 工具及其业务 ID；不得使用底层索引、路径或 fileId，未读取内容不得当成事实。"
+              : "长篇项目只在本轮授权的 bookId 内按稳定实体 ID 和 fileId 查询；不得猜测路径，也不得把未读取内容当成事实。",
       writeBoundary,
       longProfile.id === "plot_design"
         ? "连续性记录只提供按章参考，不锁定章卡、故事情节或伏笔结构。允许创建、删除、移动和重排已有记录的章卡；删除章卡时客户端会在危险确认后级联清理该章正文、连续性文件和记录索引。章卡必须指定所属分卷，剧情点关联可为 null；非空时必须与章卡属于同一分卷。调用 create_plot_design 或 propose_long_mutation 前必须核对二者；伏笔线创建必须在 propose_long_mutation 的 operations 中精确使用 type=foreshadowing.create，伏笔触点创建精确使用 type=foreshadowingBeat.create，不得改写成 snake_case 或自然语言别名。跨卷移动章卡时可改绑目标卷内剧情点或解除关联。移动或删除剧情点只解除章卡的弱关联，不移动或删除章卡。同一次运行形成多个有效提案时，客户端会按先后依赖等待前序提案处理，并基于最新工作区重新预览；不得把待审提案说成已经落盘。故事情节或章卡的纯正文写入也会按文件修订等待前序创建或写入完成。工具返回未形成提案时，必须向用户解释约束，不得要求审批不存在的卡片。"
@@ -221,7 +221,9 @@ export function buildEffectiveSystemPrompt(
           ? "当前人物结构为条目样式：概览只是姓名与一句话索引；编写或修订前必须用 list_characters 定位相关人物，并用 read_character（指定 item_id）读取对应人物卡，不得只读概览或 read_workspace_content（character_design）就开始写正文。"
           : ""
       : ""
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 const LONG_PLOT_NAVIGATION_ARC_LIMIT_PER_VOLUME = 50;
@@ -250,8 +252,8 @@ function renderLongPlotNavigation(
       left.narrativeOrder - right.narrativeOrder ||
       left.id.localeCompare(right.id)
   );
-  const writtenChapters = orderedChapters.filter((chapter) =>
-    chapter.bodyStatus === "written"
+  const writtenChapters = orderedChapters.filter(
+    (chapter) => chapter.bodyStatus === "written"
   );
   const committedThrough = navigation.committedThroughChapterId
     ? navigation.chapterCards.find(
@@ -305,9 +307,7 @@ function renderLongPlotNavigation(
     chapterWindowStart,
     chapterWindowStart + LONG_PLOT_NAVIGATION_CHAPTER_CARD_LIMIT
   );
-  const arcById = new Map(
-    navigation.arcs.map((arc) => [arc.id, arc] as const)
-  );
+  const arcById = new Map(navigation.arcs.map((arc) => [arc.id, arc] as const));
   const volumeById = new Map(
     navigation.volumes.map((volume) => [volume.id, volume] as const)
   );
@@ -326,9 +326,7 @@ function renderLongPlotNavigation(
           }`,
           `卷内顺序=${chapter.narrativeOrder}`,
           `主剧情点=${
-            primaryArc
-              ? `「${primaryArc.title}」(${primaryArc.id})`
-              : "未关联"
+            primaryArc ? `「${primaryArc.title}」(${primaryArc.id})` : "未关联"
           }`,
           `正文=${chapter.bodyStatus === "written" ? "已写" : "空白"}`,
           chapter.id === activeChapterCardId ? "当前章=是" : ""
@@ -376,9 +374,7 @@ function renderLongPlotFocus(focus: LongPlotFocusSnapshot): string {
 }
 
 function renderLongWorldbuildingDirectory(
-  directory: NonNullable<
-    LongWorkspaceRuntimeContext["worldbuildingDirectory"]
-  >
+  directory: NonNullable<LongWorkspaceRuntimeContext["worldbuildingDirectory"]>
 ): string {
   const lines = directory.categories.flatMap((category) => {
     if (category.format === "text") {
@@ -439,7 +435,10 @@ function renderLongCharacterDirectory(
         (left, right) =>
           left.order - right.order || left.id.localeCompare(right.id)
       );
-    const visible = characters.slice(0, LONG_CHARACTER_DIRECTORY_LIMIT_PER_TYPE);
+    const visible = characters.slice(
+      0,
+      LONG_CHARACTER_DIRECTORY_LIMIT_PER_TYPE
+    );
     const header = `- ${section.title}（type_id=${section.typeId}；共 ${characters.length} 人）`;
     const items = visible.length
       ? visible.map(
@@ -555,9 +554,7 @@ function renderLongCurrentStageSection(
       ? renderLongCharacterStageBrief(characterFocus, longWorkspace.navigation)
       : ""
   ].filter(Boolean);
-  return parts.length
-    ? `【当前阶段信息与要求】\n${parts.join("\n")}`
-    : "";
+  return parts.length ? `【当前阶段信息与要求】\n${parts.join("\n")}` : "";
 }
 
 /** @internal Exported for prompt-boundary regression tests. */
@@ -572,9 +569,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const longProfile = input.longAgentProfile;
   const skills = input.workspaceContext?.attachedSkills ?? [];
   const materials = input.workspaceContext?.attachedMaterials ?? [];
-  const isWritingAgentRun = Boolean(
-    writingWorkspace && writingProfile
-  );
+  const isWritingAgentRun = Boolean(writingWorkspace && writingProfile);
   const isLibraryAgentRun = Boolean(
     libraryContext && input.libraryAgentProfile
   );
@@ -586,13 +581,11 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   );
   const injectsCrossDomainDesignSnapshots = Boolean(
     longWorkspace &&
-      longProfile &&
-      longAgentAcceptsWorldbuildingDirectory(longProfile.id)
+    longProfile &&
+    longAgentAcceptsWorldbuildingDirectory(longProfile.id)
   );
   const omitLongImplementationIds = injectsCrossDomainDesignSnapshots;
-  const plotFocus = isPlotDesignAgentRun
-    ? longWorkspace?.plotFocus
-    : undefined;
+  const plotFocus = isPlotDesignAgentRun ? longWorkspace?.plotFocus : undefined;
   const worldbuildingFocus = isSettingAgentRun
     ? longWorkspace?.worldbuildingFocus
     : undefined;
@@ -603,7 +596,8 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const readableSkills = writingProfile
     ? skills.filter(
         (item) =>
-          item.kind !== undefined && writingProfile.readAccess.skill.includes(item.kind)
+          item.kind !== undefined &&
+          writingProfile.readAccess.skill.includes(item.kind)
       )
     : longProfile
       ? skills.filter(
@@ -611,13 +605,14 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
             item.kind !== undefined &&
             longProfile.readAccess.skillKinds.includes(item.kind)
         )
-    : input.libraryAgentProfile
-      ? skills
-      : skills;
+      : input.libraryAgentProfile
+        ? skills
+        : skills;
   const readableMaterials = writingProfile
     ? materials.filter(
         (item) =>
-          item.kind !== undefined && writingProfile.readAccess.material.includes(item.kind)
+          item.kind !== undefined &&
+          writingProfile.readAccess.material.includes(item.kind)
       )
     : longProfile
       ? materials.filter(
@@ -627,38 +622,42 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
         )
       : materials;
   const isLongAgentRun = Boolean(longWorkspace && longProfile);
-  const skillContext = isWritingAgentRun || isLibraryAgentRun || isLongAgentRun
-    ? readableSkills.length
-      ? isLibraryAgentRun
-        ? `可按需加载的技能：\n${input.libraryAgentProfile!.readAccess.skills
-            .map((skill) => `- ${skill.name}：${skill.description || "无描述"}`)
-            .join("\n")}\n需要正文时调用 load_skill；name 可用完整名称或唯一短名。`
-        : `可按需加载的技能：\n${readableSkills
+  const skillContext =
+    isWritingAgentRun || isLibraryAgentRun || isLongAgentRun
+      ? readableSkills.length
+        ? isLibraryAgentRun
+          ? `可按需加载的技能：\n${input
+              .libraryAgentProfile!.readAccess.skills.map(
+                (skill) => `- ${skill.name}：${skill.description || "无描述"}`
+              )
+              .join(
+                "\n"
+              )}\n需要正文时调用 load_skill；name 可用完整名称或唯一短名。`
+          : `可按需加载的技能：\n${readableSkills
+              .map((item) => `- ${item.title} [${item.kind}]`)
+              .join(
+                "\n"
+              )}\n需要正文时调用 load_skill；name 优先完整标题，也可用条目标题短名或库名（唯一命中即可）。`
+        : "可按需加载的技能: 无"
+      : skills.length
+        ? `显式附加技能:\n${skills.map((item) => `- ${item.title}: ${item.content}`).join("\n")}`
+        : "显式附加技能: 无";
+  const materialContext =
+    isWritingAgentRun || isLongAgentRun
+      ? readableMaterials.length
+        ? `当前读取范围内的关联素材：\n${readableMaterials
             .map((item) => `- ${item.title} [${item.kind}]`)
-            .join("\n")}\n需要正文时调用 load_skill；name 优先完整标题，也可用条目标题短名或库名（唯一命中即可）。`
-      : "可按需加载的技能: 无"
-    : skills.length
-      ? `显式附加技能:\n${skills.map((item) => `- ${item.title}: ${item.content}`).join("\n")}`
-      : "显式附加技能: 无";
-  const materialContext = isWritingAgentRun || isLongAgentRun
-    ? readableMaterials.length
-      ? `当前读取范围内的关联素材：\n${readableMaterials
-          .map((item) => `- ${item.title} [${item.kind}]`)
-          .join("\n")}\n需要条目正文时调用 query_linked_material_entries。`
-      : "当前读取范围内的关联素材: 无"
-    : materials.length
-      ? `显式附加素材:\n${materials
-          .map((item) => `- ${item.title}: ${item.content}`)
-          .join("\n")}`
-      : "显式附加素材: 无";
+            .join("\n")}\n需要条目正文时调用 query_linked_material_entries。`
+        : "当前读取范围内的关联素材: 无"
+      : materials.length
+        ? `显式附加素材:\n${materials
+            .map((item) => `- ${item.title}: ${item.content}`)
+            .join("\n")}`
+        : "显式附加素材: 无";
   const lines = [
     "【本次智能体会话固定上下文】",
-    omitLongImplementationIds
-      ? ""
-      : `sessionId: ${input.sessionId}`,
-    omitLongImplementationIds
-      ? ""
-      : `runId: ${input.runId}`,
+    omitLongImplementationIds ? "" : `sessionId: ${input.sessionId}`,
+    omitLongImplementationIds ? "" : `runId: ${input.runId}`,
     writingWorkspace
       ? `${scriptWorkspace ? "剧本" : "短篇"}作品: 《${writingWorkspace.title}》`
       : "",
@@ -666,8 +665,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     longWorkspace?.agentsMd?.trim()
       ? `【长篇上下文（AGENTS.md）】\n${longWorkspace.agentsMd.trim()}`
       : "",
-    injectsCrossDomainDesignSnapshots &&
-    longWorkspace?.worldbuildingDirectory
+    injectsCrossDomainDesignSnapshots && longWorkspace?.worldbuildingDirectory
       ? `【世界观条目列表（发送时快照）】\n${renderLongWorldbuildingDirectory(
           longWorkspace.worldbuildingDirectory
         )}`
@@ -695,20 +693,16 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     longWorkspace && !omitLongImplementationIds
       ? `当前根节点: ${longWorkspace.activeRoot}；当前智能体: ${longWorkspace.activeAgentId}`
       : "",
-    longWorkspace?.activeChapterCardId &&
-    !isSettingAgentRun
+    longWorkspace?.activeChapterCardId && !isSettingAgentRun
       ? `当前章卡: ${longWorkspace.activeChapterCardId}`
       : "",
-    longWorkspace?.activeFileId &&
-    !omitLongImplementationIds
+    longWorkspace?.activeFileId && !omitLongImplementationIds
       ? `当前文件: ${longWorkspace.activeFileId} (${longWorkspace.activeFileRevision})`
       : "",
     writingWorkspace
       ? `作品分类: ${writingWorkspace.categories.join("、") || "未分类"}`
       : "",
-    writingWorkspace
-      ? `当前阶段: ${writingWorkspace.activeStageId}`
-      : "",
+    writingWorkspace ? `当前阶段: ${writingWorkspace.activeStageId}` : "",
     writingWorkspace
       ? `剧情结构顺序: ${writingWorkspace.plotStages
           .map((stage) => `${stage.title} (${stage.id})`)
@@ -732,11 +726,11 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
         ? isSettingAgentRun
           ? `当前智能体: ${longProfile.label}`
           : `当前智能体: ${longProfile.label} (${longProfile.id})`
-      : input.libraryAgentProfile
-        ? `当前智能体: ${input.libraryAgentProfile.label} (${input.libraryAgentProfile.domain})`
-      : input.learningImitationProfile
-        ? `当前智能体: ${input.learningImitationProfile.label} (${input.learningImitationProfile.id})`
-      : "",
+        : input.libraryAgentProfile
+          ? `当前智能体: ${input.libraryAgentProfile.label} (${input.libraryAgentProfile.domain})`
+          : input.learningImitationProfile
+            ? `当前智能体: ${input.learningImitationProfile.label} (${input.learningImitationProfile.id})`
+            : "",
     learningContext
       ? `学习阶段: ${learningContext.stageId}；样本文档: ${learningContext.documents.length} 篇`
       : "",
@@ -827,10 +821,7 @@ export function longAgentRefreshesDesignContextOnLaterTurns(
 function buildLongFollowUpTurnUserPrompt(input: AgentRunInput): string {
   const longWorkspace = input.workspaceContext?.longWorkspace;
   const agentId = input.longAgentProfile?.id;
-  if (
-    !longWorkspace ||
-    !longAgentRefreshesDesignContextOnLaterTurns(agentId)
-  ) {
+  if (!longWorkspace || !longAgentRefreshesDesignContextOnLaterTurns(agentId)) {
     return buildRawUserText(input);
   }
   const plotFocus =
@@ -870,12 +861,20 @@ function imageContentBlocks(input: AgentRunInput): Array<{
 }> {
   return (input.attachments ?? []).flatMap((attachment) =>
     attachment.kind === "image"
-      ? [{ type: "image" as const, data: attachment.data, mimeType: attachment.mediaType }]
+      ? [
+          {
+            type: "image" as const,
+            data: attachment.data,
+            mimeType: attachment.mediaType
+          }
+        ]
       : []
   );
 }
 
-export function buildRuntimeUserMessageContent(input: AgentRunInput): UserMessage["content"] {
+export function buildRuntimeUserMessageContent(
+  input: AgentRunInput
+): UserMessage["content"] {
   const images = imageContentBlocks(input);
   return images.length
     ? [{ type: "text", text: buildRuntimeUserPrompt(input) }, ...images]
@@ -891,7 +890,10 @@ export function buildLongFollowUpTurnUserMessageContent(
 }
 
 /** @internal Exported for prompt-content regression tests. */
-export function buildRawUserMessage(input: AgentRunInput, timestamp = Date.now()): UserMessage {
+export function buildRawUserMessage(
+  input: AgentRunInput,
+  timestamp = Date.now()
+): UserMessage {
   const text = buildRawUserText(input);
   const images = imageContentBlocks(input);
   return {

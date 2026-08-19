@@ -43,7 +43,9 @@ const DRAFT_FULL_READ_MAX_SECTIONS = 20;
 const DRAFT_PREVIEW_EXCERPT_CHARACTERS = 200;
 
 function fileSizeLabel(content: string): string {
-  return content.length ? `${content.length.toLocaleString("zh-CN")} 字符` : "空";
+  return content.length
+    ? `${content.length.toLocaleString("zh-CN")} 字符`
+    : "空";
 }
 
 function previewExcerpt(content: string): string {
@@ -67,7 +69,9 @@ function renderDraftSectionPreview(
   ];
   for (const field of fields) {
     const file = section[field];
-    lines.push(`   ${draftFileLabel(field)}（${file.documentId}）：${fileSizeLabel(file.content)}`);
+    lines.push(
+      `   ${draftFileLabel(field)}（${file.documentId}）：${fileSizeLabel(file.content)}`
+    );
     if (file.content.trim()) {
       lines.push(`   摘录：${previewExcerpt(file.content)}`);
     }
@@ -147,7 +151,9 @@ export function buildReadWorkspaceContentTool(
     label: "读取工作区内容",
     description: `分页读取当前${workspaceKindLabel(input)}某一阶段的实时内容。仅允许：${allowed
       .map((stageId) => `${stageLabel(input, stageId)}(${stageId})`)
-      .join("、")}。每次只读取一个阶段；根据 next_offset 继续调用可读完整个文件。draft 只返回目录，章节原文使用 read_draft_sections。`,
+      .join(
+        "、"
+      )}。每次只读取一个阶段；根据 next_offset 继续调用可读完整个文件。draft 只返回目录，章节原文使用 read_draft_sections。`,
     parameters: Type.Object({
       stage_id: literalUnion(allowed),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -178,7 +184,9 @@ export function buildReadWorkspaceContentTool(
                 (section) => section.id === sectionId
               )
           )
-          .filter((section): section is ExpertDraftSectionSnapshot => Boolean(section));
+          .filter((section): section is ExpertDraftSectionSnapshot =>
+            Boolean(section)
+          );
         const index = sections
           .map(
             (section, sectionIndex) =>
@@ -194,10 +202,10 @@ export function buildReadWorkspaceContentTool(
           input.workspace.expertDraft.revision;
         return textResult(
           `${workspaceTitleLabel(input)}：《${input.workspace.title}》\n【正文目录】（draft）\n` +
-          `目录版本：${directoryRevision}\n` +
-          `${draftUnitLabel(input)}数：${sections.length}\n\n${index}\n\n` +
-          `这里只返回文件映射，不返回${draftUnitLabel(input)}原文。读取原文请调用 read_draft_sections：` +
-          `整篇扫描用 mode=preview，需要精读或改写的${draftUnitLabel(input)}再用 mode=full。`
+            `目录版本：${directoryRevision}\n` +
+            `${draftUnitLabel(input)}数：${sections.length}\n\n${index}\n\n` +
+            `这里只返回文件映射，不返回${draftUnitLabel(input)}原文。读取原文请调用 read_draft_sections：` +
+            `整篇扫描用 mode=preview，需要精读或改写的${draftUnitLabel(input)}再用 mode=full。`
         );
       }
       const storedBody = stageBodies.get(stageId) ?? "";
@@ -214,7 +222,7 @@ export function buildReadWorkspaceContentTool(
       }
       return textResult(
         `${workspaceTitleLabel(input)}：《${input.workspace.title}》\n【${stageLabel(input, stageId)}】（${stageId}）\n` +
-        `${renderShortDocumentPageMetadata(page)}\n\n${page.content || "该阶段当前文本为空。"}`
+          `${renderShortDocumentPageMetadata(page)}\n\n${page.content || "该阶段当前文本为空。"}`
       );
     }
   });
@@ -229,8 +237,7 @@ export function buildSearchWorkspaceTextTool(
   return defineTool({
     name: "search_workspace_text",
     label: "搜索工作区文本",
-    description:
-      `在当前智能体可读的${workspaceKindLabel(input)}阶段中按原文搜索，只返回命中位置和少量上下文；局部替换前可先用它定位准确原文。`,
+    description: `在当前智能体可读的${workspaceKindLabel(input)}阶段中按原文搜索，只返回命中位置和少量上下文；局部替换前可先用它定位准确原文。`,
     parameters: Type.Object({
       query: Type.String({ minLength: 1, maxLength: 600 }),
       stage_id: Type.Optional(literalUnion(allowed)),
@@ -242,17 +249,29 @@ export function buildSearchWorkspaceTextTool(
       const selected = params.stage_id
         ? [String(params.stage_id) as ShortWorkspaceStageId]
         : allowed;
-      const maxMatches = Math.min(50, Math.max(1, Number(params.max_matches ?? 10)));
-      const contextChars = Math.min(300, Math.max(10, Number(params.context_chars ?? 60)));
+      const maxMatches = Math.min(
+        50,
+        Math.max(1, Number(params.max_matches ?? 10))
+      );
+      const contextChars = Math.min(
+        300,
+        Math.max(10, Number(params.context_chars ?? 60))
+      );
       const matches: string[] = [];
       for (const stageId of selected) {
         if (!allowed.includes(stageId)) continue;
-        const sources = stageId === "draft"
-          ? orderedExpertSections(input, expertSections).map((section) => ({
-              label: `${section.title}（${section.id}）`,
-              body: section.body.content
-            }))
-          : [{ label: `${stageLabel(input, stageId)}(${stageId})`, body: stageBodies.get(stageId) ?? "" }];
+        const sources =
+          stageId === "draft"
+            ? orderedExpertSections(input, expertSections).map((section) => ({
+                label: `${section.title}（${section.id}）`,
+                body: section.body.content
+              }))
+            : [
+                {
+                  label: `${stageLabel(input, stageId)}(${stageId})`,
+                  body: stageBodies.get(stageId) ?? ""
+                }
+              ];
         for (const source of sources) {
           let cursor = 0;
           while (matches.length < maxMatches) {
@@ -301,8 +320,7 @@ export function buildReadDraftSectionsTool(
 ): AgentTool {
   return defineTool({
     name: "read_draft_sections",
-    label:
-      input.workspaceType === "script" ? "读取剧集正文" : "读取正文章节",
+    label: input.workspaceType === "script" ? "读取剧集正文" : "读取正文章节",
     description:
       `按 section_id 批量读取${draftContentUnitLabel(input)}文件，按目录顺序返回。` +
       "mode=preview 只返回标题、字数和首尾摘录，用于整篇扫描定位；" +
@@ -334,16 +352,17 @@ export function buildReadDraftSectionsTool(
         .map((value) => String(value ?? "").trim())
         .filter(Boolean);
       const requestedIds = new Set(requested);
-      const includeValues = Array.isArray(params.include) && params.include.length
-        ? (params.include as string[]).map((value) => String(value))
-        : ["body"];
+      const includeValues =
+        Array.isArray(params.include) && params.include.length
+          ? (params.include as string[]).map((value) => String(value))
+          : ["body"];
       const fields = DRAFT_FILE_PARAMETER_VALUES.filter((value) =>
         includeValues.includes(value)
       ).map(toDraftFileKind);
       if (fields.length === 0) fields.push("body");
 
-      const targets = orderedExpertSections(input, expertSections).filter((section) =>
-        requestedIds.has(section.id)
+      const targets = orderedExpertSections(input, expertSections).filter(
+        (section) => requestedIds.has(section.id)
       );
       const missing = requested.filter(
         (sectionId) => !targets.some((section) => section.id === sectionId)
@@ -400,7 +419,9 @@ export function buildReadDraftSectionsTool(
         const page = readShortDocumentPage(
           file.content,
           requestedOffset,
-          Number(params.max_characters ?? SHORT_DOCUMENT_PAGE_DEFAULT_CHARACTERS)
+          Number(
+            params.max_characters ?? SHORT_DOCUMENT_PAGE_DEFAULT_CHARACTERS
+          )
         );
         if (requestedOffset > page.totalCharacters) {
           return textResult(
@@ -411,9 +432,11 @@ export function buildReadDraftSectionsTool(
           readExpertFileIds.add(file.documentId);
         }
         return textResult(
-          [...header, renderDraftDocumentPage(section, field, page), ...missingNote].join(
-            "\n"
-          )
+          [
+            ...header,
+            renderDraftDocumentPage(section, field, page),
+            ...missingNote
+          ].join("\n")
         );
       }
 

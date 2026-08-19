@@ -1,5 +1,49 @@
 # DeepWrite 项目协作规范
 
+## 全仓格式基线
+
+- 项目已首次建立全仓格式基线；`.editorconfig`、`prettier.config.mjs` 和 `eslint.config.js` 是统一格式与静态检查规则的唯一来源，后续新增及修改的适用文件必须遵守，未经明确讨论不得绕过、弱化或另建冲突规则。
+- 格式化统一使用根目录脚本：`pnpm format` 用于写入格式，`pnpm format:check` 用于只读检查；ESLint 分别使用 `pnpm lint:eslint`、`pnpm lint:fix`，边界检查使用 `pnpm lint:boundary`。
+- 提交前必须从仓库根目录运行 `pnpm verify`，确保格式检查、类型检查、ESLint、边界检查、测试和构建全部通过；CI 同样以 `pnpm verify` 为准。
+- 日常改动只格式化任务范围内的文件，不得把无关文件的大面积格式变化混入功能修改；若确需调整全仓格式规则或重新建立基线，应单独说明影响范围并集中处理。
+
+## 项目布局与基础结构设计
+
+仓库是 pnpm workspace：`apps/*` 放可运行应用，`packages/*` 放共享库，`tools/` 放校验与打包编排。根目录 `package.json` 的脚本是开发、校验和打包入口；依赖版本以 `pnpm-workspace.yaml` 的 catalog 为准。新增能力必须先落入现有分层，不得另起平行应用、平行协议或平行打包入口。
+
+```text
+deepwrite/
+├── apps/desktop/                 # 唯一桌面客户端（Electron + Vue）
+│   ├── src/main/                 # 主进程：窗口、安全 IPC、配置、Utility 监管
+│   ├── src/preload/              # 预加载：白名单暴露 window.deepwrite
+│   ├── src/utilities/            # Utility 进程：core / agent / tool 入口与本地存储
+│   ├── src/renderer/             # 渲染进程：工作台 UI
+│   ├── src/extras/               # 主进程侧可选能力（如云备份），由 Main 注册 IPC
+│   └── scripts/                  # 冒烟、安装包校验、electron-builder 钩子
+├── packages/contracts/           # 命令、事件、领域模型的 Zod 契约
+├── packages/pi-runtime-adapter/  # Agent Runtime 与受控工具适配
+├── packages/shared/              # 无业务语义的 ID / 时间工具
+├── tools/                        # 边界检查、Electron 运行时、测试包编排
+└── docs/images/                  # README 配图
+```
+
+- DeepWrite 采用 Electron 多进程架构，职责不可混用：Renderer 只负责界面与会话编排；Preload 只做 `window.deepwrite` 白名单与双向 Zod 校验；Main 管理窗口、密钥、配置存储，并通过 `UtilitySupervisor` 监管 Utility；Core Utility 是本地项目与路径注册表的唯一写入者；Agent Utility 运行模型与智能体；Tool Utility 只提供受控工具执行边界。跨进程通信走 `@deepwrite/contracts` 中的 Envelope 命令/事件，不得另开未校验通道。
+- 进程依赖单向、收口明确。Renderer 只能从 `@deepwrite/contracts/renderer` 取运行时值，禁止引入 `electron`、`node:`、Pi SDK 或 `@deepwrite/pi-runtime-adapter`；该边界由 `pnpm lint:boundary` 强制检查。模型密钥与 Provider 凭据只存在于 Main / Agent，不得下发到 Renderer。Agent 需要读本地作品时，只能经 Main 授权的内部命令桥访问 Core 的只查询令（当前限于长篇 `long.getWorkspaceIndex` / `long.readDocument` / `long.search`），不得让 Agent 直接写盘。
+- `packages/contracts` 是协议与领域模型的唯一来源。新增命令、事件、清单字段或 Preload API 时，先改契约与对应 Schema，再改 Preload、Main 路由和 Utility 实现；Renderer 新增从 `@deepwrite/contracts` 导入的运行时值，必须同步导出到 `packages/contracts/src/renderer.ts`。`packages/shared` 只放 `createId` 一类无业务语义的工具，不得把领域逻辑塞进去。Pi / 工具 schema / 子智能体运行时留在 `packages/pi-runtime-adapter`；桌面进程编排留在 `apps/desktop`。
+- 本地作品以文件夹为单位，清单文件固定为 `deepwrite.json`，正文与设定使用 UTF-8 Markdown。短篇/剧本/素材库/技能库走 `folder-catalog-store`；长篇走 `long-project-store` 与 `long-workspace-service`。Core 必须原子写入，智能体对文稿的修改先以 proposal 事件展示差异，用户接受后才由 Core 落盘；不得让 Agent 或 Renderer 静默覆盖较新版本。
+- Renderer 以 `WorkspaceShell.vue` 为工作台壳：默认三栏写作面留在入口 chunk，设置、长篇、市场、云备份等用 `lazyAppComponents` 按需加载。界面状态放 `stores/`，跨组件编排放 `composables/`，领域页面可放 `features/` 或 `extras/`。主进程可选能力（如云备份）放 `apps/desktop/src/extras/`，对应界面放 `renderer/src/extras/`，由 Main 注册专用 IPC，并复用同一套 contracts。新增功能先扩现有 coordinator / store / Utility handler；只有新的可选能力才新增 extras，不得把业务写入逻辑放进组件或 Preload。
+- electron-vite 的打包入口固定为 Main `src/main/index.ts`、三个 Utility（`core-entry` / `agent-entry` / `tool-entry`）、Preload 与 Renderer。改进程边界、新增 Utility 或调整 `files` 时，必须同步 `apps/desktop/electron.vite.config.ts`、supervisor 启动路径、冒烟脚本和边界检查；不得把运行时依赖改回塞进 ASAR 的 pnpm 树，除非同时更新 before-build 钩子并补安装包内验证。
+
+## 代码体量、拆分与耦合
+
+新增和修改代码必须保持可维护：文件精简、职责单一、依赖方向清晰，禁止继续堆成难以阅读和拆改的大文件。
+
+- 普通实现文件（`.ts` / `.js`，含 store、composable、service、handler）尽量不超过 300 行，超过 400 行必须按职责拆分后再继续改。Vue 单文件组件尽量不超过 400 行，超过 500 行必须把模板、脚本或样式拆到独立子组件 / composable，不得继续往同一 `.vue` 追加功能。测试文件允许稍长，但尽量不超过 600 行；超过时应按场景拆成多个测试文件，而不是在同一文件无限追加用例。
+- 拆分必须提高内聚、降低耦合，禁止为凑行数做无职责的机械切分，也禁止把互不相关的逻辑堆进同一文件形成上帝模块、上帝组件或上帝 store。一个文件只承载一个明确职责；页面编排、状态、领域写入、IPC 路由不得混写。
+- 新逻辑优先落入现有分层：界面状态放 `stores/`，跨组件编排放 `composables/`，领域页面放 `features/` 或 `extras/`，业务写入走 coordinator / Utility handler。不得把可复用逻辑继续塞进已偏大的 `App.vue`、`WorkspaceShell.vue`、巨型 store 或 Preload。
+- 模块之间只通过明确的公共接口协作，禁止循环依赖，禁止互相直读内部状态或私有实现。共享代码只放真正跨领域且无业务语义的工具，或已由 `@deepwrite/contracts` 定义的协议；不得为了图省事抽出过宽的“万能工具”或让无关领域互相引用。
+- 修改已超限的文件时，本次改动必须顺带把触及的职责拆出去，而不是在超大文件上继续打补丁。拆出的新文件同样遵守上述体量与分层约束。
+
 ## 重要：测试代码敏感信息保护
 
 - 所有测试代码、测试夹具、快照、示例请求、Mock 数据和测试日志中，严禁出现真实接口地址、服务器 IP、生产域名、明文 Token、API Key、管理员口令或其他可用凭据。
@@ -20,21 +64,3 @@
 - 列表选择框统一复用 Renderer 的 `PopupSelect` 组件及其交互、尺寸、圆角、焦点和禁用状态，不得在同类业务表单中混用浏览器原生 `<select>`。弹窗内使用时必须保证弹出菜单层级高于所属弹窗且不会被遮挡。
 - 普通保存、创建、确认等主操作按钮沿用主界面的中性深色实心样式；只有删除持久化数据、不可恢复覆盖等真正危险操作才使用红色危险按钮。“新建学习”只清空当前临时样本、预览和聊天记录且不影响已落盘资料，因此“确认新建”必须使用中性深色主按钮，不得使用危险红色。
 - 学习仿写等复杂页面要与设置页保持一致的容器层级、圆角、边框、间距和控件风格，并兼容紧凑窗口及设置中允许的 UI 字号范围；避免依赖会在字号增大后造成裁切的固定高度。
-
-## Windows 与 macOS 测试安装包
-
-- 当前桌面端是 Electron 工程，统一使用 `electron-builder` 和 `apps/desktop/electron-builder.yml` 打包；不得使用旧 Write Claw / DeepSeekWrite 项目的 Python、PyInstaller 或旧 DMG 脚本。
-- 用户只说“打包”“打测试包”“打 Win 包”或“打 Mac 包”时，默认生成不会发布的测试包。Windows 测试包可以不做代码签名；Mac 测试包必须对完整 `.app` 做 ad-hoc 签名，但不做 Apple 公证。只有用户明确要求“正式包”“发布包”并提供或确认签名条件后，才配置 Developer ID 签名、公证或上传发布。
-- 打包前必须从仓库根目录运行对应的 `pnpm pack:test:*` 命令。命令会先执行 `pnpm verify`，不得跳过类型检查、边界检查、测试和构建，也不得直接复用无法确认是否最新的 `apps/desktop/out`。
-- `pnpm pack:test:*` 必须通过 `tools/run-test-package.mjs` 统一编排，不得把脚本退回为直接串联 electron-builder。编排器会显式锁定打包用 Electron 版本，并在成功或失败退出前通过 `tools/ensure-electron-runtime.mjs` 恢复、验证当前主机的开发 Electron；打包完成后 `pnpm dev` 必须仍可启动。
-- 指令与命令映射：未指定平台的“打包”或“打全部测试包”使用 `pnpm pack:test`；Windows x64 使用 `pnpm pack:test:win`；Mac Apple Silicon / arm64 使用 `pnpm pack:test:mac:arm64`；Mac Intel / x64 使用 `pnpm pack:test:mac:x64`；同时生成两种 Mac 架构使用 `pnpm pack:test:mac`。
-- Windows 测试包优先在 Windows x64 环境构建；Mac 包必须在 macOS 构建。在 Apple Silicon Mac 上构建或运行 Intel 包时，需要具备可用的 x86_64 / Rosetta 环境。
-- 测试包输出目录固定为 `apps/desktop/release/`，文件名必须保留 `DeepWrite-<version>-<os>-<arch>-test.<ext>` 格式，不得临时改名覆盖其他架构或版本。
-- `apps/desktop/scripts/electron-builder-before-build.cjs` 会阻止 electron-builder 把 pnpm 依赖树重复装进 ASAR，因为当前运行时依赖已由 electron-vite 编译到 `out`。如果以后引入未打包的运行时依赖或原生 Node 模块，必须同步调整该钩子和 `files` 配置，并增加对应的安装包内运行验证。
-- Mac 测试包使用 `apps/desktop/electron-builder.yml` 中的 `identity: "-"` 让 electron-builder 对 Electron Framework、Helpers 和顶层 App Bundle 完成 ad-hoc 签名，并设置 `hardenedRuntime: false`、`notarize: false`。不得改回 `identity: null`：完全跳过签名会让 x64 App 未签名、arm64 App 只保留不完整的 linker ad-hoc 签名，经微信、浏览器等渠道下载并触发 Gatekeeper 后，可能被误报为“应用已损坏”。
-- 旧 Write Claw / DeepSeekWrite 打包流程中可借鉴的只有“组装完整 `.app` 后执行 `codesign --force --deep --sign -`，再执行 `codesign --verify --deep --strict`”这一签名原则；当前 Electron 工程应优先使用 electron-builder 原生的 `identity: "-"`，不得重新引入旧 PyInstaller 或 DMG 脚本。
-- `apps/desktop/scripts/verify-test-package.mjs` 必须同时验证 DMG 校验和、`codesign --verify --deep --strict` 成功，并确认顶层 App Bundle 的签名详情包含 `Signature=adhoc`。只运行 `apps/desktop/release/mac*/DeepWrite.app` 的冒烟流程不能证明微信下载后的安装体验，因为未隔离的构建目录不会触发 Gatekeeper。
-- ad-hoc 签名只修复 App Bundle 的代码完整性，不会建立 Apple 信任链，也不能替代 Developer ID 签名和公证。通过微信、浏览器等渠道接收后，文件可能被重新添加 `com.apple.quarantine`；测试者仍可能需要右键打开、在“隐私与安全性”中选择仍要打开，或在确认包可信后手动移除隔离属性。不得声称 ad-hoc 测试包可以在所有 Mac 上无提示直接打开。
-- 交付 Mac 测试包前检查本地生成的 DMG 是否意外继承了旧文件的 `com.apple.quarantine`，若存在则从发布产物移除；但必须明确，传输工具可能在接收端重新添加该属性。
-- 成功标准：对应安装包存在且非空；同时检查生成的未打包应用目录，并尽可能运行安装包内的 DeepWrite 冒烟流程，确认主进程、Renderer、Preload 以及 core / agent / tool 三个 Utility 均可启动。若受当前操作系统限制无法运行目标平台产物，必须明确报告“只完成构建，未完成目标平台运行验证”。
-- 打包失败时报告失败的平台、架构、具体步骤和关键终端输出；不得在缺少签名凭据、目标平台环境或验证结果时声称正式发布包可用。

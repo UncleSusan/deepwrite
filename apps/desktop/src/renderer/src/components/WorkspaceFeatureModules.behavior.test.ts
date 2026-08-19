@@ -1,8 +1,6 @@
 import { ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
-import type {
-  SubagentAuthoringRuntimeContext
-} from "@deepwrite/contracts";
+import type { SubagentAuthoringRuntimeContext } from "@deepwrite/contracts";
 import type { SubagentAuthoringController } from "../composables/useSubagentAuthoring";
 import type {
   AgentTeamFeatureModule,

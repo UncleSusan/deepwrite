@@ -7,10 +7,8 @@ describe("CreateLongPlotPointDialog", () => {
     expect(source).toContain("剧情点名称");
     expect(source).toContain("概要");
     expect(source).not.toContain(">故事情节<");
-    expect(source).toContain(
-      'uiMessage.warning("请输入剧情点名称。")'
-    );
-    expect(source).toContain("<Teleport to=\"body\">");
+    expect(source).toContain('uiMessage.warning("请输入剧情点名称。")');
+    expect(source).toContain('<Teleport to="body">');
     expect(source).not.toContain("LongStructureManager");
   });
 

@@ -146,9 +146,7 @@ export function appendLegacyLedgerText(
       ) {
         return [];
       }
-      const note = stringValue(
-        placement.note ?? placement.writing_prompt
-      )
+      const note = stringValue(placement.note ?? placement.writing_prompt)
         .trim()
         .slice(0, 4_000);
       return [
@@ -164,42 +162,38 @@ export function appendLegacyLedgerText(
     );
   }
 
-  const beatDecisionLines = list(plot.foreshadowing).flatMap(
-    (rawThread) => {
-      const thread = record(rawThread);
-      const threadId = stringValue(thread.id).trim();
-      return list(thread.beats).flatMap((rawBeat) => {
-        const beat = record(rawBeat);
-        const placementId = stringValue(beat.placement_id).trim();
-        const chapterCardId =
-          stringValue(beat.chapter_card_id).trim() ||
-          placementChapterById.get(placementId) ||
-          "";
-        if (chapterCardId !== legacyCardId) return [];
-        const status = stringValue(
-          beat.status ?? beat.execution_status
-        ).trim();
-        if (
-          status !== "committed" &&
-          status !== "missed" &&
-          status !== "completed" &&
-          status !== "executed"
-        ) {
-          return [];
-        }
-        const note = stringValue(
-          beat.note ?? beat.intended_knowledge ?? beat.target_scope
-        )
-          .trim()
-          .slice(0, 4_000);
-        return [
-          `- foreshadowing_id=${threadId || "unknown"}；beat_id=${
-            stringValue(beat.id).trim() || "unknown"
-          }；旧状态=${status}${note ? `；证据/说明=${note}` : ""}`
-        ];
-      });
-    }
-  );
+  const beatDecisionLines = list(plot.foreshadowing).flatMap((rawThread) => {
+    const thread = record(rawThread);
+    const threadId = stringValue(thread.id).trim();
+    return list(thread.beats).flatMap((rawBeat) => {
+      const beat = record(rawBeat);
+      const placementId = stringValue(beat.placement_id).trim();
+      const chapterCardId =
+        stringValue(beat.chapter_card_id).trim() ||
+        placementChapterById.get(placementId) ||
+        "";
+      if (chapterCardId !== legacyCardId) return [];
+      const status = stringValue(beat.status ?? beat.execution_status).trim();
+      if (
+        status !== "committed" &&
+        status !== "missed" &&
+        status !== "completed" &&
+        status !== "executed"
+      ) {
+        return [];
+      }
+      const note = stringValue(
+        beat.note ?? beat.intended_knowledge ?? beat.target_scope
+      )
+        .trim()
+        .slice(0, 4_000);
+      return [
+        `- foreshadowing_id=${threadId || "unknown"}；beat_id=${
+          stringValue(beat.id).trim() || "unknown"
+        }；旧状态=${status}${note ? `；证据/说明=${note}` : ""}`
+      ];
+    });
+  });
   if (beatDecisionLines.length > 0) {
     sections.push(
       `### 旧版伏笔节拍执行判定（迁移证据）\n\n${beatDecisionLines.join("\n")}`

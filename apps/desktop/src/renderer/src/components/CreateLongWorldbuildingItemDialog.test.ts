@@ -7,10 +7,8 @@ describe("CreateLongWorldbuildingItemDialog", () => {
     expect(source).toContain("世界观 · {{ categoryTitle }}");
     expect(source).toContain("条目名称");
     expect(source).toContain("确认新建");
-    expect(source).toContain(
-      'uiMessage.warning("请输入世界观条目名称。")'
-    );
-    expect(source).toContain("<Teleport to=\"body\">");
+    expect(source).toContain('uiMessage.warning("请输入世界观条目名称。")');
+    expect(source).toContain('<Teleport to="body">');
     expect(source).not.toContain("LongStructureManager");
   });
 

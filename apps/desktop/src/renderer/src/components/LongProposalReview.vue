@@ -49,9 +49,7 @@ type LongContentFileChange = Extract<
   }
 >["payload"]["files"][number];
 
-function isContentFileProposalItem(
-  item: LongWorkspaceProposalItem
-): boolean {
+function isContentFileProposalItem(item: LongWorkspaceProposalItem): boolean {
   return (
     item.event.type === "long.worldbuilding_file_proposal" ||
     item.event.type === "long.character_file_proposal" ||
@@ -80,7 +78,8 @@ const contentFileCards = computed(() => {
       item.event.type !== "long.worldbuilding_file_proposal" &&
       item.event.type !== "long.character_file_proposal" &&
       item.event.type !== "long.continuity_file_proposal"
-    ) continue;
+    )
+      continue;
     cards.set(
       item.event.id,
       item.event.payload.files.map((file) => ({
@@ -197,9 +196,7 @@ function contentFileTitle(
     : file.title;
 }
 
-function canDisplayContentFileDiff(
-  item: LongWorkspaceProposalItem
-): boolean {
+function canDisplayContentFileDiff(item: LongWorkspaceProposalItem): boolean {
   return (
     item.event.type !== "long.continuity_file_proposal" ||
     (Boolean(item.preview) &&
@@ -235,10 +232,7 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
   if (item.approvalMode === "auto-approve" && item.status === "error") {
     return "重试自动保存";
   }
-  if (
-    item.status === "error" &&
-    item.event.type !== "long.mutation_proposal"
-  ) {
+  if (item.status === "error" && item.event.type !== "long.mutation_proposal") {
     return "重试";
   }
   switch (item.event.type) {
@@ -257,14 +251,10 @@ function proposalStatusText(item: LongWorkspaceProposalItem): string {
   if (item.status === "accepted") return "已接受";
   if (item.status === "waiting") return "等待前序文件";
   if (item.status === "previewing") {
-    return item.approvalMode === "auto-approve"
-      ? "自动预览中"
-      : "正在预览";
+    return item.approvalMode === "auto-approve" ? "自动预览中" : "正在预览";
   }
   if (item.status === "submitting") {
-    return item.approvalMode === "auto-approve"
-      ? "自动保存中"
-      : "正在处理";
+    return item.approvalMode === "auto-approve" ? "自动保存中" : "正在处理";
   }
   if (item.status === "error") {
     if (item.errorPhase === "preview") return "校验未通过";
@@ -274,9 +264,7 @@ function proposalStatusText(item: LongWorkspaceProposalItem): string {
         ? "需要重新生成"
         : "应用失败";
   }
-  return item.approvalMode === "auto-approve"
-    ? "等待自动保存"
-    : "等待确认";
+  return item.approvalMode === "auto-approve" ? "等待自动保存" : "等待确认";
 }
 
 function contentProposalVisualStatus(
@@ -290,9 +278,7 @@ function contentProposalVisualStatus(
   return "pending";
 }
 
-function contentProposalStatusLabel(
-  item: LongWorkspaceProposalItem
-): string {
+function contentProposalStatusLabel(item: LongWorkspaceProposalItem): string {
   if (item.status === "accepted") return "已接受";
   if (item.status === "error") {
     return item.errorPhase === "preview" ? "校验未通过" : "应用失败";
@@ -300,14 +286,14 @@ function contentProposalStatusLabel(
   if (item.status === "waiting") return "等待前序文件";
   if (item.status === "previewing") return "正在校验";
   if (item.status === "submitting") return "正在应用";
-  return item.approvalMode === "auto-approve"
-    ? "待自动保存"
-    : "待审阅";
+  return item.approvalMode === "auto-approve" ? "待自动保存" : "待审阅";
 }
 
-function contentProposalDiffStats(
-  item: LongWorkspaceProposalItem
-): { additions: number; deletions: number; hunks: number } {
+function contentProposalDiffStats(item: LongWorkspaceProposalItem): {
+  additions: number;
+  deletions: number;
+  hunks: number;
+} {
   return (contentFileCards.value.get(item.event.id) ?? []).reduce(
     (total, card) => ({
       additions: total.additions + card.diff.additions,
@@ -318,9 +304,7 @@ function contentProposalDiffStats(
   );
 }
 
-function contentProposalStatusMessage(
-  item: LongWorkspaceProposalItem
-): string {
+function contentProposalStatusMessage(item: LongWorkspaceProposalItem): string {
   if (item.status === "accepted") {
     return item.approvalMode === "auto-approve"
       ? "已自动批准并保存到本地 Markdown。"
@@ -328,8 +312,10 @@ function contentProposalStatusMessage(
   }
   if (item.status === "error") {
     if (item.errorPhase === "preview") {
-      return item.error ??
-        "变更未通过审批前校验，尚未应用。请关闭本提案并基于最新内容重新生成。";
+      return (
+        item.error ??
+        "变更未通过审批前校验，尚未应用。请关闭本提案并基于最新内容重新生成。"
+      );
     }
     return item.error ?? "变更未能应用，可重试接受并保存或拒绝。";
   }
@@ -347,9 +333,7 @@ function contentProposalStatusMessage(
     : "接受后将应用到对应 Markdown 并自动保存到本机。";
 }
 
-function showContentProposalActions(
-  item: LongWorkspaceProposalItem
-): boolean {
+function showContentProposalActions(item: LongWorkspaceProposalItem): boolean {
   return (
     item.status !== "accepted" &&
     (item.approvalMode !== "auto-approve" || item.status === "error")
@@ -368,9 +352,7 @@ function contentProposalAcceptDisabled(
   );
 }
 
-function contentProposalAcceptLabel(
-  item: LongWorkspaceProposalItem
-): string {
+function contentProposalAcceptLabel(item: LongWorkspaceProposalItem): string {
   if (item.status === "submitting") return "保存中…";
   if (item.status === "error" && item.errorRetryable === false) {
     return "需重新生成提案";
@@ -382,9 +364,7 @@ function contentProposalAcceptLabel(
     : "接受并保存";
 }
 
-function isStructureProposalItem(
-  item: LongWorkspaceProposalItem
-): boolean {
+function isStructureProposalItem(item: LongWorkspaceProposalItem): boolean {
   return item.event.type === "long.mutation_proposal";
 }
 
@@ -404,8 +384,10 @@ function structureProposalStatusMessage(
   if (item.status === "accepted") return "结构变更已应用并保存到本机。";
   if (item.status === "error") {
     if (item.errorPhase === "preview") {
-      return item.error ??
-        "结构提案未通过审批前校验，尚未应用。请关闭本提案并让智能体基于最新结构重新生成。";
+      return (
+        item.error ??
+        "结构提案未通过审批前校验，尚未应用。请关闭本提案并让智能体基于最新结构重新生成。"
+      );
     }
     return item.error ?? "结构变更未能应用，可重新预览后重试或拒绝。";
   }
@@ -535,11 +517,11 @@ function entityActionLabel(
 }
 
 function entitySnapshotText(
-  value: LongWorkspaceEntityChange["before"] | LongWorkspaceEntityChange["after"]
+  value:
+    LongWorkspaceEntityChange["before"] | LongWorkspaceEntityChange["after"]
 ): string {
   return value === null ? "（不存在）" : JSON.stringify(value, null, 2);
 }
-
 </script>
 
 <template>
@@ -581,9 +563,9 @@ function entitySnapshotText(
           <span class="long-proposal-icon">
             <AppIcon
               :name="
-                item.event.type === 'long.worldbuilding_file_proposal'
-                  || item.event.type === 'long.character_file_proposal'
-                  || item.event.type === 'long.continuity_file_proposal'
+                item.event.type === 'long.worldbuilding_file_proposal' ||
+                item.event.type === 'long.character_file_proposal' ||
+                item.event.type === 'long.continuity_file_proposal'
                   ? 'file'
                   : item.event.type === 'long.chapter_dispatch_proposal'
                     ? 'edit'
@@ -597,10 +579,7 @@ function entitySnapshotText(
             <small>{{ item.event.payload.agentId }}</small>
           </div>
           <div class="approval-status-actions">
-            <span
-              class="long-proposal-status"
-              :class="`is-${item.status}`"
-            >
+            <span class="long-proposal-status" :class="`is-${item.status}`">
               {{ proposalStatusText(item) }}
             </span>
             <button
@@ -693,9 +672,7 @@ function entitySnapshotText(
                 class="long-edit-diff-file"
               >
                 <div
-                  v-if="
-                    (contentFileCards.get(item.event.id)?.length ?? 0) > 1
-                  "
+                  v-if="(contentFileCards.get(item.event.id)?.length ?? 0) > 1"
                   class="long-edit-diff-file-label"
                 >
                   {{ contentFileTitle(item, card.file) }}
@@ -706,7 +683,10 @@ function entitySnapshotText(
                   class="edit-diff-hunk"
                 >
                   <div class="edit-diff-hunk-header">
-                    @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
+                    @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{
+                      hunk.newStart
+                    }},{{ hunk.newLines }}
+                    @@
                   </div>
                   <div
                     v-for="(line, lineIndex) in hunk.lines"
@@ -741,7 +721,10 @@ function entitySnapshotText(
           >
             文件身份和原文尚未通过校验，暂不显示差异。
           </p>
-          <p v-else-if="isContentFileProposalItem(item)" class="edit-proposal-empty">
+          <p
+            v-else-if="isContentFileProposalItem(item)"
+            class="edit-proposal-empty"
+          >
             已创建空白 Markdown 文件，没有正文行级差异。
           </p>
 
@@ -792,10 +775,7 @@ function entitySnapshotText(
         </template>
 
         <div
-          v-if="
-            item.event.type === 'long.mutation_proposal' &&
-            item.preview
-          "
+          v-if="item.event.type === 'long.mutation_proposal' && item.preview"
           class="long-proposal-impact"
         >
           <span>
@@ -816,10 +796,7 @@ function entitySnapshotText(
           </span>
         </div>
         <details
-          v-if="
-            item.event.type === 'long.mutation_proposal' &&
-            item.preview
-          "
+          v-if="item.event.type === 'long.mutation_proposal' && item.preview"
           class="long-proposal-details"
           :open="
             item.preview.impact.deletedEntityIds.length > 0 ||
@@ -842,7 +819,8 @@ function entitySnapshotText(
             >
               <summary>
                 {{ entityActionLabel(change.action) }} ·
-                {{ entityKindLabels[change.kind] }} · {{ change.id }}
+                {{ entityKindLabels[change.kind] }} ·
+                {{ change.id }}
               </summary>
               <div class="long-proposal-entity-diff">
                 <section>
@@ -863,10 +841,9 @@ function entitySnapshotText(
             <strong>
               删除文件引用（{{ item.preview.impact.deletedFileIds.length }}）
             </strong>
-            <code
-              v-for="id in item.preview.impact.deletedFileIds"
-              :key="id"
-            >{{ id }}</code>
+            <code v-for="id in item.preview.impact.deletedFileIds" :key="id">{{
+              id
+            }}</code>
           </div>
           <div
             v-if="item.preview.fileIntents.length"
@@ -879,7 +856,8 @@ function entitySnapshotText(
               :class="{ 'is-danger': intent.action === 'delete' }"
             >
               {{ intent.action === "delete" ? "删除引用" : "新建" }} ·
-              {{ intent.file.path }} · {{ intent.reason }}
+              {{ intent.file.path }} ·
+              {{ intent.reason }}
             </span>
           </div>
           <div
@@ -893,8 +871,7 @@ function entitySnapshotText(
               class="long-proposal-content"
             >
               <summary>
-                {{ proposalFilePath(item, write.fileId) }} ·
-                {{ write.mode }} ·
+                {{ proposalFilePath(item, write.fileId) }} · {{ write.mode }} ·
                 {{ write.expectedRevision ?? "新文件" }} →
                 {{ write.nextRevision }}
               </summary>
@@ -910,9 +887,7 @@ function entitySnapshotText(
         </details>
 
         <div
-          v-else-if="
-            item.event.type === 'long.chapter_dispatch_proposal'
-          "
+          v-else-if="item.event.type === 'long.chapter_dispatch_proposal'"
           class="long-proposal-impact"
         >
           <span>
@@ -972,8 +947,7 @@ function entitySnapshotText(
           v-if="
             !usesEditProposalSurface(item) &&
             item.status !== 'accepted' &&
-            (item.approvalMode !== 'auto-approve' ||
-              item.status === 'error')
+            (item.approvalMode !== 'auto-approve' || item.status === 'error')
           "
         >
           <button
@@ -987,12 +961,9 @@ function entitySnapshotText(
           <button
             v-if="
               (item.event.type === 'long.mutation_proposal' ||
-                item.event.type ===
-                  'long.worldbuilding_file_proposal' ||
-                item.event.type ===
-                  'long.character_file_proposal' ||
-                item.event.type ===
-                  'long.continuity_file_proposal') &&
+                item.event.type === 'long.worldbuilding_file_proposal' ||
+                item.event.type === 'long.character_file_proposal' ||
+                item.event.type === 'long.continuity_file_proposal') &&
               item.status === 'error'
             "
             class="long-proposal-secondary"
@@ -1008,12 +979,9 @@ function entitySnapshotText(
               item.status === 'previewing' ||
               item.status === 'submitting' ||
               ((item.event.type === 'long.mutation_proposal' ||
-                item.event.type ===
-                  'long.worldbuilding_file_proposal' ||
-                item.event.type ===
-                  'long.character_file_proposal' ||
-                item.event.type ===
-                  'long.continuity_file_proposal') &&
+                item.event.type === 'long.worldbuilding_file_proposal' ||
+                item.event.type === 'long.character_file_proposal' ||
+                item.event.type === 'long.continuity_file_proposal') &&
                 (item.status !== 'ready' || !item.preview))
             "
             @click="emit('approve', item.event.id)"
@@ -1048,7 +1016,8 @@ function entitySnapshotText(
   overflow: visible;
 }
 
-.long-proposal-review.is-embedded.has-edit-proposal-surface-items .long-proposal-list {
+.long-proposal-review.is-embedded.has-edit-proposal-surface-items
+  .long-proposal-list {
   gap: 12px;
   padding: 0;
   margin: 14px 0 20px;

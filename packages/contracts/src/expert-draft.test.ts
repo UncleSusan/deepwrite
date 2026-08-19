@@ -69,8 +69,12 @@ describe("expert draft Markdown contracts", () => {
     const draft = createDefaultExpertDraft();
     const withoutIntro = removeExpertDraftSection(draft, "intro");
 
-    expect(withoutIntro.sections.map((section) => section.id)).toEqual(["section-1"]);
-    expect(removeExpertDraftSection(withoutIntro, "section-1")).toBe(withoutIntro);
+    expect(withoutIntro.sections.map((section) => section.id)).toEqual([
+      "section-1"
+    ]);
+    expect(removeExpertDraftSection(withoutIntro, "section-1")).toBe(
+      withoutIntro
+    );
     expect(removeExpertDraftSection(draft, "missing")).toBe(draft);
   });
 
@@ -164,14 +168,18 @@ describe("expert draft Markdown contracts", () => {
     expect(serialized).toContain("id=intro");
     expect(serialized).toContain("id=scene%2F%E9%9B%A8%E5%A4%9C");
     expect(parseExpertDraftMarkdown(serialized)).toEqual(draft);
-    expect(serializeExpertDraftMarkdown(parseExpertDraftMarkdown(serialized))).toBe(
-      serialized
-    );
+    expect(
+      serializeExpertDraftMarkdown(parseExpertDraftMarkdown(serialized))
+    ).toBe(serialized);
   });
 
   it("renders a manuscript without persistence metadata or character state", () => {
     const draft = updateExpertDraftSection(
-      updateExpertDraftSectionBody(createDefaultExpertDraft(), "section-1", "正文。"),
+      updateExpertDraftSectionBody(
+        createDefaultExpertDraft(),
+        "section-1",
+        "正文。"
+      ),
       "section-1",
       {
         wordCountRequirement: "1000 字",
@@ -221,9 +229,9 @@ describe("expert draft Markdown contracts", () => {
       title: "新的第一节",
       characterState: "人物状态"
     });
-    expect(updateExpertDraftSection(draft, "missing", { body: "不会写入" })).toBe(
-      draft
-    );
+    expect(
+      updateExpertDraftSection(draft, "missing", { body: "不会写入" })
+    ).toBe(draft);
     expect(() =>
       ExpertDraftSchema.parse({
         sections: [draft.sections[0], { ...draft.sections[1], id: "intro" }]

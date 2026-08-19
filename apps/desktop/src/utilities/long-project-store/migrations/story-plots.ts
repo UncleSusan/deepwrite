@@ -7,7 +7,11 @@ import {
   type LongProjectManifest
 } from "@deepwrite/contracts";
 import { createId } from "@deepwrite/shared";
-import { commitLongProjectTransaction, serializeJson, unknownRecord } from "../io";
+import {
+  commitLongProjectTransaction,
+  serializeJson,
+  unknownRecord
+} from "../io";
 import { storyPlotPath } from "../paths";
 import { createLongFileRevision } from "../revisions";
 import {
@@ -24,7 +28,7 @@ export function storyPlotTitleFromOutline(outline: string): string {
       .find((line) => line.length > 0) ?? "";
   const cleaned = firstLine
     .replace(/^#{1,6}\s+/u, "")
-    .replace(/^\d+[\.、．)]\s*/u, "")
+    .replace(/^\d+[.、．)]\s*/u, "")
     .replace(/^\*\*(.+?)\*\*$/u, "$1")
     .trim();
   return (cleaned || "故事情节").slice(0, 256);
@@ -79,8 +83,7 @@ export async function migrateLegacyArcOutlineToStoryPlots(input: {
       nextArcs.push(rawArc);
       continue;
     }
-    const outline =
-      typeof arc.outline === "string" ? arc.outline : "";
+    const outline = typeof arc.outline === "string" ? arc.outline : "";
     if (!outline.trim() || arcsWithPlots.has(arc.id)) {
       nextArcs.push(rawArc);
       continue;

@@ -235,9 +235,7 @@ export function formatChapterRead(input: {
     input.truncated ? "truncated=true" : undefined
   ]);
   return joinParagraphs([
-    input.mode === "preview"
-      ? "预览（不建立整体覆盖凭据）："
-      : "完整内容：",
+    input.mode === "preview" ? "预览（不建立整体覆盖凭据）：" : "完整内容：",
     header,
     joinLines([
       CHAPTER_DOCUMENT_LABELS[input.document],
@@ -246,7 +244,9 @@ export function formatChapterRead(input: {
   ]);
 }
 
-export function formatChapterReadiness(readiness: LongChapterReadiness): string {
+export function formatChapterReadiness(
+  readiness: LongChapterReadiness
+): string {
   const missing =
     readiness.missingFiles.length === 0
       ? "（无）"
@@ -269,7 +269,8 @@ const PLOT_DESIGN_KIND_LABELS = {
   chapter: "章卡",
   event: "故事事件",
   connection: "事件连接",
-  placement: "叙事落点"
+  placement: "叙事落点",
+  foreshadowing: "伏笔线"
 } as const;
 
 export type PlotDesignKind = keyof typeof PLOT_DESIGN_KIND_LABELS;
@@ -284,6 +285,7 @@ export type PlotDesignListItem = {
   event_id?: string;
   connection_id?: string;
   placement_id?: string;
+  foreshadowing_id?: string;
   primary_arc_id?: string | null;
   source_event_id?: string;
   target_event_id?: string;
@@ -292,6 +294,9 @@ export type PlotDesignListItem = {
   narrative_order?: number;
   order_in_chapter?: number;
   status?: string;
+  planned_span?: string;
+  beat_count?: number;
+  anchor_summary?: string;
 };
 
 export function formatPlotDesignKindList(
@@ -374,6 +379,18 @@ function formatPlotDesignItem(item: PlotDesignListItem): string {
           : undefined,
         item.status ? `状态=${item.status}` : undefined
       ]);
+    case "foreshadowing":
+      return joinLines([
+        item.title,
+        item.foreshadowing_id
+          ? `foreshadowing_id=${item.foreshadowing_id}`
+          : undefined,
+        item.order !== undefined ? `顺序=${item.order}` : undefined,
+        item.status ? `状态=${item.status}` : undefined,
+        item.planned_span ? `计划跨度=${item.planned_span}` : undefined,
+        item.beat_count !== undefined ? `触点数=${item.beat_count}` : undefined,
+        item.anchor_summary ? `触点锚点=${item.anchor_summary}` : undefined
+      ]);
   }
 }
 
@@ -433,7 +450,9 @@ export function formatPlotDesignRead(input: {
       : undefined,
     typeof item.event_id === "string" ? `event_id=${item.event_id}` : undefined,
     typeof item.arc_id === "string" ? `arc_id=${item.arc_id}` : undefined,
-    typeof item.volume_id === "string" ? `volume_id=${item.volume_id}` : undefined,
+    typeof item.volume_id === "string"
+      ? `volume_id=${item.volume_id}`
+      : undefined,
     typeof item.source_event_id === "string"
       ? `source_event_id=${item.source_event_id}`
       : undefined,
@@ -453,7 +472,9 @@ export function formatPlotDesignRead(input: {
     typeof item.connection_type === "string"
       ? `类型=${item.connection_type}`
       : undefined,
-    typeof item.time_mode === "string" ? `时间模式=${item.time_mode}` : undefined,
+    typeof item.time_mode === "string"
+      ? `时间模式=${item.time_mode}`
+      : undefined,
     typeof item.time_label === "string" && item.time_label
       ? `时间标签=${item.time_label}`
       : undefined,
@@ -474,7 +495,9 @@ export function formatPlotDesignRead(input: {
       ? `信息披露=${item.disclosure}`
       : undefined,
     typeof item.status === "string" ? `状态=${item.status}` : undefined,
-    typeof item.commit_id === "string" ? `commit_id=${item.commit_id}` : undefined
+    typeof item.commit_id === "string"
+      ? `commit_id=${item.commit_id}`
+      : undefined
   ]);
   if (kind === "volume") {
     return joinParagraphs([
@@ -532,6 +555,7 @@ export type PlotPointRelatedForeshadowingBeat = {
 export type PlotPointRelatedForeshadowing = {
   foreshadowing_id: string;
   title: string;
+  order?: number;
   status: string;
   planned_span?: string;
   core_question: string;
@@ -625,7 +649,7 @@ function formatForeshadowingBeat(
   ]);
 }
 
-function formatForeshadowingThread(
+export function formatForeshadowingThread(
   thread: PlotPointRelatedForeshadowing
 ): string {
   const beats =
@@ -646,16 +670,12 @@ function formatForeshadowingThread(
       joinLines([
         thread.title,
         `foreshadowing_id=${thread.foreshadowing_id}`,
+        thread.order !== undefined ? `顺序=${thread.order}` : undefined,
         `状态=${FORESHADOWING_STATUS_LABELS[thread.status] ?? thread.status}`,
         thread.planned_span
-          ? `计划跨度=${
-              FORESHADOWING_SPAN_LABELS[thread.planned_span] ??
-              thread.planned_span
-            }`
+          ? `计划跨度=${FORESHADOWING_SPAN_LABELS[thread.planned_span] ?? thread.planned_span}`
           : undefined,
-        thread.truth_event_id
-          ? `真相事件=${thread.truth_event_id}`
-          : undefined
+        thread.truth_event_id ? `真相事件=${thread.truth_event_id}` : undefined
       ]),
       formatPlotDesignTextBlock("核心问题", thread.core_question),
       thread.hidden_truth
@@ -780,7 +800,7 @@ export function chapterVolumeConflictMessage(
         : operation.chapterCard.id;
     const chapterTitle =
       operation.type === "chapter.move"
-        ? chapterTitleById.get(chapterId) ?? chapterId
+        ? (chapterTitleById.get(chapterId) ?? chapterId)
         : operation.chapterCard.title;
     const targetVolumeId =
       operation.type === "chapter.move"
@@ -800,8 +820,7 @@ export function chapterVolumeConflictMessage(
     }
     const targetVolumeTitle =
       volumeTitleById.get(targetVolumeId) ?? targetVolumeId;
-    const primaryArcTitle =
-      arcTitleById.get(primaryArcId) ?? primaryArcId;
+    const primaryArcTitle = arcTitleById.get(primaryArcId) ?? primaryArcId;
     const primaryArcVolumeTitle =
       volumeTitleById.get(primaryArcVolumeId) ?? primaryArcVolumeId;
     const action = operation.type === "chapter.move" ? "移动" : "创建";

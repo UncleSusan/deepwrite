@@ -15,7 +15,7 @@ function chapterWriteProposal(
     agentId: "draft";
     chapterCardId: string;
   }> = {}
-) : ProposalEvent {
+): ProposalEvent {
   return {
     type: "long.chapter_write_proposal",
     payload: {

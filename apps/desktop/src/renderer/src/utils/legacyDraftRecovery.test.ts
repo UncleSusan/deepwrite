@@ -181,10 +181,7 @@ describe("legacy combined draft recovery detection", () => {
     const legacyKey = legacyBookDraftRecoveryKey("book-1");
 
     expect(
-      hasDirtyLegacyDraftRecoveries(
-        { [legacyKey]: legacyRecovery() },
-        snapshot
-      )
+      hasDirtyLegacyDraftRecoveries({ [legacyKey]: legacyRecovery() }, snapshot)
     ).toBe(true);
   });
 

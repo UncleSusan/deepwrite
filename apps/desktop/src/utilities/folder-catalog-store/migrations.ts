@@ -45,7 +45,8 @@ export async function migrateLegacyBookProject(
       : manifest.documents.findIndex(
           (document) => document.title === "正文编写"
         );
-  const draftManifest = draftIndex >= 0 ? manifest.documents[draftIndex] : undefined;
+  const draftManifest =
+    draftIndex >= 0 ? manifest.documents[draftIndex] : undefined;
   const legacyDraft = draftManifest
     ? {
         id: draftManifest.id,
@@ -64,7 +65,9 @@ export async function migrateLegacyBookProject(
     manifest.createdAt,
     manifest.updatedAt
   );
-  let documents = manifest.documents.filter((_, index) => index !== draftIndex);
+  const documents = manifest.documents.filter(
+    (_, index) => index !== draftIndex
+  );
   const usedPaths = new Set(
     manifest.documents.map(({ path }) => portableContentPathKey(path))
   );
@@ -298,7 +301,9 @@ export async function migrateV3BookProject(
 ): Promise<FolderCurrentBookProjectManifest> {
   const documents = manifest.documents.map((document) => ({ ...document }));
   const usedPaths = new Set(
-    manifestContentItems(manifest).map(({ path }) => portableContentPathKey(path))
+    manifestContentItems(manifest).map(({ path }) =>
+      portableContentPathKey(path)
+    )
   );
   const pendingFiles: Array<{ path: string; content: string }> = [];
   await appendMissingCharacterOverviewDocument({
@@ -345,9 +350,7 @@ export async function appendMissingCharacterOverviewDocument(input: {
   updatedAt: string;
 }): Promise<void> {
   if (
-    input.documents.some(
-      ({ id }) => id === BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID
-    )
+    input.documents.some(({ id }) => id === BOOK_CHARACTER_OVERVIEW_DOCUMENT_ID)
   ) {
     return;
   }

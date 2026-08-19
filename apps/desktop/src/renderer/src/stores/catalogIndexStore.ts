@@ -6,7 +6,11 @@ import {
   type CatalogWorkspaceProjection,
   type DraftDirectoryProjection
 } from "../data/catalogWorkspace";
-import type { ResourceTreeNode, ResourceTreeSection, WorkspaceDocument } from "../types/workspace";
+import type {
+  ResourceTreeNode,
+  ResourceTreeSection,
+  WorkspaceDocument
+} from "../types/workspace";
 import {
   createCatalogDocumentLru,
   type CatalogDocumentLruStats,
@@ -37,11 +41,18 @@ export class CatalogDocumentReadInvalidatedError extends Error {
   }
 }
 
-const EMPTY_RESOURCE_SECTIONS: readonly ResourceTreeSection[] = Object.freeze([]);
-const EMPTY_WORKSPACE_DOCUMENTS: readonly WorkspaceDocument[] = Object.freeze([]);
-const EMPTY_DRAFT_DIRECTORIES: readonly DraftDirectoryProjection[] = Object.freeze([]);
-const EMPTY_RESOURCE_NODE_MAP: ReadonlyMap<string, ResourceTreeNode> = new Map();
-const EMPTY_WORKSPACE_DOCUMENT_MAP: ReadonlyMap<string, WorkspaceDocument> = new Map();
+const EMPTY_RESOURCE_SECTIONS: readonly ResourceTreeSection[] = Object.freeze(
+  []
+);
+const EMPTY_WORKSPACE_DOCUMENTS: readonly WorkspaceDocument[] = Object.freeze(
+  []
+);
+const EMPTY_DRAFT_DIRECTORIES: readonly DraftDirectoryProjection[] =
+  Object.freeze([]);
+const EMPTY_RESOURCE_NODE_MAP: ReadonlyMap<string, ResourceTreeNode> =
+  new Map();
+const EMPTY_WORKSPACE_DOCUMENT_MAP: ReadonlyMap<string, WorkspaceDocument> =
+  new Map();
 const EMPTY_STRING_MAP: ReadonlyMap<string, string> = new Map();
 const EMPTY_DRAFT_DIRECTORY_MAP: ReadonlyMap<string, DraftDirectoryProjection> =
   new Map();
@@ -117,7 +128,8 @@ export const useCatalogIndexStore = defineStore("catalogIndex", () => {
     ReadonlyMap<string, string>
   >(
     () =>
-      projection.value?.index.preferredResourceIdByWorkspaceId ?? EMPTY_STRING_MAP
+      projection.value?.index.preferredResourceIdByWorkspaceId ??
+      EMPTY_STRING_MAP
   );
   const workspaceIdByResourceId = computed<ReadonlyMap<string, string>>(
     () => projection.value?.index.workspaceIdByResourceId ?? EMPTY_STRING_MAP
@@ -166,8 +178,7 @@ export const useCatalogIndexStore = defineStore("catalogIndex", () => {
 
     const requestLifecycleGeneration = lifecycleGeneration;
     const requestSnapshotGeneration = snapshotGeneration;
-    let request!: Promise<CatalogWorkspaceProjection>;
-    request = (async () => {
+    const request = (async () => {
       const firstSnapshot = await loader();
       assertSnapshotRequestActive(
         requestLifecycleGeneration,
@@ -261,8 +272,7 @@ export const useCatalogIndexStore = defineStore("catalogIndex", () => {
     const requestLifecycleGeneration = lifecycleGeneration;
     const requestDocumentGeneration = documentGeneration;
     const requestKeyGeneration = documentKeyGenerations.get(key) ?? 0;
-    let request!: Promise<Readonly<CatalogDocumentLruValue>>;
-    request = Promise.resolve()
+    const request = Promise.resolve()
       .then(loader)
       .then((loaded) => {
         assertDocumentRequestActive(

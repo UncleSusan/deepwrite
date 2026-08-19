@@ -39,8 +39,12 @@ describe("book resource preferences", () => {
     });
 
     expect(sections[0]?.nodes.map((node) => node.label)).toEqual(["潮声来信"]);
-    expect(sections[0]?.nodes[0]?.boundSkillLibraryIds).toEqual(["official-skills"]);
-    expect(sections[0]?.nodes[0]?.boundMaterialLibraryIds).toEqual(["writing-clips"]);
+    expect(sections[0]?.nodes[0]?.boundSkillLibraryIds).toEqual([
+      "official-skills"
+    ]);
+    expect(sections[0]?.nodes[0]?.boundMaterialLibraryIds).toEqual([
+      "writing-clips"
+    ]);
     expect(sections[1]).toBe(resourceSections[1]);
     expect(sections[2]).toBe(resourceSections[2]);
   });

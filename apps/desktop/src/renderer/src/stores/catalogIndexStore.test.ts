@@ -10,9 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const projectCatalogWorkspaceSpy = vi.hoisted(() => vi.fn());
 
 vi.mock("../data/catalogWorkspace", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("../data/catalogWorkspace")
-  >();
+  const actual =
+    await importOriginal<typeof import("../data/catalogWorkspace")>();
   return {
     ...actual,
     projectCatalogWorkspace: (snapshot: CatalogIndexSnapshot) => {
@@ -29,10 +28,7 @@ import {
 
 const NOW = "2026-08-14T02:00:00.000Z";
 
-function fixture(
-  revision = 1,
-  sourceBody = "索引正文"
-): CatalogIndexSnapshot {
+function fixture(revision = 1, sourceBody = "索引正文"): CatalogIndexSnapshot {
   return CatalogIndexSnapshotSchema.parse({
     schemaVersion: 1,
     revision,
@@ -120,7 +116,9 @@ describe("catalog index store", () => {
       ? store.resourceIdByDocumentId.get(entryDocument.id)
       : undefined;
     expect(resourceId).toBeTruthy();
-    expect(resourceId ? store.resourceNodeById.get(resourceId) : undefined).toBeDefined();
+    expect(
+      resourceId ? store.resourceNodeById.get(resourceId) : undefined
+    ).toBeDefined();
     expect(store.workspaceDocumentById).toBe(store.documentsById);
   });
 
@@ -204,7 +202,11 @@ describe("catalog index store", () => {
     await Promise.resolve();
     expect(loader).toHaveBeenCalledTimes(1);
 
-    const loaded = { id: "document", content: "按需正文", revision: 4 } as const;
+    const loaded = {
+      id: "document",
+      content: "按需正文",
+      revision: 4
+    } as const;
     pending.resolve(loaded);
     expect(await first).toBe(loaded);
     expect(await second).toBe(loaded);
@@ -221,7 +223,9 @@ describe("catalog index store", () => {
       "invalidated",
       () => invalidatedLoad.promise
     );
-    const invalidatedRejection = expect(invalidatedRequest).rejects.toMatchObject({
+    const invalidatedRejection = expect(
+      invalidatedRequest
+    ).rejects.toMatchObject({
       name: "CatalogDocumentReadInvalidatedError",
       code: "CATALOG_DOCUMENT_READ_INVALIDATED",
       key: "invalidated"

@@ -48,7 +48,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   suggestion: [value: string];
-  reviewEdit: [payload: { runId: string; proposalId: string; decision: "accept" | "reject" }];
+  reviewEdit: [
+    payload: {
+      runId: string;
+      proposalId: string;
+      decision: "accept" | "reject";
+    }
+  ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
@@ -56,8 +62,15 @@ const emit = defineEmits<{
   locateLongProposal: [eventId: string];
 }>();
 
-function processingDisplayItems(message: ChatMessage, includeApprovalCards = false) {
-  return listProcessingDisplayItems(message, includeApprovalCards, props.longProposalItems);
+function processingDisplayItems(
+  message: ChatMessage,
+  includeApprovalCards = false
+) {
+  return listProcessingDisplayItems(
+    message,
+    includeApprovalCards,
+    props.longProposalItems
+  );
 }
 
 function approvalItemsForMessage(message: ChatMessage) {
@@ -69,7 +82,9 @@ function processingLabel(message: ChatMessage) {
 }
 
 const hasStreamingAssistant = computed(() =>
-  props.messages.some((message) => message.role === "assistant" && message.status === "streaming")
+  props.messages.some(
+    (message) => message.role === "assistant" && message.status === "streaming"
+  )
 );
 const copiedMessageId = ref<string | null>(null);
 let copiedTimer: number | undefined;
@@ -77,15 +92,22 @@ let copiedTimer: number | undefined;
 function formatTime(value: string): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return value;
-  return new Date(timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  return new Date(timestamp).toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 async function copyMessage(message: ChatMessage): Promise<void> {
   try {
     await navigator.clipboard.writeText(message.content);
     copiedMessageId.value = message.id;
     if (copiedTimer !== undefined) globalThis.clearTimeout(copiedTimer);
-    copiedTimer = globalThis.setTimeout(() => { copiedMessageId.value = null; }, 1_500);
-    uiMessage.success(message.role === "assistant" ? "已复制回复" : "已复制消息");
+    copiedTimer = globalThis.setTimeout(() => {
+      copiedMessageId.value = null;
+    }, 1_500);
+    uiMessage.success(
+      message.role === "assistant" ? "已复制回复" : "已复制消息"
+    );
   } catch {
     uiMessage.error("复制失败，请稍后重试。");
   }
@@ -107,73 +129,257 @@ onBeforeUnmount(() => {
     @wheel.passive="handleConversationWheel"
     @scroll.passive="handleConversationScroll"
   >
-      <div v-if="messages.length === 0" class="conversation-empty">
-        <span class="empty-agent-mark"><AppIcon name="logo" :size="40" /></span>
-        <h1>{{ welcomeContent.title }}</h1>
-        <p>{{ welcomeContent.description }}</p>
-        <div class="empty-suggestions">
-          <button
-            v-for="item in welcomeContent.questions"
-            :key="item"
-            type="button"
-            :disabled="!runtimeAvailable"
-            @click="emit('suggestion', item)"
-          >
-            {{ item }}
-          </button>
-        </div>
-      </div>
-
-      <div
-        v-else
-        :ref="setMessageList"
-        class="message-list"
-      >
-        <article
-          v-for="message in messages"
-          :key="message.id"
-          :data-conversation-message-id="message.id"
-          class="message"
-          :class="[
-            `is-${message.role}`,
-            {
-              'is-empty-error':
-                message.role === 'assistant' &&
-                message.status === 'error' &&
-                !message.content &&
-                !hasProcessing(message) &&
-                !message.subagentRuns?.length &&
-                !message.editProposals?.length
-            }
-          ]"
+    <div v-if="messages.length === 0" class="conversation-empty">
+      <span class="empty-agent-mark"><AppIcon name="logo" :size="40" /></span>
+      <h1>{{ welcomeContent.title }}</h1>
+      <p>{{ welcomeContent.description }}</p>
+      <div class="empty-suggestions">
+        <button
+          v-for="item in welcomeContent.questions"
+          :key="item"
+          type="button"
+          :disabled="!runtimeAvailable"
+          @click="emit('suggestion', item)"
         >
-          <div class="message-body">
-            <div
-              v-if="message.role === 'assistant' && (hasProcessing(message) || message.retry || message.processingStartedAt) && message.status === 'streaming'"
-              class="processing-live-list"
-              aria-label="运行过程"
+          {{ item }}
+        </button>
+      </div>
+    </div>
+
+    <div v-else :ref="setMessageList" class="message-list">
+      <article
+        v-for="message in messages"
+        :key="message.id"
+        :data-conversation-message-id="message.id"
+        class="message"
+        :class="[
+          `is-${message.role}`,
+          {
+            'is-empty-error':
+              message.role === 'assistant' &&
+              message.status === 'error' &&
+              !message.content &&
+              !hasProcessing(message) &&
+              !message.subagentRuns?.length &&
+              !message.editProposals?.length
+          }
+        ]"
+      >
+        <div class="message-body">
+          <div
+            v-if="
+              message.role === 'assistant' &&
+              (hasProcessing(message) ||
+                message.retry ||
+                message.processingStartedAt) &&
+              message.status === 'streaming'
+            "
+            class="processing-live-list"
+            aria-label="运行过程"
+          >
+            <div class="processing-live-status" aria-live="off">
+              {{ processingLabel(message) }}
+            </div>
+            <template
+              v-for="item in processingDisplayItems(message, true)"
+              :key="item.id"
             >
-              <div class="processing-live-status" aria-live="off">
-                {{ processingLabel(message) }}
+              <details
+                v-if="item.type === 'thinking'"
+                class="processing-live-item processing-live-thinking"
+              >
+                <summary>
+                  <span>思考中</span>
+                  <AppIcon name="chevron" :size="13" />
+                </summary>
+                <div class="processing-live-body processing-thinking">
+                  <StreamedContent :content="item.content" streaming />
+                </div>
+              </details>
+              <div
+                v-else-if="item.type === 'response'"
+                class="processing-step processing-response"
+              >
+                <StreamedContent :content="item.content" streaming />
               </div>
-              <template v-for="item in processingDisplayItems(message, true)" :key="item.id">
+              <details
+                v-else-if="item.type === 'tool'"
+                class="processing-live-item processing-live-tool"
+              >
+                <summary>
+                  <div
+                    class="tool-trace"
+                    :class="[
+                      `is-${item.tool.status}`,
+                      { 'is-write': isWriteTool(item.tool) }
+                    ]"
+                  >
+                    <AppIcon
+                      v-if="!isWriteTool(item.tool)"
+                      :name="toolIcon(item.tool)"
+                      :size="17"
+                    />
+                    <div>
+                      <div
+                        v-if="isWriteTool(item.tool)"
+                        class="write-tool-label"
+                      >
+                        <strong>{{ toolLabel(item.tool) }}</strong>
+                        <AppIcon name="chevron" :size="13" />
+                      </div>
+                      <strong v-else>{{ toolLabel(item.tool) }}</strong>
+                      <span v-if="toolDetail(item.tool)">{{
+                        toolDetail(item.tool)
+                      }}</span>
+                    </div>
+                  </div>
+                  <AppIcon
+                    v-if="!isWriteTool(item.tool)"
+                    name="chevron"
+                    :size="13"
+                  />
+                </summary>
+                <div class="processing-live-body tool-detail">
+                  <div v-if="isWriteTool(item.tool)" class="write-tool-detail">
+                    <div class="write-tool-output-heading">
+                      <span>{{ writeToolContentLabel(item.tool) }}</span>
+                      <small v-if="writeToolTarget(item.tool)">{{
+                        writeToolTarget(item.tool)
+                      }}</small>
+                      <small
+                        >{{
+                          writeToolText(item.tool).length.toLocaleString(
+                            "zh-CN"
+                          )
+                        }}
+                        字符</small
+                      >
+                    </div>
+                    <pre
+                      class="write-tool-output"
+                      :class="{
+                        'is-streaming': item.tool.status === 'preparing'
+                      }"
+                      >{{
+                        writeToolText(item.tool) || "正在等待写入内容……"
+                      }}</pre>
+                  </div>
+                  <div
+                    v-else-if="
+                      formatToolPayload(visibleToolArguments(item.tool))
+                    "
+                  >
+                    <span>调用参数</span>
+                    <pre>{{
+                      formatToolPayload(visibleToolArguments(item.tool))
+                    }}</pre>
+                  </div>
+                  <div v-if="item.tool.resultSummary">
+                    <span>执行结果</span>
+                    <p>{{ item.tool.resultSummary }}</p>
+                  </div>
+                </div>
+              </details>
+              <AgentEditProposalCard
+                v-else-if="item.type === 'edit-proposal'"
+                class="approval-timeline-card"
+                :proposal="item.proposal"
+                :message-status="message.status"
+                :allow-live-edit-review="allowLiveEditReview"
+                @review="emit('reviewEdit', $event)"
+                @locate="emit('locateEditProposal', $event)"
+              />
+              <LongProposalReview
+                v-else-if="item.type === 'long-proposal'"
+                class="approval-timeline-card"
+                embedded
+                conversation-card
+                :items="[item.item]"
+                :workspace-index="longWorkspaceIndex"
+                @approve="emit('approveLongProposal', $event)"
+                @reject="emit('rejectLongProposal', $event)"
+                @retry-preview="emit('retryLongProposalPreview', $event)"
+                @locate="emit('locateLongProposal', $event)"
+              />
+              <details
+                v-else-if="item.type === 'tool-group'"
+                class="processing-live-item processing-live-thinking processing-tool-group"
+                :aria-busy="toolGroupIsRunning(item.tools)"
+              >
+                <summary>
+                  <span>{{ toolGroupLabel(item.tools) }}</span>
+                  <AppIcon name="chevron" :size="13" />
+                </summary>
+                <div
+                  class="processing-live-body tool-call-list"
+                  aria-label="工具调用列表"
+                >
+                  <details
+                    v-for="tool in item.tools"
+                    :key="tool.id"
+                    class="processing-live-item processing-live-tool tool-call-list-item"
+                  >
+                    <summary>
+                      <div class="tool-trace" :class="`is-${tool.status}`">
+                        <AppIcon :name="toolIcon(tool)" :size="17" />
+                        <div>
+                          <strong>{{ toolLabel(tool) }}</strong>
+                          <span v-if="toolDetail(tool)">{{
+                            toolDetail(tool)
+                          }}</span>
+                        </div>
+                      </div>
+                      <AppIcon name="chevron" :size="13" />
+                    </summary>
+                    <div class="processing-live-body tool-detail">
+                      <div v-if="formatToolPayload(visibleToolArguments(tool))">
+                        <span>调用参数</span>
+                        <pre>{{
+                          formatToolPayload(visibleToolArguments(tool))
+                        }}</pre>
+                      </div>
+                      <div v-if="tool.resultSummary">
+                        <span>执行结果</span>
+                        <p>{{ tool.resultSummary }}</p>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </details>
+            </template>
+          </div>
+          <details
+            v-else-if="
+              message.role === 'assistant' && hasProcessingDisclosure(message)
+            "
+            class="processing-block"
+          >
+            <summary>
+              <span>{{ processingLabel(message) }}</span>
+              <AppIcon name="chevron" :size="13" />
+            </summary>
+            <div class="processing-content">
+              <template
+                v-for="item in processingDisplayItems(message)"
+                :key="item.id"
+              >
                 <details
                   v-if="item.type === 'thinking'"
                   class="processing-live-item processing-live-thinking"
                 >
                   <summary>
-                    <span>思考中</span>
+                    <span>思考过程</span>
                     <AppIcon name="chevron" :size="13" />
                   </summary>
                   <div class="processing-live-body processing-thinking">
-                    <StreamedContent :content="item.content" streaming />
+                    <StreamedContent :content="item.content" />
                   </div>
                 </details>
                 <div
                   v-else-if="item.type === 'response'"
                   class="processing-step processing-response"
                 >
-                  <StreamedContent :content="item.content" streaming />
+                  <StreamedContent :content="item.content" />
                 </div>
                 <details
                   v-else-if="item.type === 'tool'"
@@ -182,35 +388,68 @@ onBeforeUnmount(() => {
                   <summary>
                     <div
                       class="tool-trace"
-                      :class="[`is-${item.tool.status}`, { 'is-write': isWriteTool(item.tool) }]"
+                      :class="[
+                        `is-${item.tool.status}`,
+                        { 'is-write': isWriteTool(item.tool) }
+                      ]"
                     >
-                      <AppIcon v-if="!isWriteTool(item.tool)" :name="toolIcon(item.tool)" :size="17" />
+                      <AppIcon
+                        v-if="!isWriteTool(item.tool)"
+                        :name="toolIcon(item.tool)"
+                        :size="17"
+                      />
                       <div>
-                        <div v-if="isWriteTool(item.tool)" class="write-tool-label">
+                        <div
+                          v-if="isWriteTool(item.tool)"
+                          class="write-tool-label"
+                        >
                           <strong>{{ toolLabel(item.tool) }}</strong>
                           <AppIcon name="chevron" :size="13" />
                         </div>
                         <strong v-else>{{ toolLabel(item.tool) }}</strong>
-                        <span v-if="toolDetail(item.tool)">{{ toolDetail(item.tool) }}</span>
+                        <span v-if="toolDetail(item.tool)">{{
+                          toolDetail(item.tool)
+                        }}</span>
                       </div>
                     </div>
-                    <AppIcon v-if="!isWriteTool(item.tool)" name="chevron" :size="13" />
+                    <AppIcon
+                      v-if="!isWriteTool(item.tool)"
+                      name="chevron"
+                      :size="13"
+                    />
                   </summary>
                   <div class="processing-live-body tool-detail">
-                    <div v-if="isWriteTool(item.tool)" class="write-tool-detail">
+                    <div
+                      v-if="isWriteTool(item.tool)"
+                      class="write-tool-detail"
+                    >
                       <div class="write-tool-output-heading">
                         <span>{{ writeToolContentLabel(item.tool) }}</span>
-                        <small v-if="writeToolTarget(item.tool)">{{ writeToolTarget(item.tool) }}</small>
-                        <small>{{ writeToolText(item.tool).length.toLocaleString('zh-CN') }} 字符</small>
+                        <small v-if="writeToolTarget(item.tool)">{{
+                          writeToolTarget(item.tool)
+                        }}</small>
+                        <small
+                          >{{
+                            writeToolText(item.tool).length.toLocaleString(
+                              "zh-CN"
+                            )
+                          }}
+                          字符</small
+                        >
                       </div>
-                      <pre
-                        class="write-tool-output"
-                        :class="{ 'is-streaming': item.tool.status === 'preparing' }"
-                      >{{ writeToolText(item.tool) || '正在等待写入内容……' }}</pre>
+                      <pre class="write-tool-output">{{
+                        writeToolText(item.tool) || "没有写入内容"
+                      }}</pre>
                     </div>
-                    <div v-else-if="formatToolPayload(visibleToolArguments(item.tool))">
+                    <div
+                      v-else-if="
+                        formatToolPayload(visibleToolArguments(item.tool))
+                      "
+                    >
                       <span>调用参数</span>
-                      <pre>{{ formatToolPayload(visibleToolArguments(item.tool)) }}</pre>
+                      <pre>{{
+                        formatToolPayload(visibleToolArguments(item.tool))
+                      }}</pre>
                     </div>
                     <div v-if="item.tool.resultSummary">
                       <span>执行结果</span>
@@ -218,37 +457,18 @@ onBeforeUnmount(() => {
                     </div>
                   </div>
                 </details>
-                <AgentEditProposalCard
-                  v-else-if="item.type === 'edit-proposal'"
-                  class="approval-timeline-card"
-                  :proposal="item.proposal"
-                  :message-status="message.status"
-                  :allow-live-edit-review="allowLiveEditReview"
-                  @review="emit('reviewEdit', $event)"
-                  @locate="emit('locateEditProposal', $event)"
-                />
-                <LongProposalReview
-                  v-else-if="item.type === 'long-proposal'"
-                  class="approval-timeline-card"
-                  embedded
-                  conversation-card
-                  :items="[item.item]"
-                  :workspace-index="longWorkspaceIndex"
-                  @approve="emit('approveLongProposal', $event)"
-                  @reject="emit('rejectLongProposal', $event)"
-                  @retry-preview="emit('retryLongProposalPreview', $event)"
-                  @locate="emit('locateLongProposal', $event)"
-                />
                 <details
                   v-else-if="item.type === 'tool-group'"
                   class="processing-live-item processing-live-thinking processing-tool-group"
-                  :aria-busy="toolGroupIsRunning(item.tools)"
                 >
                   <summary>
                     <span>{{ toolGroupLabel(item.tools) }}</span>
                     <AppIcon name="chevron" :size="13" />
                   </summary>
-                  <div class="processing-live-body tool-call-list" aria-label="工具调用列表">
+                  <div
+                    class="processing-live-body tool-call-list"
+                    aria-label="工具调用列表"
+                  >
                     <details
                       v-for="tool in item.tools"
                       :key="tool.id"
@@ -259,15 +479,21 @@ onBeforeUnmount(() => {
                           <AppIcon :name="toolIcon(tool)" :size="17" />
                           <div>
                             <strong>{{ toolLabel(tool) }}</strong>
-                            <span v-if="toolDetail(tool)">{{ toolDetail(tool) }}</span>
+                            <span v-if="toolDetail(tool)">{{
+                              toolDetail(tool)
+                            }}</span>
                           </div>
                         </div>
                         <AppIcon name="chevron" :size="13" />
                       </summary>
                       <div class="processing-live-body tool-detail">
-                        <div v-if="formatToolPayload(visibleToolArguments(tool))">
+                        <div
+                          v-if="formatToolPayload(visibleToolArguments(tool))"
+                        >
                           <span>调用参数</span>
-                          <pre>{{ formatToolPayload(visibleToolArguments(tool)) }}</pre>
+                          <pre>{{
+                            formatToolPayload(visibleToolArguments(tool))
+                          }}</pre>
                         </div>
                         <div v-if="tool.resultSummary">
                           <span>执行结果</span>
@@ -278,219 +504,134 @@ onBeforeUnmount(() => {
                   </div>
                 </details>
               </template>
-            </div>
-            <details
-              v-else-if="message.role === 'assistant' && hasProcessingDisclosure(message)"
-              class="processing-block"
-            >
-              <summary>
-                <span>{{ processingLabel(message) }}</span>
-                <AppIcon name="chevron" :size="13" />
-              </summary>
-              <div class="processing-content">
-                <template v-for="item in processingDisplayItems(message)" :key="item.id">
-                  <details
-                    v-if="item.type === 'thinking'"
-                    class="processing-live-item processing-live-thinking"
-                  >
-                    <summary>
-                      <span>思考过程</span>
-                      <AppIcon name="chevron" :size="13" />
-                    </summary>
-                    <div class="processing-live-body processing-thinking">
-                      <StreamedContent :content="item.content" />
-                    </div>
-                  </details>
-                  <div
-                    v-else-if="item.type === 'response'"
-                    class="processing-step processing-response"
-                  >
-                    <StreamedContent :content="item.content" />
-                  </div>
-                  <details
-                    v-else-if="item.type === 'tool'"
-                    class="processing-live-item processing-live-tool"
-                  >
-                    <summary>
-                      <div
-                        class="tool-trace"
-                        :class="[`is-${item.tool.status}`, { 'is-write': isWriteTool(item.tool) }]"
-                      >
-                        <AppIcon v-if="!isWriteTool(item.tool)" :name="toolIcon(item.tool)" :size="17" />
-                        <div>
-                          <div v-if="isWriteTool(item.tool)" class="write-tool-label">
-                            <strong>{{ toolLabel(item.tool) }}</strong>
-                            <AppIcon name="chevron" :size="13" />
-                          </div>
-                          <strong v-else>{{ toolLabel(item.tool) }}</strong>
-                          <span v-if="toolDetail(item.tool)">{{ toolDetail(item.tool) }}</span>
-                        </div>
-                      </div>
-                      <AppIcon v-if="!isWriteTool(item.tool)" name="chevron" :size="13" />
-                    </summary>
-                    <div class="processing-live-body tool-detail">
-                      <div v-if="isWriteTool(item.tool)" class="write-tool-detail">
-                        <div class="write-tool-output-heading">
-                          <span>{{ writeToolContentLabel(item.tool) }}</span>
-                          <small v-if="writeToolTarget(item.tool)">{{ writeToolTarget(item.tool) }}</small>
-                          <small>{{ writeToolText(item.tool).length.toLocaleString('zh-CN') }} 字符</small>
-                        </div>
-                        <pre class="write-tool-output">{{ writeToolText(item.tool) || '没有写入内容' }}</pre>
-                      </div>
-                      <div v-else-if="formatToolPayload(visibleToolArguments(item.tool))">
-                        <span>调用参数</span>
-                        <pre>{{ formatToolPayload(visibleToolArguments(item.tool)) }}</pre>
-                      </div>
-                      <div v-if="item.tool.resultSummary">
-                        <span>执行结果</span>
-                        <p>{{ item.tool.resultSummary }}</p>
-                      </div>
-                    </div>
-                  </details>
-                  <details
-                    v-else-if="item.type === 'tool-group'"
-                    class="processing-live-item processing-live-thinking processing-tool-group"
-                  >
-                    <summary>
-                      <span>{{ toolGroupLabel(item.tools) }}</span>
-                      <AppIcon name="chevron" :size="13" />
-                    </summary>
-                    <div class="processing-live-body tool-call-list" aria-label="工具调用列表">
-                      <details
-                        v-for="tool in item.tools"
-                        :key="tool.id"
-                        class="processing-live-item processing-live-tool tool-call-list-item"
-                      >
-                        <summary>
-                          <div class="tool-trace" :class="`is-${tool.status}`">
-                            <AppIcon :name="toolIcon(tool)" :size="17" />
-                            <div>
-                              <strong>{{ toolLabel(tool) }}</strong>
-                              <span v-if="toolDetail(tool)">{{ toolDetail(tool) }}</span>
-                            </div>
-                          </div>
-                          <AppIcon name="chevron" :size="13" />
-                        </summary>
-                        <div class="processing-live-body tool-detail">
-                          <div v-if="formatToolPayload(visibleToolArguments(tool))">
-                            <span>调用参数</span>
-                            <pre>{{ formatToolPayload(visibleToolArguments(tool)) }}</pre>
-                          </div>
-                          <div v-if="tool.resultSummary">
-                            <span>执行结果</span>
-                            <p>{{ tool.resultSummary }}</p>
-                          </div>
-                        </div>
-                      </details>
-                    </div>
-                  </details>
-                </template>
-                <SubagentRunList
-                  v-if="message.subagentRuns?.length && message.status !== 'streaming'"
-                  :message="message"
-                  :now="clock"
-                />
-              </div>
-            </details>
-
-            <SubagentRunList
-              v-if="message.role === 'assistant' && message.subagentRuns?.length && message.status === 'streaming'"
-              :message="message"
-              :now="clock"
-            />
-            <div class="message-content">
-              <div
-                v-if="message.role === 'user'"
-                class="message-copy user-message-copy"
-              >
-                <div
-                  v-if="message.attachments?.length"
-                  class="message-attachment-list"
-                  aria-label="本条消息的附件"
-                >
-                  <span
-                    v-for="attachment in message.attachments"
-                    :key="attachment.id"
-                    class="message-attachment-chip"
-                    :title="`${attachment.name} · ${formatFileSize(attachment.size)}`"
-                  >
-                    <AppIcon :name="attachment.kind === 'image' ? 'image' : 'file'" :size="14" />
-                    <span>{{ attachment.name }}</span>
-                    <small v-if="attachment.truncated">已截断</small>
-                  </span>
-                </div>
-                {{ message.content }}
-              </div>
-              <div
-                v-else-if="visibleResponse(message)"
-                class="message-copy"
-                :class="{ 'is-streaming': message.status === 'streaming' }"
-              >
-                <StreamedContent
-                  :content="visibleResponse(message)"
-                  :streaming="message.status === 'streaming'"
-                />
-              </div>
-              <div v-if="message.status === 'stopped'" class="message-stopped-copy">
-                已停止生成
-              </div>
-              <section
+              <SubagentRunList
                 v-if="
-                  message.role === 'assistant' &&
-                  message.status !== 'streaming' &&
-                  approvalItemsForMessage(message).length
+                  message.subagentRuns?.length && message.status !== 'streaming'
                 "
-                class="approval-card-stack"
-                aria-label="本轮审批卡片"
+                :message="message"
+                :now="clock"
+              />
+            </div>
+          </details>
+
+          <SubagentRunList
+            v-if="
+              message.role === 'assistant' &&
+              message.subagentRuns?.length &&
+              message.status === 'streaming'
+            "
+            :message="message"
+            :now="clock"
+          />
+          <div class="message-content">
+            <div
+              v-if="message.role === 'user'"
+              class="message-copy user-message-copy"
+            >
+              <div
+                v-if="message.attachments?.length"
+                class="message-attachment-list"
+                aria-label="本条消息的附件"
               >
-                <template
-                  v-for="approval in approvalItemsForMessage(message)"
-                  :key="approval.id"
+                <span
+                  v-for="attachment in message.attachments"
+                  :key="attachment.id"
+                  class="message-attachment-chip"
+                  :title="`${attachment.name} · ${formatFileSize(attachment.size)}`"
                 >
-                  <AgentEditProposalCard
-                    v-if="approval.type === 'edit-proposal'"
-                    :proposal="approval.proposal"
-                    :message-status="message.status"
-                    :allow-live-edit-review="allowLiveEditReview"
-                    @review="emit('reviewEdit', $event)"
-                    @locate="emit('locateEditProposal', $event)"
+                  <AppIcon
+                    :name="attachment.kind === 'image' ? 'image' : 'file'"
+                    :size="14"
                   />
-                  <LongProposalReview
-                    v-else
-                    embedded
-                    conversation-card
-                    :items="[approval.item]"
-                    :workspace-index="longWorkspaceIndex"
-                    @approve="emit('approveLongProposal', $event)"
-                    @reject="emit('rejectLongProposal', $event)"
-                    @retry-preview="emit('retryLongProposalPreview', $event)"
-                    @locate="emit('locateLongProposal', $event)"
-                  />
-                </template>
-              </section>
+                  <span>{{ attachment.name }}</span>
+                  <small v-if="attachment.truncated">已截断</small>
+                </span>
+              </div>
+              {{ message.content }}
             </div>
             <div
-              v-if="message.content && message.status !== 'streaming'"
-              class="message-actions"
+              v-else-if="visibleResponse(message)"
+              class="message-copy"
+              :class="{ 'is-streaming': message.status === 'streaming' }"
             >
-              <span v-if="message.role === 'user'">{{ formatTime(message.createdAt) }}</span>
-              <button
-                type="button"
-                :aria-label="copyMessageLabel(message)"
-                @click="copyMessage(message)"
-              >
-                <AppIcon :name="copiedMessageId === message.id ? 'check' : 'copy'" :size="15" />
-              </button>
-              <span v-if="message.role === 'assistant'">{{ formatTime(message.createdAt) }}</span>
+              <StreamedContent
+                :content="visibleResponse(message)"
+                :streaming="message.status === 'streaming'"
+              />
             </div>
+            <div
+              v-if="message.status === 'stopped'"
+              class="message-stopped-copy"
+            >
+              已停止生成
+            </div>
+            <section
+              v-if="
+                message.role === 'assistant' &&
+                message.status !== 'streaming' &&
+                approvalItemsForMessage(message).length
+              "
+              class="approval-card-stack"
+              aria-label="本轮审批卡片"
+            >
+              <template
+                v-for="approval in approvalItemsForMessage(message)"
+                :key="approval.id"
+              >
+                <AgentEditProposalCard
+                  v-if="approval.type === 'edit-proposal'"
+                  :proposal="approval.proposal"
+                  :message-status="message.status"
+                  :allow-live-edit-review="allowLiveEditReview"
+                  @review="emit('reviewEdit', $event)"
+                  @locate="emit('locateEditProposal', $event)"
+                />
+                <LongProposalReview
+                  v-else
+                  embedded
+                  conversation-card
+                  :items="[approval.item]"
+                  :workspace-index="longWorkspaceIndex"
+                  @approve="emit('approveLongProposal', $event)"
+                  @reject="emit('rejectLongProposal', $event)"
+                  @retry-preview="emit('retryLongProposalPreview', $event)"
+                  @locate="emit('locateLongProposal', $event)"
+                />
+              </template>
+            </section>
           </div>
-        </article>
+          <div
+            v-if="message.content && message.status !== 'streaming'"
+            class="message-actions"
+          >
+            <span v-if="message.role === 'user'">{{
+              formatTime(message.createdAt)
+            }}</span>
+            <button
+              type="button"
+              :aria-label="copyMessageLabel(message)"
+              @click="copyMessage(message)"
+            >
+              <AppIcon
+                :name="copiedMessageId === message.id ? 'check' : 'copy'"
+                :size="15"
+              />
+            </button>
+            <span v-if="message.role === 'assistant'">{{
+              formatTime(message.createdAt)
+            }}</span>
+          </div>
+        </div>
+      </article>
 
-        <article v-if="responding && !hasStreamingAssistant" class="message is-assistant is-thinking">
-          <div class="thinking-row">
-            <span>正在思考</span>
-          </div>
-        </article>
-      </div>
+      <article
+        v-if="responding && !hasStreamingAssistant"
+        class="message is-assistant is-thinking"
+      >
+        <div class="thinking-row">
+          <span>正在思考</span>
+        </div>
+      </article>
+    </div>
   </section>
 </template>

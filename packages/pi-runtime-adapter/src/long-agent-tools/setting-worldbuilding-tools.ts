@@ -96,8 +96,7 @@ export function resolveWorldbuildingTarget(
   }
   const pending = [...worldbuildingDocumentOverlay.values()].find(
     (candidate) =>
-      candidate.categoryId === categoryId &&
-      candidate.itemId === itemId
+      candidate.categoryId === categoryId && candidate.itemId === itemId
   );
   const item = category.items.find(({ id }) => id === itemId);
   if (!item && pending) {
@@ -162,11 +161,7 @@ export function resolveCharacterOverviewTarget(
 export function resolveCharacterDocumentTarget(
   index: LongWorkspaceIndexSnapshot,
   characterId: string,
-  document:
-    | "core_profile"
-    | "relationships"
-    | "current_state"
-    | "history",
+  document: "core_profile" | "relationships" | "current_state" | "history",
   characterDocumentOverlay: LongToolContext["characterDocumentOverlay"]
 ): {
   characterName: string;
@@ -182,8 +177,7 @@ export function resolveCharacterDocumentTarget(
   );
   const pending = [...characterDocumentOverlay.values()].find(
     (candidate) =>
-      candidate.characterId === characterId &&
-      candidate.document === document
+      candidate.characterId === characterId && candidate.document === document
   );
   if ((!character || !files) && pending) {
     return {
@@ -229,7 +223,6 @@ export async function readWholeCharacterDocument(
 ) {
   let offset = 0;
   let content = "";
-  let authoritativeFile = file;
   while (true) {
     const command = LongReadDocumentCommandEnvelopeSchema.parse(
       createEnvelope(
@@ -263,7 +256,7 @@ export async function readWholeCharacterDocument(
     ) {
       throw new Error("Core returned a different character document.");
     }
-    authoritativeFile = result.file;
+    const authoritativeFile = result.file;
     content += result.content;
     if (result.nextOffset === null) {
       return { content, file: authoritativeFile };
@@ -272,8 +265,27 @@ export async function readWholeCharacterDocument(
   }
 }
 
-export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[] {
-  const { input, workspace, profile, readableRoots, writableRoots, capabilities, isSettingAgent, isPlotDesignAgent, isDraftWritingAgent, isContinuityLedgerAgent, execute, loadIndex, nextQuerySequence, fullyReadWorldbuildingDocuments, worldbuildingDocumentOverlay, readWholeWorldbuildingDocument } = ctx;
+export function buildWorldbuildingSettingTools(
+  ctx: LongToolContext
+): AgentTool[] {
+  const {
+    input,
+    workspace,
+    profile,
+    readableRoots,
+    writableRoots,
+    capabilities,
+    isSettingAgent,
+    isPlotDesignAgent,
+    isDraftWritingAgent,
+    isContinuityLedgerAgent,
+    execute,
+    loadIndex,
+    nextQuerySequence,
+    fullyReadWorldbuildingDocuments,
+    worldbuildingDocumentOverlay,
+    readWholeWorldbuildingDocument
+  } = ctx;
   const tools: AgentTool[] = [];
   const worldbuildingQueryTools: AgentTool[] = [];
   if (
@@ -393,12 +405,8 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
         parameters: strictObject({
           query: Type.String({ minLength: 1, maxLength: 256 }),
           category_id: Type.Optional(worldbuildingCategoryIdParameter),
-          page: Type.Optional(
-            Type.Integer({ minimum: 1, maximum: 100 })
-          ),
-          limit: Type.Optional(
-            Type.Integer({ minimum: 1, maximum: 100 })
-          )
+          page: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
         }),
         execute: async (_toolCallId, params, signal) => {
           const { index } = await loadIndex(signal);
@@ -446,7 +454,9 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
               candidate.scope !== "worldbuilding" ||
               candidate.hits.some((hit) => hit.root !== "worldbuilding")
             ) {
-              throw new Error("Core returned search results outside worldbuilding.");
+              throw new Error(
+                "Core returned search results outside worldbuilding."
+              );
             }
             result = candidate;
             cursor = candidate.nextCursor ?? undefined;
@@ -484,16 +494,20 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
           const hits = result.hits.flatMap((hit) => {
             const target = targets.get(hit.fileId);
             if (!target) {
-              throw new Error("Core returned an unknown worldbuilding document.");
+              throw new Error(
+                "Core returned an unknown worldbuilding document."
+              );
             }
             if (categoryId && target.category_id !== categoryId) return [];
             return [{ ...target, snippet: hit.snippet }];
           });
-          return textResult(JSON.stringify({
-            hits,
-            next_page:
-              result.nextCursor === null || page >= 100 ? null : page + 1
-          }));
+          return textResult(
+            JSON.stringify({
+              hits,
+              next_page:
+                result.nextCursor === null || page >= 100 ? null : page + 1
+            })
+          );
         }
       }),
       defineTool({
@@ -530,11 +544,11 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
             return textResult(
               [
                 `【${title}】`,
-                mode === "preview"
-                  ? "预览（不建立整体覆盖凭据）："
-                  : "正文：",
+                mode === "preview" ? "预览（不建立整体覆盖凭据）：" : "正文：",
                 "",
-                mode === "preview" ? preview || "（正文为空）" : content || "（正文为空）",
+                mode === "preview"
+                  ? preview || "（正文为空）"
+                  : content || "（正文为空）",
                 ...(pendingCreation
                   ? ["", "（本条目为本轮待创建内容，尚未落盘。）"]
                   : [])
@@ -594,18 +608,21 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
       summary: string,
       files: LongWorldbuildingFileChange[]
     ) =>
-      textResult(longProposalResultSummary(
-        input,
-        "已形成世界观文件变更提案，等待客户端审阅与冲突检查。"
-      ), {
-        kind: "long-worldbuilding-file-proposal" as const,
-        bookId: workspace.bookId,
-        agentId: profile.id,
-        batch,
-        baseProjectRevision: projectRevision,
-        summary,
-        files
-      });
+      textResult(
+        longProposalResultSummary(
+          input,
+          "已形成世界观文件变更提案，等待客户端审阅与冲突检查。"
+        ),
+        {
+          kind: "long-worldbuilding-file-proposal" as const,
+          bookId: workspace.bookId,
+          agentId: profile.id,
+          batch,
+          baseProjectRevision: projectRevision,
+          summary,
+          files
+        }
+      );
 
     worldbuildingMutationTools.push(
       defineTool({
@@ -631,12 +648,12 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
               "Worldbuilding items can only be created in an existing list category."
             );
           }
-          const pendingItems = [...worldbuildingDocumentOverlay.values()]
-            .filter(
-              (candidate) =>
-                candidate.pendingCreation &&
-                candidate.categoryId === category.id
-            );
+          const pendingItems = [
+            ...worldbuildingDocumentOverlay.values()
+          ].filter(
+            (candidate) =>
+              candidate.pendingCreation && candidate.categoryId === category.id
+          );
           if (category.items.length + pendingItems.length >= 10_000) {
             throw new Error(
               "A worldbuilding list category supports at most 10,000 items."
@@ -692,9 +709,7 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
             content: "",
             pendingCreation: true
           });
-          const summary =
-            params.summary?.trim() ||
-            `创建世界观文件“${title}”`;
+          const summary = params.summary?.trim() || `创建世界观文件“${title}”`;
           const batch = LongWorkspaceOperationBatchSchema.parse({
             baseRevision: index.revision,
             updatedAt: timestamp,
@@ -752,18 +767,13 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
                 projectRevision,
                 signal
               );
-          const evidence = fullyReadWorldbuildingDocuments.get(
-            target.file.id
-          );
+          const evidence = fullyReadWorldbuildingDocuments.get(target.file.id);
           if (live.content.trim() && !evidence) {
             return textResult(
               "未写入：目标已有正文，请先调用 read_setting（domain=worldbuilding，mode=full）完整读取。"
             );
           }
-          if (
-            live.content.trim() &&
-            params.allow_overwrite_existing !== true
-          ) {
+          if (live.content.trim() && params.allow_overwrite_existing !== true) {
             return textResult(
               "未写入：目标已有正文；局部修改请使用 edit_setting（domain=worldbuilding），整体重写需设置 allow_overwrite_existing=true。"
             );
@@ -774,9 +784,7 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
               evidence.workspaceRevision !== index.revision ||
               evidence.projectRevision !== projectRevision)
           ) {
-            throw new Error(
-              "Worldbuilding content changed after it was read."
-            );
+            throw new Error("Worldbuilding content changed after it was read.");
           }
           const timestamp = new Date().toISOString();
           const nextRevision = nextContentRevision(
@@ -790,18 +798,20 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
             baseRevision: index.revision,
             updatedAt: timestamp,
             operations: [],
-            documentWrites: [{
-              proposalId: `proposal_${stableHash(
-                `${workspace.bookId}:${input.runId}:${toolCallId}`
-              ).slice(0, 24)}`,
-              fileId: live.file.id,
-              content: params.text,
-              mode: "replace",
-              expectedRevision: live.file.revision,
-              nextRevision,
-              updatedAt: timestamp,
-              reason: summary
-            }]
+            documentWrites: [
+              {
+                proposalId: `proposal_${stableHash(
+                  `${workspace.bookId}:${input.runId}:${toolCallId}`
+                ).slice(0, 24)}`,
+                fileId: live.file.id,
+                content: params.text,
+                mode: "replace",
+                expectedRevision: live.file.revision,
+                nextRevision,
+                updatedAt: timestamp,
+                reason: summary
+              }
+            ]
           });
           const nextFile = {
             ...live.file,
@@ -823,18 +833,20 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
             workspaceRevision: index.revision,
             projectRevision
           });
-          return proposalResult(batch, projectRevision, summary, [{
-            categoryId: params.category_id,
-            ...(params.item_id ? { itemId: params.item_id } : {}),
-            fileId: live.file.id,
-            filePath: live.file.path,
-            title: target.itemTitle ?? target.categoryTitle,
-            operation: "write",
-            beforeText: live.content,
-            afterText: params.text,
-            beforeRevision: live.file.revision,
-            nextRevision
-          }]);
+          return proposalResult(batch, projectRevision, summary, [
+            {
+              categoryId: params.category_id,
+              ...(params.item_id ? { itemId: params.item_id } : {}),
+              fileId: live.file.id,
+              filePath: live.file.path,
+              title: target.itemTitle ?? target.categoryTitle,
+              operation: "write",
+              beforeText: live.content,
+              afterText: params.text,
+              beforeRevision: live.file.revision,
+              nextRevision
+            }
+          ]);
         }
       }),
       defineTool({
@@ -868,9 +880,7 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
             params.item_id,
             worldbuildingDocumentOverlay
           );
-          const evidence = fullyReadWorldbuildingDocuments.get(
-            target.file.id
-          );
+          const evidence = fullyReadWorldbuildingDocuments.get(target.file.id);
           if (
             !evidence ||
             evidence.workspaceRevision !== index.revision ||
@@ -909,21 +919,23 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
             baseRevision: index.revision,
             updatedAt: timestamp,
             operations: [],
-            documentWrites: [{
-              proposalId: `proposal_${stableHash(
-                `${workspace.bookId}:${input.runId}:${toolCallId}`
-              ).slice(0, 24)}`,
-              fileId: evidence.file.id,
-              content,
-              mode: "replace",
-              expectedRevision: evidence.file.revision,
-              nextRevision: nextContentRevision(
-                evidence.file.revision,
-                content
-              ),
-              updatedAt: timestamp,
-              reason: summary
-            }]
+            documentWrites: [
+              {
+                proposalId: `proposal_${stableHash(
+                  `${workspace.bookId}:${input.runId}:${toolCallId}`
+                ).slice(0, 24)}`,
+                fileId: evidence.file.id,
+                content,
+                mode: "replace",
+                expectedRevision: evidence.file.revision,
+                nextRevision: nextContentRevision(
+                  evidence.file.revision,
+                  content
+                ),
+                updatedAt: timestamp,
+                reason: summary
+              }
+            ]
           });
           const nextRevision = nextContentRevision(
             evidence.file.revision,
@@ -949,18 +961,20 @@ export function buildWorldbuildingSettingTools(ctx: LongToolContext): AgentTool[
             workspaceRevision: index.revision,
             projectRevision
           });
-          return proposalResult(batch, projectRevision, summary, [{
-            categoryId: params.category_id,
-            ...(params.item_id ? { itemId: params.item_id } : {}),
-            fileId: evidence.file.id,
-            filePath: evidence.file.path,
-            title: target.itemTitle ?? target.categoryTitle,
-            operation: "edit",
-            beforeText: evidence.content,
-            afterText: content,
-            beforeRevision: evidence.file.revision,
-            nextRevision
-          }]);
+          return proposalResult(batch, projectRevision, summary, [
+            {
+              categoryId: params.category_id,
+              ...(params.item_id ? { itemId: params.item_id } : {}),
+              fileId: evidence.file.id,
+              filePath: evidence.file.path,
+              title: target.itemTitle ?? target.categoryTitle,
+              operation: "edit",
+              beforeText: evidence.content,
+              afterText: content,
+              beforeRevision: evidence.file.revision,
+              nextRevision
+            }
+          ]);
         }
       })
     );

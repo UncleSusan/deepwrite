@@ -28,10 +28,7 @@ export function createLongProjectStoreContext(
       }
       return value;
     },
-    async runExclusive<T>(
-      key: string,
-      task: () => Promise<T>
-    ): Promise<T> {
+    async runExclusive<T>(key: string, task: () => Promise<T>): Promise<T> {
       const previous = queues.get(key) ?? Promise.resolve();
       let release!: () => void;
       const gate = new Promise<void>((resolveGate) => {

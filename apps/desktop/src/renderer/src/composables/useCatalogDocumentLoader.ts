@@ -62,8 +62,7 @@ export interface CatalogDocumentsLoadResult {
   documents: readonly WorkspaceDocument[];
 }
 
-export interface CatalogDocumentLoadResult
-  extends CatalogDocumentsLoadResult {
+export interface CatalogDocumentLoadResult extends CatalogDocumentsLoadResult {
   document: WorkspaceDocument | undefined;
 }
 
@@ -105,9 +104,7 @@ function targetId(target: CatalogDocumentTarget): string {
   return typeof target === "string" ? target : target.id;
 }
 
-function uniqueTargetIds(
-  targets: readonly CatalogDocumentTarget[]
-): string[] {
+function uniqueTargetIds(targets: readonly CatalogDocumentTarget[]): string[] {
   return [...new Set(targets.map(targetId))];
 }
 
@@ -127,8 +124,7 @@ function descriptorKey(
 export function useCatalogDocumentLoader(
   options: CatalogDocumentLoaderOptions
 ) {
-  const documents =
-    options.documents ?? shallowRef<WorkspaceDocument[]>([]);
+  const documents = options.documents ?? shallowRef<WorkspaceDocument[]>([]);
   const documentsById = computed<ReadonlyMap<string, WorkspaceDocument>>(
     () => new Map(documents.value.map((document) => [document.id, document]))
   );
@@ -254,11 +250,12 @@ export function useCatalogDocumentLoader(
       return { request, readerUnavailable: true };
     }
     try {
-      const result = await options.catalogIndex.readDocument<CatalogReadDocumentResult>(
-        request.descriptor.cacheKey,
-        () => reader.readDocument(request.descriptor.input),
-        request.refresh ? { refresh: true } : undefined
-      );
+      const result =
+        await options.catalogIndex.readDocument<CatalogReadDocumentResult>(
+          request.descriptor.cacheKey,
+          () => reader.readDocument(request.descriptor.input),
+          request.refresh ? { refresh: true } : undefined
+        );
       return { request, result };
     } catch (error: unknown) {
       return { request, error };
@@ -269,9 +266,9 @@ export function useCatalogDocumentLoader(
     const current = documentsById.value.get(request.documentId);
     return Boolean(
       !disposed &&
-        current &&
-        descriptorKey(current) === request.descriptor.cacheKey &&
-        generation(request.documentId) === request.generation
+      current &&
+      descriptorKey(current) === request.descriptor.cacheKey &&
+      generation(request.documentId) === request.generation
     );
   }
 

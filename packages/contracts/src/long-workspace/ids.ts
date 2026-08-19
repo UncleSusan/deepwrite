@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-import {
-  LongRevisionSchema,
-  LongTimestampSchema
-} from "./primitives";
+import { LongTimestampSchema } from "./primitives";
 
 export const LONG_WORKSPACE_SCHEMA_VERSION = 1 as const;
 export const LONG_PROJECT_MANIFEST_SCHEMA_VERSION = 1 as const;
@@ -92,13 +89,11 @@ function stableIdWithPrefix(prefix: string) {
 
 export const LongBookIdSchema = stableIdWithPrefix("longbook");
 export type LongBookId = z.infer<typeof LongBookIdSchema>;
-export const LongWorldbuildingCategoryIdSchema =
-  stableIdWithPrefix("world");
+export const LongWorldbuildingCategoryIdSchema = stableIdWithPrefix("world");
 export type LongWorldbuildingCategoryId = z.infer<
   typeof LongWorldbuildingCategoryIdSchema
 >;
-export const LongWorldbuildingItemIdSchema =
-  stableIdWithPrefix("worlditem");
+export const LongWorldbuildingItemIdSchema = stableIdWithPrefix("worlditem");
 export type LongWorldbuildingItemId = z.infer<
   typeof LongWorldbuildingItemIdSchema
 >;
@@ -119,20 +114,14 @@ export type LongStoryEventId = z.infer<typeof LongStoryEventIdSchema>;
 /** Plot-point-bound story plot entries shown in the「故事情节」tab. */
 export const LongStoryPlotIdSchema = stableIdWithPrefix("storyplot");
 export type LongStoryPlotId = z.infer<typeof LongStoryPlotIdSchema>;
-export const LongEventConnectionIdSchema =
-  stableIdWithPrefix("connection");
-export type LongEventConnectionId = z.infer<
-  typeof LongEventConnectionIdSchema
->;
-export const LongNarrativePlacementIdSchema =
-  stableIdWithPrefix("placement");
+export const LongEventConnectionIdSchema = stableIdWithPrefix("connection");
+export type LongEventConnectionId = z.infer<typeof LongEventConnectionIdSchema>;
+export const LongNarrativePlacementIdSchema = stableIdWithPrefix("placement");
 export type LongNarrativePlacementId = z.infer<
   typeof LongNarrativePlacementIdSchema
 >;
 export const LongForeshadowingIdSchema = stableIdWithPrefix("foreshadow");
-export type LongForeshadowingId = z.infer<
-  typeof LongForeshadowingIdSchema
->;
+export type LongForeshadowingId = z.infer<typeof LongForeshadowingIdSchema>;
 export const LongForeshadowingBeatIdSchema = stableIdWithPrefix("beat");
 export type LongForeshadowingBeatId = z.infer<
   typeof LongForeshadowingBeatIdSchema
@@ -140,9 +129,7 @@ export type LongForeshadowingBeatId = z.infer<
 export const LongLedgerCommitIdSchema = stableIdWithPrefix("commit");
 export type LongLedgerCommitId = z.infer<typeof LongLedgerCommitIdSchema>;
 export const LongContinuityFactIdSchema = stableIdWithPrefix("fact");
-export type LongContinuityFactId = z.infer<
-  typeof LongContinuityFactIdSchema
->;
+export type LongContinuityFactId = z.infer<typeof LongContinuityFactIdSchema>;
 export const LongContinuityOpenLoopIdSchema = stableIdWithPrefix("loop");
 export type LongContinuityOpenLoopId = z.infer<
   typeof LongContinuityOpenLoopIdSchema
@@ -163,8 +150,7 @@ function isSafeLongProjectPath(value: string): boolean {
   return (
     segments.length > 1 &&
     segments.every(
-      (segment) =>
-        segment.length > 0 && segment !== "." && segment !== ".."
+      (segment) => segment.length > 0 && segment !== "." && segment !== ".."
     ) &&
     (value.endsWith(".md") || value.endsWith(".json"))
   );
@@ -206,13 +192,10 @@ export type LongWorkspaceFileReference = z.infer<
 >;
 
 export const LongMarkdownFileReferenceSchema =
-  LongWorkspaceFileReferenceSchema.refine(
-    (file) => file.path.endsWith(".md"),
-    {
-      path: ["path"],
-      message: "This long-form file must use a .md path."
-    }
-  );
+  LongWorkspaceFileReferenceSchema.refine((file) => file.path.endsWith(".md"), {
+    path: ["path"],
+    message: "This long-form file must use a .md path."
+  });
 export type LongMarkdownFileReference = z.infer<
   typeof LongMarkdownFileReferenceSchema
 >;
@@ -225,9 +208,7 @@ export const LongJsonFileReferenceSchema =
       message: "This long-form file must use a .json path."
     }
   );
-export type LongJsonFileReference = z.infer<
-  typeof LongJsonFileReferenceSchema
->;
+export type LongJsonFileReference = z.infer<typeof LongJsonFileReferenceSchema>;
 
 export function longWorldbuildingFileId(categoryId: string): string {
   return `file_${categoryId}:content`;
@@ -282,9 +263,7 @@ export function longChapterCardFileId(chapterCardId: string): string {
   return `file_${chapterCardId}:card`;
 }
 
-export function longChapterCharacterStateFileId(
-  chapterCardId: string
-): string {
+export function longChapterCharacterStateFileId(chapterCardId: string): string {
   return `file_${chapterCardId}:character-state`;
 }
 
@@ -298,9 +277,7 @@ export function longChapterForeshadowingChangesFileId(
   return `file_${chapterCardId}:continuity:foreshadowing-changes`;
 }
 
-export function longChapterWorldRevealsFileId(
-  chapterCardId: string
-): string {
+export function longChapterWorldRevealsFileId(chapterCardId: string): string {
   return `file_${chapterCardId}:continuity:world-reveals`;
 }
 
@@ -326,9 +303,7 @@ export const EMPTY_LONG_MARKDOWN_REVISION =
   "v2:0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" as LongFileRevision;
 
 export const LongChapterBodyStatusSchema = z.enum(["empty", "written"]);
-export type LongChapterBodyStatus = z.infer<
-  typeof LongChapterBodyStatusSchema
->;
+export type LongChapterBodyStatus = z.infer<typeof LongChapterBodyStatusSchema>;
 
 export function longWorldbuildingContentPath(categoryId: string): string {
   return `long/worldbuilding/${categoryId}/content.md`;
@@ -350,10 +325,7 @@ export function longWorldbuildingItemContentPath(
 export function longCharacterFilePath(
   characterId: string,
   filename:
-    | "core-profile.md"
-    | "relationships.md"
-    | "current-state.md"
-    | "history.md"
+    "core-profile.md" | "relationships.md" | "current-state.md" | "history.md"
 ): string {
   return `long/characters/${characterId}/${filename}`;
 }

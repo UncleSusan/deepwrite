@@ -1,101 +1,31 @@
 import type { LongWorkspaceOperation } from "./operation-schema";
 import type { MutationState } from "./state";
-import {
-  LongArcIdSchema,
-  LongArcSchema,
-  LongChapterCardIdSchema,
-  LongChapterCardSchema,
-  LongChapterCharacterContinuityFileIndexEntrySchema,
-  LongChapterFileIndexEntrySchema,
-  LongCharacterFileIndexEntrySchema,
-  LongCharacterGroupSchema,
-  LongCharacterIdSchema,
-  LongCharacterSchema,
-  LongCharacterTypeIdSchema,
-  LongCharacterTypeSchema,
-  LongEventConnectionIdSchema,
-  LongEventConnectionSchema,
-  LongFileIdSchema,
-  LongFileRevisionSchema,
-  LongForeshadowingBeatIdSchema,
-  LongForeshadowingBeatSchema,
-  LongForeshadowingIdSchema,
-  LongForeshadowingSchema,
-  LongMarkdownFileReferenceSchema,
-  LongNarrativePlacementIdSchema,
-  LongNarrativePlacementSchema,
-  LongProjectRelativePathSchema,
-  LongStableIdSchema,
-  LongStoryEventIdSchema,
-  LongStoryEventSchema,
-  LongStoryPlotIdSchema,
-  LongStoryPlotSchema,
-  LongVolumeIdSchema,
-  LongVolumeSchema,
-  LongWorldbuildingItemLayoutSchema,
-  LongWorkspaceIndexSnapshotSchema,
-  LongWorldbuildingCategoryIdSchema,
-  LongWorldbuildingCategorySchema,
-  LongWorldbuildingItemIdSchema,
-  LongWorldbuildingItemSchema,
-  createEmptyLongMarkdownFileReference,
-  deriveLongForeshadowingStatusFromCommittedBeats,
-  longWorldbuildingContentPath,
-  longWorldbuildingFileId,
-  longWorldbuildingItemContentPath,
-  longWorldbuildingItemFileId,
-  longWorldbuildingOverviewContentPath,
-  longWorldbuildingOverviewFileId
-} from "../long-workspace";
-import type {
-  LongForeshadowing,
-  LongForeshadowingBeat,
-  LongNarrativePlacement,
-  LongWorkspaceFileReference,
-  LongWorkspaceIndexSnapshot
-} from "../long-workspace";
 
 import {
+  deleteNarrativePlacement,
+  deleteStoryEvent,
+  deleteStoryPlot
+} from "./cascade";
+import {
   addFileCreateIntent,
-  addFileDeleteIntent,
-  allWorkspaceFiles,
-  assertAnchoredValue,
   assertBeatIsMutable,
   assertChapterIsMutable,
   assertExactOrder,
-  assertFrozenOrderPrefix,
   assertNewEntityId,
   assertPlacementIsMutable,
-  chapterOrderMap,
   concreteChapterIdForBeat,
   ensureFilesAvailable,
   eventParticipatesInCommittedFacts,
-  findBeat,
   findEntityIndex,
-  idsByGroupAndOrder,
   insertBeforeId,
   markCreated,
   markDeleted,
   markUpdated,
-  normalizeLongWorkspaceOrders,
   operationError,
-  orderedIdsByOrder,
   registerProvisionalId,
   retargetBeatPlanningAnchorsToChapter,
-  updateOrdersById,
-  volumeOrderMap
+  updateOrdersById
 } from "./state";
-import {
-  deleteArc,
-  deleteChapter,
-  deleteCharacter,
-  deleteForeshadowingBeat,
-  deleteForeshadowingThread,
-  deleteNarrativePlacement,
-  deleteStoryEvent,
-  deleteStoryPlot,
-  deleteVolume
-} from "./cascade";
 
 export function applyPlotOperation(
   state: MutationState,
@@ -111,11 +41,7 @@ export function applyPlotOperation(
       );
       workspace.plot.storyEvents.push(structuredClone(operation.event));
       markCreated(state, operation.event.id);
-      registerProvisionalId(
-        state,
-        operation.provisionalId,
-        operation.event.id
-      );
+      registerProvisionalId(state, operation.provisionalId, operation.event.id);
       break;
     }
     case "event.update": {
@@ -153,18 +79,14 @@ export function applyPlotOperation(
             const plannedArcId = beat.arcId ?? null;
             const plannedVolumeId = beat.volumeId ?? null;
             const arcNeedsRetarget =
-              plannedArcId !== null &&
-              !event.arcIds.includes(plannedArcId);
+              plannedArcId !== null && !event.arcIds.includes(plannedArcId);
             const volumeNeedsRetarget =
               plannedVolumeId !== null &&
               !eventVolumeIds.includes(plannedVolumeId);
             if (!arcNeedsRetarget && !volumeNeedsRetarget) return;
 
             assertBeatIsMutable(beat, "retarget with its event");
-            const concreteChapterId = concreteChapterIdForBeat(
-              workspace,
-              beat
-            );
+            const concreteChapterId = concreteChapterIdForBeat(workspace, beat);
             const concreteChapter =
               concreteChapterId === null
                 ? undefined
@@ -234,11 +156,7 @@ export function applyPlotOperation(
     }
 
     case "storyPlot.create": {
-      findEntityIndex(
-        workspace.plot.arcs,
-        operation.storyPlot.arcId,
-        "Arc"
-      );
+      findEntityIndex(workspace.plot.arcs, operation.storyPlot.arcId, "Arc");
       assertNewEntityId(
         workspace.plot.storyPlots,
         operation.storyPlot.id,
@@ -262,11 +180,7 @@ export function applyPlotOperation(
     case "storyPlot.update": {
       const storyPlot =
         workspace.plot.storyPlots[
-          findEntityIndex(
-            workspace.plot.storyPlots,
-            operation.id,
-            "Story plot"
-          )
+          findEntityIndex(workspace.plot.storyPlots, operation.id, "Story plot")
         ]!;
       Object.assign(storyPlot, operation.patch);
       markUpdated(state, storyPlot.id);
@@ -328,10 +242,7 @@ export function applyPlotOperation(
           workspace,
           connection.sourceEventId
         ) ||
-        eventParticipatesInCommittedFacts(
-          workspace,
-          connection.targetEventId
-        )
+        eventParticipatesInCommittedFacts(workspace, connection.targetEventId)
       ) {
         operationError(
           "committed_prefix_protected",
@@ -354,10 +265,7 @@ export function applyPlotOperation(
           workspace,
           connection.sourceEventId
         ) ||
-        eventParticipatesInCommittedFacts(
-          workspace,
-          connection.targetEventId
-        )
+        eventParticipatesInCommittedFacts(workspace, connection.targetEventId)
       ) {
         operationError(
           "committed_prefix_protected",
@@ -410,11 +318,7 @@ export function applyPlotOperation(
       break;
     }
     case "placement.delete": {
-      deleteNarrativePlacement(
-        state,
-        operation.id,
-        operation.cascade
-      );
+      deleteNarrativePlacement(state, operation.id, operation.cascade);
       break;
     }
     case "placement.move": {
@@ -459,12 +363,9 @@ export function applyPlotOperation(
       });
       const target = workspace.plot.narrativePlacements
         .filter(
-          ({ chapterCardId }) =>
-            chapterCardId === operation.toChapterCardId
+          ({ chapterCardId }) => chapterCardId === operation.toChapterCardId
         )
-        .sort(
-          (left, right) => left.orderInChapter - right.orderInChapter
-        );
+        .sort((left, right) => left.orderInChapter - right.orderInChapter);
       const orderedIds = insertBeforeId(
         target.map(({ id }) => id),
         placement.id,
@@ -485,12 +386,9 @@ export function applyPlotOperation(
     case "placement.reorder": {
       const target = workspace.plot.narrativePlacements
         .filter(
-          ({ chapterCardId }) =>
-            chapterCardId === operation.chapterCardId
+          ({ chapterCardId }) => chapterCardId === operation.chapterCardId
         )
-        .sort(
-          (left, right) => left.orderInChapter - right.orderInChapter
-        );
+        .sort((left, right) => left.orderInChapter - right.orderInChapter);
       target.forEach((placement) =>
         assertPlacementIsMutable(placement, "reorder")
       );

@@ -416,9 +416,7 @@ function committedAnchorWorkspace(): LongWorkspaceIndexSnapshot {
       beats: []
     }
   );
-  value.ledger.commits[0]!.foreshadowingBeatIds.push(
-    "beat_committed_second"
-  );
+  value.ledger.commits[0]!.foreshadowingBeatIds.push("beat_committed_second");
   return LongWorkspaceIndexSnapshotSchema.parse(value);
 }
 
@@ -444,8 +442,7 @@ function createBatch() {
   const newCharacterFiles = characterFiles("character_bob", "bob");
   Object.values(newCharacterFiles)
     .filter(
-      (value): value is ReturnType<typeof file> =>
-        typeof value === "object"
+      (value): value is ReturnType<typeof file> => typeof value === "object"
     )
     .forEach((value) => {
       value.updatedAt = later;
@@ -456,11 +453,9 @@ function createBatch() {
     newChapterFiles.card,
     newChapterFiles.characterState,
     newChapterFiles.handoff
-  ].forEach(
-    (value) => {
-      value.updatedAt = later;
-    }
-  );
+  ].forEach((value) => {
+    value.updatedAt = later;
+  });
 
   return LongWorkspaceOperationBatchSchema.parse({
     baseRevision: 7,
@@ -648,10 +643,10 @@ export {
   now,
   previewLongWorkspaceOperations,
   revision,
-  workspace,
+  workspace
 };
 export type {
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperation,
-  LongWorkspaceOperationErrorCode,
+  LongWorkspaceOperationErrorCode
 };

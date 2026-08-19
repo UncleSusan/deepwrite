@@ -11,7 +11,9 @@ const temporaryRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -79,14 +81,20 @@ describe("legacy book import", () => {
       linkedMaterialIdsByKind: { other: ["material-1"] },
       linkedSkillIdsByKind: { style: ["skill-1"] }
     });
-    expect(imported.documents.find(({ id }) => id === "character_design")?.content)
-      .toBe("人物旧稿");
-    expect(imported.documents.find(({ id }) => id === "draft")?.content)
-      .toBe("正文旧稿");
-    expect(imported.documents.find(({ title }) => title === "正文审阅（旧版）")?.content)
-      .toBe("审阅意见");
-    expect(imported.documents.find(({ title }) => title === "书籍记忆（旧版）")?.content)
-      .toContain("主角怕水");
+    expect(
+      imported.documents.find(({ id }) => id === "character_design")?.content
+    ).toBe("人物旧稿");
+    expect(imported.documents.find(({ id }) => id === "draft")?.content).toBe(
+      "正文旧稿"
+    );
+    expect(
+      imported.documents.find(({ title }) => title === "正文审阅（旧版）")
+        ?.content
+    ).toBe("审阅意见");
+    expect(
+      imported.documents.find(({ title }) => title === "书籍记忆（旧版）")
+        ?.content
+    ).toContain("主角怕水");
   });
 
   it("reads desktop book.zip packages and falls back to archived stage files", async () => {
@@ -108,9 +116,11 @@ describe("legacy book import", () => {
 
     const imported = await readLegacyBookArchive(archivePath);
     expect(imported.genre).toBe("悬疑");
-    expect(imported.documents.find(({ id }) => id === "outline")?.content)
-      .toBe("大纲正文");
-    expect(imported.documents.find(({ id }) => id === "draft")?.content)
-      .toBe("压缩包正文");
+    expect(imported.documents.find(({ id }) => id === "outline")?.content).toBe(
+      "大纲正文"
+    );
+    expect(imported.documents.find(({ id }) => id === "draft")?.content).toBe(
+      "压缩包正文"
+    );
   });
 });

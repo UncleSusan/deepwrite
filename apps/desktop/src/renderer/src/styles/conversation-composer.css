@@ -2,7 +2,11 @@
   position: relative;
   z-index: 2;
   padding: 10px max(18px, calc((100% - 760px) / 2)) 10px;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--surface-main) 20px);
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    var(--surface-main) 20px
+  );
 }
 
 .composer-stack {
@@ -19,7 +23,9 @@
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--surface-raised, #fbfbfa);
-  box-shadow: 0 18px 48px rgb(25 28 31 / 16%), 0 3px 10px rgb(25 28 31 / 8%);
+  box-shadow:
+    0 18px 48px rgb(25 28 31 / 16%),
+    0 3px 10px rgb(25 28 31 / 8%);
 }
 
 .composer-reference-heading {
@@ -170,13 +176,17 @@
   border: 1px solid var(--theme-line);
   border-radius: 21px;
   background: var(--surface-main);
-  box-shadow: 0 5px 18px rgba(25, 28, 31, 0.07), 0 1px 2px rgba(25, 28, 31, 0.05);
+  box-shadow:
+    0 5px 18px rgba(25, 28, 31, 0.07),
+    0 1px 2px rgba(25, 28, 31, 0.05);
   transition: none;
 }
 
 .composer:focus-within .composer-input-surface {
   border-color: var(--theme-line);
-  box-shadow: 0 7px 22px rgba(25, 28, 31, 0.09), 0 1px 2px rgba(25, 28, 31, 0.04);
+  box-shadow:
+    0 7px 22px rgba(25, 28, 31, 0.09),
+    0 1px 2px rgba(25, 28, 31, 0.04);
 }
 
 .composer-file-input {
@@ -199,7 +209,11 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--accent, #419d8c) 20%, transparent);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--accent-soft, #d9eee7) 82%, var(--surface-main));
+  background: color-mix(
+    in srgb,
+    var(--accent-soft, #d9eee7) 82%,
+    var(--surface-main)
+  );
   color: color-mix(in srgb, var(--accent, #358f80) 88%, #1f5e54);
 }
 

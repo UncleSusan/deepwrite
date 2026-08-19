@@ -600,7 +600,8 @@
   border: 1px solid var(--theme-line);
   border-radius: 15px;
   background: var(--surface-raised);
-  box-shadow: 0 24px 70px color-mix(in srgb, var(--theme-foreground) 20%, transparent);
+  box-shadow: 0 24px 70px
+    color-mix(in srgb, var(--theme-foreground) 20%, transparent);
   color: var(--text-primary);
 }
 
@@ -686,7 +687,9 @@
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 3px);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
   white-space: nowrap;
 }
 
@@ -757,7 +760,9 @@
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 3px);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
 }
 
 .model-help-icon:hover::after,

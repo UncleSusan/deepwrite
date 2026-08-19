@@ -193,11 +193,7 @@ function workspaceIndex() {
           mode: "scene" as const,
           disclosure: "full" as const,
           writingPrompt: "现场呈现来信出现。",
-          status: "planned" as
-            | "planned"
-            | "written"
-            | "committed"
-            | "missed",
+          status: "planned" as "planned" | "written" | "committed" | "missed",
           commitId: null as string | null
         }
       ],
@@ -220,20 +216,14 @@ function workspaceIndex() {
               plannedScope: "",
               note: "信封上的蜡封是第一条线索。",
               status: "planned" as
-                | "planned"
-                | "written"
-                | "committed"
-                | "missed",
+                "planned" | "written" | "committed" | "missed",
               commitId: null as string | null
             }
           ]
         }
       ]
     },
-    chapters: [
-      chapterFiles("chapter_one", 1),
-      chapterFiles("chapter_two", 2)
-    ],
+    chapters: [chapterFiles("chapter_one", 1), chapterFiles("chapter_two", 2)],
     ledger: {
       committedThroughChapterId: null as string | null,
       commits: [] as Array<{
@@ -352,7 +342,9 @@ describe("independent long-form workspace contracts", () => {
       "minor_supporting",
       "passerby"
     ]);
-    expect(navigation.characterTypes).toEqual(book.workspaceIndex.characterTypes);
+    expect(navigation.characterTypes).toEqual(
+      book.workspaceIndex.characterTypes
+    );
     expect(book.workspaceIndex.ledger.projection).toEqual({
       throughCommitId: null,
       facts: [],
@@ -360,13 +352,15 @@ describe("independent long-form workspace contracts", () => {
       openLoops: [],
       latestHandoff: null
     });
-    expect(book.workspaceIndex.chapters[0]?.foreshadowingChanges).toMatchObject({
-      id: longChapterForeshadowingChangesFileId("chapter_one"),
-      path: longChapterContinuityFilePath(
-        "chapter_one",
-        "foreshadowing-changes.md"
-      )
-    });
+    expect(book.workspaceIndex.chapters[0]?.foreshadowingChanges).toMatchObject(
+      {
+        id: longChapterForeshadowingChangesFileId("chapter_one"),
+        path: longChapterContinuityFilePath(
+          "chapter_one",
+          "foreshadowing-changes.md"
+        )
+      }
+    );
     expect(book.workspaceIndex.chapters[0]?.worldReveals).toBeNull();
     expect(book.workspaceIndex.chapters[0]?.characterContinuity).toEqual([]);
     expect(navigation.chapterCards[0]).toEqual({
@@ -488,20 +482,17 @@ describe("independent long-form workspace contracts", () => {
         latestHandoff: null
       }
     });
-    const parsedCommitted =
-      LongWorkspaceIndexSnapshotSchema.parse(committed);
+    const parsedCommitted = LongWorkspaceIndexSnapshotSchema.parse(committed);
     expect(parsedCommitted.ledger.commits[0]?.mode).toBe("structured");
 
     const orphanSubject = structuredClone(parsedCommitted);
-    orphanSubject.ledger.projection.facts[0]!.subjectId =
-      "character_missing";
+    orphanSubject.ledger.projection.facts[0]!.subjectId = "character_missing";
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(orphanSubject).success
     ).toBe(false);
 
     const unknownSource = structuredClone(parsedCommitted);
-    unknownSource.ledger.projection.facts[0]!.sourceCommitId =
-      "commit_missing";
+    unknownSource.ledger.projection.facts[0]!.sourceCommitId = "commit_missing";
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(unknownSource).success
     ).toBe(false);
@@ -531,8 +522,7 @@ describe("independent long-form workspace contracts", () => {
     );
 
     const duplicatePath = workspaceIndex();
-    duplicatePath.chapters[1]!.body.path =
-      duplicatePath.chapters[0]!.body.path;
+    duplicatePath.chapters[1]!.body.path = duplicatePath.chapters[0]!.body.path;
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(duplicatePath).success
     ).toBe(false);
@@ -544,13 +534,13 @@ describe("independent long-form workspace contracts", () => {
         "BODY.md"
       );
     expect(
-      LongWorkspaceIndexSnapshotSchema.safeParse(portableDuplicatePath)
-        .success
+      LongWorkspaceIndexSnapshotSchema.safeParse(portableDuplicatePath).success
     ).toBe(false);
 
     expect(
-      LongFileRevisionSchema.safeParse(`v2:${"1".repeat(100)}:${"a".repeat(64)}`)
-        .success
+      LongFileRevisionSchema.safeParse(
+        `v2:${"1".repeat(100)}:${"a".repeat(64)}`
+      ).success
     ).toBe(false);
   });
 
@@ -576,17 +566,15 @@ describe("independent long-form workspace contracts", () => {
       LongWorkspaceIndexSnapshotSchema.safeParse(missingReference).success
     ).toBe(false);
 
-    const unassociatedChapter = LongWorkspaceIndexSnapshotSchema.parse(
-      workspaceIndex()
-    );
+    const unassociatedChapter =
+      LongWorkspaceIndexSnapshotSchema.parse(workspaceIndex());
     unassociatedChapter.plot.chapterCards[0]!.primaryArcId = null;
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(unassociatedChapter).success
     ).toBe(true);
 
-    const missingChapterArc = LongWorkspaceIndexSnapshotSchema.parse(
-      workspaceIndex()
-    );
+    const missingChapterArc =
+      LongWorkspaceIndexSnapshotSchema.parse(workspaceIndex());
     missingChapterArc.plot.chapterCards[0]!.primaryArcId = "arc_missing";
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(missingChapterArc).success
@@ -605,8 +593,9 @@ describe("independent long-form workspace contracts", () => {
         group: "chartype_viewpoint"
       }))
     };
-    expect(LongWorkspaceIndexSnapshotSchema.parse(custom).characters[0]?.group)
-      .toBe("chartype_viewpoint");
+    expect(
+      LongWorkspaceIndexSnapshotSchema.parse(custom).characters[0]?.group
+    ).toBe("chartype_viewpoint");
 
     expect(() =>
       LongWorkspaceIndexSnapshotSchema.parse({
@@ -616,9 +605,7 @@ describe("independent long-form workspace contracts", () => {
           group: "chartype_missing"
         }))
       })
-    ).toThrow(
-      /existing character type/u
-    );
+    ).toThrow(/existing character type/u);
   });
 
   it("requires contiguous volume, arc, chapter, event and placement order", () => {
@@ -636,9 +623,9 @@ describe("independent long-form workspace contracts", () => {
 
     const eventOrder = workspaceIndex();
     eventOrder.plot.storyEvents[1]!.storyOrder = 1;
-    expect(
-      LongWorkspaceIndexSnapshotSchema.safeParse(eventOrder).success
-    ).toBe(false);
+    expect(LongWorkspaceIndexSnapshotSchema.safeParse(eventOrder).success).toBe(
+      false
+    );
 
     const placementOrder = workspaceIndex();
     placementOrder.plot.narrativePlacements[0]!.orderInChapter = 2;
@@ -787,9 +774,9 @@ describe("independent long-form workspace contracts", () => {
     Object.assign(arcPlanned.plot.foreshadowing[0]!.beats[0]!, {
       arcId: "arc_letter"
     });
-    expect(
-      LongWorkspaceIndexSnapshotSchema.safeParse(arcPlanned).success
-    ).toBe(true);
+    expect(LongWorkspaceIndexSnapshotSchema.safeParse(arcPlanned).success).toBe(
+      true
+    );
 
     const missingAnchor = workspaceIndex();
     Object.assign(missingAnchor.plot.foreshadowing[0]!.beats[0]!, {
@@ -806,16 +793,12 @@ describe("independent long-form workspace contracts", () => {
       order: 2,
       summary: ""
     });
-    Object.assign(
-      conflictingAnchors.plot.foreshadowing[0]!.beats[0]!,
-      {
-        volumeId: "volume_two",
-        arcId: "arc_letter"
-      }
-    );
+    Object.assign(conflictingAnchors.plot.foreshadowing[0]!.beats[0]!, {
+      volumeId: "volume_two",
+      arcId: "arc_letter"
+    });
     expect(
-      LongWorkspaceIndexSnapshotSchema.safeParse(conflictingAnchors)
-        .success
+      LongWorkspaceIndexSnapshotSchema.safeParse(conflictingAnchors).success
     ).toBe(false);
 
     const conflictingEventVolume = workspaceIndex();
@@ -832,24 +815,19 @@ describe("independent long-form workspace contracts", () => {
       order: 1,
       outline: ""
     });
-    Object.assign(
-      conflictingEventVolume.plot.foreshadowing[0]!.beats[0]!,
-      {
-        volumeId: "volume_two",
-        arcId: null,
-        placementId: null,
-        chapterCardId: null
-      }
-    );
+    Object.assign(conflictingEventVolume.plot.foreshadowing[0]!.beats[0]!, {
+      volumeId: "volume_two",
+      arcId: null,
+      placementId: null,
+      chapterCardId: null
+    });
     const conflictingEventVolumeResult =
       LongWorkspaceIndexSnapshotSchema.safeParse(conflictingEventVolume);
     expect(conflictingEventVolumeResult.success).toBe(false);
     if (!conflictingEventVolumeResult.success) {
       expect(
         conflictingEventVolumeResult.error.issues.some(({ message }) =>
-          message.includes(
-            "planning volume must match its concrete event"
-          )
+          message.includes("planning volume must match its concrete event")
         )
       ).toBe(true);
     }
@@ -873,8 +851,7 @@ describe("independent long-form workspace contracts", () => {
       }
     ).status = "abandoned";
     expect(
-      LongWorkspaceIndexSnapshotSchema.safeParse(explicitlyAbandoned)
-        .success
+      LongWorkspaceIndexSnapshotSchema.safeParse(explicitlyAbandoned).success
     ).toBe(true);
 
     const uncommittedButOpen = workspaceIndex();
@@ -884,8 +861,7 @@ describe("independent long-form workspace contracts", () => {
       }
     ).status = "open";
     expect(
-      LongWorkspaceIndexSnapshotSchema.safeParse(uncommittedButOpen)
-        .success
+      LongWorkspaceIndexSnapshotSchema.safeParse(uncommittedButOpen).success
     ).toBe(false);
   });
 
@@ -947,9 +923,7 @@ describe("independent long-form workspace contracts", () => {
   });
 
   it("provides an exhaustive isolated default agent set", () => {
-    expect(
-      DEFAULT_LONG_AGENT_PROFILES.map(({ id }) => id)
-    ).toEqual([
+    expect(DEFAULT_LONG_AGENT_PROFILES.map(({ id }) => id)).toEqual([
       "setting",
       "plot_design",
       "draft",
@@ -992,12 +966,8 @@ describe("independent long-form workspace contracts", () => {
     expect(settingProfile.systemPrompt).not.toContain(
       "get_long_workspace_index"
     );
-    expect(settingProfile.systemPrompt).not.toContain(
-      "read_long_document"
-    );
-    expect(settingProfile.systemPrompt).not.toContain(
-      "search_long_workspace"
-    );
+    expect(settingProfile.systemPrompt).not.toContain("read_long_document");
+    expect(settingProfile.systemPrompt).not.toContain("search_long_workspace");
     expect(settingProfile.systemPrompt).not.toContain("fileId");
     expect(settingProfile.systemPrompt).not.toContain("file_id");
     expect(settingProfile.systemPrompt).not.toContain("bookId");
@@ -1020,7 +990,9 @@ describe("independent long-form workspace contracts", () => {
     expect(plotProfile.systemPrompt).toContain("伏笔线与伏笔触点继续完全使用");
     expect(plotProfile.systemPrompt).toContain("连续性记录只供参考");
     expect(plotProfile.systemPrompt).toContain("不锁定剧情结构");
-    expect(plotProfile.systemPrompt).toContain("固定上下文已包含世界观与人物目录");
+    expect(plotProfile.systemPrompt).toContain(
+      "固定上下文已包含世界观与人物目录"
+    );
     expect(plotProfile.systemPrompt).toContain(
       "不要仅为重复取得同一列表而调用 list_setting"
     );
@@ -1052,15 +1024,11 @@ describe("independent long-form workspace contracts", () => {
     expect(writerProfile.systemPrompt).toContain(
       "同一写手智能体和同一对话历史"
     );
-    expect(writerProfile.systemPrompt).not.toContain(
-      "每章独立的写手运行"
-    );
+    expect(writerProfile.systemPrompt).not.toContain("每章独立的写手运行");
     expect(writerProfile.systemPrompt).toContain(
       "每次写入工具调用只能提交运行时锁定的当前章"
     );
-    expect(writerProfile.systemPrompt).toContain(
-      "content 只放完整小说正文"
-    );
+    expect(writerProfile.systemPrompt).toContain("content 只放完整小说正文");
     expect(writerProfile.systemPrompt).toContain("会话 diff 审批卡");
     expect(writerProfile.systemPrompt).toContain(
       "写作产物只限当前锁定章的小说正文"
@@ -1084,7 +1052,9 @@ describe("independent long-form workspace contracts", () => {
     expect(continuityProfile.systemPrompt).toContain("create_continuity_file");
     expect(continuityProfile.systemPrompt).toContain("write_continuity_file");
     expect(continuityProfile.systemPrompt).toContain("edit_continuity_file");
-    expect(continuityProfile.systemPrompt).toContain("propose_continuity_commit");
+    expect(continuityProfile.systemPrompt).toContain(
+      "propose_continuity_commit"
+    );
     expect(continuityProfile.systemPrompt).toContain("pending_catchup");
     expect(continuityProfile.systemPrompt).toContain("批量提交所有未提交章节");
     expect(continuityProfile.systemPrompt).toContain("suggested_record=brief");

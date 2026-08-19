@@ -13,12 +13,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  LongProjectStore
-} from "./long-project-store";
-import {
-  readWriteClawLongImportPlan
-} from "./write-claw-long-import";
+import { LongProjectStore } from "./long-project-store";
+import { readWriteClawLongImportPlan } from "./write-claw-long-import";
 
 const FIXED_NOW = "2026-07-26T12:00:00.000Z";
 const temporaryRoots: string[] = [];
@@ -81,9 +77,7 @@ function legacyBook() {
       },
       plot: {
         book_line: "林岚追查会说话的影子。",
-        volumes: [
-          { id: "volume-1", name: "影城", outline: "", order: 1 }
-        ],
+        volumes: [{ id: "volume-1", name: "影城", outline: "", order: 1 }],
         arcs: [
           {
             id: "arc-1",
@@ -159,9 +153,9 @@ async function fixture() {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) =>
-      rm(root, { recursive: true, force: true })
-    )
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -196,14 +190,13 @@ describe("long import store integration", () => {
       committedChapterPolicy: "legacy-checkpoints"
     });
     expect(imported.book.workspaceIndex.ledger.commits).toHaveLength(1);
-    expect(
-      imported.book.workspaceIndex.ledger.commits[0]!.reversible
-    ).toBe(false);
+    expect(imported.book.workspaceIndex.ledger.commits[0]!.reversible).toBe(
+      false
+    );
     expect(imported.book.workspaceIndex.chapters[0]!.commitId).toBe(
       imported.book.workspaceIndex.ledger.commits[0]!.id
     );
-    const migratedContinuityChapter =
-      imported.book.workspaceIndex.chapters[0]!;
+    const migratedContinuityChapter = imported.book.workspaceIndex.chapters[0]!;
     expect(imported.book.workspaceIndex.ledger.commits[0]!.mode).toBe(
       "structured"
     );
@@ -228,10 +221,9 @@ describe("long import store integration", () => {
     if (memoryCategory.format !== "text") {
       throw new Error("expected migration evidence to use a text category");
     }
-    const memoryDocument = await store.readDocument(
-      imported.projectDirectory,
-      { fileId: memoryCategory.file.id }
-    );
+    const memoryDocument = await store.readDocument(imported.projectDirectory, {
+      fileId: memoryCategory.file.id
+    });
     expect(memoryDocument.content).toContain("memory-shadow");
     expect(memoryDocument.content).toContain("仅存档");
     await expect(
@@ -309,5 +301,4 @@ describe("long import store integration", () => {
     ).rejects.toThrow(/硬链接/u);
     expect(await readdir(parentDirectory)).toEqual([]);
   });
-
 });

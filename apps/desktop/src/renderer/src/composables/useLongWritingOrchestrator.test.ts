@@ -32,10 +32,7 @@ function dispatchEvent() {
         readiness("chapter_two", "empty")
       ]
     }
-  } as Extract<
-    SystemEventEnvelope,
-    { type: "long.chapter_dispatch_proposal" }
-  >;
+  } as Extract<SystemEventEnvelope, { type: "long.chapter_dispatch_proposal" }>;
 }
 
 function writerProposal(chapterCardId = "chapter_one") {

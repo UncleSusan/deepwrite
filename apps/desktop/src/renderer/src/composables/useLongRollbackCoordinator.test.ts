@@ -32,10 +32,7 @@ async function flushMicrotasks(turns = 8): Promise<void> {
   }
 }
 
-function fakeSummary(
-  id = BOOK_A,
-  projectRevision = 10
-): LongBookSummary {
+function fakeSummary(id = BOOK_A, projectRevision = 10): LongBookSummary {
   return {
     id,
     projectRevision,
@@ -60,9 +57,7 @@ function fakeCommit(
 }
 
 function fakeIndex(
-  commits: LongWorkspaceIndexSnapshot["ledger"]["commits"] = [
-    fakeCommit()
-  ],
+  commits: LongWorkspaceIndexSnapshot["ledger"]["commits"] = [fakeCommit()],
   revision = 10
 ): LongWorkspaceIndexSnapshot {
   return {
@@ -86,10 +81,12 @@ function rollbackResult(
   };
 }
 
-function createHarness(input: {
-  readonly pending?: boolean;
-  readonly api?: LongRollbackApi;
-} = {}) {
+function createHarness(
+  input: {
+    readonly pending?: boolean;
+    readonly api?: LongRollbackApi;
+  } = {}
+) {
   const activeBookId = ref<string | null>(BOOK_A);
   const activeBookSummary = ref<LongBookSummary | null>(fakeSummary());
   const workspaceIndex = ref<LongWorkspaceIndexSnapshot | null>(fakeIndex());
@@ -99,9 +96,7 @@ function createHarness(input: {
   const rollbackDialogOpen = ref(false);
   const rollbackPending = ref(input.pending ?? false);
   const rollbackCommitId = ref<string | null>(null);
-  const rollbackLastCommit = vi.fn(
-    async () => rollbackResult()
-  );
+  const rollbackLastCommit = vi.fn(async () => rollbackResult());
   const api = input.api ?? { rollbackLastCommit };
   const saveActiveEditorChanges = vi.fn(async () => true);
   const refreshActiveWorkspace = vi.fn(async () => true);
@@ -239,9 +234,7 @@ describe("useLongRollbackCoordinator", () => {
       baseProjectRevision: 13
     });
     expect(test.state.rollbackPending.value).toBe(false);
-    expect(test.notifications.success).toHaveBeenCalledWith(
-      "已回滚提交 #1。"
-    );
+    expect(test.notifications.success).toHaveBeenCalledWith("已回滚提交 #1。");
   });
 
   it("rejects the stale target when the latest commit changes after refresh", async () => {

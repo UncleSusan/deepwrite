@@ -7,7 +7,11 @@ import {
   workspaceDocumentProvesDraftPersisted
 } from "./catalogSaveReconciliation";
 
-function document(id: string, title: string, content: string): WorkspaceDocument {
+function document(
+  id: string,
+  title: string,
+  content: string
+): WorkspaceDocument {
   return {
     id,
     domain: "creation",
@@ -41,14 +45,11 @@ describe("catalog save reconciliation", () => {
     const withoutKnownBytes = { ...metadataOnly };
     delete withoutKnownBytes.catalogContentBytes;
 
+    expect(workspaceDocumentProvesDraftPersisted(metadataOnly, draft(""))).toBe(
+      false
+    );
     expect(
-      workspaceDocumentProvesDraftPersisted(metadataOnly, draft(""))
-    ).toBe(false);
-    expect(
-      workspaceDocumentProvesDraftPersisted(
-        withoutKnownBytes,
-        draft("")
-      )
+      workspaceDocumentProvesDraftPersisted(withoutKnownBytes, draft(""))
     ).toBe(false);
     expect(
       workspaceDocumentProvesDraftPersisted(

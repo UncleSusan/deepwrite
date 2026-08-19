@@ -212,7 +212,9 @@ describe("longWorldbuildingSync", () => {
       cascade: true
     });
     expect(
-      plan.batch.operations.filter(({ type }) => type === "worldbuilding.create")
+      plan.batch.operations.filter(
+        ({ type }) => type === "worldbuilding.create"
+      )
     ).toHaveLength(2);
     expect(plan.batch.operations.at(-1)).toMatchObject({
       type: "worldbuilding.reorder",

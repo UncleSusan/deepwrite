@@ -1,6 +1,4 @@
-import {
-  createShortWorkspaceContentRevision
-} from "@deepwrite/contracts";
+import { createShortWorkspaceContentRevision } from "@deepwrite/contracts";
 import type { AgentEditProposal } from "../../types/conversation";
 import {
   beginAgentEditProposalCommit,
@@ -14,16 +12,10 @@ import {
 import type { DraftSectionCreationRevisionCursor } from "../../utils/draftSectionCreationRevision";
 import { createKeyedSerialTaskQueue } from "../../utils/keyedSerialTaskQueue";
 import type { AgentConversationController } from "../useAgentConversation";
-import type {
-  ProposalLaneContext,
-  QueuedAgentEdit
-} from "./types";
+import type { ProposalLaneContext, QueuedAgentEdit } from "./types";
 
 export function createProposalQueue(ctx: ProposalLaneContext) {
-  const {
-    uiMessage,
-    catalogBook
-  } = ctx;
+  const { uiMessage, catalogBook } = ctx;
 
   const applyAgentEdit: ProposalLaneContext["applyAgentEdit"] = (...args) =>
     ctx.applyAgentEdit(...args);
@@ -44,7 +36,8 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
   ctx.agentEditCommitQueue = agentEditCommitQueue;
   ctx.activeCoordinatorInvocations = activeCoordinatorInvocations;
   ctx.activeAgentEditCommitTasks = activeAgentEditCommitTasks;
-  ctx.acceptedDraftSectionCreationRevisions = acceptedDraftSectionCreationRevisions;
+  ctx.acceptedDraftSectionCreationRevisions =
+    acceptedDraftSectionCreationRevisions;
 
   function isDisposed(): boolean {
     return coordinatorDisposed;
@@ -58,15 +51,15 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
     const proposal = conversation.getEditProposal(runId, proposalId);
     if (!proposal) return 2;
     if (proposal.draftSectionCreationTarget) return 0;
-    if (proposal.characterStructureTarget?.mutation.type === "createItem") return 0;
-    if (
-      proposal.longWorldbuildingTarget?.file.operation === "create"
-    ) return 0;
+    if (proposal.characterStructureTarget?.mutation.type === "createItem")
+      return 0;
+    if (proposal.longWorldbuildingTarget?.file.operation === "create") return 0;
     if (
       proposal.longCharacterTarget?.files.every(
         ({ operation }) => operation === "create"
       )
-    ) return 0;
+    )
+      return 0;
     if (proposal.longWorldbuildingTarget?.file.beforeRevision !== null) {
       return proposal.predecessorProposalId ? 1 : 2;
     }
@@ -155,10 +148,7 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
     while (cursor && !seen.has(cursor.id)) {
       seen.add(cursor.id);
       compatible.add(cursor.baseRevision);
-      if (
-        cursor.status === "accepting" ||
-        cursor.status === "accepted"
-      ) {
+      if (cursor.status === "accepting" || cursor.status === "accepted") {
         compatible.add(cursor.proposedRevision);
       }
       cursor = cursor.predecessorProposalId
@@ -166,12 +156,7 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
         : undefined;
     }
     compatible.add(
-      expectedLaneDurableRevision(
-        conversation,
-        runId,
-        existing,
-        currentText
-      )
+      expectedLaneDurableRevision(conversation, runId, existing, currentText)
     );
     return compatible.has(currentRevision);
   }
@@ -236,11 +221,7 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
       ) {
         continue;
       }
-      removeQueuedAgentEdit(
-        conversation,
-        candidate.runId,
-        candidate.id
-      );
+      removeQueuedAgentEdit(conversation, candidate.runId, candidate.id);
       conversation.updateEditProposal(candidate.runId, candidate.id, {
         status: "conflict",
         proposedText: undefined,
@@ -327,7 +308,9 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
       snapshot: started.snapshot
     });
     if (scheduleImmediately) {
-      scheduleQueuedAgentEdits((queued) => queued === queuedAgentEdits.get(key));
+      scheduleQueuedAgentEdits(
+        (queued) => queued === queuedAgentEdits.get(key)
+      );
     }
   }
 
@@ -358,8 +341,7 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
           right.proposalId
         );
         return (
-          (leftProposal?.generation ?? 1) -
-            (rightProposal?.generation ?? 1) ||
+          (leftProposal?.generation ?? 1) - (rightProposal?.generation ?? 1) ||
           Date.parse(leftProposal?.createdAt ?? "") -
             Date.parse(rightProposal?.createdAt ?? "")
         );
@@ -391,10 +373,7 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
         }
         continue;
       }
-      if (
-        current.status === "pending" ||
-        current.status === "error"
-      ) {
+      if (current.status === "pending" || current.status === "error") {
         queued.conversation.updateEditProposal(
           queued.runId,
           queued.proposalId,

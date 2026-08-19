@@ -1,13 +1,16 @@
-import { ref, shallowRef, type ComputedRef, type Ref, type ShallowRef } from "vue";
+import {
+  ref,
+  shallowRef,
+  type ComputedRef,
+  type Ref,
+  type ShallowRef
+} from "vue";
 import type {
   AgentRuntimeRef,
   ModelConfig,
   ThinkingLevel
 } from "@deepwrite/contracts";
-import type {
-  AgentApprovalMode,
-  ChatMessage
-} from "../../types/conversation";
+import type { AgentApprovalMode, ChatMessage } from "../../types/conversation";
 import { cloneMessage } from "./clone";
 import { parseAgentConversationPersistenceSnapshot } from "./parse";
 import { id } from "./shared";
@@ -85,7 +88,9 @@ export function createAgentConversationState(
   );
   const conversationClock = Math.max(
     Date.now(),
-    ...(storedEnvelope?.conversations.map((conversation) => Date.parse(conversation.updatedAt)) ?? [])
+    ...(storedEnvelope?.conversations.map((conversation) =>
+      Date.parse(conversation.updatedAt)
+    ) ?? [])
   );
   const initialTimestamp = new Date(conversationClock).toISOString();
   const messages = ref<ChatMessage[]>(
@@ -114,7 +119,9 @@ export function createAgentConversationState(
       }))
     ),
     currentCreatedAt: ref(
-      storedActive?.createdAt ?? messages.value[0]?.createdAt ?? initialTimestamp
+      storedActive?.createdAt ??
+        messages.value[0]?.createdAt ??
+        initialTimestamp
     ),
     currentUpdatedAt: ref(storedActive?.updatedAt ?? initialTimestamp),
     submitting: ref(false),
@@ -150,7 +157,9 @@ export function createAgentConversationState(
   };
 }
 
-export function nextConversationTimestamp(ctx: AgentConversationContext): string {
+export function nextConversationTimestamp(
+  ctx: AgentConversationContext
+): string {
   ctx.conversationClock = Math.max(Date.now(), ctx.conversationClock + 1);
   return new Date(ctx.conversationClock).toISOString();
 }

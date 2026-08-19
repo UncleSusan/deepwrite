@@ -6,7 +6,10 @@ import {
   LongStableIdSchema,
   LongWorkspaceIndexSnapshotSchema
 } from "../long-workspace";
-import { LongProvisionalIdSchema, LongWorkspaceOperationSchema } from "./operation-schema";
+import {
+  LongProvisionalIdSchema,
+  LongWorkspaceOperationSchema
+} from "./operation-schema";
 import {
   OperationTimestampSchema,
   sortedUniqueIdArray
@@ -46,7 +49,6 @@ export type LongDocumentWriteProposal = z.infer<
   typeof LongDocumentWriteProposalSchema
 >;
 
-
 export const LongWorkspaceImpactSummarySchema = z
   .object({
     createdEntityIds: sortedUniqueIdArray(LongStableIdSchema),
@@ -68,35 +70,32 @@ export type LongWorkspaceImpactSummary = z.infer<
   typeof LongWorkspaceImpactSummarySchema
 >;
 
-export const LongWorkspaceFileIntentSchema = z.discriminatedUnion(
-  "action",
-  [
-    z
-      .object({
-        action: z.literal("create"),
-        file: z.object({
-          id: LongFileIdSchema,
-          path: LongProjectRelativePathSchema,
-          revision: LongFileRevisionSchema,
-          updatedAt: OperationTimestampSchema
-        }),
-        reason: z.string().trim().min(1).max(1_000)
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("delete"),
-        file: z.object({
-          id: LongFileIdSchema,
-          path: LongProjectRelativePathSchema,
-          revision: LongFileRevisionSchema,
-          updatedAt: OperationTimestampSchema
-        }),
-        reason: z.string().trim().min(1).max(1_000)
-      })
-      .strict()
-  ]
-);
+export const LongWorkspaceFileIntentSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("create"),
+      file: z.object({
+        id: LongFileIdSchema,
+        path: LongProjectRelativePathSchema,
+        revision: LongFileRevisionSchema,
+        updatedAt: OperationTimestampSchema
+      }),
+      reason: z.string().trim().min(1).max(1_000)
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("delete"),
+      file: z.object({
+        id: LongFileIdSchema,
+        path: LongProjectRelativePathSchema,
+        revision: LongFileRevisionSchema,
+        updatedAt: OperationTimestampSchema
+      }),
+      reason: z.string().trim().min(1).max(1_000)
+    })
+    .strict()
+]);
 export type LongWorkspaceFileIntent = z.infer<
   typeof LongWorkspaceFileIntentSchema
 >;
@@ -131,35 +130,32 @@ const LongWorkspaceEntityChangeBaseShape = {
   id: LongStableIdSchema
 } as const;
 
-export const LongWorkspaceEntityChangeSchema = z.discriminatedUnion(
-  "action",
-  [
-    z
-      .object({
-        ...LongWorkspaceEntityChangeBaseShape,
-        action: z.literal("create"),
-        before: z.null(),
-        after: LongWorkspaceEntitySnapshotSchema
-      })
-      .strict(),
-    z
-      .object({
-        ...LongWorkspaceEntityChangeBaseShape,
-        action: z.literal("update"),
-        before: LongWorkspaceEntitySnapshotSchema,
-        after: LongWorkspaceEntitySnapshotSchema
-      })
-      .strict(),
-    z
-      .object({
-        ...LongWorkspaceEntityChangeBaseShape,
-        action: z.literal("delete"),
-        before: LongWorkspaceEntitySnapshotSchema,
-        after: z.null()
-      })
-      .strict()
-  ]
-);
+export const LongWorkspaceEntityChangeSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      ...LongWorkspaceEntityChangeBaseShape,
+      action: z.literal("create"),
+      before: z.null(),
+      after: LongWorkspaceEntitySnapshotSchema
+    })
+    .strict(),
+  z
+    .object({
+      ...LongWorkspaceEntityChangeBaseShape,
+      action: z.literal("update"),
+      before: LongWorkspaceEntitySnapshotSchema,
+      after: LongWorkspaceEntitySnapshotSchema
+    })
+    .strict(),
+  z
+    .object({
+      ...LongWorkspaceEntityChangeBaseShape,
+      action: z.literal("delete"),
+      before: LongWorkspaceEntitySnapshotSchema,
+      after: z.null()
+    })
+    .strict()
+]);
 export type LongWorkspaceEntityChange = z.infer<
   typeof LongWorkspaceEntityChangeSchema
 >;
@@ -201,10 +197,7 @@ export const LongWorkspaceImpactPreviewSchema = z
     entityChanges: z.array(LongWorkspaceEntityChangeSchema).max(2_000_000),
     fileIntents: z.array(LongWorkspaceFileIntentSchema),
     documentWrites: z.array(LongDocumentWriteProposalSchema),
-    provisionalIdMap: z.record(
-      LongProvisionalIdSchema,
-      LongStableIdSchema
-    )
+    provisionalIdMap: z.record(LongProvisionalIdSchema, LongStableIdSchema)
   })
   .strict();
 export type LongWorkspaceImpactPreview = z.infer<

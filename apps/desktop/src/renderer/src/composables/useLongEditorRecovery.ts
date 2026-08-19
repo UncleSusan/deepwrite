@@ -72,10 +72,7 @@ export function useLongEditorRecovery(options: {
   handleBeforeUnload: (event: BeforeUnloadEvent) => void;
 } {
   const staleRecoveryByKey = ref<Record<string, LongEditorRecoveryRecord>>({});
-  const recoveryWriteTimers = new Map<
-    string,
-    ReturnType<typeof setTimeout>
-  >();
+  const recoveryWriteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const recoveryWriteWarningKeys = new Set<string>();
 
   function recoveryStorageKey(bookId: string, fileId: string): string {

@@ -54,11 +54,9 @@ export function buildCharacterOverviewMarkdown(
           : "";
         return `- character_id=\`${character.id}\` ${character.name}${aliases}`;
       });
-    return [
-      `## ${label}`,
-      "",
-      ...(rows.length ? rows : ["（暂无）"])
-    ].join("\n");
+    return [`## ${label}`, "", ...(rows.length ? rows : ["（暂无）"])].join(
+      "\n"
+    );
   });
   return [
     "# 人物概览",
@@ -133,7 +131,10 @@ export function buildImportedCharacters(
         group,
         order: index + 1,
         aliases: normalizedAliases
-          .filter((alias, aliasIndex, aliases) => aliases.indexOf(alias) === aliasIndex)
+          .filter(
+            (alias, aliasIndex, aliases) =>
+              aliases.indexOf(alias) === aliasIndex
+          )
           .slice(0, 64)
       });
       characterFiles.push({
@@ -141,38 +142,22 @@ export function buildImportedCharacters(
         coreProfile: documents.add(
           longCharacterCoreProfileFileId(characterId),
           characterPath(characterId, "core-profile.md"),
-          clippedTextDocument(
-            character.core_profile,
-            warnings,
-            "人物核心档案"
-          )
+          clippedTextDocument(character.core_profile, warnings, "人物核心档案")
         ),
         relationships: documents.add(
           longCharacterRelationshipsFileId(characterId),
           characterPath(characterId, "relationships.md"),
-          clippedTextDocument(
-            character.relationships,
-            warnings,
-            "人物关系"
-          )
+          clippedTextDocument(character.relationships, warnings, "人物关系")
         ),
         currentState: documents.add(
           longCharacterCurrentStateFileId(characterId),
           characterPath(characterId, "current-state.md"),
-          clippedTextDocument(
-            character.current_state,
-            warnings,
-            "人物当前状态"
-          )
+          clippedTextDocument(character.current_state, warnings, "人物当前状态")
         ),
         history: documents.add(
           longCharacterHistoryFileId(characterId),
           characterPath(characterId, "history.md"),
-          clippedTextDocument(
-            character.history,
-            warnings,
-            "人物历史"
-          )
+          clippedTextDocument(character.history, warnings, "人物历史")
         )
       });
     });

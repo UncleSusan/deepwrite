@@ -48,12 +48,48 @@ function fixture(): CatalogSnapshot {
           other: []
         },
         documents: [
-          { id: "character_design", title: "人物设计", content: "人物", createdAt: NOW, updatedAt: NOW },
-          { id: "plot_design", title: "剧情设计", content: "剧情", createdAt: NOW, updatedAt: NOW },
-          { id: "intro_design", title: "导语设计", content: "导语", createdAt: NOW, updatedAt: NOW },
-          { id: "plot_refine", title: "剧情细化", content: "细化", createdAt: NOW, updatedAt: NOW },
-          { id: "outline", title: "大纲", content: "大纲", createdAt: NOW, updatedAt: NOW },
-          { id: "notes", title: "迁移备注", content: "备注", createdAt: NOW, updatedAt: NOW }
+          {
+            id: "character_design",
+            title: "人物设计",
+            content: "人物",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "plot_design",
+            title: "剧情设计",
+            content: "剧情",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "intro_design",
+            title: "导语设计",
+            content: "导语",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "plot_refine",
+            title: "剧情细化",
+            content: "细化",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "outline",
+            title: "大纲",
+            content: "大纲",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "notes",
+            title: "迁移备注",
+            content: "备注",
+            createdAt: NOW,
+            updatedAt: NOW
+          }
         ],
         draft: {
           id: "draft",
@@ -63,8 +99,20 @@ function fixture(): CatalogSnapshot {
               id: "intro",
               title: "导语",
               wordCountRequirement: "300 字",
-              body: { id: catalogDraftBodyDocumentId("intro"), title: "导语", content: "导语正文", createdAt: NOW, updatedAt: NOW },
-              characterState: { id: catalogDraftCharacterStateDocumentId("intro"), title: "导语 · 人物状态", content: "导语状态", createdAt: NOW, updatedAt: NOW },
+              body: {
+                id: catalogDraftBodyDocumentId("intro"),
+                title: "导语",
+                content: "导语正文",
+                createdAt: NOW,
+                updatedAt: NOW
+              },
+              characterState: {
+                id: catalogDraftCharacterStateDocumentId("intro"),
+                title: "导语 · 人物状态",
+                content: "导语状态",
+                createdAt: NOW,
+                updatedAt: NOW
+              },
               createdAt: NOW,
               updatedAt: NOW
             },
@@ -72,8 +120,20 @@ function fixture(): CatalogSnapshot {
               id: "section-1",
               title: "第一节",
               wordCountRequirement: "1000 字",
-              body: { id: catalogDraftBodyDocumentId("section-1"), title: "第一节", content: "正文", createdAt: NOW, updatedAt: NOW },
-              characterState: { id: catalogDraftCharacterStateDocumentId("section-1"), title: "第一节 · 人物状态", content: "人物状态", createdAt: NOW, updatedAt: NOW },
+              body: {
+                id: catalogDraftBodyDocumentId("section-1"),
+                title: "第一节",
+                content: "正文",
+                createdAt: NOW,
+                updatedAt: NOW
+              },
+              characterState: {
+                id: catalogDraftCharacterStateDocumentId("section-1"),
+                title: "第一节 · 人物状态",
+                content: "人物状态",
+                createdAt: NOW,
+                updatedAt: NOW
+              },
               createdAt: NOW,
               updatedAt: NOW
             }
@@ -95,8 +155,22 @@ function fixture(): CatalogSnapshot {
         subGenre: "家庭",
         overview: "剧情素材说明",
         entries: [
-          { id: "material-pacing", stageId: "pacing", title: "剧情节拍", body: "节拍正文", createdAt: NOW, updatedAt: NOW },
-          { id: "material-intro", stageId: "intro", title: "导语钩子", body: "钩子正文", createdAt: NOW, updatedAt: NOW }
+          {
+            id: "material-pacing",
+            stageId: "pacing",
+            title: "剧情节拍",
+            body: "节拍正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "material-intro",
+            stageId: "intro",
+            title: "导语钩子",
+            body: "钩子正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          }
         ],
         createdAt: NOW,
         updatedAt: NOW
@@ -110,8 +184,22 @@ function fixture(): CatalogSnapshot {
         subGenre: "重生",
         overview: "综合素材说明",
         entries: [
-          { id: "material-character", stageId: "character", title: "人物反差", body: "人物正文", createdAt: NOW, updatedAt: NOW },
-          { id: "material-draft", stageId: "draft_excerpt", title: "正文片段", body: "片段正文", createdAt: NOW, updatedAt: NOW }
+          {
+            id: "material-character",
+            stageId: "character",
+            title: "人物反差",
+            body: "人物正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "material-draft",
+            stageId: "draft_excerpt",
+            title: "正文片段",
+            body: "片段正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          }
         ],
         createdAt: NOW,
         updatedAt: NOW
@@ -139,8 +227,22 @@ function fixture(): CatalogSnapshot {
         overview: "技能说明",
         isBuiltin: false,
         entries: [
-          { id: "skill-character", stageId: "character_design", title: "人物方法", body: "人物技能正文", createdAt: NOW, updatedAt: NOW },
-          { id: "skill-draft", stageId: "draft", title: "正文方法", body: "正文技能正文", createdAt: NOW, updatedAt: NOW }
+          {
+            id: "skill-character",
+            stageId: "character_design",
+            title: "人物方法",
+            body: "人物技能正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          {
+            id: "skill-draft",
+            stageId: "draft",
+            title: "正文方法",
+            body: "正文技能正文",
+            createdAt: NOW,
+            updatedAt: NOW
+          }
         ],
         createdAt: NOW,
         updatedAt: NOW
@@ -246,8 +348,9 @@ describe("catalog workspace projection", () => {
         document.libraryId === "material-plot" &&
         document.catalogLibraryField === "overview"
     )!;
-    const overviewResourceId =
-      projection.index.resourceIdByDocumentId.get(materialOverview.id)!;
+    const overviewResourceId = projection.index.resourceIdByDocumentId.get(
+      materialOverview.id
+    )!;
 
     expect(bookDocument).toMatchObject({
       content: "",
@@ -271,7 +374,9 @@ describe("catalog workspace projection", () => {
     expect(resolvePreferredBookResourceId(projection, "book-short")).toBe(
       directory.id
     );
-    expect(resolvePreferredBookResourceId(projection, "missing-book")).toBeUndefined();
+    expect(
+      resolvePreferredBookResourceId(projection, "missing-book")
+    ).toBeUndefined();
   });
 
   it("resolves a draft child back to its book and sibling section resource", () => {
@@ -293,13 +398,15 @@ describe("catalog workspace projection", () => {
     )!;
     const secondChild = directoryNode.children![1]!;
 
-    expect(resolveBookWorkspaceId(projection, secondChild.id)).toBe("book-second");
+    expect(resolveBookWorkspaceId(projection, secondChild.id)).toBe(
+      "book-second"
+    );
     expect(resolvePreferredBookResourceId(projection, "book-second")).toBe(
       directory.id
     );
-    expect(
-      resolveDraftSectionResourceId(directoryNode, "section-1")
-    ).toBe(secondChild.id);
+    expect(resolveDraftSectionResourceId(directoryNode, "section-1")).toBe(
+      secondChild.id
+    );
   });
 
   it("builds reusable lookup indexes while projecting the catalog", () => {
@@ -354,14 +461,18 @@ describe("catalog workspace projection", () => {
     expect(
       findProjectedDraftDirectoryForWorkspace(projection, "missing-book")
     ).toBeUndefined();
-    expect(resolveBookWorkspaceId(projection, "missing-resource")).toBeUndefined();
+    expect(
+      resolveBookWorkspaceId(projection, "missing-resource")
+    ).toBeUndefined();
   });
 
   it("uses the projection index without rescanning projection arrays", () => {
     const projection = projectCatalogWorkspace(fixture());
     const directory = projection.draftDirectories[0]!;
-    const sectionNode = projection.resourceSections[0]!.nodes[0]!.children!
-      .find((node) => node.id === directory.id)!.children![0]!;
+    const sectionNode =
+      projection.resourceSections[0]!.nodes[0]!.children!.find(
+        (node) => node.id === directory.id
+      )!.children![0]!;
 
     projection.resourceSections = [];
     projection.workspaceDocuments = [];
@@ -400,11 +511,9 @@ describe("catalog workspace projection", () => {
     const source = fixture();
     const projection = projectCatalogWorkspace(source);
 
-    expect(projection.resourceSections.map((section) => section.label)).toEqual([
-      "创作空间",
-      "技能库",
-      "素材库"
-    ]);
+    expect(projection.resourceSections.map((section) => section.label)).toEqual(
+      ["创作空间", "技能库", "素材库"]
+    );
     const book = projection.resourceSections[0]?.nodes[0];
     expect(book).toMatchObject({
       id: "book-short",
@@ -414,7 +523,9 @@ describe("catalog workspace projection", () => {
       boundMaterialLibraryIds: ["material-mixed", "material-plot"],
       boundSkillLibraryIds: ["skill-general"]
     });
-    expect(book?.boundMaterialLibraryIdsByKind?.plot).toEqual(["material-plot"]);
+    expect(book?.boundMaterialLibraryIdsByKind?.plot).toEqual([
+      "material-plot"
+    ]);
     expect(book?.children?.map((node) => node.label)).toEqual([
       "人物",
       "剧情",
@@ -434,18 +545,25 @@ describe("catalog workspace projection", () => {
       (document) => document.workspaceId === "book-short"
     );
     expect(bookDocuments).toHaveLength(
-      source.books[0]!.documents.length + source.books[0]!.draft.sections.length * 2
+      source.books[0]!.documents.length +
+        source.books[0]!.draft.sections.length * 2
     );
-    const draftDocuments = bookDocuments.filter((document) => document.stageId === "draft");
+    const draftDocuments = bookDocuments.filter(
+      (document) => document.stageId === "draft"
+    );
     expect(draftDocuments).toHaveLength(4);
-    expect(draftDocuments.find((document) => document.draftFileKind === "body")).toMatchObject({
+    expect(
+      draftDocuments.find((document) => document.draftFileKind === "body")
+    ).toMatchObject({
       title: "导语",
       content: "导语正文",
       format: "正文",
       expertSectionId: "intro",
       catalogDocumentId: catalogDraftBodyDocumentId("intro")
     });
-    const draftNode = book?.children?.find((node) => node.stageCategoryId === "draft");
+    const draftNode = book?.children?.find(
+      (node) => node.stageCategoryId === "draft"
+    );
     expect(draftNode).toMatchObject({
       label: "正文",
       catalogNodeType: "category",
@@ -453,7 +571,10 @@ describe("catalog workspace projection", () => {
       shortAgentId: "expert_draft_coordinator"
     });
     expect(draftNode?.id).not.toBe(draftDocuments[0]?.id);
-    expect(draftNode?.children?.map((node) => node.label)).toEqual(["导语", "第一节"]);
+    expect(draftNode?.children?.map((node) => node.label)).toEqual([
+      "导语",
+      "第一节"
+    ]);
     expect(draftNode?.children?.[1]).toMatchObject({
       targetDocumentId: expect.any(String),
       characterStateDocumentId: expect.any(String),
@@ -463,11 +584,10 @@ describe("catalog workspace projection", () => {
     expect(draftNode?.children?.[1]?.targetDocumentId).not.toBe(
       draftNode?.children?.[1]?.characterStateDocumentId
     );
-    expect(bookDocuments.find((document) => document.catalogDocumentId === "notes")?.path).toEqual([
-      "迁移短篇",
-      "剧情",
-      "迁移备注"
-    ]);
+    expect(
+      bookDocuments.find((document) => document.catalogDocumentId === "notes")
+        ?.path
+    ).toEqual(["迁移短篇", "剧情", "迁移备注"]);
   });
 
   it("projects scripts with the shared plot structure and episode terminology", () => {
@@ -525,7 +645,9 @@ describe("catalog workspace projection", () => {
       "大纲",
       "迁移备注"
     ]);
-    expect(flattenNodes([book]).some((node) => node.label === "导语设计")).toBe(true);
+    expect(flattenNodes([book]).some((node) => node.label === "导语设计")).toBe(
+      true
+    );
     expect(draft.children).toMatchObject([
       {
         label: "第一集",
@@ -534,7 +656,9 @@ describe("catalog workspace projection", () => {
       }
     ]);
     const body = projection.workspaceDocuments.find(
-      (document) => document.expertSectionId === "episode-1" && document.draftFileKind === "body"
+      (document) =>
+        document.expertSectionId === "episode-1" &&
+        document.draftFileKind === "body"
     );
     expect(body).toMatchObject({
       workspaceType: "script",
@@ -571,7 +695,8 @@ describe("catalog workspace projection", () => {
     );
 
     const projection = projectCatalogWorkspace(source);
-    const characterNode = projection.resourceSections[0]?.nodes[0]?.children?.[0];
+    const characterNode =
+      projection.resourceSections[0]?.nodes[0]?.children?.[0];
     expect(characterNode).toMatchObject({
       label: "人物",
       selectableBranch: true,
@@ -637,13 +762,18 @@ describe("catalog workspace projection", () => {
 
     const projection = projectCatalogWorkspace(source);
     const book = projection.resourceSections[0]!.nodes[0]!;
-    const draftNode = book.children!.find((node) => node.stageCategoryId === "draft")!;
+    const draftNode = book.children!.find(
+      (node) => node.stageCategoryId === "draft"
+    )!;
     const draftDocuments = projection.workspaceDocuments.filter(
-      (document) => document.workspaceId === book.id && document.stageId === "draft"
+      (document) =>
+        document.workspaceId === book.id && document.stageId === "draft"
     );
 
     expect(draftDocuments).toHaveLength(4);
-    expect(draftDocuments.every((document) => document.content.length > 0)).toBe(true);
+    expect(
+      draftDocuments.every((document) => document.content.length > 0)
+    ).toBe(true);
     expect(draftNode.children?.map((node) => node.label)).toEqual([
       "雨夜来客",
       "失踪名单"
@@ -677,9 +807,12 @@ describe("catalog workspace projection", () => {
 
     const projection = projectCatalogWorkspace(source);
     const book = projection.resourceSections[0]!.nodes[0]!;
-    const draftNode = book.children!.find((node) => node.stageCategoryId === "draft")!;
+    const draftNode = book.children!.find(
+      (node) => node.stageCategoryId === "draft"
+    )!;
     const draftDocuments = projection.workspaceDocuments.filter(
-      (document) => document.workspaceId === book.id && document.stageId === "draft"
+      (document) =>
+        document.workspaceId === book.id && document.stageId === "draft"
     );
 
     expect(draftNode).toMatchObject({
@@ -708,7 +841,9 @@ describe("catalog workspace projection", () => {
     )!;
     const nodes = flattenNodes(materialSection.nodes);
 
-    expect(materialSection.nodes.map((node) => node.label)).toEqual(["追妻素材套装"]);
+    expect(materialSection.nodes.map((node) => node.label)).toEqual([
+      "追妻素材套装"
+    ]);
 
     const materialGroup = materialSection.nodes[0];
     expect(materialGroup).toMatchObject({
@@ -727,26 +862,51 @@ describe("catalog workspace projection", () => {
       "正文"
     ]);
 
-    const plotCategory = materialSection.nodes.find((node) => node.label === "剧情");
-    const otherCategory = materialSection.nodes.find((node) => node.label === "其他");
+    const plotCategory = materialSection.nodes.find(
+      (node) => node.label === "剧情"
+    );
+    const otherCategory = materialSection.nodes.find(
+      (node) => node.label === "其他"
+    );
     expect(plotCategory).toBeUndefined();
     expect(otherCategory).toBeUndefined();
     expect(nodes.filter((node) => node.id === "material-plot")).toHaveLength(1);
-    expect(nodes.filter((node) => node.id === "material-mixed")).toHaveLength(1);
+    expect(nodes.filter((node) => node.id === "material-mixed")).toHaveLength(
+      1
+    );
     expect(nodes.some((node) => node.label === "世情")).toBe(false);
     expect(nodes.some((node) => node.label === "家庭")).toBe(false);
     expect(nodes.some((node) => node.label === "综合素材库")).toBe(false);
-    expect(nodes.some((node) => node.catalogNodeType === "category" && node.stageCategoryId)).toBe(false);
-    expect(nodes.some((node) => node.label === "剧情节拍" && node.stageCategoryId === "pacing")).toBe(true);
-    expect(nodes.some((node) => node.label.includes("missing-material") && node.muted)).toBe(true);
+    expect(
+      nodes.some(
+        (node) => node.catalogNodeType === "category" && node.stageCategoryId
+      )
+    ).toBe(false);
+    expect(
+      nodes.some(
+        (node) => node.label === "剧情节拍" && node.stageCategoryId === "pacing"
+      )
+    ).toBe(true);
+    expect(
+      nodes.some(
+        (node) => node.label.includes("missing-material") && node.muted
+      )
+    ).toBe(true);
 
     const entryDocuments = projection.workspaceDocuments.filter(
       (document) => document.domain === "material" && document.catalogEntryId
     );
     expect(entryDocuments).toHaveLength(
-      source.materials.reduce((count, library) => count + library.entries.length, 0)
+      source.materials.reduce(
+        (count, library) => count + library.entries.length,
+        0
+      )
     );
-    expect(entryDocuments.find((document) => document.catalogEntryId === "material-pacing")).toMatchObject({
+    expect(
+      entryDocuments.find(
+        (document) => document.catalogEntryId === "material-pacing"
+      )
+    ).toMatchObject({
       libraryId: "material-plot",
       materialKind: "plot",
       stageCategoryId: "pacing",
@@ -755,14 +915,16 @@ describe("catalog workspace projection", () => {
       content: "节拍正文"
     });
     expect(
-      entryDocuments.find((document) => document.catalogEntryId === "material-pacing")?.path
+      entryDocuments.find(
+        (document) => document.catalogEntryId === "material-pacing"
+      )?.path
     ).toContain("家庭");
     const materialOverview = projection.workspaceDocuments.find(
-        (document) =>
-          document.domain === "material" &&
-          document.libraryId === "material-plot" &&
-          document.catalogLibraryField === "overview"
-      );
+      (document) =>
+        document.domain === "material" &&
+        document.libraryId === "material-plot" &&
+        document.catalogLibraryField === "overview"
+    );
     expect(materialOverview).toMatchObject({
       content: "剧情素材说明",
       catalogLibraryField: "overview"
@@ -773,7 +935,9 @@ describe("catalog workspace projection", () => {
   it("shows skill groups directly and moves their libraries out of kind categories", () => {
     const source = fixture();
     const projection = projectCatalogWorkspace(source);
-    const skillSection = projection.resourceSections.find((section) => section.id === "skill")!;
+    const skillSection = projection.resourceSections.find(
+      (section) => section.id === "skill"
+    )!;
     const nodes = flattenNodes(skillSection.nodes);
 
     expect(skillSection.nodes.map((node) => node.label)).toEqual([
@@ -781,25 +945,56 @@ describe("catalog workspace projection", () => {
       "剧情设计技能库"
     ]);
     expect(nodes.some((node) => node.label === "技能库分组")).toBe(false);
-    expect(nodes.some((node) => node.label === "短篇技能套装" && node.catalogNodeType === "group")).toBe(true);
-    expect(nodes.some((node) => node.label === "通用技能库" && node.skillKind === "general")).toBe(false);
-    expect(nodes.some((node) => node.label === "人物方法" && node.stageCategoryId === "character_design")).toBe(true);
-    expect(nodes.some((node) => node.label === "正文方法" && node.stageCategoryId === "draft")).toBe(true);
-    expect(nodes.some((node) => node.label.includes("missing-skill") && node.muted)).toBe(true);
+    expect(
+      nodes.some(
+        (node) =>
+          node.label === "短篇技能套装" && node.catalogNodeType === "group"
+      )
+    ).toBe(true);
+    expect(
+      nodes.some(
+        (node) => node.label === "通用技能库" && node.skillKind === "general"
+      )
+    ).toBe(false);
+    expect(
+      nodes.some(
+        (node) =>
+          node.label === "人物方法" &&
+          node.stageCategoryId === "character_design"
+      )
+    ).toBe(true);
+    expect(
+      nodes.some(
+        (node) => node.label === "正文方法" && node.stageCategoryId === "draft"
+      )
+    ).toBe(true);
+    expect(
+      nodes.some((node) => node.label.includes("missing-skill") && node.muted)
+    ).toBe(true);
 
     const skillGroup = nodes.find(
-      (node) => node.label === "短篇技能套装" && node.catalogNodeType === "group"
+      (node) =>
+        node.label === "短篇技能套装" && node.catalogNodeType === "group"
     );
     expect(skillGroup?.badge).toBeUndefined();
     expect(skillGroup?.children?.map((node) => node.label)).toEqual([
       "通用短篇技能",
       "已丢失的技能库（missing-skill）"
     ]);
-    expect(skillGroup?.children?.map((node) => node.categoryTag)).toEqual(["通用", "文风"]);
+    expect(skillGroup?.children?.map((node) => node.categoryTag)).toEqual([
+      "通用",
+      "文风"
+    ]);
 
-    const generalKind = skillSection.nodes.find((node) => node.skillKind === "general");
-    const plotKind = skillSection.nodes.find((node) => node.skillKind === "plot");
-    const generalLibrary = skillGroup?.children?.find((node) => node.id === "skill-general");
+    const generalKind = skillSection.nodes.find(
+      (node) => node.skillKind === "general"
+    );
+    const plotKind = skillSection.nodes.find(
+      (node) => node.skillKind === "plot"
+    );
+    const generalLibrary = skillGroup?.children?.find(
+      (node) => node.id === "skill-general"
+    );
     expect(generalKind).toBeUndefined();
     expect(plotKind?.children?.map((node) => node.id)).toEqual(["skill-plot"]);
     expect(nodes.filter((node) => node.id === "skill-general")).toHaveLength(1);
@@ -810,13 +1005,20 @@ describe("catalog workspace projection", () => {
       "人物方法",
       "正文方法"
     ]);
-    expect(generalLibrary?.children?.some((node) => node.catalogNodeType === "category")).toBe(false);
+    expect(
+      generalLibrary?.children?.some(
+        (node) => node.catalogNodeType === "category"
+      )
+    ).toBe(false);
 
     const skillDocuments = projection.workspaceDocuments.filter(
       (document) => document.domain === "skill" && document.catalogEntryId
     );
     expect(skillDocuments).toHaveLength(
-      source.skills.reduce((count, library) => count + library.entries.length, 0)
+      source.skills.reduce(
+        (count, library) => count + library.entries.length,
+        0
+      )
     );
     expect(skillDocuments[0]).toMatchObject({
       libraryId: "skill-general",
@@ -825,11 +1027,11 @@ describe("catalog workspace projection", () => {
       content: "人物技能正文"
     });
     const skillOverview = projection.workspaceDocuments.find(
-        (document) =>
-          document.domain === "skill" &&
-          document.libraryId === "skill-general" &&
-          document.catalogLibraryField === "overview"
-      );
+      (document) =>
+        document.domain === "skill" &&
+        document.libraryId === "skill-general" &&
+        document.catalogLibraryField === "overview"
+    );
     expect(skillOverview).toMatchObject({
       content: "技能说明",
       catalogLibraryField: "overview"

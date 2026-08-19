@@ -5,12 +5,7 @@ import settingsPageSource from "./SettingsPage.vue?raw";
 
 describe("long agent settings UI", () => {
   it("exposes all four long-form roles in the creation settings page", () => {
-    for (const id of [
-      "setting",
-      "plot_design",
-      "draft",
-      "continuity_ledger"
-    ]) {
+    for (const id of ["setting", "plot_design", "draft", "continuity_ledger"]) {
       expect(longPanelSource).toContain(`id: "${id}"`);
     }
     expect(longPanelSource).not.toContain("expert_section_writer");
@@ -18,9 +13,7 @@ describe("long agent settings UI", () => {
     expect(workspacePanelSource).toContain(
       "@click=\"activeWorkspaceType = 'long'\""
     );
-    expect(workspacePanelSource).not.toContain(
-      "长篇 <small>尚未接入</small>"
-    );
+    expect(workspacePanelSource).not.toContain("长篇 <small>尚未接入</small>");
     expect(settingsPageSource).toContain(
       "@save-long=\"emit('saveLongAgents', $event)\""
     );
@@ -34,7 +27,7 @@ describe("long agent settings UI", () => {
     expect(longPanelSource).toContain("欢迎快捷按钮");
     expect(longPanelSource).toContain("素材库");
     expect(longPanelSource).toContain("技能库");
-    expect(longPanelSource).not.toContain("v-model=\"activeAgent.writeAccess");
+    expect(longPanelSource).not.toContain('v-model="activeAgent.writeAccess');
     expect(longPanelSource).not.toContain("patchWriteAccess");
   });
 
@@ -68,7 +61,9 @@ describe("long agent settings UI", () => {
     expect(workspacePanelSource).toContain("longLoading: boolean");
     expect(workspacePanelSource).toContain("longSaving: boolean");
     expect(workspacePanelSource).toContain("longErrorMessage: string | null");
-    expect(workspacePanelSource).toContain('import { uiMessage } from "../ui-feedback"');
+    expect(workspacePanelSource).toContain(
+      'import { uiMessage } from "../ui-feedback"'
+    );
     expect(workspacePanelSource).not.toContain("toast-stack");
     expect(workspacePanelSource).not.toContain("settings-toast");
     expect(workspacePanelSource).not.toContain("statusMessage");

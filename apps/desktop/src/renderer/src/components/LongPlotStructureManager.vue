@@ -23,11 +23,7 @@ import PopupSelect, {
 } from "./PopupSelect.vue";
 
 type PlotSection =
-  | "event"
-  | "connection"
-  | "placement"
-  | "foreshadowing"
-  | "foreshadowingBeat";
+  "event" | "connection" | "placement" | "foreshadowing" | "foreshadowingBeat";
 
 interface PlotRow {
   id: string;
@@ -240,8 +236,7 @@ const chapterById = computed(
     )
 );
 const arcById = computed(
-  () =>
-    new Map(props.snapshot.plot.arcs.map((arc) => [arc.id, arc] as const))
+  () => new Map(props.snapshot.plot.arcs.map((arc) => [arc.id, arc] as const))
 );
 const characterById = computed(
   () =>
@@ -295,9 +290,7 @@ const placementOptions = computed<PopupSelectOption[]>(() =>
     )
     .map((placement) => ({
       value: placement.id,
-      label: `${chapterTitle(placement.chapterCardId)} · ${eventTitle(
-        placement.eventId
-      )}`
+      label: `${chapterTitle(placement.chapterCardId)} · ${eventTitle(placement.eventId)}`
     }))
 );
 const optionalPlacementOptions = computed<PopupSelectOption[]>(() => [
@@ -335,11 +328,7 @@ const rows = computed<PlotRow[]>(() => {
               arcById.value,
               (value) => value.title
             )}`,
-            `人物：${names(
-              event.characterIds,
-              characterById.value,
-              (value) => value.name
-            )}`,
+            `人物：${names(event.characterIds, characterById.value, (value) => value.name)}`,
             `摘要：${event.summary || "未填写"}`
           ]
         }));
@@ -380,9 +369,7 @@ const rows = computed<PlotRow[]>(() => {
               `呈现：${narrativeModeLabels[placement.mode]} · ${
                 disclosureLabels[placement.disclosure]
               }`,
-              `状态：${placement.status} · 提交：${
-                placement.commitId ?? "未提交"
-              }`,
+              `状态：${placement.status} · 提交：${placement.commitId ?? "未提交"}`,
               `写作提示：${placement.writingPrompt || "未填写"}`
             ]
           };
@@ -397,9 +384,7 @@ const rows = computed<PlotRow[]>(() => {
           deleteLocked: false,
           details: [
             `状态：${foreshadowingStatusLabels[thread.status]} · 真相事件：${
-              thread.truthEventId
-                ? eventTitle(thread.truthEventId)
-                : "暂未关联"
+              thread.truthEventId ? eventTitle(thread.truthEventId) : "暂未关联"
             }`,
             `核心问题：${thread.coreQuestion || "未填写"}`,
             `预期读者效果：${thread.expectedReaderEffect || "未填写"}`,
@@ -414,20 +399,14 @@ const rows = computed<PlotRow[]>(() => {
           .map((beat) => {
             return {
               id: beat.id,
-              title: `${thread.title} · ${beat.order}. ${
-                beatTypeLabels[beat.type]
-              }`,
+              title: `${thread.title} · ${beat.order}. ${beatTypeLabels[beat.type]}`,
               scopeId: thread.id,
               editLocked: false,
               deleteLocked: false,
               reorderLocked: false,
               details: [
-                `事件：${
-                  beat.eventId ? eventTitle(beat.eventId) : "未关联"
-                } · 落点：${
-                  beat.placementId
-                    ? placementTitle(beat.placementId)
-                    : "未关联"
+                `事件：${beat.eventId ? eventTitle(beat.eventId) : "未关联"} · 落点：${
+                  beat.placementId ? placementTitle(beat.placementId) : "未关联"
                 }`,
                 `章卡：${
                   beat.chapterCardId
@@ -440,21 +419,17 @@ const rows = computed<PlotRow[]>(() => {
             };
           })
       );
+    default:
+      return [];
   }
 });
 
-const selectedSectionLabel = computed(
-  () => sectionLabels[activeSection.value]
-);
+const selectedSectionLabel = computed(() => sectionLabels[activeSection.value]);
 const formTitle = computed(
   () =>
-    `${formMode.value === "create" ? "新建" : "编辑"}${
-      selectedSectionLabel.value
-    }`
+    `${formMode.value === "create" ? "新建" : "编辑"}${selectedSectionLabel.value}`
 );
-const supportsReorder = computed(
-  () => activeSection.value !== "connection"
-);
+const supportsReorder = computed(() => activeSection.value !== "connection");
 const supportsCascade = computed(
   () =>
     activeSection.value === "event" ||
@@ -487,9 +462,7 @@ function chapterTitle(id: string): string {
 function placementTitle(id: string): string {
   const placement = placementById.value.get(id);
   return placement
-    ? `${chapterTitle(placement.chapterCardId)} / ${eventTitle(
-        placement.eventId
-      )}`
+    ? `${chapterTitle(placement.chapterCardId)} / ${eventTitle(placement.eventId)}`
     : `缺失落点（${id}）`;
 }
 
@@ -510,10 +483,7 @@ function firstString(options: readonly PopupSelectOption[]): string {
 }
 
 function openCreate(): void {
-  if (
-    activeSection.value === "connection" &&
-    eventOptions.value.length < 2
-  ) {
+  if (activeSection.value === "connection" && eventOptions.value.length < 2) {
     uiMessage.warning("事件连接至少需要两个故事事件。");
     return;
   }
@@ -686,9 +656,7 @@ function emitMutation(
     return true;
   } catch (error) {
     uiMessage.warning(
-      error instanceof Error
-        ? error.message
-        : "无法生成长篇剧情结构变更。"
+      error instanceof Error ? error.message : "无法生成长篇剧情结构变更。"
     );
     return false;
   }
@@ -908,15 +876,9 @@ function confirmDelete(): void {
       case "connection":
         return builder.deleteEventConnection(target.id);
       case "placement":
-        return builder.deleteNarrativePlacement(
-          target.id,
-          cascadeDelete.value
-        );
+        return builder.deleteNarrativePlacement(target.id, cascadeDelete.value);
       case "foreshadowing":
-        return builder.deleteForeshadowing(
-          target.id,
-          cascadeDelete.value
-        );
+        return builder.deleteForeshadowing(target.id, cascadeDelete.value);
       case "foreshadowingBeat":
         return builder.deleteForeshadowingBeat(target.id);
     }
@@ -993,7 +955,11 @@ function setBeatPlacement(value: PopupSelectValue) {
         <span>迁移数据会完整列出；手工修改会直接保存到本机。</span>
       </div>
       <div class="toolbar-actions">
-        <div class="plot-section-tabs" role="tablist" aria-label="剧情叙事结构类型">
+        <div
+          class="plot-section-tabs"
+          role="tablist"
+          aria-label="剧情叙事结构类型"
+        >
           <button
             v-for="section in sectionOptions"
             :id="`long-plot-section-${section.value}`"
@@ -1029,7 +995,9 @@ function setBeatPlacement(value: PopupSelectValue) {
           <span v-for="detail in row.details" :key="detail">{{ detail }}</span>
           <code>{{ row.id }}</code>
           <small v-if="row.editLocked">连续性事实已锁定编辑</small>
-          <small v-else-if="row.deleteLocked">已被连续性事实引用，禁止删除</small>
+          <small v-else-if="row.deleteLocked"
+            >已被连续性事实引用，禁止删除</small
+          >
         </div>
         <div class="row-actions">
           <button
@@ -1110,7 +1078,11 @@ function setBeatPlacement(value: PopupSelectValue) {
                 </label>
                 <label class="form-field">
                   <span>事件摘要</span>
-                  <textarea v-model="draft.summary" rows="4" maxlength="200000" />
+                  <textarea
+                    v-model="draft.summary"
+                    rows="4"
+                    maxlength="200000"
+                  />
                 </label>
                 <div class="field-grid">
                   <label class="form-field">
@@ -1143,11 +1115,7 @@ function setBeatPlacement(value: PopupSelectValue) {
                 <fieldset class="check-picker">
                   <legend>关联剧情弧</legend>
                   <p v-if="snapshot.plot.arcs.length === 0">暂无剧情弧。</p>
-                  <label
-                    v-for="arc in snapshot.plot.arcs"
-                    v-else
-                    :key="arc.id"
-                  >
+                  <label v-for="arc in snapshot.plot.arcs" v-else :key="arc.id">
                     <input
                       type="checkbox"
                       :checked="draft.arcIds.includes(arc.id)"
@@ -1185,7 +1153,10 @@ function setBeatPlacement(value: PopupSelectValue) {
                     accessible-label="选择连接起点事件"
                     :menu-z-index="2300"
                     @update:model-value="
-                      setString($event, (value) => (draft.sourceEventId = value))
+                      setString(
+                        $event,
+                        (value) => (draft.sourceEventId = value)
+                      )
                     "
                   />
                 </label>
@@ -1197,7 +1168,10 @@ function setBeatPlacement(value: PopupSelectValue) {
                     accessible-label="选择连接终点事件"
                     :menu-z-index="2300"
                     @update:model-value="
-                      setString($event, (value) => (draft.targetEventId = value))
+                      setString(
+                        $event,
+                        (value) => (draft.targetEventId = value)
+                      )
                     "
                   />
                 </label>
@@ -1238,7 +1212,10 @@ function setBeatPlacement(value: PopupSelectValue) {
                     accessible-label="选择落点章卡"
                     :menu-z-index="2300"
                     @update:model-value="
-                      setString($event, (value) => (draft.chapterCardId = value))
+                      setString(
+                        $event,
+                        (value) => (draft.chapterCardId = value)
+                      )
                     "
                   />
                 </label>
@@ -1378,7 +1355,10 @@ function setBeatPlacement(value: PopupSelectValue) {
                     accessible-label="选择节拍章卡"
                     :menu-z-index="2300"
                     @update:model-value="
-                      setString($event, (value) => (draft.chapterCardId = value))
+                      setString(
+                        $event,
+                        (value) => (draft.chapterCardId = value)
+                      )
                     "
                   />
                 </label>
@@ -1474,9 +1454,7 @@ function setBeatPlacement(value: PopupSelectValue) {
               @click="confirmDelete"
             >
               {{
-                pendingMutation?.surface === "delete"
-                  ? "删除中…"
-                  : "确认删除"
+                pendingMutation?.surface === "delete" ? "删除中…" : "确认删除"
               }}
             </button>
           </footer>
@@ -1627,7 +1605,11 @@ button:disabled {
 .row-copy code,
 .check-picker code {
   color: var(--text-tertiary);
-  font: 0.72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    0.72rem/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 
 .delete-button {

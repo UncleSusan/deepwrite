@@ -1,10 +1,8 @@
 import {
-  nextTick
-} from "vue";
-import {
   LongWorkspaceOperationBatchSchema,
   type LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
+import { nextTick } from "vue";
 import type { AgentEditProposal } from "../../types/conversation";
 import {
   replaceLongBookSummary,
@@ -25,7 +23,6 @@ import type {
 
 export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
   const {
-    api,
     uiMessage,
     acceptingAgentEditWorkspaceIds,
     rememberWorkspaceMutationEvent,
@@ -39,12 +36,14 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
 
   const queueAgentEdit: ProposalLaneContext["queueAgentEdit"] = (...args) =>
     ctx.queueAgentEdit(...args);
-  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (...args) =>
-    ctx.removeQueuedAgentEdit(...args);
-  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (...args) =>
-    ctx.latestProposalForLane(...args);
-  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] = (...args) =>
-    ctx.blockedAgentEditLaneMessage(...args);
+  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (
+    ...args
+  ) => ctx.removeQueuedAgentEdit(...args);
+  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (
+    ...args
+  ) => ctx.latestProposalForLane(...args);
+  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] =
+    (...args) => ctx.blockedAgentEditLaneMessage(...args);
 
   function longWorldbuildingBatchForFile(
     event: LongWorldbuildingFileMutationEvent
@@ -60,8 +59,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
         operation.item.file.id === file.fileId
     );
     const documentWrites = event.payload.batch.documentWrites.filter(
-      (write) =>
-        file.operation !== "create" && write.fileId === file.fileId
+      (write) => file.operation !== "create" && write.fileId === file.fileId
     );
     if (
       (file.operation === "create" &&
@@ -104,9 +102,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
       ) ?? "request-approval";
     const workspaceId = `long:${event.payload.bookId}`;
     const laneDocumentId =
-      file.operation === "create"
-        ? `create:${file.fileId}`
-        : file.fileId;
+      file.operation === "create" ? `create:${file.fileId}` : file.fileId;
     const laneId = agentEditProposalId(
       event.payload.runId,
       workspaceId,
@@ -128,12 +124,8 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
       );
       return;
     }
-    if (
-      existing &&
-      file.beforeRevision !== existing.proposedRevision
-    ) {
-      const message =
-        "世界观文件的待审批版本链已经变化，本次变更未进入审批。";
+    if (existing && file.beforeRevision !== existing.proposedRevision) {
+      const message = "世界观文件的待审批版本链已经变化，本次变更未进入审批。";
       sourceConversation.markToolConflict(
         event.payload.runId,
         event.payload.toolCallId,
@@ -149,27 +141,20 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
             .listEditProposals(event.payload.runId)
             .find(
               (proposal) =>
-                proposal.longWorldbuildingTarget?.file.fileId ===
-                  file.fileId &&
-                proposal.longWorldbuildingTarget.file.operation ===
-                  "create" &&
+                proposal.longWorldbuildingTarget?.file.fileId === file.fileId &&
+                proposal.longWorldbuildingTarget.file.operation === "create" &&
                 proposal.longWorldbuildingTarget.file.nextRevision ===
                   file.beforeRevision &&
                 proposal.status !== "rejected" &&
                 proposal.status !== "conflict"
             );
-    const generation = existing
-      ? (existing.generation ?? 1) + 1
-      : 1;
+    const generation = existing ? (existing.generation ?? 1) + 1 : 1;
     const proposalId = agentEditProposalGenerationId(laneId, generation);
-    const predecessorProposalId =
-      existing?.id ?? creationPredecessor?.id;
-    const beforeRevision =
-      file.beforeRevision ?? `long-missing:${file.fileId}`;
+    const predecessorProposalId = existing?.id ?? creationPredecessor?.id;
+    const beforeRevision = file.beforeRevision ?? `long-missing:${file.fileId}`;
     const diff = buildAgentTextDiff(file.beforeText, file.afterText);
     const noChanges =
-      file.operation !== "create" &&
-      file.beforeText === file.afterText;
+      file.operation !== "create" && file.beforeText === file.afterText;
     const proposal: AgentEditProposal = {
       id: proposalId,
       laneId,
@@ -192,9 +177,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
       deletions: diff.deletions,
       hunks: diff.hunks,
       ...(diff.truncated ? { truncated: true } : {}),
-      ...(noChanges
-        ? { statusMessage: "文本没有实际变化，无需保存。" }
-        : {}),
+      ...(noChanges ? { statusMessage: "文本没有实际变化，无需保存。" } : {}),
       createdAt: event.timestamp,
       updatedAt: event.timestamp,
       longWorldbuildingTarget: {
@@ -230,11 +213,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
       ) {
         continue;
       }
-      removeQueuedAgentEdit(
-        conversation,
-        candidate.runId,
-        candidate.id
-      );
+      removeQueuedAgentEdit(conversation, candidate.runId, candidate.id);
       conversation.updateEditProposal(candidate.runId, candidate.id, {
         status: "conflict",
         proposedText: undefined,
@@ -289,9 +268,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
       if (activeLongBookId.value === target.bookId) {
         await nextTick();
         if (!(await saveActiveLongEditorChanges())) {
-          throw new Error(
-            "当前长篇编辑内容尚未保存，未覆盖世界观文件。"
-          );
+          throw new Error("当前长篇编辑内容尚未保存，未覆盖世界观文件。");
         }
       }
       const latest = await api.getWorkspaceIndex({
@@ -305,16 +282,14 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
         conversation.updateEditProposal(request.runId, request.proposalId, {
           status: "accepted",
           proposedText: undefined,
-          statusMessage:
-            "该世界观文件变更已经存在于本地 Markdown 中。"
+          statusMessage: "该世界观文件变更已经存在于本地 Markdown 中。"
         });
         await refreshLongWritingSaveBarrier(target.bookId);
         return;
       }
       if (target.file.operation === "create") {
         if (currentFile) {
-          const message =
-            "世界观目录已存在同一文件，未重复创建。";
+          const message = "世界观目录已存在同一文件，未重复创建。";
           conversation.updateEditProposal(request.runId, request.proposalId, {
             status: "conflict",
             statusMessage: message
@@ -326,8 +301,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
         !currentFile ||
         currentFile.revision !== target.file.beforeRevision
       ) {
-        const message =
-          "世界观文件已在审阅期间发生变化，未覆盖最新内容。";
+        const message = "世界观文件已在审阅期间发生变化，未覆盖最新内容。";
         conversation.updateEditProposal(request.runId, request.proposalId, {
           status: "conflict",
           statusMessage: message
@@ -349,13 +323,10 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
             ({ id }) => id === operation.categoryId
           );
           if (!category || category.format !== "list") {
-            throw new Error(
-              "世界观文件的目标分类已不存在或不再是列表型。"
-            );
+            throw new Error("世界观文件的目标分类已不存在或不再是列表型。");
           }
           const nextOrder =
-            (nextOrderByCategory.get(category.id) ??
-              category.items.length) + 1;
+            (nextOrderByCategory.get(category.id) ?? category.items.length) + 1;
           nextOrderByCategory.set(category.id, nextOrder);
           return {
             ...operation,
@@ -374,9 +345,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
         preview.bookId !== target.bookId ||
         preview.projectRevision !== latest.projectRevision
       ) {
-        throw new Error(
-          "长篇项目已在审批期间更新，请基于最新世界观重新生成。"
-        );
+        throw new Error("长篇项目已在审批期间更新，请基于最新世界观重新生成。");
       }
       const result = await api.applyOperations({
         bookId: target.bookId,
@@ -387,10 +356,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
-      longBooks.value = replaceLongBookSummary(
-        longBooks.value,
-        result.summary
-      );
+      longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
       const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",

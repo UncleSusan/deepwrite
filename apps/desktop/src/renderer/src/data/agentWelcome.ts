@@ -23,7 +23,11 @@ export interface AgentWelcomeContent {
 export const DEFAULT_AGENT_WELCOME: AgentWelcomeContent = {
   title: "从一个创作目标开始",
   description: "告诉我你想完成的创作任务，我会结合当前文稿与你一起推进。",
-  questions: ["帮我梳理当前创作目标", "检查当前文稿的问题", "告诉我下一步可以做什么"]
+  questions: [
+    "帮我梳理当前创作目标",
+    "检查当前文稿的问题",
+    "告诉我下一步可以做什么"
+  ]
 };
 
 export const SHORT_AGENT_WELCOME_CONTENT = {
@@ -50,17 +54,20 @@ export const SHORT_AGENT_WELCOME_CONTENT = {
 export const SCRIPT_AGENT_WELCOME_CONTENT = {
   character_design: {
     title: "从一组剧本人物开始",
-    description: "我是剧本人物智能体，用于创建和完善适合镜头、行动与对白呈现的人物设计。",
+    description:
+      "我是剧本人物智能体，用于创建和完善适合镜头、行动与对白呈现的人物设计。",
     questions: DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.character_design
   },
   plot_design: {
     title: "从一条剧本主线开始",
-    description: "我是剧本剧情智能体，用于设计可拆场、可拍摄且因果连贯的剧情结构。",
+    description:
+      "我是剧本剧情智能体，用于设计可拆场、可拍摄且因果连贯的剧情结构。",
     questions: DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.plot_design
   },
   expert_draft_coordinator: {
     title: "从一部完整剧本开始",
-    description: "我是剧本正文专家，统一负责剧集结构、全剧创作、当前剧集写作和跨集修订。",
+    description:
+      "我是剧本正文专家，统一负责剧集结构、全剧创作、当前剧集写作和跨集修订。",
     questions: DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
   }
 } as const satisfies Record<ScriptWorkspaceAgentId, AgentWelcomeContent>;
@@ -102,13 +109,13 @@ export function resolveAgentWelcome(
   workspaceType: "short" | "script" | "long" = "short"
 ): AgentWelcomeContent {
   if (agentId && workspaceType === "script") {
-    const base = SCRIPT_AGENT_WELCOME_CONTENT[agentId as ScriptWorkspaceAgentId];
+    const base =
+      SCRIPT_AGENT_WELCOME_CONTENT[agentId as ScriptWorkspaceAgentId];
     if (base) return withWelcomeShortcuts(base, welcomeShortcuts);
   }
   if (
     agentId &&
-    (workspaceType === "long" ||
-      !(agentId in SHORT_AGENT_WELCOME_CONTENT))
+    (workspaceType === "long" || !(agentId in SHORT_AGENT_WELCOME_CONTENT))
   ) {
     const base = LONG_AGENT_WELCOME_CONTENT[agentId as LongAgentId];
     if (base) {
@@ -138,7 +145,9 @@ export function resolveAgentWelcome(
     if (
       welcomeShortcuts &&
       welcomeShortcuts.length === 3 &&
-      welcomeShortcuts.every((value) => typeof value === "string" && value.trim().length > 0)
+      welcomeShortcuts.every(
+        (value) => typeof value === "string" && value.trim().length > 0
+      )
     ) {
       return {
         ...base,

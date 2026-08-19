@@ -1,6 +1,9 @@
 import type { LongWorkspaceOperationBatch } from "@deepwrite/contracts";
 import { nextTick } from "vue";
-import { createLongCharacterGroupSelection, createLongChapterSelection } from "../../types/longWorkspace";
+import {
+  createLongCharacterGroupSelection,
+  createLongChapterSelection
+} from "../../types/longWorkspace";
 import type { ResourceTreeNode } from "../../types/workspace";
 import { longNavigationNodeId } from "../../utils/longWorkspaceResourceTree";
 import type { LongStructureLease } from "./lease";
@@ -15,27 +18,40 @@ export function createLongStructureCreate(
   loadLongStructureMutationModule: () => Promise<MutationModule>
 ) {
   const {
-    uiMessage, resources, session, state, isDisposed,
-    captureLongStructureMutationTarget, mutationIsCurrent,
-    assertCurrentLongStructureMutationTarget, withMutation, runTracked,
-    beginDialogRequest, dialogRequestIsCurrent
+    uiMessage,
+    resources,
+    session,
+    state,
+    isDisposed,
+    captureLongStructureMutationTarget,
+    mutationIsCurrent,
+    assertCurrentLongStructureMutationTarget,
+    withMutation,
+    runTracked,
+    beginDialogRequest,
+    dialogRequestIsCurrent
   } = host;
   const { executeLongStructureMutation } = sync;
   const {
-    activeBookId: activeLongBookId, activeBookSummary: activeLongBookSummary,
-    workspaceIndex: activeLongWorkspaceIndex, selection: activeLongSelection,
+    activeBookId: activeLongBookId,
+    activeBookSummary: activeLongBookSummary,
+    workspaceIndex: activeLongWorkspaceIndex,
+    selection: activeLongSelection,
     characterCreateTarget: longCharacterCreate,
     worldbuildingItemCreateTarget: longWorldbuildingItemCreate,
     plotPointCreateTarget: longPlotPointCreate,
     chapterCardCreateTarget: longChapterCardCreate,
-    volumeCreateTarget: longVolumeCreate, selectedResourceId
+    volumeCreateTarget: longVolumeCreate,
+    selectedResourceId
   } = state;
   const {
     blockWritingPlan: blockActiveLongWritingPlan,
     saveActiveEditorChanges: saveActiveLongEditorChanges,
     saveActiveEditorBeforeLeaving: saveActiveLongEditorBeforeLeaving,
-    openBook: openLongBook, selectWorkspaceFile: selectLongWorkspaceFile,
-    selectChapterCardTab: selectLongChapterCardTab, editor: longWorkspaceEditor
+    openBook: openLongBook,
+    selectWorkspaceFile: selectLongWorkspaceFile,
+    selectChapterCardTab: selectLongChapterCardTab,
+    editor: longWorkspaceEditor
   } = session;
   const resourceNode = resources.node;
   const selectResource = resources.select;
@@ -44,7 +60,10 @@ export function createLongStructureCreate(
   async function buildMutationBatch(
     lease: LongStructureMutationLease,
     failMessage: string,
-    build: (createLongStructureMutationBuilder: BuilderFactory, index: typeof lease.target.index) => LongWorkspaceOperationBatch
+    build: (
+      createLongStructureMutationBuilder: BuilderFactory,
+      index: typeof lease.target.index
+    ) => LongWorkspaceOperationBatch
   ): Promise<LongWorkspaceOperationBatch | null> {
     try {
       const { createLongStructureMutationBuilder } =
@@ -133,7 +152,9 @@ export function createLongStructureCreate(
   }): Promise<void> {
     const requestId = beginDialogRequest();
     if (requestId === null) return;
-    await runTracked(() => openLongChapterCardCreateInternal(requestId, target));
+    await runTracked(() =>
+      openLongChapterCardCreateInternal(requestId, target)
+    );
   }
 
   async function requestCreateLongDraftSection(
@@ -330,12 +351,18 @@ export function createLongStructureCreate(
       (message) => uiMessage.info(message),
       async (lease) => {
         const index = lease.target.index;
-        const batch = await buildMutationBatch(lease, "无法创建分卷。", (createLongStructureMutationBuilder, index) => {
-          if (longVolumeCreate.value !== target) {
-            throw new Error("新建分卷目标已切换，本次操作已取消。");
+        const batch = await buildMutationBatch(
+          lease,
+          "无法创建分卷。",
+          (createLongStructureMutationBuilder, index) => {
+            if (longVolumeCreate.value !== target) {
+              throw new Error("新建分卷目标已切换，本次操作已取消。");
+            }
+            return createLongStructureMutationBuilder(index).createVolume(
+              input
+            );
           }
-          return createLongStructureMutationBuilder(index).createVolume(input);
-        });
+        );
         if (!batch) return;
         const created = batch.operations.find(
           (operation) => operation.type === "volume.create"
@@ -345,7 +372,13 @@ export function createLongStructureCreate(
           return;
         }
         const apply = trackApply();
-        await executeLongStructureMutation(lease, batch, apply.completion, {}, index);
+        await executeLongStructureMutation(
+          lease,
+          batch,
+          apply.completion,
+          {},
+          index
+        );
         if (!apply.didApply() || isDisposed()) return;
         if (longVolumeCreate.value === target) longVolumeCreate.value = null;
         if (!apply.didSucceed() || !mutationIsCurrent(lease)) return;
@@ -380,15 +413,18 @@ export function createLongStructureCreate(
       (message) => uiMessage.info(message),
       async (lease) => {
         const index = lease.target.index;
-        const batch = await buildMutationBatch(lease, "无法创建世界观条目。", (createLongStructureMutationBuilder, index) => {
-          if (longWorldbuildingItemCreate.value !== target) {
-            throw new Error("新建世界观条目目标已切换，本次操作已取消。");
+        const batch = await buildMutationBatch(
+          lease,
+          "无法创建世界观条目。",
+          (createLongStructureMutationBuilder, index) => {
+            if (longWorldbuildingItemCreate.value !== target) {
+              throw new Error("新建世界观条目目标已切换，本次操作已取消。");
+            }
+            return createLongStructureMutationBuilder(
+              index
+            ).createWorldbuildingItem(target.categoryId, input.title);
           }
-          return createLongStructureMutationBuilder(index).createWorldbuildingItem(
-            target.categoryId,
-            input.title
-          );
-        });
+        );
         if (!batch) return;
         const created = batch.operations.find(
           (operation) => operation.type === "worldbuildingItem.create"
@@ -402,7 +438,10 @@ export function createLongStructureCreate(
           lease,
           batch,
           apply.completion,
-          { saveEditor: false, successMessage: `已创建世界观条目“${input.title}”` },
+          {
+            saveEditor: false,
+            successMessage: `已创建世界观条目“${input.title}”`
+          },
           index
         );
         if (apply.didApply() && longWorldbuildingItemCreate.value === target) {
@@ -434,17 +473,21 @@ export function createLongStructureCreate(
       (message) => uiMessage.info(message),
       async (lease) => {
         const index = lease.target.index;
-        const batch = await buildMutationBatch(lease, "无法创建剧情点。", (createLongStructureMutationBuilder, index) => {
-          if (longPlotPointCreate.value !== target) {
-            throw new Error("新建剧情点目标已切换，本次操作已取消。");
+        const batch = await buildMutationBatch(
+          lease,
+          "无法创建剧情点。",
+          (createLongStructureMutationBuilder, index) => {
+            if (longPlotPointCreate.value !== target) {
+              throw new Error("新建剧情点目标已切换，本次操作已取消。");
+            }
+            return createLongStructureMutationBuilder(index).createArc({
+              volumeId: target.volumeId,
+              title: input.title,
+              summary: input.summary,
+              outline: ""
+            });
           }
-          return createLongStructureMutationBuilder(index).createArc({
-            volumeId: target.volumeId,
-            title: input.title,
-            summary: input.summary,
-            outline: ""
-          });
-        });
+        );
         if (!batch) return;
         const created = batch.operations.find(
           (operation) => operation.type === "arc.create"
@@ -616,16 +659,20 @@ export function createLongStructureCreate(
           uiMessage.warning("当前人物分组尚未就绪。");
           return;
         }
-        const batch = await buildMutationBatch(lease, "无法创建人物。", (createLongStructureMutationBuilder, index) => {
-          if (longCharacterCreate.value !== target) {
-            throw new Error("新建人物目标已切换，本次操作已取消。");
+        const batch = await buildMutationBatch(
+          lease,
+          "无法创建人物。",
+          (createLongStructureMutationBuilder, index) => {
+            if (longCharacterCreate.value !== target) {
+              throw new Error("新建人物目标已切换，本次操作已取消。");
+            }
+            return createLongStructureMutationBuilder(index).createCharacter({
+              name: input.name,
+              group: target.group,
+              aliases: input.aliases
+            });
           }
-          return createLongStructureMutationBuilder(index).createCharacter({
-            name: input.name,
-            group: target.group,
-            aliases: input.aliases
-          });
-        });
+        );
         if (!batch) return;
         const created = batch.operations.find(
           (operation) => operation.type === "character.create"
@@ -635,7 +682,13 @@ export function createLongStructureCreate(
           return;
         }
         const apply = trackApply();
-        await executeLongStructureMutation(lease, batch, apply.completion, {}, index);
+        await executeLongStructureMutation(
+          lease,
+          batch,
+          apply.completion,
+          {},
+          index
+        );
         if (!apply.didApply() || isDisposed()) return;
         if (longCharacterCreate.value === target) {
           longCharacterCreate.value = null;
@@ -643,7 +696,11 @@ export function createLongStructureCreate(
         if (!apply.didSucceed() || !mutationIsCurrent(lease)) return;
         const latestSummary = activeLongBookSummary.value;
         const latestIndex = activeLongWorkspaceIndex.value;
-        if (!latestSummary || !latestIndex || latestSummary.id !== target.bookId) {
+        if (
+          !latestSummary ||
+          !latestIndex ||
+          latestSummary.id !== target.bookId
+        ) {
           return;
         }
         if (

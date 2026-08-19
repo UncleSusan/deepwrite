@@ -22,7 +22,10 @@ export class ContinuationImportPreviewRegistry {
     webContentsId: number;
     sourcePath: string;
     sourceFingerprint: string;
-  }): { previewId: string; expiresAt: number } {
+  }): {
+    previewId: string;
+    expiresAt: number;
+  } {
     const now = this.now();
     for (const [previewId, registration] of this.entries) {
       if (

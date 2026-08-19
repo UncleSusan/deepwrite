@@ -75,6 +75,10 @@ name: 人设卡建设
       message: "技能格式错误 · 技能正文不能为空"
     }
   ])("returns a specific reason when $label", ({ content, code, message }) => {
-    expect(parseSkillFrontmatter(content)).toEqual({ valid: false, code, message });
+    expect(parseSkillFrontmatter(content)).toEqual({
+      valid: false,
+      code,
+      message
+    });
   });
 });

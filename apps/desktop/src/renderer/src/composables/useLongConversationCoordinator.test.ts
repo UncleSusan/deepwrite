@@ -89,9 +89,7 @@ function selection(key = "plot-design:book-line"): LongWorkspaceSelection {
   };
 }
 
-function runtimeContext(
-  summary: LongBookSummary
-): LongWorkspaceRuntimeContext {
+function runtimeContext(summary: LongBookSummary): LongWorkspaceRuntimeContext {
   return {
     bookId: summary.id,
     title: summary.title,
@@ -202,9 +200,7 @@ function createHarness() {
   const activeSelection = shallowRef<LongWorkspaceSelection | null>(
     selection()
   );
-  const profile = shallowRef(
-    getDefaultLongAgentProfile("plot_design")
-  );
+  const profile = shallowRef(getDefaultLongAgentProfile("plot_design"));
   const context = shallowRef<LongWorkspaceRuntimeContext | null>(
     runtimeContext(summary.value!)
   );
@@ -213,6 +209,10 @@ function createHarness() {
   const ensureAgentSettingsLoaded = vi.fn(async () => true);
   const saveActiveEditorChanges = vi.fn(async () => true);
   const refreshActiveWorkspace = vi.fn(async () => true);
+  const foreshadowingFocus = ref({
+    threadId: null as string | null,
+    beatId: null as string | null
+  });
   const documentsForProfile = vi.fn(() => []);
   const ensureDocumentsLoaded = vi.fn(async () => true);
   const hydratedSnapshot = vi.fn(() => null as CatalogSnapshot | null);
@@ -233,13 +233,14 @@ function createHarness() {
   const synchronizeRunPreferences = vi.fn();
   const updatePermissionMode = vi.fn();
   const indexSnapshot = shallowRef<CatalogIndexSnapshot | null>(null);
+  const workspaceIndex = shallowRef({
+    plot: { foreshadowing: [] }
+  } as unknown as LongWorkspaceIndexSnapshot);
   const options: LongConversationCoordinatorOptions = {
     state: {
       activeBookId: ref(BOOK_ID),
       activeBookSummary: summary,
-      workspaceIndex: shallowRef(
-        {} as unknown as LongWorkspaceIndexSnapshot
-      ),
+      workspaceIndex,
       selection: activeSelection,
       fileContext: shallowRef(null),
       activeRoot: computed(
@@ -251,9 +252,8 @@ function createHarness() {
       agentLoadError: ref(null)
     },
     runtime: {
-      conversationKey: vi.fn(
-        (bookId, agentId, root, chapterCardId) =>
-          [bookId, agentId, root, chapterCardId ?? "none"].join(":")
+      conversationKey: vi.fn((bookId, agentId, root, chapterCardId) =>
+        [bookId, agentId, root, chapterCardId ?? "none"].join(":")
       ),
       conversationForKey: vi.fn(() => conversation.controller),
       synchronizeSessionModelSelection,
@@ -264,6 +264,7 @@ function createHarness() {
       ensureAgentSettingsLoaded,
       saveActiveEditorChanges,
       refreshActiveWorkspace,
+      captureForeshadowingFocus: vi.fn(() => foreshadowingFocus.value),
       api: vi.fn(() => undefined)
     },
     catalog: {
@@ -294,6 +295,7 @@ function createHarness() {
     ensureAgentSettingsLoaded,
     ensureDocumentsLoaded,
     filterReadableAttachments,
+    foreshadowingFocus,
     hydratedSnapshot,
     indexSnapshot,
     notifications,
@@ -307,7 +309,8 @@ function createHarness() {
     summary,
     synchronizeSessionModelSelection,
     synchronizeRunPreferences,
-    updatePermissionMode
+    updatePermissionMode,
+    workspaceIndex
   };
 }
 
@@ -398,10 +401,11 @@ describe("useLongConversationCoordinator", () => {
       content: "# 长篇上下文\n\n## 正文阶段\n写当前章。",
       truncated: false
     }));
-    test.options.workspace.api = vi.fn(() =>
-      ({
-        readAgentsMd
-      }) as unknown as LongWorkspaceRendererApi
+    test.options.workspace.api = vi.fn(
+      () =>
+        ({
+          readAgentsMd
+        }) as unknown as LongWorkspaceRendererApi
     );
 
     await test.coordinator.sendLongMessage();
@@ -420,10 +424,11 @@ describe("useLongConversationCoordinator", () => {
     const readAgentsMd = vi.fn(async () => {
       throw new Error("工作区未就绪");
     });
-    test.options.workspace.api = vi.fn(() =>
-      ({
-        readAgentsMd
-      }) as unknown as LongWorkspaceRendererApi
+    test.options.workspace.api = vi.fn(
+      () =>
+        ({
+          readAgentsMd
+        }) as unknown as LongWorkspaceRendererApi
     );
 
     await test.coordinator.sendLongMessage();
@@ -436,6 +441,69 @@ describe("useLongConversationCoordinator", () => {
     const [context] = test.conversation.sendLongMessage.mock.calls[0]!;
     expect(context).toMatchObject({ bookId: BOOK_ID });
     expect(context).not.toHaveProperty("agentsMd");
+  });
+
+  it("injects the latest foreshadowing directory and focused beat", async () => {
+    const test = createHarness();
+    test.activeSelection.value = selection("plot-design:foreshadowing");
+    test.foreshadowingFocus.value = {
+      threadId: "foreshadow_watch",
+      beatId: "beat_watch"
+    };
+    test.workspaceIndex.value = {
+      plot: {
+        foreshadowing: [
+          {
+            id: "foreshadow_watch",
+            title: "失踪的航海日志",
+            coreQuestion: "日志为何缺页？",
+            hiddenTruth: "船长主动撕毁了日志。",
+            plannedSpan: "cross_volume",
+            truthEventId: null,
+            expectedReaderEffect: "持续怀疑船长",
+            status: "open",
+            beats: [
+              {
+                id: "beat_watch",
+                type: "plant",
+                order: 1,
+                eventId: null,
+                placementId: null,
+                chapterCardId: null,
+                plannedScope: "第一卷中段",
+                note: "只露出被撕过的页脚",
+                status: "planned",
+                commitId: null
+              }
+            ]
+          }
+        ]
+      }
+    } as unknown as LongWorkspaceIndexSnapshot;
+
+    await test.coordinator.sendLongMessage();
+
+    const sentContext = test.conversation.sendLongMessage.mock.calls[0]![0]!;
+    expect(sentContext.plotFocus).toEqual({
+      section: "foreshadowing",
+      foreshadowingDirectory: {
+        totalCount: 1,
+        omittedCount: 0,
+        entries: [
+          {
+            foreshadowingId: "foreshadow_watch",
+            title: "失踪的航海日志",
+            status: "open",
+            plannedSpan: "cross_volume",
+            beatCount: 1
+          }
+        ]
+      },
+      foreshadowingThreadId: "foreshadow_watch",
+      foreshadowingBeatId: "beat_watch"
+    });
+    expect(JSON.stringify(sentContext.plotFocus)).not.toContain("船长主动");
+    expect(JSON.stringify(sentContext.plotFocus)).not.toContain("被撕过");
   });
 
   it("rejects a second send while the first preflight is pending", async () => {
@@ -503,6 +571,32 @@ describe("useLongConversationCoordinator", () => {
     await waitForCall(test.saveActiveEditorChanges);
 
     test.activeSelection.value = selection("plot-design:book-line:other");
+    gate.resolve(true);
+    await sending;
+
+    expect(test.refreshActiveWorkspace).not.toHaveBeenCalled();
+    expect(test.conversation.sendLongMessage).not.toHaveBeenCalled();
+    expect(test.notifications.info).toHaveBeenCalledWith(
+      "长篇上下文、会话、模型设置或输入内容已切换，本次发送已取消。"
+    );
+  });
+
+  it("cancels after an awaited save when the foreshadowing focus changes", async () => {
+    const gate = deferred<boolean>();
+    const test = createHarness();
+    test.activeSelection.value = selection("plot-design:foreshadowing");
+    test.foreshadowingFocus.value = {
+      threadId: "foreshadow_first",
+      beatId: "beat_first"
+    };
+    test.saveActiveEditorChanges.mockImplementation(() => gate.promise);
+    const sending = test.coordinator.sendLongMessage();
+    await waitForCall(test.saveActiveEditorChanges);
+
+    test.foreshadowingFocus.value = {
+      threadId: "foreshadow_second",
+      beatId: "beat_second"
+    };
     gate.resolve(true);
     await sending;
 

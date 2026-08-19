@@ -10,7 +10,9 @@ describe("LegacySyncPreviewRegistry", () => {
       sourcePath: "/books/legacy.zip",
       sourceFingerprint: "a".repeat(64)
     });
-    expect(registry.resolve(preview.previewId, 7).sourcePath).toBe("/books/legacy.zip");
+    expect(registry.resolve(preview.previewId, 7).sourcePath).toBe(
+      "/books/legacy.zip"
+    );
     expect(() => registry.resolve(preview.previewId, 8)).toThrow("已失效");
     registry.consume(preview.previewId);
     expect(() => registry.resolve(preview.previewId, 7)).toThrow("已失效");

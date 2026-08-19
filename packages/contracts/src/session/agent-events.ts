@@ -32,7 +32,7 @@ export const AgentRetryScheduledFieldsSchema = z.object({
 
 export function validateTurnAttempt(
   value: { attempt: number; maxAttempts: number },
-  context: z.core.$RefinementCtx<any>
+  context: z.core.$RefinementCtx<unknown>
 ): void {
   if (value.attempt > value.maxAttempts) {
     context.addIssue({
@@ -45,7 +45,7 @@ export function validateTurnAttempt(
 
 export function validateRetryAttempt(
   value: { failedAttempt: number; nextAttempt: number; maxAttempts: number },
-  context: z.core.$RefinementCtx<any>
+  context: z.core.$RefinementCtx<unknown>
 ): void {
   if (value.nextAttempt !== value.failedAttempt + 1) {
     context.addIssue({
@@ -66,7 +66,9 @@ export function validateRetryAttempt(
 export const AgentTurnStartedPayloadSchema = AgentEventIdentitySchema.extend(
   AgentTurnStartedFieldsSchema.shape
 ).superRefine(validateTurnAttempt);
-export type AgentTurnStartedPayload = z.infer<typeof AgentTurnStartedPayloadSchema>;
+export type AgentTurnStartedPayload = z.infer<
+  typeof AgentTurnStartedPayloadSchema
+>;
 
 export const AgentRetryScheduledPayloadSchema = AgentEventIdentitySchema.extend(
   AgentRetryScheduledFieldsSchema.shape
@@ -78,13 +80,16 @@ export type AgentRetryScheduledPayload = z.infer<
 export const AgentMessageDeltaPayloadSchema = AgentEventIdentitySchema.extend({
   delta: z.string()
 });
-export type AgentMessageDeltaPayload = z.infer<typeof AgentMessageDeltaPayloadSchema>;
+export type AgentMessageDeltaPayload = z.infer<
+  typeof AgentMessageDeltaPayloadSchema
+>;
 
 export const AgentThinkingDeltaPayloadSchema = AgentEventIdentitySchema.extend({
   delta: z.string()
 });
-export type AgentThinkingDeltaPayload = z.infer<typeof AgentThinkingDeltaPayloadSchema>;
-
+export type AgentThinkingDeltaPayload = z.infer<
+  typeof AgentThinkingDeltaPayloadSchema
+>;
 
 export const AgentUsageObservationStatusSchema = z.enum([
   "completed",
@@ -121,15 +126,17 @@ export type AgentUsageObservedPayload = z.infer<
   typeof AgentUsageObservedPayloadSchema
 >;
 
-
-export const AgentMessageCompletedPayloadSchema = AgentEventIdentitySchema.extend({
-  role: z.literal("assistant"),
-  content: z.string(),
-  thinking: z.string().optional(),
-  stopReason: z.string().min(1).optional(),
-  usage: AgentUsageSchema.optional()
-});
-export type AgentMessageCompletedPayload = z.infer<typeof AgentMessageCompletedPayloadSchema>;
+export const AgentMessageCompletedPayloadSchema =
+  AgentEventIdentitySchema.extend({
+    role: z.literal("assistant"),
+    content: z.string(),
+    thinking: z.string().optional(),
+    stopReason: z.string().min(1).optional(),
+    usage: AgentUsageSchema.optional()
+  });
+export type AgentMessageCompletedPayload = z.infer<
+  typeof AgentMessageCompletedPayloadSchema
+>;
 
 export const AgentToolRequestedPayloadSchema = z.object({
   sessionId: z.string().min(1),
@@ -139,7 +146,9 @@ export const AgentToolRequestedPayloadSchema = z.object({
   args: z.unknown(),
   runtime: AgentRuntimeRefSchema
 });
-export type AgentToolRequestedPayload = z.infer<typeof AgentToolRequestedPayloadSchema>;
+export type AgentToolRequestedPayload = z.infer<
+  typeof AgentToolRequestedPayloadSchema
+>;
 
 export const AgentToolCallStreamPayloadSchema = z.object({
   sessionId: z.string().min(1),
@@ -152,7 +161,9 @@ export const AgentToolCallStreamPayloadSchema = z.object({
   args: z.unknown().optional(),
   runtime: AgentRuntimeRefSchema
 });
-export type AgentToolCallStreamPayload = z.infer<typeof AgentToolCallStreamPayloadSchema>;
+export type AgentToolCallStreamPayload = z.infer<
+  typeof AgentToolCallStreamPayloadSchema
+>;
 
 export const AgentToolCompletedPayloadSchema = z.object({
   sessionId: z.string().min(1),
@@ -163,7 +174,9 @@ export const AgentToolCompletedPayloadSchema = z.object({
   isError: z.boolean(),
   runtime: AgentRuntimeRefSchema
 });
-export type AgentToolCompletedPayload = z.infer<typeof AgentToolCompletedPayloadSchema>;
+export type AgentToolCompletedPayload = z.infer<
+  typeof AgentToolCompletedPayloadSchema
+>;
 
 export const LearningImitationResultUpdatedPayloadSchema = z.object({
   sessionId: z.string().min(1),
@@ -187,7 +200,6 @@ export const SubagentAuthoringDraftUpdatedPayloadSchema = z.object({
 export type SubagentAuthoringDraftUpdatedPayload = z.infer<
   typeof SubagentAuthoringDraftUpdatedPayloadSchema
 >;
-
 
 export const AgentErrorPayloadSchema = z.object({
   sessionId: z.string().min(1),

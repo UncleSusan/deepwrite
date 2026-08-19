@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch
+} from "vue";
 import {
   isBuiltinCreativePlotStageId,
   type Book,
@@ -57,8 +65,8 @@ const deletingStage = computed(() =>
 const deletingDocument = computed(() =>
   props.book?.documents.find(({ id }) => id === deletingStageId.value)
 );
-const deletingHasContent = computed(
-  () => Boolean(deletingDocument.value?.content.trim())
+const deletingHasContent = computed(() =>
+  Boolean(deletingDocument.value?.content.trim())
 );
 const characterOverview = computed(() =>
   props.book?.documents.find(({ id }) => id === "character_design")
@@ -150,15 +158,19 @@ function confirmCharacterFormat(): void {
   const format = requestedCharacterFormat.value;
   if (!format || locked.value) return;
   localPending.value = true;
-  emit("characterMutation", { type: "setFormat", format }, {
-    succeed: () => {
-      localPending.value = false;
-      requestedCharacterFormat.value = null;
-    },
-    fail: () => {
-      localPending.value = false;
+  emit(
+    "characterMutation",
+    { type: "setFormat", format },
+    {
+      succeed: () => {
+        localPending.value = false;
+        requestedCharacterFormat.value = null;
+      },
+      fail: () => {
+        localPending.value = false;
+      }
     }
-  });
+  );
 }
 
 function submitForm(): void {
@@ -255,7 +267,10 @@ function handleKeydown(event: KeyboardEvent): void {
     close();
     return;
   }
-  if (event.key !== "Tab" || !dialogElement.value?.contains(event.target as Node)) {
+  if (
+    event.key !== "Tab" ||
+    !dialogElement.value?.contains(event.target as Node)
+  ) {
     return;
   }
   const focusable = focusableElements();
@@ -277,12 +292,15 @@ watch(
   () => props.open,
   async (open) => {
     if (open) {
-      previousFocus = document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+      previousFocus =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
       resetPanels();
       await nextTick();
-      (closeButton.value ?? dialogElement.value)?.focus({ preventScroll: true });
+      (closeButton.value ?? dialogElement.value)?.focus({
+        preventScroll: true
+      });
     } else {
       const target = previousFocus;
       previousFocus = null;
@@ -314,15 +332,27 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <header class="plot-structure-dialog-header">
           <div>
             <span>{{ book.bookType === "script" ? "剧本" : "短篇" }}设置</span>
-            <strong id="plot-structure-title">{{ book.title }} · 结构管理</strong>
+            <strong id="plot-structure-title"
+              >{{ book.title }} · 结构管理</strong
+            >
           </div>
-          <button ref="closeButton" type="button" aria-label="关闭结构管理" :disabled="locked" @click="close">
+          <button
+            ref="closeButton"
+            type="button"
+            aria-label="关闭结构管理"
+            :disabled="locked"
+            @click="close"
+          >
             <AppIcon name="close" :size="16" />
           </button>
         </header>
 
         <section class="plot-structure-manager" aria-label="结构管理">
-          <div class="structure-main-tabs" role="tablist" aria-label="结构管理类型">
+          <div
+            class="structure-main-tabs"
+            role="tablist"
+            aria-label="结构管理类型"
+          >
             <button
               type="button"
               role="tab"
@@ -374,114 +404,119 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           </template>
 
           <template v-else>
-          <header class="manager-header">
-            <div>
-              <p class="manager-eyebrow">CREATIVE PLOT STRUCTURE</p>
-              <h2>剧情结构管理</h2>
-              <p>
-                名称与说明全局生效；启用开关和排序按本书绑定。关闭后不在资源树显示，也不对智能体开放。默认五项不可删除。
-              </p>
-            </div>
-          </header>
-
-          <div class="structure-panel-content">
-            <header class="manager-toolbar">
-              <div class="section-tabs" role="tablist" aria-label="基础结构类型">
-                <button type="button" role="tab" aria-selected="true">
-                  剧情结构
-                </button>
+            <header class="manager-header">
+              <div>
+                <p class="manager-eyebrow">CREATIVE PLOT STRUCTURE</p>
+                <h2>剧情结构管理</h2>
+                <p>
+                  名称与说明全局生效；启用开关和排序按本书绑定。关闭后不在资源树显示，也不对智能体开放。默认五项不可删除。
+                </p>
               </div>
-              <button
-                class="primary-button"
-                type="button"
-                :disabled="locked || rows.length >= 32"
-                @click="openCreate"
-              >
-                新建剧情结构
-              </button>
             </header>
 
-            <ol class="manager-list">
-              <li
-                v-for="(stage, index) in rows"
-                :key="stage.id"
-                class="manager-row"
-                :class="{ 'is-disabled': !stage.enabled }"
-              >
-                <label class="row-toggle">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    :checked="stage.enabled"
-                    :disabled="locked"
-                    :aria-label="`${stage.enabled ? '关闭' : '启用'}${stage.title}`"
-                    @change="
-                      toggleEnabled(
-                        stage.id,
-                        ($event.target as HTMLInputElement).checked
-                      )
-                    "
-                  />
-                  <span>{{ stage.enabled ? "启用" : "关闭" }}</span>
-                </label>
-                <div class="row-copy">
-                  <strong>{{ stage.title }}</strong>
-                  <span>{{ stage.description }}</span>
-                  <code>
-                    {{ stage.id }}
-                    <template v-if="isBuiltinCreativePlotStageId(stage.id)">
-                      · 默认
-                    </template>
-                  </code>
-                </div>
-                <div class="row-actions">
-                  <button
-                    type="button"
-                    :aria-label="`上移${stage.title}`"
-                    title="上移"
-                    :disabled="locked || index === 0"
-                    @click="move(stage.id, 'up')"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    :aria-label="`下移${stage.title}`"
-                    title="下移"
-                    :disabled="locked || index === rows.length - 1"
-                    @click="move(stage.id, 'down')"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    :aria-label="`编辑${stage.title}`"
-                    :disabled="locked"
-                    @click="openEdit(stage.id)"
-                  >
-                    编辑
-                  </button>
-                  <button
-                    class="delete-button"
-                    type="button"
-                    :aria-label="`删除${stage.title}`"
-                    :disabled="
-                      locked ||
-                      rows.length <= 1 ||
-                      isBuiltinCreativePlotStageId(stage.id)
-                    "
-                    @click="openDelete(stage.id)"
-                  >
-                    删除
+            <div class="structure-panel-content">
+              <header class="manager-toolbar">
+                <div
+                  class="section-tabs"
+                  role="tablist"
+                  aria-label="基础结构类型"
+                >
+                  <button type="button" role="tab" aria-selected="true">
+                    剧情结构
                   </button>
                 </div>
-              </li>
-            </ol>
+                <button
+                  class="primary-button"
+                  type="button"
+                  :disabled="locked || rows.length >= 32"
+                  @click="openCreate"
+                >
+                  新建剧情结构
+                </button>
+              </header>
 
-            <p class="manager-footnote">
-              新建阶段会对全部短篇与剧本生效；启用状态仅绑定当前作品。改名全局同步，不会改变稳定 ID 与文件路径。
-            </p>
-          </div>
+              <ol class="manager-list">
+                <li
+                  v-for="(stage, index) in rows"
+                  :key="stage.id"
+                  class="manager-row"
+                  :class="{ 'is-disabled': !stage.enabled }"
+                >
+                  <label class="row-toggle">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      :checked="stage.enabled"
+                      :disabled="locked"
+                      :aria-label="`${stage.enabled ? '关闭' : '启用'}${stage.title}`"
+                      @change="
+                        toggleEnabled(
+                          stage.id,
+                          ($event.target as HTMLInputElement).checked
+                        )
+                      "
+                    />
+                    <span>{{ stage.enabled ? "启用" : "关闭" }}</span>
+                  </label>
+                  <div class="row-copy">
+                    <strong>{{ stage.title }}</strong>
+                    <span>{{ stage.description }}</span>
+                    <code>
+                      {{ stage.id }}
+                      <template v-if="isBuiltinCreativePlotStageId(stage.id)">
+                        · 默认
+                      </template>
+                    </code>
+                  </div>
+                  <div class="row-actions">
+                    <button
+                      type="button"
+                      :aria-label="`上移${stage.title}`"
+                      title="上移"
+                      :disabled="locked || index === 0"
+                      @click="move(stage.id, 'up')"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      :aria-label="`下移${stage.title}`"
+                      title="下移"
+                      :disabled="locked || index === rows.length - 1"
+                      @click="move(stage.id, 'down')"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      :aria-label="`编辑${stage.title}`"
+                      :disabled="locked"
+                      @click="openEdit(stage.id)"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      class="delete-button"
+                      type="button"
+                      :aria-label="`删除${stage.title}`"
+                      :disabled="
+                        locked ||
+                        rows.length <= 1 ||
+                        isBuiltinCreativePlotStageId(stage.id)
+                      "
+                      @click="openDelete(stage.id)"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </li>
+              </ol>
+
+              <p class="manager-footnote">
+                新建阶段会对全部短篇与剧本生效；启用状态仅绑定当前作品。改名全局同步，不会改变稳定
+                ID 与文件路径。
+              </p>
+            </div>
           </template>
         </section>
       </section>
@@ -493,7 +528,12 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
       @mousedown.self="requestedCharacterFormat = null"
       @keydown.esc.stop="requestedCharacterFormat = null"
     >
-      <section class="structure-modal" role="alertdialog" aria-modal="true" aria-labelledby="character-format-title">
+      <section
+        class="structure-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="character-format-title"
+      >
         <header class="modal-header">
           <div>
             <span>CONVERT</span>
@@ -506,29 +546,49 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               当前人物文本会完整迁移到一个“人物设定”条目，概览初始化为空。
             </template>
             <template v-else>
-              概览与全部人物条目会按当前顺序合并为一个 Markdown 文本；条目文件将在合并成功后移除。
+              概览与全部人物条目会按当前顺序合并为一个 Markdown
+              文本；条目文件将在合并成功后移除。
             </template>
           </p>
           <div class="character-conversion-preview">
             <strong>转换预览</strong>
             <template v-if="requestedCharacterFormat === 'list'">
-              <span>{{ characterOverview?.content.trim() ? "人物设定 · 1 个条目" : "概览 · 空条目列表" }}</span>
+              <span>{{
+                characterOverview?.content.trim()
+                  ? "人物设定 · 1 个条目"
+                  : "概览 · 空条目列表"
+              }}</span>
               <pre>{{ characterTextPreview }}</pre>
             </template>
             <template v-else>
               <span>
-                概览{{ characterOverview?.content.trim() ? "（有内容）" : "（为空）" }}，其后合并 {{ orderedCharacterItems.length }} 个人物条目
+                概览{{
+                  characterOverview?.content.trim() ? "（有内容）" : "（为空）"
+                }}，其后合并 {{ orderedCharacterItems.length }} 个人物条目
               </span>
               <ol v-if="orderedCharacterItems.length">
-                <li v-for="item in orderedCharacterItems" :key="item.id">{{ item.title }}</li>
+                <li v-for="item in orderedCharacterItems" :key="item.id">
+                  {{ item.title }}
+                </li>
               </ol>
               <span v-else>当前没有人物条目。</span>
             </template>
           </div>
         </fieldset>
         <footer class="modal-actions">
-          <button type="button" :disabled="locked" @click="requestedCharacterFormat = null">取消</button>
-          <button class="primary-button" type="button" :disabled="locked" @click="confirmCharacterFormat">
+          <button
+            type="button"
+            :disabled="locked"
+            @click="requestedCharacterFormat = null"
+          >
+            取消
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="locked"
+            @click="confirmCharacterFormat"
+          >
             {{ locked ? "转换中…" : "确认转换" }}
           </button>
         </footer>
@@ -551,7 +611,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           <header class="modal-header">
             <div>
               <span>{{ formMode === "create" ? "CREATE" : "EDIT" }}</span>
-              <h3>{{ formMode === "create" ? "新建剧情结构" : "编辑剧情结构" }}</h3>
+              <h3>
+                {{ formMode === "create" ? "新建剧情结构" : "编辑剧情结构" }}
+              </h3>
             </div>
             <button
               class="close-button"
@@ -583,17 +645,24 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 rows="7"
                 required
               />
-              <small>该说明会作为剧情智能体在此阶段的任务边界与交付标准。</small>
+              <small
+                >该说明会作为剧情智能体在此阶段的任务边界与交付标准。</small
+              >
             </label>
             <p class="stable-id-note">
-              稳定 ID 创建后不会因改名或排序而变化，Markdown 文件路径和已有内容也会保持不变。
+              稳定 ID 创建后不会因改名或排序而变化，Markdown
+              文件路径和已有内容也会保持不变。
             </p>
           </fieldset>
 
           <footer class="modal-actions">
-            <button type="button" :disabled="locked" @click="close">取消</button>
+            <button type="button" :disabled="locked" @click="close">
+              取消
+            </button>
             <button class="primary-button" type="submit" :disabled="locked">
-              {{ locked ? "保存中…" : formMode === "create" ? "创建" : "保存修改" }}
+              {{
+                locked ? "保存中…" : formMode === "create" ? "创建" : "保存修改"
+              }}
             </button>
           </footer>
         </form>
@@ -616,12 +685,15 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <header class="modal-header">
           <div>
             <span>DELETE</span>
-            <h3 id="plot-structure-delete-title">删除“{{ deletingStage.title }}”</h3>
+            <h3 id="plot-structure-delete-title">
+              删除“{{ deletingStage.title }}”
+            </h3>
           </div>
         </header>
         <fieldset class="modal-body" :disabled="locked">
           <p id="plot-structure-delete-description" class="delete-copy">
-            该自定义阶段会对全部短篇与剧本生效。确认后将从全局删除，并永久清除各作品中对应的 Markdown 内容。
+            该自定义阶段会对全部短篇与剧本生效。确认后将从全局删除，并永久清除各作品中对应的
+            Markdown 内容。
             {{ deletingHasContent ? "当前作品该阶段已有内容。" : "" }}
           </p>
         </fieldset>
@@ -658,7 +730,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
   border: 1px solid var(--theme-line);
   border-radius: 16px;
   background: var(--surface-raised);
-  box-shadow: 0 22px 70px color-mix(in srgb, var(--text-primary) 18%, transparent);
+  box-shadow: 0 22px 70px
+    color-mix(in srgb, var(--text-primary) 18%, transparent);
   color: var(--text-primary);
 }
 
@@ -862,7 +935,11 @@ button:disabled {
 }
 
 .primary-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--neutral-solid) 86%, var(--text-primary));
+  border-color: color-mix(
+    in srgb,
+    var(--neutral-solid) 86%,
+    var(--text-primary)
+  );
   background: color-mix(in srgb, var(--neutral-solid) 86%, var(--text-primary));
   color: var(--accent-contrast);
 }
@@ -927,7 +1004,9 @@ button:disabled {
   height: 1rem;
   border-radius: 999px;
   background: var(--text-tertiary);
-  transition: transform 120ms ease, background 120ms ease;
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
 }
 
 .row-toggle input:checked {
@@ -966,7 +1045,11 @@ button:disabled {
 
 .row-copy code {
   color: var(--text-tertiary);
-  font: 0.72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    0.72rem/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 
 .row-actions button {
@@ -991,7 +1074,8 @@ button:disabled {
   border: 1px solid var(--theme-line);
   border-radius: 0.9rem;
   background: var(--surface-main);
-  box-shadow: 0 1.2rem 3.5rem color-mix(in srgb, var(--theme-foreground) 24%, transparent);
+  box-shadow: 0 1.2rem 3.5rem
+    color-mix(in srgb, var(--theme-foreground) 24%, transparent);
   color: var(--text-primary);
   font-size: 0.875rem;
 }

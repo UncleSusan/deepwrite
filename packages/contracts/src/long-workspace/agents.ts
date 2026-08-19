@@ -28,12 +28,8 @@ export const LONG_AGENT_CAPABILITIES = [
   "write_chapter_files",
   "commit_ledger"
 ] as const;
-export const LongAgentCapabilitySchema = z.enum(
-  LONG_AGENT_CAPABILITIES
-);
-export type LongAgentCapability = z.infer<
-  typeof LongAgentCapabilitySchema
->;
+export const LongAgentCapabilitySchema = z.enum(LONG_AGENT_CAPABILITIES);
+export type LongAgentCapability = z.infer<typeof LongAgentCapabilitySchema>;
 
 function uniqueEnumValuesSchema<T extends string>(
   schema: z.ZodType<T>,
@@ -70,16 +66,10 @@ export const LongAgentReadAccessSchema = z
       5,
       "material kind"
     ),
-    skillKinds: uniqueEnumValuesSchema(
-      SkillKindSchema,
-      4,
-      "skill kind"
-    )
+    skillKinds: uniqueEnumValuesSchema(SkillKindSchema, 4, "skill kind")
   })
   .strict();
-export type LongAgentReadAccess = z.infer<
-  typeof LongAgentReadAccessSchema
->;
+export type LongAgentReadAccess = z.infer<typeof LongAgentReadAccessSchema>;
 
 export const LongAgentWriteAccessSchema = z
   .object({
@@ -95,9 +85,7 @@ export const LongAgentWriteAccessSchema = z
     )
   })
   .strict();
-export type LongAgentWriteAccess = z.infer<
-  typeof LongAgentWriteAccessSchema
->;
+export type LongAgentWriteAccess = z.infer<typeof LongAgentWriteAccessSchema>;
 
 export const LongAgentProfileSchema = z
   .object({
@@ -153,9 +141,7 @@ export function longAgentAcceptsWorldbuildingDirectory(
   agentId: LongAgentId
 ): boolean {
   return (
-    agentId === "setting" ||
-    agentId === "plot_design" ||
-    agentId === "draft"
+    agentId === "setting" || agentId === "plot_design" || agentId === "draft"
   );
 }
 
@@ -164,16 +150,10 @@ const LONG_DEFAULT_SHORTCUTS = {
   plot_design: ["完善剧情结构", "检查时间线", "梳理伏笔落点"],
   draft: ["写当前章", "续写当前章", "规划下一章"],
   continuity_ledger: ["提交当前章", "批量提交所有未提交章节", "检查连续性"]
-} as const satisfies Record<
-  LongAgentId,
-  readonly [string, string, string]
->;
+} as const satisfies Record<LongAgentId, readonly [string, string, string]>;
 
 function longDefaultProfile(
-  input: Omit<
-    LongAgentProfile,
-    "workspaceType" | "welcomeShortcuts"
-  >
+  input: Omit<LongAgentProfile, "workspaceType" | "welcomeShortcuts">
 ): LongAgentProfile {
   return LongAgentProfileSchema.parse({
     workspaceType: "long",
@@ -225,7 +205,8 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "plot_design",
     label: "剧情设计智能体",
-    description: "维护分卷、剧情弧、故事情节、章卡、故事时间线、叙事落点与伏笔。",
+    description:
+      "维护分卷、剧情弧、故事情节、章卡、故事时间线、叙事落点与伏笔。",
     systemPrompt: `你负责长篇剧情设计，帮助用户设计、核验和维护全书故事线、分卷、剧情点、故事情节、章卡、故事事件、事件连接、叙事落点与伏笔。模型只使用剧情业务标识：
 - 全书故事线使用 book_line 目标；分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点分别使用各自稳定业务 ID。
 - 伏笔线与伏笔触点沿用独立的现有结构工具；其余实现细节由工具内部处理，不要索取、推断或复述。
@@ -312,7 +293,8 @@ export const DEFAULT_LONG_AGENT_PROFILES: readonly LongAgentProfile[] = [
   longDefaultProfile({
     id: "continuity_ledger",
     label: "连续性账本智能体",
-    description: "按章留存人物轨迹、世界揭露、既有伏笔触点变化、章末状态和接续包。",
+    description:
+      "按章留存人物轨迹、世界揭露、既有伏笔触点变化、章末状态和接续包。",
     systemPrompt: `你负责长篇连续性留存。可以为任意正文已经写完且尚无记录的章节按需补记，不要求前文章节已经记录。多张未记录章卡可以在同一次对话里批量追记，不必让用户一章一章提交。
 
 工作规则：

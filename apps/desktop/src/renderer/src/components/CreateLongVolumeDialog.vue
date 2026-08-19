@@ -1,11 +1,5 @@
 <script setup lang="ts">
-import {
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  watch
-} from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 
@@ -104,9 +98,7 @@ watch(
 );
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() =>
-  document.removeEventListener("keydown", handleKeydown)
-);
+onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
@@ -314,10 +306,6 @@ button:disabled {
     var(--neutral-solid) 86%,
     var(--text-primary)
   );
-  background: color-mix(
-    in srgb,
-    var(--neutral-solid) 86%,
-    var(--text-primary)
-  );
+  background: color-mix(in srgb, var(--neutral-solid) 86%, var(--text-primary));
 }
 </style>

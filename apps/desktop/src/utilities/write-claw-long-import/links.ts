@@ -25,12 +25,7 @@ export function extractGenre(
   const firstCategory = list(book?.categories)
     .map((value) => stringValue(value).trim())
     .find(Boolean);
-  return clipped(
-    firstCategory || "长篇",
-    120,
-    warnings,
-    "题材"
-  ).trim();
+  return clipped(firstCategory || "长篇", 120, warnings, "题材").trim();
 }
 
 export function legacyLinkIds(
@@ -59,11 +54,7 @@ export function legacyLinkIds(
       warnings.add(
         `${label}包含超过当前 ID 上限的值；完整 ID 已写入迁移证据，绑定字段保留前 512 个字符。`
       );
-      warnings.preserve(
-        `${label}（超长 ID）`,
-        label,
-        candidate
-      );
+      warnings.preserve(`${label}（超长 ID）`, label, candidate);
     }
     const normalized = candidate.slice(0, 512);
     if (!ids.includes(normalized)) ids.push(normalized);

@@ -85,7 +85,9 @@ const kindLabel = {
 
 .toast-list-enter-active,
 .toast-list-leave-active {
-  transition: opacity 150ms ease, transform 150ms ease;
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
 }
 
 .toast-list-enter-from,

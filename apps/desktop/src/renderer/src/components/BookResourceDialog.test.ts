@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sourceTextIndexOf } from "../../../test-utils/sourceText";
 import appSource from "../WorkspaceShell.vue?raw";
 import lifecycleSource from "../composables/useShortBookLifecycleCoordinator.ts?raw";
 import dialogSource from "./BookResourceDialog.vue?raw";
@@ -23,9 +24,7 @@ describe("BookResourceDialog binding editor", () => {
     expect(lifecycleSource).toContain(
       "linkedMaterialIdsByKind: payload.linksByKind"
     );
-    expect(appSource).toContain(
-      '@update-book-bindings="updateBookBindings"'
-    );
+    expect(appSource).toContain('@update-book-bindings="updateBookBindings"');
   });
 
   it("offers the shared library pool to short and script books", () => {
@@ -37,14 +36,17 @@ describe("BookResourceDialog binding editor", () => {
   });
 
   it("keeps the binding dialog footer steady while libraries load", () => {
-    const actionsStart = dialogSource.indexOf(
+    const actionsStart = sourceTextIndexOf(
+      dialogSource,
       '<div class="dialog-actions" :class="{ \'create-short-book-actions\': bindingDomain }">'
     );
-    const statusStart = dialogSource.indexOf(
+    const statusStart = sourceTextIndexOf(
+      dialogSource,
       'class="dialog-action-status"',
       actionsStart
     );
-    const cancelStart = dialogSource.indexOf(
+    const cancelStart = sourceTextIndexOf(
+      dialogSource,
       'class="dialog-secondary-button"',
       actionsStart
     );

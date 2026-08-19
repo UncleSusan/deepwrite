@@ -3,18 +3,9 @@ import type {
   DeepWriteApi,
   MarketplaceSession
 } from "@deepwrite/contracts";
-import {
-  computed,
-  ref,
-  watch,
-  type ComputedRef,
-  type Ref
-} from "vue";
+import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
 import type { WorkspaceFeatureModule } from "../components/WorkspaceFeatureModules.types";
-import type {
-  AppView,
-  WorkspaceMainView
-} from "../stores/layoutStore";
+import type { AppView, WorkspaceMainView } from "../stores/layoutStore";
 import type { useSettingsStore } from "../stores/settingsStore";
 import type { DialogMode } from "../types/workspace";
 import type {
@@ -22,10 +13,7 @@ import type {
   LazySubagentAuthoringController
 } from "./useLazyFeatureControllers";
 
-export type ActiveFeature =
-  | WorkspaceMainView
-  | "settings"
-  | "long-workspace";
+export type ActiveFeature = WorkspaceMainView | "settings" | "long-workspace";
 
 export interface WorkspaceFeatureHostNotifications {
   error(message: string): void;
@@ -146,7 +134,8 @@ export function useWorkspaceFeatureHostCoordinator(
           autoSaveEnabled: settingsStore.editorAutoSaveEnabled,
           language: settingsStore.generalSettings.language,
           showInMenuBar: settingsStore.generalSettings.showInMenuBar,
-          workspacePaneLayout: settingsStore.generalSettings.workspacePaneLayout,
+          workspacePaneLayout:
+            settingsStore.generalSettings.workspacePaneLayout,
           workspaceAgentSettings: settingsStore.workspaceAgentSettings,
           longAgentSettings: settingsStore.longAgentSettings,
           workspaceAgentLoading: settingsStore.workspaceAgentLoading,
@@ -182,8 +171,7 @@ export function useWorkspaceFeatureHostCoordinator(
           longSettings: settingsStore.longAgentTeamSettings,
           models: settingsStore.modelSettings?.models ?? [],
           skills: options.catalogSnapshot.value?.skills ?? [],
-          preferredModelId:
-            settingsStore.modelSettings?.defaultModelId ?? null,
+          preferredModelId: settingsStore.modelSettings?.defaultModelId ?? null,
           loading: settingsStore.agentTeamLoading,
           saving: settingsStore.agentTeamSaving,
           loadError: settingsStore.agentTeamLoadError,
@@ -234,13 +222,15 @@ export function useWorkspaceFeatureHostCoordinator(
   });
 
   const stopLearningErrorWatch = watch(
-    () => options.features.learningImitation.controller.value?.error.value ?? null,
+    () =>
+      options.features.learningImitation.controller.value?.error.value ?? null,
     (message) => {
       if (active && message) options.notifications.error(message);
     }
   );
   const stopAuthoringErrorWatch = watch(
-    () => options.features.subagentAuthoring.controller.value?.error.value ?? null,
+    () =>
+      options.features.subagentAuthoring.controller.value?.error.value ?? null,
     (message) => {
       if (active && message) options.notifications.error(message);
     }
@@ -385,9 +375,7 @@ export function useWorkspaceFeatureHostCoordinator(
       );
     } catch (error: unknown) {
       if (active) {
-        options.notifications.error(
-          errorMessage(error, "加载工作目录失败。")
-        );
+        options.notifications.error(errorMessage(error, "加载工作目录失败。"));
       }
     }
   }
@@ -411,14 +399,10 @@ export function useWorkspaceFeatureHostCoordinator(
         return;
       }
       settingsStore.markLoaded("workspaceDirectory", settings);
-      options.notifications.success(
-        "工作目录已切换；现有项目保持原位置不变"
-      );
+      options.notifications.success("工作目录已切换；现有项目保持原位置不变");
     } catch (error: unknown) {
       if (active && generation === directoryChooseGeneration) {
-        options.notifications.error(
-          errorMessage(error, "切换工作目录失败。")
-        );
+        options.notifications.error(errorMessage(error, "切换工作目录失败。"));
       }
     } finally {
       if (generation === directoryChooseGeneration) {

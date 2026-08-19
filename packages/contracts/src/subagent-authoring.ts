@@ -84,4 +84,6 @@ export const SubagentAuthoringDraftSchema = z.object({
     .min(1)
     .max(SHORT_AGENT_SUBAGENT_SYSTEM_PROMPT_MAX_LENGTH)
 });
-export type SubagentAuthoringDraft = z.infer<typeof SubagentAuthoringDraftSchema>;
+export type SubagentAuthoringDraft = z.infer<
+  typeof SubagentAuthoringDraftSchema
+>;

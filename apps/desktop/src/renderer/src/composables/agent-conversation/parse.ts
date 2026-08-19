@@ -61,13 +61,17 @@ function parseStoredLibraryTarget(
   };
 }
 
-function parseStoredTextDiffLine(value: unknown): AgentTextDiffLine | undefined {
+function parseStoredTextDiffLine(
+  value: unknown
+): AgentTextDiffLine | undefined {
   if (
     !isRecord(value) ||
     !["context", "addition", "deletion"].includes(String(value.type)) ||
     typeof value.text !== "string" ||
-    (value.oldLineNumber !== undefined && !nonnegativeInteger(value.oldLineNumber)) ||
-    (value.newLineNumber !== undefined && !nonnegativeInteger(value.newLineNumber))
+    (value.oldLineNumber !== undefined &&
+      !nonnegativeInteger(value.oldLineNumber)) ||
+    (value.newLineNumber !== undefined &&
+      !nonnegativeInteger(value.newLineNumber))
   ) {
     return undefined;
   }
@@ -83,7 +87,9 @@ function parseStoredTextDiffLine(value: unknown): AgentTextDiffLine | undefined 
   };
 }
 
-function parseStoredTextDiffHunk(value: unknown): AgentTextDiffHunk | undefined {
+function parseStoredTextDiffHunk(
+  value: unknown
+): AgentTextDiffHunk | undefined {
   if (
     !isRecord(value) ||
     !nonnegativeInteger(value.oldStart) ||
@@ -110,7 +116,11 @@ function parseStoredTextDiffHunk(value: unknown): AgentTextDiffHunk | undefined 
 function parseStoredDraftSectionCreationTarget(
   value: unknown
 ): AgentEditProposal["draftSectionCreationTarget"] | undefined {
-  if (!isRecord(value) || !Array.isArray(value.sections) || value.sections.length === 0) {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.sections) ||
+    value.sections.length === 0
+  ) {
     return undefined;
   }
   const sections: Array<{
@@ -324,9 +334,7 @@ function parseStoredLongPlotDesignTarget(
     bookId: value.bookId,
     batch: batch.data,
     baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined
-      ? {}
-      : { appliedProjectRevision })
+    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision })
   };
 }
 
@@ -361,38 +369,45 @@ function parseStoredLongDraftTarget(
     bookId: value.bookId,
     batch: batch.data,
     baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined
-      ? {}
-      : { appliedProjectRevision }),
+    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
     file: file.data
   };
 }
 
-function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined {
+function parseStoredEditProposal(
+  value: unknown
+): AgentEditProposal | undefined {
   if (
     !isRecord(value) ||
     typeof value.id !== "string" ||
     typeof value.runId !== "string" ||
     typeof value.workspaceId !== "string" ||
-    (typeof value.stageId !== "string" ||
-      value.stageId.length > 120 ||
-      !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value.stageId)) ||
+    typeof value.stageId !== "string" ||
+    value.stageId.length > 120 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value.stageId) ||
     typeof value.documentId !== "string" ||
     typeof value.title !== "string" ||
     typeof value.summary !== "string" ||
-    !["pending", "accepting", "accepted", "rejected", "conflict", "error"].includes(
-      String(value.status)
-    ) ||
+    ![
+      "pending",
+      "accepting",
+      "accepted",
+      "rejected",
+      "conflict",
+      "error"
+    ].includes(String(value.status)) ||
     typeof value.baseRevision !== "string" ||
     typeof value.proposedRevision !== "string" ||
-    (value.proposedText !== undefined && typeof value.proposedText !== "string") ||
+    (value.proposedText !== undefined &&
+      typeof value.proposedText !== "string") ||
     !Array.isArray(value.toolCallIds) ||
     !value.toolCallIds.every((toolCallId) => typeof toolCallId === "string") ||
     !nonnegativeInteger(value.additions) ||
     !nonnegativeInteger(value.deletions) ||
     !Array.isArray(value.hunks) ||
     (value.truncated !== undefined && typeof value.truncated !== "boolean") ||
-    (value.statusMessage !== undefined && typeof value.statusMessage !== "string") ||
+    (value.statusMessage !== undefined &&
+      typeof value.statusMessage !== "string") ||
     (value.laneId !== undefined && typeof value.laneId !== "string") ||
     (value.generation !== undefined &&
       (!nonnegativeInteger(value.generation) || value.generation < 1)) ||
@@ -428,8 +443,7 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
   if (
     (value.stageId === "library" && !libraryTarget) ||
     (value.stageId !== "library" && value.libraryTarget !== undefined) ||
-    (value.stageId === "long-worldbuilding" &&
-      !longWorldbuildingTarget) ||
+    (value.stageId === "long-worldbuilding" && !longWorldbuildingTarget) ||
     (value.stageId !== "long-worldbuilding" &&
       value.longWorldbuildingTarget !== undefined) ||
     (value.stageId === "long-character" && !longCharacterTarget) ||
@@ -507,18 +521,23 @@ function parseStoredEditProposal(value: unknown): AgentEditProposal | undefined 
     documentId: value.documentId,
     title: value.title,
     summary: value.summary,
-    status: value.status === "accepting"
-      ? "pending"
-      : value.status as AgentEditProposal["status"],
+    status:
+      value.status === "accepting"
+        ? "pending"
+        : (value.status as AgentEditProposal["status"]),
     baseRevision: value.baseRevision,
     proposedRevision: value.proposedRevision,
-    ...(value.proposedText === undefined ? {} : { proposedText: value.proposedText }),
+    ...(value.proposedText === undefined
+      ? {}
+      : { proposedText: value.proposedText }),
     toolCallIds: [...value.toolCallIds] as string[],
     additions: value.additions,
     deletions: value.deletions,
     hunks,
     ...(value.truncated === undefined ? {} : { truncated: value.truncated }),
-    ...(value.statusMessage === undefined ? {} : { statusMessage: value.statusMessage }),
+    ...(value.statusMessage === undefined
+      ? {}
+      : { statusMessage: value.statusMessage }),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     ...(libraryTarget ? { libraryTarget } : {}),
@@ -581,7 +600,9 @@ function parseStoredToolTrace(value: unknown): AgentToolTrace | undefined {
     !isRecord(value) ||
     typeof value.id !== "string" ||
     typeof value.name !== "string" ||
-    !["preparing", "running", "completed", "error"].includes(String(value.status)) ||
+    !["preparing", "running", "completed", "error"].includes(
+      String(value.status)
+    ) ||
     typeof value.requestedAt !== "string"
   ) {
     return undefined;
@@ -687,7 +708,8 @@ function parseStoredSubagentRun(value: unknown): AgentSubagentRun | undefined {
               ...toolCall,
               status: "error" as const,
               completedAt: restoredAt,
-              resultSummary: toolCall.resultSummary ?? "会话恢复时子任务已停止。",
+              resultSummary:
+                toolCall.resultSummary ?? "会话恢复时子任务已停止。",
               isError: true
             }
           : toolCall
@@ -703,7 +725,7 @@ function parseStoredSubagentRun(value: unknown): AgentSubagentRun | undefined {
     status:
       restoredWhileRunning || value.status === "interrupted"
         ? "stopped"
-        : value.status as AgentSubagentRun["status"],
+        : (value.status as AgentSubagentRun["status"]),
     runtime,
     ...(typeof value.thinking === "string" ? { thinking: value.thinking } : {}),
     ...(typeof value.output === "string" ? { output: value.output } : {}),
@@ -761,14 +783,16 @@ function parseStoredMessage(value: unknown): ChatMessage | undefined {
       ) {
         return [];
       }
-      return [{
-        id: attachment.id,
-        name: attachment.name,
-        kind: attachment.kind,
-        mediaType: attachment.mediaType,
-        size: attachment.size,
-        ...(attachment.truncated === true ? { truncated: true } : {})
-      }];
+      return [
+        {
+          id: attachment.id,
+          name: attachment.name,
+          kind: attachment.kind,
+          mediaType: attachment.mediaType,
+          size: attachment.size,
+          ...(attachment.truncated === true ? { truncated: true } : {})
+        }
+      ];
     });
   }
 
@@ -804,12 +828,14 @@ function parseStoredMessage(value: unknown): ChatMessage | undefined {
       ) {
         return [];
       }
-      return [{
-        id: tool.id,
-        name: tool.name,
-        status: tool.status as "running" | "completed" | "error",
-        ...(typeof tool.summary === "string" ? { summary: tool.summary } : {})
-      }];
+      return [
+        {
+          id: tool.id,
+          name: tool.name,
+          status: tool.status as "running" | "completed" | "error",
+          ...(typeof tool.summary === "string" ? { summary: tool.summary } : {})
+        }
+      ];
     });
   }
 
@@ -868,7 +894,9 @@ function parseStoredMessage(value: unknown): ChatMessage | undefined {
   if (Array.isArray(value.editProposals)) {
     const editProposals = value.editProposals
       .map(parseStoredEditProposal)
-      .filter((proposal): proposal is AgentEditProposal => proposal !== undefined);
+      .filter(
+        (proposal): proposal is AgentEditProposal => proposal !== undefined
+      );
     if (
       editProposals.length !== value.editProposals.length ||
       editProposals.some((proposal) => proposal.runId !== message.runId)
@@ -878,7 +906,11 @@ function parseStoredMessage(value: unknown): ChatMessage | undefined {
     message.editProposals = editProposals;
   }
 
-  if (message.status === "stopped" && message.processingStartedAt && !message.processingCompletedAt) {
+  if (
+    message.status === "stopped" &&
+    message.processingStartedAt &&
+    !message.processingCompletedAt
+  ) {
     message.processingCompletedAt = new Date().toISOString();
   }
   return message;
@@ -912,11 +944,14 @@ function parsePersistenceRecord(
     messages,
     draft: typeof value.draft === "string" ? value.draft : "",
     approvalMode:
-      value.approvalMode === "auto-approve" ? "auto-approve" : "request-approval",
+      value.approvalMode === "auto-approve"
+        ? "auto-approve"
+        : "request-approval",
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     temperature:
-      typeof value.temperature === "number" && Number.isFinite(value.temperature)
+      typeof value.temperature === "number" &&
+      Number.isFinite(value.temperature)
         ? value.temperature
         : 0.7
   };
@@ -936,9 +971,7 @@ export function parseAgentConversationPersistenceSnapshot(
   const conversations = value.conversations
     .map(parsePersistenceRecord)
     .filter(
-      (
-        conversation
-      ): conversation is AgentConversationPersistenceRecord =>
+      (conversation): conversation is AgentConversationPersistenceRecord =>
         conversation !== undefined
     );
   if (!conversations.length && value.conversations.length > 0) {
@@ -946,15 +979,14 @@ export function parseAgentConversationPersistenceSnapshot(
   }
   const limited = conversations
     .sort(
-      (left, right) =>
-        Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
     )
     .slice(0, MAX_STORED_CONVERSATIONS);
   const activeSessionId = limited.some(
     (conversation) => conversation.sessionId === value.activeSessionId
   )
     ? value.activeSessionId
-    : limited[0]?.sessionId ?? value.activeSessionId;
+    : (limited[0]?.sessionId ?? value.activeSessionId);
   return {
     version: 1,
     activeSessionId,
@@ -970,9 +1002,7 @@ export function mergeAgentConversationPersistenceSnapshots(
   const sources = sourceValues
     .map(parseAgentConversationPersistenceSnapshot)
     .filter(
-      (
-        envelope
-      ): envelope is AgentConversationPersistenceSnapshot =>
+      (envelope): envelope is AgentConversationPersistenceSnapshot =>
         envelope !== undefined && envelope.conversations.length > 0
     );
   if (!sources.length) return target;
@@ -993,8 +1023,7 @@ export function mergeAgentConversationPersistenceSnapshots(
     }
   }
   const sortedConversations = [...conversationBySessionId.values()].sort(
-    (left, right) =>
-      Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+    (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
   );
   const preferredActiveConversation = target
     ? conversationBySessionId.get(target.activeSessionId)
@@ -1011,8 +1040,7 @@ export function mergeAgentConversationPersistenceSnapshots(
       ...conversations.slice(0, MAX_STORED_CONVERSATIONS - 1),
       preferredActiveConversation
     ].sort(
-      (left, right) =>
-        Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
     );
   }
   if (!conversations.length) return undefined;

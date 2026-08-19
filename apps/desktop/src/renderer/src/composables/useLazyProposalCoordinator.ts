@@ -51,9 +51,7 @@ export function useLazyProposalCoordinator(
 
   function reportFailure(error: unknown): void {
     context.notifications.error(
-      error instanceof Error
-        ? error.message
-        : "加载智能体修改协调器失败。"
+      error instanceof Error ? error.message : "加载智能体修改协调器失败。"
     );
   }
 
@@ -75,16 +73,18 @@ export function useLazyProposalCoordinator(
     enqueue((loaded) => loaded.reviewAgentEdit(...args)).catch(reportFailure);
   const reviewLongAgentEdit: ProposalCoordinator["reviewLongAgentEdit"] = (
     ...args
-  ) => enqueue((loaded) => loaded.reviewLongAgentEdit(...args)).catch(reportFailure);
+  ) =>
+    enqueue((loaded) => loaded.reviewLongAgentEdit(...args)).catch(
+      reportFailure
+    );
   const scheduleQueuedAgentEdits: ProposalCoordinator["scheduleQueuedAgentEdits"] =
     (...args) => {
       enqueueVoid((loaded) => loaded.scheduleQueuedAgentEdits(...args));
     };
-  const stageAgentEditProposal: ProposalCoordinator["stageAgentEditProposal"] = (
-    ...args
-  ) => {
-    enqueueVoid((loaded) => loaded.stageAgentEditProposal(...args));
-  };
+  const stageAgentEditProposal: ProposalCoordinator["stageAgentEditProposal"] =
+    (...args) => {
+      enqueueVoid((loaded) => loaded.stageAgentEditProposal(...args));
+    };
   const stageLibraryEditProposal: ProposalCoordinator["stageLibraryEditProposal"] =
     (...args) => {
       enqueueVoid((loaded) => loaded.stageLibraryEditProposal(...args));
@@ -113,10 +113,7 @@ export function useLazyProposalCoordinator(
       const observedTail = invocationTail;
       await observedTail;
       await coordinator?.drain();
-      if (
-        observedTail === invocationTail &&
-        pendingInvocationCount === 0
-      ) {
+      if (observedTail === invocationTail && pendingInvocationCount === 0) {
         return;
       }
     }

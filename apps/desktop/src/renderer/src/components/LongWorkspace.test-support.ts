@@ -121,5 +121,5 @@ export {
   worldbuildingNavigationSource,
   writingOrchestratorSource,
   writingWorkflowSource,
-  writingWorkspaceSource,
+  writingWorkspaceSource
 };

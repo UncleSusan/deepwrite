@@ -97,9 +97,7 @@ function uniqueLongCandidates(
   });
 }
 
-function longOperationCandidates(
-  operation: LongWorkspaceOperation
-): {
+function longOperationCandidates(operation: LongWorkspaceOperation): {
   primary: LongApprovalNavigationCandidate[];
   fallback: LongApprovalNavigationCandidate[];
 } {
@@ -345,9 +343,7 @@ function longOperationCandidates(
       };
     case "foreshadowing.create":
       return {
-        primary: [
-          { kind: "foreshadowing", threadId: operation.thread.id }
-        ],
+        primary: [{ kind: "foreshadowing", threadId: operation.thread.id }],
         fallback: [root("plot_design")]
       };
     case "foreshadowing.update":
@@ -379,9 +375,7 @@ function longOperationCandidates(
       };
     case "foreshadowingBeat.move":
       return {
-        primary: [
-          { kind: "foreshadowing", threadId: operation.toThreadId }
-        ],
+        primary: [{ kind: "foreshadowing", threadId: operation.toThreadId }],
         fallback: [{ kind: "foreshadowing" }, root("plot_design")]
       };
     case "foreshadowingBeat.delete":
@@ -461,8 +455,7 @@ export function resolveAgentEditApprovalTarget(
       workspaceId: proposal.workspaceId,
       ...(section?.realSectionId || section?.provisionalSectionId
         ? {
-            sectionId:
-              section.realSectionId ?? section.provisionalSectionId
+            sectionId: section.realSectionId ?? section.provisionalSectionId
           }
         : {}),
       fileKind: "body"
@@ -773,9 +766,7 @@ function resolveLongFileNavigation(
     }
     const character =
       index.characters?.find(({ id }) => id === entry.characterId) ??
-      summary.navigation.characters.find(
-        ({ id }) => id === entry.characterId
-      );
+      summary.navigation.characters.find(({ id }) => id === entry.characterId);
     if (!character) return undefined;
     return {
       selection: {
@@ -910,7 +901,7 @@ function resolveLongCandidate(
       item?.file.id ??
       (category.format === "text"
         ? category.file.id
-        : category.overview?.id ?? category.items[0]?.file.id);
+        : (category.overview?.id ?? category.items[0]?.file.id));
     return {
       selection: {
         ...selection,
@@ -1036,9 +1027,7 @@ function resolveLongCandidate(
         selection,
         focus: {
           ...(thread ? { foreshadowingThreadId: thread.id } : {}),
-          ...(candidate.beatId
-            ? { foreshadowingBeatId: candidate.beatId }
-            : {})
+          ...(candidate.beatId ? { foreshadowingBeatId: candidate.beatId } : {})
         }
       }
     : undefined;

@@ -33,7 +33,9 @@ const emit = defineEmits<{
         <span>{{ path ? "已启用" : "待设置" }}</span>
       </div>
       <div class="dialog-note">
-        新书和旧版导入保存在 books，新素材库保存在 materials，新技能库保存在 skills。项目仍采用 deepwrite.json + Markdown 文件结构，可由 Git 或同步盘直接管理。
+        新书和旧版导入保存在 books，新素材库保存在 materials，新技能库保存在
+        skills。项目仍采用 deepwrite.json + Markdown 文件结构，可由 Git
+        或同步盘直接管理。
       </div>
       <div class="dialog-actions">
         <button

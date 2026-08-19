@@ -29,7 +29,9 @@ function takeSnapshotText(
 }
 
 function catalogNodeId(...parts: string[]): string {
-  return ["catalog", ...parts.map((part) => encodeURIComponent(part))].join(":");
+  return ["catalog", ...parts.map((part) => encodeURIComponent(part))].join(
+    ":"
+  );
 }
 
 function entryDocumentId(
@@ -76,7 +78,8 @@ function findOwningGroup(
     const memberIds = [
       ...new Set(
         Object.values(group.members).filter(
-          (value): value is string => typeof value === "string" && value.length > 0
+          (value): value is string =>
+            typeof value === "string" && value.length > 0
         )
       )
     ];
@@ -146,7 +149,9 @@ function resolveReadableLibraries(
   }
 
   // Keep the current library first for prioritization and prompts.
-  sources.sort((left, right) => Number(right.isCurrent) - Number(left.isCurrent));
+  sources.sort(
+    (left, right) => Number(right.isCurrent) - Number(left.isCurrent)
+  );
   readableLibraries.sort((left, right) =>
     left.libraryId === current.id ? -1 : right.libraryId === current.id ? 1 : 0
   );
@@ -219,12 +224,8 @@ export function buildLibraryAgentWorkspaceContext(
   const library = materialLibrary ?? skillLibrary;
   if (!library) return undefined;
 
-  const {
-    sources,
-    groupId,
-    groupTitle,
-    readableLibraries
-  } = resolveReadableLibraries(snapshot, domain, library);
+  const { sources, groupId, groupTitle, readableLibraries } =
+    resolveReadableLibraries(snapshot, domain, library);
 
   const activeEntryId = activeDocument.catalogEntryId;
   const liveOverview = liveDocuments.find(
@@ -324,10 +325,7 @@ export function buildLibraryAgentWorkspaceContext(
   }
 
   // Ensure the active entry is present if it was deferred by capacity.
-  if (
-    activeEntryId &&
-    !entries.some(({ id }) => id === activeEntryId)
-  ) {
+  if (activeEntryId && !entries.some(({ id }) => id === activeEntryId)) {
     const activeEntry = library.entries.find(({ id }) => id === activeEntryId);
     const liveActive = liveDocuments.find(
       (document) =>
@@ -341,7 +339,8 @@ export function buildLibraryAgentWorkspaceContext(
     }
     const textLimit = Math.min(
       LIBRARY_AGENT_ENTRY_MAX_CHARACTERS,
-      LIBRARY_AGENT_TOTAL_SNAPSHOT_MAX_CHARACTERS - overviewSnapshot.content.length
+      LIBRARY_AGENT_TOTAL_SNAPSHOT_MAX_CHARACTERS -
+        overviewSnapshot.content.length
     );
     const textSnapshot = takeSnapshotText(liveActive.content, textLimit);
     entries.unshift({
@@ -351,7 +350,8 @@ export function buildLibraryAgentWorkspaceContext(
       title: liveActive.title,
       content: textSnapshot.content,
       revision: createShortWorkspaceContentRevision(textSnapshot.content),
-      readOnly: Boolean(skillLibrary?.isBuiltin) || Boolean(liveActive.readOnly),
+      readOnly:
+        Boolean(skillLibrary?.isBuiltin) || Boolean(liveActive.readOnly),
       ...(textSnapshot.truncated
         ? {
             truncated: true,

@@ -46,7 +46,9 @@ export class AppearanceConfigStore {
   async list(): Promise<AppearanceSettingsSnapshot> {
     await this.writeChain;
     try {
-      const raw = JSON.parse(await readFile(this.settingsPath, "utf8")) as unknown;
+      const raw = JSON.parse(
+        await readFile(this.settingsPath, "utf8")
+      ) as unknown;
       if (
         !raw ||
         typeof raw !== "object" ||
@@ -81,7 +83,9 @@ export class AppearanceConfigStore {
     }
   }
 
-  async save(rawInput: AppearanceSettings): Promise<AppearanceSettingsSnapshot> {
+  async save(
+    rawInput: AppearanceSettings
+  ): Promise<AppearanceSettingsSnapshot> {
     const settings = AppearanceSettingsSchema.parse(rawInput);
     let saved: AppearanceSettingsSnapshot | undefined;
     const operation = this.writeChain.then(async () => {

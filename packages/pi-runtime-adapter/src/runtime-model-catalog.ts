@@ -378,7 +378,9 @@ const DEEPWRITE_RUNTIME_MODELS = [
   } satisfies Model<"openai-completions">
 ] as const;
 
-export function findDeepWriteRuntimeModel(modelId: string): Model<Api> | undefined {
+export function findDeepWriteRuntimeModel(
+  modelId: string
+): Model<Api> | undefined {
   const normalizedModelId = modelId.toLowerCase();
   let matchedModel: Model<Api> | undefined;
 

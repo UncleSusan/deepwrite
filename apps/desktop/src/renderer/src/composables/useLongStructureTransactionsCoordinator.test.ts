@@ -109,17 +109,18 @@ function mutationBatch(
   });
 }
 
-function createHarness(overrides: {
-  previewOperations?: LongWorkspaceRendererApi["previewOperations"];
-  applyOperations?: LongWorkspaceRendererApi["applyOperations"];
-  saveActiveEditorChanges?: () => Promise<boolean>;
-  refreshActiveWorkspace?: (bookId: string) => Promise<boolean>;
-  refreshWritingSaveBarrier?: (bookId: string) => Promise<boolean>;
-} = {}) {
+function createHarness(
+  overrides: {
+    previewOperations?: LongWorkspaceRendererApi["previewOperations"];
+    applyOperations?: LongWorkspaceRendererApi["applyOperations"];
+    saveActiveEditorChanges?: () => Promise<boolean>;
+    refreshActiveWorkspace?: (bookId: string) => Promise<boolean>;
+    refreshWritingSaveBarrier?: (bookId: string) => Promise<boolean>;
+  } = {}
+) {
   const activeLongBookId = ref<string | null>(BOOK_ID);
-  const activeLongWorkspaceIndex = shallowRef<LongWorkspaceIndexSnapshot | null>(
-    workspaceIndex()
-  );
+  const activeLongWorkspaceIndex =
+    shallowRef<LongWorkspaceIndexSnapshot | null>(workspaceIndex());
   const longBooks = shallowRef<readonly LongBookSummary[]>([bookSummary()]);
   const activeLongBookSummary = computed(
     () =>
@@ -127,24 +128,26 @@ function createHarness(overrides: {
   );
   const previewOperations = vi.fn(
     overrides.previewOperations ??
-      (async ({ bookId }) => ({
-        bookId,
-        projectRevision: activeLongBookSummary.value?.projectRevision ?? 0,
-        preview: { impact: {} }
-      }) as never)
+      (async ({ bookId }) =>
+        ({
+          bookId,
+          projectRevision: activeLongBookSummary.value?.projectRevision ?? 0,
+          preview: { impact: {} }
+        }) as never)
   );
   const applyOperations = vi.fn(
     overrides.applyOperations ??
-      (async ({ bookId, baseProjectRevision }) => ({
-        bookId,
-        projectRevision: baseProjectRevision + 1,
-        summary: bookSummary(
+      (async ({ bookId, baseProjectRevision }) =>
+        ({
           bookId,
-          (activeLongWorkspaceIndex.value?.revision ?? 0) + 1,
-          baseProjectRevision + 1
-        ),
-        operationResult: {}
-      }) as never)
+          projectRevision: baseProjectRevision + 1,
+          summary: bookSummary(
+            bookId,
+            (activeLongWorkspaceIndex.value?.revision ?? 0) + 1,
+            baseProjectRevision + 1
+          ),
+          operationResult: {}
+        }) as never)
   );
   const api = {
     previewOperations,
@@ -289,13 +292,12 @@ describe("useLongStructureTransactionsCoordinator", () => {
   });
 
   it("rebases against the authoritative revisions advanced by editor save", async () => {
-    let harness!: ReturnType<typeof createHarness>;
     const save = vi.fn(async () => {
       harness.workspaceIndex.value = workspaceIndex(BOOK_ID, 2);
       harness.longBooks.value = [bookSummary(BOOK_ID, 2, 14)];
       return true;
     });
-    harness = createHarness({ saveActiveEditorChanges: save });
+    const harness = createHarness({ saveActiveEditorChanges: save });
     const initialIndex = harness.workspaceIndex.value!;
     const result = completion();
 

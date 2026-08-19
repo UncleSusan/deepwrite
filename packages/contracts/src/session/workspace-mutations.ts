@@ -4,53 +4,75 @@ import { SHORT_WORKSPACE_FILE_MAX_CHARACTERS } from "../expert-draft";
 import { ShortWorkspaceStageIdSchema } from "../workspace";
 import { AgentRuntimeRefSchema } from "./runtime";
 
-export const WorkspaceEditorMutationTargetSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("expert-draft-file"),
-    documentId: z.string().trim().min(1).max(4_096),
-    sectionId: z.string().trim().min(1).max(120),
-    fileKind: z.enum(["body", "characterState"])
-  }),
-  z.object({
-    kind: z.literal("expert-draft-section-creation"),
-    sections: z
-      .array(
+export const WorkspaceEditorMutationTargetSchema = z.discriminatedUnion(
+  "kind",
+  [
+    z.object({
+      kind: z.literal("expert-draft-file"),
+      documentId: z.string().trim().min(1).max(4_096),
+      sectionId: z.string().trim().min(1).max(120),
+      fileKind: z.enum(["body", "characterState"])
+    }),
+    z.object({
+      kind: z.literal("expert-draft-section-creation"),
+      sections: z
+        .array(
+          z.object({
+            title: z.string().trim().min(1).max(240),
+            wordCountRequirement: z.string().max(1_000),
+            provisionalSectionId: z.string().trim().min(1).max(120)
+          })
+        )
+        .min(1)
+        .max(100),
+      afterSectionId: z.string().trim().min(1).max(120).optional()
+    }),
+    z.object({
+      kind: z.literal("expert-draft-section-rename"),
+      sectionId: z.string().trim().min(1).max(120),
+      previousTitle: z.string().trim().min(1).max(240),
+      title: z.string().trim().min(1).max(240)
+    }),
+    z.object({
+      kind: z.literal("expert-draft-section-deletion"),
+      sectionId: z.string().trim().min(1).max(120),
+      title: z.string().trim().min(1).max(240)
+    }),
+    z.object({
+      kind: z.literal("character-file"),
+      documentId: z.string().trim().min(1).max(4_096),
+      itemId: z.string().trim().min(1).max(512).optional()
+    }),
+    z.object({
+      kind: z.literal("character-structure"),
+      mutation: z.discriminatedUnion("type", [
         z.object({
-          title: z.string().trim().min(1).max(240),
-          wordCountRequirement: z.string().max(1_000),
-          provisionalSectionId: z.string().trim().min(1).max(120)
+          type: z.literal("createItem"),
+          title: z.string().trim().min(1).max(256),
+          provisionalItemId: z.string().trim().min(1).max(512)
+        }),
+        z.object({
+          type: z.literal("updateItem"),
+          itemId: z.string().trim().min(1).max(512),
+          previousTitle: z.string().trim().min(1).max(256),
+          title: z.string().trim().min(1).max(256)
+        }),
+        z.object({
+          type: z.literal("moveItem"),
+          itemId: z.string().trim().min(1).max(512),
+          direction: z.enum(["up", "down"]),
+          title: z.string().trim().min(1).max(256)
+        }),
+        z.object({
+          type: z.literal("deleteItem"),
+          itemId: z.string().trim().min(1).max(512),
+          title: z.string().trim().min(1).max(256),
+          deletedText: z.string().max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS)
         })
-      )
-      .min(1)
-      .max(100),
-    afterSectionId: z.string().trim().min(1).max(120).optional()
-  }),
-  z.object({
-    kind: z.literal("expert-draft-section-rename"),
-    sectionId: z.string().trim().min(1).max(120),
-    previousTitle: z.string().trim().min(1).max(240),
-    title: z.string().trim().min(1).max(240)
-  }),
-  z.object({
-    kind: z.literal("expert-draft-section-deletion"),
-    sectionId: z.string().trim().min(1).max(120),
-    title: z.string().trim().min(1).max(240)
-  }),
-  z.object({
-    kind: z.literal("character-file"),
-    documentId: z.string().trim().min(1).max(4_096),
-    itemId: z.string().trim().min(1).max(512).optional()
-  }),
-  z.object({
-    kind: z.literal("character-structure"),
-    mutation: z.discriminatedUnion("type", [
-      z.object({ type: z.literal("createItem"), title: z.string().trim().min(1).max(256), provisionalItemId: z.string().trim().min(1).max(512) }),
-      z.object({ type: z.literal("updateItem"), itemId: z.string().trim().min(1).max(512), previousTitle: z.string().trim().min(1).max(256), title: z.string().trim().min(1).max(256) }),
-      z.object({ type: z.literal("moveItem"), itemId: z.string().trim().min(1).max(512), direction: z.enum(["up", "down"]), title: z.string().trim().min(1).max(256) }),
-      z.object({ type: z.literal("deleteItem"), itemId: z.string().trim().min(1).max(512), title: z.string().trim().min(1).max(256), deletedText: z.string().max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS) })
-    ])
-  })
-]);
+      ])
+    })
+  ]
+);
 export type WorkspaceEditorMutationTarget = z.infer<
   typeof WorkspaceEditorMutationTargetSchema
 >;
@@ -102,7 +124,6 @@ export const WorkspaceEditorMutationPayloadSchema = z
 export type WorkspaceEditorMutationPayload = z.infer<
   typeof WorkspaceEditorMutationPayloadSchema
 >;
-
 
 const LibraryEditorMutationBaseSchema = z.object({
   sessionId: z.string().min(1),

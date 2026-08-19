@@ -41,7 +41,9 @@ function isRelativeMarkdownPath(value: string): boolean {
   }
   return value
     .split("/")
-    .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+    .every(
+      (segment) => segment.length > 0 && segment !== "." && segment !== ".."
+    );
 }
 
 export const CatalogProjectContentPathSchema = z

@@ -27,8 +27,7 @@ function loadLongRollbackCoordinatorModule(): Promise<LongRollbackCoordinatorMod
  */
 export function useLazyLongRollbackCoordinator(
   context: LongRollbackCoordinatorOptions,
-  loadModule: LongRollbackCoordinatorModuleLoader =
-    loadLongRollbackCoordinatorModule
+  loadModule: LongRollbackCoordinatorModuleLoader = loadLongRollbackCoordinatorModule
 ): LongRollbackCoordinator {
   const targetIdentity: LongRollbackTargetIdentityState =
     context.targetIdentity ?? {
@@ -40,8 +39,7 @@ export function useLazyLongRollbackCoordinator(
     targetIdentity
   };
   let coordinator: LongRollbackCoordinator | null = null;
-  let coordinatorPromise: Promise<LongRollbackCoordinator | null> | null =
-    null;
+  let coordinatorPromise: Promise<LongRollbackCoordinator | null> | null = null;
   let disposed = false;
   let disposePromise: Promise<void> | null = null;
   let loadFailureReported = false;
@@ -83,9 +81,7 @@ export function useLazyLongRollbackCoordinator(
     if (disposed || loadFailureReported) return;
     loadFailureReported = true;
     context.notifications.error(
-      error instanceof Error
-        ? error.message
-        : "加载长篇回滚协调器失败。"
+      error instanceof Error ? error.message : "加载长篇回滚协调器失败。"
     );
   }
 
@@ -107,10 +103,7 @@ export function useLazyLongRollbackCoordinator(
   function openLongRollbackDialog(): void {
     if (disposed) return;
     const pendingOwnedByCoordinator = coordinator?.ownsPending() ?? false;
-    if (
-      context.state.rollbackPending.value &&
-      !pendingOwnedByCoordinator
-    ) {
+    if (context.state.rollbackPending.value && !pendingOwnedByCoordinator) {
       return;
     }
     if (context.blockWritingPlan("回滚连续性提交")) return;

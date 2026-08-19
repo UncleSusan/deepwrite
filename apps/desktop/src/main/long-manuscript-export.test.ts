@@ -2,13 +2,18 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { safeLongExportName, writeLongManuscriptExport } from "./long-manuscript-export";
+import {
+  safeLongExportName,
+  writeLongManuscriptExport
+} from "./long-manuscript-export";
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true }))
+    temporaryDirectories
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true }))
   );
 });
 
@@ -28,10 +33,9 @@ describe("long manuscript folder export", () => {
 
     expect(result.fileCount).toBe(3);
     expect(result.directoryPath).toContain("雾港 长篇-导出");
-    expect((await readdir(join(result.directoryPath, "世界观", "势力"))).sort()).toEqual([
-      "巡夜司 (2).txt",
-      "巡夜司.txt"
-    ]);
+    expect(
+      (await readdir(join(result.directoryPath, "世界观", "势力"))).sort()
+    ).toEqual(["巡夜司 (2).txt", "巡夜司.txt"]);
     expect(
       await readFile(join(result.directoryPath, "正文", "第一节.txt"), "utf8")
     ).toBe("\ufeff正文内容");

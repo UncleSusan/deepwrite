@@ -71,7 +71,6 @@ const emit = defineEmits<{
   refreshCatalog: [];
   marketplaceSessionChange: [session: MarketplaceSession];
 }>();
-
 </script>
 
 <template>
@@ -129,8 +128,9 @@ const emit = defineEmits<{
     @load-official-models="emit('loadOfficialModels')"
     @save-official-token="emit('saveOfficialToken', $event)"
     @clear-official-token="emit('clearOfficialToken')"
-    @set-official-model-enabled="(modelId, enabled) =>
-      emit('setOfficialModelEnabled', modelId, enabled)"
+    @set-official-model-enabled="
+      (modelId, enabled) => emit('setOfficialModelEnabled', modelId, enabled)
+    "
   />
 
   <WorkspaceFeatureFrame
@@ -264,9 +264,6 @@ const emit = defineEmits<{
     >
       <AppIcon name="panel-left" :size="18" />
     </button>
-    <CloudBackupPage
-      active
-      @refresh-catalog="emit('refreshCatalog')"
-    />
+    <CloudBackupPage active @refresh-catalog="emit('refreshCatalog')" />
   </main>
 </template>

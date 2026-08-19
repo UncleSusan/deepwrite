@@ -78,7 +78,10 @@ describe("ChatAssistantProjectConfigStore", () => {
     const project = { projectType: "short" as const, projectId: "book-limits" };
     await expect(store.save(project, "  ")).rejects.toThrow();
     await expect(
-      store.save(project, "x".repeat(CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH + 1))
+      store.save(
+        project,
+        "x".repeat(CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH + 1)
+      )
     ).rejects.toThrow();
   });
 });

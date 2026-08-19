@@ -50,25 +50,30 @@ function baseContext() {
       updatedAt: NOW
     },
     longBooks: [],
-    models: [{
-      id: "model-1",
-      label: "测试模型",
-      provider: "example",
-      modelId: "example-chat",
-      api: "openai-completions" as const,
-      reasoning: false,
-      defaultThinkingLevel: "off" as const,
-      thinkingLevelOptions: ["off"],
-      temperatureOptions: [0.7],
-      credentialConfigured: true
-    }],
+    models: [
+      {
+        id: "model-1",
+        label: "测试模型",
+        provider: "example",
+        modelId: "example-chat",
+        api: "openai-completions" as const,
+        reasoning: false,
+        defaultThinkingLevel: "off" as const,
+        thinkingLevelOptions: ["off"],
+        temperatureOptions: [0.7],
+        credentialConfigured: true
+      }
+    ],
     defaultModelId: "model-1",
     usage: { today: usage, "7d": usage, "30d": usage, all: usage }
   };
 }
 
 function normalContext(): ChatAssistantRuntimeContext {
-  return { mode: "normal", ...baseContext() } as unknown as ChatAssistantRuntimeContext;
+  return {
+    mode: "normal",
+    ...baseContext()
+  } as unknown as ChatAssistantRuntimeContext;
 }
 
 function projectContext(): ChatAssistantRuntimeContext {
@@ -85,43 +90,48 @@ function projectContext(): ChatAssistantRuntimeContext {
       items: [{ id: "character-alice", title: "林岚", order: 1 }]
     },
     plotStages: [{ id: "outline", title: "大纲", enabled: true, order: 1 }],
-    documents: [{
-      id: "outline",
-      title: "大纲",
-      content: "林岚在雨夜发现线索。",
-      createdAt: NOW,
-      updatedAt: NOW
-    }, {
-      id: "character-alice",
-      title: "林岚",
-      content: "林岚是一名调查员。",
-      createdAt: NOW,
-      updatedAt: NOW
-    }],
+    documents: [
+      {
+        id: "outline",
+        title: "大纲",
+        content: "林岚在雨夜发现线索。",
+        createdAt: NOW,
+        updatedAt: NOW
+      },
+      {
+        id: "character-alice",
+        title: "林岚",
+        content: "林岚是一名调查员。",
+        createdAt: NOW,
+        updatedAt: NOW
+      }
+    ],
     draft: {
       id: "draft",
       title: "正文",
-      sections: [{
-        id: "section-1",
-        title: "第一节",
-        wordCountRequirement: "1000 字",
-        body: {
-          id: "draft:section-1:body",
+      sections: [
+        {
+          id: "section-1",
           title: "第一节",
-          content: "雨落在旧码头。",
+          wordCountRequirement: "1000 字",
+          body: {
+            id: "draft:section-1:body",
+            title: "第一节",
+            content: "雨落在旧码头。",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
+          characterState: {
+            id: "draft:section-1:state",
+            title: "人物状态",
+            content: "林岚保持警觉。",
+            createdAt: NOW,
+            updatedAt: NOW
+          },
           createdAt: NOW,
           updatedAt: NOW
-        },
-        characterState: {
-          id: "draft:section-1:state",
-          title: "人物状态",
-          content: "林岚保持警觉。",
-          createdAt: NOW,
-          updatedAt: NOW
-        },
-        createdAt: NOW,
-        updatedAt: NOW
-      }],
+        }
+      ],
       createdAt: NOW,
       updatedAt: NOW
     },
@@ -184,7 +194,9 @@ function longProjectContext(): ChatAssistantRuntimeContext {
   } as unknown as ChatAssistantRuntimeContext;
 }
 
-function resultText(result: { content: Array<{ type: string; text?: string }> }) {
+function resultText(result: {
+  content: Array<{ type: string; text?: string }>;
+}) {
   const first = result.content[0];
   return first?.type === "text" ? first.text : "";
 }
@@ -208,14 +220,18 @@ describe("chat assistant read-only runtime", () => {
       context: normalContext()
     });
     const names = tools.map(({ name }) => name);
-    expect(names).toEqual(expect.arrayContaining([
-      "list_creation_projects",
-      "get_material_library_summary",
-      "get_skill_library_summary",
-      "query_model_configs",
-      "query_model_usage"
-    ]));
-    expect(names.some((name) => /write|edit|delete|propos|approv/u.test(name))).toBe(false);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "list_creation_projects",
+        "get_material_library_summary",
+        "get_skill_library_summary",
+        "query_model_configs",
+        "query_model_usage"
+      ])
+    );
+    expect(
+      names.some((name) => /write|edit|delete|propos|approv/u.test(name))
+    ).toBe(false);
     expect(names).not.toContain("read_workspace_content");
 
     const modelTool = tools.find(({ name }) => name === "query_model_configs")!;
@@ -231,25 +247,37 @@ describe("chat assistant read-only runtime", () => {
       context: projectContext()
     });
     const names = tools.map(({ name }) => name);
-    expect(names).toEqual(expect.arrayContaining([
-      "list_workspace_content",
-      "search_workspace_text",
-      "read_workspace_content",
-      "list_characters",
-      "search_characters",
-      "read_character",
-      "read_draft_sections"
-    ]));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "list_workspace_content",
+        "search_workspace_text",
+        "read_workspace_content",
+        "list_characters",
+        "search_characters",
+        "read_character",
+        "read_draft_sections"
+      ])
+    );
     const read = tools.find(({ name }) => name === "read_workspace_content")!;
-    expect(Object.keys((read.parameters as { properties: object }).properties)).not.toContain("project_id");
-    expect(resultText(await read.execute("read-ok", {
-      document_id: "draft:section-1:body",
-      offset: 0,
-      max_characters: 4
-    }))).toContain("雨落在旧");
-    expect(resultText(await read.execute("read-other", {
-      document_id: "another-book-document"
-    }))).toContain("不属于当前项目");
+    expect(
+      Object.keys((read.parameters as { properties: object }).properties)
+    ).not.toContain("project_id");
+    expect(
+      resultText(
+        await read.execute("read-ok", {
+          document_id: "draft:section-1:body",
+          offset: 0,
+          max_characters: 4
+        })
+      )
+    ).toContain("雨落在旧");
+    expect(
+      resultText(
+        await read.execute("read-other", {
+          document_id: "another-book-document"
+        })
+      )
+    ).toContain("不属于当前项目");
   });
 
   it("long project mode retains only the existing query triples and safe continuity search", () => {
@@ -258,12 +286,15 @@ describe("chat assistant read-only runtime", () => {
       sessionId: "session-long-project",
       context: longProjectContext()
     });
-    const projectNames = tools.map(({ name }) => name).filter((name) =>
-      name.includes("setting") ||
-      name.includes("plot_design") ||
-      name.includes("chapter") ||
-      name.includes("continuity")
-    );
+    const projectNames = tools
+      .map(({ name }) => name)
+      .filter(
+        (name) =>
+          name.includes("setting") ||
+          name.includes("plot_design") ||
+          name.includes("chapter") ||
+          name.includes("continuity")
+      );
     expect(projectNames).toEqual([
       "list_setting",
       "search_setting",
@@ -278,8 +309,16 @@ describe("chat assistant read-only runtime", () => {
       "read_continuity_file",
       "search_continuity_files"
     ]);
-    expect(tools.some(({ name }) => /create|write|edit|delete|propos|approv/u.test(name))).toBe(false);
-    const search = tools.find(({ name }) => name === "search_continuity_files")!;
-    expect(Object.keys((search.parameters as { properties: object }).properties)).not.toContain("book_id");
+    expect(
+      tools.some(({ name }) =>
+        /create|write|edit|delete|propos|approv/u.test(name)
+      )
+    ).toBe(false);
+    const search = tools.find(
+      ({ name }) => name === "search_continuity_files"
+    )!;
+    expect(
+      Object.keys((search.parameters as { properties: object }).properties)
+    ).not.toContain("book_id");
   });
 });

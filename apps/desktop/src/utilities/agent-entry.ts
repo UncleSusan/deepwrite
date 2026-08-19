@@ -12,10 +12,7 @@ import {
   type LongCommandExecutor
 } from "@deepwrite/pi-runtime-adapter";
 import { createId, nowIso } from "@deepwrite/shared";
-import {
-  bootUtility,
-  type UtilityCommandHandlerContext
-} from "./runtime";
+import { bootUtility, type UtilityCommandHandlerContext } from "./runtime";
 
 const runtime = new PiAgentRuntimeAdapter({
   evaluationMode: process.env.DEEPWRITE_APP_MODE === "evaluation"
@@ -125,7 +122,9 @@ function toEventEnvelope(
         content: event.payload.content,
         runtime: event.payload.runtime,
         ...(event.payload.thinking ? { thinking: event.payload.thinking } : {}),
-        ...(event.payload.stopReason ? { stopReason: event.payload.stopReason } : {}),
+        ...(event.payload.stopReason
+          ? { stopReason: event.payload.stopReason }
+          : {}),
         ...(event.payload.usage ? { usage: event.payload.usage } : {})
       },
       { id: createId("evt"), context }
@@ -205,9 +204,13 @@ function toEventEnvelope(
         phase: event.payload.phase,
         argumentsDelta: event.payload.argumentsDelta,
         runtime: event.payload.runtime,
-        ...(event.payload.toolCallId ? { toolCallId: event.payload.toolCallId } : {}),
+        ...(event.payload.toolCallId
+          ? { toolCallId: event.payload.toolCallId }
+          : {}),
         ...(event.payload.toolName ? { toolName: event.payload.toolName } : {}),
-        ...(event.payload.args !== undefined ? { args: event.payload.args } : {})
+        ...(event.payload.args !== undefined
+          ? { args: event.payload.args }
+          : {})
       },
       { id: createId("evt"), context }
     );
@@ -495,7 +498,7 @@ function streamPrompt(
   input: Parameters<PiAgentRuntimeAdapter["start"]>[0],
   correlationId: string,
   emitEvent: (event: SystemEventEnvelope) => void,
-  controller: AbortController
+  _controller: AbortController
 ): void {
   const stream = (async () => {
     try {
@@ -518,8 +521,11 @@ function streamPrompt(
               sessionId: input.sessionId,
               runId: input.runId,
               code: "agent.stream_failed",
-              message: error instanceof Error ? error.message : "Agent stream failed.",
-              details: { kind: error instanceof Error ? error.name : "unknown" },
+              message:
+                error instanceof Error ? error.message : "Agent stream failed.",
+              details: {
+                kind: error instanceof Error ? error.name : "unknown"
+              },
               runtime: runtime.describe(input.runtimeConfig)
             },
             {
@@ -674,7 +680,8 @@ bootUtility("agent", {
         ...((command.payload.longAgentProfile ||
           (command.payload.chatAssistantRuntimeContext?.mode === "project" &&
             command.payload.chatAssistantRuntimeContext.project.projectType ===
-              "long")) && context
+              "long")) &&
+        context
           ? { longCommandExecutor: createLongCommandExecutor(context) }
           : {}),
         ...(command.payload.subagentDefinitions
@@ -687,7 +694,9 @@ bootUtility("agent", {
           ? { libraryAgentProfile: command.payload.libraryAgentProfile }
           : {}),
         ...(command.payload.learningImitationProfile
-          ? { learningImitationProfile: command.payload.learningImitationProfile }
+          ? {
+              learningImitationProfile: command.payload.learningImitationProfile
+            }
           : {}),
         ...(command.payload.workspaceContext
           ? { workspaceContext: command.payload.workspaceContext }

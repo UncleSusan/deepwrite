@@ -17,10 +17,7 @@ vi.mock("electron", () => ({
   }
 }));
 
-import {
-  UtilitySupervisor,
-  type UtilitySupervisorOptions
-} from "./supervisor";
+import { UtilitySupervisor, type UtilitySupervisorOptions } from "./supervisor";
 
 class FakeUtilityProcess extends EventEmitter {
   readonly posted: unknown[] = [];
@@ -108,7 +105,9 @@ describe("UtilitySupervisor internal command bridge", () => {
   });
 
   afterEach(async () => {
-    await Promise.all(supervisors.splice(0).map((supervisor) => supervisor.shutdownAll()));
+    await Promise.all(
+      supervisors.splice(0).map((supervisor) => supervisor.shutdownAll())
+    );
   });
 
   function createSupervisor(
@@ -159,9 +158,7 @@ describe("UtilitySupervisor internal command bridge", () => {
       .posted.find(
         (message) =>
           (message as { kind?: string }).kind === "utility.command.request"
-      ) as
-      | { requestId: string; command: CommandEnvelope }
-      | undefined;
+      ) as { requestId: string; command: CommandEnvelope } | undefined;
     expect(targetRequest?.command.id).toBe(command.id);
 
     processes.get("core")!.dispatch({
@@ -257,8 +254,7 @@ describe("UtilitySupervisor internal command bridge", () => {
         .get("core")!
         .posted.some(
           (message) =>
-            (message as { kind?: string }).kind ===
-            "utility.command.request"
+            (message as { kind?: string }).kind === "utility.command.request"
         )
     ).toBe(false);
     expect(processes.get("agent")!.posted).toContainEqual(
@@ -270,8 +266,7 @@ describe("UtilitySupervisor internal command bridge", () => {
           requestId: command.id,
           error: {
             code: "utility.internal_command_unauthorized",
-            message:
-              "The run has not completed the Main acceptance chain.",
+            message: "The run has not completed the Main acceptance chain.",
             details: {
               authorizationCode: "main.run_not_accepted"
             }

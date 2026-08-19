@@ -4,12 +4,13 @@ import { CommandEnvelopeSchema, createEnvelope } from "@deepwrite/contracts";
 
 describe("chat assistant runtime context", () => {
   it("uses registered Core command discriminators for every authority query", () => {
-    const source = readFileSync(
-      new URL("./chat-assistant-runtime-context.ts", import.meta.url),
+    const mainSource = readFileSync(
+      new URL("./index.ts", import.meta.url),
       "utf8"
     );
-    const resolverSource = source.slice(
-      source.indexOf("async function resolveChatAssistantRuntimeContext")
+    const resolverSource = mainSource.slice(
+      mainSource.indexOf("async function resolveChatAssistantRuntimeContext"),
+      mainSource.indexOf("function usageRuntimeKey")
     );
 
     expect(resolverSource).toContain(
@@ -17,13 +18,21 @@ describe("chat assistant runtime context", () => {
     );
     expect(resolverSource).not.toContain("long.listBooks");
 
-    for (const type of ["catalog.index", "catalog.snapshot", "long.list"] as const) {
+    for (const type of [
+      "catalog.index",
+      "catalog.snapshot",
+      "long.list"
+    ] as const) {
       expect(() =>
         CommandEnvelopeSchema.parse(
-          createEnvelope(type, {}, {
-            id: `cmd_chat_assistant_${type}`,
-            correlationId: `cmd_chat_assistant_${type}`
-          })
+          createEnvelope(
+            type,
+            {},
+            {
+              id: `cmd_chat_assistant_${type}`,
+              correlationId: `cmd_chat_assistant_${type}`
+            }
+          )
         )
       ).not.toThrow();
     }

@@ -71,10 +71,7 @@ export interface UtilitySupervisorOptions {
   onWorkerRestarted(worker: UtilityWorkerName, reason: string): void;
   internalCommandAllowlist?: Readonly<
     Partial<
-      Record<
-        UtilityInternalCommandTarget,
-        readonly CommandEnvelope["type"][]
-      >
+      Record<UtilityInternalCommandTarget, readonly CommandEnvelope["type"][]>
     >
   >;
   /**
@@ -101,7 +98,10 @@ class UtilityWorker {
   constructor(
     private readonly name: UtilityWorkerName,
     private readonly entryPath: string,
-    private readonly onUnexpectedExit: (worker: UtilityWorkerName, reason: string) => void,
+    private readonly onUnexpectedExit: (
+      worker: UtilityWorkerName,
+      reason: string
+    ) => void,
     private readonly onReady: (worker: UtilityWorkerName) => void,
     private readonly onUtilityEvent: (
       event: SystemEventEnvelope,
@@ -137,7 +137,9 @@ class UtilityWorker {
       this.startedAt = undefined;
       this.lastHeartbeatAt = undefined;
       this.resolvePendingHealth("degraded");
-      this.rejectPendingCommands(new Error(`${this.name} utility exited: ${reason}`));
+      this.rejectPendingCommands(
+        new Error(`${this.name} utility exited: ${reason}`)
+      );
       this.resolvePendingShutdown();
       this.onExit(this.name, reason);
 
@@ -157,7 +159,9 @@ class UtilityWorker {
     return await new Promise<UtilityHealthPayload>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingHealth.delete(requestId);
-        resolve(this.snapshot(this.status === "starting" ? "starting" : "degraded"));
+        resolve(
+          this.snapshot(this.status === "starting" ? "starting" : "degraded")
+        );
       }, timeoutMs);
       this.pendingHealth.set(requestId, { resolve, timer });
       try {
@@ -231,7 +235,11 @@ class UtilityWorker {
       } catch (error: unknown) {
         clearTimeout(timer);
         this.pendingCommands.delete(requestId);
-        reject(error instanceof Error ? error : new Error("Failed to post utility command."));
+        reject(
+          error instanceof Error
+            ? error
+            : new Error("Failed to post utility command.")
+        );
       }
     });
   }
@@ -313,7 +321,9 @@ class UtilityWorker {
       status,
       ...(this.pid ? { pid: this.pid } : {}),
       ...(this.startedAt ? { startedAt: this.startedAt } : {}),
-      ...(this.lastHeartbeatAt ? { lastHeartbeatAt: this.lastHeartbeatAt } : {}),
+      ...(this.lastHeartbeatAt
+        ? { lastHeartbeatAt: this.lastHeartbeatAt }
+        : {}),
       details: { entry: this.entryPath }
     };
   }
@@ -322,7 +332,8 @@ class UtilityWorker {
     const parsed = UtilityOutboundMessageSchema.safeParse(rawMessage);
     if (!parsed.success) {
       const raw = rawMessage as Record<string, unknown> | null;
-      const requestId = raw && typeof raw.requestId === "string" ? raw.requestId : undefined;
+      const requestId =
+        raw && typeof raw.requestId === "string" ? raw.requestId : undefined;
       const isCommandResponse =
         raw?.kind === "utility.command.result" ||
         raw?.kind === "utility.command.event";
@@ -333,7 +344,9 @@ class UtilityWorker {
       if (requestId && pending) {
         clearTimeout(pending.timer);
         this.pendingCommands.delete(requestId);
-        pending.reject(new Error(`${this.name} utility emitted an invalid command message.`));
+        pending.reject(
+          new Error(`${this.name} utility emitted an invalid command message.`)
+        );
       }
       return;
     }
@@ -388,7 +401,9 @@ class UtilityWorker {
       clearTimeout(pending.timer);
       this.pendingCommands.delete(message.requestId);
       if (message.result.requestId !== pending.commandId) {
-        pending.reject(new Error("Utility result requestId does not match pending command."));
+        pending.reject(
+          new Error("Utility result requestId does not match pending command.")
+        );
         return;
       }
       pending.resolve(message.result);
@@ -446,8 +461,7 @@ export class UtilitySupervisor {
         (worker, reason) => this.handleUnexpectedExit(worker, reason),
         (worker) => this.handleWorkerReady(worker),
         options.onUtilityEvent,
-        (source, message) =>
-          this.handleInternalCommandRequest(source, message),
+        (source, message) => this.handleInternalCommandRequest(source, message),
         (worker, reason) => this.handleWorkerExit(worker, reason)
       );
 
@@ -710,21 +724,14 @@ export class UtilitySupervisor {
       this.pendingInternalCommands.delete(pending.requestId);
       this.workers
         .get(pending.target)
-        ?.cancelCommandRequest(
-          pending.targetRequestId,
-          new Error(message)
-        );
+        ?.cancelCommandRequest(pending.targetRequestId, new Error(message));
       this.workers
         .get(pending.source)
         ?.sendInternalCommandResult(
           pending.target,
           pending.requestId,
           pending.parentRequestId,
-          this.createInternalCommandRejection(
-            pending.commandId,
-            code,
-            message
-          )
+          this.createInternalCommandRejection(pending.commandId, code, message)
         );
     }
   }
@@ -775,7 +782,10 @@ export class UtilitySupervisor {
     }
   }
 
-  private handleUnexpectedExit(worker: UtilityWorkerName, reason: string): void {
+  private handleUnexpectedExit(
+    worker: UtilityWorkerName,
+    reason: string
+  ): void {
     this.restartReasons.set(worker, reason);
     this.options.onUnexpectedExit(worker, reason);
     if (this.shuttingDown || this.restartTimers.has(worker)) {

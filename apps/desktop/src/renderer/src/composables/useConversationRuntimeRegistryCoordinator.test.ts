@@ -1,7 +1,4 @@
-import type {
-  ModelSettings,
-  ThinkingLevel
-} from "@deepwrite/contracts";
+import type { ModelSettings, ThinkingLevel } from "@deepwrite/contracts";
 import { ref, shallowRef } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -116,17 +113,11 @@ function createHarness(input: { persistence?: boolean } = {}) {
   const configurePersistenceAdapter = vi.fn();
   const schedulePersistence = vi.fn();
   const schedulePersistenceFactory = vi.fn();
-  const loadPersistence = vi.fn(
-    async (_key: string) => undefined as unknown
-  );
+  const loadPersistence = vi.fn(async (_key: string) => undefined as unknown);
   const removePersistence = vi.fn(async () => undefined);
   const hydratePreferences = vi.fn(async () => undefined);
   const registerController = vi.fn(
-    (
-      key: string,
-      scope: string,
-      controller: AgentConversationController
-    ) => {
+    (key: string, scope: string, controller: AgentConversationController) => {
       controllers.set(key, controller);
       scopes.set(key, scope);
       return controller;
@@ -174,7 +165,8 @@ function createHarness(input: { persistence?: boolean } = {}) {
         [scope]: { ...preferences }
       };
       for (const [key, controller] of controllers) {
-        if (scopes.get(key) !== scope || controller === options.source) continue;
+        if (scopes.get(key) !== scope || controller === options.source)
+          continue;
         controller.applyRunSettings({
           selectedModelId: controller.selectedModelId.value,
           thinkingLevel: controller.thinkingLevel.value,
@@ -227,7 +219,9 @@ function createHarness(input: { persistence?: boolean } = {}) {
   >();
   const createController = vi.fn(
     (persistenceHooks: ConversationControllerPersistenceHooks) => {
-      const fixture = controllerFixture(`controller-${createdControllers.length + 1}`);
+      const fixture = controllerFixture(
+        `controller-${createdControllers.length + 1}`
+      );
       createdControllers.push(fixture);
       hooks.set(fixture.controller, persistenceHooks);
       return fixture.controller;
@@ -297,15 +291,15 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
       "alpha",
       "book:one",
       created,
-      { applyPreferences: false }
+      {
+        applyPreferences: false
+      }
     );
     expect(fixture.applyModelSettings).toHaveBeenCalledWith(
       test.modelSettingsRef.value
     );
     expect(test.setControllerScope).toHaveBeenCalledWith("alpha", "book:two");
-    expect(fixture.selectApprovalMode).toHaveBeenCalledWith(
-      "request-approval"
-    );
+    expect(fixture.selectApprovalMode).toHaveBeenCalledWith("request-approval");
     expect(test.resumeRecovered).toHaveBeenCalledWith([created]);
   });
 
@@ -320,9 +314,8 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
       persistenceKey,
       created.capturePersistenceSnapshot
     );
-    const snapshotFactory = test.schedulePersistenceFactory.mock.calls[0]?.[1] as
-      | (() => unknown)
-      | undefined;
+    const snapshotFactory = test.schedulePersistenceFactory.mock
+      .calls[0]?.[1] as (() => unknown) | undefined;
     expect(snapshotFactory?.()).toEqual({ name: "controller-1" });
 
     test.controllers.set("alpha", controllerFixture("replacement").controller);
@@ -413,9 +406,8 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
     );
 
     const saveTest = createHarness();
-    const configured = saveTest.configurePersistenceAdapter.mock.calls[0]?.[1] as
-      | ConversationPersistenceOptions
-      | undefined;
+    const configured = saveTest.configurePersistenceAdapter.mock
+      .calls[0]?.[1] as ConversationPersistenceOptions | undefined;
     configured?.onError?.("alpha", new Error("disk full"));
     configured?.onError?.("beta", new Error("disk full"));
     expect(saveTest.notifications.warning).toHaveBeenCalledTimes(1);

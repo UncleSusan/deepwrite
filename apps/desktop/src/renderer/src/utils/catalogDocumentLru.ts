@@ -108,10 +108,7 @@ export function createCatalogDocumentLru<
     },
     set(key, value) {
       const characterCount = value.content.length;
-      if (
-        maxEntries === 0 ||
-        characterCount > maxRetainedCharacters
-      ) {
+      if (maxEntries === 0 || characterCount > maxRetainedCharacters) {
         // Never leave a stale version behind when an update is too large to
         // cache, and never evict unrelated entries for a value we will reject.
         remove(key);

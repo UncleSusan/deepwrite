@@ -5,10 +5,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import type { DraftDirectoryProjection } from "../data/catalogWorkspace";
 import type { LongWorkspaceSelection } from "../types/longWorkspace";
-import type {
-  ResourceTreeNode,
-  WorkspaceDocument
-} from "../types/workspace";
+import type { ResourceTreeNode, WorkspaceDocument } from "../types/workspace";
 import type {
   ApprovalNavigationTarget,
   ResolvedLongApprovalNavigation
@@ -129,8 +126,7 @@ function createHarness(options: HarnessOptions = {}) {
         selectedResourceId = node.id;
       },
       selectedResourceId: () => selectedResourceId,
-      documentForResourceId: (resourceId) =>
-        resourceDocuments.get(resourceId),
+      documentForResourceId: (resourceId) => resourceDocuments.get(resourceId),
       preferredLongResourceId: (bookId, _index, selection) =>
         `long:${bookId}:${selection.key}`,
       longNavigationResourceId: (bookId, selectionKey) =>
@@ -242,8 +238,7 @@ describe("useApprovalNavigationCoordinator", () => {
     const targetDocument = workspaceDocument("document-1", {
       workspaceId: "workspace-1"
     });
-    let harness!: ReturnType<typeof createHarness>;
-    harness = createHarness({
+    const harness = createHarness({
       async refresh() {
         harness.documents.push(targetDocument);
       }
@@ -284,23 +279,21 @@ describe("useApprovalNavigationCoordinator", () => {
       characterItemId: "character-1",
       characterFileKind: "item"
     });
-    harness.documents.push(
-      libraryDocument,
-      bodyDocument,
-      characterDocument
-    );
+    harness.documents.push(libraryDocument, bodyDocument, characterDocument);
     harness.directories.push({
       id: "draft-directory",
       workspaceId: "workspace-1",
       workspaceType: "short",
       title: "正文",
-      sections: [{
-        id: "section-1",
-        title: "第一节",
-        wordCountRequirement: "",
-        bodyDocumentId: bodyDocument.id,
-        characterStateDocumentId: "draft-state"
-      }]
+      sections: [
+        {
+          id: "section-1",
+          title: "第一节",
+          wordCountRequirement: "",
+          bodyDocumentId: bodyDocument.id,
+          characterStateDocumentId: "draft-state"
+        }
+      ]
     });
     for (const [document, nodeId] of [
       [libraryDocument, "library-resource"],
@@ -312,30 +305,33 @@ describe("useApprovalNavigationCoordinator", () => {
       harness.resourceIds.set(document.id, node.id);
       harness.resourceDocuments.set(node.id, document);
     }
-    harness.nodes.set(
-      "draft-directory",
-      resourceNode("draft-directory")
-    );
+    harness.nodes.set("draft-directory", resourceNode("draft-directory"));
     const coordinator = useApprovalNavigationCoordinator(harness.context);
 
-    await expect(coordinator.navigateToTarget({
-      kind: "library",
-      domain: "skill",
-      libraryId: "library-1",
-      entryId: "entry-1",
-      documentId: libraryDocument.id
-    })).resolves.toBe(true);
-    await expect(coordinator.navigateToTarget({
-      kind: "draft-section",
-      workspaceId: "workspace-1",
-      sectionId: "section-1",
-      fileKind: "body"
-    })).resolves.toBe(true);
-    await expect(coordinator.navigateToTarget({
-      kind: "character-item",
-      workspaceId: "workspace-1",
-      itemId: "character-1"
-    })).resolves.toBe(true);
+    await expect(
+      coordinator.navigateToTarget({
+        kind: "library",
+        domain: "skill",
+        libraryId: "library-1",
+        entryId: "entry-1",
+        documentId: libraryDocument.id
+      })
+    ).resolves.toBe(true);
+    await expect(
+      coordinator.navigateToTarget({
+        kind: "draft-section",
+        workspaceId: "workspace-1",
+        sectionId: "section-1",
+        fileKind: "body"
+      })
+    ).resolves.toBe(true);
+    await expect(
+      coordinator.navigateToTarget({
+        kind: "character-item",
+        workspaceId: "workspace-1",
+        itemId: "character-1"
+      })
+    ).resolves.toBe(true);
 
     expect(harness.selectedNodes).toEqual([
       "library-resource",
@@ -345,9 +341,7 @@ describe("useApprovalNavigationCoordinator", () => {
     expect(harness.selectedExpertSections).toEqual([
       ["draft-directory", "section-1"]
     ]);
-    expect(harness.selectedDraftFiles).toEqual([
-      ["draft-directory", "body"]
-    ]);
+    expect(harness.selectedDraftFiles).toEqual([["draft-directory", "body"]]);
   });
 
   it("lets the newest request win after an older refresh settles", async () => {
@@ -356,8 +350,7 @@ describe("useApprovalNavigationCoordinator", () => {
     const staleDocument = workspaceDocument("missing-document", {
       workspaceId: "stale-workspace"
     });
-    let harness!: ReturnType<typeof createHarness>;
-    harness = createHarness({
+    const harness = createHarness({
       async refresh() {
         refreshStarted.resolve();
         await refreshGate.promise;
@@ -402,8 +395,7 @@ describe("useApprovalNavigationCoordinator", () => {
     const lateDocument = workspaceDocument("missing-document", {
       workspaceId: "workspace-1"
     });
-    let harness!: ReturnType<typeof createHarness>;
-    harness = createHarness({
+    const harness = createHarness({
       async refresh() {
         refreshStarted.resolve();
         await refreshGate.promise;
@@ -449,17 +441,17 @@ describe("useApprovalNavigationCoordinator", () => {
       }
     });
     harness.focusLongResult = false;
-    const navigationNode = resourceNode(
-      "long:long-book:draft:chapter-1"
-    );
+    const navigationNode = resourceNode("long:long-book:draft:chapter-1");
     harness.nodes.set(navigationNode.id, navigationNode);
     const coordinator = useApprovalNavigationCoordinator(harness.context);
 
-    await expect(coordinator.navigateToLong({
-      kind: "long",
-      bookId: "long-book",
-      candidates: [{ kind: "file", fileId: "chapter-body" }]
-    })).resolves.toBe(true);
+    await expect(
+      coordinator.navigateToLong({
+        kind: "long",
+        bookId: "long-book",
+        candidates: [{ kind: "file", fileId: "chapter-body" }]
+      })
+    ).resolves.toBe(true);
 
     expect(resolutionCount).toBe(2);
     expect(harness.longRefreshes).toBe(1);

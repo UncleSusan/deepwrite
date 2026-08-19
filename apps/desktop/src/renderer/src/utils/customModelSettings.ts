@@ -1,4 +1,7 @@
-import type { ModelConfigInput, ModelSettingsInput } from "@deepwrite/contracts";
+import type {
+  ModelConfigInput,
+  ModelSettingsInput
+} from "@deepwrite/contracts";
 
 export function mergeCustomModelSettings(
   existingModels: readonly ModelConfigInput[],
@@ -27,6 +30,6 @@ export function mergeCustomModelSettings(
     models,
     defaultModelId: models.some((model) => model.id === preferredDefaultModelId)
       ? preferredDefaultModelId
-      : models[0]?.id ?? ""
+      : (models[0]?.id ?? "")
   };
 }

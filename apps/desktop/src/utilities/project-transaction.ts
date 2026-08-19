@@ -9,14 +9,7 @@ import {
   rm,
   unlink
 } from "node:fs/promises";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep
-} from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomHex8 } from "@deepwrite/shared";
 
 const INTERNAL_DIRECTORY = ".deepwrite";
@@ -181,12 +174,7 @@ async function recoverProjectTransactionLocked(
       throw error;
     }
   } else {
-    await assertJournalPreconditions(
-      projectRoot,
-      journal,
-      maxFileBytes,
-      true
-    );
+    await assertJournalPreconditions(projectRoot, journal, maxFileBytes, true);
   }
 
   const committing: TransactionJournal = {
@@ -304,7 +292,10 @@ async function commitProjectTransactionLocked(
   let journalWritten = false;
   try {
     for (const [index, operation] of operations.entries()) {
-      const target = await resolveProjectFileTarget(projectRoot, operation.path);
+      const target = await resolveProjectFileTarget(
+        projectRoot,
+        operation.path
+      );
       const existing = await readRegularFileOptionalWithIdentity(
         projectRoot,
         target,
@@ -415,13 +406,14 @@ function validateOperations(
     rawOperations.length < 1 ||
     rawOperations.length > MAX_TRANSACTION_FILES
   ) {
-    throw new Error(
-      `项目事务必须包含 1 到 ${MAX_TRANSACTION_FILES} 个文件。`
-    );
+    throw new Error(`项目事务必须包含 1 到 ${MAX_TRANSACTION_FILES} 个文件。`);
   }
   const normalized = rawOperations.map((operation) => {
     const path = validateBusinessProjectPath(operation.path);
-    if (operation.action === "check" && operation.expectedSha256 === undefined) {
+    if (
+      operation.action === "check" &&
+      operation.expectedSha256 === undefined
+    ) {
       throw new Error(`项目事务只校验操作必须包含 revision：${path}`);
     }
     if (
@@ -459,7 +451,9 @@ function validateRelativeProjectPath(value: string): string {
     path.includes("\\") ||
     path.startsWith("/") ||
     path.endsWith("/") ||
-    path.split("/").some((segment) => !segment || segment === "." || segment === "..")
+    path
+      .split("/")
+      .some((segment) => !segment || segment === "." || segment === "..")
   ) {
     throw new Error("项目事务路径必须是规范化的项目内相对路径。");
   }
@@ -520,7 +514,7 @@ function parseJournal(text: string): TransactionJournal {
           ? "delete"
           : raw.action === "check"
             ? "check"
-          : undefined;
+            : undefined;
     if (!action) {
       throw new Error(`项目事务日志操作 ${index} 的动作无效。`);
     }
@@ -560,9 +554,7 @@ function parseJournal(text: string): TransactionJournal {
         : action === "check"
           ? raw.afterSha256 === null
             ? null
-            : validateSha256(
-                stringField(raw.afterSha256, "afterSha256")
-              )
+            : validateSha256(stringField(raw.afterSha256, "afterSha256"))
           : raw.afterSha256 === null || raw.afterSha256 === undefined
             ? null
             : (() => {
@@ -571,9 +563,7 @@ function parseJournal(text: string): TransactionJournal {
                 );
               })();
     if (action === "check" && afterSha256 !== beforeSha256) {
-      throw new Error(
-        `项目事务日志只校验操作 ${index} 的前后哈希必须一致。`
-      );
+      throw new Error(`项目事务日志只校验操作 ${index} 的前后哈希必须一致。`);
     }
     return {
       action,
@@ -616,10 +606,7 @@ async function assertJournalPreconditions(
       allowAppliedState &&
       operation.action !== "check" &&
       currentSha256 === operation.afterSha256;
-    if (
-      currentSha256 !== operation.beforeSha256 &&
-      !appliedStateAllowed
-    ) {
+    if (currentSha256 !== operation.beforeSha256 && !appliedStateAllowed) {
       throw new ProjectTransactionConflictError(
         operation.path,
         operation.beforeSha256,
@@ -642,10 +629,7 @@ function validateInternalTransactionPath(
 }
 
 function parseTransactionId(value: unknown): string {
-  if (
-    typeof value !== "string" ||
-    !/^txn-[0-9]+-[0-9a-f]{8}$/u.test(value)
-  ) {
+  if (typeof value !== "string" || !/^txn-[0-9]+-[0-9a-f]{8}$/u.test(value)) {
     throw new Error("项目事务标识无效。");
   }
   return value;
@@ -808,7 +792,9 @@ async function removeStaleProjectTransactionLock(
     projectRoot,
     lockPath,
     4 * 1024,
-    { pathRaceAsMissing: true }
+    {
+      pathRaceAsMissing: true
+    }
   );
   if (!current) return;
   const owner = parseLockOwnerOptional(current.bytes.toString("utf8"));
@@ -1082,11 +1068,7 @@ async function readRegularFileOptional(
   maxFileBytes: number
 ): Promise<Buffer | undefined> {
   return (
-    await readRegularFileOptionalWithIdentity(
-      projectRoot,
-      path,
-      maxFileBytes
-    )
+    await readRegularFileOptionalWithIdentity(projectRoot, path, maxFileBytes)
   )?.bytes;
 }
 
@@ -1099,10 +1081,7 @@ async function readRegularFileOptionalWithIdentity(
   assertContained(projectRoot, path);
   let handle: Awaited<ReturnType<typeof open>>;
   try {
-    handle = await open(
-      path,
-      fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW
-    );
+    handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) return undefined;
     if (isNodeError(error, "ELOOP")) {
@@ -1126,10 +1105,7 @@ async function readRegularFileOptionalWithIdentity(
     try {
       canonical = await realpath(path);
     } catch (error: unknown) {
-      if (
-        options.pathRaceAsMissing &&
-        isNodeError(error, "ENOENT")
-      ) {
+      if (options.pathRaceAsMissing && isNodeError(error, "ENOENT")) {
         return undefined;
       }
       throw error;
@@ -1139,10 +1115,7 @@ async function readRegularFileOptionalWithIdentity(
     try {
       pathInfo = await lstat(path, { bigint: true });
     } catch (error: unknown) {
-      if (
-        options.pathRaceAsMissing &&
-        isNodeError(error, "ENOENT")
-      ) {
+      if (options.pathRaceAsMissing && isNodeError(error, "ENOENT")) {
         return undefined;
       }
       throw error;
@@ -1192,9 +1165,7 @@ function assertContained(root: string, candidate: string): void {
   const offset = relative(root, candidate);
   if (
     offset === "" ||
-    (!offset.startsWith(`..${sep}`) &&
-      offset !== ".." &&
-      !isAbsolute(offset))
+    (!offset.startsWith(`..${sep}`) && offset !== ".." && !isAbsolute(offset))
   ) {
     return;
   }

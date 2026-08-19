@@ -61,9 +61,7 @@ export function conversationHistoryPersistenceKey(key: string): string {
 export function legacyConversationHistoryStorageKey(key: string): string {
   const normalized = key.trim();
   if (!normalized) throw new Error("会话 key 不能为空。");
-  return `${LEGACY_CONVERSATION_HISTORY_STORAGE_PREFIX}${encodeURIComponent(
-    normalized
-  )}`;
+  return `${LEGACY_CONVERSATION_HISTORY_STORAGE_PREFIX}${encodeURIComponent(normalized)}`;
 }
 
 function decodePersistenceSuffix(encoded: string): string | undefined {

@@ -78,10 +78,9 @@ describe("Agent Utility prompt forwarding", () => {
   it("forwards scriptAgentProfile from the command payload into streamPrompt", async () => {
     await import("./agent-entry");
 
-    const scriptAgentProfile =
-      DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
-        (profile) => profile.id === "character_design"
-      )!;
+    const scriptAgentProfile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
+      (profile) => profile.id === "character_design"
+    )!;
     const emptyRevision = createShortWorkspaceContentRevision("");
     const characterContent = "人物设定快照";
     const plotStages = createDefaultCreativePlotStages();
@@ -130,8 +129,7 @@ describe("Agent Utility prompt forwarding", () => {
                       revision: emptyRevision
                     },
                     characterState: {
-                      documentId:
-                        "draft-section:episode-1:character-state",
+                      documentId: "draft-section:episode-1:character-state",
                       title: "第一集 · 人物状态",
                       content: "",
                       revision: emptyRevision
@@ -171,9 +169,8 @@ describe("Agent Utility prompt forwarding", () => {
 
     const handler = captured.commandHandler;
     expect(handler).toBeTypeOf("function");
-    const result = (await handler!(
-      command,
-      (event) => emittedEvents.push(event)
+    const result = (await handler!(command, (event) =>
+      emittedEvents.push(event)
     )) as CommandResult;
 
     expect(result).toMatchObject({
@@ -239,9 +236,7 @@ describe("Agent Utility prompt forwarding", () => {
                 },
                 worldbuilding: [],
                 characters: [],
-                volumes: [
-                  { id: "volume_default", title: "第一卷", order: 1 }
-                ],
+                volumes: [{ id: "volume_default", title: "第一卷", order: 1 }],
                 arcs: [],
                 chapterCards: [],
                 committedThroughChapterId: null
@@ -316,11 +311,9 @@ describe("Agent Utility prompt forwarding", () => {
       status: "accepted",
       requestId: "query-long-forwarding"
     });
-    expect(requestInternalCommand).toHaveBeenCalledWith(
-      "core",
-      queryCommand,
-      { timeoutMs: 60_000 }
-    );
+    expect(requestInternalCommand).toHaveBeenCalledWith("core", queryCommand, {
+      timeoutMs: 60_000
+    });
 
     const aborted = new AbortController();
     aborted.abort();
@@ -453,8 +446,7 @@ describe("Agent Utility prompt forwarding", () => {
                   order: 1,
                   file: {
                     id: "file_worlditem_memory:content",
-                    path:
-                      "long/worldbuilding/world_rules/items/worlditem_memory.md",
+                    path: "long/worldbuilding/world_rules/items/worlditem_memory.md",
                     revision: "v1:0:00000000",
                     updatedAt: "2026-07-26T12:00:00.000Z"
                   }
@@ -512,16 +504,18 @@ describe("Agent Utility prompt forwarding", () => {
             baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",
             operations: [],
-            documentWrites: [{
-              proposalId: "proposal_chapter_one",
-              fileId: longChapterBodyFileId("chapter_one"),
-              content: "正文",
-              mode: "replace",
-              expectedRevision: "v1:0:00000000",
-              nextRevision: "v1:2:00000000",
-              updatedAt: "2026-07-26T12:00:00.000Z",
-              reason: "完成第一章"
-            }]
+            documentWrites: [
+              {
+                proposalId: "proposal_chapter_one",
+                fileId: longChapterBodyFileId("chapter_one"),
+                content: "正文",
+                mode: "replace",
+                expectedRevision: "v1:0:00000000",
+                nextRevision: "v1:2:00000000",
+                updatedAt: "2026-07-26T12:00:00.000Z",
+                reason: "完成第一章"
+              }
+            ]
           },
           baseProjectRevision: 3,
           file: {

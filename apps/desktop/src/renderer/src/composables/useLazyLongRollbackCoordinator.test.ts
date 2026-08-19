@@ -107,12 +107,8 @@ function createContext(input: { readonly pending?: boolean } = {}) {
 
 describe("useLazyLongRollbackCoordinator", () => {
   it("keeps the implementation behind a type-only dynamic boundary", () => {
-    expect(lazySource).toContain(
-      'import type {\n  LongRollbackCoordinator,'
-    );
-    expect(lazySource).not.toContain(
-      'import { useLongRollbackCoordinator }'
-    );
+    expect(lazySource).toContain("import type {\n  LongRollbackCoordinator,");
+    expect(lazySource).not.toContain("import { useLongRollbackCoordinator }");
     expect(lazySource).toContain(
       'return import("./useLongRollbackCoordinator")'
     );

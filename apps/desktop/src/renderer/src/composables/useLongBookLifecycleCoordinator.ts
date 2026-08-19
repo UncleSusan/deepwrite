@@ -20,9 +20,7 @@ import type {
   LongBookRenameTarget,
   LongWorkspaceRefreshStatus
 } from "../stores/longWorkspaceStore";
-import type {
-  LongBookResourceNodeActionPayload
-} from "../types/workspace";
+import type { LongBookResourceNodeActionPayload } from "../types/workspace";
 import {
   createLongContinuitySelection,
   longBookResourceId,
@@ -130,7 +128,9 @@ export interface LongBookLifecycleManuscriptPort {
     readonly workspace: LongWorkspaceIndexSnapshot;
     readonly sections: readonly LongManuscriptExportSection[];
   }): Promise<ExportLongManuscriptInput>;
-  exportLong(input: ExportLongManuscriptInput): Promise<ExportLongManuscriptResult>;
+  exportLong(
+    input: ExportLongManuscriptInput
+  ): Promise<ExportLongManuscriptResult>;
 }
 
 export interface LongBookLifecycleSchedulerPort {
@@ -401,7 +401,8 @@ export function useLongBookLifecycleCoordinator(
     return runWithLease(lease, async () => {
       try {
         if (!(await session.saveActiveEditorBeforeLeaving())) return;
-        if (!leaseIsCurrent(lease) || !dialogRequestIsCurrent(requestId)) return;
+        if (!leaseIsCurrent(lease) || !dialogRequestIsCurrent(requestId))
+          return;
         const preview = await api.chooseContinuationImportSource();
         if (
           !preview ||
@@ -527,7 +528,9 @@ export function useLongBookLifecycleCoordinator(
     if (!api) return Promise.resolve();
     const bookId = payload.node.longBookId;
     if (workflow.isWritingPlanActive(bookId)) {
-      uiMessage.warning("当前长篇串行写作计划尚未完成；请先取消计划，再复制长篇。");
+      uiMessage.warning(
+        "当前长篇串行写作计划尚未完成；请先取消计划，再复制长篇。"
+      );
       return Promise.resolve();
     }
     const lease = acquirePendingLease("book-action");
@@ -584,10 +587,17 @@ export function useLongBookLifecycleCoordinator(
           state.activeBookId.value === bookId
             ? await session.saveActiveEditorChanges()
             : await session.saveActiveEditorBeforeLeaving(bookId);
-        if (!saved || !leaseIsCurrent(lease) || !dialogRequestIsCurrent(requestId)) {
+        if (
+          !saved ||
+          !leaseIsCurrent(lease) ||
+          !dialogRequestIsCurrent(requestId)
+        ) {
           return;
         }
-        if (state.activeBookId.value !== bookId || !state.workspaceIndex.value) {
+        if (
+          state.activeBookId.value !== bookId ||
+          !state.workspaceIndex.value
+        ) {
           await session.openBook(bookId);
         }
         if (
@@ -679,7 +689,11 @@ export function useLongBookLifecycleCoordinator(
           return;
         }
         await session.refreshActiveWorkspace(bookId);
-        if (leaseIsCurrent(lease) && targetCurrent && dialogRequestIsCurrent(requestId)) {
+        if (
+          leaseIsCurrent(lease) &&
+          targetCurrent &&
+          dialogRequestIsCurrent(requestId)
+        ) {
           uiMessage.success(`已将旧版本“${preview.sourceTitle}”同步到当前长篇`);
         }
       } catch (error: unknown) {
@@ -700,7 +714,11 @@ export function useLongBookLifecycleCoordinator(
     if (disposed) return;
     const target = state.exportTarget.value;
     const ownedLease = ownedPendingLeases.get("manuscript-export");
-    if (target && ownedLease && requestForTarget(target) === ownedLease.requestId) {
+    if (
+      target &&
+      ownedLease &&
+      requestForTarget(target) === ownedLease.requestId
+    ) {
       return;
     }
     if (state.manuscriptExportPending.value && !ownedLease) return;
@@ -843,7 +861,11 @@ export function useLongBookLifecycleCoordinator(
         );
         if (targetCurrent) state.bookRenameTarget.value = null;
         await catalog.loadBookList({ force: true });
-        if (leaseIsCurrent(lease) && targetCurrent && dialogRequestIsCurrent(requestId)) {
+        if (
+          leaseIsCurrent(lease) &&
+          targetCurrent &&
+          dialogRequestIsCurrent(requestId)
+        ) {
           uiMessage.success(
             `已将“${target.title}”修改为“${updated.summary.title}”`
           );
@@ -966,7 +988,9 @@ export function useLongBookLifecycleCoordinator(
         }
         await catalog.loadBookList({ force: true });
         if (leaseIsCurrent(lease) && targetCurrent) {
-          uiMessage.success(`已更新长篇“${updated.book.title}”的${bindingLabel}`);
+          uiMessage.success(
+            `已更新长篇“${updated.book.title}”的${bindingLabel}`
+          );
         }
       } catch (error: unknown) {
         if (leaseIsCurrent(lease) && dialogRequestIsCurrent(target.requestId)) {
@@ -1157,7 +1181,11 @@ export function useLongBookLifecycleCoordinator(
         );
         if (targetCurrent) state.bookRemovalTarget.value = null;
         await catalog.loadBookList({ force: true });
-        if (leaseIsCurrent(lease) && targetCurrent && dialogRequestIsCurrent(requestId)) {
+        if (
+          leaseIsCurrent(lease) &&
+          targetCurrent &&
+          dialogRequestIsCurrent(requestId)
+        ) {
           if (cleanupError) {
             uiMessage.error(
               errorMessage(cleanupError, "长篇已移除，但本地运行状态清理失败。")

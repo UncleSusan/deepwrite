@@ -28,12 +28,16 @@ describe("prompt attachments", () => {
       items: [] as unknown as DataTransferItemList
     };
 
-    expect(promptAttachmentFilesFromClipboard(clipboardData)).toEqual([document]);
+    expect(promptAttachmentFilesFromClipboard(clipboardData)).toEqual([
+      document
+    ]);
   });
 
   it("reads markdown as user-message text context", async () => {
     const result = await readPromptAttachment(
-      new File(["# 场景笔记\n雨夜需要更压抑。"], "notes.md", { type: "text/markdown" })
+      new File(["# 场景笔记\n雨夜需要更压抑。"], "notes.md", {
+        type: "text/markdown"
+      })
     );
 
     expect(result.attachment).toMatchObject({
@@ -46,7 +50,9 @@ describe("prompt attachments", () => {
 
   it("encodes supported images for multimodal model input", async () => {
     const result = await readPromptAttachment(
-      new File([new Uint8Array([1, 2, 3])], "reference.png", { type: "image/png" })
+      new File([new Uint8Array([1, 2, 3])], "reference.png", {
+        type: "image/png"
+      })
     );
 
     expect(result.attachment).toMatchObject({
@@ -59,9 +65,13 @@ describe("prompt attachments", () => {
 
   it("marks extracted text that exceeds the per-file context limit", async () => {
     const result = await readPromptAttachment(
-      new File(["字".repeat(PROMPT_TEXT_ATTACHMENT_MAX_CONTENT_LENGTH + 1)], "long.txt", {
-        type: "text/plain"
-      })
+      new File(
+        ["字".repeat(PROMPT_TEXT_ATTACHMENT_MAX_CONTENT_LENGTH + 1)],
+        "long.txt",
+        {
+          type: "text/plain"
+        }
+      )
     );
 
     expect(result.attachment).toMatchObject({
@@ -74,7 +84,9 @@ describe("prompt attachments", () => {
 
   it("rejects unsupported files with an actionable message", async () => {
     await expect(
-      readPromptAttachment(new File(["{}"], "data.json", { type: "application/json" }))
+      readPromptAttachment(
+        new File(["{}"], "data.json", { type: "application/json" })
+      )
     ).rejects.toThrow("TXT、MD、PDF 或常见图片");
   });
 });

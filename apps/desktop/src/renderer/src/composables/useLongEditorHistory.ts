@@ -1,11 +1,11 @@
 import { computed, nextTick, ref, type ComputedRef, type Ref } from "vue";
+import type { LongWorkspaceSelectionFile } from "../types/longWorkspace";
 import {
   countNonWhitespaceCharacters,
   createBoundedTextHistory,
   type TextHistoryRestoreResult,
   type TextSelectionRange
 } from "../utils/boundedTextHistory";
-import type { LongWorkspaceSelectionFile } from "../types/longWorkspace";
 import type { LongDocumentState } from "./useLongEditorDocumentSession";
 
 export function useLongEditorHistory(options: {
@@ -59,8 +59,6 @@ export function useLongEditorHistory(options: {
     inputType: string;
     timestamp: number;
   } | null = null;
-  let countedVisibleContent = options.currentVisibleContent.value;
-
   const canUndo = computed(() => {
     void historyVersion.value;
     return (
@@ -139,7 +137,8 @@ export function useLongEditorHistory(options: {
     const input = event.currentTarget as HTMLTextAreaElement;
     pendingEditorInput = {
       selectionBefore: {
-        start: input.selectionStart ?? options.currentVisibleContent.value.length,
+        start:
+          input.selectionStart ?? options.currentVisibleContent.value.length,
         end: input.selectionEnd ?? options.currentVisibleContent.value.length
       },
       inputType: event.inputType,
@@ -148,7 +147,8 @@ export function useLongEditorHistory(options: {
   }
 
   function handleEditorInput(event: Event): void {
-    if (options.currentReadOnly.value || options.isDocumentContentBusy.value) return;
+    if (options.currentReadOnly.value || options.isDocumentContentBusy.value)
+      return;
     const input = event.currentTarget as HTMLTextAreaElement;
     const beforeContent = options.currentVisibleContent.value;
     const afterContent = input.value;
@@ -199,7 +199,6 @@ export function useLongEditorHistory(options: {
     nonWhitespaceDelta?: number
   ): void {
     if (options.currentVisibleContent.value !== nextContent) return;
-    countedVisibleContent = nextContent;
     options.characterCount.value =
       nonWhitespaceDelta === undefined
         ? countNonWhitespaceCharacters(nextContent)

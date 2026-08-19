@@ -38,7 +38,9 @@ export class GeneralSettingsStore {
   async list(): Promise<GeneralSettingsSnapshot> {
     await this.writeChain;
     try {
-      const raw = JSON.parse(await readFile(this.settingsPath, "utf8")) as unknown;
+      const raw = JSON.parse(
+        await readFile(this.settingsPath, "utf8")
+      ) as unknown;
       if (
         !raw ||
         typeof raw !== "object" ||

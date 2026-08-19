@@ -15,13 +15,7 @@ import {
   type WorkspaceAgentId,
   type WorkspaceAgentSettings
 } from "@deepwrite/contracts";
-import {
-  computed,
-  ref,
-  watch,
-  type ComputedRef,
-  type Ref
-} from "vue";
+import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
 import type {
   AgentConversationController,
   AgentRunSettings
@@ -94,9 +88,7 @@ export interface ShortConversationCoordinatorOptions {
       key: string,
       scope?: string
     ): AgentConversationController;
-    synchronizeSessionModelSelection(
-      source: AgentConversationController
-    ): void;
+    synchronizeSessionModelSelection(source: AgentConversationController): void;
     synchronizeRunPreferences(
       scope: string,
       source: AgentConversationController
@@ -130,9 +122,7 @@ export interface ShortConversationCoordinatorOptions {
     acceptingDocumentIds: Readonly<Ref<Set<string>>>;
     acceptingWorkspaceIds: Readonly<Ref<Set<string>>>;
     hasQueued(): boolean;
-    schedule(
-      predicate: (queued: ShortConversationQueuedEdit) => boolean
-    ): void;
+    schedule(predicate: (queued: ShortConversationQueuedEdit) => boolean): void;
     resumeRecovered(
       conversations: readonly AgentConversationController[]
     ): void;
@@ -220,7 +210,9 @@ function creationSkillReferences(
 ): ComposerReferenceOption[] {
   if (!snapshot || !book || allowedKinds.length === 0) return [];
   const allowed = new Set(allowedKinds);
-  const libraries = new Map(snapshot.skills.map((library) => [library.id, library]));
+  const libraries = new Map(
+    snapshot.skills.map((library) => [library.id, library])
+  );
   const seenLibraries = new Set<string>();
   const references: ComposerReferenceOption[] = [];
   for (const boundIds of Object.values(book.linkedSkillIdsByKind)) {
@@ -291,7 +283,8 @@ function libraryEntryReferences(
   domain: LibraryAgentDomain | undefined
 ): ComposerReferenceOption[] {
   if (!snapshot || !domain || !descriptor.libraryId) return [];
-  const libraries = domain === "material" ? snapshot.materials : snapshot.skills;
+  const libraries =
+    domain === "material" ? snapshot.materials : snapshot.skills;
   const groups =
     domain === "material" ? snapshot.materialGroups : snapshot.skillGroups;
   const current = libraries.find(({ id }) => id === descriptor.libraryId);
@@ -312,10 +305,7 @@ function libraryEntryReferences(
     const library = libraries.find(({ id }) => id === libraryId);
     if (!library) continue;
     for (const entry of library.entries) {
-      if (
-        library.id === current.id &&
-        entry.id === descriptor.catalogEntryId
-      ) {
+      if (library.id === current.id && entry.id === descriptor.catalogEntryId) {
         continue;
       }
       references.push({
@@ -379,7 +369,9 @@ export function useShortConversationCoordinator(
     const agentId = activeAgentId.value;
     return agentId
       ? options.profiles.workspaceAgents.value
-          .find(({ workspaceType }) => workspaceType === descriptor.workspaceType)
+          .find(
+            ({ workspaceType }) => workspaceType === descriptor.workspaceType
+          )
           ?.agents.find(({ id }) => id === agentId)
       : undefined;
   });
@@ -408,21 +400,23 @@ export function useShortConversationCoordinator(
       activeShortAgentProfile.value?.readAccess.skill ?? []
     );
   });
-  const availableMaterialReferences = computed<ComposerReferenceOption[]>(() => {
-    if (activeLibraryDomain.value) {
-      return libraryEntryReferences(
+  const availableMaterialReferences = computed<ComposerReferenceOption[]>(
+    () => {
+      if (activeLibraryDomain.value) {
+        return libraryEntryReferences(
+          options.catalog.snapshot.value,
+          activeDescriptor.value,
+          activeLibraryDomain.value
+        );
+      }
+      const workspaceId = activeDescriptor.value.workspaceId;
+      return creationMaterialReferences(
         options.catalog.snapshot.value,
-        activeDescriptor.value,
-        activeLibraryDomain.value
+        workspaceId ? options.catalog.findBook(workspaceId) : undefined,
+        activeShortAgentProfile.value?.readAccess.material ?? []
       );
     }
-    const workspaceId = activeDescriptor.value.workspaceId;
-    return creationMaterialReferences(
-      options.catalog.snapshot.value,
-      workspaceId ? options.catalog.findBook(workspaceId) : undefined,
-      activeShortAgentProfile.value?.readAccess.material ?? []
-    );
-  });
+  );
   const conversationContext = computed(() => {
     const descriptor = activeDescriptor.value;
     const agentId = activeAgentId.value;
@@ -450,7 +444,9 @@ export function useShortConversationCoordinator(
           : ("short" as const),
       libraryDomain: activeLibraryDomain.value,
       librarySkills: activeLibraryAgentProfile.value?.readAccess.skills.map(
-        (skill) => ({ name: skill.name })
+        (skill) => ({
+          name: skill.name
+        })
       ),
       welcomeShortcuts: activeShortAgentProfile.value?.welcomeShortcuts,
       availableSkills: availableSkillReferences.value,
@@ -495,8 +491,7 @@ export function useShortConversationCoordinator(
       conversationKey: activeConversationKey.value,
       sessionId: conversation.sessionId.value,
       selectedResourceId: options.resource.selectedResourceId.value,
-      activeCreationResourceId:
-        options.resource.activeCreationResourceId.value,
+      activeCreationResourceId: options.resource.activeCreationResourceId.value,
       documentId: document.id,
       ...(document.workspaceId ? { workspaceId: document.workspaceId } : {}),
       ...(document.stageId ? { stageId: document.stageId } : {}),
@@ -595,8 +590,7 @@ export function useShortConversationCoordinator(
     }
     const target = captureSendTarget();
     sendPreflightPending.value = true;
-    let operation!: Promise<void>;
-    operation = (async () => {
+    const operation = (async () => {
       try {
         const contextReady = await options.resource.ensureDocumentsLoaded(
           options.resource.contextDocuments()
@@ -610,7 +604,8 @@ export function useShortConversationCoordinator(
         const contextSnapshot = options.resource.hydratedCatalogSnapshot();
         const liveDocuments = options.resource.liveWorkspaceDocuments.value;
         const agentDocument = options.resource.activeAgentDocument.value;
-        const workspaceId = options.resource.activePromptDocument.value.workspaceId;
+        const workspaceId =
+          options.resource.activePromptDocument.value.workspaceId;
         const attachments =
           contextSnapshot &&
           agentDocument.domain === "creation" &&
@@ -689,7 +684,9 @@ export function useShortConversationCoordinator(
       } catch (error: unknown) {
         if (!disposed && sendTargetIsCurrent(target, { includeDraft: false })) {
           options.notifications.error(
-            error instanceof Error ? error.message : "发送消息失败，请稍后重试。"
+            error instanceof Error
+              ? error.message
+              : "发送消息失败，请稍后重试。"
           );
         }
       }
@@ -714,9 +711,7 @@ export function useShortConversationCoordinator(
     } catch (error: unknown) {
       if (!disposed) {
         options.notifications.error(
-          error instanceof Error
-            ? error.message
-            : "停止生成失败，请稍后重试。"
+          error instanceof Error ? error.message : "停止生成失败，请稍后重试。"
         );
       }
     }
@@ -750,9 +745,7 @@ export function useShortConversationCoordinator(
     synchronizeActiveRunPreferences();
   }
 
-  function selectApprovalMode(
-    mode: AgentRunSettings["approvalMode"]
-  ): void {
+  function selectApprovalMode(mode: AgentRunSettings["approvalMode"]): void {
     options.settings.updatePermissionMode(mode);
     activeConversation.value.selectApprovalMode(mode);
     synchronizeActiveRunPreferences();

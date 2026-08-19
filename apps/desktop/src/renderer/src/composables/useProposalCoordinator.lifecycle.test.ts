@@ -1,6 +1,9 @@
 import { computed, ref, shallowRef } from "vue";
 import { describe, expect, it, vi } from "vitest";
-import type { CatalogIndexSnapshot, CatalogLibrary } from "@deepwrite/contracts";
+import type {
+  CatalogIndexSnapshot,
+  CatalogLibrary
+} from "@deepwrite/contracts";
 import type { AgentEditProposal } from "../types/conversation";
 import type { AgentConversationController } from "./useAgentConversation";
 import {
@@ -67,7 +70,11 @@ function createFixture() {
       runId === proposal.runId ? [proposal] : []
     ),
     updateEditProposal: vi.fn(
-      (runId: string, proposalId: string, patch: Partial<AgentEditProposal>) => {
+      (
+        runId: string,
+        proposalId: string,
+        patch: Partial<AgentEditProposal>
+      ) => {
         if (runId !== proposal.runId || proposalId !== proposal.id) return;
         proposal = { ...proposal, ...patch };
       }

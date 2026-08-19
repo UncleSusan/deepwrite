@@ -9,7 +9,9 @@ export const MARKETPLACE_IPC_CHANNEL = "deepwrite:marketplace" as const;
 
 export const MARKETPLACE_CONTENT_TYPES = ["group", "library", "skill"] as const;
 export const MarketplaceContentTypeSchema = z.enum(MARKETPLACE_CONTENT_TYPES);
-export type MarketplaceContentType = z.infer<typeof MarketplaceContentTypeSchema>;
+export type MarketplaceContentType = z.infer<
+  typeof MarketplaceContentTypeSchema
+>;
 
 export const MarketplaceContentRefSchema = z
   .object({
@@ -192,12 +194,13 @@ export type MarketplaceSkillDetail = z.infer<
   typeof MarketplaceSkillDetailSchema
 >;
 
-export const MarketplaceLibraryDetailSchema = MarketplaceDetailBaseSchema.extend({
-  contentType: z.literal("library"),
-  kind: MarketplaceSkillKindSchema,
-  libraryType: MarketplaceLibraryTypeSchema,
-  skills: z.array(MarketplaceSkillDetailSchema).max(4_096)
-}).strict();
+export const MarketplaceLibraryDetailSchema =
+  MarketplaceDetailBaseSchema.extend({
+    contentType: z.literal("library"),
+    kind: MarketplaceSkillKindSchema,
+    libraryType: MarketplaceLibraryTypeSchema,
+    skills: z.array(MarketplaceSkillDetailSchema).max(4_096)
+  }).strict();
 export type MarketplaceLibraryDetail = z.infer<
   typeof MarketplaceLibraryDetailSchema
 >;
@@ -206,7 +209,9 @@ export const MarketplaceGroupDetailSchema = MarketplaceDetailBaseSchema.extend({
   contentType: z.literal("group"),
   items: z.array(MarketplaceContentSummarySchema).max(200)
 }).strict();
-export type MarketplaceGroupDetail = z.infer<typeof MarketplaceGroupDetailSchema>;
+export type MarketplaceGroupDetail = z.infer<
+  typeof MarketplaceGroupDetailSchema
+>;
 
 export const MarketplaceContentDetailSchema = z.discriminatedUnion(
   "contentType",
@@ -254,7 +259,9 @@ export const MarketplacePublishLibraryInputSchema =
   }).strict();
 
 export const MarketplacePublishGroupLibrarySchema =
-  MarketplacePublishLibraryInputSchema.omit({ contentType: true });
+  MarketplacePublishLibraryInputSchema.omit({
+    contentType: true
+  });
 export type MarketplacePublishGroupLibrary = z.infer<
   typeof MarketplacePublishGroupLibrarySchema
 >;
@@ -299,7 +306,9 @@ export const MarketplaceUpdateInputSchema = z
     content: MarketplacePublishInputSchema
   })
   .strict();
-export type MarketplaceUpdateInput = z.infer<typeof MarketplaceUpdateInputSchema>;
+export type MarketplaceUpdateInput = z.infer<
+  typeof MarketplaceUpdateInputSchema
+>;
 
 export const MarketplaceSetEnabledInputSchema =
   MarketplaceContentRefSchema.extend({
@@ -359,7 +368,10 @@ export type MarketplaceInstallBucket = z.infer<
 
 export const MarketplaceInstallPackageSchema = z
   .object({
-    source: MarketplaceSourceSchema.omit({ installedAt: true, bucketKind: true }),
+    source: MarketplaceSourceSchema.omit({
+      installedAt: true,
+      bucketKind: true
+    }),
     title: MarketplaceTitleSchema,
     overview: z.string().max(40_000),
     buckets: z.array(MarketplaceInstallBucketSchema).min(1).max(4),
@@ -433,19 +445,81 @@ export const CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema =
 
 export const MarketplaceIpcRequestSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("session") }).strict(),
-  z.object({ operation: z.literal("register"), input: MarketplaceRegisterInputSchema }).strict(),
-  z.object({ operation: z.literal("login"), input: MarketplaceLoginInputSchema }).strict(),
+  z
+    .object({
+      operation: z.literal("register"),
+      input: MarketplaceRegisterInputSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("login"),
+      input: MarketplaceLoginInputSchema
+    })
+    .strict(),
   z.object({ operation: z.literal("logout") }).strict(),
-  z.object({ operation: z.literal("list"), filter: MarketplaceListFilterSchema }).strict(),
-  z.object({ operation: z.literal("detail"), ref: MarketplaceContentRefSchema }).strict(),
-  z.object({ operation: z.literal("listMine"), filter: MarketplaceListFilterSchema }).strict(),
-  z.object({ operation: z.literal("myDetail"), ref: MarketplaceContentRefSchema }).strict(),
-  z.object({ operation: z.literal("publish"), input: MarketplacePublishInputSchema }).strict(),
-  z.object({ operation: z.literal("update"), input: MarketplaceUpdateInputSchema }).strict(),
-  z.object({ operation: z.literal("setEnabled"), input: MarketplaceSetEnabledInputSchema }).strict(),
-  z.object({ operation: z.literal("delete"), ref: MarketplaceContentRefSchema }).strict(),
-  z.object({ operation: z.literal("like"), input: MarketplaceLikeInputSchema }).strict(),
-  z.object({ operation: z.literal("previewInstall"), ref: MarketplaceContentRefSchema }).strict(),
-  z.object({ operation: z.literal("install"), input: MarketplaceInstallInputSchema }).strict()
+  z
+    .object({
+      operation: z.literal("list"),
+      filter: MarketplaceListFilterSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("detail"),
+      ref: MarketplaceContentRefSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("listMine"),
+      filter: MarketplaceListFilterSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("myDetail"),
+      ref: MarketplaceContentRefSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("publish"),
+      input: MarketplacePublishInputSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("update"),
+      input: MarketplaceUpdateInputSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("setEnabled"),
+      input: MarketplaceSetEnabledInputSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("delete"),
+      ref: MarketplaceContentRefSchema
+    })
+    .strict(),
+  z
+    .object({ operation: z.literal("like"), input: MarketplaceLikeInputSchema })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("previewInstall"),
+      ref: MarketplaceContentRefSchema
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("install"),
+      input: MarketplaceInstallInputSchema
+    })
+    .strict()
 ]);
 export type MarketplaceIpcRequest = z.infer<typeof MarketplaceIpcRequestSchema>;

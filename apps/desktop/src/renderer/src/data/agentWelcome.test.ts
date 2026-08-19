@@ -14,7 +14,9 @@ import {
 
 describe("agent welcome content", () => {
   it("provides an independent welcome and three common questions for every short agent", () => {
-    expect(Object.keys(SHORT_AGENT_WELCOME_CONTENT)).toEqual([...SHORT_WORKSPACE_AGENT_IDS]);
+    expect(Object.keys(SHORT_AGENT_WELCOME_CONTENT)).toEqual([
+      ...SHORT_WORKSPACE_AGENT_IDS
+    ]);
 
     for (const agentId of SHORT_WORKSPACE_AGENT_IDS) {
       const welcome = resolveAgentWelcome(agentId);
@@ -24,7 +26,11 @@ describe("agent welcome content", () => {
     }
 
     expect(
-      new Set(SHORT_WORKSPACE_AGENT_IDS.map((agentId) => resolveAgentWelcome(agentId).title)).size
+      new Set(
+        SHORT_WORKSPACE_AGENT_IDS.map(
+          (agentId) => resolveAgentWelcome(agentId).title
+        )
+      ).size
     ).toBe(SHORT_WORKSPACE_AGENT_IDS.length);
   });
 
@@ -63,8 +69,11 @@ describe("agent welcome content", () => {
     }
 
     expect(
-      new Set(LIBRARY_AGENT_DOMAINS.map((domain) => resolveAgentWelcome(undefined, domain).title))
-        .size
+      new Set(
+        LIBRARY_AGENT_DOMAINS.map(
+          (domain) => resolveAgentWelcome(undefined, domain).title
+        )
+      ).size
     ).toBe(LIBRARY_AGENT_DOMAINS.length);
   });
 

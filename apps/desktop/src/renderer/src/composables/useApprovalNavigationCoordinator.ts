@@ -3,13 +3,8 @@ import type {
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import type { DraftDirectoryProjection } from "../data/catalogWorkspace";
-import type {
-  LongWorkspaceSelection
-} from "../types/longWorkspace";
-import type {
-  ResourceTreeNode,
-  WorkspaceDocument
-} from "../types/workspace";
+import type { LongWorkspaceSelection } from "../types/longWorkspace";
+import type { ResourceTreeNode, WorkspaceDocument } from "../types/workspace";
 import type {
   ApprovalNavigationTarget,
   LongApprovalEditorFocus,
@@ -176,10 +171,7 @@ export function useApprovalNavigationCoordinator(
     const node = context.resources.node(targetResourceId);
     if (!node || !(await selectResource(node, requestId))) return false;
     if (draftDirectoryId && document.draftFileKind) {
-      context.view.selectDraftFile(
-        draftDirectoryId,
-        document.draftFileKind
-      );
+      context.view.selectDraftFile(draftDirectoryId, document.draftFileKind);
       if (!requestIsCurrent(requestId)) return false;
       await context.view.afterUpdate();
       if (!requestIsCurrent(requestId)) return false;
@@ -219,12 +211,14 @@ export function useApprovalNavigationCoordinator(
     refresh = true
   ): Promise<boolean> {
     const document = target.entryId
-      ? context.catalog.documents().find(
-          (candidate) =>
-            candidate.domain === target.domain &&
-            candidate.libraryId === target.libraryId &&
-            candidate.catalogEntryId === target.entryId
-        )
+      ? context.catalog
+          .documents()
+          .find(
+            (candidate) =>
+              candidate.domain === target.domain &&
+              candidate.libraryId === target.libraryId &&
+              candidate.catalogEntryId === target.entryId
+          )
       : context.catalog.documentById(target.documentId);
     if (
       document &&
@@ -241,9 +235,7 @@ export function useApprovalNavigationCoordinator(
     const fallbackNode = context.resources
       .libraryNode(target.libraryId)
       ?.children?.find((node) => node.catalogNodeType === "document");
-    return fallbackNode
-      ? await selectResource(fallbackNode, requestId)
-      : false;
+    return fallbackNode ? await selectResource(fallbackNode, requestId) : false;
   }
 
   async function navigateToDraftSectionInternal(
@@ -266,7 +258,9 @@ export function useApprovalNavigationCoordinator(
         ? await selectResource(directoryNode, requestId)
         : false;
     }
-    const section = directory.sections.find(({ id }) => id === target.sectionId);
+    const section = directory.sections.find(
+      ({ id }) => id === target.sectionId
+    );
     if (!section) {
       if (refresh) {
         await context.catalog.refresh();
@@ -287,9 +281,7 @@ export function useApprovalNavigationCoordinator(
     const resourceId =
       context.resources.draftSectionResourceId(directoryNode, section.id) ??
       directory.id;
-    const node =
-      context.resources.node(resourceId) ??
-      directoryNode;
+    const node = context.resources.node(resourceId) ?? directoryNode;
     if (!node || !(await selectResource(node, requestId))) return false;
     context.view.selectDraftFile(
       directory.id,
@@ -310,23 +302,24 @@ export function useApprovalNavigationCoordinator(
     refresh = true
   ): Promise<boolean> {
     const exact = target.itemId
-      ? context.catalog.documents().find(
-          (document) =>
-            document.workspaceId === target.workspaceId &&
-            document.stageId === "character_design" &&
-            document.characterItemId === target.itemId
-        )
+      ? context.catalog
+          .documents()
+          .find(
+            (document) =>
+              document.workspaceId === target.workspaceId &&
+              document.stageId === "character_design" &&
+              document.characterItemId === target.itemId
+          )
       : undefined;
-    const fallback = context.catalog.documents().find(
-      (document) =>
-        document.workspaceId === target.workspaceId &&
-        document.stageId === "character_design" &&
-        document.characterFileKind === "overview"
-    );
-    if (
-      exact &&
-      (await navigateToApprovalDocumentInternal(exact, requestId))
-    ) {
+    const fallback = context.catalog
+      .documents()
+      .find(
+        (document) =>
+          document.workspaceId === target.workspaceId &&
+          document.stageId === "character_design" &&
+          document.characterFileKind === "overview"
+      );
+    if (exact && (await navigateToApprovalDocumentInternal(exact, requestId))) {
       return true;
     }
     if (!requestIsCurrent(requestId)) return false;
@@ -486,15 +479,13 @@ export function useApprovalNavigationCoordinator(
   }
 
   function navigateToLong(target: LongTarget): Promise<boolean> {
-    return schedule((requestId) =>
-      navigateToLongInternal(target, requestId)
-    );
+    return schedule((requestId) => navigateToLongInternal(target, requestId));
   }
 
-  function navigateToTarget(target: ApprovalNavigationTarget): Promise<boolean> {
-    return schedule((requestId) =>
-      navigateToTargetInternal(target, requestId)
-    );
+  function navigateToTarget(
+    target: ApprovalNavigationTarget
+  ): Promise<boolean> {
+    return schedule((requestId) => navigateToTargetInternal(target, requestId));
   }
 
   async function drain(): Promise<void> {

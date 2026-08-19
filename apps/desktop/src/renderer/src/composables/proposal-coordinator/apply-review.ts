@@ -47,38 +47,67 @@ export function createApplyReview(ctx: ProposalLaneContext) {
     longWritingOrchestrator
   } = ctx;
 
-  const queueAgentEdit: ProposalLaneContext["queueAgentEdit"] = (...args) => ctx.queueAgentEdit(...args);
-  const canReviewAgentEditDuringRun: ProposalLaneContext["canReviewAgentEditDuringRun"] = (...args) => ctx.canReviewAgentEditDuringRun(...args);
-  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (...args) => ctx.removeQueuedAgentEdit(...args);
-  const blockLaterAgentEditGenerations: ProposalLaneContext["blockLaterAgentEditGenerations"] = (...args) => ctx.blockLaterAgentEditGenerations(...args);
-  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (...args) => ctx.latestProposalForLane(...args);
-  const laneDurableRevisionMatches: ProposalLaneContext["laneDurableRevisionMatches"] = (...args) => ctx.laneDurableRevisionMatches(...args);
-  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] = (...args) => ctx.blockedAgentEditLaneMessage(...args);
-  const resolveProvisionalExpertSectionId: ProposalLaneContext["resolveProvisionalExpertSectionId"] = (...args) => ctx.resolveProvisionalExpertSectionId(...args);
-  const findPendingDraftSectionCreationForProvisional: ProposalLaneContext["findPendingDraftSectionCreationForProvisional"] = (...args) => ctx.findPendingDraftSectionCreationForProvisional(...args);
-  const remapProvisionalExpertSectionFileProposals: ProposalLaneContext["remapProvisionalExpertSectionFileProposals"] = (...args) => ctx.remapProvisionalExpertSectionFileProposals(...args);
-  const restoreAcceptedDraftSectionCreationMappings: ProposalLaneContext["restoreAcceptedDraftSectionCreationMappings"] = (...args) => ctx.restoreAcceptedDraftSectionCreationMappings(...args);
-  const conflictDependentProvisionalFileProposals: ProposalLaneContext["conflictDependentProvisionalFileProposals"] = (...args) => ctx.conflictDependentProvisionalFileProposals(...args);
-  const acceptLibraryCreationProposal: ProposalLaneContext["acceptLibraryCreationProposal"] = (...args) => ctx.acceptLibraryCreationProposal(...args);
-  const currentLibraryProjectRevisionMatches: ProposalLaneContext["currentLibraryProjectRevisionMatches"] = (...args) => ctx.currentLibraryProjectRevisionMatches(...args);
-  const rememberAcceptedLibraryMutation: ProposalLaneContext["rememberAcceptedLibraryMutation"] = (...args) => ctx.rememberAcceptedLibraryMutation(...args);
-  const acceptDraftSectionCreationProposal: ProposalLaneContext["acceptDraftSectionCreationProposal"] = (...args) => ctx.acceptDraftSectionCreationProposal(...args);
-  const acceptDraftSectionRenameProposal: ProposalLaneContext["acceptDraftSectionRenameProposal"] = (...args) => ctx.acceptDraftSectionRenameProposal(...args);
-  const acceptDraftSectionDeletionProposal: ProposalLaneContext["acceptDraftSectionDeletionProposal"] = (...args) => ctx.acceptDraftSectionDeletionProposal(...args);
-  const stageDraftSectionDirectoryProposal: ProposalLaneContext["stageDraftSectionDirectoryProposal"] = (...args) => ctx.stageDraftSectionDirectoryProposal(...args);
-  const acceptCharacterStructureProposal: ProposalLaneContext["acceptCharacterStructureProposal"] = (...args) => ctx.acceptCharacterStructureProposal(...args);
-  const stageCharacterStructureProposal: ProposalLaneContext["stageCharacterStructureProposal"] = (...args) => ctx.stageCharacterStructureProposal(...args);
-  const findPendingCharacterCreationForProvisional: ProposalLaneContext["findPendingCharacterCreationForProvisional"] = (...args) => ctx.findPendingCharacterCreationForProvisional(...args);
-  const acceptLongWorldbuildingFileProposal: ProposalLaneContext["acceptLongWorldbuildingFileProposal"] = (...args) => ctx.acceptLongWorldbuildingFileProposal(...args);
-  const conflictDependentLongWorldbuildingProposals: ProposalLaneContext["conflictDependentLongWorldbuildingProposals"] = (...args) => ctx.conflictDependentLongWorldbuildingProposals(...args);
-  const acceptLongCharacterFileProposal: ProposalLaneContext["acceptLongCharacterFileProposal"] = (...args) => ctx.acceptLongCharacterFileProposal(...args);
-  const conflictDependentLongCharacterProposals: ProposalLaneContext["conflictDependentLongCharacterProposals"] = (...args) => ctx.conflictDependentLongCharacterProposals(...args);
-  const acceptLongPlotDesignProposal: ProposalLaneContext["acceptLongPlotDesignProposal"] = (...args) => ctx.acceptLongPlotDesignProposal(...args);
-  const acceptLongDraftProposal: ProposalLaneContext["acceptLongDraftProposal"] = (...args) => ctx.acceptLongDraftProposal(...args);
+  const queueAgentEdit: ProposalLaneContext["queueAgentEdit"] = (...args) =>
+    ctx.queueAgentEdit(...args);
+  const canReviewAgentEditDuringRun: ProposalLaneContext["canReviewAgentEditDuringRun"] =
+    (...args) => ctx.canReviewAgentEditDuringRun(...args);
+  const removeQueuedAgentEdit: ProposalLaneContext["removeQueuedAgentEdit"] = (
+    ...args
+  ) => ctx.removeQueuedAgentEdit(...args);
+  const blockLaterAgentEditGenerations: ProposalLaneContext["blockLaterAgentEditGenerations"] =
+    (...args) => ctx.blockLaterAgentEditGenerations(...args);
+  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (
+    ...args
+  ) => ctx.latestProposalForLane(...args);
+  const laneDurableRevisionMatches: ProposalLaneContext["laneDurableRevisionMatches"] =
+    (...args) => ctx.laneDurableRevisionMatches(...args);
+  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] =
+    (...args) => ctx.blockedAgentEditLaneMessage(...args);
+  const resolveProvisionalExpertSectionId: ProposalLaneContext["resolveProvisionalExpertSectionId"] =
+    (...args) => ctx.resolveProvisionalExpertSectionId(...args);
+  const findPendingDraftSectionCreationForProvisional: ProposalLaneContext["findPendingDraftSectionCreationForProvisional"] =
+    (...args) => ctx.findPendingDraftSectionCreationForProvisional(...args);
+  const remapProvisionalExpertSectionFileProposals: ProposalLaneContext["remapProvisionalExpertSectionFileProposals"] =
+    (...args) => ctx.remapProvisionalExpertSectionFileProposals(...args);
+  const restoreAcceptedDraftSectionCreationMappings: ProposalLaneContext["restoreAcceptedDraftSectionCreationMappings"] =
+    (...args) => ctx.restoreAcceptedDraftSectionCreationMappings(...args);
+  const conflictDependentProvisionalFileProposals: ProposalLaneContext["conflictDependentProvisionalFileProposals"] =
+    (...args) => ctx.conflictDependentProvisionalFileProposals(...args);
+  const acceptLibraryCreationProposal: ProposalLaneContext["acceptLibraryCreationProposal"] =
+    (...args) => ctx.acceptLibraryCreationProposal(...args);
+  const currentLibraryProjectRevisionMatches: ProposalLaneContext["currentLibraryProjectRevisionMatches"] =
+    (...args) => ctx.currentLibraryProjectRevisionMatches(...args);
+  const rememberAcceptedLibraryMutation: ProposalLaneContext["rememberAcceptedLibraryMutation"] =
+    (...args) => ctx.rememberAcceptedLibraryMutation(...args);
+  const acceptDraftSectionCreationProposal: ProposalLaneContext["acceptDraftSectionCreationProposal"] =
+    (...args) => ctx.acceptDraftSectionCreationProposal(...args);
+  const acceptDraftSectionRenameProposal: ProposalLaneContext["acceptDraftSectionRenameProposal"] =
+    (...args) => ctx.acceptDraftSectionRenameProposal(...args);
+  const acceptDraftSectionDeletionProposal: ProposalLaneContext["acceptDraftSectionDeletionProposal"] =
+    (...args) => ctx.acceptDraftSectionDeletionProposal(...args);
+  const stageDraftSectionDirectoryProposal: ProposalLaneContext["stageDraftSectionDirectoryProposal"] =
+    (...args) => ctx.stageDraftSectionDirectoryProposal(...args);
+  const acceptCharacterStructureProposal: ProposalLaneContext["acceptCharacterStructureProposal"] =
+    (...args) => ctx.acceptCharacterStructureProposal(...args);
+  const stageCharacterStructureProposal: ProposalLaneContext["stageCharacterStructureProposal"] =
+    (...args) => ctx.stageCharacterStructureProposal(...args);
+  const findPendingCharacterCreationForProvisional: ProposalLaneContext["findPendingCharacterCreationForProvisional"] =
+    (...args) => ctx.findPendingCharacterCreationForProvisional(...args);
+  const acceptLongWorldbuildingFileProposal: ProposalLaneContext["acceptLongWorldbuildingFileProposal"] =
+    (...args) => ctx.acceptLongWorldbuildingFileProposal(...args);
+  const conflictDependentLongWorldbuildingProposals: ProposalLaneContext["conflictDependentLongWorldbuildingProposals"] =
+    (...args) => ctx.conflictDependentLongWorldbuildingProposals(...args);
+  const acceptLongCharacterFileProposal: ProposalLaneContext["acceptLongCharacterFileProposal"] =
+    (...args) => ctx.acceptLongCharacterFileProposal(...args);
+  const conflictDependentLongCharacterProposals: ProposalLaneContext["conflictDependentLongCharacterProposals"] =
+    (...args) => ctx.conflictDependentLongCharacterProposals(...args);
+  const acceptLongPlotDesignProposal: ProposalLaneContext["acceptLongPlotDesignProposal"] =
+    (...args) => ctx.acceptLongPlotDesignProposal(...args);
+  const acceptLongDraftProposal: ProposalLaneContext["acceptLongDraftProposal"] =
+    (...args) => ctx.acceptLongDraftProposal(...args);
 
   function resumeRecoveredAutomaticAgentEdits(
-    conversationsToScan: readonly AgentConversationController[] =
-      allConversations()
+    conversationsToScan: readonly AgentConversationController[] = allConversations()
   ): void {
     if (!catalogSnapshot.value) return;
     for (const conversation of conversationsToScan) {
@@ -120,15 +149,28 @@ export function createApplyReview(ctx: ProposalLaneContext) {
       ) ?? "request-approval";
 
     const mutationTarget = event.payload.mutationTarget;
-    if (stageCharacterStructureProposal(event, sourceConversation, runApprovalMode)) {
+    if (
+      stageCharacterStructureProposal(
+        event,
+        sourceConversation,
+        runApprovalMode
+      )
+    ) {
       return;
     }
-    if (stageDraftSectionDirectoryProposal(event, sourceConversation, runApprovalMode)) {
+    if (
+      stageDraftSectionDirectoryProposal(
+        event,
+        sourceConversation,
+        runApprovalMode
+      )
+    ) {
       return;
     }
 
     const expectedDraftFileKind =
-      mutationTarget?.kind === "expert-draft-file" && mutationTarget.fileKind === "characterState"
+      mutationTarget?.kind === "expert-draft-file" &&
+      mutationTarget.fileKind === "characterState"
         ? "character-state"
         : mutationTarget?.kind === "expert-draft-file"
           ? mutationTarget.fileKind
@@ -139,14 +181,14 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           document.workspaceId === event.payload.workspaceId &&
           document.stageId === "character_design"
         : mutationTarget?.kind === "expert-draft-file"
-        ? document.id === mutationTarget.documentId &&
-          document.workspaceId === event.payload.workspaceId &&
-          document.stageId === "draft" &&
-          document.expertSectionId === mutationTarget.sectionId &&
-          document.draftFileKind === expectedDraftFileKind
-        : document.workspaceId === event.payload.workspaceId &&
-          document.stageId === event.payload.stageId &&
-          document.draftFileKind === undefined
+          ? document.id === mutationTarget.documentId &&
+            document.workspaceId === event.payload.workspaceId &&
+            document.stageId === "draft" &&
+            document.expertSectionId === mutationTarget.sectionId &&
+            document.draftFileKind === expectedDraftFileKind
+          : document.workspaceId === event.payload.workspaceId &&
+            document.stageId === event.payload.stageId &&
+            document.draftFileKind === undefined
     );
     if (
       (!target || target.readOnly) &&
@@ -214,7 +256,9 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           );
           return;
         }
-        const currentRevision = createShortWorkspaceContentRevision(realTarget.content);
+        const currentRevision = createShortWorkspaceContentRevision(
+          realTarget.content
+        );
         const expectedBaseRevision = expectedMutationBaseRevision(
           existing,
           realTarget.content
@@ -235,11 +279,15 @@ export function createApplyReview(ctx: ProposalLaneContext) {
             existing &&
             (existing.status === "pending" || existing.status === "error")
           ) {
-            sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
-              status: "conflict",
-              statusMessage: message,
-              updatedAt: event.timestamp
-            });
+            sourceConversation.updateEditProposal(
+              event.payload.runId,
+              existing.id,
+              {
+                status: "conflict",
+                statusMessage: message,
+                updatedAt: event.timestamp
+              }
+            );
           }
           sourceConversation.markToolConflict(
             event.payload.runId,
@@ -258,11 +306,15 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         );
         if ("error" in resolvedMutation) {
           if (existing) {
-            sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
-              status: "conflict",
-              statusMessage: resolvedMutation.error,
-              updatedAt: event.timestamp
-            });
+            sourceConversation.updateEditProposal(
+              event.payload.runId,
+              existing.id,
+              {
+                status: "conflict",
+                statusMessage: resolvedMutation.error,
+                updatedAt: event.timestamp
+              }
+            );
           }
           sourceConversation.markToolConflict(
             event.payload.runId,
@@ -273,15 +325,18 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           return;
         }
         const proposedText = resolvedMutation.text;
-        const proposedRevision = createShortWorkspaceContentRevision(proposedText);
+        const proposedRevision =
+          createShortWorkspaceContentRevision(proposedText);
         const diff = buildAgentTextDiff(realTarget.content, proposedText);
         const identity = resolveAgentEditProposalGeneration(laneId, existing);
         const applyBaseRevision = identity.coalescesExisting
           ? existing!.baseRevision
-          : existing?.proposedRevision ?? event.payload.baseRevision;
+          : (existing?.proposedRevision ?? event.payload.baseRevision);
         const noChanges =
           proposedRevision === currentRevision &&
-          (!existing || existing.status === "accepted" || identity.coalescesExisting);
+          (!existing ||
+            existing.status === "accepted" ||
+            identity.coalescesExisting);
         const proposal: AgentEditProposal = {
           id: identity.id,
           laneId,
@@ -303,7 +358,9 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           ...(noChanges ? {} : { proposedText }),
           toolCallIds: [
             ...new Set([
-              ...(identity.coalescesExisting ? existing?.toolCallIds ?? [] : []),
+              ...(identity.coalescesExisting
+                ? (existing?.toolCallIds ?? [])
+                : []),
               event.payload.toolCallId
             ])
           ],
@@ -336,8 +393,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
       }
 
       if (stagingMode === "unavailable" || !creation) {
-        const message =
-          "目标章节尚未创建或已失效，本次智能体变更未进入审阅。";
+        const message = "目标章节尚未创建或已失效，本次智能体变更未进入审阅。";
         sourceConversation.markToolConflict(
           event.payload.runId,
           event.payload.toolCallId,
@@ -370,7 +426,10 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         return;
       }
       const baseText = existing?.proposedText ?? "";
-      const expectedBaseRevision = expectedMutationBaseRevision(existing, baseText);
+      const expectedBaseRevision = expectedMutationBaseRevision(
+        existing,
+        baseText
+      );
       if (event.payload.baseRevision !== expectedBaseRevision) {
         const message =
           "待创建章节的文稿版本已变化，本次智能体变更未进入审阅。";
@@ -378,11 +437,15 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           existing &&
           (existing.status === "pending" || existing.status === "error")
         ) {
-          sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
-            status: "conflict",
-            statusMessage: message,
-            updatedAt: event.timestamp
-          });
+          sourceConversation.updateEditProposal(
+            event.payload.runId,
+            existing.id,
+            {
+              status: "conflict",
+              statusMessage: message,
+              updatedAt: event.timestamp
+            }
+          );
         }
         sourceConversation.markToolConflict(
           event.payload.runId,
@@ -392,14 +455,21 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         uiMessage.warning(message);
         return;
       }
-      const resolvedMutation = resolveAgentEditorMutationText(baseText, event.payload);
+      const resolvedMutation = resolveAgentEditorMutationText(
+        baseText,
+        event.payload
+      );
       if ("error" in resolvedMutation) {
         if (existing) {
-          sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
-            status: "conflict",
-            statusMessage: resolvedMutation.error,
-            updatedAt: event.timestamp
-          });
+          sourceConversation.updateEditProposal(
+            event.payload.runId,
+            existing.id,
+            {
+              status: "conflict",
+              statusMessage: resolvedMutation.error,
+              updatedAt: event.timestamp
+            }
+          );
         }
         sourceConversation.markToolConflict(
           event.payload.runId,
@@ -410,15 +480,18 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         return;
       }
       const proposedText = resolvedMutation.text;
-      const proposedRevision = createShortWorkspaceContentRevision(proposedText);
+      const proposedRevision =
+        createShortWorkspaceContentRevision(proposedText);
       const diff = buildAgentTextDiff(baseText, proposedText);
       const identity = resolveAgentEditProposalGeneration(laneId, existing);
       const applyBaseRevision = identity.coalescesExisting
         ? existing!.baseRevision
-        : existing?.proposedRevision ?? event.payload.baseRevision;
+        : (existing?.proposedRevision ?? event.payload.baseRevision);
       const noChanges =
         proposedRevision === createShortWorkspaceContentRevision("") &&
-        (!existing || existing.status === "accepted" || identity.coalescesExisting);
+        (!existing ||
+          existing.status === "accepted" ||
+          identity.coalescesExisting);
       const sectionTitle =
         creation.draftSectionCreationTarget?.sections.find(
           (section) => section.provisionalSectionId === mutationTarget.sectionId
@@ -448,7 +521,9 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         ...(noChanges ? {} : { proposedText }),
         toolCallIds: [
           ...new Set([
-            ...(identity.coalescesExisting ? existing?.toolCallIds ?? [] : []),
+            ...(identity.coalescesExisting
+              ? (existing?.toolCallIds ?? [])
+              : []),
             event.payload.toolCallId
           ])
         ],
@@ -490,7 +565,8 @@ export function createApplyReview(ctx: ProposalLaneContext) {
       );
       const creationMutation = creation?.characterStructureTarget?.mutation;
       if (!creation || creationMutation?.type !== "createItem") {
-        const message = "目标人物条目尚未创建或已失效，本次智能体变更未进入审阅。";
+        const message =
+          "目标人物条目尚未创建或已失效，本次智能体变更未进入审阅。";
         sourceConversation.markToolConflict(
           event.payload.runId,
           event.payload.toolCallId,
@@ -531,7 +607,8 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         event.payload.baseRevision !==
         expectedMutationBaseRevision(existing, baseText)
       ) {
-        const message = "待创建人物条目的文稿版本已变化，本次智能体变更未进入审阅。";
+        const message =
+          "待创建人物条目的文稿版本已变化，本次智能体变更未进入审阅。";
         sourceConversation.markToolConflict(
           event.payload.runId,
           event.payload.toolCallId,
@@ -554,7 +631,8 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         return;
       }
       const proposedText = resolvedMutation.text;
-      const proposedRevision = createShortWorkspaceContentRevision(proposedText);
+      const proposedRevision =
+        createShortWorkspaceContentRevision(proposedText);
       const diff = buildAgentTextDiff(baseText, proposedText);
       const identity = resolveAgentEditProposalGeneration(laneId, existing);
       const proposal: AgentEditProposal = {
@@ -575,12 +653,14 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         status: "pending",
         baseRevision: identity.coalescesExisting
           ? existing!.baseRevision
-          : existing?.proposedRevision ?? event.payload.baseRevision,
+          : (existing?.proposedRevision ?? event.payload.baseRevision),
         proposedRevision,
         proposedText,
         toolCallIds: [
           ...new Set([
-            ...(identity.coalescesExisting ? existing?.toolCallIds ?? [] : []),
+            ...(identity.coalescesExisting
+              ? (existing?.toolCallIds ?? [])
+              : []),
             event.payload.toolCallId
           ])
         ],
@@ -664,11 +744,15 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         existing &&
         (existing.status === "pending" || existing.status === "error")
       ) {
-        sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
-          status: "conflict",
-          statusMessage: message,
-          updatedAt: event.timestamp
-        });
+        sourceConversation.updateEditProposal(
+          event.payload.runId,
+          existing.id,
+          {
+            status: "conflict",
+            statusMessage: message,
+            updatedAt: event.timestamp
+          }
+        );
       }
       sourceConversation.markToolConflict(
         event.payload.runId,
@@ -690,11 +774,15 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         existing &&
         (existing.status === "pending" || existing.status === "error")
       ) {
-        sourceConversation.updateEditProposal(event.payload.runId, existing.id, {
-          status: "conflict",
-          statusMessage: resolvedMutation.error,
-          updatedAt: event.timestamp
-        });
+        sourceConversation.updateEditProposal(
+          event.payload.runId,
+          existing.id,
+          {
+            status: "conflict",
+            statusMessage: resolvedMutation.error,
+            updatedAt: event.timestamp
+          }
+        );
       }
       sourceConversation.markToolConflict(
         event.payload.runId,
@@ -711,10 +799,12 @@ export function createApplyReview(ctx: ProposalLaneContext) {
     const identity = resolveAgentEditProposalGeneration(laneId, existing);
     const applyBaseRevision = identity.coalescesExisting
       ? existing!.baseRevision
-      : existing?.proposedRevision ?? event.payload.baseRevision;
+      : (existing?.proposedRevision ?? event.payload.baseRevision);
     const noChanges =
       proposedRevision === currentRevision &&
-      (!existing || existing.status === "accepted" || identity.coalescesExisting);
+      (!existing ||
+        existing.status === "accepted" ||
+        identity.coalescesExisting);
     const proposal: AgentEditProposal = {
       id: identity.id,
       laneId,
@@ -736,7 +826,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
       ...(noChanges ? {} : { proposedText }),
       toolCallIds: [
         ...new Set([
-          ...(identity.coalescesExisting ? existing?.toolCallIds ?? [] : []),
+          ...(identity.coalescesExisting ? (existing?.toolCallIds ?? []) : []),
           event.payload.toolCallId
         ])
       ],
@@ -773,30 +863,31 @@ export function createApplyReview(ctx: ProposalLaneContext) {
       expectedProposedRevision: string;
     }
   ): Promise<void> {
-    let proposal = conversation.getEditProposal(request.runId, request.proposalId);
+    let proposal = conversation.getEditProposal(
+      request.runId,
+      request.proposalId
+    );
     if (!proposal) {
       uiMessage.error("待审阅的智能体变更已不存在，请重新生成修改。");
       return;
     }
     const reserved = Boolean(
       reservation &&
-        proposal.status === "accepting" &&
-        proposal.decisionToken === reservation.decisionToken &&
-        proposal.proposedRevision === reservation.expectedProposedRevision
+      proposal.status === "accepting" &&
+      proposal.decisionToken === reservation.decisionToken &&
+      proposal.proposedRevision === reservation.expectedProposedRevision
     );
     if (reservation && !reserved) {
       return;
     }
-    if (
-      conversation.isBusy.value &&
-      !canReviewAgentEditDuringRun(proposal)
-    ) {
+    if (conversation.isBusy.value && !canReviewAgentEditDuringRun(proposal)) {
       uiMessage.info("请等待本轮智能体完成后再审阅文稿变更");
       return;
     }
 
     if (request.decision === "reject") {
-      if (proposal.status === "accepting" || proposal.status === "accepted") return;
+      if (proposal.status === "accepting" || proposal.status === "accepted")
+        return;
       removeQueuedAgentEdit(conversation, request.runId, request.proposalId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "rejected",
@@ -805,7 +896,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           ? "已拒绝，剧情设计保持不变。"
           : proposal.longDraftTarget
             ? "已拒绝，章节正文保持不变。"
-          : "已拒绝，原文保持不变。"
+            : "已拒绝，原文保持不变。"
       });
       if (proposal.draftSectionCreationTarget) {
         conflictDependentProvisionalFileProposals(
@@ -817,9 +908,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           "空白章节创建已被拒绝，相关正文写入无法落盘。"
         );
       }
-      if (
-        proposal.longWorldbuildingTarget?.file.operation === "create"
-      ) {
+      if (proposal.longWorldbuildingTarget?.file.operation === "create") {
         conflictDependentLongWorldbuildingProposals(
           conversation,
           proposal,
@@ -849,7 +938,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           ? "已拒绝剧情设计变更，当前结构未改变"
           : proposal.longDraftTarget
             ? "已拒绝章节正文变更，当前正文未改变"
-          : "已拒绝智能体修改，原文未改变"
+            : "已拒绝智能体修改，原文未改变"
       );
       return;
     }
@@ -933,12 +1022,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
     }
 
     if (proposal.longDraftTarget) {
-      await acceptLongDraftProposal(
-        conversation,
-        request,
-        proposal,
-        automatic
-      );
+      await acceptLongDraftProposal(conversation, request, proposal, automatic);
       return;
     }
 
@@ -1038,12 +1122,15 @@ export function createApplyReview(ctx: ProposalLaneContext) {
             new Map([[provisionalSectionId, realSectionId]])
           );
         } else {
-          const inFlight = conversation.listEditProposals(request.runId).find(
-            (candidate) =>
-              candidate.draftSectionCreationTarget?.sections.some(
-                (section) => section.provisionalSectionId === provisionalSectionId
-              ) && candidate.status === "accepting"
-          );
+          const inFlight = conversation
+            .listEditProposals(request.runId)
+            .find(
+              (candidate) =>
+                candidate.draftSectionCreationTarget?.sections.some(
+                  (section) =>
+                    section.provisionalSectionId === provisionalSectionId
+                ) && candidate.status === "accepting"
+            );
           if (inFlight) {
             uiMessage.info("同一作品正在保存其他修改，请稍候再接受");
             return;
@@ -1141,8 +1228,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         !library ||
         !currentLibraryProjectRevisionMatches(proposal, library.projectRevision)
       ) {
-        const message =
-          "资料库目录已在审阅期间发生变化，未接受智能体修改。";
+        const message = "资料库目录已在审阅期间发生变化，未接受智能体修改。";
         conversation.updateEditProposal(request.runId, request.proposalId, {
           status: "conflict",
           statusMessage: message
@@ -1187,9 +1273,9 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         : undefined;
       const staleRecoveryDraft = Boolean(
         currentDraft &&
-          currentDraft.title === persistedDocument.title &&
-          (draftRevision === proposal.baseRevision ||
-            draftRevision === proposal.proposedRevision)
+        currentDraft.title === persistedDocument.title &&
+        (draftRevision === proposal.baseRevision ||
+          draftRevision === proposal.proposedRevision)
       );
       if (staleRecoveryDraft) {
         const nextDrafts = { ...editorDrafts.value };
@@ -1251,12 +1337,16 @@ export function createApplyReview(ctx: ProposalLaneContext) {
     try {
       let persisted = false;
       let newerDraftPreserved = false;
-      if (persistedDocument.workspaceId && persistedDocument.catalogDocumentId) {
+      if (
+        persistedDocument.workspaceId &&
+        persistedDocument.catalogDocumentId
+      ) {
         if (!currentApi) {
           throw new Error("桌面文件服务当前不可用。");
         }
         const projectRevision =
-          currentDraft?.baseProjectRevision ?? persistedDocument.catalogProjectRevision;
+          currentDraft?.baseProjectRevision ??
+          persistedDocument.catalogProjectRevision;
         const saved = await currentApi.catalog.saveDocument({
           bookId: persistedDocument.workspaceId,
           documentId: persistedDocument.catalogDocumentId,
@@ -1311,8 +1401,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
                   findCatalogLibrary(
                     persistedDocument.domain,
                     persistedDocument.libraryId
-                  )?.projectRevision ??
-                  persistedDocument.catalogProjectRevision
+                  )?.projectRevision ?? persistedDocument.catalogProjectRevision
               })
         });
         const normalizedPayload = {
@@ -1423,7 +1512,9 @@ export function createApplyReview(ctx: ProposalLaneContext) {
     }
   }
 
-  async function reviewAgentEdit(request: AgentEditReviewRequest): Promise<void> {
+  async function reviewAgentEdit(
+    request: AgentEditReviewRequest
+  ): Promise<void> {
     const conversation = activeConversation.value;
     const proposal = conversation.getEditProposal(
       request.runId,

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import appSource from "./WorkspaceShell.vue?raw";
-import applyReviewSource from "./composables/proposal-coordinator/apply-review.ts?raw";
-import libraryLaneSource from "./composables/proposal-coordinator/library-lane.ts?raw";
+import coordinatorSource from "./composables/useProposalCoordinator.ts?raw";
 import resourceSource from "./composables/useWorkspaceResourceCoordinator.ts?raw";
 import eventRoutesSource from "./events/registerWorkspaceSystemEventRoutes.ts?raw";
 import settingsCoordinatorSource from "./composables/useSettingsFeatureCoordinator.ts?raw";
@@ -10,7 +9,9 @@ import shortConversationSource from "./composables/useShortConversationCoordinat
 describe("library management agent wiring", () => {
   it("routes selected libraries into a bounded management context", () => {
     expect(resourceSource).toContain("activeAgentDocumentForSelection(");
-    expect(shortConversationSource).toContain("function libraryEntryReferences(");
+    expect(shortConversationSource).toContain(
+      "function libraryEntryReferences("
+    );
     expect(shortConversationSource).toContain("按需加载的方法");
     expect(shortConversationSource).toContain(
       "await options.resource.ensureDocumentsLoaded("
@@ -31,10 +32,15 @@ describe("library management agent wiring", () => {
       "dependencies.stageLibraryEditProposal(event)"
     );
     expect(appSource).toContain("stageLibraryEditProposal,");
-    const coordinatorSource = [libraryLaneSource, applyReviewSource].join("\n");
-    expect(coordinatorSource).toContain("currentApi.catalog.saveLibraryEntry({");
-    expect(coordinatorSource).toContain("currentApi.catalog.createLibraryEntry({");
-    expect(coordinatorSource).toContain("currentLibraryProjectRevisionMatches(");
+    expect(coordinatorSource).toContain(
+      "currentApi.catalog.saveLibraryEntry({"
+    );
+    expect(coordinatorSource).toContain(
+      "currentApi.catalog.createLibraryEntry({"
+    );
+    expect(coordinatorSource).toContain(
+      "currentLibraryProjectRevisionMatches("
+    );
     expect(coordinatorSource).toContain("applySavedLibraryEntry(");
     expect(coordinatorSource).toContain("applyCreatedLibraryEntry(");
     expect(coordinatorSource).toContain("entryId: created.id");

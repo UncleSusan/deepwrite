@@ -132,7 +132,9 @@ function createHarness(
     },
     profiles: {
       workspaceAgents: shallowRef([] as WorkspaceAgentSettings[]),
-      libraryAgents: shallowRef({ agents: [] } as unknown as LibraryAgentSettings)
+      libraryAgents: shallowRef({
+        agents: []
+      } as unknown as LibraryAgentSettings)
     },
     edits: {
       acceptingDocumentIds: ref(new Set<string>()),
@@ -171,7 +173,9 @@ describe("useShortConversationCoordinator", () => {
   it("keeps full Catalog context construction on the send cold path", async () => {
     const test = createHarness();
 
-    expect(test.coordinator.conversationContext.value.contextTitle).toBe("正文");
+    expect(test.coordinator.conversationContext.value.contextTitle).toBe(
+      "正文"
+    );
     expect(test.hydratedCatalogSnapshot).not.toHaveBeenCalled();
 
     await test.coordinator.sendMessage();
@@ -216,7 +220,9 @@ describe("useShortConversationCoordinator", () => {
   it("cancels the captured target when the session or draft changes", async () => {
     const sessionGate = deferred<boolean>();
     const sessionTest = createHarness();
-    sessionTest.ensureDocumentsLoaded.mockImplementation(() => sessionGate.promise);
+    sessionTest.ensureDocumentsLoaded.mockImplementation(
+      () => sessionGate.promise
+    );
     const sessionSend = sessionTest.coordinator.sendMessage();
     sessionTest.conversation.sessionId.value = "session-two";
     sessionGate.resolve(true);

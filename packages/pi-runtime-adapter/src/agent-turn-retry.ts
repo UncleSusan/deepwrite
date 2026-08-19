@@ -9,11 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 
 export const DEFAULT_AGENT_TURN_RETRY_DELAYS_MS = [
-  2_000,
-  5_000,
-  10_000,
-  20_000,
-  30_000
+  2_000, 5_000, 10_000, 20_000, 30_000
 ] as const;
 
 const DEFAULT_RETRY_JITTER_RATIO = 0.2;
@@ -61,10 +57,7 @@ export interface RunAgentWithTurnRetriesOptions {
    * The default delegates to pi-ai's transient provider-error classifier.
    */
   classifyFailure?: (message: AssistantMessage) => string | undefined;
-  onEvent?: (
-    event: AgentEvent,
-    signal: AbortSignal
-  ) => Promise<void> | void;
+  onEvent?: (event: AgentEvent, signal: AbortSignal) => Promise<void> | void;
   /**
    * Runs for every provider-returned assistant terminal message before retry
    * suppression. Use this for accounting that must include transient failures
@@ -93,11 +86,19 @@ interface ResolvedAgentTurnRetryPolicy {
   now: () => number;
 }
 
-function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
-  return typeof message === "object" && message !== null && message.role === "assistant";
+function isAssistantMessage(
+  message: AgentMessage
+): message is AssistantMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    message.role === "assistant"
+  );
 }
 
-function defaultFailureClassifier(message: AssistantMessage): string | undefined {
+function defaultFailureClassifier(
+  message: AssistantMessage
+): string | undefined {
   return isRetryableAssistantError(message)
     ? message.errorMessage || "模型连接暂时不可用。"
     : undefined;
@@ -149,8 +150,8 @@ export function jitterAgentTurnRetryDelay(
   const sample = Number.isFinite(randomValue)
     ? Math.min(1, Math.max(0, randomValue))
     : 0.5;
-  const factor = 1 - DEFAULT_RETRY_JITTER_RATIO +
-    sample * DEFAULT_RETRY_JITTER_RATIO * 2;
+  const factor =
+    1 - DEFAULT_RETRY_JITTER_RATIO + sample * DEFAULT_RETRY_JITTER_RATIO * 2;
   return Math.max(0, Math.round(normalizedBase * factor));
 }
 
@@ -202,8 +203,7 @@ export async function runAgentWithTurnRetries(
   let activeTurn: AgentTurnAttempt | undefined;
   let retryContinuationPending = false;
   let pendingRetry:
-    | { schedule: AgentTurnRetrySchedule; message: AssistantMessage }
-    | undefined;
+    { schedule: AgentTurnRetrySchedule; message: AssistantMessage } | undefined;
 
   const unsubscribe = options.agent.subscribe(async (event, signal) => {
     if (event.type === "turn_start") {
@@ -254,7 +254,9 @@ export async function runAgentWithTurnRetries(
           retryAt: new Date(policy.now() + delayMs).toISOString(),
           reason: reason.slice(0, 4_000)
         };
-        if (!removeFailedAssistantFromTranscript(options.agent, event.message)) {
+        if (
+          !removeFailedAssistantFromTranscript(options.agent, event.message)
+        ) {
           await options.onEvent?.(event, signal);
           return;
         }

@@ -4,12 +4,8 @@ import {
   LongProjectManifestSchema,
   LongWorkspaceIndexSnapshotSchema
 } from "@deepwrite/contracts";
-import {
-  parseWriteClawLongSourceBytes
-} from "./write-claw-long-archive";
-import {
-  createWriteClawLongImportPlan
-} from "./write-claw-long-import";
+import { parseWriteClawLongSourceBytes } from "./write-claw-long-archive";
+import { createWriteClawLongImportPlan } from "./write-claw-long-import";
 
 const FIXED_NOW = "2026-07-26T12:00:00.000Z";
 
@@ -21,10 +17,7 @@ function crc32(content: Uint8Array): number {
     for (let index = 0; index < 256; index += 1) {
       let value = index;
       for (let bit = 0; bit < 8; bit += 1) {
-        value =
-          (value & 1) !== 0
-            ? 0xedb88320 ^ (value >>> 1)
-            : value >>> 1;
+        value = (value & 1) !== 0 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
       }
       crcTable[index] = value >>> 0;
     }
@@ -381,9 +374,9 @@ describe("Write Claw long-form import", () => {
       expect(plan.index.chapters[0]?.commitId).toBe(
         plan.index.ledger.commits[0]!.id
       );
-      expect(
-        plan.idMap.chapterStage?.["draft.volume-1.arc-1.chapter-1"]
-      ).toBe(plan.index.plot.chapterCards[0]!.id);
+      expect(plan.idMap.chapterStage?.["draft.volume-1.arc-1.chapter-1"]).toBe(
+        plan.index.plot.chapterCards[0]!.id
+      );
       expect(plan.documents.length).toBeGreaterThanOrEqual(1 + 1 + 4 + 3);
       const worldCategory = plan.index.worldbuilding[0]!;
       if (worldCategory.format !== "list") throw new Error("expected list");
@@ -478,12 +471,8 @@ describe("Write Claw long-form import", () => {
 
   it("normalizes uncommitted legacy foreshadowing to its derived planned state", () => {
     const workspace = legacyWorkspace();
-    workspace.chapters[
-      "draft.volume-1.arc-1.chapter-1"
-    ]!.committed = false;
-    workspace.chapters[
-      "draft.volume-1.arc-1.chapter-1"
-    ]!.commit_id = "";
+    workspace.chapters["draft.volume-1.arc-1.chapter-1"]!.committed = false;
+    workspace.chapters["draft.volume-1.arc-1.chapter-1"]!.commit_id = "";
     workspace.ledger.committed_through = "";
     workspace.ledger.timeline = [];
     const plan = createWriteClawLongImportPlan(
@@ -497,17 +486,13 @@ describe("Write Claw long-form import", () => {
     expect(plan.index.ledger.commits).toEqual([]);
     expect(plan.index.plot.foreshadowing[0]).toMatchObject({
       status: "planned",
-      beats: [
-        expect.objectContaining({ status: "written", commitId: null })
-      ]
+      beats: [expect.objectContaining({ status: "written", commitId: null })]
     });
   });
 
   it("rejects incomplete v3+ audit metadata but restores v1/v2 checkpoints conservatively", () => {
     const invalidV5 = legacyWorkspace();
-    invalidV5.chapters[
-      "draft.volume-1.arc-1.chapter-1"
-    ]!.commit_id = "";
+    invalidV5.chapters["draft.volume-1.arc-1.chapter-1"]!.commit_id = "";
     expect(() =>
       createWriteClawLongImportPlan(
         parseWriteClawLongSourceBytes(
@@ -520,12 +505,8 @@ describe("Write Claw long-form import", () => {
 
     const legacyV2 = legacyWorkspace();
     legacyV2.schema_version = 2;
-    legacyV2.chapters[
-      "draft.volume-1.arc-1.chapter-1"
-    ]!.commit_id = "";
-    legacyV2.chapters[
-      "draft.volume-1.arc-1.chapter-1"
-    ]!.committed_at = "";
+    legacyV2.chapters["draft.volume-1.arc-1.chapter-1"]!.commit_id = "";
+    legacyV2.chapters["draft.volume-1.arc-1.chapter-1"]!.committed_at = "";
     legacyV2.ledger.timeline = [];
     const plan = createWriteClawLongImportPlan(
       parseWriteClawLongSourceBytes(
@@ -640,9 +621,7 @@ describe("Write Claw long-form import", () => {
     expect(source.warnings.join("\n")).toContain(
       "已优先采用根目录“long_workspace.json”"
     );
-    expect(source.warnings.join("\n")).toContain(
-      "backup/long_workspace.json"
-    );
+    expect(source.warnings.join("\n")).toContain("backup/long_workspace.json");
   });
 
   it("deduplicates identical nested authority files deterministically", () => {
@@ -772,9 +751,8 @@ describe("Write Claw long-form import", () => {
       .flatMap((category) =>
         category.format === "text"
           ? [
-              plan.documents.find(
-                ({ fileId }) => fileId === category.file.id
-              )?.content ?? ""
+              plan.documents.find(({ fileId }) => fileId === category.file.id)
+                ?.content ?? ""
             ]
           : []
       )
@@ -827,8 +805,8 @@ describe("Write Claw long-form import", () => {
     const items = category.items.map((item) => ({
       title: item.title,
       content:
-        plan.documents.find(({ fileId }) => fileId === item.file.id)
-          ?.content ?? ""
+        plan.documents.find(({ fileId }) => fileId === item.file.id)?.content ??
+        ""
     }));
 
     expect(items).toHaveLength(10_000);
@@ -836,27 +814,20 @@ describe("Write Claw long-form import", () => {
     expect(items[1]?.content).toContain(
       "<!-- deepwrite-world-item&#58;legacy -->"
     );
-    expect(items[1]?.content).not.toContain(
-      "<!-- deepwrite-world-item:"
-    );
-    expect(plan.warnings.join("\n")).toMatch(
-      /超过 10000 项|超过 10,000 项/u
-    );
+    expect(items[1]?.content).not.toContain("<!-- deepwrite-world-item:");
+    expect(plan.warnings.join("\n")).toMatch(/超过 10000 项|超过 10,000 项/u);
     const evidence = plan.index.worldbuilding
       .filter(({ id }) => id.startsWith("world_migration-evidence-"))
       .flatMap((category) =>
         category.format === "text"
           ? [
-              plan.documents.find(
-                ({ fileId }) => fileId === category.file.id
-              )?.content ?? ""
+              plan.documents.find(({ fileId }) => fileId === category.file.id)
+                ?.content ?? ""
             ]
           : []
       )
       .join("\n");
-    expect(evidence).toContain(
-      "<!-- deepwrite-world-item:legacy -->"
-    );
+    expect(evidence).toContain("<!-- deepwrite-world-item:legacy -->");
     expect(evidence).toContain("world-item-10000");
   });
 
@@ -878,9 +849,8 @@ describe("Write Claw long-form import", () => {
     const evidenceDocuments = evidenceCategories.flatMap((category) =>
       category.format === "text"
         ? [
-            plan.documents.find(
-              ({ fileId }) => fileId === category.file.id
-            )?.content ?? ""
+            plan.documents.find(({ fileId }) => fileId === category.file.id)
+              ?.content ?? ""
           ]
         : []
     );
@@ -888,14 +858,10 @@ describe("Write Claw long-form import", () => {
     expect(plan.index.worldbuilding.length).toBeLessThanOrEqual(10_000);
     expect(evidenceCategories.length).toBeLessThan(1_000);
     expect(
-      evidenceDocuments.some((content) =>
-        content.includes("附件证据 1")
-      )
+      evidenceDocuments.some((content) => content.includes("附件证据 1"))
     ).toBe(true);
     expect(
-      evidenceDocuments.some((content) =>
-        content.includes("附件证据 10050")
-      )
+      evidenceDocuments.some((content) => content.includes("附件证据 10050"))
     ).toBe(true);
     expect(
       evidenceDocuments.some((content) =>
@@ -949,9 +915,8 @@ describe("Write Claw long-form import", () => {
       .flatMap((category) =>
         category.format === "text"
           ? [
-              plan.documents.find(
-                ({ fileId }) => fileId === category.file.id
-              )?.content ?? ""
+              plan.documents.find(({ fileId }) => fileId === category.file.id)
+                ?.content ?? ""
             ]
           : []
       )
@@ -960,22 +925,16 @@ describe("Write Claw long-form import", () => {
     expect(searchableEvidence).toContain(
       "long_workspace.json.plot.narrative_placements[1]"
     );
-    expect(searchableEvidence).toContain(
-      "dangling-placement-search-marker"
-    );
+    expect(searchableEvidence).toContain("dangling-placement-search-marker");
     expect(searchableEvidence).toContain("duplicate-link-search-marker");
     expect(searchableEvidence).toContain("cycle-link-search-marker");
-    expect(searchableEvidence).toContain(
-      "character-reference-does-not-exist"
-    );
+    expect(searchableEvidence).toContain("character-reference-does-not-exist");
     expect(searchableEvidence).toContain("unresolved-reference");
     expect(plan.index.plot.chapterCards[0]!.primaryArcId).toBeNull();
     expect(plan.warnings.join("\n")).toContain("已移除该关联");
     expect(searchableEvidence).toContain('"action": "merge"');
     expect(searchableEvidence).toContain('"action": "drop"');
-    expect(searchableEvidence).toContain(
-      "Legacy → DeepWrite 完整 ID 映射"
-    );
+    expect(searchableEvidence).toContain("Legacy → DeepWrite 完整 ID 映射");
     expect(searchableEvidence).toContain('"sourceIdentity"');
     expect(searchableEvidence).toContain(plan.idMap.event!["event-a"]!);
   });

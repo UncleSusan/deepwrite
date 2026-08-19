@@ -157,7 +157,9 @@ describe("workspace lifecycle coordinator", () => {
     await Promise.all([starting, disposing]);
     await harness.coordinator.dispose();
 
-    expect(harness.options.hydrateConversationPreferences).not.toHaveBeenCalled();
+    expect(
+      harness.options.hydrateConversationPreferences
+    ).not.toHaveBeenCalled();
     expect(harness.options.loadCatalog).not.toHaveBeenCalled();
     expect(harness.stopSystemEvents).toHaveBeenCalledOnce();
     expect(harness.windowTarget.listenerCount()).toBe(0);
@@ -239,9 +241,11 @@ describe("workspace lifecycle coordinator", () => {
           order.push("draft-recovery-flushed");
         })
       },
-      cleanup: [() => {
-        order.push("stores-disposed");
-      }]
+      cleanup: [
+        () => {
+          order.push("stores-disposed");
+        }
+      ]
     });
     await harness.coordinator.start();
 

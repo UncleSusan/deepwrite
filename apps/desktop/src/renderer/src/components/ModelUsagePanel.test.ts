@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import source from "./ModelUsagePanel.vue?raw";
 
 describe("ModelUsagePanel", () => {
@@ -20,12 +21,14 @@ describe("ModelUsagePanel", () => {
     expect(source).toContain('if (status === "historical") return "历史模型"');
     expect(source).toContain("还没有模型用量");
     expect(source).toContain('v-else-if="isEmpty && !hasModels"');
-    expect(source).toContain("<span v-else class=\"usage-model-unused\">未使用</span>");
+    expect(source).toContain(
+      '<span v-else class="usage-model-unused">未使用</span>'
+    );
     expect(source).toContain("正在读取本地用量…");
     expect(source).toContain("模块分布");
     expect(source).toContain("模型状态");
     expect(source).toContain("最近实际调用");
-    expect(source).toContain("本地最多保留 100 条");
+    expectSourceToContain(source, "本地最多保留 100 条");
     expect(source).toContain('return "本地模拟"');
   });
 });

@@ -106,10 +106,7 @@ const activeSaving = computed(() =>
   activeWorkspaceType.value === "long" ? props.longSaving : props.saving
 );
 const formDisabled = computed(
-  () =>
-    activeLoading.value ||
-    activeSaving.value ||
-    !props.runtimeAvailable
+  () => activeLoading.value || activeSaving.value || !props.runtimeAvailable
 );
 const activeWorkspaceLabel = computed(() =>
   activeWorkspaceType.value === "long"
@@ -161,8 +158,7 @@ function selectAgent(agentId: WorkspaceAgentId): void {
 
 function isReadAccessChecked(scope: ReadAccessKey, id: string): boolean {
   const values = activeAgent.value?.readAccess[scope] as
-    | readonly string[]
-    | undefined;
+    readonly string[] | undefined;
   return values?.includes(id) ?? false;
 }
 
@@ -193,9 +189,7 @@ function resetActiveAgent(): void {
     activeWorkspaceType.value === "script"
       ? DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES
       : DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES;
-  const builtin = defaults.find(
-    (agent) => agent.id === activeAgentId.value
-  );
+  const builtin = defaults.find((agent) => agent.id === activeAgentId.value);
   const index = draftAgents.value.findIndex(
     (agent) => agent.id === activeAgentId.value
   );
@@ -226,26 +220,31 @@ function saveSettings(): void {
   }
   const workspaceType = activeWorkspaceType.value;
 
-  const agents = visibleAgents.value.map(({ id }) => {
-    const agent = draftAgents.value.find((candidate) => candidate.id === id);
-    if (!agent) return null;
+  const agents = visibleAgents.value
+    .map(({ id }) => {
+      const agent = draftAgents.value.find((candidate) => candidate.id === id);
+      if (!agent) return null;
 
-    const shortcuts = agent.welcomeShortcuts.map((value) => value.trim());
-    if (shortcuts.some((value) => value.length === 0) || shortcuts.length !== 3) {
-      uiMessage.warning("每个智能体的三个欢迎快捷按钮都不能为空");
-      return null;
-    }
-
-    return {
-      id,
-      systemPrompt: agent.systemPrompt,
-      welcomeShortcuts: [shortcuts[0]!, shortcuts[1]!, shortcuts[2]!],
-      readAccess: {
-        material: [...agent.readAccess.material],
-        skill: [...agent.readAccess.skill]
+      const shortcuts = agent.welcomeShortcuts.map((value) => value.trim());
+      if (
+        shortcuts.some((value) => value.length === 0) ||
+        shortcuts.length !== 3
+      ) {
+        uiMessage.warning("每个智能体的三个欢迎快捷按钮都不能为空");
+        return null;
       }
-    };
-  }).filter((agent): agent is EditableAgent => agent !== null);
+
+      return {
+        id,
+        systemPrompt: agent.systemPrompt,
+        welcomeShortcuts: [shortcuts[0]!, shortcuts[1]!, shortcuts[2]!],
+        readAccess: {
+          material: [...agent.readAccess.material],
+          skill: [...agent.readAccess.skill]
+        }
+      };
+    })
+    .filter((agent): agent is EditableAgent => agent !== null);
 
   if (agents.length !== visibleAgents.value.length) return;
   emit("save", {
@@ -262,7 +261,9 @@ function saveSettings(): void {
         <span class="panel-kicker">{{ activeWorkspaceLabel }}创作空间</span>
         <h2 id="short-agent-title">智能体设置</h2>
         <p>
-          分别配置{{ activeWorkspaceLabel }}智能体的系统提示词、欢迎快捷按钮，以及可读取的素材和技能范围。创作空间内容始终可以按需互相读取。
+          分别配置{{
+            activeWorkspaceLabel
+          }}智能体的系统提示词、欢迎快捷按钮，以及可读取的素材和技能范围。创作空间内容始终可以按需互相读取。
         </p>
         <p v-if="!runtimeAvailable" class="runtime-note">
           当前环境仅支持查看；保存和恢复默认设置需要使用 DeepWrite 桌面端。
@@ -311,14 +312,21 @@ function saveSettings(): void {
       @save="emit('saveLong', $event)"
     />
     <div v-else-if="activeLoading" class="panel-state" aria-live="polite">
-      正在加载{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}智能体设置…
+      正在加载{{
+        activeWorkspaceType === "script" ? "剧本" : "短篇"
+      }}智能体设置…
     </div>
     <div v-else-if="!activeSettings || !activeAgent" class="panel-state">
-      暂无可用的{{ activeWorkspaceType === "script" ? "剧本" : "短篇" }}智能体设置。
+      暂无可用的{{
+        activeWorkspaceType === "script" ? "剧本" : "短篇"
+      }}智能体设置。
     </div>
 
     <div v-else class="settings-layout">
-      <nav class="agent-nav" :aria-label="`${activeWorkspaceType === 'script' ? '剧本' : '短篇'}智能体`">
+      <nav
+        class="agent-nav"
+        :aria-label="`${activeWorkspaceType === 'script' ? '剧本' : '短篇'}智能体`"
+      >
         <button
           v-for="agent in visibleAgents"
           :key="agent.id"
@@ -338,7 +346,10 @@ function saveSettings(): void {
           <span>{{ activeMeta.eyebrow }}</span>
           <h3>{{ activeSettingsAgent?.label ?? activeMeta.label }}</h3>
           <p>
-            {{ activeSettingsAgent?.description ?? "配置当前智能体的职责和读取边界。" }}
+            {{
+              activeSettingsAgent?.description ??
+              "配置当前智能体的职责和读取边界。"
+            }}
           </p>
         </header>
 
@@ -363,7 +374,9 @@ function saveSettings(): void {
           <div class="section-heading">
             <div>
               <h4>欢迎快捷按钮</h4>
-              <p>空对话欢迎区展示的三个快捷提问；可自定义，也可通过“恢复当前智能体默认”还原。</p>
+              <p>
+                空对话欢迎区展示的三个快捷提问；可自定义，也可通过“恢复当前智能体默认”还原。
+              </p>
             </div>
           </div>
           <div class="welcome-shortcut-list">
@@ -389,7 +402,9 @@ function saveSettings(): void {
           <div class="section-heading">
             <div>
               <h4>读取范围</h4>
-              <p>未勾选的素材或技能不会提供给当前智能体；创作空间各阶段始终可按需读取。</p>
+              <p>
+                未勾选的素材或技能不会提供给当前智能体；创作空间各阶段始终可按需读取。
+              </p>
             </div>
           </div>
 
@@ -502,7 +517,8 @@ function saveSettings(): void {
 .workspace-type-tabs button.is-active {
   background: var(--surface-raised);
   color: var(--text-primary);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--theme-foreground) 9%, transparent);
+  box-shadow: 0 1px 3px
+    color-mix(in srgb, var(--theme-foreground) 9%, transparent);
 }
 
 .workspace-type-tabs button:disabled {
@@ -550,7 +566,8 @@ function saveSettings(): void {
   padding: 48px 20px;
   border-radius: 12px;
   background: var(--surface-raised);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--theme-foreground) 4%, transparent);
+  box-shadow: 0 1px 2px
+    color-mix(in srgb, var(--theme-foreground) 4%, transparent);
   color: var(--text-secondary);
   font-size: 0.928571rem;
   text-align: center;
@@ -598,7 +615,8 @@ function saveSettings(): void {
 .agent-nav-item.is-active {
   background: var(--surface-raised);
   color: var(--text-primary);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--theme-foreground) 8%, transparent);
+  box-shadow: 0 1px 2px
+    color-mix(in srgb, var(--theme-foreground) 8%, transparent);
 }
 
 .agent-nav-item small {
@@ -632,7 +650,8 @@ function saveSettings(): void {
   border: 1px solid var(--theme-line-soft);
   border-radius: 12px;
   background: var(--surface-raised);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--theme-foreground) 3.5%, transparent);
+  box-shadow: 0 1px 2px
+    color-mix(in srgb, var(--theme-foreground) 3.5%, transparent);
   overflow: hidden;
 }
 
@@ -854,7 +873,11 @@ function saveSettings(): void {
 }
 
 .primary-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--neutral-solid) 88%, var(--theme-foreground));
+  background: color-mix(
+    in srgb,
+    var(--neutral-solid) 88%,
+    var(--theme-foreground)
+  );
 }
 
 .panel-actions button:disabled {

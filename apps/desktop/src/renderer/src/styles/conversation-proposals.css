@@ -27,12 +27,20 @@
 }
 
 .edit-proposal-card.is-accepted {
-  border-color: color-mix(in srgb, var(--success) 34%, var(--theme-line, #dedfdf));
+  border-color: color-mix(
+    in srgb,
+    var(--success) 34%,
+    var(--theme-line, #dedfdf)
+  );
 }
 
 .edit-proposal-card.is-conflict,
 .edit-proposal-card.is-error {
-  border-color: color-mix(in srgb, var(--danger) 42%, var(--theme-line, #dedfdf));
+  border-color: color-mix(
+    in srgb,
+    var(--danger) 42%,
+    var(--theme-line, #dedfdf)
+  );
 }
 
 .edit-proposal-header {
@@ -102,7 +110,11 @@
 .edit-proposal-status.is-pending,
 .edit-proposal-status.is-accepting {
   background: color-mix(in srgb, var(--accent, #5b82b8) 12%, transparent);
-  color: color-mix(in srgb, var(--accent, #5b82b8) 82%, var(--text-primary, #202226));
+  color: color-mix(
+    in srgb,
+    var(--accent, #5b82b8) 82%,
+    var(--text-primary, #202226)
+  );
 }
 
 .edit-proposal-status.is-accepted {
@@ -145,7 +157,11 @@
 }
 
 .approval-target-button:hover {
-  border-color: color-mix(in srgb, var(--accent, #5b82b8) 45%, var(--theme-line, #dedfdf));
+  border-color: color-mix(
+    in srgb,
+    var(--accent, #5b82b8) 45%,
+    var(--theme-line, #dedfdf)
+  );
   background: var(--surface-hover, #e9e9e7);
   color: var(--accent, #5b82b8);
 }
@@ -230,7 +246,11 @@
 .edit-diff-hunk-header {
   min-width: max-content;
   padding: 5px 12px;
-  background: color-mix(in srgb, var(--accent, #5b82b8) 8%, var(--surface-main, #ffffff));
+  background: color-mix(
+    in srgb,
+    var(--accent, #5b82b8) 8%,
+    var(--surface-main, #ffffff)
+  );
   color: var(--text-secondary, #60646b);
   font-family: var(--code-font);
   font-size: 0.714286rem;
@@ -250,16 +270,25 @@
 }
 
 .edit-diff-line.is-addition {
-  background: color-mix(in srgb, var(--success) 11%, var(--surface-main, #ffffff));
+  background: color-mix(
+    in srgb,
+    var(--success) 11%,
+    var(--surface-main, #ffffff)
+  );
 }
 
 .edit-diff-line.is-deletion {
-  background: color-mix(in srgb, var(--danger) 11%, var(--surface-main, #ffffff));
+  background: color-mix(
+    in srgb,
+    var(--danger) 11%,
+    var(--surface-main, #ffffff)
+  );
 }
 
 .edit-diff-line-number {
   padding: 2px 7px 2px 4px;
-  border-right: 1px solid color-mix(in srgb, var(--theme-line-soft, #e9e9e7) 70%, transparent);
+  border-right: 1px solid
+    color-mix(in srgb, var(--theme-line-soft, #e9e9e7) 70%, transparent);
   color: var(--text-tertiary, #8b8f94);
   text-align: right;
   user-select: none;
@@ -367,17 +396,19 @@
   opacity: 0.56;
 }
 
-html[data-theme="dark"] :where(
-  .edit-proposal-stats .is-addition,
-  .edit-diff-line.is-addition .edit-diff-line-mark
-) {
+html[data-theme="dark"]
+  :where(
+    .edit-proposal-stats .is-addition,
+    .edit-diff-line.is-addition .edit-diff-line-mark
+  ) {
   color: var(--success);
 }
 
-html[data-theme="dark"] :where(
-  .edit-proposal-stats .is-deletion,
-  .edit-diff-line.is-deletion .edit-diff-line-mark
-) {
+html[data-theme="dark"]
+  :where(
+    .edit-proposal-stats .is-deletion,
+    .edit-diff-line.is-deletion .edit-diff-line-mark
+  ) {
   color: var(--danger);
 }
 
@@ -385,12 +416,13 @@ html[data-theme="dark"] .edit-proposal-status.is-accepted {
   color: var(--success);
 }
 
-html[data-theme="dark"] :where(
-  .edit-proposal-status.is-conflict,
-  .edit-proposal-status.is-error,
-  .edit-proposal-card.is-conflict .edit-proposal-message,
-  .edit-proposal-card.is-error .edit-proposal-message
-) {
+html[data-theme="dark"]
+  :where(
+    .edit-proposal-status.is-conflict,
+    .edit-proposal-status.is-error,
+    .edit-proposal-card.is-conflict .edit-proposal-message,
+    .edit-proposal-card.is-error .edit-proposal-message
+  ) {
   color: var(--danger);
 }
 
@@ -537,7 +569,9 @@ html[data-theme="dark"] :where(
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
-  transition: opacity 140ms ease, visibility 140ms ease;
+  transition:
+    opacity 140ms ease,
+    visibility 140ms ease;
 }
 
 .message:hover .message-actions,
@@ -723,7 +757,12 @@ html[data-theme="dark"] :where(
 }
 
 .thinking-row span {
-  background: linear-gradient(90deg, var(--text-tertiary) 20%, var(--theme-line) 45%, var(--text-secondary) 70%);
+  background: linear-gradient(
+    90deg,
+    var(--text-tertiary) 20%,
+    var(--theme-line) 45%,
+    var(--text-secondary) 70%
+  );
   background-size: 220% 100%;
   background-clip: text;
   color: transparent;

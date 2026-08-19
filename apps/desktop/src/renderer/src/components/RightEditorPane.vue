@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import {
   CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
   LIBRARY_AGENT_ENTRY_MAX_CHARACTERS
@@ -113,38 +120,38 @@ let pendingEditorInput: {
   inputType: string;
   timestamp: number;
 } | null = null;
-const activeScrollMemoryKey = computed(() => editorScrollMemoryKey(props.document));
+const activeScrollMemoryKey = computed(() =>
+  editorScrollMemoryKey(props.document)
+);
 const documentScrollbar = createTransientScrollbarController();
 
-watch(
-  activeScrollMemoryKey,
-  (nextScrollMemoryKey, previousScrollMemoryKey) => {
-    rememberCurrentDocumentScroll(previousScrollMemoryKey);
-    title.value = props.draftState?.title ?? props.document.title;
-    content.value = props.draftState?.content ?? props.document.content;
-    nonWhitespaceCharacterCount.value = countNonWhitespaceCharacters(
-      content.value
-    );
-    dirty.value = props.draftState?.dirty ?? false;
-    viewMode.value = "edit";
-    selectionAction.value = null;
-    findPanelOpen.value = false;
-    searchQuery.value = "";
-    replacementText.value = "";
-    currentMatchIndex.value = -1;
-    resetEditorHistory();
-    void restoreDocumentScroll(nextScrollMemoryKey, "edit");
-  }
-);
+watch(activeScrollMemoryKey, (nextScrollMemoryKey, previousScrollMemoryKey) => {
+  rememberCurrentDocumentScroll(previousScrollMemoryKey);
+  title.value = props.draftState?.title ?? props.document.title;
+  content.value = props.draftState?.content ?? props.document.content;
+  nonWhitespaceCharacterCount.value = countNonWhitespaceCharacters(
+    content.value
+  );
+  dirty.value = props.draftState?.dirty ?? false;
+  viewMode.value = "edit";
+  selectionAction.value = null;
+  findPanelOpen.value = false;
+  searchQuery.value = "";
+  replacementText.value = "";
+  currentMatchIndex.value = -1;
+  resetEditorHistory();
+  void restoreDocumentScroll(nextScrollMemoryKey, "edit");
+});
 
 watch(
-  () => [
-    props.draftState?.title,
-    props.draftState?.content,
-    props.draftState?.dirty,
-    props.document.title,
-    props.document.content
-  ] as const,
+  () =>
+    [
+      props.draftState?.title,
+      props.draftState?.content,
+      props.draftState?.dirty,
+      props.document.title,
+      props.document.content
+    ] as const,
   ([nextTitle, nextContent, nextDirty, documentTitle, documentContent]) => {
     const resolvedTitle = nextTitle ?? documentTitle;
     const resolvedContent = nextContent ?? documentContent;
@@ -161,7 +168,8 @@ watch(
 
 const isLibraryEntry = computed(
   () =>
-    (props.document.domain === "material" || props.document.domain === "skill") &&
+    (props.document.domain === "material" ||
+      props.document.domain === "skill") &&
     Boolean(props.document.catalogEntryId)
 );
 const isLibraryOverview = computed(
@@ -185,7 +193,9 @@ const contentMaxLength = computed(() =>
       : undefined
 );
 const contentExceedsLimit = computed(
-  () => contentMaxLength.value !== undefined && content.value.length > contentMaxLength.value
+  () =>
+    contentMaxLength.value !== undefined &&
+    content.value.length > contentMaxLength.value
 );
 const characterCount = computed(() =>
   isLibraryDocument.value
@@ -220,7 +230,8 @@ const searchMatches = computed<EditorSearchMatch[]>(() => {
 const searchResultLabel = computed(() => {
   if (!searchQuery.value) return "0/0";
   if (!searchMatches.value.length) return "无结果";
-  const current = currentMatchIndex.value >= 0 ? currentMatchIndex.value + 1 : 0;
+  const current =
+    currentMatchIndex.value >= 0 ? currentMatchIndex.value + 1 : 0;
   return `${current}/${searchMatches.value.length}`;
 });
 const draftUnitLabel = computed(() =>
@@ -238,9 +249,9 @@ const resolvedDeleteSectionLabel = computed(
 const persistedDocument = computed(() =>
   Boolean(
     props.document.catalogDocumentId ||
-      props.document.catalogEntryId ||
-      props.document.catalogLibraryField ||
-      props.document.catalogProjectRevision !== undefined
+    props.document.catalogEntryId ||
+    props.document.catalogLibraryField ||
+    props.document.catalogProjectRevision !== undefined
   )
 );
 
@@ -339,7 +350,10 @@ function updateContent(
   nextContent: string,
   nonWhitespaceDelta?: number
 ): boolean {
-  if (contentMaxLength.value !== undefined && nextContent.length > contentMaxLength.value) {
+  if (
+    contentMaxLength.value !== undefined &&
+    nextContent.length > contentMaxLength.value
+  ) {
     uiMessage.warning(
       isLibraryOverview.value
         ? "素材库或技能库介绍最多 40,000 字，请精简内容后再编辑"
@@ -352,10 +366,7 @@ function updateContent(
   nonWhitespaceCharacterCount.value =
     nonWhitespaceDelta === undefined
       ? countNonWhitespaceCharacters(nextContent)
-      : Math.max(
-          0,
-          nonWhitespaceCharacterCount.value + nonWhitespaceDelta
-        );
+      : Math.max(0, nonWhitespaceCharacterCount.value + nonWhitespaceDelta);
   currentMatchIndex.value = -1;
   markDirty();
   return true;
@@ -486,7 +497,11 @@ function save(): void {
     return;
   }
   pendingSaveViewport = captureEditorViewport();
-  emit("save", { id: props.document.id, title: title.value, content: content.value });
+  emit("save", {
+    id: props.document.id,
+    title: title.value,
+    content: content.value
+  });
   const snapshot = pendingSaveViewport;
   void restoreEditorViewport(snapshot).then(() => {
     if (!props.saving && pendingSaveViewport === snapshot) {
@@ -510,11 +525,15 @@ function closeSelectionAction(): void {
   selectionAction.value = null;
 }
 
-function currentDocumentScroller(view: EditorScrollView): HTMLElement | undefined {
+function currentDocumentScroller(
+  view: EditorScrollView
+): HTMLElement | undefined {
   return view === "edit" ? editorInput.value : documentPreview.value;
 }
 
-function rememberCurrentDocumentScroll(key = activeScrollMemoryKey.value): void {
+function rememberCurrentDocumentScroll(
+  key = activeScrollMemoryKey.value
+): void {
   const scroller = currentDocumentScroller(viewMode.value);
   if (!scroller) return;
   rememberEditorScrollPosition(key, viewMode.value, scroller.scrollTop);
@@ -578,7 +597,9 @@ function resolveInitialMatchIndex(direction: 1 | -1): number {
   if (!matches.length) return -1;
 
   if (direction === 1) {
-    const index = matches.findIndex((match) => match.start >= searchAnchor.value);
+    const index = matches.findIndex(
+      (match) => match.start >= searchAnchor.value
+    );
     return index >= 0 ? index : 0;
   }
   for (let index = matches.length - 1; index >= 0; index -= 1) {
@@ -594,7 +615,10 @@ function scrollEditorToRange(input: HTMLTextAreaElement, start: number): void {
   const resolvedLineHeight = Number.isFinite(lineHeight)
     ? lineHeight
     : Number.parseFloat(computedStyle.fontSize) * 1.95;
-  input.scrollTop = Math.max(0, (line - 1) * resolvedLineHeight - input.clientHeight / 3);
+  input.scrollTop = Math.max(
+    0,
+    (line - 1) * resolvedLineHeight - input.clientHeight / 3
+  );
 }
 
 async function selectSearchMatch(index: number): Promise<void> {
@@ -644,7 +668,9 @@ function replaceCurrentMatch(): void {
       : resolveInitialMatchIndex(1);
   const match = searchMatches.value[index];
   if (!match) {
-    uiMessage.info(searchQuery.value ? "未找到可替换的文字" : "请输入要替换的文字");
+    uiMessage.info(
+      searchQuery.value ? "未找到可替换的文字" : "请输入要替换的文字"
+    );
     return;
   }
 
@@ -670,14 +696,17 @@ function replaceAllMatches(): void {
   if (editorReadOnly.value) return;
   const matches = searchMatches.value;
   if (!searchQuery.value || !matches.length) {
-    uiMessage.info(searchQuery.value ? "未找到可替换的文字" : "请输入要替换的文字");
+    uiMessage.info(
+      searchQuery.value ? "未找到可替换的文字" : "请输入要替换的文字"
+    );
     return;
   }
 
   let cursor = 0;
   let nextContent = "";
   for (const match of matches) {
-    nextContent += content.value.slice(cursor, match.start) + replacementText.value;
+    nextContent +=
+      content.value.slice(cursor, match.start) + replacementText.value;
     cursor = match.end;
   }
   nextContent += content.value.slice(cursor);
@@ -724,14 +753,22 @@ function captureEditorSelection(
   const anchorTop = event?.clientY ?? editorRect.top + 24;
   selectionAction.value = {
     reference,
-    left: Math.max(8, Math.min(globalThis.innerWidth - menuWidth - 8, anchorLeft + 8)),
-    top: Math.max(8, Math.min(globalThis.innerHeight - menuHeight - 8, anchorTop + 8))
+    left: Math.max(
+      8,
+      Math.min(globalThis.innerWidth - menuWidth - 8, anchorLeft + 8)
+    ),
+    top: Math.max(
+      8,
+      Math.min(globalThis.innerHeight - menuHeight - 8, anchorTop + 8)
+    )
   };
   return true;
 }
 
 function handleEditorContextMenu(event: MouseEvent): void {
-  if (captureEditorSelection(event.currentTarget as HTMLTextAreaElement, event)) {
+  if (
+    captureEditorSelection(event.currentTarget as HTMLTextAreaElement, event)
+  ) {
     event.preventDefault();
   }
 }
@@ -758,13 +795,17 @@ function handleWindowPointerDown(event: PointerEvent): void {
 async function locateEditorReference(
   navigation: EditorTextReferenceNavigation | undefined
 ): Promise<void> {
-  if (!navigation || navigation.reference.documentId !== props.document.id) return;
+  if (!navigation || navigation.reference.documentId !== props.document.id)
+    return;
   viewMode.value = "edit";
   closeSelectionAction();
   await nextTick();
   const input = editorInput.value;
   if (!input) return;
-  const range = resolveEditorTextReferenceRange(content.value, navigation.reference);
+  const range = resolveEditorTextReferenceRange(
+    content.value,
+    navigation.reference
+  );
   input.focus();
   input.setSelectionRange(range.start, range.end, "forward");
   scrollEditorToRange(input, range.start);
@@ -809,7 +850,21 @@ onBeforeUnmount(() => {
       <div class="editor-header-actions">
         <span class="save-state" :class="{ 'is-dirty': dirty }">
           <AppIcon :name="dirty ? 'save' : 'check'" :size="13" />
-          {{ document.readOnly ? "只读" : locked ? (lockedLabel ?? "智能体运行中 · 暂停编辑") : saving ? "正在保存到本机" : dirty ? (autoSaveEnabled ? "等待自动保存" : "有未应用修改") : persistedDocument ? "已保存到本机" : "本次运行已应用" }}
+          {{
+            document.readOnly
+              ? "只读"
+              : locked
+                ? (lockedLabel ?? "智能体运行中 · 暂停编辑")
+                : saving
+                  ? "正在保存到本机"
+                  : dirty
+                    ? autoSaveEnabled
+                      ? "等待自动保存"
+                      : "有未应用修改"
+                    : persistedDocument
+                      ? "已保存到本机"
+                      : "本次运行已应用"
+          }}
         </span>
         <button
           v-if="rightPane !== false"
@@ -1002,7 +1057,9 @@ onBeforeUnmount(() => {
               @input="handleFindInput"
               @keydown.enter.prevent="findMatch($event.shiftKey ? -1 : 1)"
             />
-            <span class="editor-find-count" aria-live="polite">{{ searchResultLabel }}</span>
+            <span class="editor-find-count" aria-live="polite">{{
+              searchResultLabel
+            }}</span>
           </label>
           <button
             class="editor-find-icon-button is-previous"
@@ -1064,10 +1121,15 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="editor-document" :class="{ 'is-readonly': document.readOnly || locked }">
+    <div
+      class="editor-document"
+      :class="{ 'is-readonly': document.readOnly || locked }"
+    >
       <div class="document-meta-row">
         <span>{{ document.eyebrow }}</span>
-        <span v-if="document.format" class="document-format">{{ document.format }}</span>
+        <span v-if="document.format" class="document-format">{{
+          document.format
+        }}</span>
         <span v-if="document.readOnly" class="readonly-badge">只读内容</span>
         <span v-if="document.domain !== 'creation'" class="readonly-badge">
           {{ boundToCurrentBook ? "已绑定到当前书籍" : "仅浏览 · 未绑定" }}
@@ -1086,7 +1148,12 @@ onBeforeUnmount(() => {
       <input
         v-model="title"
         class="document-title-input"
-        :readonly="document.readOnly || locked || document.draftFileKind === 'character-state' || isLibraryOverview"
+        :readonly="
+          document.readOnly ||
+          locked ||
+          document.draftFileKind === 'character-state' ||
+          isLibraryOverview
+        "
         aria-label="文档标题"
         @input="markDirty"
       />
@@ -1119,22 +1186,46 @@ onBeforeUnmount(() => {
 
     <footer class="editor-footer">
       <span>
-        {{ characterCount.toLocaleString("zh-CN") }}<template v-if="contentMaxLength"> / {{ contentMaxLength.toLocaleString("zh-CN") }}</template> 字
+        {{ characterCount.toLocaleString("zh-CN")
+        }}<template v-if="contentMaxLength">
+          / {{ contentMaxLength.toLocaleString("zh-CN") }}</template
+        >
+        字
       </span>
       <span
         v-if="isLibraryDocument"
         class="library-entry-limit-hint"
         :class="{ 'limit-warning': contentExceedsLimit }"
-        :title="isLibraryOverview ? '素材库或技能库介绍最多 40,000 字' : '每个素材库或技能库条目最多 40,000 字，请勿上传过多内容'"
+        :title="
+          isLibraryOverview
+            ? '素材库或技能库介绍最多 40,000 字'
+            : '每个素材库或技能库条目最多 40,000 字，请勿上传过多内容'
+        "
       >
-        {{ isLibraryOverview ? "库介绍最多 40,000 字" : "每个条目最多 40,000 字，请勿上传过多内容" }}
+        {{
+          isLibraryOverview
+            ? "库介绍最多 40,000 字"
+            : "每个条目最多 40,000 字，请勿上传过多内容"
+        }}
       </span>
-      <span class="editor-save-status">{{ locked ? (lockedLabel ?? "智能体运行中 · 防止版本冲突") : saving ? "正在原子保存本机文稿" : persistedDocument ? (autoSaveEnabled ? "本机文稿 · 更改后自动保存" : "本机文稿 · 应用后持久保存") : "内存草稿 · 重启后不保留" }}</span>
+      <span class="editor-save-status">{{
+        locked
+          ? (lockedLabel ?? "智能体运行中 · 防止版本冲突")
+          : saving
+            ? "正在原子保存本机文稿"
+            : persistedDocument
+              ? autoSaveEnabled
+                ? "本机文稿 · 更改后自动保存"
+                : "本机文稿 · 应用后持久保存"
+              : "内存草稿 · 重启后不保留"
+      }}</span>
       <span class="footer-spacer" />
       <button
         class="save-button"
         type="button"
-        :disabled="document.readOnly || locked || saving || !dirty || contentExceedsLimit"
+        :disabled="
+          document.readOnly || locked || saving || !dirty || contentExceedsLimit
+        "
         @mousedown.prevent
         @click="save"
       >
@@ -1151,7 +1242,10 @@ onBeforeUnmount(() => {
       class="editor-selection-menu"
       role="menu"
       aria-label="正文选区操作"
-      :style="{ left: `${selectionAction.left}px`, top: `${selectionAction.top}px` }"
+      :style="{
+        left: `${selectionAction.left}px`,
+        top: `${selectionAction.top}px`
+      }"
     >
       <button
         type="button"

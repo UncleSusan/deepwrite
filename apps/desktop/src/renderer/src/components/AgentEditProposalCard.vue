@@ -14,11 +14,13 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  review: [payload: {
-    runId: string;
-    proposalId: string;
-    decision: "accept" | "reject";
-  }];
+  review: [
+    payload: {
+      runId: string;
+      proposalId: string;
+      decision: "accept" | "reject";
+    }
+  ];
   locate: [payload: { runId: string; proposalId: string }];
 }>();
 
@@ -63,7 +65,8 @@ function showProposalReviewActions(): boolean {
   if (
     props.proposal.approvalMode === "auto-approve" &&
     canReviewProposalWhileStreaming() &&
-    (props.proposal.status === "pending" || props.proposal.status === "accepting")
+    (props.proposal.status === "pending" ||
+      props.proposal.status === "accepting")
   ) {
     return false;
   }
@@ -86,8 +89,7 @@ function isProposalReviewable(decision: "accept" | "reject"): boolean {
 function proposalReviewDisabled(decision: "accept" | "reject"): boolean {
   if (!isProposalReviewable(decision)) return true;
   return (
-    props.messageStatus === "streaming" &&
-    !canReviewProposalWhileStreaming()
+    props.messageStatus === "streaming" && !canReviewProposalWhileStreaming()
   );
 }
 
@@ -113,7 +115,10 @@ function proposalStatusMessage(): string {
     proposal.status === "error" &&
     canReviewProposalWhileStreaming()
   ) {
-    return proposal.statusMessage ?? "实时保存失败，可立即重试或拒绝；智能体仍在继续。";
+    return (
+      proposal.statusMessage ??
+      "实时保存失败，可立即重试或拒绝；智能体仍在继续。"
+    );
   }
   if (
     props.messageStatus === "streaming" &&
@@ -128,7 +133,11 @@ function proposalStatusMessage(): string {
   ) {
     return "生成完成后可审阅。";
   }
-  if (!proposal.statusMessage && proposal.status === "pending" && proposal.libraryTarget) {
+  if (
+    !proposal.statusMessage &&
+    proposal.status === "pending" &&
+    proposal.libraryTarget
+  ) {
     return proposal.libraryTarget.operation === "create"
       ? "接受后将创建资料库条目并保存到本机。"
       : "接受后将更新资料库条目并保存到本机。";
@@ -188,7 +197,9 @@ function proposalStatusMessage(): string {
   ) {
     return "接受后将把当前章正文保存到该章节独立的 Markdown 文件。";
   }
-  return proposal.statusMessage?.trim() || proposalStatusMessages[proposal.status];
+  return (
+    proposal.statusMessage?.trim() || proposalStatusMessages[proposal.status]
+  );
 }
 
 function review(decision: "accept" | "reject"): void {
@@ -229,10 +240,12 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
             type="button"
             title="跳转到目标文件"
             aria-label="跳转到目标文件"
-            @click.stop="emit('locate', {
-              runId: proposal.runId,
-              proposalId: proposal.id
-            })"
+            @click.stop="
+              emit('locate', {
+                runId: proposal.runId,
+                proposalId: proposal.id
+              })
+            "
           >
             跳转到目标文件
           </button>
@@ -261,7 +274,10 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
           class="edit-diff-hunk"
         >
           <div class="edit-diff-hunk-header">
-            @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
+            @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{
+              hunk.newLines
+            }}
+            @@
           </div>
           <div
             v-for="(line, lineIndex) in hunk.lines"
@@ -269,8 +285,12 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
             class="edit-diff-line"
             :class="`is-${line.type}`"
           >
-            <span class="edit-diff-line-number">{{ line.oldLineNumber ?? "" }}</span>
-            <span class="edit-diff-line-number">{{ line.newLineNumber ?? "" }}</span>
+            <span class="edit-diff-line-number">{{
+              line.oldLineNumber ?? ""
+            }}</span>
+            <span class="edit-diff-line-number">{{
+              line.newLineNumber ?? ""
+            }}</span>
             <span class="edit-diff-line-mark" aria-hidden="true">
               {{ diffLineMark(line.type) }}
             </span>

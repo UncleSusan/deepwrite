@@ -30,7 +30,5 @@ export function suggestedDraftSectionTitle(
     const numeric = numericPattern.exec(sectionId)?.[1];
     return numeric ? Math.max(value, Number(numeric)) : value;
   }, 0);
-  return `第${chineseSectionNumber(highest + 1)}${
-    workspaceType === "script" ? "集" : "节"
-  }`;
+  return `第${chineseSectionNumber(highest + 1)}${workspaceType === "script" ? "集" : "节"}`;
 }

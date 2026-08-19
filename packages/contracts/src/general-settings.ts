@@ -5,9 +5,7 @@ export const GeneralPermissionModeSchema = z.enum([
   "request-approval",
   "auto-approve"
 ]);
-export type GeneralPermissionMode = z.infer<
-  typeof GeneralPermissionModeSchema
->;
+export type GeneralPermissionMode = z.infer<typeof GeneralPermissionModeSchema>;
 
 export const AppLanguageSchema = z.enum(["auto", "zh-CN"]);
 export type AppLanguage = z.infer<typeof AppLanguageSchema>;
@@ -16,9 +14,7 @@ export const WorkspacePaneLayoutSchema = z.enum([
   "agent-editor",
   "editor-agent"
 ]);
-export type WorkspacePaneLayout = z.infer<
-  typeof WorkspacePaneLayoutSchema
->;
+export type WorkspacePaneLayout = z.infer<typeof WorkspacePaneLayoutSchema>;
 
 export const GeneralSettingsSchema = z.object({
   permissionMode: GeneralPermissionModeSchema,

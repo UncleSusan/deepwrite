@@ -51,7 +51,9 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     profile.workspaceType !== "long" ||
     profile.id !== workspace.activeAgentId
   ) {
-    throw new Error("Long agent profile does not match the active workspace agent.");
+    throw new Error(
+      "Long agent profile does not match the active workspace agent."
+    );
   }
 
   const readableRoots = new Set(profile.readAccess.workspaceRoots);
@@ -104,7 +106,9 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
         .then((payload) => LongWorkspaceIndexResultSchema.parse(payload))
         .then((result) => {
           if (result.bookId !== workspace.bookId) {
-            throw new Error("Core returned a workspace index for another book.");
+            throw new Error(
+              "Core returned a workspace index for another book."
+            );
           }
           return {
             index: result.workspaceIndex,
@@ -132,10 +136,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
   }): AgentToolResult<LongAgentToolDetails> => {
     const preflightFailure = inputProposal.verifiedPendingDependency
       ? undefined
-      : preflightLongMutationProposal(
-          inputProposal.index,
-          inputProposal.batch
-        );
+      : preflightLongMutationProposal(inputProposal.index, inputProposal.batch);
     if (preflightFailure) return preflightFailure;
     return textResult(
       inputProposal.plain
@@ -162,12 +163,9 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     chapter: LongWorkspaceIndexSnapshot["chapters"][number];
   }> => {
     const { index, projectRevision } = await loadIndex(signal);
-    const activeChapterCardId =
-      chapterCardId ?? workspace.activeChapterCardId;
+    const activeChapterCardId = chapterCardId ?? workspace.activeChapterCardId;
     if (!activeChapterCardId) {
-      throw new Error(
-        "需要指定 chapter_card_id，或先选中一张待记录章卡。"
-      );
+      throw new Error("需要指定 chapter_card_id，或先选中一张待记录章卡。");
     }
     if (
       workspace.navigation.bookId !== index.bookId ||
@@ -217,7 +215,10 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
 
   let querySequence = 0;
   const nextQuerySequence = () => ++querySequence;
-  const fullyReadWorldbuildingDocuments = new Map<string, FullyReadDocumentEntry>();
+  const fullyReadWorldbuildingDocuments = new Map<
+    string,
+    FullyReadDocumentEntry
+  >();
   const worldbuildingDocumentOverlay = new Map<
     string,
     {
@@ -274,7 +275,10 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
       content: string;
     }
   >();
-  const fullyReadContinuityDocuments = new Map<string, FullyReadDocumentEntry>();
+  const fullyReadContinuityDocuments = new Map<
+    string,
+    FullyReadDocumentEntry
+  >();
   const continuityDocumentOverlay = new Map<
     string,
     {
@@ -325,7 +329,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
   ) => {
     let offset = 0;
     let content = "";
-    let authoritativeFile = file;
+    let authoritativeFile: LongWorkspaceFileReference;
     while (true) {
       const command = LongReadDocumentCommandEnvelopeSchema.parse(
         createEnvelope(
@@ -357,9 +361,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
         result.workspaceRevision !== expectedWorkspaceRevision ||
         result.projectRevision !== expectedProjectRevision
       ) {
-        throw new Error(
-          "Core returned a different worldbuilding document."
-        );
+        throw new Error("Core returned a different worldbuilding document.");
       }
       authoritativeFile = result.file;
       content += result.content;
@@ -513,7 +515,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
   ): Promise<{ content: string; file: LongWorkspaceFileReference }> => {
     let offset = 0;
     let content = "";
-    let authoritativeFile = file;
+    let authoritativeFile: LongWorkspaceFileReference;
     let readWorkspaceRevision: number | null = null;
     let readProjectRevision: number | null = null;
     let readFileRevision: string | null = null;

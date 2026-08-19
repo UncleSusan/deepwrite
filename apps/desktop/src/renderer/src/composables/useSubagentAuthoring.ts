@@ -18,12 +18,7 @@ type SessionApi = {
 };
 
 export type SubagentAuthoringRunStatus =
-  | "idle"
-  | "starting"
-  | "running"
-  | "stopping"
-  | "completed"
-  | "error";
+  "idle" | "starting" | "running" | "stopping" | "completed" | "error";
 
 export interface UseSubagentAuthoringOptions {
   api: () => { session: SessionApi } | undefined;
@@ -210,7 +205,9 @@ export function useSubagentAuthoring(
     }
 
     if (event.type === "subagent_authoring.draft_updated") {
-      const parsed = SubagentAuthoringDraftSchema.safeParse(event.payload.draft);
+      const parsed = SubagentAuthoringDraftSchema.safeParse(
+        event.payload.draft
+      );
       if (parsed.success) {
         draft.value = parsed.data;
         statusText.value = "草稿已更新，可确认加入团队或继续等待生成完成。";

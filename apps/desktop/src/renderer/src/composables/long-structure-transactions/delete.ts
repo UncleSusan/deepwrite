@@ -14,16 +14,25 @@ export function createLongStructureDelete(
   loadLongStructureMutationModule: () => Promise<MutationModule>
 ) {
   const {
-    uiMessage, resources, session, state, isDisposed,
-    assertCurrentLongStructureMutationTarget, withMutation, runTracked,
+    uiMessage,
+    resources,
+    session,
+    state,
+    isDisposed,
+    assertCurrentLongStructureMutationTarget,
+    withMutation,
+    runTracked,
     mutationIsCurrent
   } = host;
   const { executeLongStructureMutation } = sync;
   const {
-    activeBookId: activeLongBookId, activeBookSummary: activeLongBookSummary,
-    workspaceIndex: activeLongWorkspaceIndex, selection: activeLongSelection,
+    activeBookId: activeLongBookId,
+    activeBookSummary: activeLongBookSummary,
+    workspaceIndex: activeLongWorkspaceIndex,
+    selection: activeLongSelection,
     draftSectionDeleteTarget: longDraftSectionDelete,
-    treeItemDeleteTarget: longTreeItemDelete, selectedResourceId
+    treeItemDeleteTarget: longTreeItemDelete,
+    selectedResourceId
   } = state;
   const {
     blockWritingPlan: blockActiveLongWritingPlan,
@@ -180,7 +189,9 @@ export function createLongStructureDelete(
         } catch (error: unknown) {
           if (isDisposed()) return;
           uiMessage.warning(
-            error instanceof Error ? error.message : `无法删除“${input.title}”。`
+            error instanceof Error
+              ? error.message
+              : `无法删除“${input.title}”。`
           );
           completion(false);
           return;

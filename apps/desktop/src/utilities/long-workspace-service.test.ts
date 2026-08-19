@@ -25,9 +25,7 @@ import {
   longWorldbuildingContentPath,
   longWorldbuildingFileId
 } from "@deepwrite/contracts";
-import {
-  LongWorkspaceService
-} from "./long-workspace-service";
+import { LongWorkspaceService } from "./long-workspace-service";
 import { createLongFileRevision } from "./long-project-store";
 
 describe("LongWorkspaceService", () => {
@@ -178,10 +176,7 @@ describe("LongWorkspaceService", () => {
     };
     const worldReveals = createEmptyLongMarkdownFileReference(
       longChapterWorldRevealsFileId(chapter.chapterCardId),
-      longChapterContinuityFilePath(
-        chapter.chapterCardId,
-        "world-reveals.md"
-      ),
+      longChapterContinuityFilePath(chapter.chapterCardId, "world-reveals.md"),
       updatedAt
     );
     const currentState = createEmptyLongMarkdownFileReference(
@@ -197,10 +192,7 @@ describe("LongWorkspaceService", () => {
       updatedAt
     );
     const history = createEmptyLongMarkdownFileReference(
-      longChapterCharacterHistoryFileId(
-        chapter.chapterCardId,
-        characterId
-      ),
+      longChapterCharacterHistoryFileId(chapter.chapterCardId, characterId),
       longChapterCharacterContinuityFilePath(
         chapter.chapterCardId,
         characterId,
@@ -547,9 +539,7 @@ describe("LongWorkspaceService", () => {
     });
     expect(applied.projectRevision).toBe(1);
     const reopened = await service.open({ bookId: created.book.id });
-    expect(reopened.book.workspaceIndex.plot.volumes[0]?.title).toBe(
-      "新卷名"
-    );
+    expect(reopened.book.workspaceIndex.plot.volumes[0]?.title).toBe("新卷名");
     const weather = reopened.book.workspaceIndex.worldbuilding.find(
       ({ id }) => id === "world_weather"
     )!;
@@ -567,11 +557,7 @@ describe("LongWorkspaceService", () => {
     const geography = reopened.book.workspaceIndex.worldbuilding.find(
       ({ id }) => id === "world_biomes"
     );
-    if (
-      !geography ||
-      geography.format !== "list" ||
-      !geography.overview
-    ) {
+    if (!geography || geography.format !== "list" || !geography.overview) {
       throw new Error("expected list category overview");
     }
     await expect(

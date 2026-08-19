@@ -40,7 +40,9 @@ describe("LongWorldbuildingNavigation", () => {
     expect(editorSource).toContain(
       'import LongWorldbuildingNavigation from "./LongWorldbuildingNavigation.vue"'
     );
-    expect(editorSource.match(/<LongWorldbuildingNavigation/gu)).toHaveLength(2);
+    expect(editorSource.match(/<LongWorldbuildingNavigation/gu)).toHaveLength(
+      2
+    );
     expect(editorSource).toContain(
       '@select-overview="selectWorldbuildingOverview"'
     );
@@ -49,7 +51,9 @@ describe("LongWorldbuildingNavigation", () => {
     expect(editorSource).toContain(
       '@delete-item="openWorldbuildingItemDelete"'
     );
-    expect(editorSessionSource).toContain("async function loadWorkspaceDocument(");
+    expect(editorSessionSource).toContain(
+      "async function loadWorkspaceDocument("
+    );
   });
 
   it("projects navigation metadata without subscribing to every item body", () => {

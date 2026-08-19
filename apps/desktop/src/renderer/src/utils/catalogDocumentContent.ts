@@ -29,7 +29,10 @@ export function catalogDocumentReadDescriptor(
       target: "document",
       documentId: document.catalogDocumentId
     };
-  } else if (document.libraryId && document.catalogLibraryField === "overview") {
+  } else if (
+    document.libraryId &&
+    document.catalogLibraryField === "overview"
+  ) {
     input = {
       projectId: document.libraryId,
       target: "overview"
@@ -102,8 +105,14 @@ export function catalogSnapshotWithDocumentContents(
         `${document.workspaceId}\u0000${document.catalogDocumentId}`,
         document.content
       );
-    } else if (document.libraryId && document.catalogLibraryField === "overview") {
-      libraryBodies.set(`${document.domain}\u0000${document.libraryId}\u0000overview`, document.content);
+    } else if (
+      document.libraryId &&
+      document.catalogLibraryField === "overview"
+    ) {
+      libraryBodies.set(
+        `${document.domain}\u0000${document.libraryId}\u0000overview`,
+        document.content
+      );
     } else if (document.libraryId && document.catalogEntryId) {
       libraryBodies.set(
         `${document.domain}\u0000${document.libraryId}\u0000${document.catalogEntryId}`,
@@ -111,13 +120,14 @@ export function catalogSnapshotWithDocumentContents(
       );
     }
   }
-  const hydrateBookDocument = <Document extends { id: string; content: string }>(
+  const hydrateBookDocument = <
+    Document extends { id: string; content: string }
+  >(
     bookId: string,
     document: Document
   ): Document => ({
     ...document,
-    content:
-      bookBodies.get(`${bookId}\u0000${document.id}`) ?? document.content
+    content: bookBodies.get(`${bookId}\u0000${document.id}`) ?? document.content
   });
   return {
     ...snapshot,

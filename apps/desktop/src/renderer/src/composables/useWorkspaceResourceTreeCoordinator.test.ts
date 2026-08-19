@@ -9,10 +9,7 @@ import {
 import { ref, shallowRef } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import type { CatalogWorkspaceProjection } from "../data/catalogWorkspace";
-import type {
-  ResourceTreeNode,
-  ResourceTreeSection
-} from "../types/workspace";
+import type { ResourceTreeNode, ResourceTreeSection } from "../types/workspace";
 import {
   longBookResourceId,
   type LongWorkspaceSelection
@@ -104,13 +101,9 @@ function bookSummary(id = "longbook_tree"): LongBookSummary {
       bookId: id,
       updatedAt: NOW,
       worldbuilding: [],
-      characterTypes: [
-        { id: "protagonist", title: "主角", order: 1 }
-      ],
+      characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
       characters: [],
-      volumes: [
-        { id: "volume_one", title: "第一卷", order: 1 }
-      ],
+      volumes: [{ id: "volume_one", title: "第一卷", order: 1 }],
       arcs: [],
       chapterCards: [],
       committedThroughChapterId: null,
@@ -188,15 +181,17 @@ function selection(
   };
 }
 
-function createHarness(options: {
-  projection?: CatalogWorkspaceProjection | null;
-  longBooks?: readonly LongBookSummary[];
-  diagnostics?: NonNullable<LongListBooksResult["diagnostics"]>;
-  index?: LongWorkspaceIndexSnapshot | null;
-  selection?: LongWorkspaceSelection | null;
-  selectedResourceId?: string;
-  storage?: WorkspaceResourceTreeCoordinatorOptions["storage"];
-} = {}) {
+function createHarness(
+  options: {
+    projection?: CatalogWorkspaceProjection | null;
+    longBooks?: readonly LongBookSummary[];
+    diagnostics?: NonNullable<LongListBooksResult["diagnostics"]>;
+    index?: LongWorkspaceIndexSnapshot | null;
+    selection?: LongWorkspaceSelection | null;
+    selectedResourceId?: string;
+    storage?: WorkspaceResourceTreeCoordinatorOptions["storage"];
+  } = {}
+) {
   const catalogProjection = shallowRef<CatalogWorkspaceProjection | null>(
     options.projection ?? null
   );
@@ -206,12 +201,9 @@ function createHarness(options: {
   const longCatalogDiagnostics = shallowRef<
     NonNullable<LongListBooksResult["diagnostics"]>
   >(options.diagnostics ?? []);
-  const activeLongBookId = ref<string | null>(
-    options.index?.bookId ?? null
-  );
-  const activeLongWorkspaceIndex = shallowRef<LongWorkspaceIndexSnapshot | null>(
-    options.index ?? null
-  );
+  const activeLongBookId = ref<string | null>(options.index?.bookId ?? null);
+  const activeLongWorkspaceIndex =
+    shallowRef<LongWorkspaceIndexSnapshot | null>(options.index ?? null);
   const activeLongSelection = shallowRef<LongWorkspaceSelection | null>(
     options.selection ?? null
   );
@@ -411,7 +403,9 @@ describe("useWorkspaceResourceTreeCoordinator", () => {
         value: selection(
           "plot-design:chapter-cards:volume_one",
           "plot_design",
-          { chapterCardId: "chapter_one" }
+          {
+            chapterCardId: "chapter_one"
+          }
         ),
         leftTreeKey: "plot-design:chapter-card:chapter_one",
         branchKey: "plot-design:chapter-cards:volume_one"
@@ -467,7 +461,9 @@ describe("useWorkspaceResourceTreeCoordinator", () => {
     const activeSelection = selection(
       "worldbuilding:geography",
       "worldbuilding",
-      { worldbuildingItemId: "harbor" }
+      {
+        worldbuildingItemId: "harbor"
+      }
     );
     const preferredId = longNavigationNodeId(
       "longbook_tree",

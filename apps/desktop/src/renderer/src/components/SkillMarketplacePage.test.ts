@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  expectSourceToContain,
+  sourceTextIndexOf
+} from "../../../test-utils/sourceText";
 import source from "./SkillMarketplacePage.vue?raw";
 import appSource from "../WorkspaceShell.vue?raw";
 import featureModulesSource from "./WorkspaceFeatureModules.vue?raw";
@@ -37,8 +41,11 @@ describe("SkillMarketplacePage", () => {
   });
 
   it("refreshes the browse results from the action immediately before search", () => {
-    const refreshButton = source.indexOf('@click="loadBrowse()"');
-    const searchButton = source.indexOf('type="submit" :disabled="loading">搜索</button>');
+    const refreshButton = sourceTextIndexOf(source, '@click="loadBrowse()"');
+    const searchButton = sourceTextIndexOf(
+      source,
+      'type="submit" :disabled="loading">搜索</button>'
+    );
 
     expect(refreshButton).toBeGreaterThan(-1);
     expect(searchButton).toBeGreaterThan(refreshButton);
@@ -51,13 +58,15 @@ describe("SkillMarketplacePage", () => {
     expect(source).toContain('@submit.prevent="loadBrowse(1)"');
     expect(source).toContain('aria-label="技能广场分页"');
     expect(source).toContain("changeBrowsePage(browsePage + 1)");
-    expect(source).toContain("共 {{ browseTotal }} 条 · 每页 {{ PAGE_SIZE }} 条");
+    expect(source).toContain(
+      "共 {{ browseTotal }} 条 · 每页 {{ PAGE_SIZE }} 条"
+    );
   });
 
   it("shows only the skill-library category beside each browse card content type", () => {
     expect(source).toContain('style: "文风"');
-    expect(source).toContain('{{ KIND_LABELS[item.kind] }}');
-    expect(source).not.toContain('{{ LIBRARY_TYPE_LABELS[item.libraryType] }}');
+    expectSourceToContain(source, "{{ KIND_LABELS[item.kind] }}");
+    expect(source).not.toContain("{{ LIBRARY_TYPE_LABELS[item.libraryType] }}");
   });
 
   it("publishes, edits and deletes all three content types", () => {
@@ -75,7 +84,7 @@ describe("SkillMarketplacePage", () => {
     expect(source).toContain("marketplace.setEnabled");
     expect(source).toContain('role="switch"');
     expect(source).toContain("只有启用且审核通过的内容才会显示在广场");
-    expect(source).toContain("服务端保留 10 天后再永久清理");
+    expectSourceToContain(source, "服务端保留 10 天后再永久清理");
     expect(source).toContain('deleted: "已删除"');
   });
 
@@ -95,13 +104,12 @@ describe("SkillMarketplacePage", () => {
   });
 
   it("copies reactive collections before crossing the Electron context bridge", () => {
-    expect(source).toContain(
+    expectSourceToContain(
+      source,
       "entries: publishEntries.value.map(({ stageId, title: entryTitle, content })"
     );
     expect(source).toContain("libraries: publishGroupLibraries.value.map");
-    expect(source).toContain(
-      "...installTypeSelections.value"
-    );
+    expect(source).toContain("...installTypeSelections.value");
     expect(source).not.toMatch(/entries:\s*publishEntries\.value\s*[,}]/u);
     expect(source).not.toMatch(/items:\s*publishGroupItems\.value\s*[,}]/u);
   });
@@ -119,7 +127,10 @@ describe("SkillMarketplacePage", () => {
 
   it("keeps long detail and install content scrollable inside the modal", () => {
     expect(source).toContain("grid-template-rows: auto minmax(0, 1fr) auto");
-    expect(source).toContain("min-height: 0; overflow-x: hidden; overflow-y: auto");
+    expectSourceToContain(
+      source,
+      "min-height: 0; overflow-x: hidden; overflow-y: auto"
+    );
   });
 
   it("shows library skill tabs and two-level category/skill tabs for group details", () => {
@@ -154,11 +165,9 @@ describe("SkillMarketplacePage", () => {
     expect(featureHostSource).toContain(
       "session: knownMarketplaceSession.value"
     );
+    expect(featureModulesSource).toContain(':initial-session="module.session"');
     expect(featureModulesSource).toContain(
-      ':initial-session="module.session"'
-    );
-    expect(featureModulesSource).toContain(
-      '@session-change="emit(\'marketplaceSessionChange\', $event)"'
+      "@session-change=\"emit('marketplaceSessionChange', $event)\""
     );
     expect(appSource).toContain(
       '@marketplace-session-change="applyMarketplaceSession"'

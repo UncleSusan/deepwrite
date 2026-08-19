@@ -263,7 +263,9 @@ describe("conversation store", () => {
     expect(store.persistenceErrors.get("history:one")).toBe("暂时无法保存");
 
     store.schedulePersistence("history:one", { revision: 2 });
-    await expect(store.flushPersistence("history:one")).resolves.toBeUndefined();
+    await expect(
+      store.flushPersistence("history:one")
+    ).resolves.toBeUndefined();
     expect(attempts).toBe(2);
     expect(store.persistenceErrors.has("history:one")).toBe(false);
   });

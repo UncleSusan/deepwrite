@@ -73,7 +73,9 @@ export class CloudBackupService {
   async status(): Promise<CloudBackupStatus> {
     const machineKey = await this.identity.getOrCreate(() => this.isoNow());
     const local = await listLocalBackupProjects(this.userDataPath);
-    const remote = this.store ? await this.readRemoteManifest(machineKey) : null;
+    const remote = this.store
+      ? await this.readRemoteManifest(machineKey)
+      : null;
     return CloudBackupStatusSchema.parse({
       configured: this.store !== null,
       machineKey,
@@ -91,7 +93,11 @@ export class CloudBackupService {
     const local = await listLocalBackupProjects(this.userDataPath);
     const packed = packBackupSnapshot(machineKey, this.isoNow(), local);
     const remote = await this.readRemoteManifest(machineKey);
-    const changes = diffBackupItems("upload", packed.manifest.items, remote?.items ?? []);
+    const changes = diffBackupItems(
+      "upload",
+      packed.manifest.items,
+      remote?.items ?? []
+    );
     const preview = this.remember({
       id: previewId(),
       createdAt: Date.now(),
@@ -192,7 +198,12 @@ export class CloudBackupService {
         change.title
       );
       await writeProjectFiles(projectDirectory, files);
-      await this.registerRestoredProject(change.kind, change.id, projectDirectory, now);
+      await this.registerRestoredProject(
+        change.kind,
+        change.id,
+        projectDirectory,
+        now
+      );
     }
     return CloudBackupApplyResultSchema.parse({
       direction: "download",
@@ -232,7 +243,9 @@ export class CloudBackupService {
     machineKey: string
   ): Promise<CloudBackupSnapshotManifest | null> {
     if (!this.store) return null;
-    const body = await this.store.getObject(snapshotObjectKeys(machineKey).manifest);
+    const body = await this.store.getObject(
+      snapshotObjectKeys(machineKey).manifest
+    );
     if (!body) return null;
     return parseSnapshotManifest(JSON.parse(body.toString("utf8")) as unknown);
   }

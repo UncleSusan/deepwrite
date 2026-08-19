@@ -66,8 +66,7 @@ export const LongBookSchema = z
       context.addIssue({
         code: "custom",
         path: ["updatedAt"],
-        message:
-          "Long book and workspace index update timestamps must match."
+        message: "Long book and workspace index update timestamps must match."
       });
     }
   });
@@ -133,16 +132,14 @@ export const LongWorkspaceIndexFileReferenceSchema =
       context.addIssue({
         code: "custom",
         path: ["id"],
-        message:
-          `Long workspace index id must be ${LONG_WORKSPACE_INDEX_FILE_ID}.`
+        message: `Long workspace index id must be ${LONG_WORKSPACE_INDEX_FILE_ID}.`
       });
     }
     if (file.path !== LONG_WORKSPACE_INDEX_PATH) {
       context.addIssue({
         code: "custom",
         path: ["path"],
-        message:
-          `Long workspace index path must be ${LONG_WORKSPACE_INDEX_PATH}.`
+        message: `Long workspace index path must be ${LONG_WORKSPACE_INDEX_PATH}.`
       });
     }
   });
@@ -164,6 +161,4 @@ export const LongProjectManifestSchema = z
     workspaceIndexFile: LongWorkspaceIndexFileReferenceSchema
   })
   .strict();
-export type LongProjectManifest = z.infer<
-  typeof LongProjectManifestSchema
->;
+export type LongProjectManifest = z.infer<typeof LongProjectManifestSchema>;

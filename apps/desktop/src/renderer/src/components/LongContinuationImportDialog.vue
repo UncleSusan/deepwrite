@@ -90,7 +90,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           </button>
         </header>
 
-        <form class="dialog-content continuation-import-form" @submit.prevent="submit">
+        <form
+          class="dialog-content continuation-import-form"
+          @submit.prevent="submit"
+        >
           <section class="continuation-import-basics">
             <label>
               <span>书名</span>
@@ -118,14 +121,27 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           </section>
 
           <section class="continuation-import-summary" aria-label="导入摘要">
-            <span><strong>{{ preview.volumeCount }}</strong> 卷</span>
-            <span><strong>{{ preview.chapterCount }}</strong> 章</span>
-            <span><strong>{{ preview.checkpointCount }}</strong> 个历史检查点</span>
-            <span>待核验：<strong>{{ preview.pendingVolumeTitle }} · {{ preview.pendingChapterTitle }}</strong></span>
+            <span
+              ><strong>{{ preview.volumeCount }}</strong> 卷</span
+            >
+            <span
+              ><strong>{{ preview.chapterCount }}</strong> 章</span
+            >
+            <span
+              ><strong>{{ preview.checkpointCount }}</strong> 个历史检查点</span
+            >
+            <span
+              >待核验：<strong
+                >{{ preview.pendingVolumeTitle }} ·
+                {{ preview.pendingChapterTitle }}</strong
+              ></span
+            >
           </section>
 
           <p class="continuation-import-note">
-            前 {{ preview.checkpointCount }} 章只会封存为不可逆的导入检查点，不会生成或推断人物事实、世界观揭露和接续包。最后一章导入后会成为唯一待处理章节。
+            前
+            {{ preview.checkpointCount }}
+            章只会封存为不可逆的导入检查点，不会生成或推断人物事实、世界观揭露和接续包。最后一章导入后会成为唯一待处理章节。
           </p>
 
           <section
@@ -134,11 +150,16 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             aria-label="排序提示"
           >
             <strong>排序提示</strong>
-            <span v-for="warning in preview.warnings" :key="warning">{{ warning }}</span>
+            <span v-for="warning in preview.warnings" :key="warning">{{
+              warning
+            }}</span>
           </section>
 
           <section class="continuation-import-tree" aria-label="卷章导入顺序">
-            <article v-for="volume in preview.volumes" :key="`${volume.order}:${volume.sourceName}`">
+            <article
+              v-for="volume in preview.volumes"
+              :key="`${volume.order}:${volume.sourceName}`"
+            >
               <header>
                 <strong>{{ volume.order }}. {{ volume.title }}</strong>
                 <span>{{ volume.chapters.length }} 章</span>
@@ -149,7 +170,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   :key="`${chapter.order}:${chapter.sourceName}`"
                 >
                   <span>{{ chapter.order }}. {{ chapter.title }}</span>
-                  <small :class="{ 'is-non-utf8': chapter.encoding !== 'utf-8' }">
+                  <small
+                    :class="{ 'is-non-utf8': chapter.encoding !== 'utf-8' }"
+                  >
                     {{ encodingLabel(chapter.encoding) }}
                   </small>
                 </li>
@@ -158,8 +181,14 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           </section>
 
           <footer class="dialog-actions">
-            <button type="button" :disabled="submitting" @click="requestClose">取消</button>
-            <button class="dialog-primary-button" type="submit" :disabled="submitting">
+            <button type="button" :disabled="submitting" @click="requestClose">
+              取消
+            </button>
+            <button
+              class="dialog-primary-button"
+              type="submit"
+              :disabled="submitting"
+            >
               {{ submitting ? "导入中…" : "确认导入" }}
             </button>
           </footer>

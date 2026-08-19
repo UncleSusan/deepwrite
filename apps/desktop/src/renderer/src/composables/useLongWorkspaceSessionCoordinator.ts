@@ -20,6 +20,7 @@ import {
   createLongPlotPointVolumeSelection,
   reconcileLongWorkspaceSelection,
   replaceLongBookSummary,
+  type LongForeshadowingFocus,
   type LongWorkspaceRendererApi,
   type LongWorkspaceSelection
 } from "../types/longWorkspace";
@@ -43,6 +44,7 @@ export interface LongWorkspaceEditorPort {
   focusFile(fileId: string): Promise<boolean>;
   focusTarget(target: LongApprovalEditorFocus): Promise<boolean>;
   captureNavigationSelection(): Partial<LongWorkspaceSelection>;
+  captureForeshadowingFocus(): LongForeshadowingFocus;
   ensureDocumentsLoaded(
     files: LongWorkspaceSelection["files"]
   ): Promise<boolean>;
@@ -175,10 +177,7 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
         error instanceof Error ? error.message : "加载长篇创作空间失败。";
       if (notify) {
         notifications.error(message);
-      } else if (
-        catalogRetryAttempts < 2 &&
-        catalogRetryTimer === undefined
-      ) {
+      } else if (catalogRetryAttempts < 2 && catalogRetryTimer === undefined) {
         catalogRetryAttempts += 1;
         catalogRetryTimer = context.scheduler.setTimeout(() => {
           catalogRetryTimer = undefined;
@@ -219,9 +218,7 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
     if (disposed) return;
     const api = context.api();
     if (!api) {
-      notifications.warning(
-        "浏览器预览不能打开长篇项目，请使用桌面客户端。"
-      );
+      notifications.warning("浏览器预览不能打开长篇项目，请使用桌面客户端。");
       return;
     }
     if (
@@ -313,17 +310,15 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
         ...currentSummary,
         projectRevision: result.projectRevision,
         updatedAt: result.workspaceIndex.updatedAt,
-        navigation: createLongWorkspaceNavigationSnapshot(
-          result.workspaceIndex
-        )
+        navigation: createLongWorkspaceNavigationSnapshot(result.workspaceIndex)
       };
       const currentSelection = state.selection.value;
       const nextSelection = currentSelection
-        ? reconcileLongWorkspaceSelection(
+        ? (reconcileLongWorkspaceSelection(
             nextSummary,
             result.workspaceIndex,
             currentSelection
-          ) ?? null
+          ) ?? null)
         : null;
       const activeFileId = state.fileContext.value?.fileId;
       const nextFile = nextSelection?.files.find(
@@ -357,9 +352,7 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
         refreshClock.isCurrent(bookId, requestId)
       ) {
         const message =
-          error instanceof Error
-            ? error.message
-            : "刷新长篇工作区索引失败。";
+          error instanceof Error ? error.message : "刷新长篇工作区索引失败。";
         state.refreshStatus.value = {
           bookId,
           requestId,
@@ -478,12 +471,7 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
       return;
     }
     const accepted = await selectWorkspaceFile(
-      createLongCharacterGroupSelection(
-        summary,
-        index,
-        group,
-        characterId
-      )
+      createLongCharacterGroupSelection(summary, index, group, characterId)
     );
     done?.(accepted);
   }
@@ -532,9 +520,7 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
     if (!bookId || state.activeRefreshStatus.value?.pending) return;
     if (state.activeRevisionRequirement.value) {
       if (await refreshAndSynchronizeRequiredRevision(bookId)) {
-        notifications.success(
-          "已同步账本回滚后的最新版本，可以继续编辑正文。"
-        );
+        notifications.success("已同步账本回滚后的最新版本，可以继续编辑正文。");
       }
       return;
     }

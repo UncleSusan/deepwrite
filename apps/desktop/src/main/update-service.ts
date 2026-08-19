@@ -58,7 +58,8 @@ export class UpdateService {
     });
     autoUpdater.on("error", (error: Error) => {
       const canRetryInstall =
-        this.state.status === "downloaded" || this.state.status === "installing";
+        this.state.status === "downloaded" ||
+        this.state.status === "installing";
       this.patchState({
         status: "error",
         canDownload: !canRetryInstall && Boolean(this.manifest),
@@ -105,7 +106,10 @@ export class UpdateService {
       }
       const manifest = UpdateManifestSchema.parse(await response.json());
       this.manifest = undefined;
-      if (!manifest.enabled || compareVersions(manifest.version, app.getVersion()) <= 0) {
+      if (
+        !manifest.enabled ||
+        compareVersions(manifest.version, app.getVersion()) <= 0
+      ) {
         return this.replaceState({
           status: "not-available",
           currentVersion: app.getVersion(),
@@ -124,7 +128,8 @@ export class UpdateService {
         manifest.mandatory ||
         Boolean(
           manifest.minimumSupportedVersion &&
-            compareVersions(app.getVersion(), manifest.minimumSupportedVersion) < 0
+          compareVersions(app.getVersion(), manifest.minimumSupportedVersion) <
+            0
         );
       this.manifest = manifest;
       const availableState = {

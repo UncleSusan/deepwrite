@@ -30,9 +30,7 @@ describe("listRemoteModels", () => {
         apiKey: "sk-test",
         provider: "google"
       })
-    ).toBe(
-      "https://generativelanguage.example.test/v1beta/models?key=sk-test"
-    );
+    ).toBe("https://generativelanguage.example.test/v1beta/models?key=sk-test");
   });
 
   it("parses OpenAI, Anthropic, and Google list payloads", () => {

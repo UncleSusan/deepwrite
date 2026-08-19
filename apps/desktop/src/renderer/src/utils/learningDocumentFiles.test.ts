@@ -92,9 +92,13 @@ describe("learning document files", () => {
 
   it("recovers readable UTF-16 text from legacy doc files", async () => {
     const result = await readLearningDocumentFile(
-      new File([utf16Le("第一章\n雨夜归来，旧案重启。").buffer as ArrayBuffer], "旧稿.doc", {
-        type: "application/msword"
-      })
+      new File(
+        [utf16Le("第一章\n雨夜归来，旧案重启。").buffer as ArrayBuffer],
+        "旧稿.doc",
+        {
+          type: "application/msword"
+        }
+      )
     );
 
     expect(result.document.text).toContain("雨夜归来，旧案重启");

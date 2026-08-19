@@ -15,23 +15,24 @@ describe("demo workspace contract", () => {
       "雾港回声 · 短篇",
       "雾港来信"
     ]);
-    expect(resourceSections[0]?.nodes[0]?.children?.map((node) => node.label)).toEqual([
-      "人物",
-      "剧情",
-      "正文"
+    expect(
+      resourceSections[0]?.nodes[0]?.children?.map((node) => node.label)
+    ).toEqual(["人物", "剧情", "正文"]);
+    expect(
+      resourceSections[0]?.nodes[0]?.children
+        ?.find((node) => node.label === "剧情")
+        ?.children?.map((node) => node.label)
+    ).toEqual([
+      "世界观",
+      "剧情设计",
+      "导语设计",
+      "剧情细化",
+      "叙事视角",
+      "大纲"
     ]);
     expect(
-      resourceSections[0]?.nodes[0]?.children?.find(
-        (node) => node.label === "剧情"
-      )?.children?.map((node) => node.label)
-    ).toEqual(["世界观", "剧情设计", "导语设计", "剧情细化", "叙事视角", "大纲"]);
-    expect(resourceSections[0]?.nodes[1]?.children?.map((node) => node.label)).toEqual([
-      "世界观",
-      "人物",
-      "剧情",
-      "长篇正文",
-      "状态账本"
-    ]);
+      resourceSections[0]?.nodes[1]?.children?.map((node) => node.label)
+    ).toEqual(["世界观", "人物", "剧情", "长篇正文", "状态账本"]);
     expect(resourceSections[1]?.nodes.map((node) => node.label)).toEqual([
       "官方通用技能库",
       "我的技能库"

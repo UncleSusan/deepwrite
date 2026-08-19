@@ -37,9 +37,24 @@ export type ShortWorkspaceToolDetails =
       stageId: "character_design";
       mutation:
         | { type: "createItem"; title: string; provisionalItemId: string }
-        | { type: "updateItem"; itemId: string; previousTitle: string; title: string }
-        | { type: "moveItem"; itemId: string; direction: "up" | "down"; title: string }
-        | { type: "deleteItem"; itemId: string; title: string; deletedText: string };
+        | {
+            type: "updateItem";
+            itemId: string;
+            previousTitle: string;
+            title: string;
+          }
+        | {
+            type: "moveItem";
+            itemId: string;
+            direction: "up" | "down";
+            title: string;
+          }
+        | {
+            type: "deleteItem";
+            itemId: string;
+            title: string;
+            deletedText: string;
+          };
       baseRevision: string;
       summary: string;
     }
@@ -157,14 +172,17 @@ export type ExpertSectionMap = Map<string, ExpertDraftSectionSnapshot>;
 export interface ShortWorkspaceToolSharedState {
   stageBodies: Map<ShortWorkspaceStageId, string>;
   stageRevisions: Map<ShortWorkspaceStageId, string>;
-  characterItems: Map<string, {
-    id: string;
-    title: string;
-    order: number;
-    content: string;
-    revision: string;
-    provisional?: boolean;
-  }>;
+  characterItems: Map<
+    string,
+    {
+      id: string;
+      title: string;
+      order: number;
+      content: string;
+      revision: string;
+      provisional?: boolean;
+    }
+  >;
   characterItemOrder: string[];
   pendingCharacterSeq: number;
   expertSections: ExpertSectionMap;
@@ -187,7 +205,9 @@ export type DraftFileKind = "body" | "characterState";
 export const DRAFT_FILE_PARAMETER_VALUES = ["body", "character_state"] as const;
 
 export function toDraftFileKind(value: unknown): DraftFileKind {
-  return String(value ?? "body") === "character_state" ? "characterState" : "body";
+  return String(value ?? "body") === "character_state"
+    ? "characterState"
+    : "body";
 }
 
 export function draftFileLabel(field: DraftFileKind): string {
@@ -213,11 +233,15 @@ export function stageLabel(
   );
 }
 
-export function workspaceKindLabel(input: BuildWritingWorkspaceToolsInput): string {
+export function workspaceKindLabel(
+  input: BuildWritingWorkspaceToolsInput
+): string {
   return input.workspaceType === "script" ? "剧本" : "短篇";
 }
 
-export function workspaceTitleLabel(input: BuildWritingWorkspaceToolsInput): string {
+export function workspaceTitleLabel(
+  input: BuildWritingWorkspaceToolsInput
+): string {
   return input.workspaceType === "script" ? "剧名" : "书名";
 }
 
@@ -225,11 +249,15 @@ export function draftUnitLabel(input: BuildWritingWorkspaceToolsInput): string {
   return input.workspaceType === "script" ? "剧集" : "章节";
 }
 
-export function draftUnitCounter(input: BuildWritingWorkspaceToolsInput): string {
+export function draftUnitCounter(
+  input: BuildWritingWorkspaceToolsInput
+): string {
   return input.workspaceType === "script" ? "集" : "章";
 }
 
-export function draftContentUnitLabel(input: BuildWritingWorkspaceToolsInput): string {
+export function draftContentUnitLabel(
+  input: BuildWritingWorkspaceToolsInput
+): string {
   return input.workspaceType === "script" ? "剧集" : "正文章节";
 }
 
@@ -261,7 +289,10 @@ export function scriptBodyToolConstraint(
     : "";
 }
 
-export function lineColumnAt(text: string, index: number): { line: number; column: number } {
+export function lineColumnAt(
+  text: string,
+  index: number
+): { line: number; column: number } {
   const prefix = text.slice(0, index);
   const lines = prefix.split("\n");
   return { line: lines.length, column: (lines.at(-1)?.length ?? 0) + 1 };
@@ -283,7 +314,10 @@ export function replaceText(
       return { count, error: `没有找到原文片段：${original.slice(0, 80)}` };
     }
     if (next.indexOf(original, first + original.length) >= 0) {
-      return { count, error: `原文片段出现多次，请提供更长且唯一的上下文：${original.slice(0, 80)}` };
+      return {
+        count,
+        error: `原文片段出现多次，请提供更长且唯一的上下文：${original.slice(0, 80)}`
+      };
     }
     next = `${next.slice(0, first)}${replacement.new_text}${next.slice(first + original.length)}`;
     count += 1;
@@ -311,5 +345,7 @@ export function orderedExpertSections(
     input.workspace.expertDraft.sections.map((section) => section.id);
   return order
     .map((sectionId) => expertSections.get(sectionId))
-    .filter((section): section is ExpertDraftSectionSnapshot => Boolean(section));
+    .filter((section): section is ExpertDraftSectionSnapshot =>
+      Boolean(section)
+    );
 }

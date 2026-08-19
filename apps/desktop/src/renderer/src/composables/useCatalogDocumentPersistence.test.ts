@@ -109,14 +109,16 @@ function manyResult(
   };
 }
 
-function createHarness(options: {
-  saveDocument?: DeepWriteApi["catalog"]["saveDocument"];
-  ensureOne?: (
-    document: string | WorkspaceDocument
-  ) => Promise<CatalogDocumentLoadResult>;
-  refreshIndex?: () => Promise<boolean>;
-  findBook?: (bookId: string) => Book | undefined;
-} = {}) {
+function createHarness(
+  options: {
+    saveDocument?: DeepWriteApi["catalog"]["saveDocument"];
+    ensureOne?: (
+      document: string | WorkspaceDocument
+    ) => Promise<CatalogDocumentLoadResult>;
+    refreshIndex?: () => Promise<boolean>;
+    findBook?: (bookId: string) => Book | undefined;
+  } = {}
+) {
   const documents = shallowRef<WorkspaceDocument[]>([workspaceDocument()]);
   const drafts = shallowRef<Record<string, EditorDraftState>>({
     "body-1": editorDraft("提交 A")
@@ -133,10 +135,7 @@ function createHarness(options: {
   const saveDocument = vi.fn(
     options.saveDocument ??
       (async (input) =>
-        savedDocument(
-          input.content,
-          (input.baseProjectRevision ?? 1) + 1
-        ))
+        savedDocument(input.content, (input.baseProjectRevision ?? 1) + 1))
   );
   const catalogApi = {
     saveDocument
@@ -156,13 +155,13 @@ function createHarness(options: {
       async (
         targets: readonly (string | WorkspaceDocument)[] = documents.value
       ) =>
-      manyResult(
-        targets.map((target) =>
-          typeof target === "string"
-            ? documents.value.find((document) => document.id === target)!
-            : target
+        manyResult(
+          targets.map((target) =>
+            typeof target === "string"
+              ? documents.value.find((document) => document.id === target)!
+              : target
+          )
         )
-      )
     ),
     invalidate: vi.fn(() => false)
   };
@@ -183,8 +182,7 @@ function createHarness(options: {
       refreshIndex,
       findBook:
         options.findBook ??
-        ((bookId) =>
-          ({ id: bookId, projectRevision }) as unknown as Book),
+        ((bookId) => ({ id: bookId, projectRevision }) as unknown as Book),
       findLibrary: () => undefined
     },
     nextRecoveryTimestamp: () => `${NOW}:${++timestamp}`,
@@ -269,9 +267,9 @@ describe("catalog document persistence", () => {
     );
 
     const targets = harness.ensureLoaded.mock.calls[0]?.[0] ?? [];
-    expect(targets.map((target) =>
-      typeof target === "string" ? target : target.id
-    )).toEqual(["body-1", "dirty-file", "previously-loaded"]);
+    expect(
+      targets.map((target) => (typeof target === "string" ? target : target.id))
+    ).toEqual(["body-1", "dirty-file", "previously-loaded"]);
   });
 
   it("retries a failed post-save draft rebase on the next catalog refresh", async () => {
@@ -592,9 +590,11 @@ describe("catalog document persistence", () => {
     expect(harness.saveDocument.mock.calls[1]?.[0].baseProjectRevision).toBe(
       11
     );
-    expect(harness.documents.value.every(
-      (document) => document.catalogProjectRevision === 12
-    )).toBe(true);
+    expect(
+      harness.documents.value.every(
+        (document) => document.catalogProjectRevision === 12
+      )
+    ).toBe(true);
     expect(harness.refreshIndex).toHaveBeenCalledOnce();
   });
 
@@ -690,9 +690,11 @@ describe("catalog document persistence", () => {
       ensureOne: async () => {
         reads += 1;
         if (reads === 1) {
-          return oneResult(workspaceDocument("外部版本 C", {
-            catalogProjectRevision: 2
-          }));
+          return oneResult(
+            workspaceDocument("外部版本 C", {
+              catalogProjectRevision: 2
+            })
+          );
         }
         return reloadRead.promise;
       }
@@ -712,9 +714,11 @@ describe("catalog document persistence", () => {
       "body-1": editorDraft("读取期间新输入 D")
     };
     reloadRead.resolve(
-      oneResult(workspaceDocument("最新磁盘版本", {
-        catalogProjectRevision: 3
-      }))
+      oneResult(
+        workspaceDocument("最新磁盘版本", {
+          catalogProjectRevision: 3
+        })
+      )
     );
     await reload;
 
@@ -875,7 +879,9 @@ describe("catalog document persistence", () => {
       }
       return normalizedEntry;
     });
-    const catalogApi = { saveLibraryEntry } as unknown as DeepWriteApi["catalog"];
+    const catalogApi = {
+      saveLibraryEntry
+    } as unknown as DeepWriteApi["catalog"];
     const persistence = useCatalogDocumentPersistence({
       api: () => catalogApi,
       documents,

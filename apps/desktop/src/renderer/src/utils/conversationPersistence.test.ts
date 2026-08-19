@@ -119,10 +119,7 @@ describe("conversation persistence adapter", () => {
     await adapter.save("conversation-history:test", value);
     await adapter.remove!("conversation-history:test");
 
-    expect(api.save).toHaveBeenCalledWith(
-      "conversation-history:test",
-      value
-    );
+    expect(api.save).toHaveBeenCalledWith("conversation-history:test", value);
     expect(api.remove).toHaveBeenCalledWith("conversation-history:test");
   });
 
@@ -147,7 +144,9 @@ describe("conversation persistence adapter", () => {
     const persistenceKey = conversationHistoryPersistenceKey(logicalKey);
 
     await expect(adapter.load(persistenceKey)).resolves.toEqual(legacy);
-    expect(storage.getItem(legacyConversationHistoryStorageKey(logicalKey))).toBeNull();
+    expect(
+      storage.getItem(legacyConversationHistoryStorageKey(logicalKey))
+    ).toBeNull();
     expect(api.values.get(persistenceKey)).toEqual(legacy);
   });
 
@@ -205,7 +204,10 @@ describe("conversation persistence adapter", () => {
 
     await expect(
       adapter.load(MODEL_SELECTION_PERSISTENCE_KEY)
-    ).resolves.toEqual({ selectedModelId: "writer", thinkingLevel: "high" });
+    ).resolves.toEqual({
+      selectedModelId: "writer",
+      thinkingLevel: "high"
+    });
     await expect(
       adapter.load(RUN_PREFERENCES_PERSISTENCE_KEY)
     ).resolves.toEqual({
@@ -237,7 +239,9 @@ describe("conversation persistence adapter", () => {
   });
 
   it("retries history saves without evaluation snapshots when the full envelope is rejected", async () => {
-    const persistenceKey = conversationHistoryPersistenceKey("book-one:plot_design");
+    const persistenceKey = conversationHistoryPersistenceKey(
+      "book-one:plot_design"
+    );
     const envelope = {
       version: 1,
       activeSessionId: "session-eval",
@@ -268,7 +272,9 @@ describe("conversation persistence adapter", () => {
       load: vi.fn(async () => undefined),
       save: vi.fn(async (_key: string, value: unknown) => {
         if (JSON.stringify(value).includes("evaluationSnapshot")) {
-          throw new Error("Renderer state item exceeds the 4194304 byte limit.");
+          throw new Error(
+            "Renderer state item exceeds the 4194304 byte limit."
+          );
         }
       }),
       remove: vi.fn(async () => undefined)
@@ -285,22 +291,27 @@ describe("conversation persistence adapter", () => {
       id: "assistant-1",
       content: "已规划剧情点"
     });
-    expect(persisted.conversations[0]?.messages[0]?.evaluationSnapshot).toBeUndefined();
+    expect(
+      persisted.conversations[0]?.messages[0]?.evaluationSnapshot
+    ).toBeUndefined();
   });
 
   it("keeps unreadable localStorage entries so a later launch can retry", async () => {
     const storage = new MemoryStorage();
     const logicalKey = "book-one:plot_design";
-    storage.setItem(legacyConversationHistoryStorageKey(logicalKey), "not-json");
+    storage.setItem(
+      legacyConversationHistoryStorageKey(logicalKey),
+      "not-json"
+    );
     const api = memoryApi();
     const adapter = createConversationPersistenceAdapter(api, { storage })!;
 
     await expect(
       adapter.load(conversationHistoryPersistenceKey(logicalKey))
     ).resolves.toBeUndefined();
-    expect(storage.getItem(legacyConversationHistoryStorageKey(logicalKey))).toBe(
-      "not-json"
-    );
+    expect(
+      storage.getItem(legacyConversationHistoryStorageKey(logicalKey))
+    ).toBe("not-json");
     expect(api.save).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,8 @@
-import { cloneJsonRecord, cloneMessage, cloneMessageForPersistence } from "./clone";
+import {
+  cloneJsonRecord,
+  cloneMessage,
+  cloneMessageForPersistence
+} from "./clone";
 import type { AgentConversationContext } from "./context";
 import { nextConversationTimestamp } from "./context";
 import { parseAgentConversationPersistenceSnapshot } from "./parse";
@@ -9,7 +13,9 @@ import type {
   AgentConversationPersistenceSnapshot
 } from "./types";
 
-export function currentStoredConversation(ctx: AgentConversationContext): AgentConversationPersistenceRecord {
+export function currentStoredConversation(
+  ctx: AgentConversationContext
+): AgentConversationPersistenceRecord {
   return {
     sessionId: ctx.sessionId.value,
     messages: ctx.messages.value.map(cloneMessageForPersistence),
@@ -25,7 +31,9 @@ export function hasConversationContent(
   ctx: AgentConversationContext,
   conversation: AgentConversationPersistenceRecord
 ): boolean {
-  return conversation.messages.length > 0 || conversation.draft.trim().length > 0;
+  return (
+    conversation.messages.length > 0 || conversation.draft.trim().length > 0
+  );
 }
 
 export function storeCurrentConversation(ctx: AgentConversationContext): void {
@@ -37,11 +45,15 @@ export function storeCurrentConversation(ctx: AgentConversationContext): void {
     next.push(current);
   }
   ctx.storedConversations.value = next
-    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+    .sort(
+      (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+    )
     .slice(0, MAX_STORED_CONVERSATIONS);
 }
 
-export function capturePersistenceSnapshot(ctx: AgentConversationContext): AgentConversationPersistenceSnapshot {
+export function capturePersistenceSnapshot(
+  ctx: AgentConversationContext
+): AgentConversationPersistenceSnapshot {
   storeCurrentConversation(ctx);
   return cloneJsonRecord({
     version: 1 as const,
@@ -56,7 +68,10 @@ export function reportPersistenceError(ctx: AgentConversationContext): void {
   ctx.options.onPersistenceError?.();
 }
 
-export function observePersistenceResult(ctx: AgentConversationContext, result: void | Promise<void>): void {
+export function observePersistenceResult(
+  ctx: AgentConversationContext,
+  result: void | Promise<void>
+): void {
   if (!result || typeof result.then !== "function") {
     ctx.persistenceErrorReported = false;
     return;
@@ -89,7 +104,8 @@ export function emitPersistenceSnapshot(ctx: AgentConversationContext): void {
     return;
   }
   try {
-    observePersistenceResult(ctx,
+    observePersistenceResult(
+      ctx,
       ctx.options.onPersistenceChange
         ? ctx.options.onPersistenceChange()
         : ctx.options.onPersistenceSnapshot!(capturePersistenceSnapshot(ctx))
@@ -115,7 +131,10 @@ export function runPersistenceBatch<T>(
   }
 }
 
-export async function restorePersistenceSnapshot(ctx: AgentConversationContext, snapshot: unknown): Promise<boolean> {
+export async function restorePersistenceSnapshot(
+  ctx: AgentConversationContext,
+  snapshot: unknown
+): Promise<boolean> {
   const parsed = parseAgentConversationPersistenceSnapshot(snapshot);
   if (!parsed) return false;
   const expectedRevision = ctx.persistenceMutationRevision;
@@ -140,14 +159,17 @@ export async function restorePersistenceSnapshot(ctx: AgentConversationContext, 
   ctx.applyingPersistenceSnapshot = true;
   try {
     resetTransientConversationState(ctx);
-    ctx.storedConversations.value = parsed.conversations.map((conversation) => ({
-      ...conversation,
-      messages: conversation.messages.map(cloneMessage)
-    }));
+    ctx.storedConversations.value = parsed.conversations.map(
+      (conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map(cloneMessage)
+      })
+    );
     const active = ctx.storedConversations.value.find(
       (conversation) => conversation.sessionId === parsed.activeSessionId
     );
-    const restoredTimestamp = active?.updatedAt ?? nextConversationTimestamp(ctx);
+    const restoredTimestamp =
+      active?.updatedAt ?? nextConversationTimestamp(ctx);
     ctx.conversationClock = Math.max(
       ctx.conversationClock,
       ...ctx.storedConversations.value.map((conversation) =>

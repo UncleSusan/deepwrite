@@ -28,10 +28,7 @@ export function readShortDocumentPage(
   let totalCharacters = 0;
   let returnedCharacters = 0;
   for (const character of content) {
-    if (
-      totalCharacters >= offset &&
-      returnedCharacters < maximum
-    ) {
+    if (totalCharacters >= offset && returnedCharacters < maximum) {
       page.push(character);
       returnedCharacters += 1;
     }
@@ -56,8 +53,11 @@ export function recordShortDocumentPage(
   const previous = coverage.get(documentId);
   const contiguousEnd =
     page.offset <= (previous?.contiguousEnd ?? 0)
-      ? Math.max(previous?.contiguousEnd ?? 0, page.offset + page.returnedCharacters)
-      : previous?.contiguousEnd ?? 0;
+      ? Math.max(
+          previous?.contiguousEnd ?? 0,
+          page.offset + page.returnedCharacters
+        )
+      : (previous?.contiguousEnd ?? 0);
   coverage.set(documentId, {
     contiguousEnd,
     totalCharacters: page.totalCharacters
@@ -65,7 +65,9 @@ export function recordShortDocumentPage(
   return contiguousEnd >= page.totalCharacters;
 }
 
-export function renderShortDocumentPageMetadata(page: ShortDocumentPage): string {
+export function renderShortDocumentPageMetadata(
+  page: ShortDocumentPage
+): string {
   return [
     `offset: ${page.offset}`,
     `本页字符数: ${page.returnedCharacters}`,

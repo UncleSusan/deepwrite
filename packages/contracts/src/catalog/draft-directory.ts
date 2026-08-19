@@ -22,7 +22,9 @@ export function catalogDraftBodyDocumentId(sectionId: string): string {
   return `draft-section:${sectionId}:body`;
 }
 
-export function catalogDraftCharacterStateDocumentId(sectionId: string): string {
+export function catalogDraftCharacterStateDocumentId(
+  sectionId: string
+): string {
   return `draft-section:${sectionId}:character-state`;
 }
 
@@ -103,7 +105,8 @@ export const CatalogDraftSectionSchema = z
       context.addIssue({
         code: "custom",
         path: ["characterState", "id"],
-        message: "Draft body and character-state documents must have distinct ids."
+        message:
+          "Draft body and character-state documents must have distinct ids."
       });
     }
   });
@@ -139,9 +142,7 @@ export const DraftSectionCreationOperationSchema = z
         message: "Draft creation client ids cannot contain duplicates."
       });
     }
-    if (
-      !uniqueIds(operation.sections.map(({ sectionId }) => sectionId))
-    ) {
+    if (!uniqueIds(operation.sections.map(({ sectionId }) => sectionId))) {
       context.addIssue({
         code: "custom",
         path: ["sections"],

@@ -9,7 +9,9 @@ const props = defineProps<{
   workspaceType?: "short" | "script" | undefined;
 }>();
 
-const unitLabel = computed(() => (props.workspaceType === "script" ? "剧集" : "小节"));
+const unitLabel = computed(() =>
+  props.workspaceType === "script" ? "剧集" : "小节"
+);
 
 const emit = defineEmits<{
   close: [];
@@ -38,7 +40,14 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             <span class="dialog-eyebrow">正文编写</span>
             <h2 id="delete-expert-section-title">删除{{ unitLabel }}</h2>
           </div>
-          <button class="dialog-close" type="button" aria-label="关闭" @click="emit('close')">×</button>
+          <button
+            class="dialog-close"
+            type="button"
+            aria-label="关闭"
+            @click="emit('close')"
+          >
+            ×
+          </button>
         </header>
 
         <div class="dialog-content">
@@ -47,14 +56,24 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             <div>
               <strong>确认删除“{{ sectionTitle }}”？</strong>
               <p>
-                {{ hasContent ? `该${unitLabel}的标题、正文和人物状态都会删除。` : `该空${unitLabel}会从正文结构中删除。` }}
+                {{
+                  hasContent
+                    ? `该${unitLabel}的标题、正文和人物状态都会删除。`
+                    : `该空${unitLabel}会从正文结构中删除。`
+                }}
                 删除后需点击右侧“应用”保存，此操作无法自动撤销。
               </p>
             </div>
           </div>
 
           <div class="dialog-actions">
-            <button class="dialog-secondary-button" type="button" @click="emit('close')">取消</button>
+            <button
+              class="dialog-secondary-button"
+              type="button"
+              @click="emit('close')"
+            >
+              取消
+            </button>
             <button
               class="dialog-primary-button is-danger"
               type="button"

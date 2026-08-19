@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import conversationSource from "./AgentConversation.vue?raw";
-import messageListSource from "./ConversationMessageList.vue?raw";
 import editProposalSource from "./AgentEditProposalCard.vue?raw";
 import source from "./LongProposalReview.vue?raw";
 
@@ -11,11 +10,11 @@ describe("LongProposalReview content file cards", () => {
     expect(source).toContain("approval-target-button");
     expect(source).toContain("跳转到目标文件");
     expect(source).toContain("emit('locate', item.event.id)");
-    expect(messageListSource).toContain(
+    expect(conversationSource).toContain(
       "@locate=\"emit('locateLongProposal', $event)\""
     );
     expect(
-      messageListSource.match(
+      conversationSource.match(
         /@locate="emit\('locateLongProposal', \$event\)"/g
       )
     ).toHaveLength(2);
@@ -48,7 +47,9 @@ describe("LongProposalReview content file cards", () => {
       "edit-review-button is-accept"
     ]) {
       expect(source).toContain(className);
-      expect(`${conversationSource}\n${messageListSource}\n${editProposalSource}`).toContain(className);
+      expect(`${conversationSource}\n${editProposalSource}`).toContain(
+        className
+      );
     }
     expect(source).not.toContain("worldbuilding-file-card");
     expect(source).not.toContain("long.ledger_commit_proposal");
@@ -64,9 +65,7 @@ describe("LongProposalReview content file cards", () => {
   it("keeps structure changes separate from worldbuilding file writes", () => {
     expect(source).toContain('case "long.mutation_proposal":');
     expect(source).toContain('return "结构变更";');
-    expect(source).toContain(
-      'case "long.worldbuilding_file_proposal":'
-    );
+    expect(source).toContain('case "long.worldbuilding_file_proposal":');
     expect(source).toContain('case "long.character_file_proposal":');
     expect(source).toContain('return "确认写入并保存";');
   });
@@ -86,7 +85,7 @@ describe("LongProposalReview content file cards", () => {
     expect(source).toContain('item.errorPhase === "preview"');
     expect(source).toContain("校验未通过");
     expect(source).toContain("尚未应用");
-    expect(source).toContain('item.errorRetryable === false');
+    expect(source).toContain("item.errorRetryable === false");
     expect(source).toContain("需重新生成提案");
   });
 

@@ -1,4 +1,12 @@
-import { computed, nextTick, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  ref,
+  watch,
+  type ComputedRef,
+  type Ref
+} from "vue";
 import {
   type LongArcId,
   type LongFileId,
@@ -53,10 +61,7 @@ export function useLongEditorDocumentSession(options: {
     locked?: boolean;
   };
   emit: {
-    (
-      event: "saved",
-      result: LongWriteDocumentResult
-    ): void;
+    (event: "saved", result: LongWriteDocumentResult): void;
     (
       event: "contextChange",
       context: {
@@ -255,8 +260,8 @@ export function useLongEditorDocumentSession(options: {
       : false;
     const refreshingJustSavedDocument = Boolean(
       pendingSaveViewport &&
-        pendingSaveViewport.documentKey === currentEditorViewportKey() &&
-        options.currentSelectionFile.value?.file.id === file.id
+      pendingSaveViewport.documentKey === currentEditorViewportKey() &&
+      options.currentSelectionFile.value?.file.id === file.id
     );
     replaceDocumentState(key, {
       bookId,
@@ -722,16 +727,14 @@ export function useLongEditorDocumentSession(options: {
       .map(([key]) => key);
     const dirtyVolumeIds = Object.entries(options.volumeOutlineDrafts.value)
       .filter(
-        ([, draft]) =>
-          !draft.saving && draft.content !== draft.savedContent
+        ([, draft]) => !draft.saving && draft.content !== draft.savedContent
       )
       .map(([volumeId]) => volumeId);
     const dirtyPlotPointSummaryIds = Object.entries(
       options.plotPointSummaryDrafts.value
     )
       .filter(
-        ([, draft]) =>
-          !draft.saving && draft.content !== draft.savedContent
+        ([, draft]) => !draft.saving && draft.content !== draft.savedContent
       )
       .map(([plotPointId]) => plotPointId as LongArcId);
     if (
@@ -761,27 +764,27 @@ export function useLongEditorDocumentSession(options: {
       // Editing remains available during an asynchronous save. A keystroke
       // after a file's submitted snapshot must keep navigation blocked instead
       // of being mistaken for part of the successful write.
-      return !Object.entries(documentStates.value).some(
-        ([key, state]) =>
-          key.startsWith(bookPrefix) &&
-          state.loaded &&
-          state.content !== state.savedContent
-      ) &&
+      return (
+        !Object.entries(documentStates.value).some(
+          ([key, state]) =>
+            key.startsWith(bookPrefix) &&
+            state.loaded &&
+            state.content !== state.savedContent
+        ) &&
         !Object.values(options.volumeOutlineDrafts.value).some(
           (draft) => draft.content !== draft.savedContent
         ) &&
         !Object.values(options.plotPointSummaryDrafts.value).some(
           (draft) => draft.content !== draft.savedContent
-        );
+        )
+      );
     });
     if (saved) {
       const savedCount =
         dirtyKeys.length +
         dirtyVolumeIds.length +
         dirtyPlotPointSummaryIds.length;
-      uiMessage.success(
-        `离开前已自动保存 ${savedCount} 项长篇修改`
-      );
+      uiMessage.success(`离开前已自动保存 ${savedCount} 项长篇修改`);
     } else {
       uiMessage.warning("长篇修改尚未保存，已取消切换以保留当前内容。");
     }
@@ -821,12 +824,10 @@ export function useLongEditorDocumentSession(options: {
     if (
       includeVolumeDrafts &&
       (Object.values(options.volumeOutlineDrafts.value).some(
-        (draft) =>
-          !draft.saving && draft.content !== draft.savedContent
+        (draft) => !draft.saving && draft.content !== draft.savedContent
       ) ||
         Object.values(options.plotPointSummaryDrafts.value).some(
-          (draft) =>
-            !draft.saving && draft.content !== draft.savedContent
+          (draft) => !draft.saving && draft.content !== draft.savedContent
         ))
     ) {
       return false;
@@ -908,7 +909,9 @@ export function useLongEditorDocumentSession(options: {
         props.bookId,
         props.selection?.key,
         options.currentIsWorldbuildingList.value,
-        (props.selection?.worldbuildingItems ?? []).map(({ id }) => id).join("\u0000")
+        (props.selection?.worldbuildingItems ?? [])
+          .map(({ id }) => id)
+          .join("\u0000")
       ] as const,
     () => {
       if (options.currentIsWorldbuildingList.value) {
@@ -931,7 +934,8 @@ export function useLongEditorDocumentSession(options: {
         return;
       }
       if (
-        options.currentSelectionFile.value?.file.revision !== snapshot.fileRevision
+        options.currentSelectionFile.value?.file.revision !==
+        snapshot.fileRevision
       ) {
         return;
       }

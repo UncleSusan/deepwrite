@@ -209,10 +209,14 @@ export interface DeepWriteApi {
     myDetail(ref: MarketplaceContentRef): Promise<MarketplaceContentDetail>;
     publish(input: MarketplacePublishInput): Promise<MarketplaceContentDetail>;
     update(input: MarketplaceUpdateInput): Promise<MarketplaceContentDetail>;
-    setEnabled(input: MarketplaceSetEnabledInput): Promise<MarketplaceContentSummary>;
+    setEnabled(
+      input: MarketplaceSetEnabledInput
+    ): Promise<MarketplaceContentSummary>;
     delete(ref: MarketplaceContentRef): Promise<void>;
     like(input: MarketplaceLikeInput): Promise<MarketplaceLikeResult>;
-    previewInstall(ref: MarketplaceContentRef): Promise<MarketplaceInstallPreview>;
+    previewInstall(
+      ref: MarketplaceContentRef
+    ): Promise<MarketplaceInstallPreview>;
     install(input: MarketplaceInstallInput): Promise<MarketplaceInstallResult>;
   };
   cloudBackup: {
@@ -224,7 +228,9 @@ export interface DeepWriteApi {
   };
   catalog: {
     index(): Promise<CatalogIndexSnapshot>;
-    readDocument(input: CatalogReadDocumentInput): Promise<CatalogReadDocumentResult>;
+    readDocument(
+      input: CatalogReadDocumentInput
+    ): Promise<CatalogReadDocumentResult>;
     snapshot(): Promise<CatalogSnapshot>;
     loadDraftRecovery(): Promise<CatalogDraftRecovery>;
     saveDraftRecovery(drafts: CatalogDraftRecovery): Promise<void>;
@@ -232,32 +238,52 @@ export interface DeepWriteApi {
     createScriptBook(input: CreateScriptBookInput): Promise<ScriptBook | null>;
     createLibrary(input: CreateLibraryInput): Promise<CatalogLibrary | null>;
     updateLibrary(input: UpdateLibraryInput): Promise<CatalogLibrary>;
-    createLibraryGroup(input: CreateLibraryGroupInput): Promise<CatalogLibraryGroup | null>;
-    openProject(domain: CatalogProjectDomain): Promise<CatalogOpenProjectResult | null>;
+    createLibraryGroup(
+      input: CreateLibraryGroupInput
+    ): Promise<CatalogLibraryGroup | null>;
+    openProject(
+      domain: CatalogProjectDomain
+    ): Promise<CatalogOpenProjectResult | null>;
     importLegacyLibrary(
       domain: CatalogLibraryProjectDomain
     ): Promise<ImportLegacyLibraryResult | null>;
     updateBook(input: UpdateBookInput): Promise<Book>;
-    mutateCharacterStructure(input: MutateCharacterStructureInput): Promise<Book>;
+    mutateCharacterStructure(
+      input: MutateCharacterStructureInput
+    ): Promise<Book>;
     mutatePlotStructure(input: MutatePlotStructureInput): Promise<Book>;
-    updateLibraryGroup(input: UpdateLibraryGroupInput): Promise<CatalogLibraryGroup>;
+    updateLibraryGroup(
+      input: UpdateLibraryGroupInput
+    ): Promise<CatalogLibraryGroup>;
     deleteBook(bookId: string): Promise<DeleteBookResult>;
     saveDocument(input: SaveDocumentInput): Promise<SaveDocumentResult>;
-    createDraftSection(input: CreateDraftSectionInput): Promise<CatalogDraftSection>;
+    createDraftSection(
+      input: CreateDraftSectionInput
+    ): Promise<CatalogDraftSection>;
     createDraftSections(
       input: CreateDraftSectionsInput
     ): Promise<CreateDraftSectionsResult>;
     deleteDraftSection(
       input: DeleteDraftSectionInput
     ): Promise<DeleteDraftSectionResult>;
-    moveDraftSection(input: MoveDraftSectionInput): Promise<MoveDraftSectionResult>;
-    saveLibraryEntry(input: SaveLibraryEntryInput): Promise<CatalogLibraryEntry>;
-    createLibraryEntry(input: CreateLibraryEntryInput): Promise<CatalogLibraryEntry>;
+    moveDraftSection(
+      input: MoveDraftSectionInput
+    ): Promise<MoveDraftSectionResult>;
+    saveLibraryEntry(
+      input: SaveLibraryEntryInput
+    ): Promise<CatalogLibraryEntry>;
+    createLibraryEntry(
+      input: CreateLibraryEntryInput
+    ): Promise<CatalogLibraryEntry>;
     chooseExternalSkills(
       sourceKind: ExternalSkillSourceKind
     ): Promise<ExternalSkillSelectionResult | null>;
-    removeLibraryEntry(input: RemoveLibraryEntryInput): Promise<RemoveLibraryEntryResult>;
-    moveLibraryEntry(input: MoveLibraryEntryInput): Promise<MoveLibraryEntryResult>;
+    removeLibraryEntry(
+      input: RemoveLibraryEntryInput
+    ): Promise<RemoveLibraryEntryResult>;
+    moveLibraryEntry(
+      input: MoveLibraryEntryInput
+    ): Promise<MoveLibraryEntryResult>;
     unregisterProject(
       input: UnregisterCatalogProjectInput
     ): Promise<UnregisterCatalogProjectResult>;
@@ -273,7 +299,9 @@ export interface DeepWriteApi {
     create(input: CreateLongBookInput): Promise<LongOpenBookResult | null>;
     duplicateBook(input: LongDuplicateBookInput): Promise<LongOpenBookResult>;
     chooseLegacySyncSource(): Promise<LongChooseLegacySyncSourceResult | null>;
-    applyLegacySync(input: LongApplyLegacySyncInput): Promise<LongApplyLegacySyncResult>;
+    applyLegacySync(
+      input: LongApplyLegacySyncInput
+    ): Promise<LongApplyLegacySyncResult>;
     importPortable(): Promise<LongImportPortableResult | null>;
     chooseContinuationImportSource(): Promise<LongChooseContinuationImportSourceResult | null>;
     importContinuation(
@@ -281,22 +309,16 @@ export interface DeepWriteApi {
     ): Promise<LongImportContinuationResult | null>;
     open(input: LongOpenBookInput): Promise<LongOpenBookResult>;
     rename(input: LongRenameBookInput): Promise<LongOpenBookResult>;
-    updateBindings(
-      input: LongUpdateBindingsInput
-    ): Promise<LongOpenBookResult>;
+    updateBindings(input: LongUpdateBindingsInput): Promise<LongOpenBookResult>;
     openExisting(): Promise<LongOpenBookResult | null>;
     getWorkspaceIndex(
       input: LongOpenBookInput
     ): Promise<LongWorkspaceIndexResult>;
-    readDocument(
-      input: LongReadDocumentInput
-    ): Promise<LongReadDocumentResult>;
+    readDocument(input: LongReadDocumentInput): Promise<LongReadDocumentResult>;
     writeDocument(
       input: LongWriteDocumentInput
     ): Promise<LongWriteDocumentResult>;
-    readAgentsMd(
-      input: LongReadAgentsMdInput
-    ): Promise<LongReadAgentsMdResult>;
+    readAgentsMd(input: LongReadAgentsMdInput): Promise<LongReadAgentsMdResult>;
     writeAgentsMd(
       input: LongWriteAgentsMdInput
     ): Promise<LongWriteAgentsMdResult>;
@@ -306,9 +328,7 @@ export interface DeepWriteApi {
     applyOperations(
       input: LongApplyOperationsInput
     ): Promise<LongApplyOperationsResult>;
-    writeChapter(
-      input: LongWriteChapterInput
-    ): Promise<LongWriteChapterResult>;
+    writeChapter(input: LongWriteChapterInput): Promise<LongWriteChapterResult>;
     commitChapter(
       input: LongCommitChapterInput
     ): Promise<LongCommitChapterResult>;
@@ -319,8 +339,12 @@ export interface DeepWriteApi {
     delete(input: LongRemoveBookInput): Promise<LongRemoveBookResult>;
   };
   session: {
-    prompt(payload: SessionPromptCommandPayload): Promise<SessionPromptAcceptedPayload>;
-    abort(payload: SessionAbortCommandPayload): Promise<SessionAbortAcceptedPayload>;
+    prompt(
+      payload: SessionPromptCommandPayload
+    ): Promise<SessionPromptAcceptedPayload>;
+    abort(
+      payload: SessionAbortCommandPayload
+    ): Promise<SessionAbortAcceptedPayload>;
   };
   models: {
     list(): Promise<ModelSettings>;
@@ -329,7 +353,10 @@ export interface DeepWriteApi {
     queryOfficialBalance(): Promise<OfficialModelBalance>;
     saveOfficialToken(apiKey: string): Promise<ModelSettings>;
     clearOfficialToken(): Promise<ModelSettings>;
-    setOfficialModelEnabled(modelId: string, enabled: boolean): Promise<ModelSettings>;
+    setOfficialModelEnabled(
+      modelId: string,
+      enabled: boolean
+    ): Promise<ModelSettings>;
     save(settings: ModelSettingsInput): Promise<ModelSettings>;
     test(model: ModelConfigInput): Promise<ModelConnectionTestResult>;
     listRemote(input: RemoteModelListInput): Promise<RemoteModelListResult>;
@@ -344,11 +371,15 @@ export interface DeepWriteApi {
       project: ChatAssistantProjectRef,
       systemPrompt: string
     ): Promise<ChatAssistantProjectConfig>;
-    reset(project: ChatAssistantProjectRef): Promise<ChatAssistantProjectConfig>;
+    reset(
+      project: ChatAssistantProjectRef
+    ): Promise<ChatAssistantProjectConfig>;
   };
   workspaceAgents: {
     list(workspaceType: WorkspaceType): Promise<WorkspaceAgentSettings>;
-    save(settings: WorkspaceAgentSettingsInput): Promise<WorkspaceAgentSettings>;
+    save(
+      settings: WorkspaceAgentSettingsInput
+    ): Promise<WorkspaceAgentSettings>;
     reset(
       workspaceType: WorkspaceType,
       agentId?: WorkspaceAgentId
@@ -361,9 +392,7 @@ export interface DeepWriteApi {
   };
   longAgentTeams: {
     list(): Promise<LongAgentTeamSettings>;
-    save(
-      settings: LongAgentTeamSettingsInput
-    ): Promise<LongAgentTeamSettings>;
+    save(settings: LongAgentTeamSettingsInput): Promise<LongAgentTeamSettings>;
   };
   agentTeams: {
     list(workspaceType: WorkspaceType): Promise<WorkspaceAgentTeamSettings>;
@@ -378,8 +407,12 @@ export interface DeepWriteApi {
   };
   learningImitationSettings: {
     list(): Promise<LearningImitationSettings>;
-    save(settings: LearningImitationSettingsInput): Promise<LearningImitationSettings>;
-    reset(stageId?: LearningImitationStageId): Promise<LearningImitationSettings>;
+    save(
+      settings: LearningImitationSettingsInput
+    ): Promise<LearningImitationSettings>;
+    reset(
+      stageId?: LearningImitationStageId
+    ): Promise<LearningImitationSettings>;
   };
   workspaceDirectory: {
     list(): Promise<WorkspaceDirectorySettings>;

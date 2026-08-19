@@ -11,7 +11,10 @@ import type { ChatAssistantProjectConfigStore } from "../chat-assistant-project-
 import type { ContinuationImportPreviewRegistry } from "../continuation-import-preview-registry";
 import type { readExternalSkills } from "../external-skill-import";
 import type { GeneralSettingsStore } from "../general-settings-store";
-import type { authorizeMainInternalCommand, MainInternalCommandActiveRun } from "../internal-command-authorizer";
+import type {
+  authorizeMainInternalCommand,
+  MainInternalCommandActiveRun
+} from "../internal-command-authorizer";
 import type { LearningImitationConfigStore } from "../learning-imitation-config-store";
 import type { importLegacyLibraryArchives } from "../legacy-library-import-batch";
 import type { LegacySyncPreviewRegistry } from "../legacy-sync-preview-registry";

@@ -33,8 +33,13 @@ function rememberRenderedBoundaries(content: string): void {
 function isAppendOnlyUpdate(content: string): boolean {
   if (content.length <= renderedContent.length) return false;
   if (content.slice(0, renderedHead.length) !== renderedHead) return false;
-  const previousTailStart = Math.max(0, renderedContent.length - renderedTail.length);
-  return content.slice(previousTailStart, renderedContent.length) === renderedTail;
+  const previousTailStart = Math.max(
+    0,
+    renderedContent.length - renderedTail.length
+  );
+  return (
+    content.slice(previousTailStart, renderedContent.length) === renderedTail
+  );
 }
 
 function renderContent(): void {

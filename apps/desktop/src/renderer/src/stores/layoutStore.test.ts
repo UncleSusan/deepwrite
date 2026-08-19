@@ -169,7 +169,9 @@ describe("layout store", () => {
     store.stopPaneResize();
 
     expect(store.resizingPane).toBeNull();
-    expect(runtime.removeEventListener.mock.calls.map(([type]) => type)).toEqual(
+    expect(
+      runtime.removeEventListener.mock.calls.map(([type]) => type)
+    ).toEqual(
       expect.arrayContaining(["pointermove", "pointerup", "pointercancel"])
     );
   });

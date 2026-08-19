@@ -31,6 +31,7 @@ interface DiskModelConfig {
   modelId: string;
   requestModelId?: string | undefined;
   supportsDeveloperRole?: boolean | undefined;
+  toolSchemaProfile?: ModelConfig["toolSchemaProfile"];
   api: ModelConfig["api"];
   baseUrl: string;
   reasoning: boolean;
@@ -101,9 +102,17 @@ function normalizeDiskSettings(raw: unknown): DiskModelSettings {
   return {
     version: 1,
     defaultModelId: parsed.data.defaultModelId,
-    models: parsed.data.models.map(({ apiKey: _apiKey, clearApiKey: _clear, ...model }) => model),
+    models: parsed.data.models.map(
+      ({ apiKey: _apiKey, clearApiKey: _clear, ...model }) => model
+    ),
     disabledOfficialModelIds: Array.isArray(raw.disabledOfficialModelIds)
-      ? [...new Set(raw.disabledOfficialModelIds.filter((id): id is string => typeof id === "string" && id.length <= 120))]
+      ? [
+          ...new Set(
+            raw.disabledOfficialModelIds.filter(
+              (id): id is string => typeof id === "string" && id.length <= 120
+            )
+          )
+        ]
       : []
   };
 }
@@ -169,7 +178,9 @@ export class ModelConfigStore {
       this.freeModelCatalog.initialize(),
       this.officialModelCatalog.initialize()
     ]);
-    await this.persistDeepWriteFreeApiKeys(await this.freeModelCatalog.getCatalog());
+    await this.persistDeepWriteFreeApiKeys(
+      await this.freeModelCatalog.getCatalog()
+    );
   }
 
   async list(): Promise<ModelSettings> {
@@ -321,9 +332,14 @@ export class ModelConfigStore {
     return saved!;
   }
 
-  async setOfficialModelEnabled(modelId: string, enabled: boolean): Promise<ModelSettings> {
+  async setOfficialModelEnabled(
+    modelId: string,
+    enabled: boolean
+  ): Promise<ModelSettings> {
     const { freeCatalog, officialCatalog } = await this.getCatalogs();
-    const officialModel = officialCatalog.models.find((model) => model.id === modelId);
+    const officialModel = officialCatalog.models.find(
+      (model) => model.id === modelId
+    );
     if (!officialModel) {
       throw new Error("这个 DeepWrite 官方模型已不再受支持。");
     }
@@ -343,9 +359,17 @@ export class ModelConfigStore {
         officialCatalog
       );
       await atomicWriteJson(this.settingsPath, nextSettings);
-      saved = this.toPublicSettings(nextSettings, secrets, freeCatalog, officialCatalog);
+      saved = this.toPublicSettings(
+        nextSettings,
+        secrets,
+        freeCatalog,
+        officialCatalog
+      );
     });
-    this.writeChain = operation.then(() => undefined, () => undefined);
+    this.writeChain = operation.then(
+      () => undefined,
+      () => undefined
+    );
     await operation;
     return saved!;
   }
@@ -384,7 +408,9 @@ export class ModelConfigStore {
               "当前系统安全存储不可用，DeepWrite 不会把 API Key 以明文写入磁盘。"
             );
           }
-          encryptedApiKeys[model.id] = safeStorage.encryptString(apiKey).toString("base64");
+          encryptedApiKeys[model.id] = safeStorage
+            .encryptString(apiKey)
+            .toString("base64");
           continue;
         }
         if (model.clearApiKey) {
@@ -435,7 +461,9 @@ export class ModelConfigStore {
     return saved!;
   }
 
-  async resolve(modelId?: string): Promise<AgentProviderRuntimeConfig | undefined> {
+  async resolve(
+    modelId?: string
+  ): Promise<AgentProviderRuntimeConfig | undefined> {
     const { freeCatalog, officialCatalog } = await this.getCatalogs();
     await this.writeChain;
     const [storedSettings, secrets] = await this.readState();
@@ -452,8 +480,11 @@ export class ModelConfigStore {
       return undefined;
     }
 
-    const effectiveId = modelId || settings.defaultModelId || settings.models[0]!.id;
-    const storedModel = settings.models.find((candidate) => candidate.id === effectiveId);
+    const effectiveId =
+      modelId || settings.defaultModelId || settings.models[0]!.id;
+    const storedModel = settings.models.find(
+      (candidate) => candidate.id === effectiveId
+    );
     const model = storedModel
       ? this.synchronizeManagedModel(
           storedModel,
@@ -479,14 +510,18 @@ export class ModelConfigStore {
       try {
         apiKey = safeStorage.decryptString(Buffer.from(encrypted, "base64"));
       } catch {
-        throw new Error("模型 API Key 解密失败，请在模型配置中重新填写并保存。");
+        throw new Error(
+          "模型 API Key 解密失败，请在模型配置中重新填写并保存。"
+        );
       }
     }
 
     return AgentProviderRuntimeConfigSchema.parse({ ...model, apiKey });
   }
 
-  async resolveDraft(rawModel: ModelConfigInput): Promise<AgentProviderRuntimeConfig> {
+  async resolveDraft(
+    rawModel: ModelConfigInput
+  ): Promise<AgentProviderRuntimeConfig> {
     const parsedModel = ModelConfigInputSchema.parse(rawModel);
     const { freeCatalog, officialCatalog } = await this.getCatalogs();
     await this.writeChain;
@@ -497,7 +532,7 @@ export class ModelConfigStore {
       true
     );
 
-    let apiKey = model.managedBy ? "" : model.apiKey ?? "";
+    let apiKey = model.managedBy ? "" : (model.apiKey ?? "");
     if (!apiKey && !model.clearApiKey) {
       const [, secrets] = await this.readState();
       const secretId =
@@ -507,12 +542,16 @@ export class ModelConfigStore {
       const encrypted = secrets.encryptedApiKeys[secretId];
       if (encrypted) {
         if (!safeStorage.isEncryptionAvailable()) {
-          throw new Error("系统安全存储当前不可用，无法解密这个模型的 API Key。");
+          throw new Error(
+            "系统安全存储当前不可用，无法解密这个模型的 API Key。"
+          );
         }
         try {
           apiKey = safeStorage.decryptString(Buffer.from(encrypted, "base64"));
         } catch {
-          throw new Error("模型 API Key 解密失败，请在模型配置中重新填写并保存。");
+          throw new Error(
+            "模型 API Key 解密失败，请在模型配置中重新填写并保存。"
+          );
         }
       }
     }
@@ -583,7 +622,9 @@ export class ModelConfigStore {
   private async persistDeepWriteFreeApiKeys(
     catalog: DeepWriteFreeModelCatalog
   ): Promise<void> {
-    const entries = Object.entries(catalog.apiKeys).filter(([, apiKey]) => Boolean(apiKey));
+    const entries = Object.entries(catalog.apiKeys).filter(([, apiKey]) =>
+      Boolean(apiKey)
+    );
     if (entries.length === 0) {
       return;
     }
@@ -596,7 +637,9 @@ export class ModelConfigStore {
       const [, existingSecrets] = await this.readState();
       const encryptedApiKeys = { ...existingSecrets.encryptedApiKeys };
       for (const [id, apiKey] of entries) {
-        encryptedApiKeys[id] = safeStorage.encryptString(apiKey).toString("base64");
+        encryptedApiKeys[id] = safeStorage
+          .encryptString(apiKey)
+          .toString("base64");
       }
       await atomicWriteJson(this.secretsPath, {
         version: 1,
@@ -635,7 +678,9 @@ export class ModelConfigStore {
       ...(freeCatalog.defaultModelId
         ? { deepwriteFreeDefaultModelId: freeCatalog.defaultModelId }
         : {}),
-      ...(freeCatalog.message ? { deepwriteFreeMessage: freeCatalog.message } : {}),
+      ...(freeCatalog.message
+        ? { deepwriteFreeMessage: freeCatalog.message }
+        : {}),
       deepwriteOfficialModels: officialCatalog.models.map((model) => ({
         ...model,
         hasApiKey: Boolean(
@@ -665,7 +710,9 @@ export class ModelConfigStore {
       officialCatalog.models.map((model) => model.id)
     );
     const disabledOfficialModelIds = new Set(settings.disabledOfficialModelIds);
-    const officialModels = secrets.encryptedApiKeys[DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID]
+    const officialModels = secrets.encryptedApiKeys[
+      DEEPWRITE_OFFICIAL_TOKEN_SECRET_ID
+    ]
       ? officialCatalog.models
           .filter(
             (model) =>
@@ -687,9 +734,11 @@ export class ModelConfigStore {
       );
     const models = [...officialModels, ...otherModels];
     const requestedDefaultModelId = settings.defaultModelId;
-    const defaultModelId = models.some((model) => model.id === requestedDefaultModelId)
+    const defaultModelId = models.some(
+      (model) => model.id === requestedDefaultModelId
+    )
       ? requestedDefaultModelId
-      : models[0]?.id ?? "";
+      : (models[0]?.id ?? "");
     return {
       ...settings,
       defaultModelId,
@@ -728,12 +777,20 @@ export class ModelConfigStore {
     if (model.managedBy !== "deepwrite-free") {
       return model;
     }
-    if (enforceRemoteStatus && freeCatalog.manifestAvailable && !freeCatalog.enabled) {
-      throw new Error(freeCatalog.message || "DeepWrite 免费模型当前已暂停使用。");
+    if (
+      enforceRemoteStatus &&
+      freeCatalog.manifestAvailable &&
+      !freeCatalog.enabled
+    ) {
+      throw new Error(
+        freeCatalog.message || "DeepWrite 免费模型当前已暂停使用。"
+      );
     }
     const remoteModel =
       freeCatalog.models.find((candidate) => candidate.id === model.id) ??
-      freeCatalog.models.find((candidate) => candidate.id === freeCatalog.defaultModelId);
+      freeCatalog.models.find(
+        (candidate) => candidate.id === freeCatalog.defaultModelId
+      );
     return {
       ...(remoteModel ? { ...remoteModel, id: model.id } : model),
       managedBy: "deepwrite-free"

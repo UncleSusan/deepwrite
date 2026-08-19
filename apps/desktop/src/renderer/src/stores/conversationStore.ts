@@ -102,7 +102,8 @@ function validRunPreferencesByScope(
     typeof value === "object" &&
     !Array.isArray(value) &&
     Object.entries(value as Record<string, unknown>).every(
-      ([scope, preference]) => scope.trim().length > 0 && validRunPreference(preference)
+      ([scope, preference]) =>
+        scope.trim().length > 0 && validRunPreference(preference)
     )
   );
 }
@@ -120,18 +121,19 @@ export const useConversationStore = defineStore("conversation", () => {
 
   const controllerCount = computed(() => controllers.value.size);
   const persistenceBusy = computed(() => {
-    persistenceStateVersion.value;
+    void persistenceStateVersion.value;
     return [...persistenceQueues.values()].some(
       (queue) =>
-        queue.hasPending || queue.timer !== undefined || queue.inFlight !== undefined
+        queue.hasPending ||
+        queue.timer !== undefined ||
+        queue.inFlight !== undefined
     );
   });
 
   let persistenceAdapter: ConversationPersistenceAdapter | null = null;
   let persistenceDebounceMs = 180;
   let persistenceErrorHandler:
-    | ((key: string, error: unknown) => void)
-    | undefined;
+    ((key: string, error: unknown) => void) | undefined;
   let persistenceAdapterEpoch = 0;
   let acceptsPersistenceSchedules = true;
   const persistenceQueues = new Map<string, PersistenceQueue>();
@@ -262,7 +264,9 @@ export const useConversationStore = defineStore("conversation", () => {
     return controller;
   }
 
-  function disposeAllControllers(options: { clearPersistence?: boolean } = {}): void {
+  function disposeAllControllers(
+    options: { clearPersistence?: boolean } = {}
+  ): void {
     const existing = [...controllers.value.values()];
     controllers.value.clear();
     scopesByKey.value.clear();
@@ -405,8 +409,7 @@ export const useConversationStore = defineStore("conversation", () => {
     queue.lastError = undefined;
     clearPersistenceError(queue.key);
 
-    let task!: Promise<void>;
-    task = Promise.resolve()
+    const task = Promise.resolve()
       .then(() => {
         const resolvedValue = valueFactory ? valueFactory() : value;
         cachePersistenceValue(queue.key, resolvedValue);
@@ -530,8 +533,7 @@ export const useConversationStore = defineStore("conversation", () => {
     const epoch = loadEpochs.get(key) ?? 0;
     const adapterEpoch = persistenceAdapterEpoch;
     const adapter = persistenceAdapter;
-    let pending!: Promise<unknown | undefined>;
-    pending = adapter
+    const pending = adapter
       .load(key)
       .then((value) => {
         if (
@@ -580,7 +582,9 @@ export const useConversationStore = defineStore("conversation", () => {
   async function hydratePreferences(): Promise<void> {
     const [selection, preferences] = await Promise.all([
       loadPersistence<AgentModelSelection>(MODEL_SELECTION_PERSISTENCE_KEY),
-      loadPersistence<AgentRunPreferencesByScope>(RUN_PREFERENCES_PERSISTENCE_KEY)
+      loadPersistence<AgentRunPreferencesByScope>(
+        RUN_PREFERENCES_PERSISTENCE_KEY
+      )
     ]);
     if (validModelSelection(selection)) {
       setSessionAgentModelSelection(selection, { persist: false });
@@ -595,7 +599,10 @@ export const useConversationStore = defineStore("conversation", () => {
         )
       );
       for (const [key, controller] of controllers.value) {
-        applyGlobalPreferences(controller, scopesByKey.value.get(key) ?? "general");
+        applyGlobalPreferences(
+          controller,
+          scopesByKey.value.get(key) ?? "general"
+        );
       }
     }
   }

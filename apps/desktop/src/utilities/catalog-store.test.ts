@@ -1,10 +1,4 @@
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,7 +29,9 @@ function tickingClock(): () => string {
 
 afterEach(async () => {
   await Promise.all(
-    [...temporaryRoots].map((root) => rm(root, { recursive: true, force: true }))
+    [...temporaryRoots].map((root) =>
+      rm(root, { recursive: true, force: true })
+    )
   );
   temporaryRoots.clear();
 });
@@ -100,8 +96,12 @@ describe("CatalogStore", () => {
               }
             ],
             intro_design: "设计开篇钩子。",
-            draft: [{ id: "skill-entry-draft", title: "正文", body: "写正文。" }],
-            draft_review: [{ id: "skill-entry-review", title: "审阅", body: "审阅正文。" }]
+            draft: [
+              { id: "skill-entry-draft", title: "正文", body: "写正文。" }
+            ],
+            draft_review: [
+              { id: "skill-entry-review", title: "审阅", body: "审阅正文。" }
+            ]
           },
           created_at: legacyTimestamp,
           updated_at: legacyTimestamp
@@ -167,9 +167,15 @@ describe("CatalogStore", () => {
     const skill = imported.skills[0]!;
     expect(skill.id).toBe("official-general-skill-library");
     expect(skill.isBuiltin).toBe(true);
-    expect(skill.entries.filter((entry) => entry.stageId === "plot_design")).toHaveLength(2);
-    expect(skill.entries.filter((entry) => entry.stageId === "draft")).toHaveLength(2);
-    expect(skill.entries.map((entry) => entry.id)).toContain("skill-entry-review");
+    expect(
+      skill.entries.filter((entry) => entry.stageId === "plot_design")
+    ).toHaveLength(2);
+    expect(
+      skill.entries.filter((entry) => entry.stageId === "draft")
+    ).toHaveLength(2);
+    expect(skill.entries.map((entry) => entry.id)).toContain(
+      "skill-entry-review"
+    );
 
     const firstCatalogText = await readFile(store.catalogPath, "utf8");
     const legacyMaterials = JSON.parse(
@@ -256,7 +262,9 @@ describe("CatalogStore", () => {
           skill_kind: "general",
           is_builtin: true,
           stages: {
-            draft: [{ id: "official-source-only", title: "正文", body: "源端补充" }]
+            draft: [
+              { id: "official-source-only", title: "正文", body: "源端补充" }
+            ]
           }
         },
         {
@@ -389,8 +397,16 @@ describe("CatalogStore", () => {
           ...existingMaterial,
           stage_items: {
             character: [
-              { id: "entry-existing", title: "冲突条目", body: "不能覆盖现有正文" },
-              { id: "entry-source-only", title: "补充条目", body: "缺失来源补充" }
+              {
+                id: "entry-existing",
+                title: "冲突条目",
+                body: "不能覆盖现有正文"
+              },
+              {
+                id: "entry-source-only",
+                title: "补充条目",
+                body: "缺失来源补充"
+              }
             ]
           }
         },
@@ -435,9 +451,8 @@ describe("CatalogStore", () => {
     ]);
     expect(supplemented.books).toHaveLength(1);
     expect(
-      supplemented.books[0]?.draft.sections.find(
-        ({ id }) => id === "section-1"
-      )?.body.content
+      supplemented.books[0]?.draft.sections.find(({ id }) => id === "section-1")
+        ?.body.content
     ).toBe("必须保留的书稿");
     expect(supplemented.legacyImport).toMatchObject({
       sourceRoot: firstRoot,
@@ -446,7 +461,10 @@ describe("CatalogStore", () => {
       skills: 1
     });
 
-    const supplementedText = await readFile(supplementedStore.catalogPath, "utf8");
+    const supplementedText = await readFile(
+      supplementedStore.catalogPath,
+      "utf8"
+    );
     const secondMaterials = JSON.parse(
       await readFile(join(secondRoot, "materials.json"), "utf8")
     ) as { materials: unknown[] };
@@ -518,7 +536,9 @@ describe("CatalogStore", () => {
     });
     expect(book.documents).toHaveLength(7);
     expect(book.draft.sections).toHaveLength(2);
-    expect(book.linkedMaterialIdsByKind.character).toEqual(["material-character"]);
+    expect(book.linkedMaterialIdsByKind.character).toEqual([
+      "material-character"
+    ]);
 
     const document = await store.saveDocument({
       bookId: book.id,
@@ -712,10 +732,12 @@ describe("CatalogStore", () => {
     });
     const stage = withStage.plotStages.at(-1)!;
     expect(stage.id).toMatch(/^plot-stage-/u);
-    expect(withStage.documents.find(({ id }) => id === stage.id)).toMatchObject({
-      title: "反转校验",
-      content: ""
-    });
+    expect(withStage.documents.find(({ id }) => id === stage.id)).toMatchObject(
+      {
+        title: "反转校验",
+        content: ""
+      }
+    );
 
     const updated = await store.mutatePlotStructure({
       bookId: created.id,
@@ -783,12 +805,7 @@ describe("CatalogStore", () => {
     );
     expect(
       toggled.plotStages.filter((stage) => stage.enabled).map(({ id }) => id)
-    ).toEqual([
-      "plot_design",
-      "intro_design",
-      "plot_refine",
-      "outline"
-    ]);
+    ).toEqual(["plot_design", "intro_design", "plot_refine", "outline"]);
 
     await expect(
       store.mutatePlotStructure({
@@ -806,5 +823,4 @@ describe("CatalogStore", () => {
       ])
     });
   });
-
 });

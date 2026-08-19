@@ -377,23 +377,25 @@ export const SystemReadyEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: SystemHealthPayloadSchema
 });
 
-export const SystemWorkerRestartedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("system.worker_restarted"),
-  payload: z.object({
-    worker: UtilityWorkerNameSchema,
-    reason: z.string().min(1),
-    restartedAt: z.string().datetime()
-  })
-});
+export const SystemWorkerRestartedEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("system.worker_restarted"),
+    payload: z.object({
+      worker: UtilityWorkerNameSchema,
+      reason: z.string().min(1),
+      restartedAt: z.string().datetime()
+    })
+  });
 
-export const SystemWorkerRestartingEventEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("system.worker_restarting"),
-  payload: z.object({
-    worker: UtilityWorkerNameSchema,
-    reason: z.string().min(1),
-    detectedAt: z.string().datetime()
-  })
-});
+export const SystemWorkerRestartingEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("system.worker_restarting"),
+    payload: z.object({
+      worker: UtilityWorkerNameSchema,
+      reason: z.string().min(1),
+      detectedAt: z.string().datetime()
+    })
+  });
 
 export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   SystemReadyEventEnvelopeSchema,
@@ -427,7 +429,10 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   AgentErrorEventEnvelopeSchema
 ]);
 
-export type SystemReadyEventEnvelope = Envelope<SystemHealthPayload, "system.ready">;
+export type SystemReadyEventEnvelope = Envelope<
+  SystemHealthPayload,
+  "system.ready"
+>;
 export type SystemWorkerRestartedEventEnvelope = Envelope<
   { worker: UtilityWorkerName; reason: string; restartedAt: string },
   "system.worker_restarted"

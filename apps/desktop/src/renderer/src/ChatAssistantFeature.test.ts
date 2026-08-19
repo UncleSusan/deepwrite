@@ -16,7 +16,9 @@ describe("independent chat assistant feature", () => {
     expect(chatIndex).toBeGreaterThan(teamIndex);
     expect(sidebarSource).toContain('emit("openChatAssistant")');
     expect(shellSource).toContain('@open-chat-assistant="chatAssistant.open"');
-    expect(shellSource).toContain("chatAssistant.active.value ? 'chat-assistant'");
+    expect(shellSource).toContain(
+      "chatAssistant.active.value ? 'chat-assistant'"
+    );
     expect(featureSource).not.toContain("workspaceMainView");
   });
 
@@ -43,14 +45,18 @@ describe("independent chat assistant feature", () => {
 
   it("isolates normal and per-project controllers and sends the selected context", () => {
     expect(modeSource).toContain('key: "chat-assistant:normal"');
-    expect(modeSource).toContain('`chat-assistant:project:${suffix}`');
-    expect(featureSource).toContain('"chat-assistant",\n      "chat-assistant:normal"');
+    expect(modeSource).toContain("`chat-assistant:project:${suffix}`");
+    expect(featureSource).toContain(
+      '"chat-assistant",\n      "chat-assistant:normal"'
+    );
     expect(modeSource).toContain("sendAssistantMessage(context)");
     expect(overlaySource).toContain("assistant.sendAssistantMessage()");
     expect(overlaySource).toContain("controller.stopGeneration()");
     expect(overlaySource).toContain("controller.thinkingLevel.value");
     expect(overlaySource).toContain('accessible-label="聊天模型"');
-    expect(overlaySource).toContain("controller.value!.selectModel(String(value))");
+    expect(overlaySource).toContain(
+      "controller.value!.selectModel(String(value))"
+    );
     expect(overlaySource).toContain("controller.value!.configuredModels.value");
     expect(overlaySource).toContain("附件功能后续开放");
     expect(overlaySource).toContain("语音功能后续开放");
@@ -64,16 +70,22 @@ describe("independent chat assistant feature", () => {
     expect(overlaySource).toContain("编辑项目");
     expect(overlaySource).toContain('actionIcon: "edit"');
     expect(overlaySource).toContain('@option-action="openEditProject"');
-    expect(overlaySource).not.toContain('class="chat-assistant-project-action"');
+    expect(overlaySource).not.toContain(
+      'class="chat-assistant-project-action"'
+    );
     expect(overlaySource).toContain('accessible-label="关联书籍"');
-    expect(overlaySource).toContain("projectConfigMode === 'edit' || projectConfigPending");
+    expect(overlaySource).toContain(
+      "projectConfigMode === 'edit' || projectConfigPending"
+    );
     expect(overlaySource).toContain("关联书籍已锁定，不可更换");
     expect(modeSource).not.toContain("projectOptions.value[0].project");
     expect(overlaySource).toContain("恢复默认");
     expect(overlaySource).toContain("uiMessage.success");
     expect(overlaySource).toContain("可查询创作空间目录");
-    expect(overlaySource).not.toContain("chat-assistant-context\"");
-    expect(overlaySource).toContain("grid-template-rows: auto minmax(0, 1fr) auto");
+    expect(overlaySource).not.toContain('chat-assistant-context"');
+    expect(overlaySource).toContain(
+      "grid-template-rows: auto minmax(0, 1fr) auto"
+    );
     expect(overlaySource).toContain("var(--theme-line)");
     expect(overlaySource).toContain("assistant.isBusy.value");
     expect(overlaySource).toContain("!assistant.projectAvailable.value");

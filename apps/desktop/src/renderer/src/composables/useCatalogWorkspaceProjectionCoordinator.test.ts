@@ -45,7 +45,11 @@ function catalogSnapshot(
 }
 
 function fullCatalogSnapshot(revision: number): CatalogSnapshot {
-  return { schemaVersion: 1, revision, books: [] } as unknown as CatalogSnapshot;
+  return {
+    schemaVersion: 1,
+    revision,
+    books: []
+  } as unknown as CatalogSnapshot;
 }
 
 function workspaceDocument(
@@ -67,11 +71,13 @@ function workspaceDocument(
   };
 }
 
-function projection(options: {
-  resourceId?: string;
-  document?: WorkspaceDocument;
-  workspaceId?: string;
-} = {}): CatalogWorkspaceProjection {
+function projection(
+  options: {
+    resourceId?: string;
+    document?: WorkspaceDocument;
+    workspaceId?: string;
+  } = {}
+): CatalogWorkspaceProjection {
   const document = options.document;
   const resourceId = options.resourceId;
   const workspaceId = options.workspaceId ?? document?.workspaceId;
@@ -101,9 +107,7 @@ function projection(options: {
       resourceNodeById: new Map(
         resourceId ? [[resourceId, sections[0]!.nodes[0]!]] : []
       ),
-      workspaceDocumentById: new Map(
-        document ? [[document.id, document]] : []
-      ),
+      workspaceDocumentById: new Map(document ? [[document.id, document]] : []),
       resourceIdByDocumentId: new Map(
         resourceId && document ? [[document.id, resourceId]] : []
       ),
@@ -142,21 +146,22 @@ function pendingConversation(): AgentConversationController {
   } as unknown as AgentConversationController;
 }
 
-function createHarness(options: {
-  snapshots?: readonly CatalogIndexSnapshot[];
-  projections?: ReadonlyMap<number, CatalogWorkspaceProjection>;
-  drafts?: Record<string, EditorDraftState>;
-  selectedResourceId?: string;
-  activeCreationResourceId?: string;
-  conversations?: readonly AgentConversationController[];
-  aggregateSnapshots?: readonly CatalogSnapshot[];
-  loadMigrator?: () => Promise<CatalogLegacyRecoveryMigratorModule>;
-  indexLoader?: CatalogWorkspaceProjectionCoordinatorOptions["index"]["ensureSnapshot"];
-  api?: CatalogWorkspaceProjectionCoordinatorOptions["api"];
-} = {}) {
+function createHarness(
+  options: {
+    snapshots?: readonly CatalogIndexSnapshot[];
+    projections?: ReadonlyMap<number, CatalogWorkspaceProjection>;
+    drafts?: Record<string, EditorDraftState>;
+    selectedResourceId?: string;
+    activeCreationResourceId?: string;
+    conversations?: readonly AgentConversationController[];
+    aggregateSnapshots?: readonly CatalogSnapshot[];
+    loadMigrator?: () => Promise<CatalogLegacyRecoveryMigratorModule>;
+    indexLoader?: CatalogWorkspaceProjectionCoordinatorOptions["index"]["ensureSnapshot"];
+    api?: CatalogWorkspaceProjectionCoordinatorOptions["api"];
+  } = {}
+) {
   const snapshots = [...(options.snapshots ?? [catalogSnapshot(1)])];
-  const projections =
-    options.projections ?? new Map([[1, projection()]]);
+  const projections = options.projections ?? new Map([[1, projection()]]);
   const aggregateSnapshots = [...(options.aggregateSnapshots ?? [])];
   const snapshot = shallowRef<CatalogIndexSnapshot | null>(null);
   const projected = shallowRef<CatalogWorkspaceProjection | null>(null);
@@ -165,9 +170,7 @@ function createHarness(options: {
     options.drafts ?? {}
   );
   const selectedResourceId = ref(options.selectedResourceId ?? "");
-  const activeCreationResourceId = ref(
-    options.activeCreationResourceId ?? ""
-  );
+  const activeCreationResourceId = ref(options.activeCreationResourceId ?? "");
   const microtasks: Array<() => void> = [];
   const resume = vi.fn();
   const reconcileProjection = vi.fn((next: CatalogWorkspaceProjection) => {
@@ -189,9 +192,7 @@ function createHarness(options: {
     if (!next) throw new Error("No queued aggregate Catalog fixture");
     return next;
   });
-  const api =
-    options.api ??
-    (() => ({ index, snapshot: aggregate }));
+  const api = options.api ?? (() => ({ index, snapshot: aggregate }));
   const ensureSnapshot =
     options.indexLoader ??
     (async (loader: () => Promise<CatalogIndexSnapshot>) => {
@@ -261,9 +262,8 @@ function createHarness(options: {
 
 describe("useCatalogWorkspaceProjectionCoordinator", () => {
   it("keeps the normal metadata path aggregate-free and preserves an empty selection", async () => {
-    const loadMigrator = vi.fn<
-      () => Promise<CatalogLegacyRecoveryMigratorModule>
-    >();
+    const loadMigrator =
+      vi.fn<() => Promise<CatalogLegacyRecoveryMigratorModule>>();
     const harness = createHarness({ loadMigrator });
 
     await expect(harness.coordinator.loadSnapshot()).resolves.toBe(true);
@@ -434,7 +434,9 @@ describe("useCatalogWorkspaceProjectionCoordinator", () => {
     });
 
     const loading = harness.coordinator.loadSnapshot();
-    await vi.waitFor(() => expect(harness.projected.value).toBe(pairOneProjection));
+    await vi.waitFor(() =>
+      expect(harness.projected.value).toBe(pairOneProjection)
+    );
     harness.snapshot.value = catalogSnapshot(2);
     harness.projected.value = pairTwoProjection;
     aggregate.resolve(fullCatalogSnapshot(1));
@@ -465,10 +467,7 @@ describe("useCatalogWorkspaceProjectionCoordinator", () => {
         [1, projection()],
         [2, projection()]
       ]),
-      aggregateSnapshots: [
-        fullCatalogSnapshot(2),
-        fullCatalogSnapshot(2)
-      ],
+      aggregateSnapshots: [fullCatalogSnapshot(2), fullCatalogSnapshot(2)],
       drafts: {
         [legacyKey]: { title: "旧稿", content: "正文", dirty: true }
       },

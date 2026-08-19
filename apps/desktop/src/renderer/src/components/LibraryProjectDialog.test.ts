@@ -13,7 +13,9 @@ describe("LibraryProjectDialog create-library form", () => {
   });
 
   it("uses the configured workspace directory without offering another location step", () => {
-    expect(source).toContain("新资料库会自动保存在当前工作目录中，无需再次选择目录。");
+    expect(source).toContain(
+      "新资料库会自动保存在当前工作目录中，无需再次选择目录。"
+    );
     expect(source).not.toContain("下一步会选择保存位置");
     expect(source).not.toContain("选择位置并创建");
   });
@@ -28,7 +30,9 @@ describe("LibraryProjectDialog create-entry form", () => {
     );
     expect(source).toContain('v-if="showEntryStageField"');
     expect(source).not.toContain("stageId: stageId.value as SkillStageId");
-    expect(source).not.toContain('{ value: "character_design", label: "人物设计" }');
+    expect(source).not.toContain(
+      '{ value: "character_design", label: "人物设计" }'
+    );
   });
 
   it("keeps all material stages available because libraries are shared", () => {

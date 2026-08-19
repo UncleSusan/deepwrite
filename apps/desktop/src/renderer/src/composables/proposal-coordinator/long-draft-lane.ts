@@ -1,9 +1,5 @@
-import {
-  nextTick
-} from "vue";
-import {
-  LongWorkspaceOperationBatchSchema
-} from "@deepwrite/contracts";
+import { LongWorkspaceOperationBatchSchema } from "@deepwrite/contracts";
+import { nextTick } from "vue";
 import type { AgentEditProposal } from "../../types/conversation";
 import {
   replaceLongBookSummary,
@@ -23,7 +19,6 @@ import type {
 
 export function createLongDraftLane(ctx: ProposalLaneContext) {
   const {
-    api,
     uiMessage,
     acceptingAgentEditWorkspaceIds,
     rememberWorkspaceMutationEvent,
@@ -38,10 +33,11 @@ export function createLongDraftLane(ctx: ProposalLaneContext) {
 
   const queueAgentEdit: ProposalLaneContext["queueAgentEdit"] = (...args) =>
     ctx.queueAgentEdit(...args);
-  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (...args) =>
-    ctx.latestProposalForLane(...args);
-  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] = (...args) =>
-    ctx.blockedAgentEditLaneMessage(...args);
+  const latestProposalForLane: ProposalLaneContext["latestProposalForLane"] = (
+    ...args
+  ) => ctx.latestProposalForLane(...args);
+  const blockedAgentEditLaneMessage: ProposalLaneContext["blockedAgentEditLaneMessage"] =
+    (...args) => ctx.blockedAgentEditLaneMessage(...args);
 
   function stageLongDraftEditProposal(event: LongDraftMutationEvent): void {
     if (!rememberWorkspaceMutationEvent(event.id)) return;
@@ -251,9 +247,7 @@ export function createLongDraftLane(ctx: ProposalLaneContext) {
         preview.bookId !== target.bookId ||
         preview.projectRevision !== latest.projectRevision
       ) {
-        throw new Error(
-          "长篇项目已在审批期间更新，请基于最新正文重新生成。"
-        );
+        throw new Error("长篇项目已在审批期间更新，请基于最新正文重新生成。");
       }
       const result = await api.applyOperations({
         bookId: target.bookId,

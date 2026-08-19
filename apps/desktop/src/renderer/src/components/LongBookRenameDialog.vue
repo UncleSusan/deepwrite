@@ -66,19 +66,47 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             <span class="dialog-eyebrow">{{ title }}</span>
             <h2 id="long-book-rename-dialog-title">修改长篇名称</h2>
           </div>
-          <button class="dialog-close" type="button" aria-label="关闭" :disabled="pending" @click="requestClose">×</button>
+          <button
+            class="dialog-close"
+            type="button"
+            aria-label="关闭"
+            :disabled="pending"
+            @click="requestClose"
+          >
+            ×
+          </button>
         </header>
 
         <form class="dialog-content" @submit.prevent="submit">
           <label class="book-resource-name-field">
             <span>长篇名称</span>
-            <input ref="nameInput" v-model="nameDraft" type="text" maxlength="256" autocomplete="off" aria-label="长篇名称" />
+            <input
+              ref="nameInput"
+              v-model="nameDraft"
+              type="text"
+              maxlength="256"
+              autocomplete="off"
+              aria-label="长篇名称"
+            />
           </label>
-          <p class="book-resource-help">侧栏和长篇工作区显示名称会同步更新，本地项目文件夹名称不会被自动修改。</p>
+          <p class="book-resource-help">
+            侧栏和长篇工作区显示名称会同步更新，本地项目文件夹名称不会被自动修改。
+          </p>
 
           <div class="dialog-actions">
-            <button class="dialog-secondary-button" type="button" :disabled="pending" @click="requestClose">取消</button>
-            <button class="dialog-primary-button" type="submit" :disabled="pending">
+            <button
+              class="dialog-secondary-button"
+              type="button"
+              :disabled="pending"
+              @click="requestClose"
+            >
+              取消
+            </button>
+            <button
+              class="dialog-primary-button"
+              type="submit"
+              :disabled="pending"
+            >
               {{ pending ? "保存中…" : "保存名称" }}
             </button>
           </div>

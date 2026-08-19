@@ -8,7 +8,9 @@ import structureSource from "./composables/useShortWorkspaceStructureCoordinator
 
 describe("App agent chapter-file creation", () => {
   it("keeps shared draft conversations out of per-section cleanup", () => {
-    expect(structureSource).toContain("function legacyDraftSectionConversationKeys(");
+    expect(structureSource).toContain(
+      "function legacyDraftSectionConversationKeys("
+    );
     expect(structureSource).toContain(
       "`${workspaceId}:expert_draft_coordinator:${suffix}`"
     );
@@ -18,7 +20,9 @@ describe("App agent chapter-file creation", () => {
     expect(structureSource).toContain(
       "for (const key of legacyDraftSectionConversationKeys(bookId, sectionId))"
     );
-    expect(structureSource).not.toContain("function draftSectionConversationKeys(");
+    expect(structureSource).not.toContain(
+      "function draftSectionConversationKeys("
+    );
     expect(source).toContain("legacyDraftSectionConversationKeys,");
   });
 
@@ -66,21 +70,33 @@ describe("App agent chapter-file creation", () => {
     expect(coordinatorSource).toContain(
       "rememberAcceptedDraftSectionCreation(proposal, savedDirectoryRevision)"
     );
-    expect(coordinatorSource).toContain("remapProvisionalExpertSectionFileProposals(");
-    expect(coordinatorSource).toContain("restoreAcceptedDraftSectionCreationMappings(");
-    expect(coordinatorSource).toContain("acceptedDirectoryRevision: savedDirectoryRevision");
+    expect(coordinatorSource).toContain(
+      "remapProvisionalExpertSectionFileProposals("
+    );
+    expect(coordinatorSource).toContain(
+      "restoreAcceptedDraftSectionCreationMappings("
+    );
+    expect(coordinatorSource).toContain(
+      "acceptedDirectoryRevision: savedDirectoryRevision"
+    );
     expect(coordinatorSource).toContain("realSectionId: createdMapping.get(");
     expect(coordinatorSource).toContain("requiresIdempotentRecoveryProbe");
-    expect(coordinatorSource).toContain("resolveDraftSectionCreationCommitPlan({");
+    expect(coordinatorSource).toContain(
+      "resolveDraftSectionCreationCommitPlan({"
+    );
     expect(coordinatorSource).toContain("target.baseProjectRevision");
-    expect(coordinatorSource).toContain("pauseDependentProvisionalFileProposals(");
+    expect(coordinatorSource).toContain(
+      "pauseDependentProvisionalFileProposals("
+    );
     expect(coordinatorSource).toContain("provisionalExpertSection: true");
     expect(coordinatorSource).toContain("createExpertDraftDirectoryRevision(");
     expect(coordinatorSource).toContain("autoApproveEditPriority(");
     expect(coordinatorSource).toContain("scheduleQueuedAgentEdits(");
     expect(coordinatorSource).toContain("agentEditCommitQueue");
     expect(coordinatorSource).toContain("decisionToken");
-    expect(coordinatorSource).toContain("section.hasBody && section.hasCharacterState");
+    expect(coordinatorSource).toContain(
+      "section.hasBody && section.hasCharacterState"
+    );
     expect(coordinatorSource).toContain("expectedDirectoryRevision");
     expect(coordinatorSource).toContain("resolveProvisionalWriteStagingMode(");
     expect(coordinatorSource).toContain('stagingMode === "mapped-real"');

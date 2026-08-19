@@ -21,33 +21,35 @@ const overview = {
   revision: EMPTY_LONG_MARKDOWN_REVISION,
   updatedAt
 };
-const characterFiles = [{
-  characterId: "character_alice",
-  coreProfile: {
-    id: longCharacterCoreProfileFileId("character_alice"),
-    path: longCharacterFilePath("character_alice", "core-profile.md"),
-    revision: EMPTY_LONG_MARKDOWN_REVISION,
-    updatedAt
-  },
-  relationships: {
-    id: longCharacterRelationshipsFileId("character_alice"),
-    path: longCharacterFilePath("character_alice", "relationships.md"),
-    revision: EMPTY_LONG_MARKDOWN_REVISION,
-    updatedAt
-  },
-  currentState: {
-    id: longCharacterCurrentStateFileId("character_alice"),
-    path: longCharacterFilePath("character_alice", "current-state.md"),
-    revision: EMPTY_LONG_MARKDOWN_REVISION,
-    updatedAt
-  },
-  history: {
-    id: longCharacterHistoryFileId("character_alice"),
-    path: longCharacterFilePath("character_alice", "history.md"),
-    revision: EMPTY_LONG_MARKDOWN_REVISION,
-    updatedAt
+const characterFiles = [
+  {
+    characterId: "character_alice",
+    coreProfile: {
+      id: longCharacterCoreProfileFileId("character_alice"),
+      path: longCharacterFilePath("character_alice", "core-profile.md"),
+      revision: EMPTY_LONG_MARKDOWN_REVISION,
+      updatedAt
+    },
+    relationships: {
+      id: longCharacterRelationshipsFileId("character_alice"),
+      path: longCharacterFilePath("character_alice", "relationships.md"),
+      revision: EMPTY_LONG_MARKDOWN_REVISION,
+      updatedAt
+    },
+    currentState: {
+      id: longCharacterCurrentStateFileId("character_alice"),
+      path: longCharacterFilePath("character_alice", "current-state.md"),
+      revision: EMPTY_LONG_MARKDOWN_REVISION,
+      updatedAt
+    },
+    history: {
+      id: longCharacterHistoryFileId("character_alice"),
+      path: longCharacterFilePath("character_alice", "history.md"),
+      revision: EMPTY_LONG_MARKDOWN_REVISION,
+      updatedAt
+    }
   }
-}];
+];
 
 describe("long character file indexing", () => {
   it("indexes the stage overview before character documents", () => {

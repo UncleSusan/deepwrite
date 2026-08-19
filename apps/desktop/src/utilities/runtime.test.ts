@@ -64,7 +64,9 @@ describe("utility runtime internal command bridge", () => {
         const internalResult = await context!.requestInternalCommand(
           "core",
           internalCommand,
-          { timeoutMs: 1_000 }
+          {
+            timeoutMs: 1_000
+          }
         );
         return {
           status: "accepted",
@@ -197,7 +199,9 @@ describe("utility runtime internal command bridge", () => {
         payload: await context!.requestInternalCommand(
           "core",
           internalCommand,
-          { timeoutMs: 30_000 }
+          {
+            timeoutMs: 30_000
+          }
         )
       })
     });

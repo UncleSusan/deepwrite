@@ -51,7 +51,9 @@ export async function sendMessage(
   const api = ctx.options.api();
   // Vue refs wrap objects in proxies, which Electron IPC cannot structured-clone.
   // Normalize at the API boundary so callers cannot accidentally leak proxies.
-  const requestAttachments = promptAttachments.map((attachment) => ({ ...attachment }));
+  const requestAttachments = promptAttachments.map((attachment) => ({
+    ...attachment
+  }));
   const requestChatAssistant: ChatAssistantRequestContext | undefined =
     chatAssistant?.mode === "project"
       ? {
@@ -64,9 +66,12 @@ export async function sendMessage(
       : chatAssistant?.mode === "normal"
         ? { mode: "normal" }
         : undefined;
-  const content = ctx.draft.value.trim() || (requestAttachments.length ? "请阅读并分析我上传的附件。" : "");
+  const content =
+    ctx.draft.value.trim() ||
+    (requestAttachments.length ? "请阅读并分析我上传的附件。" : "");
   if (!api) {
-    ctx.conversationError.value = "浏览器预览没有桌面 Agent Runtime，请使用 pnpm dev 启动客户端。";
+    ctx.conversationError.value =
+      "浏览器预览没有桌面 Agent Runtime，请使用 pnpm dev 启动客户端。";
     return;
   }
   if (!content || ctx.isBusy.value || ctx.hasPendingEditReview.value) {
@@ -79,48 +84,58 @@ export async function sendMessage(
   const originalLength = activeDocument?.content.length ?? 0;
   const snapshotContent =
     activeDocument &&
-    (activeDocument.workspaceType === "short" || activeDocument.workspaceType === "script") &&
-      activeDocument.stageId === "draft"
+    (activeDocument.workspaceType === "short" ||
+      activeDocument.workspaceType === "script") &&
+    activeDocument.stageId === "draft"
       ? activeDocument.content
-      : activeDocument?.content.slice(0, 20_000) ?? "";
+      : (activeDocument?.content.slice(0, 20_000) ?? "");
   const contextSnapshot: WorkspaceRuntimeContext | undefined =
     mode === "chat-assistant"
       ? undefined
-      : contextOverride ?? (activeDocument ? {
-      activeResource: {
-        id: activeDocument.id,
-        domain: activeDocument.domain,
-        title: activeDocument.title,
-        path: [...activeDocument.path],
-        ...(activeDocument.format ? { format: activeDocument.format } : {}),
-        source: "live-editor" as const,
-        content: snapshotContent,
-        ...(originalLength > snapshotContent.length
-          ? { truncated: true as const, originalLength }
-          : {})
-      }
-    } : undefined);
+      : (contextOverride ??
+        (activeDocument
+          ? {
+              activeResource: {
+                id: activeDocument.id,
+                domain: activeDocument.domain,
+                title: activeDocument.title,
+                path: [...activeDocument.path],
+                ...(activeDocument.format
+                  ? { format: activeDocument.format }
+                  : {}),
+                source: "live-editor" as const,
+                content: snapshotContent,
+                ...(originalLength > snapshotContent.length
+                  ? { truncated: true as const, originalLength }
+                  : {})
+              }
+            }
+          : undefined));
   if (contextSnapshot && attachments.attachedSkills?.length) {
-    contextSnapshot.attachedSkills = attachments.attachedSkills.map((skill) => ({
-      ...skill
-    }));
+    contextSnapshot.attachedSkills = attachments.attachedSkills.map(
+      (skill) => ({
+        ...skill
+      })
+    );
   }
   if (contextSnapshot && attachments.attachedMaterials?.length) {
-    contextSnapshot.attachedMaterials = attachments.attachedMaterials.map((material) => ({
-      ...material
-    }));
+    contextSnapshot.attachedMaterials = attachments.attachedMaterials.map(
+      (material) => ({
+        ...material
+      })
+    );
   }
   if (!contextOverride && attachments.libraryWorkspace) {
     if (!contextSnapshot) return;
-    contextSnapshot.libraryWorkspace = LibraryAgentWorkspaceSnapshotSchema.parse(
-      attachments.libraryWorkspace
-    );
+    contextSnapshot.libraryWorkspace =
+      LibraryAgentWorkspaceSnapshotSchema.parse(attachments.libraryWorkspace);
   }
   if (
     !contextOverride &&
     contextSnapshot &&
     activeDocument &&
-    (activeDocument.workspaceType === "short" || activeDocument.workspaceType === "script") &&
+    (activeDocument.workspaceType === "short" ||
+      activeDocument.workspaceType === "script") &&
     activeDocument.workspaceId &&
     activeDocument.workspaceTitle &&
     activeDocument.stageId
@@ -182,26 +197,27 @@ export async function sendMessage(
         (left, right) =>
           (left.characterItemOrder ?? 0) - (right.characterItemOrder ?? 0)
       );
-    const characterStructure = characterItemDocuments.length > 0 ||
+    const characterStructure =
+      characterItemDocuments.length > 0 ||
       liveStages.some(
         (document) =>
           document.stageId === "character_design" &&
           document.characterFileKind === "overview" &&
           document.path.length > 2
       )
-      ? {
-          format: "list" as const,
-          items: characterItemDocuments.map((document, index) => {
-            return {
-              id: document.characterItemId!,
-              title: document.title,
-              order: document.characterItemOrder ?? index + 1,
-              content: document.content,
-              revision: createShortWorkspaceContentRevision(document.content)
-            };
-          })
-        }
-      : { format: "text" as const };
+        ? {
+            format: "list" as const,
+            items: characterItemDocuments.map((document, index) => {
+              return {
+                id: document.characterItemId!,
+                title: document.title,
+                order: document.characterItemOrder ?? index + 1,
+                content: document.content,
+                revision: createShortWorkspaceContentRevision(document.content)
+              };
+            })
+          }
+        : { format: "text" as const };
     const draftSections = new Map<
       string,
       {
@@ -232,7 +248,8 @@ export async function sendMessage(
       };
       if (document.draftFileKind === "body") {
         current.title = document.title;
-        current.wordCountRequirement = document.expertWordCountRequirement ?? "";
+        current.wordCountRequirement =
+          document.expertWordCountRequirement ?? "";
         current.body = document;
       } else {
         current.characterState = document;
@@ -242,28 +259,30 @@ export async function sendMessage(
     const completeDraftSections = [...draftSections.values()]
       .sort((left, right) => left.order - right.order)
       .flatMap((section) => {
-      if (!section.body || !section.characterState) return [];
-      return [
-        {
-          id: section.id,
-          title: section.title,
-          wordCountRequirement: section.wordCountRequirement,
-          body: {
-            documentId: section.body.id,
-            title: section.body.title,
-            content: section.body.content,
-            revision: createShortWorkspaceContentRevision(section.body.content)
-          },
-          characterState: {
-            documentId: section.characterState.id,
-            title: section.characterState.title,
-            content: section.characterState.content,
-            revision: createShortWorkspaceContentRevision(
-              section.characterState.content
-            )
+        if (!section.body || !section.characterState) return [];
+        return [
+          {
+            id: section.id,
+            title: section.title,
+            wordCountRequirement: section.wordCountRequirement,
+            body: {
+              documentId: section.body.id,
+              title: section.body.title,
+              content: section.body.content,
+              revision: createShortWorkspaceContentRevision(
+                section.body.content
+              )
+            },
+            characterState: {
+              documentId: section.characterState.id,
+              title: section.characterState.title,
+              content: section.characterState.content,
+              revision: createShortWorkspaceContentRevision(
+                section.characterState.content
+              )
+            }
           }
-        }
-      ];
+        ];
       });
     if (
       completeStages.length === textStageIds.length &&
@@ -298,13 +317,11 @@ export async function sendMessage(
         stages: completeStages
       };
       if (workspaceType === "script") {
-        contextSnapshot.scriptWorkspace = ScriptWorkspaceSnapshotSchema.parse(
-          creativeWorkspace
-        );
+        contextSnapshot.scriptWorkspace =
+          ScriptWorkspaceSnapshotSchema.parse(creativeWorkspace);
       } else {
-        contextSnapshot.shortWorkspace = ShortWorkspaceSnapshotSchema.parse(
-          creativeWorkspace
-        );
+        contextSnapshot.shortWorkspace =
+          ShortWorkspaceSnapshotSchema.parse(creativeWorkspace);
       }
     }
   }
@@ -349,13 +366,20 @@ export async function sendMessage(
       sessionId: sendSessionId,
       message: content,
       ...(mode === "chat-assistant"
-        ? { mode, ...(requestChatAssistant ? { chatAssistant: requestChatAssistant } : {}) }
+        ? {
+            mode,
+            ...(requestChatAssistant
+              ? { chatAssistant: requestChatAssistant }
+              : {})
+          }
         : {}),
       ...(requestAttachments.length ? { attachments: requestAttachments } : {}),
       ...(mode === "chat-assistant"
         ? {}
         : { writeApprovalMode: ctx.approvalModeByAttempt.get(attemptId) }),
-      ...(ctx.selectedModelId.value ? { modelId: ctx.selectedModelId.value } : {}),
+      ...(ctx.selectedModelId.value
+        ? { modelId: ctx.selectedModelId.value }
+        : {}),
       ...(ctx.thinkingLevel.value === "off"
         ? {
             thinkingLevel: "off" as const,
@@ -370,17 +394,24 @@ export async function sendMessage(
       ctx.pendingAttemptId.value !== attemptId
     ) {
       if (accepted.sessionId === sendSessionId) {
-        void api.session.abort({
-          sessionId: accepted.sessionId,
-          runId: accepted.runId
-        }).catch(() => undefined);
+        void api.session
+          .abort({
+            sessionId: accepted.sessionId,
+            runId: accepted.runId
+          })
+          .catch(() => undefined);
       }
       return;
     }
     if (accepted.sessionId !== sendSessionId) {
       const observedRunId = ctx.observedRunByAttempt.get(attemptId);
       if (observedRunId) {
-        failProtocol(ctx, observedRunId, "智能体受理结果返回了错误的会话标识。", accepted.runtime);
+        failProtocol(
+          ctx,
+          observedRunId,
+          "智能体受理结果返回了错误的会话标识。",
+          accepted.runtime
+        );
       }
       ctx.pendingAttemptId.value = null;
       ctx.approvalModeByAttempt.delete(attemptId);
@@ -392,7 +423,12 @@ export async function sendMessage(
 
     const observedRunId = ctx.observedRunByAttempt.get(attemptId);
     if (observedRunId && observedRunId !== accepted.runId) {
-      failProtocol(ctx, observedRunId, "智能体受理结果与已到达事件的运行标识不一致。", accepted.runtime);
+      failProtocol(
+        ctx,
+        observedRunId,
+        "智能体受理结果与已到达事件的运行标识不一致。",
+        accepted.runtime
+      );
       ctx.pendingAttemptId.value = null;
       ctx.observedRunByAttempt.delete(attemptId);
       ctx.approvalModeByAttempt.delete(attemptId);
@@ -427,10 +463,16 @@ export async function sendMessage(
     ) {
       return;
     }
-    const messageText = error instanceof Error ? error.message : "智能体请求受理失败。";
+    const messageText =
+      error instanceof Error ? error.message : "智能体请求受理失败。";
     const observedRunId = ctx.observedRunByAttempt.get(attemptId);
     if (observedRunId) {
-      markRunError(ctx, observedRunId, messageText, ctx.runtime.value ?? undefined);
+      markRunError(
+        ctx,
+        observedRunId,
+        messageText,
+        ctx.runtime.value ?? undefined
+      );
       if (ctx.activeRunId.value === observedRunId) {
         ctx.activeRunId.value = null;
       }
@@ -448,7 +490,8 @@ export async function sendAssistantMessage(
   ctx: AgentConversationContext,
   context: ChatAssistantRequestContext = { mode: "normal" }
 ): Promise<void> {
-  await sendMessage(ctx,
+  await sendMessage(
+    ctx,
     null,
     [],
     {},
@@ -469,7 +512,8 @@ export async function sendLongMessage(
   promptAttachments: UserPromptAttachment[] = []
 ): Promise<void> {
   const longWorkspace = LongWorkspaceRuntimeContextSchema.parse(context);
-  await sendMessage(ctx,
+  await sendMessage(
+    ctx,
     {
       id: longWorkspace.bookId,
       domain: "creation",
@@ -486,7 +530,9 @@ export async function sendLongMessage(
   );
 }
 
-export async function stopGeneration(ctx: AgentConversationContext): Promise<boolean> {
+export async function stopGeneration(
+  ctx: AgentConversationContext
+): Promise<boolean> {
   flushPendingAgentTextDelta(ctx);
   const api = ctx.options.api();
   const runId = ctx.activeRunId.value;
@@ -502,10 +548,7 @@ export async function stopGeneration(ctx: AgentConversationContext): Promise<boo
       sessionId: stopSessionId,
       runId
     });
-    if (
-      accepted.sessionId !== stopSessionId ||
-      accepted.runId !== runId
-    ) {
+    if (accepted.sessionId !== stopSessionId || accepted.runId !== runId) {
       throw new Error("智能体停止结果与当前运行不一致。");
     }
     return true;
@@ -522,11 +565,10 @@ export async function stopGeneration(ctx: AgentConversationContext): Promise<boo
   }
 }
 
-export function cancelPendingGeneration(ctx: AgentConversationContext): boolean {
-  if (
-    ctx.pendingAttemptId.value === null ||
-    ctx.activeRunId.value !== null
-  ) {
+export function cancelPendingGeneration(
+  ctx: AgentConversationContext
+): boolean {
+  if (ctx.pendingAttemptId.value === null || ctx.activeRunId.value !== null) {
     return false;
   }
   newConversation(ctx);
@@ -540,7 +582,8 @@ export function stopStreamingMessages(ctx: AgentConversationContext): void {
     if (message.status !== "streaming") continue;
     message.status = "stopped";
     if (message.retry) delete message.retry;
-    finalizeRunningSubagents(ctx,
+    finalizeRunningSubagents(
+      ctx,
       message,
       "stopped",
       completedAt,
@@ -569,7 +612,10 @@ export function newConversation(ctx: AgentConversationContext): void {
   });
 }
 
-export function selectConversation(ctx: AgentConversationContext, nextSessionId: string): boolean {
+export function selectConversation(
+  ctx: AgentConversationContext,
+  nextSessionId: string
+): boolean {
   if (nextSessionId === ctx.sessionId.value) return true;
   if (ctx.isBusy.value) return false;
 
@@ -596,7 +642,10 @@ export function selectConversation(ctx: AgentConversationContext, nextSessionId:
   return selected;
 }
 
-export function applyRunSettings(ctx: AgentConversationContext, settings: AgentRunSettings): void {
+export function applyRunSettings(
+  ctx: AgentConversationContext,
+  settings: AgentRunSettings
+): void {
   ctx.hasRunSettingsPreference = true;
   ctx.approvalMode.value = settings.approvalMode;
   if (ctx.configuredModels.value.length === 0) {
@@ -617,7 +666,9 @@ export function applyRunSettings(ctx: AgentConversationContext, settings: AgentR
   );
   const selected =
     preferredModel ??
-    ctx.configuredModels.value.find((model) => model.id === ctx.defaultModelId.value) ??
+    ctx.configuredModels.value.find(
+      (model) => model.id === ctx.defaultModelId.value
+    ) ??
     ctx.configuredModels.value[0];
   if (!selected) return;
 
@@ -631,10 +682,13 @@ export function applyRunSettings(ctx: AgentConversationContext, settings: AgentR
   ctx.temperature.value =
     preferredModel && selected.temperatureOptions.includes(settings.temperature)
       ? settings.temperature
-      : selected.temperatureOptions[1] ?? 0.7;
+      : (selected.temperatureOptions[1] ?? 0.7);
 }
 
-export function applyModelSettings(ctx: AgentConversationContext, settings: ModelSettings): void {
+export function applyModelSettings(
+  ctx: AgentConversationContext,
+  settings: ModelSettings
+): void {
   const currentRunSettings: AgentRunSettings = {
     selectedModelId: ctx.selectedModelId.value,
     thinkingLevel: ctx.thinkingLevel.value,
@@ -664,8 +718,13 @@ export function applyModelSettings(ctx: AgentConversationContext, settings: Mode
   ctx.hasRunSettingsPreference = true;
 }
 
-export function selectModel(ctx: AgentConversationContext, modelId: string): void {
-  const selected = ctx.configuredModels.value.find((model) => model.id === modelId);
+export function selectModel(
+  ctx: AgentConversationContext,
+  modelId: string
+): void {
+  const selected = ctx.configuredModels.value.find(
+    (model) => model.id === modelId
+  );
   if (!selected) {
     return;
   }
@@ -674,7 +733,10 @@ export function selectModel(ctx: AgentConversationContext, modelId: string): voi
   ctx.temperature.value = selected.temperatureOptions[1];
 }
 
-export function selectThinkingLevel(ctx: AgentConversationContext, level: ThinkingLevel): void {
+export function selectThinkingLevel(
+  ctx: AgentConversationContext,
+  level: ThinkingLevel
+): void {
   const selected = ctx.configuredModels.value.find(
     (model) => model.id === ctx.selectedModelId.value
   );
@@ -688,7 +750,10 @@ export function selectThinkingLevel(ctx: AgentConversationContext, level: Thinki
   ctx.thinkingLevel.value = level;
 }
 
-export function selectTemperature(ctx: AgentConversationContext, value: number): void {
+export function selectTemperature(
+  ctx: AgentConversationContext,
+  value: number
+): void {
   const selected = ctx.configuredModels.value.find(
     (model) => model.id === ctx.selectedModelId.value
   );
@@ -702,7 +767,10 @@ export function selectTemperature(ctx: AgentConversationContext, value: number):
   ctx.temperature.value = value;
 }
 
-export function selectApprovalMode(ctx: AgentConversationContext, mode: AgentApprovalMode): void {
+export function selectApprovalMode(
+  ctx: AgentConversationContext,
+  mode: AgentApprovalMode
+): void {
   if (mode === "request-approval" || mode === "auto-approve") {
     ctx.approvalMode.value = mode;
   }

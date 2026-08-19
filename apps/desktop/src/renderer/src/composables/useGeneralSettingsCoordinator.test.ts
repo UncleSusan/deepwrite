@@ -63,7 +63,7 @@ function harness(
   const api: GeneralSettingsApi | undefined =
     overrides.api === null
       ? undefined
-      : overrides.api ?? {
+      : (overrides.api ?? {
           list: vi.fn(async () => ({
             persisted: true,
             settings: createDefaultGeneralSettings()
@@ -72,7 +72,7 @@ function harness(
             persisted: true,
             settings: createDefaultGeneralSettings()
           }))
-        };
+        });
   const coordinator = useGeneralSettingsCoordinator({
     settings,
     autoSaveEnabled,

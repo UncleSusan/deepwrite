@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../test-utils/sourceText";
 import appSource from "./App.vue?raw";
 import source from "./WorkspaceShell.vue?raw";
 import catalogLoaderSource from "./composables/useCatalogDocumentLoader.ts?raw";
@@ -105,9 +106,7 @@ describe("App performance boundaries", () => {
     expect(shortBookLifecycleSource).toContain(
       "function exportBookManuscript("
     );
-    expect(shortBookLifecycleSource).toContain(
-      "function updateBookBindings("
-    );
+    expect(shortBookLifecycleSource).toContain("function updateBookBindings(");
     expect(shortBookLifecycleSource).toContain("function removeBook(");
     expect(longRollbackSource).toContain("function openLongRollbackDialog(");
     expect(longRollbackSource).toContain("function closeLongRollbackDialog(");
@@ -141,10 +140,10 @@ describe("App performance boundaries", () => {
     );
     expect(source).not.toContain('from "./utils/shortManuscriptExport"');
     expect(lazyLongBookLifecycleSource).toContain(
-      'import type {\n  LongBookBindingsUpdate,'
+      "import type {\n  LongBookBindingsUpdate,"
     );
     expect(lazyLongBookLifecycleSource).not.toContain(
-      'import { useLongBookLifecycleCoordinator }'
+      "import { useLongBookLifecycleCoordinator }"
     );
     expect(lazyLongBookLifecycleSource).toContain(
       'return import("./useLongBookLifecycleCoordinator")'
@@ -153,16 +152,16 @@ describe("App performance boundaries", () => {
       'from "./useShortBookLifecycleCoordinator"'
     );
     expect(lazyShortBookLifecycleSource).not.toContain(
-      'import { useShortBookLifecycleCoordinator }'
+      "import { useShortBookLifecycleCoordinator }"
     );
     expect(lazyShortBookLifecycleSource).toContain(
       'return import("./useShortBookLifecycleCoordinator")'
     );
     expect(lazyLongRollbackSource).toContain(
-      'import type {\n  LongRollbackCoordinator,'
+      "import type {\n  LongRollbackCoordinator,"
     );
     expect(lazyLongRollbackSource).not.toContain(
-      'import { useLongRollbackCoordinator }'
+      "import { useLongRollbackCoordinator }"
     );
     expect(lazyLongRollbackSource).toContain(
       'return import("./useLongRollbackCoordinator")'
@@ -171,10 +170,10 @@ describe("App performance boundaries", () => {
       'import type { LongWorldbuildingSyncBookOption } from "../utils/longWorldbuildingSync"'
     );
     expect(lazyLongStructureTransactionsSource).toContain(
-      'import type {\n  LongStructureTransactionsCoordinator,'
+      "import type {\n  LongStructureTransactionsCoordinator,"
     );
     expect(lazyLongStructureTransactionsSource).not.toContain(
-      'import { useLongStructureTransactionsCoordinator }'
+      "import { useLongStructureTransactionsCoordinator }"
     );
     expect(lazyLongStructureTransactionsSource).toContain(
       'return import("./useLongStructureTransactionsCoordinator")'
@@ -198,21 +197,19 @@ describe("App performance boundaries", () => {
       "const {\n  createLongBook,\n  openExistingLongBook,"
     );
     expect(source).toContain("async createInput(input) {");
-    expect(source).toContain('import(\n        "./utils/longManuscriptExport"');
+    expectSourceToContain(source, 'import("./utils/longManuscriptExport"');
     expect(dialogCoordinatorSource).toContain(
       "book: options.shortLifecycle.activeBookTarget.value?.node ?? null"
     );
     expect(source).toContain("stopped.some((accepted) => !accepted)");
-    expect(source).toContain(
-      "clearPersistence: options.clearPersistence"
-    );
+    expect(source).toContain("clearPersistence: options.clearPersistence");
     const cleanup = source.split("cleanupBeforeDraftRecovery: [")[1] ?? "";
     expect(cleanup.indexOf("disposeShortBookLifecycle")).toBeGreaterThan(
       cleanup.indexOf("disposeLazyApprovalNavigationCoordinator")
     );
-    expect(cleanup.indexOf("disposeCatalogWorkspaceProjection")).toBeGreaterThan(
-      cleanup.indexOf("disposeLayout")
-    );
+    expect(
+      cleanup.indexOf("disposeCatalogWorkspaceProjection")
+    ).toBeGreaterThan(cleanup.indexOf("disposeLayout"));
     expect(cleanup.indexOf("disposeCatalogWorkspaceProjection")).toBeLessThan(
       cleanup.indexOf("disposeLazyApprovalNavigationCoordinator")
     );
@@ -251,7 +248,9 @@ describe("App performance boundaries", () => {
       "const projectedDocuments = pair.projection.index.workspaceDocumentById"
     );
     expect(catalogStoreSource).toContain("projection.value = nextProjection");
-    expect(catalogStoreSource).toContain("projectCatalogWorkspace(nextSnapshot)");
+    expect(catalogStoreSource).toContain(
+      "projectCatalogWorkspace(nextSnapshot)"
+    );
   });
 
   it("indexes the visible tree and document collection for navigation", () => {
@@ -262,16 +261,16 @@ describe("App performance boundaries", () => {
     expect(resourceTreeSource).toContain(
       "createResourceTreeLookup(resourceTreeSections.value)"
     );
-    expect(resourceSource).toContain("tree.lookup.value.nodeById.get(resourceId)");
+    expect(resourceSource).toContain(
+      "tree.lookup.value.nodeById.get(resourceId)"
+    );
     expect(resourceSource).toContain(
       "tree.lookup.value.resourceIdByDocumentId.get(documentId)"
     );
   });
 
   it("keeps high-frequency conversation refs below the three-pane boundary", () => {
-    expect(source).toContain(
-      "conversationContext: writingConversationContext"
-    );
+    expect(source).toContain("conversationContext: writingConversationContext");
     expect(shortConversationSource).toContain(
       "const conversationContext = computed(() => {"
     );
@@ -281,9 +280,7 @@ describe("App performance boundaries", () => {
     expect(source).toContain(
       "const writingRightPaneViewModel = computed(() => ({"
     );
-    expect(source).toContain(
-      ':conversation-controller="activeConversation"'
-    );
+    expect(source).toContain(':conversation-controller="activeConversation"');
     expect(source).toContain(':editor="writingEditorViewModel"');
     expect(source).not.toContain("const writingWorkspaceViewModel");
     expect(source).not.toContain("const messages = computed(");
@@ -294,9 +291,10 @@ describe("App performance boundaries", () => {
     expect(writingWorkspaceSource).toContain(
       ':draft="conversationController.draft.value"'
     );
-    const hotContext = shortConversationSource
-      .split("const conversationContext = computed(() => {")[1]
-      ?.split("let disposed = false")[0] ?? "";
+    const hotContext =
+      shortConversationSource
+        .split("const conversationContext = computed(() => {")[1]
+        ?.split("let disposed = false")[0] ?? "";
     expect(hotContext).not.toContain("buildLibraryAttachments(");
     expect(hotContext).not.toContain("buildLibraryAgentWorkspaceContext(");
     expect(shortConversationSource).toContain(
@@ -306,8 +304,12 @@ describe("App performance boundaries", () => {
 
   it("coalesces catalog reads and throttles noisy window-focus refreshes", () => {
     expect(catalogStoreSource).toContain("let snapshotLoadPromise:");
-    expect(catalogStoreSource).toContain("snapshotTrailingRefreshRequested = true");
-    expect(catalogStoreSource).toContain("if (snapshotTrailingRefreshRequested)");
+    expect(catalogStoreSource).toContain(
+      "snapshotTrailingRefreshRequested = true"
+    );
+    expect(catalogStoreSource).toContain(
+      "if (snapshotTrailingRefreshRequested)"
+    );
     expect(catalogProjectionSource).toContain(
       "options.index.ensureSnapshot(() => api.index())"
     );
@@ -333,12 +335,14 @@ describe("App performance boundaries", () => {
     expect(catalogProjectionSource).toContain(
       "const hasLegacyRecovery = hasDirtyLegacyDraftRecoveries("
     );
-    expect(catalogProjectionSource.indexOf("if (hasLegacyRecovery)"))
-      .toBeLessThan(catalogProjectionSource.indexOf("await api.snapshot()"));
-    expect(catalogProjectionSource.indexOf("await api.snapshot()"))
-      .toBeLessThan(
-        catalogProjectionSource.indexOf("await loadLegacyRecoveryMigrator()")
-      );
+    expect(
+      catalogProjectionSource.indexOf("if (hasLegacyRecovery)")
+    ).toBeLessThan(catalogProjectionSource.indexOf("await api.snapshot()"));
+    expect(
+      catalogProjectionSource.indexOf("await api.snapshot()")
+    ).toBeLessThan(
+      catalogProjectionSource.indexOf("await loadLegacyRecoveryMigrator()")
+    );
     expect(resourceSource).toContain(
       "catalog.projection.value !== next.reconciledProjection"
     );

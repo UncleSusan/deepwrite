@@ -65,7 +65,9 @@ describe("FolderCatalogStore marketplace installation", () => {
     const installed = await store.installMarketplaceSkillContent(input);
     const duplicate = await store.installMarketplaceSkillContent(input);
     const snapshot = await store.snapshot();
-    const library = snapshot.skills.find(({ id }) => id === target.resource.id)!;
+    const library = snapshot.skills.find(
+      ({ id }) => id === target.resource.id
+    )!;
 
     expect(installed).toMatchObject({
       alreadyInstalled: false,
@@ -97,10 +99,14 @@ describe("FolderCatalogStore marketplace installation", () => {
       now: () => NOW
     });
 
-    const installed = await store.installMarketplaceSkillContent(singlePackage());
-    const duplicate = await store.installMarketplaceSkillContent(singlePackage());
+    const installed =
+      await store.installMarketplaceSkillContent(singlePackage());
+    const duplicate =
+      await store.installMarketplaceSkillContent(singlePackage());
     const snapshot = await store.snapshot();
-    const library = snapshot.skills.find(({ id }) => id === installed.libraryIds[0])!;
+    const library = snapshot.skills.find(
+      ({ id }) => id === installed.libraryIds[0]
+    )!;
 
     expect(installed).toMatchObject({
       alreadyInstalled: false,
@@ -145,10 +151,9 @@ describe("FolderCatalogStore marketplace installation", () => {
       "转折留白",
       "转折留白 (2)"
     ]);
-    expect(snapshot.skills.map(({ marketplaceSource }) => marketplaceSource?.version)).toEqual([
-      1,
-      2
-    ]);
+    expect(
+      snapshot.skills.map(({ marketplaceSource }) => marketplaceSource?.version)
+    ).toEqual([1, 2]);
   });
 
   it("buckets a mixed group into ordered local libraries and creates a source group", async () => {
@@ -168,8 +173,18 @@ describe("FolderCatalogStore marketplace installation", () => {
           libraryType: "long",
           availableLibraryTypes: ["short", "long"],
           entries: [
-            { marketplaceSkillId: "p1", title: "因果", stageId: "plot_design", content: "一" },
-            { marketplaceSkillId: "p2", title: "因果", stageId: "outline", content: "二" }
+            {
+              marketplaceSkillId: "p1",
+              title: "因果",
+              stageId: "plot_design",
+              content: "一"
+            },
+            {
+              marketplaceSkillId: "p2",
+              title: "因果",
+              stageId: "outline",
+              content: "二"
+            }
           ]
         },
         {
@@ -177,7 +192,12 @@ describe("FolderCatalogStore marketplace installation", () => {
           libraryType: "script",
           availableLibraryTypes: ["script"],
           entries: [
-            { marketplaceSkillId: "s1", title: "对白", stageId: "draft", content: "三" }
+            {
+              marketplaceSkillId: "s1",
+              title: "对白",
+              stageId: "draft",
+              content: "三"
+            }
           ]
         }
       ]
@@ -200,7 +220,9 @@ describe("FolderCatalogStore marketplace installation", () => {
       skillKind: "plot",
       marketplaceSource: { bucketKind: "plot" }
     });
-    expect(plot.entries.map(({ title, sourceSkillId }) => [title, sourceSkillId])).toEqual([
+    expect(
+      plot.entries.map(({ title, sourceSkillId }) => [title, sourceSkillId])
+    ).toEqual([
       ["因果", "p1"],
       ["因果 (2)", "p2"]
     ]);
@@ -226,7 +248,12 @@ describe("FolderCatalogStore marketplace installation", () => {
           libraryType: "short",
           availableLibraryTypes: ["short"],
           entries: [
-            { marketplaceSkillId: "ok", title: "短", stageId: "draft", content: "ok" }
+            {
+              marketplaceSkillId: "ok",
+              title: "短",
+              stageId: "draft",
+              content: "ok"
+            }
           ]
         },
         {
@@ -234,7 +261,12 @@ describe("FolderCatalogStore marketplace installation", () => {
           libraryType: "short",
           availableLibraryTypes: ["short"],
           entries: [
-            { marketplaceSkillId: "fail", title: "长", stageId: "draft", content: "too-long" }
+            {
+              marketplaceSkillId: "fail",
+              title: "长",
+              stageId: "draft",
+              content: "too-long"
+            }
           ]
         }
       ]

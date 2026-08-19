@@ -74,7 +74,8 @@ export function useLongEditorFindReplace(options: {
   const searchResultLabel = computed(() => {
     if (!searchQuery.value) return "0/0";
     if (!searchMatches.value.length) return "无结果";
-    const current = currentMatchIndex.value >= 0 ? currentMatchIndex.value + 1 : 0;
+    const current =
+      currentMatchIndex.value >= 0 ? currentMatchIndex.value + 1 : 0;
     return `${current}/${searchMatches.value.length}`;
   });
 
@@ -118,7 +119,9 @@ export function useLongEditorFindReplace(options: {
     input: HTMLTextAreaElement,
     start: number
   ): void {
-    const line = options.currentVisibleContent.value.slice(0, start).split("\n").length;
+    const line = options.currentVisibleContent.value
+      .slice(0, start)
+      .split("\n").length;
     const computedStyle = globalThis.getComputedStyle(input);
     const lineHeight = Number.parseFloat(computedStyle.lineHeight);
     const resolvedLineHeight = Number.isFinite(lineHeight)
@@ -213,8 +216,7 @@ export function useLongEditorFindReplace(options: {
     let cursor = 0;
     let nextContent = "";
     for (const match of matches) {
-      nextContent +=
-        content.slice(cursor, match.start) + replacementText.value;
+      nextContent += content.slice(cursor, match.start) + replacementText.value;
       cursor = match.end;
     }
     nextContent += content.slice(cursor);

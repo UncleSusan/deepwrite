@@ -99,11 +99,16 @@ describe("useLazyApprovalNavigationCoordinator", () => {
   });
 
   it("disposes a coordinator loaded during teardown exactly once", async () => {
-    const pendingModule = deferred<
-      Awaited<ReturnType<NonNullable<Parameters<
-        typeof useLazyApprovalNavigationCoordinator
-      >[0]["load"]>>>
-    >();
+    const pendingModule =
+      deferred<
+        Awaited<
+          ReturnType<
+            NonNullable<
+              Parameters<typeof useLazyApprovalNavigationCoordinator>[0]["load"]
+            >
+          >
+        >
+      >();
     const dispose = vi.fn(async () => undefined);
     const load = vi.fn(() => pendingModule.promise);
     const lazy = useLazyApprovalNavigationCoordinator({

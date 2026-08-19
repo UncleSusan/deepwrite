@@ -34,14 +34,13 @@ export function createCharacterStructureLane(ctx: ProposalLaneContext) {
       const mutation = proposal.characterStructureTarget?.mutation;
       return Boolean(
         mutation?.type === "createItem" &&
-          mutation.itemId === itemId &&
-          (proposal.status === "pending" ||
-            proposal.status === "accepting" ||
-            proposal.status === "error")
+        mutation.itemId === itemId &&
+        (proposal.status === "pending" ||
+          proposal.status === "accepting" ||
+          proposal.status === "error")
       );
     });
   }
-
 
   async function acceptCharacterStructureProposal(
     conversation: AgentConversationController,
@@ -55,7 +54,8 @@ export function createCharacterStructureLane(ctx: ProposalLaneContext) {
       proposal.status === "accepted" ||
       proposal.status === "rejected" ||
       proposal.status === "conflict"
-    ) return;
+    )
+      return;
     const target = proposal.characterStructureTarget;
     const book = catalogBook(proposal.workspaceId);
     const currentApi = api();
@@ -112,7 +112,8 @@ export function createCharacterStructureLane(ctx: ProposalLaneContext) {
       if (!automatic) uiMessage.success("人物结构变更已保存");
     } catch (error) {
       await loadCatalogSnapshot();
-      const message = error instanceof Error ? error.message : "人物结构变更保存失败。";
+      const message =
+        error instanceof Error ? error.message : "人物结构变更保存失败。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: isCatalogConflict(error) ? "conflict" : "error",
         statusMessage: message
@@ -130,21 +131,33 @@ export function createCharacterStructureLane(ctx: ProposalLaneContext) {
   ): boolean {
     const mutationTarget = event.payload.mutationTarget;
     if (mutationTarget?.kind === "character-structure") {
-    const book = catalogBook(event.payload.workspaceId);
-    if (!book || book.characterStructure.format !== "list") {
-      const message = "人物结构已变化，本次条目操作未进入审阅。";
-      sourceConversation.markToolConflict(event.payload.runId, event.payload.toolCallId, message);
-      uiMessage.warning(message);
-      return true;
-    }
+      const book = catalogBook(event.payload.workspaceId);
+      if (!book || book.characterStructure.format !== "list") {
+        const message = "人物结构已变化，本次条目操作未进入审阅。";
+        sourceConversation.markToolConflict(
+          event.payload.runId,
+          event.payload.toolCallId,
+          message
+        );
+        uiMessage.warning(message);
+        return true;
+      }
       const source = mutationTarget.mutation;
       const mutation: CharacterStructureMutation =
         source.type === "createItem"
-          ? { type: "createItem", title: source.title, itemId: source.provisionalItemId }
+          ? {
+              type: "createItem",
+              title: source.title,
+              itemId: source.provisionalItemId
+            }
           : source.type === "updateItem"
             ? { type: "updateItem", itemId: source.itemId, title: source.title }
             : source.type === "moveItem"
-              ? { type: "moveItem", itemId: source.itemId, direction: source.direction }
+              ? {
+                  type: "moveItem",
+                  itemId: source.itemId,
+                  direction: source.direction
+                }
               : { type: "deleteItem", itemId: source.itemId };
       const documentId = `character-structure:${event.payload.toolCallId}`;
       const proposalId = agentEditProposalId(
@@ -153,9 +166,9 @@ export function createCharacterStructureLane(ctx: ProposalLaneContext) {
         "character_design",
         documentId
       );
-    if (sourceConversation.getEditProposal(event.payload.runId, proposalId)) {
-      return true;
-    }
+      if (sourceConversation.getEditProposal(event.payload.runId, proposalId)) {
+        return true;
+      }
       const beforeText =
         source.type === "deleteItem"
           ? source.deletedText
@@ -219,7 +232,7 @@ export function createCharacterStructureLane(ctx: ProposalLaneContext) {
           true
         );
       }
-    return true;
+      return true;
     }
     return false;
   }

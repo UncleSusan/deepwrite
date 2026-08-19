@@ -36,7 +36,13 @@ export class AliyunOssObjectStore implements CloudBackupObjectStore {
   ) {}
 
   async getObject(key: string): Promise<Buffer | null> {
-    const response = await this.request("GET", key, undefined, undefined, LARGE_TIMEOUT_MS);
+    const response = await this.request(
+      "GET",
+      key,
+      undefined,
+      undefined,
+      LARGE_TIMEOUT_MS
+    );
     if (response.status === 404) {
       return null;
     }
@@ -46,8 +52,18 @@ export class AliyunOssObjectStore implements CloudBackupObjectStore {
     return Buffer.from(await response.arrayBuffer());
   }
 
-  async putObject(key: string, body: Buffer, contentType: string): Promise<void> {
-    const response = await this.request("PUT", key, body, contentType, LARGE_TIMEOUT_MS);
+  async putObject(
+    key: string,
+    body: Buffer,
+    contentType: string
+  ): Promise<void> {
+    const response = await this.request(
+      "PUT",
+      key,
+      body,
+      contentType,
+      LARGE_TIMEOUT_MS
+    );
     if (!response.ok) {
       throw new Error(`上传云端备份失败（${response.status}）。`);
     }
@@ -92,7 +108,9 @@ export class AliyunOssObjectStore implements CloudBackupObjectStore {
       if (error instanceof Error && error.name === "AbortError") {
         throw new Error("连接云端备份超时。");
       }
-      throw new Error(error instanceof Error ? error.message : "连接云端备份失败。");
+      throw new Error(
+        error instanceof Error ? error.message : "连接云端备份失败。"
+      );
     } finally {
       clearTimeout(timer);
     }

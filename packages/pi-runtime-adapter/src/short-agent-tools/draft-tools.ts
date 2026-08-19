@@ -50,12 +50,13 @@ function expertDraftFileMutationResult(
       revision: createShortWorkspaceContentRevision(text)
     }
   });
-  const resultSummary = input.writeApprovalMode === "auto-approve"
-    ? summary.replace(
-        "，等待用户审阅。",
-        "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
-      )
-    : summary;
+  const resultSummary =
+    input.writeApprovalMode === "auto-approve"
+      ? summary.replace(
+          "，等待用户审阅。",
+          "，将立即提交自动保存队列；以审批卡的落盘状态为准。"
+        )
+      : summary;
   return textResult(resultSummary, {
     kind: "workspace-expert-draft-file-mutation",
     workspaceId: input.workspace.id,
@@ -180,13 +181,10 @@ export function buildRenameExpertDraftSectionTool(
         return textResult(`未改名：${draftUnitLabel(input)}标题不能为空。`);
       }
       if (title === section.title) {
-        return textResult(
-          `未改名：「${section.title}」的标题没有变化。`
-        );
+        return textResult(`未改名：「${section.title}」的标题没有变化。`);
       }
       const conflicting = orderedExpertSections(input, expertSections).find(
-        (candidate) =>
-          candidate.id !== section.id && candidate.title === title
+        (candidate) => candidate.id !== section.id && candidate.title === title
       );
       if (conflicting) {
         return textResult(
@@ -384,7 +382,8 @@ export function buildCreateExpertDraftSectionsTool(
 
       let insertAt = sharedState.expertSectionOrder.length;
       if (afterSectionId) {
-        const afterIndex = sharedState.expertSectionOrder.indexOf(afterSectionId);
+        const afterIndex =
+          sharedState.expertSectionOrder.indexOf(afterSectionId);
         if (afterIndex < 0) {
           return textResult(
             `未创建：找不到插入位置${draftUnitLabel(input)} ${afterSectionId}。`
@@ -406,7 +405,11 @@ export function buildCreateExpertDraftSectionsTool(
           section.wordCountRequirement
         );
         sharedState.expertSections.set(provisionalSectionId, snapshot);
-        sharedState.expertSectionOrder.splice(insertAt + offset, 0, provisionalSectionId);
+        sharedState.expertSectionOrder.splice(
+          insertAt + offset,
+          0,
+          provisionalSectionId
+        );
         sharedState.pendingExpertSectionTitles.add(section.title);
         createdSections.push({
           title: section.title,
@@ -453,8 +456,7 @@ export function buildWriteDraftSectionTool(
 ): AgentTool {
   return defineTool({
     name: "write_draft_section",
-    label:
-      input.workspaceType === "script" ? "写入剧集正文" : "写入正文章节",
+    label: input.workspaceType === "script" ? "写入剧集正文" : "写入正文章节",
     description:
       `把完整内容写入指定${draftUnitLabel(input)}的正文或人物状态文件。file 默认 body；section_id 省略时写入当前选中${draftUnitLabel(input)}。` +
       `已有内容时必须先用 read_draft_sections（mode=full）读完该文件，并明确设置 allow_overwrite_existing=true 才能整${draftUnitCounter(input)}覆盖。` +
@@ -465,8 +467,13 @@ export function buildWriteDraftSectionTool(
       allow_overwrite_existing: Type.Optional(Type.Boolean())
     }),
     execute: async (_toolCallId, params) => {
-      const target = resolveDraftWriteTarget(input, expertSections, params.section_id);
-      if ("error" in target) return textResult(target.error.replace("未修改：", "未写入："));
+      const target = resolveDraftWriteTarget(
+        input,
+        expertSections,
+        params.section_id
+      );
+      if ("error" in target)
+        return textResult(target.error.replace("未修改：", "未写入："));
       const field = toDraftFileKind(params.file);
       const section = expertSections.get(target.sectionId)!;
       const file = section[field];
@@ -522,8 +529,13 @@ export function buildReplaceDraftSectionTextTool(
       )
     }),
     execute: async (_toolCallId, params) => {
-      const target = resolveDraftWriteTarget(input, expertSections, params.section_id);
-      if ("error" in target) return textResult(target.error.replace("未修改：", "未替换："));
+      const target = resolveDraftWriteTarget(
+        input,
+        expertSections,
+        params.section_id
+      );
+      if ("error" in target)
+        return textResult(target.error.replace("未修改：", "未替换："));
       const field = toDraftFileKind(params.file);
       const section = expertSections.get(target.sectionId)!;
       const file = section[field];

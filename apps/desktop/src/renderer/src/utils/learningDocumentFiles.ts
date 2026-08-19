@@ -131,7 +131,8 @@ function normalizeLegacyWordRuns(runs: readonly string[]): string {
   const lines: string[] = [];
   for (const run of runs) {
     for (const line of run
-      .split("\u0000").join("")
+      .split("\u0000")
+      .join("")
       .replace(/\u00a0/gu, " ")
       .replace(/[ \t]+/gu, " ")
       .split(/\r?\n+/gu)
@@ -152,14 +153,19 @@ function extractLegacyWordText(buffer: ArrayBuffer): string {
     ...collectUtf16ReadableRuns(bytes, 1)
   ];
   try {
-    runs.push(...collectReadableRuns(new TextDecoder("gb18030").decode(bytes), 6));
+    runs.push(
+      ...collectReadableRuns(new TextDecoder("gb18030").decode(bytes), 6)
+    );
   } catch {
     runs.push(...collectReadableRuns(new TextDecoder().decode(bytes), 6));
   }
   return normalizeLegacyWordRuns(runs);
 }
 
-function findZipEntry(bytes: Uint8Array, expectedName: string): ZipEntry | undefined {
+function findZipEntry(
+  bytes: Uint8Array,
+  expectedName: string
+): ZipEntry | undefined {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const minimumOffset = Math.max(0, bytes.length - 65_557);
   let endOffset = -1;
@@ -175,7 +181,10 @@ function findZipEntry(bytes: Uint8Array, expectedName: string): ZipEntry | undef
   let offset = view.getUint32(endOffset + 16, true);
   const decoder = new TextDecoder();
   for (let index = 0; index < entryCount; index += 1) {
-    if (offset + 46 > bytes.length || view.getUint32(offset, true) !== ZIP_CENTRAL_DIRECTORY_HEADER) {
+    if (
+      offset + 46 > bytes.length ||
+      view.getUint32(offset, true) !== ZIP_CENTRAL_DIRECTORY_HEADER
+    ) {
       throw new Error("Word 文档 ZIP 目录损坏。");
     }
     const flags = view.getUint16(offset + 8, true);
@@ -237,14 +246,20 @@ async function inflateRawWithLimit(
   return output;
 }
 
-async function readZipEntry(bytes: Uint8Array, entry: ZipEntry): Promise<Uint8Array> {
+async function readZipEntry(
+  bytes: Uint8Array,
+  entry: ZipEntry
+): Promise<Uint8Array> {
   if (entry.encrypted) throw new Error("受密码保护的 Word 文档暂时无法读取。");
   if (entry.uncompressedSize > WORD_DOCUMENT_XML_MAX_BYTES) {
     throw new Error("Word 文档正文 XML 过大，无法安全读取。");
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const offset = entry.localHeaderOffset;
-  if (offset + 30 > bytes.length || view.getUint32(offset, true) !== ZIP_LOCAL_FILE_HEADER) {
+  if (
+    offset + 30 > bytes.length ||
+    view.getUint32(offset, true) !== ZIP_LOCAL_FILE_HEADER
+  ) {
     throw new Error("Word 文档 ZIP 内容损坏。");
   }
   const nameLength = view.getUint16(offset + 26, true);
@@ -257,7 +272,9 @@ async function readZipEntry(bytes: Uint8Array, entry: ZipEntry): Promise<Uint8Ar
   if (entry.compressionMethod === 8) {
     return inflateRawWithLimit(compressed, WORD_DOCUMENT_XML_MAX_BYTES);
   }
-  throw new Error(`暂不支持 Word 文档使用的 ZIP 压缩方式 ${entry.compressionMethod}。`);
+  throw new Error(
+    `暂不支持 Word 文档使用的 ZIP 压缩方式 ${entry.compressionMethod}。`
+  );
 }
 
 function decodeXmlEntities(text: string): string {
@@ -270,18 +287,26 @@ function decodeXmlEntities(text: string): string {
           hexadecimal ? numeric.slice(1) : numeric,
           hexadecimal ? 16 : 10
         );
-        if (Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff) {
+        if (
+          Number.isInteger(codePoint) &&
+          codePoint >= 0 &&
+          codePoint <= 0x10ffff
+        ) {
           return String.fromCodePoint(codePoint);
         }
         return "";
       }
-      return ({
-        "&amp;": "&",
-        "&lt;": "<",
-        "&gt;": ">",
-        "&quot;": '"',
-        "&apos;": "'"
-      } as Record<string, string>)[entity.toLowerCase()] ?? entity;
+      return (
+        (
+          {
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&quot;": '"',
+            "&apos;": "'"
+          } as Record<string, string>
+        )[entity.toLowerCase()] ?? entity
+      );
     }
   );
 }
@@ -315,13 +340,16 @@ export async function readLearningDocumentFile(
   if (extension === "doc" || file.type === "application/msword") {
     const text = extractLegacyWordText(await file.arrayBuffer());
     if (!text.trim()) {
-      throw new Error(`无法从“${file.name}”中提取可读文字，请另存为 .docx 后再上传。`);
+      throw new Error(
+        `无法从“${file.name}”中提取可读文字，请另存为 .docx 后再上传。`
+      );
     }
     return toLearningDocument(file, "application/msword", text);
   }
   if (
     extension === "docx" ||
-    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
   ) {
     return toLearningDocument(
       file,
@@ -329,7 +357,10 @@ export async function readLearningDocumentFile(
       await extractDocxText(await file.arrayBuffer())
     );
   }
-  if (["txt", "md", "markdown"].includes(extension) || file.type.startsWith("text/")) {
+  if (
+    ["txt", "md", "markdown"].includes(extension) ||
+    file.type.startsWith("text/")
+  ) {
     return toLearningDocument(
       file,
       file.type || (extension === "txt" ? "text/plain" : "text/markdown"),

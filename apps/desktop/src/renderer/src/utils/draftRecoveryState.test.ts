@@ -130,11 +130,7 @@ describe("draft recovery state", () => {
     );
 
     expect(Object.keys(result)).toEqual(["coreOnly", "liveOnly"]);
-    expect(result.coreOnly?.recoveryUpdatedAt).toBe(
-      "2026-08-14T08:00:00.000Z"
-    );
-    expect(result.liveOnly?.recoveryUpdatedAt).toBe(
-      "2026-08-14T08:00:00.001Z"
-    );
+    expect(result.coreOnly?.recoveryUpdatedAt).toBe("2026-08-14T08:00:00.000Z");
+    expect(result.liveOnly?.recoveryUpdatedAt).toBe("2026-08-14T08:00:00.001Z");
   });
 });

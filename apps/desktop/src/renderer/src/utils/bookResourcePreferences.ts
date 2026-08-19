@@ -1,6 +1,7 @@
 import type { ResourceTreeSection } from "../types/workspace";
 
-export const BOOK_RESOURCE_PREFERENCES_STORAGE_KEY = "deepwrite:book-resource-preferences";
+export const BOOK_RESOURCE_PREFERENCES_STORAGE_KEY =
+  "deepwrite:book-resource-preferences";
 
 export interface BookResourcePreference {
   label?: string;
@@ -15,19 +16,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function validTopLevelIds(sections: ResourceTreeSection[], sectionId: ResourceTreeSection["id"]): Set<string> {
+function validTopLevelIds(
+  sections: ResourceTreeSection[],
+  sectionId: ResourceTreeSection["id"]
+): Set<string> {
   return new Set(
-    sections.find((section) => section.id === sectionId)?.nodes.map((node) => node.id) ?? []
+    sections
+      .find((section) => section.id === sectionId)
+      ?.nodes.map((node) => node.id) ?? []
   );
 }
 
-function parseLibraryIds(value: unknown, validIds: Set<string>): string[] | undefined {
+function parseLibraryIds(
+  value: unknown,
+  validIds: Set<string>
+): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  return [...new Set(value.filter((id): id is string => typeof id === "string"))].filter((id) =>
-    validIds.has(id)
-  );
+  return [
+    ...new Set(value.filter((id): id is string => typeof id === "string"))
+  ].filter((id) => validIds.has(id));
 }
 
 export function parseBookResourcePreferences(
@@ -55,15 +64,24 @@ export function parseBookResourcePreferences(
       }
 
       const preference: BookResourcePreference = {};
-      if (typeof rawPreference.label === "string" && rawPreference.label.trim()) {
+      if (
+        typeof rawPreference.label === "string" &&
+        rawPreference.label.trim()
+      ) {
         preference.label = rawPreference.label.trim().slice(0, 80);
       }
       if (rawPreference.removed === true) {
         preference.removed = true;
       }
 
-      const skills = parseLibraryIds(rawPreference.skillLibraryIds, skillLibraryIds);
-      const materials = parseLibraryIds(rawPreference.materialLibraryIds, materialLibraryIds);
+      const skills = parseLibraryIds(
+        rawPreference.skillLibraryIds,
+        skillLibraryIds
+      );
+      const materials = parseLibraryIds(
+        rawPreference.materialLibraryIds,
+        materialLibraryIds
+      );
       if (skills) {
         preference.skillLibraryIds = skills;
       }
@@ -100,10 +118,14 @@ export function applyBookResourcePreferences(
             ...node,
             ...(preference?.label ? { label: preference.label } : {}),
             boundSkillLibraryIds: [
-              ...(preference?.skillLibraryIds ?? node.boundSkillLibraryIds ?? [])
+              ...(preference?.skillLibraryIds ??
+                node.boundSkillLibraryIds ??
+                [])
             ],
             boundMaterialLibraryIds: [
-              ...(preference?.materialLibraryIds ?? node.boundMaterialLibraryIds ?? [])
+              ...(preference?.materialLibraryIds ??
+                node.boundMaterialLibraryIds ??
+                [])
             ]
           }
         ];

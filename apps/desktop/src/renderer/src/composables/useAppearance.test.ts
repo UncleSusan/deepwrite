@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import source from "./useAppearance.ts?raw";
 
 describe("useAppearance", () => {
@@ -17,11 +18,15 @@ describe("useAppearance", () => {
   });
 
   it("applies selected font families to document CSS variables", () => {
-    expect(source).toContain('root.style.setProperty("--ui-font"');
-    expect(source).toContain('root.style.setProperty(');
+    expectSourceToContain(source, 'root.style.setProperty("--ui-font"');
+    expect(source).toContain("root.style.setProperty(");
     expect(source).toContain('"--editor-font"');
-    expect(source).toContain("resolveAppearanceUiFontStack(state.uiFontFamily)");
-    expect(source).toContain("resolveAppearanceEditorFontStack(state.editorFontFamily)");
+    expect(source).toContain(
+      "resolveAppearanceUiFontStack(state.uiFontFamily)"
+    );
+    expect(source).toContain(
+      "resolveAppearanceEditorFontStack(state.editorFontFamily)"
+    );
     expect(source).toContain("setUiFontFamily");
     expect(source).toContain("setEditorFontFamily");
   });

@@ -4,9 +4,7 @@ import AppIcon from "./AppIcon.vue";
 
 export type BookTransferDialogMode = "open" | "import";
 export type BookTransferAction =
-  | "open-book"
-  | "open-long-book"
-  | "import-continuation-long-book";
+  "open-book" | "open-long-book" | "import-continuation-long-book";
 
 const props = defineProps<{
   mode: BookTransferDialogMode | null;
@@ -68,7 +66,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <header>
           <div>
             <span class="dialog-eyebrow">创作空间</span>
-            <h2 id="book-transfer-title">{{ mode === "open" ? "打开已有作品" : "导入作品" }}</h2>
+            <h2 id="book-transfer-title">
+              {{ mode === "open" ? "打开已有作品" : "导入作品" }}
+            </h2>
           </div>
           <button
             class="dialog-close"
@@ -82,7 +82,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         </header>
 
         <div class="dialog-content book-transfer-content">
-          <p>请选择{{ mode === "open" ? "作品类型" : "来源格式" }}，随后将在系统窗口中选择对应文件。</p>
+          <p>
+            请选择{{
+              mode === "open" ? "作品类型" : "来源格式"
+            }}，随后将在系统窗口中选择对应文件。
+          </p>
           <div class="book-transfer-options">
             <button
               v-for="option in options"

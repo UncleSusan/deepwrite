@@ -58,9 +58,7 @@ export function useLongEditorPaneResize(options: {
   const longEditorPanePreferences = loadLongEditorPanePreferences(
     window.localStorage
   );
-  const preferredEntryListWidth = ref(
-    longEditorPanePreferences.entryListWidth
-  );
+  const preferredEntryListWidth = ref(longEditorPanePreferences.entryListWidth);
   const preferredStoryPlotListWidth = ref(
     longEditorPanePreferences.storyPlotListWidth
   );
@@ -91,7 +89,9 @@ export function useLongEditorPaneResize(options: {
       : storyPlotLayoutElement.value;
   }
 
-  function longEditorPaneContentMinWidth(pane: LongEditorResizablePane): number {
+  function longEditorPaneContentMinWidth(
+    pane: LongEditorResizablePane
+  ): number {
     if (pane === "story-plot-list") {
       return LONG_EDITOR_STORY_DETAIL_MIN_WIDTH;
     }
@@ -117,7 +117,8 @@ export function useLongEditorPaneResize(options: {
     const container = longEditorPaneContainer(pane);
     if (!container) return undefined;
     const containerWidth = container.getBoundingClientRect().width;
-    if (!Number.isFinite(containerWidth) || containerWidth <= 0) return undefined;
+    if (!Number.isFinite(containerWidth) || containerWidth <= 0)
+      return undefined;
     const availableMax = Math.max(
       LONG_EDITOR_LIST_MIN_WIDTH,
       Math.floor(

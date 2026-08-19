@@ -116,7 +116,12 @@ async function collectFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "out" || entry.name === "release") {
+    if (
+      entry.name === "node_modules" ||
+      entry.name === "dist" ||
+      entry.name === "out" ||
+      entry.name === "release"
+    ) {
       continue;
     }
     const fullPath = join(directory, entry.name);
@@ -163,7 +168,9 @@ for (const file of files.sort()) {
   if (isTestFile(relPath)) {
     reports.push({ relPath, lines, budget: TEST_FILE_BUDGET, kind: "test" });
     if (lines > TEST_FILE_BUDGET) {
-      violations.push(`${relPath} has ${lines} lines (test source budget ${TEST_FILE_BUDGET})`);
+      violations.push(
+        `${relPath} has ${lines} lines (test source budget ${TEST_FILE_BUDGET})`
+      );
     }
     continue;
   }
@@ -181,7 +188,12 @@ for (const file of files.sort()) {
   }
 
   if (isUnderNewModuleDirectory(relPath) || newModuleFiles.has(relPath)) {
-    reports.push({ relPath, lines, budget: NEW_FILE_BUDGET, kind: "new-module" });
+    reports.push({
+      relPath,
+      lines,
+      budget: NEW_FILE_BUDGET,
+      kind: "new-module"
+    });
     if (lines > NEW_FILE_BUDGET) {
       violations.push(
         `${relPath} has ${lines} lines (new non-test source budget ${NEW_FILE_BUDGET})`

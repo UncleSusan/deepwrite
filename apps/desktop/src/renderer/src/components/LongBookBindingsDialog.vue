@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch
+} from "vue";
 import type {
   LinkedMaterialIdsByKind,
   LinkedSkillIdsByKind,
@@ -131,9 +139,7 @@ function skillOptions(kind: SkillKind): Array<{
     { value: "", label: "添加一个技能库…" },
     ...props.skills
       .filter(
-        (library) =>
-          library.skillKind === kind &&
-          !selected.has(library.id)
+        (library) => library.skillKind === kind && !selected.has(library.id)
       )
       .map((library) => ({
         value: library.id,
@@ -222,11 +228,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="mode"
-      class="dialog-backdrop"
-      @mousedown.self="requestClose"
-    >
+    <div v-if="mode" class="dialog-backdrop" @mousedown.self="requestClose">
       <section
         ref="dialog"
         class="workspace-dialog book-binding-dialog long-binding-dialog"
@@ -261,7 +263,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           >
             <div class="create-short-binding-heading">
               <span class="create-short-binding-icon">
-                <AppIcon :name="mode === 'skill' ? 'library' : 'archive'" :size="17" />
+                <AppIcon
+                  :name="mode === 'skill' ? 'library' : 'archive'"
+                  :size="17"
+                />
               </span>
               <div>
                 <h3 :id="`long-binding-heading-${mode}`">{{ heading }}</h3>
@@ -279,7 +284,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   <strong>{{ kind.label }}</strong>
                   <small>{{ kind.description }}</small>
                 </span>
-                <div v-if="selectedMaterials[kind.id].length" class="long-binding-chips">
+                <div
+                  v-if="selectedMaterials[kind.id].length"
+                  class="long-binding-chips"
+                >
                   <span
                     v-for="id in selectedMaterials[kind.id]"
                     :key="id"
@@ -291,10 +299,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                       :aria-label="`解除${kind.label}绑定：${materialLabel(id)}`"
                       :disabled="submitting"
                       @click="
-                        selectedMaterials[kind.id] =
-                          selectedMaterials[kind.id].filter(
-                            (candidate) => candidate !== id
-                          )
+                        selectedMaterials[kind.id] = selectedMaterials[
+                          kind.id
+                        ].filter((candidate) => candidate !== id)
                       "
                     >
                       ×
@@ -325,7 +332,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                   <strong>{{ kind.label }}</strong>
                   <small>{{ kind.description }}</small>
                 </span>
-                <div v-if="selectedSkills[kind.id].length" class="long-binding-chips">
+                <div
+                  v-if="selectedSkills[kind.id].length"
+                  class="long-binding-chips"
+                >
                   <span
                     v-for="id in selectedSkills[kind.id]"
                     :key="id"
@@ -337,10 +347,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                       :aria-label="`解除${kind.label}绑定：${skillLabel(id)}`"
                       :disabled="submitting"
                       @click="
-                        selectedSkills[kind.id] =
-                          selectedSkills[kind.id].filter(
-                            (candidate) => candidate !== id
-                          )
+                        selectedSkills[kind.id] = selectedSkills[
+                          kind.id
+                        ].filter((candidate) => candidate !== id)
                       "
                     >
                       ×
@@ -361,7 +370,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </div>
             </div>
             <p class="create-short-stable-hint">
-              Catalog 中暂时缺失的已有绑定仍会保留，只有点击移除才会解除已有绑定。
+              Catalog
+              中暂时缺失的已有绑定仍会保留，只有点击移除才会解除已有绑定。
             </p>
           </section>
 

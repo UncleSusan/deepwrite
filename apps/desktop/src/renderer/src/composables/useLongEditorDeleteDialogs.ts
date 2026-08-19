@@ -45,7 +45,10 @@ export function useLongEditorDeleteDialogs(options: {
   navigationDeletePending: Ref<boolean>;
   navigationDeleteDialog: Ref<HTMLElement | undefined>;
   navigationDeleteCancelButton: Ref<HTMLButtonElement | undefined>;
-  pendingWorldbuildingDeleteItem: ComputedRef<{ id: string; title: string } | null>;
+  pendingWorldbuildingDeleteItem: ComputedRef<{
+    id: string;
+    title: string;
+  } | null>;
   openWorldbuildingItemDelete: (itemId: string) => void;
   closeWorldbuildingItemDelete: () => void;
   handleWorldbuildingDeleteKeydown: (event: KeyboardEvent) => void;
@@ -134,12 +137,14 @@ export function useLongEditorDeleteDialogs(options: {
     const categoryId = props.selection?.key.slice("worldbuilding:".length);
     if (!categoryId) return;
     options.emitWorldbuildingItemMutation(
-      [{
-        type: "worldbuildingItem.delete",
-        categoryId,
-        id: target.id,
-        cascade: true
-      }],
+      [
+        {
+          type: "worldbuildingItem.delete",
+          categoryId,
+          id: target.id,
+          cascade: true
+        }
+      ],
       () => {
         closeWorldbuildingItemDelete();
         const nextId =
@@ -228,10 +233,7 @@ export function useLongEditorDeleteDialogs(options: {
   }
 
   function openChapterCardDelete(chapterCardId: LongChapterCardId): void {
-    if (
-      props.locked ||
-      options.currentReadOnly.value
-    ) {
+    if (props.locked || options.currentReadOnly.value) {
       return;
     }
     const chapterCard = props.workspaceIndex?.plot.chapterCards.find(

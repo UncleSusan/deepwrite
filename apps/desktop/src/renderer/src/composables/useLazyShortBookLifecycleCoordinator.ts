@@ -1,12 +1,5 @@
-import type {
-  ShortManuscriptExportFormat
-} from "@deepwrite/contracts";
-import {
-  ref,
-  shallowRef,
-  type Ref,
-  type ShallowRef
-} from "vue";
+import type { ShortManuscriptExportFormat } from "@deepwrite/contracts";
+import { ref, shallowRef, type Ref, type ShallowRef } from "vue";
 import type {
   BookResourceDialogMode,
   ResourceTreeNode
@@ -40,8 +33,8 @@ export interface ShortBookLifecycleModule {
   ): ShortBookLifecycleCoordinator;
 }
 
-export type ShortBookLifecycleModuleLoader = () =>
-  Promise<ShortBookLifecycleModule>;
+export type ShortBookLifecycleModuleLoader =
+  () => Promise<ShortBookLifecycleModule>;
 
 export interface LazyShortBookLifecycleCoordinator {
   readonly dialogIntent: Ref<number>;
@@ -177,8 +170,7 @@ export function useLazyShortBookLifecycleCoordinator(
     if (coordinator) return Promise.resolve(coordinator);
     if (coordinatorPromise) return coordinatorPromise;
     loadFailureReported = false;
-    let loading!: Promise<ShortBookLifecycleCoordinator | null>;
-    loading = loadModule()
+    const loading = loadModule()
       .then(async ({ useShortBookLifecycleCoordinator }) => {
         const loaded = useShortBookLifecycleCoordinator(coordinatorOptions);
         coordinator = loaded;
@@ -273,15 +265,16 @@ export function useLazyShortBookLifecycleCoordinator(
     return invoke((loaded) => loaded.createBook(input));
   }
 
-  function renameBook(payload: { bookId: string; label: string }): Promise<void> {
+  function renameBook(payload: {
+    bookId: string;
+    label: string;
+  }): Promise<void> {
     const requestId = activeBook.value?.requestId;
     if (requestId === undefined) return Promise.resolve();
     return invoke((loaded) => loaded.renameBook(payload), requestId);
   }
 
-  function updateBookBindings(
-    payload: ShortBookBindingsUpdate
-  ): Promise<void> {
+  function updateBookBindings(payload: ShortBookBindingsUpdate): Promise<void> {
     const requestId = activeBook.value?.requestId;
     if (requestId === undefined) return Promise.resolve();
     return invoke((loaded) => loaded.updateBookBindings(payload), requestId);
@@ -304,10 +297,7 @@ export function useLazyShortBookLifecycleCoordinator(
   ): Promise<void> {
     const requestId = exportBookTarget.value?.requestId;
     if (requestId === undefined) return Promise.resolve();
-    return invoke(
-      (loaded) => loaded.exportBookManuscript(format),
-      requestId
-    );
+    return invoke((loaded) => loaded.exportBookManuscript(format), requestId);
   }
 
   async function drain(): Promise<void> {

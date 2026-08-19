@@ -68,14 +68,10 @@ function validateLongWorkspaceIndexSnapshot(
     "Worldbuilding category",
     context
   );
-  const worldbuildingIds = new Set(
-    snapshot.worldbuilding.map(({ id }) => id)
-  );
+  const worldbuildingIds = new Set(snapshot.worldbuilding.map(({ id }) => id));
   validateUniqueValues(
     snapshot.worldbuilding.flatMap((category) =>
-      category.format === "list"
-        ? category.items.map(({ id }) => id)
-        : []
+      category.format === "list" ? category.items.map(({ id }) => id) : []
     ),
     (index) => ["worldbuilding", index, "items"],
     "worldbuilding item id",
@@ -103,9 +99,7 @@ function validateLongWorkspaceIndexSnapshot(
     "Character type",
     context
   );
-  const characterTypeIds = new Set(
-    snapshot.characterTypes.map(({ id }) => id)
-  );
+  const characterTypeIds = new Set(snapshot.characterTypes.map(({ id }) => id));
   snapshot.characters.forEach((character, index) => {
     if (!characterTypeIds.has(character.group)) {
       addIssue(
@@ -135,9 +129,7 @@ function validateLongWorkspaceIndexSnapshot(
     );
   }
 
-  const characterIds = new Set(
-    snapshot.characters.map(({ id }) => id)
-  );
+  const characterIds = new Set(snapshot.characters.map(({ id }) => id));
   validateUniqueValues(
     snapshot.characterFiles.map(({ characterId }) => characterId),
     (index) => ["characterFiles", index, "characterId"],
@@ -229,9 +221,7 @@ function validateLongWorkspaceIndexSnapshot(
   chapterCards.forEach((card, index) => {
     const volume = volumeById.get(card.volumeId);
     const arc =
-      card.primaryArcId === null
-        ? undefined
-        : arcById.get(card.primaryArcId);
+      card.primaryArcId === null ? undefined : arcById.get(card.primaryArcId);
     if (!volume) {
       addIssue(
         context,
@@ -260,12 +250,7 @@ function validateLongWorkspaceIndexSnapshot(
   )) {
     validateContiguousOrder(
       entries,
-      (index) => [
-        "plot",
-        "chapterCards",
-        index,
-        "narrativeOrder"
-      ],
+      (index) => ["plot", "chapterCards", index, "narrativeOrder"],
       `Chapter narrative order in ${volumeId}`,
       context
     );
@@ -332,13 +317,7 @@ function validateLongWorkspaceIndexSnapshot(
       if (!characterIds.has(characterId)) {
         addIssue(
           context,
-          [
-            "plot",
-            "storyEvents",
-            index,
-            "characterIds",
-            characterIndex
-          ],
+          ["plot", "storyEvents", index, "characterIds", characterIndex],
           "Story event must reference an existing character."
         );
       }
@@ -418,12 +397,7 @@ function validateLongWorkspaceIndexSnapshot(
   )) {
     validateContiguousOrder(
       entries,
-      (index) => [
-        "plot",
-        "narrativePlacements",
-        index,
-        "orderInChapter"
-      ],
+      (index) => ["plot", "narrativePlacements", index, "orderInChapter"],
       `Narrative placement order in ${chapterCardId}`,
       context
     );
@@ -444,8 +418,9 @@ function validateLongWorkspaceIndexSnapshot(
   >();
   foreshadowing.forEach((thread, threadIndex) => {
     if (thread.status !== "abandoned") {
-      const derivedStatus =
-        deriveLongForeshadowingStatusFromCommittedBeats(thread.beats);
+      const derivedStatus = deriveLongForeshadowingStatusFromCommittedBeats(
+        thread.beats
+      );
       if (thread.status !== derivedStatus) {
         addIssue(
           context,
@@ -454,10 +429,7 @@ function validateLongWorkspaceIndexSnapshot(
         );
       }
     }
-    if (
-      thread.truthEventId !== null &&
-      !eventById.has(thread.truthEventId)
-    ) {
+    if (thread.truthEventId !== null && !eventById.has(thread.truthEventId)) {
       addIssue(
         context,
         ["plot", "foreshadowing", threadIndex, "truthEventId"],
@@ -484,14 +456,7 @@ function validateLongWorkspaceIndexSnapshot(
       if (beatById.has(beat.id)) {
         addIssue(
           context,
-          [
-            "plot",
-            "foreshadowing",
-            threadIndex,
-            "beats",
-            beatIndex,
-            "id"
-          ],
+          ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "id"],
           `Duplicate foreshadowing-beat id: ${beat.id}`
         );
       } else {
@@ -500,9 +465,7 @@ function validateLongWorkspaceIndexSnapshot(
       const plannedVolumeId = beat.volumeId ?? null;
       const plannedArcId = beat.arcId ?? null;
       const plannedVolume =
-        plannedVolumeId === null
-          ? undefined
-          : volumeById.get(plannedVolumeId);
+        plannedVolumeId === null ? undefined : volumeById.get(plannedVolumeId);
       const plannedArc =
         plannedArcId === null ? undefined : arcById.get(plannedArcId);
       if (plannedVolumeId !== null && !plannedVolume) {
@@ -522,14 +485,7 @@ function validateLongWorkspaceIndexSnapshot(
       if (plannedArcId !== null && !plannedArc) {
         addIssue(
           context,
-          [
-            "plot",
-            "foreshadowing",
-            threadIndex,
-            "beats",
-            beatIndex,
-            "arcId"
-          ],
+          ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "arcId"],
           "Foreshadowing beat must reference an existing planning arc."
         );
       }
@@ -540,28 +496,14 @@ function validateLongWorkspaceIndexSnapshot(
       ) {
         addIssue(
           context,
-          [
-            "plot",
-            "foreshadowing",
-            threadIndex,
-            "beats",
-            beatIndex,
-            "arcId"
-          ],
+          ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "arcId"],
           "Foreshadowing beat planning arc must belong to its planning volume."
         );
       }
       if (beat.eventId !== null && !eventById.has(beat.eventId)) {
         addIssue(
           context,
-          [
-            "plot",
-            "foreshadowing",
-            threadIndex,
-            "beats",
-            beatIndex,
-            "eventId"
-          ],
+          ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "eventId"],
           "Foreshadowing beat must reference an existing event."
         );
       }
@@ -583,10 +525,7 @@ function validateLongWorkspaceIndexSnapshot(
           "Foreshadowing beat must reference an existing placement."
         );
       }
-      if (
-        beat.chapterCardId !== null &&
-        !chapterById.has(beat.chapterCardId)
-      ) {
+      if (beat.chapterCardId !== null && !chapterById.has(beat.chapterCardId)) {
         addIssue(
           context,
           [
@@ -632,14 +571,7 @@ function validateLongWorkspaceIndexSnapshot(
       ) {
         addIssue(
           context,
-          [
-            "plot",
-            "foreshadowing",
-            threadIndex,
-            "beats",
-            beatIndex,
-            "arcId"
-          ],
+          ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "arcId"],
           "Foreshadowing beat planning arc must match its concrete chapter."
         );
       }
@@ -672,14 +604,7 @@ function validateLongWorkspaceIndexSnapshot(
       ) {
         addIssue(
           context,
-          [
-            "plot",
-            "foreshadowing",
-            threadIndex,
-            "beats",
-            beatIndex,
-            "arcId"
-          ],
+          ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "arcId"],
           "Foreshadowing beat planning arc must match its concrete event."
         );
       }
@@ -690,14 +615,7 @@ function validateLongWorkspaceIndexSnapshot(
       ) {
         addIssue(
           context,
-          [
-            "plot",
-            "foreshadowing",
-            threadIndex,
-            "beats",
-            beatIndex,
-            "eventId"
-          ],
+          ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "eventId"],
           "Foreshadowing beat event must match its placement event."
         );
       }
@@ -773,10 +691,7 @@ function validateLongWorkspaceIndexSnapshot(
     context
   );
   const chapterFilesById = new Map(
-    snapshot.chapters.map((chapter) => [
-      chapter.chapterCardId,
-      chapter
-    ])
+    snapshot.chapters.map((chapter) => [chapter.chapterCardId, chapter])
   );
   snapshot.chapters.forEach((chapter, index) => {
     if (!chapterById.has(chapter.chapterCardId)) {
@@ -819,20 +734,20 @@ function validateLongWorkspaceIndexSnapshot(
     { file: snapshot.bookLine, path: ["bookLine"] },
     ...snapshot.worldbuilding.flatMap((category, index) =>
       category.format === "text"
-        ? [{
-            file: category.file,
-            path: ["worldbuilding", index, "file"] as ValidationPath
-          }]
+        ? [
+            {
+              file: category.file,
+              path: ["worldbuilding", index, "file"] as ValidationPath
+            }
+          ]
         : [
             ...(category.overview
-              ? [{
-                  file: category.overview,
-                  path: [
-                    "worldbuilding",
-                    index,
-                    "overview"
-                  ] as ValidationPath
-                }]
+              ? [
+                  {
+                    file: category.overview,
+                    path: ["worldbuilding", index, "overview"] as ValidationPath
+                  }
+                ]
               : []),
             ...category.items.map((item, itemIndex) => ({
               file: item.file,
@@ -847,10 +762,12 @@ function validateLongWorkspaceIndexSnapshot(
           ]
     ),
     ...(snapshot.characterOverview
-      ? [{
-          file: snapshot.characterOverview,
-          path: ["characterOverview"] as ValidationPath
-        }]
+      ? [
+          {
+            file: snapshot.characterOverview,
+            path: ["characterOverview"] as ValidationPath
+          }
+        ]
       : []),
     ...snapshot.characterFiles.flatMap((entry, index) =>
       [
@@ -870,21 +787,14 @@ function validateLongWorkspaceIndexSnapshot(
         ["characterState", entry.characterState],
         ["handoff", entry.handoff],
         ["foreshadowingChanges", entry.foreshadowingChanges],
-        ...(entry.worldReveals
-          ? [["worldReveals", entry.worldReveals]]
-          : []),
-        ...entry.characterContinuity.flatMap(
-          (character, characterIndex) => [
-            [
-              `characterContinuity.${characterIndex}.currentState`,
-              character.currentState
-            ],
-            [
-              `characterContinuity.${characterIndex}.history`,
-              character.history
-            ]
-          ]
-        )
+        ...(entry.worldReveals ? [["worldReveals", entry.worldReveals]] : []),
+        ...entry.characterContinuity.flatMap((character, characterIndex) => [
+          [
+            `characterContinuity.${characterIndex}.currentState`,
+            character.currentState
+          ],
+          [`characterContinuity.${characterIndex}.history`, character.history]
+        ])
       ].map(([field, file]) => ({
         file: file as LongWorkspaceFileReference,
         path: ["chapters", index, field as string] as ValidationPath
@@ -928,10 +838,7 @@ function validateLongWorkspaceIndexSnapshot(
     context
   );
   commits.forEach((commit, index) => {
-    if (
-      index > 0 &&
-      commit.sequence <= commits[index - 1]!.sequence
-    ) {
+    if (index > 0 && commit.sequence <= commits[index - 1]!.sequence) {
       addIssue(
         context,
         ["ledger", "commits", index, "sequence"],
@@ -951,10 +858,7 @@ function validateLongWorkspaceIndexSnapshot(
     commits.map((commit) => [commit.id, new Set(commit.placementIds)])
   );
   const beatIdsByCommitId = new Map(
-    commits.map((commit) => [
-      commit.id,
-      new Set(commit.foreshadowingBeatIds)
-    ])
+    commits.map((commit) => [commit.id, new Set(commit.foreshadowingBeatIds)])
   );
   const commitByChapterId = new Map(
     commits.map((commit) => [commit.chapterCardId, commit])
@@ -990,10 +894,7 @@ function validateLongWorkspaceIndexSnapshot(
     if (!commitByChapterId.has(chapter.id)) break;
     expectedCommittedThrough = chapter.id;
   }
-  if (
-    snapshot.ledger.committedThroughChapterId !==
-    expectedCommittedThrough
-  ) {
+  if (snapshot.ledger.committedThroughChapterId !== expectedCommittedThrough) {
     addIssue(
       context,
       ["ledger", "committedThroughChapterId"],
@@ -1007,39 +908,21 @@ function validateLongWorkspaceIndexSnapshot(
       if (!placement) {
         addIssue(
           context,
-          [
-            "ledger",
-            "commits",
-            commitIndex,
-            "placementIds",
-            placementIndex
-          ],
+          ["ledger", "commits", commitIndex, "placementIds", placementIndex],
           "Ledger placement decision must reference an existing placement."
         );
       } else {
         if (placement.chapterCardId !== commit.chapterCardId) {
           addIssue(
             context,
-            [
-              "ledger",
-              "commits",
-              commitIndex,
-              "placementIds",
-              placementIndex
-            ],
+            ["ledger", "commits", commitIndex, "placementIds", placementIndex],
             "Ledger placement decision must belong to the committed chapter."
           );
         }
         if (placement.commitId !== commit.id) {
           addIssue(
             context,
-            [
-              "ledger",
-              "commits",
-              commitIndex,
-              "placementIds",
-              placementIndex
-            ],
+            ["ledger", "commits", commitIndex, "placementIds", placementIndex],
             "Ledger placement decision must carry the same commit id."
           );
         }
@@ -1050,13 +933,7 @@ function validateLongWorkspaceIndexSnapshot(
       if (!beatRecord) {
         addIssue(
           context,
-          [
-            "ledger",
-            "commits",
-            commitIndex,
-            "foreshadowingBeatIds",
-            beatIndex
-          ],
+          ["ledger", "commits", commitIndex, "foreshadowingBeatIds", beatIndex],
           "Ledger beat decision must reference an existing beat."
         );
       } else {
@@ -1143,28 +1020,14 @@ function validateLongWorkspaceIndexSnapshot(
     if (chapterCommit && beat.commitId !== chapterCommit.id) {
       addIssue(
         context,
-        [
-          "plot",
-          "foreshadowing",
-          threadIndex,
-          "beats",
-          beatIndex,
-          "commitId"
-        ],
+        ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "commitId"],
         "Every foreshadowing beat in a committed chapter must be decided by that chapter commit."
       );
     }
     if (!chapterCommit && beat.commitId !== null) {
       addIssue(
         context,
-        [
-          "plot",
-          "foreshadowing",
-          threadIndex,
-          "beats",
-          beatIndex,
-          "commitId"
-        ],
+        ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "commitId"],
         "A foreshadowing beat without a committed chapter cannot reference a ledger commit."
       );
     }
@@ -1173,27 +1036,13 @@ function validateLongWorkspaceIndexSnapshot(
     if (!commit) {
       addIssue(
         context,
-        [
-          "plot",
-          "foreshadowing",
-          threadIndex,
-          "beats",
-          beatIndex,
-          "commitId"
-        ],
+        ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "commitId"],
         "Foreshadowing beat commit id must reference an indexed ledger commit."
       );
     } else if (!beatIdsByCommitId.get(commit.id)!.has(beat.id)) {
       addIssue(
         context,
-        [
-          "plot",
-          "foreshadowing",
-          threadIndex,
-          "beats",
-          beatIndex,
-          "commitId"
-        ],
+        ["plot", "foreshadowing", threadIndex, "beats", beatIndex, "commitId"],
         "Committed foreshadowing beat must be indexed by its ledger commit."
       );
     }
@@ -1291,12 +1140,7 @@ function validateLongWorkspaceIndexSnapshot(
     }
   });
   projection.knowledge.forEach((knowledge, index) => {
-    const path = [
-      "ledger",
-      "projection",
-      "knowledge",
-      index
-    ] as ValidationPath;
+    const path = ["ledger", "projection", "knowledge", index] as ValidationPath;
     validateProjectionProvenance(knowledge, path);
     if (
       knowledge.audienceType === "character" &&
@@ -1311,12 +1155,7 @@ function validateLongWorkspaceIndexSnapshot(
     }
   });
   projection.openLoops.forEach((loop, index) => {
-    const path = [
-      "ledger",
-      "projection",
-      "openLoops",
-      index
-    ] as ValidationPath;
+    const path = ["ledger", "projection", "openLoops", index] as ValidationPath;
     validateProjectionProvenance(loop, path);
     if (
       loop.subjectId !== null &&

@@ -40,9 +40,7 @@ export type * from "./update";
 export type * from "./workspace";
 export type * from "./workspace-directory";
 
-export {
-  CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH
-} from "./chat-assistant-base";
+export { CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH } from "./chat-assistant-base";
 export {
   APPEARANCE_FONT_SIZE_LIMITS,
   AppearanceEditorFontFamilySchema,
@@ -132,6 +130,7 @@ export {
   LONG_CHARACTER_FOCUS_MAX_CHARACTERS,
   LONG_CHARACTER_OVERVIEW_FOCUS_MAX_CHARACTERS,
   LONG_DOCUMENT_PAGE_MAX_CHARACTERS,
+  LONG_FORESHADOWING_DIRECTORY_MAX_ENTRIES,
   LONG_WORLDBUILDING_DIRECTORY_MAX_CATEGORIES,
   LONG_WORLDBUILDING_DIRECTORY_MAX_ITEMS,
   LONG_WORLDBUILDING_FOCUS_MAX_CHARACTERS,

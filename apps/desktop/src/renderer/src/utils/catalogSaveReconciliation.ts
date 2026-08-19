@@ -29,7 +29,12 @@ export function captureWorkspaceDocumentBaselines(
   return new Map(
     documents.flatMap((document) =>
       document.workspaceId === workspaceId
-        ? [[document.id, { title: document.title, content: document.content }] as const]
+        ? [
+            [
+              document.id,
+              { title: document.title, content: document.content }
+            ] as const
+          ]
         : []
     )
   );

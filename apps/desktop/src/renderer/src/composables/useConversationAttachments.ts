@@ -17,7 +17,9 @@ export function formatFileSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function attachmentPreview(attachment: UserPromptAttachment): string | undefined {
+export function attachmentPreview(
+  attachment: UserPromptAttachment
+): string | undefined {
   return attachment.kind === "image"
     ? `data:${attachment.mediaType};base64,${attachment.data}`
     : undefined;
@@ -44,13 +46,16 @@ export function useConversationAttachments(options: {
     return `${attachment.name}\u0000${attachment.size}`;
   }
 
-  function validateAttachmentCapacity(attachment: UserPromptAttachment): string | undefined {
+  function validateAttachmentCapacity(
+    attachment: UserPromptAttachment
+  ): string | undefined {
     if (pendingAttachments.value.length >= PROMPT_ATTACHMENT_MAX_ITEMS) {
       return `每条消息最多上传 ${PROMPT_ATTACHMENT_MAX_ITEMS} 个附件。`;
     }
     if (attachment.kind === "text") {
       const textLength = pendingAttachments.value.reduce(
-        (total, item) => total + (item.kind === "text" ? item.content.length : 0),
+        (total, item) =>
+          total + (item.kind === "text" ? item.content.length : 0),
         attachment.content.length
       );
       if (textLength > PROMPT_TEXT_ATTACHMENTS_MAX_CONTENT_LENGTH) {
@@ -75,7 +80,9 @@ export function useConversationAttachments(options: {
     const failures: string[] = [];
     let added = 0;
     try {
-      const existing = new Set(pendingAttachments.value.map(pendingAttachmentKey));
+      const existing = new Set(
+        pendingAttachments.value.map(pendingAttachmentKey)
+      );
       const seenFiles = new Set<string>();
       for (const file of files) {
         const fileKey = attachmentKey(file);
@@ -95,7 +102,9 @@ export function useConversationAttachments(options: {
           added += 1;
           if (result.warning) uiMessage.warning(result.warning);
         } catch (error: unknown) {
-          failures.push(error instanceof Error ? error.message : `读取“${file.name}”失败。`);
+          failures.push(
+            error instanceof Error ? error.message : `读取“${file.name}”失败。`
+          );
         }
       }
     } finally {
@@ -106,7 +115,9 @@ export function useConversationAttachments(options: {
     if (readEpoch !== attachmentReadEpoch) return;
     if (failures.length) {
       uiMessage.error(
-        failures.length === 1 ? failures[0]! : `${failures[0]}（另有 ${failures.length - 1} 个附件未添加）`
+        failures.length === 1
+          ? failures[0]!
+          : `${failures[0]}（另有 ${failures.length - 1} 个附件未添加）`
       );
     } else if (added > 0) {
       uiMessage.success(`已添加 ${added} 个附件`);
@@ -157,8 +168,14 @@ export function useConversationAttachments(options: {
   });
 
   return {
-    attachmentInput, pendingAttachments, readingAttachments, openAttachmentPicker,
-    addAttachmentFiles, handleAttachmentChange, handleComposerPaste, removePendingAttachment,
+    attachmentInput,
+    pendingAttachments,
+    readingAttachments,
+    openAttachmentPicker,
+    addAttachmentFiles,
+    handleAttachmentChange,
+    handleComposerPaste,
+    removePendingAttachment,
     resetAttachments
   };
 }

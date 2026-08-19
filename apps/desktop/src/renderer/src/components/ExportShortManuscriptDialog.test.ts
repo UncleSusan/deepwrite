@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectSourceToContain } from "../../../test-utils/sourceText";
 import source from "./ExportShortManuscriptDialog.vue?raw";
 
 describe("ExportShortManuscriptDialog", () => {
@@ -15,9 +16,9 @@ describe("ExportShortManuscriptDialog", () => {
   });
 
   it("offers DOCX, TXT, and EPUB as selectable format cards", () => {
-    expect(source).toContain('{ id: "docx", label: "DOCX 文档"');
-    expect(source).toContain('{ id: "txt", label: "TXT 纯文本"');
-    expect(source).toContain('{ id: "epub", label: "EPUB 电子书"');
+    expectSourceToContain(source, '{ id: "docx", label: "DOCX 文档"');
+    expectSourceToContain(source, '{ id: "txt", label: "TXT 纯文本"');
+    expectSourceToContain(source, '{ id: "epub", label: "EPUB 电子书"');
     expect(source).toContain('type="radio"');
     expect(source).toContain('emit("export", selectedFormat.value)');
   });

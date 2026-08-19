@@ -39,7 +39,9 @@ export function normalizeLoadSkillName(raw: string): string {
 
 function uniqueOrAmbiguous(
   matches: LoadSkillCandidate[]
-): Extract<ResolveAttachedSkillResult, { status: "found" | "ambiguous" }> | undefined {
+):
+  | Extract<ResolveAttachedSkillResult, { status: "found" | "ambiguous" }>
+  | undefined {
   if (matches.length === 1) {
     return { status: "found", skill: matches[0]! };
   }
@@ -52,7 +54,9 @@ function uniqueOrAmbiguous(
 function matchByTiers(
   name: string,
   pool: readonly LoadSkillCandidate[]
-): Extract<ResolveAttachedSkillResult, { status: "found" | "ambiguous" }> | undefined {
+):
+  | Extract<ResolveAttachedSkillResult, { status: "found" | "ambiguous" }>
+  | undefined {
   const exactTitle = pool.filter((item) => item.title === name);
   const exactTitleHit = uniqueOrAmbiguous(exactTitle);
   if (exactTitleHit) return exactTitleHit;
@@ -61,11 +65,15 @@ function matchByTiers(
   const exactIdHit = uniqueOrAmbiguous(exactId);
   if (exactIdHit) return exactIdHit;
 
-  const exactShort = pool.filter((item) => skillEntryShortName(item.title) === name);
+  const exactShort = pool.filter(
+    (item) => skillEntryShortName(item.title) === name
+  );
   const exactShortHit = uniqueOrAmbiguous(exactShort);
   if (exactShortHit) return exactShortHit;
 
-  const exactLibrary = pool.filter((item) => skillLibraryTitle(item.title) === name);
+  const exactLibrary = pool.filter(
+    (item) => skillLibraryTitle(item.title) === name
+  );
   const exactLibraryHit = uniqueOrAmbiguous(exactLibrary);
   if (exactLibraryHit) return exactLibraryHit;
 
@@ -102,7 +110,9 @@ export function resolveAttachedSkill(
     return {
       status: "out_of_scope",
       matches:
-        outOfScopeHit.status === "found" ? [outOfScopeHit.skill] : outOfScopeHit.matches
+        outOfScopeHit.status === "found"
+          ? [outOfScopeHit.skill]
+          : outOfScopeHit.matches
     };
   }
 
@@ -121,7 +131,8 @@ export function formatLoadSkillToolResult(
   result: ResolveAttachedSkillResult,
   readable: readonly LoadSkillCandidate[]
 ): string {
-  const name = normalizeLoadSkillName(rawName) || String(rawName ?? "").trim() || "(空)";
+  const name =
+    normalizeLoadSkillName(rawName) || String(rawName ?? "").trim() || "(空)";
   if (result.status === "found") {
     return `【技能：${result.skill.title}】\n\n${result.skill.content}`;
   }
@@ -146,7 +157,10 @@ export function formatLoadSkillToolResult(
     ].join("\n");
   }
 
-  return [`没有找到可读取的同名已附加技能（查询：${name}）。`, readableList].join("\n");
+  return [
+    `没有找到可读取的同名已附加技能（查询：${name}）。`,
+    readableList
+  ].join("\n");
 }
 
 export const LOAD_SKILL_TOOL_DESCRIPTION =

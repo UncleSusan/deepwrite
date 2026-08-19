@@ -10,7 +10,11 @@ import {
   LongWorldbuildingCategoryIdSchema,
   LongWorkspaceSchemaVersionSchema
 } from "./ids";
-import { DEFAULT_LONG_CHARACTER_TYPES, LongCharacterGroupSchema, LongCharacterTypeSchema } from "./characters";
+import {
+  DEFAULT_LONG_CHARACTER_TYPES,
+  LongCharacterGroupSchema,
+  LongCharacterTypeSchema
+} from "./characters";
 import type { LongWorkspaceIndexSnapshot } from "./index-validation";
 import {
   addIssue,
@@ -96,20 +100,18 @@ export const LongWorkspaceNavigationSnapshotSchema = z
     bookId: LongBookIdSchema,
     updatedAt: LongTimestampSchema,
     counts: LongWorkspaceNavigationCountsSchema,
-    worldbuilding: z
-      .array(LongWorldbuildingNavigationEntrySchema)
-      .max(10_000),
+    worldbuilding: z.array(LongWorldbuildingNavigationEntrySchema).max(10_000),
     characterTypes: z
       .array(LongCharacterTypeNavigationEntrySchema)
       .min(1)
       .max(10_000)
-      .default(() => DEFAULT_LONG_CHARACTER_TYPES.map((value) => ({ ...value }))),
+      .default(() =>
+        DEFAULT_LONG_CHARACTER_TYPES.map((value) => ({ ...value }))
+      ),
     characters: z.array(LongCharacterNavigationEntrySchema).max(100_000),
     volumes: z.array(LongVolumeNavigationEntrySchema).min(1).max(10_000),
     arcs: z.array(LongArcNavigationEntrySchema).max(100_000),
-    chapterCards: z
-      .array(LongChapterCardNavigationEntrySchema)
-      .max(100_000),
+    chapterCards: z.array(LongChapterCardNavigationEntrySchema).max(100_000),
     committedThroughChapterId: LongChapterCardIdSchema.nullable()
   })
   .strict()
@@ -122,11 +124,7 @@ export const LongWorkspaceNavigationSnapshotSchema = z
       chapterCards: snapshot.chapterCards.length
     };
     for (const [key, expected] of Object.entries(expectedCounts)) {
-      if (
-        snapshot.counts[
-          key as keyof typeof expectedCounts
-        ] !== expected
-      ) {
+      if (snapshot.counts[key as keyof typeof expectedCounts] !== expected) {
         context.addIssue({
           code: "custom",
           path: ["counts", key],
@@ -134,9 +132,7 @@ export const LongWorkspaceNavigationSnapshotSchema = z
         });
       }
     }
-    if (
-      snapshot.counts.committedChapters > snapshot.counts.chapterCards
-    ) {
+    if (snapshot.counts.committedChapters > snapshot.counts.chapterCards) {
       context.addIssue({
         code: "custom",
         path: ["counts", "committedChapters"],
@@ -304,18 +300,16 @@ export const LongWorkspaceNavigationSnapshotSchema = z
       );
     }
 
-    const orderedChapters = [...snapshot.chapterCards].sort(
-      (left, right) => {
-        const leftVolumeOrder =
-          volumeById.get(left.volumeId)?.order ?? Number.MAX_SAFE_INTEGER;
-        const rightVolumeOrder =
-          volumeById.get(right.volumeId)?.order ?? Number.MAX_SAFE_INTEGER;
-        return (
-          leftVolumeOrder - rightVolumeOrder ||
-          left.narrativeOrder - right.narrativeOrder
-        );
-      }
-    );
+    const orderedChapters = [...snapshot.chapterCards].sort((left, right) => {
+      const leftVolumeOrder =
+        volumeById.get(left.volumeId)?.order ?? Number.MAX_SAFE_INTEGER;
+      const rightVolumeOrder =
+        volumeById.get(right.volumeId)?.order ?? Number.MAX_SAFE_INTEGER;
+      return (
+        leftVolumeOrder - rightVolumeOrder ||
+        left.narrativeOrder - right.narrativeOrder
+      );
+    });
     void orderedChapters;
   });
 export type LongWorkspaceNavigationSnapshot = z.infer<
@@ -349,22 +343,23 @@ export function createLongWorkspaceNavigationSnapshot(
       title,
       order
     })),
-    characters: workspace.characters.map(
-      ({ id, name, group, order }) => ({ id, name, group, order })
-    ),
+    characters: workspace.characters.map(({ id, name, group, order }) => ({
+      id,
+      name,
+      group,
+      order
+    })),
     volumes: workspace.plot.volumes.map(({ id, title, order }) => ({
       id,
       title,
       order
     })),
-    arcs: workspace.plot.arcs.map(
-      ({ id, volumeId, title, order }) => ({
-        id,
-        volumeId,
-        title,
-        order
-      })
-    ),
+    arcs: workspace.plot.arcs.map(({ id, volumeId, title, order }) => ({
+      id,
+      volumeId,
+      title,
+      order
+    })),
     chapterCards: workspace.plot.chapterCards.map(
       ({ id, volumeId, primaryArcId, title, narrativeOrder }) => ({
         id,
@@ -377,7 +372,6 @@ export function createLongWorkspaceNavigationSnapshot(
             ?.bodyStatus ?? "empty"
       })
     ),
-    committedThroughChapterId:
-      workspace.ledger.committedThroughChapterId
+    committedThroughChapterId: workspace.ledger.committedThroughChapterId
   });
 }

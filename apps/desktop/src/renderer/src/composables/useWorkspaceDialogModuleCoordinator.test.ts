@@ -39,118 +39,147 @@ function shortBookTarget(
 
 function createHarness() {
   const startupMessages = shallowRef<readonly string[]>([]);
-  const conflict = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["save"]["conflict"]["value"]
-  >(null);
+  const conflict =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["save"]["conflict"]["value"]
+    >(null);
   const saveSubmitting = shallowRef(false);
 
-  const expertCreation = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["shortStructure"]["expertCreation"]["value"]
-  >(null);
-  const expertDeletion = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["shortStructure"]["expertDeletion"]["value"]
-  >(null);
-  const characterDialog = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["shortStructure"]["characterDialog"]["value"]
-  >(null);
+  const expertCreation =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["shortStructure"]["expertCreation"]["value"]
+    >(null);
+  const expertDeletion =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["shortStructure"]["expertDeletion"]["value"]
+    >(null);
+  const characterDialog =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["shortStructure"]["characterDialog"]["value"]
+    >(null);
   const plotBookId = shallowRef<string | null>(null);
-  const plotBook = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["shortStructure"]["plotBook"]["value"]
-  >(null);
+  const plotBook =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["shortStructure"]["plotBook"]["value"]
+    >(null);
 
-  const characterCreation = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["longStructure"]["characterCreation"]["value"]
-  >(null);
-  const worldbuildingItemCreation = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["longStructure"]["worldbuildingItemCreation"]["value"]
-  >(null);
-  const plotPointCreation = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["longStructure"]["plotPointCreation"]["value"]
-  >(null);
-  const chapterCardCreation = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["longStructure"]["chapterCardCreation"]["value"]
-  >(null);
-  const draftDeletion = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["longStructure"]["draftDeletion"]["value"]
-  >(null);
-  const treeDeletion = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["longStructure"]["treeDeletion"]["value"]
-  >(null);
-  const volumeCreation = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["longStructure"]["volumeCreation"]["value"]
-  >(null);
+  const characterCreation =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["longStructure"]["characterCreation"]["value"]
+    >(null);
+  const worldbuildingItemCreation =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["longStructure"]["worldbuildingItemCreation"]["value"]
+    >(null);
+  const plotPointCreation =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["longStructure"]["plotPointCreation"]["value"]
+    >(null);
+  const chapterCardCreation =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["longStructure"]["chapterCardCreation"]["value"]
+    >(null);
+  const draftDeletion =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["longStructure"]["draftDeletion"]["value"]
+    >(null);
+  const treeDeletion =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["longStructure"]["treeDeletion"]["value"]
+    >(null);
+  const volumeCreation =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["longStructure"]["volumeCreation"]["value"]
+    >(null);
   const longStructureDialogOpen = shallowRef(false);
   const syncBookOptions = shallowRef<
     WorkspaceDialogModuleCoordinatorOptions["longStructure"]["syncBookOptions"]["value"]
   >([]);
 
-  const continuationPreview = shallowRef<
-    WorkspaceDialogLongLifecycleState["continuationPreview"]["value"]
-  >(null);
-  const legacyPreview = shallowRef<
-    WorkspaceDialogLongLifecycleState["legacyPreview"]["value"]
-  >(null);
-  const legacyResult = shallowRef<
-    WorkspaceDialogLongLifecycleState["legacyResult"]["value"]
-  >(null);
+  const continuationPreview =
+    shallowRef<
+      WorkspaceDialogLongLifecycleState["continuationPreview"]["value"]
+    >(null);
+  const legacyPreview =
+    shallowRef<WorkspaceDialogLongLifecycleState["legacyPreview"]["value"]>(
+      null
+    );
+  const legacyResult =
+    shallowRef<WorkspaceDialogLongLifecycleState["legacyResult"]["value"]>(
+      null
+    );
   const longMutationPending = shallowRef(false);
   const rollbackDialogOpen = shallowRef(false);
-  const rollbackCommit = shallowRef<
-    WorkspaceDialogLongLifecycleState["rollbackCommit"]["value"]
-  >(null);
+  const rollbackCommit =
+    shallowRef<WorkspaceDialogLongLifecycleState["rollbackCommit"]["value"]>(
+      null
+    );
   const rollbackChapterTitle = shallowRef("");
   const rollbackPending = shallowRef(false);
-  const activeBookSummary = shallowRef<
-    WorkspaceDialogLongLifecycleState["activeBookSummary"]["value"]
-  >(null);
+  const activeBookSummary =
+    shallowRef<WorkspaceDialogLongLifecycleState["activeBookSummary"]["value"]>(
+      null
+    );
   const activeBookId = shallowRef<string | null>(null);
-  const workspaceIndex = shallowRef<
-    WorkspaceDialogLongLifecycleState["workspaceIndex"]["value"]
-  >(null);
+  const workspaceIndex =
+    shallowRef<WorkspaceDialogLongLifecycleState["workspaceIndex"]["value"]>(
+      null
+    );
   const bindingsMode = shallowRef<"skill" | "material" | null>(null);
   const bookActionPending = shallowRef(false);
-  const renameTarget = shallowRef<
-    WorkspaceDialogLongLifecycleState["renameTarget"]["value"]
-  >(null);
-  const removalTarget = shallowRef<
-    WorkspaceDialogLongLifecycleState["removalTarget"]["value"]
-  >(null);
-  const longExportTarget = shallowRef<
-    WorkspaceDialogLongLifecycleState["exportTarget"]["value"]
-  >(null);
+  const renameTarget =
+    shallowRef<WorkspaceDialogLongLifecycleState["renameTarget"]["value"]>(
+      null
+    );
+  const removalTarget =
+    shallowRef<WorkspaceDialogLongLifecycleState["removalTarget"]["value"]>(
+      null
+    );
+  const longExportTarget =
+    shallowRef<WorkspaceDialogLongLifecycleState["exportTarget"]["value"]>(
+      null
+    );
   const longManuscriptExportPending = shallowRef(false);
 
   const shortExportTarget = shallowRef<ShortBookLifecycleTarget | null>(null);
   const shortManuscriptExportPending = shallowRef(false);
   const createDialogOpen = shallowRef(false);
   const transferMode = shallowRef<"open" | "import" | null>(null);
-  const resourceMode = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["shortLifecycle"]["resourceMode"]["value"]
-  >(null);
+  const resourceMode =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["shortLifecycle"]["resourceMode"]["value"]
+    >(null);
   const activeBookTarget = shallowRef<ShortBookLifecycleTarget | null>(null);
 
-  const removalDialog = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["library"]["removalDialog"]["value"]
-  >(null);
-  const projectDialog = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["library"]["projectDialog"]["value"]
-  >(null);
-  const externalSkillImportDialog = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["library"]["externalSkillImportDialog"]["value"]
-  >(null);
-  const entryMove = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["library"]["entryMove"]["value"]
-  >(null);
-  const groupDialog = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["library"]["groupDialog"]["value"]
-  >(null);
-  const activeGroup = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["library"]["activeGroup"]["value"]
-  >(null);
+  const removalDialog =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["library"]["removalDialog"]["value"]
+    >(null);
+  const projectDialog =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["library"]["projectDialog"]["value"]
+    >(null);
+  const externalSkillImportDialog =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["library"]["externalSkillImportDialog"]["value"]
+    >(null);
+  const entryMove =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["library"]["entryMove"]["value"]
+    >(null);
+  const groupDialog =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["library"]["groupDialog"]["value"]
+    >(null);
+  const activeGroup =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["library"]["activeGroup"]["value"]
+    >(null);
 
-  const catalogSnapshot = shallowRef<
-    WorkspaceDialogModuleCoordinatorOptions["catalog"]["snapshot"]["value"]
-  >(null);
+  const catalogSnapshot =
+    shallowRef<
+      WorkspaceDialogModuleCoordinatorOptions["catalog"]["snapshot"]["value"]
+    >(null);
   const catalogLoading = shallowRef(false);
   const catalogMutationPending = shallowRef(false);
   const skillLibraries = shallowRef<ResourceTreeNode[]>([]);
@@ -339,7 +368,9 @@ function setKindActive(
             NonNullable<
               WorkspaceDialogLongLifecycleState["continuationPreview"]["value"]
             >
-          >({ sourcePath: "/example.test/continuation" })
+          >({
+            sourcePath: "/example.test/continuation"
+          })
         : null;
       return;
     case "legacy-sync":
@@ -348,7 +379,9 @@ function setKindActive(
             NonNullable<
               WorkspaceDialogLongLifecycleState["legacyPreview"]["value"]
             >
-          >({ sourcePath: "/example.test/legacy" })
+          >({
+            sourcePath: "/example.test/legacy"
+          })
         : null;
       state.legacyResult.value = null;
       return;
@@ -359,7 +392,9 @@ function setKindActive(
             NonNullable<
               WorkspaceDialogLongLifecycleState["rollbackCommit"]["value"]
             >
-          >({ sequence: 7 })
+          >({
+            sequence: 7
+          })
         : null;
       return;
     case "create-long-character":
@@ -643,10 +678,7 @@ describe("useWorkspaceDialogModuleCoordinator", () => {
       reads.activeBookTarget
     );
     harness.options.library.activeGroup = trackedRef(null, reads.activeGroup);
-    harness.options.catalog.snapshot = trackedRef(
-      null,
-      reads.catalogSnapshot
-    );
+    harness.options.catalog.snapshot = trackedRef(null, reads.catalogSnapshot);
     harness.options.catalog.loading = trackedRef(false, reads.catalogLoading);
     harness.options.catalog.mutationPending = trackedRef(
       false,
@@ -745,9 +777,9 @@ describe("useWorkspaceDialogModuleCoordinator", () => {
     expect(coordinatorSource).not.toMatch(
       /(?:from|import\()\s*["'][^"']*\.vue/
     );
-    expect(
-      coordinatorSource.match(/^import (?!type).*$/gm)
-    ).toEqual(['import { computed, type Ref } from "vue";']);
+    expect(coordinatorSource.match(/^import (?!type).*$/gm)).toEqual([
+      'import { computed, type Ref } from "vue";'
+    ]);
     expect(coordinatorSource).toContain(
       "Readonly<Ref<WorkspaceDialogModule | null>>"
     );

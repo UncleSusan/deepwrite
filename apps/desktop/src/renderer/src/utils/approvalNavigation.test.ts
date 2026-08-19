@@ -13,9 +13,7 @@ import {
   resolveLongProposalApprovalTarget
 } from "./approvalNavigation";
 
-function proposal(
-  patch: Partial<AgentEditProposal> = {}
-): AgentEditProposal {
+function proposal(patch: Partial<AgentEditProposal> = {}): AgentEditProposal {
   return {
     id: "proposal_test",
     runId: "run_test",
@@ -193,31 +191,29 @@ describe("approval navigation target resolution", () => {
   });
 
   it("prefers document writes as exact file targets before structure fallbacks", () => {
-    const candidates = longApprovalCandidatesForBatch(
-      {
-        baseRevision: 4,
-        updatedAt: "2026-08-14T00:00:00.000Z",
-        operations: [
-          {
-            type: "storyPlot.update",
-            id: "story_plot_one",
-            patch: { title: "新标题" }
-          }
-        ],
-        documentWrites: [
-          {
-            proposalId: "proposal_story_plot",
-            fileId: "file_story_plot",
-            content: "情节",
-            mode: "replace",
-            expectedRevision: "revision_before",
-            nextRevision: "revision_after",
-            updatedAt: "2026-08-14T00:00:00.000Z",
-            reason: "写入故事情节"
-          }
-        ]
-      } as LongWorkspaceOperationBatch
-    );
+    const candidates = longApprovalCandidatesForBatch({
+      baseRevision: 4,
+      updatedAt: "2026-08-14T00:00:00.000Z",
+      operations: [
+        {
+          type: "storyPlot.update",
+          id: "story_plot_one",
+          patch: { title: "新标题" }
+        }
+      ],
+      documentWrites: [
+        {
+          proposalId: "proposal_story_plot",
+          fileId: "file_story_plot",
+          content: "情节",
+          mode: "replace",
+          expectedRevision: "revision_before",
+          nextRevision: "revision_after",
+          updatedAt: "2026-08-14T00:00:00.000Z",
+          reason: "写入故事情节"
+        }
+      ]
+    } as LongWorkspaceOperationBatch);
     expect(candidates[0]).toEqual({
       kind: "file",
       fileId: "file_story_plot"
@@ -229,21 +225,19 @@ describe("approval navigation target resolution", () => {
   });
 
   it("orders surviving structure targets before deletion fallbacks", () => {
-    const candidates = longApprovalCandidatesForBatch(
-      {
-        baseRevision: 4,
-        updatedAt: "2026-08-14T00:00:00.000Z",
-        operations: [
-          { type: "chapter.delete", id: "chapter_deleted" },
-          {
-            type: "arc.update",
-            id: "arc_surviving",
-            patch: { title: "新标题" }
-          }
-        ],
-        documentWrites: []
-      } as LongWorkspaceOperationBatch
-    );
+    const candidates = longApprovalCandidatesForBatch({
+      baseRevision: 4,
+      updatedAt: "2026-08-14T00:00:00.000Z",
+      operations: [
+        { type: "chapter.delete", id: "chapter_deleted" },
+        {
+          type: "arc.update",
+          id: "arc_surviving",
+          patch: { title: "新标题" }
+        }
+      ],
+      documentWrites: []
+    } as LongWorkspaceOperationBatch);
     expect(candidates[0]).toEqual({
       kind: "arc",
       arcId: "arc_surviving"
@@ -399,9 +393,7 @@ describe("long approval navigation against the latest index", () => {
     } as unknown as LongBookSummary;
     const characterIndex = {
       ...index,
-      characterTypes: [
-        { id: "protagonist", title: "主角", order: 1 }
-      ],
+      characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
       characterFiles: [
         {
           characterId: "character_hero",

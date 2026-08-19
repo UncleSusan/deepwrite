@@ -29,7 +29,14 @@ function manifest(
         baseUrl: "https://example.test/v1",
         reasoning: false,
         defaultThinkingLevel: "off",
-        thinkingLevelOptions: ["minimal", "low", "medium", "high", "xhigh", "max"],
+        thinkingLevelOptions: [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
         temperatureOptions: [0.1, 0.7, 1],
         enabled: true,
         sort: 10,
@@ -42,7 +49,9 @@ function manifest(
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
@@ -63,16 +72,22 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     });
 
     await store.initialize();
-    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v1");
+    expect((await store.getCatalog()).models[0]?.modelId).toBe(
+      "vendor/writer-v1"
+    );
     expect(requests).toBe(1);
 
     modelId = "vendor/writer-v2";
     now += DEEPWRITE_FREE_MODEL_REFRESH_INTERVAL_MS - 1;
-    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v1");
+    expect((await store.getCatalog()).models[0]?.modelId).toBe(
+      "vendor/writer-v1"
+    );
     expect(requests).toBe(1);
 
     now += 1;
-    expect((await store.getCatalog()).models[0]?.modelId).toBe("vendor/writer-v2");
+    expect((await store.getCatalog()).models[0]?.modelId).toBe(
+      "vendor/writer-v2"
+    );
     expect(requests).toBe(2);
   });
 
@@ -98,7 +113,9 @@ describe("DeepWriteFreeModelCatalogStore", () => {
   });
 
   it("reports a forced refresh failure while retaining the last valid catalog", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-failed-refresh-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-free-models-failed-refresh-")
+    );
     temporaryRoots.push(root);
     let online = true;
     const store = new DeepWriteFreeModelCatalogStore(root, {
@@ -123,7 +140,8 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     temporaryRoots.push(root);
     const first = new DeepWriteFreeModelCatalogStore(root, {
       appVersion: "1.0.0",
-      fetcher: async () => new Response(JSON.stringify(manifest("vendor/cached")))
+      fetcher: async () =>
+        new Response(JSON.stringify(manifest("vendor/cached")))
     });
     await first.initialize();
 
@@ -135,7 +153,9 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     });
     await offline.initialize();
 
-    expect((await offline.getCatalog()).models[0]?.modelId).toBe("vendor/cached");
+    expect((await offline.getCatalog()).models[0]?.modelId).toBe(
+      "vendor/cached"
+    );
   });
 
   it("uses the remote model configuration without extra provider or model-id limits", () => {
@@ -157,15 +177,20 @@ describe("DeepWriteFreeModelCatalogStore", () => {
       baseUrl: "https://example.invalid/v1",
       managedBy: "deepwrite-free"
     });
-    expect(catalog.apiKeys).toEqual({ "deepwrite-free-writing": "remote-secret" });
+    expect(catalog.apiKeys).toEqual({
+      "deepwrite-free-writing": "remote-secret"
+    });
     expect(catalog.models[0]).not.toHaveProperty("apiKey");
   });
 
   it("does not write remote keys into the manifest cache", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-secret-cache-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-free-models-secret-cache-")
+    );
     temporaryRoots.push(root);
     const remoteManifest = manifest();
-    (remoteManifest.models as Array<Record<string, unknown>>)[0]!.apiKey = "remote-secret";
+    (remoteManifest.models as Array<Record<string, unknown>>)[0]!.apiKey =
+      "remote-secret";
     const store = new DeepWriteFreeModelCatalogStore(root, {
       appVersion: "1.0.0",
       fetcher: async () => new Response(JSON.stringify(remoteManifest))

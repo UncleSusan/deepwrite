@@ -74,7 +74,10 @@ export interface LongChapterCardCreateTarget {
   readonly bookId: string;
   readonly volumeId: string;
   readonly volumeTitle: string;
-  readonly arcOptions: ReadonlyArray<{ readonly value: string; readonly label: string }>;
+  readonly arcOptions: ReadonlyArray<{
+    readonly value: string;
+    readonly label: string;
+  }>;
   readonly source: "chapter-card" | "draft";
 }
 
@@ -119,7 +122,9 @@ function disposedError(): Error {
 
 export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const longBooks = shallowRef<readonly LongBookSummary[]>([]);
-  const longCatalogDiagnostics = shallowRef<readonly LongCatalogDiagnostic[]>([]);
+  const longCatalogDiagnostics = shallowRef<readonly LongCatalogDiagnostic[]>(
+    []
+  );
   const catalogRevision = ref<number | null>(null);
   const catalogUpdatedAt = ref<string | null>(null);
   const activeBookId = ref<string | null>(null);
@@ -127,9 +132,8 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const selection = shallowRef<LongWorkspaceSelection | null>(null);
   const fileContext = shallowRef<LongWorkspaceFileContext | null>(null);
   const refreshStatus = shallowRef<LongWorkspaceRefreshStatus | null>(null);
-  const revisionRequirement = shallowRef<
-    LongWorkspaceRevisionSyncRequirement | null
-  >(null);
+  const revisionRequirement =
+    shallowRef<LongWorkspaceRevisionSyncRequirement | null>(null);
 
   const bookListLoading = ref(false);
   const bookListError = ref<string | null>(null);
@@ -142,9 +146,8 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const bookActionPending = ref(false);
   const manuscriptExportPending = ref(false);
 
-  const continuationImportPreview = shallowRef<
-    LongChooseContinuationImportSourceResult | null
-  >(null);
+  const continuationImportPreview =
+    shallowRef<LongChooseContinuationImportSourceResult | null>(null);
   const legacySyncPreview = shallowRef<LongChooseLegacySyncSourceResult | null>(
     null
   );
@@ -154,26 +157,31 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const structureDialogOpen = ref(false);
   const structureAgentsMd = ref<string | null>(null);
   const structureAgentsMdPending = ref(false);
-  const characterCreateTarget = shallowRef<LongCharacterCreateTarget | null>(null);
-  const worldbuildingItemCreateTarget =
-    shallowRef<LongWorldbuildingItemCreateTarget | null>(null);
-  const plotPointCreateTarget = shallowRef<LongPlotPointCreateTarget | null>(null);
-  const chapterCardCreateTarget = shallowRef<LongChapterCardCreateTarget | null>(
+  const characterCreateTarget = shallowRef<LongCharacterCreateTarget | null>(
     null
   );
-  const draftSectionDeleteTarget = shallowRef<
-    LongDraftSectionDeleteTarget | null
-  >(null);
-  const treeItemDeleteTarget = shallowRef<LongTreeItemDeleteTarget | null>(null);
-  const volumeCreateTarget = shallowRef<{ readonly bookId: string } | null>(null);
+  const worldbuildingItemCreateTarget =
+    shallowRef<LongWorldbuildingItemCreateTarget | null>(null);
+  const plotPointCreateTarget = shallowRef<LongPlotPointCreateTarget | null>(
+    null
+  );
+  const chapterCardCreateTarget =
+    shallowRef<LongChapterCardCreateTarget | null>(null);
+  const draftSectionDeleteTarget =
+    shallowRef<LongDraftSectionDeleteTarget | null>(null);
+  const treeItemDeleteTarget = shallowRef<LongTreeItemDeleteTarget | null>(
+    null
+  );
+  const volumeCreateTarget = shallowRef<{ readonly bookId: string } | null>(
+    null
+  );
   const bindingsDialogMode = ref<"skill" | "material" | null>(null);
   const exportTarget = shallowRef<LongBookRenameTarget | null>(null);
   const bookRenameTarget = shallowRef<LongBookRenameTarget | null>(null);
   const bookRemovalTarget = shallowRef<LongBookRemovalTarget | null>(null);
 
   const activeBookSummary = computed<LongBookSummary | null>(
-    () =>
-      longBooks.value.find((book) => book.id === activeBookId.value) ?? null
+    () => longBooks.value.find((book) => book.id === activeBookId.value) ?? null
   );
   const activeRefreshStatus = computed(() => {
     const current = refreshStatus.value;
@@ -268,7 +276,9 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     if (payload.summary) return payload.summary;
     const current = activeBookSummary.value;
     if (!current || current.id !== payload.bookId) {
-      throw new Error("Long workspace result does not include its book summary.");
+      throw new Error(
+        "Long workspace result does not include its book summary."
+      );
     }
     return {
       ...current,
@@ -292,11 +302,11 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     const summary = summaryForWorkspacePayload(payload);
     const previousSelection = selection.value;
     const nextSelection = previousSelection
-      ? reconcileLongWorkspaceSelection(
+      ? (reconcileLongWorkspaceSelection(
           summary,
           payload.workspaceIndex,
           previousSelection
-        ) ?? null
+        ) ?? null)
       : null;
     const previousFileId = fileContext.value?.fileId;
     const nextFile = nextSelection?.files.find(
@@ -366,8 +376,7 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     const requestLifecycleGeneration = lifecycleGeneration;
     const requestStateGeneration = stateGeneration;
     const requestBookListGeneration = bookListGeneration;
-    let request!: Promise<LongListBooksResult | null>;
-    request = Promise.resolve()
+    const request = Promise.resolve()
       .then(loader)
       .then((result) => {
         if (
@@ -434,11 +443,13 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     const requestStateGeneration = stateGeneration;
     const requestActiveGeneration = activeGeneration;
     const requestId = ++workspaceRequestClock;
-    let record!: WorkspaceLoadRecord;
     const request = Promise.resolve()
       .then(loader)
       .then((payload) => {
-        if (payload.bookId !== bookId || payload.workspaceIndex.bookId !== bookId) {
+        if (
+          payload.bookId !== bookId ||
+          payload.workspaceIndex.bookId !== bookId
+        ) {
           throw new Error("Long workspace loader returned a different book.");
         }
         if (
@@ -490,7 +501,7 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
           workspaceLoading.value = false;
         }
       });
-    record = {
+    const record: WorkspaceLoadRecord = {
       generation,
       activeGeneration: requestActiveGeneration,
       requestId,

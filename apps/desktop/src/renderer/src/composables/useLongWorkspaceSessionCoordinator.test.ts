@@ -142,6 +142,10 @@ function editorPort(overrides: Partial<LongWorkspaceEditorPort> = {}) {
     focusFile: vi.fn(async () => true),
     focusTarget: vi.fn(async () => true),
     captureNavigationSelection: vi.fn(() => ({})),
+    captureForeshadowingFocus: vi.fn(() => ({
+      threadId: null,
+      beatId: null
+    })),
     ensureDocumentsLoaded: vi.fn(async () => true),
     synchronizeProjectRevisions: vi.fn(),
     synchronizeProjectRevisionsIfClean: vi.fn(() => true),
@@ -348,7 +352,10 @@ describe("long workspace session coordinator", () => {
       harness.coordinator.refreshAndSynchronizeRequiredRevision("longbook_a")
     ).resolves.toBe(true);
     expect(harness.api.getWorkspaceIndex).toHaveBeenCalledTimes(2);
-    expect(currentEditor.synchronizeProjectRevisions).toHaveBeenCalledWith(3, 5);
+    expect(currentEditor.synchronizeProjectRevisions).toHaveBeenCalledWith(
+      3,
+      5
+    );
     expect(harness.refs.revisionRequirement.value).toBeNull();
   });
 

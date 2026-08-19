@@ -109,14 +109,7 @@ export const EventConnectionUpdatePatchSchema = nonEmptyPatch({
   sourceEventId: LongStoryEventIdSchema.optional(),
   targetEventId: LongStoryEventIdSchema.optional(),
   type: z
-    .enum([
-      "before",
-      "same_time",
-      "overlaps",
-      "causes",
-      "enables",
-      "conceals"
-    ])
+    .enum(["before", "same_time", "overlaps", "causes", "enables", "conceals"])
     .optional(),
   note: OperationShortTextSchema.optional()
 });
@@ -141,9 +134,7 @@ export const ForeshadowingUpdatePatchSchema = nonEmptyPatch({
   title: OperationTitleSchema.optional(),
   coreQuestion: OperationTextSchema.optional(),
   hiddenTruth: OperationTextSchema.optional(),
-  plannedSpan: z
-    .enum(["local", "within_volume", "cross_volume"])
-    .optional(),
+  plannedSpan: z.enum(["local", "within_volume", "cross_volume"]).optional(),
   truthEventId: LongStoryEventIdSchema.nullable().optional(),
   expectedReaderEffect: OperationTextSchema.optional(),
   status: z.enum(["planned", "abandoned"]).optional()
@@ -169,7 +160,6 @@ export const ForeshadowingBeatUpdatePatchSchema = nonEmptyPatch({
   plannedScope: z.string().max(1_000).optional(),
   note: OperationShortTextSchema.optional()
 });
-
 
 export function sortedUniqueIdArray<T extends string>(schema: z.ZodType<T>) {
   return z.array(schema).superRefine((values, context) => {

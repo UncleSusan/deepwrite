@@ -1,9 +1,12 @@
-<script lang="ts">
-export const CREATE_DEFAULT_LIBRARY_VALUE = "__create_default_library__";
-</script>
-
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import type {
   CreateLibraryGroupInput,
   MaterialKind,
@@ -57,10 +60,13 @@ const titleInput = ref<HTMLInputElement | null>(null);
 const selections = ref<Record<string, string>>({});
 const resolving = ref(false);
 const editing = computed(() => Boolean(props.group));
-const domainLabel = computed(() => (props.domain === "material" ? "素材" : "技能"));
+const domainLabel = computed(() =>
+  props.domain === "material" ? "素材" : "技能"
+);
 const busy = computed(() => Boolean(props.submitting) || resolving.value);
 const unavailableLibraryIds = computed(() => {
-  const groups = props.domain === "material" ? props.materialGroups : props.skillGroups;
+  const groups =
+    props.domain === "material" ? props.materialGroups : props.skillGroups;
   return new Set(
     groups
       .filter((group) => group.id !== props.group?.id)
@@ -90,7 +96,8 @@ const rows = computed(() =>
           ...props.materials
             .filter(
               (library) =>
-                (library.materialKind === kind || library.materialKind === "mixed") &&
+                (library.materialKind === kind ||
+                  library.materialKind === "mixed") &&
                 !unavailableLibraryIds.value.has(library.id) &&
                 !selectedInAnotherRow(kind, library.id)
             )
@@ -217,7 +224,9 @@ async function submit(): Promise<void> {
       );
     }
   } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "新建默认库失败。");
+    uiMessage.error(
+      error instanceof Error ? error.message : "新建默认库失败。"
+    );
   } finally {
     resolving.value = false;
   }
@@ -234,7 +243,9 @@ watch(
     title.value = props.group?.title ?? "";
     selections.value = props.group
       ? (Object.fromEntries(
-          Object.entries(props.group.members).filter(([, libraryId]) => Boolean(libraryId))
+          Object.entries(props.group.members).filter(([, libraryId]) =>
+            Boolean(libraryId)
+          )
         ) as Record<string, string>)
       : {};
     resolving.value = false;
@@ -258,7 +269,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <header>
           <div>
             <span class="dialog-eyebrow">{{ domainLabel }}库分组</span>
-            <h2 id="library-group-dialog-title">{{ editing ? "编辑分组" : "新建分组" }}</h2>
+            <h2 id="library-group-dialog-title">
+              {{ editing ? "编辑分组" : "新建分组" }}
+            </h2>
           </div>
           <button
             class="dialog-close"
@@ -271,13 +284,20 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           </button>
         </header>
 
-        <form class="dialog-content catalog-resource-form" @submit.prevent="submit">
+        <form
+          class="dialog-content catalog-resource-form"
+          @submit.prevent="submit"
+        >
           <p class="dialog-description">
             <template v-if="editing">
-              修改“{{ group?.title }}”的名称或包含的{{ domainLabel }}库。移出的库会回到原分类，新绑定的库会移动到此分组。已有库被占用时，也可选择「新建默认库」。
+              修改“{{ group?.title }}”的名称或包含的{{
+                domainLabel
+              }}库。移出的库会回到原分类，新绑定的库会移动到此分组。已有库被占用时，也可选择「新建默认库」。
             </template>
             <template v-else>
-              每一种类型最多选择一个已有{{ domainLabel }}库，也可以选择「新建默认库」当场创建，或全部留空稍后再补充。
+              每一种类型最多选择一个已有{{
+                domainLabel
+              }}库，也可以选择「新建默认库」当场创建，或全部留空稍后再补充。
             </template>
           </p>
           <label class="book-resource-name-field">
@@ -295,7 +315,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 
           <fieldset class="library-group-members">
             <legend>选择{{ domainLabel }}库</legend>
-            <label v-for="row in rows" :key="row.kind" class="library-group-member-row">
+            <label
+              v-for="row in rows"
+              :key="row.kind"
+              class="library-group-member-row"
+            >
               <span>{{ row.label }}</span>
               <PopupSelect
                 :model-value="selections[row.kind] ?? ''"
@@ -318,7 +342,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             >
               取消
             </button>
-            <button class="dialog-primary-button" type="submit" :disabled="busy">
+            <button
+              class="dialog-primary-button"
+              type="submit"
+              :disabled="busy"
+            >
               {{
                 resolving
                   ? "创建默认库…"

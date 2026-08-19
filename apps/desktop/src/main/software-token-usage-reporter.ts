@@ -61,7 +61,8 @@ export interface SoftwareTokenUsageReporterOptions {
 
 const STATE_VERSION = 1;
 const REPORT_TIMEOUT_MS = 3_000;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -158,7 +159,9 @@ function parseState(value: unknown): SoftwareTokenReporterState | undefined {
   };
 }
 
-function totalsFromDashboard(dashboard: ModelUsageDashboard): SoftwareTokenTotals {
+function totalsFromDashboard(
+  dashboard: ModelUsageDashboard
+): SoftwareTokenTotals {
   return {
     inputTokens: dashboard.totals.inputTokens,
     outputTokens: dashboard.totals.outputTokens,
@@ -169,9 +172,7 @@ function totalsFromDashboard(dashboard: ModelUsageDashboard): SoftwareTokenTotal
 
 function addHasPositiveValue(totals: SoftwareTokenTotals): boolean {
   return (
-    totals.inputTokens > 0 ||
-    totals.outputTokens > 0 ||
-    totals.cacheTokens > 0
+    totals.inputTokens > 0 || totals.outputTokens > 0 || totals.cacheTokens > 0
   );
 }
 
@@ -267,7 +268,7 @@ export class SoftwareTokenUsageReporter {
       }
     }
 
-    const mode = baseline ? "increment" as const : "initial" as const;
+    const mode = baseline ? ("increment" as const) : ("initial" as const);
     const delta = baseline
       ? {
           inputTokens: current.inputTokens - baseline.inputTokens,
@@ -275,7 +276,8 @@ export class SoftwareTokenUsageReporter {
           cacheTokens: current.cacheTokens - baseline.cacheTokens
         }
       : { ...current };
-    const dailyDue = reason === "startup" && state.lastDailyReportDate !== today;
+    const dailyDue =
+      reason === "startup" && state.lastDailyReportDate !== today;
     if (mode === "increment" && !addHasPositiveValue(delta) && !dailyDue) {
       if (rebased) await atomicWriteJson(this.statePath, state);
       return;
@@ -296,7 +298,9 @@ export class SoftwareTokenUsageReporter {
     await this.sendPending(state);
   }
 
-  private async sendPending(state: SoftwareTokenReporterState): Promise<boolean> {
+  private async sendPending(
+    state: SoftwareTokenReporterState
+  ): Promise<boolean> {
     const pending = state.pending;
     if (!pending) return true;
     try {

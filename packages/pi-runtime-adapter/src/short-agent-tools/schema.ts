@@ -11,7 +11,8 @@ export function literalUnion<T extends string>(values: readonly T[]) {
 
 function primitiveTypeOf(value: unknown): string | undefined {
   if (typeof value === "string") return "string";
-  if (typeof value === "number") return Number.isInteger(value) ? "integer" : "number";
+  if (typeof value === "number")
+    return Number.isInteger(value) ? "integer" : "number";
   if (typeof value === "boolean") return "boolean";
   return undefined;
 }
@@ -58,7 +59,9 @@ export function sanitizeToolSchemaForGemini(value: unknown): unknown {
   return output;
 }
 
-export function defineTool<T extends ReturnType<typeof Type.Object>>(definition: {
+export function defineTool<
+  T extends ReturnType<typeof Type.Object>
+>(definition: {
   name: string;
   label: string;
   description: string;
@@ -76,6 +79,8 @@ export function defineTool<T extends ReturnType<typeof Type.Object>>(definition:
     description: definition.description,
     parameters: sanitizeToolSchemaForGemini(definition.parameters) as T,
     execute: definition.execute,
-    ...(definition.executionMode ? { executionMode: definition.executionMode } : {})
+    ...(definition.executionMode
+      ? { executionMode: definition.executionMode }
+      : {})
   };
 }

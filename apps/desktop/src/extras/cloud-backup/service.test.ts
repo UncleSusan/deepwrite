@@ -10,7 +10,9 @@ import { CLOUD_BACKUP_QUOTA_BYTES } from "@deepwrite/contracts";
 const roots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+  );
 });
 
 class MemoryStore implements CloudBackupObjectStore {
@@ -29,7 +31,9 @@ async function setupWorkspace(): Promise<{
   userData: string;
   workspace: string;
 }> {
-  const userData = await mkdtemp(join(tmpdir(), "deepwrite-cloud-backup-user-"));
+  const userData = await mkdtemp(
+    join(tmpdir(), "deepwrite-cloud-backup-user-")
+  );
   const workspace = await mkdtemp(join(tmpdir(), "deepwrite-cloud-backup-ws-"));
   roots.push(userData, workspace);
   const bookDir = join(workspace, "books", "测试书");
@@ -88,13 +92,19 @@ describe("cloud backup service", () => {
     expect(status.quotaBytes).toBe(CLOUD_BACKUP_QUOTA_BYTES);
 
     const uploadPreview = await service.previewBackup();
-    expect(uploadPreview.changes.some((change) => change.change === "add")).toBe(true);
+    expect(
+      uploadPreview.changes.some((change) => change.change === "add")
+    ).toBe(true);
     const uploaded = await service.applyBackup(uploadPreview.previewId);
     expect(uploaded.added).toBe(1);
     expect(store.objects.size).toBe(2);
 
-    const otherUser = await mkdtemp(join(tmpdir(), "deepwrite-cloud-backup-other-"));
-    const otherWorkspace = await mkdtemp(join(tmpdir(), "deepwrite-cloud-backup-other-ws-"));
+    const otherUser = await mkdtemp(
+      join(tmpdir(), "deepwrite-cloud-backup-other-")
+    );
+    const otherWorkspace = await mkdtemp(
+      join(tmpdir(), "deepwrite-cloud-backup-other-ws-")
+    );
     roots.push(otherUser, otherWorkspace);
     await writeFile(
       join(otherUser, "catalog-registry.json"),
@@ -124,7 +134,9 @@ describe("cloud backup service", () => {
       () => new Date("2026-08-13T02:00:00.000Z")
     );
     const restorePreview = await other.previewRestore(status.machineKey);
-    expect(restorePreview.changes.map((change) => change.change)).toEqual(["add"]);
+    expect(restorePreview.changes.map((change) => change.change)).toEqual([
+      "add"
+    ]);
     await other.applyRestore(restorePreview.previewId);
     expect(registered.length).toBe(1);
     const restored = await readFile(
@@ -145,6 +157,8 @@ describe("cloud backup service", () => {
       },
       new MemoryStore()
     );
-    await expect(service.applyRestore("preview_missing")).rejects.toThrow("同步预览已过期");
+    await expect(service.applyRestore("preview_missing")).rejects.toThrow(
+      "同步预览已过期"
+    );
   });
 });

@@ -5,7 +5,10 @@ import {
   type LibraryAgentDomain,
   type UserPromptAttachment
 } from "@deepwrite/contracts";
-import type { ComposerReferenceOption, EditorTextReference } from "../types/conversation";
+import type {
+  ComposerReferenceOption,
+  EditorTextReference
+} from "../types/conversation";
 import { uiMessage } from "../ui-feedback";
 import {
   findComposerReferenceMatch,
@@ -15,24 +18,31 @@ import {
 import { createEditorReferenceAttachment } from "../utils/editorTextReferences";
 
 export function useConversationComposer(options: {
-  draft: () => string; canSend: () => boolean; canSendAttachments: () => boolean;
-  runtimeAvailable: () => boolean; libraryDomain: () => LibraryAgentDomain | undefined;
+  draft: () => string;
+  canSend: () => boolean;
+  canSendAttachments: () => boolean;
+  runtimeAvailable: () => boolean;
+  libraryDomain: () => LibraryAgentDomain | undefined;
   availableSkills: () => readonly ComposerReferenceOption[];
   availableMaterials: () => readonly ComposerReferenceOption[];
   editorReferences: () => readonly EditorTextReference[];
-  pendingAttachments: Ref<UserPromptAttachment[]>; readingAttachments: Ref<boolean>;
-  emitDraft: (value: string) => void; emitSend: (attachments: UserPromptAttachment[]) => void;
+  pendingAttachments: Ref<UserPromptAttachment[]>;
+  readingAttachments: Ref<boolean>;
+  emitDraft: (value: string) => void;
+  emitSend: (attachments: UserPromptAttachment[]) => void;
   emitClearEditorReferences: () => void;
 }) {
   const composerInput = ref<HTMLTextAreaElement>();
   const activeReference = ref<ComposerReferenceMatch | null>(null);
   const activeReferenceIndex = ref(0);
 
-  const canSubmit = computed(() =>
-    !options.readingAttachments.value &&
-    (options.canSend() ||
-      (options.canSendAttachments() &&
-        (options.pendingAttachments.value.length > 0 || options.editorReferences().length > 0)))
+  const canSubmit = computed(
+    () =>
+      !options.readingAttachments.value &&
+      (options.canSend() ||
+        (options.canSendAttachments() &&
+          (options.pendingAttachments.value.length > 0 ||
+            options.editorReferences().length > 0)))
   );
 
   const referenceOptions = computed(() =>
@@ -43,10 +53,13 @@ export function useConversationComposer(options: {
         : []
   );
   const filteredReferenceOptions = computed(() => {
-    const query = activeReference.value?.query.trim().toLocaleLowerCase("zh-CN") ?? "";
+    const query =
+      activeReference.value?.query.trim().toLocaleLowerCase("zh-CN") ?? "";
     const matches = query
       ? referenceOptions.value.filter((option) =>
-          `${option.label} ${option.detail}`.toLocaleLowerCase("zh-CN").includes(query)
+          `${option.label} ${option.detail}`
+            .toLocaleLowerCase("zh-CN")
+            .includes(query)
         )
       : referenceOptions.value;
     return matches.slice(0, 12);
@@ -54,15 +67,20 @@ export function useConversationComposer(options: {
   const referenceMenuTitle = computed(() =>
     activeReference.value?.trigger === "/"
       ? "调用技能"
-      : options.libraryDomain() === "skill" ? "引用技能" : "引用素材"
+      : options.libraryDomain() === "skill"
+        ? "引用技能"
+        : "引用素材"
   );
   const referenceMenuHint = computed(() =>
     activeReference.value?.trigger === "/"
       ? "输入名称搜索技能"
-      : options.libraryDomain() === "skill" ? "输入名称搜索技能条目" : "输入名称搜索素材条目"
+      : options.libraryDomain() === "skill"
+        ? "输入名称搜索技能条目"
+        : "输入名称搜索素材条目"
   );
   const composerPlaceholder = computed(() => {
-    if (!options.runtimeAvailable()) return "浏览器预览不可发送，请启动桌面客户端";
+    if (!options.runtimeAvailable())
+      return "浏览器预览不可发送，请启动桌面客户端";
     if (options.libraryDomain() === "skill") {
       return "描述资料库任务，输入 / 加载方法技能，输入 @ 引用当前库或同分组其它库的技能……";
     }
@@ -73,7 +91,11 @@ export function useConversationComposer(options: {
   });
 
   watch(
-    () => options.editorReferences().map((reference) => reference.id).join("\u0000"),
+    () =>
+      options
+        .editorReferences()
+        .map((reference) => reference.id)
+        .join("\u0000"),
     (ids) => {
       if (!ids) return;
       void nextTick(() => composerInput.value?.focus());
@@ -81,7 +103,8 @@ export function useConversationComposer(options: {
   );
 
   watch(
-    () => filteredReferenceOptions.value.map((option) => option.id).join("\u0000"),
+    () =>
+      filteredReferenceOptions.value.map((option) => option.id).join("\u0000"),
     () => {
       activeReferenceIndex.value = Math.min(
         activeReferenceIndex.value,
@@ -91,9 +114,13 @@ export function useConversationComposer(options: {
   );
 
   function updateActiveReference(input: HTMLTextAreaElement): void {
-    const next = findComposerReferenceMatch(input.value, input.selectionStart ?? input.value.length);
+    const next = findComposerReferenceMatch(
+      input.value,
+      input.selectionStart ?? input.value.length
+    );
     const changedTrigger =
-      next?.start !== activeReference.value?.start || next?.trigger !== activeReference.value?.trigger;
+      next?.start !== activeReference.value?.start ||
+      next?.trigger !== activeReference.value?.trigger;
     activeReference.value = next;
     if (changedTrigger) {
       activeReferenceIndex.value = 0;
@@ -107,13 +134,16 @@ export function useConversationComposer(options: {
   }
 
   function closeReferenceMenu(): void {
-    activeReference.value = null; activeReferenceIndex.value = 0;
+    activeReference.value = null;
+    activeReferenceIndex.value = 0;
   }
 
   function scrollActiveReferenceOptionIntoView(): void {
     void nextTick(() => {
       document
-        .getElementById(`composer-reference-option-${activeReferenceIndex.value}`)
+        .getElementById(
+          `composer-reference-option-${activeReferenceIndex.value}`
+        )
         ?.scrollIntoView({ block: "nearest" });
     });
   }
@@ -136,14 +166,21 @@ export function useConversationComposer(options: {
 
   function submitMessage(): void {
     if (!canSubmit.value) return;
-    const attachments = options.pendingAttachments.value.map((attachment) => ({ ...attachment }));
-    attachments.push(...options.editorReferences().map(createEditorReferenceAttachment));
+    const attachments = options.pendingAttachments.value.map((attachment) => ({
+      ...attachment
+    }));
+    attachments.push(
+      ...options.editorReferences().map(createEditorReferenceAttachment)
+    );
     if (attachments.length > PROMPT_ATTACHMENT_MAX_ITEMS) {
-      uiMessage.warning(`每条消息最多携带 ${PROMPT_ATTACHMENT_MAX_ITEMS} 项附件或正文引用。`);
+      uiMessage.warning(
+        `每条消息最多携带 ${PROMPT_ATTACHMENT_MAX_ITEMS} 项附件或正文引用。`
+      );
       return;
     }
     const textLength = attachments.reduce(
-      (total, attachment) => total + (attachment.kind === "text" ? attachment.content.length : 0),
+      (total, attachment) =>
+        total + (attachment.kind === "text" ? attachment.content.length : 0),
       0
     );
     if (textLength > PROMPT_TEXT_ATTACHMENTS_MAX_CONTENT_LENGTH) {
@@ -164,7 +201,8 @@ export function useConversationComposer(options: {
         const count = filteredReferenceOptions.value.length;
         if (count) {
           const offset = event.key === "ArrowDown" ? 1 : -1;
-          activeReferenceIndex.value = (activeReferenceIndex.value + offset + count) % count;
+          activeReferenceIndex.value =
+            (activeReferenceIndex.value + offset + count) % count;
           scrollActiveReferenceOptionIntoView();
         }
         return;
@@ -176,7 +214,8 @@ export function useConversationComposer(options: {
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
-        const option = filteredReferenceOptions.value[activeReferenceIndex.value];
+        const option =
+          filteredReferenceOptions.value[activeReferenceIndex.value];
         if (option) selectReference(option);
         else closeReferenceMenu();
         return;
@@ -188,9 +227,21 @@ export function useConversationComposer(options: {
   }
 
   return {
-    composerInput, activeReference, activeReferenceIndex, canSubmit, referenceOptions,
-    filteredReferenceOptions, referenceMenuTitle, referenceMenuHint, composerPlaceholder,
-    updateActiveReference, handleInput, closeReferenceMenu, scrollActiveReferenceOptionIntoView,
-    selectReference, submitMessage, handleKeydown
+    composerInput,
+    activeReference,
+    activeReferenceIndex,
+    canSubmit,
+    referenceOptions,
+    filteredReferenceOptions,
+    referenceMenuTitle,
+    referenceMenuHint,
+    composerPlaceholder,
+    updateActiveReference,
+    handleInput,
+    closeReferenceMenu,
+    scrollActiveReferenceOptionIntoView,
+    selectReference,
+    submitMessage,
+    handleKeydown
   };
 }

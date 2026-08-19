@@ -1,4 +1,8 @@
-import type { AgentTool, AgentToolResult, StreamFn } from "@earendil-works/pi-agent-core";
+import type {
+  AgentTool,
+  AgentToolResult,
+  StreamFn
+} from "@earendil-works/pi-agent-core";
 import {
   createModels,
   fauxAssistantMessage,
@@ -38,10 +42,12 @@ function childTool(): AgentTool {
     description: "测试子智能体工具。",
     parameters,
     execute: async (_toolCallId, params) => ({
-      content: [{
-        type: "text",
-        text: `已检查：${String((params as { text?: unknown }).text)}`
-      }],
+      content: [
+        {
+          type: "text",
+          text: `已检查：${String((params as { text?: unknown }).text)}`
+        }
+      ],
       details: { kind: "none" }
     })
   };
@@ -101,7 +107,9 @@ function makeHarness(options: {
     ...(options.systemPromptRequirements
       ? { systemPromptRequirements: options.systemPromptRequirements }
       : {}),
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.timeoutMs === undefined
+      ? {}
+      : { timeoutMs: options.timeoutMs }),
     ...(options.depth === undefined ? {} : { depth: options.depth }),
     ...(options.createRunId ? { createRunId: options.createRunId } : {})
   });
@@ -127,10 +135,10 @@ describe("blocking subagent runtime", () => {
     });
     if (!tool) throw new Error("spawn_subagent was not built");
 
-    await tool.execute(
-      "parent-sdk-retry-call",
-      { subagent_id: "continuity_checker", task: "检查 SDK 重试配置" } as never
-    );
+    await tool.execute("parent-sdk-retry-call", {
+      subagent_id: "continuity_checker",
+      task: "检查 SDK 重试配置"
+    } as never);
 
     expect(streamOptions).toHaveLength(1);
     expect(streamOptions[0]?.maxRetries).toBe(0);
@@ -157,7 +165,9 @@ describe("blocking subagent runtime", () => {
     );
 
     expect(prompt).toContain("你是章节写手，负责把委派任务写成章节正文。");
-    expect(prompt).toContain("【当前子智能体：连续性检查员 / continuity_checker】");
+    expect(prompt).toContain(
+      "【当前子智能体：连续性检查员 / continuity_checker】"
+    );
     expect(prompt).toContain("write_draft_section（写入章节正文）");
     expect(prompt).toContain("replace_draft_section_text（替换正文章节文本）");
     expect(prompt).toContain("不继承主对话历史");
@@ -199,10 +209,10 @@ describe("blocking subagent runtime", () => {
     });
     if (!tool) throw new Error("spawn_subagent was not built");
 
-    await tool.execute(
-      "parent-screenplay-call",
-      { subagent_id: "continuity_checker", task: "检查第一集格式" } as never
-    );
+    await tool.execute("parent-screenplay-call", {
+      subagent_id: "continuity_checker",
+      task: "检查第一集格式"
+    } as never);
 
     expect(contexts[0]?.systemPrompt).toContain("【本轮不可编辑的写作约束】");
     expect(contexts[0]?.systemPrompt).toContain(requirements);
@@ -225,9 +235,11 @@ describe("blocking subagent runtime", () => {
 
   it("only exposes spawn for enabled definitions and never at child depth", () => {
     expect(makeHarness({ definitions: [] }).tool).toBeUndefined();
-    expect(makeHarness({
-      definitions: [{ ...enabledDefinition, enabled: false }]
-    }).tool).toBeUndefined();
+    expect(
+      makeHarness({
+        definitions: [{ ...enabledDefinition, enabled: false }]
+      }).tool
+    ).toBeUndefined();
     expect(makeHarness({ depth: 1 }).tool).toBeUndefined();
 
     const tool = makeHarness({
@@ -292,10 +304,17 @@ describe("blocking subagent runtime", () => {
         { ...childTool(), name: "spawn_subagent", label: "调用子智能体" }
       ],
       responses: [
-        fauxAssistantMessage([
-          fauxThinking("先检查当前工作区。"),
-          fauxToolCall("echo_child_context", { text: "第一节" }, { id: "child-tool" })
-        ], { stopReason: "toolUse" }),
+        fauxAssistantMessage(
+          [
+            fauxThinking("先检查当前工作区。"),
+            fauxToolCall(
+              "echo_child_context",
+              { text: "第一节" },
+              { id: "child-tool" }
+            )
+          ],
+          { stopReason: "toolUse" }
+        ),
         fauxAssistantMessage([
           fauxThinking("整理交接结论。"),
           fauxText("连续性检查完成：第一节时间线一致。")
@@ -313,7 +332,9 @@ describe("blocking subagent runtime", () => {
     );
     const progress = progressFrom(updates);
     const usageObserved = progress.filter(
-      (item): item is Extract<SubagentToolProgress, { type: "usage_observed" }> =>
+      (
+        item
+      ): item is Extract<SubagentToolProgress, { type: "usage_observed" }> =>
         item.type === "usage_observed"
     );
 
@@ -330,30 +351,44 @@ describe("blocking subagent runtime", () => {
     expect(contexts[0]?.tools?.map((candidate) => candidate.name)).toEqual([
       "echo_child_context"
     ]);
-    expect(contexts[0]?.tools?.some((candidate) => candidate.name === "load_skill"))
-      .toBe(false);
-    expect(contexts[0]?.tools?.some((candidate) => candidate.name === "spawn_subagent"))
-      .toBe(false);
+    expect(
+      contexts[0]?.tools?.some((candidate) => candidate.name === "load_skill")
+    ).toBe(false);
+    expect(
+      contexts[0]?.tools?.some(
+        (candidate) => candidate.name === "spawn_subagent"
+      )
+    ).toBe(false);
     expect(progress[0]).toMatchObject({
       type: "started",
       parentToolCallId: "parent-spawn-call",
       subagentRunId: "subrun-fixed-1"
     });
-    expect(progress.some((item) =>
-      item.type === "activity" && item.activity.type === "thinking_delta"
-    )).toBe(true);
-    expect(progress.some((item) =>
-      item.type === "activity" &&
-      item.activity.type === "tool_requested" &&
-      item.activity.toolCallId === "subrun-fixed-1:child-tool"
-    )).toBe(true);
-    expect(progress.some((item) => item.type === "child_tool_details")).toBe(true);
+    expect(
+      progress.some(
+        (item) =>
+          item.type === "activity" && item.activity.type === "thinking_delta"
+      )
+    ).toBe(true);
+    expect(
+      progress.some(
+        (item) =>
+          item.type === "activity" &&
+          item.activity.type === "tool_requested" &&
+          item.activity.toolCallId === "subrun-fixed-1:child-tool"
+      )
+    ).toBe(true);
+    expect(progress.some((item) => item.type === "child_tool_details")).toBe(
+      true
+    );
     expect(usageObserved).toHaveLength(2);
-    expect(usageObserved.map((item) => ({
-      status: item.status,
-      hadToolCall: item.hadToolCall,
-      attempt: item.attempt
-    }))).toEqual([
+    expect(
+      usageObserved.map((item) => ({
+        status: item.status,
+        hadToolCall: item.hadToolCall,
+        attempt: item.attempt
+      }))
+    ).toEqual([
       { status: "completed", hadToolCall: true, attempt: 1 },
       { status: "completed", hadToolCall: false, attempt: 1 }
     ]);
@@ -362,42 +397,50 @@ describe("blocking subagent runtime", () => {
       status: "completed",
       summary: "连续性检查完成：第一节时间线一致。"
     });
-    const requestedIndex = progress.findIndex((item) =>
-      item.type === "activity" && item.activity.type === "tool_requested"
+    const requestedIndex = progress.findIndex(
+      (item) =>
+        item.type === "activity" && item.activity.type === "tool_requested"
     );
-    const completedToolIndex = progress.findIndex((item) =>
-      item.type === "activity" && item.activity.type === "tool_completed"
+    const completedToolIndex = progress.findIndex(
+      (item) =>
+        item.type === "activity" && item.activity.type === "tool_completed"
     );
-    const detailsIndex = progress.findIndex((item) => item.type === "child_tool_details");
+    const detailsIndex = progress.findIndex(
+      (item) => item.type === "child_tool_details"
+    );
     expect(requestedIndex).toBeGreaterThan(0);
     expect(completedToolIndex).toBeGreaterThan(requestedIndex);
     expect(detailsIndex).toBeGreaterThan(completedToolIndex);
     expect(progress.length - 1).toBeGreaterThan(detailsIndex);
-    expect(result.content).toEqual([{
-      type: "text",
-      text: "连续性检查完成：第一节时间线一致。"
-    }]);
+    expect(result.content).toEqual([
+      {
+        type: "text",
+        text: "连续性检查完成：第一节时间线一致。"
+      }
+    ]);
     expect(result.details).toEqual({ kind: "subagent-result" });
     expect(JSON.stringify(result)).not.toContain("先检查当前工作区");
     expect(JSON.stringify(result)).not.toContain("已检查：第一节");
 
-    faux.setResponses([
-      fauxAssistantMessage(fauxText("第二次独立检查完成。"))
-    ]);
-    const secondResult = await tool.execute(
-      "parent-spawn-call-2",
-      { subagent_id: "continuity_checker", task: "重新独立检查" } as never
-    );
+    faux.setResponses([fauxAssistantMessage(fauxText("第二次独立检查完成。"))]);
+    const secondResult = await tool.execute("parent-spawn-call-2", {
+      subagent_id: "continuity_checker",
+      task: "重新独立检查"
+    } as never);
     expect(contexts.at(-1)?.messages).toHaveLength(1);
     expect(contexts.at(-1)?.messages[0]).toMatchObject({
       role: "user",
       content: "重新独立检查"
     });
-    expect(JSON.stringify(contexts.at(-1)?.messages)).not.toContain("第一节时间线一致");
-    expect(secondResult.content).toEqual([{
-      type: "text",
-      text: "第二次独立检查完成。"
-    }]);
+    expect(JSON.stringify(contexts.at(-1)?.messages)).not.toContain(
+      "第一节时间线一致"
+    );
+    expect(secondResult.content).toEqual([
+      {
+        type: "text",
+        text: "第二次独立检查完成。"
+      }
+    ]);
   });
 
   it("retries only the failed model turn and never replays a completed child tool", async () => {
@@ -417,7 +460,11 @@ describe("blocking subagent runtime", () => {
       },
       responses: [
         fauxAssistantMessage(
-          fauxToolCall("echo_child_context", { text: "只执行一次" }, { id: "once" }),
+          fauxToolCall(
+            "echo_child_context",
+            { text: "只执行一次" },
+            { id: "once" }
+          ),
           { stopReason: "toolUse" }
         ),
         fauxAssistantMessage("第一次残片", {
@@ -432,27 +479,35 @@ describe("blocking subagent runtime", () => {
 
     const result = await tool.execute(
       "parent-retry-call",
-      { subagent_id: "continuity_checker", task: "验证子任务断线恢复" } as never,
+      {
+        subagent_id: "continuity_checker",
+        task: "验证子任务断线恢复"
+      } as never,
       undefined,
       (update) => updates.push(update as AgentToolResult<SubagentToolDetails>)
     );
     const progress = progressFrom(updates);
     const retry = progress.find(
-      (item) => item.type === "activity" && item.activity.type === "retry_scheduled"
+      (item) =>
+        item.type === "activity" && item.activity.type === "retry_scheduled"
     );
     const usageObserved = progress.filter(
-      (item): item is Extract<SubagentToolProgress, { type: "usage_observed" }> =>
+      (
+        item
+      ): item is Extract<SubagentToolProgress, { type: "usage_observed" }> =>
         item.type === "usage_observed"
     );
 
     expect(faux.state.callCount).toBe(3);
     expect(toolExecutions).toBe(1);
-    expect(usageObserved.map((item) => ({
-      status: item.status,
-      hadToolCall: item.hadToolCall,
-      turnId: item.turnId,
-      attempt: item.attempt
-    }))).toEqual([
+    expect(
+      usageObserved.map((item) => ({
+        status: item.status,
+        hadToolCall: item.hadToolCall,
+        turnId: item.turnId,
+        attempt: item.attempt
+      }))
+    ).toEqual([
       {
         status: "completed",
         hadToolCall: true,
@@ -535,18 +590,25 @@ describe("blocking subagent runtime", () => {
         }
       },
       responses: [
-        fauxAssistantMessage([
-          fauxToolCall("echo_child_context", { text: "权限检查" }, { id: "hook-tool" })
-        ], { stopReason: "toolUse" }),
+        fauxAssistantMessage(
+          [
+            fauxToolCall(
+              "echo_child_context",
+              { text: "权限检查" },
+              { id: "hook-tool" }
+            )
+          ],
+          { stopReason: "toolUse" }
+        ),
         fauxAssistantMessage(fauxText("权限 hook 继承完成。"))
       ]
     });
     if (!tool) throw new Error("spawn_subagent was not built");
 
-    const result = await tool.execute(
-      "parent-hook-call",
-      { subagent_id: "continuity_checker", task: "验证权限 hook" } as never
-    );
+    const result = await tool.execute("parent-hook-call", {
+      subagent_id: "continuity_checker",
+      task: "验证权限 hook"
+    } as never);
 
     expect(beforeCalls).toBe(1);
     expect(afterCalls).toBe(1);
@@ -587,7 +649,9 @@ describe("blocking subagent runtime", () => {
     const customFaux = fauxProvider({
       api: `custom-subagent-${Math.random()}`,
       provider: `custom-subagent-${Math.random()}`,
-      models: [{ id: "custom-child-model", name: "Custom Child", reasoning: true }],
+      models: [
+        { id: "custom-child-model", name: "Custom Child", reasoning: true }
+      ],
       tokensPerSecond: 0
     });
     const customModels = createModels();
@@ -596,7 +660,9 @@ describe("blocking subagent runtime", () => {
       fauxAssistantMessage(fauxText("自定义模型交接完成。"))
     ]);
     const customModel = customFaux.getModel("custom-child-model") as Model<Api>;
-    const customSourceStream = customModels.streamSimple.bind(customModels) as StreamFn;
+    const customSourceStream = customModels.streamSimple.bind(
+      customModels
+    ) as StreamFn;
     const seenModels: Model<Api>[] = [];
 
     const { tool, parentModel } = makeHarness({
@@ -648,15 +714,16 @@ describe("blocking subagent runtime", () => {
 
     expect(seenModels[0]?.id).toBe("custom-child-model");
     expect(seenModels[0]?.id).not.toBe(parentModel.id);
-    expect(progressFrom(updates).find((item) => item.type === "usage_observed"))
-      .toMatchObject({
-        runtime: {
-          provider: "openai-compatible",
-          model: "custom-child-model",
-          mode: "provider",
-          configId: "cfg-custom-1"
-        }
-      });
+    expect(
+      progressFrom(updates).find((item) => item.type === "usage_observed")
+    ).toMatchObject({
+      runtime: {
+        provider: "openai-compatible",
+        model: "custom-child-model",
+        mode: "provider",
+        configId: "cfg-custom-1"
+      }
+    });
     expect(result.content[0]).toMatchObject({
       type: "text",
       text: "自定义模型交接完成。"
@@ -667,7 +734,9 @@ describe("blocking subagent runtime", () => {
     const customFaux = fauxProvider({
       api: `custom-temp-${Math.random()}`,
       provider: `custom-temp-${Math.random()}`,
-      models: [{ id: "custom-temp-model", name: "Custom Temp", reasoning: false }],
+      models: [
+        { id: "custom-temp-model", name: "Custom Temp", reasoning: false }
+      ],
       tokensPerSecond: 0
     });
     const customModels = createModels();
@@ -714,10 +783,10 @@ describe("blocking subagent runtime", () => {
     });
     if (!tool) throw new Error("spawn_subagent was not built");
 
-    const result = await tool.execute(
-      "parent-temp-model",
-      { subagent_id: "continuity_checker", task: "验证温度" } as never
-    );
+    const result = await tool.execute("parent-temp-model", {
+      subagent_id: "continuity_checker",
+      task: "验证温度"
+    } as never);
 
     expect(seenTemperature).toBe(1);
     expect(result.content[0]).toMatchObject({

@@ -118,7 +118,9 @@ function normalizeEndpointIdentity(baseUrl: string): string {
   }
 }
 
-function registryKey(model: Pick<ModelUsageModelSnapshot, "configId" | "revisionId">): string {
+function registryKey(
+  model: Pick<ModelUsageModelSnapshot, "configId" | "revisionId">
+): string {
   return createHash("sha256")
     .update(`${model.configId}\u0000${model.revisionId}`, "utf8")
     .digest("hex");
@@ -140,10 +142,15 @@ function sameSnapshot(
   );
 }
 
-function sameActiveMap(left: Record<string, string>, right: Record<string, string>): boolean {
+function sameActiveMap(
+  left: Record<string, string>,
+  right: Record<string, string>
+): boolean {
   const leftEntries = Object.entries(left);
   if (leftEntries.length !== Object.keys(right).length) return false;
-  return leftEntries.every(([configId, revisionId]) => right[configId] === revisionId);
+  return leftEntries.every(
+    ([configId, revisionId]) => right[configId] === revisionId
+  );
 }
 
 function emptyTotals(): ModelUsageTotals {
@@ -185,7 +192,8 @@ function localBucketStart(
   value: string | number | Date,
   granularity: ModelUsageTrendGranularity
 ): string {
-  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  const date =
+    value instanceof Date ? new Date(value.getTime()) : new Date(value);
   if (granularity === "hour") {
     date.setMinutes(0, 0, 0);
   } else if (granularity === "day") {
@@ -212,17 +220,22 @@ function nextLocalBucket(
   return date.toISOString();
 }
 
-function resolveTrendGranularity(startAt: string, endAt: string): ModelUsageTrendGranularity {
+function resolveTrendGranularity(
+  startAt: string,
+  endAt: string
+): ModelUsageTrendGranularity {
   const durationMs = Math.max(0, toTimestamp(endAt) - toTimestamp(startAt));
   if (durationMs <= 36 * 60 * 60 * 1_000) return "hour";
   if (durationMs <= 120 * 24 * 60 * 60 * 1_000) return "day";
   return "month";
 }
 
-function rollupKey(row: Pick<
-  DiskModelUsageRollup,
-  "bucketStart" | "granularity" | "model" | "module"
->): string {
+function rollupKey(
+  row: Pick<
+    DiskModelUsageRollup,
+    "bucketStart" | "granularity" | "model" | "module"
+  >
+): string {
   return [
     row.granularity,
     row.bucketStart,
@@ -231,7 +244,9 @@ function rollupKey(row: Pick<
   ].join("\u0000");
 }
 
-function mergeRollups(rows: readonly DiskModelUsageRollup[]): DiskModelUsageRollup[] {
+function mergeRollups(
+  rows: readonly DiskModelUsageRollup[]
+): DiskModelUsageRollup[] {
   const merged = new Map<string, DiskModelUsageRollup>();
   for (const row of rows) {
     const key = rollupKey(row);
@@ -335,7 +350,9 @@ function normalizeRegistry(raw: unknown): DiskModelUsageRegistry {
 
   const activeConfigRevisions: Record<string, string> = {};
   if (isRecord(raw.activeConfigRevisions)) {
-    for (const [configId, revisionId] of Object.entries(raw.activeConfigRevisions)) {
+    for (const [configId, revisionId] of Object.entries(
+      raw.activeConfigRevisions
+    )) {
       if (
         configId.trim().length > 0 &&
         configId.length <= 120 &&
@@ -353,7 +370,9 @@ function normalizeRegistry(raw: unknown): DiskModelUsageRegistry {
 
 function parseRollup(raw: unknown): DiskModelUsageRollup | undefined {
   if (!isRecord(raw)) return undefined;
-  const granularity = ModelUsageTrendGranularitySchema.safeParse(raw.granularity);
+  const granularity = ModelUsageTrendGranularitySchema.safeParse(
+    raw.granularity
+  );
   const model = ModelUsageModelSnapshotSchema.safeParse(raw.model);
   const module = ModelUsageModuleSchema.safeParse(raw.module);
   const totals = ModelUsageTotalsSchema.safeParse(raw.totals);
@@ -408,8 +427,12 @@ function normalizeLedger(raw: unknown): DiskModelUsageLedger {
   };
 }
 
-function compareRecords(left: ModelUsageRecord, right: ModelUsageRecord): number {
-  const timeDifference = toTimestamp(left.occurredAt) - toTimestamp(right.occurredAt);
+function compareRecords(
+  left: ModelUsageRecord,
+  right: ModelUsageRecord
+): number {
+  const timeDifference =
+    toTimestamp(left.occurredAt) - toTimestamp(right.occurredAt);
   return timeDifference || left.id.localeCompare(right.id);
 }
 
@@ -446,7 +469,9 @@ export function createModelUsageRevisionId(
   return createHash("sha256").update(source, "utf8").digest("hex");
 }
 
-export function createModelUsageSnapshot(model: ModelConfig): ModelUsageModelSnapshot {
+export function createModelUsageSnapshot(
+  model: ModelConfig
+): ModelUsageModelSnapshot {
   const parsed = ModelConfigSchema.parse(model);
   return ModelUsageModelSnapshotSchema.parse({
     configId: parsed.id,
@@ -474,7 +499,10 @@ export class ModelUsageStore {
     this.ledgerPath = join(this.usageDirectory, "model-usage-ledger-v2.json");
     this.registryPath = join(this.usageDirectory, "model-registry-v2.json");
     this.legacyRecordsDirectory = join(this.usageDirectory, "model-usage-v1");
-    this.legacyRegistryPath = join(this.usageDirectory, "model-registry-v1.json");
+    this.legacyRegistryPath = join(
+      this.usageDirectory,
+      "model-registry-v1.json"
+    );
   }
 
   async flush(): Promise<void> {
@@ -489,7 +517,8 @@ export class ModelUsageStore {
         this.readRegistry(),
         this.readLedger()
       ]);
-      if (ledger.recentRecords.some((candidate) => candidate.id === record.id)) return;
+      if (ledger.recentRecords.some((candidate) => candidate.id === record.id))
+        return;
 
       const key = registryKey(record.model);
       if (!sameSnapshot(registry.models[key], record.model)) {
@@ -497,7 +526,9 @@ export class ModelUsageStore {
         await this.writeRegistry(registry);
       }
 
-      const recentRecords = [...ledger.recentRecords, record].sort(compareRecords);
+      const recentRecords = [...ledger.recentRecords, record].sort(
+        compareRecords
+      );
       let rollups = ledger.rollups;
       while (recentRecords.length > RECENT_RECORD_LIMIT) {
         const pruned = recentRecords.shift();
@@ -525,7 +556,9 @@ export class ModelUsageStore {
         }
       }
 
-      if (!sameActiveMap(registry.activeConfigRevisions, activeConfigRevisions)) {
+      if (
+        !sameActiveMap(registry.activeConfigRevisions, activeConfigRevisions)
+      ) {
         registry.activeConfigRevisions = activeConfigRevisions;
         changed = true;
       }
@@ -533,7 +566,9 @@ export class ModelUsageStore {
     });
   }
 
-  async query(rawInput: ModelUsageQueryInput = {}): Promise<ModelUsageDashboard> {
+  async query(
+    rawInput: ModelUsageQueryInput = {}
+  ): Promise<ModelUsageDashboard> {
     const input = ModelUsageQueryInputSchema.parse(rawInput);
     return this.enqueue(async () => {
       await this.ensureStorageInitialized();
@@ -541,7 +576,9 @@ export class ModelUsageStore {
         this.readRegistry(),
         this.readLedger()
       ]);
-      const modelConfigIds = input.modelConfigIds ? new Set(input.modelConfigIds) : undefined;
+      const modelConfigIds = input.modelConfigIds
+        ? new Set(input.modelConfigIds)
+        : undefined;
       const managedBy = input.managedBy;
       const modules = input.modules ? new Set(input.modules) : undefined;
       const startAt = input.startAt ? toTimestamp(input.startAt) : undefined;
@@ -611,19 +648,22 @@ export class ModelUsageStore {
           addTotals(summary.totals, contribution.totals);
           if (
             !summary.firstUsedAt ||
-            toTimestamp(contribution.firstUsedAt) < toTimestamp(summary.firstUsedAt)
+            toTimestamp(contribution.firstUsedAt) <
+              toTimestamp(summary.firstUsedAt)
           ) {
             summary.firstUsedAt = contribution.firstUsedAt;
           }
           if (
             !summary.lastUsedAt ||
-            toTimestamp(contribution.lastUsedAt) > toTimestamp(summary.lastUsedAt)
+            toTimestamp(contribution.lastUsedAt) >
+              toTimestamp(summary.lastUsedAt)
           ) {
             summary.lastUsedAt = contribution.lastUsedAt;
           }
         }
 
-        const moduleTotals = moduleSummaries.get(contribution.module) ?? emptyTotals();
+        const moduleTotals =
+          moduleSummaries.get(contribution.module) ?? emptyTotals();
         addTotals(moduleTotals, contribution.totals);
         moduleSummaries.set(contribution.module, moduleTotals);
       }
@@ -643,11 +683,11 @@ export class ModelUsageStore {
         .map((summary) => ({
           ...summary,
           status: isFauxModel(summary.model)
-            ? "faux" as const
+            ? ("faux" as const)
             : registry.activeConfigRevisions[summary.model.configId] ===
                 summary.model.revisionId
-              ? "current" as const
-              : "historical" as const
+              ? ("current" as const)
+              : ("historical" as const)
         }))
         .sort((left, right) => {
           if (right.totals.totalTokens !== left.totals.totalTokens) {
@@ -657,8 +697,10 @@ export class ModelUsageStore {
           if (statusRank[left.status] !== statusRank[right.status]) {
             return statusRank[left.status] - statusRank[right.status];
           }
-          return (right.lastUsedAt ?? "").localeCompare(left.lastUsedAt ?? "") ||
-            left.model.label.localeCompare(right.model.label);
+          return (
+            (right.lastUsedAt ?? "").localeCompare(left.lastUsedAt ?? "") ||
+            left.model.label.localeCompare(right.model.label)
+          );
         });
 
       const earliest = contributions.reduce<string | undefined>(
@@ -684,7 +726,8 @@ export class ModelUsageStore {
         trendTotals.set(bucketStart, bucketTotals);
       }
 
-      const trend: Array<{ bucketStart: string; totals: ModelUsageTotals }> = [];
+      const trend: Array<{ bucketStart: string; totals: ModelUsageTotals }> =
+        [];
       if (trendStart) {
         let cursor = localBucketStart(trendStart, trendGranularity);
         const finalBucket = localBucketStart(trendEnd, trendGranularity);
@@ -719,9 +762,9 @@ export class ModelUsageStore {
         trendGranularity,
         trend,
         models: modelRows,
-        modules: MODEL_USAGE_MODULES.filter((module) => moduleSummaries.has(module)).map(
-          (module) => ({ module, totals: moduleSummaries.get(module)! })
-        ),
+        modules: MODEL_USAGE_MODULES.filter((module) =>
+          moduleSummaries.has(module)
+        ).map((module) => ({ module, totals: moduleSummaries.get(module)! })),
         recentCalls
       });
     });

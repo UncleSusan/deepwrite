@@ -35,15 +35,15 @@ function show(
   const normalized = String(content).trim();
   if (!normalized) return -1;
   const id = ++messageId;
-  const overflow = Math.max(
-    0,
-    items.value.length + 1 - MAX_VISIBLE_MESSAGES
-  );
+  const overflow = Math.max(0, items.value.length + 1 - MAX_VISIBLE_MESSAGES);
   items.value.slice(0, overflow).forEach((item) => remove(item.id));
   items.value = [...items.value, { id, kind, content: normalized }];
   const duration = Math.max(0, options.duration ?? DEFAULT_DURATION_MS);
   if (duration > 0) {
-    timers.set(id, setTimeout(() => remove(id), duration));
+    timers.set(
+      id,
+      setTimeout(() => remove(id), duration)
+    );
   }
   return id;
 }

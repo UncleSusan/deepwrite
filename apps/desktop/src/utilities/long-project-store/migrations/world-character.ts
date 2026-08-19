@@ -1,21 +1,21 @@
-import { lstat } from "node:fs/promises";
-import { join } from "node:path";
 import {
   DEFAULT_LONG_CHARACTER_TYPES,
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
   LONG_WORKSPACE_INDEX_PATH,
   LongProjectManifestSchema,
+  LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId,
   longWorldbuildingOverviewContentPath,
   longWorldbuildingOverviewFileId,
-  LongWorkspaceFileReferenceSchema,
   parseLongWorldbuildingMarkdownList,
   type LongProjectManifest,
   type LongWorkspaceFileReference
 } from "@deepwrite/contracts";
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 import type { ProjectTransactionFileOperation } from "../../project-transaction";
 import {
   commitLongProjectTransaction,
@@ -24,7 +24,6 @@ import {
   serializeJson,
   unknownRecord
 } from "../io";
-import { legacyWorldbuildingItemPath, legacyWorldbuildingPath } from "../paths";
 import {
   createLongFileRevision,
   encodeUtf8Strict,
@@ -56,8 +55,7 @@ export async function migrateLegacyWorldbuildingStorage(input: {
       worldbuilding.push(rawCategory);
       continue;
     }
-    const categoryId =
-      typeof category.id === "string" ? category.id : "";
+    const categoryId = typeof category.id === "string" ? category.id : "";
     const overviewPath = longWorldbuildingOverviewContentPath(categoryId);
     const overview = {
       id: longWorldbuildingOverviewFileId(categoryId),
@@ -127,16 +125,12 @@ export async function migrateLegacyWorldbuildingStorage(input: {
         `旧版世界观分类 ${categoryId} 的索引 revision 与聚合文件不一致。`
       );
     }
-    const legacyItems = parseLongWorldbuildingMarkdownList(
-      legacyDisk.content
-    );
+    const legacyItems = parseLongWorldbuildingMarkdownList(legacyDisk.content);
     const items = legacyItems.map((item, itemIndex) => {
       const path = longWorldbuildingItemContentPath(categoryId, item.id);
       const bytes = encodeUtf8Strict(item.content);
       if (bytes.byteLength > MAX_DOCUMENT_BYTES) {
-        throw new Error(
-          `旧版世界观条目“${item.title}”超过 32 MiB，无法迁移。`
-        );
+        throw new Error(`旧版世界观条目“${item.title}”超过 32 MiB，无法迁移。`);
       }
       const file: LongWorkspaceFileReference = {
         id: longWorldbuildingItemFileId(item.id),

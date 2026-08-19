@@ -21,11 +21,7 @@ export function validateUniqueValues(
   const seen = new Set<string>();
   values.forEach((value, index) => {
     if (seen.has(value)) {
-      addIssue(
-        context,
-        pathForIndex(index),
-        `Duplicate ${label}: ${value}`
-      );
+      addIssue(context, pathForIndex(index), `Duplicate ${label}: ${value}`);
     }
     seen.add(value);
   });
@@ -54,10 +50,7 @@ export function groupOrderedEntries<T>(
   groupFor: (value: T) => string,
   orderFor: (value: T) => number
 ): Map<string, Array<{ index: number; order: number }>> {
-  const groups = new Map<
-    string,
-    Array<{ index: number; order: number }>
-  >();
+  const groups = new Map<string, Array<{ index: number; order: number }>>();
   values.forEach((value, index) => {
     const group = groupFor(value);
     const entries = groups.get(group) ?? [];

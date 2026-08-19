@@ -17,15 +17,21 @@ export function useConversationScrollFollow(options: {
   let scrollFrame: number | undefined;
 
   function isNearConversationTail(element: HTMLElement): boolean {
-    return element.scrollHeight - element.scrollTop - element.clientHeight <= TAIL_FOLLOW_THRESHOLD;
+    return (
+      element.scrollHeight - element.scrollTop - element.clientHeight <=
+      TAIL_FOLLOW_THRESHOLD
+    );
   }
 
   function hasActiveConversationResponse(): boolean {
     return (
       options.responding() ||
-      options.messages().some(
-        (message) => message.role === "assistant" && message.status === "streaming"
-      )
+      options
+        .messages()
+        .some(
+          (message) =>
+            message.role === "assistant" && message.status === "streaming"
+        )
     );
   }
 
@@ -48,7 +54,10 @@ export function useConversationScrollFollow(options: {
     if (!element) return;
     conversationScrollbar.reveal(element);
     const nextScrollTop = element.scrollTop;
-    if (hasActiveConversationResponse() && nextScrollTop < lastConversationScrollTop - 1) {
+    if (
+      hasActiveConversationResponse() &&
+      nextScrollTop < lastConversationScrollTop - 1
+    ) {
       lockConversationTailForCurrentResponse();
     }
     if (hasActiveConversationResponse()) {

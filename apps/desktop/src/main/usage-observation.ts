@@ -7,7 +7,10 @@ import type {
   SessionPromptCommandPayload,
   SystemEventEnvelope
 } from "@deepwrite/contracts";
-import { createModelUsageRevisionId, type ModelUsageStore } from "./model-usage-store";
+import {
+  createModelUsageRevisionId,
+  type ModelUsageStore
+} from "./model-usage-store";
 
 export interface UsageRunContext {
   module: ModelUsageModule;
@@ -45,7 +48,9 @@ export function recordUsageObservation(
     });
 }
 
-export function usageRuntimeKey(runtime: Pick<AgentRuntimeRef, "provider" | "model">): string {
+export function usageRuntimeKey(
+  runtime: Pick<AgentRuntimeRef, "provider" | "model">
+): string {
   return `${runtime.provider}\u0000${runtime.model}`;
 }
 
@@ -69,12 +74,12 @@ export function createUsageModelSnapshot(
   const revisionId = config
     ? createModelUsageRevisionId(config)
     : createHash("sha256")
-        .update(JSON.stringify({ provider, modelId, api: api ?? "", endpointOrigin }))
+        .update(
+          JSON.stringify({ provider, modelId, api: api ?? "", endpointOrigin })
+        )
         .digest("hex");
   const configId =
-    config?.id ??
-    runtime.configId ??
-    `runtime:${provider}:${modelId}`;
+    config?.id ?? runtime.configId ?? `runtime:${provider}:${modelId}`;
   return {
     configId,
     revisionId,
@@ -86,7 +91,9 @@ export function createUsageModelSnapshot(
   };
 }
 
-export function usageModuleForPrompt(payload: SessionPromptCommandPayload): ModelUsageModule {
+export function usageModuleForPrompt(
+  payload: SessionPromptCommandPayload
+): ModelUsageModule {
   if (payload.mode === "chat-assistant") return "assistant-chat";
   const context = payload.workspaceContext;
   if (!context) return "unknown";

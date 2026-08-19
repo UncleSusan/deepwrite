@@ -9,15 +9,21 @@ import {
 describe("pinned resources", () => {
   it("keeps valid top-level resources in the saved pin order", () => {
     const pinnedIds = parsePinnedResourceIds(
-      JSON.stringify(["mist-materials", "book-mist-harbor", "mist-materials", "chapter-1"]),
+      JSON.stringify([
+        "mist-materials",
+        "book-mist-harbor",
+        "mist-materials",
+        "chapter-1"
+      ]),
       resourceSections
     );
 
     expect(pinnedIds).toEqual(["mist-materials", "book-mist-harbor"]);
-    expect(collectPinnedResourceNodes(resourceSections, pinnedIds).map((node) => node.id)).toEqual([
-      "mist-materials",
-      "book-mist-harbor"
-    ]);
+    expect(
+      collectPinnedResourceNodes(resourceSections, pinnedIds).map(
+        (node) => node.id
+      )
+    ).toEqual(["mist-materials", "book-mist-harbor"]);
   });
 
   it("removes pinned resources from their original sections", () => {
@@ -27,14 +33,19 @@ describe("pinned resources", () => {
     ]);
 
     expect(sections[1]?.nodes.map((node) => node.id)).toEqual(["my-skills"]);
-    expect(sections[2]?.nodes.map((node) => node.id)).toEqual(["mist-materials"]);
+    expect(sections[2]?.nodes.map((node) => node.id)).toEqual([
+      "mist-materials"
+    ]);
   });
 
   it("ignores malformed persisted state", () => {
     expect(parsePinnedResourceIds("not-json", resourceSections)).toEqual([]);
-    expect(parsePinnedResourceIds(JSON.stringify({ id: "mist-materials" }), resourceSections)).toEqual(
-      []
-    );
+    expect(
+      parsePinnedResourceIds(
+        JSON.stringify({ id: "mist-materials" }),
+        resourceSections
+      )
+    ).toEqual([]);
   });
 
   it("supports folder-project libraries nested under catalog categories", () => {

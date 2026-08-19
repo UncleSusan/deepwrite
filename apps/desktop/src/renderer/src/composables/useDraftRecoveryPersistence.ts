@@ -1,10 +1,5 @@
 import type { CatalogDraftRecovery } from "@deepwrite/contracts";
-import {
-  ref,
-  watch,
-  type Ref,
-  type ShallowRef
-} from "vue";
+import { ref, watch, type Ref, type ShallowRef } from "vue";
 import type { EditorDraftState } from "../types/workspace";
 import {
   createDraftRecoveryClock,
@@ -26,11 +21,7 @@ export interface DraftRecoveryPersistenceOptions {
 }
 
 export type DraftRecoveryPersistencePhase =
-  | "idle"
-  | "loading"
-  | "ready"
-  | "failed"
-  | "disposed";
+  "idle" | "loading" | "ready" | "failed" | "disposed";
 
 export interface DraftRecoveryPersistence {
   phase: Ref<DraftRecoveryPersistencePhase>;
@@ -185,9 +176,7 @@ export function useDraftRecoveryPersistence(
     }
   }
 
-  async function flush(
-    flushOptions: { notify?: boolean } = {}
-  ): Promise<void> {
+  async function flush(flushOptions: { notify?: boolean } = {}): Promise<void> {
     if (disposed || phase.value !== "ready") return;
     cancelTimer();
     notifyPendingFailure ||= flushOptions.notify !== false;

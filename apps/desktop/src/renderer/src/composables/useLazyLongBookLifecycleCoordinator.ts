@@ -19,7 +19,8 @@ export interface LongBookLifecycleModule {
   ): LongBookLifecycleCoordinator;
 }
 
-export type LongBookLifecycleModuleLoader = () => Promise<LongBookLifecycleModule>;
+export type LongBookLifecycleModuleLoader =
+  () => Promise<LongBookLifecycleModule>;
 
 export interface LazyLongBookLifecycleCoordinator {
   activateLongBookWorkspace(opened: LongOpenBookResult): Promise<void>;
@@ -29,7 +30,9 @@ export interface LazyLongBookLifecycleCoordinator {
   importPortableLongBook(): Promise<void>;
   confirmContinuationImport(input: LongImportContinuationInput): Promise<void>;
   closeContinuationImportDialog(): void;
-  handleLongBookAction(payload: LongBookResourceNodeActionPayload): Promise<void>;
+  handleLongBookAction(
+    payload: LongBookResourceNodeActionPayload
+  ): Promise<void>;
   closeLegacySyncDialog(): void;
   confirmLegacySync(modules: LongLegacySyncModule[]): Promise<void>;
   closeLongExportDialog(): void;
@@ -131,7 +134,9 @@ export function useLazyLongBookLifecycleCoordinator(
     dialogIntentEpoch += 1;
   }
 
-  function activateLongBookWorkspace(opened: LongOpenBookResult): Promise<void> {
+  function activateLongBookWorkspace(
+    opened: LongOpenBookResult
+  ): Promise<void> {
     return invoke((loaded) => loaded.activateLongBookWorkspace(opened));
   }
 
@@ -145,10 +150,7 @@ export function useLazyLongBookLifecycleCoordinator(
 
   function chooseContinuationImportSource(): Promise<void> {
     const intent = dialogIntent();
-    return invoke(
-      (loaded) => loaded.chooseContinuationImportSource(),
-      intent
-    );
+    return invoke((loaded) => loaded.chooseContinuationImportSource(), intent);
   }
 
   function importPortableLongBook(): Promise<void> {
@@ -159,10 +161,7 @@ export function useLazyLongBookLifecycleCoordinator(
     input: LongImportContinuationInput
   ): Promise<void> {
     const intent = dialogIntent();
-    return invoke(
-      (loaded) => loaded.confirmContinuationImport(input),
-      intent
-    );
+    return invoke((loaded) => loaded.confirmContinuationImport(input), intent);
   }
 
   function closeContinuationImportDialog(): void {

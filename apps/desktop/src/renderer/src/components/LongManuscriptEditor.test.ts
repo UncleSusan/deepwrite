@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import source from "./LongManuscriptEditor.vue?raw";
 import editorSource from "./LongWorkspaceEditor.vue?raw";
-import editorSessionSource from "../composables/useLongEditorDocumentSession.ts?raw";
+import documentSessionSource from "../composables/useLongEditorDocumentSession.ts?raw";
+
+const editorImplementationSource = [editorSource, documentSessionSource].join(
+  "\n"
+);
 
 describe("LongManuscriptEditor", () => {
   it("owns the chapter body writing and preview surface", () => {
@@ -38,30 +42,50 @@ describe("LongManuscriptEditor", () => {
     expect(editorSource).toContain(
       '@editor-element-change="setEditorInputElement"'
     );
-    expect(editorSessionSource).toContain("async function loadWorkspaceDocument(");
-    expect(editorSessionSource).toContain("async function saveCurrentDocument(");
-    expect(editorSessionSource).toContain("baseRevision: state.file.revision");
-    expect(editorSessionSource).toContain(
+    expect(editorImplementationSource).toContain(
+      "async function loadWorkspaceDocument("
+    );
+    expect(editorImplementationSource).toContain(
+      "async function saveCurrentDocument("
+    );
+    expect(editorImplementationSource).toContain(
+      "baseRevision: state.file.revision"
+    );
+    expect(editorImplementationSource).toContain(
       "baseWorkspaceRevision: state.workspaceRevision"
     );
-    expect(editorSessionSource).toContain(
+    expect(editorImplementationSource).toContain(
       "baseProjectRevision: state.projectRevision"
     );
   });
 
   it("keeps the current text viewport after a manual save", () => {
-    expect(editorSessionSource).toContain("const viewport = captureCurrentEditorViewport()");
-    expect(editorSessionSource).toContain("await restoreCurrentEditorViewport(viewport)");
-    expect(editorSessionSource).toContain("input.scrollTop = snapshot.scrollTop");
-    expect(editorSessionSource).toContain("currentEditorViewportKey() !== snapshot.documentKey");
-    expect(editorSource).toContain("props.workspaceIndex?.revision");
+    expect(editorImplementationSource).toContain(
+      "const viewport = captureCurrentEditorViewport()"
+    );
+    expect(editorImplementationSource).toContain(
+      "await restoreCurrentEditorViewport(viewport)"
+    );
+    expect(editorImplementationSource).toContain(
+      "input.scrollTop = snapshot.scrollTop"
+    );
+    expect(editorImplementationSource).toContain(
+      "currentEditorViewportKey() !== snapshot.documentKey"
+    );
+    expect(editorImplementationSource).toContain(
+      "props.workspaceIndex?.revision"
+    );
   });
 
   it("does not flash a read-only background or loading placeholder while refreshing a save", () => {
     expect(source).toContain(`:class="{ 'is-readonly': readOnly }"`);
-    expect(source).not.toContain(`:class="{ 'is-readonly': readOnly || busy }"`);
-    expect(editorSessionSource).toContain("refreshingJustSavedDocument");
-    expect(editorSessionSource).toContain("loaded: dirty || refreshingJustSavedDocument");
+    expect(source).not.toContain(
+      `:class="{ 'is-readonly': readOnly || busy }"`
+    );
+    expect(editorImplementationSource).toContain("refreshingJustSavedDocument");
+    expect(editorImplementationSource).toContain(
+      "loaded: dirty || refreshingJustSavedDocument"
+    );
     expect(editorSource).toContain("'is-readonly': currentReadOnly");
     expect(editorSource).not.toContain(
       "'is-readonly': currentReadOnly || isDocumentContentBusy"

@@ -123,7 +123,9 @@ export interface CatalogLibraryTransactionsContext {
     expectedProjectRevision: number | undefined
   ): void;
   isConflict(error: unknown): boolean;
-  prepareProjectsForDuplicate(libraryIds: ReadonlySet<string>): Promise<boolean>;
+  prepareProjectsForDuplicate(
+    libraryIds: ReadonlySet<string>
+  ): Promise<boolean>;
   selectDocument(documentId: string, revealEditor: boolean): void;
   navigateToDocumentResource(documentId: string): Promise<void>;
   collectResourceNodeIds(node: ResourceTreeNode): string[];
@@ -171,7 +173,9 @@ export function useCatalogLibraryTransactionsCoordinator(
     return groups?.find((group) => group.id === state.groupId) ?? null;
   });
 
-  async function createCatalogLibrary(payload: CreateLibraryInput): Promise<void> {
+  async function createCatalogLibrary(
+    payload: CreateLibraryInput
+  ): Promise<void> {
     const api = context.api();
     if (!api || catalogMutationPending.value) return;
     catalogMutationPending.value = true;
@@ -189,7 +193,9 @@ export function useCatalogLibraryTransactionsCoordinator(
         `已创建${payload.domain === "material" ? "素材" : "技能"}库“${created.title}”`
       );
     } catch (error: unknown) {
-      uiMessage.error(error instanceof Error ? error.message : "创建资料库失败。");
+      uiMessage.error(
+        error instanceof Error ? error.message : "创建资料库失败。"
+      );
     } finally {
       catalogMutationPending.value = false;
     }
@@ -294,7 +300,9 @@ export function useCatalogLibraryTransactionsCoordinator(
       if (context.isConflict(error)) {
         await context.refreshCatalog();
         libraryProjectDialog.value = null;
-        uiMessage.warning("资料库已在外部更新，已重新加载；请从新目录状态重新创建条目");
+        uiMessage.warning(
+          "资料库已在外部更新，已重新加载；请从新目录状态重新创建条目"
+        );
       } else {
         uiMessage.error(
           error instanceof Error ? error.message : "创建资料库条目失败。"
@@ -484,7 +492,8 @@ export function useCatalogLibraryTransactionsCoordinator(
           document.catalogEntryId === payload.entryId
       );
       if (persistedDocument) {
-        persistedDocument = await context.ensureDocumentLoaded(persistedDocument);
+        persistedDocument =
+          await context.ensureDocumentLoaded(persistedDocument);
         if (persistedDocument.catalogContentLoaded === false) return;
       }
       const result = await api.removeLibraryEntry({
@@ -496,9 +505,7 @@ export function useCatalogLibraryTransactionsCoordinator(
                 persistedDocument.content
               )
             }),
-        ...(baseProjectRevision === undefined
-          ? {}
-          : { baseProjectRevision })
+        ...(baseProjectRevision === undefined ? {} : { baseProjectRevision })
       });
       if (!result.deleted) {
         await context.refreshCatalog();
@@ -546,8 +553,7 @@ export function useCatalogLibraryTransactionsCoordinator(
     if (!library) return null;
     const entry = library.entries.find((item) => item.id === entryId);
     const document = documents.value.find(
-      (item) =>
-        item.libraryId === libraryId && item.catalogEntryId === entryId
+      (item) => item.libraryId === libraryId && item.catalogEntryId === entryId
     );
     const draft = document ? editorDrafts.value[document.id] : undefined;
     const title = (
@@ -590,7 +596,9 @@ export function useCatalogLibraryTransactionsCoordinator(
     materialKind: MaterialLibraryKind | undefined
   ): MaterialStageId {
     const parsed = MaterialStageIdSchema.safeParse(stageId);
-    const candidate = parsed.success ? parsed.data : ("other" as MaterialStageId);
+    const candidate = parsed.success
+      ? parsed.data
+      : ("other" as MaterialStageId);
     const allowed = MATERIAL_KIND_ALLOWED_STAGES[materialKind ?? "mixed"];
     if (allowed.includes(candidate)) return candidate;
     return allowed[0] ?? "other";
@@ -660,7 +668,11 @@ export function useCatalogLibraryTransactionsCoordinator(
       uiMessage.error("未找到要粘贴到的资料库");
       return;
     }
-    if (payload.domain === "skill" && "isBuiltin" in library && library.isBuiltin) {
+    if (
+      payload.domain === "skill" &&
+      "isBuiltin" in library &&
+      library.isBuiltin
+    ) {
       uiMessage.warning("内置技能库为只读内容，不能粘贴条目");
       return;
     }
@@ -840,12 +852,19 @@ export function useCatalogLibraryTransactionsCoordinator(
       if (!result.unregistered) {
         throw new Error("资料库已经不在当前目录中。");
       }
-      context.disposeLibraryConversation(payload.domain, payload.node.libraryId);
+      context.disposeLibraryConversation(
+        payload.domain,
+        payload.node.libraryId
+      );
       await context.refreshCatalog();
       libraryRemovalDialog.value = null;
-      uiMessage.success(`已从列表移除“${payload.node.label}”，本地文件夹仍完整保留`);
+      uiMessage.success(
+        `已从列表移除“${payload.node.label}”，本地文件夹仍完整保留`
+      );
     } catch (error: unknown) {
-      uiMessage.error(error instanceof Error ? error.message : "移除资料库失败。");
+      uiMessage.error(
+        error instanceof Error ? error.message : "移除资料库失败。"
+      );
     } finally {
       catalogMutationPending.value = false;
     }
@@ -873,12 +892,17 @@ export function useCatalogLibraryTransactionsCoordinator(
           ([documentId]) => !removedDocumentIds.has(documentId)
         )
       );
-      context.disposeLibraryConversation(payload.domain, payload.node.libraryId);
+      context.disposeLibraryConversation(
+        payload.domain,
+        payload.node.libraryId
+      );
       await context.refreshCatalog();
       libraryRemovalDialog.value = null;
       uiMessage.success(`已删除“${payload.node.label}”及其本地文件夹`);
     } catch (error: unknown) {
-      uiMessage.error(error instanceof Error ? error.message : "删除资料库失败。");
+      uiMessage.error(
+        error instanceof Error ? error.message : "删除资料库失败。"
+      );
     } finally {
       catalogMutationPending.value = false;
     }
@@ -898,7 +922,8 @@ export function useCatalogLibraryTransactionsCoordinator(
     payload: CatalogResourceNodeActionPayload
   ): Promise<void> {
     const api = context.api();
-    if (!api || catalogMutationPending.value || payload.node.unavailable) return;
+    if (!api || catalogMutationPending.value || payload.node.unavailable)
+      return;
     const isGroup = payload.action === "duplicate-group";
     const projectId = isGroup ? payload.node.groupId : payload.node.libraryId;
     if (!projectId) {
@@ -943,7 +968,9 @@ export function useCatalogLibraryTransactionsCoordinator(
           : `已复制“${payload.node.label}”为“${duplicated.title}”`
       );
     } catch (error: unknown) {
-      uiMessage.error(error instanceof Error ? error.message : "复制资料库项目失败。");
+      uiMessage.error(
+        error instanceof Error ? error.message : "复制资料库项目失败。"
+      );
     } finally {
       catalogMutationPending.value = false;
     }
@@ -965,9 +992,13 @@ export function useCatalogLibraryTransactionsCoordinator(
         throw new Error("分组已经不在当前目录中。");
       }
       await context.refreshCatalog();
-      uiMessage.success(`已解散分组“${payload.node.label}”，成员库已回到原分类`);
+      uiMessage.success(
+        `已解散分组“${payload.node.label}”，成员库已回到原分类`
+      );
     } catch (error: unknown) {
-      uiMessage.error(error instanceof Error ? error.message : "解散分组失败。");
+      uiMessage.error(
+        error instanceof Error ? error.message : "解散分组失败。"
+      );
     } finally {
       catalogMutationPending.value = false;
     }

@@ -72,7 +72,10 @@ function readZipEntries(archive: Buffer, archiveLabel: string): ZipEntry[] {
     if (offset + 22 + commentLength !== archive.length) {
       continue;
     }
-    if (archive.readUInt16LE(offset + 4) !== 0 || archive.readUInt16LE(offset + 6) !== 0) {
+    if (
+      archive.readUInt16LE(offset + 4) !== 0 ||
+      archive.readUInt16LE(offset + 6) !== 0
+    ) {
       throw new Error(`暂不支持分卷${archiveLabel}。`);
     }
     entryCount = archive.readUInt16LE(offset + 10);
@@ -90,7 +93,13 @@ function readZipEntries(archive: Buffer, archiveLabel: string): ZipEntry[] {
   if (directoryOffset < 0) {
     throw new Error(`无效的 zip 文件：${archiveLabel}中找不到压缩包目录。`);
   }
-  checkedRange(archive, directoryOffset, directorySize, "文件目录", archiveLabel);
+  checkedRange(
+    archive,
+    directoryOffset,
+    directorySize,
+    "文件目录",
+    archiveLabel
+  );
   const entries: ZipEntry[] = [];
   const entryNames = new Set<string>();
   let cursor = directoryOffset;
@@ -144,7 +153,9 @@ function readZipEntry(
   archiveLabel: string
 ): Buffer {
   if (entry.uncompressedSize > MAX_ENTRY_BYTES) {
-    throw new Error(`${archiveLabel}中的文件“${entry.name}”超过 32 MB 安全上限。`);
+    throw new Error(
+      `${archiveLabel}中的文件“${entry.name}”超过 32 MB 安全上限。`
+    );
   }
   checkedRange(
     archive,
@@ -185,10 +196,14 @@ function readZipEntry(
     `文件“${entry.name}”`,
     archiveLabel
   );
-  const compressed = archive.subarray(contentOffset, contentOffset + entry.compressedSize);
-  const content = entry.method === 0
-    ? Buffer.from(compressed)
-    : inflateRawSync(compressed, { maxOutputLength: MAX_ENTRY_BYTES });
+  const compressed = archive.subarray(
+    contentOffset,
+    contentOffset + entry.compressedSize
+  );
+  const content =
+    entry.method === 0
+      ? Buffer.from(compressed)
+      : inflateRawSync(compressed, { maxOutputLength: MAX_ENTRY_BYTES });
   if (content.length !== entry.uncompressedSize) {
     throw new Error(`${archiveLabel}中文件“${entry.name}”的长度校验失败。`);
   }

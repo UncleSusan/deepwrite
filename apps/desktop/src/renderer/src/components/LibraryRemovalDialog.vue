@@ -2,15 +2,18 @@
 import { computed, onBeforeUnmount, onMounted } from "vue";
 import AppIcon from "./AppIcon.vue";
 
-const props = withDefaults(defineProps<{
-  open: boolean;
-  action: "remove" | "delete";
-  domain: "material" | "skill";
-  label: string;
-  submitting?: boolean;
-}>(), {
-  submitting: false
-});
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    action: "remove" | "delete";
+    domain: "material" | "skill";
+    label: string;
+    submitting?: boolean;
+  }>(),
+  {
+    submitting: false
+  }
+);
 
 const emit = defineEmits<{
   close: [];
@@ -55,29 +58,56 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             aria-label="关闭"
             :disabled="submitting"
             @click="requestClose"
-          >×</button>
+          >
+            ×
+          </button>
         </header>
 
         <form class="dialog-content" @submit.prevent="emit('confirm')">
           <div class="book-remove-warning">
             <AppIcon name="trash" :size="20" />
             <div>
-              <strong>确认{{ action === "delete" ? "删除" : "移除" }}“{{ label }}”？</strong>
+              <strong
+                >确认{{ action === "delete" ? "删除" : "移除" }}“{{
+                  label
+                }}”？</strong
+              >
               <p v-if="action === 'delete'">
-                会从当前{{ resourceName }}列表移除，并永久删除本地项目文件夹及其中所有文件。此操作无法撤销。
+                会从当前{{
+                  resourceName
+                }}列表移除，并永久删除本地项目文件夹及其中所有文件。此操作无法撤销。
               </p>
               <p v-else>
-                只会从当前{{ resourceName }}列表解除注册，不会删除本地文件夹；之后可通过“打开已存在{{ resourceName }}”恢复。
+                只会从当前{{
+                  resourceName
+                }}列表解除注册，不会删除本地文件夹；之后可通过“打开已存在{{
+                  resourceName
+                }}”恢复。
               </p>
             </div>
           </div>
 
           <div class="dialog-actions">
-            <button class="dialog-secondary-button" type="button" :disabled="submitting" @click="requestClose">
+            <button
+              class="dialog-secondary-button"
+              type="button"
+              :disabled="submitting"
+              @click="requestClose"
+            >
               取消
             </button>
-            <button class="dialog-primary-button is-danger" type="submit" :disabled="submitting">
-              {{ submitting ? "处理中…" : action === "delete" ? "确认删除" : "确认移除" }}
+            <button
+              class="dialog-primary-button is-danger"
+              type="submit"
+              :disabled="submitting"
+            >
+              {{
+                submitting
+                  ? "处理中…"
+                  : action === "delete"
+                    ? "确认删除"
+                    : "确认移除"
+              }}
             </button>
           </div>
         </form>

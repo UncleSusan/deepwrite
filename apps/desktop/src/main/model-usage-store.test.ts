@@ -10,11 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AgentUsage, ModelConfig, ModelUsageRecord } from "@deepwrite/contracts";
-import {
-  ModelUsageStore,
-  createModelUsageSnapshot
-} from "./model-usage-store";
+import type {
+  AgentUsage,
+  ModelConfig,
+  ModelUsageRecord
+} from "@deepwrite/contracts";
+import { ModelUsageStore, createModelUsageSnapshot } from "./model-usage-store";
 
 const temporaryRoots = new Set<string>();
 
@@ -79,7 +80,9 @@ function localDate(
 
 afterEach(async () => {
   await Promise.all(
-    [...temporaryRoots].map((root) => rm(root, { recursive: true, force: true }))
+    [...temporaryRoots].map((root) =>
+      rm(root, { recursive: true, force: true })
+    )
   );
   temporaryRoots.clear();
 });
@@ -116,8 +119,12 @@ describe("ModelUsageStore", () => {
     expect(registry).not.toContain("apiKey");
     expect((await stat(store.ledgerPath)).mode & 0o777).toBe(0o600);
     expect((await stat(store.registryPath)).mode & 0o777).toBe(0o600);
-    await expect(access(legacyDirectory)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(access(legacyRegistry)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(legacyDirectory)).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+    await expect(access(legacyRegistry)).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
   it("lists a current configuration before it has any usage", async () => {
@@ -172,13 +179,17 @@ describe("ModelUsageStore", () => {
       startAt: localDate(2026, 6, 1),
       endAt: localDate(2026, 6, 3, 23, 59)
     });
-    const imitationOnly = await store.query({ modules: ["learning-imitation"] });
+    const imitationOnly = await store.query({
+      modules: ["learning-imitation"]
+    });
 
     expect(range.totals.requestCount).toBe(2);
     expect(range.totals.totalTokens).toBe(48);
     expect(range.trendGranularity).toBe("day");
     expect(range.trend).toHaveLength(3);
-    expect(range.trend.map((point) => point.totals.requestCount)).toEqual([1, 0, 1]);
+    expect(range.trend.map((point) => point.totals.requestCount)).toEqual([
+      1, 0, 1
+    ]);
     expect(new Date(range.trend[0]!.bucketStart).getHours()).toBe(0);
     expect(imitationOnly.totals).toEqual({
       inputTokens: 5,
@@ -292,9 +303,11 @@ describe("ModelUsageStore", () => {
 
     expect(dashboard.trendGranularity).toBe("hour");
     expect(dashboard.trend.length).toBeGreaterThanOrEqual(24);
-    expect(dashboard.trend.reduce(
-      (count, point) => count + point.totals.requestCount,
-      0
-    )).toBe(1);
+    expect(
+      dashboard.trend.reduce(
+        (count, point) => count + point.totals.requestCount,
+        0
+      )
+    ).toBe(1);
   });
 });

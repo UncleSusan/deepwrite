@@ -7,11 +7,7 @@ interface CachedDocument {
   readonly revision: number;
 }
 
-function document(
-  id: string,
-  content: string,
-  revision = 1
-): CachedDocument {
+function document(id: string, content: string, revision = 1): CachedDocument {
   return { id, content, revision };
 }
 
@@ -87,7 +83,10 @@ describe("catalog document LRU", () => {
 
     for (let index = 0; index < 10; index += 1) {
       expect(
-        cache.set(`oversized-${index}`, document(`oversized-${index}`, "一二三四五"))
+        cache.set(
+          `oversized-${index}`,
+          document(`oversized-${index}`, "一二三四五")
+        )
       ).toBe(false);
     }
 
@@ -107,7 +106,9 @@ describe("catalog document LRU", () => {
     });
     cache.set("document", document("document", "旧"));
 
-    expect(cache.set("document", document("document", "新的正文", 2))).toBe(false);
+    expect(cache.set("document", document("document", "新的正文", 2))).toBe(
+      false
+    );
     expect(cache.get("document")).toBeUndefined();
     expect(cache.stats().retainedCharacters).toBe(0);
   });
@@ -148,9 +149,13 @@ describe("catalog document LRU", () => {
   });
 
   it("rejects invalid limits", () => {
-    expect(() => createCatalogDocumentLru({ maxEntries: -1 })).toThrow(RangeError);
+    expect(() => createCatalogDocumentLru({ maxEntries: -1 })).toThrow(
+      RangeError
+    );
     expect(() =>
-      createCatalogDocumentLru({ maxRetainedCharacters: Number.POSITIVE_INFINITY })
+      createCatalogDocumentLru({
+        maxRetainedCharacters: Number.POSITIVE_INFINITY
+      })
     ).toThrow(RangeError);
   });
 });

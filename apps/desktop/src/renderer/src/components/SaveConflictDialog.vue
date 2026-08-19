@@ -32,7 +32,8 @@ const emit = defineEmits<{
 
         <div class="dialog-content">
           <p class="dialog-description">
-            DeepWrite 没有覆盖磁盘内容。可以保留当前草稿、重新加载磁盘版本，或明确确认后用当前草稿覆盖。
+            DeepWrite
+            没有覆盖磁盘内容。可以保留当前草稿、重新加载磁盘版本，或明确确认后用当前草稿覆盖。
           </p>
           <div class="save-conflict-columns">
             <section>
@@ -44,17 +45,35 @@ const emit = defineEmits<{
               <pre>{{ diskContent.slice(0, 2000) || "（空内容）" }}</pre>
             </section>
           </div>
-          <p v-if="draftContent.length > 2000 || diskContent.length > 2000" class="dialog-note">
+          <p
+            v-if="draftContent.length > 2000 || diskContent.length > 2000"
+            class="dialog-note"
+          >
             对比预览最多显示前 2,000 字，实际操作仍针对完整内容。
           </p>
           <div class="dialog-actions save-conflict-actions">
-            <button class="dialog-secondary-button" type="button" :disabled="submitting" @click="emit('keep')">
+            <button
+              class="dialog-secondary-button"
+              type="button"
+              :disabled="submitting"
+              @click="emit('keep')"
+            >
               保留当前草稿
             </button>
-            <button class="dialog-secondary-button" type="button" :disabled="submitting" @click="emit('reload')">
+            <button
+              class="dialog-secondary-button"
+              type="button"
+              :disabled="submitting"
+              @click="emit('reload')"
+            >
               重新加载磁盘版
             </button>
-            <button class="dialog-primary-button is-danger" type="button" :disabled="submitting" @click="emit('overwrite')">
+            <button
+              class="dialog-primary-button is-danger"
+              type="button"
+              :disabled="submitting"
+              @click="emit('overwrite')"
+            >
               {{ submitting ? "覆盖中…" : "覆盖磁盘版" }}
             </button>
           </div>

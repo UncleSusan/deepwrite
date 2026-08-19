@@ -88,9 +88,7 @@ function revisionMatchesContent(revision: string, content: string): boolean {
   const match = /^(v1|v2):(\d+):([0-9a-f]+)$/u.exec(revision);
   if (!match || Number(match[2]) !== bytes.byteLength) return false;
   const digest = sha256(bytes);
-  return match[1] === "v1"
-    ? digest.startsWith(match[3]!)
-    : digest === match[3];
+  return match[1] === "v1" ? digest.startsWith(match[3]!) : digest === match[3];
 }
 
 function continuityFactKey(
@@ -115,9 +113,7 @@ function sameContinuityEntity(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function serializeContinuityHandoff(
-  handoff: LongContinuityHandoff
-): string {
+function serializeContinuityHandoff(handoff: LongContinuityHandoff): string {
   const bullets = (items: readonly string[]): string =>
     items.length === 0
       ? "- 无"
@@ -174,14 +170,9 @@ function replayContinuityProjection(
         (change.before === null
           ? idIndex !== undefined
           : idIndex === undefined ||
-            !sameContinuityEntity(
-              projection.facts[idIndex],
-              change.before
-            ))
+            !sameContinuityEntity(projection.facts[idIndex], change.before))
       ) {
-        throw new Error(
-          `连续性事实变更链不一致：${change.after.factId}。`
-        );
+        throw new Error(`连续性事实变更链不一致：${change.after.factId}。`);
       }
       if (idIndex === undefined) {
         const nextIndex = projection.facts.length;
@@ -199,10 +190,7 @@ function replayContinuityProjection(
         change.before === null
           ? index !== undefined
           : index === undefined ||
-            !sameContinuityEntity(
-              projection.knowledge[index],
-              change.before
-            )
+            !sameContinuityEntity(projection.knowledge[index], change.before)
       ) {
         throw new Error(`连续性认知变更链不一致：${key}。`);
       }
@@ -219,20 +207,14 @@ function replayContinuityProjection(
         change.before === null
           ? index !== undefined
           : index === undefined ||
-            !sameContinuityEntity(
-              projection.openLoops[index],
-              change.before
-            )
+            !sameContinuityEntity(projection.openLoops[index], change.before)
       ) {
         throw new Error(
           `连续性未闭合事项变更链不一致：${change.after.loopId}。`
         );
       }
       if (index === undefined) {
-        openLoopIndexById.set(
-          change.after.loopId,
-          projection.openLoops.length
-        );
+        openLoopIndexById.set(change.after.loopId, projection.openLoops.length);
         projection.openLoops.push({ ...change.after });
       } else {
         projection.openLoops[index] = { ...change.after };
@@ -475,12 +457,8 @@ export function assertLongLedgerRecordChain(
       chapterCardId: chapter.chapterCardId
     });
   }
-  const characterSubjectIds = new Set(
-    index.characters.map(({ id }) => id)
-  );
-  const worldSubjectIds = new Set(
-    index.worldbuilding.map(({ id }) => id)
-  );
+  const characterSubjectIds = new Set(index.characters.map(({ id }) => id));
+  const worldSubjectIds = new Set(index.worldbuilding.map(({ id }) => id));
   const plotSubjectIds = new Set<string>([
     index.bookId,
     ...index.plot.volumes.map(({ id }) => id),
@@ -512,8 +490,7 @@ export function assertLongLedgerRecordChain(
     assertLongLedgerRecordMatchesIndex(index, entry, record);
     if (
       record.sourceWorkspaceRevision !== record.sourceProjectRevision ||
-      record.committedWorkspaceRevision !==
-        record.committedProjectRevision ||
+      record.committedWorkspaceRevision !== record.committedProjectRevision ||
       record.committedWorkspaceRevision > index.revision ||
       record.committedProjectRevision > finalProjectRevision ||
       (previousRecord !== undefined &&
@@ -546,9 +523,7 @@ export function assertLongLedgerRecordChain(
       const expectedFiles = [
         chapter.characterState,
         chapter.handoff,
-        ...(auditsForeshadowingChanges
-          ? [chapter.foreshadowingChanges]
-          : []),
+        ...(auditsForeshadowingChanges ? [chapter.foreshadowingChanges] : []),
         ...(chapter.worldReveals ? [chapter.worldReveals] : []),
         ...chapter.characterContinuity.flatMap((continuity) => [
           continuity.currentState,
@@ -580,8 +555,7 @@ export function assertLongLedgerRecordChain(
       );
       for (const { after: fact } of record.factChanges) {
         const subjectExists =
-          fact.domain === "character" ||
-          fact.domain === "relationship"
+          fact.domain === "character" || fact.domain === "relationship"
             ? characterSubjectIds.has(fact.subjectId)
             : fact.domain === "world"
               ? worldSubjectIds.has(fact.subjectId)
@@ -593,10 +567,7 @@ export function assertLongLedgerRecordChain(
             `v3 连续性事实包含孤立 subjectId：${fact.factId} / ${fact.subjectId}。`
           );
         }
-        if (
-          fact.domain !== "character" &&
-          fact.domain !== "relationship"
-        ) {
+        if (fact.domain !== "character" && fact.domain !== "relationship") {
           continue;
         }
         const files = characterFilesByCharacterId.get(fact.subjectId);
@@ -635,9 +606,7 @@ export function assertLongLedgerRecordChain(
         handoffChange.after.content !==
           serializeContinuityHandoff(record.chapterOutputs.handoff)
       ) {
-        throw new Error(
-          `v3 连续性账本缺少可信的章节输出变更：${record.id}。`
-        );
+        throw new Error(`v3 连续性账本缺少可信的章节输出变更：${record.id}。`);
       }
     }
     for (const change of record.fileChanges) {
@@ -658,19 +627,14 @@ export function assertLongLedgerRecordChain(
           change.before.revision,
           change.before.content
         ) ||
-        !revisionMatchesContent(
-          change.after.revision,
-          change.after.content
-        ) ||
+        !revisionMatchesContent(change.after.revision, change.after.content) ||
         (change.mode === "append" &&
           !change.after.content.startsWith(change.before.content)) ||
         (previous !== undefined &&
           (previous.content !== change.before.content ||
             previous.revision !== change.before.revision))
       ) {
-        throw new Error(
-          `连续性账本文件变更链不一致：${change.fileId}。`
-        );
+        throw new Error(`连续性账本文件变更链不一致：${change.fileId}。`);
       }
       lastFileState.set(change.fileId, change.after);
     }
@@ -699,18 +663,12 @@ export function assertLongLedgerRecordChain(
     index.plot.foreshadowing.flatMap((thread) =>
       thread.beats.map(
         (beat) =>
-          [
-            beat.id,
-            { status: beat.status, commitId: beat.commitId }
-          ] as const
+          [beat.id, { status: beat.status, commitId: beat.commitId }] as const
       )
     )
   );
   const threadState = new Map(
-    index.plot.foreshadowing.map((thread) => [
-      thread.id,
-      thread.status
-    ])
+    index.plot.foreshadowing.map((thread) => [thread.id, thread.status])
   );
   const touchedPlacements = new Set<string>();
   const touchedBeats = new Set<string>();
@@ -736,9 +694,7 @@ export function assertLongLedgerRecordChain(
         current.status !== change.after.status ||
         current.commitId !== change.after.commitId
       ) {
-        throw new Error(
-          `连续性账本伏笔节拍回滚链不一致：${change.beatId}。`
-        );
+        throw new Error(`连续性账本伏笔节拍回滚链不一致：${change.beatId}。`);
       }
       beatState.set(change.beatId, { ...change.before });
       touchedBeats.add(change.beatId);
@@ -758,9 +714,7 @@ export function assertLongLedgerRecordChain(
       state.commitId !== null ||
       (state.status !== "planned" && state.status !== "written")
     ) {
-      throw new Error(
-        `连续性账本叙事落点缺少可信回滚前态：${placementId}。`
-      );
+      throw new Error(`连续性账本叙事落点缺少可信回滚前态：${placementId}。`);
     }
   }
   for (const beatId of touchedBeats) {
@@ -769,9 +723,7 @@ export function assertLongLedgerRecordChain(
       state.commitId !== null ||
       (state.status !== "planned" && state.status !== "written")
     ) {
-      throw new Error(
-        `连续性账本伏笔节拍缺少可信回滚前态：${beatId}。`
-      );
+      throw new Error(`连续性账本伏笔节拍缺少可信回滚前态：${beatId}。`);
     }
   }
 }
@@ -780,9 +732,7 @@ function assertUniqueIndexedFiles(files: readonly IndexedPortableFile[]): void {
   const ids = new Set<string>();
   const paths = new Set<string>();
   for (const { reference } of files) {
-    const pathKey = reference.path
-      .normalize("NFC")
-      .toLocaleLowerCase("en-US");
+    const pathKey = reference.path.normalize("NFC").toLocaleLowerCase("en-US");
     if (ids.has(reference.id) || paths.has(pathKey)) {
       throw new Error(
         `长篇工作区索引包含重复文件：${reference.id} / ${reference.path}。`
@@ -832,10 +782,7 @@ function parseJsonEntry(
   return { sha256: entry.sha256, value: entry.value };
 }
 
-function recordOrThrow(
-  value: unknown,
-  label: string
-): Record<string, unknown> {
+function recordOrThrow(value: unknown, label: string): Record<string, unknown> {
   if (!isRecord(value)) {
     throw new Error(`长篇可移植包的${label}格式无效。`);
   }
@@ -852,10 +799,7 @@ function normalizeLegacyPortableWorldbuilding(
   if (!Array.isArray(rawFiles)) {
     throw new Error("长篇可移植包的 files 格式无效。");
   }
-  if (
-    !isRecord(rawIndex) ||
-    !Array.isArray(rawIndex.worldbuilding)
-  ) {
+  if (!isRecord(rawIndex) || !Array.isArray(rawIndex.worldbuilding)) {
     return { index: rawIndex, files: rawFiles };
   }
 
@@ -870,19 +814,13 @@ function normalizeLegacyPortableWorldbuilding(
       return rawCategory;
     }
 
-    const categoryId =
-      typeof rawCategory.id === "string" ? rawCategory.id : "";
-    const legacyFile = LongWorkspaceFileReferenceSchema.parse(
-      rawCategory.file
-    );
+    const categoryId = typeof rawCategory.id === "string" ? rawCategory.id : "";
+    const legacyFile = LongWorkspaceFileReferenceSchema.parse(rawCategory.file);
     const matching = files.filter(
-      (rawFile) =>
-        isRecord(rawFile) && rawFile.id === legacyFile.id
+      (rawFile) => isRecord(rawFile) && rawFile.id === legacyFile.id
     );
     if (matching.length !== 1) {
-      throw new Error(
-        `旧版世界观分类 ${categoryId} 的聚合文件缺失或重复。`
-      );
+      throw new Error(`旧版世界观分类 ${categoryId} 的聚合文件缺失或重复。`);
     }
     const aggregate = recordOrThrow(
       matching[0],
@@ -902,35 +840,32 @@ function normalizeLegacyPortableWorldbuilding(
       );
     }
 
-    const items = parseLongWorldbuildingMarkdownList(
-      aggregate.content
-    ).map((item, itemIndex) => {
-      const path = longWorldbuildingItemContentPath(
-        categoryId,
-        item.id
-      );
-      const revision = contentRevision(item.content);
-      const file = {
-        id: longWorldbuildingItemFileId(item.id),
-        path,
-        revision,
-        updatedAt: legacyFile.updatedAt
-      };
-      files.push({
-        id: file.id,
-        path,
-        kind: "markdown",
-        revision,
-        sha256: sha256(item.content),
-        content: item.content
-      });
-      return {
-        id: item.id,
-        title: item.title,
-        order: itemIndex + 1,
-        file
-      };
-    });
+    const items = parseLongWorldbuildingMarkdownList(aggregate.content).map(
+      (item, itemIndex) => {
+        const path = longWorldbuildingItemContentPath(categoryId, item.id);
+        const revision = contentRevision(item.content);
+        const file = {
+          id: longWorldbuildingItemFileId(item.id),
+          path,
+          revision,
+          updatedAt: legacyFile.updatedAt
+        };
+        files.push({
+          id: file.id,
+          path,
+          kind: "markdown",
+          revision,
+          sha256: sha256(item.content),
+          content: item.content
+        });
+        return {
+          id: item.id,
+          title: item.title,
+          order: itemIndex + 1,
+          file
+        };
+      }
+    );
     files = files.filter((rawFile) => rawFile !== matching[0]);
     const overviewPath = longWorldbuildingOverviewContentPath(categoryId);
     const overviewRevision = contentRevision("");
@@ -1107,9 +1042,7 @@ export function parseLongPortableExportBundle(
   const expectedById = new Map(
     expected.map((entry) => [entry.reference.id, entry])
   );
-  if (
-    normalizedContinuity.files.length !== expected.length
-  ) {
+  if (normalizedContinuity.files.length !== expected.length) {
     throw new Error("长篇可移植包没有完整包含索引中的全部文档。");
   }
   let totalBytes = 0;
@@ -1175,12 +1108,7 @@ export function parseLongPortableExportBundle(
       const entry = index.ledger.commits.find(
         (candidate) => candidate.id === expectedFile.commitId
       )!;
-      assertLongLedgerRecordMatchesIndex(
-        index,
-        entry,
-        record,
-        file.content
-      );
+      assertLongLedgerRecordMatchesIndex(index, entry, record, file.content);
       ledgerRecords.push(record);
     }
     return {

@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import { DraftSectionTitleSchema } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
@@ -102,9 +109,7 @@ watch(
 );
 
 onMounted(() => document.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() =>
-  document.removeEventListener("keydown", handleKeydown)
-);
+onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
@@ -152,7 +157,9 @@ onBeforeUnmount(() =>
               />
             </label>
             <p>
-              确认后将在正文末尾新增一个空{{ unitLabel }}，并立即保存到正文文件夹。
+              确认后将在正文末尾新增一个空{{
+                unitLabel
+              }}，并立即保存到正文文件夹。
             </p>
           </fieldset>
 
@@ -305,10 +312,6 @@ button:disabled {
     var(--neutral-solid) 86%,
     var(--text-primary)
   );
-  background: color-mix(
-    in srgb,
-    var(--neutral-solid) 86%,
-    var(--text-primary)
-  );
+  background: color-mix(in srgb, var(--neutral-solid) 86%, var(--text-primary));
 }
 </style>

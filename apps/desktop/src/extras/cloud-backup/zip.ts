@@ -85,7 +85,10 @@ export function readZip(buffer: Buffer): Map<string, Buffer> {
   let cursor = 0;
   while (cursor + 30 <= buffer.length) {
     const signature = buffer.readUInt32LE(cursor);
-    if (signature === CENTRAL_DIRECTORY_SIGNATURE || signature === END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+    if (
+      signature === CENTRAL_DIRECTORY_SIGNATURE ||
+      signature === END_OF_CENTRAL_DIRECTORY_SIGNATURE
+    ) {
       break;
     }
     if (signature !== LOCAL_FILE_SIGNATURE) {
@@ -102,7 +105,9 @@ export function readZip(buffer: Buffer): Map<string, Buffer> {
     if (dataEnd > buffer.length) {
       throw new Error("备份压缩包已损坏。");
     }
-    const name = buffer.subarray(nameStart, nameStart + nameLength).toString("utf8");
+    const name = buffer
+      .subarray(nameStart, nameStart + nameLength)
+      .toString("utf8");
     const payload = buffer.subarray(dataStart, dataEnd);
     const data =
       method === 0

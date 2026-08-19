@@ -29,10 +29,7 @@ import { buildContinuityTools } from "./continuity-tools";
 export type LongQueryCommandEnvelope = Extract<
   LongWorkspaceCommandEnvelope,
   {
-    type:
-      | "long.getWorkspaceIndex"
-      | "long.readDocument"
-      | "long.search";
+    type: "long.getWorkspaceIndex" | "long.readDocument" | "long.search";
   }
 >;
 

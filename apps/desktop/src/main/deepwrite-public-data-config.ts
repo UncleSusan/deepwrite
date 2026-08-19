@@ -38,7 +38,9 @@ export const DEEPWRITE_PUBLIC_DATA_API_CONFIGURED =
   DEEPWRITE_PUBLIC_DATA_API_BASE_URL !== UNCONFIGURED_PUBLIC_DATA_ORIGIN &&
   configuredValue("MAIN_VITE_DEEPWRITE_PUBLIC_DATA_API_KEY") !== "";
 
-export function deepWritePublicDataUrl(fileName: "MODEL.json" | "MODELDEEPWRITE.json" | "ALERT.json"): string {
+export function deepWritePublicDataUrl(
+  fileName: "MODEL.json" | "MODELDEEPWRITE.json" | "ALERT.json"
+): string {
   return `${DEEPWRITE_PUBLIC_DATA_API_BASE_URL}/deepwrite/v1/${fileName}`;
 }
 

@@ -53,66 +53,74 @@ describe("useSubagentAuthoring", () => {
     const sessionId = promptPayload?.sessionId;
     if (!sessionId) throw new Error("missing authoring session id");
 
-    controller.handleEvent(createEnvelope(
-      "agent.turn_started",
-      {
-        sessionId,
-        runId: "run_authoring_retry",
-        messageId: "authoring_message_retry",
-        turnId: "authoring_turn_retry",
-        attempt: 1,
-        maxAttempts: 6,
-        runtime
-      },
-      {
-        id: "event_authoring_turn_started",
-        timestamp: "2026-07-26T04:00:00.000Z",
-        context: { sessionId, runId: "run_authoring_retry" }
-      }
-    ));
-    controller.handleEvent(createEnvelope(
-      "agent.retry_scheduled",
-      {
-        sessionId,
-        runId: "run_authoring_retry",
-        messageId: "authoring_message_retry",
-        turnId: "authoring_turn_retry",
-        failedAttempt: 1,
-        nextAttempt: 2,
-        maxAttempts: 6,
-        delayMs: 30_000,
-        retryAt: "2026-07-26T04:00:30.000Z",
-        reason: "连接暂时中断",
-        runtime
-      },
-      {
-        id: "event_authoring_retry_scheduled",
-        timestamp: "2026-07-26T04:00:01.000Z",
-        context: { sessionId, runId: "run_authoring_retry" }
-      }
-    ));
+    controller.handleEvent(
+      createEnvelope(
+        "agent.turn_started",
+        {
+          sessionId,
+          runId: "run_authoring_retry",
+          messageId: "authoring_message_retry",
+          turnId: "authoring_turn_retry",
+          attempt: 1,
+          maxAttempts: 6,
+          runtime
+        },
+        {
+          id: "event_authoring_turn_started",
+          timestamp: "2026-07-26T04:00:00.000Z",
+          context: { sessionId, runId: "run_authoring_retry" }
+        }
+      )
+    );
+    controller.handleEvent(
+      createEnvelope(
+        "agent.retry_scheduled",
+        {
+          sessionId,
+          runId: "run_authoring_retry",
+          messageId: "authoring_message_retry",
+          turnId: "authoring_turn_retry",
+          failedAttempt: 1,
+          nextAttempt: 2,
+          maxAttempts: 6,
+          delayMs: 30_000,
+          retryAt: "2026-07-26T04:00:30.000Z",
+          reason: "连接暂时中断",
+          runtime
+        },
+        {
+          id: "event_authoring_retry_scheduled",
+          timestamp: "2026-07-26T04:00:01.000Z",
+          context: { sessionId, runId: "run_authoring_retry" }
+        }
+      )
+    );
 
     expect(controller.status.value).toBe("running");
     expect(controller.isBusy.value).toBe(true);
-    expect(controller.statusText.value).toBe("网络波动，30s 后重试（第 1/5 次）");
+    expect(controller.statusText.value).toBe(
+      "网络波动，30s 后重试（第 1/5 次）"
+    );
 
-    controller.handleEvent(createEnvelope(
-      "agent.turn_started",
-      {
-        sessionId,
-        runId: "run_authoring_retry",
-        messageId: "authoring_message_retry",
-        turnId: "authoring_turn_retry",
-        attempt: 2,
-        maxAttempts: 6,
-        runtime
-      },
-      {
-        id: "event_authoring_retry_started",
-        timestamp: "2026-07-26T04:00:30.000Z",
-        context: { sessionId, runId: "run_authoring_retry" }
-      }
-    ));
+    controller.handleEvent(
+      createEnvelope(
+        "agent.turn_started",
+        {
+          sessionId,
+          runId: "run_authoring_retry",
+          messageId: "authoring_message_retry",
+          turnId: "authoring_turn_retry",
+          attempt: 2,
+          maxAttempts: 6,
+          runtime
+        },
+        {
+          id: "event_authoring_retry_started",
+          timestamp: "2026-07-26T04:00:30.000Z",
+          context: { sessionId, runId: "run_authoring_retry" }
+        }
+      )
+    );
 
     expect(controller.status.value).toBe("running");
     expect(controller.isBusy.value).toBe(true);

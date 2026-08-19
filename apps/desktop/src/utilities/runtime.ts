@@ -82,7 +82,9 @@ export function bootUtility(
 ): void {
   const port = process.parentPort;
   if (!port) {
-    throw new Error(`${worker} utility requires Electron utilityProcess parentPort.`);
+    throw new Error(
+      `${worker} utility requires Electron utilityProcess parentPort.`
+    );
   }
 
   const startedAt = nowIso();
@@ -202,11 +204,7 @@ export function bootUtility(
 
     const timeoutMs =
       requestOptions?.timeoutMs ?? DEFAULT_INTERNAL_COMMAND_TIMEOUT_MS;
-    if (
-      !Number.isInteger(timeoutMs) ||
-      timeoutMs < 1 ||
-      timeoutMs > 120_000
-    ) {
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
       return Promise.resolve(
         rejectedCommandResult(
           command.id,
@@ -260,7 +258,10 @@ export function bootUtility(
     });
   };
 
-  const handleCommand = async (requestId: string, command: CommandEnvelope): Promise<void> => {
+  const handleCommand = async (
+    requestId: string,
+    command: CommandEnvelope
+  ): Promise<void> => {
     if (shuttingDown) {
       sendRejected(
         requestId,
@@ -286,7 +287,11 @@ export function bootUtility(
           ? await options.commandHandler(command, emitEvent, {
               worker,
               requestId,
-              requestInternalCommand: (target, internalCommand, requestOptions) =>
+              requestInternalCommand: (
+                target,
+                internalCommand,
+                requestOptions
+              ) =>
                 requestInternalCommand(
                   requestId,
                   target,
@@ -305,7 +310,9 @@ export function bootUtility(
       );
 
       if (result.requestId !== command.id) {
-        throw new Error("Utility command result requestId does not match command id.");
+        throw new Error(
+          "Utility command result requestId does not match command id."
+        );
       }
 
       post({

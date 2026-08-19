@@ -349,10 +349,7 @@ describe("long structure mutation builder", () => {
         order: 1,
         file: file(
           longWorldbuildingItemFileId("worlditem_plain"),
-          longWorldbuildingItemContentPath(
-            category.id,
-            "worlditem_plain"
-          )
+          longWorldbuildingItemContentPath(category.id, "worlditem_plain")
         )
       },
       {
@@ -361,10 +358,7 @@ describe("long structure mutation builder", () => {
         order: 2,
         file: file(
           longWorldbuildingItemFileId("worlditem_harbor"),
-          longWorldbuildingItemContentPath(
-            category.id,
-            "worlditem_harbor"
-          )
+          longWorldbuildingItemContentPath(category.id, "worlditem_harbor")
         )
       }
     ];
@@ -391,11 +385,8 @@ describe("long structure mutation builder", () => {
       }
     ]);
     expect(
-      mutations.reorderWorldbuildingItem(
-        category.id,
-        "worlditem_harbor",
-        "up"
-      ).operations
+      mutations.reorderWorldbuildingItem(category.id, "worlditem_harbor", "up")
+        .operations
     ).toEqual([
       {
         type: "worldbuildingItem.reorder",
@@ -404,10 +395,8 @@ describe("long structure mutation builder", () => {
       }
     ]);
     expect(
-      mutations.deleteWorldbuildingItem(
-        category.id,
-        "worlditem_plain"
-      ).operations
+      mutations.deleteWorldbuildingItem(category.id, "worlditem_plain")
+        .operations
     ).toEqual([
       {
         type: "worldbuildingItem.delete",
@@ -574,9 +563,7 @@ describe("long structure mutation builder", () => {
             updatedAt: later
           },
           foreshadowingChanges: {
-            id: longChapterForeshadowingChangesFileId(
-              "chapter_generated"
-            ),
+            id: longChapterForeshadowingChangesFileId("chapter_generated"),
             path: longChapterContinuityFilePath(
               "chapter_generated",
               "foreshadowing-changes.md"
@@ -659,18 +646,14 @@ describe("long structure mutation builder", () => {
         orderedIds: ["character_bob", "character_alice"]
       }
     ]);
-    expect(
-      mutations.reorderArc("arc_clock", "up").operations
-    ).toEqual([
+    expect(mutations.reorderArc("arc_clock", "up").operations).toEqual([
       {
         type: "arc.reorder",
         volumeId: "volume_one",
         orderedIds: ["arc_clock", "arc_letter"]
       }
     ]);
-    expect(
-      mutations.reorderChapter("chapter_two", "up").operations
-    ).toEqual([
+    expect(mutations.reorderChapter("chapter_two", "up").operations).toEqual([
       {
         type: "chapter.reorder",
         volumeId: "volume_one",
@@ -785,13 +768,13 @@ describe("long structure mutation builder", () => {
       id: "arc_letter",
       cascade: true
     });
-    expect(
-      mutations.deleteChapter("chapter_one", false).operations[0]
-    ).toEqual({
-      type: "chapter.delete",
-      id: "chapter_one",
-      cascade: false
-    });
+    expect(mutations.deleteChapter("chapter_one", false).operations[0]).toEqual(
+      {
+        type: "chapter.delete",
+        id: "chapter_one",
+        cascade: false
+      }
+    );
   });
 
   it("builds complete story-event and event-connection proposals", () => {
@@ -843,14 +826,14 @@ describe("long structure mutation builder", () => {
         }
       }
     ]);
-    expect(
-      mutations.reorderStoryEvent("event_clock", "up").operations
-    ).toEqual([
-      {
-        type: "event.reorder",
-        orderedIds: ["event_clock", "event_letter"]
-      }
-    ]);
+    expect(mutations.reorderStoryEvent("event_clock", "up").operations).toEqual(
+      [
+        {
+          type: "event.reorder",
+          orderedIds: ["event_clock", "event_letter"]
+        }
+      ]
+    );
     expect(
       mutations.createEventConnection({
         sourceEventId: "event_clock",
@@ -882,7 +865,11 @@ describe("long structure mutation builder", () => {
     ]);
     expect(
       mutations.deleteStoryEvent("event_clock", true).operations[0]
-    ).toEqual({ type: "event.delete", id: "event_clock", cascade: true });
+    ).toEqual({
+      type: "event.delete",
+      id: "event_clock",
+      cascade: true
+    });
     expect(
       mutations.deleteEventConnection("connection_letter_clock").operations[0]
     ).toEqual({
@@ -1082,10 +1069,7 @@ describe("long structure mutation builder", () => {
       }
     ]);
     expect(
-      mutations.reorderForeshadowingBeat(
-        "beat_bell_reinforce",
-        "up"
-      ).operations
+      mutations.reorderForeshadowingBeat("beat_bell_reinforce", "up").operations
     ).toEqual([
       {
         type: "foreshadowingBeat.reorder",
@@ -1122,9 +1106,7 @@ describe("long structure mutation builder", () => {
         volumeId: "volume_two",
         eventId: "event_letter"
       })
-    ).toThrow(
-      "planning volume must match its concrete event"
-    );
+    ).toThrow("planning volume must match its concrete event");
   });
 
   it("produces plot proposals accepted by the shared impact preview engine", () => {

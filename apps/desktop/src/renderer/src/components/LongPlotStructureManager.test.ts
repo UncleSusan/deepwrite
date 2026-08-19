@@ -40,9 +40,7 @@ describe("LongPlotStructureManager", () => {
     expect(source).toContain(
       'succeed: () => finishMutation(requestId, "succeeded")'
     );
-    expect(source).toContain(
-      'fail: () => finishMutation(requestId, "failed")'
-    );
+    expect(source).toContain('fail: () => finishMutation(requestId, "failed")');
     expect(source).toContain("appliedButRefreshFailed");
     expect(source).toContain('if (outcome === "failed") return');
     expect(source).toContain('}, "form")');

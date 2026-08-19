@@ -16,7 +16,7 @@ describe("LibraryGroupDialog default library option", () => {
   });
 
   it("allows updating a group's name together with its bindings", () => {
-    expect(source).toContain('title: name');
+    expect(source).toContain("title: name");
     expect(source).toContain('editing ? "编辑分组" : "新建分组"');
     expect(source).toContain('v-model="title"');
   });

@@ -24,14 +24,21 @@ import {
 const temporaryRoots = new Set<string>();
 
 async function makeTemporaryRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "deepwrite-learning-imitation-store-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "deepwrite-learning-imitation-store-")
+  );
   temporaryRoots.add(root);
   return root;
 }
 
-function asInput(settings: LearningImitationSettings): LearningImitationSettingsInput {
+function asInput(
+  settings: LearningImitationSettings
+): LearningImitationSettingsInput {
   return {
-    prompts: settings.prompts.map(({ id, systemPrompt }) => ({ id, systemPrompt }))
+    prompts: settings.prompts.map(({ id, systemPrompt }) => ({
+      id,
+      systemPrompt
+    }))
   };
 }
 
@@ -46,7 +53,9 @@ function promptById(
 
 afterEach(async () => {
   await Promise.all(
-    [...temporaryRoots].map((root) => rm(root, { recursive: true, force: true }))
+    [...temporaryRoots].map((root) =>
+      rm(root, { recursive: true, force: true })
+    )
   );
   temporaryRoots.clear();
 });
@@ -56,15 +65,15 @@ describe("LearningImitationConfigStore", () => {
     const digest = (value: string): string =>
       createHash("sha256").update(value, "utf8").digest("hex");
 
-    expect(digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.material_split)).toBe(
-      "40f70237736eb0d521d4dec6d5b8f0b527a7c24c0fb7710439b18fa036bb94d7"
-    );
-    expect(digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.plot_learning)).toBe(
-      "2abefe718588459f1e6531859999671bf390fc02301af3103e03b00c29df2068"
-    );
-    expect(digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.style_learning)).toBe(
-      "000f46bdf64df47b74eee1aabcd380a4ff04e2ae1ce5bb5d33fda99aca797473"
-    );
+    expect(
+      digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.material_split)
+    ).toBe("40f70237736eb0d521d4dec6d5b8f0b527a7c24c0fb7710439b18fa036bb94d7");
+    expect(
+      digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.plot_learning)
+    ).toBe("2abefe718588459f1e6531859999671bf390fc02301af3103e03b00c29df2068");
+    expect(
+      digest(DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.style_learning)
+    ).toBe("000f46bdf64df47b74eee1aabcd380a4ff04e2ae1ce5bb5d33fda99aca797473");
   });
 
   it("returns the three non-customized defaults when no config exists", async () => {
@@ -127,7 +136,9 @@ describe("LearningImitationConfigStore", () => {
     });
 
     const fullyReset = await store.reset();
-    expect(fullyReset.prompts.every(({ customized }) => !customized)).toBe(true);
+    expect(fullyReset.prompts.every(({ customized }) => !customized)).toBe(
+      true
+    );
     expect(await store.list()).toEqual(fullyReset);
   });
 
@@ -141,7 +152,8 @@ describe("LearningImitationConfigStore", () => {
         version: 1,
         overrides: {
           material_split: "",
-          plot_learning: DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.plot_learning,
+          plot_learning:
+            DEFAULT_LEARNING_IMITATION_SYSTEM_PROMPTS.plot_learning,
           style_learning: "保留的文风覆盖",
           unknown: "忽略"
         },

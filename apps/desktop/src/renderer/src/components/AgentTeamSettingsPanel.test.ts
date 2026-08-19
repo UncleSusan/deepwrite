@@ -15,21 +15,22 @@ describe("AgentTeamSettingsPanel", () => {
     expect(source).toContain("长篇");
     expect(source).not.toContain("尚未接入");
     expect(source).toContain("@click=\"activeWorkspaceType = 'script'\"");
-    expect(source).toContain(":aria-selected=\"activeWorkspaceType === 'script'\"");
+    expect(source).toContain(
+      ":aria-selected=\"activeWorkspaceType === 'script'\""
+    );
     expect(source).toContain("@click=\"activeWorkspaceType = 'long'\"");
-    expect(source).toContain(":settings=\"longSettings\"");
-    expect(source.match(/role=\"tab\"/g)?.length).toBe(3);
-    expect(source).toContain("const activeSkills = computed(() => props.skills ?? [])");
-    expect(source).not.toContain("skill.skillType === activeWorkspaceType.value");
+    expect(source).toContain(':settings="longSettings"');
+    expect(source.match(/role="tab"/g)?.length).toBe(3);
+    expect(source).toContain(
+      "const activeSkills = computed(() => props.skills ?? [])"
+    );
+    expect(source).not.toContain(
+      "skill.skillType === activeWorkspaceType.value"
+    );
   });
 
   it("maps all four long parent agents and preserves approval boundaries", () => {
-    for (const id of [
-      "setting",
-      "plot_design",
-      "draft",
-      "continuity_ledger"
-    ]) {
+    for (const id of ["setting", "plot_design", "draft", "continuity_ledger"]) {
       expect(longSource).toContain(`id: "${id}"`);
     }
     expect(longSource).not.toContain("expert_section_writer");
@@ -52,9 +53,11 @@ describe("AgentTeamSettingsPanel", () => {
       expect(longSource).toContain(marker);
     }
     expect(longSource).toContain("LoadSubagentFromSkillDialog");
-    expect(longSource).toContain("@change=\"toggleSubagent(definition, $event)\"");
-    expect(longSource).toContain("@click=\"removeSubagent(index)\"");
-    expect(longSource).toContain("@click=\"saveSettings\"");
+    expect(longSource).toContain(
+      '@change="toggleSubagent(definition, $event)"'
+    );
+    expect(longSource).toContain('@click="removeSubagent(index)"');
+    expect(longSource).toContain('@click="saveSettings"');
   });
 
   it("keeps the same three parent agents for short and script", () => {
@@ -70,14 +73,16 @@ describe("AgentTeamSettingsPanel", () => {
   it("supports model mode inherit or custom with PopupSelect", () => {
     expect(source).toContain("跟随主智能体");
     expect(source).toContain("单独配置模型");
-    expect(source).toContain('setSubagentModelMode(subagent, \'inherit\')');
-    expect(source).toContain('setSubagentModelMode(subagent, \'custom\')');
+    expect(source).toContain("setSubagentModelMode(subagent, 'inherit')");
+    expect(source).toContain("setSubagentModelMode(subagent, 'custom')");
     expect(source).toContain("PopupSelect");
     expect(source).toContain("models:");
     expect(source).toContain("setSubagentThinkingLevel");
     expect(source).toContain("setSubagentTemperature");
-    expect(source).toContain('v-if="subagent.thinkingLevel === \'off\'"');
-    expect(source.indexOf("模型配置")).toBeLessThan(source.indexOf("<span>名称</span>"));
+    expect(source).toContain("v-if=\"subagent.thinkingLevel === 'off'\"");
+    expect(source.indexOf("模型配置")).toBeLessThan(
+      source.indexOf("<span>名称</span>")
+    );
   });
 
   it("supports adding, editing, enabling, deleting and saving subagents", () => {

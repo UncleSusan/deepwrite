@@ -16,7 +16,7 @@ describe("CreateLongCharacterDialog", () => {
   it("uses non-layout feedback, themed surfaces, and a neutral primary action", () => {
     expect(source).toContain('uiMessage.warning("请输入人物姓名。")');
     expect(source).not.toContain("form-error");
-    expect(source).toContain("<Teleport to=\"body\">");
+    expect(source).toContain('<Teleport to="body">');
     expect(source).toContain("var(--surface-raised)");
     expect(source).toContain("var(--theme-line)");
     expect(source).toContain("var(--text-primary)");

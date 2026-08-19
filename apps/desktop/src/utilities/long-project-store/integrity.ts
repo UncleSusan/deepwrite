@@ -69,10 +69,7 @@ export async function assertPinnedSetIntegrity(
       throw new Error(`连续性账本记录文件类型无效：${entry.id}。`);
     }
     const record = LongLedgerCommitRecordSchema.parse(
-      parseJson(
-        recordFile.disk.content,
-        `长篇连续性账本记录 ${entry.id}`
-      )
+      parseJson(recordFile.disk.content, `长篇连续性账本记录 ${entry.id}`)
     );
     assertLongLedgerRecordMatchesIndex(
       loaded.index,
@@ -102,9 +99,7 @@ export async function assertPinnedSetIntegrity(
       addCheck(await loadIndexedFile(loaded, reference.id));
     }
   }
-  if (
-    loaded.index.ledger.commits.some(({ mode }) => mode === "structured")
-  ) {
+  if (loaded.index.ledger.commits.some(({ mode }) => mode === "structured")) {
     for (const entry of loaded.index.characterFiles) {
       for (const reference of [
         entry.relationships,
@@ -244,9 +239,7 @@ export function validateImportPlan(
   if (plan.documents.length !== slots.length) {
     throw new Error("Write Claw 导入计划没有完整包含全部索引文档。");
   }
-  const slotById = new Map(
-    slots.map((slot) => [slot.reference.id, slot])
-  );
+  const slotById = new Map(slots.map((slot) => [slot.reference.id, slot]));
   const seenIds = new Set<string>();
   for (const document of plan.documents) {
     const fileId = LongFileIdSchema.parse(document.fileId);
@@ -287,20 +280,22 @@ export function validateImportPlan(
   }
 }
 
-export function validatePortableAndCanonicalPaths(slots: IndexedFileSlot[]): void {
+export function validatePortableAndCanonicalPaths(
+  slots: IndexedFileSlot[]
+): void {
   const keys = new Set<string>([
     portablePathKey(MANIFEST_PATH),
     portablePathKey(LONG_WORKSPACE_INDEX_PATH)
   ]);
   for (const slot of slots) {
     if (!isCompatibleRolePath(slot)) {
-      throw new Error(
-        `长篇文件路径不符合其文件角色：${slot.reference.path}`
-      );
+      throw new Error(`长篇文件路径不符合其文件角色：${slot.reference.path}`);
     }
     const key = portablePathKey(slot.reference.path);
     if (keys.has(key)) {
-      throw new Error(`长篇文件路径存在大小写或 Unicode 等价冲突：${slot.reference.path}`);
+      throw new Error(
+        `长篇文件路径存在大小写或 Unicode 等价冲突：${slot.reference.path}`
+      );
     }
     keys.add(key);
   }

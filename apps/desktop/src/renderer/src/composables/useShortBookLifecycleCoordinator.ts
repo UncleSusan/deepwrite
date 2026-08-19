@@ -254,7 +254,7 @@ export function useShortBookLifecycleCoordinator(
       (!expectedModes ||
         Boolean(
           state.bookDialogMode.value &&
-            expectedModes.includes(state.bookDialogMode.value)
+          expectedModes.includes(state.bookDialogMode.value)
         ))
     );
   }
@@ -369,8 +369,7 @@ export function useShortBookLifecycleCoordinator(
     }
     if (
       anchors.activeCreationBelongedToBook &&
-      state.activeCreationResourceId.value ===
-        anchors.activeCreationResourceId
+      state.activeCreationResourceId.value === anchors.activeCreationResourceId
     ) {
       state.activeCreationResourceId.value = fallback;
     }
@@ -545,7 +544,10 @@ export function useShortBookLifecycleCoordinator(
     });
   }
 
-  function renameBook(payload: { bookId: string; label: string }): Promise<void> {
+  function renameBook(payload: {
+    bookId: string;
+    label: string;
+  }): Promise<void> {
     const target = state.activeBook.value;
     if (
       !target ||
@@ -662,7 +664,8 @@ export function useShortBookLifecycleCoordinator(
     const bindingLabel = payload.domain === "skill" ? "技能库" : "素材库";
     return runWithLease(lease, async () => {
       try {
-        if (!(await prepareTargetMutation(target, lease, [expectedMode]))) return;
+        if (!(await prepareTargetMutation(target, lease, [expectedMode])))
+          return;
         if (!catalogBook) {
           await legacy.updateBindings(target, payload);
           if (!leaseIsOwned(lease)) return;
@@ -746,7 +749,8 @@ export function useShortBookLifecycleCoordinator(
     }
     const api = catalog.api();
     const catalogBook = catalog.book(bookId);
-    const legacyTarget = !catalogBook && !target.unavailable && legacy.hasBook(target);
+    const legacyTarget =
+      !catalogBook && !target.unavailable && legacy.hasBook(target);
     if (action === "delete" && (target.unavailable || legacyTarget)) {
       notifications.error("该书籍没有可删除的本地项目文件夹。");
       return Promise.resolve();
@@ -795,7 +799,10 @@ export function useShortBookLifecycleCoordinator(
           }
           if (!leaseIsOwned(lease)) return;
           if (!changed) {
-            if (leaseCanPublish(lease) && activeTargetIsCurrent(target, [action])) {
+            if (
+              leaseCanPublish(lease) &&
+              activeTargetIsCurrent(target, [action])
+            ) {
               closeActiveTarget(target);
               notifications.warning(
                 `未找到要${action === "delete" ? "删除" : "移除"}的${workspaceTypeLabel(target)}。`
@@ -881,7 +888,12 @@ export function useShortBookLifecycleCoordinator(
   ): Promise<void> {
     const target = state.exportBookTarget.value;
     const api = manuscript.api();
-    if (!target || !api || target.unavailable || !exportTargetIsCurrent(target)) {
+    if (
+      !target ||
+      !api ||
+      target.unavailable ||
+      !exportTargetIsCurrent(target)
+    ) {
       return Promise.resolve();
     }
     const lease = acquirePendingLease("manuscript-export");
@@ -919,7 +931,8 @@ export function useShortBookLifecycleCoordinator(
           state.drafts.value,
           format
         );
-        const result: ExportShortManuscriptResult = await api.exportShort(input);
+        const result: ExportShortManuscriptResult =
+          await api.exportShort(input);
         if (
           !leaseCanPublish(lease) ||
           !exportTargetIsCurrent(target) ||

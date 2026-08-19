@@ -2,7 +2,6 @@ import { z } from "zod";
 import { BookSchema, CatalogIndexSnapshotSchema } from "./catalog";
 import {
   CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH,
-  ChatAssistantProjectConfigSchema,
   ChatAssistantProjectRefSchema
 } from "./chat-assistant-base";
 import { EnvelopeBaseSchema } from "./envelope";
@@ -113,10 +112,7 @@ const ChatAssistantRuntimeBaseSchema = z.object({
   longBooks: z.array(LongBookSummarySchema).max(100_000),
   models: z.array(ChatAssistantModelConfigSchema).max(100),
   defaultModelId: z.string().max(120),
-  usage: z.record(
-    ChatAssistantUsagePeriodSchema,
-    ModelUsageDashboardSchema
-  )
+  usage: z.record(ChatAssistantUsagePeriodSchema, ModelUsageDashboardSchema)
 });
 
 export const ChatAssistantRuntimeContextSchema = z.discriminatedUnion("mode", [
@@ -137,14 +133,16 @@ export const ChatAssistantRuntimeContextSchema = z.discriminatedUnion("mode", [
         context.addIssue({
           code: "custom",
           path: ["projectBook", "id"],
-          message: "Chat assistant project snapshot must match the selected project."
+          message:
+            "Chat assistant project snapshot must match the selected project."
         });
       }
       if (value.projectBook.bookType !== value.project.projectType) {
         context.addIssue({
           code: "custom",
           path: ["projectBook", "bookType"],
-          message: "Chat assistant project type must match the selected project."
+          message:
+            "Chat assistant project type must match the selected project."
         });
       }
     })

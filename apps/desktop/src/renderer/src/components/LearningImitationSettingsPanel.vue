@@ -86,8 +86,8 @@ function saveSettings(): void {
   emit("save", {
     prompts: LEARNING_IMITATION_STAGE_IDS.map((id) => ({
       id,
-      systemPrompt:
-        draftPrompts.value.find((prompt) => prompt.id === id)!.systemPrompt
+      systemPrompt: draftPrompts.value.find((prompt) => prompt.id === id)!
+        .systemPrompt
     }))
   });
 }
@@ -145,16 +145,10 @@ function formatRuntimePlaceholder(name: string): string {
             <h3>{{ LEARNING_IMITATION_STAGE_LABELS[activeStageId] }}</h3>
             <p>{{ LEARNING_IMITATION_STAGE_DESCRIPTIONS[activeStageId] }}</p>
           </div>
-          <span
-            v-if="activeHasUnsavedChanges"
-            class="prompt-state is-unsaved"
-          >
+          <span v-if="activeHasUnsavedChanges" class="prompt-state is-unsaved">
             未保存
           </span>
-          <span
-            v-else-if="activeSavedPrompt?.customized"
-            class="prompt-state"
-          >
+          <span v-else-if="activeSavedPrompt?.customized" class="prompt-state">
             已自定义
           </span>
         </header>

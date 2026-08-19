@@ -48,9 +48,13 @@ export function createEnvelope<TType extends string, TPayload>(
     context: {
       correlationId:
         options.context?.correlationId ?? options.correlationId ?? options.id,
-      ...(options.context?.sessionId ? { sessionId: options.context.sessionId } : {}),
+      ...(options.context?.sessionId
+        ? { sessionId: options.context.sessionId }
+        : {}),
       ...(options.context?.runId ? { runId: options.context.runId } : {}),
-      ...(options.context?.resourceId ? { resourceId: options.context.resourceId } : {})
+      ...(options.context?.resourceId
+        ? { resourceId: options.context.resourceId }
+        : {})
     }
   };
 }

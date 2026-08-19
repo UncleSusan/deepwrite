@@ -10,10 +10,12 @@ import {
 describe("general preferences", () => {
   it("keeps auto-save enabled by default and rejects malformed values", () => {
     expect(parseGeneralPreferences(null)).toEqual(DEFAULT_GENERAL_PREFERENCES);
-    expect(parseGeneralPreferences("not-json")).toEqual(DEFAULT_GENERAL_PREFERENCES);
-    expect(parseGeneralPreferences(JSON.stringify({ version: 2, autoSave: true }))).toEqual(
+    expect(parseGeneralPreferences("not-json")).toEqual(
       DEFAULT_GENERAL_PREFERENCES
     );
+    expect(
+      parseGeneralPreferences(JSON.stringify({ version: 2, autoSave: true }))
+    ).toEqual(DEFAULT_GENERAL_PREFERENCES);
   });
 
   it("persists and reloads the auto-save choice", () => {

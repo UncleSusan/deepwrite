@@ -58,11 +58,19 @@ export async function writeProjectFiles(
   const written = new Set<string>();
   for (const file of files) {
     const relativePath = file.relativePath.replaceAll("\\", "/");
-    if (!relativePath || relativePath.includes("..") || relativePath.startsWith("/")) {
+    if (
+      !relativePath ||
+      relativePath.includes("..") ||
+      relativePath.startsWith("/")
+    ) {
       throw new Error("备份文件路径无效。");
     }
     const target = resolve(root, ...relativePath.split("/"));
-    if (target !== root && !target.startsWith(`${root}/`) && !target.startsWith(`${root}\\`)) {
+    if (
+      target !== root &&
+      !target.startsWith(`${root}/`) &&
+      !target.startsWith(`${root}\\`)
+    ) {
       throw new Error("备份文件路径超出项目目录。");
     }
     await mkdir(dirname(target), { recursive: true });

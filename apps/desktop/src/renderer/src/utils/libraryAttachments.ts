@@ -14,8 +14,12 @@ import {
 } from "@deepwrite/contracts";
 import { MATERIAL_STAGE_KINDS } from "../data/catalogWorkspace";
 
-type AttachedSkill = NonNullable<WorkspaceRuntimeContext["attachedSkills"]>[number];
-type AttachedMaterial = NonNullable<WorkspaceRuntimeContext["attachedMaterials"]>[number];
+type AttachedSkill = NonNullable<
+  WorkspaceRuntimeContext["attachedSkills"]
+>[number];
+type AttachedMaterial = NonNullable<
+  WorkspaceRuntimeContext["attachedMaterials"]
+>[number];
 
 export const MAX_LIBRARY_ATTACHMENTS_PER_DOMAIN = ATTACHED_CONTEXT_MAX_ITEMS;
 export const MAX_LIBRARY_ATTACHMENT_CONTENT_LENGTH =
@@ -112,7 +116,11 @@ function uniqueAttachmentId(base: string, used: Set<string>): string {
   return value;
 }
 
-function attachmentTitle(libraryTitle: string, entryTitle: string, entryId: string): string {
+function attachmentTitle(
+  libraryTitle: string,
+  entryTitle: string,
+  entryId: string
+): string {
   const combined = `${libraryTitle} · ${entryTitle}`;
   if (combined.length <= 240) return combined;
   const suffix = ` · ${entryId.slice(-12)}`;
@@ -151,7 +159,9 @@ function collectMaterialCandidates(
   book: LibraryAttachmentBindingTarget,
   diagnostics: LibraryAttachmentDiagnostic[]
 ): AttachmentCandidate<MaterialKind>[] {
-  const libraries = new Map(snapshot.materials.map((library) => [library.id, library]));
+  const libraries = new Map(
+    snapshot.materials.map((library) => [library.id, library])
+  );
   const candidates: AttachmentCandidate<MaterialKind>[] = [];
   const usedAttachmentIds = new Set<string>();
   const seenBindings = new Set<string>();
@@ -183,7 +193,10 @@ function collectMaterialCandidates(
         });
         continue;
       }
-      if (library.materialKind !== "mixed" && library.materialKind !== selectedKind) {
+      if (
+        library.materialKind !== "mixed" &&
+        library.materialKind !== selectedKind
+      ) {
         diagnostics.push({
           code: "library-kind-mismatch",
           domain: "material",
@@ -220,7 +233,9 @@ function collectSkillCandidates(
   book: LibraryAttachmentBindingTarget,
   diagnostics: LibraryAttachmentDiagnostic[]
 ): AttachmentCandidate<SkillKind>[] {
-  const libraries = new Map(snapshot.skills.map((library) => [library.id, library]));
+  const libraries = new Map(
+    snapshot.skills.map((library) => [library.id, library])
+  );
   const candidates: AttachmentCandidate<SkillKind>[] = [];
   const usedAttachmentIds = new Set<string>();
   const seenLibraryKinds = new Map<string, SkillKind>();
@@ -370,13 +385,15 @@ export function buildLibraryAttachments(
     omittedAttachments
   );
 
-  const attachedMaterials: AttachedMaterial[] = materialCandidates.map((candidate) => ({
-    id: candidate.attachmentId,
-    title: candidate.title,
-    content: truncateContent(candidate, contentLimit, book.id, diagnostics),
-    source: "attached-material",
-    kind: candidate.kind
-  }));
+  const attachedMaterials: AttachedMaterial[] = materialCandidates.map(
+    (candidate) => ({
+      id: candidate.attachmentId,
+      title: candidate.title,
+      content: truncateContent(candidate, contentLimit, book.id, diagnostics),
+      source: "attached-material",
+      kind: candidate.kind
+    })
+  );
   const attachedSkills: AttachedSkill[] = skillCandidates.map((candidate) => ({
     id: candidate.attachmentId,
     title: candidate.title,

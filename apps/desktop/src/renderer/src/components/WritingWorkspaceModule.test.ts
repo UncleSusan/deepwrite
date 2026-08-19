@@ -18,10 +18,14 @@ describe("WritingWorkspaceModule boundary", () => {
     expect(source).toContain("<RightEditorPane");
     expect(source).toContain('class="pane-resizer pane-resizer-right"');
     expect(source).toContain("paneLayout: WorkspacePaneLayout");
-    expect(source).toContain("paneLayout === 'agent-editor' || !rightPane.collapsed");
-    expect(source).toContain("paneLayout === 'editor-agent' || !rightPane.collapsed");
-    expect(source).toContain(':right-pane="paneLayout === \'editor-agent\'"');
-    expect(source).toContain(':right-pane="paneLayout === \'agent-editor\'"');
+    expect(source).toContain(
+      "paneLayout === 'agent-editor' || !rightPane.collapsed"
+    );
+    expect(source).toContain(
+      "paneLayout === 'editor-agent' || !rightPane.collapsed"
+    );
+    expect(source).toContain(":right-pane=\"paneLayout === 'editor-agent'\"");
+    expect(source).toContain(":right-pane=\"paneLayout === 'agent-editor'\"");
     expect(appSource).toContain("<WritingWorkspaceModule");
     expect(appSource).toContain("activeFeature === 'conversation'");
     expect(appSource).not.toContain("<RightEditorPane");
@@ -52,7 +56,7 @@ describe("WritingWorkspaceModule boundary", () => {
     expect(appSource).not.toContain("const composerDraft = computed");
     expect(appSource).toContain('@save="applyDocument"');
     expect(appSource).toContain(
-      '@resize-start="startPaneResize(\'right\', $event)"'
+      "@resize-start=\"startPaneResize('right', $event)\""
     );
   });
 

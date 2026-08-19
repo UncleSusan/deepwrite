@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "typebox";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
 import {
   LongReadDocumentCommandEnvelopeSchema,
   LongReadDocumentResultSchema,
@@ -21,7 +21,6 @@ import {
   defineTool,
   filePathBelongsToRoot,
   fileRootMap,
-  literalUnion,
   projectIndex,
   textResult
 } from "./shared";
@@ -38,32 +37,21 @@ export function buildQueryLinkedMaterialEntriesTool(
     description:
       "列出、搜索或读取当前长篇显式绑定且位于本智能体读取范围内的素材。缺失或未绑定的 Catalog 内容不会被猜测。",
     parameters: Type.Object({
-      mode: Type.Union([
-        Type.Literal("list"),
-        Type.Literal("search"),
-        Type.Literal("read")
-      ]),
+      mode: StringEnum(["list", "search", "read"] as const),
       query: Type.Optional(Type.String({ maxLength: 300 })),
       entry_name: Type.Optional(Type.String({ maxLength: 240 })),
       material_kind: Type.Optional(
-        literalUnion(allowedKinds.length ? allowedKinds : MATERIAL_KINDS)
+        StringEnum(allowedKinds.length ? allowedKinds : MATERIAL_KINDS)
       )
     }),
     execute: async (_toolCallId, params) => {
       const items = (input.attachedMaterials ?? []).filter(
-        (item) =>
-          item.kind !== undefined && allowedKinds.includes(item.kind)
+        (item) => item.kind !== undefined && allowedKinds.includes(item.kind)
       );
-      const kind = params.material_kind
-        ? String(params.material_kind)
-        : "";
-      const scoped = kind
-        ? items.filter((item) => item.kind === kind)
-        : items;
+      const kind = params.material_kind ? String(params.material_kind) : "";
+      const scoped = kind ? items.filter((item) => item.kind === kind) : items;
       if (params.mode === "read") {
-        const name = String(
-          params.entry_name ?? params.query ?? ""
-        ).trim();
+        const name = String(params.entry_name ?? params.query ?? "").trim();
         const found = scoped.find((item) => item.title === name);
         return textResult(
           found
@@ -74,8 +62,7 @@ export function buildQueryLinkedMaterialEntriesTool(
       if (params.mode === "search") {
         const query = String(params.query ?? "").trim();
         const found = scoped.filter(
-          (item) =>
-            item.title.includes(query) || item.content.includes(query)
+          (item) => item.title.includes(query) || item.content.includes(query)
         );
         return textResult(
           found.length
@@ -92,8 +79,7 @@ export function buildQueryLinkedMaterialEntriesTool(
         scoped.length
           ? scoped
               .map(
-                (item) =>
-                  `- ${item.title}${item.kind ? ` [${item.kind}]` : ""}`
+                (item) => `- ${item.title}${item.kind ? ` [${item.kind}]` : ""}`
               )
               .join("\n")
           : "本轮没有当前智能体可读的已绑定长篇素材。"
@@ -121,19 +107,27 @@ export function buildLoadSkillTool(
         (allowedKinds as readonly string[]).includes(item.kind);
       const result = resolveAttachedSkill(name, attached, isReadable);
       return textResult(
-        formatLoadSkillToolResult(
-          name,
-          result,
-          attached.filter(isReadable)
-        )
+        formatLoadSkillToolResult(name, result, attached.filter(isReadable))
       );
     }
   });
 }
 
-
 export function buildCatalogTools(ctx: LongToolContext): AgentTool[] {
-  const { input, workspace, profile, readableRoots, capabilities, isSettingAgent, isPlotDesignAgent, isDraftWritingAgent, isContinuityLedgerAgent, execute, loadIndex, nextQuerySequence } = ctx;
+  const {
+    input,
+    workspace,
+    profile,
+    readableRoots,
+    capabilities,
+    isSettingAgent,
+    isPlotDesignAgent,
+    isDraftWritingAgent,
+    isContinuityLedgerAgent,
+    execute,
+    loadIndex,
+    nextQuerySequence
+  } = ctx;
   const tools: AgentTool[] = [];
   if (
     capabilities.has("query_structure") &&
@@ -177,7 +171,9 @@ export function buildCatalogTools(ctx: LongToolContext): AgentTool[] {
           const { index } = await loadIndex(signal);
           const known = fileRootMap(index).get(params.file_id);
           if (!known || !readableRoots.has(known.root)) {
-            throw new Error("The requested long document is outside this agent's read roots.");
+            throw new Error(
+              "The requested long document is outside this agent's read roots."
+            );
           }
           const command = LongReadDocumentCommandEnvelopeSchema.parse(
             createEnvelope(
@@ -208,7 +204,9 @@ export function buildCatalogTools(ctx: LongToolContext): AgentTool[] {
             result.offset !== (params.offset ?? 0) ||
             !filePathBelongsToRoot(result.file, known.root)
           ) {
-            throw new Error("Core returned a long document outside the authorized file.");
+            throw new Error(
+              "Core returned a long document outside the authorized file."
+            );
           }
           return textResult(JSON.stringify(result, null, 2));
         }
@@ -221,13 +219,15 @@ export function buildCatalogTools(ctx: LongToolContext): AgentTool[] {
         parameters: Type.Object({
           query: Type.String({ minLength: 1, maxLength: 256 }),
           scope: Type.Optional(
-            literalUnion(
+            StringEnum(
               readableRoots.size === ALL_ROOTS.size
                 ? ["all", ...profile.readAccess.workspaceRoots]
                 : profile.readAccess.workspaceRoots
             )
           ),
-          cursor: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),
+          cursor: Type.Optional(
+            Type.String({ minLength: 1, maxLength: 2_048 })
+          ),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
           max_snippet_characters: Type.Optional(
             Type.Integer({ minimum: 40, maximum: 2_000 })
@@ -245,7 +245,9 @@ export function buildCatalogTools(ctx: LongToolContext): AgentTool[] {
             throw new Error("The requested search scope is not authorized.");
           }
           if (scope === "all" && readableRoots.size !== ALL_ROOTS.size) {
-            throw new Error("Searching all roots requires read access to every root.");
+            throw new Error(
+              "Searching all roots requires read access to every root."
+            );
           }
           const command = LongSearchCommandEnvelopeSchema.parse(
             createEnvelope(
@@ -275,7 +277,9 @@ export function buildCatalogTools(ctx: LongToolContext): AgentTool[] {
             result.bookId !== workspace.bookId ||
             result.hits.some((hit) => !readableRoots.has(hit.root))
           ) {
-            throw new Error("Core returned search hits outside the authorized roots.");
+            throw new Error(
+              "Core returned search hits outside the authorized roots."
+            );
           }
           return textResult(JSON.stringify(result, null, 2));
         }

@@ -175,7 +175,10 @@ describe("catalog document loader", () => {
 
   it("publishes all successful reads with one shallow overlay replacement", async () => {
     const { loader, readDocument } = createHarness(async (input) =>
-      readResult(input, `已加载 ${input.target === "document" ? input.documentId : "overview"}`)
+      readResult(
+        input,
+        `已加载 ${input.target === "document" ? input.documentId : "overview"}`
+      )
     );
     loader.reconcileProjection(
       projection([
@@ -202,9 +205,9 @@ describe("catalog document loader", () => {
     });
     expect(readDocument).toHaveBeenCalledTimes(2);
     expect(publications).toHaveBeenCalledTimes(1);
-    expect(loader.documents.value.every((item) => item.catalogContentLoaded)).toBe(
-      true
-    );
+    expect(
+      loader.documents.value.every((item) => item.catalogContentLoaded)
+    ).toBe(true);
   });
 
   it("returns structured partial failures and still publishes successes once", async () => {

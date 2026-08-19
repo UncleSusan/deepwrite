@@ -9,18 +9,18 @@ import {
   longChapterCharacterHistoryFileId,
   longChapterContinuityFilePath,
   longChapterForeshadowingChangesFileId,
-  longChapterHandoffFileId,
   longChapterWorldRevealsFileId,
-  type LongContinuityHandoff,
   type LongLedgerCommitRecord,
   type LongProjectManifest,
   type LongWorkspaceFileReference,
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
+import { assertLongLedgerRecordMatchesIndex } from "../../long-portable-bundle";
 import type { ProjectTransactionFileOperation } from "../../project-transaction";
 import {
-  assertLongLedgerRecordMatchesIndex
-} from "../../long-portable-bundle";
+  appendLongCharacterHistoryEntry,
+  serializeLongContinuityHandoff
+} from "../continuity";
 import {
   commitLongProjectTransaction,
   isNodeError,
@@ -30,10 +30,10 @@ import {
   unknownRecord
 } from "../io";
 import {
-  appendLongCharacterHistoryEntry,
-  serializeLongContinuityHandoff
-} from "../continuity";
-import { createLongFileRevision, encodeUtf8Strict, longRevisionsMatchContent } from "../revisions";
+  createLongFileRevision,
+  encodeUtf8Strict,
+  longRevisionsMatchContent
+} from "../revisions";
 import {
   MANIFEST_PATH,
   MAX_DOCUMENT_BYTES,
@@ -105,7 +105,7 @@ export async function migrateLegacyChapterContinuityFiles(input: {
         updatedAt:
           typeof chapter.body === "object" && chapter.body !== null
             ? (unknownRecord(chapter.body)?.updatedAt ??
-                input.manifest.updatedAt)
+              input.manifest.updatedAt)
             : input.manifest.updatedAt
       },
       worldReveals: chapter.worldReveals ?? null,
@@ -268,7 +268,12 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
     const record = LongLedgerCommitRecordSchema.parse(
       parseJson(recordDisk.content, `旧版连续性账本 ${commit.id}`)
     );
-    assertLongLedgerRecordMatchesIndex(index, commit, record, recordDisk.content);
+    assertLongLedgerRecordMatchesIndex(
+      index,
+      commit,
+      record,
+      recordDisk.content
+    );
     if (record.schemaVersion === 4) continue;
     const projection = projectLegacyStructuredContinuity(
       index,
@@ -473,8 +478,8 @@ export function projectLegacyStructuredContinuity(
   );
   const hasWorld = Boolean(
     record.coverage.world.status === "changed" ||
-      worldFacts.length ||
-      worldKnowledge.length
+    worldFacts.length ||
+    worldKnowledge.length
   );
   const world = hasWorld
     ? [

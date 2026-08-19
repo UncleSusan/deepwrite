@@ -9,14 +9,7 @@ import {
   unlink,
   writeFile
 } from "node:fs/promises";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep
-} from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   CatalogProjectContentPathSchema,
   createShortWorkspaceContentRevision
@@ -24,7 +17,10 @@ import {
 import { randomHex8 } from "@deepwrite/shared";
 import { FolderCatalogConflictError } from "./types";
 
-export function sanitizeFileName(value: string, fallback = "未命名项目"): string {
+export function sanitizeFileName(
+  value: string,
+  fallback = "未命名项目"
+): string {
   const normalized = value
     .normalize("NFC")
     .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "-")
@@ -125,7 +121,10 @@ export async function availableProjectDirectory(
   throw new Error("无法为项目分配不重复的文件夹名称。");
 }
 
-export async function secureDirectory(path: string, label: string): Promise<string> {
+export async function secureDirectory(
+  path: string,
+  label: string
+): Promise<string> {
   const info = await lstat(path);
   if (info.isSymbolicLink() || !info.isDirectory()) {
     throw new Error(`${label} must be a real directory, not a symbolic link.`);
@@ -139,7 +138,10 @@ export async function secureProjectRoot(path: string): Promise<string> {
 
 export function assertContained(root: string, candidate: string): void {
   const offset = relative(root, candidate);
-  if (offset === "" || (!offset.startsWith(`..${sep}`) && offset !== ".." && !isAbsolute(offset))) {
+  if (
+    offset === "" ||
+    (!offset.startsWith(`..${sep}`) && offset !== ".." && !isAbsolute(offset))
+  ) {
     return;
   }
   throw new Error("Project path escapes its project directory.");
@@ -196,7 +198,9 @@ export async function secureWritableProjectPath(
   if (await pathExists(target)) {
     const info = await lstat(target);
     if (info.isSymbolicLink() || !info.isFile()) {
-      throw new Error("Project files must be regular files, not symbolic links.");
+      throw new Error(
+        "Project files must be regular files, not symbolic links."
+      );
     }
     assertContained(projectRoot, await realpath(target));
   }
@@ -261,7 +265,11 @@ export function parseJson(text: string, path: string): unknown {
   }
 }
 
-export function assertTextByteLength(text: string, maxBytes: number, label: string): void {
+export function assertTextByteLength(
+  text: string,
+  maxBytes: number,
+  label: string
+): void {
   if (Buffer.byteLength(text, "utf8") > maxBytes) {
     throw new Error(`${label} exceeds the ${maxBytes} byte limit.`);
   }
@@ -375,7 +383,10 @@ export async function commitProjectFileCreations(
   }
 }
 
-export async function atomicWriteText(path: string, value: string): Promise<void> {
+export async function atomicWriteText(
+  path: string,
+  value: string
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = join(dirname(path), `.deepwrite-${randomHex8()}.tmp`);
   try {
@@ -412,7 +423,9 @@ export async function removeEmptyOrPartialProject(path: string): Promise<void> {
   await rm(path, { recursive: true, force: true });
 }
 
-export async function cleanupNewProjectDirectories(paths: readonly string[]): Promise<void> {
+export async function cleanupNewProjectDirectories(
+  paths: readonly string[]
+): Promise<void> {
   const failures: unknown[] = [];
   for (const path of [...paths].reverse()) {
     try {
@@ -441,6 +454,9 @@ export async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-export function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
+export function isNodeError(
+  error: unknown,
+  code: string
+): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === code;
 }

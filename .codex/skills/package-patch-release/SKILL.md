@@ -9,7 +9,7 @@ description: 为 DeepWrite 桌面端递增一个 SemVer 补丁版本，安全清
 
 ## 不可破坏的边界
 
-- 先读根目录 `AGENTS.md` 和 `docs/GitHub-Release测试版自动更新发布说明.md`；项目规则与本技能冲突时，以项目规则为准。
+- 先读 `.codex/skills/windows-macos-test-package/SKILL.md` 和 `docs/GitHub-Release测试版自动更新发布说明.md`；测试安装包规则与本技能冲突时，以测试安装包技能为准。
 - 当前工作树可以很脏。把已有修改全部视为用户资产，不得还原、覆盖、删除、暂存或混入提交。
 - 只修改版本交付所需的 `package.json`、`apps/desktop/package.json` 和发布成功后的 `update.json`。不得顺手修改业务代码或打包配置。
 - 最终 Git 提交只能包含根目录 `update.json`。两个 `package.json` 的版本修改留在工作树中，不得暂存或提交；这是本技能的明确交付约束。

@@ -1,5 +1,5 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Type, type Static } from "typebox";
+import { StringEnum, Type, type Static } from "@earendil-works/pi-ai";
 import {
   LEARNING_IMITATION_RESULT_FIELD_MAX_CHARACTERS,
   LEARNING_IMITATION_STAGE_IDS,
@@ -12,6 +12,7 @@ import {
   type LearningImitationStageId,
   type LearningImitationWritePayload
 } from "@deepwrite/contracts";
+import { piStrictToolSampling } from "./pi-tool-schema";
 
 const LEARNING_DOCUMENT_CHUNK_SIZE = 12_000;
 
@@ -22,71 +23,13 @@ export type LearningImitationToolDetails = {
 };
 
 type LearningImitationToolResultDetails =
-  | { kind: "none" }
-  | LearningImitationToolDetails;
+  { kind: "none" } | LearningImitationToolDetails;
 
 function textResult(
   text: string,
   details: LearningImitationToolResultDetails = { kind: "none" }
 ): AgentToolResult<LearningImitationToolResultDetails> {
   return { content: [{ type: "text", text }], details };
-}
-
-function primitiveTypeOf(value: unknown): string | undefined {
-  if (typeof value === "string") return "string";
-  if (typeof value === "number") return Number.isInteger(value) ? "integer" : "number";
-  if (typeof value === "boolean") return "boolean";
-  return undefined;
-}
-
-function sanitizeToolSchemaForGemini(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeToolSchemaForGemini(item));
-  }
-  if (!value || typeof value !== "object") return value;
-
-  const input = value as Record<string, unknown>;
-  const output: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(input)) {
-    output[key] = sanitizeToolSchemaForGemini(child);
-  }
-
-  for (const unionKey of ["anyOf", "oneOf"]) {
-    const union = output[unionKey];
-    if (!Array.isArray(union) || union.length === 0) continue;
-    const branches = union as Array<Record<string, unknown>>;
-    const values = branches.map((branch) => {
-      if (
-        branch &&
-        typeof branch === "object" &&
-        Object.prototype.hasOwnProperty.call(branch, "const")
-      ) {
-        return { matched: true, value: branch.const };
-      }
-      if (Array.isArray(branch?.enum) && branch.enum.length === 1) {
-        return { matched: true, value: branch.enum[0] };
-      }
-      return { matched: false, value: undefined };
-    });
-    if (values.every((value) => value.matched)) {
-      const enumValues = values.map((value) => value.value);
-      delete output[unionKey];
-      output.enum = enumValues;
-      if (!output.type) {
-        const types = [
-          ...new Set(enumValues.map(primitiveTypeOf).filter(Boolean))
-        ];
-        if (types.length === 1) output.type = types[0];
-      }
-    }
-  }
-
-  if (Object.prototype.hasOwnProperty.call(output, "const")) {
-    output.enum = [output.const];
-    if (!output.type) output.type = primitiveTypeOf(output.const);
-    delete output.const;
-  }
-  return output;
 }
 
 function defineTool<T extends ReturnType<typeof Type.Object>>(definition: {
@@ -104,15 +47,22 @@ function defineTool<T extends ReturnType<typeof Type.Object>>(definition: {
     name: definition.name,
     label: definition.label,
     description: definition.description,
-    parameters: sanitizeToolSchemaForGemini(definition.parameters) as T,
+    parameters: definition.parameters,
+    ...piStrictToolSampling(definition.parameters),
     execute: definition.execute
   };
 }
 
 function splitDocument(document: LearningImitationDocument): string[] {
   const chunks: string[] = [];
-  for (let index = 0; index < document.text.length; index += LEARNING_DOCUMENT_CHUNK_SIZE) {
-    chunks.push(document.text.slice(index, index + LEARNING_DOCUMENT_CHUNK_SIZE));
+  for (
+    let index = 0;
+    index < document.text.length;
+    index += LEARNING_DOCUMENT_CHUNK_SIZE
+  ) {
+    chunks.push(
+      document.text.slice(index, index + LEARNING_DOCUMENT_CHUNK_SIZE)
+    );
   }
   return chunks;
 }
@@ -135,21 +85,26 @@ function buildListLearningDocumentsTool(
   return defineTool({
     name: "list_learning_documents",
     label: "列出学习样本",
-    description: "列出当前上传的小说正文样本，包括文档 id、文件名、字数和分块数量。",
+    description:
+      "列出当前上传的小说正文样本，包括文档 id、文件名、字数和分块数量。",
     parameters: Type.Object({}),
     execute: async () =>
       textResult(
-        context.documents.map((document, index) => {
-          const chunks = splitDocument(document);
-          const truncated = document.truncated ? "\n状态：正文已截断" : "";
-          return [
-            `${index + 1}. id=${document.id}`,
-            `文件：${document.name}`,
-            `格式：${documentFormat(document)}`,
-            `字数：${document.charCount}`,
-            `分块：${chunks.length}`
-          ].join("\n") + truncated;
-        }).join("\n\n") || "（暂无可用样本）"
+        context.documents
+          .map((document, index) => {
+            const chunks = splitDocument(document);
+            const truncated = document.truncated ? "\n状态：正文已截断" : "";
+            return (
+              [
+                `${index + 1}. id=${document.id}`,
+                `文件：${document.name}`,
+                `格式：${documentFormat(document)}`,
+                `字数：${document.charCount}`,
+                `分块：${chunks.length}`
+              ].join("\n") + truncated
+            );
+          })
+          .join("\n\n") || "（暂无可用样本）"
       )
   });
 }
@@ -167,7 +122,9 @@ function buildReadLearningDocumentTool(
       chunk_index: Type.Optional(Type.Integer({ minimum: 1 }))
     }),
     execute: async (_toolCallId, params) => {
-      const document = context.documents.find((item) => item.id === params.document_id);
+      const document = context.documents.find(
+        (item) => item.id === params.document_id
+      );
       if (!document) return textResult(`未找到文档：${params.document_id}`);
 
       const chunks = splitDocument(document);
@@ -177,10 +134,13 @@ function buildReadLearningDocumentTool(
         return textResult(`${document.name} 没有第 ${chunkIndex} 个分块`);
       }
 
-      const heading = chunks.length > 1
-        ? `（${document.name} 共 ${chunks.length} 块，当前第 ${chunkIndex} 块）`
-        : `（${document.name} 全文）`;
-      return textResult(`${heading}${documentTruncationNote(document)}\n\n${chunk}`);
+      const heading =
+        chunks.length > 1
+          ? `（${document.name} 共 ${chunks.length} 块，当前第 ${chunkIndex} 块）`
+          : `（${document.name} 全文）`;
+      return textResult(
+        `${heading}${documentTruncationNote(document)}\n\n${chunk}`
+      );
     }
   });
 }
@@ -200,7 +160,10 @@ function buildSearchLearningDocumentsTool(
       const query = String(params.query ?? "").trim();
       if (!query) return textResult("请提供搜索关键词");
 
-      const maxResults = Math.min(20, Math.max(1, Number(params.max_results ?? 8)));
+      const maxResults = Math.min(
+        20,
+        Math.max(1, Number(params.max_results ?? 8))
+      );
       const needle = query.toLowerCase();
       const matches: string[] = [];
       for (const document of context.documents) {
@@ -210,7 +173,10 @@ function buildSearchLearningDocumentsTool(
           const found = haystack.indexOf(needle, cursor);
           if (found < 0) break;
           const start = Math.max(0, found - 120);
-          const end = Math.min(document.text.length, found + query.length + 160);
+          const end = Math.min(
+            document.text.length,
+            found + query.length + 160
+          );
           matches.push(
             `【${document.name}】\n${start > 0 ? "..." : ""}${document.text.slice(start, end)}${end < document.text.length ? "..." : ""}`
           );
@@ -222,9 +188,10 @@ function buildSearchLearningDocumentsTool(
       const truncatedDocumentCount = context.documents.filter(
         (document) => document.truncated
       ).length;
-      const truncationNote = truncatedDocumentCount > 0
-        ? `\n\n注意：${truncatedDocumentCount} 个样本正文已截断，搜索范围仅覆盖当前可读正文。`
-        : "";
+      const truncationNote =
+        truncatedDocumentCount > 0
+          ? `\n\n注意：${truncatedDocumentCount} 个样本正文已截断，搜索范围仅覆盖当前可读正文。`
+          : "";
       return textResult(
         matches.length
           ? `${matches.join("\n\n---\n\n")}${truncationNote}`
@@ -275,14 +242,14 @@ function buildWriteLearningResultTool(
       description:
         "把一种素材拆分结果写入对应预览区。每次只写一个类型；六种素材必须分别调用。只写预览，不会直接写入素材库。",
       parameters: Type.Object({
-        type: Type.Union([
-          Type.Literal("gimmick"),
-          Type.Literal("character"),
-          Type.Literal("pacing"),
-          Type.Literal("intro"),
-          Type.Literal("plot_refine"),
-          Type.Literal("draft_excerpt")
-        ]),
+        type: StringEnum([
+          "gimmick",
+          "character",
+          "pacing",
+          "intro",
+          "plot_refine",
+          "draft_excerpt"
+        ] as const),
         text: resultText
       }),
       execute: async (_toolCallId, params) => {
@@ -302,10 +269,7 @@ function buildWriteLearningResultTool(
       description:
         "把一项剧情学习技能写入对应预览区。剧情设计技能与剧情细化技能必须分别调用。只写预览，不会直接写入技能库。",
       parameters: Type.Object({
-        type: Type.Union([
-          Type.Literal("plot_design_skill"),
-          Type.Literal("plot_refine_skill")
-        ]),
+        type: StringEnum(["plot_design_skill", "plot_refine_skill"] as const),
         text: resultText
       }),
       execute: async (_toolCallId, params) => {
@@ -321,12 +285,9 @@ function buildWriteLearningResultTool(
   return defineTool({
     name: "write_learning_result",
     label: "写入学习结果预览",
-    description:
-      "把文风学习结果写入界面预览区。只写预览，不会直接写入技能库。",
+    description: "把文风学习结果写入界面预览区。只写预览，不会直接写入技能库。",
     parameters: Type.Object({
-      mode: Type.Optional(
-        Type.Union([Type.Literal("replace"), Type.Literal("append")])
-      ),
+      mode: Type.Optional(StringEnum(["replace", "append"] as const)),
       style_skill_title: Type.Optional(Type.String({ maxLength: 256 })),
       style_skill_body: Type.Optional(resultText)
     }),

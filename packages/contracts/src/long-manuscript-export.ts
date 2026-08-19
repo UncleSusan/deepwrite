@@ -43,8 +43,7 @@ export const ExportLongManuscriptInputSchema = z
       });
     }
     const characterCount = value.files.reduce(
-      (total, file) =>
-        total + file.content.length + file.path.join("").length,
+      (total, file) => total + file.content.length + file.path.join("").length,
       value.title.length
     );
     if (characterCount > LONG_MANUSCRIPT_EXPORT_MAX_CHARACTERS) {
@@ -59,17 +58,14 @@ export type ExportLongManuscriptInput = z.infer<
   typeof ExportLongManuscriptInputSchema
 >;
 
-export const ExportLongManuscriptResultSchema = z.discriminatedUnion(
-  "status",
-  [
-    z.object({ status: z.literal("cancelled") }),
-    z.object({
-      status: z.literal("saved"),
-      directoryPath: z.string().min(1),
-      fileCount: z.number().int().nonnegative()
-    })
-  ]
-);
+export const ExportLongManuscriptResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("cancelled") }),
+  z.object({
+    status: z.literal("saved"),
+    directoryPath: z.string().min(1),
+    fileCount: z.number().int().nonnegative()
+  })
+]);
 export type ExportLongManuscriptResult = z.infer<
   typeof ExportLongManuscriptResultSchema
 >;
@@ -79,4 +75,3 @@ export const ExportLongManuscriptCommandEnvelopeSchema =
     type: z.literal("manuscript.exportLong"),
     payload: ExportLongManuscriptInputSchema
   });
-

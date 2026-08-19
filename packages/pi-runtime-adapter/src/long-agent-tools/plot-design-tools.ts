@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type, type Static } from "typebox";
+import { Type, type Static } from "@earendil-works/pi-ai";
 import {
   LongReadDocumentCommandEnvelopeSchema,
   LongReadDocumentResultSchema,
@@ -29,6 +29,7 @@ import {
   formatPlotDesignItemList,
   formatPlotDesignKindList,
   formatPlotDesignRead,
+  formatForeshadowingThread,
   formatPlotPointRead,
   resolveForeshadowingBeatArcIds,
   type PlotDesignKind,
@@ -52,78 +53,24 @@ import {
 } from "./shared";
 import type { LongToolContext } from "./context";
 
-const PLOT_MUTATION_OPERATION_TYPE_ALIASES = {
-  create_foreshadow_thread: "foreshadowing.create"
-} as const;
-
-const PLOT_ITEM_KIND_ALIASES = {
-  chapter_card: "chapter"
-} as const;
-
-function preparePlotItemKindArguments<T>(args: unknown): T {
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
-    return args as T;
-  }
-  const input = args as Record<string, unknown>;
-  let prepared: Record<string, unknown> | undefined;
-  const canonicalKind =
-    typeof input.kind === "string"
-      ? PLOT_ITEM_KIND_ALIASES[
-          input.kind as keyof typeof PLOT_ITEM_KIND_ALIASES
-        ]
-      : undefined;
-  if (canonicalKind) {
-    prepared = { ...input, kind: canonicalKind };
-  }
-  for (const key of ["target", "item"] as const) {
-    const nested = input[key];
-    if (!nested || typeof nested !== "object" || Array.isArray(nested)) continue;
-    const candidate = nested as Record<string, unknown>;
-    const nestedKind =
-      typeof candidate.kind === "string"
-        ? PLOT_ITEM_KIND_ALIASES[
-            candidate.kind as keyof typeof PLOT_ITEM_KIND_ALIASES
-          ]
-        : undefined;
-    if (!nestedKind) continue;
-    prepared ??= { ...input };
-    prepared[key] = { ...candidate, kind: nestedKind };
-  }
-  return (prepared ?? args) as T;
-}
-
-function preparePlotMutationArguments(
-  args: unknown
-): Static<typeof LONG_PLOT_MUTATION_PARAMETERS> {
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
-    return args as Static<typeof LONG_PLOT_MUTATION_PARAMETERS>;
-  }
-  const input = args as Record<string, unknown>;
-  if (!Array.isArray(input.operations)) {
-    return args as Static<typeof LONG_PLOT_MUTATION_PARAMETERS>;
-  }
-  let changed = false;
-  const operations = input.operations.map((operation) => {
-    if (!operation || typeof operation !== "object" || Array.isArray(operation)) {
-      return operation;
-    }
-    const candidate = operation as Record<string, unknown>;
-    if (typeof candidate.type !== "string") return operation;
-    const canonicalType =
-      PLOT_MUTATION_OPERATION_TYPE_ALIASES[
-        candidate.type as keyof typeof PLOT_MUTATION_OPERATION_TYPE_ALIASES
-      ];
-    if (!canonicalType) return operation;
-    changed = true;
-    return { ...candidate, type: canonicalType };
-  });
-  return (changed ? { ...input, operations } : args) as Static<
-    typeof LONG_PLOT_MUTATION_PARAMETERS
-  >;
-}
-
 export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
-  const { input, workspace, profile, readableRoots, writableRoots, capabilities, isPlotDesignAgent, execute, loadIndex, formLongMutationProposal, nextQuerySequence, fullyReadPlotItems, storyPlotOverlay, chapterCardOverlay, readWholeWorldbuildingDocument } = ctx;
+  const {
+    input,
+    workspace,
+    profile,
+    readableRoots,
+    writableRoots,
+    capabilities,
+    isPlotDesignAgent,
+    execute,
+    loadIndex,
+    formLongMutationProposal,
+    nextQuerySequence,
+    fullyReadPlotItems,
+    storyPlotOverlay,
+    chapterCardOverlay,
+    readWholeWorldbuildingDocument
+  } = ctx;
   const tools: AgentTool[] = [];
   type PlotItemKind = Static<typeof plotItemKindParameter>;
 
@@ -146,7 +93,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
                 ? item.event_id
                 : item.kind === "connection"
                   ? item.connection_id
-                  : item.placement_id;
+                  : item.kind === "placement"
+                    ? item.placement_id
+                    : item.foreshadowing_id;
     if (typeof id !== "string") {
       throw new Error(`Plot ${item.kind} target is missing its business id.`);
     }
@@ -171,7 +120,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
                 ? index.plot.storyEvents
                 : kind === "connection"
                   ? index.plot.eventConnections
-                  : index.plot.narrativePlacements;
+                  : kind === "placement"
+                    ? index.plot.narrativePlacements
+                    : index.plot.foreshadowing;
     const item = collection.find((candidate) => candidate.id === id);
     if (!item) {
       throw new Error(`Plot ${kind} ${id} does not exist.`);
@@ -253,6 +204,39 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         }
       ];
     });
+
+  const toForeshadowingBusinessItem = (
+    index: LongWorkspaceIndexSnapshot,
+    thread: LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number]
+  ): PlotPointRelatedForeshadowing => ({
+    foreshadowing_id: thread.id,
+    title: thread.title,
+    order:
+      index.plot.foreshadowing.findIndex(
+        (candidate) => candidate.id === thread.id
+      ) + 1,
+    status: thread.status,
+    ...(thread.plannedSpan ? { planned_span: thread.plannedSpan } : {}),
+    core_question: thread.coreQuestion,
+    ...(thread.hiddenTruth ? { hidden_truth: thread.hiddenTruth } : {}),
+    expected_reader_effect: thread.expectedReaderEffect,
+    ...(thread.truthEventId ? { truth_event_id: thread.truthEventId } : {}),
+    beats: [...thread.beats]
+      .sort((left, right) => left.order - right.order)
+      .map((beat) => ({
+        beat_id: beat.id,
+        type: beat.type,
+        order: beat.order,
+        status: beat.status,
+        note: beat.note,
+        planned_scope: beat.plannedScope,
+        ...(beat.volumeId ? { volume_id: beat.volumeId } : {}),
+        ...(beat.arcId ? { arc_id: beat.arcId } : {}),
+        event_id: beat.eventId,
+        placement_id: beat.placementId,
+        chapter_card_id: beat.chapterCardId
+      }))
+  });
 
   const toPlotBusinessItem = (
     kind: Exclude<PlotItemKind, "book_line">,
@@ -379,10 +363,7 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
     return result.file.revision;
   };
 
-  if (
-    capabilities.has("query_structure") &&
-    readableRoots.has("plot_design")
-  ) {
+  if (capabilities.has("query_structure") && readableRoots.has("plot_design")) {
     const plotCollections = (index: LongWorkspaceIndexSnapshot) => ({
       volume: index.plot.volumes,
       arc: index.plot.arcs,
@@ -406,6 +387,74 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
           entry.pendingCreation &&
           !index.plot.chapterCards.some((chapter) => chapter.id === id)
       );
+
+    const foreshadowingBeatChapterIds = (
+      index: LongWorkspaceIndexSnapshot,
+      beat: LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number]["beats"][number]
+    ): string[] => [
+      ...new Set(
+        [
+          beat.chapterCardId,
+          beat.placementId
+            ? index.plot.narrativePlacements.find(
+                (placement) => placement.id === beat.placementId
+              )?.chapterCardId
+            : undefined
+        ].filter((id): id is string => Boolean(id))
+      )
+    ];
+
+    const foreshadowingBeatMatchesFilters = (
+      index: LongWorkspaceIndexSnapshot,
+      beat: LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number]["beats"][number],
+      filters: {
+        volume_id?: string | undefined;
+        arc_id?: string | undefined;
+        chapter_card_id?: string | undefined;
+      }
+    ): boolean => {
+      const chapterIds = foreshadowingBeatChapterIds(index, beat);
+      const arcIds = resolveForeshadowingBeatArcIds(beat, index);
+      const chapterVolumeIds = chapterIds.flatMap((chapterId) => {
+        const volumeId = index.plot.chapterCards.find(
+          (chapter) => chapter.id === chapterId
+        )?.volumeId;
+        return volumeId ? [volumeId] : [];
+      });
+      const volumeIds = new Set([
+        ...(beat.volumeId ? [beat.volumeId] : []),
+        ...chapterVolumeIds,
+        ...arcIds.flatMap((arcId) => {
+          const volumeId = index.plot.arcs.find(
+            (arc) => arc.id === arcId
+          )?.volumeId;
+          return volumeId ? [volumeId] : [];
+        })
+      ]);
+      return (
+        (!filters.volume_id || volumeIds.has(filters.volume_id)) &&
+        (!filters.arc_id || arcIds.includes(filters.arc_id)) &&
+        (!filters.chapter_card_id ||
+          chapterIds.includes(filters.chapter_card_id))
+      );
+    };
+
+    const foreshadowingAnchorSummary = (
+      thread: LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number]
+    ): string =>
+      [...thread.beats]
+        .sort((left, right) => left.order - right.order)
+        .map((beat) => {
+          const anchors = [
+            beat.volumeId ? `volume_id=${beat.volumeId}` : "",
+            beat.arcId ? `arc_id=${beat.arcId}` : "",
+            beat.eventId ? `event_id=${beat.eventId}` : "",
+            beat.placementId ? `placement_id=${beat.placementId}` : "",
+            beat.chapterCardId ? `chapter_card_id=${beat.chapterCardId}` : ""
+          ].filter(Boolean);
+          return `${beat.id}[${anchors.join(";") || "未绑定结构锚点"}]`;
+        })
+        .join("、");
 
     const collectPlotDesignListItems = (
       index: LongWorkspaceIndexSnapshot,
@@ -475,7 +524,8 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
           persisted = index.plot.chapterCards
             .filter(
               (chapter) =>
-                (!filters.volume_id || chapter.volumeId === filters.volume_id) &&
+                (!filters.volume_id ||
+                  chapter.volumeId === filters.volume_id) &&
                 (!filters.arc_id || chapter.primaryArcId === filters.arc_id)
             )
             .map((chapter) => ({
@@ -539,6 +589,33 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
               status: placement.status
             }));
           break;
+        case "foreshadowing":
+          persisted = index.plot.foreshadowing
+            .map((thread, threadIndex) => ({ thread, threadIndex }))
+            .filter(
+              ({ thread }) =>
+                (!filters.volume_id &&
+                  !filters.arc_id &&
+                  !filters.chapter_card_id) ||
+                thread.beats.some((beat) =>
+                  foreshadowingBeatMatchesFilters(index, beat, filters)
+                )
+            )
+            .map(({ thread, threadIndex }) => ({
+              kind,
+              title: thread.title,
+              foreshadowing_id: thread.id,
+              order: threadIndex + 1,
+              status: thread.status,
+              ...(thread.plannedSpan
+                ? { planned_span: thread.plannedSpan }
+                : {}),
+              beat_count: thread.beats.length,
+              ...(thread.beats.length
+                ? { anchor_summary: foreshadowingAnchorSummary(thread) }
+                : {})
+            }));
+          break;
       }
       return [...persisted, ...pending].sort(comparePlotDesignListItems);
     };
@@ -548,14 +625,13 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         name: "list_plot_design",
         label: "列出剧情设计",
         description:
-          "一次列出全部剧情结构类型；指定 kind 时列出该类型的全部条目。章卡对应 kind=chapter，不能使用 chapter_card；chapter_card_id 只是章卡业务 ID 字段。按行段落返回稳定业务 ID、标题和关联摘要，不显示文件或版本信息。可用 volume_id / arc_id / chapter_card_id 筛选。若只要某个剧情点的故事事件正文或关联伏笔，直接 read_plot_design 该剧情点即可，不必再列出后逐条读取。伏笔不在本工具中，继续使用现有伏笔结构工具。",
+          "一次列出全部剧情结构类型；指定 kind 时列出该类型的全部条目，章卡对应 kind=chapter。按行段落返回稳定业务 ID、标题和关联摘要，不显示文件或版本信息。可用 volume_id / arc_id / chapter_card_id 筛选；kind=foreshadowing 时按触点解析后的卷、剧情点或章卡锚点筛选伏笔线，只返回状态、跨度、触点数量与锚点摘要，不返回隐藏真相。若只要某个剧情点的故事事件正文或关联伏笔，直接 read_plot_design 该剧情点即可。",
         parameters: strictObject({
           kind: Type.Optional(plotItemKindParameter),
           volume_id: Type.Optional(stableIdParameter("volume")),
           arc_id: Type.Optional(stableIdParameter("arc")),
           chapter_card_id: Type.Optional(stableIdParameter("chapter"))
         }),
-        prepareArguments: preparePlotItemKindArguments,
         execute: async (_toolCallId, params, signal) => {
           const { index } = await loadIndex(signal);
           if (!params.kind) {
@@ -584,6 +660,10 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
                 {
                   kind: "placement",
                   count: index.plot.narrativePlacements.length
+                },
+                {
+                  kind: "foreshadowing",
+                  count: index.plot.foreshadowing.length
                 }
               ])
             );
@@ -612,14 +692,13 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         name: "search_plot_design",
         label: "搜索剧情设计",
         description:
-          "搜索全书故事线及非伏笔剧情结构，返回可交给 read_plot_design 的业务目标和少量上下文。章卡对应 kind=chapter，不能使用 chapter_card。若目标是剧情点，直接读取该剧情点即可同时得到其故事事件正文、故事情节正文和关联伏笔，不必再逐条读取。",
+          "搜索全书故事线、剧情结构和伏笔设计，返回可交给 read_plot_design 的业务目标和少量上下文。伏笔搜索覆盖伏笔线元数据、隐藏真相以及全部触点内容和锚点；触点命中时返回 matched_beat_ids。若目标是剧情点，直接读取该剧情点即可同时得到其故事事件正文、故事情节正文和关联伏笔。",
         parameters: strictObject({
           query: Type.String({ minLength: 1, maxLength: 256 }),
           kind: Type.Optional(plotItemKindParameter),
           page: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
         }),
-        prepareArguments: preparePlotItemKindArguments,
         execute: async (_toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
           const query = params.query.normalize("NFC").toLocaleLowerCase();
@@ -639,10 +718,11 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
               searchable: bookLine.content
             });
           }
-          for (const [kind, collection] of Object.entries(plotCollections(index)) as Array<[
-            Exclude<PlotItemKind, "book_line">,
-            Array<{ id: string }>
-          ]>) {
+          for (const [kind, collection] of Object.entries(
+            plotCollections(index)
+          ) as Array<
+            [Exclude<PlotItemKind, "book_line">, Array<{ id: string }>]
+          >) {
             if (params.kind && params.kind !== kind) continue;
             for (const item of collection) {
               const business = toPlotBusinessItem(
@@ -665,10 +745,57 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
               });
             }
           }
+          if (!params.kind || params.kind === "foreshadowing") {
+            for (const thread of index.plot.foreshadowing) {
+              const threadSearchable = JSON.stringify({
+                foreshadowing_id: thread.id,
+                title: thread.title,
+                core_question: thread.coreQuestion,
+                hidden_truth: thread.hiddenTruth,
+                expected_reader_effect: thread.expectedReaderEffect,
+                status: thread.status,
+                planned_span: thread.plannedSpan,
+                truth_event_id: thread.truthEventId
+              });
+              const matchingBeatIds = thread.beats.flatMap((beat) => {
+                const searchable = JSON.stringify({
+                  beat_id: beat.id,
+                  type: beat.type,
+                  status: beat.status,
+                  note: beat.note,
+                  planned_scope: beat.plannedScope,
+                  volume_id: beat.volumeId,
+                  arc_id: beat.arcId,
+                  event_id: beat.eventId,
+                  placement_id: beat.placementId,
+                  chapter_card_id: beat.chapterCardId
+                })
+                  .normalize("NFC")
+                  .toLocaleLowerCase();
+                return searchable.includes(query) ? [beat.id] : [];
+              });
+              candidates.push({
+                target: {
+                  kind: "foreshadowing",
+                  foreshadowing_id: thread.id,
+                  title: thread.title,
+                  ...(matchingBeatIds.length
+                    ? { matched_beat_ids: matchingBeatIds }
+                    : {})
+                },
+                searchable: [
+                  threadSearchable,
+                  ...thread.beats.map((beat) => JSON.stringify(beat))
+                ].join("\n")
+              });
+            }
+          }
           if (!params.kind || params.kind === "story_plot") {
             for (const [id, entry] of storyPlotOverlay) {
               if (!entry.pendingCreation) continue;
-              if (index.plot.storyPlots.some((storyPlot) => storyPlot.id === id)) {
+              if (
+                index.plot.storyPlots.some((storyPlot) => storyPlot.id === id)
+              ) {
                 continue;
               }
               candidates.push({
@@ -691,7 +818,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
           if (!params.kind || params.kind === "chapter") {
             for (const [id, entry] of chapterCardOverlay) {
               if (!entry.pendingCreation) continue;
-              if (index.plot.chapterCards.some((chapter) => chapter.id === id)) {
+              if (
+                index.plot.chapterCards.some((chapter) => chapter.id === id)
+              ) {
                 continue;
               }
               candidates.push({
@@ -716,33 +845,44 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             }
           }
           const hits = candidates.flatMap((candidate) => {
-            const normalized = candidate.searchable.normalize("NFC").toLocaleLowerCase();
+            const normalized = candidate.searchable
+              .normalize("NFC")
+              .toLocaleLowerCase();
             const offset = normalized.indexOf(query);
             if (offset < 0) return [];
             const start = Math.max(0, offset - 120);
-            const end = Math.min(candidate.searchable.length, offset + params.query.length + 200);
-            return [{ ...candidate.target, snippet: candidate.searchable.slice(start, end) }];
+            const end = Math.min(
+              candidate.searchable.length,
+              offset + params.query.length + 200
+            );
+            return [
+              {
+                ...candidate.target,
+                snippet: candidate.searchable.slice(start, end)
+              }
+            ];
           });
           const page = params.page ?? 1;
           const limit = params.limit ?? 20;
           const start = (page - 1) * limit;
           const end = Math.min(start + limit, hits.length);
-          return textResult(JSON.stringify({
-            hits: hits.slice(start, end),
-            next_page: end < hits.length ? page + 1 : null
-          }));
+          return textResult(
+            JSON.stringify({
+              hits: hits.slice(start, end),
+              next_page: end < hits.length ? page + 1 : null
+            })
+          );
         }
       }),
       defineTool({
         name: "read_plot_design",
         label: "读取剧情设计",
         description:
-          "按业务目标读取全书故事线或一个非伏笔剧情条目。按行段落返回标题、稳定业务 ID 和正文，不包装成 JSON。读取剧情点时一次返回概要、挂到该剧情点的全部故事事件（含每条事件正文）、该剧情点下全部故事情节正文，以及关联伏笔（如有）；不要再分别为这些故事事件或故事情节调用本工具。mode=preview 只返回摘录；mode=full 会建立本轮对该剧情点及其附带故事事件、故事情节进行 write_plot_design / edit_plot_design 所需的完整读取凭据。",
+          "按业务目标读取全书故事线、一个剧情条目或一条完整伏笔线。按行段落返回标题、稳定业务 ID 和内容，不包装成 JSON。读取伏笔线会返回核心问题、隐藏真相、预期效果和全部触点；伏笔是结构数据，不建立正文写入凭据。读取剧情点时一次返回概要、全部故事事件、故事情节正文和关联伏笔；不要再分别为这些故事事件或故事情节调用本工具。mode=preview 只返回摘录；mode=full 会为非伏笔正文目标建立 write_plot_design / edit_plot_design 所需的完整读取凭据。",
         parameters: strictObject({
           target: LONG_PLOT_ITEM_TARGET_PARAMETER,
           mode: Type.Optional(worldbuildingReadModeParameter)
         }),
-        prepareArguments: preparePlotItemKindArguments,
         execute: async (_toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
           const mode = params.mode ?? "full";
@@ -796,7 +936,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
                 (entry) => entry.chapterCardId === targetId
               );
               if (!fileEntry) {
-                throw new Error(`Chapter ${targetId} is missing its file index.`);
+                throw new Error(
+                  `Chapter ${targetId} is missing its file index.`
+                );
               }
               const result = await readWholeWorldbuildingDocument(
                 fileEntry.card,
@@ -809,6 +951,16 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             }
             key = plotItemKey("chapter", targetId);
             display = formatPlotDesignRead({ item: meta, body: serialized });
+          } else if (params.target.kind === "foreshadowing") {
+            const targetId = plotBusinessId(params.target);
+            const item = resolvePlotItem(index, "foreshadowing", targetId);
+            const thread = toForeshadowingBusinessItem(
+              index,
+              item as unknown as LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number]
+            );
+            serialized = JSON.stringify(thread, null, 2);
+            key = plotItemKey("foreshadowing", targetId);
+            display = formatForeshadowingThread(thread);
           } else if (params.target.kind === "arc") {
             const targetId = plotBusinessId(params.target);
             const item = resolvePlotItem(index, "arc", targetId);
@@ -903,7 +1055,7 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             display = formatPlotDesignRead({ item: business });
             key = plotItemKey(params.target.kind, targetId);
           }
-          if (mode === "full") {
+          if (mode === "full" && params.target.kind !== "foreshadowing") {
             fullyReadPlotItems.set(key, {
               serialized,
               workspaceRevision: index.revision,
@@ -917,7 +1069,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
               : display;
           return textResult(
             [
-              mode === "preview" ? "预览（不建立整体覆盖凭据）：" : "完整内容：",
+              mode === "preview"
+                ? "预览（不建立整体覆盖凭据）："
+                : "完整内容：",
               "",
               visible || "（内容为空）"
             ].join("\n")
@@ -950,8 +1104,15 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
       });
 
     const plotUpdateOperation = (
-      item: Exclude<Static<typeof LONG_PLOT_WRITE_PARAMETERS>["item"], { kind: "book_line" } | { kind: "story_plot" }> |
-        Exclude<Static<typeof LONG_PLOT_EDIT_PARAMETERS>["item"], { kind: "book_line" } | { kind: "story_plot" }>,
+      item:
+        | Exclude<
+            Static<typeof LONG_PLOT_WRITE_PARAMETERS>["item"],
+            { kind: "book_line" } | { kind: "story_plot" }
+          >
+        | Exclude<
+            Static<typeof LONG_PLOT_EDIT_PARAMETERS>["item"],
+            { kind: "book_line" } | { kind: "story_plot" }
+          >,
       patch: Record<string, unknown>
     ): LongWorkspaceOperation => {
       const id = plotBusinessId(item);
@@ -968,7 +1129,11 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         return { type: "event.update", id, patch } as LongWorkspaceOperation;
       }
       if (item.kind === "connection") {
-        return { type: "connection.update", id, patch } as LongWorkspaceOperation;
+        return {
+          type: "connection.update",
+          id,
+          patch
+        } as LongWorkspaceOperation;
       }
       return { type: "placement.update", id, patch } as LongWorkspaceOperation;
     };
@@ -980,7 +1145,6 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         description:
           "一次创建一个非伏笔剧情条目并返回稳定业务 ID（叙事落点可用 placements 一次批量创建多个，只形成一张审批卡）。创建只建立结构条目（故事情节与章卡同时建立空正文文件），不在创建时初始化内容；故事情节必须通过 arc_id 挂载到既有剧情点；章卡必须指定 volume_id，primary_arc_id 可为 null，非空时必须属于同一分卷。创建提案通过预检后，故事情节与章卡可在本轮继续读取并用 write_plot_design 写入；同一轮的后续提案会按先后顺序等待前序提案获批，并基于最新工作区重新预览。伏笔线和伏笔触点继续使用现有结构提案工具。",
         parameters: LONG_PLOT_CREATE_PARAMETERS,
-        prepareArguments: preparePlotItemKindArguments,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
@@ -1043,46 +1207,60 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
                 }))
               : [
                   item.kind === "volume"
-                    ? { type: "volume.create" as const, title: item.title, summary: item.summary }
+                    ? {
+                        type: "volume.create" as const,
+                        title: item.title,
+                        summary: item.summary
+                      }
                     : item.kind === "arc"
-                      ? { type: "arc.create" as const, volumeId: item.volume_id, title: item.title, summary: item.summary, outline: item.outline }
+                      ? {
+                          type: "arc.create" as const,
+                          volumeId: item.volume_id,
+                          title: item.title,
+                          summary: item.summary,
+                          outline: item.outline
+                        }
                       : item.kind === "story_plot"
-                        ? { type: "storyPlot.create" as const, arcId: item.arc_id, title: item.title }
-                        : item.kind === "chapter"
                         ? {
-                            type: "chapter.create" as const,
-                            volumeId: item.volume_id,
-                            primaryArcId: item.primary_arc_id,
+                            type: "storyPlot.create" as const,
+                            arcId: item.arc_id,
                             title: item.title
                           }
-                        : item.kind === "event"
+                        : item.kind === "chapter"
                           ? {
-                              type: "event.create" as const,
-                              title: item.title,
-                              summary: item.summary,
-                              timeMode: item.time_mode,
-                              timeLabel: item.time_label,
-                              timeValue: item.time_value,
-                              location: item.location,
-                              arcIds: item.arc_ids,
-                              characterIds: item.character_ids
+                              type: "chapter.create" as const,
+                              volumeId: item.volume_id,
+                              primaryArcId: item.primary_arc_id,
+                              title: item.title
                             }
-                          : item.kind === "connection"
+                          : item.kind === "event"
                             ? {
-                                type: "connection.create" as const,
-                                sourceEventId: item.source_event_id,
-                                targetEventId: item.target_event_id,
-                                connectionType: item.connection_type,
-                                note: item.note
+                                type: "event.create" as const,
+                                title: item.title,
+                                summary: item.summary,
+                                timeMode: item.time_mode,
+                                timeLabel: item.time_label,
+                                timeValue: item.time_value,
+                                location: item.location,
+                                arcIds: item.arc_ids,
+                                characterIds: item.character_ids
                               }
-                            : {
-                                type: "placement.create" as const,
-                                eventId: item.event_id,
-                                chapterCardId: item.chapter_card_id,
-                                mode: item.mode,
-                                disclosure: item.disclosure,
-                                writingPrompt: item.writing_prompt
-                              }
+                            : item.kind === "connection"
+                              ? {
+                                  type: "connection.create" as const,
+                                  sourceEventId: item.source_event_id,
+                                  targetEventId: item.target_event_id,
+                                  connectionType: item.connection_type,
+                                  note: item.note
+                                }
+                              : {
+                                  type: "placement.create" as const,
+                                  eventId: item.event_id,
+                                  chapterCardId: item.chapter_card_id,
+                                  mode: item.mode,
+                                  disclosure: item.disclosure,
+                                  writingPrompt: item.writing_prompt
+                                }
                 ]
           ) as LongMutationToolOperation[];
           const built = buildRuntimeOperations({
@@ -1109,7 +1287,8 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
                         : created && "placement" in created
                           ? created.placement.id
                           : "";
-          const summary = params.summary?.trim() ||
+          const summary =
+            params.summary?.trim() ||
             (item.kind === "placements"
               ? `批量创建 ${item.items.length} 个叙事落点`
               : `创建${item.kind}“${"title" in item ? item.title : createdId}”`);
@@ -1208,24 +1387,28 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         description:
           "完整覆盖全书故事线、一个既有非伏笔剧情条目的内容字段，或故事情节/章卡的整篇正文。已有连续性记录只作历史参考，不限制大幅修改。既有目标必须先用 read_plot_design mode=full 完整读取，并明确 allow_overwrite_existing=true；读取剧情点（mode=full）也会同时建立其下故事事件与故事情节的完整读取凭据，不必再分别读取。本轮刚创建的空白故事情节或章卡可直接一次性写入，无需再次读取或确认覆盖。局部修改应使用 edit_plot_design。故事情节与章卡正文一次性整篇写入，不要分段多次写入。",
         parameters: LONG_PLOT_WRITE_PARAMETERS,
-        prepareArguments: preparePlotItemKindArguments,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
           const item = params.item;
-          const itemId = item.kind === "book_line" ? undefined : plotBusinessId(item);
+          const itemId =
+            item.kind === "book_line" ? undefined : plotBusinessId(item);
           const key = plotItemKey(item.kind, itemId);
           const evidence = fullyReadPlotItems.get(key);
           const pendingEmptyTextItem =
             item.kind === "story_plot"
               ? (() => {
                   const entry = storyPlotOverlay.get(itemId!);
-                  return entry?.pendingCreation === true && entry.content === "";
+                  return (
+                    entry?.pendingCreation === true && entry.content === ""
+                  );
                 })()
               : item.kind === "chapter"
                 ? (() => {
                     const entry = chapterCardOverlay.get(itemId!);
-                    return entry?.pendingCreation === true && entry.content === "";
+                    return (
+                      entry?.pendingCreation === true && entry.content === ""
+                    );
                   })()
                 : false;
           if (
@@ -1233,10 +1416,17 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             evidence.workspaceRevision !== index.revision ||
             evidence.projectRevision !== projectRevision
           ) {
-            return textResult("未写入：请先调用 read_plot_design（mode=full）完整读取目标内容。");
+            return textResult(
+              "未写入：请先调用 read_plot_design（mode=full）完整读取目标内容。"
+            );
           }
-          if (!pendingEmptyTextItem && params.allow_overwrite_existing !== true) {
-            return textResult("未写入：完整覆盖需明确设置 allow_overwrite_existing=true；局部修改请使用 edit_plot_design。");
+          if (
+            !pendingEmptyTextItem &&
+            params.allow_overwrite_existing !== true
+          ) {
+            return textResult(
+              "未写入：完整覆盖需明确设置 allow_overwrite_existing=true；局部修改请使用 edit_plot_design。"
+            );
           }
           const timestamp = new Date().toISOString();
           const summary = params.summary?.trim() || `完整写入剧情设计 ${key}`;
@@ -1250,23 +1440,32 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             if (live.content !== evidence.serialized) {
               throw new Error("Book line changed after it was read.");
             }
-            const nextRevision = nextContentRevision(live.file.revision, item.text);
+            const nextRevision = nextContentRevision(
+              live.file.revision,
+              item.text
+            );
             const batch = LongWorkspaceOperationBatchSchema.parse({
               baseRevision: index.revision,
               updatedAt: timestamp,
               operations: [],
-              documentWrites: [{
-                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
-                fileId: live.file.id,
-                content: item.text,
-                mode: "replace",
-                expectedRevision: live.file.revision,
-                nextRevision,
-                updatedAt: timestamp,
-                reason: summary
-              }]
+              documentWrites: [
+                {
+                  proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                  fileId: live.file.id,
+                  content: item.text,
+                  mode: "replace",
+                  expectedRevision: live.file.revision,
+                  nextRevision,
+                  updatedAt: timestamp,
+                  reason: summary
+                }
+              ]
             });
-            fullyReadPlotItems.set(key, { serialized: item.text, workspaceRevision: index.revision, projectRevision });
+            fullyReadPlotItems.set(key, {
+              serialized: item.text,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
             return plotProposal(index, batch, projectRevision, summary);
           }
           if (item.kind === "story_plot") {
@@ -1301,34 +1500,59 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             if (liveContent !== evidence.serialized) {
               throw new Error("Story plot changed after it was read.");
             }
-            const nextRevision = nextContentRevision(liveFile.revision, item.text);
+            const nextRevision = nextContentRevision(
+              liveFile.revision,
+              item.text
+            );
             const batch = LongWorkspaceOperationBatchSchema.parse({
               baseRevision: index.revision,
               updatedAt: timestamp,
               operations: [],
-              documentWrites: [{
-                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
-                fileId: liveFile.id,
-                content: item.text,
-                mode: "replace",
-                expectedRevision: liveFile.revision,
-                nextRevision,
-                updatedAt: timestamp,
-                reason: summary
-              }]
+              documentWrites: [
+                {
+                  proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                  fileId: liveFile.id,
+                  content: item.text,
+                  mode: "replace",
+                  expectedRevision: liveFile.revision,
+                  nextRevision,
+                  updatedAt: timestamp,
+                  reason: summary
+                }
+              ]
             });
             storyPlotOverlay.set(itemId!, {
               ...meta,
-              file: { ...liveFile, revision: nextRevision, updatedAt: timestamp },
+              file: {
+                ...liveFile,
+                revision: nextRevision,
+                updatedAt: timestamp
+              },
               content: item.text,
               pendingCreation: overlayEntry?.pendingCreation ?? false
             });
-            fullyReadPlotItems.set(key, { serialized: item.text, workspaceRevision: index.revision, projectRevision });
-            return plotProposal(index, batch, projectRevision, summary, `已写入故事情节“${meta.title}”正文。`, true);
+            fullyReadPlotItems.set(key, {
+              serialized: item.text,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
+            return plotProposal(
+              index,
+              batch,
+              projectRevision,
+              summary,
+              `已写入故事情节“${meta.title}”正文。`,
+              true
+            );
           }
           if (item.kind === "chapter") {
             const overlayEntry = chapterCardOverlay.get(itemId!);
-            let meta: { volumeId: string; primaryArcId: string | null; title: string; narrativeOrder: number };
+            let meta: {
+              volumeId: string;
+              primaryArcId: string | null;
+              title: string;
+              narrativeOrder: number;
+            };
             let liveFile: LongWorkspaceFileReference;
             let liveContent: string;
             if (overlayEntry) {
@@ -1367,33 +1591,56 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             if (liveContent !== evidence.serialized) {
               throw new Error("Chapter card changed after it was read.");
             }
-            const nextRevision = nextContentRevision(liveFile.revision, item.text);
+            const nextRevision = nextContentRevision(
+              liveFile.revision,
+              item.text
+            );
             const batch = LongWorkspaceOperationBatchSchema.parse({
               baseRevision: index.revision,
               updatedAt: timestamp,
               operations: [],
-              documentWrites: [{
-                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
-                fileId: liveFile.id,
-                content: item.text,
-                mode: "replace",
-                expectedRevision: liveFile.revision,
-                nextRevision,
-                updatedAt: timestamp,
-                reason: summary
-              }]
+              documentWrites: [
+                {
+                  proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                  fileId: liveFile.id,
+                  content: item.text,
+                  mode: "replace",
+                  expectedRevision: liveFile.revision,
+                  nextRevision,
+                  updatedAt: timestamp,
+                  reason: summary
+                }
+              ]
             });
             chapterCardOverlay.set(itemId!, {
               ...meta,
-              file: { ...liveFile, revision: nextRevision, updatedAt: timestamp },
+              file: {
+                ...liveFile,
+                revision: nextRevision,
+                updatedAt: timestamp
+              },
               content: item.text,
               pendingCreation: overlayEntry?.pendingCreation ?? false
             });
-            fullyReadPlotItems.set(key, { serialized: item.text, workspaceRevision: index.revision, projectRevision });
-            return plotProposal(index, batch, projectRevision, summary, `已写入章卡“${meta.title}”正文。`, true);
+            fullyReadPlotItems.set(key, {
+              serialized: item.text,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
+            return plotProposal(
+              index,
+              batch,
+              projectRevision,
+              summary,
+              `已写入章卡“${meta.title}”正文。`,
+              true
+            );
           }
           const current = JSON.stringify(
-            toPlotBusinessItem(item.kind, resolvePlotItem(index, item.kind, itemId!)),
+            toPlotBusinessItem(
+              item.kind,
+              resolvePlotItem(index, item.kind, itemId!)
+            ),
             null,
             2
           );
@@ -1410,7 +1657,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
                       summary: item.summary,
                       timeMode: item.time_mode,
                       timeLabel: item.time_label,
-                      ...(item.time_value === undefined ? {} : { timeValue: item.time_value }),
+                      ...(item.time_value === undefined
+                        ? {}
+                        : { timeValue: item.time_value }),
                       location: item.location,
                       arcIds: item.arc_ids,
                       characterIds: item.character_ids
@@ -1433,12 +1682,12 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
         description:
           "在已用 read_plot_design mode=full 完整读取的目标上做局部修改。读取剧情点（mode=full）后可直接局部修改该剧情点及其下故事事件、故事情节，不必再分别读取。全书故事线、故事情节与章卡正文按唯一原文片段替换；已有连续性记录不限制局部或大幅修改；其余结构化剧情条目只更新明确给出的内容字段。",
         parameters: LONG_PLOT_EDIT_PARAMETERS,
-        prepareArguments: preparePlotItemKindArguments,
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           const { index, projectRevision } = await loadIndex(signal);
           const item = params.item;
-          const itemId = item.kind === "book_line" ? undefined : plotBusinessId(item);
+          const itemId =
+            item.kind === "book_line" ? undefined : plotBusinessId(item);
           const key = plotItemKey(item.kind, itemId);
           const evidence = fullyReadPlotItems.get(key);
           if (
@@ -1446,7 +1695,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             evidence.workspaceRevision !== index.revision ||
             evidence.projectRevision !== projectRevision
           ) {
-            return textResult("未编辑：请先调用 read_plot_design（mode=full）完整读取目标内容。");
+            return textResult(
+              "未编辑：请先调用 read_plot_design（mode=full）完整读取目标内容。"
+            );
           }
           const timestamp = new Date().toISOString();
           const summary = params.summary?.trim() || `局部修改剧情设计 ${key}`;
@@ -1463,29 +1714,49 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             let content = live.content;
             for (const replacement of item.replacements) {
               const first = content.indexOf(replacement.original_text);
-              const second = first < 0 ? -1 : content.indexOf(replacement.original_text, first + replacement.original_text.length);
+              const second =
+                first < 0
+                  ? -1
+                  : content.indexOf(
+                      replacement.original_text,
+                      first + replacement.original_text.length
+                    );
               if (first < 0 || second >= 0) {
-                return textResult(`未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`);
+                return textResult(
+                  `未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`
+                );
               }
-              content = content.slice(0, first) + replacement.new_text + content.slice(first + replacement.original_text.length);
+              content =
+                content.slice(0, first) +
+                replacement.new_text +
+                content.slice(first + replacement.original_text.length);
             }
-            const nextRevision = nextContentRevision(live.file.revision, content);
+            const nextRevision = nextContentRevision(
+              live.file.revision,
+              content
+            );
             const batch = LongWorkspaceOperationBatchSchema.parse({
               baseRevision: index.revision,
               updatedAt: timestamp,
               operations: [],
-              documentWrites: [{
-                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
-                fileId: live.file.id,
-                content,
-                mode: "replace",
-                expectedRevision: live.file.revision,
-                nextRevision,
-                updatedAt: timestamp,
-                reason: summary
-              }]
+              documentWrites: [
+                {
+                  proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                  fileId: live.file.id,
+                  content,
+                  mode: "replace",
+                  expectedRevision: live.file.revision,
+                  nextRevision,
+                  updatedAt: timestamp,
+                  reason: summary
+                }
+              ]
             });
-            fullyReadPlotItems.set(key, { serialized: content, workspaceRevision: index.revision, projectRevision });
+            fullyReadPlotItems.set(key, {
+              serialized: content,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
             return plotProposal(index, batch, projectRevision, summary);
           }
           if (item.kind === "story_plot") {
@@ -1523,40 +1794,76 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             let content = liveContent;
             for (const replacement of item.replacements) {
               const first = content.indexOf(replacement.original_text);
-              const second = first < 0 ? -1 : content.indexOf(replacement.original_text, first + replacement.original_text.length);
+              const second =
+                first < 0
+                  ? -1
+                  : content.indexOf(
+                      replacement.original_text,
+                      first + replacement.original_text.length
+                    );
               if (first < 0 || second >= 0) {
-                return textResult(`未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`);
+                return textResult(
+                  `未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`
+                );
               }
-              content = content.slice(0, first) + replacement.new_text + content.slice(first + replacement.original_text.length);
+              content =
+                content.slice(0, first) +
+                replacement.new_text +
+                content.slice(first + replacement.original_text.length);
             }
-            const nextRevision = nextContentRevision(liveFile.revision, content);
+            const nextRevision = nextContentRevision(
+              liveFile.revision,
+              content
+            );
             const batch = LongWorkspaceOperationBatchSchema.parse({
               baseRevision: index.revision,
               updatedAt: timestamp,
               operations: [],
-              documentWrites: [{
-                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
-                fileId: liveFile.id,
-                content,
-                mode: "replace",
-                expectedRevision: liveFile.revision,
-                nextRevision,
-                updatedAt: timestamp,
-                reason: summary
-              }]
+              documentWrites: [
+                {
+                  proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                  fileId: liveFile.id,
+                  content,
+                  mode: "replace",
+                  expectedRevision: liveFile.revision,
+                  nextRevision,
+                  updatedAt: timestamp,
+                  reason: summary
+                }
+              ]
             });
             storyPlotOverlay.set(itemId!, {
               ...meta,
-              file: { ...liveFile, revision: nextRevision, updatedAt: timestamp },
+              file: {
+                ...liveFile,
+                revision: nextRevision,
+                updatedAt: timestamp
+              },
               content,
               pendingCreation: overlayEntry?.pendingCreation ?? false
             });
-            fullyReadPlotItems.set(key, { serialized: content, workspaceRevision: index.revision, projectRevision });
-            return plotProposal(index, batch, projectRevision, summary, `已局部修改故事情节“${meta.title}”正文。`, true);
+            fullyReadPlotItems.set(key, {
+              serialized: content,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
+            return plotProposal(
+              index,
+              batch,
+              projectRevision,
+              summary,
+              `已局部修改故事情节“${meta.title}”正文。`,
+              true
+            );
           }
           if (item.kind === "chapter") {
             const overlayEntry = chapterCardOverlay.get(itemId!);
-            let meta: { volumeId: string; primaryArcId: string | null; title: string; narrativeOrder: number };
+            let meta: {
+              volumeId: string;
+              primaryArcId: string | null;
+              title: string;
+              narrativeOrder: number;
+            };
             let liveFile: LongWorkspaceFileReference;
             let liveContent: string;
             if (overlayEntry) {
@@ -1597,39 +1904,73 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             let content = liveContent;
             for (const replacement of item.replacements) {
               const first = content.indexOf(replacement.original_text);
-              const second = first < 0 ? -1 : content.indexOf(replacement.original_text, first + replacement.original_text.length);
+              const second =
+                first < 0
+                  ? -1
+                  : content.indexOf(
+                      replacement.original_text,
+                      first + replacement.original_text.length
+                    );
               if (first < 0 || second >= 0) {
-                return textResult(`未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`);
+                return textResult(
+                  `未替换：原文片段必须唯一存在：${replacement.original_text.slice(0, 80)}`
+                );
               }
-              content = content.slice(0, first) + replacement.new_text + content.slice(first + replacement.original_text.length);
+              content =
+                content.slice(0, first) +
+                replacement.new_text +
+                content.slice(first + replacement.original_text.length);
             }
-            const nextRevision = nextContentRevision(liveFile.revision, content);
+            const nextRevision = nextContentRevision(
+              liveFile.revision,
+              content
+            );
             const batch = LongWorkspaceOperationBatchSchema.parse({
               baseRevision: index.revision,
               updatedAt: timestamp,
               operations: [],
-              documentWrites: [{
-                proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
-                fileId: liveFile.id,
-                content,
-                mode: "replace",
-                expectedRevision: liveFile.revision,
-                nextRevision,
-                updatedAt: timestamp,
-                reason: summary
-              }]
+              documentWrites: [
+                {
+                  proposalId: `proposal_${stableHash(`${workspace.bookId}:${input.runId}:${toolCallId}`).slice(0, 24)}`,
+                  fileId: liveFile.id,
+                  content,
+                  mode: "replace",
+                  expectedRevision: liveFile.revision,
+                  nextRevision,
+                  updatedAt: timestamp,
+                  reason: summary
+                }
+              ]
             });
             chapterCardOverlay.set(itemId!, {
               ...meta,
-              file: { ...liveFile, revision: nextRevision, updatedAt: timestamp },
+              file: {
+                ...liveFile,
+                revision: nextRevision,
+                updatedAt: timestamp
+              },
               content,
               pendingCreation: overlayEntry?.pendingCreation ?? false
             });
-            fullyReadPlotItems.set(key, { serialized: content, workspaceRevision: index.revision, projectRevision });
-            return plotProposal(index, batch, projectRevision, summary, `已局部修改章卡“${meta.title}”正文。`, true);
+            fullyReadPlotItems.set(key, {
+              serialized: content,
+              workspaceRevision: index.revision,
+              projectRevision
+            });
+            return plotProposal(
+              index,
+              batch,
+              projectRevision,
+              summary,
+              `已局部修改章卡“${meta.title}”正文。`,
+              true
+            );
           }
           const current = JSON.stringify(
-            toPlotBusinessItem(item.kind, resolvePlotItem(index, item.kind, itemId!)),
+            toPlotBusinessItem(
+              item.kind,
+              resolvePlotItem(index, item.kind, itemId!)
+            ),
             null,
             2
           );
@@ -1640,13 +1981,25 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
           const patch =
             item.kind === "event"
               ? {
-                  ...(raw.summary === undefined ? {} : { summary: raw.summary }),
-                  ...(raw.time_mode === undefined ? {} : { timeMode: raw.time_mode }),
-                  ...(raw.time_label === undefined ? {} : { timeLabel: raw.time_label }),
-                  ...(raw.time_value === undefined ? {} : { timeValue: raw.time_value }),
-                  ...(raw.location === undefined ? {} : { location: raw.location }),
+                  ...(raw.summary === undefined
+                    ? {}
+                    : { summary: raw.summary }),
+                  ...(raw.time_mode === undefined
+                    ? {}
+                    : { timeMode: raw.time_mode }),
+                  ...(raw.time_label === undefined
+                    ? {}
+                    : { timeLabel: raw.time_label }),
+                  ...(raw.time_value === undefined
+                    ? {}
+                    : { timeValue: raw.time_value }),
+                  ...(raw.location === undefined
+                    ? {}
+                    : { location: raw.location }),
                   ...(raw.arc_ids === undefined ? {} : { arcIds: raw.arc_ids }),
-                  ...(raw.character_ids === undefined ? {} : { characterIds: raw.character_ids })
+                  ...(raw.character_ids === undefined
+                    ? {}
+                    : { characterIds: raw.character_ids })
                 }
               : item.kind === "placement"
                 ? { writingPrompt: raw.writing_prompt }
@@ -1672,17 +2025,14 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
           profile.id === "setting"
             ? "提交世界观分类与已有条目的重命名、删除和排序，以及人物重命名、别名、移动到现有人物类型、删除和排序。此工具不能创建列表条目或人物，也不能写入正文；创建必须使用 create_setting，正文必须使用 write_setting 或 edit_setting。提案只进入审阅队列，不直接写磁盘。"
             : profile.id === "plot_design"
-              ? "提交既有分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点的重命名、关联、移动、删除、排序，以及全部伏笔线/伏笔触点变更。创建伏笔线时 operations[].type 必须精确使用 foreshadowing.create；创建伏笔触点时必须精确使用 foreshadowingBeat.create，不得自造 snake_case 操作类型。连续性记录只作参考，不锁定这些结构；删除已有记录的章卡会在危险确认后级联清理该章正文与记录。章卡必须属于分卷，剧情点关联可为 null；非空时必须与章卡属于同一分卷。所有结构操作会在生成审批前基于当前有效索引预检；预检失败不会生成审批卡。同一轮的多个有效提案会按先后顺序等待前序提案处理，并基于最新工作区重新预览。非伏笔条目创建必须使用 create_plot_design，内容写入必须使用 write_plot_design 或 edit_plot_design。提案只进入审阅队列，不直接写磁盘。"
-            : "按显式领域操作提交当前长篇的结构变更提案。伏笔线可分别填写 hiddenTruth 与 plannedSpan，伏笔触点可用 volumeId 或 arcId 设置卷级/剧情点计划锚点。运行时锁定项目版本、生成新实体与文件信息并计算文档内容修订；只能更新逻辑文档目标，不能传路径或文件修订。提案只进入审阅队列，不直接写磁盘。",
+              ? "提交既有分卷、剧情点、故事情节、章卡、故事事件、事件连接和叙事落点的重命名、关联、移动、删除、排序，以及全部伏笔线/伏笔触点变更。伏笔线创建必须精确使用 foreshadowing.create，伏笔触点创建必须精确使用 foreshadowingBeat.create。连续性记录只作参考，不锁定这些结构；删除已有记录的章卡会在危险确认后级联清理该章正文与记录。章卡必须属于分卷，剧情点关联可为 null；非空时必须与章卡属于同一分卷。所有结构操作会在生成审批前基于当前有效索引预检；预检失败不会生成审批卡。同一轮的多个有效提案会按先后顺序等待前序提案处理，并基于最新工作区重新预览。非伏笔条目创建必须使用 create_plot_design，内容写入必须使用 write_plot_design 或 edit_plot_design。提案只进入审阅队列，不直接写磁盘。"
+              : "按显式领域操作提交当前长篇的结构变更提案。伏笔线可分别填写 hiddenTruth 与 plannedSpan，伏笔触点可用 volumeId 或 arcId 设置卷级/剧情点计划锚点。运行时锁定项目版本、生成新实体与文件信息并计算文档内容修订；只能更新逻辑文档目标，不能传路径或文件修订。提案只进入审阅队列，不直接写磁盘。",
         parameters:
           profile.id === "setting"
             ? LONG_SETTING_MUTATION_PARAMETERS
             : profile.id === "plot_design"
               ? LONG_PLOT_MUTATION_PARAMETERS
               : LONG_MUTATION_PARAMETERS,
-        ...(profile.id === "plot_design"
-          ? { prepareArguments: preparePlotMutationArguments }
-          : {}),
         executionMode: "sequential",
         execute: async (toolCallId, params, signal) => {
           throwIfAborted(signal);
@@ -1702,19 +2052,14 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             idSeed
           });
           const documentUpdates =
-            "document_updates" in params
-              ? params.document_updates ?? []
-              : [];
+            "document_updates" in params ? (params.document_updates ?? []) : [];
           const documentTargets = documentUpdates.map((update) => {
             const target = resolveDocumentUpdateTarget(
               update,
               index,
               built.clientReferences
             );
-            if (
-              target.root === "draft" ||
-              !writableRoots.has(target.root)
-            ) {
+            if (target.root === "draft" || !writableRoots.has(target.root)) {
               throw new Error(
                 "Document update proposal is outside the agent's write roots."
               );
@@ -1723,37 +2068,40 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
           });
           const liveRevisions = new Map(
             await Promise.all(
-              documentTargets.map(async (target) => [
-                target.file.id,
-                await loadLiveDocumentRevision(
-                  target.file,
-                  index.revision,
-                  projectRevision,
-                  signal
-                )
-              ] as const)
+              documentTargets.map(
+                async (target) =>
+                  [
+                    target.file.id,
+                    await loadLiveDocumentRevision(
+                      target.file,
+                      index.revision,
+                      projectRevision,
+                      signal
+                    )
+                  ] as const
+              )
             )
           );
-          const batch = LongWorkspaceOperationBatchSchema.parse(
-            {
-              baseRevision: index.revision,
-              updatedAt: timestamp,
-              operations: built.operations,
-              documentWrites: buildRuntimeDocumentWrites({
-                updates: documentUpdates,
-                index,
-                clientReferences: built.clientReferences,
-                writableRoots,
-                liveRevisions,
-                timestamp,
-                idSeed
-              })
-            }
-          );
+          const batch = LongWorkspaceOperationBatchSchema.parse({
+            baseRevision: index.revision,
+            updatedAt: timestamp,
+            operations: built.operations,
+            documentWrites: buildRuntimeDocumentWrites({
+              updates: documentUpdates,
+              index,
+              clientReferences: built.clientReferences,
+              writableRoots,
+              liveRevisions,
+              timestamp,
+              idSeed
+            })
+          });
           for (const operation of batch.operations) {
             const root = rootForOperation(operation);
             if (!writableRoots.has(root)) {
-              throw new Error(`Operation ${operation.type} is outside the agent's write roots.`);
+              throw new Error(
+                `Operation ${operation.type} is outside the agent's write roots.`
+              );
             }
             for (const file of collectOperationFiles(operation)) {
               const createdRoots: LongWorkspaceRoot[] =
@@ -1765,7 +2113,9 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
                   filePathBelongsToRoot(file, candidate)
                 )
               ) {
-                throw new Error(`Operation ${operation.type} contains an out-of-root file path.`);
+                throw new Error(
+                  `Operation ${operation.type} contains an out-of-root file path.`
+                );
               }
             }
           }
@@ -1775,8 +2125,7 @@ export function buildPlotDesignTools(ctx: LongToolContext): AgentTool[] {
             batch,
             projectRevision,
             summary,
-            message:
-              "已形成长篇结构变更提案，等待客户端审阅与冲突检查。"
+            message: "已形成长篇结构变更提案，等待客户端审阅与冲突检查。"
           });
         }
       })

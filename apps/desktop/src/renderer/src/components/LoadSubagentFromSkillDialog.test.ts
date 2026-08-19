@@ -7,7 +7,9 @@ describe("LoadSubagentFromSkillDialog", () => {
     expect(source).toContain(":class=\"{ 'is-placeholder': !generating }\"");
     expect(source).toContain('class="authoring-status-slot"');
     expect(source).toContain("height: 2.65rem;");
-    expect(source).not.toContain('v-if="generating"\n                type="button"');
+    expect(source).not.toContain(
+      'v-if="generating"\n                type="button"'
+    );
   });
 
   it("routes generation errors through floating feedback", () => {

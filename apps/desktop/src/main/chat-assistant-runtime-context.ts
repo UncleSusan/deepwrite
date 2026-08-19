@@ -54,12 +54,22 @@ export async function resolveChatAssistantRuntimeContext(
   const request = payload.chatAssistant ?? { mode: "normal" as const };
   const [catalog, longList, settings, today, sevenDays, thirtyDays, all] =
     await Promise.all([
-      requireCorePayload(supervisor, "catalog.index", CatalogIndexSnapshotSchema),
+      requireCorePayload(
+        supervisor,
+        "catalog.index",
+        CatalogIndexSnapshotSchema
+      ),
       requireCorePayload(supervisor, "long.list", LongListBooksResultSchema),
       deps.requireModelConfigStore().list(),
-      deps.requireModelUsageStore().query({ startAt: chatAssistantUsageStart(1) }),
-      deps.requireModelUsageStore().query({ startAt: chatAssistantUsageStart(7) }),
-      deps.requireModelUsageStore().query({ startAt: chatAssistantUsageStart(30) }),
+      deps
+        .requireModelUsageStore()
+        .query({ startAt: chatAssistantUsageStart(1) }),
+      deps
+        .requireModelUsageStore()
+        .query({ startAt: chatAssistantUsageStart(7) }),
+      deps
+        .requireModelUsageStore()
+        .query({ startAt: chatAssistantUsageStart(30) }),
       deps.requireModelUsageStore().query()
     ]);
   const modelSettings = ModelSettingsSchema.parse(settings);
@@ -103,12 +113,15 @@ export async function resolveChatAssistantRuntimeContext(
   if (request.mode === "normal") {
     return ChatAssistantRuntimeContextSchema.parse({ ...base, mode: "normal" });
   }
-  const config = await deps.requireChatAssistantProjectConfigStore().get(request.project);
+  const config = await deps
+    .requireChatAssistantProjectConfigStore()
+    .get(request.project);
   if (request.project.projectType === "long") {
     const projectBook = base.longBooks.find(
       (book) => book.id === request.project.projectId
     );
-    if (!projectBook) throw new Error("所选长篇项目不存在或暂时不可用，请刷新后重试。");
+    if (!projectBook)
+      throw new Error("所选长篇项目不存在或暂时不可用，请刷新后重试。");
     return ChatAssistantRuntimeContextSchema.parse({
       ...base,
       mode: "project",
@@ -118,14 +131,19 @@ export async function resolveChatAssistantRuntimeContext(
     });
   }
   const snapshot = CatalogSnapshotSchema.parse(
-    await requireCorePayload(supervisor, "catalog.snapshot", CatalogSnapshotSchema)
+    await requireCorePayload(
+      supervisor,
+      "catalog.snapshot",
+      CatalogSnapshotSchema
+    )
   );
   const projectBook = snapshot.books.find(
     (book) =>
       book.id === request.project.projectId &&
       book.bookType === request.project.projectType
   );
-  if (!projectBook) throw new Error("所选创作项目不存在或暂时不可用，请刷新后重试。");
+  if (!projectBook)
+    throw new Error("所选创作项目不存在或暂时不可用，请刷新后重试。");
   return ChatAssistantRuntimeContextSchema.parse({
     ...base,
     mode: "project",

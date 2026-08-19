@@ -131,16 +131,13 @@ export class LongWorkspaceService {
 
   private readonly now: () => string;
   private readonly onDiagnostic:
-    | ((diagnostic: LongWorkspaceServiceDiagnostic) => void)
-    | undefined;
+    ((diagnostic: LongWorkspaceServiceDiagnostic) => void) | undefined;
   private readonly diagnostics: LongWorkspaceServiceDiagnostic[] = [];
 
   constructor(options: LongWorkspaceServiceOptions) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.onDiagnostic = options.onDiagnostic;
-    this.store = new LongProjectStore(
-      options.now ? { now: options.now } : {}
-    );
+    this.store = new LongProjectStore(options.now ? { now: options.now } : {});
     this.catalog = new LongProjectCatalog({
       userDataPath: options.userDataPath,
       ...(options.now ? { now: options.now } : {}),
@@ -200,9 +197,7 @@ export class LongWorkspaceService {
       sourcePath,
       options
     );
-    const registered = await this.catalog.openAtPath(
-      imported.projectDirectory
-    );
+    const registered = await this.catalog.openAtPath(imported.projectDirectory);
     return {
       ...imported,
       projectDirectory: registered.projectDirectory,
@@ -303,9 +298,7 @@ export class LongWorkspaceService {
         genre: input.genre
       }
     );
-    const registered = await this.catalog.openAtPath(
-      imported.projectDirectory
-    );
+    const registered = await this.catalog.openAtPath(imported.projectDirectory);
     return {
       ...imported,
       projectDirectory: registered.projectDirectory,
@@ -322,9 +315,7 @@ export class LongWorkspaceService {
       parentDirectory,
       sourcePath
     );
-    const registered = await this.catalog.openAtPath(
-      imported.projectDirectory
-    );
+    const registered = await this.catalog.openAtPath(imported.projectDirectory);
     return {
       ...imported,
       projectDirectory: registered.projectDirectory,
@@ -351,25 +342,22 @@ export class LongWorkspaceService {
   ): Promise<LongOpenBookResult> {
     const parsed = LongUpdateBindingsInputSchema.parse(input);
     const opened = await this.openProject({ bookId: parsed.bookId });
-    const updated = await this.store.updateBindings(
-      opened.projectDirectory,
-      {
-        expectedProjectRevision: parsed.expectedProjectRevision,
-        linkedMaterialIdsByKind: {
-          character: [...(parsed.linkedMaterialIdsByKind.character ?? [])],
-          gimmick: [...(parsed.linkedMaterialIdsByKind.gimmick ?? [])],
-          plot: [...(parsed.linkedMaterialIdsByKind.plot ?? [])],
-          draft: [...(parsed.linkedMaterialIdsByKind.draft ?? [])],
-          other: [...(parsed.linkedMaterialIdsByKind.other ?? [])]
-        },
-        linkedSkillIdsByKind: {
-          general: [...(parsed.linkedSkillIdsByKind.general ?? [])],
-          plot: [...(parsed.linkedSkillIdsByKind.plot ?? [])],
-          style: [...(parsed.linkedSkillIdsByKind.style ?? [])],
-          other: [...(parsed.linkedSkillIdsByKind.other ?? [])]
-        }
+    const updated = await this.store.updateBindings(opened.projectDirectory, {
+      expectedProjectRevision: parsed.expectedProjectRevision,
+      linkedMaterialIdsByKind: {
+        character: [...(parsed.linkedMaterialIdsByKind.character ?? [])],
+        gimmick: [...(parsed.linkedMaterialIdsByKind.gimmick ?? [])],
+        plot: [...(parsed.linkedMaterialIdsByKind.plot ?? [])],
+        draft: [...(parsed.linkedMaterialIdsByKind.draft ?? [])],
+        other: [...(parsed.linkedMaterialIdsByKind.other ?? [])]
+      },
+      linkedSkillIdsByKind: {
+        general: [...(parsed.linkedSkillIdsByKind.general ?? [])],
+        plot: [...(parsed.linkedSkillIdsByKind.plot ?? [])],
+        style: [...(parsed.linkedSkillIdsByKind.style ?? [])],
+        other: [...(parsed.linkedSkillIdsByKind.other ?? [])]
       }
-    );
+    });
     await this.updateCatalogSummaryBestEffort(
       parsed.bookId,
       updated.summary,
@@ -460,12 +448,10 @@ export class LongWorkspaceService {
     const opened = await this.openProject(parsed);
     const query = parsed.query.normalize("NFC");
     const candidates = searchFiles(opened.book.workspaceIndex).filter(
-      (candidate) =>
-        parsed.scope === "all" || candidate.root === parsed.scope
+      (candidate) => parsed.scope === "all" || candidate.root === parsed.scope
     );
     const workspaceRevision = opened.book.workspaceIndex.revision;
-    const projectRevision =
-      opened.book.projectRevision ?? workspaceRevision;
+    const projectRevision = opened.book.projectRevision ?? workspaceRevision;
     const cursorContext: SearchCursorContext = {
       bookId: parsed.bookId,
       query,
@@ -473,11 +459,7 @@ export class LongWorkspaceService {
       workspaceRevision,
       projectRevision
     };
-    const resume = parseSearchCursor(
-      parsed.cursor,
-      cursorContext,
-      candidates
-    );
+    const resume = parseSearchCursor(parsed.cursor, cursorContext, candidates);
     if (candidates.length === 0) {
       return LongSearchResultSchema.parse({
         bookId: parsed.bookId,
@@ -548,10 +530,7 @@ export class LongWorkspaceService {
       written.summary,
       "write-document"
     );
-    const file = findWorkspaceFile(
-      written.book.workspaceIndex,
-      written.fileId
-    );
+    const file = findWorkspaceFile(written.book.workspaceIndex, written.fileId);
     return LongWriteDocumentResultSchema.parse({
       bookId: parsed.bookId,
       file: {
@@ -602,10 +581,7 @@ export class LongWorkspaceService {
     const parsed = LongRollbackLastCommitInputSchema.parse(input);
     const opened = await this.openProject(parsed);
     const result = LongRollbackLastCommitResultSchema.parse(
-      await this.store.rollbackLastCommit(
-        opened.projectDirectory,
-        parsed
-      )
+      await this.store.rollbackLastCommit(opened.projectDirectory, parsed)
     );
     await this.refreshCatalogSummaryBestEffort(
       opened.projectDirectory,
@@ -663,9 +639,7 @@ export class LongWorkspaceService {
     });
   }
 
-  async unregister(
-    input: LongRemoveBookInput
-  ): Promise<LongRemoveBookResult> {
+  async unregister(input: LongRemoveBookInput): Promise<LongRemoveBookResult> {
     const parsed = LongRemoveBookInputSchema.parse(input);
     return LongRemoveBookResultSchema.parse(
       await this.catalog.unregister(parsed.bookId)
@@ -683,9 +657,9 @@ export class LongWorkspaceService {
     return this.diagnostics.map((diagnostic) => ({ ...diagnostic }));
   }
 
-  private async openProject(
-    input: { bookId: string }
-  ): Promise<OpenLongProject> {
+  private async openProject(input: {
+    bookId: string;
+  }): Promise<OpenLongProject> {
     return await this.catalog.open(input.bookId);
   }
 
@@ -724,9 +698,7 @@ export class LongWorkspaceService {
       bookId,
       operation,
       message:
-        error instanceof Error
-          ? error.message
-          : "长篇项目摘要缓存更新失败。",
+        error instanceof Error ? error.message : "长篇项目摘要缓存更新失败。",
       occurredAt: this.now()
     };
     this.diagnostics.push(diagnostic);
@@ -834,18 +806,22 @@ function searchFiles(
     },
     ...index.worldbuilding.flatMap((category) =>
       category.format === "text"
-        ? [{
-            file: category.file,
-            root: "worldbuilding" as const,
-            title: category.title
-          }]
+        ? [
+            {
+              file: category.file,
+              root: "worldbuilding" as const,
+              title: category.title
+            }
+          ]
         : [
             ...(category.overview
-              ? [{
-                  file: category.overview,
-                  root: "worldbuilding" as const,
-                  title: `${category.title} / 概览`
-                }]
+              ? [
+                  {
+                    file: category.overview,
+                    root: "worldbuilding" as const,
+                    title: `${category.title} / 概览`
+                  }
+                ]
               : []),
             ...category.items.map((item) => ({
               file: item.file,
@@ -855,11 +831,13 @@ function searchFiles(
           ]
     ),
     ...(index.characterOverview
-      ? [{
-          file: index.characterOverview,
-          root: "character_design" as const,
-          title: "人物概览"
-        }]
+      ? [
+          {
+            file: index.characterOverview,
+            root: "character_design" as const,
+            title: "人物概览"
+          }
+        ]
       : []),
     ...index.characterFiles.flatMap((entry) => {
       const title =
@@ -889,8 +867,7 @@ function searchFiles(
     }),
     ...index.chapters.flatMap((entry) => {
       const title =
-        chapterById.get(entry.chapterCardId)?.title ??
-        entry.chapterCardId;
+        chapterById.get(entry.chapterCardId)?.title ?? entry.chapterCardId;
       return [
         {
           file: entry.body,
@@ -1083,10 +1060,7 @@ function formatSearchCursor(
     fileRevision: resume.fileRevision,
     characterOffset: resume.characterOffset
   };
-  const cursor = `v2.${Buffer.from(
-    JSON.stringify(payload),
-    "utf8"
-  ).toString("base64url")}`;
+  const cursor = `v2.${Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")}`;
   if (cursor.length > 2_048) {
     throw new Error("长篇搜索游标超过安全长度。");
   }

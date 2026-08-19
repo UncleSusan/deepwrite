@@ -146,8 +146,7 @@ function isReadAccessChecked(
   id: string
 ): boolean {
   const values = activeAgent.value?.readAccess[scope] as
-    | readonly string[]
-    | undefined;
+    readonly string[] | undefined;
   return values?.includes(id) ?? false;
 }
 
@@ -216,9 +215,7 @@ function saveSettings(): void {
         skillKinds: [...agent.readAccess.skillKinds]
       }
     };
-  }).filter(
-    (agent): agent is LongAgentSettingsInputAgent => agent !== null
-  );
+  }).filter((agent): agent is LongAgentSettingsInputAgent => agent !== null);
   if (agents.length !== LONG_AGENT_IDS.length) return;
   const parsed = LongAgentSettingsInputSchema.safeParse({
     workspaceType: "long",
@@ -362,9 +359,7 @@ function saveSettings(): void {
                 type="checkbox"
                 :checked="isReadAccessChecked('skillKinds', option.id)"
                 :disabled="formDisabled"
-                @change="
-                  handleCheckboxChange('skillKinds', option.id, $event)
-                "
+                @change="handleCheckboxChange('skillKinds', option.id, $event)"
               />
               <span>
                 <strong>{{ option.label }}</strong>
@@ -387,10 +382,7 @@ function saveSettings(): void {
           阶段读取范围：四个阶段均可读取设定、剧情、正文与连续性账本，互相可读
         </p>
         <div class="immutable-list">
-          <span
-            v-for="option in WORKSPACE_OPTIONS"
-            :key="`read:${option.id}`"
-          >
+          <span v-for="option in WORKSPACE_OPTIONS" :key="`read:${option.id}`">
             {{ option.label }}
           </span>
         </div>
@@ -400,7 +392,10 @@ function saveSettings(): void {
             v-for="root in immutableProfile.writeAccess.workspaceRoots"
             :key="`root:${root}`"
           >
-            {{ WORKSPACE_OPTIONS.find((option) => option.id === root)?.label ?? root }}
+            {{
+              WORKSPACE_OPTIONS.find((option) => option.id === root)?.label ??
+              root
+            }}
           </span>
           <span
             v-for="capability in immutableProfile.writeAccess.capabilities"

@@ -106,20 +106,20 @@ function scriptManifest() {
       title: "正文",
       sections: [
         {
-            id: "episode-1",
+          id: "episode-1",
           title: "第一集",
           wordCountRequirement: "",
           body: {
-              id: "draft-section:episode-1:body",
+            id: "draft-section:episode-1:body",
             title: "第一集",
-              path: "draft/episode-1.md",
+            path: "draft/episode-1.md",
             createdAt: timestamp,
             updatedAt: timestamp
           },
           characterState: {
-              id: "draft-section:episode-1:character-state",
+            id: "draft-section:episode-1:character-state",
             title: "第一集 · 人物状态",
-              path: "draft/episode-1-character-state.md",
+            path: "draft/episode-1-character-state.md",
             createdAt: timestamp,
             updatedAt: timestamp
           },
@@ -154,7 +154,13 @@ describe("script catalog contracts", () => {
   });
 
   it("keeps script genres and book schemas independently addressable", () => {
-    expect(SCRIPT_BOOK_GENRES).toEqual(["世情", "追妻", "科幻", "悬疑", "其他"]);
+    expect(SCRIPT_BOOK_GENRES).toEqual([
+      "世情",
+      "追妻",
+      "科幻",
+      "悬疑",
+      "其他"
+    ]);
     expect(ScriptBookSchema.parse(scriptBook()).bookType).toBe("script");
     expect(BookSchema.parse(scriptBook()).bookType).toBe("script");
     expect(BookSchema.parse(shortBook()).bookType).toBe("short");
@@ -181,12 +187,12 @@ describe("script catalog contracts", () => {
   });
 
   it("parses a current script project manifest through the book discriminator", () => {
-    expect(ScriptBookProjectManifestSchema.parse(scriptManifest()).bookType).toBe(
-      "script"
-    );
-    expect(CurrentBookProjectManifestSchema.parse(scriptManifest()).bookType).toBe(
-      "script"
-    );
+    expect(
+      ScriptBookProjectManifestSchema.parse(scriptManifest()).bookType
+    ).toBe("script");
+    expect(
+      CurrentBookProjectManifestSchema.parse(scriptManifest()).bookType
+    ).toBe("script");
   });
 
   it("accepts create-script inputs and command envelopes", () => {
@@ -206,13 +212,16 @@ describe("script catalog contracts", () => {
     const createAtPath = createEnvelope(
       "catalog.createScriptBookAtPath",
       atPath,
-      { id: "create_script_at_path" }
+      {
+        id: "create_script_at_path"
+      }
     );
     expect(
       CatalogCreateScriptBookCommandEnvelopeSchema.parse(create).type
     ).toBe("catalog.createScriptBook");
     expect(
-      CatalogCreateScriptBookAtPathCommandEnvelopeSchema.parse(createAtPath).type
+      CatalogCreateScriptBookAtPathCommandEnvelopeSchema.parse(createAtPath)
+        .type
     ).toBe("catalog.createScriptBookAtPath");
     expect(CatalogCommandEnvelopeSchema.parse(create).type).toBe(
       "catalog.createScriptBook"

@@ -55,7 +55,9 @@ describe("RendererStateStore", () => {
       join(root, "renderer-state", "conversation-persistence.json")
     );
     expect(disk).toEqual({ version: 1, entries: { [key]: value } });
-    await expect(new RendererStateStore(root).load(key)).resolves.toEqual(value);
+    await expect(new RendererStateStore(root).load(key)).resolves.toEqual(
+      value
+    );
   });
 
   it("serializes concurrent writes and leaves a complete atomic document", async () => {
@@ -72,7 +74,9 @@ describe("RendererStateStore", () => {
     await expect(store.load(key)).resolves.toEqual({ revision: 3 });
     await expect(
       store.load("conversation-preferences:run-options:v1")
-    ).resolves.toEqual({ revision: 2 });
+    ).resolves.toEqual({
+      revision: 2
+    });
     expect(JSON.parse(await readFile(store.statePath, "utf8"))).toMatchObject({
       version: 1,
       entries: {
@@ -98,7 +102,9 @@ describe("RendererStateStore", () => {
     await store.remove("conversation-history:missing");
 
     await expect(store.load(removedKey)).resolves.toBeUndefined();
-    await expect(new RendererStateStore(root).load(retainedKey)).resolves.toEqual({
+    await expect(
+      new RendererStateStore(root).load(retainedKey)
+    ).resolves.toEqual({
       value: "retained"
     });
   });
@@ -125,7 +131,9 @@ describe("RendererStateStore", () => {
     });
     await expect(
       store.load("conversation-history:omitted-undefined")
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toEqual({
+      ok: true
+    });
   });
 
   it("enforces per-item and aggregate byte limits without replacing valid state", async () => {

@@ -239,36 +239,45 @@ export type AgentRuntimeEvent =
         workspaceId: string;
         stageId: import("@deepwrite/contracts").ShortWorkspaceStageId;
         text: string;
-        mutationTarget?: {
-          kind: "expert-draft-file";
-          documentId: string;
-          sectionId: string;
-          fileKind: "body" | "characterState";
-        } | {
-          kind: "expert-draft-section-creation";
-          sections: Array<{
-            title: string;
-            wordCountRequirement: string;
-            provisionalSectionId: string;
-          }>;
-          afterSectionId?: string;
-        } | {
-          kind: "expert-draft-section-rename";
-          sectionId: string;
-          previousTitle: string;
-          title: string;
-        } | {
-          kind: "expert-draft-section-deletion";
-          sectionId: string;
-          title: string;
-        } | {
-          kind: "character-file";
-          documentId: string;
-          itemId?: string;
-        } | {
-          kind: "character-structure";
-          mutation: Extract<ShortWorkspaceToolDetails, { kind: "workspace-character-structure-mutation" }>["mutation"];
-        };
+        mutationTarget?:
+          | {
+              kind: "expert-draft-file";
+              documentId: string;
+              sectionId: string;
+              fileKind: "body" | "characterState";
+            }
+          | {
+              kind: "expert-draft-section-creation";
+              sections: Array<{
+                title: string;
+                wordCountRequirement: string;
+                provisionalSectionId: string;
+              }>;
+              afterSectionId?: string;
+            }
+          | {
+              kind: "expert-draft-section-rename";
+              sectionId: string;
+              previousTitle: string;
+              title: string;
+            }
+          | {
+              kind: "expert-draft-section-deletion";
+              sectionId: string;
+              title: string;
+            }
+          | {
+              kind: "character-file";
+              documentId: string;
+              itemId?: string;
+            }
+          | {
+              kind: "character-structure";
+              mutation: Extract<
+                ShortWorkspaceToolDetails,
+                { kind: "workspace-character-structure-mutation" }
+              >["mutation"];
+            };
         baseRevision: string;
         summary: string;
         runtime: AgentRuntimeRef;

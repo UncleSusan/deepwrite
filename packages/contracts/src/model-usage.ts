@@ -18,7 +18,11 @@ export const MODEL_USAGE_MODULES = [
 export const ModelUsageModuleSchema = z.enum(MODEL_USAGE_MODULES);
 export type ModelUsageModule = z.infer<typeof ModelUsageModuleSchema>;
 
-export const MODEL_USAGE_ACTORS = ["main-agent", "subagent", "connection-test"] as const;
+export const MODEL_USAGE_ACTORS = [
+  "main-agent",
+  "subagent",
+  "connection-test"
+] as const;
 export const ModelUsageActorSchema = z.enum(MODEL_USAGE_ACTORS);
 export type ModelUsageActor = z.infer<typeof ModelUsageActorSchema>;
 
@@ -39,7 +43,9 @@ export const ModelUsageModelSnapshotSchema = z.object({
   api: z.string().trim().min(1).max(120).optional(),
   managedBy: ModelManagedBySchema.optional()
 });
-export type ModelUsageModelSnapshot = z.infer<typeof ModelUsageModelSnapshotSchema>;
+export type ModelUsageModelSnapshot = z.infer<
+  typeof ModelUsageModelSnapshotSchema
+>;
 
 export const ModelUsageRecordSchema = z.object({
   id: z.string().trim().min(1).max(240),
@@ -52,21 +58,33 @@ export const ModelUsageRecordSchema = z.object({
 });
 export type ModelUsageRecord = z.infer<typeof ModelUsageRecordSchema>;
 
-export const ModelUsageQueryInputSchema = z.object({
-  startAt: z.string().datetime().optional(),
-  endAt: z.string().datetime().optional(),
-  modelConfigIds: z.array(z.string().trim().min(1).max(120)).max(100).optional(),
-  managedBy: ModelManagedBySchema.optional(),
-  modules: z.array(ModelUsageModuleSchema).max(MODEL_USAGE_MODULES.length).optional()
-}).superRefine((value, context) => {
-  if (value.startAt && value.endAt && Date.parse(value.startAt) > Date.parse(value.endAt)) {
-    context.addIssue({
-      code: "custom",
-      path: ["endAt"],
-      message: "endAt must not be earlier than startAt."
-    });
-  }
-});
+export const ModelUsageQueryInputSchema = z
+  .object({
+    startAt: z.string().datetime().optional(),
+    endAt: z.string().datetime().optional(),
+    modelConfigIds: z
+      .array(z.string().trim().min(1).max(120))
+      .max(100)
+      .optional(),
+    managedBy: ModelManagedBySchema.optional(),
+    modules: z
+      .array(ModelUsageModuleSchema)
+      .max(MODEL_USAGE_MODULES.length)
+      .optional()
+  })
+  .superRefine((value, context) => {
+    if (
+      value.startAt &&
+      value.endAt &&
+      Date.parse(value.startAt) > Date.parse(value.endAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["endAt"],
+        message: "endAt must not be earlier than startAt."
+      });
+    }
+  });
 export type ModelUsageQueryInput = z.infer<typeof ModelUsageQueryInputSchema>;
 
 export const ModelUsageTotalsSchema = AgentUsageSchema.extend({
@@ -74,7 +92,11 @@ export const ModelUsageTotalsSchema = AgentUsageSchema.extend({
 });
 export type ModelUsageTotals = z.infer<typeof ModelUsageTotalsSchema>;
 
-export const ModelUsageTrendGranularitySchema = z.enum(["hour", "day", "month"]);
+export const ModelUsageTrendGranularitySchema = z.enum([
+  "hour",
+  "day",
+  "month"
+]);
 export type ModelUsageTrendGranularity = z.infer<
   typeof ModelUsageTrendGranularitySchema
 >;
@@ -85,7 +107,9 @@ export const ModelUsageTrendPointSchema = z.object({
 });
 export type ModelUsageTrendPoint = z.infer<typeof ModelUsageTrendPointSchema>;
 
-export const ModelUsageRecentCallSchema = ModelUsageRecordSchema.omit({ id: true });
+export const ModelUsageRecentCallSchema = ModelUsageRecordSchema.omit({
+  id: true
+});
 export type ModelUsageRecentCall = z.infer<typeof ModelUsageRecentCallSchema>;
 
 export const ModelUsageModelSummarySchema = z.object({
@@ -95,13 +119,17 @@ export const ModelUsageModelSummarySchema = z.object({
   firstUsedAt: z.string().datetime().optional(),
   lastUsedAt: z.string().datetime().optional()
 });
-export type ModelUsageModelSummary = z.infer<typeof ModelUsageModelSummarySchema>;
+export type ModelUsageModelSummary = z.infer<
+  typeof ModelUsageModelSummarySchema
+>;
 
 export const ModelUsageModuleSummarySchema = z.object({
   module: ModelUsageModuleSchema,
   totals: ModelUsageTotalsSchema
 });
-export type ModelUsageModuleSummary = z.infer<typeof ModelUsageModuleSummarySchema>;
+export type ModelUsageModuleSummary = z.infer<
+  typeof ModelUsageModuleSummarySchema
+>;
 
 export const ModelUsageDashboardSchema = z.object({
   generatedAt: z.string().datetime(),

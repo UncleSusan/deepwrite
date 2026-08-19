@@ -159,9 +159,7 @@ export function useLongWritingOrchestrator(
     () => state.value.chapters[state.value.currentIndex] ?? null
   );
   const active = computed(
-    () =>
-      state.value.phase !== "idle" &&
-      state.value.phase !== "complete"
+    () => state.value.phase !== "idle" && state.value.phase !== "complete"
   );
 
   function patch(values: Partial<LongWritingWorkflowState>): void {
@@ -278,9 +276,7 @@ export function useLongWritingOrchestrator(
     >
   ): Promise<void> {
     if (active.value) {
-      throw new Error(
-        "已有长篇串行写作计划正在执行，请先完成当前计划。"
-      );
+      throw new Error("已有长篇串行写作计划正在执行，请先完成当前计划。");
     }
     epoch += 1;
     const runEpoch = epoch;
@@ -307,14 +303,9 @@ export function useLongWritingOrchestrator(
   ): Promise<boolean> {
     const bookId = state.value.bookId;
     const chapter = currentChapter.value;
-    if (
-      !bookId ||
-      !chapter ||
-      event.payload.bookId !== bookId
-    ) {
+    if (!bookId || !chapter || event.payload.bookId !== bookId) {
       return false;
     }
-    const runEpoch = epoch;
     if (event.type === "long.ledger_commit_proposal") return false;
     return false;
   }
@@ -359,10 +350,7 @@ export function useLongWritingOrchestrator(
   }
 
   async function retry(): Promise<void> {
-    if (
-      state.value.phase !== "error" ||
-      state.value.retryPoint === null
-    ) {
+    if (state.value.phase !== "error" || state.value.retryPoint === null) {
       return;
     }
     const runEpoch = epoch;

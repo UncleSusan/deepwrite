@@ -120,7 +120,9 @@ export function migrateLegacyDraftRecoveries(
         )
       };
     });
-    if (mappedFiles.some(({ body, characterState }) => !body || !characterState)) {
+    if (
+      mappedFiles.some(({ body, characterState }) => !body || !characterState)
+    ) {
       unmappedLegacyKeys.push(legacyKey);
       continue;
     }

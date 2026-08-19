@@ -185,9 +185,7 @@ function readZipEntries(archive: Buffer): ZipEntry[] {
     }
     totalPathBytes += nameLength;
     if (totalPathBytes > MAX_TOTAL_ARCHIVE_PATH_BYTES) {
-      throw new Error(
-        "旧版本长篇压缩包的文件路径总量超过安全上限。"
-      );
+      throw new Error("旧版本长篇压缩包的文件路径总量超过安全上限。");
     }
     const name = normalizeArchivePath(
       decodeUtf8(
@@ -206,9 +204,7 @@ function readZipEntries(archive: Buffer): ZipEntry[] {
         throw new Error("旧版本长篇压缩包已加密，无法导入。");
       }
       if (method !== 0 && method !== 8) {
-        throw new Error(
-          `旧版本长篇压缩包使用了不支持的压缩方式：${method}。`
-        );
+        throw new Error(`旧版本长篇压缩包使用了不支持的压缩方式：${method}。`);
       }
       totalUncompressedBytes += uncompressedSize;
       if (totalUncompressedBytes > MAX_TOTAL_UNCOMPRESSED_BYTES) {
@@ -248,10 +244,7 @@ function crc32(content: Uint8Array): number {
     for (let index = 0; index < 256; index += 1) {
       let value = index;
       for (let bit = 0; bit < 8; bit += 1) {
-        value =
-          (value & 1) !== 0
-            ? 0xedb88320 ^ (value >>> 1)
-            : value >>> 1;
+        value = (value & 1) !== 0 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
       }
       crcTable[index] = value >>> 0;
     }
@@ -277,18 +270,14 @@ function readZipEntry(
   }
   checkedRange(archive, entry.localHeaderOffset, 30, `文件“${entry.name}”`);
   if (archive.readUInt32LE(entry.localHeaderOffset) !== LOCAL_FILE_SIGNATURE) {
-    throw new Error(
-      `旧版本长篇压缩包中文件“${entry.name}”的本地头已损坏。`
-    );
+    throw new Error(`旧版本长篇压缩包中文件“${entry.name}”的本地头已损坏。`);
   }
   const localFlags = archive.readUInt16LE(entry.localHeaderOffset + 6);
   const localMethod = archive.readUInt16LE(entry.localHeaderOffset + 8);
   const nameLength = archive.readUInt16LE(entry.localHeaderOffset + 26);
   const extraLength = archive.readUInt16LE(entry.localHeaderOffset + 28);
   if (nameLength > MAX_ARCHIVE_PATH_BYTES) {
-    throw new Error(
-      `旧版本长篇压缩包中文件“${entry.name}”的本地路径过长。`
-    );
+    throw new Error(`旧版本长篇压缩包中文件“${entry.name}”的本地路径过长。`);
   }
   checkedRange(
     archive,
@@ -310,9 +299,7 @@ function readZipEntry(
     localMethod !== entry.method ||
     (localFlags & 0x41) !== (entry.flags & 0x41)
   ) {
-    throw new Error(
-      `旧版本长篇压缩包中文件“${entry.name}”的目录信息不一致。`
-    );
+    throw new Error(`旧版本长篇压缩包中文件“${entry.name}”的目录信息不一致。`);
   }
   const contentOffset = entry.localHeaderOffset + 30 + nameLength + extraLength;
   checkedRange(
@@ -334,22 +321,21 @@ function readZipEntry(
             maxOutputLength: maxEntryBytes
           });
   } catch {
-    throw new Error(
-      `旧版本长篇压缩包中文件“${entry.name}”无法安全解压。`
-    );
+    throw new Error(`旧版本长篇压缩包中文件“${entry.name}”无法安全解压。`);
   }
   if (
     content.length !== entry.uncompressedSize ||
     crc32(content) !== entry.crc32
   ) {
-    throw new Error(
-      `旧版本长篇压缩包中文件“${entry.name}”的完整性校验失败。`
-    );
+    throw new Error(`旧版本长篇压缩包中文件“${entry.name}”的完整性校验失败。`);
   }
   return content;
 }
 
-function parseJsonObject(content: Uint8Array, label: string): Record<string, unknown> {
+function parseJsonObject(
+  content: Uint8Array,
+  label: string
+): Record<string, unknown> {
   const text = decodeUtf8(content, label).replace(/^\uFEFF/u, "");
   try {
     const value = JSON.parse(text) as unknown;
@@ -371,13 +357,10 @@ function summarizedEntryPaths(entries: readonly ZipEntry[]): string {
   const visible = entries
     .slice(0, 8)
     .map(
-      ({ name }) =>
-        `“${name.length > 240 ? `${name.slice(0, 237)}...` : name}”`
+      ({ name }) => `“${name.length > 240 ? `${name.slice(0, 237)}...` : name}”`
     );
   const remaining = entries.length - visible.length;
-  return `${visible.join("、")}${
-    remaining > 0 ? `等 ${entries.length} 个路径` : ""
-  }`;
+  return `${visible.join("、")}${remaining > 0 ? `等 ${entries.length} 个路径` : ""}`;
 }
 
 function authorityEntryDigest(archive: Buffer, entry: ZipEntry): string {
@@ -476,11 +459,7 @@ function readZipSource(archive: Buffer): WriteClawLongArchiveSource {
   ];
   const standaloneWorkspace = workspaceEntry
     ? parseJsonObject(
-        readZipEntry(
-          archive,
-          workspaceEntry,
-          MAX_AUTHORITY_JSON_ENTRY_BYTES
-        ),
+        readZipEntry(archive, workspaceEntry, MAX_AUTHORITY_JSON_ENTRY_BYTES),
         workspaceEntry.name
       )
     : null;
@@ -488,11 +467,7 @@ function readZipSource(archive: Buffer): WriteClawLongArchiveSource {
   if (bookEntry) {
     try {
       book = parseJsonObject(
-        readZipEntry(
-          archive,
-          bookEntry,
-          MAX_AUTHORITY_JSON_ENTRY_BYTES
-        ),
+        readZipEntry(archive, bookEntry, MAX_AUTHORITY_JSON_ENTRY_BYTES),
         bookEntry.name
       );
     } catch (error: unknown) {
@@ -507,11 +482,7 @@ function readZipSource(archive: Buffer): WriteClawLongArchiveSource {
   if (!book && metadataEntry) {
     try {
       const metadata = parseJsonObject(
-        readZipEntry(
-          archive,
-          metadataEntry,
-          MAX_AUTHORITY_JSON_ENTRY_BYTES
-        ),
+        readZipEntry(archive, metadataEntry, MAX_AUTHORITY_JSON_ENTRY_BYTES),
         metadataEntry.name
       );
       if (
@@ -539,9 +510,7 @@ function readZipSource(archive: Buffer): WriteClawLongArchiveSource {
     );
   }
   if (standaloneWorkspace && embeddedWorkspace) {
-    warnings.push(
-      "压缩包同时包含两份长篇工作区，已采用 long_workspace.json。"
-    );
+    warnings.push("压缩包同时包含两份长篇工作区，已采用 long_workspace.json。");
   }
   const evidenceFiles: WriteClawLongArchiveSource["evidenceFiles"] = [];
   for (const entry of entries) {
@@ -633,28 +602,21 @@ export async function readWriteClawLongSource(
 ): Promise<WriteClawLongArchiveSource> {
   let handle: Awaited<ReturnType<typeof open>>;
   try {
-    handle = await open(
-      path,
-      fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW
-    );
+    handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   } catch (error: unknown) {
     if (
       error instanceof Error &&
       "code" in error &&
       (error as NodeJS.ErrnoException).code === "ELOOP"
     ) {
-      throw new Error(
-        "选择的 旧版本长篇导入来源不能是符号链接。"
-      );
+      throw new Error("选择的 旧版本长篇导入来源不能是符号链接。");
     }
     throw error;
   }
   try {
     const info = await handle.stat();
     if (!info.isFile() || info.nlink > 1) {
-      throw new Error(
-        "选择的 旧版本长篇导入来源必须是无硬链接的普通文件。"
-      );
+      throw new Error("选择的 旧版本长篇导入来源必须是无硬链接的普通文件。");
     }
     if (info.size > MAX_ARCHIVE_BYTES) {
       throw new Error("旧版本长篇导入文件超过 256 MB 安全上限。");

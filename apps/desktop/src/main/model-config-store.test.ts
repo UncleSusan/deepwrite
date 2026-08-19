@@ -100,13 +100,17 @@ function officialCatalog(
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
   );
 });
 
 describe("ModelConfigStore official models", () => {
   it("encrypts one official token, injects immutable models first, and removes them with the token", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-official-model-store-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-official-model-store-")
+    );
     temporaryRoots.push(root);
     const freeModelCatalog = {
       initialize: async () => undefined,
@@ -143,9 +147,7 @@ describe("ModelConfigStore official models", () => {
       managedBy: "deepwrite-official"
     });
 
-    const resolved = await store.resolve(
-      "deepwrite-deepseek-v4-flash"
-    );
+    const resolved = await store.resolve("deepwrite-deepseek-v4-flash");
     expect(resolved).toMatchObject({
       modelId: "deepseek-v4-flash-202605",
       supportsDeveloperRole: false,
@@ -166,9 +168,7 @@ describe("ModelConfigStore official models", () => {
       label: "官方模型-DeepSeekFlash正式版本",
       baseUrl: "https://tokenhub.tencentmaas.com/v1"
     });
-    expect(resaved.defaultModelId).toBe(
-      "deepwrite-deepseek-v4-flash"
-    );
+    expect(resaved.defaultModelId).toBe("deepwrite-deepseek-v4-flash");
     const secrets = await readFile(
       join(root, "config", "model-secrets.json"),
       "utf8"
@@ -186,7 +186,9 @@ describe("ModelConfigStore official models", () => {
   });
 
   it("replaces the read-only official entries when the refreshed remote catalog changes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-official-refresh-store-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-official-refresh-store-")
+    );
     temporaryRoots.push(root);
     const remoteOfficialCatalog = officialCatalog();
     let refreshCount = 0;
@@ -218,8 +220,7 @@ describe("ModelConfigStore official models", () => {
         modelId: "deepseek-v4-flash-next"
       })
     ];
-    remoteOfficialCatalog.defaultModelId =
-      "deepwrite-deepseek-v4-flash-next";
+    remoteOfficialCatalog.defaultModelId = "deepwrite-deepseek-v4-flash-next";
 
     const refreshed = await store.refreshOfficialModels();
     expect(refreshCount).toBe(1);
@@ -228,13 +229,13 @@ describe("ModelConfigStore official models", () => {
       "custom-writer"
     ]);
     expect(refreshed.models[0]?.label).toBe("远程更新后的官方模型");
-    expect(refreshed.defaultModelId).toBe(
-      "deepwrite-deepseek-v4-flash-next"
-    );
+    expect(refreshed.defaultModelId).toBe("deepwrite-deepseek-v4-flash-next");
   });
 
   it("persists per-model enablement and exposes only enabled official models in model settings", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-official-enabled-store-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-official-enabled-store-")
+    );
     temporaryRoots.push(root);
     const first = officialModel();
     const second = officialModel({
@@ -265,8 +266,14 @@ describe("ModelConfigStore official models", () => {
       second.id,
       unavailable.id
     ]);
-    expect(initial.deepwriteOfficialEnabledModelIds).toEqual([first.id, second.id]);
-    expect(initial.models.map((model) => model.id)).toEqual([first.id, second.id]);
+    expect(initial.deepwriteOfficialEnabledModelIds).toEqual([
+      first.id,
+      second.id
+    ]);
+    expect(initial.models.map((model) => model.id)).toEqual([
+      first.id,
+      second.id
+    ]);
     await expect(
       store.setOfficialModelEnabled(unavailable.id, true)
     ).rejects.toThrow(/当前不可用/u);
@@ -298,7 +305,10 @@ describe("ModelConfigStore official models", () => {
     expect(afterRestart.models.map((model) => model.id)).toEqual([second.id]);
 
     const enabled = await store.setOfficialModelEnabled(first.id, true);
-    expect(enabled.models.map((model) => model.id)).toEqual([first.id, second.id]);
+    expect(enabled.models.map((model) => model.id)).toEqual([
+      first.id,
+      second.id
+    ]);
   });
 });
 
@@ -348,7 +358,10 @@ describe("ModelConfigStore managed free models", () => {
       baseUrl: "https://example.invalid/v1"
     });
     expect(resolved?.apiKey).toBe("sk-test-only");
-    const secrets = await readFile(join(root, "config", "model-secrets.json"), "utf8");
+    const secrets = await readFile(
+      join(root, "config", "model-secrets.json"),
+      "utf8"
+    );
     expect(secrets).not.toContain("sk-test-only");
 
     const listed = await store.list();
@@ -391,8 +404,36 @@ describe("ModelConfigStore managed free models", () => {
 });
 
 describe("ModelConfigStore draft API keys", () => {
+  it("persists and resolves an explicit portable tool schema profile", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-tool-schema-")
+    );
+    temporaryRoots.push(root);
+    const store = new ModelConfigStore(root);
+    const saved = await store.save({
+      models: [
+        {
+          ...customModel(),
+          toolSchemaProfile: "portable",
+          apiKey: "sk-portable-test-only"
+        }
+      ],
+      defaultModelId: "custom-writer"
+    });
+
+    expect(saved.models[0]).toMatchObject({
+      id: "custom-writer",
+      toolSchemaProfile: "portable"
+    });
+    await expect(store.resolve("custom-writer")).resolves.toMatchObject({
+      toolSchemaProfile: "portable"
+    });
+  });
+
   it("reuses a saved key when the draft key field is blank", async () => {
-    const root = await mkdtemp(join(tmpdir(), "deepwrite-model-store-draft-key-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-draft-key-")
+    );
     temporaryRoots.push(root);
     const store = new ModelConfigStore(root);
     await store.save({

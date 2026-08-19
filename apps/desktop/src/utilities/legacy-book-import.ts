@@ -62,7 +62,9 @@ function safeTitle(value: unknown): string {
 
 function normalizeGenre(book: Record<string, unknown>): ShortBookGenre {
   const categories = Array.isArray(book.categories)
-    ? book.categories.filter((value): value is string => typeof value === "string")
+    ? book.categories.filter(
+        (value): value is string => typeof value === "string"
+      )
     : [];
   const raw = asString(book.genre).trim() || categories[0]?.trim() || "";
   if (raw === "世情" || raw === "追妻" || raw === "科幻" || raw === "悬疑") {
@@ -86,7 +88,9 @@ function normalizedIdList(value: unknown): string[] {
   ];
 }
 
-function normalizeMaterialLinks(book: Record<string, unknown>): LinkedMaterialIdsByKind {
+function normalizeMaterialLinks(
+  book: Record<string, unknown>
+): LinkedMaterialIdsByKind {
   const source = isRecord(book.linked_material_ids_by_kind)
     ? book.linked_material_ids_by_kind
     : {};
@@ -98,13 +102,18 @@ function normalizeMaterialLinks(book: Record<string, unknown>): LinkedMaterialId
     other: normalizedIdList(source.other)
   };
   const legacyId = asString(book.linked_material_id).trim();
-  if (legacyId && !Object.values(result).some((ids) => ids.includes(legacyId))) {
+  if (
+    legacyId &&
+    !Object.values(result).some((ids) => ids.includes(legacyId))
+  ) {
     result.other.push(legacyId);
   }
   return result;
 }
 
-function normalizeSkillLinks(book: Record<string, unknown>): LinkedSkillIdsByKind {
+function normalizeSkillLinks(
+  book: Record<string, unknown>
+): LinkedSkillIdsByKind {
   const source = isRecord(book.linked_skill_ids_by_kind)
     ? book.linked_skill_ids_by_kind
     : {};
@@ -115,7 +124,10 @@ function normalizeSkillLinks(book: Record<string, unknown>): LinkedSkillIdsByKin
     other: normalizedIdList(source.other)
   };
   const legacyId = asString(book.linked_skill_id).trim();
-  if (legacyId && !Object.values(result).some((ids) => ids.includes(legacyId))) {
+  if (
+    legacyId &&
+    !Object.values(result).some((ids) => ids.includes(legacyId))
+  ) {
     result.other.push(legacyId);
   }
   return result;
@@ -184,11 +196,18 @@ export function normalizeLegacyBook(
   }
 
   const documents: ImportedLegacyBookDocument[] = CORE_DOCUMENTS.map(
-    ([id, title]) => ({ id, title, content: stages.get(id) ?? "" })
+    ([id, title]) => ({
+      id,
+      title,
+      content: stages.get(id) ?? ""
+    })
   );
   const coreIds = new Set(CORE_DOCUMENTS.map(([id]) => id));
   for (const [stageId, content] of stages) {
-    if (coreIds.has(stageId as (typeof CORE_DOCUMENTS)[number][0]) || !content.trim()) {
+    if (
+      coreIds.has(stageId as (typeof CORE_DOCUMENTS)[number][0]) ||
+      !content.trim()
+    ) {
       continue;
     }
     documents.push({
@@ -234,14 +253,17 @@ export function normalizeLegacyBook(
   };
 }
 
-export async function readLegacyBookArchive(path: string): Promise<ImportedLegacyBook> {
+export async function readLegacyBookArchive(
+  path: string
+): Promise<ImportedLegacyBook> {
   const archive = await openLegacyZipArchive(path, "旧版书籍压缩包");
   let book = archive.readJsonObject("book.json");
   if (!book) {
     const metadata = archive.readJsonObject("metadata.json");
     if (
       metadata &&
-      (metadata.library_type === "book" || metadata.library_type === "workspace") &&
+      (metadata.library_type === "book" ||
+        metadata.library_type === "workspace") &&
       isRecord(metadata.data)
     ) {
       book = metadata.data;

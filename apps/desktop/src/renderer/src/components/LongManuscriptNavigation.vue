@@ -2,9 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { LongChapterCardId } from "@deepwrite/contracts";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
-import {
-  orderLongChapterNavigationItems
-} from "../utils/orderLongChapterNavigationItems";
+import { orderLongChapterNavigationItems } from "../utils/orderLongChapterNavigationItems";
 import AppIcon from "./AppIcon.vue";
 
 export interface LongManuscriptNavigationItem {
@@ -26,10 +24,7 @@ const emit = defineEmits<{
   selectChapter: [chapterCardId: LongChapterCardId];
   createChapter: [];
   deleteChapter: [chapterCardId: LongChapterCardId];
-  reorderChapter: [
-    chapterCardId: LongChapterCardId,
-    direction: "up" | "down"
-  ];
+  reorderChapter: [chapterCardId: LongChapterCardId, direction: "up" | "down"];
 }>();
 
 const actionMenuId = ref<LongChapterCardId | null>(null);
@@ -202,8 +197,7 @@ onBeforeUnmount(() => {
             v-if="actionMenuId === chapter.id"
             class="long-story-plot-action-menu"
             :class="{
-              'opens-upward':
-                index >= 2 && index >= orderedItems.length - 2
+              'opens-upward': index >= 2 && index >= orderedItems.length - 2
             }"
             role="menu"
             @keydown.esc.stop="actionMenuId = null"

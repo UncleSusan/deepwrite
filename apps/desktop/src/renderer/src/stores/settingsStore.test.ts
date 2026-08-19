@@ -91,9 +91,13 @@ describe("settings store", () => {
     const stale = deferred<WorkspaceDirectorySettings>();
     const fresh = deferred<WorkspaceDirectorySettings>();
 
-    const staleRequest = store.ensureWorkspaceDirectoryLoaded(() => stale.promise);
+    const staleRequest = store.ensureWorkspaceDirectoryLoaded(
+      () => stale.promise
+    );
     store.invalidate("workspaceDirectory");
-    const freshRequest = store.ensureWorkspaceDirectoryLoaded(() => fresh.promise);
+    const freshRequest = store.ensureWorkspaceDirectoryLoaded(
+      () => fresh.promise
+    );
 
     stale.resolve({ path: "/stale" } as WorkspaceDirectorySettings);
     await expect(staleRequest).resolves.toEqual({ path: "/stale" });
@@ -128,7 +132,9 @@ describe("settings store", () => {
   it("provides independent ensureLoaded resources for every deferred settings domain", async () => {
     const store = useSettingsStore();
     const agentTeams = [] as WorkspaceAgentTeamSettings[];
-    const longAgents = structuredClone(DEFAULT_LONG_AGENT_SETTINGS) as LongAgentSettings;
+    const longAgents = structuredClone(
+      DEFAULT_LONG_AGENT_SETTINGS
+    ) as LongAgentSettings;
     const longAgentTeams = structuredClone(
       DEFAULT_LONG_AGENT_TEAM_SETTINGS
     ) as LongAgentTeamSettings;
@@ -232,9 +238,10 @@ describe("settings store", () => {
 
   it("preserves loader result types for generic callers", async () => {
     const store = useSettingsStore();
-    const loader: SettingsLoader<"workspaceDirectory"> = async () => ({
-      path: "/workspace"
-    }) as WorkspaceDirectorySettings;
+    const loader: SettingsLoader<"workspaceDirectory"> = async () =>
+      ({
+        path: "/workspace"
+      }) as WorkspaceDirectorySettings;
 
     const result = await store.ensureLoaded("workspaceDirectory", loader);
     expect(result.path).toBe("/workspace");

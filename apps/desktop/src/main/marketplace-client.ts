@@ -121,7 +121,10 @@ function requiredNumber(record: Record<string, unknown>, key: string): number {
   return typeof value === "number" ? value : Number.NaN;
 }
 
-function requiredBoolean(record: Record<string, unknown>, key: string): boolean {
+function requiredBoolean(
+  record: Record<string, unknown>,
+  key: string
+): boolean {
   return record[key] === true;
 }
 
@@ -141,7 +144,8 @@ function normalizeUser(raw: unknown): MarketplaceUser {
       ? { email: optionalString(value, "email") }
       : {}),
     displayName:
-      requiredString(value, "display_name") || requiredString(value, "username"),
+      requiredString(value, "display_name") ||
+      requiredString(value, "username"),
     avatarUrl: requiredString(value, "avatar_url"),
     bio: requiredString(value, "bio"),
     createdAt: requiredString(value, "created_at")
@@ -408,11 +412,9 @@ export class MarketplaceClient {
   private readonly now: () => number;
   private readonly sessionPath: string;
   private readonly loadCatalogSnapshot:
-    | (() => Promise<CatalogSnapshot>)
-    | undefined;
+    (() => Promise<CatalogSnapshot>) | undefined;
   private readonly installCatalogPackage:
-    | MarketplaceClientOptions["installPackage"]
-    | undefined;
+    MarketplaceClientOptions["installPackage"] | undefined;
   private readonly loadPromise: Promise<void>;
   private token: string | undefined;
   private expiresAt: string | undefined;
@@ -515,7 +517,9 @@ export class MarketplaceClient {
     const data = await this.request(
       "GET",
       `/market/v1/skill-content${this.filterQuery(parsed)}`,
-      { authenticated: "optional" }
+      {
+        authenticated: "optional"
+      }
     );
     return normalizeContentPage(data);
   }
@@ -542,7 +546,9 @@ export class MarketplaceClient {
     return normalizeContentPage(data);
   }
 
-  async myDetail(ref: MarketplaceContentRef): Promise<MarketplaceContentDetail> {
+  async myDetail(
+    ref: MarketplaceContentRef
+  ): Promise<MarketplaceContentDetail> {
     const parsed = MarketplaceContentRefSchema.parse(ref);
     const data = await this.request(
       "GET",
@@ -552,7 +558,9 @@ export class MarketplaceClient {
     return normalizeDetail(parsed.contentType, data);
   }
 
-  async publish(input: MarketplacePublishInput): Promise<MarketplaceContentDetail> {
+  async publish(
+    input: MarketplacePublishInput
+  ): Promise<MarketplaceContentDetail> {
     const parsed = MarketplacePublishInputSchema.parse(input);
     const data = await this.request("POST", publishPath(parsed), {
       authenticated: true,
@@ -561,12 +569,17 @@ export class MarketplaceClient {
     return normalizeDetail(parsed.contentType, data);
   }
 
-  async update(input: MarketplaceUpdateInput): Promise<MarketplaceContentDetail> {
+  async update(
+    input: MarketplaceUpdateInput
+  ): Promise<MarketplaceContentDetail> {
     const parsed = MarketplaceUpdateInputSchema.parse(input);
     const data = await this.request(
       "PUT",
       publishPath(parsed.content, parsed.id),
-      { authenticated: true, body: requestBody(parsed.content) }
+      {
+        authenticated: true,
+        body: requestBody(parsed.content)
+      }
     );
     return normalizeDetail(parsed.content.contentType, data);
   }
@@ -608,7 +621,9 @@ export class MarketplaceClient {
     });
   }
 
-  async previewInstall(ref: MarketplaceContentRef): Promise<MarketplaceInstallPreview> {
+  async previewInstall(
+    ref: MarketplaceContentRef
+  ): Promise<MarketplaceInstallPreview> {
     const parsed = MarketplaceContentRefSchema.parse(ref);
     const detail = await this.detail(parsed);
     const installPackage = await this.buildInstallPackage(detail);
@@ -633,7 +648,9 @@ export class MarketplaceClient {
     });
   }
 
-  async install(input: MarketplaceInstallInput): Promise<MarketplaceInstallResult> {
+  async install(
+    input: MarketplaceInstallInput
+  ): Promise<MarketplaceInstallResult> {
     const parsed = MarketplaceInstallInputSchema.parse(input);
     if (!this.installCatalogPackage) {
       throw new MarketplaceClientError(
@@ -706,7 +723,8 @@ export class MarketplaceClient {
           id: item.id
         });
         if (child.contentType === "skill") orderedSkills.push(child);
-        if (child.contentType === "library") orderedSkills.push(...child.skills);
+        if (child.contentType === "library")
+          orderedSkills.push(...child.skills);
       }
     }
     const kinds: MarketplaceSkillKind[] = ["general", "plot", "style", "other"];
@@ -754,7 +772,9 @@ export class MarketplaceClient {
     ref: MarketplaceContentRef,
     version: number
   ): boolean {
-    const matches = (source: CatalogSnapshot["skills"][number]["marketplaceSource"]) =>
+    const matches = (
+      source: CatalogSnapshot["skills"][number]["marketplaceSource"]
+    ) =>
       source?.contentType === ref.contentType &&
       source.contentId === ref.id &&
       source.version === version;
@@ -873,12 +893,15 @@ export class MarketplaceClient {
       const envelope = payload ? asRecord(payload, "错误信息") : {};
       const rawError = envelope.error;
       const error =
-        typeof rawError === "object" && rawError !== null && !Array.isArray(rawError)
+        typeof rawError === "object" &&
+        rawError !== null &&
+        !Array.isArray(rawError)
           ? (rawError as Record<string, unknown>)
           : {};
       throw new MarketplaceClientError(
         requiredString(error, "code") || `marketplace.http_${response.status}`,
-        requiredString(error, "message") || `技能广场请求失败（${response.status}）。`,
+        requiredString(error, "message") ||
+          `技能广场请求失败（${response.status}）。`,
         response.status
       );
     }
@@ -894,11 +917,16 @@ export class MarketplaceClient {
     return envelope.data;
   }
 
-  private async acceptAuthentication(data: Record<string, unknown>): Promise<void> {
+  private async acceptAuthentication(
+    data: Record<string, unknown>
+  ): Promise<void> {
     const token = requiredString(data, "token");
     const expiresAt = requiredString(data, "expires_at");
     const user = normalizeUser(data.user);
-    if (!token.startsWith("dw_user_") || !Number.isFinite(Date.parse(expiresAt))) {
+    if (
+      !token.startsWith("dw_user_") ||
+      !Number.isFinite(Date.parse(expiresAt))
+    ) {
       throw new MarketplaceClientError(
         "marketplace.invalid_response",
         "技能广场登录响应无效。"
@@ -960,7 +988,11 @@ export class MarketplaceClient {
 
   private async persistSession(): Promise<void> {
     this.persistent = false;
-    if (!this.token || !this.expiresAt || !this.storage.isEncryptionAvailable()) {
+    if (
+      !this.token ||
+      !this.expiresAt ||
+      !this.storage.isEncryptionAvailable()
+    ) {
       return;
     }
     const stored: StoredMarketplaceSession = {

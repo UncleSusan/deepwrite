@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { AgentRuntimeRefSchema } from "./runtime";
 import { AgentEventIdentitySchema } from "./agent-events";
 
 export const AgentEvaluationToolConfigurationSchema = z.object({

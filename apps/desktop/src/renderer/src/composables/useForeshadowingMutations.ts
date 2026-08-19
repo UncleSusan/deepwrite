@@ -80,8 +80,14 @@ export function useForeshadowingMutations(
     surface: MutationSurface;
   } | null>(null);
   let mutationClock = 0;
-  const { threadDraft, beatDraft, formKind, formMode, threads, firstFormInput } =
-    state;
+  const {
+    threadDraft,
+    beatDraft,
+    formKind,
+    formMode,
+    threads,
+    firstFormInput
+  } = state;
 
   const mutationLocked = computed(
     () => props.disabled || pendingMutation.value !== null
@@ -104,7 +110,9 @@ export function useForeshadowingMutations(
   }
 
   function emitMutation(
-    build: (builder: LongStructureMutationBuilder) => LongWorkspaceOperationBatch,
+    build: (
+      builder: LongStructureMutationBuilder
+    ) => LongWorkspaceOperationBatch,
     surface: MutationSurface
   ): boolean {
     if (mutationLocked.value) return false;
@@ -143,7 +151,9 @@ export function useForeshadowingMutations(
         expectedReaderEffect: threadDraft.expectedReaderEffect,
         plannedSpan: threadDraft.plannedSpan,
         status:
-          formMode.value === "create" ? ("planned" as const) : threadDraft.status
+          formMode.value === "create"
+            ? ("planned" as const)
+            : threadDraft.status
       };
       if (formMode.value === "create") {
         return builder.createForeshadowing(input);
@@ -180,8 +190,8 @@ export function useForeshadowingMutations(
         : undefined;
     const hasLegacyAnchor = Boolean(
       originalBeat?.eventId ||
-        originalBeat?.placementId ||
-        originalBeat?.chapterCardId
+      originalBeat?.placementId ||
+      originalBeat?.chapterCardId
     );
     if (
       !beatDraft.volumeId &&

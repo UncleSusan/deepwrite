@@ -1,9 +1,8 @@
-import { Type, type TSchema } from "typebox";
+import { StringEnum, Type, type TSchema } from "@earendil-works/pi-ai";
 import {
   LONG_WORKSPACE_ROOTS,
   type LongWorkspaceRoot
 } from "@deepwrite/contracts";
-import { literalUnion } from "./shared";
 
 export const ALL_ROOTS = new Set<LongWorkspaceRoot>(LONG_WORKSPACE_ROOTS);
 export const STABLE_ID_SUFFIX_PATTERN =
@@ -21,14 +20,55 @@ export function strictObject<T extends Record<string, TSchema>>(
   });
 }
 
-export function providerObjectUnion<T extends TSchema[]>(schemas: [...T]) {
-  // OpenAI-compatible providers require every function parameter schema to
-  // declare an object at the root, even when the valid shapes are expressed
-  // as a discriminated union.
+export function providerObjectUnion<T extends TSchema[]>(
+  schemas: [...T]
+): T[number] {
+  const propertyMaps = schemas.map((schema) => {
+    const properties = (schema as unknown as Record<string, unknown>)[
+      "properties"
+    ];
+    if (!properties || typeof properties !== "object") {
+      throw new Error("Provider object unions require object schemas.");
+    }
+    return properties as Record<string, TSchema>;
+  });
+  const propertyNames = new Set(propertyMaps.flatMap(Object.keys));
+  const properties: Record<string, TSchema> = {};
+
+  for (const propertyName of propertyNames) {
+    const variants = propertyMaps
+      .map((propertyMap) => propertyMap[propertyName])
+      .filter((variant): variant is TSchema => variant !== undefined);
+    const literalValues = variants.map(
+      (variant) => (variant as unknown as Record<string, unknown>)["const"]
+    );
+    if (
+      variants.length === schemas.length &&
+      literalValues.every((value): value is string => typeof value === "string")
+    ) {
+      properties[propertyName] = StringEnum(literalValues);
+      continue;
+    }
+    properties[propertyName] = variants[0]!;
+  }
+
+  const required = [...propertyNames].filter((propertyName) =>
+    schemas.every((schema) => {
+      const requiredProperties = (schema as unknown as Record<string, unknown>)[
+        "required"
+      ];
+      return (
+        Array.isArray(requiredProperties) &&
+        requiredProperties.includes(propertyName)
+      );
+    })
+  );
   return {
-    ...Type.Union(schemas),
-    type: "object" as const
-  };
+    type: "object",
+    properties,
+    required,
+    additionalProperties: false
+  } as T[number];
 }
 
 export function stableIdParameter(prefix: string) {
@@ -61,13 +101,17 @@ export const clientReferenceParameter = Type.Optional(
   })
 );
 export const titleParameter = Type.String({ minLength: 1, maxLength: 256 });
+export const explicitTrueParameter = Type.Unsafe<true>({
+  type: "boolean",
+  enum: [true]
+});
 export const worldbuildingCategoryIdParameter = stableIdParameter("world");
 export const worldbuildingItemIdParameter = stableIdParameter("worlditem");
-export const worldbuildingReadModeParameter = literalUnion([
+export const worldbuildingReadModeParameter = StringEnum([
   "preview",
   "full"
 ] as const);
-export const plotItemKindParameter = literalUnion([
+export const plotItemKindParameter = StringEnum([
   "book_line",
   "volume",
   "arc",
@@ -75,19 +119,20 @@ export const plotItemKindParameter = literalUnion([
   "chapter",
   "event",
   "connection",
-  "placement"
-] as const, {
-  description:
-    "剧情结构类型。章卡必须使用 chapter；chapter_card 不是 kind，chapter_card_id 只是章卡业务 ID 字段。"
-});
+  "placement",
+  "foreshadowing"
+] as const);
 export const textParameter = Type.String({ maxLength: 200_000 });
 export const shortTextParameter = Type.String({ maxLength: 4_000 });
 export const aliasesParameter = Type.Array(
   Type.String({ minLength: 1, maxLength: 120 }),
-  { maxItems: 64, uniqueItems: true }
+  {
+    maxItems: 64,
+    uniqueItems: true
+  }
 );
 export const characterTypeIdParameter = Type.Union([
-  literalUnion([
+  StringEnum([
     "protagonist",
     "major_supporting",
     "minor_supporting",
@@ -95,7 +140,7 @@ export const characterTypeIdParameter = Type.Union([
   ] as const),
   stableIdParameter("chartype")
 ]);
-export const characterDocumentParameter = literalUnion([
+export const characterDocumentParameter = StringEnum([
   "core_profile",
   "relationships",
   "current_state",
@@ -103,7 +148,7 @@ export const characterDocumentParameter = literalUnion([
 ] as const);
 export const continuityFileTargetParameter = Type.Union([
   strictObject({
-    document: literalUnion([
+    document: StringEnum([
       "foreshadowing_changes",
       "world_reveals",
       "chapter_end_state",
@@ -111,7 +156,7 @@ export const continuityFileTargetParameter = Type.Union([
     ] as const)
   }),
   strictObject({
-    document: literalUnion([
+    document: StringEnum([
       "character_current_state",
       "character_history"
     ] as const),
@@ -119,19 +164,19 @@ export const continuityFileTargetParameter = Type.Union([
   })
 ]);
 export const continuityCreateTargetParameter = Type.Union([
-  strictObject({ document: Type.Literal("world_reveals") }),
+  strictObject({ document: StringEnum(["world_reveals"] as const) }),
   strictObject({
-    document: Type.Literal("character"),
+    document: StringEnum(["character"] as const),
     character_id: stableIdParameter("character")
   })
 ]);
-export const storyTimeModeParameter = literalUnion([
+export const storyTimeModeParameter = StringEnum([
   "exact",
   "relative",
   "sequence",
   "unknown"
 ] as const);
-export const connectionTypeParameter = literalUnion([
+export const connectionTypeParameter = StringEnum([
   "before",
   "same_time",
   "overlaps",
@@ -139,7 +184,7 @@ export const connectionTypeParameter = literalUnion([
   "enables",
   "conceals"
 ] as const);
-export const narrativeModeParameter = literalUnion([
+export const narrativeModeParameter = StringEnum([
   "scene",
   "flashback",
   "retelling",
@@ -149,13 +194,13 @@ export const narrativeModeParameter = literalUnion([
   "dream",
   "prophecy"
 ] as const);
-export const disclosureParameter = literalUnion([
+export const disclosureParameter = StringEnum([
   "hint",
   "partial",
   "full",
   "false"
 ] as const);
-export const beatTypeParameter = literalUnion([
+export const beatTypeParameter = StringEnum([
   "source",
   "plant",
   "reinforce",
@@ -165,12 +210,8 @@ export const beatTypeParameter = literalUnion([
   "payoff",
   "aftermath"
 ] as const);
-export const foreshadowingSpanParameter = Type.Union(
-  [
-    Type.Literal("local"),
-    Type.Literal("within_volume"),
-    Type.Literal("cross_volume")
-  ],
+export const foreshadowingSpanParameter = StringEnum(
+  ["local", "within_volume", "cross_volume"] as const,
   {
     description:
       "伏笔计划跨度：local 为局部剧情点，within_volume 为卷内，cross_volume 为跨卷。"
@@ -184,10 +225,9 @@ export function nullableEntityReferenceParameter(
   prefix: string,
   description: string
 ) {
-  return Type.Union(
-    [entityReferenceParameter(prefix), Type.Null()],
-    { description }
-  );
+  return Type.Union([entityReferenceParameter(prefix), Type.Null()], {
+    description
+  });
 }
 
 export function patchParameter<T extends Record<string, TSchema>>(
@@ -198,39 +238,39 @@ export function patchParameter<T extends Record<string, TSchema>>(
 
 export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   strictObject({
-    type: Type.Literal("worldbuilding.create"),
+    type: StringEnum(["worldbuilding.create"] as const),
     client_ref: clientReferenceParameter,
     title: titleParameter,
-    format: Type.Optional(literalUnion(["list", "text"] as const))
+    format: Type.Optional(StringEnum(["list", "text"] as const))
   }),
   strictObject({
-    type: Type.Literal("worldbuilding.update"),
+    type: StringEnum(["worldbuilding.update"] as const),
     id: entityReferenceParameter("world"),
     patch: patchParameter({
       title: Type.Optional(titleParameter),
-      format: Type.Optional(literalUnion(["list", "text"] as const))
+      format: Type.Optional(StringEnum(["list", "text"] as const))
     })
   }),
   strictObject({
-    type: Type.Literal("worldbuilding.delete"),
+    type: StringEnum(["worldbuilding.delete"] as const),
     id: entityReferenceParameter("world"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("worldbuilding.reorder"),
+    type: StringEnum(["worldbuilding.reorder"] as const),
     orderedIds: Type.Array(entityReferenceParameter("world"), {
       maxItems: 400_000,
       uniqueItems: true
     })
   }),
   strictObject({
-    type: Type.Literal("worldbuildingItem.create"),
+    type: StringEnum(["worldbuildingItem.create"] as const),
     client_ref: clientReferenceParameter,
     categoryId: entityReferenceParameter("world"),
     title: titleParameter
   }),
   strictObject({
-    type: Type.Literal("worldbuildingItem.update"),
+    type: StringEnum(["worldbuildingItem.update"] as const),
     categoryId: entityReferenceParameter("world"),
     id: entityReferenceParameter("worlditem"),
     patch: patchParameter({
@@ -238,13 +278,13 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("worldbuildingItem.delete"),
+    type: StringEnum(["worldbuildingItem.delete"] as const),
     categoryId: entityReferenceParameter("world"),
     id: entityReferenceParameter("worlditem"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("worldbuildingItem.reorder"),
+    type: StringEnum(["worldbuildingItem.reorder"] as const),
     categoryId: entityReferenceParameter("world"),
     orderedIds: Type.Array(entityReferenceParameter("worlditem"), {
       maxItems: 10_000,
@@ -253,14 +293,14 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("character.create"),
+    type: StringEnum(["character.create"] as const),
     client_ref: clientReferenceParameter,
     name: titleParameter,
     type_id: characterTypeIdParameter,
     aliases: Type.Optional(aliasesParameter)
   }),
   strictObject({
-    type: Type.Literal("character.update"),
+    type: StringEnum(["character.update"] as const),
     id: entityReferenceParameter("character"),
     patch: patchParameter({
       name: Type.Optional(titleParameter),
@@ -268,20 +308,18 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("character.delete"),
+    type: StringEnum(["character.delete"] as const),
     id: entityReferenceParameter("character"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("character.move"),
+    type: StringEnum(["character.move"] as const),
     id: entityReferenceParameter("character"),
     to_type_id: characterTypeIdParameter,
-    beforeCharacterId: Type.Optional(
-      entityReferenceParameter("character")
-    )
+    beforeCharacterId: Type.Optional(entityReferenceParameter("character"))
   }),
   strictObject({
-    type: Type.Literal("character.reorder"),
+    type: StringEnum(["character.reorder"] as const),
     type_id: characterTypeIdParameter,
     orderedIds: Type.Array(entityReferenceParameter("character"), {
       maxItems: 400_000,
@@ -290,13 +328,13 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("volume.create"),
+    type: StringEnum(["volume.create"] as const),
     client_ref: clientReferenceParameter,
     title: titleParameter,
     summary: Type.Optional(textParameter)
   }),
   strictObject({
-    type: Type.Literal("volume.update"),
+    type: StringEnum(["volume.update"] as const),
     id: entityReferenceParameter("volume"),
     patch: patchParameter({
       title: Type.Optional(titleParameter),
@@ -304,12 +342,12 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("volume.delete"),
+    type: StringEnum(["volume.delete"] as const),
     id: entityReferenceParameter("volume"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("volume.reorder"),
+    type: StringEnum(["volume.reorder"] as const),
     orderedIds: Type.Array(entityReferenceParameter("volume"), {
       maxItems: 400_000,
       uniqueItems: true
@@ -317,7 +355,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("arc.create"),
+    type: StringEnum(["arc.create"] as const),
     client_ref: clientReferenceParameter,
     volumeId: entityReferenceParameter("volume"),
     title: titleParameter,
@@ -325,7 +363,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     outline: Type.Optional(textParameter)
   }),
   strictObject({
-    type: Type.Literal("arc.update"),
+    type: StringEnum(["arc.update"] as const),
     id: entityReferenceParameter("arc"),
     patch: patchParameter({
       title: Type.Optional(titleParameter),
@@ -333,18 +371,18 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("arc.delete"),
+    type: StringEnum(["arc.delete"] as const),
     id: entityReferenceParameter("arc"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("arc.move"),
+    type: StringEnum(["arc.move"] as const),
     id: entityReferenceParameter("arc"),
     toVolumeId: entityReferenceParameter("volume"),
     beforeArcId: Type.Optional(entityReferenceParameter("arc"))
   }),
   strictObject({
-    type: Type.Literal("arc.reorder"),
+    type: StringEnum(["arc.reorder"] as const),
     volumeId: entityReferenceParameter("volume"),
     orderedIds: Type.Array(entityReferenceParameter("arc"), {
       maxItems: 400_000,
@@ -353,26 +391,26 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("chapter.create"),
+    type: StringEnum(["chapter.create"] as const),
     client_ref: clientReferenceParameter,
     volumeId: entityReferenceParameter("volume"),
     primaryArcId: Type.Union([entityReferenceParameter("arc"), Type.Null()]),
     title: titleParameter
   }),
   strictObject({
-    type: Type.Literal("chapter.update"),
+    type: StringEnum(["chapter.update"] as const),
     id: entityReferenceParameter("chapter"),
     patch: patchParameter({
       title: Type.Optional(titleParameter)
     })
   }),
   strictObject({
-    type: Type.Literal("chapter.delete"),
+    type: StringEnum(["chapter.delete"] as const),
     id: entityReferenceParameter("chapter"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("chapter.move"),
+    type: StringEnum(["chapter.move"] as const),
     id: entityReferenceParameter("chapter"),
     toVolumeId: entityReferenceParameter(
       "volume",
@@ -385,12 +423,10 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
       ),
       Type.Null()
     ]),
-    beforeChapterCardId: Type.Optional(
-      entityReferenceParameter("chapter")
-    )
+    beforeChapterCardId: Type.Optional(entityReferenceParameter("chapter"))
   }),
   strictObject({
-    type: Type.Literal("chapter.reorder"),
+    type: StringEnum(["chapter.reorder"] as const),
     volumeId: entityReferenceParameter("volume"),
     orderedIds: Type.Array(entityReferenceParameter("chapter"), {
       maxItems: 400_000,
@@ -399,7 +435,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("event.create"),
+    type: StringEnum(["event.create"] as const),
     client_ref: clientReferenceParameter,
     title: titleParameter,
     summary: Type.Optional(textParameter),
@@ -421,7 +457,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     )
   }),
   strictObject({
-    type: Type.Literal("event.update"),
+    type: StringEnum(["event.update"] as const),
     id: entityReferenceParameter("event"),
     patch: patchParameter({
       title: Type.Optional(titleParameter),
@@ -445,12 +481,12 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("event.delete"),
+    type: StringEnum(["event.delete"] as const),
     id: entityReferenceParameter("event"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("event.reorder"),
+    type: StringEnum(["event.reorder"] as const),
     orderedIds: Type.Array(entityReferenceParameter("event"), {
       maxItems: 400_000,
       uniqueItems: true
@@ -458,25 +494,25 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("storyPlot.create"),
+    type: StringEnum(["storyPlot.create"] as const),
     client_ref: clientReferenceParameter,
     arcId: entityReferenceParameter("arc"),
     title: titleParameter
   }),
   strictObject({
-    type: Type.Literal("storyPlot.update"),
+    type: StringEnum(["storyPlot.update"] as const),
     id: entityReferenceParameter("storyplot"),
     patch: patchParameter({
       title: Type.Optional(titleParameter)
     })
   }),
   strictObject({
-    type: Type.Literal("storyPlot.delete"),
+    type: StringEnum(["storyPlot.delete"] as const),
     id: entityReferenceParameter("storyplot"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("storyPlot.reorder"),
+    type: StringEnum(["storyPlot.reorder"] as const),
     arcId: entityReferenceParameter("arc"),
     orderedIds: Type.Array(entityReferenceParameter("storyplot"), {
       maxItems: 100_000,
@@ -485,7 +521,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("connection.create"),
+    type: StringEnum(["connection.create"] as const),
     client_ref: clientReferenceParameter,
     sourceEventId: entityReferenceParameter("event"),
     targetEventId: entityReferenceParameter("event"),
@@ -493,7 +529,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     note: Type.Optional(shortTextParameter)
   }),
   strictObject({
-    type: Type.Literal("connection.update"),
+    type: StringEnum(["connection.update"] as const),
     id: entityReferenceParameter("connection"),
     patch: patchParameter({
       sourceEventId: Type.Optional(entityReferenceParameter("event")),
@@ -503,13 +539,13 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("connection.delete"),
+    type: StringEnum(["connection.delete"] as const),
     id: entityReferenceParameter("connection"),
     cascade: Type.Boolean()
   }),
 
   strictObject({
-    type: Type.Literal("placement.create"),
+    type: StringEnum(["placement.create"] as const),
     client_ref: clientReferenceParameter,
     eventId: entityReferenceParameter("event"),
     chapterCardId: entityReferenceParameter("chapter"),
@@ -518,7 +554,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     writingPrompt: Type.Optional(shortTextParameter)
   }),
   strictObject({
-    type: Type.Literal("placement.update"),
+    type: StringEnum(["placement.update"] as const),
     id: entityReferenceParameter("placement"),
     patch: patchParameter({
       eventId: Type.Optional(entityReferenceParameter("event")),
@@ -528,20 +564,18 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("placement.delete"),
+    type: StringEnum(["placement.delete"] as const),
     id: entityReferenceParameter("placement"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("placement.move"),
+    type: StringEnum(["placement.move"] as const),
     id: entityReferenceParameter("placement"),
     toChapterCardId: entityReferenceParameter("chapter"),
-    beforePlacementId: Type.Optional(
-      entityReferenceParameter("placement")
-    )
+    beforePlacementId: Type.Optional(entityReferenceParameter("placement"))
   }),
   strictObject({
-    type: Type.Literal("placement.reorder"),
+    type: StringEnum(["placement.reorder"] as const),
     chapterCardId: entityReferenceParameter("chapter"),
     orderedIds: Type.Array(entityReferenceParameter("placement"), {
       maxItems: 400_000,
@@ -550,7 +584,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("foreshadowing.create"),
+    type: StringEnum(["foreshadowing.create"] as const),
     client_ref: clientReferenceParameter,
     title: titleParameter,
     coreQuestion: Type.Optional(textParameter),
@@ -560,10 +594,10 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
       Type.Union([entityReferenceParameter("event"), Type.Null()])
     ),
     expectedReaderEffect: Type.Optional(textParameter),
-    status: Type.Optional(Type.Literal("planned"))
+    status: Type.Optional(StringEnum(["planned"] as const))
   }),
   strictObject({
-    type: Type.Literal("foreshadowing.update"),
+    type: StringEnum(["foreshadowing.update"] as const),
     id: entityReferenceParameter("foreshadow"),
     patch: patchParameter({
       title: Type.Optional(titleParameter),
@@ -574,16 +608,16 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
         Type.Union([entityReferenceParameter("event"), Type.Null()])
       ),
       expectedReaderEffect: Type.Optional(textParameter),
-      status: Type.Optional(literalUnion(["planned", "abandoned"] as const))
+      status: Type.Optional(StringEnum(["planned", "abandoned"] as const))
     })
   }),
   strictObject({
-    type: Type.Literal("foreshadowing.delete"),
+    type: StringEnum(["foreshadowing.delete"] as const),
     id: entityReferenceParameter("foreshadow"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("foreshadowing.reorder"),
+    type: StringEnum(["foreshadowing.reorder"] as const),
     orderedIds: Type.Array(entityReferenceParameter("foreshadow"), {
       maxItems: 400_000,
       uniqueItems: true
@@ -591,7 +625,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
   }),
 
   strictObject({
-    type: Type.Literal("foreshadowingBeat.create"),
+    type: StringEnum(["foreshadowingBeat.create"] as const),
     client_ref: clientReferenceParameter,
     threadId: entityReferenceParameter("foreshadow"),
     beatType: beatTypeParameter,
@@ -620,7 +654,7 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     note: Type.Optional(shortTextParameter)
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.update"),
+    type: StringEnum(["foreshadowingBeat.update"] as const),
     id: entityReferenceParameter("beat"),
     patch: patchParameter({
       beatType: Type.Optional(beatTypeParameter),
@@ -650,18 +684,18 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.delete"),
+    type: StringEnum(["foreshadowingBeat.delete"] as const),
     id: entityReferenceParameter("beat"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.move"),
+    type: StringEnum(["foreshadowingBeat.move"] as const),
     id: entityReferenceParameter("beat"),
     toThreadId: entityReferenceParameter("foreshadow"),
     beforeBeatId: Type.Optional(entityReferenceParameter("beat"))
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.reorder"),
+    type: StringEnum(["foreshadowingBeat.reorder"] as const),
     threadId: entityReferenceParameter("foreshadow"),
     orderedIds: Type.Array(entityReferenceParameter("beat"), {
       maxItems: 400_000,
@@ -672,13 +706,13 @@ export const LONG_MUTATION_OPERATION_PARAMETER = Type.Union([
 
 export const LONG_DOCUMENT_UPDATE_PARAMETER = Type.Union([
   strictObject({
-    target: strictObject({ kind: Type.Literal("book_line") }),
+    target: strictObject({ kind: StringEnum(["book_line"] as const) }),
     content: Type.String({ maxLength: 10_000_000 }),
     reason: Type.String({ minLength: 1, maxLength: 1_000 })
   }),
   strictObject({
     target: strictObject({
-      kind: Type.Literal("worldbuilding"),
+      kind: StringEnum(["worldbuilding"] as const),
       categoryId: entityReferenceParameter("world"),
       itemId: Type.Optional(entityReferenceParameter("worlditem"))
     }),
@@ -687,9 +721,9 @@ export const LONG_DOCUMENT_UPDATE_PARAMETER = Type.Union([
   }),
   strictObject({
     target: strictObject({
-      kind: Type.Literal("character"),
+      kind: StringEnum(["character"] as const),
       characterId: entityReferenceParameter("character"),
-      role: literalUnion([
+      role: StringEnum([
         "core_profile",
         "relationships",
         "current_state",
@@ -714,33 +748,33 @@ export const LONG_MUTATION_PARAMETERS = strictObject({
 
 export const LONG_WORLDBUILDING_STRUCTURE_OPERATION_PARAMETER = Type.Union([
   strictObject({
-    type: Type.Literal("worldbuilding.create"),
+    type: StringEnum(["worldbuilding.create"] as const),
     client_ref: clientReferenceParameter,
     title: titleParameter,
-    format: Type.Optional(literalUnion(["list", "text"] as const))
+    format: Type.Optional(StringEnum(["list", "text"] as const))
   }),
   strictObject({
-    type: Type.Literal("worldbuilding.update"),
+    type: StringEnum(["worldbuilding.update"] as const),
     id: entityReferenceParameter("world"),
     patch: patchParameter({
       title: Type.Optional(titleParameter),
-      format: Type.Optional(literalUnion(["list", "text"] as const))
+      format: Type.Optional(StringEnum(["list", "text"] as const))
     })
   }),
   strictObject({
-    type: Type.Literal("worldbuilding.delete"),
+    type: StringEnum(["worldbuilding.delete"] as const),
     id: entityReferenceParameter("world"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("worldbuilding.reorder"),
+    type: StringEnum(["worldbuilding.reorder"] as const),
     orderedIds: Type.Array(entityReferenceParameter("world"), {
       maxItems: 400_000,
       uniqueItems: true
     })
   }),
   strictObject({
-    type: Type.Literal("worldbuildingItem.update"),
+    type: StringEnum(["worldbuildingItem.update"] as const),
     categoryId: entityReferenceParameter("world"),
     id: entityReferenceParameter("worlditem"),
     patch: patchParameter({
@@ -748,13 +782,13 @@ export const LONG_WORLDBUILDING_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("worldbuildingItem.delete"),
+    type: StringEnum(["worldbuildingItem.delete"] as const),
     categoryId: entityReferenceParameter("world"),
     id: entityReferenceParameter("worlditem"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("worldbuildingItem.reorder"),
+    type: StringEnum(["worldbuildingItem.reorder"] as const),
     categoryId: entityReferenceParameter("world"),
     orderedIds: Type.Array(entityReferenceParameter("worlditem"), {
       maxItems: 10_000,
@@ -764,19 +798,16 @@ export const LONG_WORLDBUILDING_STRUCTURE_OPERATION_PARAMETER = Type.Union([
 ]);
 
 export const LONG_WORLDBUILDING_MUTATION_PARAMETERS = strictObject({
-  operations: Type.Array(
-    LONG_WORLDBUILDING_STRUCTURE_OPERATION_PARAMETER,
-    {
-      minItems: 1,
-      maxItems: 10_000
-    }
-  ),
+  operations: Type.Array(LONG_WORLDBUILDING_STRUCTURE_OPERATION_PARAMETER, {
+    minItems: 1,
+    maxItems: 10_000
+  }),
   summary: Type.String({ minLength: 1, maxLength: 1_000 })
 });
 
 export const LONG_CHARACTER_STRUCTURE_OPERATION_PARAMETER = Type.Union([
   strictObject({
-    type: Type.Literal("character.update"),
+    type: StringEnum(["character.update"] as const),
     id: entityReferenceParameter("character"),
     patch: patchParameter({
       name: Type.Optional(titleParameter),
@@ -784,20 +815,18 @@ export const LONG_CHARACTER_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("character.delete"),
+    type: StringEnum(["character.delete"] as const),
     id: entityReferenceParameter("character"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("character.move"),
+    type: StringEnum(["character.move"] as const),
     id: entityReferenceParameter("character"),
     to_type_id: characterTypeIdParameter,
-    beforeCharacterId: Type.Optional(
-      entityReferenceParameter("character")
-    )
+    beforeCharacterId: Type.Optional(entityReferenceParameter("character"))
   }),
   strictObject({
-    type: Type.Literal("character.reorder"),
+    type: StringEnum(["character.reorder"] as const),
     type_id: characterTypeIdParameter,
     orderedIds: Type.Array(entityReferenceParameter("character"), {
       maxItems: 100_000,
@@ -827,7 +856,7 @@ export const LONG_SETTING_MUTATION_PARAMETERS = strictObject({
   summary: Type.String({ minLength: 1, maxLength: 1_000 })
 });
 
-export const settingCharacterDocumentParameter = literalUnion([
+export const settingCharacterDocumentParameter = StringEnum([
   "overview",
   "core_profile",
   "relationships",
@@ -837,35 +866,36 @@ export const settingCharacterDocumentParameter = literalUnion([
 
 export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
   strictObject({
-    type: Type.Literal("volume.update"),
+    type: StringEnum(["volume.update"] as const),
     id: entityReferenceParameter("volume"),
     patch: patchParameter({ title: Type.Optional(titleParameter) })
   }),
   strictObject({
-    type: Type.Literal("volume.delete"),
+    type: StringEnum(["volume.delete"] as const),
     id: entityReferenceParameter("volume"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("volume.reorder"),
+    type: StringEnum(["volume.reorder"] as const),
     orderedIds: Type.Array(entityReferenceParameter("volume"), {
       maxItems: 10_000,
       uniqueItems: true,
-      description: "必须按最终顺序完整列出当前全部分卷 ID，不能遗漏或附加其它 ID。"
+      description:
+        "必须按最终顺序完整列出当前全部分卷 ID，不能遗漏或附加其它 ID。"
     })
   }),
   strictObject({
-    type: Type.Literal("arc.update"),
+    type: StringEnum(["arc.update"] as const),
     id: entityReferenceParameter("arc"),
     patch: patchParameter({ title: Type.Optional(titleParameter) })
   }),
   strictObject({
-    type: Type.Literal("arc.delete"),
+    type: StringEnum(["arc.delete"] as const),
     id: entityReferenceParameter("arc"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("arc.move"),
+    type: StringEnum(["arc.move"] as const),
     id: entityReferenceParameter("arc"),
     toVolumeId: entityReferenceParameter("volume"),
     beforeArcId: Type.Optional(
@@ -876,7 +906,7 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     )
   }),
   strictObject({
-    type: Type.Literal("arc.reorder"),
+    type: StringEnum(["arc.reorder"] as const),
     volumeId: entityReferenceParameter("volume"),
     orderedIds: Type.Array(entityReferenceParameter("arc"), {
       maxItems: 100_000,
@@ -885,17 +915,17 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("chapter.update"),
+    type: StringEnum(["chapter.update"] as const),
     id: entityReferenceParameter("chapter"),
     patch: patchParameter({ title: Type.Optional(titleParameter) })
   }),
   strictObject({
-    type: Type.Literal("chapter.delete"),
+    type: StringEnum(["chapter.delete"] as const),
     id: entityReferenceParameter("chapter"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("chapter.move"),
+    type: StringEnum(["chapter.move"] as const),
     id: entityReferenceParameter("chapter"),
     toVolumeId: entityReferenceParameter(
       "volume",
@@ -916,44 +946,46 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     )
   }),
   strictObject({
-    type: Type.Literal("chapter.reorder"),
+    type: StringEnum(["chapter.reorder"] as const),
     volumeId: entityReferenceParameter("volume"),
     orderedIds: Type.Array(entityReferenceParameter("chapter"), {
       maxItems: 100_000,
       uniqueItems: true,
-      description: "必须按最终顺序完整列出 volumeId 分卷内当前全部章卡 ID，并保持已提交前缀不变。"
+      description:
+        "必须按最终顺序完整列出 volumeId 分卷内当前全部章卡 ID，并保持已提交前缀不变。"
     })
   }),
   strictObject({
-    type: Type.Literal("event.update"),
+    type: StringEnum(["event.update"] as const),
     id: entityReferenceParameter("event"),
     patch: patchParameter({ title: Type.Optional(titleParameter) })
   }),
   strictObject({
-    type: Type.Literal("event.delete"),
+    type: StringEnum(["event.delete"] as const),
     id: entityReferenceParameter("event"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("event.reorder"),
+    type: StringEnum(["event.reorder"] as const),
     orderedIds: Type.Array(entityReferenceParameter("event"), {
       maxItems: 200_000,
       uniqueItems: true,
-      description: "必须按最终故事发生顺序完整列出当前全部故事事件 ID；已进入提交事实的事件不能改变位置。"
+      description:
+        "必须按最终故事发生顺序完整列出当前全部故事事件 ID；已进入提交事实的事件不能改变位置。"
     })
   }),
   strictObject({
-    type: Type.Literal("storyPlot.update"),
+    type: StringEnum(["storyPlot.update"] as const),
     id: entityReferenceParameter("storyplot"),
     patch: patchParameter({ title: Type.Optional(titleParameter) })
   }),
   strictObject({
-    type: Type.Literal("storyPlot.delete"),
+    type: StringEnum(["storyPlot.delete"] as const),
     id: entityReferenceParameter("storyplot"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("storyPlot.reorder"),
+    type: StringEnum(["storyPlot.reorder"] as const),
     arcId: entityReferenceParameter("arc"),
     orderedIds: Type.Array(entityReferenceParameter("storyplot"), {
       maxItems: 100_000,
@@ -962,7 +994,7 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("connection.update"),
+    type: StringEnum(["connection.update"] as const),
     id: entityReferenceParameter("connection"),
     patch: patchParameter({
       sourceEventId: Type.Optional(entityReferenceParameter("event")),
@@ -971,12 +1003,12 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("connection.delete"),
+    type: StringEnum(["connection.delete"] as const),
     id: entityReferenceParameter("connection"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("placement.update"),
+    type: StringEnum(["placement.update"] as const),
     id: entityReferenceParameter("placement"),
     patch: patchParameter({
       eventId: Type.Optional(entityReferenceParameter("event")),
@@ -985,12 +1017,12 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("placement.delete"),
+    type: StringEnum(["placement.delete"] as const),
     id: entityReferenceParameter("placement"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("placement.move"),
+    type: StringEnum(["placement.move"] as const),
     id: entityReferenceParameter("placement"),
     toChapterCardId: entityReferenceParameter("chapter"),
     beforePlacementId: Type.Optional(
@@ -1001,16 +1033,17 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     )
   }),
   strictObject({
-    type: Type.Literal("placement.reorder"),
+    type: StringEnum(["placement.reorder"] as const),
     chapterCardId: entityReferenceParameter("chapter"),
     orderedIds: Type.Array(entityReferenceParameter("placement"), {
       maxItems: 400_000,
       uniqueItems: true,
-      description: "必须按最终顺序完整列出 chapterCardId 章卡内当前全部叙事落点 ID。"
+      description:
+        "必须按最终顺序完整列出 chapterCardId 章卡内当前全部叙事落点 ID。"
     })
   }),
   strictObject({
-    type: Type.Literal("foreshadowing.create"),
+    type: StringEnum(["foreshadowing.create"] as const),
     client_ref: clientReferenceParameter,
     title: titleParameter,
     coreQuestion: Type.Optional(textParameter),
@@ -1020,10 +1053,10 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
       Type.Union([entityReferenceParameter("event"), Type.Null()])
     ),
     expectedReaderEffect: Type.Optional(textParameter),
-    status: Type.Optional(Type.Literal("planned"))
+    status: Type.Optional(StringEnum(["planned"] as const))
   }),
   strictObject({
-    type: Type.Literal("foreshadowing.update"),
+    type: StringEnum(["foreshadowing.update"] as const),
     id: entityReferenceParameter("foreshadow"),
     patch: patchParameter({
       title: Type.Optional(titleParameter),
@@ -1034,16 +1067,16 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
         Type.Union([entityReferenceParameter("event"), Type.Null()])
       ),
       expectedReaderEffect: Type.Optional(textParameter),
-      status: Type.Optional(literalUnion(["planned", "abandoned"] as const))
+      status: Type.Optional(StringEnum(["planned", "abandoned"] as const))
     })
   }),
   strictObject({
-    type: Type.Literal("foreshadowing.delete"),
+    type: StringEnum(["foreshadowing.delete"] as const),
     id: entityReferenceParameter("foreshadow"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("foreshadowing.reorder"),
+    type: StringEnum(["foreshadowing.reorder"] as const),
     orderedIds: Type.Array(entityReferenceParameter("foreshadow"), {
       maxItems: 100_000,
       uniqueItems: true,
@@ -1051,39 +1084,71 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     })
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.create"),
+    type: StringEnum(["foreshadowingBeat.create"] as const),
     client_ref: clientReferenceParameter,
     threadId: entityReferenceParameter("foreshadow"),
     beatType: beatTypeParameter,
-    volumeId: Type.Optional(nullableEntityReferenceParameter("volume", "卷级计划锚点；传 null 可清空。")),
-    arcId: Type.Optional(nullableEntityReferenceParameter("arc", "剧情点计划锚点；传 null 可清空。")),
-    eventId: Type.Optional(Type.Union([entityReferenceParameter("event"), Type.Null()])),
-    placementId: Type.Optional(Type.Union([entityReferenceParameter("placement"), Type.Null()])),
-    chapterCardId: Type.Optional(Type.Union([entityReferenceParameter("chapter"), Type.Null()])),
+    volumeId: Type.Optional(
+      nullableEntityReferenceParameter(
+        "volume",
+        "卷级计划锚点；传 null 可清空。"
+      )
+    ),
+    arcId: Type.Optional(
+      nullableEntityReferenceParameter(
+        "arc",
+        "剧情点计划锚点；传 null 可清空。"
+      )
+    ),
+    eventId: Type.Optional(
+      Type.Union([entityReferenceParameter("event"), Type.Null()])
+    ),
+    placementId: Type.Optional(
+      Type.Union([entityReferenceParameter("placement"), Type.Null()])
+    ),
+    chapterCardId: Type.Optional(
+      Type.Union([entityReferenceParameter("chapter"), Type.Null()])
+    ),
     plannedScope: Type.Optional(Type.String({ maxLength: 1_000 })),
     note: Type.Optional(shortTextParameter)
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.update"),
+    type: StringEnum(["foreshadowingBeat.update"] as const),
     id: entityReferenceParameter("beat"),
     patch: patchParameter({
       beatType: Type.Optional(beatTypeParameter),
-      volumeId: Type.Optional(nullableEntityReferenceParameter("volume", "更新卷级计划锚点；传 null 可清空。")),
-      arcId: Type.Optional(nullableEntityReferenceParameter("arc", "更新剧情点计划锚点；传 null 可清空。")),
-      eventId: Type.Optional(Type.Union([entityReferenceParameter("event"), Type.Null()])),
-      placementId: Type.Optional(Type.Union([entityReferenceParameter("placement"), Type.Null()])),
-      chapterCardId: Type.Optional(Type.Union([entityReferenceParameter("chapter"), Type.Null()])),
+      volumeId: Type.Optional(
+        nullableEntityReferenceParameter(
+          "volume",
+          "更新卷级计划锚点；传 null 可清空。"
+        )
+      ),
+      arcId: Type.Optional(
+        nullableEntityReferenceParameter(
+          "arc",
+          "更新剧情点计划锚点；传 null 可清空。"
+        )
+      ),
+      eventId: Type.Optional(
+        Type.Union([entityReferenceParameter("event"), Type.Null()])
+      ),
+      placementId: Type.Optional(
+        Type.Union([entityReferenceParameter("placement"), Type.Null()])
+      ),
+      chapterCardId: Type.Optional(
+        Type.Union([entityReferenceParameter("chapter"), Type.Null()])
+      ),
       plannedScope: Type.Optional(Type.String({ maxLength: 1_000 })),
       note: Type.Optional(shortTextParameter)
     })
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.delete"),
+    type: StringEnum(["foreshadowingBeat.delete"] as const),
     id: entityReferenceParameter("beat"),
     cascade: Type.Boolean()
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.move"),
+    type: StringEnum(["foreshadowingBeat.move"] as const),
     id: entityReferenceParameter("beat"),
     toThreadId: entityReferenceParameter("foreshadow"),
     beforeBeatId: Type.Optional(
@@ -1094,7 +1159,7 @@ export const LONG_PLOT_STRUCTURE_OPERATION_PARAMETER = Type.Union([
     )
   }),
   strictObject({
-    type: Type.Literal("foreshadowingBeat.reorder"),
+    type: StringEnum(["foreshadowingBeat.reorder"] as const),
     threadId: entityReferenceParameter("foreshadow"),
     orderedIds: Type.Array(entityReferenceParameter("beat"), {
       maxItems: 10_000,
@@ -1115,24 +1180,24 @@ export const LONG_PLOT_MUTATION_PARAMETERS = strictObject({
 export const LONG_PLOT_CREATE_PARAMETERS = strictObject({
   item: Type.Union([
     strictObject({
-      kind: Type.Literal("volume"),
+      kind: StringEnum(["volume"] as const),
       title: titleParameter,
       summary: Type.Optional(textParameter)
     }),
     strictObject({
-      kind: Type.Literal("arc"),
+      kind: StringEnum(["arc"] as const),
       volume_id: entityReferenceParameter("volume"),
       title: titleParameter,
       summary: Type.Optional(textParameter),
       outline: Type.Optional(textParameter)
     }),
     strictObject({
-      kind: Type.Literal("story_plot"),
+      kind: StringEnum(["story_plot"] as const),
       arc_id: entityReferenceParameter("arc"),
       title: titleParameter
     }),
     strictObject({
-      kind: Type.Literal("chapter"),
+      kind: StringEnum(["chapter"] as const),
       volume_id: entityReferenceParameter(
         "volume",
         "章卡所属分卷；primary_arc_id 非空时必须属于该分卷。"
@@ -1147,7 +1212,7 @@ export const LONG_PLOT_CREATE_PARAMETERS = strictObject({
       title: titleParameter
     }),
     strictObject({
-      kind: Type.Literal("event"),
+      kind: StringEnum(["event"] as const),
       title: titleParameter,
       summary: Type.Optional(textParameter),
       time_mode: storyTimeModeParameter,
@@ -1168,14 +1233,14 @@ export const LONG_PLOT_CREATE_PARAMETERS = strictObject({
       )
     }),
     strictObject({
-      kind: Type.Literal("connection"),
+      kind: StringEnum(["connection"] as const),
       source_event_id: entityReferenceParameter("event"),
       target_event_id: entityReferenceParameter("event"),
       connection_type: connectionTypeParameter,
       note: Type.Optional(shortTextParameter)
     }),
     strictObject({
-      kind: Type.Literal("placement"),
+      kind: StringEnum(["placement"] as const),
       event_id: entityReferenceParameter("event"),
       chapter_card_id: entityReferenceParameter("chapter"),
       mode: narrativeModeParameter,
@@ -1183,7 +1248,7 @@ export const LONG_PLOT_CREATE_PARAMETERS = strictObject({
       writing_prompt: Type.Optional(shortTextParameter)
     }),
     strictObject({
-      kind: Type.Literal("placements"),
+      kind: StringEnum(["placements"] as const),
       items: Type.Array(
         strictObject({
           event_id: entityReferenceParameter("event"),
@@ -1200,40 +1265,95 @@ export const LONG_PLOT_CREATE_PARAMETERS = strictObject({
 });
 
 export const LONG_PLOT_ITEM_TARGET_PARAMETER = Type.Union([
-  strictObject({ kind: Type.Literal("book_line") }),
-  strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume") }),
-  strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc") }),
-  strictObject({ kind: Type.Literal("story_plot"), story_plot_id: stableIdParameter("storyplot") }),
-  strictObject({ kind: Type.Literal("chapter"), chapter_card_id: stableIdParameter("chapter") }),
-  strictObject({ kind: Type.Literal("event"), event_id: stableIdParameter("event") }),
-  strictObject({ kind: Type.Literal("connection"), connection_id: stableIdParameter("connection") }),
-  strictObject({ kind: Type.Literal("placement"), placement_id: stableIdParameter("placement") })
+  strictObject({ kind: StringEnum(["book_line"] as const) }),
+  strictObject({
+    kind: StringEnum(["volume"] as const),
+    volume_id: stableIdParameter("volume")
+  }),
+  strictObject({
+    kind: StringEnum(["arc"] as const),
+    arc_id: stableIdParameter("arc")
+  }),
+  strictObject({
+    kind: StringEnum(["story_plot"] as const),
+    story_plot_id: stableIdParameter("storyplot")
+  }),
+  strictObject({
+    kind: StringEnum(["chapter"] as const),
+    chapter_card_id: stableIdParameter("chapter")
+  }),
+  strictObject({
+    kind: StringEnum(["event"] as const),
+    event_id: stableIdParameter("event")
+  }),
+  strictObject({
+    kind: StringEnum(["connection"] as const),
+    connection_id: stableIdParameter("connection")
+  }),
+  strictObject({
+    kind: StringEnum(["placement"] as const),
+    placement_id: stableIdParameter("placement")
+  }),
+  strictObject({
+    kind: StringEnum(["foreshadowing"] as const),
+    foreshadowing_id: stableIdParameter("foreshadow")
+  })
 ]);
 
 export const LONG_PLOT_WRITE_PARAMETERS = strictObject({
   item: Type.Union([
-    strictObject({ kind: Type.Literal("book_line"), text: Type.String({ minLength: 1, maxLength: 1_000_000 }) }),
-    strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume"), summary: textParameter }),
-    strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc"), summary: textParameter, outline: textParameter }),
-    strictObject({ kind: Type.Literal("story_plot"), story_plot_id: stableIdParameter("storyplot"), text: Type.String({ minLength: 1, maxLength: 1_000_000 }) }),
     strictObject({
-      kind: Type.Literal("chapter"),
+      kind: StringEnum(["book_line"] as const),
+      text: Type.String({ minLength: 1, maxLength: 1_000_000 })
+    }),
+    strictObject({
+      kind: StringEnum(["volume"] as const),
+      volume_id: stableIdParameter("volume"),
+      summary: textParameter
+    }),
+    strictObject({
+      kind: StringEnum(["arc"] as const),
+      arc_id: stableIdParameter("arc"),
+      summary: textParameter,
+      outline: textParameter
+    }),
+    strictObject({
+      kind: StringEnum(["story_plot"] as const),
+      story_plot_id: stableIdParameter("storyplot"),
+      text: Type.String({ minLength: 1, maxLength: 1_000_000 })
+    }),
+    strictObject({
+      kind: StringEnum(["chapter"] as const),
       chapter_card_id: stableIdParameter("chapter"),
       text: Type.String({ minLength: 1, maxLength: 1_000_000 })
     }),
     strictObject({
-      kind: Type.Literal("event"),
+      kind: StringEnum(["event"] as const),
       event_id: stableIdParameter("event"),
       summary: textParameter,
       time_mode: storyTimeModeParameter,
       time_label: Type.String({ maxLength: 1_000 }),
       time_value: Type.Optional(Type.String({ maxLength: 1_000 })),
       location: Type.String({ maxLength: 1_000 }),
-      arc_ids: Type.Array(entityReferenceParameter("arc"), { maxItems: 1_024, uniqueItems: true }),
-      character_ids: Type.Array(entityReferenceParameter("character"), { maxItems: 1_024, uniqueItems: true })
+      arc_ids: Type.Array(entityReferenceParameter("arc"), {
+        maxItems: 1_024,
+        uniqueItems: true
+      }),
+      character_ids: Type.Array(entityReferenceParameter("character"), {
+        maxItems: 1_024,
+        uniqueItems: true
+      })
     }),
-    strictObject({ kind: Type.Literal("connection"), connection_id: stableIdParameter("connection"), note: shortTextParameter }),
-    strictObject({ kind: Type.Literal("placement"), placement_id: stableIdParameter("placement"), writing_prompt: shortTextParameter })
+    strictObject({
+      kind: StringEnum(["connection"] as const),
+      connection_id: stableIdParameter("connection"),
+      note: shortTextParameter
+    }),
+    strictObject({
+      kind: StringEnum(["placement"] as const),
+      placement_id: stableIdParameter("placement"),
+      writing_prompt: shortTextParameter
+    })
   ]),
   allow_overwrite_existing: Type.Optional(Type.Boolean()),
   summary: Type.Optional(Type.String({ minLength: 1, maxLength: 1_000 }))
@@ -1242,7 +1362,7 @@ export const LONG_PLOT_WRITE_PARAMETERS = strictObject({
 export const LONG_PLOT_EDIT_PARAMETERS = strictObject({
   item: Type.Union([
     strictObject({
-      kind: Type.Literal("book_line"),
+      kind: StringEnum(["book_line"] as const),
       replacements: Type.Array(
         strictObject({
           original_text: Type.String({ minLength: 1, maxLength: 2_400 }),
@@ -1251,10 +1371,21 @@ export const LONG_PLOT_EDIT_PARAMETERS = strictObject({
         { minItems: 1, maxItems: 20 }
       )
     }),
-    strictObject({ kind: Type.Literal("volume"), volume_id: stableIdParameter("volume"), patch: patchParameter({ summary: Type.Optional(textParameter) }) }),
-    strictObject({ kind: Type.Literal("arc"), arc_id: stableIdParameter("arc"), patch: patchParameter({ summary: Type.Optional(textParameter), outline: Type.Optional(textParameter) }) }),
     strictObject({
-      kind: Type.Literal("story_plot"),
+      kind: StringEnum(["volume"] as const),
+      volume_id: stableIdParameter("volume"),
+      patch: patchParameter({ summary: Type.Optional(textParameter) })
+    }),
+    strictObject({
+      kind: StringEnum(["arc"] as const),
+      arc_id: stableIdParameter("arc"),
+      patch: patchParameter({
+        summary: Type.Optional(textParameter),
+        outline: Type.Optional(textParameter)
+      })
+    }),
+    strictObject({
+      kind: StringEnum(["story_plot"] as const),
       story_plot_id: stableIdParameter("storyplot"),
       replacements: Type.Array(
         strictObject({
@@ -1265,7 +1396,7 @@ export const LONG_PLOT_EDIT_PARAMETERS = strictObject({
       )
     }),
     strictObject({
-      kind: Type.Literal("chapter"),
+      kind: StringEnum(["chapter"] as const),
       chapter_card_id: stableIdParameter("chapter"),
       replacements: Type.Array(
         strictObject({
@@ -1276,19 +1407,40 @@ export const LONG_PLOT_EDIT_PARAMETERS = strictObject({
       )
     }),
     strictObject({
-      kind: Type.Literal("event"), event_id: stableIdParameter("event"),
+      kind: StringEnum(["event"] as const),
+      event_id: stableIdParameter("event"),
       patch: patchParameter({
         summary: Type.Optional(textParameter),
         time_mode: Type.Optional(storyTimeModeParameter),
         time_label: Type.Optional(Type.String({ maxLength: 1_000 })),
         time_value: Type.Optional(Type.String({ maxLength: 1_000 })),
         location: Type.Optional(Type.String({ maxLength: 1_000 })),
-        arc_ids: Type.Optional(Type.Array(entityReferenceParameter("arc"), { maxItems: 1_024, uniqueItems: true })),
-        character_ids: Type.Optional(Type.Array(entityReferenceParameter("character"), { maxItems: 1_024, uniqueItems: true }))
+        arc_ids: Type.Optional(
+          Type.Array(entityReferenceParameter("arc"), {
+            maxItems: 1_024,
+            uniqueItems: true
+          })
+        ),
+        character_ids: Type.Optional(
+          Type.Array(entityReferenceParameter("character"), {
+            maxItems: 1_024,
+            uniqueItems: true
+          })
+        )
       })
     }),
-    strictObject({ kind: Type.Literal("connection"), connection_id: stableIdParameter("connection"), patch: patchParameter({ note: Type.Optional(shortTextParameter) }) }),
-    strictObject({ kind: Type.Literal("placement"), placement_id: stableIdParameter("placement"), patch: patchParameter({ writing_prompt: Type.Optional(shortTextParameter) }) })
+    strictObject({
+      kind: StringEnum(["connection"] as const),
+      connection_id: stableIdParameter("connection"),
+      patch: patchParameter({ note: Type.Optional(shortTextParameter) })
+    }),
+    strictObject({
+      kind: StringEnum(["placement"] as const),
+      placement_id: stableIdParameter("placement"),
+      patch: patchParameter({
+        writing_prompt: Type.Optional(shortTextParameter)
+      })
+    })
   ]),
   summary: Type.Optional(Type.String({ minLength: 1, maxLength: 1_000 }))
 });

@@ -82,7 +82,10 @@ function bytesToBase64(bytes: Uint8Array): string {
   return globalThis.btoa(chunks.join(""));
 }
 
-async function readImage(file: File, mediaType: PromptImageMediaType): Promise<PromptAttachmentReadResult> {
+async function readImage(
+  file: File,
+  mediaType: PromptImageMediaType
+): Promise<PromptAttachmentReadResult> {
   if (file.size > PROMPT_IMAGE_ATTACHMENT_MAX_BYTES) {
     throw new Error(`图片“${file.name}”超过 10 MB，无法作为模型图片输入。`);
   }
@@ -112,7 +115,10 @@ function extractedTextAttachment(
         : `文件“${file.name}”没有可读取的文本内容。`
     );
   }
-  const content = normalized.slice(0, PROMPT_TEXT_ATTACHMENT_MAX_CONTENT_LENGTH);
+  const content = normalized.slice(
+    0,
+    PROMPT_TEXT_ATTACHMENT_MAX_CONTENT_LENGTH
+  );
   const truncated = content.length < normalized.length;
   return {
     attachment: PromptTextAttachmentSchema.parse({
@@ -122,7 +128,9 @@ function extractedTextAttachment(
       mediaType,
       size: file.size,
       content,
-      ...(truncated ? { truncated: true, originalLength: normalized.length } : {})
+      ...(truncated
+        ? { truncated: true, originalLength: normalized.length }
+        : {})
     }),
     ...(truncated
       ? {
@@ -143,10 +151,11 @@ async function readPdfText(file: File): Promise<PromptAttachmentReadResult> {
   if (file.size > PDF_FILE_MAX_BYTES) {
     throw new Error(`PDF“${file.name}”超过 20 MB，请拆分或压缩后再上传。`);
   }
-  const [{ getDocument, GlobalWorkerOptions }, workerModule] = await Promise.all([
-    import("pdfjs-dist"),
-    import("pdfjs-dist/build/pdf.worker.min.mjs?url")
-  ]);
+  const [{ getDocument, GlobalWorkerOptions }, workerModule] =
+    await Promise.all([
+      import("pdfjs-dist"),
+      import("pdfjs-dist/build/pdf.worker.min.mjs?url")
+    ]);
   GlobalWorkerOptions.workerSrc = workerModule.default;
   const loadingTask = getDocument({
     data: new Uint8Array(await file.arrayBuffer()),
@@ -171,7 +180,8 @@ async function readPdfText(file: File): Promise<PromptAttachmentReadResult> {
     }
     return extractedTextAttachment(file, "application/pdf", pages.join("\n\n"));
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "未知 PDF 解析错误";
+    const message =
+      error instanceof Error ? error.message : "未知 PDF 解析错误";
     if (/password/i.test(message)) {
       throw new Error(`PDF“${file.name}”受密码保护，暂时无法读取。`);
     }
@@ -181,7 +191,9 @@ async function readPdfText(file: File): Promise<PromptAttachmentReadResult> {
   }
 }
 
-export async function readPromptAttachment(file: File): Promise<PromptAttachmentReadResult> {
+export async function readPromptAttachment(
+  file: File
+): Promise<PromptAttachmentReadResult> {
   const mediaType = imageMediaType(file);
   if (mediaType) {
     return readImage(file, mediaType);
@@ -193,5 +205,7 @@ export async function readPromptAttachment(file: File): Promise<PromptAttachment
   if (TEXT_EXTENSIONS.has(extension) || file.type.startsWith("text/")) {
     return readPlainText(file);
   }
-  throw new Error(`不支持“${file.name}”的文件类型；请选择 TXT、MD、PDF 或常见图片。`);
+  throw new Error(
+    `不支持“${file.name}”的文件类型；请选择 TXT、MD、PDF 或常见图片。`
+  );
 }

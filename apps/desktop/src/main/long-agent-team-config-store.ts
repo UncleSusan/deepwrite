@@ -67,7 +67,7 @@ function migrateLegacyLongAgentTeams(
   settings: LongAgentTeamSettingsInput | Record<string, unknown>
 ): Record<string, unknown> {
   const teams = Array.isArray((settings as { teams?: unknown }).teams)
-    ? ((settings as { teams: unknown[] }).teams)
+    ? (settings as { teams: unknown[] }).teams
     : [];
   let records = teams.filter(
     (team): team is Record<string, unknown> =>
@@ -89,10 +89,7 @@ function migrateLegacyLongAgentTeams(
       ...collectSubagents(world, usedNames, "（世界观）"),
       ...collectSubagents(character, usedNames, "（人物）")
     ];
-    records = [
-      { parentAgentId: "setting", subagents: merged },
-      ...remaining
-    ];
+    records = [{ parentAgentId: "setting", subagents: merged }, ...remaining];
   }
   const writer = records.find(
     (team) => team.parentAgentId === "expert_section_writer"
@@ -148,11 +145,7 @@ export class LongAgentTeamConfigStore {
   private writeChain: Promise<void> = Promise.resolve();
 
   constructor(userDataPath: string) {
-    this.settingsPath = join(
-      userDataPath,
-      "config",
-      "long-agent-teams.json"
-    );
+    this.settingsPath = join(userDataPath, "config", "long-agent-teams.json");
   }
 
   async list(): Promise<LongAgentTeamSettings> {
@@ -165,10 +158,11 @@ export class LongAgentTeamConfigStore {
       !("version" in raw) ||
       raw.version !== 1
     ) {
-      throw new Error("长篇智能体团队配置版本无效，已停止加载以避免覆盖原文件。");
+      throw new Error(
+        "长篇智能体团队配置版本无效，已停止加载以避免覆盖原文件。"
+      );
     }
-    const { version: _version, ...settings } =
-      raw as DiskLongAgentTeamSettings;
+    const { version: _version, ...settings } = raw as DiskLongAgentTeamSettings;
     const parsed = LongAgentTeamSettingsInputSchema.safeParse(
       migrateLegacyLongAgentTeams(settings)
     );

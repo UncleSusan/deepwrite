@@ -1,101 +1,20 @@
+import { deriveLongForeshadowingStatusFromCommittedBeats } from "../long-workspace";
 import type { LongWorkspaceOperation } from "./operation-schema";
 import type { MutationState } from "./state";
-import {
-  LongArcIdSchema,
-  LongArcSchema,
-  LongChapterCardIdSchema,
-  LongChapterCardSchema,
-  LongChapterCharacterContinuityFileIndexEntrySchema,
-  LongChapterFileIndexEntrySchema,
-  LongCharacterFileIndexEntrySchema,
-  LongCharacterGroupSchema,
-  LongCharacterIdSchema,
-  LongCharacterSchema,
-  LongCharacterTypeIdSchema,
-  LongCharacterTypeSchema,
-  LongEventConnectionIdSchema,
-  LongEventConnectionSchema,
-  LongFileIdSchema,
-  LongFileRevisionSchema,
-  LongForeshadowingBeatIdSchema,
-  LongForeshadowingBeatSchema,
-  LongForeshadowingIdSchema,
-  LongForeshadowingSchema,
-  LongMarkdownFileReferenceSchema,
-  LongNarrativePlacementIdSchema,
-  LongNarrativePlacementSchema,
-  LongProjectRelativePathSchema,
-  LongStableIdSchema,
-  LongStoryEventIdSchema,
-  LongStoryEventSchema,
-  LongStoryPlotIdSchema,
-  LongStoryPlotSchema,
-  LongVolumeIdSchema,
-  LongVolumeSchema,
-  LongWorldbuildingItemLayoutSchema,
-  LongWorkspaceIndexSnapshotSchema,
-  LongWorldbuildingCategoryIdSchema,
-  LongWorldbuildingCategorySchema,
-  LongWorldbuildingItemIdSchema,
-  LongWorldbuildingItemSchema,
-  createEmptyLongMarkdownFileReference,
-  deriveLongForeshadowingStatusFromCommittedBeats,
-  longWorldbuildingContentPath,
-  longWorldbuildingFileId,
-  longWorldbuildingItemContentPath,
-  longWorldbuildingItemFileId,
-  longWorldbuildingOverviewContentPath,
-  longWorldbuildingOverviewFileId
-} from "../long-workspace";
-import type {
-  LongForeshadowing,
-  LongForeshadowingBeat,
-  LongNarrativePlacement,
-  LongWorkspaceFileReference,
-  LongWorkspaceIndexSnapshot
-} from "../long-workspace";
 
+import { deleteForeshadowingBeat, deleteForeshadowingThread } from "./cascade";
 import {
-  addFileCreateIntent,
-  addFileDeleteIntent,
-  allWorkspaceFiles,
-  assertAnchoredValue,
   assertBeatIsMutable,
-  assertChapterIsMutable,
   assertExactOrder,
-  assertFrozenOrderPrefix,
   assertNewEntityId,
-  assertPlacementIsMutable,
-  chapterOrderMap,
-  concreteChapterIdForBeat,
-  ensureFilesAvailable,
-  eventParticipatesInCommittedFacts,
   findBeat,
   findEntityIndex,
-  idsByGroupAndOrder,
   insertBeforeId,
   markCreated,
-  markDeleted,
   markUpdated,
-  normalizeLongWorkspaceOrders,
   operationError,
-  orderedIdsByOrder,
-  registerProvisionalId,
-  retargetBeatPlanningAnchorsToChapter,
-  updateOrdersById,
-  volumeOrderMap
+  registerProvisionalId
 } from "./state";
-import {
-  deleteArc,
-  deleteChapter,
-  deleteCharacter,
-  deleteForeshadowingBeat,
-  deleteForeshadowingThread,
-  deleteNarrativePlacement,
-  deleteStoryEvent,
-  deleteStoryPlot,
-  deleteVolume
-} from "./cascade";
 
 export function applyForeshadowingOperation(
   state: MutationState,
@@ -135,13 +54,9 @@ export function applyForeshadowingOperation(
           "New foreshadowing threads must start in planned state."
         );
       }
-      workspace.plot.foreshadowing.push(
-        structuredClone(operation.thread)
-      );
+      workspace.plot.foreshadowing.push(structuredClone(operation.thread));
       markCreated(state, operation.thread.id);
-      operation.thread.beats.forEach((beat) =>
-        markCreated(state, beat.id)
-      );
+      operation.thread.beats.forEach((beat) => markCreated(state, beat.id));
       registerProvisionalId(
         state,
         operation.provisionalId,
@@ -164,19 +79,10 @@ export function applyForeshadowingOperation(
       const changesLockedCoreField = Object.keys(operation.patch).some(
         (field) =>
           field !== "status" &&
-          !(
-            field === "hiddenTruth" &&
-            thread.hiddenTruth === undefined
-          ) &&
-          !(
-            field === "plannedSpan" &&
-            thread.plannedSpan === undefined
-          )
+          !(field === "hiddenTruth" && thread.hiddenTruth === undefined) &&
+          !(field === "plannedSpan" && thread.plannedSpan === undefined)
       );
-      if (
-        hasCommittedBeat &&
-        changesLockedCoreField
-      ) {
+      if (hasCommittedBeat && changesLockedCoreField) {
         operationError(
           "committed_prefix_protected",
           `Cannot update core fields of thread ${thread.id} after a beat is committed.`
@@ -184,18 +90,15 @@ export function applyForeshadowingOperation(
       }
       Object.assign(thread, operation.patch);
       if (operation.patch.status === "planned") {
-        thread.status =
-          deriveLongForeshadowingStatusFromCommittedBeats(thread.beats);
+        thread.status = deriveLongForeshadowingStatusFromCommittedBeats(
+          thread.beats
+        );
       }
       markUpdated(state, thread.id);
       break;
     }
     case "foreshadowing.delete": {
-      deleteForeshadowingThread(
-        state,
-        operation.id,
-        operation.cascade
-      );
+      deleteForeshadowingThread(state, operation.id, operation.cascade);
       break;
     }
     case "foreshadowing.reorder": {
@@ -205,10 +108,7 @@ export function applyForeshadowingOperation(
         "Foreshadowing thread"
       );
       const byId = new Map(
-        workspace.plot.foreshadowing.map((thread) => [
-          thread.id,
-          thread
-        ])
+        workspace.plot.foreshadowing.map((thread) => [thread.id, thread])
       );
       workspace.plot.foreshadowing = operation.orderedIds.map((id: string) => {
         const thread = byId.get(id);
@@ -256,11 +156,7 @@ export function applyForeshadowingOperation(
       thread.beats.push(structuredClone(operation.beat));
       markCreated(state, operation.beat.id);
       markUpdated(state, thread.id);
-      registerProvisionalId(
-        state,
-        operation.provisionalId,
-        operation.beat.id
-      );
+      registerProvisionalId(state, operation.provisionalId, operation.beat.id);
       break;
     }
     case "foreshadowingBeat.update": {
@@ -295,10 +191,7 @@ export function applyForeshadowingOperation(
         "Foreshadowing beat move"
       );
       const beatById = new Map(
-        [...targetThread.beats, located.beat].map((beat) => [
-          beat.id,
-          beat
-        ])
+        [...targetThread.beats, located.beat].map((beat) => [beat.id, beat])
       );
       targetThread.beats = ids.map((id, index) => {
         const beat = beatById.get(id);
@@ -330,9 +223,7 @@ export function applyForeshadowingOperation(
         operation.orderedIds,
         `Foreshadowing beats in ${thread.id}`
       );
-      const beatById = new Map(
-        thread.beats.map((beat) => [beat.id, beat])
-      );
+      const beatById = new Map(thread.beats.map((beat) => [beat.id, beat]));
       thread.beats = operation.orderedIds.map((id: string, index: number) => {
         const beat = beatById.get(id);
         if (!beat) {

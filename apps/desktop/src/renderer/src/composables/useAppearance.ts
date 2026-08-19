@@ -88,8 +88,11 @@ function sanitizeTheme(value: unknown, scheme: ColorScheme): ThemeConfig {
   if (!value || typeof value !== "object") return fallback;
   const candidate = value as Partial<ThemeConfig>;
   return {
-    preset: typeof candidate.preset === "string" ? candidate.preset : fallback.preset,
-    accent: isHexColor(candidate.accent) ? candidate.accent.toUpperCase() : fallback.accent,
+    preset:
+      typeof candidate.preset === "string" ? candidate.preset : fallback.preset,
+    accent: isHexColor(candidate.accent)
+      ? candidate.accent.toUpperCase()
+      : fallback.accent,
     background: isHexColor(candidate.background)
       ? candidate.background.toUpperCase()
       : fallback.background,
@@ -167,13 +170,18 @@ function readLegacyStoredState(systemScheme: ColorScheme): AppearanceState {
     }
     return {
       mode:
-        parsed.mode === "light" || parsed.mode === "dark" || parsed.mode === "system"
+        parsed.mode === "light" ||
+        parsed.mode === "dark" ||
+        parsed.mode === "system"
           ? parsed.mode
           : fallback.mode,
       systemScheme,
       light: sanitizeTheme(parsed.light, "light"),
       dark: sanitizeTheme(parsed.dark, "dark"),
-      uiFontFamily: sanitizeUiFontFamily(parsed.uiFontFamily, fallback.uiFontFamily),
+      uiFontFamily: sanitizeUiFontFamily(
+        parsed.uiFontFamily,
+        fallback.uiFontFamily
+      ),
       editorFontFamily: sanitizeEditorFontFamily(
         parsed.editorFontFamily,
         fallback.editorFontFamily
@@ -229,7 +237,11 @@ function mixChannels(
   ) as [number, number, number];
 }
 
-function mix(background: string, foreground: string, foregroundRatio: number): string {
+function mix(
+  background: string,
+  foreground: string,
+  foregroundRatio: number
+): string {
   return `rgb(${mixChannels(background, foreground, foregroundRatio).join(" ")})`;
 }
 
@@ -254,7 +266,9 @@ function mixRgba(
 }
 
 const media = window.matchMedia("(prefers-color-scheme: dark)");
-const state = reactive<AppearanceState>(readLegacyStoredState(media.matches ? "dark" : "light"));
+const state = reactive<AppearanceState>(
+  readLegacyStoredState(media.matches ? "dark" : "light")
+);
 const resolvedScheme = computed<ColorScheme>(() =>
   state.mode === "system" ? state.systemScheme : state.mode
 );
@@ -273,22 +287,52 @@ function applyToDocument(): void {
   root.style.colorScheme = scheme;
   root.style.setProperty("--accent", theme.accent);
   root.style.setProperty("--accent-contrast", readableAccentText(theme.accent));
-  root.style.setProperty("--accent-soft", rgba(theme.accent, scheme === "dark" ? 0.18 : 0.12));
+  root.style.setProperty(
+    "--accent-soft",
+    rgba(theme.accent, scheme === "dark" ? 0.18 : 0.12)
+  );
   root.style.setProperty("--theme-background", theme.background);
   root.style.setProperty("--theme-foreground", theme.foreground);
   root.style.setProperty("--surface-main", theme.background);
-  root.style.setProperty("--surface-raised", mix(theme.background, theme.foreground, scheme === "dark" ? 0.055 : 0.018));
-  root.style.setProperty("--surface-muted", mix(theme.background, theme.foreground, scheme === "dark" ? 0.09 : 0.045));
-  root.style.setProperty("--surface-hover", mix(theme.background, theme.foreground, scheme === "dark" ? 0.14 : 0.085));
-  root.style.setProperty("--surface-selected", mix(theme.background, theme.foreground, scheme === "dark" ? 0.2 : 0.12));
-  root.style.setProperty("--theme-line", mix(theme.background, theme.foreground, scheme === "dark" ? 0.2 : 0.14));
-  root.style.setProperty("--theme-line-soft", mix(theme.background, theme.foreground, scheme === "dark" ? 0.13 : 0.075));
+  root.style.setProperty(
+    "--surface-raised",
+    mix(theme.background, theme.foreground, scheme === "dark" ? 0.055 : 0.018)
+  );
+  root.style.setProperty(
+    "--surface-muted",
+    mix(theme.background, theme.foreground, scheme === "dark" ? 0.09 : 0.045)
+  );
+  root.style.setProperty(
+    "--surface-hover",
+    mix(theme.background, theme.foreground, scheme === "dark" ? 0.14 : 0.085)
+  );
+  root.style.setProperty(
+    "--surface-selected",
+    mix(theme.background, theme.foreground, scheme === "dark" ? 0.2 : 0.12)
+  );
+  root.style.setProperty(
+    "--theme-line",
+    mix(theme.background, theme.foreground, scheme === "dark" ? 0.2 : 0.14)
+  );
+  root.style.setProperty(
+    "--theme-line-soft",
+    mix(theme.background, theme.foreground, scheme === "dark" ? 0.13 : 0.075)
+  );
   root.style.setProperty("--text-primary", theme.foreground);
-  root.style.setProperty("--text-secondary", mix(theme.background, theme.foreground, scheme === "dark" ? 0.72 : 0.67));
-  root.style.setProperty("--text-tertiary", mix(theme.background, theme.foreground, scheme === "dark" ? 0.52 : 0.5));
+  root.style.setProperty(
+    "--text-secondary",
+    mix(theme.background, theme.foreground, scheme === "dark" ? 0.72 : 0.67)
+  );
+  root.style.setProperty(
+    "--text-tertiary",
+    mix(theme.background, theme.foreground, scheme === "dark" ? 0.52 : 0.5)
+  );
   root.style.setProperty("--ui-font-size", `${theme.uiFontSize}px`);
   root.style.setProperty("--code-font-size", `${theme.codeFontSize}px`);
-  root.style.setProperty("--ui-font", resolveAppearanceUiFontStack(state.uiFontFamily));
+  root.style.setProperty(
+    "--ui-font",
+    resolveAppearanceUiFontStack(state.uiFontFamily)
+  );
   root.style.setProperty(
     "--editor-font",
     resolveAppearanceEditorFontStack(state.editorFontFamily)
@@ -296,11 +340,22 @@ function applyToDocument(): void {
   root.style.setProperty(
     "--sidebar-surface",
     theme.translucentSidebar
-      ? mixRgba(theme.background, theme.foreground, scheme === "dark" ? 0.08 : 0.035, 0.84)
-      : mix(theme.background, theme.foreground, scheme === "dark" ? 0.08 : 0.035)
+      ? mixRgba(
+          theme.background,
+          theme.foreground,
+          scheme === "dark" ? 0.08 : 0.035,
+          0.84
+        )
+      : mix(
+          theme.background,
+          theme.foreground,
+          scheme === "dark" ? 0.08 : 0.035
+        )
   );
   root.dataset.translucentSidebar = String(theme.translucentSidebar);
-  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", theme.background);
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute("content", theme.background);
 }
 
 function queueDesktopPersist(settings: AppearanceSettings): void {
@@ -411,7 +466,10 @@ export function setEditorFontFamily(family: string): void {
   state.editorFontFamily = parsed.data;
 }
 
-export function updateTheme(scheme: ColorScheme, patch: Partial<ThemeConfig>): void {
+export function updateTheme(
+  scheme: ColorScheme,
+  patch: Partial<ThemeConfig>
+): void {
   Object.assign(state[scheme], patch);
 }
 
@@ -422,7 +480,9 @@ export function applyThemePreset(scheme: ColorScheme, presetId: string): void {
 }
 
 export function importTheme(scheme: ColorScheme, value: unknown): void {
-  Object.assign(state[scheme], sanitizeTheme(value, scheme), { preset: "custom" });
+  Object.assign(state[scheme], sanitizeTheme(value, scheme), {
+    preset: "custom"
+  });
 }
 
 export function resetTheme(scheme: ColorScheme): void {
@@ -450,11 +510,18 @@ export function serializeTheme(scheme: ColorScheme): string {
   return JSON.stringify({ version: 2, scheme, theme: state[scheme] }, null, 2);
 }
 
-export function parseThemeFile(value: string): { scheme?: ColorScheme; theme: unknown } {
+export function parseThemeFile(value: string): {
+  scheme?: ColorScheme;
+  theme: unknown;
+} {
   const parsed: unknown = JSON.parse(value);
-  if (!parsed || typeof parsed !== "object") throw new Error("主题文件格式无效");
+  if (!parsed || typeof parsed !== "object")
+    throw new Error("主题文件格式无效");
   const record = parsed as { scheme?: unknown; theme?: unknown };
-  const scheme = record.scheme === "light" || record.scheme === "dark" ? record.scheme : undefined;
+  const scheme =
+    record.scheme === "light" || record.scheme === "dark"
+      ? record.scheme
+      : undefined;
   return {
     ...(scheme ? { scheme } : {}),
     theme: record.theme ?? parsed

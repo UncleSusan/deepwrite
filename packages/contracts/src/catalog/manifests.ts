@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-import {
-  DraftSectionIdSchema,
-  DraftSectionTitleSchema
-} from "../expert-draft";
+import { DraftSectionIdSchema, DraftSectionTitleSchema } from "../expert-draft";
 import { MarketplaceSourceSchema } from "../marketplace";
 import {
   migrateBookPlotStageEnabled,
@@ -98,15 +95,18 @@ export const CatalogProjectManifestBaseSchema = z
   })
   .strict();
 
-export const LegacyBookProjectManifestSchema = CatalogProjectManifestBaseSchema.extend({
-  kind: z.literal("deepwrite.book"),
-  bookType: z.literal("short"),
-  genre: ShortBookGenreSchema,
-  status: z.enum(["editing", "completed"]),
-  linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
-  linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
-  documents: z.array(BookProjectDocumentManifestSchema).max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
-});
+export const LegacyBookProjectManifestSchema =
+  CatalogProjectManifestBaseSchema.extend({
+    kind: z.literal("deepwrite.book"),
+    bookType: z.literal("short"),
+    genre: ShortBookGenreSchema,
+    status: z.enum(["editing", "completed"]),
+    linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
+    linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
+    documents: z
+      .array(BookProjectDocumentManifestSchema)
+      .max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
+  });
 export type LegacyBookProjectManifest = z.infer<
   typeof LegacyBookProjectManifestSchema
 >;
@@ -152,7 +152,8 @@ export const BookProjectDraftSectionManifestSchema = z
       context.addIssue({
         code: "custom",
         path: ["characterState", "path"],
-        message: "Draft body and character-state files must have distinct paths."
+        message:
+          "Draft body and character-state files must have distinct paths."
       });
     }
   });
@@ -164,10 +165,7 @@ export const BookProjectDraftDirectoryManifestSchema = z
   .object({
     id: z.literal(CATALOG_DRAFT_DIRECTORY_ID),
     title: CatalogTitleSchema,
-    sections: z
-      .array(BookProjectDraftSectionManifestSchema)
-      .min(1)
-      .max(100),
+    sections: z.array(BookProjectDraftSectionManifestSchema).min(1).max(100),
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema
   })
@@ -312,8 +310,7 @@ function validateUniqueBookManifestFiles(
     documents: ReadonlyArray<{ id: string; path: string }>;
     draft: BookProjectDraftDirectoryManifest;
     draftSectionCreationOperations?:
-      | ReadonlyArray<{ operationId: string }>
-      | undefined;
+      ReadonlyArray<{ operationId: string }> | undefined;
   },
   context: z.core.$RefinementCtx<unknown>
 ): void {
@@ -375,7 +372,9 @@ function validateCharacterStructureManifestFiles(
 }
 
 function preprocessBookProjectManifestPlotStages(value: unknown): unknown {
-  return migrateLegacyCharacterOverviewTitle(migrateBookPlotStageEnabled(value));
+  return migrateLegacyCharacterOverviewTitle(
+    migrateBookPlotStageEnabled(value)
+  );
 }
 
 export const CurrentShortBookProjectManifestSchema = z
@@ -442,7 +441,9 @@ export const MaterialLibraryProjectManifestSchema =
     parentGenre: z.string(),
     subGenre: z.string(),
     overview: z.string(),
-    entries: z.array(MaterialProjectEntryManifestSchema).max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
+    entries: z
+      .array(MaterialProjectEntryManifestSchema)
+      .max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
   });
 export type MaterialLibraryProjectManifest = z.infer<
   typeof MaterialLibraryProjectManifestSchema
@@ -456,7 +457,9 @@ export const SkillLibraryProjectManifestSchema =
     overview: z.string(),
     isBuiltin: z.boolean(),
     marketplaceSource: MarketplaceSourceSchema.optional(),
-    entries: z.array(SkillProjectEntryManifestSchema).max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
+    entries: z
+      .array(SkillProjectEntryManifestSchema)
+      .max(CATALOG_PROJECT_MAX_CONTENT_ITEMS)
   });
 export type SkillLibraryProjectManifest = z.infer<
   typeof SkillLibraryProjectManifestSchema

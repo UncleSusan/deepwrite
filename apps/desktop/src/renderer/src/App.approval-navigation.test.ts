@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import appSource from "./WorkspaceShell.vue?raw";
 import editorSource from "./components/LongWorkspaceEditor.vue?raw";
-import editorStructureSource from "./composables/useLongEditorStructureSelection.ts?raw";
 import coordinatorSource from "./composables/useApprovalNavigationCoordinator.ts?raw";
 import lazyCoordinatorSource from "./composables/useLazyApprovalNavigationCoordinator.ts?raw";
 import resourceTreeSource from "./composables/useWorkspaceResourceTreeCoordinator.ts?raw";
+import editorStructureSource from "./composables/useLongEditorStructureSelection.ts?raw";
 
 describe("accepted approval navigation wiring", () => {
   it("routes both approval card families into the central navigator", () => {
@@ -35,7 +35,7 @@ describe("accepted approval navigation wiring", () => {
       '() => import("./useApprovalNavigationCoordinator")'
     );
     expect(appSource).not.toContain(
-      'import { useApprovalNavigationCoordinator }'
+      "import { useApprovalNavigationCoordinator }"
     );
   });
 
@@ -43,7 +43,9 @@ describe("accepted approval navigation wiring", () => {
     expect(resourceTreeSource).toContain(
       "function preferredLongResourceIdForSelection("
     );
-    expect(resourceTreeSource).toContain('selection.key.startsWith("chapter:")');
+    expect(resourceTreeSource).toContain(
+      'selection.key.startsWith("chapter:")'
+    );
     expect(editorStructureSource).toContain(
       "if (explicitlySelectedFile) return explicitlySelectedFile;"
     );
@@ -59,13 +61,16 @@ describe("accepted approval navigation wiring", () => {
   });
 
   it("lets the long editor focus exact files and structured targets", () => {
-    expect(editorStructureSource).toContain("async function focusFile(fileId: string)");
     expect(editorStructureSource).toContain(
-      "async function focusTarget(target: LongApprovalEditorFocus)"
+      "async function focusFile(fileId: string)"
     );
+    expect(editorStructureSource).toContain("async function focusTarget(");
+    expect(editorStructureSource).toContain("target: LongApprovalEditorFocus");
     expect(editorStructureSource).toContain("selectWorldbuildingItem(item.id)");
     expect(editorStructureSource).toContain('selectPlotPointTab("storyline")');
-    expect(editorStructureSource).toContain("foreshadowingWorkspace.value?.focusTarget(");
+    expect(editorStructureSource).toContain(
+      "foreshadowingWorkspace.value?.focusTarget("
+    );
     expect(editorSource).toContain("defineExpose({");
   });
 });

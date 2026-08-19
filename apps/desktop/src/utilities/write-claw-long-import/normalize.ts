@@ -28,9 +28,7 @@ export function booleanValue(value: unknown): boolean {
 
 export function positiveNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0
-    ? Math.floor(parsed)
-    : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 export function normalizeTimestamp(value: unknown, fallback: string): string {
@@ -173,14 +171,12 @@ export function splitTextByUtf8Bytes(
     while (low <= high) {
       const middle = Math.floor((low + high) / 2);
       const candidate =
-        middle < content.length &&
-        /[\uD800-\uDBFF]/u.test(content[middle - 1]!)
+        middle < content.length && /[\uD800-\uDBFF]/u.test(content[middle - 1]!)
           ? middle - 1
           : middle;
       if (
         candidate > offset &&
-        Buffer.byteLength(content.slice(offset, candidate), "utf8") <=
-          maxBytes
+        Buffer.byteLength(content.slice(offset, candidate), "utf8") <= maxBytes
       ) {
         end = candidate;
         low = middle + 1;
@@ -203,20 +199,14 @@ export function clippedTextDocument(
   label: string
 ): string {
   const content = safeUnicode(value, warnings, label);
-  if (
-    Buffer.byteLength(content, "utf8") <=
-    MAX_IMPORTED_TEXT_DOCUMENT_BYTES
-  ) {
+  if (Buffer.byteLength(content, "utf8") <= MAX_IMPORTED_TEXT_DOCUMENT_BYTES) {
     return content;
   }
   warnings.preserve(`${label}（完整溢出原文）`, label, content);
   warnings.add(
     `${label}超过当前单文档 28 MiB 导入预算；可编辑文档已安全裁剪，完整原文已写入只读迁移证据。`
   );
-  return splitTextByUtf8Bytes(
-    content,
-    MAX_IMPORTED_TEXT_DOCUMENT_BYTES
-  )[0]!;
+  return splitTextByUtf8Bytes(content, MAX_IMPORTED_TEXT_DOCUMENT_BYTES)[0]!;
 }
 
 export function title(
@@ -225,10 +215,7 @@ export function title(
   warnings: WarningCollector,
   label: string
 ): string {
-  return (
-    clipped(value, 256, warnings, label).trim() ||
-    fallback.slice(0, 256)
-  );
+  return clipped(value, 256, warnings, label).trim() || fallback.slice(0, 256);
 }
 
 export class DeterministicIdRegistry {

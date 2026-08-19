@@ -18,7 +18,7 @@ import {
   createExpertDraftDirectoryRevision,
   createEnvelope,
   createDefaultCreativePlotStages,
-  resolveShortWorkspaceAgentIdForStage,
+  resolveShortWorkspaceAgentIdForStage
 } from "./index";
 
 function expertDraftFile(documentId: string, title: string, content: string) {
@@ -118,9 +118,9 @@ describe("short workspace contracts", () => {
   });
 
   it("exposes three complete default agent profiles", () => {
-    expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.map((profile) => profile.id)).toEqual(
-      SHORT_WORKSPACE_AGENT_IDS
-    );
+    expect(
+      DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.map((profile) => profile.id)
+    ).toEqual(SHORT_WORKSPACE_AGENT_IDS);
     expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES).toHaveLength(3);
     for (const profile of DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES) {
       expect(profile.label).not.toBe("");
@@ -128,12 +128,14 @@ describe("short workspace contracts", () => {
       expect(profile.systemPrompt).toMatch(/^你是 DeepWrite 的/);
       expect(profile.systemPrompt.endsWith("\n")).toBe(true);
       expect(profile.welcomeShortcuts).toHaveLength(3);
-      expect(profile.welcomeShortcuts.every((value) => value.trim().length > 0)).toBe(
-        true
-      );
+      expect(
+        profile.welcomeShortcuts.every((value) => value.trim().length > 0)
+      ).toBe(true);
     }
     expect(() =>
-      ShortWorkspaceAgentSettingsSchema.parse(DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS)
+      ShortWorkspaceAgentSettingsSchema.parse(
+        DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS
+      )
     ).not.toThrow();
   });
 
@@ -189,10 +191,12 @@ describe("short workspace contracts", () => {
     });
 
     const legacy = structuredClone(DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS);
-    Object.assign(legacy.agents[0]!.readAccess, { workspace: ["character_design"] });
-    expect(ShortWorkspaceAgentSettingsInputSchema.safeParse(legacy).success).toBe(
-      false
-    );
+    Object.assign(legacy.agents[0]!.readAccess, {
+      workspace: ["character_design"]
+    });
+    expect(
+      ShortWorkspaceAgentSettingsInputSchema.safeParse(legacy).success
+    ).toBe(false);
   });
 
   it("validates a complete short workspace snapshot", () => {
@@ -334,7 +338,9 @@ describe("short workspace contracts", () => {
       )
     };
 
-    expect(ShortWorkspaceAgentSettingsInputSchema.parse(input).agents).toHaveLength(3);
+    expect(
+      ShortWorkspaceAgentSettingsInputSchema.parse(input).agents
+    ).toHaveLength(3);
     expect(
       WorkspaceAgentsListCommandEnvelopeSchema.parse(
         createEnvelope(

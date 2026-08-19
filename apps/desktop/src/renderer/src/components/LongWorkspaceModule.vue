@@ -30,9 +30,7 @@ import type {
   LongStructureMutationCompletion,
   LongWorkspaceSelection
 } from "../types/longWorkspace";
-import {
-  LONG_WORKSPACE_ROOT_LABELS
-} from "../utils/longWorkspaceResourceTree";
+import { LONG_WORKSPACE_ROOT_LABELS } from "../utils/longWorkspaceResourceTree";
 import AgentConversation from "./AgentConversation.vue";
 import AppIcon from "./AppIcon.vue";
 import { LongWorkspaceEditor } from "./lazyAppComponents";
@@ -84,11 +82,13 @@ const emit = defineEmits<{
   selectThinking: [level: ThinkingLevel];
   selectTemperature: [temperature: number];
   selectApproval: [mode: AgentApprovalMode];
-  reviewEdit: [payload: {
-    runId: string;
-    proposalId: string;
-    decision: "accept" | "reject";
-  }];
+  reviewEdit: [
+    payload: {
+      runId: string;
+      proposalId: string;
+      decision: "accept" | "reject";
+    }
+  ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
@@ -266,9 +266,7 @@ onBeforeUnmount(() => {
           sendContextReady &&
           conversationController.canSend.value
         "
-        :can-send-attachments="
-          conversationController.canSendAttachments.value
-        "
+        :can-send-attachments="conversationController.canSendAttachments.value"
         :can-stop="conversationController.canStop.value"
         :runtime-available="runtimeAvailable"
         :models="conversationController.configuredModels.value"
@@ -309,9 +307,7 @@ onBeforeUnmount(() => {
         @locate-edit-proposal="emit('locateEditProposal', $event)"
         @approve-long-proposal="emit('approveLongProposal', $event)"
         @reject-long-proposal="emit('rejectLongProposal', $event)"
-        @retry-long-proposal-preview="
-          emit('retryLongProposalPreview', $event)
-        "
+        @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
       />
       <section
@@ -322,13 +318,8 @@ onBeforeUnmount(() => {
         <span v-if="revisionSyncRequired">
           账本回滚已完成，但最新版本尚未同步；正文编辑已锁定以防止版本冲突。
         </span>
-        <span v-else>
-          最新工作区索引尚未同步，长篇智能体已暂停发送。
-        </span>
-        <button
-          type="button"
-          @click="emit('retryWorkspaceRefresh')"
-        >
+        <span v-else> 最新工作区索引尚未同步，长篇智能体已暂停发送。 </span>
+        <button type="button" @click="emit('retryWorkspaceRefresh')">
           重新同步
         </button>
       </section>
@@ -354,16 +345,12 @@ onBeforeUnmount(() => {
           </span>
           <span v-else>已完成</span>
         </div>
-        <small
-          v-if="writingOrchestrator.state.value.error"
-          class="is-error"
-        >
+        <small v-if="writingOrchestrator.state.value.error" class="is-error">
           {{ writingOrchestrator.state.value.error }}
         </small>
         <small v-else>
           {{
-            writingOrchestrator.state.value.phase ===
-            "awaiting_writer_approval"
+            writingOrchestrator.state.value.phase === "awaiting_writer_approval"
               ? "等待你审阅本章正文写入提案"
               : writingOrchestrator.state.value.phase === "complete"
                 ? "本次计划已完成"
@@ -381,10 +368,7 @@ onBeforeUnmount(() => {
           >
             重试当前章
           </button>
-          <button
-            type="button"
-            @click="emit('cancelWritingWorkflow')"
-          >
+          <button type="button" @click="emit('cancelWritingWorkflow')">
             取消计划
           </button>
         </div>
@@ -439,11 +423,7 @@ onBeforeUnmount(() => {
         <AppIcon name="book" :size="28" />
       </span>
       <strong>
-        {{
-          loading
-            ? "正在打开长篇工作区…"
-            : "长篇工作区尚未载入"
-        }}
+        {{ loading ? "正在打开长篇工作区…" : "长篇工作区尚未载入" }}
       </strong>
       <span>
         {{
@@ -482,11 +462,7 @@ onBeforeUnmount(() => {
         <AppIcon name="book" :size="28" />
       </span>
       <strong>
-        {{
-          loading
-            ? "正在打开长篇工作区…"
-            : "长篇工作区尚未载入"
-        }}
+        {{ loading ? "正在打开长篇工作区…" : "长篇工作区尚未载入" }}
       </strong>
       <span>
         {{

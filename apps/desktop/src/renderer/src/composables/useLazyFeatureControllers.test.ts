@@ -62,9 +62,7 @@ describe("lazy feature controllers", () => {
       api: () => undefined
     });
     learning.setConfiguredModels(
-      [
-        { id: "model-placeholder" } as ModelConfig
-      ],
+      [{ id: "model-placeholder" } as ModelConfig],
       "model-placeholder"
     );
 

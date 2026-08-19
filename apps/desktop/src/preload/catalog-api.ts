@@ -1,30 +1,105 @@
 import {
-  BookSchema, CatalogDraftRecoverySaveResultSchema, CatalogDraftRecoverySchema, CatalogDraftSectionSchema,
-  CatalogIndexSnapshotSchema, CatalogLibraryEntrySchema, CatalogLibraryGroupSchema, CatalogLibraryProjectDomainSchema,
-  CatalogLibrarySchema, CatalogOpenProjectResultSchema, CatalogProjectDomainSchema, CatalogReadDocumentInputSchema,
-  CatalogReadDocumentResultSchema, CatalogSnapshotSchema, CreateDraftSectionInputSchema, CreateDraftSectionsInputSchema,
-  CreateDraftSectionsResultSchema, CreateLibraryEntryInputSchema, CreateLibraryGroupInputSchema, CreateLibraryInputSchema,
-  CreateScriptBookInputSchema, CreateShortBookInputSchema, DeleteBookInputSchema, DeleteBookResultSchema,
-  DeleteCatalogProjectInputSchema, DeleteCatalogProjectResultSchema, DeleteDraftSectionInputSchema, DeleteDraftSectionResultSchema,
-  DuplicateCatalogProjectInputSchema, DuplicateCatalogProjectResultSchema, ExternalSkillSelectionResultSchema, ExternalSkillSourceKindSchema,
-  ImportLegacyLibraryResultSchema, MoveDraftSectionInputSchema, MoveDraftSectionResultSchema, MoveLibraryEntryInputSchema,
-  MoveLibraryEntryResultSchema, MutateCharacterStructureInputSchema, MutatePlotStructureInputSchema, RemoveLibraryEntryInputSchema,
-  RemoveLibraryEntryResultSchema, SaveDocumentInputSchema, SaveDocumentResultSchema, SaveLibraryEntryInputSchema,
-  ScriptBookSchema, ShortBookSchema, UnregisterCatalogProjectInputSchema, UnregisterCatalogProjectResultSchema,
-  UpdateBookInputSchema, UpdateLibraryGroupInputSchema, UpdateLibraryInputSchema, createEnvelope,
-  type Book, type CatalogDraftRecovery, type CatalogDraftSection, type CatalogIndexSnapshot,
-  type CatalogLibrary, type CatalogLibraryEntry, type CatalogLibraryGroup, type CatalogLibraryProjectDomain,
-  type CatalogOpenProjectResult, type CatalogProjectDomain, type CatalogReadDocumentInput, type CatalogReadDocumentResult,
-  type CatalogSnapshot, type CreateDraftSectionInput, type CreateDraftSectionsInput, type CreateDraftSectionsResult,
-  type CreateLibraryEntryInput, type CreateLibraryGroupInput, type CreateLibraryInput, type CreateScriptBookInput,
-  type CreateShortBookInput, type DeleteBookResult, type DeleteCatalogProjectInput, type DeleteCatalogProjectResult,
-  type DeleteDraftSectionInput, type DeleteDraftSectionResult, type DuplicateCatalogProjectInput, type DuplicateCatalogProjectResult,
-  type ExternalSkillSelectionResult, type ExternalSkillSourceKind, type ImportLegacyLibraryResult, type MoveDraftSectionInput,
-  type MoveDraftSectionResult, type MoveLibraryEntryInput, type MoveLibraryEntryResult, type MutateCharacterStructureInput,
-  type MutatePlotStructureInput, type RemoveLibraryEntryInput, type RemoveLibraryEntryResult, type SaveDocumentInput,
-  type SaveDocumentResult, type SaveLibraryEntryInput, type ScriptBook, type ShortBook,
-  type UnregisterCatalogProjectInput, type UnregisterCatalogProjectResult, type UpdateBookInput, type UpdateLibraryGroupInput,
-  type UpdateLibraryInput,
+  BookSchema,
+  CatalogDraftRecoverySaveResultSchema,
+  CatalogDraftRecoverySchema,
+  CatalogDraftSectionSchema,
+  CatalogIndexSnapshotSchema,
+  CatalogLibraryEntrySchema,
+  CatalogLibraryGroupSchema,
+  CatalogLibraryProjectDomainSchema,
+  CatalogLibrarySchema,
+  CatalogOpenProjectResultSchema,
+  CatalogProjectDomainSchema,
+  CatalogReadDocumentInputSchema,
+  CatalogReadDocumentResultSchema,
+  CatalogSnapshotSchema,
+  CreateDraftSectionInputSchema,
+  CreateDraftSectionsInputSchema,
+  CreateDraftSectionsResultSchema,
+  CreateLibraryEntryInputSchema,
+  CreateLibraryGroupInputSchema,
+  CreateLibraryInputSchema,
+  CreateScriptBookInputSchema,
+  CreateShortBookInputSchema,
+  DeleteBookInputSchema,
+  DeleteBookResultSchema,
+  DeleteCatalogProjectInputSchema,
+  DeleteCatalogProjectResultSchema,
+  DeleteDraftSectionInputSchema,
+  DeleteDraftSectionResultSchema,
+  DuplicateCatalogProjectInputSchema,
+  DuplicateCatalogProjectResultSchema,
+  ExternalSkillSelectionResultSchema,
+  ExternalSkillSourceKindSchema,
+  ImportLegacyLibraryResultSchema,
+  MoveDraftSectionInputSchema,
+  MoveDraftSectionResultSchema,
+  MoveLibraryEntryInputSchema,
+  MoveLibraryEntryResultSchema,
+  MutateCharacterStructureInputSchema,
+  MutatePlotStructureInputSchema,
+  RemoveLibraryEntryInputSchema,
+  RemoveLibraryEntryResultSchema,
+  SaveDocumentInputSchema,
+  SaveDocumentResultSchema,
+  SaveLibraryEntryInputSchema,
+  ScriptBookSchema,
+  ShortBookSchema,
+  UnregisterCatalogProjectInputSchema,
+  UnregisterCatalogProjectResultSchema,
+  UpdateBookInputSchema,
+  UpdateLibraryGroupInputSchema,
+  UpdateLibraryInputSchema,
+  createEnvelope,
+  type Book,
+  type CatalogDraftRecovery,
+  type CatalogDraftSection,
+  type CatalogIndexSnapshot,
+  type CatalogLibrary,
+  type CatalogLibraryEntry,
+  type CatalogLibraryGroup,
+  type CatalogLibraryProjectDomain,
+  type CatalogOpenProjectResult,
+  type CatalogProjectDomain,
+  type CatalogReadDocumentInput,
+  type CatalogReadDocumentResult,
+  type CatalogSnapshot,
+  type CreateDraftSectionInput,
+  type CreateDraftSectionsInput,
+  type CreateDraftSectionsResult,
+  type CreateLibraryEntryInput,
+  type CreateLibraryGroupInput,
+  type CreateLibraryInput,
+  type CreateScriptBookInput,
+  type CreateShortBookInput,
+  type DeleteBookResult,
+  type DeleteCatalogProjectInput,
+  type DeleteCatalogProjectResult,
+  type DeleteDraftSectionInput,
+  type DeleteDraftSectionResult,
+  type DuplicateCatalogProjectInput,
+  type DuplicateCatalogProjectResult,
+  type ExternalSkillSelectionResult,
+  type ExternalSkillSourceKind,
+  type ImportLegacyLibraryResult,
+  type MoveDraftSectionInput,
+  type MoveDraftSectionResult,
+  type MoveLibraryEntryInput,
+  type MoveLibraryEntryResult,
+  type MutateCharacterStructureInput,
+  type MutatePlotStructureInput,
+  type RemoveLibraryEntryInput,
+  type RemoveLibraryEntryResult,
+  type SaveDocumentInput,
+  type SaveDocumentResult,
+  type SaveLibraryEntryInput,
+  type ScriptBook,
+  type ShortBook,
+  type UnregisterCatalogProjectInput,
+  type UnregisterCatalogProjectResult,
+  type UpdateBookInput,
+  type UpdateLibraryGroupInput,
+  type UpdateLibraryInput
 } from "@deepwrite/contracts";
 
 import { browserId, invokeCommand } from "./invoke";
@@ -145,10 +220,14 @@ export async function openProject(
   const id = browserId("cmd_catalog_open_project");
   return CatalogOpenProjectResultSchema.nullable().parse(
     await invokeCommand<CatalogOpenProjectResult | null>(
-      createEnvelope("catalog.openProject", { domain }, {
-        id,
-        correlationId: id
-      })
+      createEnvelope(
+        "catalog.openProject",
+        { domain },
+        {
+          id,
+          correlationId: id
+        }
+      )
     )
   );
 }
@@ -359,7 +438,9 @@ export async function chooseExternalSkills(
     ? null
     : ExternalSkillSelectionResultSchema.parse(result);
 }
-export async function updateLibrary(rawInput: UpdateLibraryInput): Promise<CatalogLibrary> {
+export async function updateLibrary(
+  rawInput: UpdateLibraryInput
+): Promise<CatalogLibrary> {
   const input = UpdateLibraryInputSchema.parse(rawInput);
   const id = browserId("cmd_catalog_update_library");
   return CatalogLibrarySchema.parse(

@@ -108,12 +108,16 @@ describe("catalog contracts", () => {
 
   it("round-trips draft section document ids through parseCatalogDraftDocumentId", () => {
     const sectionId = "pending:section:1";
-    expect(parseCatalogDraftDocumentId(catalogDraftBodyDocumentId(sectionId))).toEqual({
+    expect(
+      parseCatalogDraftDocumentId(catalogDraftBodyDocumentId(sectionId))
+    ).toEqual({
       sectionId,
       fileKind: "body"
     });
     expect(
-      parseCatalogDraftDocumentId(catalogDraftCharacterStateDocumentId(sectionId))
+      parseCatalogDraftDocumentId(
+        catalogDraftCharacterStateDocumentId(sectionId)
+      )
     ).toEqual({
       sectionId,
       fileKind: "character-state"
@@ -165,10 +169,12 @@ describe("catalog contracts", () => {
       )
     };
 
-    expect(CatalogDraftSectionSchema.safeParse(catalogSection).success).toBe(true);
-    expect(BookProjectDraftSectionManifestSchema.safeParse(manifestSection).success).toBe(
+    expect(CatalogDraftSectionSchema.safeParse(catalogSection).success).toBe(
       true
     );
+    expect(
+      BookProjectDraftSectionManifestSchema.safeParse(manifestSection).success
+    ).toBe(true);
     expect(
       CatalogDraftSectionSchema.safeParse({
         ...catalogSection,
@@ -297,7 +303,8 @@ describe("catalog contracts", () => {
 
     expect(SaveDocumentResultSchema.parse(result)).toEqual(result);
     expect(
-      SaveDocumentResultSchema.safeParse({ ...result, projectRevision: -1 }).success
+      SaveDocumentResultSchema.safeParse({ ...result, projectRevision: -1 })
+        .success
     ).toBe(false);
     expect(
       SaveDocumentResultSchema.safeParse({
@@ -467,10 +474,12 @@ describe("catalog contracts", () => {
       "character_design"
     ]);
     expect(
-      snapshot.books[0]?.draft.sections.find((section) => section.body.content)?.body
-        .content
+      snapshot.books[0]?.draft.sections.find((section) => section.body.content)
+        ?.body.content
     ).toBe("窗外正在下雨。");
-    expect(snapshot.books[0]?.draft.sections[0]?.characterState.content).toBe("");
+    expect(snapshot.books[0]?.draft.sections[0]?.characterState.content).toBe(
+      ""
+    );
     expect(MATERIAL_KINDS).toHaveLength(5);
     expect(SKILL_KINDS).toHaveLength(4);
   });
@@ -528,10 +537,13 @@ describe("catalog contracts", () => {
 
     expect(
       snapshot.books[0]?.documents.find(({ id }) => id === "notes")
-    ).toMatchObject({ id: "notes", content: "同名普通文档" });
+    ).toMatchObject({
+      id: "notes",
+      content: "同名普通文档"
+    });
     expect(
-      snapshot.books[0]?.draft.sections.find(({ id }) => id === "section-1")?.body
-        .content
+      snapshot.books[0]?.draft.sections.find(({ id }) => id === "section-1")
+        ?.body.content
     ).toBe("必须迁移的正文");
   });
 
@@ -604,7 +616,11 @@ describe("catalog contracts", () => {
       ),
       createEnvelope(
         "catalog.updateBook",
-        { bookId: "book-1", status: "completed" as const, baseProjectRevision: 2 },
+        {
+          bookId: "book-1",
+          status: "completed" as const,
+          baseProjectRevision: 2
+        },
         { id: "catalog-update" }
       ),
       createEnvelope(
@@ -682,12 +698,23 @@ describe("catalog contracts", () => {
       ),
       createEnvelope(
         "catalog.updateLibrary",
-        { domain: "material" as const, libraryId: "material-1", title: "新名称", baseProjectRevision: 1 },
+        {
+          domain: "material" as const,
+          libraryId: "material-1",
+          title: "新名称",
+          baseProjectRevision: 1
+        },
         { id: "catalog-update-library" }
       ),
       createEnvelope(
         "catalog.moveLibraryEntry",
-        { domain: "material" as const, sourceLibraryId: "material-1", targetLibraryId: "material-2", entryId: "entry-1", targetStageId: "plot_refine" as const },
+        {
+          domain: "material" as const,
+          sourceLibraryId: "material-1",
+          targetLibraryId: "material-2",
+          entryId: "entry-1",
+          targetStageId: "plot_refine" as const
+        },
         { id: "catalog-move-library-entry" }
       ),
       createEnvelope(
@@ -712,32 +739,32 @@ describe("catalog contracts", () => {
       )
     ];
 
-    expect(commands.map((command) => CommandEnvelopeSchema.parse(command).type)).toEqual(
-      [
-        "catalog.snapshot",
-        "catalog.createShortBook",
-        "catalog.createLibrary",
-        "catalog.openProject",
-        "catalog.importLegacyLibrary",
-        "catalog.createShortBookAtPath",
-        "catalog.createLibraryAtPath",
-        "catalog.openProjectAtPath",
-        "catalog.importLegacyLibraryAtPath",
-        "catalog.updateBook",
-        "catalog.deleteBook",
-        "catalog.saveDocument",
-        "catalog.createDraftSection",
-        "catalog.createDraftSections",
-        "catalog.deleteDraftSection",
-        "catalog.saveLibraryEntry",
-        "catalog.createLibraryEntry",
-        "catalog.updateLibrary",
-        "catalog.moveLibraryEntry",
-        "catalog.removeLibraryEntry",
-        "catalog.unregisterProject",
-        "catalog.deleteProject"
-      ]
-    );
+    expect(
+      commands.map((command) => CommandEnvelopeSchema.parse(command).type)
+    ).toEqual([
+      "catalog.snapshot",
+      "catalog.createShortBook",
+      "catalog.createLibrary",
+      "catalog.openProject",
+      "catalog.importLegacyLibrary",
+      "catalog.createShortBookAtPath",
+      "catalog.createLibraryAtPath",
+      "catalog.openProjectAtPath",
+      "catalog.importLegacyLibraryAtPath",
+      "catalog.updateBook",
+      "catalog.deleteBook",
+      "catalog.saveDocument",
+      "catalog.createDraftSection",
+      "catalog.createDraftSections",
+      "catalog.deleteDraftSection",
+      "catalog.saveLibraryEntry",
+      "catalog.createLibraryEntry",
+      "catalog.updateLibrary",
+      "catalog.moveLibraryEntry",
+      "catalog.removeLibraryEntry",
+      "catalog.unregisterProject",
+      "catalog.deleteProject"
+    ]);
   });
 
   it("constrains new entry stages to the selected library domain", () => {
@@ -763,7 +790,13 @@ describe("catalog contracts", () => {
   });
 
   it("accepts library metadata updates and entry move payloads", () => {
-    expect(UpdateLibraryInputSchema.parse({ domain: "skill", libraryId: "skill-1", title: "新技能库" })).toMatchObject({ title: "新技能库" });
+    expect(
+      UpdateLibraryInputSchema.parse({
+        domain: "skill",
+        libraryId: "skill-1",
+        title: "新技能库"
+      })
+    ).toMatchObject({ title: "新技能库" });
     expect(
       UpdateLibraryInputSchema.parse({
         domain: "material",
@@ -784,7 +817,16 @@ describe("catalog contracts", () => {
         overview: "字".repeat(CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS + 1)
       })
     ).toThrow();
-    expect(MoveLibraryEntryInputSchema.parse({ domain: "material", sourceLibraryId: "material-1", targetLibraryId: "material-2", entryId: "entry-1", beforeEntryId: "entry-2", targetStageId: "pacing" })).toMatchObject({ targetStageId: "pacing" });
+    expect(
+      MoveLibraryEntryInputSchema.parse({
+        domain: "material",
+        sourceLibraryId: "material-1",
+        targetLibraryId: "material-2",
+        entryId: "entry-1",
+        beforeEntryId: "entry-2",
+        targetStageId: "pacing"
+      })
+    ).toMatchObject({ targetStageId: "pacing" });
   });
 
   it("limits created and saved library entries to 40,000 characters", () => {
@@ -910,7 +952,9 @@ describe("catalog contracts", () => {
     ];
 
     expect(
-      manifests.map((manifest) => CatalogProjectManifestSchema.parse(manifest).kind)
+      manifests.map(
+        (manifest) => CatalogProjectManifestSchema.parse(manifest).kind
+      )
     ).toEqual([
       "deepwrite.book",
       "deepwrite.material-library",
@@ -992,7 +1036,10 @@ describe("catalog contracts", () => {
           ...manifest.draft,
           sections: manifest.draft.sections.map((section) => ({
             ...section,
-            characterState: { ...section.characterState, path: section.body.path }
+            characterState: {
+              ...section.characterState,
+              path: section.body.path
+            }
           }))
         }
       })

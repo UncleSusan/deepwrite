@@ -11,12 +11,7 @@ import {
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceRuntimeContext
 } from "@deepwrite/contracts";
-import {
-  computed,
-  shallowRef,
-  type ComputedRef,
-  type Ref
-} from "vue";
+import { computed, shallowRef, type ComputedRef, type Ref } from "vue";
 import type {
   LongWorkspaceFileContext,
   LongWorkspaceRefreshStatus,
@@ -32,8 +27,7 @@ import {
 } from "../utils/libraryAttachments";
 import { buildLongWorldbuildingDirectorySnapshot } from "../utils/longWorldbuildingAgentContext";
 
-type LongLedgerCommit =
-  LongWorkspaceIndexSnapshot["ledger"]["commits"][number];
+type LongLedgerCommit = LongWorkspaceIndexSnapshot["ledger"]["commits"][number];
 
 type LongReadableAttachments = Pick<
   LibraryAttachmentBuildResult,
@@ -93,12 +87,7 @@ export interface LongWorkspacePresentationCoordinatorOptions {
      * the aggregated scope state below.
      */
     controllers: Readonly<
-      Ref<
-        ReadonlyMap<
-          string,
-          LongWorkspacePresentationConversationState
-        >
-      >
+      Ref<ReadonlyMap<string, LongWorkspacePresentationConversationState>>
     >;
     scopesByKey: Readonly<Ref<ReadonlyMap<string, string>>>;
   };
@@ -110,9 +99,7 @@ export interface LongWorkspacePresentationCoordinatorOptions {
 }
 
 export interface LongWorkspacePresentationCoordinator {
-  activeLongRoot: ComputedRef<
-    LongWorkspaceRuntimeContext["activeRoot"]
-  >;
+  activeLongRoot: ComputedRef<LongWorkspaceRuntimeContext["activeRoot"]>;
   activeLongChapterWriterEnabled: ComputedRef<boolean>;
   activeLongAgentProfile: ComputedRef<LongAgentProfile | null>;
   activeLongRuntimeContext: ComputedRef<LongWorkspaceRuntimeContext | null>;
@@ -174,14 +161,18 @@ export function useLongWorkspacePresentationCoordinator(
 
   function bindWorkflow(port: LongWorkspacePresentationWorkflowPort): void {
     if (workflowPort.value && workflowPort.value !== port) {
-      throw new Error("Long workspace presentation workflow port is already bound.");
+      throw new Error(
+        "Long workspace presentation workflow port is already bound."
+      );
     }
     workflowPort.value = port;
   }
 
   function bindEditor(port: LongWorkspacePresentationEditorPort): void {
     if (editorPort.value && editorPort.value !== port) {
-      throw new Error("Long workspace presentation editor port is already bound.");
+      throw new Error(
+        "Long workspace presentation editor port is already bound."
+      );
     }
     editorPort.value = port;
   }
@@ -209,8 +200,8 @@ export function useLongWorkspacePresentationCoordinator(
 
   const chapterTitleByCardId = computed(() => {
     const result = new Map<string, string>();
-    for (const chapter of
-      options.long.activeBookSummary.value?.navigation.chapterCards ?? []) {
+    for (const chapter of options.long.activeBookSummary.value?.navigation
+      .chapterCards ?? []) {
       result.set(chapter.id, chapter.title);
     }
     return result;
@@ -223,11 +214,11 @@ export function useLongWorkspacePresentationCoordinator(
       : undefined;
     return Boolean(
       activeLongRoot.value === "draft" &&
-        chapterCardId &&
-        chapter &&
-        (chapter.commitId !== null ||
-          chapter.bodyStatus === "written" ||
-          chapterPresentation.value.nextWritableChapterCardId === chapterCardId)
+      chapterCardId &&
+      chapter &&
+      (chapter.commitId !== null ||
+        chapter.bodyStatus === "written" ||
+        chapterPresentation.value.nextWritableChapterCardId === chapterCardId)
     );
   });
 
@@ -272,15 +263,11 @@ export function useLongWorkspacePresentationCoordinator(
         general: skillKinds.has("general")
           ? summary.linkedSkillIdsByKind.general
           : [],
-        plot: skillKinds.has("plot")
-          ? summary.linkedSkillIdsByKind.plot
-          : [],
+        plot: skillKinds.has("plot") ? summary.linkedSkillIdsByKind.plot : [],
         style: skillKinds.has("style")
           ? summary.linkedSkillIdsByKind.style
           : [],
-        other: skillKinds.has("other")
-          ? summary.linkedSkillIdsByKind.other
-          : []
+        other: skillKinds.has("other") ? summary.linkedSkillIdsByKind.other : []
       }
     });
   }
@@ -346,8 +333,8 @@ export function useLongWorkspacePresentationCoordinator(
     );
   }
 
-  const activeLongRuntimeContext =
-    computed<LongWorkspaceRuntimeContext | null>(() => {
+  const activeLongRuntimeContext = computed<LongWorkspaceRuntimeContext | null>(
+    () => {
       const summary = options.long.activeBookSummary.value;
       const workspaceIndex = options.long.workspaceIndex.value;
       const profile = activeLongAgentProfile.value;
@@ -387,19 +374,20 @@ export function useLongWorkspacePresentationCoordinator(
         navigation: summary.navigation,
         ...(longAgentAcceptsWorldbuildingDirectory(profile.id)
           ? {
-              worldbuildingDirectory:
-                buildLongWorldbuildingDirectorySnapshot(
-                  workspaceIndex.worldbuilding
-                )
+              worldbuildingDirectory: buildLongWorldbuildingDirectorySnapshot(
+                workspaceIndex.worldbuilding
+              )
             }
           : {})
       };
-    });
+    }
+  );
 
   const ledgerPresentation = computed(() => {
     const byId = new Map<string, LongLedgerCommit>();
     let latest: LongLedgerCommit | undefined;
-    for (const commit of options.long.workspaceIndex.value?.ledger.commits ?? []) {
+    for (const commit of options.long.workspaceIndex.value?.ledger.commits ??
+      []) {
       byId.set(commit.id, commit);
       if (!latest || commit.sequence > latest.sequence) latest = commit;
     }
@@ -416,9 +404,8 @@ export function useLongWorkspacePresentationCoordinator(
   const longRollbackChapterTitle = computed(() => {
     const chapterId = longRollbackCommit.value?.chapterCardId;
     return (
-      (chapterId
-        ? chapterTitleByCardId.value.get(chapterId)
-        : undefined) ?? "对应章节"
+      (chapterId ? chapterTitleByCardId.value.get(chapterId) : undefined) ??
+      "对应章节"
     );
   });
 
@@ -435,8 +422,7 @@ export function useLongWorkspacePresentationCoordinator(
       result.set(scope, {
         busy: Boolean(previous?.busy || conversation.isBusy.value),
         pendingEditReview: Boolean(
-          previous?.pendingEditReview ||
-            conversation.hasPendingEditReview.value
+          previous?.pendingEditReview || conversation.hasPendingEditReview.value
         )
       });
     }
@@ -481,7 +467,7 @@ export function useLongWorkspacePresentationCoordinator(
       options.long.proposalApprovalPending.value ||
       Boolean(
         workspaceId &&
-          options.edits.acceptingWorkspaceIds.value.has(workspaceId)
+        options.edits.acceptingWorkspaceIds.value.has(workspaceId)
       ) ||
       Boolean(scope && agentRunScopeHasWriteBarrier(scope)) ||
       proposalItems.some(({ status }) => status !== "accepted")
@@ -506,7 +492,7 @@ export function useLongWorkspacePresentationCoordinator(
       options.long.proposalApprovalPending.value ||
       Boolean(
         workspaceId &&
-          options.edits.acceptingWorkspaceIds.value.has(workspaceId)
+        options.edits.acceptingWorkspaceIds.value.has(workspaceId)
       )
     ) {
       return "正在应用长篇提案，编辑暂时锁定";
@@ -550,7 +536,9 @@ export function useLongWorkspacePresentationCoordinator(
         agentRunScopeForDocument(activeAgentDocument)
       ) ||
       (activeDocument.workspaceId !== undefined &&
-        options.edits.acceptingWorkspaceIds.value.has(activeDocument.workspaceId))
+        options.edits.acceptingWorkspaceIds.value.has(
+          activeDocument.workspaceId
+        ))
     ) {
       return "正在接受并保存智能体修改";
     }
@@ -565,7 +553,7 @@ export function useLongWorkspacePresentationCoordinator(
     const activeDocument = editorPort.value?.activeDocument.value;
     return Boolean(
       activeDocument &&
-        options.edits.savingDocumentIds.value.has(activeDocument.id)
+      options.edits.savingDocumentIds.value.has(activeDocument.id)
     );
   });
 

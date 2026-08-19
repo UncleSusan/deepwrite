@@ -1,5 +1,5 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Type, type Static } from "typebox";
+import { StringEnum, Type, type Static } from "@earendil-works/pi-ai";
 import {
   LIBRARY_AGENT_ENTRY_MAX_CHARACTERS,
   LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS,
@@ -18,6 +18,7 @@ import {
   formatLoadSkillToolResult,
   resolveAttachedSkill
 } from "./resolve-attached-skill";
+import { piStrictToolSampling } from "./pi-tool-schema";
 
 type LibraryDomain = LibraryAgentDomain;
 
@@ -221,63 +222,6 @@ function textResult(
   return { content: [{ type: "text", text }], details };
 }
 
-function primitiveTypeOf(value: unknown): string | undefined {
-  if (typeof value === "string") return "string";
-  if (typeof value === "number") return Number.isInteger(value) ? "integer" : "number";
-  if (typeof value === "boolean") return "boolean";
-  return undefined;
-}
-
-function sanitizeToolSchemaForGemini(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeToolSchemaForGemini(item));
-  }
-  if (!value || typeof value !== "object") return value;
-
-  const input = value as Record<string, unknown>;
-  const output: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(input)) {
-    output[key] = sanitizeToolSchemaForGemini(child);
-  }
-
-  for (const unionKey of ["anyOf", "oneOf"]) {
-    const union = output[unionKey];
-    if (!Array.isArray(union) || union.length === 0) continue;
-    const branches = union as Array<Record<string, unknown>>;
-    const values = branches.map((branch) => {
-      if (
-        branch &&
-        typeof branch === "object" &&
-        Object.prototype.hasOwnProperty.call(branch, "const")
-      ) {
-        return { matched: true, value: branch.const };
-      }
-      if (Array.isArray(branch?.enum) && branch.enum.length === 1) {
-        return { matched: true, value: branch.enum[0] };
-      }
-      return { matched: false, value: undefined };
-    });
-    if (values.every((value) => value.matched)) {
-      const enumValues = values.map((value) => value.value);
-      delete output[unionKey];
-      output.enum = enumValues;
-      if (!output.type) {
-        const types = [
-          ...new Set(enumValues.map(primitiveTypeOf).filter(Boolean))
-        ];
-        if (types.length === 1) output.type = types[0];
-      }
-    }
-  }
-
-  if (Object.prototype.hasOwnProperty.call(output, "const")) {
-    output.enum = [output.const];
-    if (!output.type) output.type = primitiveTypeOf(output.const);
-    delete output.const;
-  }
-  return output;
-}
-
 function defineTool<T extends ReturnType<typeof Type.Object>>(definition: {
   name: string;
   label: string;
@@ -294,16 +238,13 @@ function defineTool<T extends ReturnType<typeof Type.Object>>(definition: {
     name: definition.name,
     label: definition.label,
     description: definition.description,
-    parameters: sanitizeToolSchemaForGemini(definition.parameters) as T,
+    parameters: definition.parameters,
+    ...piStrictToolSampling(definition.parameters),
     execute: definition.execute,
-    ...(definition.executionMode ? { executionMode: definition.executionMode } : {})
+    ...(definition.executionMode
+      ? { executionMode: definition.executionMode }
+      : {})
   };
-}
-
-function literalUnion(values: readonly string[]) {
-  const unique = [...new Set(values)];
-  if (unique.length === 1) return Type.Literal(unique[0]!);
-  return Type.Union(unique.map((value) => Type.Literal(value)));
 }
 
 function normalizedName(value: string): string {
@@ -315,7 +256,11 @@ function countTextCharacters(value: string): number {
 }
 
 function stageLabel(domain: LibraryDomain, stageId: string): string {
-  return (domain === "material" ? MATERIAL_STAGE_LABELS : SKILL_STAGE_LABELS)[stageId] ?? stageId;
+  return (
+    (domain === "material" ? MATERIAL_STAGE_LABELS : SKILL_STAGE_LABELS)[
+      stageId
+    ] ?? stageId
+  );
 }
 
 function clampInteger(
@@ -328,7 +273,10 @@ function clampInteger(
   return Math.min(maximum, Math.max(minimum, Math.floor(value)));
 }
 
-function lineColumnAt(text: string, index: number): { line: number; column: number } {
+function lineColumnAt(
+  text: string,
+  index: number
+): { line: number; column: number } {
   const prefix = text.slice(0, index);
   const lines = prefix.split("\n");
   return { line: lines.length, column: (lines.at(-1)?.length ?? 0) + 1 };
@@ -336,31 +284,42 @@ function lineColumnAt(text: string, index: number): { line: number; column: numb
 
 function profileDomain(profile: LibraryAgentProfile): LibraryDomain {
   const value = profile as unknown as LibraryProfileShape;
-  if (value.domain === "material" || value.domain === "skill") return value.domain;
+  if (value.domain === "material" || value.domain === "skill")
+    return value.domain;
   if (value.id?.includes("material")) return "material";
   if (value.id?.includes("skill")) return "skill";
   throw new Error("Library agent profile does not declare a supported domain.");
 }
 
-function workspaceShape(workspace: LibraryAgentWorkspaceSnapshot): LibraryWorkspaceShape {
+function workspaceShape(
+  workspace: LibraryAgentWorkspaceSnapshot
+): LibraryWorkspaceShape {
   return workspace as unknown as LibraryWorkspaceShape;
 }
 
-function workspaceDomain(workspace: LibraryAgentWorkspaceSnapshot): LibraryDomain {
+function workspaceDomain(
+  workspace: LibraryAgentWorkspaceSnapshot
+): LibraryDomain {
   const value = workspaceShape(workspace).domain;
   if (value === "material" || value === "skill") return value;
-  throw new Error("Library workspace snapshot does not declare a supported domain.");
+  throw new Error(
+    "Library workspace snapshot does not declare a supported domain."
+  );
 }
 
 function libraryId(workspace: LibraryAgentWorkspaceSnapshot): string {
   const value = workspaceShape(workspace);
   const id = String(value.libraryId ?? value.id ?? "").trim();
-  if (!id) throw new Error("Library workspace snapshot is missing its library id.");
+  if (!id)
+    throw new Error("Library workspace snapshot is missing its library id.");
   return id;
 }
 
 function libraryTitle(workspace: LibraryAgentWorkspaceSnapshot): string {
-  return String(workspaceShape(workspace).title ?? "未命名资料库").trim() || "未命名资料库";
+  return (
+    String(workspaceShape(workspace).title ?? "未命名资料库").trim() ||
+    "未命名资料库"
+  );
 }
 
 function libraryProjectRevision(
@@ -380,7 +339,11 @@ function isReadOnly(
 ): boolean {
   const value = workspaceShape(workspace);
   const profileValue = profile as unknown as LibraryProfileShape;
-  return value.readOnly === true || value.isReadOnly === true || profileValue.readOnly === true;
+  return (
+    value.readOnly === true ||
+    value.isReadOnly === true ||
+    profileValue.readOnly === true
+  );
 }
 
 function readableLibraries(
@@ -421,12 +384,19 @@ function allowedStageIds(
 ): string[] {
   const value = workspaceShape(workspace);
   const explicit = value.allowedStageIds ?? value.stageIds;
-  if (explicit?.length) return [...new Set(explicit.map(String).filter(Boolean))];
+  if (explicit?.length)
+    return [...new Set(explicit.map(String).filter(Boolean))];
   const kind = String(
-    value.kind ?? (domain === "material" ? value.materialKind : value.skillKind) ?? ""
+    value.kind ??
+      (domain === "material" ? value.materialKind : value.skillKind) ??
+      ""
   );
-  const byKind = domain === "material" ? MATERIAL_KIND_STAGE_IDS : SKILL_KIND_STAGE_IDS;
-  return [...(byKind[kind] ?? (domain === "material" ? MATERIAL_STAGE_IDS : SKILL_STAGE_IDS))];
+  const byKind =
+    domain === "material" ? MATERIAL_KIND_STAGE_IDS : SKILL_KIND_STAGE_IDS;
+  return [
+    ...(byKind[kind] ??
+      (domain === "material" ? MATERIAL_STAGE_IDS : SKILL_STAGE_IDS))
+  ];
 }
 
 function mutableEntries(
@@ -438,7 +408,9 @@ function mutableEntries(
   return (workspaceShape(workspace).entries ?? []).map((entry, index) => {
     const entryId = String(entry.entryId ?? entry.id ?? `entry-${index + 1}`);
     const content = String(entry.content ?? entry.body ?? "");
-    const sourceLibraryId = String(entry.sourceLibraryId ?? currentLibraryId).trim() || currentLibraryId;
+    const sourceLibraryId =
+      String(entry.sourceLibraryId ?? currentLibraryId).trim() ||
+      currentLibraryId;
     const sourceLibraryTitle =
       String(entry.sourceLibraryTitle ?? "").trim() ||
       (sourceLibraryId === currentLibraryId
@@ -450,7 +422,9 @@ function mutableEntries(
       stageId: String(entry.stageId ?? ""),
       title: String(entry.title ?? "").trim() || "未命名条目",
       content,
-      revision: String(entry.revision ?? createShortWorkspaceContentRevision(content)),
+      revision: String(
+        entry.revision ?? createShortWorkspaceContentRevision(content)
+      ),
       truncated: entry.truncated === true,
       ...(entry.originalLength === undefined
         ? {}
@@ -487,7 +461,10 @@ function mutableOverview(
   };
 }
 
-function formatEntryChoice(domain: LibraryDomain, entry: MutableLibraryEntry): string {
+function formatEntryChoice(
+  domain: LibraryDomain,
+  entry: MutableLibraryEntry
+): string {
   const libraryPart = entry.isCurrentLibrary
     ? ""
     : `｜来源库：${entry.sourceLibraryTitle}（${entry.sourceLibraryId}）`;
@@ -507,7 +484,10 @@ function catalogEntryId(entry: MutableLibraryEntry): string {
  * - 快照 ID（当前库裸 ID，或同组跨库的 `libraryId/entryId`）
  * - Catalog 裸 entry_id（可再配合 library_id 消歧）
  */
-function entryIdMatches(entry: MutableLibraryEntry, requested: string): boolean {
+function entryIdMatches(
+  entry: MutableLibraryEntry,
+  requested: string
+): boolean {
   if (entry.entryId === requested) return true;
   const nativeId = catalogEntryId(entry);
   if (nativeId === requested) return true;
@@ -551,7 +531,9 @@ function resolveEntry(
 
   const name = normalizedName(String(input.name ?? ""));
   if (!name) return { error: "请提供 entry_id 或 name。" };
-  const matches = scoped.filter((entry) => normalizedName(entry.title) === name);
+  const matches = scoped.filter(
+    (entry) => normalizedName(entry.title) === name
+  );
   if (matches.length === 1) return { entry: matches[0]! };
   if (matches.length > 1) {
     return {
@@ -561,12 +543,16 @@ function resolveEntry(
       ].join("\n")
     };
   }
-  const nearby = scoped.filter((entry) => normalizedName(entry.title).includes(name));
+  const nearby = scoped.filter((entry) =>
+    normalizedName(entry.title).includes(name)
+  );
   return nearby.length
     ? {
         error: [
           `未找到标题完全等于「${name}」的条目。相近条目：`,
-          ...nearby.slice(0, 10).map((entry) => formatEntryChoice(domain, entry))
+          ...nearby
+            .slice(0, 10)
+            .map((entry) => formatEntryChoice(domain, entry))
         ].join("\n")
       }
     : {
@@ -603,7 +589,9 @@ function mutationResult(
     title: entry.title,
     text: entry.content,
     baseRevision,
-    ...(projectRevision === undefined ? {} : { baseProjectRevision: projectRevision }),
+    ...(projectRevision === undefined
+      ? {}
+      : { baseProjectRevision: projectRevision }),
     summary: finalizedSummary
   } as const;
   return operation === "create"
@@ -658,9 +646,9 @@ function buildListTool(
       ? `列出当前${noun}库及同分组其它成员库中的条目名称、栏目、来源库、entry_id 和字数；可用 library_id 只看某一个成员库。写入仍只针对当前库。`
       : `列出当前${noun}库中的条目名称、栏目、entry_id 和字数；不会读取其它资料库。`,
     parameters: Type.Object({
-      stage_id: Type.Optional(literalUnion(stages)),
+      stage_id: Type.Optional(StringEnum(stages)),
       ...(withPeers
-        ? { library_id: Type.Optional(literalUnion(libraryIds)) }
+        ? { library_id: Type.Optional(StringEnum(libraryIds)) }
         : {})
     }),
     execute: async (_toolCallId, params) => {
@@ -668,7 +656,8 @@ function buildListTool(
       const libraryIdFilter = String(params.library_id ?? "").trim();
       const scoped = entries.filter((entry) => {
         if (stageId && entry.stageId !== stageId) return false;
-        if (libraryIdFilter && entry.sourceLibraryId !== libraryIdFilter) return false;
+        if (libraryIdFilter && entry.sourceLibraryId !== libraryIdFilter)
+          return false;
         return true;
       });
       const omitted = omittedEntryCount(input.workspace);
@@ -716,9 +705,9 @@ function buildReadTool(
     parameters: Type.Object({
       entry_id: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
       name: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      stage_id: Type.Optional(literalUnion(stages)),
+      stage_id: Type.Optional(StringEnum(stages)),
       ...(withPeers
-        ? { library_id: Type.Optional(literalUnion(libraryIds)) }
+        ? { library_id: Type.Optional(StringEnum(libraryIds)) }
         : {})
     }),
     execute: async (_toolCallId, params) => {
@@ -772,10 +761,13 @@ function buildSearchTool(
       ? `在当前${noun}库及同分组其它成员库的标题和正文中搜索文本，只返回命中位置与少量上下文；可用 library_id 限定范围。`
       : `在当前${noun}库的标题和正文中搜索文本，只返回命中位置与少量上下文。`,
     parameters: Type.Object({
-      query: Type.String({ minLength: 1, maxLength: MAX_SEARCH_QUERY_CHARACTERS }),
-      stage_id: Type.Optional(literalUnion(stages)),
+      query: Type.String({
+        minLength: 1,
+        maxLength: MAX_SEARCH_QUERY_CHARACTERS
+      }),
+      stage_id: Type.Optional(StringEnum(stages)),
       ...(withPeers
-        ? { library_id: Type.Optional(literalUnion(libraryIds)) }
+        ? { library_id: Type.Optional(StringEnum(libraryIds)) }
         : {}),
       max_matches: Type.Optional(
         Type.Integer({ minimum: 1, maximum: MAX_SEARCH_MATCHES })
@@ -794,7 +786,8 @@ function buildSearchTool(
       const libraryIdFilter = String(params.library_id ?? "").trim();
       const scoped = entries.filter((entry) => {
         if (stageId && entry.stageId !== stageId) return false;
-        if (libraryIdFilter && entry.sourceLibraryId !== libraryIdFilter) return false;
+        if (libraryIdFilter && entry.sourceLibraryId !== libraryIdFilter)
+          return false;
         return true;
       });
       const maxMatches = clampInteger(
@@ -816,7 +809,9 @@ function buildSearchTool(
       const normalizedQuery = query.toLocaleLowerCase();
       let total = 0;
       for (const entry of scoped) {
-        const titleHit = entry.title.toLocaleLowerCase().includes(normalizedQuery);
+        const titleHit = entry.title
+          .toLocaleLowerCase()
+          .includes(normalizedQuery);
         const bodyLower = entry.content.toLocaleLowerCase();
         const matches: number[] = [];
         let cursor = 0;
@@ -839,7 +834,10 @@ function buildSearchTool(
         for (const [index, start] of matches.entries()) {
           const end = start + query.length;
           const contextStart = Math.max(0, start - contextCharacters);
-          const contextEnd = Math.min(entry.content.length, end + contextCharacters);
+          const contextEnd = Math.min(
+            entry.content.length,
+            end + contextCharacters
+          );
           const location = lineColumnAt(entry.content, start);
           output.push(
             `${index + 1}. L${location.line}:C${location.column} chars ${start}-${end}`,
@@ -847,7 +845,8 @@ function buildSearchTool(
           );
           total += 1;
         }
-        if (entry.truncated) output.push("注意：该条目仅搜索了本轮可见的截断快照。");
+        if (entry.truncated)
+          output.push("注意：该条目仅搜索了本轮可见的截断快照。");
         if (total >= maxMatches) break;
       }
       if (output.length === 2) {
@@ -858,7 +857,8 @@ function buildSearchTool(
         );
       }
       const omitted = omittedEntryCount(input.workspace);
-      if (omitted) output.push(`注意：另有 ${omitted} 条因容量限制未载入，未参与搜索。`);
+      if (omitted)
+        output.push(`注意：另有 ${omitted} 条因容量限制未载入，未参与搜索。`);
       output.push("", `已返回 ${total} 处正文匹配。`);
       return textResult(output.join("\n"));
     }
@@ -879,9 +879,11 @@ function buildCreateTool(
     label: `创建${noun}条目`,
     description: `在当前${noun}库的允许栏目中创建一个条目；只提交待审阅变更，不会直接绕过客户端保存。即使同分组其它成员库可读，也不会写入那些库。`,
     parameters: Type.Object({
-      stage_id: literalUnion(stages),
+      stage_id: StringEnum(stages),
       title: Type.String({ minLength: 1, maxLength: 256 }),
-      body: Type.Optional(Type.String({ maxLength: MAX_ENTRY_CONTENT_CHARACTERS }))
+      body: Type.Optional(
+        Type.String({ maxLength: MAX_ENTRY_CONTENT_CHARACTERS })
+      )
     }),
     execute: async (toolCallId, params) => {
       const stageId = String(params.stage_id ?? "");
@@ -898,10 +900,14 @@ function buildCreateTool(
             normalizedName(entry.title) === normalizedName(title)
         )
       ) {
-        return textResult(`未创建：栏目「${stageLabel(domain, stageId)}」中已存在同名条目「${title}」。`);
+        return textResult(
+          `未创建：栏目「${stageLabel(domain, stageId)}」中已存在同名条目「${title}」。`
+        );
       }
       const content = String(params.body ?? "").trim();
-      const safeCallId = toolCallId.replace(/[^A-Za-z0-9._-]/gu, "-").slice(0, 180);
+      const safeCallId = toolCallId
+        .replace(/[^A-Za-z0-9._-]/gu, "-")
+        .slice(0, 180);
       const entry: MutableLibraryEntry = {
         entryId: `pending:${safeCallId || "entry"}`,
         documentId: `pending:${domain}:${safeCallId || "entry"}`,
@@ -939,7 +945,8 @@ function replaceFragments(
   current: string,
   replacements: readonly TextReplacement[]
 ): { text?: string; count: number; error?: string } {
-  if (!replacements.length) return { count: 0, error: "replacements 不能为空。" };
+  if (!replacements.length)
+    return { count: 0, error: "replacements 不能为空。" };
   let next = current;
   let count = 0;
   for (const [index, replacement] of replacements.entries()) {
@@ -981,14 +988,12 @@ function buildEditTool(
     parameters: Type.Object({
       entry_id: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
       name: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      stage_id: Type.Optional(literalUnion(stages)),
+      stage_id: Type.Optional(StringEnum(stages)),
       title: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      mode: Type.Union([
-        Type.Literal("replace_fragments"),
-        Type.Literal("append"),
-        Type.Literal("replace")
-      ]),
-      body: Type.Optional(Type.String({ maxLength: MAX_ENTRY_CONTENT_CHARACTERS })),
+      mode: StringEnum(["replace_fragments", "append", "replace"] as const),
+      body: Type.Optional(
+        Type.String({ maxLength: MAX_ENTRY_CONTENT_CHARACTERS })
+      ),
       allow_overwrite_existing: Type.Optional(Type.Boolean()),
       replacements: Type.Optional(
         Type.Array(
@@ -1033,9 +1038,11 @@ function buildEditTool(
       const baseRevision = entry.revision;
       const previousTitle = entry.title;
       const previousContent = entry.content;
-      const nextTitle = params.title === undefined ? entry.title : String(params.title).trim();
+      const nextTitle =
+        params.title === undefined ? entry.title : String(params.title).trim();
       if (!nextTitle) return textResult("未修改：title 不能为空。");
-      const mode = String(params.mode) as "replace_fragments" | "append" | "replace";
+      const mode = String(params.mode) as
+        "replace_fragments" | "append" | "replace";
       let nextContent = entry.content;
       let changeDescription = "更新";
       if (mode === "replace_fragments") {
@@ -1050,15 +1057,19 @@ function buildEditTool(
         const body = String(params.body).trim();
         if (mode === "append") {
           if (!body) return textResult("未修改：append 模式的 body 不能为空。");
-          const separator = entry.content.length === 0
-            ? ""
-            : entry.content.endsWith("\n")
-              ? "\n"
-              : "\n\n";
+          const separator =
+            entry.content.length === 0
+              ? ""
+              : entry.content.endsWith("\n")
+                ? "\n"
+                : "\n\n";
           nextContent = `${entry.content}${separator}${body}`;
           changeDescription = "正文追加";
         } else {
-          if (entry.content.trim() && params.allow_overwrite_existing !== true) {
+          if (
+            entry.content.trim() &&
+            params.allow_overwrite_existing !== true
+          ) {
             return textResult(
               "未覆盖：该条目已有正文。只有用户明确要求覆盖全文时，才可设置 allow_overwrite_existing=true；普通修改请使用 replace_fragments。"
             );
@@ -1067,7 +1078,9 @@ function buildEditTool(
           changeDescription = "全文覆盖";
         }
       } else if (nextTitle === entry.title) {
-        return textResult(`未修改：${mode} 模式需要提供 body，或通过 title 修改标题。`);
+        return textResult(
+          `未修改：${mode} 模式需要提供 body，或通过 title 修改标题。`
+        );
       }
 
       if (nextTitle === previousTitle && nextContent === previousContent) {
@@ -1121,11 +1134,7 @@ function buildEditOverviewTool(
       noun +
       "。局部修改用 replace_fragments，追加用 append，明确整篇覆盖才用 replace；只提交待审阅变更。",
     parameters: Type.Object({
-      mode: Type.Union([
-        Type.Literal("replace_fragments"),
-        Type.Literal("append"),
-        Type.Literal("replace")
-      ]),
+      mode: StringEnum(["replace_fragments", "append", "replace"] as const),
       body: Type.Optional(
         Type.String({ maxLength: LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS })
       ),
@@ -1163,11 +1172,9 @@ function buildEditOverviewTool(
       const baseRevision = overview.revision;
       const previousContent = overview.content;
       const mode = String(params.mode) as
-        | "replace_fragments"
-        | "append"
-        | "replace";
-      let nextContent = previousContent;
-      let changeDescription = "更新";
+        "replace_fragments" | "append" | "replace";
+      let nextContent: string;
+      let changeDescription: string;
       if (mode === "replace_fragments") {
         const replacements = (params.replacements ?? []) as TextReplacement[];
         const result = replaceFragments(previousContent, replacements);
@@ -1180,11 +1187,12 @@ function buildEditOverviewTool(
         const body = String(params.body).trim();
         if (mode === "append") {
           if (!body) return textResult("未修改：append 模式的 body 不能为空。");
-          const separator = previousContent.length === 0
-            ? ""
-            : previousContent.endsWith("\n")
-              ? "\n"
-              : "\n\n";
+          const separator =
+            previousContent.length === 0
+              ? ""
+              : previousContent.endsWith("\n")
+                ? "\n"
+                : "\n\n";
           nextContent = previousContent + separator + body;
           changeDescription = "正文追加";
         } else {
@@ -1230,7 +1238,9 @@ function buildEditOverviewTool(
 }
 
 function buildLoadSkillTool(input: BuildLibraryAgentToolsInput): AgentTool {
-  const configuredNames = new Set(input.profile.readAccess.skills.map((skill) => skill.name));
+  const configuredNames = new Set(
+    input.profile.readAccess.skills.map((skill) => skill.name)
+  );
   return defineTool({
     name: "load_skill",
     label: "加载技能",
@@ -1241,7 +1251,8 @@ function buildLoadSkillTool(input: BuildLibraryAgentToolsInput): AgentTool {
     execute: async (_toolCallId, params) => {
       const name = String(params.name ?? "");
       const attached = input.attachedSkills ?? [];
-      const isReadable = (item: { title: string }) => configuredNames.has(item.title);
+      const isReadable = (item: { title: string }) =>
+        configuredNames.has(item.title);
       const result = resolveAttachedSkill(name, attached, isReadable);
       return textResult(
         formatLoadSkillToolResult(name, result, attached.filter(isReadable))
@@ -1255,29 +1266,45 @@ export function buildLibraryAgentTools(
 ): AgentTool[] {
   const domain = workspaceDomain(input.workspace);
   if (profileDomain(input.profile) !== domain) {
-    throw new Error("Library agent profile domain does not match the workspace snapshot.");
+    throw new Error(
+      "Library agent profile domain does not match the workspace snapshot."
+    );
   }
   const readOnly = isReadOnly(input.workspace, input.profile);
   const writeStages = allowedStageIds(input.workspace, domain);
   if (!writeStages.length) {
-    throw new Error("Library workspace snapshot does not expose any allowed stages.");
+    throw new Error(
+      "Library workspace snapshot does not expose any allowed stages."
+    );
   }
   const libraries = readableLibraries(input.workspace);
   const entries = mutableEntries(input.workspace, readOnly);
   const overview = mutableOverview(input.workspace);
   const readStages = [
-    ...new Set(
-      [
-        ...writeStages,
-        ...entries.map((entry) => entry.stageId).filter(Boolean)
-      ]
-    )
+    ...new Set([
+      ...writeStages,
+      ...entries.map((entry) => entry.stageId).filter(Boolean)
+    ])
   ];
   const accessedEntryIds = new Set<string>();
   const readTools = [
     buildListTool(input, domain, entries, readStages, libraries),
-    buildReadTool(input, domain, entries, readStages, libraries, accessedEntryIds),
-    buildSearchTool(input, domain, entries, readStages, libraries, accessedEntryIds),
+    buildReadTool(
+      input,
+      domain,
+      entries,
+      readStages,
+      libraries,
+      accessedEntryIds
+    ),
+    buildSearchTool(
+      input,
+      domain,
+      entries,
+      readStages,
+      libraries,
+      accessedEntryIds
+    ),
     buildLoadSkillTool(input)
   ];
   return readOnly
@@ -1290,7 +1317,9 @@ export function buildLibraryAgentTools(
       ];
 }
 
-export function isLibraryAgentToolDetails(value: unknown): value is LibraryAgentToolDetails {
+export function isLibraryAgentToolDetails(
+  value: unknown
+): value is LibraryAgentToolDetails {
   if (!value || typeof value !== "object" || !("kind" in value)) return false;
   const kind = (value as { kind?: unknown }).kind;
   return (

@@ -55,7 +55,9 @@ export class CloudBackupIdentityStore {
     this.filePath = join(userDataPath, "config", IDENTITY_FILE);
   }
 
-  async getOrCreate(now: () => string = () => new Date().toISOString()): Promise<string> {
+  async getOrCreate(
+    now: () => string = () => new Date().toISOString()
+  ): Promise<string> {
     try {
       const raw = JSON.parse(await readFile(this.filePath, "utf8")) as unknown;
       if (
@@ -68,7 +70,11 @@ export class CloudBackupIdentityStore {
         return formatMachineKey(raw.machineKey);
       }
     } catch (error: unknown) {
-      if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        error.code !== "ENOENT"
+      ) {
         if (!(error instanceof SyntaxError)) {
           throw error;
         }

@@ -51,7 +51,9 @@ describe("model run settings", () => {
 
   it("rejects stale run settings that are no longer configured for the model", () => {
     expect(() =>
-      resolveModelRunSettings(temperatureModeConfig, { thinkingLevel: "medium" })
+      resolveModelRunSettings(temperatureModeConfig, {
+        thinkingLevel: "medium"
+      })
     ).toThrow("所选思考等级不在当前模型配置中");
     expect(() =>
       resolveModelRunSettings(temperatureModeConfig, {

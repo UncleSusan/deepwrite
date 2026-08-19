@@ -218,9 +218,10 @@ function parsedOrdinal(name: string): number | null {
     const value = Number(arabicPrefix[1]);
     return Number.isSafeInteger(value) ? value : null;
   }
-  const ordinal = /^第\s*([零〇一二两三四五六七八九十百千万亿\d]+)\s*[章节卷回部集]/u.exec(
-    stem
-  );
+  const ordinal =
+    /^第\s*([零〇一二两三四五六七八九十百千万亿\d]+)\s*[章节卷回部集]/u.exec(
+      stem
+    );
   if (!ordinal) return null;
   if (/^\d+$/u.test(ordinal[1]!)) {
     const value = Number(ordinal[1]);
@@ -234,7 +235,10 @@ function orderedNames(
   label: string,
   warnings: string[]
 ): string[] {
-  const ordinals = names.map((name) => ({ name, ordinal: parsedOrdinal(name) }));
+  const ordinals = names.map((name) => ({
+    name,
+    ordinal: parsedOrdinal(name)
+  }));
   const usable =
     ordinals.every(({ ordinal }) => ordinal !== null) &&
     new Set(ordinals.map(({ ordinal }) => ordinal)).size === ordinals.length;
@@ -242,7 +246,9 @@ function orderedNames(
     warnings.push(
       `${label}无法全部识别唯一编号，已按中文数字感知的自然文件名排序；请在导入前核对顺序。`
     );
-    return [...names].sort((left, right) => NATURAL_COLLATOR.compare(left, right));
+    return [...names].sort((left, right) =>
+      NATURAL_COLLATOR.compare(left, right)
+    );
   }
   const ordered = [...ordinals].sort(
     (left, right) =>
@@ -265,14 +271,22 @@ function looksBinary(content: string): boolean {
   for (const character of content) {
     count += 1;
     const code = character.codePointAt(0)!;
-    if (code < 32 && character !== "\n" && character !== "\r" && character !== "\t") {
+    if (
+      code < 32 &&
+      character !== "\n" &&
+      character !== "\r" &&
+      character !== "\t"
+    ) {
       controlCount += 1;
     }
   }
   return count > 0 && controlCount / count > 0.01;
 }
 
-function decodeChapter(bytes: Uint8Array, sourceName: string): {
+function decodeChapter(
+  bytes: Uint8Array,
+  sourceName: string
+): {
   content: string;
   encoding: LongContinuationImportEncoding;
 } {
@@ -306,7 +320,8 @@ function decodeChapter(bytes: Uint8Array, sourceName: string): {
   }
   content = content.replace(/^\uFEFF/u, "");
   if (!content.trim()) throw new Error(`章节内容为空：${sourceName}`);
-  if (looksBinary(content)) throw new Error(`章节疑似二进制或包含非法控制字符：${sourceName}`);
+  if (looksBinary(content))
+    throw new Error(`章节疑似二进制或包含非法控制字符：${sourceName}`);
   return { content, encoding };
 }
 
@@ -321,7 +336,8 @@ async function readSecureChapter(
   if (!before.isFile() || before.isSymbolicLink()) {
     throw new Error(`章节必须是普通 TXT 文件：${relativePath}`);
   }
-  if (before.nlink !== 1n) throw new Error(`章节不允许使用硬链接：${relativePath}`);
+  if (before.nlink !== 1n)
+    throw new Error(`章节不允许使用硬链接：${relativePath}`);
   if (before.size <= 0n) throw new Error(`章节文件为空：${relativePath}`);
   if (before.size > BigInt(MAX_DOCUMENT_BYTES)) {
     throw new Error(`章节超过 32 MiB 安全上限：${relativePath}`);
@@ -392,7 +408,9 @@ async function scanChapterDirectory(
   return chapters;
 }
 
-function publicScan(source: ContinuationImportSource): LongContinuationImportScan {
+function publicScan(
+  source: ContinuationImportSource
+): LongContinuationImportScan {
   const volumes = source.volumes.map((volume) => ({
     sourceName: volume.sourceName,
     title: volume.title,
@@ -437,10 +455,14 @@ export async function scanContinuationImportSource(
     ({ name }) => visibleName(name)
   );
   if (entries.length === 0) throw new Error("所选文件夹没有可导入的章节。");
-  const allFiles = entries.every((entry) => entry.isFile() && isTxt(entry.name));
+  const allFiles = entries.every(
+    (entry) => entry.isFile() && isTxt(entry.name)
+  );
   const allDirectories = entries.every((entry) => entry.isDirectory());
   if (!allFiles && !allDirectories) {
-    throw new Error("根目录必须全部是 TXT 章节，或全部是按卷划分的文件夹，不能混放。");
+    throw new Error(
+      "根目录必须全部是 TXT 章节，或全部是按卷划分的文件夹，不能混放。"
+    );
   }
   const warnings: string[] = [];
   const volumes: ScannedVolume[] = [];
@@ -489,7 +511,8 @@ export async function scanContinuationImportSource(
   }
   const rawTitle = basename(sourceRoot).normalize("NFC").trim() || "续写导入";
   const defaultTitle = Array.from(rawTitle).slice(0, 256).join("");
-  if (defaultTitle !== rawTitle) warnings.push("根文件夹名过长，默认书名已截取前 256 个字符。");
+  if (defaultTitle !== rawTitle)
+    warnings.push("根文件夹名过长，默认书名已截取前 256 个字符。");
   const fingerprint = sha256(
     JSON.stringify({
       mode: allFiles ? "flat" : "volume_folders",
@@ -513,9 +536,9 @@ export async function scanContinuationImportSource(
   };
 }
 
-export async function previewContinuationImportSource(rawSourcePath: string): Promise<
-  LongContinuationImportScan & { sourceFingerprint: string }
-> {
+export async function previewContinuationImportSource(
+  rawSourcePath: string
+): Promise<LongContinuationImportScan & { sourceFingerprint: string }> {
   const source = await scanContinuationImportSource(rawSourcePath);
   return { ...publicScan(source), sourceFingerprint: source.sourceFingerprint };
 }
@@ -527,7 +550,9 @@ export async function createContinuationImportPlan(
   const input = LongImportContinuationAtPathInputSchema.parse(rawInput);
   const source = await scanContinuationImportSource(input.sourcePath);
   if (source.sourceFingerprint !== input.expectedFingerprint) {
-    throw new Error("续写导入源文件在预览后发生变化，请重新选择文件夹并核对顺序。");
+    throw new Error(
+      "续写导入源文件在预览后发生变化，请重新选择文件夹并核对顺序。"
+    );
   }
   const bookId = createId("longbook");
   const documents: ContinuationImportDocument[] = [];
@@ -543,10 +568,20 @@ export async function createContinuationImportPlan(
       revision: fileRevision(content),
       updatedAt: importedAt
     } as LongWorkspaceFileReference;
-    documents.push({ fileId, path, kind, content, revision: reference.revision });
+    documents.push({
+      fileId,
+      path,
+      kind,
+      content,
+      revision: reference.revision
+    });
     return reference;
   };
-  const bookLine = addDocument(LONG_BOOK_LINE_FILE_ID, "long/plot/book-line.md", "");
+  const bookLine = addDocument(
+    LONG_BOOK_LINE_FILE_ID,
+    "long/plot/book-line.md",
+    ""
+  );
   const worldbuilding = DEFAULT_WORLD_CATEGORIES.map(([id, title], index) => ({
     id,
     title,

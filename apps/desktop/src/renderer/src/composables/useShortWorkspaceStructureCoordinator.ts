@@ -4,13 +4,7 @@ import type {
   DeepWriteApi,
   PlotStructureMutation
 } from "@deepwrite/contracts";
-import {
-  computed,
-  nextTick,
-  ref,
-  type Ref,
-  type ShallowRef
-} from "vue";
+import { computed, nextTick, ref, type Ref, type ShallowRef } from "vue";
 import type {
   CatalogWorkspaceProjection,
   DraftDirectoryProjection
@@ -119,10 +113,7 @@ export interface ShortWorkspaceStructureResourcePort {
 }
 
 export interface ShortWorkspaceStructureConversationPort {
-  forKey(
-    key: string,
-    scope: string
-  ): ShortWorkspaceConversationHandle;
+  forKey(key: string, scope: string): ShortWorkspaceConversationHandle;
   entries(): Iterable<readonly [string, ShortWorkspaceConversationHandle]>;
   hasWriteBarrier(scope: string): boolean;
   remove(key: string, options?: { clearPersistence?: boolean }): void;
@@ -156,13 +147,15 @@ export function useShortWorkspaceStructureCoordinator(
     options;
   const plotStructureBookId = ref<string | null>(null);
   const characterItemDialog = ref<CharacterItemDialogState | null>(null);
-  const pendingExpertSectionDeletion =
-    ref<PendingExpertSectionDeletion | null>(null);
-  const pendingExpertSectionCreation =
-    ref<PendingExpertSectionCreation | null>(null);
+  const pendingExpertSectionDeletion = ref<PendingExpertSectionDeletion | null>(
+    null
+  );
+  const pendingExpertSectionCreation = ref<PendingExpertSectionCreation | null>(
+    null
+  );
   const plotStructureBook = computed(() =>
     plotStructureBookId.value
-      ? catalog.findBook(plotStructureBookId.value) ?? null
+      ? (catalog.findBook(plotStructureBookId.value) ?? null)
       : null
   );
 
@@ -193,8 +186,7 @@ export function useShortWorkspaceStructureCoordinator(
 
   function canPublish(context: WorkspaceMutationContext): boolean {
     return (
-      !disposed &&
-      workspaceMutationEpochs.get(context.bookId) === context.epoch
+      !disposed && workspaceMutationEpochs.get(context.bookId) === context.epoch
     );
   }
 
@@ -260,13 +252,15 @@ export function useShortWorkspaceStructureCoordinator(
       state.acceptingDocumentIds.value.has(source.id) ||
       Boolean(
         source.workspaceId &&
-          (state.acceptingWorkspaceIds.value.has(source.workspaceId) ||
-            hasBusyExpertConversation(source.workspaceId))
+        (state.acceptingWorkspaceIds.value.has(source.workspaceId) ||
+          hasBusyExpertConversation(source.workspaceId))
       )
     );
   }
 
-  async function prepareBookStructureMutation(bookId: string): Promise<boolean> {
+  async function prepareBookStructureMutation(
+    bookId: string
+  ): Promise<boolean> {
     await saves.drain();
     if (disposed) return false;
     const scopedDocuments = state.documents.value.filter(
@@ -297,16 +291,12 @@ export function useShortWorkspaceStructureCoordinator(
       conversations.hasWriteBarrier(scope) ||
       state.acceptingWorkspaceIds.value.has(bookId)
     ) {
-      notifications.warning(
-        "请先等待当前智能体结束，并接受或拒绝待审阅变更。"
-      );
+      notifications.warning("请先等待当前智能体结束，并接受或拒绝待审阅变更。");
       return false;
     }
     if (
       saves.conflict.value &&
-      scopedDocuments.some(
-        ({ id }) => id === saves.conflict.value?.documentId
-      )
+      scopedDocuments.some(({ id }) => id === saves.conflict.value?.documentId)
     ) {
       notifications.warning("请先处理该作品尚未解决的保存冲突。");
       return false;
@@ -372,7 +362,10 @@ export function useShortWorkspaceStructureCoordinator(
     const operation = enqueueWorkspaceMutation(bookId, async (context) => {
       if (!(await prepareBookStructureMutation(bookId))) return;
       const authoritativeBook = catalog.findBook(bookId);
-      if (!authoritativeBook || authoritativeBook.projectRevision === undefined) {
+      if (
+        !authoritativeBook ||
+        authoritativeBook.projectRevision === undefined
+      ) {
         if (canPublish(context)) {
           notifications.error("当前作品缺少项目版本，无法安全管理结构。");
         }
@@ -417,12 +410,13 @@ export function useShortWorkspaceStructureCoordinator(
         return;
       }
       const authoritativeBook = catalog.findBook(bookId);
-      if (!authoritativeBook || authoritativeBook.projectRevision === undefined) {
+      if (
+        !authoritativeBook ||
+        authoritativeBook.projectRevision === undefined
+      ) {
         if (canPublish(context)) {
           completion.fail();
-          notifications.error(
-            "当前作品缺少项目版本，无法安全变更人物结构。"
-          );
+          notifications.error("当前作品缺少项目版本，无法安全变更人物结构。");
         }
         return;
       }
@@ -468,9 +462,7 @@ export function useShortWorkspaceStructureCoordinator(
     await operation;
   }
 
-  function characterBookIdForNode(
-    node: ResourceTreeNode
-  ): string | undefined {
+  function characterBookIdForNode(node: ResourceTreeNode): string | undefined {
     return resources.documentForResourceId(node.id)?.workspaceId;
   }
 
@@ -548,9 +540,7 @@ export function useShortWorkspaceStructureCoordinator(
           )
         : undefined);
     if (!directory) {
-      notifications.warning(
-        "无法确定人物目录，暂时不能新建人物条目。"
-      );
+      notifications.warning("无法确定人物目录，暂时不能新建人物条目。");
       return;
     }
     requestCreateCharacterItem(directory);
@@ -655,12 +645,13 @@ export function useShortWorkspaceStructureCoordinator(
         return;
       }
       const authoritativeBook = catalog.findBook(bookId);
-      if (!authoritativeBook || authoritativeBook.projectRevision === undefined) {
+      if (
+        !authoritativeBook ||
+        authoritativeBook.projectRevision === undefined
+      ) {
         if (canPublish(context)) {
           completion.fail();
-          notifications.error(
-            "当前作品缺少项目版本，无法安全变更剧情结构。"
-          );
+          notifications.error("当前作品缺少项目版本，无法安全变更剧情结构。");
         }
         return;
       }
@@ -842,7 +833,10 @@ export function useShortWorkspaceStructureCoordinator(
         return;
       }
       const authoritativeBook = catalog.findBook(bookId);
-      if (!authoritativeBook || authoritativeBook.projectRevision === undefined) {
+      if (
+        !authoritativeBook ||
+        authoritativeBook.projectRevision === undefined
+      ) {
         if (canPublish(context)) {
           notifications.error("当前作品缺少项目版本，无法安全新建正文结构。");
         }
@@ -954,7 +948,10 @@ export function useShortWorkspaceStructureCoordinator(
         direction === "up" ? currentIndex - 1 : currentIndex + 1;
       if (targetIndex < 0 || targetIndex >= directory.sections.length) return;
       const authoritativeBook = catalog.findBook(bookId);
-      if (!authoritativeBook || authoritativeBook.projectRevision === undefined) {
+      if (
+        !authoritativeBook ||
+        authoritativeBook.projectRevision === undefined
+      ) {
         if (canPublish(context)) {
           notifications.error("当前作品缺少项目版本，无法安全调整正文结构。");
         }
@@ -1043,11 +1040,7 @@ export function useShortWorkspaceStructureCoordinator(
       notifications.info("当前作品正在更新，请稍候。");
       return;
     }
-    const body = resources.draftFileDocument(
-      directory,
-      section.id,
-      "body"
-    );
+    const body = resources.draftFileDocument(directory, section.id, "body");
     const characterState = resources.draftFileDocument(
       directory,
       section.id,
@@ -1061,8 +1054,9 @@ export function useShortWorkspaceStructureCoordinator(
       workspaceType: directory.workspaceType,
       hasContent: Boolean(
         (body && resources.liveDocument(body).content.trim()) ||
-          (characterState && resources.liveDocument(characterState).content.trim()) ||
-          section.wordCountRequirement.trim()
+        (characterState &&
+          resources.liveDocument(characterState).content.trim()) ||
+        section.wordCountRequirement.trim()
       )
     };
   }
@@ -1125,11 +1119,12 @@ export function useShortWorkspaceStructureCoordinator(
         const fallbackSection =
           fallbackSections[Math.min(removedIndex, fallbackSections.length - 1)];
         const authoritativeBook = catalog.findBook(target.workspaceId);
-        if (!authoritativeBook || authoritativeBook.projectRevision === undefined) {
+        if (
+          !authoritativeBook ||
+          authoritativeBook.projectRevision === undefined
+        ) {
           if (canPublish(context)) {
-            notifications.error(
-              "当前作品缺少项目版本，无法安全删除正文结构。"
-            );
+            notifications.error("当前作品缺少项目版本，无法安全删除正文结构。");
           }
           return;
         }
