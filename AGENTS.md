@@ -10,6 +10,7 @@
 ## GitHub 提交与署名
 
 - 创建 Git commit、Pull Request 或执行合并时，不得擅自添加任何个人作为共同作者、协作者或附加署名；禁止自行加入 `Co-authored-by`、`Signed-off-by` 等署名尾注，也不得在提交信息、PR 描述或合并信息中额外列出个人姓名或邮箱。仅当用户明确要求添加某项署名时才可添加；正常使用仓库现有 Git 身份与 GitHub 自动生成的记录，不得擅自改写作者身份。
+- 本仓库创建 Git commit 时固定使用 `carswj <wenjia@wenjiadeMacBook-Air.local>` 作为提交身份；如本地尚未配置，只能通过仓库级 `git config --local user.name carswj` 和 `git config --local user.email wenjia@wenjiadeMacBook-Air.local` 设置，不得修改全局 Git 身份。除非用户明确要求变更，否则后续提交均沿用该身份。
 
 ## 项目布局与基础结构设计
 
