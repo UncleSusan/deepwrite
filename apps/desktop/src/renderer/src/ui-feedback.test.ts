@@ -13,4 +13,14 @@ describe("ui-feedback", () => {
     expect(hostSource).toContain("left: 50%");
     expect(hostSource).toContain("var(--surface-raised)");
   });
+
+  it("sizes each message to its content and wraps at the existing limit", () => {
+    expect(hostSource).toContain("justify-items: center");
+    expect(hostSource).toContain("width: calc(100vw - 32px)");
+    expect(hostSource).toContain("width: fit-content");
+    expect(hostSource).toContain("max-width: min(520px, 100%)");
+    expect(hostSource).toContain('class="toast-message__content"');
+    expect(hostSource).toContain("white-space: normal");
+    expect(hostSource).toContain("overflow-wrap: anywhere");
+  });
 });

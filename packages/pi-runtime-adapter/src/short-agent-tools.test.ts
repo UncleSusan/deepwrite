@@ -1384,6 +1384,32 @@ describe("short workspace tools", () => {
     expect(resultText(blocked)).toContain("请先读取");
   });
 
+  it("documents short section ids and tolerates catalog resource ids", async () => {
+    const tools = buildShortWorkspaceTools({
+      workspace: workspace("draft"),
+      profile: profile("expert_draft_coordinator")
+    });
+    const read = toolByName(tools, "read_draft_sections");
+
+    expect(read.description).toContain("section-1");
+    expect(read.description).toContain("不要填写 catalog:");
+    expect(JSON.stringify(read.parameters)).toContain(
+      "正文目录中明确标为 section_id 的短 ID"
+    );
+
+    const preview = await read.execute("preview-resource-ids", {
+      section_ids: [
+        "catalog:book-document:book-example:draft-section%3Aintro%3Abody",
+        "catalog:book-document:book-example:draft-section%3Asection-1%3Abody"
+      ],
+      mode: "preview"
+    });
+
+    expect(resultText(preview)).toContain("导语");
+    expect(resultText(preview)).toContain("第一节·迟到的汽笛");
+    expect(resultText(preview)).not.toContain("没有找到这些正文章节");
+  });
+
   it("lets the coordinator maintain character state alongside chapter bodies", async () => {
     const tools = buildShortWorkspaceTools({
       workspace: workspace("draft"),

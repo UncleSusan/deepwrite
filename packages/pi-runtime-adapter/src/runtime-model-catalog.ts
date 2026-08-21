@@ -1,4 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { findLongestModelIdBoundaryMatch } from "./model-id-matching";
 
 /**
  * Runtime model metadata that DeepWrite needs before the pinned pi-ai catalog
@@ -381,17 +382,6 @@ const DEEPWRITE_RUNTIME_MODELS = [
 export function findDeepWriteRuntimeModel(
   modelId: string
 ): Model<Api> | undefined {
-  const normalizedModelId = modelId.toLowerCase();
-  let matchedModel: Model<Api> | undefined;
-
-  for (const model of DEEPWRITE_RUNTIME_MODELS) {
-    if (!normalizedModelId.startsWith(model.id.toLowerCase())) {
-      continue;
-    }
-    if (!matchedModel || model.id.length > matchedModel.id.length) {
-      matchedModel = model as Model<Api>;
-    }
-  }
-
-  return matchedModel;
+  return findLongestModelIdBoundaryMatch(DEEPWRITE_RUNTIME_MODELS, modelId) as
+    Model<Api> | undefined;
 }

@@ -9,6 +9,15 @@ import { writeToolText } from "../utils/agentWriteToolPreview";
 
 export function workspaceToolLabel(name: string): string {
   const labels: Record<string, string> = {
+    list_creation_projects: "列出创作项目",
+    get_creation_project_summary: "查看项目摘要",
+    list_material_libraries: "列出素材库",
+    get_material_library_summary: "查看素材库摘要",
+    list_skill_libraries: "列出技能库",
+    get_skill_library_summary: "查看技能库摘要",
+    query_model_configs: "查询模型配置",
+    query_model_usage: "查询模型用量",
+    list_workspace_content: "列出项目阶段",
     read_workspace_content: "读取工作区内容",
     search_workspace_text: "搜索工作区文本",
     query_linked_material_entries: "查询关联素材",
@@ -22,6 +31,12 @@ export function workspaceToolLabel(name: string): string {
     replace_draft_section_text: "替换正文章节文本",
     rename_draft_section: "修改章节名称",
     delete_draft_section: "删除章节",
+    list_chapters: "列出章节",
+    search_chapters: "搜索章节",
+    read_chapter: "读取章节",
+    list_continuity_files: "列出连续性文件",
+    read_continuity_file: "读取连续性文件",
+    search_continuity_files: "搜索连续性文件",
     list_setting: "列出设定",
     search_setting: "搜索设定",
     read_setting: "读取设定",
@@ -57,7 +72,8 @@ export function workspaceToolLabel(name: string): string {
     read_plot_design: "读取剧情设计",
     create_plot_design: "创建剧情设计",
     write_plot_design: "写入剧情设计",
-    edit_plot_design: "编辑剧情设计"
+    edit_plot_design: "编辑剧情设计",
+    web_search: "智能搜索"
   };
   return labels[name] ?? name;
 }

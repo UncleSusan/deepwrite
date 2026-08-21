@@ -8,11 +8,11 @@ import {
 } from "@deepwrite/contracts";
 import {
   PiAgentRuntimeAdapter,
-  type AgentRuntimeEvent,
-  type LongCommandExecutor
+  type AgentRuntimeEvent
 } from "@deepwrite/pi-runtime-adapter";
 import { createId, nowIso } from "@deepwrite/shared";
-import { bootUtility, type UtilityCommandHandlerContext } from "./runtime";
+import { createAgentRunInput } from "./agent-run-input";
+import { bootUtility } from "./runtime";
 
 const runtime = new PiAgentRuntimeAdapter({
   evaluationMode: process.env.DEEPWRITE_APP_MODE === "evaluation"
@@ -456,44 +456,6 @@ function toEventEnvelope(
   );
 }
 
-function abortedError(): Error {
-  const error = new Error("Long workspace Core request was aborted.");
-  error.name = "AbortError";
-  return error;
-}
-
-function createLongCommandExecutor(
-  context: UtilityCommandHandlerContext
-): LongCommandExecutor {
-  return (command, signal) => {
-    if (signal?.aborted) {
-      return Promise.reject(abortedError());
-    }
-    const request = context.requestInternalCommand("core", command, {
-      timeoutMs: 60_000
-    });
-    if (!signal) return request;
-    return new Promise((resolve, reject) => {
-      const onAbort = (): void => {
-        signal.removeEventListener("abort", onAbort);
-        reject(abortedError());
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      void request.then(
-        (result) => {
-          signal.removeEventListener("abort", onAbort);
-          if (signal.aborted) reject(abortedError());
-          else resolve(result);
-        },
-        (error: unknown) => {
-          signal.removeEventListener("abort", onAbort);
-          reject(error);
-        }
-      );
-    });
-  };
-}
-
 function streamPrompt(
   input: Parameters<PiAgentRuntimeAdapter["start"]>[0],
   correlationId: string,
@@ -642,67 +604,7 @@ bootUtility("agent", {
     abortControllers.set(runId, controller);
 
     streamPrompt(
-      {
-        runId,
-        sessionId: command.payload.sessionId,
-        prompt: command.payload.message,
-        ...(command.payload.mode ? { mode: command.payload.mode } : {}),
-        ...(command.payload.attachments?.length
-          ? { attachments: command.payload.attachments }
-          : {}),
-        ...(command.payload.writeApprovalMode
-          ? { writeApprovalMode: command.payload.writeApprovalMode }
-          : {}),
-        ...(command.payload.thinkingLevel
-          ? { thinkingLevel: command.payload.thinkingLevel }
-          : {}),
-        ...(command.payload.temperature !== undefined
-          ? { temperature: command.payload.temperature }
-          : {}),
-        ...(command.payload.runtimeConfig
-          ? { runtimeConfig: command.payload.runtimeConfig }
-          : {}),
-        ...(command.payload.chatAssistantRuntimeContext
-          ? {
-              chatAssistantRuntimeContext:
-                command.payload.chatAssistantRuntimeContext
-            }
-          : {}),
-        ...(command.payload.agentProfile
-          ? { agentProfile: command.payload.agentProfile }
-          : {}),
-        ...(command.payload.scriptAgentProfile
-          ? { scriptAgentProfile: command.payload.scriptAgentProfile }
-          : {}),
-        ...(command.payload.longAgentProfile
-          ? { longAgentProfile: command.payload.longAgentProfile }
-          : {}),
-        ...((command.payload.longAgentProfile ||
-          (command.payload.chatAssistantRuntimeContext?.mode === "project" &&
-            command.payload.chatAssistantRuntimeContext.project.projectType ===
-              "long")) &&
-        context
-          ? { longCommandExecutor: createLongCommandExecutor(context) }
-          : {}),
-        ...(command.payload.subagentDefinitions
-          ? { subagentDefinitions: command.payload.subagentDefinitions }
-          : {}),
-        ...(command.payload.subagentRuntimeConfigs
-          ? { subagentRuntimeConfigs: command.payload.subagentRuntimeConfigs }
-          : {}),
-        ...(command.payload.libraryAgentProfile
-          ? { libraryAgentProfile: command.payload.libraryAgentProfile }
-          : {}),
-        ...(command.payload.learningImitationProfile
-          ? {
-              learningImitationProfile: command.payload.learningImitationProfile
-            }
-          : {}),
-        ...(command.payload.workspaceContext
-          ? { workspaceContext: command.payload.workspaceContext }
-          : {}),
-        signal: controller.signal
-      },
+      createAgentRunInput(command.payload, runId, controller.signal, context),
       correlationId,
       emitEvent,
       controller

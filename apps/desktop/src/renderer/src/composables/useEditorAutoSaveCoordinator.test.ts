@@ -100,6 +100,28 @@ afterEach(() => {
 });
 
 describe("editor auto-save coordinator", () => {
+  it("exposes progress only for an explicitly applied manual save", async () => {
+    const pendingSave = deferred<EditorPersistOutcome>();
+    const persist = vi.fn(() => pendingSave.promise);
+    const { coordinator } = harness(persist);
+
+    coordinator.apply({
+      id: "first",
+      title: "测试标题",
+      content: "手动保存正文"
+    });
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledOnce());
+    expect(coordinator.manualSavingDocumentIds.value.has("first")).toBe(true);
+    expect(persist).toHaveBeenCalledWith(
+      { id: "first", title: "测试标题", content: "手动保存正文" },
+      true
+    );
+
+    pendingSave.resolve("saved");
+    await coordinator.drain();
+    expect(coordinator.manualSavingDocumentIds.value.size).toBe(0);
+  });
+
   it("debounces a document and persists only its latest draft", async () => {
     vi.useFakeTimers();
     const { coordinator, drafts, persist } = harness();

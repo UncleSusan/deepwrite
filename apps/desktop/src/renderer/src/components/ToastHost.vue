@@ -23,7 +23,7 @@ const kindLabel = {
           @click="dismissUiMessage(item.id)"
         >
           <span class="toast-message__mark" aria-hidden="true" />
-          <span>{{ item.content }}</span>
+          <span class="toast-message__content">{{ item.content }}</span>
         </button>
       </TransitionGroup>
     </div>
@@ -37,7 +37,8 @@ const kindLabel = {
   top: 18px;
   left: 50%;
   display: grid;
-  width: min(520px, calc(100vw - 32px));
+  justify-items: center;
+  width: calc(100vw - 32px);
   gap: 9px;
   pointer-events: none;
   transform: translateX(-50%);
@@ -48,7 +49,8 @@ const kindLabel = {
   grid-template-columns: 9px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  width: 100%;
+  width: fit-content;
+  max-width: min(520px, 100%);
   min-height: 42px;
   padding: 10px 14px;
   border: 1px solid var(--theme-line);
@@ -62,6 +64,12 @@ const kindLabel = {
   pointer-events: auto;
   backdrop-filter: blur(14px);
   cursor: pointer;
+}
+
+.toast-message__content {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .toast-message__mark {

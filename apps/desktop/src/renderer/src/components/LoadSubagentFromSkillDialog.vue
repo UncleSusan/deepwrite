@@ -51,7 +51,6 @@ const emit = defineEmits<{
 }>();
 
 const selectedSkillIds = ref<string[]>([]);
-const showAllStages = ref(false);
 const outputMode = ref<SubagentAuthoringOutputMode>("handoff");
 const modelId = ref("");
 const draftName = ref("");
@@ -67,34 +66,10 @@ watch(
   }
 );
 
-function skillStageForParent(
-  parentAgentId: SubagentAuthoringParentAgentId
-): SkillStageId | null {
-  if (
-    parentAgentId === "expert_draft_coordinator" ||
-    parentAgentId === "draft"
-  ) {
-    return "draft";
-  }
-  if (parentAgentId === "character_design" || parentAgentId === "plot_design") {
-    return parentAgentId;
-  }
-  return null;
-}
-
 const skillOptions = computed<SubagentAuthoringSkillOption[]>(() => {
-  const preferredStage = skillStageForParent(props.parentAgentId);
   const options: SubagentAuthoringSkillOption[] = [];
   for (const library of props.skills) {
     for (const entry of library.entries) {
-      if (!entry.body.trim()) continue;
-      if (
-        preferredStage &&
-        !showAllStages.value &&
-        entry.stageId !== preferredStage
-      ) {
-        continue;
-      }
       options.push({
         id: `skill:${library.id}:${entry.id}`,
         libraryId: library.id,
@@ -173,6 +148,8 @@ function generate(): void {
       outputMode: outputMode.value,
       skills: selectedSkills.value.map((skill) => ({
         id: skill.id,
+        libraryId: skill.libraryId,
+        entryId: skill.entryId,
         title: skill.title,
         libraryTitle: skill.libraryTitle,
         body: skill.body
@@ -203,7 +180,6 @@ watch(
   (open) => {
     if (!open) return;
     selectedSkillIds.value = [];
-    showAllStages.value = skillStageForParent(props.parentAgentId) === null;
     outputMode.value = "handoff";
     modelId.value =
       (props.preferredModelId &&
@@ -264,20 +240,12 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           <section class="authoring-section">
             <div class="section-heading">
               <strong>1. 选择技能</strong>
-              <label class="show-all">
-                <input
-                  v-model="showAllStages"
-                  type="checkbox"
-                  :disabled="generating"
-                />
-                查看全部阶段
-              </label>
             </div>
             <p class="section-hint">
-              默认只显示匹配当前主智能体阶段的条目。子智能体运行时不能加载技能，技能要点会写入系统提示词。
+              可从全部技能库、全部阶段选择技能。生成时会读取所选技能正文，并将技能要点写入子智能体系统提示词。
             </p>
             <div v-if="!skillOptions.length" class="empty-skills">
-              当前没有可加载的技能条目。请先在技能库中补充正文，或勾选「查看全部阶段」。
+              当前技能库中没有技能条目，请先在技能库中添加技能。
             </div>
             <ul v-else class="skill-list">
               <li v-for="skill in skillOptions" :key="skill.id">
@@ -538,14 +506,6 @@ header p {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-}
-
-.show-all {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  color: var(--text-secondary);
-  font-size: 0.86rem;
 }
 
 .empty-skills {

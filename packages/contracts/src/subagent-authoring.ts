@@ -18,6 +18,8 @@ export const SUBAGENT_AUTHORING_SKILL_BODY_MAX_LENGTH = 20_000;
  */
 export const SubagentAuthoringSkillSnapshotSchema = z.object({
   id: z.string().trim().min(1).max(240),
+  libraryId: z.string().trim().min(1).max(512).optional(),
+  entryId: z.string().trim().min(1).max(512).optional(),
   title: z.string().trim().min(1).max(240),
   libraryTitle: z.string().trim().min(1).max(240),
   body: z.string().max(SUBAGENT_AUTHORING_SKILL_BODY_MAX_LENGTH)

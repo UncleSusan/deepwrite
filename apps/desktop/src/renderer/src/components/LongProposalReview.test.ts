@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import conversationSource from "./AgentConversation.vue?raw";
+import conversationItemSource from "./ConversationMessageItem.vue?raw";
+import processingItemSource from "./ConversationProcessingItem.vue?raw";
 import editProposalSource from "./AgentEditProposalCard.vue?raw";
 import source from "./LongProposalReview.vue?raw";
+
+const conversationSource = `${conversationItemSource}\n${processingItemSource}`;
 
 describe("LongProposalReview content file cards", () => {
   it("offers target navigation after a proposal is accepted", () => {

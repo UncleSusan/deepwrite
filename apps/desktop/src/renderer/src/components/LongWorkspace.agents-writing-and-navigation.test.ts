@@ -14,8 +14,8 @@ import {
   longRollbackSource,
   longStructureTransactionsSource,
   longWorkspaceModuleSource,
+  longWorkspaceRefreshSource,
   longWorkspaceResourceTreeSource,
-  longWorkspaceSessionSource,
   presentationCoordinatorSource,
   proposalSource,
   resourceTreeCoordinatorSource,
@@ -362,14 +362,14 @@ describe("long-form renderer vertical slice: agents-writing-and-navigation", () 
   });
 
   it("keeps saved revisions atomic and pauses long-agent sends while refreshing", () => {
-    expect(longWorkspaceSessionSource).toContain(
+    expect(longWorkspaceRefreshSource).toContain(
       "createLongWorkspaceRefreshClock()"
     );
-    expect(longWorkspaceSessionSource).toContain(
+    expect(longWorkspaceRefreshSource).toContain(
       "isMonotonicLongWorkspaceRefresh("
     );
     expect(appSource).toContain("activeLongWorkspaceContextReady");
-    expect(longWorkspaceSessionSource).toContain(
+    expect(longWorkspaceRefreshSource).toContain(
       "state.refreshStatus.value = {"
     );
     expect(appSource).toContain("retryActiveLongWorkspaceRefresh");

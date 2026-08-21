@@ -75,7 +75,10 @@ export function buildEffectiveSystemPrompt(
     if (!input.chatAssistantRuntimeContext) {
       throw new Error("Chat assistant runtime context is unavailable.");
     }
-    return buildChatAssistantSystemPrompt(input.chatAssistantRuntimeContext);
+    return buildChatAssistantSystemPrompt(
+      input.chatAssistantRuntimeContext,
+      input.webSearchEnabled === true
+    );
   }
   const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
   if (subagentAuthoring) {

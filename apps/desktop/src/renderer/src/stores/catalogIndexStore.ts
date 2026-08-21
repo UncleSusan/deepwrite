@@ -198,7 +198,10 @@ export const useCatalogIndexStore = defineStore("catalogIndex", () => {
       return latestProjection;
     })();
     snapshotLoadPromise = request;
-    snapshotLoading.value = true;
+    // Once a usable snapshot exists, later focus-driven refreshes are
+    // background reconciliation. They must not make open catalog forms look
+    // like their initial data is loading or temporarily disable controls.
+    snapshotLoading.value = snapshot.value === null;
     try {
       return await request;
     } finally {

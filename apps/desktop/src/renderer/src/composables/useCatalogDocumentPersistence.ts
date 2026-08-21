@@ -21,7 +21,12 @@ import {
   rebaseDraftsForMatchingDocuments,
   type WorkspaceDocumentBaseline
 } from "../utils/catalogSaveReconciliation";
+import { catalogDocumentReadDescriptor } from "../utils/catalogDocumentContent";
 import { draftCharacterStateTitle } from "../utils/draftFileTitles";
+import {
+  normalizeFixedWorkspaceDocumentDraft,
+  resolveWorkspaceDocumentTitle
+} from "../utils/fixedWorkspaceDocumentTitle";
 
 export interface CatalogDocumentPersistenceNotifications {
   error(message: string): void;
@@ -31,6 +36,11 @@ export interface CatalogDocumentPersistenceNotifications {
 }
 
 export interface CatalogDocumentPersistenceLoaderPort {
+  preserveAuthoritativeBodyForNextProjection(
+    documentId: string,
+    content: string,
+    expectedProjectRevision?: number
+  ): void;
   ensureLoaded(
     targets?: readonly CatalogDocumentTarget[],
     options?: EnsureCatalogDocumentsOptions
@@ -235,6 +245,9 @@ export function useCatalogDocumentPersistence(
     });
 
     const currentDraft = editorDrafts.value[payload.id];
+    const normalizedCurrentDraft = currentDraft
+      ? normalizeFixedWorkspaceDocumentDraft(current, currentDraft)
+      : undefined;
     const nextDrafts = { ...editorDrafts.value };
     if (savedProjectRevision !== undefined) {
       for (const documentId of projectDocumentIds) {
@@ -263,12 +276,12 @@ export function useCatalogDocumentPersistence(
       }
     }
     if (
-      currentDraft &&
-      (currentDraft.title !== submittedPayload.title ||
-        currentDraft.content !== submittedPayload.content)
+      normalizedCurrentDraft &&
+      (normalizedCurrentDraft.title !== submittedPayload.title ||
+        normalizedCurrentDraft.content !== submittedPayload.content)
     ) {
       nextDrafts[payload.id] = {
-        ...currentDraft,
+        ...normalizedCurrentDraft,
         ...(current.draftFileKind === "character-state"
           ? { title: payload.title }
           : {}),
@@ -290,6 +303,16 @@ export function useCatalogDocumentPersistence(
     savedProjectRevision: number | undefined,
     draftAtAccept: EditorDraftState | undefined
   ): void {
+    const persistedDocument = documents.value.find(
+      (document) => document.id === payload.id
+    );
+    if (persistedDocument && catalogDocumentReadDescriptor(persistedDocument)) {
+      loader.preserveAuthoritativeBodyForNextProjection(
+        payload.id,
+        payload.content,
+        savedProjectRevision
+      );
+    }
     const currentDraft = editorDrafts.value[payload.id];
     if (currentDraft && currentDraft === draftAtAccept) {
       editorDrafts.value = {
@@ -482,6 +505,19 @@ export function useCatalogDocumentPersistence(
     saved: CatalogLibraryEntry,
     projectRevision: number | undefined
   ): Promise<number | undefined> {
+    const savedDocument = documents.value.find(
+      (document) =>
+        document.domain === domain &&
+        document.libraryId === libraryId &&
+        document.catalogEntryId === saved.id
+    );
+    if (savedDocument) {
+      loader.preserveAuthoritativeBodyForNextProjection(
+        savedDocument.id,
+        saved.body,
+        projectRevision
+      );
+    }
     const synchronized = await refreshCatalogAfterLibraryMutation(
       domain,
       libraryId,
@@ -502,6 +538,19 @@ export function useCatalogDocumentPersistence(
     domain: "material" | "skill",
     updated: CatalogLibrary
   ): Promise<void> {
+    const overviewDocument = documents.value.find(
+      (document) =>
+        document.domain === domain &&
+        document.libraryId === updated.id &&
+        document.catalogLibraryField === "overview"
+    );
+    if (overviewDocument) {
+      loader.preserveAuthoritativeBodyForNextProjection(
+        overviewDocument.id,
+        updated.overview,
+        updated.projectRevision
+      );
+    }
     await refreshCatalogAfterLibraryMutation(
       domain,
       updated.id,
@@ -552,11 +601,14 @@ export function useCatalogDocumentPersistence(
     payload: CatalogDocumentPayload
   ): void {
     const currentDraft = editorDrafts.value[payload.id];
+    const normalizedCurrentDraft = currentDraft
+      ? normalizeFixedWorkspaceDocumentDraft(document, currentDraft)
+      : undefined;
     const newerDraft =
-      currentDraft &&
-      (currentDraft.title !== payload.title ||
-        currentDraft.content !== payload.content)
-        ? currentDraft
+      normalizedCurrentDraft &&
+      (normalizedCurrentDraft.title !== payload.title ||
+        normalizedCurrentDraft.content !== payload.content)
+        ? normalizedCurrentDraft
         : { title: payload.title, content: payload.content };
     editorDrafts.value = {
       ...editorDrafts.value,
@@ -706,6 +758,11 @@ export function useCatalogDocumentPersistence(
         title: saved.title,
         content: saved.content
       };
+      loader.preserveAuthoritativeBodyForNextProjection(
+        payload.id,
+        saved.content,
+        saved.projectRevision
+      );
       const savedProjectRevision = saved.projectRevision;
       applyDocumentLocally(normalizedPayload, savedProjectRevision, payload);
       if (saveOptions.announceSuccess !== false) {
@@ -909,6 +966,16 @@ export function useCatalogDocumentPersistence(
       (candidate) => candidate.id === payload.id
     );
     if (!document) return "paused";
+    const normalizedPayload = {
+      ...payload,
+      title: resolveWorkspaceDocumentTitle(document, payload.title)
+    };
+    if (!normalizedPayload.title.trim()) {
+      if (announceSuccess) {
+        uiMessage.warning("请输入文档标题后再保存");
+      }
+      return "paused";
+    }
     if (
       document.workspaceId &&
       acceptingWorkspaceIds.value.has(document.workspaceId)
@@ -919,7 +986,7 @@ export function useCatalogDocumentPersistence(
       return "retry";
     }
     if (document.catalogDocumentId && document.workspaceId) {
-      const saved = await saveCatalogDocument(document, payload, {
+      const saved = await saveCatalogDocument(document, normalizedPayload, {
         announceSuccess
       });
       return saved ? "saved" : saveConflict.value ? "paused" : "retry";
@@ -930,10 +997,13 @@ export function useCatalogDocumentPersistence(
       (document.domain === "material" || document.domain === "skill")
     ) {
       const invalid =
-        payload.content.length > CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS;
-      const saved = await saveCatalogLibraryOverview(document, payload, {
-        announceSuccess
-      });
+        normalizedPayload.content.length >
+        CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS;
+      const saved = await saveCatalogLibraryOverview(
+        document,
+        normalizedPayload,
+        { announceSuccess }
+      );
       return saved
         ? "saved"
         : saveConflict.value || invalid
@@ -946,8 +1016,8 @@ export function useCatalogDocumentPersistence(
       (document.domain === "material" || document.domain === "skill")
     ) {
       const invalid =
-        payload.content.length > CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS;
-      const saved = await saveCatalogLibraryEntry(document, payload, {
+        normalizedPayload.content.length > CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS;
+      const saved = await saveCatalogLibraryEntry(document, normalizedPayload, {
         announceSuccess
       });
       return saved
@@ -956,7 +1026,7 @@ export function useCatalogDocumentPersistence(
           ? "paused"
           : "retry";
     }
-    applyDocumentLocally(payload);
+    applyDocumentLocally(normalizedPayload);
     return "saved";
   }
 

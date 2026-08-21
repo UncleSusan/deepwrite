@@ -16,6 +16,8 @@ describe("App editor auto-save integration", () => {
     expect(autoSaveSource).toContain(
       "await options.persist(submittedPayload, false)"
     );
+    expect(source).toContain("manualSavingDocumentIds.value.has(");
+    expect(autoSaveSource).toContain("manualSavingDocumentIds");
   });
 
   it("wires the general setting to the editor and resumes recovered dirty drafts", () => {

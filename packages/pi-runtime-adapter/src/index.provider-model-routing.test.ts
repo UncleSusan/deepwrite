@@ -237,6 +237,35 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
     });
   });
 
+  it("matches a provider model when an enterprise route prefixes its catalog id", () => {
+    const config: AgentProviderRuntimeConfig = {
+      id: "enterprise-gemini",
+      label: "Enterprise Gemini",
+      provider: "google",
+      modelId: "kdi-gemini-3.1-pro-preview",
+      api: "google-generative-ai",
+      baseUrl: "https://generativelanguage.googleapis.com.example.test/v1beta",
+      reasoning: true,
+      defaultThinkingLevel: "high",
+      thinkingLevelOptions: ["low", "high"],
+      temperatureOptions: [0.1, 0.7, 1],
+      apiKey: "test-only"
+    };
+
+    expect(buildProviderRuntime(config).model).toMatchObject({
+      id: "kdi-gemini-3.1-pro-preview",
+      contextWindow: 1_048_576,
+      maxTokens: 65_536,
+      thinkingLevelMap: {
+        off: null,
+        minimal: null,
+        low: "LOW",
+        medium: null,
+        high: "HIGH"
+      }
+    });
+  });
+
   it.each(["openai-completions", "openai-responses"] as const)(
     "rejects object-union tool roots before an %s request",
     async (api) => {

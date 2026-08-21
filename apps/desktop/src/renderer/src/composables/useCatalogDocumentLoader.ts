@@ -10,6 +10,7 @@ import {
   useCatalogIndexStore
 } from "../stores/catalogIndexStore";
 import type { WorkspaceDocument } from "../types/workspace";
+import { createCatalogSavedBodyRetention } from "../utils/catalogSavedBodyRetention";
 import {
   applyCatalogDocumentResult,
   catalogDocumentReadDescriptor,
@@ -118,8 +119,11 @@ function descriptorKey(
 
 /**
  * Owns the metadata projection/body overlay boundary. Catalog projection stays
- * metadata-only; bodies are carried forward only while the stamped descriptor
- * is unchanged and every asynchronous read is revalidated before publication.
+ * metadata-only; bodies are carried forward while the stamped descriptor is
+ * unchanged. A body just returned by a successful save also crosses stale and
+ * updated projections atomically, so the editor never observes an empty
+ * metadata-only frame between write and refresh. Every unrelated asynchronous
+ * read is still revalidated before publication.
  */
 export function useCatalogDocumentLoader(
   options: CatalogDocumentLoaderOptions
@@ -129,6 +133,7 @@ export function useCatalogDocumentLoader(
     () => new Map(documents.value.map((document) => [document.id, document]))
   );
   const documentGenerations = new Map<string, number>();
+  const savedBodyRetention = createCatalogSavedBodyRetention();
   let projectedDocumentsById: ReadonlyMap<string, WorkspaceDocument> =
     new Map();
   let disposed = false;
@@ -166,6 +171,8 @@ export function useCatalogDocumentLoader(
     const discardedBodyIds: string[] = [];
     const removedIds: string[] = [];
 
+    savedBodyRetention.prune(new Set(nextProjectedById.keys()));
+
     for (const previous of previousById.values()) {
       const next = nextProjectedById.get(previous.id);
       const previousDescriptor = catalogDocumentReadDescriptor(previous);
@@ -178,13 +185,29 @@ export function useCatalogDocumentLoader(
       if (previousDescriptor?.cacheKey !== descriptorKey(next)) {
         invalidateGeneration(previous.id);
         invalidateDescriptor(previousDescriptor);
-        if (previous.catalogContentLoaded !== false) {
+        if (
+          previous.catalogContentLoaded !== false &&
+          !savedBodyRetention.has(previous.id)
+        ) {
           discardedBodyIds.push(previous.id);
         }
       }
     }
 
     const nextDocuments = projection.workspaceDocuments.map((projected) => {
+      const savedBody = savedBodyRetention.reconcile(projected);
+      if (savedBody.kind === "contradicts") {
+        if (previousById.get(projected.id)?.catalogContentLoaded !== false) {
+          discardedBodyIds.push(projected.id);
+        }
+      } else if (savedBody.kind === "retain") {
+        retainedBodyIds.push(projected.id);
+        return {
+          ...projected,
+          content: savedBody.content,
+          catalogContentLoaded: true
+        };
+      }
       const previous = previousById.get(projected.id);
       if (
         !previous ||
@@ -209,6 +232,24 @@ export function useCatalogDocumentLoader(
       discardedBodyIds,
       removedIds
     };
+  }
+
+  function preserveAuthoritativeBodyForNextProjection(
+    documentId: string,
+    content: string,
+    expectedProjectRevision?: number
+  ): void {
+    if (!disposed) {
+      // An already-running index request may publish its old projection before
+      // the post-save refresh. Keep this overlay until the descriptor or the
+      // project revision advances to the saved generation.
+      savedBodyRetention.preserve(
+        documentsById.value.get(documentId),
+        documentId,
+        content,
+        expectedProjectRevision
+      );
+    }
   }
 
   function invalidate(
@@ -499,6 +540,7 @@ export function useCatalogDocumentLoader(
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    savedBodyRetention.clear();
     for (const documentId of new Set([
       ...documentGenerations.keys(),
       ...documentsById.value.keys(),
@@ -512,6 +554,7 @@ export function useCatalogDocumentLoader(
     documents,
     documentsById,
     reconcileProjection,
+    preserveAuthoritativeBodyForNextProjection,
     ensureLoaded,
     ensureOne,
     invalidate,

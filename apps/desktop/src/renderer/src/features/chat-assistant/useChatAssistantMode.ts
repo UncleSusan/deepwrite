@@ -192,10 +192,12 @@ export function useChatAssistantMode(options: ChatAssistantModeOptions) {
     }
   }
 
-  async function sendAssistantMessage(): Promise<void> {
+  async function sendAssistantMessage(webSearchEnabled = false): Promise<void> {
     const context = requestContext.value;
     if (!context || !controller.value) return;
-    await controller.value.sendAssistantMessage(context);
+    await controller.value.sendAssistantMessage(
+      webSearchEnabled ? { ...context, webSearchEnabled: true } : context
+    );
   }
 
   function requireProject(): ChatAssistantProjectRef {

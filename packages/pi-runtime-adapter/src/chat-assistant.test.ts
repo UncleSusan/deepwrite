@@ -5,6 +5,7 @@ import {
 } from "@deepwrite/contracts";
 import { buildChatAssistantSystemPrompt } from "./chat-assistant";
 import { buildChatAssistantTools } from "./chat-assistant-tools";
+import { buildEffectiveSystemPrompt } from "./prompts";
 
 const NOW = "2026-08-17T08:00:00.000Z";
 
@@ -211,6 +212,39 @@ describe("chat assistant read-only runtime", () => {
       prompt.indexOf("不可编辑的安全与工具边界")
     );
     expect(prompt).not.toContain("雨落在旧码头");
+  });
+
+  it("describes DeepSeek server-side search only when the runtime enables it", () => {
+    const disabledPrompt = buildEffectiveSystemPrompt("ignored", {
+      runId: "run-search-disabled",
+      sessionId: "session-search-disabled",
+      prompt: "今天有什么热点？",
+      mode: "chat-assistant",
+      chatAssistantRuntimeContext: normalContext()
+    });
+    expect(disabledPrompt).toContain("Shell、网络、浏览器");
+    expect(disabledPrompt).not.toContain("本轮已启用 DeepSeek 服务端智能搜索");
+
+    const enabledPrompt = buildEffectiveSystemPrompt("ignored", {
+      runId: "run-search-enabled",
+      sessionId: "session-search-enabled",
+      prompt: "今天有什么热点？",
+      mode: "chat-assistant",
+      chatAssistantRuntimeContext: normalContext(),
+      webSearchEnabled: true
+    });
+    expect(enabledPrompt).toContain("本轮已启用 DeepSeek 服务端智能搜索");
+    expect(enabledPrompt).toContain(
+      "网络能力仅限本轮列出的 DeepSeek 服务端 web_search"
+    );
+    expect(enabledPrompt).not.toContain("Shell、网络、浏览器");
+  });
+
+  it("keeps project read-only boundaries while enabling server-side search", () => {
+    const prompt = buildChatAssistantSystemPrompt(projectContext(), true);
+    expect(prompt).toContain("本轮已启用 DeepSeek 服务端智能搜索");
+    expect(prompt).toContain("不能创建、保存、编辑、删除、审批或覆盖书籍");
+    expect(prompt).toContain("优先核对人物动机");
   });
 
   it("normal mode exposes summaries and sanitized model/usage queries only", async () => {

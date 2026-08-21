@@ -547,6 +547,73 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
     expect(String(userMessages?.[0]?.content)).not.toContain("run_history_1");
   });
 
+  it("restores persisted conversation history only when rebuilding an agent", async () => {
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+    const history = [
+      {
+        role: "user" as const,
+        content: "先帮我规划一段雨夜相遇。",
+        createdAt: "2026-08-17T07:58:00.000Z"
+      },
+      {
+        role: "assistant" as const,
+        content: "可以从旧站台的一封错投来信开始。",
+        createdAt: "2026-08-17T07:59:00.000Z"
+      }
+    ];
+
+    for await (const _event of runtime.start({
+      runId: "run_restored_history_1",
+      sessionId: "session_restored_history",
+      prompt: "我上边说了啥？",
+      conversationHistory: history,
+      thinkingLevel: "off"
+    })) {
+      // Consume the rebuilt conversation turn.
+    }
+
+    for await (const _event of runtime.start({
+      runId: "run_restored_history_2",
+      sessionId: "session_restored_history",
+      prompt: "继续",
+      conversationHistory: [
+        {
+          role: "user",
+          content: "这条历史不应重复灌入",
+          createdAt: "2026-08-17T08:01:00.000Z"
+        }
+      ],
+      thinkingLevel: "off"
+    })) {
+      // Consume a normal follow-up turn on the same in-memory agent.
+    }
+
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          { state: { messages: Array<{ role?: string; content?: unknown }> } }
+        >;
+      }
+    ).conversationAgents;
+    const messages = cache.get("session_restored_history:default")?.state
+      .messages;
+
+    expect(messages?.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+      "assistant"
+    ]);
+    expect(String(messages?.[0]?.content)).toBe("先帮我规划一段雨夜相遇。");
+    expect(JSON.stringify(messages)).toContain(
+      "可以从旧站台的一封错投来信开始。"
+    );
+    expect(JSON.stringify(messages)).not.toContain("这条历史不应重复灌入");
+  });
+
   it("uses the same permanent-context transcript for creative workspace agents", async () => {
     const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
     const scriptWorkspace = screenplayWorkspace();

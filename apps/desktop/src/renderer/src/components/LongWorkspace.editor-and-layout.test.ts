@@ -10,6 +10,7 @@ import {
   it,
   longStructureTransactionsSource,
   longWorkspaceModuleSource,
+  longWorkspaceRefreshSource,
   longWorkspaceSessionSource,
   longWorkspaceStoreSource,
   longWorkspaceTypeSource,
@@ -186,6 +187,13 @@ describe("long-form renderer vertical slice: editor-and-layout", () => {
     expect(editorStructureSource).toContain(
       "function captureNavigationSelection("
     );
+    expect(editorSource).toContain(
+      "function captureForeshadowingFocus(): LongForeshadowingFocus"
+    );
+    expect(editorSource).toContain(
+      "foreshadowingWorkspace.value?.captureFocus()"
+    );
+    expect(editorSource).toContain("captureForeshadowingFocus,");
   });
 
   it("loads a list worldbuilding item before activating its tab", () => {
@@ -264,13 +272,14 @@ describe("long-form renderer vertical slice: editor-and-layout", () => {
       "state.loaded && state.content !== state.savedContent"
     );
     expect(editorSource).toContain("synchronizeProjectRevisionsIfClean");
-    expect(longWorkspaceSessionSource).toContain(
+    expect(longWorkspaceRefreshSource).toContain(
       "async function refreshOnWindowFocus("
     );
-    expect(longWorkspaceSessionSource).toContain(
+    expect(longWorkspaceRefreshSource).toContain(
       "editor.value?.synchronizeProjectRevisionsIfClean("
     );
-    expect(longWorkspaceSessionSource).toContain("当前有未保存内容");
+    expect(longWorkspaceRefreshSource).toContain("当前有未保存内容");
+    expect(longWorkspaceRefreshSource).toContain("publishPending: false");
   });
 
   it("mounts the long workspace without routing it through short/script state", () => {

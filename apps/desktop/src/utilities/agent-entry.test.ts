@@ -75,6 +75,61 @@ describe("Agent Utility prompt forwarding", () => {
     captured.runtimeEvents.length = 0;
   });
 
+  it("forwards web search only for a chat-assistant prompt", async () => {
+    await import("./agent-entry");
+    const command = CommandEnvelopeSchema.parse(
+      createEnvelope(
+        "agent.prompt",
+        {
+          sessionId: "session-chat-web-search",
+          message: "查询今天的行业动态",
+          conversationHistory: [
+            {
+              role: "user" as const,
+              content: "先聊聊出版趋势",
+              createdAt: "2026-08-17T07:58:00.000Z"
+            },
+            {
+              role: "assistant" as const,
+              content: "可以先比较纸书与电子书市场。",
+              createdAt: "2026-08-17T07:59:00.000Z"
+            }
+          ],
+          mode: "chat-assistant" as const,
+          chatAssistant: {
+            mode: "normal" as const,
+            webSearchEnabled: true
+          },
+          chatAssistantRuntimeContext: { mode: "normal" as const }
+        },
+        {
+          id: "command-chat-web-search",
+          context: {
+            correlationId: "correlation-chat-web-search",
+            sessionId: "session-chat-web-search"
+          }
+        }
+      )
+    );
+
+    await expect(
+      captured.commandHandler!(command, vi.fn())
+    ).resolves.toMatchObject({
+      status: "accepted"
+    });
+    await vi.waitFor(() => expect(captured.startInputs).toHaveLength(1));
+
+    expect(captured.startInputs[0]).toMatchObject({
+      mode: "chat-assistant",
+      conversationHistory: [
+        { role: "user", content: "先聊聊出版趋势" },
+        { role: "assistant", content: "可以先比较纸书与电子书市场。" }
+      ],
+      webSearchEnabled: true
+    });
+    expect(captured.startInputs[0]?.subagentRuntimeConfigs).toBeUndefined();
+  });
+
   it("forwards scriptAgentProfile from the command payload into streamPrompt", async () => {
     await import("./agent-entry");
 

@@ -29,6 +29,7 @@ export type IconName =
   | "more"
   | "panel-left"
   | "panel-right"
+  | "panel-top"
   | "pin"
   | "plus"
   | "quote"

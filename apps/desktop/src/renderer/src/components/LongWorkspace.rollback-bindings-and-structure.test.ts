@@ -13,6 +13,7 @@ import {
   longRollbackSource,
   longStructureTransactionsSource,
   longWorkspaceModuleSource,
+  longWorkspaceRefreshSource,
   longWorkspaceResourceTreeSource,
   longWorkspaceSessionSource,
   longWorkspaceStoreSource,
@@ -37,7 +38,7 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
         .split("const longEditorLocked = computed(")[1]
         ?.split("const longEditorLockedReason = computed(")[0] ?? "";
     const retryRefreshSource =
-      longWorkspaceSessionSource
+      longWorkspaceRefreshSource
         .split("async function retryActiveRefresh(")[1]
         ?.split("async function refreshOnWindowFocus(")[0] ?? "";
 
@@ -88,7 +89,7 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
     expect(longWorkspaceStoreSource).toContain(
       "activeRevisionRequirement.value === null"
     );
-    expect(longWorkspaceSessionSource).toContain(
+    expect(longWorkspaceRefreshSource).toContain(
       "hasReachedLongWorkspaceRevisionTarget("
     );
     expect(retryRefreshSource).toContain(

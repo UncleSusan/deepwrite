@@ -540,7 +540,7 @@ function buildReadWorkspaceContentTool(
         const index = sections
           .map(
             (section, sectionIndex) =>
-              `${sectionIndex + 1}. ${section.title}（${section.id}）` +
+              `${sectionIndex + 1}. ${section.title}｜section_id: ${section.id}` +
               `${isProvisionalExpertDraftSectionId(section.id) ? "〔本轮待创建〕" : ""}\n` +
               `   字数要求：${section.wordCountRequirement || "未设置"}\n` +
               `   正文文件：${section.body.title}（${section.body.documentId}）｜${fileSizeLabel(section.body.content)}\n` +
@@ -555,6 +555,7 @@ function buildReadWorkspaceContentTool(
             `目录版本：${directoryRevision}\n` +
             `${draftUnitLabel(input)}数：${sections.length}\n\n${index}\n\n` +
             `这里只返回文件映射，不返回${draftUnitLabel(input)}原文。读取原文请调用 read_draft_sections：` +
+            `section_ids 只复制上方 section_id: 后的短 ID（如 intro、section-1），不要使用括号中的文件 ID；` +
             `整篇扫描用 mode=preview，需要精读或改写的${draftUnitLabel(input)}再用 mode=full。`
         );
       }
@@ -1948,6 +1949,36 @@ function renderDraftDocumentPage(
   ].join("\n");
 }
 
+function resolveDraftSectionId(
+  value: string,
+  sections: readonly ExpertDraftSectionSnapshot[]
+): string {
+  const trimmed = value.trim();
+  const exactSection = sections.find((section) => section.id === trimmed);
+  if (exactSection) return exactSection.id;
+
+  let decoded = trimmed;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    // Keep the original value so malformed percent escapes remain a normal miss.
+  }
+
+  const referencedSection = sections.find((section) => {
+    const documentIds = [
+      catalogDraftBodyDocumentId(section.id),
+      catalogDraftCharacterStateDocumentId(section.id),
+      section.body.documentId,
+      section.characterState.documentId
+    ];
+    return documentIds.some(
+      (documentId) =>
+        decoded === documentId || decoded.endsWith(`:${documentId}`)
+    );
+  });
+  return referencedSection?.id ?? trimmed;
+}
+
 function buildReadDraftSectionsTool(
   input: BuildWritingWorkspaceToolsInput,
   expertSections: ExpertSectionMap,
@@ -1958,16 +1989,26 @@ function buildReadDraftSectionsTool(
     name: "read_draft_sections",
     label: input.workspaceType === "script" ? "读取剧集正文" : "读取正文章节",
     description:
-      `按 section_id 批量读取${draftContentUnitLabel(input)}文件，按目录顺序返回。` +
+      `按短 section_id 批量读取${draftContentUnitLabel(input)}文件，按目录顺序返回。` +
+      "section_ids 只能填写正文目录中 section_id: 后的短业务 ID（例如 intro、section-1）；不要填写 catalog:... 资源节点 ID、draft-section:...:body 文件 ID、标题或路径。" +
       "mode=preview 只返回标题、字数和首尾摘录，用于整篇扫描定位；" +
       `mode=full 的批量读取单次最多 ${DRAFT_FULL_READ_MAX_SECTIONS} ${draftUnitCounter(input)}且合计不超过 ${DRAFT_FULL_READ_CHARACTER_BUDGET.toLocaleString("zh-CN")} 个字符。` +
       "单个超长文件请只指定一个 section_id 和一种 include，并根据 next_offset 使用 offset、max_characters 连续分页读取。" +
       `只有被 mode=full 完整读取的文件才获得整${draftUnitCounter(input)}覆盖权限。`,
     parameters: Type.Object({
-      section_ids: Type.Array(Type.String({ minLength: 1, maxLength: 120 }), {
-        minItems: 1,
-        maxItems: 100
-      }),
+      section_ids: Type.Array(
+        Type.String({
+          description:
+            '正文目录中明确标为 section_id 的短 ID，例如 "intro"、"section-1"；不是 catalog:... 资源 ID，也不是 draft-section:...:body 文件 ID。',
+          minLength: 1,
+          maxLength: 120
+        }),
+        {
+          description: "需要读取的短 section_id 列表。",
+          minItems: 1,
+          maxItems: 100
+        }
+      ),
       include: Type.Optional(
         Type.Array(StringEnum(DRAFT_FILE_PARAMETER_VALUES), {
           minItems: 1,
@@ -1984,8 +2025,11 @@ function buildReadDraftSectionsTool(
       )
     }),
     execute: async (_toolCallId, params) => {
+      const availableSections = orderedExpertSections(input, expertSections);
       const requested = (params.section_ids as string[])
-        .map((value) => String(value ?? "").trim())
+        .map((value) =>
+          resolveDraftSectionId(String(value ?? ""), availableSections)
+        )
         .filter(Boolean);
       const requestedIds = new Set(requested);
       const includeValues =
@@ -1997,8 +2041,8 @@ function buildReadDraftSectionsTool(
       ).map(toDraftFileKind);
       if (fields.length === 0) fields.push("body");
 
-      const targets = orderedExpertSections(input, expertSections).filter(
-        (section) => requestedIds.has(section.id)
+      const targets = availableSections.filter((section) =>
+        requestedIds.has(section.id)
       );
       const missing = requested.filter(
         (sectionId) => !targets.some((section) => section.id === sectionId)

@@ -187,6 +187,20 @@ describe("catalog index store", () => {
     expect(store.snapshot?.revision).toBe(3);
   });
 
+  it("keeps an established catalog interactive during a background refresh", async () => {
+    const store = useCatalogIndexStore();
+    const pendingRefresh = deferred<CatalogIndexSnapshot>();
+    store.applySnapshot(fixture(1, "当前目录"));
+
+    const refreshing = store.ensureSnapshot(() => pendingRefresh.promise);
+    expect(store.snapshotLoading).toBe(false);
+
+    pendingRefresh.resolve(fixture(2, "刷新目录"));
+    await refreshing;
+    expect(store.snapshot?.revision).toBe(2);
+    expect(store.snapshotLoading).toBe(false);
+  });
+
   it("deduplicates read-through loads and serves the immutable cached value", async () => {
     const store = useCatalogIndexStore();
     const pending = deferred<{

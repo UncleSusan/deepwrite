@@ -18,6 +18,7 @@ import {
   type Ref
 } from "vue";
 import {
+  type LongForeshadowingFocus,
   type LongStructureMutationCompletion,
   type LongWorkspaceFileRole,
   type LongWorkspaceSelection,
@@ -123,6 +124,7 @@ export function useLongEditorStructureSelection(options: {
   pendingRole: Ref<LongWorkspaceFileRole | null>;
   pendingFileId: Ref<string | null>;
   foreshadowingWorkspace: Ref<{
+    captureFocus(): LongForeshadowingFocus;
     focusTarget(threadId?: string, beatId?: string): Promise<boolean>;
   } | null>;
   activeBookLineVolumeId: Ref<string | null>;
@@ -211,6 +213,7 @@ export function useLongEditorStructureSelection(options: {
   const pendingRole = ref<LongWorkspaceFileRole | null>(null);
   const pendingFileId = ref<string | null>(null);
   const foreshadowingWorkspace = ref<{
+    captureFocus(): LongForeshadowingFocus;
     focusTarget(threadId?: string, beatId?: string): Promise<boolean>;
   } | null>(null);
   const activeBookLineVolumeId = ref<string | null>(null);

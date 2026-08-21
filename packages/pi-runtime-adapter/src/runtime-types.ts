@@ -10,6 +10,7 @@ import type {
   LibraryAgentProfile,
   LongAgentProfile,
   ScriptWorkspaceAgentProfile,
+  SessionConversationHistoryMessage,
   SessionMode,
   ShortAgentSubagentDefinition,
   ShortWorkspaceAgentProfile,
@@ -27,9 +28,11 @@ export interface AgentRunInput {
   runId: string;
   sessionId: string;
   prompt: string;
+  conversationHistory?: SessionConversationHistoryMessage[];
   mode?: SessionMode;
   attachments?: UserPromptAttachment[];
   chatAssistantRuntimeContext?: ChatAssistantRuntimeContext;
+  webSearchEnabled?: boolean;
   writeApprovalMode?: AgentWriteApprovalMode;
   thinkingLevel?: ConfiguredThinkingLevel;
   temperature?: number;

@@ -35,6 +35,8 @@ import {
   markRunError
 } from "./retry-subagent";
 import { rememberRunApprovalMode } from "./approvals";
+import { normalizeChatAssistantRequestContext } from "./chat-assistant-request";
+import { buildConversationHistory } from "./history";
 import { id, rememberBounded } from "./shared";
 import type { AgentRunSettings, WorkspaceContextAttachments } from "./types";
 
@@ -54,18 +56,8 @@ export async function sendMessage(
   const requestAttachments = promptAttachments.map((attachment) => ({
     ...attachment
   }));
-  const requestChatAssistant: ChatAssistantRequestContext | undefined =
-    chatAssistant?.mode === "project"
-      ? {
-          mode: "project",
-          project: {
-            projectType: chatAssistant.project.projectType,
-            projectId: chatAssistant.project.projectId
-          }
-        }
-      : chatAssistant?.mode === "normal"
-        ? { mode: "normal" }
-        : undefined;
+  const requestChatAssistant =
+    normalizeChatAssistantRequestContext(chatAssistant);
   const content =
     ctx.draft.value.trim() ||
     (requestAttachments.length ? "请阅读并分析我上传的附件。" : "");
@@ -77,6 +69,8 @@ export async function sendMessage(
   if (!content || ctx.isBusy.value || ctx.hasPendingEditReview.value) {
     return;
   }
+
+  const conversationHistory = buildConversationHistory(ctx.messages.value);
 
   const sendEpoch = ctx.epoch;
   const sendSessionId = ctx.sessionId.value;
@@ -365,6 +359,7 @@ export async function sendMessage(
     const accepted = await api.session.prompt({
       sessionId: sendSessionId,
       message: content,
+      ...(conversationHistory.length ? { conversationHistory } : {}),
       ...(mode === "chat-assistant"
         ? {
             mode,

@@ -510,6 +510,33 @@ describe("long workspace session coordinator", () => {
     );
   });
 
+  it("keeps the editor writable during a passive window-focus refresh", async () => {
+    const pendingRefresh = deferred<{
+      bookId: string;
+      workspaceIndex: LongWorkspaceIndexSnapshot;
+      projectRevision: number;
+    }>();
+    const harness = createHarness({
+      getWorkspaceIndex: vi.fn(() => pendingRefresh.promise)
+    });
+    harness.store.publishBook(
+      summary("longbook_a", 1, 1),
+      index("longbook_a", 1)
+    );
+
+    const refreshing = harness.coordinator.refreshOnWindowFocus("longbook_a");
+    await flushMicrotasks();
+    expect(harness.refs.activeRefreshStatus.value).toBeNull();
+
+    pendingRefresh.resolve({
+      bookId: "longbook_a",
+      workspaceIndex: index("longbook_a", 1),
+      projectRevision: 1
+    });
+    await refreshing;
+    expect(harness.refs.activeRefreshStatus.value).toBeNull();
+  });
+
   it("invalidates and clears the active session before selecting a fallback", async () => {
     const harness = createHarness();
     harness.store.publishBook(summary("longbook_a"), index("longbook_a"));

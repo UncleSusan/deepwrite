@@ -182,7 +182,10 @@ export {
   longWorldbuildingOverviewFileId,
   resolveLongAgentIdForRoot
 } from "./long-workspace";
-export { BUILT_IN_REASONING_LEVELS } from "./models";
+export {
+  BUILT_IN_REASONING_LEVELS,
+  isDeepSeekWebSearchCompatible
+} from "./models";
 export {
   DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,

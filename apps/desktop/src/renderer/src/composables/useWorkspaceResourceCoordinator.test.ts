@@ -76,7 +76,8 @@ function loadResult(
 
 function createHarness(
   ensureOne?: WorkspaceResourceCatalogPort["loader"]["ensureOne"],
-  useCatalogReconciliationGate = false
+  useCatalogReconciliationGate = false,
+  startInLongWorkspace = false
 ) {
   const documents = ref<WorkspaceDocument[]>([
     workspaceDocument("document-a"),
@@ -94,15 +95,21 @@ function createHarness(
       targetDocumentId: "document-b"
     }
   ];
+  const longNode: ResourceTreeNode = {
+    id: "long-detail",
+    label: "长篇正文",
+    longBookId: "long-book",
+    workspaceType: "long"
+  };
   const sections = ref<ResourceTreeSection[]>([
     {
       id: "creation",
       label: "创作空间",
       icon: "book",
-      nodes
+      nodes: startInLongWorkspace ? [...nodes, longNode] : nodes
     }
   ]);
-  const selectedResourceId = ref("");
+  const selectedResourceId = ref(startInLongWorkspace ? longNode.id : "");
   const activeCreationResourceId = ref("");
   const rightCollapsed = ref(true);
   const showConversation = vi.fn();
@@ -115,6 +122,9 @@ function createHarness(
     info: vi.fn(),
     warning: vi.fn()
   };
+  const activeLongBookId = ref<string | null>(
+    startInLongWorkspace ? longNode.longBookId! : null
+  );
   const defaultEnsureOne: WorkspaceResourceCatalogPort["loader"]["ensureOne"] =
     async (target) => {
       const id = typeof target === "string" ? target : target.id;
@@ -192,7 +202,7 @@ function createHarness(
     },
     longNavigation: {
       books: ref<LongBookSummary[]>([]),
-      activeBookId: ref(null),
+      activeBookId: activeLongBookId,
       activeBookSummary: ref<LongBookSummary | null>(null),
       workspaceIndex: ref<LongWorkspaceIndexSnapshot | null>(null),
       activeRoot:
@@ -202,7 +212,19 @@ function createHarness(
       saveActiveEditorBeforeLeaving: async () => true,
       openBook: async () => undefined,
       selectWorkspaceFile: async () => true,
-      deactivateActiveBook: () => undefined
+      deactivateActiveBook: () => {
+        activeLongBookId.value = null;
+        if (startInLongWorkspace) {
+          sections.value = [
+            {
+              id: "creation",
+              label: "创作空间",
+              icon: "book",
+              nodes
+            }
+          ];
+        }
+      }
     },
     emptyDocument: EMPTY_DOCUMENT,
     showConversation,
@@ -228,6 +250,16 @@ function createHarness(
 }
 
 describe("useWorkspaceResourceCoordinator", () => {
+  it("keeps a short-form selection current when leaving long-form contracts the tree", async () => {
+    const harness = createHarness(undefined, false, true);
+
+    await harness.coordinator.selectResource(harness.nodes[1]!);
+
+    expect(harness.selectedResourceId.value).toBe("resource-b");
+    expect(harness.activeCreationResourceId.value).toBe("resource-b");
+    expect(harness.showConversation).toHaveBeenCalledTimes(1);
+  });
+
   it("publishes only the latest resource selection when body reads settle out of order", async () => {
     const pending = new Map<string, Deferred<ReturnType<typeof loadResult>>>();
     let documents: readonly WorkspaceDocument[] = [];

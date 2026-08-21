@@ -115,6 +115,7 @@ export const useConversationStore = defineStore("conversation", () => {
   const scopesByKey = shallowRef<Map<string, string>>(new Map());
   const persistenceCache = shallowRef<Map<string, unknown>>(new Map());
   const persistenceErrors = shallowRef<Map<string, string>>(new Map());
+  const controllerRegistryRevision = ref(0);
   const sessionAgentModelSelection = shallowRef<AgentModelSelection>();
   const agentRunPreferences = shallowRef<AgentRunPreferencesByScope>({});
   const persistenceStateVersion = ref(0);
@@ -211,6 +212,7 @@ export const useConversationStore = defineStore("conversation", () => {
     }
     replaceMapEntry(controllers, normalizedKey, markRaw(controller));
     replaceMapEntry(scopesByKey, normalizedKey, normalizedScope);
+    controllerRegistryRevision.value += 1;
     if (options.applyPreferences !== false) {
       applyGlobalPreferences(controller, normalizedScope);
     }
@@ -254,6 +256,7 @@ export const useConversationStore = defineStore("conversation", () => {
     if (!controller) return undefined;
     deleteMapEntry(controllers, key);
     deleteMapEntry(scopesByKey, key);
+    controllerRegistryRevision.value += 1;
     if (options.dispose !== false) {
       controller.dispose(
         options.clearPersistence === undefined
@@ -272,6 +275,7 @@ export const useConversationStore = defineStore("conversation", () => {
     scopesByKey.value.clear();
     triggerRef(controllers);
     triggerRef(scopesByKey);
+    if (existing.length) controllerRegistryRevision.value += 1;
     for (const controller of existing) {
       controller.dispose(
         options.clearPersistence === undefined
@@ -652,6 +656,7 @@ export const useConversationStore = defineStore("conversation", () => {
     controllers,
     scopesByKey,
     controllerCount,
+    controllerRegistryRevision,
     persistenceCache,
     persistenceErrors,
     persistenceBusy,

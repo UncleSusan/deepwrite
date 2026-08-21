@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import conversationSource from "./ConversationMessageList.vue?raw";
+import messageItemSource from "./ConversationMessageItem.vue?raw";
+import processingItemSource from "./ConversationProcessingItem.vue?raw";
 import streamedContentSource from "./StreamedContent.vue?raw";
 import streamingTextSource from "./StreamingText.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
@@ -24,15 +26,13 @@ describe("streaming conversation content", () => {
       '<MessageMarkdown v-else :content="content" />'
     );
     expect(
-      conversationSource.match(
-        /<StreamedContent :content="item\.content" streaming \/>/g
-      )
+      processingItemSource.match(/:content="item\.content"/g)
     ).toHaveLength(2);
-    expect(conversationSource).toContain(
-      '<StreamedContent :content="item.content" />'
-    );
-    expect(conversationSource).toContain(':content="visibleResponse(message)"');
-    expect(conversationSource).not.toContain("<MessageMarkdown");
+    expect(processingItemSource).toContain(':streaming="streaming"');
+    expect(messageItemSource).toContain(':content="visibleResponse(message)"');
+    expect(
+      `${conversationSource}\n${messageItemSource}\n${processingItemSource}`
+    ).not.toContain("<MessageMarkdown");
   });
 
   it("applies the same safe streaming renderer to subagent output", () => {

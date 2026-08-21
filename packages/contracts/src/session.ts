@@ -459,10 +459,46 @@ export const UserPromptAttachmentsSchema = z
 export const SessionModeSchema = z.enum(["workspace", "chat-assistant"]);
 export type SessionMode = z.infer<typeof SessionModeSchema>;
 
+export const SESSION_CONVERSATION_HISTORY_MAX_MESSAGES = 80;
+export const SESSION_CONVERSATION_HISTORY_MAX_MESSAGE_LENGTH = 20_000;
+export const SESSION_CONVERSATION_HISTORY_MAX_CONTENT_LENGTH = 120_000;
+
+export const SessionConversationHistoryMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z
+    .string()
+    .min(1)
+    .max(SESSION_CONVERSATION_HISTORY_MAX_MESSAGE_LENGTH)
+    .refine((value) => value.trim().length > 0, {
+      message: "Conversation history messages cannot be blank."
+    }),
+  createdAt: z.string().datetime()
+});
+export type SessionConversationHistoryMessage = z.infer<
+  typeof SessionConversationHistoryMessageSchema
+>;
+
+export const SessionConversationHistorySchema = z
+  .array(SessionConversationHistoryMessageSchema)
+  .max(SESSION_CONVERSATION_HISTORY_MAX_MESSAGES)
+  .superRefine((messages, context) => {
+    const contentLength = messages.reduce(
+      (total, message) => total + message.content.length,
+      0
+    );
+    if (contentLength > SESSION_CONVERSATION_HISTORY_MAX_CONTENT_LENGTH) {
+      context.addIssue({
+        code: "custom",
+        message: "Conversation history exceeds the total content limit."
+      });
+    }
+  });
+
 export const SessionPromptCommandPayloadSchema = z
   .object({
     sessionId: z.string().min(1),
     message: z.string().trim().min(1).max(20_000),
+    conversationHistory: SessionConversationHistorySchema.optional(),
     mode: SessionModeSchema.optional(),
     attachments: UserPromptAttachmentsSchema.optional(),
     modelId: z.string().min(1).max(120).optional(),

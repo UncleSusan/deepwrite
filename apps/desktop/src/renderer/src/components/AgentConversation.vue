@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   computed,
+  inject,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -26,8 +27,6 @@ import { resolveAgentWelcome } from "../data/agentWelcome";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import type {
   AgentApprovalMode,
-  AgentEditProposal,
-  AgentToolTrace,
   ChatMessage,
   ComposerReferenceOption,
   ConversationHistoryItem,
@@ -46,14 +45,14 @@ import {
   type ComposerReferenceMatch
 } from "../utils/composerReferences";
 import { createEditorReferenceAttachment } from "../utils/editorTextReferences";
-import { writeToolText } from "../utils/agentWriteToolPreview";
 import { createTransientScrollbarController } from "../utils/transientScrollbar";
+import { useConversationTurnNavigator } from "../composables/useConversationTurnNavigator";
 import AppIcon from "./AppIcon.vue";
-import AgentEditProposalCard from "./AgentEditProposalCard.vue";
-import LongProposalReview from "./LongProposalReview.vue";
+import AgentActivityFloatPanel from "./AgentActivityFloatPanel.vue";
+import ConversationMessageList from "./ConversationMessageList.vue";
+import ConversationTurnNavigator from "./ConversationTurnNavigator.vue";
 import PopupSelect from "./PopupSelect.vue";
-import StreamedContent from "./StreamedContent.vue";
-import SubagentRunList from "./SubagentRunList.vue";
+import { AGENT_ACTIVITY_CONTEXT_KEY } from "../composables/agentActivityContext";
 
 const props = withDefaults(
   defineProps<{
@@ -99,6 +98,15 @@ const props = withDefaults(
 );
 
 const conversationScrollbar = createTransientScrollbarController();
+const agentActivity = inject(AGENT_ACTIVITY_CONTEXT_KEY, null);
+const agentActivityItems = computed(() => agentActivity?.items.value ?? []);
+const agentActivityCollapsed = computed(
+  () => agentActivity?.collapsed.value ?? false
+);
+
+function selectAgentActivity(conversationKey: string): void {
+  void agentActivity?.selectActivity(conversationKey);
+}
 
 const emit = defineEmits<{
   "update:draft": [value: string];
@@ -132,7 +140,14 @@ const emit = defineEmits<{
 
 const scroller = ref<HTMLElement>();
 const messageList = ref<HTMLElement>();
-const conversationNavigatorList = ref<HTMLElement>();
+
+function setConversationScroller(element: unknown): void {
+  scroller.value = element instanceof HTMLElement ? element : undefined;
+}
+
+function setConversationMessageList(element: unknown): void {
+  messageList.value = element instanceof HTMLElement ? element : undefined;
+}
 const composerInput = ref<HTMLTextAreaElement>();
 const attachmentInput = ref<HTMLInputElement>();
 const pendingAttachments = ref<UserPromptAttachment[]>([]);
@@ -147,125 +162,23 @@ const hasLiveProcessing = computed(
         message.subagentRuns?.some((run) => run.status === "running")
     )
 );
-const copiedMessageId = ref<string | null>(null);
 const historyOpen = ref(false);
 const activeReference = ref<ComposerReferenceMatch | null>(null);
 const activeReferenceIndex = ref(0);
 let clockTimer: number | undefined;
-let copiedTimer: number | undefined;
 let scrollFrame: number | undefined;
-let conversationNavigatorFrame: number | undefined;
-let conversationNavigatorResizeObserver: ResizeObserver | undefined;
 let attachmentReadEpoch = 0;
 const followsConversationTail = ref(true);
 const tailFollowLockedForResponse = ref(false);
-const activeConversationTurnId = ref<string | null>(null);
 let lastConversationScrollTop = 0;
 
 const TAIL_FOLLOW_THRESHOLD = 72;
-const MODEL_QUEUE_LABEL_DELAY_MS = 10_000;
 
 function isNearConversationTail(element: HTMLElement): boolean {
   return (
     element.scrollHeight - element.scrollTop - element.clientHeight <=
     TAIL_FOLLOW_THRESHOLD
   );
-}
-
-function compactConversationTurn(message: ChatMessage): string {
-  const compact = message.content
-    .slice(0, 1_200)
-    .replace(/```[\s\S]*?```/g, " 代码片段 ")
-    .replace(/!\[[^\]]*]\([^)]*\)/g, " 图片 ")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/[`*_~>#]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (compact) {
-    return compact.length > 56 ? `${compact.slice(0, 56)}…` : compact;
-  }
-  const attachmentNames = message.attachments
-    ?.map((attachment) => attachment.name)
-    .filter(Boolean)
-    .join("、");
-  return attachmentNames ? `附件：${attachmentNames}` : "无文字消息";
-}
-
-const conversationTurns = computed(() => {
-  let turnNumber = 0;
-  return props.messages.flatMap((message) => {
-    if (message.role !== "user") return [];
-    turnNumber += 1;
-    return [
-      {
-        id: message.id,
-        number: turnNumber,
-        text: compactConversationTurn(message)
-      }
-    ];
-  });
-});
-
-function conversationMessageElement(
-  messageId: string
-): HTMLElement | undefined {
-  const list = messageList.value;
-  if (!list) return undefined;
-  return Array.from(
-    list.querySelectorAll<HTMLElement>(
-      ":scope > .message[data-conversation-message-id]"
-    )
-  ).find((element) => element.dataset.conversationMessageId === messageId);
-}
-
-function keepActiveConversationCardVisible(): void {
-  const list = conversationNavigatorList.value;
-  const activeId = activeConversationTurnId.value;
-  if (!list || !activeId) return;
-  const activeCard = Array.from(
-    list.querySelectorAll<HTMLElement>("[data-conversation-turn-id]")
-  ).find((element) => element.dataset.conversationTurnId === activeId);
-  if (!activeCard) return;
-  const listRect = list.getBoundingClientRect();
-  const cardRect = activeCard.getBoundingClientRect();
-  if (cardRect.top < listRect.top) {
-    list.scrollTop -= listRect.top - cardRect.top + 6;
-  } else if (cardRect.bottom > listRect.bottom) {
-    list.scrollTop += cardRect.bottom - listRect.bottom + 6;
-  }
-}
-
-function updateActiveConversationTurn(): void {
-  const container = scroller.value;
-  if (!container || !conversationTurns.value.length) {
-    activeConversationTurnId.value = null;
-    return;
-  }
-  const focusLine =
-    container.getBoundingClientRect().top + container.clientHeight * 0.34;
-  let activeId = conversationTurns.value[0]!.id;
-  for (const turn of conversationTurns.value) {
-    const messageElement = conversationMessageElement(turn.id);
-    if (
-      !messageElement ||
-      messageElement.getBoundingClientRect().top > focusLine
-    ) {
-      break;
-    }
-    activeId = turn.id;
-  }
-  if (activeConversationTurnId.value !== activeId) {
-    activeConversationTurnId.value = activeId;
-    void nextTick(keepActiveConversationCardVisible);
-  }
-}
-
-function scheduleActiveConversationTurnUpdate(): void {
-  if (conversationNavigatorFrame !== undefined) return;
-  conversationNavigatorFrame = globalThis.requestAnimationFrame(() => {
-    conversationNavigatorFrame = undefined;
-    updateActiveConversationTurn();
-  });
 }
 
 function hasActiveConversationResponse(): boolean {
@@ -287,6 +200,22 @@ function lockConversationTailForCurrentResponse(): void {
     scrollFrame = undefined;
   }
 }
+
+const {
+  activeTurnId: activeConversationTurnId,
+  scheduleActiveTurnUpdate: scheduleActiveConversationTurnUpdate,
+  scrollToTurn: scrollToConversationTurn,
+  turns: conversationTurns
+} = useConversationTurnNavigator({
+  messages: () => props.messages,
+  currentSessionId: () => props.currentSessionId,
+  scroller,
+  messageList,
+  beforeNavigate: () => {
+    lockConversationTailForCurrentResponse();
+    followsConversationTail.value = false;
+  }
+});
 
 function handleConversationWheel(event: WheelEvent): void {
   if (event.deltaY < 0) lockConversationTailForCurrentResponse();
@@ -310,28 +239,6 @@ function handleConversationScroll(): void {
   }
   lastConversationScrollTop = nextScrollTop;
   scheduleActiveConversationTurnUpdate();
-}
-
-function scrollToConversationTurn(messageId: string): void {
-  const container = scroller.value;
-  const messageElement = conversationMessageElement(messageId);
-  if (!container || !messageElement) return;
-  lockConversationTailForCurrentResponse();
-  followsConversationTail.value = false;
-  activeConversationTurnId.value = messageId;
-  keepActiveConversationCardVisible();
-  const targetTop =
-    container.scrollTop +
-    messageElement.getBoundingClientRect().top -
-    container.getBoundingClientRect().top -
-    22;
-  const reduceMotion = globalThis.matchMedia?.(
-    "(prefers-reduced-motion: reduce)"
-  ).matches;
-  container.scrollTo({
-    top: Math.max(0, targetTop),
-    behavior: reduceMotion ? "auto" : "smooth"
-  });
 }
 
 function scheduleConversationTailFollow(): void {
@@ -412,16 +319,6 @@ onMounted(async () => {
   await nextTick();
   lastConversationScrollTop = scroller.value?.scrollTop ?? 0;
   scheduleConversationTailFollow();
-  updateActiveConversationTurn();
-  conversationNavigatorResizeObserver = new ResizeObserver(
-    scheduleActiveConversationTurnUpdate
-  );
-  if (scroller.value) {
-    conversationNavigatorResizeObserver.observe(scroller.value);
-  }
-  if (messageList.value) {
-    conversationNavigatorResizeObserver.observe(messageList.value);
-  }
 });
 
 watch(
@@ -491,19 +388,7 @@ watch(
     void nextTick(() => {
       lastConversationScrollTop = scroller.value?.scrollTop ?? 0;
       scheduleConversationTailFollow();
-      updateActiveConversationTurn();
     });
-  }
-);
-
-watch(
-  () => props.messages.length,
-  async () => {
-    await nextTick();
-    if (messageList.value) {
-      conversationNavigatorResizeObserver?.observe(messageList.value);
-    }
-    updateActiveConversationTurn();
   }
 );
 
@@ -696,16 +581,9 @@ onBeforeUnmount(() => {
   if (clockTimer !== undefined) {
     globalThis.clearInterval(clockTimer);
   }
-  if (copiedTimer !== undefined) {
-    globalThis.clearTimeout(copiedTimer);
-  }
   if (scrollFrame !== undefined) {
     globalThis.cancelAnimationFrame(scrollFrame);
   }
-  if (conversationNavigatorFrame !== undefined) {
-    globalThis.cancelAnimationFrame(conversationNavigatorFrame);
-  }
-  conversationNavigatorResizeObserver?.disconnect();
   conversationScrollbar.dispose();
 });
 
@@ -868,11 +746,6 @@ const welcomeContent = computed(() =>
     props.agentWorkspaceType
   )
 );
-const hasStreamingAssistant = computed(() =>
-  props.messages.some(
-    (message) => message.role === "assistant" && message.status === "streaming"
-  )
-);
 const selectedModel = computed(() =>
   props.models.find((model) => model.id === props.selectedModelId)
 );
@@ -959,17 +832,6 @@ function handleApprovalChange(value: string | number): void {
   }
 }
 
-function formatTime(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-  return new Date(timestamp).toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
 function formatHistoryTime(value: string): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return value;
@@ -993,657 +855,6 @@ function selectHistoryConversation(item: ConversationHistoryItem): void {
     emit("selectConversation", item.sessionId);
   }
 }
-
-function workspaceToolLabel(name: string): string {
-  const labels: Record<string, string> = {
-    read_workspace_content: "读取工作区内容",
-    search_workspace_text: "搜索工作区文本",
-    query_linked_material_entries: "查询关联素材",
-    load_skill: "加载技能",
-    switch_storyline_stage: "切换剧情方向",
-    write_workspace_editor: "写入阶段编辑器",
-    replace_current_stage_text: "替换阶段文本",
-    create_draft_sections: "创建章节文件",
-    read_draft_sections: "读取正文章节",
-    write_draft_section: "写入正文章节",
-    replace_draft_section_text: "替换正文章节文本",
-    rename_draft_section: "修改章节名称",
-    delete_draft_section: "删除章节",
-    list_setting: "列出设定",
-    search_setting: "搜索设定",
-    read_setting: "读取设定",
-    create_setting: "创建设定",
-    write_setting: "写入设定",
-    edit_setting: "编辑设定",
-    list_worldbuilding: "列出世界观",
-    read_worldbuilding: "读取世界观",
-    search_worldbuilding: "搜索世界观",
-    read_worldbuilding_file: "读取世界观文件",
-    create_worldbuilding_file: "创建世界观文件",
-    write_worldbuilding_file: "写入世界观文件",
-    edit_worldbuilding_file: "编辑世界观文件",
-    create_worldbuilding_files: "创建世界观文件",
-    read_worldbuilding_content: "读取世界观文件",
-    create_worldbuilding_items: "创建世界观文件",
-    write_worldbuilding_content: "写入世界观文件",
-    replace_worldbuilding_text: "编辑世界观文件",
-    list_characters: "列出人物",
-    search_characters: "搜索人物",
-    read_character: "读取人物",
-    write_character_overview: "写入人物概览",
-    edit_character_overview: "编辑人物概览",
-    create_character: "创建人物",
-    write_character_file: "写入人物文件",
-    create_character_file: "创建人物文件",
-    edit_character_file: "编辑人物文件",
-    rename_character_item: "修改人物名称",
-    move_character_item: "移动人物条目",
-    delete_character_file: "删除人物文件",
-    list_plot_design: "列出剧情设计",
-    search_plot_design: "搜索剧情设计",
-    read_plot_design: "读取剧情设计",
-    create_plot_design: "创建剧情设计",
-    write_plot_design: "写入剧情设计",
-    edit_plot_design: "编辑剧情设计"
-  };
-  return labels[name] ?? name;
-}
-
-function hasProcessing(message: ChatMessage): boolean {
-  return processingItems(message).length > 0;
-}
-
-function hasProcessingDisclosure(message: ChatMessage): boolean {
-  return hasProcessing(message) || Boolean(message.subagentRuns?.length);
-}
-
-function isSpawnSubagentTool(tool: AgentToolTrace): boolean {
-  return tool.name === "spawn_subagent";
-}
-
-function hasSubagentRunForTool(
-  message: ChatMessage,
-  tool: AgentToolTrace
-): boolean {
-  return Boolean(
-    isSpawnSubagentTool(tool) &&
-    message.subagentRuns?.some((run) => run.parentToolCallId === tool.id)
-  );
-}
-
-type ProcessingItem =
-  | { id: string; type: "thinking"; content: string; createdAt: string }
-  | { id: string; type: "response"; content: string; createdAt: string }
-  | { id: string; type: "tool"; tool: AgentToolTrace; createdAt: string };
-
-type ApprovalCardItem =
-  | {
-      id: string;
-      type: "edit-proposal";
-      createdAt: string;
-      toolCallIds: string[];
-      proposal: AgentEditProposal;
-    }
-  | {
-      id: string;
-      type: "long-proposal";
-      createdAt: string;
-      toolCallIds: string[];
-      item: LongWorkspaceProposalItem;
-    };
-
-type ProcessingDisplayItem =
-  | Exclude<ProcessingItem, { type: "tool" }>
-  | { id: string; type: "tool"; tool: AgentToolTrace }
-  | { id: string; type: "tool-group"; tools: AgentToolTrace[] }
-  | ApprovalCardItem;
-
-function processingItems(message: ChatMessage): ProcessingItem[] {
-  const items: ProcessingItem[] = [];
-  if (message.processingSteps?.length) {
-    let lastResponseIndex = -1;
-    for (
-      let index = message.processingSteps.length - 1;
-      index >= 0;
-      index -= 1
-    ) {
-      if (message.processingSteps[index]?.type === "response") {
-        lastResponseIndex = index;
-        break;
-      }
-    }
-    for (const [index, step] of message.processingSteps.entries()) {
-      if (step.type === "thinking") {
-        items.push({
-          id: step.id,
-          type: "thinking",
-          content: step.content,
-          createdAt: step.createdAt
-        });
-        continue;
-      }
-      if (step.type === "response") {
-        // While streaming every turn remains visible in arrival order. Once the
-        // run ends, the last response moves outside the processed disclosure.
-        if (message.status === "streaming" || index !== lastResponseIndex) {
-          items.push({
-            id: step.id,
-            type: "response",
-            content: step.content,
-            createdAt: step.createdAt
-          });
-        }
-        continue;
-      }
-      const tool = message.toolCalls?.find(
-        (toolCall) => toolCall.id === step.toolCallId
-      );
-      if (tool && !hasSubagentRunForTool(message, tool)) {
-        items.push({
-          id: step.id,
-          type: "tool",
-          tool,
-          createdAt: step.createdAt
-        });
-      }
-    }
-    return items;
-  }
-  if (message.thinking) {
-    items.push({
-      id: `${message.id}_thinking`,
-      type: "thinking",
-      content: message.thinking,
-      createdAt: message.createdAt
-    });
-  }
-  for (const tool of message.toolCalls ?? []) {
-    if (!hasSubagentRunForTool(message, tool)) {
-      items.push({
-        id: `${message.id}_${tool.id}`,
-        type: "tool",
-        tool,
-        createdAt: tool.requestedAt
-      });
-    }
-  }
-  return items;
-}
-
-function compareApprovalCards(
-  left: ApprovalCardItem,
-  right: ApprovalCardItem
-): number {
-  return (
-    left.createdAt.localeCompare(right.createdAt) ||
-    left.id.localeCompare(right.id)
-  );
-}
-
-function approvalItemsForMessage(message: ChatMessage): ApprovalCardItem[] {
-  const editItems: ApprovalCardItem[] = (message.editProposals ?? []).map(
-    (proposal) => ({
-      id: `edit:${proposal.id}`,
-      type: "edit-proposal",
-      createdAt: proposal.createdAt,
-      toolCallIds: proposal.toolCallIds,
-      proposal
-    })
-  );
-  const longItems: ApprovalCardItem[] = longProposalItemsForMessage(
-    message
-  ).map((item) => ({
-    id: `long:${item.event.id}`,
-    type: "long-proposal",
-    createdAt: item.event.timestamp,
-    toolCallIds: [item.event.payload.toolCallId],
-    item
-  }));
-  return [...editItems, ...longItems].sort(compareApprovalCards);
-}
-
-function liveTimelineItems(
-  message: ChatMessage
-): Array<ProcessingItem | ApprovalCardItem> {
-  const processing = processingItems(message);
-  const positioned: Array<{
-    position: number;
-    sequence: number;
-    item: ProcessingItem | ApprovalCardItem;
-  }> = processing.map((item, index) => ({
-    position: index * 2,
-    sequence: index,
-    item
-  }));
-
-  for (const [approvalIndex, approval] of approvalItemsForMessage(
-    message
-  ).entries()) {
-    let anchorIndex = -1;
-    for (const [index, item] of processing.entries()) {
-      if (item.type === "tool" && approval.toolCallIds.includes(item.tool.id)) {
-        anchorIndex = index;
-      }
-    }
-    if (anchorIndex >= 0) {
-      positioned.push({
-        position: anchorIndex * 2 + 1,
-        sequence: processing.length + approvalIndex,
-        item: approval
-      });
-      continue;
-    }
-
-    const laterIndex = processing.findIndex(
-      (item) => item.createdAt.localeCompare(approval.createdAt) > 0
-    );
-    positioned.push({
-      position: laterIndex < 0 ? processing.length * 2 + 1 : laterIndex * 2 - 1,
-      sequence: processing.length + approvalIndex,
-      item: approval
-    });
-  }
-
-  return positioned
-    .sort((left, right) => {
-      if (left.position !== right.position)
-        return left.position - right.position;
-      const leftApproval =
-        left.item.type === "edit-proposal" ||
-        left.item.type === "long-proposal";
-      const rightApproval =
-        right.item.type === "edit-proposal" ||
-        right.item.type === "long-proposal";
-      if (leftApproval && rightApproval) {
-        return compareApprovalCards(
-          left.item as ApprovalCardItem,
-          right.item as ApprovalCardItem
-        );
-      }
-      return left.sequence - right.sequence;
-    })
-    .map(({ item }) => item);
-}
-
-function processingDisplayItems(
-  message: ChatMessage,
-  includeApprovalCards = false
-): ProcessingDisplayItem[] {
-  const displayItems: ProcessingDisplayItem[] = [];
-  const timelineItems = includeApprovalCards
-    ? liveTimelineItems(message)
-    : processingItems(message);
-  for (const item of timelineItems) {
-    if (item.type === "edit-proposal" || item.type === "long-proposal") {
-      displayItems.push(item);
-      continue;
-    }
-    if (item.type !== "tool" || isWriteTool(item.tool)) {
-      displayItems.push(item);
-      continue;
-    }
-    const previous = displayItems.at(-1);
-    if (previous?.type === "tool-group") {
-      previous.tools.push(item.tool);
-      continue;
-    }
-    displayItems.push({
-      id: `${item.id}_group`,
-      type: "tool-group",
-      tools: [item.tool]
-    });
-  }
-  return displayItems;
-}
-
-function hasResponseSteps(message: ChatMessage): boolean {
-  return (
-    message.processingSteps?.some((step) => step.type === "response") ?? false
-  );
-}
-
-function visibleResponse(message: ChatMessage): string {
-  if (message.status === "streaming" && hasResponseSteps(message)) {
-    return "";
-  }
-  return message.content;
-}
-
-function retryProgress(
-  message: ChatMessage
-): { current: number; total: number } | undefined {
-  if (!message.retry) return undefined;
-  return {
-    current: Math.max(1, message.retry.attempt - 1),
-    total: Math.max(1, message.retry.maxAttempts - 1)
-  };
-}
-
-function retryStatusLabel(message: ChatMessage): string | undefined {
-  const retry = message.retry;
-  const progress = retryProgress(message);
-  if (!retry || !progress) return undefined;
-  const suffix = `（第 ${progress.current}/${progress.total} 次）`;
-  if (retry.state === "trying") {
-    return `正在重试${suffix}`;
-  }
-  const retryAt = retry.retryAt ? Date.parse(retry.retryAt) : Number.NaN;
-  const remainingSeconds = Number.isFinite(retryAt)
-    ? Math.max(0, Math.ceil((retryAt - clock.value) / 1_000))
-    : Math.max(0, Math.ceil((retry.delayMs ?? 0) / 1_000));
-  return `网络波动，${remainingSeconds}s 后重试${suffix}`;
-}
-
-function hasFirstModelOutput(message: ChatMessage): boolean {
-  if (message.content || message.thinking) return true;
-  if (message.toolCalls?.length || message.subagentRuns?.length) return true;
-  return (
-    message.processingSteps?.some(
-      (step) =>
-        step.type === "tool" ||
-        ((step.type === "thinking" || step.type === "response") &&
-          step.content.length > 0)
-    ) ?? false
-  );
-}
-
-function processingLabel(message: ChatMessage): string {
-  const retryLabel = retryStatusLabel(message);
-  if (retryLabel) return retryLabel;
-  const start = Date.parse(message.processingStartedAt ?? message.createdAt);
-  const end = message.processingCompletedAt
-    ? Date.parse(message.processingCompletedAt)
-    : message.status === "streaming"
-      ? clock.value
-      : start + 1_000;
-  if (!Number.isFinite(start) || !Number.isFinite(end)) {
-    return message.status === "streaming" ? "处理中" : "已处理";
-  }
-  const seconds = Math.max(1, Math.ceil((end - start) / 1_000));
-  if (
-    message.status === "streaming" &&
-    end - start >= MODEL_QUEUE_LABEL_DELAY_MS &&
-    !hasFirstModelOutput(message)
-  ) {
-    return `模型排队中 · 已等待 ${seconds}s`;
-  }
-  return `${message.status === "streaming" ? "处理中" : "已处理"} ${seconds}s`;
-}
-
-type ToolKind = "read" | "command" | "write" | "web" | "other";
-
-const WRITE_TOOL_NAMES = new Set([
-  "write_workspace_editor",
-  "replace_current_stage_text",
-  "create_draft_sections",
-  "write_draft_section",
-  "replace_draft_section_text",
-  "rename_draft_section",
-  "delete_draft_section",
-  "create_setting",
-  "write_setting",
-  "edit_setting",
-  "create_worldbuilding_file",
-  "write_worldbuilding_file",
-  "edit_worldbuilding_file",
-  "create_worldbuilding_items",
-  "write_worldbuilding_content",
-  "replace_worldbuilding_text",
-  "create_character",
-  "create_character_file",
-  "write_character_file",
-  "edit_character_file",
-  "rename_character_item",
-  "move_character_item",
-  "delete_character_file",
-  "write_character_overview",
-  "edit_character_overview",
-  "create_plot_design",
-  "write_plot_design",
-  "edit_plot_design",
-  "write_chapter_draft",
-  "edit_chapter_draft"
-]);
-
-const CREATE_FILE_TOOL_NAMES = new Set([
-  "create_draft_sections",
-  "create_setting",
-  "create_worldbuilding_file",
-  "create_worldbuilding_files",
-  "create_worldbuilding_items",
-  "create_character",
-  "create_character_file",
-  "create_plot_design"
-]);
-
-const DIRECT_WRITE_TOOL_NAMES = new Set([
-  "write_workspace_editor",
-  "create_draft_sections",
-  "write_draft_section",
-  "rename_draft_section",
-  "delete_draft_section",
-  "write_setting",
-  "write_worldbuilding_file",
-  "write_worldbuilding_content",
-  "write_character_file",
-  "write_character_overview",
-  "write_plot_design",
-  "write_chapter_draft"
-]);
-
-function isWriteTool(tool: AgentToolTrace): boolean {
-  return WRITE_TOOL_NAMES.has(tool.name) || toolKind(tool.name) === "write";
-}
-
-type WriteToolAction = "write" | "modify";
-
-function writeToolAction(tool: AgentToolTrace): WriteToolAction {
-  return DIRECT_WRITE_TOOL_NAMES.has(tool.name) ||
-    /(?:write|save)/i.test(tool.name)
-    ? "write"
-    : "modify";
-}
-
-function writeActionLabel(action: WriteToolAction): "写入" | "修改" {
-  return action === "write" ? "写入" : "修改";
-}
-
-function toolKind(toolName: string): ToolKind {
-  const name = toolName.toLowerCase();
-  if (
-    WRITE_TOOL_NAMES.has(name) ||
-    /(write|edit|replace|patch|save|apply)/.test(name)
-  ) {
-    return "write";
-  }
-  if (/(read|list|search|find|glob|file)/.test(name)) {
-    return "read";
-  }
-  if (/(exec|shell|command|terminal|run)/.test(name)) {
-    return "command";
-  }
-  if (/(browser|web|http|fetch|url)/.test(name)) {
-    return "web";
-  }
-  return "other";
-}
-
-function toolIcon(tool: AgentToolTrace): IconName {
-  const kind = toolKind(tool.name);
-  if (kind === "read") {
-    return "folder";
-  }
-  if (kind === "command") {
-    return "terminal";
-  }
-  if (kind === "write") {
-    return "file";
-  }
-  if (kind === "web") {
-    return "globe";
-  }
-  return "sparkles";
-}
-
-function toolLabel(tool: AgentToolTrace): string {
-  const displayName = workspaceToolLabel(tool.name);
-  if (tool.name === "write_chapter_draft") {
-    if (tool.status === "error") return "正文审核生成失败";
-    if (tool.status === "completed") return "当前章正文待审核";
-    if (tool.status === "running") return "正在生成正文审核";
-    return "正在生成当前章正文";
-  }
-  if (tool.name === "edit_chapter_draft") {
-    if (tool.status === "error") return "正文修改审核生成失败";
-    if (tool.status === "completed") return "当前章正文修改待审核";
-    if (tool.status === "running") return "正在生成正文修改审核";
-    return "正在生成当前章正文修改";
-  }
-  if (CREATE_FILE_TOOL_NAMES.has(tool.name)) {
-    if (tool.status === "error") return "创建文件失败";
-    if (tool.status === "completed") return "文件创建变更已生成";
-    return "正在创建文件";
-  }
-  if (isWriteTool(tool)) {
-    const action = writeActionLabel(writeToolAction(tool));
-    if (tool.status === "error") return `${action}失败`;
-    if (tool.status === "completed") return `${action}结果已生成`;
-    return `正在${action}`;
-  }
-  if (tool.status === "error") {
-    return `执行 ${displayName} 时出错`;
-  }
-  if (tool.status === "preparing") {
-    return `正在准备${displayName}`;
-  }
-  const running = tool.status === "running";
-  const kind = toolKind(tool.name);
-  if (kind === "read") {
-    return running ? "正在读取文件" : "已读取文件";
-  }
-  if (kind === "command") {
-    return running ? "正在运行命令" : "运行了命令";
-  }
-  if (kind === "write") {
-    return running ? "正在提交文本变更" : "已生成文本变更";
-  }
-  if (kind === "web") {
-    return running ? "正在访问页面" : "已访问页面";
-  }
-  return `${running ? "正在执行" : "已执行"} ${displayName}`;
-}
-
-function toolGroupIsRunning(tools: AgentToolTrace[]): boolean {
-  return tools.some(
-    (tool) => tool.status === "preparing" || tool.status === "running"
-  );
-}
-
-function toolGroupLabel(tools: AgentToolTrace[]): "执行中" | "执行完成" {
-  return toolGroupIsRunning(tools) ? "执行中" : "执行完成";
-}
-
-function compactTrace(value: string): string {
-  const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length > 180 ? `${compact.slice(0, 177)}…` : compact;
-}
-
-function toolDetail(tool: AgentToolTrace): string | undefined {
-  if (tool.status === "preparing") {
-    const length = writeToolText(tool).length;
-    return length > 0
-      ? `已生成 ${length.toLocaleString("zh-CN")} 字符`
-      : isWriteTool(tool)
-        ? "待审阅文本生成中"
-        : "参数生成中";
-  }
-  if (isWriteTool(tool) && tool.status === "running") {
-    return `正在提交${writeActionLabel(writeToolAction(tool))}内容`;
-  }
-  if (tool.resultSummary?.trim()) {
-    return compactTrace(tool.resultSummary);
-  }
-  if (!tool.args || typeof tool.args !== "object") {
-    return undefined;
-  }
-  const args = tool.args as Record<string, unknown>;
-  for (const key of ["path", "file", "command", "query", "url"]) {
-    if (typeof args[key] === "string") {
-      return compactTrace(args[key]);
-    }
-  }
-  try {
-    return compactTrace(JSON.stringify(args));
-  } catch {
-    return undefined;
-  }
-}
-
-function writeToolContentLabel(tool: AgentToolTrace): string {
-  return tool.name === "write_chapter_draft" ||
-    tool.name === "edit_chapter_draft"
-    ? "待审阅正文"
-    : "写入内容";
-}
-
-function writeToolTarget(tool: AgentToolTrace): string | undefined {
-  if (!tool.args || typeof tool.args !== "object") return undefined;
-  const args = tool.args as Record<string, unknown>;
-  return typeof args.target_stage_id === "string"
-    ? args.target_stage_id
-    : undefined;
-}
-
-function visibleToolArguments(tool: AgentToolTrace): unknown {
-  return tool.args ?? tool.argumentsText;
-}
-
-function formatToolPayload(value: unknown): string | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  try {
-    const formatted =
-      typeof value === "string" ? value : JSON.stringify(value, null, 2);
-    return formatted.length > 3_000
-      ? `${formatted.slice(0, 3_000)}\n…`
-      : formatted;
-  } catch {
-    return String(value);
-  }
-}
-
-function longProposalItemsForMessage(
-  message: ChatMessage
-): LongWorkspaceProposalItem[] {
-  if (!message.runId) return [];
-  return props.longProposalItems.filter(
-    (item) => item.event.payload.runId === message.runId
-  );
-}
-
-async function copyMessage(message: ChatMessage): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(message.content);
-    copiedMessageId.value = message.id;
-    if (copiedTimer !== undefined) {
-      globalThis.clearTimeout(copiedTimer);
-    }
-    copiedTimer = globalThis.setTimeout(() => {
-      copiedMessageId.value = null;
-    }, 1_500);
-    uiMessage.success(
-      message.role === "assistant" ? "已复制回复" : "已复制消息"
-    );
-  } catch {
-    uiMessage.error("复制失败，请稍后重试。");
-  }
-}
-
-function copyMessageLabel(message: ChatMessage): string {
-  if (copiedMessageId.value === message.id) return "已复制";
-  return message.role === "assistant" ? "复制回复" : "复制消息";
-}
 </script>
 
 <template>
@@ -1658,6 +869,32 @@ function copyMessageLabel(message: ChatMessage): string {
           @click="emit('toggleLeft')"
         >
           <AppIcon name="panel-left" :size="18" />
+        </button>
+        <button
+          v-if="agentActivity"
+          class="icon-button agent-activity-toggle"
+          :class="{ 'is-collapsed': agentActivityCollapsed }"
+          type="button"
+          :aria-label="
+            agentActivityCollapsed ? '展开智能体执行列表' : '收起智能体执行列表'
+          "
+          :aria-expanded="!agentActivityCollapsed"
+          aria-controls="agent-activity-panel"
+          @click="agentActivity.toggleCollapsed()"
+        >
+          <AppIcon
+            class="agent-activity-toggle-icon"
+            name="panel-top"
+            :size="18"
+          />
+          <span
+            v-if="agentActivityCollapsed && agentActivityItems.length"
+            class="agent-activity-toggle-badge"
+            aria-hidden="true"
+          >
+            {{ Math.min(agentActivityItems.length, 9)
+            }}{{ agentActivityItems.length > 9 ? "+" : "" }}
+          </span>
         </button>
         <div>
           <strong>{{ agentLabel }}</strong>
@@ -1788,578 +1025,40 @@ function copyMessageLabel(message: ChatMessage): string {
     </header>
 
     <div class="conversation-scroll-shell">
-      <section
-        ref="scroller"
-        class="conversation-scroll transient-scrollbar"
-        aria-live="polite"
-        @wheel.passive="handleConversationWheel"
-        @scroll.passive="handleConversationScroll"
-      >
-        <div v-if="messages.length === 0" class="conversation-empty">
-          <span class="empty-agent-mark"
-            ><AppIcon name="logo" :size="40"
-          /></span>
-          <h1>{{ welcomeContent.title }}</h1>
-          <p>{{ welcomeContent.description }}</p>
-          <div class="empty-suggestions">
-            <button
-              v-for="item in welcomeContent.questions"
-              :key="item"
-              type="button"
-              :disabled="!runtimeAvailable"
-              @click="emit('suggestion', item)"
-            >
-              {{ item }}
-            </button>
-          </div>
-        </div>
+      <AgentActivityFloatPanel
+        v-if="agentActivity && !agentActivityCollapsed"
+        id="agent-activity-panel"
+        :items="agentActivityItems"
+        @select="selectAgentActivity"
+      />
+      <ConversationMessageList
+        :messages="messages"
+        :responding="responding"
+        :runtime-available="runtimeAvailable"
+        :clock="clock"
+        :allow-live-edit-review="allowLiveEditReview"
+        :long-proposal-items="longProposalItems"
+        :long-workspace-index="longWorkspaceIndex"
+        :welcome-content="welcomeContent"
+        :handle-conversation-wheel="handleConversationWheel"
+        :handle-conversation-scroll="handleConversationScroll"
+        :set-scroller="setConversationScroller"
+        :set-message-list="setConversationMessageList"
+        @suggestion="emit('suggestion', $event)"
+        @review-edit="emit('reviewEdit', $event)"
+        @locate-edit-proposal="emit('locateEditProposal', $event)"
+        @approve-long-proposal="emit('approveLongProposal', $event)"
+        @reject-long-proposal="emit('rejectLongProposal', $event)"
+        @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
+        @locate-long-proposal="emit('locateLongProposal', $event)"
+      />
 
-        <div v-else ref="messageList" class="message-list">
-          <article
-            v-for="message in messages"
-            :key="message.id"
-            :data-conversation-message-id="message.id"
-            class="message"
-            :class="[
-              `is-${message.role}`,
-              {
-                'is-empty-error':
-                  message.role === 'assistant' &&
-                  message.status === 'error' &&
-                  !message.content &&
-                  !hasProcessing(message) &&
-                  !message.subagentRuns?.length &&
-                  !message.editProposals?.length
-              }
-            ]"
-          >
-            <div class="message-body">
-              <div
-                v-if="
-                  message.role === 'assistant' &&
-                  (hasProcessing(message) ||
-                    message.retry ||
-                    message.processingStartedAt) &&
-                  message.status === 'streaming'
-                "
-                class="processing-live-list"
-                aria-label="运行过程"
-              >
-                <div class="processing-live-status" aria-live="off">
-                  {{ processingLabel(message) }}
-                </div>
-                <template
-                  v-for="item in processingDisplayItems(message, true)"
-                  :key="item.id"
-                >
-                  <details
-                    v-if="item.type === 'thinking'"
-                    class="processing-live-item processing-live-thinking"
-                  >
-                    <summary>
-                      <span>思考中</span>
-                      <AppIcon name="chevron" :size="13" />
-                    </summary>
-                    <div class="processing-live-body processing-thinking">
-                      <StreamedContent :content="item.content" streaming />
-                    </div>
-                  </details>
-                  <div
-                    v-else-if="item.type === 'response'"
-                    class="processing-step processing-response"
-                  >
-                    <StreamedContent :content="item.content" streaming />
-                  </div>
-                  <details
-                    v-else-if="item.type === 'tool'"
-                    class="processing-live-item processing-live-tool"
-                  >
-                    <summary>
-                      <div
-                        class="tool-trace"
-                        :class="[
-                          `is-${item.tool.status}`,
-                          { 'is-write': isWriteTool(item.tool) }
-                        ]"
-                      >
-                        <AppIcon
-                          v-if="!isWriteTool(item.tool)"
-                          :name="toolIcon(item.tool)"
-                          :size="17"
-                        />
-                        <div>
-                          <div
-                            v-if="isWriteTool(item.tool)"
-                            class="write-tool-label"
-                          >
-                            <strong>{{ toolLabel(item.tool) }}</strong>
-                            <AppIcon name="chevron" :size="13" />
-                          </div>
-                          <strong v-else>{{ toolLabel(item.tool) }}</strong>
-                          <span v-if="toolDetail(item.tool)">{{
-                            toolDetail(item.tool)
-                          }}</span>
-                        </div>
-                      </div>
-                      <AppIcon
-                        v-if="!isWriteTool(item.tool)"
-                        name="chevron"
-                        :size="13"
-                      />
-                    </summary>
-                    <div class="processing-live-body tool-detail">
-                      <div
-                        v-if="isWriteTool(item.tool)"
-                        class="write-tool-detail"
-                      >
-                        <div class="write-tool-output-heading">
-                          <span>{{ writeToolContentLabel(item.tool) }}</span>
-                          <small v-if="writeToolTarget(item.tool)">{{
-                            writeToolTarget(item.tool)
-                          }}</small>
-                          <small
-                            >{{
-                              writeToolText(item.tool).length.toLocaleString(
-                                "zh-CN"
-                              )
-                            }}
-                            字符</small
-                          >
-                        </div>
-                        <pre
-                          class="write-tool-output"
-                          :class="{
-                            'is-streaming': item.tool.status === 'preparing'
-                          }"
-                          >{{
-                            writeToolText(item.tool) || "正在等待写入内容……"
-                          }}</pre>
-                      </div>
-                      <div
-                        v-else-if="
-                          formatToolPayload(visibleToolArguments(item.tool))
-                        "
-                      >
-                        <span>调用参数</span>
-                        <pre>{{
-                          formatToolPayload(visibleToolArguments(item.tool))
-                        }}</pre>
-                      </div>
-                      <div v-if="item.tool.resultSummary">
-                        <span>执行结果</span>
-                        <p>{{ item.tool.resultSummary }}</p>
-                      </div>
-                    </div>
-                  </details>
-                  <AgentEditProposalCard
-                    v-else-if="item.type === 'edit-proposal'"
-                    class="approval-timeline-card"
-                    :proposal="item.proposal"
-                    :message-status="message.status"
-                    :allow-live-edit-review="allowLiveEditReview"
-                    @review="emit('reviewEdit', $event)"
-                    @locate="emit('locateEditProposal', $event)"
-                  />
-                  <LongProposalReview
-                    v-else-if="item.type === 'long-proposal'"
-                    class="approval-timeline-card"
-                    embedded
-                    conversation-card
-                    :items="[item.item]"
-                    :workspace-index="longWorkspaceIndex"
-                    @approve="emit('approveLongProposal', $event)"
-                    @reject="emit('rejectLongProposal', $event)"
-                    @retry-preview="emit('retryLongProposalPreview', $event)"
-                    @locate="emit('locateLongProposal', $event)"
-                  />
-                  <details
-                    v-else-if="item.type === 'tool-group'"
-                    class="processing-live-item processing-live-thinking processing-tool-group"
-                    :aria-busy="toolGroupIsRunning(item.tools)"
-                  >
-                    <summary>
-                      <span>{{ toolGroupLabel(item.tools) }}</span>
-                      <AppIcon name="chevron" :size="13" />
-                    </summary>
-                    <div
-                      class="processing-live-body tool-call-list"
-                      aria-label="工具调用列表"
-                    >
-                      <details
-                        v-for="tool in item.tools"
-                        :key="tool.id"
-                        class="processing-live-item processing-live-tool tool-call-list-item"
-                      >
-                        <summary>
-                          <div class="tool-trace" :class="`is-${tool.status}`">
-                            <AppIcon :name="toolIcon(tool)" :size="17" />
-                            <div>
-                              <strong>{{ toolLabel(tool) }}</strong>
-                              <span v-if="toolDetail(tool)">{{
-                                toolDetail(tool)
-                              }}</span>
-                            </div>
-                          </div>
-                          <AppIcon name="chevron" :size="13" />
-                        </summary>
-                        <div class="processing-live-body tool-detail">
-                          <div
-                            v-if="formatToolPayload(visibleToolArguments(tool))"
-                          >
-                            <span>调用参数</span>
-                            <pre>{{
-                              formatToolPayload(visibleToolArguments(tool))
-                            }}</pre>
-                          </div>
-                          <div v-if="tool.resultSummary">
-                            <span>执行结果</span>
-                            <p>{{ tool.resultSummary }}</p>
-                          </div>
-                        </div>
-                      </details>
-                    </div>
-                  </details>
-                </template>
-              </div>
-              <details
-                v-else-if="
-                  message.role === 'assistant' &&
-                  hasProcessingDisclosure(message)
-                "
-                class="processing-block"
-              >
-                <summary>
-                  <span>{{ processingLabel(message) }}</span>
-                  <AppIcon name="chevron" :size="13" />
-                </summary>
-                <div class="processing-content">
-                  <template
-                    v-for="item in processingDisplayItems(message)"
-                    :key="item.id"
-                  >
-                    <details
-                      v-if="item.type === 'thinking'"
-                      class="processing-live-item processing-live-thinking"
-                    >
-                      <summary>
-                        <span>思考过程</span>
-                        <AppIcon name="chevron" :size="13" />
-                      </summary>
-                      <div class="processing-live-body processing-thinking">
-                        <StreamedContent :content="item.content" />
-                      </div>
-                    </details>
-                    <div
-                      v-else-if="item.type === 'response'"
-                      class="processing-step processing-response"
-                    >
-                      <StreamedContent :content="item.content" />
-                    </div>
-                    <details
-                      v-else-if="item.type === 'tool'"
-                      class="processing-live-item processing-live-tool"
-                    >
-                      <summary>
-                        <div
-                          class="tool-trace"
-                          :class="[
-                            `is-${item.tool.status}`,
-                            { 'is-write': isWriteTool(item.tool) }
-                          ]"
-                        >
-                          <AppIcon
-                            v-if="!isWriteTool(item.tool)"
-                            :name="toolIcon(item.tool)"
-                            :size="17"
-                          />
-                          <div>
-                            <div
-                              v-if="isWriteTool(item.tool)"
-                              class="write-tool-label"
-                            >
-                              <strong>{{ toolLabel(item.tool) }}</strong>
-                              <AppIcon name="chevron" :size="13" />
-                            </div>
-                            <strong v-else>{{ toolLabel(item.tool) }}</strong>
-                            <span v-if="toolDetail(item.tool)">{{
-                              toolDetail(item.tool)
-                            }}</span>
-                          </div>
-                        </div>
-                        <AppIcon
-                          v-if="!isWriteTool(item.tool)"
-                          name="chevron"
-                          :size="13"
-                        />
-                      </summary>
-                      <div class="processing-live-body tool-detail">
-                        <div
-                          v-if="isWriteTool(item.tool)"
-                          class="write-tool-detail"
-                        >
-                          <div class="write-tool-output-heading">
-                            <span>{{ writeToolContentLabel(item.tool) }}</span>
-                            <small v-if="writeToolTarget(item.tool)">{{
-                              writeToolTarget(item.tool)
-                            }}</small>
-                            <small
-                              >{{
-                                writeToolText(item.tool).length.toLocaleString(
-                                  "zh-CN"
-                                )
-                              }}
-                              字符</small
-                            >
-                          </div>
-                          <pre class="write-tool-output">{{
-                            writeToolText(item.tool) || "没有写入内容"
-                          }}</pre>
-                        </div>
-                        <div
-                          v-else-if="
-                            formatToolPayload(visibleToolArguments(item.tool))
-                          "
-                        >
-                          <span>调用参数</span>
-                          <pre>{{
-                            formatToolPayload(visibleToolArguments(item.tool))
-                          }}</pre>
-                        </div>
-                        <div v-if="item.tool.resultSummary">
-                          <span>执行结果</span>
-                          <p>{{ item.tool.resultSummary }}</p>
-                        </div>
-                      </div>
-                    </details>
-                    <details
-                      v-else-if="item.type === 'tool-group'"
-                      class="processing-live-item processing-live-thinking processing-tool-group"
-                    >
-                      <summary>
-                        <span>{{ toolGroupLabel(item.tools) }}</span>
-                        <AppIcon name="chevron" :size="13" />
-                      </summary>
-                      <div
-                        class="processing-live-body tool-call-list"
-                        aria-label="工具调用列表"
-                      >
-                        <details
-                          v-for="tool in item.tools"
-                          :key="tool.id"
-                          class="processing-live-item processing-live-tool tool-call-list-item"
-                        >
-                          <summary>
-                            <div
-                              class="tool-trace"
-                              :class="`is-${tool.status}`"
-                            >
-                              <AppIcon :name="toolIcon(tool)" :size="17" />
-                              <div>
-                                <strong>{{ toolLabel(tool) }}</strong>
-                                <span v-if="toolDetail(tool)">{{
-                                  toolDetail(tool)
-                                }}</span>
-                              </div>
-                            </div>
-                            <AppIcon name="chevron" :size="13" />
-                          </summary>
-                          <div class="processing-live-body tool-detail">
-                            <div
-                              v-if="
-                                formatToolPayload(visibleToolArguments(tool))
-                              "
-                            >
-                              <span>调用参数</span>
-                              <pre>{{
-                                formatToolPayload(visibleToolArguments(tool))
-                              }}</pre>
-                            </div>
-                            <div v-if="tool.resultSummary">
-                              <span>执行结果</span>
-                              <p>{{ tool.resultSummary }}</p>
-                            </div>
-                          </div>
-                        </details>
-                      </div>
-                    </details>
-                  </template>
-                  <SubagentRunList
-                    v-if="
-                      message.subagentRuns?.length &&
-                      message.status !== 'streaming'
-                    "
-                    :message="message"
-                    :now="clock"
-                  />
-                </div>
-              </details>
-
-              <SubagentRunList
-                v-if="
-                  message.role === 'assistant' &&
-                  message.subagentRuns?.length &&
-                  message.status === 'streaming'
-                "
-                :message="message"
-                :now="clock"
-              />
-              <div class="message-content">
-                <div
-                  v-if="message.role === 'user'"
-                  class="message-copy user-message-copy"
-                >
-                  <div
-                    v-if="message.attachments?.length"
-                    class="message-attachment-list"
-                    aria-label="本条消息的附件"
-                  >
-                    <span
-                      v-for="attachment in message.attachments"
-                      :key="attachment.id"
-                      class="message-attachment-chip"
-                      :title="`${attachment.name} · ${formatFileSize(attachment.size)}`"
-                    >
-                      <AppIcon
-                        :name="attachment.kind === 'image' ? 'image' : 'file'"
-                        :size="14"
-                      />
-                      <span>{{ attachment.name }}</span>
-                      <small v-if="attachment.truncated">已截断</small>
-                    </span>
-                  </div>
-                  {{ message.content }}
-                </div>
-                <div
-                  v-else-if="visibleResponse(message)"
-                  class="message-copy"
-                  :class="{ 'is-streaming': message.status === 'streaming' }"
-                >
-                  <StreamedContent
-                    :content="visibleResponse(message)"
-                    :streaming="message.status === 'streaming'"
-                  />
-                </div>
-                <div
-                  v-if="message.status === 'stopped'"
-                  class="message-stopped-copy"
-                >
-                  已停止生成
-                </div>
-                <section
-                  v-if="
-                    message.role === 'assistant' &&
-                    message.status !== 'streaming' &&
-                    approvalItemsForMessage(message).length
-                  "
-                  class="approval-card-stack"
-                  aria-label="本轮审批卡片"
-                >
-                  <template
-                    v-for="approval in approvalItemsForMessage(message)"
-                    :key="approval.id"
-                  >
-                    <AgentEditProposalCard
-                      v-if="approval.type === 'edit-proposal'"
-                      :proposal="approval.proposal"
-                      :message-status="message.status"
-                      :allow-live-edit-review="allowLiveEditReview"
-                      @review="emit('reviewEdit', $event)"
-                      @locate="emit('locateEditProposal', $event)"
-                    />
-                    <LongProposalReview
-                      v-else
-                      embedded
-                      conversation-card
-                      :items="[approval.item]"
-                      :workspace-index="longWorkspaceIndex"
-                      @approve="emit('approveLongProposal', $event)"
-                      @reject="emit('rejectLongProposal', $event)"
-                      @retry-preview="emit('retryLongProposalPreview', $event)"
-                      @locate="emit('locateLongProposal', $event)"
-                    />
-                  </template>
-                </section>
-              </div>
-              <div
-                v-if="message.content && message.status !== 'streaming'"
-                class="message-actions"
-              >
-                <span v-if="message.role === 'user'">{{
-                  formatTime(message.createdAt)
-                }}</span>
-                <button
-                  type="button"
-                  :aria-label="copyMessageLabel(message)"
-                  @click="copyMessage(message)"
-                >
-                  <AppIcon
-                    :name="copiedMessageId === message.id ? 'check' : 'copy'"
-                    :size="15"
-                  />
-                </button>
-                <span v-if="message.role === 'assistant'">{{
-                  formatTime(message.createdAt)
-                }}</span>
-              </div>
-            </div>
-          </article>
-
-          <article
-            v-if="responding && !hasStreamingAssistant"
-            class="message is-assistant is-thinking"
-          >
-            <div class="thinking-row">
-              <span>正在思考</span>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <nav
+      <ConversationTurnNavigator
         v-if="conversationTurns.length"
-        class="conversation-turn-navigator"
-        aria-label="当前对话轮次"
-      >
-        <button
-          class="conversation-turn-navigator-toggle"
-          type="button"
-          aria-label="展开对话定位"
-          title="悬停查看对话定位"
-        >
-          <span class="conversation-turn-indicators" aria-hidden="true">
-            <i
-              v-for="turn in conversationTurns"
-              :key="turn.id"
-              :class="{ 'is-active': activeConversationTurnId === turn.id }"
-            />
-          </span>
-        </button>
-        <div class="conversation-turn-navigator-panel">
-          <div
-            ref="conversationNavigatorList"
-            class="conversation-turn-navigator-list"
-          >
-            <button
-              v-for="turn in conversationTurns"
-              :key="turn.id"
-              type="button"
-              class="conversation-turn-card"
-              :class="{ 'is-active': activeConversationTurnId === turn.id }"
-              :data-conversation-turn-id="turn.id"
-              :aria-current="
-                activeConversationTurnId === turn.id ? 'location' : undefined
-              "
-              :title="`第 ${turn.number} 轮：${turn.text}`"
-              @click="scrollToConversationTurn(turn.id)"
-            >
-              <span class="conversation-turn-card-number">
-                {{ String(turn.number).padStart(2, "0") }}
-              </span>
-              <span class="conversation-turn-card-copy">{{ turn.text }}</span>
-            </button>
-          </div>
-        </div>
-      </nav>
+        :turns="conversationTurns"
+        :active-turn-id="activeConversationTurnId"
+        @select="scrollToConversationTurn"
+      />
     </div>
 
     <footer class="composer-wrap">

@@ -50,6 +50,7 @@ interface EditorViewportSnapshot {
   selectionStart: number;
   selectionEnd: number;
   selectionDirection: "forward" | "backward" | "none";
+  focused: boolean;
 }
 
 const DOCUMENT_PAGE_CHARACTERS = 256 * 1024;
@@ -153,6 +154,7 @@ export function useLongEditorDocumentSession(options: {
   let requestClock = 0;
   let activeSavePromise: Promise<boolean> | null = null;
   let pendingSaveViewport: EditorViewportSnapshot | null = null;
+  let completedSaveViewport: EditorViewportSnapshot | null = null;
   let worldbuildingPrefetchRequest = 0;
   let selectionPrefetchRequest = 0;
 
@@ -224,7 +226,8 @@ export function useLongEditorDocumentSession(options: {
       scrollTop: input.scrollTop,
       selectionStart: input.selectionStart,
       selectionEnd: input.selectionEnd,
-      selectionDirection: input.selectionDirection
+      selectionDirection: input.selectionDirection,
+      focused: input.ownerDocument?.activeElement === input
     };
   }
 
@@ -241,13 +244,64 @@ export function useLongEditorDocumentSession(options: {
     }
     const input = options.editorInput.value;
     if (!input) return;
-    input.setSelectionRange(
-      snapshot.selectionStart,
-      snapshot.selectionEnd,
-      snapshot.selectionDirection
-    );
-    input.scrollTop = snapshot.scrollTop;
+    if (snapshot.focused && input.ownerDocument.activeElement !== input) {
+      input.focus({ preventScroll: true });
+    }
+    if (
+      input.selectionStart !== snapshot.selectionStart ||
+      input.selectionEnd !== snapshot.selectionEnd ||
+      input.selectionDirection !== snapshot.selectionDirection
+    ) {
+      input.setSelectionRange(
+        snapshot.selectionStart,
+        snapshot.selectionEnd,
+        snapshot.selectionDirection
+      );
+    }
+    if (Math.abs(input.scrollTop - snapshot.scrollTop) > 0.5) {
+      input.scrollTop = snapshot.scrollTop;
+    }
   }
+
+  const currentVisibleSaving = computed(() => {
+    if (options.currentIsStructuredText.value) {
+      const plotPointId = props.selection?.plotPointId;
+      if (plotPointId && options.activePlotPointTab.value === "summary") {
+        return Boolean(
+          options.plotPointSummaryDrafts.value[plotPointId]?.saving
+        );
+      }
+      const volumeId = options.activeBookLineVolumeId.value;
+      if (volumeId && options.activeBookLineContentTab.value === "outline") {
+        return Boolean(options.volumeOutlineDrafts.value[volumeId]?.saving);
+      }
+    }
+    return Boolean(currentState.value?.saving);
+  });
+
+  watch(
+    currentVisibleSaving,
+    (saving, wasSaving) => {
+      if (saving) {
+        if (!wasSaving) {
+          pendingSaveViewport =
+            captureCurrentEditorViewport() ?? pendingSaveViewport;
+        }
+        return;
+      }
+      if (!wasSaving || !pendingSaveViewport) return;
+      const latest = captureCurrentEditorViewport();
+      if (!latest || latest.documentKey !== pendingSaveViewport.documentKey) {
+        return;
+      }
+      // The editor stays writable during persistence. Capture immediately
+      // before the successful result patches its reactive state so later
+      // restoration never rewinds scrolling or selection to save-start values.
+      pendingSaveViewport = latest;
+      completedSaveViewport = latest;
+    },
+    { flush: "pre" }
+  );
 
   function initializeLoadingState(
     key: string,
@@ -678,12 +732,16 @@ export function useLongEditorDocumentSession(options: {
   async function saveCurrentDocument(): Promise<void> {
     const viewport = captureCurrentEditorViewport();
     pendingSaveViewport = viewport;
+    completedSaveViewport = null;
     if (options.currentIsStructuredText.value) {
       let saved = true;
       if (!options.currentReadOnly.value && options.currentDirty.value) {
         saved = await saveAllChanges();
       }
-      await restoreCurrentEditorViewport(viewport);
+      await restoreCurrentEditorViewport(
+        completedSaveViewport ?? pendingSaveViewport ?? viewport
+      );
+      completedSaveViewport = null;
       if (!saved && pendingSaveViewport === viewport) {
         pendingSaveViewport = null;
       }
@@ -701,7 +759,10 @@ export function useLongEditorDocumentSession(options: {
     const saved = await runExclusiveSave(() =>
       saveDocumentState(stateKey(selectedFile.file.id), true)
     );
-    await restoreCurrentEditorViewport(viewport);
+    await restoreCurrentEditorViewport(
+      completedSaveViewport ?? pendingSaveViewport ?? viewport
+    );
+    completedSaveViewport = null;
     if (!saved && pendingSaveViewport === viewport) {
       pendingSaveViewport = null;
     }

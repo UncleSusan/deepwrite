@@ -59,13 +59,17 @@ describe("LongManuscriptEditor", () => {
     );
   });
 
-  it("keeps the current text viewport after a manual save", () => {
+  it("keeps the latest text viewport when a save finishes", () => {
     expect(editorImplementationSource).toContain(
       "const viewport = captureCurrentEditorViewport()"
     );
     expect(editorImplementationSource).toContain(
-      "await restoreCurrentEditorViewport(viewport)"
+      "completedSaveViewport ?? pendingSaveViewport ?? viewport"
     );
+    expect(editorImplementationSource).toContain(
+      "const latest = captureCurrentEditorViewport()"
+    );
+    expect(editorImplementationSource).toContain('{ flush: "pre" }');
     expect(editorImplementationSource).toContain(
       "input.scrollTop = snapshot.scrollTop"
     );

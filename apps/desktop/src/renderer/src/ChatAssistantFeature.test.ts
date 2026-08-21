@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import shellSource from "./WorkspaceShell.vue?raw";
+import messageListSource from "./components/ConversationMessageList.vue?raw";
+import processingTimelineSource from "./components/ConversationProcessingTimeline.vue?raw";
 import sidebarSource from "./components/LeftSidebar.vue?raw";
 import lazySource from "./components/lazyAppComponents.ts?raw";
+import composerSource from "./features/chat-assistant/ChatAssistantComposer.vue?raw";
+import homeSource from "./features/chat-assistant/ChatAssistantHome.vue?raw";
 import overlaySource from "./features/chat-assistant/ChatAssistantOverlay.vue?raw";
 import featureSource from "./features/chat-assistant/useChatAssistant.ts?raw";
 import modeSource from "./features/chat-assistant/useChatAssistantMode.ts?raw";
+import webSearchSource from "./features/chat-assistant/useChatAssistantWebSearch.ts?raw";
 
 describe("independent chat assistant feature", () => {
   it("places chat beside agent teams without replacing the workspace view", () => {
@@ -29,9 +34,9 @@ describe("independent chat assistant feature", () => {
     expect(shellSource).toContain('<Teleport to="body">');
     expect(shellSource).toContain('v-if="chatAssistant.visible.value');
     expect(overlaySource).toContain('aria-label="最小化聊天助手"');
-    expect(overlaySource).toContain("visibleHistory");
-    expect(overlaySource).toContain("查看全部");
-    expect(overlaySource).toContain("selectConversation(item.sessionId)");
+    expect(homeSource).toContain("visibleHistory");
+    expect(homeSource).toContain("查看全部");
+    expect(homeSource).toContain("selectConversation(item.sessionId)");
     expect(overlaySource).toContain("controller.value!.newConversation()");
     expect(overlaySource).toContain("width: min(44vw");
     expect(overlaySource).toContain("height: min(88vh");
@@ -43,23 +48,83 @@ describe("independent chat assistant feature", () => {
     expect(overlaySource).toContain('"deepwrite:chat-assistant-size:v2"');
   });
 
+  it("centers the new-chat empty state without moving recent history", () => {
+    expect(overlaySource).toContain("<ChatAssistantHome");
+    expect(homeSource).toContain("chat-assistant-home.is-empty");
+    expect(homeSource).toContain("place-items: center");
+    expect(homeSource).toContain("chat-assistant-home.has-history");
+    expect(homeSource).toContain("grid-template-rows: minmax(80px, 1fr) auto");
+    expect(homeSource).not.toContain("align-self: end");
+  });
+
+  it("shares the agent conversation timeline instead of maintaining a chat-only trace", () => {
+    expect(overlaySource).toContain(
+      'import ConversationMessageList from "../../components/ConversationMessageList.vue"'
+    );
+    expect(overlaySource).toContain("<ConversationMessageList");
+    expect(overlaySource).not.toContain("ChatAssistantProcessingTrace");
+    expect(messageListSource).toContain("<ConversationMessageItem");
+    expect(processingTimelineSource).toContain(
+      "processingDisplayItems(message, true, longProposalItems)"
+    );
+    expect(processingTimelineSource).toContain(
+      "processingDisplayItems(message)"
+    );
+  });
+
+  it("stops following the tail as soon as the user scrolls upward", () => {
+    expect(overlaySource).toContain(
+      'import { useConversationScrollFollow } from "../../composables/useConversationScrollFollow"'
+    );
+    expect(overlaySource).toContain("useConversationScrollFollow({");
+    expect(overlaySource).toContain(
+      ':handle-conversation-wheel="handleConversationWheel"'
+    );
+    expect(overlaySource).toContain(
+      ':handle-conversation-scroll="handleConversationScroll"'
+    );
+    expect(overlaySource).toContain(
+      "if (!followsConversationTail.value) return"
+    );
+    expect(overlaySource).toContain("tailFollowLockedForResponse.value");
+    expect(overlaySource).toContain(
+      "const preservedScrollTop = element.scrollTop"
+    );
+    expect(overlaySource).not.toContain(
+      "scrollTo({ top: scroller.value.scrollHeight })"
+    );
+  });
+
   it("isolates normal and per-project controllers and sends the selected context", () => {
     expect(modeSource).toContain('key: "chat-assistant:normal"');
     expect(modeSource).toContain("`chat-assistant:project:${suffix}`");
     expect(featureSource).toContain(
       '"chat-assistant",\n      "chat-assistant:normal"'
     );
-    expect(modeSource).toContain("sendAssistantMessage(context)");
-    expect(overlaySource).toContain("assistant.sendAssistantMessage()");
-    expect(overlaySource).toContain("controller.stopGeneration()");
-    expect(overlaySource).toContain("controller.thinkingLevel.value");
-    expect(overlaySource).toContain('accessible-label="聊天模型"');
-    expect(overlaySource).toContain(
-      "controller.value!.selectModel(String(value))"
-    );
+    expect(modeSource).toContain("controller.value.sendAssistantMessage(");
+    expect(overlaySource).toContain("assistant.sendAssistantMessage(");
+    expect(composerSource).toContain("emit('stop')");
+    expect(composerSource).toContain('accessible-label="聊天模型"');
     expect(overlaySource).toContain("controller.value!.configuredModels.value");
-    expect(overlaySource).toContain("附件功能后续开放");
-    expect(overlaySource).toContain("语音功能后续开放");
+    expect(composerSource).toContain("附件功能后续开放");
+    expect(composerSource).toContain("语音功能后续开放");
+  });
+
+  it("adds a persisted DeepSeek-only web search toggle before the model selector", () => {
+    const searchIndex = composerSource.indexOf('aria-label="智能搜索"');
+    const modelIndex = composerSource.indexOf('accessible-label="聊天模型"');
+    expect(searchIndex).toBeGreaterThan(-1);
+    expect(modelIndex).toBeGreaterThan(searchIndex);
+    expect(composerSource).toContain("webSearchAvailable");
+    expect(composerSource).toContain("is-active");
+    expect(composerSource).toContain("var(--accent-soft)");
+    expect(composerSource).toContain("<span>智能搜索</span>");
+    expect(composerSource).not.toContain('<AppIcon name="search"');
+    expect(webSearchSource).toContain(
+      '"deepwrite:chat-assistant-web-search:v1"'
+    );
+    expect(webSearchSource).toContain("isDeepSeekWebSearchCompatible");
+    expect(modeSource).toContain("webSearchEnabled: true");
   });
 
   it("uses one context list and immutable book association in the project dialog", () => {

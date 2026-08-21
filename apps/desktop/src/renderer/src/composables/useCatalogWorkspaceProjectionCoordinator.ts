@@ -15,7 +15,7 @@ import type { AgentConversationController } from "./useAgentConversation";
 import type { CatalogProjectionReconcileResult } from "./useCatalogDocumentLoader";
 import { longBookIdFromResourceId } from "../types/longWorkspace";
 import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
-import { workspaceDocumentProvesDraftPersisted } from "../utils/catalogSaveReconciliation";
+import { reconcileCatalogRecoveryDrafts } from "../utils/catalogDraftRecoveryReconciliation";
 import { hasDirtyLegacyDraftRecoveries } from "../utils/legacyDraftRecoveryDetection";
 import type { LegacyDraftRecoveryMigrationResult } from "../utils/legacyDraftRecovery";
 
@@ -264,14 +264,9 @@ export function useCatalogWorkspaceProjectionCoordinator(
       activeBeforeCommit
     );
     const projectedDocuments = pair.projection.index.workspaceDocumentById;
-    const nextDrafts = Object.fromEntries(
-      Object.entries(migration.drafts).filter(([documentId, draft]) => {
-        if (!draft.dirty) return false;
-        const persisted = projectedDocuments.get(documentId);
-        return (
-          !persisted || !workspaceDocumentProvesDraftPersisted(persisted, draft)
-        );
-      })
+    const nextDrafts = reconcileCatalogRecoveryDrafts(
+      migration.drafts,
+      projectedDocuments
     );
 
     const reconciliation = options.documents.reconcileProjection(

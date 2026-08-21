@@ -1,4 +1,5 @@
 import {
+  SUBAGENT_AUTHORING_SKILL_BODY_MAX_LENGTH,
   SubagentAuthoringDraftSchema,
   type SubagentAuthoringDraft,
   type SubagentAuthoringRuntimeContext,
@@ -17,12 +18,46 @@ type SessionApi = {
   abort: (payload: { sessionId: string; runId: string }) => Promise<unknown>;
 };
 
+type CatalogApi = {
+  readDocument: (input: {
+    projectId: string;
+    target: "document";
+    documentId: string;
+  }) => Promise<{ content: string }>;
+};
+
 export type SubagentAuthoringRunStatus =
   "idle" | "starting" | "running" | "stopping" | "completed" | "error";
 
 export interface UseSubagentAuthoringOptions {
-  api: () => { session: SessionApi } | undefined;
+  api: () => { session: SessionApi; catalog?: CatalogApi } | undefined;
   createId?: (prefix: string) => string;
+}
+
+async function hydrateSkillBodies(
+  context: SubagentAuthoringRuntimeContext,
+  catalog: CatalogApi | undefined
+): Promise<SubagentAuthoringRuntimeContext> {
+  const skills = await Promise.all(
+    context.skills.map(async (skill) => {
+      if (skill.body || !skill.libraryId || !skill.entryId || !catalog) {
+        return skill;
+      }
+      const document = await catalog.readDocument({
+        projectId: skill.libraryId,
+        target: "document",
+        documentId: skill.entryId
+      });
+      return {
+        ...skill,
+        body: document.content.slice(
+          0,
+          SUBAGENT_AUTHORING_SKILL_BODY_MAX_LENGTH
+        )
+      };
+    })
+  );
+  return { ...context, skills };
 }
 
 export interface SubagentAuthoringController {
@@ -114,30 +149,36 @@ export function useSubagentAuthoring(
     sessionId.value = makeId("subagent_authoring_session");
     draft.value = null;
     error.value = null;
-    statusText.value = "正在根据技能生成子智能体草稿…";
+    statusText.value = "正在读取已选技能正文…";
     status.value = "starting";
     activeRunId.value = null;
     observedRunId.value = null;
     stopRequested = false;
 
-    const modeLabel =
-      context.outputMode === "write" ? "直接写入文档" : "只交回结论";
-    const skillTitles = context.skills
-      .map((skill) => `${skill.libraryTitle} · ${skill.title}`)
-      .join("、");
-    const message = [
-      `请根据已选定的技能，为「${context.parentAgentLabel}」生成一个子智能体草稿。`,
-      `产出方式（用户已确认）：${modeLabel}。`,
-      `选定技能：${skillTitles}。`,
-      "请先读取技能正文，再调用 write_subagent_draft 提交名称、能力说明和系统提示词。"
-    ].join("\n");
-
     try {
+      const runtimeContext = await hydrateSkillBodies(context, api.catalog);
+      if (stopRequested) {
+        status.value = "idle";
+        statusText.value = null;
+        return false;
+      }
+      statusText.value = "正在根据技能生成子智能体草稿…";
+      const modeLabel =
+        runtimeContext.outputMode === "write" ? "直接写入文档" : "只交回结论";
+      const skillTitles = runtimeContext.skills
+        .map((skill) => `${skill.libraryTitle} · ${skill.title}`)
+        .join("、");
+      const message = [
+        `请根据已选定的技能，为「${runtimeContext.parentAgentLabel}」生成一个子智能体草稿。`,
+        `产出方式（用户已确认）：${modeLabel}。`,
+        `选定技能：${skillTitles}。`,
+        "请先读取技能正文，再调用 write_subagent_draft 提交名称、能力说明和系统提示词。"
+      ].join("\n");
       const accepted = await api.session.prompt({
         sessionId: sessionId.value,
         message,
         modelId,
-        workspaceContext: { subagentAuthoring: context }
+        workspaceContext: { subagentAuthoring: runtimeContext }
       });
       if (stopRequested) {
         status.value = "idle";

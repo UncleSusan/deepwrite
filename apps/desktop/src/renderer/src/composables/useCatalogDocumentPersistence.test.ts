@@ -150,6 +150,7 @@ function createHarness(
       })
   );
   const loader = {
+    preserveAuthoritativeBodyForNextProjection: vi.fn(),
     ensureOne,
     ensureLoaded: vi.fn(
       async (
@@ -196,6 +197,8 @@ function createHarness(
     saveDocument,
     ensureOne,
     ensureLoaded: loader.ensureLoaded,
+    preserveAuthoritativeBodyForNextProjection:
+      loader.preserveAuthoritativeBodyForNextProjection,
     refreshIndex,
     scheduleAutoSave,
     notifications
@@ -203,6 +206,97 @@ function createHarness(
 }
 
 describe("catalog document persistence", () => {
+  it("saves a recovered character overview with its canonical title", async () => {
+    const harness = createHarness({
+      saveDocument: async (input) => ({
+        ...savedDocument(input.content),
+        title: input.title ?? "概览"
+      })
+    });
+    const overviewDocument = workspaceDocument("磁盘人物正文", {
+      title: "概览",
+      stageId: "character_design",
+      characterFileKind: "overview"
+    });
+    delete overviewDocument.draftFileKind;
+    harness.documents.value = [overviewDocument];
+    harness.drafts.value = {
+      "body-1": {
+        ...editorDraft("未保存的人物正文"),
+        title: ""
+      }
+    };
+
+    await expect(
+      harness.persistence.persistEditorDocumentWithOutcome(
+        { id: "body-1", title: "", content: "未保存的人物正文" },
+        false
+      )
+    ).resolves.toBe("saved");
+    expect(harness.saveDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "概览",
+        content: "未保存的人物正文"
+      })
+    );
+    expect(
+      harness.preserveAuthoritativeBodyForNextProjection
+    ).toHaveBeenCalledWith("body-1", "未保存的人物正文", 2);
+    expect(
+      harness.preserveAuthoritativeBodyForNextProjection.mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(harness.refreshIndex.mock.invocationCallOrder[0]!);
+    expect(harness.drafts.value["body-1"]).toBeUndefined();
+  });
+
+  it("keeps a canonical title when a recovered character overview save fails", async () => {
+    const harness = createHarness({
+      saveDocument: async () => {
+        throw new Error("测试写入失败");
+      }
+    });
+    const overviewDocument = workspaceDocument("磁盘人物正文", {
+      title: "概览",
+      stageId: "character_design",
+      characterFileKind: "overview"
+    });
+    delete overviewDocument.draftFileKind;
+    harness.documents.value = [overviewDocument];
+    harness.drafts.value = {
+      "body-1": {
+        ...editorDraft("未保存的人物正文"),
+        title: ""
+      }
+    };
+
+    await expect(
+      harness.persistence.persistEditorDocumentWithOutcome(
+        { id: "body-1", title: "", content: "未保存的人物正文" },
+        false
+      )
+    ).resolves.toBe("retry");
+    expect(harness.drafts.value["body-1"]).toMatchObject({
+      title: "概览",
+      content: "未保存的人物正文",
+      dirty: true
+    });
+  });
+
+  it("pauses an editable empty title without entering the retry lane", async () => {
+    const harness = createHarness();
+
+    await expect(
+      harness.persistence.persistEditorDocumentWithOutcome(
+        { id: "body-1", title: "   ", content: "未保存正文" },
+        true
+      )
+    ).resolves.toBe("paused");
+    expect(harness.saveDocument).not.toHaveBeenCalled();
+    expect(harness.notifications.warning).toHaveBeenCalledWith(
+      "请输入文档标题后再保存"
+    );
+  });
+
   it("keeps newer typing while save A is in flight and advances only its disk base", async () => {
     const pending = deferred<SaveDocumentResult>();
     const harness = createHarness({
@@ -221,6 +315,9 @@ describe("catalog document persistence", () => {
 
     await expect(operation).resolves.toBe(true);
     expect(harness.documents.value[0]?.content).toBe("提交 A");
+    expect(
+      harness.preserveAuthoritativeBodyForNextProjection
+    ).toHaveBeenCalledWith("body-1", "提交 A", 2);
     expect(harness.drafts.value["body-1"]).toMatchObject({
       content: "保存期间继续输入 B",
       dirty: true,
@@ -888,6 +985,7 @@ describe("catalog document persistence", () => {
       drafts,
       acceptingWorkspaceIds: ref(new Set<string>()),
       loader: {
+        preserveAuthoritativeBodyForNextProjection: vi.fn(),
         ensureOne: vi.fn(async () => oneResult(diskDocument)),
         ensureLoaded: vi.fn(async () => manyResult([])),
         invalidate: vi.fn(() => false)

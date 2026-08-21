@@ -19,6 +19,10 @@ import { createId } from "@deepwrite/shared";
 import { uiMessage } from "../ui-feedback";
 import { mergeCustomModelSettings } from "../utils/customModelSettings";
 import AppIcon from "./AppIcon.vue";
+import {
+  applyProviderPresetDefaults,
+  MODEL_PROVIDER_OPTIONS
+} from "./modelProviderPresets";
 import PopupSelect from "./PopupSelect.vue";
 
 interface DraftModel extends ModelConfig {
@@ -99,24 +103,12 @@ const reasoningOptions = BUILT_IN_REASONING_LEVELS.map((value) => ({
   value,
   label: builtInThinkingLabels[value]
 }));
-const allProviderOptions = [
-  { value: "deepwrite-free", label: "DeepWrite 免费模型" },
-  { value: "deepseek", label: "DeepSeek" },
-  { value: "kimi-coding", label: "Kimi Coding" },
-  { value: "minimax-codeplan", label: "MiniMax Plan" },
-  { value: "dashscope", label: "阿里云百炼" },
-  { value: "zhipu", label: "智谱 GLM" },
-  { value: "moonshot", label: "Kimi 开放平台" },
-  { value: "openai", label: "OpenAI" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "google", label: "Google" },
-  { value: "ollama", label: "Ollama" },
-  { value: "custom", label: "其他兼容服务" }
-] as const;
 const providerOptions = computed(() =>
   props.modelScope === "custom"
-    ? allProviderOptions.filter((option) => option.value !== "deepwrite-free")
-    : allProviderOptions
+    ? MODEL_PROVIDER_OPTIONS.filter(
+        (option) => option.value !== "deepwrite-free"
+      )
+    : MODEL_PROVIDER_OPTIONS
 );
 const deepwriteFreeModels = computed(
   () => props.modelSettings?.deepwriteFreeModels ?? []
@@ -445,38 +437,7 @@ function applyProviderPreset(provider: string): void {
     editor.apiKey = "";
     editor.clearApiKey = false;
   }
-  editor.provider = provider;
-  if (provider === "openai") {
-    editor.api = "openai-responses";
-    editor.baseUrl = "https://api.openai.com/v1";
-  } else if (provider === "anthropic") {
-    editor.api = "anthropic-messages";
-    editor.baseUrl = "https://api.anthropic.com";
-  } else if (provider === "deepseek") {
-    editor.api = "openai-completions";
-    editor.baseUrl = "https://api.deepseek.com/v1";
-  } else if (provider === "kimi-coding") {
-    editor.api = "anthropic-messages";
-    editor.baseUrl = "https://api.kimi.com/coding";
-  } else if (provider === "minimax-codeplan") {
-    editor.api = "openai-completions";
-    editor.baseUrl = "https://api.minimaxi.com/v1";
-  } else if (provider === "dashscope") {
-    editor.api = "openai-completions";
-    editor.baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-  } else if (provider === "zhipu") {
-    editor.api = "openai-completions";
-    editor.baseUrl = "https://open.bigmodel.cn/api/paas/v4";
-  } else if (provider === "moonshot") {
-    editor.api = "openai-completions";
-    editor.baseUrl = "https://api.moonshot.cn/v1";
-  } else if (provider === "ollama") {
-    editor.api = "openai-completions";
-    editor.baseUrl = "http://127.0.0.1:11434/v1";
-  } else if (provider === "google") {
-    editor.api = "google-generative-ai";
-    editor.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
-  }
+  applyProviderPresetDefaults(editor, provider);
 }
 
 function setModelApi(value: string | number): void {
@@ -982,6 +943,14 @@ function discardModelChanges(): void {
                   />
                 </label>
                 <label v-if="!isDeepWriteFreeEditor">
+                  <span>API 地址</span>
+                  <input
+                    v-model="modelEditor.baseUrl"
+                    type="url"
+                    placeholder="内置模型可留空，自定义服务请填写"
+                  />
+                </label>
+                <label v-if="!isDeepWriteFreeEditor">
                   <span>工具结构</span>
                   <PopupSelect
                     :model-value="modelEditor.toolSchemaProfile ?? 'auto'"
@@ -989,14 +958,6 @@ function discardModelChanges(): void {
                     accessible-label="选择工具结构兼容模式"
                     :menu-min-width="300"
                     @update:model-value="setToolSchemaProfile"
-                  />
-                </label>
-                <label v-if="!isDeepWriteFreeEditor" class="is-wide">
-                  <span>API 地址</span>
-                  <input
-                    v-model="modelEditor.baseUrl"
-                    type="url"
-                    placeholder="内置模型可留空，自定义服务请填写"
                   />
                 </label>
                 <label v-if="!isDeepWriteFreeEditor" class="is-wide">

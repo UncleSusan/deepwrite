@@ -16,6 +16,7 @@ import { countNonWhitespaceCharacters } from "../utils/boundedTextHistory";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
 import {
   isEditableLongFile,
+  type LongForeshadowingFocus,
   type LongStructureMutationCompletion,
   type LongWorkspaceSelection
 } from "../types/longWorkspace";
@@ -1168,12 +1169,22 @@ Object.assign(structureHost, {
   updateCurrentContent
 });
 
+function captureForeshadowingFocus(): LongForeshadowingFocus {
+  return (
+    foreshadowingWorkspace.value?.captureFocus() ?? {
+      threadId: null,
+      beatId: null
+    }
+  );
+}
+
 defineExpose({
   saveAllChanges,
   selectBookLineVolume,
   focusFile,
   focusTarget,
   captureNavigationSelection,
+  captureForeshadowingFocus,
   ensureDocumentsLoaded,
   synchronizeProjectRevisions,
   synchronizeProjectRevisionsIfClean

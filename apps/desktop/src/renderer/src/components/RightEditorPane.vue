@@ -3,7 +3,9 @@ import {
   computed,
   nextTick,
   onBeforeUnmount,
+  onBeforeUpdate,
   onMounted,
+  onUpdated,
   ref,
   watch
 } from "vue";
@@ -34,9 +36,14 @@ import {
   type TextSelectionRange
 } from "../utils/boundedTextHistory";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
+import {
+  resolveWorkspaceDocumentTitle,
+  workspaceDocumentHasFixedTitle
+} from "../utils/fixedWorkspaceDocumentTitle";
 import { parseSkillFrontmatter } from "../utils/skillFrontmatter";
 import { createTransientScrollbarController } from "../utils/transientScrollbar";
 import { uiMessage } from "../ui-feedback";
+import { useEditorSaveViewport } from "../composables/useEditorSaveViewport";
 import AppIcon from "./AppIcon.vue";
 import MarkdownContent from "./MarkdownContent.vue";
 
@@ -48,6 +55,7 @@ const props = defineProps<{
   locked: boolean;
   lockedLabel?: string | undefined;
   saving?: boolean;
+  manualSaving?: boolean;
   autoSaveEnabled?: boolean;
   boundToCurrentBook?: boolean;
   sectionTabs?: readonly { id: string; title: string }[];
@@ -85,7 +93,9 @@ const selectionAction = ref<{
   left: number;
   top: number;
 } | null>(null);
-const title = ref(props.draftState?.title ?? props.document.title);
+const title = ref(
+  resolveWorkspaceDocumentTitle(props.document, props.draftState?.title)
+);
 const content = ref(props.draftState?.content ?? props.document.content);
 const nonWhitespaceCharacterCount = ref(
   countNonWhitespaceCharacters(content.value)
@@ -104,17 +114,8 @@ interface EditorSearchMatch {
   end: number;
 }
 
-interface EditorViewportSnapshot {
-  documentKey: string;
-  scrollTop: number;
-  selectionStart: number;
-  selectionEnd: number;
-  selectionDirection: "forward" | "backward" | "none";
-}
-
 const textHistory = createBoundedTextHistory();
 const historyVersion = ref(0);
-let pendingSaveViewport: EditorViewportSnapshot | null = null;
 let pendingEditorInput: {
   selectionBefore: TextSelectionRange;
   inputType: string;
@@ -124,10 +125,28 @@ const activeScrollMemoryKey = computed(() =>
   editorScrollMemoryKey(props.document)
 );
 const documentScrollbar = createTransientScrollbarController();
+const {
+  captureBeforeRender: captureEditorViewportBeforeRender,
+  preserveForDispatchedSave: preserveEditorViewportForSave,
+  restoreAfterRender: restoreEditorViewportAfterRender
+} = useEditorSaveViewport({
+  editorInput,
+  documentKey: activeScrollMemoryKey,
+  isEditView: () => viewMode.value === "edit",
+  isSaving: () => Boolean(props.saving),
+  rememberScroll: (documentKey, scrollTop) =>
+    rememberEditorScrollPosition(documentKey, "edit", scrollTop)
+});
+
+onBeforeUpdate(captureEditorViewportBeforeRender);
+onUpdated(restoreEditorViewportAfterRender);
 
 watch(activeScrollMemoryKey, (nextScrollMemoryKey, previousScrollMemoryKey) => {
   rememberCurrentDocumentScroll(previousScrollMemoryKey);
-  title.value = props.draftState?.title ?? props.document.title;
+  title.value = resolveWorkspaceDocumentTitle(
+    props.document,
+    props.draftState?.title
+  );
   content.value = props.draftState?.content ?? props.document.content;
   nonWhitespaceCharacterCount.value = countNonWhitespaceCharacters(
     content.value
@@ -153,7 +172,10 @@ watch(
       props.document.content
     ] as const,
   ([nextTitle, nextContent, nextDirty, documentTitle, documentContent]) => {
-    const resolvedTitle = nextTitle ?? documentTitle;
+    const resolvedTitle = resolveWorkspaceDocumentTitle(
+      props.document,
+      nextTitle ?? documentTitle
+    );
     const resolvedContent = nextContent ?? documentContent;
     if (title.value !== resolvedTitle) title.value = resolvedTitle;
     if (content.value !== resolvedContent) {
@@ -174,6 +196,12 @@ const isLibraryEntry = computed(
 );
 const isLibraryOverview = computed(
   () => props.document.catalogLibraryField === "overview"
+);
+const isTitleReadOnly = computed(
+  () =>
+    props.document.readOnly ||
+    props.locked ||
+    workspaceDocumentHasFixedTitle(props.document)
 );
 const isLibraryDocument = computed(
   () => isLibraryEntry.value || isLibraryOverview.value
@@ -253,6 +281,9 @@ const persistedDocument = computed(() =>
     props.document.catalogLibraryField ||
     props.document.catalogProjectRevision !== undefined
   )
+);
+const visibleDirtySaveState = computed(
+  () => dirty.value && !props.autoSaveEnabled
 );
 
 function markDirty(): void {
@@ -446,44 +477,6 @@ function handleEditorKeydown(event: KeyboardEvent): void {
   }
 }
 
-function captureEditorViewport(): EditorViewportSnapshot | null {
-  const input = editorInput.value;
-  if (!input || viewMode.value !== "edit") return null;
-  return {
-    documentKey: activeScrollMemoryKey.value,
-    scrollTop: input.scrollTop,
-    selectionStart: input.selectionStart,
-    selectionEnd: input.selectionEnd,
-    selectionDirection: input.selectionDirection
-  };
-}
-
-async function restoreEditorViewport(
-  snapshot: EditorViewportSnapshot | null
-): Promise<void> {
-  if (!snapshot) return;
-  await nextTick();
-  if (
-    viewMode.value !== "edit" ||
-    activeScrollMemoryKey.value !== snapshot.documentKey
-  ) {
-    return;
-  }
-  const input = editorInput.value;
-  if (!input) return;
-  input.setSelectionRange(
-    snapshot.selectionStart,
-    snapshot.selectionEnd,
-    snapshot.selectionDirection
-  );
-  input.scrollTop = snapshot.scrollTop;
-  rememberEditorScrollPosition(
-    snapshot.documentKey,
-    "edit",
-    snapshot.scrollTop
-  );
-}
-
 function save(): void {
   if (props.document.readOnly || props.locked || props.saving) {
     return;
@@ -496,30 +489,21 @@ function save(): void {
     );
     return;
   }
-  pendingSaveViewport = captureEditorViewport();
+  const resolvedTitle = resolveWorkspaceDocumentTitle(
+    props.document,
+    title.value
+  );
+  if (!resolvedTitle.trim()) {
+    uiMessage.warning("请输入文档标题后再保存");
+    return;
+  }
+  preserveEditorViewportForSave();
   emit("save", {
     id: props.document.id,
-    title: title.value,
+    title: resolvedTitle,
     content: content.value
   });
-  const snapshot = pendingSaveViewport;
-  void restoreEditorViewport(snapshot).then(() => {
-    if (!props.saving && pendingSaveViewport === snapshot) {
-      pendingSaveViewport = null;
-    }
-  });
 }
-
-watch(
-  () => props.saving,
-  (saving, wasSaving) => {
-    if (saving || !wasSaving || !pendingSaveViewport) return;
-    const snapshot = pendingSaveViewport;
-    pendingSaveViewport = null;
-    void restoreEditorViewport(snapshot);
-  },
-  { flush: "post" }
-);
 
 function closeSelectionAction(): void {
   selectionAction.value = null;
@@ -848,22 +832,25 @@ onBeforeUnmount(() => {
         </span>
       </div>
       <div class="editor-header-actions">
-        <span class="save-state" :class="{ 'is-dirty': dirty }">
-          <AppIcon :name="dirty ? 'save' : 'check'" :size="13" />
+        <span class="save-state" :class="{ 'is-dirty': visibleDirtySaveState }">
+          <AppIcon
+            :name="visibleDirtySaveState ? 'save' : 'check'"
+            :size="13"
+          />
           {{
             document.readOnly
               ? "只读"
               : locked
                 ? (lockedLabel ?? "智能体运行中 · 暂停编辑")
-                : saving
+                : manualSaving
                   ? "正在保存到本机"
-                  : dirty
-                    ? autoSaveEnabled
-                      ? "等待自动保存"
-                      : "有未应用修改"
-                    : persistedDocument
-                      ? "已保存到本机"
-                      : "本次运行已应用"
+                  : autoSaveEnabled
+                    ? "自动保存已开启"
+                    : dirty
+                      ? "有未应用修改"
+                      : persistedDocument
+                        ? "已保存到本机"
+                        : "本次运行已应用"
           }}
         </span>
         <button
@@ -1148,12 +1135,7 @@ onBeforeUnmount(() => {
       <input
         v-model="title"
         class="document-title-input"
-        :readonly="
-          document.readOnly ||
-          locked ||
-          document.draftFileKind === 'character-state' ||
-          isLibraryOverview
-        "
+        :readonly="isTitleReadOnly"
         aria-label="文档标题"
         @input="markDirty"
       />
@@ -1211,7 +1193,7 @@ onBeforeUnmount(() => {
       <span class="editor-save-status">{{
         locked
           ? (lockedLabel ?? "智能体运行中 · 防止版本冲突")
-          : saving
+          : manualSaving
             ? "正在原子保存本机文稿"
             : persistedDocument
               ? autoSaveEnabled
@@ -1224,13 +1206,17 @@ onBeforeUnmount(() => {
         class="save-button"
         type="button"
         :disabled="
-          document.readOnly || locked || saving || !dirty || contentExceedsLimit
+          document.readOnly ||
+          locked ||
+          manualSaving ||
+          (!autoSaveEnabled && !dirty) ||
+          contentExceedsLimit
         "
         @mousedown.prevent
         @click="save"
       >
         <AppIcon name="save" :size="14" />
-        {{ saving ? "保存中…" : autoSaveEnabled ? "立即保存" : "应用" }}
+        {{ manualSaving ? "保存中…" : autoSaveEnabled ? "立即保存" : "应用" }}
       </button>
     </footer>
   </aside>

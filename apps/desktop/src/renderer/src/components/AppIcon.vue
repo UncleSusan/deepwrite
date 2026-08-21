@@ -59,6 +59,10 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 18 });
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="M15 4v16" />
     </template>
+    <template v-else-if="name === 'panel-top'">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18" />
+    </template>
     <template v-else-if="name === 'pin'">
       <path
         d="m8 3 8 8M14.5 4.5l5 5-3 1-4.5 4.5-1 4-6-6 4-1 4.5-4.5zM9 17l-5 5"

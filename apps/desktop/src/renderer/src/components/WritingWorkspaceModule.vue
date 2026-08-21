@@ -51,6 +51,7 @@ type WritingEditorViewModel = Readonly<
     | "locked"
     | "lockedLabel"
     | "saving"
+    | "manualSaving"
     | "autoSaveEnabled"
     | "boundToCurrentBook"
     | "sectionTabs"

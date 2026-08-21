@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import appSource from "../WorkspaceShell.vue?raw";
-import agentConversationSource from "./ConversationMessageList.vue?raw";
+import conversationListSource from "./ConversationMessageList.vue?raw";
+import conversationItemSource from "./ConversationMessageItem.vue?raw";
+import processingTimelineSource from "./ConversationProcessingTimeline.vue?raw";
+import processingItemSource from "./ConversationProcessingItem.vue?raw";
 import bindingsSource from "./LongBookBindingsDialog.vue?raw";
 import chapterCardDialogSource from "./CreateLongChapterCardDialog.vue?raw";
 import characterDialogSource from "./CreateLongCharacterDialog.vue?raw";
@@ -35,6 +38,7 @@ import writingWorkflowSource from "../composables/useLongWritingWorkflowCoordina
 import longBookLifecycleSource from "../composables/useLongBookLifecycleCoordinator.ts?raw";
 import presentationCoordinatorSource from "../composables/useLongWorkspacePresentationCoordinator.ts?raw";
 import longRollbackSource from "../composables/useLongRollbackCoordinator.ts?raw";
+import longWorkspaceRefreshSource from "../composables/useLongWorkspaceRefreshCoordinator.ts?raw";
 import longWorkspaceSessionSource from "../composables/useLongWorkspaceSessionCoordinator.ts?raw";
 import longStructureTransactionsFacadeSource from "../composables/useLongStructureTransactionsCoordinator.ts?raw";
 import longStructureTransactionsLeaseSource from "../composables/long-structure-transactions/lease.ts?raw";
@@ -62,6 +66,13 @@ import longWorkspaceStoreSource from "../stores/longWorkspaceStore.ts?raw";
 import agentRunPreferencesSource from "../utils/agentRunPreferences.ts?raw";
 import longWorkspaceResourceTreeSource from "../utils/longWorkspaceResourceTree.ts?raw";
 import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
+
+const agentConversationSource = [
+  conversationListSource,
+  conversationItemSource,
+  processingTimelineSource,
+  processingItemSource
+].join("\n");
 
 export {
   agentConversationSource,
@@ -101,6 +112,7 @@ export {
   longStructureTransactionsSyncSource,
   longStructureTransactionsTreeSource,
   longWorkspaceModuleSource,
+  longWorkspaceRefreshSource,
   longWorkspaceResourceTreeSource,
   longWorkspaceSessionSource,
   longWorkspaceStoreSource,

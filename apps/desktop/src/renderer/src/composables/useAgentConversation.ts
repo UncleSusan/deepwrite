@@ -41,6 +41,8 @@ import type {
   ConversationHistoryItem
 } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
+import { normalizeChatAssistantRequestContext } from "./agent-conversation/chat-assistant-request";
+import { buildConversationHistory } from "./agent-conversation/history";
 
 export interface ConversationStorage {
   getItem(key: string): string | null;
@@ -3429,18 +3431,8 @@ export function useAgentConversation(
     const requestAttachments = promptAttachments.map((attachment) => ({
       ...attachment
     }));
-    const requestChatAssistant: ChatAssistantRequestContext | undefined =
-      chatAssistant?.mode === "project"
-        ? {
-            mode: "project",
-            project: {
-              projectType: chatAssistant.project.projectType,
-              projectId: chatAssistant.project.projectId
-            }
-          }
-        : chatAssistant?.mode === "normal"
-          ? { mode: "normal" }
-          : undefined;
+    const requestChatAssistant =
+      normalizeChatAssistantRequestContext(chatAssistant);
     const content =
       draft.value.trim() ||
       (requestAttachments.length ? "请阅读并分析我上传的附件。" : "");
@@ -3452,6 +3444,8 @@ export function useAgentConversation(
     if (!content || isBusy.value || hasPendingEditReview.value) {
       return;
     }
+
+    const conversationHistory = buildConversationHistory(messages.value);
 
     const sendEpoch = epoch;
     const sendSessionId = sessionId.value;
@@ -3742,6 +3736,7 @@ export function useAgentConversation(
       const accepted = await api.session.prompt({
         sessionId: sendSessionId,
         message: content,
+        ...(conversationHistory.length ? { conversationHistory } : {}),
         ...(mode === "chat-assistant"
           ? {
               mode,

@@ -1,0 +1,107 @@
+import type { AgentPromptCommandPayload } from "@deepwrite/contracts";
+import type {
+  AgentRunInput,
+  LongCommandExecutor
+} from "@deepwrite/pi-runtime-adapter";
+import type { UtilityCommandHandlerContext } from "./runtime";
+
+function abortedError(): Error {
+  const error = new Error("Long workspace Core request was aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
+function createLongCommandExecutor(
+  context: UtilityCommandHandlerContext
+): LongCommandExecutor {
+  return (command, signal) => {
+    if (signal?.aborted) return Promise.reject(abortedError());
+    const request = context.requestInternalCommand("core", command, {
+      timeoutMs: 60_000
+    });
+    if (!signal) return request;
+    return new Promise((resolve, reject) => {
+      const onAbort = (): void => {
+        signal.removeEventListener("abort", onAbort);
+        reject(abortedError());
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      void request.then(
+        (result) => {
+          signal.removeEventListener("abort", onAbort);
+          if (signal.aborted) reject(abortedError());
+          else resolve(result);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        }
+      );
+    });
+  };
+}
+
+export function createAgentRunInput(
+  payload: AgentPromptCommandPayload,
+  runId: string,
+  signal: AbortSignal,
+  context?: UtilityCommandHandlerContext
+): AgentRunInput {
+  const needsLongCommandExecutor =
+    payload.longAgentProfile ||
+    (payload.chatAssistantRuntimeContext?.mode === "project" &&
+      payload.chatAssistantRuntimeContext.project.projectType === "long");
+  return {
+    runId,
+    sessionId: payload.sessionId,
+    prompt: payload.message,
+    ...(payload.conversationHistory?.length
+      ? { conversationHistory: payload.conversationHistory }
+      : {}),
+    ...(payload.mode ? { mode: payload.mode } : {}),
+    ...(payload.attachments?.length
+      ? { attachments: payload.attachments }
+      : {}),
+    ...(payload.writeApprovalMode
+      ? { writeApprovalMode: payload.writeApprovalMode }
+      : {}),
+    ...(payload.thinkingLevel ? { thinkingLevel: payload.thinkingLevel } : {}),
+    ...(payload.temperature !== undefined
+      ? { temperature: payload.temperature }
+      : {}),
+    ...(payload.runtimeConfig ? { runtimeConfig: payload.runtimeConfig } : {}),
+    ...(payload.chatAssistantRuntimeContext
+      ? { chatAssistantRuntimeContext: payload.chatAssistantRuntimeContext }
+      : {}),
+    ...(payload.mode === "chat-assistant" &&
+    payload.chatAssistant?.webSearchEnabled === true
+      ? { webSearchEnabled: true }
+      : {}),
+    ...(payload.agentProfile ? { agentProfile: payload.agentProfile } : {}),
+    ...(payload.scriptAgentProfile
+      ? { scriptAgentProfile: payload.scriptAgentProfile }
+      : {}),
+    ...(payload.longAgentProfile
+      ? { longAgentProfile: payload.longAgentProfile }
+      : {}),
+    ...(needsLongCommandExecutor && context
+      ? { longCommandExecutor: createLongCommandExecutor(context) }
+      : {}),
+    ...(payload.subagentDefinitions
+      ? { subagentDefinitions: payload.subagentDefinitions }
+      : {}),
+    ...(payload.subagentRuntimeConfigs
+      ? { subagentRuntimeConfigs: payload.subagentRuntimeConfigs }
+      : {}),
+    ...(payload.libraryAgentProfile
+      ? { libraryAgentProfile: payload.libraryAgentProfile }
+      : {}),
+    ...(payload.learningImitationProfile
+      ? { learningImitationProfile: payload.learningImitationProfile }
+      : {}),
+    ...(payload.workspaceContext
+      ? { workspaceContext: payload.workspaceContext }
+      : {}),
+    signal
+  };
+}

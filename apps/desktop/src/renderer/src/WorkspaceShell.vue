@@ -4,6 +4,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  provide,
   ref,
   shallowRef,
   watch
@@ -44,6 +45,9 @@ import { useCatalogDocumentLoader } from "./composables/useCatalogDocumentLoader
 import { useCatalogDocumentPersistence } from "./composables/useCatalogDocumentPersistence";
 import { useCatalogWorkspaceProjectionCoordinator } from "./composables/useCatalogWorkspaceProjectionCoordinator";
 import { useConversationRuntimeRegistryCoordinator } from "./composables/useConversationRuntimeRegistryCoordinator";
+import { AGENT_ACTIVITY_CONTEXT_KEY } from "./composables/agentActivityContext";
+import { useAgentActivityCoordinator } from "./composables/useAgentActivityCoordinator";
+import { useCurrentAgentActivityView } from "./composables/useCurrentAgentActivityView";
 import {
   MATERIAL_KIND_ALLOWED_STAGES,
   useCatalogLibraryTransactionsCoordinator
@@ -100,6 +104,7 @@ import {
   resolveLongWorkspaceApi
 } from "./types/longWorkspace";
 import { createConversationPersistenceAdapter } from "./utils/conversationPersistence";
+import { resolveAgentActivityDescriptor } from "./utils/agentActivityDescriptors";
 import type { ApprovalNavigationTarget } from "./utils/approvalNavigation";
 import { loadGeneralPreferences } from "./utils/generalPreferences";
 import { longNavigationNodeId } from "./utils/longWorkspaceResourceTree";
@@ -280,6 +285,7 @@ const {
   cancel: cancelEditorAutoSave,
   dispose: disposeEditorAutoSave,
   drain: drainEditorSaves,
+  manualSavingDocumentIds,
   schedule: scheduleEditorAutoSave,
   scheduleDirty: scheduleDirtyEditorDraftsForAutoSave
 } = useEditorAutoSaveCoordinator({
@@ -435,6 +441,7 @@ const conversationStore = useConversationStore();
 const {
   controllers: conversationControllers,
   scopesByKey: conversationScopesByKey,
+  controllerRegistryRevision,
   agentRunPreferences,
   sessionAgentModelSelection
 } = storeToRefs(conversationStore);
@@ -1636,6 +1643,40 @@ const {
   showConversation,
   notifications: uiMessage
 });
+const currentAgentActivityView = useCurrentAgentActivityView({
+  activeFeature,
+  selectedResourceId,
+  shortConversation: activeConversation,
+  shortContext: writingConversationContext,
+  longConversation: activeLongConversation,
+  longProfile: activeLongAgentProfile,
+  longBook: activeLongBookSummary,
+  longSelection: activeLongSelection,
+  longRoot: activeLongRoot
+});
+const agentActivity = useAgentActivityCoordinator({
+  controllers: conversationControllers,
+  scopesByKey: conversationScopesByKey,
+  registryRevision: controllerRegistryRevision,
+  currentView: currentAgentActivityView,
+  resolveDescriptor: (conversationKey) =>
+    resolveAgentActivityDescriptor(conversationKey, {
+      documents: documents.value,
+      resourceTree: resourceTreeLookup.value,
+      workspaceAgents: workspaceAgentSettings.value,
+      longAgents: longAgentSettings.value,
+      libraryAgents: libraryAgentSettings.value,
+      longBooks: longBooks.value
+    }),
+  async navigate(item) {
+    const node = resourceTreeLookup.value.nodeById.get(item.targetResourceId);
+    if (!node) return "missing";
+    await selectResource(node);
+    return selectedResourceId.value === node.id ? "navigated" : "blocked";
+  },
+  notifications: uiMessage
+});
+provide(AGENT_ACTIVITY_CONTEXT_KEY, agentActivity.context);
 const writingEditorViewModel = computed(() => ({
   document: activeDocument.value,
   resourceId: selectedResourceId.value,
@@ -1644,6 +1685,7 @@ const writingEditorViewModel = computed(() => ({
   locked: editorLocked.value,
   lockedLabel: editorLockedLabel.value,
   saving: editorSaving.value,
+  manualSaving: manualSavingDocumentIds.value.has(activeDocument.value.id),
   autoSaveEnabled: editorAutoSaveEnabled.value,
   boundToCurrentBook: activeLibraryBoundToBook.value,
   sectionTabs: activeEditorSectionTabs.value,

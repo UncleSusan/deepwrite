@@ -173,6 +173,94 @@ describe("catalog document loader", () => {
     expect(loader.documentsById.value.has("draft-body")).toBe(false);
   });
 
+  it("publishes a just-saved authoritative body atomically with its new projection", async () => {
+    const { loader, readDocument } = createHarness();
+    const first = document("draft-body", "fs-v1:10:1:1");
+    loader.reconcileProjection(projection([first]));
+    loader.documents.value = [
+      {
+        ...first,
+        content: "保存前正文",
+        catalogContentLoaded: true
+      }
+    ];
+    const publishedContents: string[] = [];
+    const stop = watch(
+      loader.documents,
+      (documents) => publishedContents.push(documents[0]?.content ?? "missing"),
+      { flush: "sync" }
+    );
+
+    loader.preserveAuthoritativeBodyForNextProjection(
+      "draft-body",
+      "刚刚保存的完整正文",
+      2
+    );
+    const staleProjection = loader.reconcileProjection(projection([first]));
+    expect(staleProjection.retainedBodyIds).toEqual(["draft-body"]);
+    expect(loader.documentsById.value.get("draft-body")?.content).toBe(
+      "刚刚保存的完整正文"
+    );
+    const reconciled = loader.reconcileProjection(
+      projection([
+        document("draft-body", "fs-v1:10:2:2", {
+          catalogProjectRevision: 2,
+          catalogContentBytes: new TextEncoder().encode("刚刚保存的完整正文")
+            .byteLength
+        })
+      ])
+    );
+
+    expect(reconciled.retainedBodyIds).toEqual(["draft-body"]);
+    expect(reconciled.discardedBodyIds).toEqual([]);
+    expect(loader.documentsById.value.get("draft-body")).toMatchObject({
+      content: "刚刚保存的完整正文",
+      catalogContentLoaded: true,
+      catalogContentStamp: "fs-v1:10:2:2"
+    });
+    const hydration = await loader.ensureLoaded([
+      loader.documentsById.value.get("draft-body")!
+    ]);
+    stop();
+    expect(hydration.alreadyLoadedIds).toEqual(["draft-body"]);
+    expect(readDocument).not.toHaveBeenCalled();
+    expect(publishedContents).toEqual([
+      "刚刚保存的完整正文",
+      "刚刚保存的完整正文"
+    ]);
+  });
+
+  it("still invalidates a saved overlay when the advanced projection contradicts it", () => {
+    const { loader } = createHarness();
+    const first = document("draft-body", "fs-v1:10:1:1");
+    loader.reconcileProjection(projection([first]));
+    loader.documents.value = [
+      { ...first, content: "保存前正文", catalogContentLoaded: true }
+    ];
+    loader.preserveAuthoritativeBodyForNextProjection(
+      "draft-body",
+      "本次保存正文",
+      2
+    );
+
+    const reconciled = loader.reconcileProjection(
+      projection([
+        document("draft-body", "fs-v1:99:9:9", {
+          catalogProjectRevision: 2,
+          catalogContentBytes: 999
+        })
+      ])
+    );
+
+    expect(reconciled.retainedBodyIds).toEqual([]);
+    expect(reconciled.discardedBodyIds).toEqual(["draft-body"]);
+    expect(loader.documentsById.value.get("draft-body")).toMatchObject({
+      content: "",
+      catalogContentLoaded: false,
+      catalogContentStamp: "fs-v1:99:9:9"
+    });
+  });
+
   it("publishes all successful reads with one shallow overlay replacement", async () => {
     const { loader, readDocument } = createHarness(async (input) =>
       readResult(

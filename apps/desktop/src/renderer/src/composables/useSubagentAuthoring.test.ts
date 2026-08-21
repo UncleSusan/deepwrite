@@ -28,6 +28,52 @@ const context: SubagentAuthoringRuntimeContext = {
 };
 
 describe("useSubagentAuthoring", () => {
+  it("hydrates selected indexed skills before starting generation", async () => {
+    const prompt = vi.fn(async (payload: SessionPromptCommandPayload) => ({
+      sessionId: payload.sessionId,
+      runId: "run_authoring_hydrated",
+      acceptedAt: "2026-08-19T04:00:00.000Z",
+      runtime
+    }));
+    const readDocument = vi.fn(async () => ({
+      content: "从技能文档按需读取的正文。"
+    }));
+    const controller = useSubagentAuthoring({
+      api: () => ({
+        session: { prompt, abort: vi.fn() },
+        catalog: { readDocument }
+      }),
+      createId: () => "authoring_session_hydrated"
+    });
+    const indexedContext: SubagentAuthoringRuntimeContext = {
+      ...context,
+      skills: [
+        {
+          id: "skill:library_1:entry_1",
+          libraryId: "library_1",
+          entryId: "entry_1",
+          title: "剧情检查",
+          libraryTitle: "写作技能库",
+          body: ""
+        }
+      ]
+    };
+
+    await expect(controller.generate(indexedContext, "model_a")).resolves.toBe(
+      true
+    );
+
+    expect(readDocument).toHaveBeenCalledWith({
+      projectId: "library_1",
+      target: "document",
+      documentId: "entry_1"
+    });
+    expect(
+      prompt.mock.calls[0]?.[0].workspaceContext?.subagentAuthoring?.skills[0]
+        ?.body
+    ).toBe("从技能文档按需读取的正文。");
+  });
+
   it("stays busy while a model turn waits for and begins a retry", async () => {
     let promptPayload: SessionPromptCommandPayload | undefined;
     const api = {

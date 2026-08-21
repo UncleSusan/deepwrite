@@ -1,5 +1,6 @@
 import {
   Agent,
+  type AgentMessage,
   type AgentTool,
   type StreamFn,
   type ThinkingLevel as PiThinkingLevel
@@ -12,8 +13,10 @@ import {
   fauxThinking,
   isRetryableAssistantError,
   type Api,
+  type AssistantMessage,
   type Model,
-  type UserMessage
+  type UserMessage,
+  type Usage
 } from "@earendil-works/pi-ai";
 import type {
   AgentProviderRuntimeConfig,
@@ -129,6 +132,47 @@ class AsyncEventQueue<T> implements AsyncIterable<T> {
 
 const TOOL_STREAM_DELTA_FLUSH_MS = 100;
 
+const EMPTY_RESTORED_MESSAGE_USAGE: Usage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0
+  }
+};
+
+function restoredConversationMessages(
+  input: AgentRunInput,
+  model: Model<Api>
+): AgentMessage[] {
+  return (input.conversationHistory ?? []).map((message) => {
+    const timestamp = Date.parse(message.createdAt);
+    if (message.role === "user") {
+      return {
+        role: "user",
+        content: message.content,
+        timestamp
+      } satisfies UserMessage;
+    }
+    return {
+      role: "assistant",
+      content: [{ type: "text", text: message.content }],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: EMPTY_RESTORED_MESSAGE_USAGE,
+      stopReason: "stop",
+      timestamp
+    } satisfies AssistantMessage;
+  });
+}
+
 export class PiAgentRuntimeAdapter implements AgentRuntime {
   private readonly idleTimeoutMs: number;
   private readonly subagentTimeoutMs: number | undefined;
@@ -219,7 +263,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         input.runtimeConfig,
         effectiveTemperature,
         configuredThinkingLevel,
-        { portableToolSchemaProfile }
+        {
+          portableToolSchemaProfile,
+          webSearchEnabled: input.webSearchEnabled === true
+        }
       );
       model = providerRuntime.model;
       streamFn = providerRuntime.streamFn;
@@ -446,6 +493,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         emitToolCallEvent(event, assistantTurnIndex)
     );
     let agent = this.conversationAgents.get(agentKey);
+    const createdAgent = agent === undefined;
     if (agent) {
       if (agent.state.isStreaming) {
         throw new Error("The selected conversation agent is already running.");
@@ -476,11 +524,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       this.conversationAgents.delete(agentKey);
       this.conversationAgents.set(agentKey, agent);
     } else {
+      const restoredMessages = restoredConversationMessages(input, model);
       agent = new Agent({
         initialState: {
           systemPrompt,
           model,
           thinkingLevel: effectiveThinkingLevel,
+          ...(restoredMessages.length ? { messages: restoredMessages } : {}),
           tools
         },
         streamFn: interceptedStreamFn,
@@ -721,7 +771,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       // Preserve the first request wrapper as the stable prefix for later turns.
       // Plot-design and draft turns also receive their latest structure
       // snapshots; tools and the system prompt are still refreshed before every run.
-      const persistInitialRuntimeContext = agent.state.messages.length === 0;
+      const persistInitialRuntimeContext =
+        createdAgent || agent.state.messages.length === 0;
       const runtimeUserContent =
         input.mode === "chat-assistant"
           ? buildRawUserMessage(input).content

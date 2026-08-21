@@ -375,6 +375,46 @@ describe("useCatalogWorkspaceProjectionCoordinator", () => {
     expect(harness.documents.value).toEqual([document]);
   });
 
+  it("repairs a recovered character overview title without losing unsaved body text", async () => {
+    const document = workspaceDocument(
+      "character-overview",
+      "book-1",
+      "磁盘人物正文"
+    );
+    document.title = "概览";
+    document.stageId = "character_design";
+    document.characterFileKind = "overview";
+    const recovered: EditorDraftState = {
+      title: "",
+      content: "未保存的人物正文",
+      dirty: true,
+      recoveryUpdatedAt: "2026-08-18T10:00:00.000Z",
+      baseRevision: "base-revision",
+      baseProjectRevision: 7
+    };
+    const harness = createHarness({
+      snapshots: [catalogSnapshot(5, ["book-1"])],
+      projections: new Map([
+        [
+          5,
+          projection({
+            resourceId: "character-overview-resource",
+            document,
+            workspaceId: "book-1"
+          })
+        ]
+      ]),
+      drafts: { "character-overview": recovered }
+    });
+
+    await harness.coordinator.loadSnapshot();
+
+    expect(harness.drafts.value["character-overview"]).toEqual({
+      ...recovered,
+      title: "概览"
+    });
+  });
+
   it("coalesces a burst into one load and at most one trailing refresh", async () => {
     const first = deferred<CatalogIndexSnapshot>();
     const trailing = deferred<CatalogIndexSnapshot>();

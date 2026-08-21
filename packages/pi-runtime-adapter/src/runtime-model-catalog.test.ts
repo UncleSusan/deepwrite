@@ -14,6 +14,12 @@ describe("DeepWrite runtime model catalog", () => {
     ).toBe("deepseek-v4-flash-0731");
   });
 
+  it("matches provider route prefixes by model id suffix", () => {
+    expect(
+      findDeepWriteRuntimeModel("enterprise-deepseek-v4-flash-0731")?.id
+    ).toBe("deepseek-v4-flash-0731");
+  });
+
   it("keeps prefix matching case-insensitive", () => {
     expect(findDeepWriteRuntimeModel("DEEPSEEK-V4-FLASH-ROUTED")?.id).toBe(
       "deepseek-v4-flash"

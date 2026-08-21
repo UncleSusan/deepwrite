@@ -1,4 +1,4 @@
-import type { Ref, ShallowRef } from "vue";
+import { shallowRef, type Ref, type ShallowRef } from "vue";
 import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
 
 export interface EditorSavePayload {
@@ -50,6 +50,7 @@ export function useEditorAutoSaveCoordinator(
   const maxRetryMs = options.maxRetryMs ?? DEFAULT_MAX_RETRY_MS;
   const timers = new Map<string, number>();
   const retryAttempts = new Map<string, number>();
+  const manualSavingDocumentIds = shallowRef<ReadonlySet<string>>(new Set());
   let saveChain: Promise<void> = Promise.resolve();
   let pendingTaskCount = 0;
   let disposed = false;
@@ -175,7 +176,17 @@ export function useEditorAutoSaveCoordinator(
   function apply(payload: EditorSavePayload): void {
     cancel(payload.id);
     enqueue(async () => {
-      await options.persist(payload, true);
+      manualSavingDocumentIds.value = new Set([
+        ...manualSavingDocumentIds.value,
+        payload.id
+      ]);
+      try {
+        await options.persist(payload, true);
+      } finally {
+        const nextIds = new Set(manualSavingDocumentIds.value);
+        nextIds.delete(payload.id);
+        manualSavingDocumentIds.value = nextIds;
+      }
     });
   }
 
@@ -196,6 +207,7 @@ export function useEditorAutoSaveCoordinator(
     cancel,
     dispose,
     drain,
+    manualSavingDocumentIds,
     schedule,
     scheduleDirty
   };

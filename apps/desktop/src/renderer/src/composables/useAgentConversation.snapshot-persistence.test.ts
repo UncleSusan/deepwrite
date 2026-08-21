@@ -40,6 +40,95 @@ describe("agent conversation controller: snapshot-persistence", () => {
     controller.dispose();
   });
 
+  it("forwards restored visible messages when continuing a persisted conversation", async () => {
+    const deferred = createDeferredApi();
+    const snapshot: AgentConversationPersistenceSnapshot = {
+      version: 1,
+      activeSessionId: "session-restored-history",
+      conversations: [
+        {
+          ...storedConversation(
+            "session-restored-history",
+            "2026-08-17T07:58:00.000Z",
+            "先帮我规划一段雨夜相遇。"
+          ),
+          messages: [
+            {
+              id: "user-restored-history",
+              role: "user",
+              content: "先帮我规划一段雨夜相遇。",
+              createdAt: "2026-08-17T07:58:00.000Z",
+              status: "completed"
+            },
+            {
+              id: "assistant-restored-history",
+              role: "assistant",
+              content: "可以从旧站台的一封错投来信开始。",
+              createdAt: "2026-08-17T07:59:00.000Z",
+              status: "completed"
+            }
+          ]
+        }
+      ]
+    };
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      initialPersistenceSnapshot: snapshot
+    });
+    controller.draft.value = "我上边说了啥？";
+
+    const sending = controller.sendAssistantMessage();
+
+    expect(deferred.prompts[0]?.conversationHistory).toEqual([
+      {
+        role: "user",
+        content: "先帮我规划一段雨夜相遇。",
+        createdAt: "2026-08-17T07:58:00.000Z"
+      },
+      {
+        role: "assistant",
+        content: "可以从旧站台的一封错投来信开始。",
+        createdAt: "2026-08-17T07:59:00.000Z"
+      }
+    ]);
+    expect(deferred.prompts[0]?.conversationHistory).not.toContainEqual(
+      expect.objectContaining({ content: "我上边说了啥？" })
+    );
+
+    deferred.resolveAccepted(0, {
+      sessionId: controller.sessionId.value,
+      runId: "run_restored_history",
+      acceptedAt: "2026-08-17T08:00:00.000Z",
+      runtime
+    });
+    await sending;
+    controller.dispose();
+  });
+
+  it("preserves enabled web search in normal chat requests", async () => {
+    const deferred = createDeferredApi();
+    const controller = useAgentConversation({ api: () => deferred.api });
+    controller.draft.value = "搜索今天的热点";
+
+    const sending = controller.sendAssistantMessage({
+      mode: "normal",
+      webSearchEnabled: true
+    });
+    expect(deferred.prompts[0]?.chatAssistant).toEqual({
+      mode: "normal",
+      webSearchEnabled: true
+    });
+
+    deferred.resolveAccepted(0, {
+      sessionId: controller.sessionId.value,
+      runId: "run_normal_chat_web_search",
+      acceptedAt: "2026-08-17T08:00:00.000Z",
+      runtime
+    });
+    await sending;
+    controller.dispose();
+  });
+
   it("normalizes reactive project context before sending it through IPC", async () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({ api: () => deferred.api });
@@ -51,11 +140,13 @@ describe("agent conversation controller: snapshot-persistence", () => {
 
     const sending = controller.sendAssistantMessage({
       mode: "project",
-      project
+      project,
+      webSearchEnabled: true
     });
     expect(deferred.prompts[0]?.chatAssistant).toEqual({
       mode: "project",
-      project: { projectType: "short", projectId: "book-1" }
+      project: { projectType: "short", projectId: "book-1" },
+      webSearchEnabled: true
     });
     expect(() =>
       structuredClone(deferred.prompts[0]?.chatAssistant)

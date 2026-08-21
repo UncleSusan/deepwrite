@@ -27,8 +27,13 @@ import {
   isOllamaProviderName,
   type ProviderRuntimeCompatibilityOptions
 } from "./portable-tool-schema";
+import { findLongestModelIdBoundaryMatch } from "./model-id-matching";
 import { enforceProviderToolSchemaCompatibility } from "./provider-tool-schema-compat";
 import { findDeepWriteRuntimeModel } from "./runtime-model-catalog";
+import {
+  appendDeepSeekWebSearchTool,
+  assertDeepSeekWebSearchCompatible
+} from "./deepseek-web-search";
 
 function providerStreams(
   api: AgentProviderRuntimeConfig["api"]
@@ -52,8 +57,9 @@ function findBuiltinModel(
     (candidate) => candidate.toLowerCase() === config.provider.toLowerCase()
   );
   if (provider) {
-    const model = getBuiltinModels(provider).find(
-      (candidate) => candidate.id.toLowerCase() === config.modelId.toLowerCase()
+    const model = findLongestModelIdBoundaryMatch(
+      getBuiltinModels(provider),
+      config.modelId
     ) as Model<Api> | undefined;
     if (model) return model;
   }
@@ -121,6 +127,9 @@ export function buildProviderRuntime(
   model: Model<Api>;
   streamFn: StreamFn;
 } {
+  if (compatibility.webSearchEnabled) {
+    assertDeepSeekWebSearchCompatible(config);
+  }
   const builtin = findBuiltinModel(config);
   const baseUrl =
     config.baseUrl || (builtin?.api === config.api ? builtin.baseUrl : "");
@@ -191,8 +200,9 @@ export function buildProviderRuntime(
     requestModel: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions
-  ) =>
-    streams.streamSimple(
+  ) => {
+    const upstreamOnPayload = options?.onPayload;
+    return streams.streamSimple(
       requestModel,
       applyProviderToolSchemaCompatibility(
         enforceProviderToolSchemaCompatibility(context),
@@ -202,6 +212,19 @@ export function buildProviderRuntime(
       ),
       {
         ...options,
+        ...(compatibility.webSearchEnabled
+          ? {
+              onPayload: async (payload: unknown, payloadModel: Model<Api>) => {
+                const transformed = upstreamOnPayload
+                  ? await upstreamOnPayload(payload, payloadModel)
+                  : undefined;
+                return appendDeepSeekWebSearchTool(
+                  transformed === undefined ? payload : transformed,
+                  config.api
+                );
+              }
+            }
+          : {}),
         ...(mandatoryZaiThinkingFallback
           ? { reasoning: mandatoryZaiThinkingFallback }
           : {}),
@@ -217,5 +240,6 @@ export function buildProviderRuntime(
               : {})
       }
     );
+  };
   return { model, streamFn: streamFn as StreamFn };
 }

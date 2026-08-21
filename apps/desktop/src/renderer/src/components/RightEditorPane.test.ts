@@ -8,6 +8,8 @@ import resourceSource from "../composables/useWorkspaceResourceCoordinator.ts?ra
 import structureSource from "../composables/useShortWorkspaceStructureCoordinator.ts?raw";
 import dialogLayerSource from "./WorkspaceDialogLayer.vue?raw";
 import dialogCoordinatorSource from "../composables/useWorkspaceDialogModuleCoordinator.ts?raw";
+import fixedTitleSource from "../utils/fixedWorkspaceDocumentTitle.ts?raw";
+import saveViewportSource from "../composables/useEditorSaveViewport.ts?raw";
 
 describe("RightEditorPane expert draft navigation", () => {
   it("expands a collapsed right-side agent when the editor is centered", () => {
@@ -22,8 +24,10 @@ describe("RightEditorPane expert draft navigation", () => {
     );
   });
 
-  it("shows automatic save status while preserving an immediate save action", () => {
-    expectSourceToContain(source, 'autoSaveEnabled ? "等待自动保存"');
+  it("keeps automatic save status visually stable while preserving an immediate save action", () => {
+    expectSourceToContain(source, 'autoSaveEnabled ? "自动保存已开启"');
+    expect(source).toContain("visibleDirtySaveState");
+    expect(source).not.toContain('autoSaveEnabled ? "等待自动保存"');
     expectSourceToContain(
       source,
       'autoSaveEnabled ? "本机文稿 · 更改后自动保存"'
@@ -59,23 +63,25 @@ describe("RightEditorPane expert draft navigation", () => {
     );
   });
 
-  it("keeps library overview titles fixed while routing overview content to persistent saves", () => {
+  it("keeps structural overview titles fixed while routing overview content to persistent saves", () => {
     expect(source).toContain(
       'props.document.catalogLibraryField === "overview"'
     );
-    expectSourceToContain(
-      source,
-      "document.draftFileKind === 'character-state' || isLibraryOverview"
+    expect(source).toContain("workspaceDocumentHasFixedTitle(props.document)");
+    expect(source).toContain(':readonly="isTitleReadOnly"');
+    expect(source).toContain("resolveWorkspaceDocumentTitle(");
+    expect(fixedTitleSource).toContain(
+      'document.characterFileKind === "overview"'
     );
+    expect(fixedTitleSource).toContain("document.plotStageOrder !== undefined");
     expect(source).toContain("CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS");
     expect(persistenceSource).toContain(
       "async function saveCatalogLibraryOverview("
     );
     expect(persistenceSource).toContain('catalogLibraryField !== "overview"');
     expect(persistenceSource).toContain("overview: payload.content");
-    expect(persistenceSource).toContain(
-      "await saveCatalogLibraryOverview(document, payload"
-    );
+    expect(persistenceSource).toContain("await saveCatalogLibraryOverview(");
+    expect(persistenceSource).toContain("normalizedPayload");
   });
 
   it("renders independently managed section tabs before the active section editor", () => {
@@ -114,12 +120,26 @@ describe("RightEditorPane expert draft navigation", () => {
     );
   });
 
-  it("preserves the active text viewport when a manual save refreshes the document", () => {
-    expect(source).toContain("pendingSaveViewport = captureEditorViewport()");
-    expect(source).toContain("input.scrollTop = snapshot.scrollTop");
-    expect(source).toContain(
-      "activeScrollMemoryKey.value !== snapshot.documentKey"
+  it("preserves the latest active text viewport across manual and automatic saves", () => {
+    expect(source).toContain("preserveEditorViewportForSave()");
+    expect(saveViewportSource).toContain("pendingSnapshot = capture()");
+    expect(saveViewportSource).toContain(
+      "const snapshot = capture() ?? pendingSnapshot"
     );
+    expect(saveViewportSource).toContain(
+      "input.scrollTop = snapshot.scrollTop"
+    );
+    expect(saveViewportSource).toContain(
+      "input.selectionStart !== snapshot.selectionStart"
+    );
+    expect(saveViewportSource).toContain('{ flush: "pre" }');
+    expect(source).toContain(
+      "onBeforeUpdate(captureEditorViewportBeforeRender)"
+    );
+    expect(source).toContain("onUpdated(restoreEditorViewportAfterRender)");
+    expect(source).toContain(": manualSaving");
+    expect(source).toContain('{{ manualSaving ? "保存中…"');
+    expect(source).toContain("(!autoSaveEnabled && !dirty)");
     expect(source).toContain("@mousedown.prevent");
   });
 

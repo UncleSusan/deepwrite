@@ -13,22 +13,24 @@ import {
   CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH,
   type CatalogIndexSnapshot,
   type ChatAssistantProjectRef,
-  type LongBookSummary,
-  type ThinkingLevel
+  type LongBookSummary
 } from "@deepwrite/contracts";
 import type { AgentConversationController } from "../../composables/useAgentConversation";
+import { useConversationScrollFollow } from "../../composables/useConversationScrollFollow";
 import { uiMessage } from "../../ui-feedback";
 import AppIcon from "../../components/AppIcon.vue";
-import MarkdownContent from "../../components/MarkdownContent.vue";
+import ConversationMessageList from "../../components/ConversationMessageList.vue";
 import PopupSelect, {
   type PopupSelectOption,
   type PopupSelectValue
 } from "../../components/PopupSelect.vue";
-import ChatAssistantProcessingTrace from "./ChatAssistantProcessingTrace.vue";
+import ChatAssistantHome from "./ChatAssistantHome.vue";
+import ChatAssistantComposer from "./ChatAssistantComposer.vue";
 import {
   useChatAssistantMode,
   type ChatAssistantProjectOption
 } from "./useChatAssistantMode";
+import { useChatAssistantWebSearch } from "./useChatAssistantWebSearch";
 
 const props = defineProps<{
   active: boolean;
@@ -65,9 +67,8 @@ interface ResizeSession extends ChatAssistantSize {
   axis: ResizeAxis;
 }
 
-const input = ref<HTMLTextAreaElement | null>(null);
-const scroller = ref<HTMLElement | null>(null);
-const showAllHistory = ref(false);
+const composer = ref<{ focus(): void } | null>(null);
+const clock = ref(Date.now());
 const viewportWidth = ref(
   typeof window === "undefined" ? 1440 : window.innerWidth
 );
@@ -83,6 +84,7 @@ const projectConfigCustomized = ref(false);
 const projectConfigPending = ref(false);
 let previousUserSelect = "";
 let previousCursor = "";
+let clockTimer: number | undefined;
 
 function defaultSize(): ChatAssistantSize {
   return {
@@ -130,10 +132,20 @@ const windowStyle = computed<CSSProperties>(() =>
       }
 );
 const messages = computed(() => controller.value!.messages.value);
+const {
+  scroller,
+  followsConversationTail,
+  tailFollowLockedForResponse,
+  handleConversationWheel,
+  handleConversationScroll,
+  scheduleConversationTailFollow,
+  resetScrollForSession,
+  setLastConversationScrollTop
+} = useConversationScrollFollow({
+  messages: () => messages.value,
+  responding: () => controller.value!.isBusy.value
+});
 const history = computed(() => controller.value!.history.value);
-const visibleHistory = computed(() =>
-  showAllHistory.value ? history.value : history.value.slice(0, 3)
-);
 const currentHistory = computed(() =>
   history.value.find((item) => item.current)
 );
@@ -143,16 +155,52 @@ const lastAssistantMessage = computed(() =>
     .reverse()
     .find((message) => message.role === "assistant" && message.content.trim())
 );
-const hasStreamingAssistant = computed(() =>
-  messages.value.some(
-    (message) => message.role === "assistant" && message.status === "streaming"
-  )
+const hasLiveProcessing = computed(
+  () =>
+    controller.value!.isBusy.value ||
+    messages.value.some(
+      (message) =>
+        message.status === "streaming" ||
+        message.subagentRuns?.some((run) => run.status === "running")
+    )
+);
+const messagePresentationKey = computed(() =>
+  messages.value
+    .map((message) =>
+      [
+        message.id,
+        message.status ?? "completed",
+        message.content.length,
+        message.thinking?.length ?? 0,
+        message.processingSteps
+          ?.map((step) =>
+            step.type === "tool"
+              ? `${step.id}:${step.toolCallId}`
+              : `${step.id}:${step.type}:${step.content.length}`
+          )
+          .join(",") ?? "",
+        message.toolCalls
+          ?.map((tool) => `${tool.id}:${tool.status}`)
+          .join(",") ?? ""
+      ].join(":")
+    )
+    .join("|")
 );
 const selectedModel = computed(() =>
   controller.value!.configuredModels.value.find(
     (model) => model.id === controller.value!.selectedModelId.value
   )
 );
+const webSearch = useChatAssistantWebSearch({
+  selectedModel,
+  onAutomaticallyDisabled: () => {
+    uiMessage.info(
+      "智能搜索已关闭：仅 DeepSeek 的 Responses 或 Anthropic API 模型支持此功能"
+    );
+  }
+});
+const webSearchDisabledReason =
+  "仅支持 Provider 为 DeepSeek，且 API 类型为 OpenAI Responses 或 Anthropic Messages 的模型";
 const modelOptions = computed(() =>
   controller.value!.configuredModels.value.map((model) => ({
     value: model.id,
@@ -302,30 +350,18 @@ const emptyHint = computed(() => {
 });
 
 function focusInput(): void {
-  void nextTick(() => input.value?.focus());
+  void nextTick(() => composer.value?.focus());
+}
+
+function setConversationScroller(element: unknown): void {
+  scroller.value = element instanceof HTMLElement ? element : undefined;
 }
 
 async function send(): Promise<void> {
   if (!effectiveCanSend.value) return;
-  await assistant.sendAssistantMessage();
-}
-
-function handleInput(event: Event): void {
-  controller.value!.draft.value = (event.target as HTMLTextAreaElement).value;
-}
-
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
-  event.preventDefault();
-  void send();
-}
-
-function updateThinking(value: PopupSelectValue): void {
-  controller.value!.selectThinkingLevel(value as ThinkingLevel);
-}
-
-function updateModel(value: PopupSelectValue): void {
-  controller.value!.selectModel(String(value));
+  await assistant.sendAssistantMessage(
+    webSearch.enabled.value && webSearch.available.value
+  );
 }
 
 function updateContext(value: PopupSelectValue): void {
@@ -475,7 +511,6 @@ async function resetProjectConfig(): Promise<void> {
 
 function newConversation(): void {
   controller.value!.newConversation();
-  showAllHistory.value = false;
   focusInput();
 }
 
@@ -484,7 +519,6 @@ function selectConversation(sessionId: string): void {
     uiMessage.info("当前回复完成或停止后，才能切换聊天记录");
     return;
   }
-  showAllHistory.value = false;
   focusInput();
 }
 
@@ -497,14 +531,6 @@ async function copyLastReply(): Promise<void> {
   } catch {
     uiMessage.error("复制失败，请稍后重试");
   }
-}
-
-function formatHistoryTime(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "";
-  const elapsedDays = Math.floor((Date.now() - timestamp) / 86_400_000);
-  if (elapsedDays <= 0) return "今天";
-  return `${elapsedDays} 天`;
 }
 
 function persistSize(): void {
@@ -594,15 +620,19 @@ function handleViewportResize(): void {
   windowSize.value = clampSize(windowSize.value);
 }
 
-onMounted(() => {
+onMounted(async () => {
   viewportWidth.value = window.innerWidth;
   viewportHeight.value = window.innerHeight;
   windowSize.value = readStoredSize();
   window.addEventListener("resize", handleViewportResize);
+  await nextTick();
+  setLastConversationScrollTop(scroller.value?.scrollTop ?? 0);
+  scheduleConversationTailFollow();
 });
 
 onBeforeUnmount(() => {
   stopResize();
+  if (clockTimer !== undefined) globalThis.clearInterval(clockTimer);
   window.removeEventListener("resize", handleViewportResize);
 });
 
@@ -627,16 +657,62 @@ watch(
     }
   }
 );
+watch(messagePresentationKey, async () => {
+  if (!followsConversationTail.value) return;
+  await nextTick();
+  scheduleConversationTailFollow();
+});
 watch(
-  () => [
-    messages.value.length,
-    lastAssistantMessage.value?.content.length ?? 0
-  ],
-  () => {
-    void nextTick(() =>
-      scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
-    );
+  () => controller.value!.isBusy.value,
+  (responding, wasResponding) => {
+    if (!responding || wasResponding) return;
+    resetScrollForSession();
   }
+);
+watch(
+  () => controller.value!.sessionId.value,
+  () => resetScrollForSession()
+);
+watch(
+  () => {
+    const message = [...messages.value]
+      .reverse()
+      .find((candidate) => candidate.role === "assistant");
+    return message ? `${message.id}:${message.status ?? "completed"}` : "";
+  },
+  async (next, previous) => {
+    if (
+      !tailFollowLockedForResponse.value ||
+      !previous.endsWith(":streaming") ||
+      next.endsWith(":streaming")
+    ) {
+      return;
+    }
+    const element = scroller.value;
+    if (!element) return;
+    const preservedScrollTop = element.scrollTop;
+    await nextTick();
+    if (!tailFollowLockedForResponse.value || !scroller.value) return;
+    scroller.value.scrollTop = preservedScrollTop;
+    setLastConversationScrollTop(preservedScrollTop);
+  },
+  { flush: "pre" }
+);
+watch(
+  hasLiveProcessing,
+  (live) => {
+    if (clockTimer !== undefined) {
+      globalThis.clearInterval(clockTimer);
+      clockTimer = undefined;
+    }
+    clock.value = Date.now();
+    if (live) {
+      clockTimer = globalThis.setInterval(() => {
+        clock.value = Date.now();
+      }, 1_000);
+    }
+  },
+  { immediate: true }
 );
 </script>
 
@@ -719,151 +795,48 @@ watch(
       </div>
     </header>
 
-    <div ref="scroller" class="chat-assistant-content" aria-live="polite">
-      <div v-if="messages.length" class="chat-assistant-messages">
-        <article
-          v-for="message in messages"
-          :key="message.id"
-          class="chat-assistant-message"
-          :class="`is-${message.role}`"
-        >
-          <div v-if="message.role === 'user'" class="chat-assistant-user-copy">
-            {{ message.content }}
-          </div>
-          <div v-else class="chat-assistant-reply">
-            <ChatAssistantProcessingTrace :message="message" />
-            <MarkdownContent
-              v-if="message.content"
-              :content="message.content"
-            />
-            <span
-              v-else-if="message.status === 'streaming'"
-              class="chat-assistant-waiting"
-              >正在组织回复…</span
-            >
-            <span v-if="message.status === 'error'" class="sr-only"
-              >回复失败</span
-            >
-          </div>
-        </article>
-        <div
-          v-if="controller.isBusy.value && !hasStreamingAssistant"
-          class="chat-assistant-waiting"
-        >
-          正在连接模型…
+    <ConversationMessageList
+      class="chat-assistant-content"
+      :messages="messages"
+      :responding="controller.isBusy.value"
+      :runtime-available="runtimeAvailable"
+      :clock="clock"
+      :set-scroller="setConversationScroller"
+      :handle-conversation-wheel="handleConversationWheel"
+      :handle-conversation-scroll="handleConversationScroll"
+    >
+      <template #empty>
+        <div class="chat-assistant-home-wrap">
+          <ChatAssistantHome
+            :history="history"
+            :empty-hint="emptyHint"
+            @select-conversation="selectConversation"
+          />
         </div>
-      </div>
+      </template>
+    </ConversationMessageList>
 
-      <section v-else class="chat-assistant-home">
-        <div class="chat-assistant-home-spacer" />
-        <div v-if="history.length" class="chat-assistant-recent">
-          <span>最近聊天</span>
-          <button
-            v-for="item in visibleHistory"
-            :key="item.sessionId"
-            type="button"
-            @click="selectConversation(item.sessionId)"
-          >
-            <strong>{{ item.title }}</strong>
-            <time :datetime="item.updatedAt">{{
-              formatHistoryTime(item.updatedAt)
-            }}</time>
-          </button>
-          <button
-            v-if="history.length > 3 && !showAllHistory"
-            class="chat-assistant-view-all"
-            type="button"
-            @click="showAllHistory = true"
-          >
-            查看全部
-          </button>
-        </div>
-        <div v-else class="chat-assistant-empty">
-          <AppIcon name="message" :size="28" />
-          <strong>开始一段新聊天</strong>
-          <span>{{ emptyHint }}</span>
-        </div>
-      </section>
-    </div>
-
-    <footer class="chat-assistant-composer">
-      <textarea
-        ref="input"
-        :value="controller.draft.value"
-        :placeholder="
-          runtimeAvailable
-            ? '给聊天助手发送消息'
-            : '浏览器预览不可发送，请启动桌面客户端'
-        "
-        :disabled="!runtimeAvailable || controller.isBusy.value"
-        rows="1"
-        @input="handleInput"
-        @keydown="handleKeydown"
-      />
-      <div class="chat-assistant-toolbar">
-        <button
-          class="chat-assistant-placeholder-action"
-          type="button"
-          disabled
-          title="附件功能后续开放"
-          aria-label="附件功能后续开放"
-        >
-          <AppIcon name="plus" :size="19" />
-        </button>
-        <span class="chat-assistant-toolbar-spacer" />
-        <PopupSelect
-          :model-value="controller.selectedModelId.value"
-          :options="modelOptions"
-          accessible-label="聊天模型"
-          placeholder="默认模型"
-          variant="compact"
-          size="small"
-          align="end"
-          :disabled="modelOptions.length === 0"
-          :menu-min-width="220"
-          :menu-z-index="95"
-          @update:model-value="updateModel"
-        />
-        <PopupSelect
-          :model-value="controller.thinkingLevel.value"
-          :options="thinkingOptions"
-          accessible-label="思考等级"
-          variant="compact"
-          size="small"
-          align="end"
-          :menu-z-index="95"
-          @update:model-value="updateThinking"
-        />
-        <button
-          class="chat-assistant-placeholder-action"
-          type="button"
-          disabled
-          title="语音功能后续开放"
-          aria-label="语音功能后续开放"
-        >
-          <AppIcon name="mic" :size="18" />
-        </button>
-        <button
-          v-if="canStop"
-          class="chat-assistant-send is-stop"
-          type="button"
-          aria-label="停止生成"
-          @click="controller.stopGeneration()"
-        >
-          <AppIcon name="stop" :size="15" />
-        </button>
-        <button
-          v-else
-          class="chat-assistant-send"
-          type="button"
-          aria-label="发送消息"
-          :disabled="!effectiveCanSend"
-          @click="send"
-        >
-          <AppIcon name="arrow-up" :size="19" />
-        </button>
-      </div>
-    </footer>
+    <ChatAssistantComposer
+      ref="composer"
+      :draft="controller.draft.value"
+      :runtime-available="runtimeAvailable"
+      :busy="controller.isBusy.value"
+      :can-send="effectiveCanSend"
+      :can-stop="canStop"
+      :selected-model-id="controller.selectedModelId.value"
+      :model-options="modelOptions"
+      :thinking-level="controller.thinkingLevel.value"
+      :thinking-options="thinkingOptions"
+      :web-search-enabled="webSearch.enabled.value"
+      :web-search-available="webSearch.available.value"
+      :web-search-disabled-reason="webSearchDisabledReason"
+      @update:draft="controller.draft.value = $event"
+      @send="send"
+      @stop="controller.stopGeneration()"
+      @select-model="controller.selectModel($event)"
+      @select-thinking="controller.selectThinkingLevel($event)"
+      @toggle-web-search="webSearch.setEnabled($event)"
+    />
 
     <div
       v-if="projectConfigOpen"
@@ -1061,8 +1034,7 @@ watch(
 .chat-assistant-header-actions {
   flex: none;
 }
-.chat-assistant-header-actions button,
-.chat-assistant-placeholder-action {
+.chat-assistant-header-actions button {
   display: grid;
   place-items: center;
   width: 34px;
@@ -1077,152 +1049,22 @@ watch(
   color: var(--text-primary);
   background: var(--surface-hover);
 }
-.chat-assistant-header button:disabled,
-.chat-assistant-placeholder-action:disabled {
+.chat-assistant-header button:disabled {
   opacity: 0.42;
 }
 .chat-assistant-content {
   min-height: 0;
-  overflow-y: auto;
-  padding: 22px 30px;
-}
-.chat-assistant-messages {
-  width: min(720px, 100%);
-  margin: 0 auto;
-  display: grid;
-  gap: 20px;
-}
-.chat-assistant-message {
-  min-width: 0;
-}
-.chat-assistant-message.is-user {
-  display: flex;
-  justify-content: flex-end;
-}
-.chat-assistant-user-copy {
-  max-width: 78%;
-  padding: 10px 14px;
-  white-space: pre-wrap;
-  line-height: 1.65;
-  background: var(--surface-selected);
-  border-radius: 16px 16px 4px 16px;
-}
-.chat-assistant-reply {
-  line-height: 1.72;
-}
-.chat-assistant-waiting {
-  color: var(--text-tertiary);
-}
-.chat-assistant-home {
-  min-height: 100%;
-  display: grid;
-  grid-template-rows: minmax(80px, 1fr) auto;
-}
-.chat-assistant-home-spacer {
-  min-height: 80px;
-}
-.chat-assistant-recent {
-  display: grid;
-  gap: 4px;
-  padding-bottom: 20px;
-}
-.chat-assistant-recent > span {
-  margin-bottom: 10px;
-  color: var(--text-tertiary);
-}
-.chat-assistant-recent > button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  width: 100%;
-  padding: 10px 0;
-  color: var(--text-secondary);
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-}
-.chat-assistant-recent > button:hover {
-  color: var(--text-primary);
-}
-.chat-assistant-recent strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-.chat-assistant-recent time {
-  flex: none;
-  color: var(--text-tertiary);
-}
-.chat-assistant-view-all {
-  justify-content: flex-start !important;
-  color: var(--text-tertiary) !important;
-}
-.chat-assistant-empty {
-  align-self: end;
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding-bottom: 40px;
-  color: var(--text-tertiary);
-  text-align: center;
-}
-.chat-assistant-empty strong {
-  color: var(--text-secondary);
-}
-.chat-assistant-composer {
-  position: relative;
-  margin: 0 12px 12px;
-  padding: 10px 12px 8px;
-  background: var(--surface-raised);
-  border: 1px solid var(--theme-line);
-  border-radius: 22px;
-  box-shadow: 0 8px 24px color-mix(in srgb, #000 7%, transparent);
-}
-.chat-assistant-composer textarea {
-  display: block;
-  width: 100%;
-  min-height: 42px;
-  max-height: 150px;
-  resize: none;
-  padding: 8px 10px;
-  color: var(--text-primary);
-  font: inherit;
-  line-height: 1.5;
-  background: transparent;
-  border: 0;
-  outline: 0;
-}
-.chat-assistant-composer textarea::placeholder {
-  color: var(--text-tertiary);
-}
-.chat-assistant-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.chat-assistant-toolbar-spacer {
-  flex: 1;
-}
-.chat-assistant-send {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
   padding: 0;
-  color: var(--surface-main);
-  background: var(--text-primary);
-  border: 0;
-  border-radius: 50%;
 }
-.chat-assistant-send:disabled {
-  opacity: 0.35;
+.chat-assistant-content :deep(.message-list) {
+  width: min(720px, calc(100% - 36px));
+  padding: 28px 0 48px;
 }
-.chat-assistant-send.is-stop {
-  color: var(--text-primary);
-  background: var(--surface-selected);
+.chat-assistant-home-wrap {
+  width: min(720px, calc(100% - 60px));
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 22px 0;
 }
 .chat-assistant-config-backdrop {
   position: fixed;
@@ -1358,11 +1200,9 @@ watch(
     width: 100%;
     max-width: none;
   }
-  .chat-assistant-content {
-    padding: 18px;
-  }
-  .chat-assistant-user-copy {
-    max-width: 90%;
+  .chat-assistant-content :deep(.message-list),
+  .chat-assistant-home-wrap {
+    width: calc(100% - 32px);
   }
 }
 </style>

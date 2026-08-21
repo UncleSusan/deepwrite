@@ -17,6 +17,7 @@ import {
   it,
   runtime
 } from "./index.test-support";
+import { isDeepSeekWebSearchCompatible } from "./models";
 
 describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
   it("creates a versioned command envelope with a correlation id", () => {
@@ -87,6 +88,18 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
       {
         sessionId: "session_1",
         message: "续写这一段",
+        conversationHistory: [
+          {
+            role: "user" as const,
+            content: "先写一个雨夜开场。",
+            createdAt: "2026-08-17T07:58:00.000Z"
+          },
+          {
+            role: "assistant" as const,
+            content: "雨水沿着旧站台的铁轨漫开。",
+            createdAt: "2026-08-17T07:59:00.000Z"
+          }
+        ],
         thinkingLevel: "medium" as const,
         writeApprovalMode: "auto-approve" as const,
         workspaceContext: {
@@ -109,7 +122,13 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
 
     expect(CommandEnvelopeSchema.parse(envelope)).toMatchObject({
       type: "session.prompt",
-      payload: { writeApprovalMode: "auto-approve" }
+      payload: {
+        conversationHistory: [
+          { role: "user", content: "先写一个雨夜开场。" },
+          { role: "assistant", content: "雨水沿着旧站台的铁轨漫开。" }
+        ],
+        writeApprovalMode: "auto-approve"
+      }
     });
   });
 
@@ -120,12 +139,19 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
         sessionId: "session_chat_1",
         message: "聊聊今天的计划",
         mode: "chat-assistant" as const,
-        thinkingLevel: "medium" as const
+        thinkingLevel: "medium" as const,
+        chatAssistant: {
+          mode: "normal" as const,
+          webSearchEnabled: true
+        }
       },
       { id: "cmd_chat", context: { sessionId: "session_chat_1" } }
     );
     expect(CommandEnvelopeSchema.parse(accepted)).toMatchObject({
-      payload: { mode: "chat-assistant" }
+      payload: {
+        mode: "chat-assistant",
+        chatAssistant: { mode: "normal", webSearchEnabled: true }
+      }
     });
 
     const project = createEnvelope(
@@ -136,7 +162,8 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
         mode: "chat-assistant" as const,
         chatAssistant: {
           mode: "project" as const,
-          project: { projectType: "long" as const, projectId: "book-1" }
+          project: { projectType: "long" as const, projectId: "book-1" },
+          webSearchEnabled: true
         }
       },
       { id: "cmd_chat_project", context: { sessionId: "session_chat_project" } }
@@ -145,7 +172,8 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
       payload: {
         chatAssistant: {
           mode: "project",
-          project: { projectType: "long", projectId: "book-1" }
+          project: { projectType: "long", projectId: "book-1" },
+          webSearchEnabled: true
         }
       }
     });
@@ -181,6 +209,50 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
       );
       expect(() => CommandEnvelopeSchema.parse(envelope)).toThrow();
     }
+
+    const nonChatSearch = createEnvelope(
+      "session.prompt",
+      {
+        sessionId: "session_non_chat_search",
+        message: "不应启用搜索",
+        chatAssistant: {
+          mode: "normal" as const,
+          webSearchEnabled: true
+        }
+      },
+      {
+        id: "cmd_non_chat_search",
+        context: { sessionId: "session_non_chat_search" }
+      }
+    );
+    expect(() => CommandEnvelopeSchema.parse(nonChatSearch)).toThrow();
+  });
+
+  it("restricts DeepSeek web search to the two server-tool APIs", () => {
+    expect(
+      isDeepSeekWebSearchCompatible({
+        provider: " DeepSeek ",
+        api: "openai-responses"
+      })
+    ).toBe(true);
+    expect(
+      isDeepSeekWebSearchCompatible({
+        provider: "DEEPSEEK",
+        api: "anthropic-messages"
+      })
+    ).toBe(true);
+    expect(
+      isDeepSeekWebSearchCompatible({
+        provider: "deepseek",
+        api: "openai-completions"
+      })
+    ).toBe(false);
+    expect(
+      isDeepSeekWebSearchCompatible({
+        provider: "deepseek-official",
+        api: "openai-responses"
+      })
+    ).toBe(false);
   });
 
   it("accepts extracted text and base64 image prompt attachments", () => {

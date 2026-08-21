@@ -31,11 +31,17 @@ export type ChatAssistantProjectRef = z.infer<
 >;
 
 export const ChatAssistantRequestContextSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("normal") }).strict(),
+  z
+    .object({
+      mode: z.literal("normal"),
+      webSearchEnabled: z.boolean().optional()
+    })
+    .strict(),
   z
     .object({
       mode: z.literal("project"),
-      project: ChatAssistantProjectRefSchema
+      project: ChatAssistantProjectRefSchema,
+      webSearchEnabled: z.boolean().optional()
     })
     .strict()
 ]);

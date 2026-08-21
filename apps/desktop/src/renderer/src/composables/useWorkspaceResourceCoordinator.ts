@@ -682,7 +682,7 @@ export function useWorkspaceResourceCoordinator(
   );
 
   async function selectResource(node: ResourceTreeNode): Promise<void> {
-    const requestId = beginNavigationRequest();
+    let requestId = beginNavigationRequest();
     if (
       disposed ||
       longNavigation.blockWritingPlan("切换创作空间", {
@@ -738,6 +738,12 @@ export function useWorkspaceResourceCoordinator(
     }
     if (longNavigation.activeBookId.value) {
       longNavigation.deactivateActiveBook();
+      // Deactivating a long workspace synchronously contracts its resource
+      // tree. Selection reconciliation may advance the navigation generation
+      // when the previously selected long node disappears. Reassert this
+      // explicit short-form selection after that contraction so the user's
+      // cross-workspace navigation is not mistaken for a stale request.
+      requestId = beginNavigationRequest();
     }
     const directory = draftDirectoryForResourceId(node.id);
     const document =
