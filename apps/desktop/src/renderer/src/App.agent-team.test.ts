@@ -27,8 +27,8 @@ describe("App agent-team integration", () => {
     expect(source).toContain("useSettingsFeatureCoordinator({");
     expect(source).toContain("loadAgentTeamSettings,");
     expect(source).toContain("saveAgentTeamSettings,");
-    expect(coordinatorSource).toContain('api.agentTeams.list("short")');
-    expect(coordinatorSource).toContain("api.agentTeams.save(settings)");
+    expect(coordinatorSource).toContain("api.agentTeams.list()");
+    expect(coordinatorSource).toContain("api.agentTeams.save(input)");
     expect(source).toContain('@save-agent-team="saveAgentTeamSettings"');
     expect(featureModulesSource).toContain(
       "@save=\"emit('saveAgentTeam', $event)\""
@@ -74,26 +74,13 @@ describe("App agent-team integration", () => {
     );
   });
 
-  it("loads and saves long teams independently in both failure directions", () => {
-    expect(settingsSource).toContain("const longAgentTeamLoading = ref(false)");
-    expect(settingsSource).toContain("const longAgentTeamSaving = ref(false)");
-    expect(settingsSource).toContain(
-      "const longAgentTeamLoadError = ref<string | null>(null)"
-    );
-    expect(coordinatorSource).toContain(
-      "loadShortAndScriptAgentTeamSettings()"
-    );
-    expect(coordinatorSource).toContain("loadLongAgentTeamSettings()");
+  it("loads and saves all workspace team settings through one catalog", () => {
+    expect(settingsSource).toContain("const agentTeamCatalog = shallowRef");
     expect(coordinatorSource).toContain("settingsStore.ensureAgentTeamsLoaded");
-    expect(coordinatorSource).toContain(
-      "settingsStore.ensureLongAgentTeamsLoaded"
-    );
+    expect(coordinatorSource).toContain("api.agentTeams.setEnabled(input)");
+    expect(featureModulesSource).toContain(':catalog="module.catalog"');
     expect(featureModulesSource).toContain(
-      ':long-loading="module.longLoading"'
-    );
-    expect(featureModulesSource).toContain(':long-saving="module.longSaving"');
-    expect(featureModulesSource).toContain(
-      ':long-load-error="module.longLoadError"'
+      "@set-enabled=\"emit('setAgentTeamEnabled', $event)\""
     );
   });
 

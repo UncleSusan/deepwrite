@@ -1,4 +1,5 @@
 import {
+  AgentTeamCatalogSnapshotSchema,
   AppearanceSettingsSnapshotSchema,
   ChatAssistantProjectConfigListSchema,
   ChatAssistantProjectConfigSchema,
@@ -6,9 +7,7 @@ import {
   LearningImitationSettingsSchema,
   LibraryAgentSettingsSchema,
   LongAgentSettingsSchema,
-  LongAgentTeamSettingsSchema,
   WorkspaceAgentSettingsSchema,
-  WorkspaceAgentTeamSettingsSchema,
   WorkspaceDirectorySettingsSchema,
   type CommandEnvelope,
   type CommandResult
@@ -196,10 +195,8 @@ export async function handleSettingsCommands(
       return {
         status: "accepted",
         requestId: command.id,
-        payload: WorkspaceAgentTeamSettingsSchema.parse(
-          await ctx
-            .requireAgentTeamConfigStore()
-            .list(command.payload.workspaceType)
+        payload: AgentTeamCatalogSnapshotSchema.parse(
+          await ctx.requireAgentTeamConfigStore().list()
         )
       };
     } catch (error: unknown) {
@@ -216,14 +213,29 @@ export async function handleSettingsCommands(
     }
   }
 
-  if (command.type === "agentTeams.save") {
+  if (
+    command.type === "agentTeams.create" ||
+    command.type === "agentTeams.rename" ||
+    command.type === "agentTeams.delete" ||
+    command.type === "agentTeams.setEnabled" ||
+    command.type === "agentTeams.save"
+  ) {
     try {
+      const store = ctx.requireAgentTeamConfigStore();
+      const snapshot =
+        command.type === "agentTeams.create"
+          ? await store.create(command.payload)
+          : command.type === "agentTeams.rename"
+            ? await store.rename(command.payload)
+            : command.type === "agentTeams.delete"
+              ? await store.delete(command.payload)
+              : command.type === "agentTeams.setEnabled"
+                ? await store.setEnabled(command.payload)
+                : await store.save(command.payload);
       return {
         status: "accepted",
         requestId: command.id,
-        payload: WorkspaceAgentTeamSettingsSchema.parse(
-          await ctx.requireAgentTeamConfigStore().save(command.payload)
-        )
+        payload: AgentTeamCatalogSnapshotSchema.parse(snapshot)
       };
     } catch (error: unknown) {
       return {
@@ -356,56 +368,6 @@ export async function handleSettingsCommands(
             error instanceof Error
               ? error.message
               : "恢复长篇智能体默认设置失败。",
-          details: safeErrorDetails(error)
-        }
-      };
-    }
-  }
-
-  if (command.type === "longAgentTeams.list") {
-    try {
-      return {
-        status: "accepted",
-        requestId: command.id,
-        payload: LongAgentTeamSettingsSchema.parse(
-          await ctx.requireLongAgentTeamConfigStore().list()
-        )
-      };
-    } catch (error: unknown) {
-      return {
-        status: "rejected",
-        requestId: command.id,
-        error: {
-          code: "long_agent_teams.list_failed",
-          message:
-            error instanceof Error
-              ? error.message
-              : "加载长篇智能体团队设置失败。",
-          details: safeErrorDetails(error)
-        }
-      };
-    }
-  }
-
-  if (command.type === "longAgentTeams.save") {
-    try {
-      return {
-        status: "accepted",
-        requestId: command.id,
-        payload: LongAgentTeamSettingsSchema.parse(
-          await ctx.requireLongAgentTeamConfigStore().save(command.payload)
-        )
-      };
-    } catch (error: unknown) {
-      return {
-        status: "rejected",
-        requestId: command.id,
-        error: {
-          code: "long_agent_teams.save_failed",
-          message:
-            error instanceof Error
-              ? error.message
-              : "保存长篇智能体团队设置失败。",
           details: safeErrorDetails(error)
         }
       };

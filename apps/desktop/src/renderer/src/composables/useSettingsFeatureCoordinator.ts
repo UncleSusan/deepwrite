@@ -1,17 +1,20 @@
 import type {
   DeepWriteApi,
+  AgentTeamProfileCreateInput,
+  AgentTeamProfileRenameInput,
+  AgentTeamProfileSaveInput,
+  AgentTeamProfileSetEnabledInput,
+  AgentTeamProfileTargetInput,
   LearningImitationSettingsInput,
   LearningImitationStageId,
   LibraryAgentDomain,
   LibraryAgentSettingsInput,
   LongAgentSettingsInput,
-  LongAgentTeamSettingsInput,
   ModelConfigInput,
   ModelSettings,
   ModelSettingsInput,
   ModelUsageQueryInput,
-  WorkspaceAgentSettingsInput,
-  WorkspaceAgentTeamSettingsInput
+  WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -372,77 +375,94 @@ export function useSettingsFeatureCoordinator(
     }
   }
 
-  async function loadShortAndScriptAgentTeamSettings(): Promise<void> {
+  async function loadAgentTeamSettings(): Promise<void> {
     const api = context.api();
     if (!api) return;
     try {
-      await settingsStore.ensureAgentTeamsLoaded(() =>
-        Promise.all([
-          api.agentTeams.list("short"),
-          api.agentTeams.list("script")
-        ])
-      );
+      await settingsStore.ensureAgentTeamsLoaded(() => api.agentTeams.list());
     } catch (error: unknown) {
       uiMessage.error(errorMessage(error, "加载智能体团队设置失败。"));
     }
   }
 
-  async function loadLongAgentTeamSettings(): Promise<void> {
-    const api = context.api();
-    if (!api) return;
-    try {
-      await settingsStore.ensureLongAgentTeamsLoaded(() =>
-        api.longAgentTeams.list()
-      );
-    } catch (error: unknown) {
-      uiMessage.error(errorMessage(error, "加载长篇智能体团队设置失败。"));
-    }
-  }
-
-  async function loadAgentTeamSettings(): Promise<void> {
-    await Promise.all([
-      loadShortAndScriptAgentTeamSettings(),
-      loadLongAgentTeamSettings()
-    ]);
-  }
-
-  async function saveAgentTeamSettings(
-    settings: WorkspaceAgentTeamSettingsInput
+  async function mutateAgentTeamCatalog(
+    operation: () => ReturnType<DeepWriteApi["agentTeams"]["list"]>,
+    successMessage: string,
+    fallbackMessage: string
   ): Promise<void> {
     const api = context.api();
     if (!api || settingsStore.agentTeamSaving) return;
     settingsStore.agentTeamSaving = true;
     try {
-      const saved = await api.agentTeams.save(settings);
-      settingsStore.markLoaded("agentTeams", [
-        ...settingsStore.agentTeamSettings.filter(
-          (candidate) => candidate.workspaceType !== saved.workspaceType
-        ),
-        saved
-      ]);
-      uiMessage.success("智能体团队已保存，下一轮对话立即生效。");
+      settingsStore.markLoaded("agentTeams", await operation());
+      uiMessage.success(successMessage);
     } catch (error: unknown) {
-      uiMessage.error(errorMessage(error, "保存智能体团队设置失败。"));
+      uiMessage.error(errorMessage(error, fallbackMessage));
     } finally {
       settingsStore.agentTeamSaving = false;
     }
   }
 
-  async function saveLongAgentTeamSettings(
-    settings: LongAgentTeamSettingsInput
+  async function createAgentTeam(
+    input: AgentTeamProfileCreateInput
   ): Promise<void> {
     const api = context.api();
-    if (!api || settingsStore.longAgentTeamSaving) return;
-    settingsStore.longAgentTeamSaving = true;
-    try {
-      const saved = await api.longAgentTeams.save(settings);
-      settingsStore.markLoaded("longAgentTeams", saved);
-      uiMessage.success("长篇智能体团队已保存，下一轮对话立即生效。");
-    } catch (error: unknown) {
-      uiMessage.error(errorMessage(error, "保存长篇智能体团队设置失败。"));
-    } finally {
-      settingsStore.longAgentTeamSaving = false;
-    }
+    if (!api) return;
+    await mutateAgentTeamCatalog(
+      () => api.agentTeams.create(input),
+      "智能体团队已创建。",
+      "创建智能体团队失败。"
+    );
+  }
+
+  async function renameAgentTeam(
+    input: AgentTeamProfileRenameInput
+  ): Promise<void> {
+    const api = context.api();
+    if (!api) return;
+    await mutateAgentTeamCatalog(
+      () => api.agentTeams.rename(input),
+      "智能体团队已重命名。",
+      "重命名智能体团队失败。"
+    );
+  }
+
+  async function deleteAgentTeam(
+    input: AgentTeamProfileTargetInput
+  ): Promise<void> {
+    const api = context.api();
+    if (!api) return;
+    await mutateAgentTeamCatalog(
+      () => api.agentTeams.delete(input),
+      "智能体团队已删除。",
+      "删除智能体团队失败。"
+    );
+  }
+
+  async function setAgentTeamEnabled(
+    input: AgentTeamProfileSetEnabledInput
+  ): Promise<void> {
+    const api = context.api();
+    if (!api) return;
+    await mutateAgentTeamCatalog(
+      () => api.agentTeams.setEnabled(input),
+      input.enabled
+        ? "团队已启用，下一轮对应类型的对话开始使用。"
+        : "团队已关闭，下一轮对应类型的对话不再使用团队配置。",
+      "更新团队启用状态失败。"
+    );
+  }
+
+  async function saveAgentTeamSettings(
+    input: AgentTeamProfileSaveInput
+  ): Promise<void> {
+    const api = context.api();
+    if (!api) return;
+    await mutateAgentTeamCatalog(
+      () => api.agentTeams.save(input),
+      "智能体团队已保存。",
+      "保存智能体团队设置失败。"
+    );
   }
 
   async function loadLibraryAgentSettings(): Promise<void> {
@@ -558,8 +578,11 @@ export function useSettingsFeatureCoordinator(
     saveWorkspaceAgentSettings,
     saveLongAgentSettings,
     loadAgentTeamSettings,
+    createAgentTeam,
+    renameAgentTeam,
+    deleteAgentTeam,
+    setAgentTeamEnabled,
     saveAgentTeamSettings,
-    saveLongAgentTeamSettings,
     loadLibraryAgentSettings,
     saveLibraryAgentSettings,
     resetLibraryAgentSettings,

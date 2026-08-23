@@ -63,14 +63,7 @@
   background: var(--text-secondary);
 }
 
-.conversation-turn-navigator:hover .conversation-turn-marker-line {
-  width: 16px;
-  background: var(--text-tertiary);
-}
-
-.conversation-turn-navigator:hover
-  .conversation-turn-marker.is-active
-  .conversation-turn-marker-line,
+.conversation-turn-marker:hover .conversation-turn-marker-line,
 .conversation-turn-marker:focus-visible .conversation-turn-marker-line {
   width: 26px;
   background: var(--text-secondary);

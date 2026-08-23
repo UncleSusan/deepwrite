@@ -77,7 +77,7 @@ function dismissPreview(): void {
   focusedTurnId.value = null;
 }
 
-function selectPreviewTurn(messageId: string): void {
+function selectTurn(messageId: string): void {
   dismissPreview();
   emit("select", messageId);
 }
@@ -105,6 +105,7 @@ onBeforeUnmount(cancelPreviewHide);
           @mouseleave="schedulePreviewHide(turn.id, 'hover')"
           @focus="showPreview(turn.id, $event, 'focus')"
           @blur="schedulePreviewHide(turn.id, 'focus')"
+          @click="selectTurn(turn.id)"
         >
           <span class="conversation-turn-marker-line" aria-hidden="true" />
         </button>
@@ -121,7 +122,7 @@ onBeforeUnmount(cancelPreviewHide);
       @mouseleave="dismissPreview"
       @focus="cancelPreviewHide"
       @blur="dismissPreview"
-      @click="selectPreviewTurn(previewTurn.id)"
+      @click="selectTurn(previewTurn.id)"
     >
       <strong>{{ previewTurn.prompt }}</strong>
       <span v-if="previewTurn.response">{{ previewTurn.response }}</span>

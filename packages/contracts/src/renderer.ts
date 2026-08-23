@@ -8,6 +8,7 @@
 export type * from "./appearance";
 export type * from "./app-alert";
 export type * from "./agent-team";
+export type * from "./agent-team-catalog";
 export type * from "./catalog";
 export type * from "./chat-assistant";
 export type * from "./cloud-backup";
@@ -55,12 +56,22 @@ export {
 } from "./appearance";
 export {
   DEFAULT_AGENT_TEAM_SETTINGS,
+  DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
   SHORT_AGENT_SUBAGENT_DESCRIPTION_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_MAX_COUNT,
   SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_SYSTEM_PROMPT_MAX_LENGTH,
   WorkspaceAgentTeamSettingsInputSchema
 } from "./agent-team";
+export {
+  AGENT_TEAM_PROFILE_NAME_MAX_LENGTH,
+  AgentTeamCatalogSnapshotSchema,
+  AgentTeamProfileCreateInputSchema,
+  AgentTeamProfileRenameInputSchema,
+  AgentTeamProfileSaveInputSchema,
+  AgentTeamProfileSetEnabledInputSchema,
+  AgentTeamProfileTargetInputSchema
+} from "./agent-team-catalog";
 export {
   CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
   CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,

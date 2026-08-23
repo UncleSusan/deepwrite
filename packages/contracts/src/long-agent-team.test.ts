@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  CommandEnvelopeSchema,
   DEFAULT_LONG_AGENT_TEAM_SETTINGS,
-  LongAgentTeamSettingsSchema,
-  createEnvelope
+  LongAgentTeamSettingsSchema
 } from "./index";
 
 describe("long agent team contracts", () => {
@@ -23,30 +21,5 @@ describe("long agent team contracts", () => {
 
     const empty = { ...DEFAULT_LONG_AGENT_TEAM_SETTINGS, teams: [] };
     expect(() => LongAgentTeamSettingsSchema.parse(empty)).toThrow();
-  });
-
-  it("validates independent list and save commands", () => {
-    expect(
-      CommandEnvelopeSchema.parse(
-        createEnvelope(
-          "longAgentTeams.list",
-          {},
-          {
-            id: "cmd_long_agent_teams_list"
-          }
-        )
-      ).type
-    ).toBe("longAgentTeams.list");
-    expect(
-      CommandEnvelopeSchema.parse(
-        createEnvelope(
-          "longAgentTeams.save",
-          DEFAULT_LONG_AGENT_TEAM_SETTINGS,
-          {
-            id: "cmd_long_agent_teams_save"
-          }
-        )
-      ).type
-    ).toBe("longAgentTeams.save");
   });
 });

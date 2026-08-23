@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import type {
+  AgentTeamProfileCreateInput,
+  AgentTeamProfileRenameInput,
+  AgentTeamProfileSaveInput,
+  AgentTeamProfileSetEnabledInput,
+  AgentTeamProfileTargetInput,
   AppLanguage,
   GeneralPermissionMode,
   LearningImitationSettingsInput,
@@ -7,14 +12,12 @@ import type {
   LibraryAgentDomain,
   LibraryAgentSettingsInput,
   LongAgentSettingsInput,
-  LongAgentTeamSettingsInput,
   MarketplaceSession,
   ModelConfigInput,
   ModelSettingsInput,
   ModelUsageQueryInput,
   WorkspacePaneLayout,
-  WorkspaceAgentSettingsInput,
-  WorkspaceAgentTeamSettingsInput
+  WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
 import AppIcon from "./AppIcon.vue";
 import {
@@ -63,8 +66,11 @@ const emit = defineEmits<{
   clearOfficialToken: [];
   setOfficialModelEnabled: [modelId: string, enabled: boolean];
   retryAgentTeam: [];
-  saveAgentTeam: [settings: WorkspaceAgentTeamSettingsInput];
-  saveLongAgentTeam: [settings: LongAgentTeamSettingsInput];
+  createAgentTeam: [input: AgentTeamProfileCreateInput];
+  renameAgentTeam: [input: AgentTeamProfileRenameInput];
+  deleteAgentTeam: [input: AgentTeamProfileTargetInput];
+  setAgentTeamEnabled: [input: AgentTeamProfileSetEnabledInput];
+  saveAgentTeam: [input: AgentTeamProfileSaveInput];
   chooseWorkspaceDirectory: [];
   refreshFreeModels: [];
   openOfficialModels: [];
@@ -143,25 +149,25 @@ const emit = defineEmits<{
   >
     <AgentTeamSettingsPanel
       v-if="module.authoring"
-      :settings="module.settings"
-      :long-settings="module.longSettings"
+      :catalog="module.catalog"
+      :navigation-epoch="module.navigationEpoch"
       :models="module.models"
       :skills="module.skills"
       :preferred-model-id="module.preferredModelId"
       :loading="module.loading"
       :saving="module.saving"
       :load-error="module.loadError"
-      :long-loading="module.longLoading"
-      :long-saving="module.longSaving"
-      :long-load-error="module.longLoadError"
       :runtime-available="module.runtimeAvailable"
       :authoring-generating="module.authoring.isBusy.value"
       :authoring-draft="module.authoring.draft.value"
       :authoring-status-text="module.authoring.statusText.value"
       :authoring-error="module.authoring.error.value"
       @retry="emit('retryAgentTeam')"
+      @create="emit('createAgentTeam', $event)"
+      @rename="emit('renameAgentTeam', $event)"
+      @delete="emit('deleteAgentTeam', $event)"
+      @set-enabled="emit('setAgentTeamEnabled', $event)"
       @save="emit('saveAgentTeam', $event)"
-      @save-long="emit('saveLongAgentTeam', $event)"
       @authoring-generate="generateWorkspaceFeatureSubagent(module, $event)"
       @authoring-stop="stopWorkspaceFeatureSubagent(module)"
       @authoring-reset="resetWorkspaceFeatureSubagent(module)"

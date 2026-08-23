@@ -162,8 +162,8 @@ export async function handleSessionCommands(
             .resolve(creativeWorkspaceType, agentProfile.id)
         : longAgentProfile
           ? await ctx
-              .requireLongAgentTeamConfigStore()
-              .resolve(longAgentProfile.id)
+              .requireAgentTeamConfigStore()
+              .resolve("long", longAgentProfile.id)
           : undefined;
       const subagentRuntimeConfigs: Record<string, AgentProviderRuntimeConfig> =
         {};

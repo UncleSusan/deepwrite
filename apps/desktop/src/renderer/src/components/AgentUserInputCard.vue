@@ -25,31 +25,34 @@ const emit = defineEmits<{
 const selectedByQuestion = ref<Record<string, string[]>>({});
 const textByQuestion = ref<Record<string, string>>({});
 const customAnswerByQuestion = ref<Record<string, boolean>>({});
+const activeQuestionIndex = ref(0);
 const customAnswerInputs = new Map<string, HTMLTextAreaElement>();
 
-const isSingleQuestion = computed(() => props.request.questions.length === 1);
-const cardTitle = computed(() =>
-  isSingleQuestion.value
-    ? props.request.questions[0]?.question
-    : props.request.source === "cross_stage_write"
-      ? "需要确认跨阶段操作"
-      : "智能体需要你的回答"
+const visibleQuestions = computed(() =>
+  props.request.questions.slice(
+    activeQuestionIndex.value,
+    activeQuestionIndex.value + 1
+  )
 );
+const currentQuestion = computed(() => visibleQuestions.value[0]);
+const isLastQuestion = computed(
+  () => activeQuestionIndex.value >= props.request.questions.length - 1
+);
+const cardTitle = computed(() => currentQuestion.value?.question ?? "");
 const requiresConfirmation = computed(
-  () =>
-    !isSingleQuestion.value ||
-    props.request.questions.some((question) => question.multi_select === true)
+  () => currentQuestion.value?.multi_select === true
 );
 const showsSubmitButton = computed(
   () =>
     requiresConfirmation.value ||
-    props.request.questions.some(
-      (question) =>
-        !question.options || customAnswerByQuestion.value[question.id]
-    )
+    !currentQuestion.value?.options ||
+    (currentQuestion.value
+      ? customAnswerByQuestion.value[currentQuestion.value.id]
+      : false)
 );
 
 function resetAnswers(): void {
+  activeQuestionIndex.value = 0;
   selectedByQuestion.value = Object.fromEntries(
     props.request.questions.map((question) => [question.id, []])
   );
@@ -95,22 +98,29 @@ function chooseOption(
     customAnswerByQuestion.value[question.id] = false;
   }
 
-  if (isSingleQuestion.value && question.multi_select !== true) {
-    emit("submit", answers());
+  if (question.multi_select !== true) {
+    advanceOrSubmit();
   }
 }
 
 const canSubmit = computed(() =>
-  props.request.questions.every((question) => {
-    const selectedOptions = selectedByQuestion.value[question.id] ?? [];
-    const text = textByQuestion.value[question.id]?.trim() ?? "";
-    return selectedOptions.length > 0 || !!text;
-  })
+  currentQuestion.value
+    ? (selectedByQuestion.value[currentQuestion.value.id]?.length ?? 0) > 0 ||
+      !!textByQuestion.value[currentQuestion.value.id]?.trim()
+    : false
 );
+
+function advanceOrSubmit(): void {
+  if (isLastQuestion.value) {
+    emit("submit", answers());
+    return;
+  }
+  activeQuestionIndex.value += 1;
+}
 
 function submit(): void {
   if (!canSubmit.value || props.submitting) return;
-  emit("submit", answers());
+  advanceOrSubmit();
 }
 
 function skip(): void {
@@ -177,15 +187,10 @@ function recommended(label: string): boolean {
 
     <div class="agent-user-input-questions">
       <fieldset
-        v-for="question in request.questions"
+        v-for="question in visibleQuestions"
         :key="question.id"
         class="agent-user-input-question"
       >
-        <legend v-if="!isSingleQuestion">
-          <small v-if="question.header">{{ question.header }}</small>
-          <span>{{ question.question }}</span>
-        </legend>
-
         <div
           v-if="question.options"
           class="agent-user-input-options"
@@ -273,7 +278,7 @@ function recommended(label: string): boolean {
           :disabled="!canSubmit || submitting"
           @click="submit"
         >
-          {{ submitting ? "提交中…" : "确认" }}
+          {{ submitting ? "提交中…" : isLastQuestion ? "确认" : "下一题" }}
         </button>
         <button
           class="agent-user-input-skip"

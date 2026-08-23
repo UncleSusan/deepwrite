@@ -67,9 +67,13 @@ import {
   type WorkspaceStageSelectionEventEnvelope
 } from "./session";
 import {
+  AgentTeamsCreateCommandEnvelopeSchema,
+  AgentTeamsDeleteCommandEnvelopeSchema,
   AgentTeamsListCommandEnvelopeSchema,
+  AgentTeamsRenameCommandEnvelopeSchema,
+  AgentTeamsSetEnabledCommandEnvelopeSchema,
   AgentTeamsSaveCommandEnvelopeSchema
-} from "./agent-team";
+} from "./agent-team-catalog";
 import {
   LearningImitationSettingsListCommandEnvelopeSchema,
   LearningImitationSettingsResetCommandEnvelopeSchema,
@@ -104,10 +108,6 @@ import {
   LongAgentsResetCommandEnvelopeSchema,
   LongAgentsSaveCommandEnvelopeSchema
 } from "./long-agent-settings";
-import {
-  LongAgentTeamsListCommandEnvelopeSchema,
-  LongAgentTeamsSaveCommandEnvelopeSchema
-} from "./long-agent-team";
 import {
   CatalogCreateLibraryAtPathCommandEnvelopeSchema,
   CatalogCreateLibraryCommandEnvelopeSchema,
@@ -323,8 +323,6 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LongAgentsListCommandEnvelopeSchema,
   LongAgentsSaveCommandEnvelopeSchema,
   LongAgentsResetCommandEnvelopeSchema,
-  LongAgentTeamsListCommandEnvelopeSchema,
-  LongAgentTeamsSaveCommandEnvelopeSchema,
   LibraryAgentsListCommandEnvelopeSchema,
   LibraryAgentsSaveCommandEnvelopeSchema,
   LibraryAgentsResetCommandEnvelopeSchema,
@@ -332,6 +330,10 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LearningImitationSettingsSaveCommandEnvelopeSchema,
   LearningImitationSettingsResetCommandEnvelopeSchema,
   AgentTeamsListCommandEnvelopeSchema,
+  AgentTeamsCreateCommandEnvelopeSchema,
+  AgentTeamsRenameCommandEnvelopeSchema,
+  AgentTeamsDeleteCommandEnvelopeSchema,
+  AgentTeamsSetEnabledCommandEnvelopeSchema,
   AgentTeamsSaveCommandEnvelopeSchema,
   WorkspaceDirectoryListCommandEnvelopeSchema,
   WorkspaceDirectoryChooseCommandEnvelopeSchema,

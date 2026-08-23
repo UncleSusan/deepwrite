@@ -1,6 +1,7 @@
 export * from "./appearance";
 export * from "./app-alert";
 export * from "./agent-team";
+export * from "./agent-team-catalog";
 export * from "./catalog";
 export * from "./chat-assistant";
 export * from "./cloud-backup";

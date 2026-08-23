@@ -5,6 +5,7 @@ import {
   DEFAULT_LIBRARY_AGENT_SETTINGS,
   DEFAULT_LONG_AGENT_SETTINGS,
   DEFAULT_LONG_AGENT_TEAM_SETTINGS,
+  DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   SHORT_WORKSPACE_STAGE_IDS,
@@ -601,20 +602,46 @@ function createDeferredApi(): {
         return structuredClone(DEFAULT_LONG_AGENT_SETTINGS);
       }
     },
-    longAgentTeams: {
-      async list() {
-        return structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
-      },
-      async save() {
-        return structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
-      }
-    },
     agentTeams: {
       async list() {
-        return structuredClone(DEFAULT_AGENT_TEAM_SETTINGS);
+        return {
+          enabledTeamIds: {},
+          teams: [
+            {
+              id: "team_short_default",
+              name: "默认短篇团队",
+              workspaceType: "short" as const,
+              settings: structuredClone(DEFAULT_AGENT_TEAM_SETTINGS)
+            },
+            {
+              id: "team_script_default",
+              name: "默认剧本团队",
+              workspaceType: "script" as const,
+              settings: structuredClone(DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS)
+            },
+            {
+              id: "team_long_default",
+              name: "默认长篇团队",
+              workspaceType: "long" as const,
+              settings: structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS)
+            }
+          ]
+        };
+      },
+      async create() {
+        return this.list();
+      },
+      async rename() {
+        return this.list();
+      },
+      async delete() {
+        return this.list();
+      },
+      async setEnabled() {
+        return this.list();
       },
       async save() {
-        return structuredClone(DEFAULT_AGENT_TEAM_SETTINGS);
+        return this.list();
       }
     },
     libraryAgents: {

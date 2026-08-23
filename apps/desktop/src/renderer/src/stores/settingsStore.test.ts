@@ -3,18 +3,14 @@ import { isReactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   CloudBackupStatus,
+  AgentTeamCatalogSnapshot,
   LearningImitationSettings,
   LibraryAgentSettings,
   LongAgentSettings,
-  LongAgentTeamSettings,
   ModelSettings,
-  WorkspaceAgentTeamSettings,
   WorkspaceDirectorySettings
 } from "@deepwrite/contracts";
-import {
-  DEFAULT_LONG_AGENT_SETTINGS,
-  DEFAULT_LONG_AGENT_TEAM_SETTINGS
-} from "@deepwrite/contracts";
+import { DEFAULT_LONG_AGENT_SETTINGS } from "@deepwrite/contracts";
 import {
   useSettingsStore,
   type OfficialModelsSnapshot,
@@ -131,13 +127,13 @@ describe("settings store", () => {
 
   it("provides independent ensureLoaded resources for every deferred settings domain", async () => {
     const store = useSettingsStore();
-    const agentTeams = [] as WorkspaceAgentTeamSettings[];
+    const agentTeams = {
+      enabledTeamIds: {},
+      teams: []
+    } as unknown as AgentTeamCatalogSnapshot;
     const longAgents = structuredClone(
       DEFAULT_LONG_AGENT_SETTINGS
     ) as LongAgentSettings;
-    const longAgentTeams = structuredClone(
-      DEFAULT_LONG_AGENT_TEAM_SETTINGS
-    ) as LongAgentTeamSettings;
     const libraryAgents = { agents: [] } as unknown as LibraryAgentSettings;
     const learningImitation = {
       stages: []
@@ -146,19 +142,16 @@ describe("settings store", () => {
     await Promise.all([
       store.ensureLongAgentsLoaded(async () => longAgents),
       store.ensureAgentTeamsLoaded(async () => agentTeams),
-      store.ensureLongAgentTeamsLoaded(async () => longAgentTeams),
       store.ensureLibraryAgentsLoaded(async () => libraryAgents),
       store.ensureLearningImitationLoaded(async () => learningImitation)
     ]);
 
     expect(store.longAgentLoaded).toBe(true);
     expect(store.agentTeamLoaded).toBe(true);
-    expect(store.longAgentTeamLoaded).toBe(true);
     expect(store.libraryAgentsLoaded).toBe(true);
     expect(store.learningImitationLoaded).toBe(true);
     expect(store.longAgentSettings).toBe(longAgents);
-    expect(store.agentTeamSettings).toBe(agentTeams);
-    expect(store.longAgentTeamSettings).toBe(longAgentTeams);
+    expect(store.agentTeamCatalog).toBe(agentTeams);
     expect(store.libraryAgentSettings).toBe(libraryAgents);
     expect(store.learningImitationSettings).toBe(learningImitation);
   });
@@ -232,7 +225,7 @@ describe("settings store", () => {
     expect(isReactive(refs.generalSettings.value)).toBe(false);
     expect(isReactive(refs.modelSettings.value)).toBe(false);
     expect(isReactive(refs.longAgentSettings.value)).toBe(false);
-    expect(isReactive(refs.agentTeamSettings.value)).toBe(false);
+    expect(isReactive(refs.agentTeamCatalog.value)).toBe(false);
     expect(isReactive(refs.libraryAgentSettings.value)).toBe(false);
   });
 

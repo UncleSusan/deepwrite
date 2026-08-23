@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   BookSchema,
+  AgentTeamCatalogSnapshotSchema,
+  AgentTeamProfileCreateInputSchema,
+  AgentTeamProfileRenameInputSchema,
+  AgentTeamProfileSaveInputSchema,
+  AgentTeamProfileSetEnabledInputSchema,
+  AgentTeamProfileTargetInputSchema,
   SaveDocumentResultSchema,
   CatalogDraftSectionSchema,
   CatalogDraftRecoverySaveResultSchema,
@@ -18,6 +24,7 @@ import {
   ChatAssistantProjectConfigSchema,
   ChatAssistantProjectConfigListSchema,
   ChatAssistantProjectRefSchema,
+  CommandEnvelopeSchema,
   CommandResultSchema,
   CreateLibraryEntryInputSchema,
   CreateDraftSectionInputSchema,
@@ -109,8 +116,6 @@ import {
   LongAgentIdSchema,
   LongAgentSettingsInputSchema,
   LongAgentSettingsSchema,
-  LongAgentTeamSettingsInputSchema,
-  LongAgentTeamSettingsSchema,
   LongCommitChapterInputSchema,
   LongCommitChapterResultSchema,
   LongDuplicateBookInputSchema,
@@ -169,13 +174,15 @@ import {
   UpdateLibraryGroupInputSchema,
   WorkspaceAgentSettingsInputSchema,
   WorkspaceAgentSettingsSchema,
-  WorkspaceAgentTeamSettingsInputSchema,
-  WorkspaceAgentTeamSettingsSchema,
   WorkspaceTypeSchema,
   createEnvelope,
   type CommandEnvelope,
-  type AgentTeamSettings,
-  type AgentTeamSettingsInput,
+  type AgentTeamCatalogSnapshot,
+  type AgentTeamProfileCreateInput,
+  type AgentTeamProfileRenameInput,
+  type AgentTeamProfileSaveInput,
+  type AgentTeamProfileSetEnabledInput,
+  type AgentTeamProfileTargetInput,
   type Book,
   type CatalogDraftSection,
   type CatalogDraftRecovery,
@@ -245,8 +252,6 @@ import {
   type LongAgentId,
   type LongAgentSettings,
   type LongAgentSettingsInput,
-  type LongAgentTeamSettings,
-  type LongAgentTeamSettingsInput,
   type LongCommitChapterInput,
   type LongCommitChapterResult,
   type LongDuplicateBookInput,
@@ -297,8 +302,6 @@ import {
   type SaveDocumentInput,
   type SaveDocumentResult,
   type SaveLibraryEntryInput,
-  type ScriptAgentTeamSettings,
-  type ScriptAgentTeamSettingsInput,
   type ScriptBook,
   type ScriptWorkspaceAgentId,
   type ScriptWorkspaceAgentSettings,
@@ -317,8 +320,6 @@ import {
   type WorkspaceDirectorySettings,
   type WorkspaceAgentSettings,
   type WorkspaceAgentSettingsInput,
-  type WorkspaceAgentTeamSettings,
-  type WorkspaceAgentTeamSettingsInput,
   type WorkspaceType,
   type AppearanceSettings,
   type AppearanceSettingsSnapshot,
@@ -1569,82 +1570,59 @@ async function resetLongAgents(
   );
 }
 
-async function listLongAgentTeams(): Promise<LongAgentTeamSettings> {
-  const id = browserId("cmd_long_agent_teams_list");
-  return LongAgentTeamSettingsSchema.parse(
-    await invokeCommand<LongAgentTeamSettings>(
-      createEnvelope(
-        "longAgentTeams.list",
-        {},
-        {
-          id,
-          correlationId: id
-        }
-      )
-    )
-  );
-}
-
-async function saveLongAgentTeams(
-  rawSettings: LongAgentTeamSettingsInput
-): Promise<LongAgentTeamSettings> {
-  const settings = LongAgentTeamSettingsInputSchema.parse(rawSettings);
-  const id = browserId("cmd_long_agent_teams_save");
-  return LongAgentTeamSettingsSchema.parse(
-    await invokeCommand<LongAgentTeamSettings>(
-      createEnvelope("longAgentTeams.save", settings, {
-        id,
-        correlationId: id
-      })
-    )
-  );
-}
-
-async function listAgentTeams(
-  workspaceType: "short"
-): Promise<AgentTeamSettings>;
-async function listAgentTeams(
-  workspaceType: "script"
-): Promise<ScriptAgentTeamSettings>;
-async function listAgentTeams(
-  rawWorkspaceType: WorkspaceType
-): Promise<WorkspaceAgentTeamSettings>;
-async function listAgentTeams(
-  rawWorkspaceType: WorkspaceType
-): Promise<WorkspaceAgentTeamSettings> {
-  const workspaceType = WorkspaceTypeSchema.parse(rawWorkspaceType);
+async function listAgentTeams(): Promise<AgentTeamCatalogSnapshot> {
   const id = browserId("cmd_agent_teams_list");
-  return WorkspaceAgentTeamSettingsSchema.parse(
-    await invokeCommand<WorkspaceAgentTeamSettings>(
-      createEnvelope(
-        "agentTeams.list",
-        { workspaceType },
-        { id, correlationId: id }
+  return AgentTeamCatalogSnapshotSchema.parse(
+    await invokeCommand<AgentTeamCatalogSnapshot>(
+      createEnvelope("agentTeams.list", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function mutateAgentTeams(
+  type:
+    | "agentTeams.create"
+    | "agentTeams.rename"
+    | "agentTeams.delete"
+    | "agentTeams.setEnabled"
+    | "agentTeams.save",
+  payload: object
+): Promise<AgentTeamCatalogSnapshot> {
+  const id = browserId(`cmd_${type.replace(".", "_")}`);
+  return AgentTeamCatalogSnapshotSchema.parse(
+    await invokeCommand<AgentTeamCatalogSnapshot>(
+      CommandEnvelopeSchema.parse(
+        createEnvelope(type, payload, { id, correlationId: id })
       )
     )
   );
 }
 
-async function saveAgentTeams(
-  rawSettings: AgentTeamSettingsInput
-): Promise<AgentTeamSettings>;
-async function saveAgentTeams(
-  rawSettings: ScriptAgentTeamSettingsInput
-): Promise<ScriptAgentTeamSettings>;
-async function saveAgentTeams(
-  rawSettings: WorkspaceAgentTeamSettingsInput
-): Promise<WorkspaceAgentTeamSettings>;
-async function saveAgentTeams(
-  rawSettings: WorkspaceAgentTeamSettingsInput
-): Promise<WorkspaceAgentTeamSettings> {
-  const settings = WorkspaceAgentTeamSettingsInputSchema.parse(rawSettings);
-  const id = browserId("cmd_agent_teams_save");
-  return WorkspaceAgentTeamSettingsSchema.parse(
-    await invokeCommand<WorkspaceAgentTeamSettings>(
-      createEnvelope("agentTeams.save", settings, { id, correlationId: id })
-    )
+const createAgentTeam = (input: AgentTeamProfileCreateInput) =>
+  mutateAgentTeams(
+    "agentTeams.create",
+    AgentTeamProfileCreateInputSchema.parse(input)
   );
-}
+const renameAgentTeam = (input: AgentTeamProfileRenameInput) =>
+  mutateAgentTeams(
+    "agentTeams.rename",
+    AgentTeamProfileRenameInputSchema.parse(input)
+  );
+const deleteAgentTeam = (input: AgentTeamProfileTargetInput) =>
+  mutateAgentTeams(
+    "agentTeams.delete",
+    AgentTeamProfileTargetInputSchema.parse(input)
+  );
+const setAgentTeamEnabled = (input: AgentTeamProfileSetEnabledInput) =>
+  mutateAgentTeams(
+    "agentTeams.setEnabled",
+    AgentTeamProfileSetEnabledInputSchema.parse(input)
+  );
+const saveAgentTeams = (input: AgentTeamProfileSaveInput) =>
+  mutateAgentTeams(
+    "agentTeams.save",
+    AgentTeamProfileSaveInputSchema.parse(input)
+  );
 
 async function saveWorkspaceAgents(
   rawSettings: ShortWorkspaceAgentSettingsInput
@@ -2190,12 +2168,12 @@ const api: DeepWriteApi = {
     save: saveLongAgents,
     reset: resetLongAgents
   },
-  longAgentTeams: {
-    list: listLongAgentTeams,
-    save: saveLongAgentTeams
-  },
   agentTeams: {
     list: listAgentTeams,
+    create: createAgentTeam,
+    rename: renameAgentTeam,
+    delete: deleteAgentTeam,
+    setEnabled: setAgentTeamEnabled,
     save: saveAgentTeams
   },
   libraryAgents: {

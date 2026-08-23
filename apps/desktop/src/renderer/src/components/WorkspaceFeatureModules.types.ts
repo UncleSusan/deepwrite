@@ -1,11 +1,11 @@
 import type {
   AppLanguage,
+  AgentTeamCatalogSnapshot,
   CatalogSnapshot,
   GeneralPermissionMode,
   LearningImitationSettings,
   LibraryAgentSettings,
   LongAgentSettings,
-  LongAgentTeamSettings,
   ModelConfig,
   MarketplaceSession,
   ModelSettings,
@@ -13,8 +13,7 @@ import type {
   OfficialModelBalance,
   SkillLibrary,
   WorkspacePaneLayout,
-  WorkspaceAgentSettings,
-  WorkspaceAgentTeamSettings
+  WorkspaceAgentSettings
 } from "@deepwrite/contracts";
 import type { LearningImitationController } from "../composables/useLearningImitation";
 import type { SubagentAuthoringController } from "../composables/useSubagentAuthoring";
@@ -57,17 +56,14 @@ export interface SettingsFeatureModule {
 
 export interface AgentTeamFeatureModule {
   kind: "agent-team";
-  settings: readonly WorkspaceAgentTeamSettings[];
-  longSettings: LongAgentTeamSettings | null;
+  navigationEpoch: number;
+  catalog: AgentTeamCatalogSnapshot | null;
   models: readonly ModelConfig[];
   skills: readonly SkillLibrary[];
   preferredModelId: string | null;
   loading: boolean;
   saving: boolean;
   loadError: string | null;
-  longLoading: boolean;
-  longSaving: boolean;
-  longLoadError: string | null;
   runtimeAvailable: boolean;
   authoring: SubagentAuthoringController | null;
 }

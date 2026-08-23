@@ -3,7 +3,7 @@ import { defineAsyncComponent } from "vue";
 // The default three-pane writing surface stays in the entry chunk. Each
 // top-level feature and modal-only component gets its own on-demand chunk.
 export const AgentTeamSettingsPanel = defineAsyncComponent(
-  () => import("./AgentTeamSettingsPanel.vue")
+  () => import("./AgentTeamCatalogFeature.vue")
 );
 export const LearningImitationDialog = defineAsyncComponent(
   () => import("./LearningImitationDialog.vue")

@@ -23,9 +23,13 @@ import type {
   WorkspaceAgentSettingsInput
 } from "./workspace";
 import type {
-  WorkspaceAgentTeamSettings,
-  WorkspaceAgentTeamSettingsInput
-} from "./agent-team";
+  AgentTeamCatalogSnapshot,
+  AgentTeamProfileCreateInput,
+  AgentTeamProfileRenameInput,
+  AgentTeamProfileSaveInput,
+  AgentTeamProfileSetEnabledInput,
+  AgentTeamProfileTargetInput
+} from "./agent-team-catalog";
 import type { WorkspaceType } from "./script-workspace";
 import type { WorkspaceDirectorySettings } from "./workspace-directory";
 import type {
@@ -148,10 +152,6 @@ import type {
   LongAgentSettings,
   LongAgentSettingsInput
 } from "./long-agent-settings";
-import type {
-  LongAgentTeamSettings,
-  LongAgentTeamSettingsInput
-} from "./long-agent-team";
 import type { LongAgentId } from "./long-workspace";
 import type { UpdateState } from "./update";
 import type { AppAlertSnapshot } from "./app-alert";
@@ -395,15 +395,21 @@ export interface DeepWriteApi {
     save(settings: LongAgentSettingsInput): Promise<LongAgentSettings>;
     reset(agentId?: LongAgentId): Promise<LongAgentSettings>;
   };
-  longAgentTeams: {
-    list(): Promise<LongAgentTeamSettings>;
-    save(settings: LongAgentTeamSettingsInput): Promise<LongAgentTeamSettings>;
-  };
   agentTeams: {
-    list(workspaceType: WorkspaceType): Promise<WorkspaceAgentTeamSettings>;
-    save(
-      settings: WorkspaceAgentTeamSettingsInput
-    ): Promise<WorkspaceAgentTeamSettings>;
+    list(): Promise<AgentTeamCatalogSnapshot>;
+    create(
+      input: AgentTeamProfileCreateInput
+    ): Promise<AgentTeamCatalogSnapshot>;
+    rename(
+      input: AgentTeamProfileRenameInput
+    ): Promise<AgentTeamCatalogSnapshot>;
+    delete(
+      input: AgentTeamProfileTargetInput
+    ): Promise<AgentTeamCatalogSnapshot>;
+    setEnabled(
+      input: AgentTeamProfileSetEnabledInput
+    ): Promise<AgentTeamCatalogSnapshot>;
+    save(input: AgentTeamProfileSaveInput): Promise<AgentTeamCatalogSnapshot>;
   };
   libraryAgents: {
     list(): Promise<LibraryAgentSettings>;

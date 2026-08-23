@@ -1,5 +1,6 @@
 import {
   AppearanceSettingsSchema,
+  CommandEnvelopeSchema,
   AppearanceSettingsSnapshotSchema,
   ExportLongManuscriptInputSchema,
   ExportLongManuscriptResultSchema,
@@ -7,6 +8,12 @@ import {
   ExportShortManuscriptResultSchema,
   GeneralSettingsSchema,
   GeneralSettingsSnapshotSchema,
+  AgentTeamCatalogSnapshotSchema,
+  AgentTeamProfileCreateInputSchema,
+  AgentTeamProfileRenameInputSchema,
+  AgentTeamProfileSaveInputSchema,
+  AgentTeamProfileSetEnabledInputSchema,
+  AgentTeamProfileTargetInputSchema,
   LearningImitationSettingsInputSchema,
   LearningImitationSettingsSchema,
   LearningImitationStageIdSchema,
@@ -16,14 +23,10 @@ import {
   LongAgentIdSchema,
   LongAgentSettingsInputSchema,
   LongAgentSettingsSchema,
-  LongAgentTeamSettingsInputSchema,
-  LongAgentTeamSettingsSchema,
   ScriptWorkspaceAgentIdSchema,
   ShortWorkspaceAgentIdSchema,
   WorkspaceAgentSettingsInputSchema,
   WorkspaceAgentSettingsSchema,
-  WorkspaceAgentTeamSettingsInputSchema,
-  WorkspaceAgentTeamSettingsSchema,
   WorkspaceDirectorySettingsSchema,
   WorkspaceTypeSchema,
   createEnvelope,
@@ -35,6 +38,12 @@ import {
   type ExportShortManuscriptResult,
   type GeneralSettings,
   type GeneralSettingsSnapshot,
+  type AgentTeamCatalogSnapshot,
+  type AgentTeamProfileCreateInput,
+  type AgentTeamProfileRenameInput,
+  type AgentTeamProfileSaveInput,
+  type AgentTeamProfileSetEnabledInput,
+  type AgentTeamProfileTargetInput,
   type LearningImitationSettings,
   type LearningImitationSettingsInput,
   type LearningImitationStageId,
@@ -44,14 +53,10 @@ import {
   type LongAgentId,
   type LongAgentSettings,
   type LongAgentSettingsInput,
-  type LongAgentTeamSettings,
-  type LongAgentTeamSettingsInput,
   type ScriptWorkspaceAgentId,
   type ShortWorkspaceAgentId,
   type WorkspaceAgentSettings,
   type WorkspaceAgentSettingsInput,
-  type WorkspaceAgentTeamSettings,
-  type WorkspaceAgentTeamSettingsInput,
   type WorkspaceDirectorySettings,
   type WorkspaceType
 } from "@deepwrite/contracts";
@@ -110,62 +115,59 @@ export async function resetLongAgents(
     )
   );
 }
-export async function listLongAgentTeams(): Promise<LongAgentTeamSettings> {
-  const id = browserId("cmd_long_agent_teams_list");
-  return LongAgentTeamSettingsSchema.parse(
-    await invokeCommand<LongAgentTeamSettings>(
-      createEnvelope(
-        "longAgentTeams.list",
-        {},
-        {
-          id,
-          correlationId: id
-        }
-      )
-    )
-  );
-}
-export async function saveLongAgentTeams(
-  rawSettings: LongAgentTeamSettingsInput
-): Promise<LongAgentTeamSettings> {
-  const settings = LongAgentTeamSettingsInputSchema.parse(rawSettings);
-  const id = browserId("cmd_long_agent_teams_save");
-  return LongAgentTeamSettingsSchema.parse(
-    await invokeCommand<LongAgentTeamSettings>(
-      createEnvelope("longAgentTeams.save", settings, {
-        id,
-        correlationId: id
-      })
-    )
-  );
-}
-export async function listAgentTeams(
-  rawWorkspaceType: WorkspaceType
-): Promise<WorkspaceAgentTeamSettings> {
-  const workspaceType = WorkspaceTypeSchema.parse(rawWorkspaceType);
+export async function listAgentTeams(): Promise<AgentTeamCatalogSnapshot> {
   const id = browserId("cmd_agent_teams_list");
-  return WorkspaceAgentTeamSettingsSchema.parse(
-    await invokeCommand<WorkspaceAgentTeamSettings>(
-      createEnvelope(
-        "agentTeams.list",
-        { workspaceType },
-        { id, correlationId: id }
+  return AgentTeamCatalogSnapshotSchema.parse(
+    await invokeCommand<AgentTeamCatalogSnapshot>(
+      createEnvelope("agentTeams.list", {}, { id, correlationId: id })
+    )
+  );
+}
+
+async function mutateAgentTeams(
+  type:
+    | "agentTeams.create"
+    | "agentTeams.rename"
+    | "agentTeams.delete"
+    | "agentTeams.setEnabled"
+    | "agentTeams.save",
+  payload: object
+): Promise<AgentTeamCatalogSnapshot> {
+  const id = browserId(`cmd_${type.replace(".", "_")}`);
+  return AgentTeamCatalogSnapshotSchema.parse(
+    await invokeCommand<AgentTeamCatalogSnapshot>(
+      CommandEnvelopeSchema.parse(
+        createEnvelope(type, payload, { id, correlationId: id })
       )
     )
   );
 }
 
-export async function saveAgentTeams(
-  rawSettings: WorkspaceAgentTeamSettingsInput
-): Promise<WorkspaceAgentTeamSettings> {
-  const settings = WorkspaceAgentTeamSettingsInputSchema.parse(rawSettings);
-  const id = browserId("cmd_agent_teams_save");
-  return WorkspaceAgentTeamSettingsSchema.parse(
-    await invokeCommand<WorkspaceAgentTeamSettings>(
-      createEnvelope("agentTeams.save", settings, { id, correlationId: id })
-    )
+export const createAgentTeam = (input: AgentTeamProfileCreateInput) =>
+  mutateAgentTeams(
+    "agentTeams.create",
+    AgentTeamProfileCreateInputSchema.parse(input)
   );
-}
+export const renameAgentTeam = (input: AgentTeamProfileRenameInput) =>
+  mutateAgentTeams(
+    "agentTeams.rename",
+    AgentTeamProfileRenameInputSchema.parse(input)
+  );
+export const deleteAgentTeam = (input: AgentTeamProfileTargetInput) =>
+  mutateAgentTeams(
+    "agentTeams.delete",
+    AgentTeamProfileTargetInputSchema.parse(input)
+  );
+export const setAgentTeamEnabled = (input: AgentTeamProfileSetEnabledInput) =>
+  mutateAgentTeams(
+    "agentTeams.setEnabled",
+    AgentTeamProfileSetEnabledInputSchema.parse(input)
+  );
+export const saveAgentTeams = (input: AgentTeamProfileSaveInput) =>
+  mutateAgentTeams(
+    "agentTeams.save",
+    AgentTeamProfileSaveInputSchema.parse(input)
+  );
 
 export async function saveWorkspaceAgents(
   rawSettings: WorkspaceAgentSettingsInput

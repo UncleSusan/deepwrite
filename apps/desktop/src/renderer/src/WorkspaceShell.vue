@@ -1462,8 +1462,11 @@ const {
   saveWorkspaceAgentSettings,
   saveLongAgentSettings,
   loadAgentTeamSettings,
+  createAgentTeam,
+  renameAgentTeam,
+  deleteAgentTeam,
+  setAgentTeamEnabled,
   saveAgentTeamSettings,
-  saveLongAgentTeamSettings,
   loadLibraryAgentSettings,
   saveLibraryAgentSettings,
   resetLibraryAgentSettings,
@@ -2561,8 +2564,11 @@ onBeforeUnmount(() => {
       :left-collapsed="leftCollapsed"
       @expand-left="leftCollapsed = false"
       @retry-agent-team="loadAgentTeamSettings"
+      @create-agent-team="createAgentTeam"
+      @rename-agent-team="renameAgentTeam"
+      @delete-agent-team="deleteAgentTeam"
+      @set-agent-team-enabled="setAgentTeamEnabled"
       @save-agent-team="saveAgentTeamSettings"
-      @save-long-agent-team="saveLongAgentTeamSettings"
       @choose-workspace-directory="chooseWorkspaceDirectory"
       @save-models="saveModelSettings"
       @refresh-free-models="refreshFreeModels"

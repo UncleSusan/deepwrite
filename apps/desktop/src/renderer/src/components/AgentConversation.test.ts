@@ -21,11 +21,19 @@ describe("AgentConversation edit proposal placement", () => {
     expect(conversationSource).toContain("<AgentUserInputCard");
     expect(conversationSource).toContain('v-if="userInputRequest"');
     expect(userInputCardSource).toContain(
-      'request.source === "cross_stage_write"'
+      "request.source === 'cross_stage_write'"
     );
     expect(userInputCardSource).toContain("输入自己的回答");
     expect(userInputCardSource).toContain("推荐");
     expect(userInputCardSource).toContain("跳过");
+    expect(userInputCardSource).toContain(
+      'v-for="question in visibleQuestions"'
+    );
+    expect(userInputCardSource).toContain("activeQuestionIndex.value += 1");
+    expect(userInputCardSource).toContain('isLastQuestion ? "确认" : "下一题"');
+    expect(userInputCardSource).not.toContain(
+      'v-for="question in request.questions"'
+    );
     expect(conversationSource).toContain(
       '<div v-else class="composer" :class="{ \'is-disabled\': responding }">'
     );

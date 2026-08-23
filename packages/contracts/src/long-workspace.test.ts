@@ -4,6 +4,7 @@ import {
   CatalogProjectManifestSchema,
   DEFAULT_LONG_AGENT_PROFILES,
   DEFAULT_LONG_AGENTS_MD,
+  LONG_AGENTS_MD_MAX_CHARACTERS,
   LONG_AGENTS_MD_PATH,
   LONG_BOOK_LINE_FILE_ID,
   LONG_WORKSPACE_INDEX_FILE_ID,
@@ -20,6 +21,7 @@ import {
   WorkspaceTypeSchema,
   createLongBookSummary,
   createLongWorkspaceNavigationSnapshot,
+  longAgentsMdCharacterCount,
   longChapterBodyFileId,
   longChapterCardFileId,
   longChapterContinuityFilePath,
@@ -334,11 +336,22 @@ describe("independent long-form workspace contracts", () => {
   it("ships a default AGENTS.md that explains the five long-form stages", () => {
     expect(LONG_AGENTS_MD_PATH).toBe("AGENTS.md");
     expect(DEFAULT_LONG_AGENTS_MD).toContain("# 长篇上下文");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain("## 写作思路");
     expect(DEFAULT_LONG_AGENTS_MD).toContain("## 世界观阶段");
     expect(DEFAULT_LONG_AGENTS_MD).toContain("## 人物阶段");
     expect(DEFAULT_LONG_AGENTS_MD).toContain("## 剧情点阶段");
     expect(DEFAULT_LONG_AGENTS_MD).toContain("## 正文阶段");
     expect(DEFAULT_LONG_AGENTS_MD).toContain("## 持续性账本阶段");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain(
+      "未读取的正文、剧情或设定不得当成事实"
+    );
+    expect(DEFAULT_LONG_AGENTS_MD).toContain("账本不能新增伏笔线和触点");
+    expect(DEFAULT_LONG_AGENTS_MD).toContain(
+      "除非用户要求，不要直接把章节账本记录完成"
+    );
+    expect(
+      longAgentsMdCharacterCount(DEFAULT_LONG_AGENTS_MD)
+    ).toBeLessThanOrEqual(LONG_AGENTS_MD_MAX_CHARACTERS);
   });
 
   it("parses a full index, lightweight navigation, book and manifest without joining existing unions", () => {

@@ -31,17 +31,14 @@ function agentTeamModule(
 ): AgentTeamFeatureModule {
   return {
     kind: "agent-team",
-    settings: [],
-    longSettings: null,
+    navigationEpoch: 0,
+    catalog: null,
     models: [],
     skills: [],
     preferredModelId: null,
     loading: false,
     saving: false,
     loadError: null,
-    longLoading: false,
-    longSaving: false,
-    longLoadError: null,
     runtimeAvailable: true,
     authoring
   };

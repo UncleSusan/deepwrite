@@ -103,6 +103,7 @@ export function useWorkspaceFeatureHostCoordinator(
 ): WorkspaceFeatureHostCoordinator {
   const { settingsStore } = options;
   const marketplaceDisplayName = ref<string>();
+  const agentTeamNavigationEpoch = ref(0);
   const knownMarketplaceSession = ref<MarketplaceSession | null>(null);
   let active = true;
   let navigationGeneration = 0;
@@ -167,17 +168,14 @@ export function useWorkspaceFeatureHostCoordinator(
       case "agent-team":
         return {
           kind: "agent-team",
-          settings: settingsStore.agentTeamSettings,
-          longSettings: settingsStore.longAgentTeamSettings,
+          navigationEpoch: agentTeamNavigationEpoch.value,
+          catalog: settingsStore.agentTeamCatalog,
           models: settingsStore.modelSettings?.models ?? [],
           skills: options.catalogSnapshot.value?.skills ?? [],
           preferredModelId: settingsStore.modelSettings?.defaultModelId ?? null,
           loading: settingsStore.agentTeamLoading,
           saving: settingsStore.agentTeamSaving,
           loadError: settingsStore.agentTeamLoadError,
-          longLoading: settingsStore.longAgentTeamLoading,
-          longSaving: settingsStore.longAgentTeamSaving,
-          longLoadError: settingsStore.longAgentTeamLoadError,
           runtimeAvailable: Boolean(options.api()),
           authoring: options.features.subagentAuthoring.controller.value
         };
@@ -336,11 +334,9 @@ export function useWorkspaceFeatureHostCoordinator(
       return;
     }
     if (!navigationIsCurrent(generation)) return;
+    agentTeamNavigationEpoch.value += 1;
     options.view.workspaceMain.value = "agent-team";
-    if (
-      options.api() &&
-      (!settingsStore.agentTeamLoaded || !settingsStore.longAgentTeamLoaded)
-    ) {
+    if (options.api() && !settingsStore.agentTeamLoaded) {
       issueBackground(options.loaders.loadAgentTeamSettings);
     }
     if (options.api() && !settingsStore.modelSettings) {

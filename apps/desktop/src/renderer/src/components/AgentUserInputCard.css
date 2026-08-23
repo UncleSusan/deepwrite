@@ -77,22 +77,6 @@
   border: 0;
 }
 
-.agent-user-input-question legend {
-  display: grid;
-  gap: 2px;
-  padding: 0 2px;
-}
-
-.agent-user-input-question legend small {
-  color: var(--text-tertiary);
-  font-size: 0.714286rem;
-}
-
-.agent-user-input-question legend span {
-  font-size: 0.928571rem;
-  font-weight: 620;
-}
-
 .agent-user-input-options {
   display: grid;
   gap: 4px;

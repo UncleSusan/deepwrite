@@ -204,11 +204,7 @@ describe("agent-team contracts", () => {
   });
 
   it("registers agentTeams commands and validates subagent event parent identity", () => {
-    const command = createEnvelope(
-      "agentTeams.list",
-      { workspaceType: "short" as const },
-      { id: "cmd-1" }
-    );
+    const command = createEnvelope("agentTeams.list", {}, { id: "cmd-1" });
     expect(CommandEnvelopeSchema.safeParse(command).success).toBe(true);
 
     const event = createEnvelope(

@@ -37,19 +37,20 @@ describe("script agent-team contracts", () => {
   it("accepts script agent-team list and save commands", () => {
     expect(
       AgentTeamsListCommandEnvelopeSchema.parse(
-        createEnvelope(
-          "agentTeams.list",
-          { workspaceType: "script" as const },
-          { id: "script_team_list" }
-        )
-      ).payload.workspaceType
-    ).toBe("script");
+        createEnvelope("agentTeams.list", {}, { id: "script_team_list" })
+      ).payload
+    ).toEqual({});
     expect(
       AgentTeamsSaveCommandEnvelopeSchema.parse(
-        createEnvelope("agentTeams.save", DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS, {
-          id: "script_team_save"
-        })
-      ).payload.workspaceType
+        createEnvelope(
+          "agentTeams.save",
+          {
+            teamId: "team_default",
+            settings: DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS
+          },
+          { id: "script_team_save" }
+        )
+      ).payload.settings.workspaceType
     ).toBe("script");
   });
 

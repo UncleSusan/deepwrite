@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { EnvelopeBaseSchema } from "./envelope";
 import { TemperatureSchema, ThinkingLevelSchema } from "./models";
 import {
   SHORT_WORKSPACE_AGENT_IDS,
@@ -9,7 +8,6 @@ import {
 import {
   SCRIPT_WORKSPACE_AGENT_IDS,
   ScriptWorkspaceAgentIdSchema,
-  WorkspaceTypeSchema,
   type ScriptWorkspaceAgentId
 } from "./script-workspace";
 
@@ -263,20 +261,3 @@ export const DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS: ScriptAgentTeamSettings = {
     subagents: []
   }))
 };
-
-export const AgentTeamsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("agentTeams.list"),
-  payload: z.object({ workspaceType: WorkspaceTypeSchema })
-});
-
-export const AgentTeamsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
-  type: z.literal("agentTeams.save"),
-  payload: WorkspaceAgentTeamSettingsInputSchema
-});
-
-export type AgentTeamsListCommandEnvelope = z.infer<
-  typeof AgentTeamsListCommandEnvelopeSchema
->;
-export type AgentTeamsSaveCommandEnvelope = z.infer<
-  typeof AgentTeamsSaveCommandEnvelopeSchema
->;

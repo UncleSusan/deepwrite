@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  WorkspaceAgentTeamSettingsSchema,
+  AgentTeamCatalogSnapshotSchema,
   BookSchema,
   SaveDocumentResultSchema,
   CatalogDraftSectionSchema,
@@ -60,7 +60,6 @@ import {
   LongApplyOperationsResultSchema,
   LongApplyLegacySyncResultSchema,
   LongAgentSettingsSchema,
-  LongAgentTeamSettingsSchema,
   LongCommitChapterResultSchema,
   LongImportPortableResultSchema,
   LongChooseContinuationImportSourceResultSchema,
@@ -136,7 +135,6 @@ import { SoftwareTokenUsageReporter } from "./software-token-usage-reporter";
 import { LearningImitationConfigStore } from "./learning-imitation-config-store";
 import { LibraryAgentConfigStore } from "./library-agent-config-store";
 import { LongAgentConfigStore } from "./long-agent-config-store";
-import { LongAgentTeamConfigStore } from "./long-agent-team-config-store";
 import {
   assertModelRunSettings,
   resolveModelRunSettings
@@ -200,7 +198,6 @@ let chatAssistantProjectConfigStore:
 let learningImitationConfigStore: LearningImitationConfigStore | undefined;
 let libraryAgentConfigStore: LibraryAgentConfigStore | undefined;
 let longAgentConfigStore: LongAgentConfigStore | undefined;
-let longAgentTeamConfigStore: LongAgentTeamConfigStore | undefined;
 let cachedAppearanceSettings: AppearanceSettings =
   createDefaultAppearanceSettings();
 let cachedGeneralSettings: GeneralSettings = createDefaultGeneralSettings();
@@ -936,13 +933,6 @@ function requireLongAgentConfigStore(): LongAgentConfigStore {
     throw new Error("长篇智能体设置存储尚未初始化。");
   }
   return longAgentConfigStore;
-}
-
-function requireLongAgentTeamConfigStore(): LongAgentTeamConfigStore {
-  if (!longAgentTeamConfigStore) {
-    throw new Error("长篇智能体团队设置存储尚未初始化。");
-  }
-  return longAgentTeamConfigStore;
 }
 
 function requireLearningImitationConfigStore(): LearningImitationConfigStore {
@@ -2714,10 +2704,8 @@ function registerIpc(): void {
           return {
             status: "accepted",
             requestId: command.id,
-            payload: WorkspaceAgentTeamSettingsSchema.parse(
-              await requireAgentTeamConfigStore().list(
-                command.payload.workspaceType
-              )
+            payload: AgentTeamCatalogSnapshotSchema.parse(
+              await requireAgentTeamConfigStore().list()
             )
           };
         } catch (error: unknown) {
@@ -2736,14 +2724,29 @@ function registerIpc(): void {
         }
       }
 
-      if (command.type === "agentTeams.save") {
+      if (
+        command.type === "agentTeams.create" ||
+        command.type === "agentTeams.rename" ||
+        command.type === "agentTeams.delete" ||
+        command.type === "agentTeams.setEnabled" ||
+        command.type === "agentTeams.save"
+      ) {
         try {
+          const store = requireAgentTeamConfigStore();
+          const snapshot =
+            command.type === "agentTeams.create"
+              ? await store.create(command.payload)
+              : command.type === "agentTeams.rename"
+                ? await store.rename(command.payload)
+                : command.type === "agentTeams.delete"
+                  ? await store.delete(command.payload)
+                  : command.type === "agentTeams.setEnabled"
+                    ? await store.setEnabled(command.payload)
+                    : await store.save(command.payload);
           return {
             status: "accepted",
             requestId: command.id,
-            payload: WorkspaceAgentTeamSettingsSchema.parse(
-              await requireAgentTeamConfigStore().save(command.payload)
-            )
+            payload: AgentTeamCatalogSnapshotSchema.parse(snapshot)
           };
         } catch (error: unknown) {
           return {
@@ -2883,56 +2886,6 @@ function registerIpc(): void {
                 error instanceof Error
                   ? error.message
                   : "恢复长篇智能体默认设置失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "longAgentTeams.list") {
-        try {
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: LongAgentTeamSettingsSchema.parse(
-              await requireLongAgentTeamConfigStore().list()
-            )
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "long_agent_teams.list_failed",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "加载长篇智能体团队设置失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "longAgentTeams.save") {
-        try {
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: LongAgentTeamSettingsSchema.parse(
-              await requireLongAgentTeamConfigStore().save(command.payload)
-            )
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "long_agent_teams.save_failed",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "保存长篇智能体团队设置失败。",
               details: safeErrorDetails(error)
             }
           };
@@ -3281,7 +3234,8 @@ function registerIpc(): void {
                 agentProfile.id
               )
             : longAgentProfile
-              ? await requireLongAgentTeamConfigStore().resolve(
+              ? await requireAgentTeamConfigStore().resolve(
+                  "long",
                   longAgentProfile.id
                 )
               : undefined;
@@ -3630,7 +3584,6 @@ if (!hasSingleInstanceLock) {
     agentTeamConfigStore = new AgentTeamConfigStore(userDataPath);
     libraryAgentConfigStore = new LibraryAgentConfigStore(userDataPath);
     longAgentConfigStore = new LongAgentConfigStore(userDataPath);
-    longAgentTeamConfigStore = new LongAgentTeamConfigStore(userDataPath);
     learningImitationConfigStore = new LearningImitationConfigStore(
       userDataPath
     );

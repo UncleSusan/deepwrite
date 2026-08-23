@@ -21,7 +21,6 @@ import type { LegacySyncPreviewRegistry } from "../legacy-sync-preview-registry"
 import type { LibraryAgentConfigStore } from "../library-agent-config-store";
 import type { listRemoteModels } from "../list-remote-models";
 import type { LongAgentConfigStore } from "../long-agent-config-store";
-import type { LongAgentTeamConfigStore } from "../long-agent-team-config-store";
 import type { exportLongManuscript } from "../long-manuscript-export";
 import type { ModelConfigStore } from "../model-config-store";
 import type { ModelUsageStore } from "../model-usage-store";
@@ -63,7 +62,6 @@ export interface IpcCommandContext {
   requireAgentTeamConfigStore: () => AgentTeamConfigStore;
   requireLibraryAgentConfigStore: () => LibraryAgentConfigStore;
   requireLongAgentConfigStore: () => LongAgentConfigStore;
-  requireLongAgentTeamConfigStore: () => LongAgentTeamConfigStore;
   requireLearningImitationConfigStore: () => LearningImitationConfigStore;
   requireWorkspaceDirectoryStore: () => WorkspaceDirectoryStore;
   requireAppearanceConfigStore: () => AppearanceConfigStore;

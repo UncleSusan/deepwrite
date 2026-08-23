@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { ShortAgentSubagentDefinitionsSchema } from "./agent-team";
-import { EnvelopeBaseSchema } from "./envelope";
 import {
   LONG_AGENT_IDS,
   LongAgentIdSchema,
@@ -54,22 +53,3 @@ export const DEFAULT_LONG_AGENT_TEAM_SETTINGS: LongAgentTeamSettings = {
     subagents: []
   }))
 };
-
-export const LongAgentTeamsListCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("longAgentTeams.list"),
-    payload: z.object({}).strict()
-  });
-
-export const LongAgentTeamsSaveCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("longAgentTeams.save"),
-    payload: LongAgentTeamSettingsInputSchema
-  });
-
-export type LongAgentTeamsListCommandEnvelope = z.infer<
-  typeof LongAgentTeamsListCommandEnvelopeSchema
->;
-export type LongAgentTeamsSaveCommandEnvelope = z.infer<
-  typeof LongAgentTeamsSaveCommandEnvelopeSchema
->;

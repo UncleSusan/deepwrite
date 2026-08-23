@@ -8,14 +8,12 @@ describe("ConversationTurnNavigator", () => {
     expect(navigatorSource).toContain('class="conversation-turn-marker-list"');
     expect(navigatorSource).toContain('v-for="turn in turns"');
     expect(navigatorSource).toContain('class="conversation-turn-marker"');
-    expect(navigatorSource).not.toContain("@click=\"emit('select', turn.id)\"");
+    expect(navigatorSource).toContain('@click="selectTurn(turn.id)"');
     expect(navigatorSource).toContain(
       "@mouseenter=\"showPreview(turn.id, $event, 'hover')\""
     );
     expect(navigatorSource).toContain('v-if="previewTurn"');
-    expect(navigatorSource).toContain(
-      '@click="selectPreviewTurn(previewTurn.id)"'
-    );
+    expect(navigatorSource).toContain('@click="selectTurn(previewTurn.id)"');
     expect(navigatorSource).toContain(
       'class="conversation-turn-preview is-visible"'
     );
@@ -67,9 +65,11 @@ describe("ConversationTurnNavigator", () => {
     expect(lineStyles).toContain("width: 8px;");
     expect(activeLineStyles).not.toContain("width:");
     expect(rendererStyles).toContain(
+      ".conversation-turn-marker:hover .conversation-turn-marker-line"
+    );
+    expect(rendererStyles).not.toContain(
       ".conversation-turn-navigator:hover .conversation-turn-marker-line"
     );
-    expect(rendererStyles).toContain("width: 16px;");
     expect(rendererStyles).toContain("width: 26px;");
     expect(previewStyles).toContain("right: 40px;");
     expect(previewStyles).toContain("transform-origin: right center;");

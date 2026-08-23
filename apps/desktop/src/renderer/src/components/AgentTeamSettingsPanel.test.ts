@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import source from "./AgentTeamSettingsPanel.vue?raw";
+import componentSource from "./AgentTeamSettingsPanel.vue?raw";
+import templateSource from "./AgentTeamSettingsPanel.template.html?raw";
 import longSource from "./LongAgentTeamSettingsPanel.vue?raw";
+import metaSource from "./agentTeamSettingsMeta.ts?raw";
+
+const source = `${componentSource}\n${templateSource}\n${metaSource}`;
 
 describe("AgentTeamSettingsPanel", () => {
   it("explains the isolated subagent prompt and skill boundary", () => {

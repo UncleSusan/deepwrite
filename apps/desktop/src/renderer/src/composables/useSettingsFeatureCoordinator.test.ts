@@ -9,6 +9,7 @@ import type {
 import {
   DEFAULT_AGENT_TEAM_SETTINGS,
   DEFAULT_LONG_AGENT_TEAM_SETTINGS,
+  DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS
 } from "@deepwrite/contracts";
@@ -79,10 +80,12 @@ function createApi(overrides: Record<string, unknown> = {}): DeepWriteApi {
       list: vi.fn()
     },
     agentTeams: {
-      list: vi.fn()
-    },
-    longAgentTeams: {
-      list: vi.fn()
+      list: vi.fn(),
+      create: vi.fn(),
+      rename: vi.fn(),
+      delete: vi.fn(),
+      activate: vi.fn(),
+      save: vi.fn()
     },
     ...overrides
   } as unknown as DeepWriteApi;
@@ -225,18 +228,32 @@ describe("settings feature coordinator", () => {
     expect(notifications.error).not.toHaveBeenCalled();
   });
 
-  it("single-flights short/script and long agent-team settings together", async () => {
-    const list = vi.fn(async (workspaceType: "short" | "script") =>
-      workspaceType === "short"
-        ? structuredClone(DEFAULT_AGENT_TEAM_SETTINGS)
-        : { workspaceType: "script" as const, teams: [] }
-    );
-    const listLong = vi.fn(async () =>
-      structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS)
-    );
+  it("single-flights the unified agent-team catalog", async () => {
+    const list = vi.fn(async () => ({
+      enabledTeamIds: {},
+      teams: [
+        {
+          id: "team_short_default",
+          name: "默认短篇团队",
+          workspaceType: "short" as const,
+          settings: structuredClone(DEFAULT_AGENT_TEAM_SETTINGS)
+        },
+        {
+          id: "team_script_default",
+          name: "默认剧本团队",
+          workspaceType: "script" as const,
+          settings: structuredClone(DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS)
+        },
+        {
+          id: "team_long_default",
+          name: "默认长篇团队",
+          workspaceType: "long" as const,
+          settings: structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS)
+        }
+      ]
+    }));
     const api = createApi({
-      agentTeams: { list },
-      longAgentTeams: { list: listLong }
+      agentTeams: { list }
     });
     const { coordinator, notifications, settingsStore } = createHarness(api);
 
@@ -245,16 +262,11 @@ describe("settings feature coordinator", () => {
       coordinator.loadAgentTeamSettings()
     ]);
 
-    expect(list).toHaveBeenCalledTimes(2);
-    expect(list).toHaveBeenCalledWith("short");
-    expect(list).toHaveBeenCalledWith("script");
-    expect(listLong).toHaveBeenCalledOnce();
+    expect(list).toHaveBeenCalledOnce();
     expect(settingsStore.agentTeamLoaded).toBe(true);
-    expect(settingsStore.longAgentTeamLoaded).toBe(true);
 
     await coordinator.loadAgentTeamSettings();
-    expect(list).toHaveBeenCalledTimes(2);
-    expect(listLong).toHaveBeenCalledOnce();
+    expect(list).toHaveBeenCalledOnce();
     expect(notifications.error).not.toHaveBeenCalled();
   });
 });
