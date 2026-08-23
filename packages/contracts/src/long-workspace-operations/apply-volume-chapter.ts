@@ -19,7 +19,8 @@ import {
   operationError,
   registerProvisionalId,
   retargetBeatPlanningAnchorsToChapter,
-  updateOrdersById
+  updateOrdersById,
+  nextOrder
 } from "./state";
 
 export function applyVolumeChapterOperation(
@@ -30,7 +31,11 @@ export function applyVolumeChapterOperation(
   switch (operation.type) {
     case "volume.create": {
       assertNewEntityId(workspace.plot.volumes, operation.volume.id, "Volume");
-      workspace.plot.volumes.push(structuredClone(operation.volume));
+      const volume = structuredClone(operation.volume);
+      volume.order = nextOrder(
+        workspace.plot.volumes.map(({ order }) => order)
+      );
+      workspace.plot.volumes.push(volume);
       markCreated(state, operation.volume.id);
       registerProvisionalId(
         state,
@@ -71,7 +76,13 @@ export function applyVolumeChapterOperation(
 
     case "arc.create": {
       assertNewEntityId(workspace.plot.arcs, operation.arc.id, "Arc");
-      workspace.plot.arcs.push(structuredClone(operation.arc));
+      const arc = structuredClone(operation.arc);
+      arc.order = nextOrder(
+        workspace.plot.arcs
+          .filter((candidate) => candidate.volumeId === arc.volumeId)
+          .map(({ order }) => order)
+      );
+      workspace.plot.arcs.push(arc);
       markCreated(state, operation.arc.id);
       registerProvisionalId(state, operation.provisionalId, operation.arc.id);
       break;
@@ -225,7 +236,13 @@ export function applyVolumeChapterOperation(
         ])
       ];
       ensureFilesAvailable(state, files);
-      workspace.plot.chapterCards.push(structuredClone(operation.chapterCard));
+      const chapterCard = structuredClone(operation.chapterCard);
+      chapterCard.narrativeOrder = nextOrder(
+        workspace.plot.chapterCards
+          .filter((candidate) => candidate.volumeId === chapterCard.volumeId)
+          .map(({ narrativeOrder }) => narrativeOrder)
+      );
+      workspace.plot.chapterCards.push(chapterCard);
       workspace.chapters.push(structuredClone(operation.files));
       files.forEach((file) =>
         addFileCreateIntent(

@@ -10,8 +10,8 @@ import {
   watch
 } from "vue";
 import {
-  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
-  LIBRARY_AGENT_ENTRY_MAX_CHARACTERS
+  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
+  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS
 } from "@deepwrite/contracts";
 import { randomHex8 } from "@deepwrite/shared";
 import type {
@@ -134,6 +134,7 @@ const {
   documentKey: activeScrollMemoryKey,
   isEditView: () => viewMode.value === "edit",
   isSaving: () => Boolean(props.saving),
+  isTransientlyReadOnly: () => props.locked,
   rememberScroll: (documentKey, scrollTop) =>
     rememberEditorScrollPosition(documentKey, "edit", scrollTop)
 });
@@ -213,17 +214,17 @@ const skillFormatError = computed(() => {
   const result = parseSkillFrontmatter(content.value);
   return result.valid ? undefined : result.message;
 });
-const contentMaxLength = computed(() =>
+const recommendedContentLength = computed(() =>
   isLibraryOverview.value
     ? CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS
     : isLibraryEntry.value
-      ? LIBRARY_AGENT_ENTRY_MAX_CHARACTERS
+      ? CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS
       : undefined
 );
-const contentExceedsLimit = computed(
+const contentExceedsRecommendedLength = computed(
   () =>
-    contentMaxLength.value !== undefined &&
-    content.value.length > contentMaxLength.value
+    recommendedContentLength.value !== undefined &&
+    content.value.length > recommendedContentLength.value
 );
 const characterCount = computed(() =>
   isLibraryDocument.value
@@ -284,6 +285,9 @@ const persistedDocument = computed(() =>
 );
 const visibleDirtySaveState = computed(
   () => dirty.value && !props.autoSaveEnabled
+);
+const resolvedLockedLabel = computed(
+  () => props.lockedLabel ?? "智能体运行中 · 只读"
 );
 
 function markDirty(): void {
@@ -346,15 +350,6 @@ function handleEditorInput(event: Event): void {
   const input = event.currentTarget as HTMLTextAreaElement;
   const beforeContent = content.value;
   const afterContent = input.value;
-  if (
-    contentMaxLength.value !== undefined &&
-    afterContent.length > contentMaxLength.value
-  ) {
-    input.value = beforeContent;
-    pendingEditorInput = null;
-    updateContent(afterContent);
-    return;
-  }
   const selectionAfter = {
     start: input.selectionStart ?? afterContent.length,
     end: input.selectionEnd ?? afterContent.length
@@ -381,17 +376,6 @@ function updateContent(
   nextContent: string,
   nonWhitespaceDelta?: number
 ): boolean {
-  if (
-    contentMaxLength.value !== undefined &&
-    nextContent.length > contentMaxLength.value
-  ) {
-    uiMessage.warning(
-      isLibraryOverview.value
-        ? "素材库或技能库介绍最多 40,000 字，请精简内容后再编辑"
-        : "每个素材库或技能库条目最多 40,000 字，请精简内容后再编辑"
-    );
-    return false;
-  }
   if (content.value === nextContent) return true;
   content.value = nextContent;
   nonWhitespaceCharacterCount.value =
@@ -479,14 +463,6 @@ function handleEditorKeydown(event: KeyboardEvent): void {
 
 function save(): void {
   if (props.document.readOnly || props.locked || props.saving) {
-    return;
-  }
-  if (contentExceedsLimit.value) {
-    uiMessage.warning(
-      isLibraryOverview.value
-        ? "素材库或技能库介绍最多 40,000 字，请精简内容后再保存"
-        : "每个素材库或技能库条目最多 40,000 字，请精简内容后再保存"
-    );
     return;
   }
   const resolvedTitle = resolveWorkspaceDocumentTitle(
@@ -841,7 +817,7 @@ onBeforeUnmount(() => {
             document.readOnly
               ? "只读"
               : locked
-                ? (lockedLabel ?? "智能体运行中 · 暂停编辑")
+                ? resolvedLockedLabel
                 : manualSaving
                   ? "正在保存到本机"
                   : autoSaveEnabled
@@ -1108,10 +1084,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div
-      class="editor-document"
-      :class="{ 'is-readonly': document.readOnly || locked }"
-    >
+    <div class="editor-document" :class="{ 'is-readonly': document.readOnly }">
       <div class="document-meta-row">
         <span>{{ document.eyebrow }}</span>
         <span v-if="document.format" class="document-format">{{
@@ -1146,7 +1119,6 @@ onBeforeUnmount(() => {
         :value="content"
         class="document-editor transient-scrollbar"
         :readonly="document.readOnly || locked"
-        :maxlength="contentMaxLength"
         aria-label="文本内容编辑器"
         spellcheck="false"
         @beforeinput="handleEditorBeforeInput"
@@ -1169,30 +1141,30 @@ onBeforeUnmount(() => {
     <footer class="editor-footer">
       <span>
         {{ characterCount.toLocaleString("zh-CN")
-        }}<template v-if="contentMaxLength">
-          / {{ contentMaxLength.toLocaleString("zh-CN") }}</template
+        }}<template v-if="recommendedContentLength">
+          / {{ recommendedContentLength.toLocaleString("zh-CN") }}</template
         >
         字
       </span>
       <span
         v-if="isLibraryDocument"
         class="library-entry-limit-hint"
-        :class="{ 'limit-warning': contentExceedsLimit }"
+        :class="{ 'limit-warning': contentExceedsRecommendedLength }"
         :title="
           isLibraryOverview
-            ? '素材库或技能库介绍最多 40,000 字'
-            : '每个素材库或技能库条目最多 40,000 字，请勿上传过多内容'
+            ? '素材库或技能库介绍建议不超过 40,000 字'
+            : '每个素材库或技能库条目建议不超过 40,000 字，请勿上传过多内容'
         "
       >
         {{
           isLibraryOverview
-            ? "库介绍最多 40,000 字"
-            : "每个条目最多 40,000 字，请勿上传过多内容"
+            ? "建议库介绍不超过 40,000 字"
+            : "建议每个条目不超过 40,000 字，请勿上传过多内容"
         }}
       </span>
       <span class="editor-save-status">{{
         locked
-          ? (lockedLabel ?? "智能体运行中 · 防止版本冲突")
+          ? resolvedLockedLabel
           : manualSaving
             ? "正在原子保存本机文稿"
             : persistedDocument
@@ -1209,8 +1181,7 @@ onBeforeUnmount(() => {
           document.readOnly ||
           locked ||
           manualSaving ||
-          (!autoSaveEnabled && !dirty) ||
-          contentExceedsLimit
+          (!autoSaveEnabled && !dirty)
         "
         @mousedown.prevent
         @click="save"

@@ -265,6 +265,7 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       :skills="module.skills"
       :linked-material-ids-by-kind="module.linkedMaterialIdsByKind"
       :linked-skill-ids-by-kind="module.linkedSkillIdsByKind"
+      :linked-resource-stage-scopes="module.linkedResourceStageScopes"
       :submitting="module.submitting"
       @close="emit('closeLongBindings')"
       @submit="emit('submitLongBindings', $event)"

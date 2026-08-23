@@ -4,7 +4,6 @@ import type {
   CommandResult,
   LongAgentProfile,
   LongChapterBodyChange,
-  LongChapterReadiness,
   LongCharacterFileChange,
   LongCommitChapterInput,
   LongContinuityFileChange,
@@ -12,19 +11,21 @@ import type {
   LongWorkspaceOperationBatch,
   LongWorkspaceRuntimeContext,
   LongWorldbuildingFileChange,
-  LongWritingScope,
   WorkspaceRuntimeContext
 } from "@deepwrite/contracts";
 import { createLongToolContext } from "./context";
 import {
-  buildCatalogTools,
   buildLoadSkillTool,
   buildQueryLinkedMaterialEntriesTool
 } from "./catalog-tools";
-import { buildSettingTools } from "./setting-tools";
-import { buildPlotDesignTools } from "./plot-design-tools";
-import { buildChapterReadinessTools, buildChapterTools } from "./chapter-tools";
-import { buildContinuityTools } from "./continuity-tools";
+import { buildListTool } from "./tool-list";
+import { buildReadTool } from "./tool-read";
+import { buildCreateTool } from "./tool-create";
+import { buildEditTool } from "./tool-edit";
+import { buildDeleteTool } from "./tool-delete";
+import { buildLedgerCommitTool } from "./ledger-tools";
+import { buildAskUserQuestionTool } from "./tool-ask-user-question";
+import type { AgentUserInputRequester } from "../runtime-types";
 
 export type LongQueryCommandEnvelope = Extract<
   LongWorkspaceCommandEnvelope,
@@ -90,18 +91,6 @@ export type LongAgentToolDetails =
       agentId: LongAgentProfile["id"];
       input: LongCommitChapterInput;
       summary: string;
-    }
-  | {
-      kind: "long-chapter-dispatch-proposal";
-      bookId: string;
-      agentId: LongAgentProfile["id"];
-      scope: LongWritingScope;
-      chapterCardId: string;
-      title: string;
-      chapters: LongChapterReadiness[];
-      workspaceRevision: number;
-      projectRevision: number;
-      summary: string;
     };
 
 export interface BuildLongWorkspaceToolsInput {
@@ -113,8 +102,14 @@ export interface BuildLongWorkspaceToolsInput {
   attachedSkills?: WorkspaceRuntimeContext["attachedSkills"];
   attachedMaterials?: WorkspaceRuntimeContext["attachedMaterials"];
   executor?: LongCommandExecutor;
+  requestUserInput?: AgentUserInputRequester;
+  includeAskUserQuestion?: boolean;
 }
 
+/**
+ * The unified long-form tool surface: five CRUD tools over every stage, plus
+ * the material, skill and ledger-commit tools.
+ */
 export function buildLongWorkspaceTools(
   input: BuildLongWorkspaceToolsInput
 ): AgentTool[] {
@@ -123,22 +118,22 @@ export function buildLongWorkspaceTools(
     buildQueryLinkedMaterialEntriesTool(input),
     buildLoadSkillTool(input)
   ];
-  tools.push(...buildCatalogTools(ctx));
-  tools.push(...buildChapterReadinessTools(ctx));
-  tools.push(...buildSettingTools(ctx));
-  tools.push(...buildPlotDesignTools(ctx));
-  tools.push(...buildChapterTools(ctx));
-  tools.push(...buildContinuityTools(ctx));
+  if (input.includeAskUserQuestion !== false) {
+    tools.push(buildAskUserQuestionTool(ctx));
+  }
+  if (ctx.capabilities.has("query_structure")) {
+    tools.push(buildListTool(ctx), buildReadTool(ctx));
+  }
+  if (ctx.writableRoots.size > 0) {
+    tools.push(buildCreateTool(ctx), buildEditTool(ctx), buildDeleteTool(ctx));
+  }
+  if (ctx.capabilities.has("commit_ledger")) {
+    tools.push(buildLedgerCommitTool(ctx));
+  }
   return tools;
 }
 
-export {
-  classifyLongChapterReadiness,
-  isLongAgentToolDetails,
-  selectLongChaptersForWritingScope,
-  selectNextLongChapterForDispatch
-} from "./dispatch";
-export type { SelectLongWritingScopeInput } from "./dispatch";
+export { isLongAgentToolDetails } from "./tool-details";
 export type {
   LongReadDocumentResult,
   LongSearchResult

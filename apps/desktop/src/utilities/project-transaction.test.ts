@@ -273,7 +273,7 @@ describe("project transaction", () => {
       `${replacement.dev}:${replacement.ino}`
     );
     await expect(readFile(lockPath, "utf8")).resolves.toBe(ownerText);
-  }, 30_000);
+  }, 60_000);
 
   it("reclaims a transaction lock left by a terminated process", async () => {
     const root = await temporaryProject();

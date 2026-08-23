@@ -36,10 +36,9 @@ export function createLongStructureSync(
     structureDialogOpen: longStructureDialogOpen
   } = state;
   const {
-    blockWritingPlan: blockActiveLongWritingPlan,
     saveActiveEditorChanges: saveActiveLongEditorChanges,
     refreshActiveWorkspace: refreshActiveLongWorkspace,
-    refreshWritingSaveBarrier: refreshLongWritingSaveBarrier,
+    refreshWorkspaceAfterProposal: refreshLongProposalWorkspace,
     editor: longWorkspaceEditor
   } = session;
 
@@ -180,10 +179,6 @@ export function createLongStructureSync(
         ...longWorkspaceEditor.value?.captureNavigationSelection()
       };
     }
-    if (blockActiveLongWritingPlan("修改长篇结构")) {
-      completion.fail("当前长篇串行写作计划尚未完成。");
-      return;
-    }
     if (
       options.saveEditor !== false &&
       !(await saveActiveLongEditorChanges())
@@ -257,7 +252,7 @@ export function createLongStructureSync(
         longBooks.value,
         applyResult.summary
       );
-      const refreshed = await refreshLongWritingSaveBarrier(expectedBookId);
+      const refreshed = await refreshLongProposalWorkspace(expectedBookId);
       if (isDisposed()) return;
       if (!refreshed) {
         longStructureDialogOpen.value = false;

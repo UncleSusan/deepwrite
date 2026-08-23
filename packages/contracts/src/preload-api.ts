@@ -1,6 +1,8 @@
 import type {
   SessionAbortAcceptedPayload,
   SessionAbortCommandPayload,
+  SessionUserInputResponseAcceptedPayload,
+  SessionUserInputResponsePayload,
   SessionPromptAcceptedPayload,
   SessionPromptCommandPayload
 } from "./session";
@@ -345,6 +347,9 @@ export interface DeepWriteApi {
     abort(
       payload: SessionAbortCommandPayload
     ): Promise<SessionAbortAcceptedPayload>;
+    submitUserInput(
+      payload: SessionUserInputResponsePayload
+    ): Promise<SessionUserInputResponseAcceptedPayload>;
   };
   models: {
     list(): Promise<ModelSettings>;

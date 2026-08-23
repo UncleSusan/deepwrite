@@ -286,11 +286,7 @@ export async function commitChapter(
         chapter.characterState.id,
         chapter.handoff.id,
         chapter.foreshadowingChanges.id,
-        ...(chapter.worldReveals ? [chapter.worldReveals.id] : []),
-        ...chapter.characterContinuity.flatMap((entry) => [
-          entry.currentState.id,
-          entry.history.id
-        ])
+        ...(chapter.worldReveals ? [chapter.worldReveals.id] : [])
       ])
     );
     const continuityFileRoles = new Map<
@@ -305,6 +301,8 @@ export async function commitChapter(
         characterId: entry.characterId,
         role: "relationships"
       });
+    }
+    for (const entry of chapterEntry.characterContinuity) {
       continuityFileRoles.set(entry.currentState.id, {
         characterId: entry.characterId,
         role: "current-state"
@@ -317,11 +315,18 @@ export async function commitChapter(
     if (loaded.index.ledger.commits.length === 0) {
       const updatedFileIds = new Set(updateIds);
       for (const entry of loaded.index.characterFiles) {
-        for (const reference of [
-          entry.relationships,
-          entry.currentState,
-          entry.history
-        ]) {
+        for (const reference of [entry.relationships]) {
+          if (updatedFileIds.has(reference.id)) continue;
+          const file = await loadIndexedFile(loaded, reference.id);
+          newlyPinnedChecks.push({
+            action: "check",
+            path: file.reference.path,
+            expectedSha256: file.disk.sha256
+          });
+        }
+      }
+      for (const entry of chapterEntry.characterContinuity) {
+        for (const reference of [entry.currentState, entry.history]) {
           if (updatedFileIds.has(reference.id)) continue;
           const file = await loadIndexedFile(loaded, reference.id);
           newlyPinnedChecks.push({

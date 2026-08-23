@@ -222,8 +222,6 @@ function proposalTitle(item: LongWorkspaceProposalItem): string {
       return item.event.payload.files.length === 1
         ? contentFileTitle(item, item.event.payload.files[0]!)
         : `${item.event.payload.files.length} 个连续性文件`;
-    case "long.chapter_dispatch_proposal":
-      return "串行写作调度";
   }
 }
 
@@ -242,8 +240,6 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
     case "long.character_file_proposal":
     case "long.continuity_file_proposal":
       return "确认写入并保存";
-    case "long.chapter_dispatch_proposal":
-      return "确认启动串行写作";
   }
 }
 
@@ -567,9 +563,7 @@ function entitySnapshotText(
                 item.event.type === 'long.character_file_proposal' ||
                 item.event.type === 'long.continuity_file_proposal'
                   ? 'file'
-                  : item.event.type === 'long.chapter_dispatch_proposal'
-                    ? 'edit'
-                    : 'wand'
+                  : 'wand'
               "
               :size="15"
             />
@@ -883,63 +877,6 @@ function entitySnapshotText(
                 :value="write.content"
               />
             </details>
-          </div>
-        </details>
-
-        <div
-          v-else-if="item.event.type === 'long.chapter_dispatch_proposal'"
-          class="long-proposal-impact"
-        >
-          <span>
-            <strong>{{ item.event.payload.chapters.length }}</strong>
-            {{
-              item.event.payload.scope === "chapter"
-                ? "单章"
-                : item.event.payload.scope === "arc"
-                  ? "主弧连续章节"
-                  : "当前卷章节"
-            }}
-          </span>
-          <span>
-            <strong>
-              {{
-                item.event.payload.chapters.filter(
-                  ({ status }) => status === "ready_to_commit"
-                ).length
-              }}
-            </strong>
-            已可提交
-          </span>
-          <span>
-            <strong>
-              {{
-                item.event.payload.chapters.filter(
-                  ({ status }) => status !== "ready_to_commit"
-                ).length
-              }}
-            </strong>
-            需要补写
-          </span>
-        </div>
-        <details
-          v-if="item.event.type === 'long.chapter_dispatch_proposal'"
-          class="long-proposal-details"
-        >
-          <summary>查看串行章序与正文证据状态</summary>
-          <div class="long-proposal-detail-group">
-            <span
-              v-for="(chapter, chapterIndex) in item.event.payload.chapters"
-              :key="chapter.chapterCardId"
-            >
-              {{ chapterIndex + 1 }}. {{ chapter.title }} ·
-              {{
-                chapter.status === "ready_to_commit"
-                  ? "正文已完成，直接进入连续性结算"
-                  : chapter.status === "empty"
-                    ? "正文为空"
-                    : `缺失 ${chapter.missingFiles.join("、")}`
-              }}
-            </span>
           </div>
         </details>
 

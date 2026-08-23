@@ -12,6 +12,7 @@ import {
   insertBeforeId,
   markCreated,
   markUpdated,
+  nextOrder,
   operationError,
   registerProvisionalId
 } from "./state";
@@ -153,7 +154,9 @@ export function applyForeshadowingOperation(
           "New foreshadowing beats must start in planned state."
         );
       }
-      thread.beats.push(structuredClone(operation.beat));
+      const beat = structuredClone(operation.beat);
+      beat.order = nextOrder(thread.beats.map(({ order }) => order));
+      thread.beats.push(beat);
       markCreated(state, operation.beat.id);
       markUpdated(state, thread.id);
       registerProvisionalId(state, operation.provisionalId, operation.beat.id);

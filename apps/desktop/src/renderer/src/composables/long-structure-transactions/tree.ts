@@ -58,7 +58,7 @@ export function resolveLongTreeItemDetails(
     return {
       label: "人物",
       title: character.name,
-      description: `将永久删除该人物的四份人物档案${
+      description: `将永久删除该人物的核心档案和人物关系${
         eventReferences > 0
           ? `，并从 ${eventReferences} 个故事事件中移除人物引用`
           : ""
@@ -191,7 +191,6 @@ export function createLongStructureTree(
     volumeCreateTarget: longVolumeCreate
   } = state;
   const {
-    blockWritingPlan: blockActiveLongWritingPlan,
     saveActiveEditorBeforeLeaving: saveActiveLongEditorBeforeLeaving,
     openBook: openLongBook
   } = session;
@@ -210,7 +209,6 @@ export function createLongStructureTree(
       uiMessage.warning(`当前长篇尚未准备好${actionLabel}。`);
       return null;
     }
-    if (blockActiveLongWritingPlan(actionLabel)) return null;
     if (activeLongBookId.value !== bookId) {
       if (!(await saveActiveLongEditorBeforeLeaving(bookId))) return null;
       if (!dialogRequestIsCurrent(requestId)) return null;

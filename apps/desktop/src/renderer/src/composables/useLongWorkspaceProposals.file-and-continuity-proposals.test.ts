@@ -390,7 +390,7 @@ describe("long workspace proposal approval: file-and-continuity-proposals", () =
           "long.ledger_commit_proposal",
           {
             ...proposalBase,
-            agentId: "continuity_ledger" as const,
+            agentId: "long" as const,
             toolCallId: "tool_text_files_commit_two",
             input: {
               mode: "text_files" as const,

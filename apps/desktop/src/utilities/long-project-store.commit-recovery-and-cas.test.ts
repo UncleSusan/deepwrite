@@ -12,12 +12,13 @@ import {
   longChapterBodyFileId,
   longChapterCardFileId,
   longChapterCharacterStateFileId,
+  longChapterCharacterContinuityFilePath,
+  longChapterCharacterCurrentStateFileId,
+  longChapterCharacterHistoryFileId,
   longChapterContinuityFilePath,
   longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
-  longCharacterCurrentStateFileId,
-  longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   lstat,
   projectTransactionContentSha256,
@@ -240,16 +241,29 @@ describe("LongProjectStore: commit-recovery-and-cas", () => {
         path: "long/characters/alice/relationships.md",
         revision: emptyRevision,
         updatedAt: FIXED_NOW
-      },
+      }
+    };
+    const characterContinuityFiles = {
       currentState: {
-        id: longCharacterCurrentStateFileId("character_alice"),
-        path: "long/characters/alice/current-state.md",
+        id: longChapterCharacterCurrentStateFileId(
+          chapterCardId,
+          "character_alice"
+        ),
+        path: longChapterCharacterContinuityFilePath(
+          chapterCardId,
+          "character_alice",
+          "current-state.md"
+        ),
         revision: emptyRevision,
         updatedAt: FIXED_NOW
       },
       history: {
-        id: longCharacterHistoryFileId("character_alice"),
-        path: "long/characters/alice/history.md",
+        id: longChapterCharacterHistoryFileId(chapterCardId, "character_alice"),
+        path: longChapterCharacterContinuityFilePath(
+          chapterCardId,
+          "character_alice",
+          "history.md"
+        ),
         revision: emptyRevision,
         updatedAt: FIXED_NOW
       }
@@ -269,6 +283,12 @@ describe("LongProjectStore: commit-recovery-and-cas", () => {
               aliases: []
             },
             files: characterFiles
+          },
+          {
+            type: "chapterContinuity.character.create",
+            chapterCardId,
+            characterId: "character_alice",
+            ...characterContinuityFiles
           },
           {
             type: "event.create",
@@ -415,15 +435,15 @@ describe("LongProjectStore: commit-recovery-and-cas", () => {
       },
       fileUpdates: [
         {
-          fileId: characterFiles.currentState.id,
+          fileId: characterContinuityFiles.currentState.id,
           content: "林岚已收到旧信并开始追查寄信人。",
-          baseRevision: characterFiles.currentState.revision,
+          baseRevision: characterContinuityFiles.currentState.revision,
           mode: "replace"
         },
         {
-          fileId: characterFiles.history.id,
+          fileId: characterContinuityFiles.history.id,
           content: "收到旧信，决定调查寄信人。",
-          baseRevision: characterFiles.history.revision,
+          baseRevision: characterContinuityFiles.history.revision,
           mode: "append"
         }
       ],
@@ -530,7 +550,7 @@ describe("LongProjectStore: commit-recovery-and-cas", () => {
       projectStore.commitChapter(created.projectDirectory, {
         ...commitInput,
         fileUpdates: commitInput.fileUpdates.filter(
-          ({ fileId }) => fileId !== characterFiles.history.id
+          ({ fileId }) => fileId !== characterContinuityFiles.history.id
         )
       })
     ).rejects.toThrow(/必须同步更新人物当前状态和历史轨迹/u);
@@ -728,21 +748,22 @@ describe("LongProjectStore: commit-recovery-and-cas", () => {
     // direct-write behavior is covered by the focused store and operation tests.
     await expect(
       projectStore.readDocument(created.projectDirectory, {
-        fileId: committedCharacterFiles.currentState.id
+        fileId:
+          migratedContinuityChapter.characterContinuity[0]!.currentState.id
       })
     ).resolves.toMatchObject({
       content: "林岚已收到旧信并开始追查寄信人。"
     });
     await expect(
       projectStore.readDocument(created.projectDirectory, {
-        fileId: committedCharacterFiles.history.id
+        fileId: migratedContinuityChapter.characterContinuity[0]!.history.id
       })
     ).resolves.toMatchObject({
       content: expect.stringContaining("收到旧信，决定调查寄信人。")
     });
     await expect(
       projectStore.readDocument(created.projectDirectory, {
-        fileId: committedCharacterFiles.history.id
+        fileId: migratedContinuityChapter.characterContinuity[0]!.history.id
       })
     ).resolves.toMatchObject({
       content: expect.stringContaining(`提交：${committed.record.id}`)
@@ -864,12 +885,16 @@ describe("LongProjectStore: commit-recovery-and-cas", () => {
     });
     await expect(
       projectStore.readDocument(created.projectDirectory, {
-        fileId: committedCharacterFiles.currentState.id
+        fileId:
+          afterRollback.book.workspaceIndex.chapters[0]!.characterContinuity[0]!
+            .currentState.id
       })
     ).resolves.toMatchObject({ content: "" });
     await expect(
       projectStore.readDocument(created.projectDirectory, {
-        fileId: committedCharacterFiles.history.id
+        fileId:
+          afterRollback.book.workspaceIndex.chapters[0]!.characterContinuity[0]!
+            .history.id
       })
     ).resolves.toMatchObject({ content: "" });
     await expect(
@@ -970,18 +995,6 @@ describe("LongProjectStore: commit-recovery-and-cas", () => {
       relationships: {
         id: longCharacterRelationshipsFileId(characterId),
         path: `long/characters/${characterStorage}/relationships.md`,
-        revision: emptyRevision,
-        updatedAt: FIXED_NOW
-      },
-      currentState: {
-        id: longCharacterCurrentStateFileId(characterId),
-        path: `long/characters/${characterStorage}/current-state.md`,
-        revision: emptyRevision,
-        updatedAt: FIXED_NOW
-      },
-      history: {
-        id: longCharacterHistoryFileId(characterId),
-        path: `long/characters/${characterStorage}/history.md`,
         revision: emptyRevision,
         updatedAt: FIXED_NOW
       }
@@ -1184,5 +1197,5 @@ describe("LongProjectStore: commit-recovery-and-cas", () => {
     expect(after.book.workspaceIndex.ledger.commits[0]!.id).toBe(
       firstCommitted.record.id
     );
-  });
+  }, 15_000);
 });

@@ -175,6 +175,40 @@ describe("useAgentActivityCoordinator", () => {
     expect(test.activity.items.value).toEqual([]);
   });
 
+  it("freezes the jump target of a running long-form activity", async () => {
+    const test = setup();
+    test.currentView.value = {
+      controller: test.first,
+      agentLabel: "长篇智能体",
+      contextLabel: "测试长篇 · 第二章",
+      targetResourceId: "chapter-card-two",
+      chapterCardId: "chapter-two"
+    };
+    setBusy(test.first, true);
+    test.first.messages.value = [assistant("first", "streaming")];
+    await nextTick();
+    expect(test.activity.items.value[0]).toMatchObject({
+      conversationKey: "first",
+      targetResourceId: "chapter-card-two",
+      chapterCardId: "chapter-two",
+      status: "running"
+    });
+
+    test.currentView.value = {
+      controller: test.first,
+      agentLabel: "长篇智能体",
+      contextLabel: "测试长篇 · 规则",
+      targetResourceId: "world-rules"
+    };
+    await nextTick();
+    expect(test.activity.items.value[0]).toMatchObject({
+      conversationKey: "first",
+      targetResourceId: "chapter-card-two",
+      chapterCardId: "chapter-two",
+      status: "running"
+    });
+  });
+
   it("starts collapsed and keeps manual expansion independent from new activity", async () => {
     const test = setup();
 

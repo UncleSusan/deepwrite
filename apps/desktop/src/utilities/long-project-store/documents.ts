@@ -118,6 +118,7 @@ export async function updateBindings(
       revision: loaded.manifest.revision + 1,
       linkedMaterialIdsByKind: input.linkedMaterialIdsByKind,
       linkedSkillIdsByKind: input.linkedSkillIdsByKind,
+      linkedResourceStageScopes: input.linkedResourceStageScopes,
       updatedAt: timestamp,
       workspaceIndexFile: {
         ...loaded.manifest.workspaceIndexFile,

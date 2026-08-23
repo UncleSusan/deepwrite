@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
+  net: { fetch: vi.fn() },
   safeStorage: {
     isEncryptionAvailable: () => false,
     encryptString: (value: string) => Buffer.from(value),
@@ -391,6 +392,32 @@ describe("MarketplaceClient", () => {
       insecureTransport: true
     });
     await expect(client.list()).rejects.toThrow();
+  });
+
+  it("returns a useful network error and retains the original failure", async () => {
+    const root = await temporaryRoot();
+    const cause = Object.assign(new Error("getaddrinfo ENOTFOUND"), {
+      code: "ENOTFOUND"
+    });
+    const transportError = new TypeError("fetch failed", { cause });
+    const client = new MarketplaceClient(root, {
+      baseUrl: "https://relay.example.test",
+      fetcher: async () => {
+        throw transportError;
+      },
+      secureStorage: encryptedStorage
+    });
+
+    await expect(
+      client.register({
+        username: "writer-test",
+        password: "invalid-test-password"
+      })
+    ).rejects.toMatchObject({
+      code: "marketplace.network_error",
+      message: "无法解析技能广场服务器地址，请检查 DNS 或网络连接。",
+      cause: transportError
+    });
   });
 
   it("requests and normalizes page-based marketplace results", async () => {

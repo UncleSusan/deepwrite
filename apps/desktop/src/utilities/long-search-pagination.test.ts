@@ -4,10 +4,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createEmptyLongMarkdownFileReference,
+  longChapterCharacterContinuityFilePath,
+  longChapterCharacterCurrentStateFileId,
+  longChapterCharacterHistoryFileId,
   longCharacterCoreProfileFileId,
-  longCharacterCurrentStateFileId,
   longCharacterFilePath,
-  longCharacterHistoryFileId,
   longCharacterRelationshipsFileId
 } from "@deepwrite/contracts";
 import {
@@ -288,6 +289,7 @@ describe("LongWorkspaceService opaque search cursor", () => {
       title: "多文件搜索",
       genre: "其他"
     });
+    const chapterCardId = created.book.workspaceIndex.plot.chapterCards[0]!.id;
     const operations = Array.from({ length: 130 }, (_, index) => {
       const characterId = `character_search-${index + 1}`;
       const reference = (
@@ -299,36 +301,53 @@ describe("LongWorkspaceService opaque search cursor", () => {
           longCharacterFilePath(characterId, filename),
           FIXED_NOW
         );
-      return {
-        type: "character.create" as const,
-        character: {
-          id: characterId,
-          name: `人物${index + 1}`,
-          group: "major_supporting" as const,
-          order: index + 1,
-          aliases: []
+      return [
+        {
+          type: "character.create" as const,
+          character: {
+            id: characterId,
+            name: `人物${index + 1}`,
+            group: "major_supporting" as const,
+            order: index + 1,
+            aliases: []
+          },
+          files: {
+            characterId,
+            coreProfile: reference(
+              longCharacterCoreProfileFileId(characterId),
+              "core-profile.md"
+            ),
+            relationships: reference(
+              longCharacterRelationshipsFileId(characterId),
+              "relationships.md"
+            )
+          }
         },
-        files: {
+        {
+          type: "chapterContinuity.character.create" as const,
+          chapterCardId,
           characterId,
-          coreProfile: reference(
-            longCharacterCoreProfileFileId(characterId),
-            "core-profile.md"
+          currentState: createEmptyLongMarkdownFileReference(
+            longChapterCharacterCurrentStateFileId(chapterCardId, characterId),
+            longChapterCharacterContinuityFilePath(
+              chapterCardId,
+              characterId,
+              "current-state.md"
+            ),
+            FIXED_NOW
           ),
-          relationships: reference(
-            longCharacterRelationshipsFileId(characterId),
-            "relationships.md"
-          ),
-          currentState: reference(
-            longCharacterCurrentStateFileId(characterId),
-            "current-state.md"
-          ),
-          history: reference(
-            longCharacterHistoryFileId(characterId),
-            "history.md"
+          history: createEmptyLongMarkdownFileReference(
+            longChapterCharacterHistoryFileId(chapterCardId, characterId),
+            longChapterCharacterContinuityFilePath(
+              chapterCardId,
+              characterId,
+              "history.md"
+            ),
+            FIXED_NOW
           )
         }
-      };
-    });
+      ];
+    }).flat();
     await service.applyOperations({
       bookId: created.book.id,
       batch: {
@@ -341,7 +360,9 @@ describe("LongWorkspaceService opaque search cursor", () => {
     });
     const opened = await service.open({ bookId: created.book.id });
     const lastHistory =
-      opened.book.workspaceIndex.characterFiles.at(-1)!.history;
+      opened.book.workspaceIndex.chapters[0]!.characterContinuity.at(
+        -1
+      )!.history;
     const initial = await service.readDocument({
       bookId: created.book.id,
       fileId: lastHistory.id,
@@ -364,7 +385,7 @@ describe("LongWorkspaceService opaque search cursor", () => {
       const page = await service.search({
         bookId: created.book.id,
         query: "needle",
-        scope: "character_design",
+        scope: "all",
         limit: 20,
         maxSnippetCharacters: 80,
         ...(cursor ? { cursor } : {})
@@ -374,12 +395,12 @@ describe("LongWorkspaceService opaque search cursor", () => {
       cursor = page.nextCursor ?? undefined;
     } while (cursor);
 
-    expect(searchPages).toBeGreaterThan(8);
+    expect(searchPages).toBeGreaterThan(4);
     expect(hits).toEqual([
       expect.objectContaining({
         fileId: lastHistory.id,
-        root: "character_design",
-        title: "人物130 · 历史"
+        root: "continuity_ledger",
+        title: expect.stringContaining("人物130 · 历史轨迹")
       })
     ]);
     await expect(

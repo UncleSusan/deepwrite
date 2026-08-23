@@ -618,20 +618,6 @@ export function resolveLongProposalApprovalTarget(
       ])
     };
   }
-  if (event.type === "long.chapter_dispatch_proposal") {
-    return {
-      kind: "long",
-      bookId: event.payload.bookId,
-      candidates: [
-        {
-          kind: "chapter-card",
-          chapterCardId: event.payload.chapterCardId,
-          view: "draft"
-        },
-        { kind: "root", root: "draft" }
-      ]
-    };
-  }
   return {
     kind: "long",
     bookId: event.payload.bookId,
@@ -754,14 +740,7 @@ function resolveLongFileNavigation(
     };
   }
   for (const entry of index.characterFiles) {
-    if (
-      ![
-        entry.coreProfile.id,
-        entry.relationships.id,
-        entry.currentState.id,
-        entry.history.id
-      ].includes(fileId)
-    ) {
+    if (![entry.coreProfile.id, entry.relationships.id].includes(fileId)) {
       continue;
     }
     const character =

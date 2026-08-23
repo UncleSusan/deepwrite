@@ -769,7 +769,7 @@ defineExpose({
       <p class="manager-footnote">
         {{
           activeFoundationSection === "characterTypes"
-            ? "排序只调整人物类型的展示顺序；人物仍保留核心档案、人物关系、当前状态和历史轨迹四份文本文档。"
+            ? "排序只调整人物类型的展示顺序；人物仍保留核心档案和人物关系两份文本文档。"
             : "排序只调整世界观分类的展示顺序，不会改动分类中的现有内容。"
         }}
       </p>

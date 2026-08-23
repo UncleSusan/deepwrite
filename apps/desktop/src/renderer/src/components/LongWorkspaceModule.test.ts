@@ -35,15 +35,11 @@ describe("LongWorkspaceModule boundary", () => {
     expect(shellSource).toContain(
       ':conversation-controller="activeLongConversation"'
     );
-    expect(shellSource).toContain(
-      ':writing-orchestrator="longWritingOrchestrator"'
-    );
     expect(shellSource).not.toContain("const longMessages = computed(");
     expect(shellSource).not.toContain("const longComposerDraft = computed(");
     expect(source).toContain("conversationController.messages.value");
     expect(source).toContain("props.conversationController?.draft.value");
     expect(source).toContain("conversationController.isBusy.value");
-    expect(source).toContain("writingOrchestrator.state.value.phase");
     expect(source).not.toMatch(/\bany\b/u);
   });
 

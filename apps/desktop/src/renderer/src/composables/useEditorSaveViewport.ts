@@ -14,6 +14,7 @@ interface EditorSaveViewportOptions {
   documentKey: Readonly<Ref<string>>;
   isEditView(): boolean;
   isSaving(): boolean;
+  isTransientlyReadOnly?(): boolean;
   rememberScroll(documentKey: string, scrollTop: number): void;
 }
 
@@ -21,6 +22,7 @@ interface EditorSaveViewportOptions {
 export function useEditorSaveViewport(options: EditorSaveViewportOptions) {
   let pendingSnapshot: EditorViewportSnapshot | null = null;
   let renderSnapshot: EditorViewportSnapshot | null = null;
+  let readonlyTransitionRevision = 0;
 
   function capture(): EditorViewportSnapshot | null {
     const input = options.editorInput.value;
@@ -83,6 +85,15 @@ export function useEditorSaveViewport(options: EditorSaveViewportOptions) {
     restoreImmediately(snapshot);
   }
 
+  function preserveForReadonlyTransition(): void {
+    const snapshot = capture();
+    const revision = ++readonlyTransitionRevision;
+    void nextTick(() => {
+      if (revision !== readonlyTransitionRevision) return;
+      restoreImmediately(snapshot);
+    });
+  }
+
   function preserveForDispatchedSave(): void {
     const snapshot = capture();
     pendingSnapshot = snapshot;
@@ -110,6 +121,12 @@ export function useEditorSaveViewport(options: EditorSaveViewportOptions) {
     },
     { flush: "pre" }
   );
+
+  if (options.isTransientlyReadOnly) {
+    watch(options.isTransientlyReadOnly, preserveForReadonlyTransition, {
+      flush: "sync"
+    });
+  }
 
   return {
     captureBeforeRender,

@@ -6,14 +6,15 @@ import type {
   LongWorkspaceFileReference,
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
-import { longCharacterGroupLabel } from "../types/longWorkspace";
+import {
+  latestCommittedContinuityChapter,
+  longCharacterGroupLabel
+} from "../types/longWorkspace";
 import { readLongDocumentFullContent } from "./longWorldbuildingSync";
 
 const CHARACTER_FILE_LABELS = {
   coreProfile: "核心档案",
-  relationships: "人物关系",
-  currentState: "当前状态",
-  history: "历史轨迹"
+  relationships: "人物关系"
 } as const;
 
 function ordered<T extends { order: number; id: string }>(
@@ -55,6 +56,9 @@ export async function createLongManuscriptExportInput(input: {
   ): Promise<void> => {
     files.push({ path, content: await read(file) });
   };
+  const addContent = (path: string[], content: string): void => {
+    files.push({ path, content });
+  };
 
   if (selected.has("worldbuilding")) {
     for (const category of ordered(input.workspace.worldbuilding)) {
@@ -93,6 +97,22 @@ export async function createLongManuscriptExportInput(input: {
         keyof typeof CHARACTER_FILE_LABELS
       >) {
         await add([...base, CHARACTER_FILE_LABELS[key]], entry[key]);
+      }
+      const latest = latestCommittedContinuityChapter(
+        input.workspace,
+        (chapter) =>
+          chapter.characterContinuity.some(
+            ({ characterId }) => characterId === character.id
+          )
+      )?.characterContinuity.find(
+        ({ characterId }) => characterId === character.id
+      );
+      if (latest) {
+        await add([...base, "当前状态"], latest.currentState);
+        await add([...base, "历史轨迹"], latest.history);
+      } else {
+        addContent([...base, "当前状态"], "");
+        addContent([...base, "历史轨迹"], "");
       }
     }
   }

@@ -101,11 +101,7 @@ export async function assertPinnedSetIntegrity(
   }
   if (loaded.index.ledger.commits.some(({ mode }) => mode === "structured")) {
     for (const entry of loaded.index.characterFiles) {
-      for (const reference of [
-        entry.relationships,
-        entry.currentState,
-        entry.history
-      ]) {
+      for (const reference of [entry.relationships]) {
         addCheck(await loadIndexedFile(loaded, reference.id));
       }
     }

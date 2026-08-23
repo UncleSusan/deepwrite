@@ -24,6 +24,10 @@ import {
 } from "../workspace";
 import { UserPromptAttachmentsSchema } from "./attachments";
 import {
+  SessionUserInputResponsePayloadSchema,
+  type SessionUserInputResponsePayload
+} from "./user-input";
+import {
   AgentRuntimeRefSchema,
   AgentWriteApprovalModeSchema,
   WorkspaceRuntimeContextSchema
@@ -185,6 +189,35 @@ export const SessionAbortCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("session.abort"),
   payload: SessionAbortCommandPayloadSchema
 }).superRefine(validateAbortCommandContext);
+
+function validateUserInputResponseCommandContext(
+  value: {
+    context: { sessionId?: string | undefined; runId?: string | undefined };
+    payload: SessionUserInputResponsePayload;
+  },
+  context: z.core.$RefinementCtx<unknown>
+): void {
+  if (value.context.sessionId !== value.payload.sessionId) {
+    context.addIssue({
+      code: "custom",
+      path: ["context", "sessionId"],
+      message: "Envelope sessionId must match the user-input response."
+    });
+  }
+  if (value.context.runId !== value.payload.runId) {
+    context.addIssue({
+      code: "custom",
+      path: ["context", "runId"],
+      message: "Envelope runId must match the user-input response."
+    });
+  }
+}
+
+export const SessionUserInputResponseCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("session.user_input_response"),
+    payload: SessionUserInputResponsePayloadSchema
+  }).superRefine(validateUserInputResponseCommandContext);
 
 /**
  * Main fully parses the authoritative snapshot before creating agent.prompt.
@@ -443,3 +476,9 @@ export const AgentAbortCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agent.abort"),
   payload: SessionAbortCommandPayloadSchema
 }).superRefine(validateAbortCommandContext);
+
+export const AgentUserInputResponseCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("agent.user_input_response"),
+    payload: SessionUserInputResponsePayloadSchema
+  }).superRefine(validateUserInputResponseCommandContext);

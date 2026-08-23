@@ -39,7 +39,7 @@ describe("App performance boundaries", () => {
     expect(source.split("\n").length).toBeLessThanOrEqual(2_800);
     expect(source).toContain("useLongWorkspaceSessionCoordinator");
     expect(source).toContain("useLazyLongStructureTransactionsCoordinator");
-    expect(source).toContain("useLongWritingWorkflowCoordinator");
+    expect(source).toContain("useLongProposalRuntimeCoordinator");
     expect(source).toContain("useLazyLongBookLifecycleCoordinator");
     expect(source).toContain("useLazyLongRollbackCoordinator");
     expect(source).toContain("useCatalogLibraryTransactionsCoordinator");

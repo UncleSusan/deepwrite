@@ -266,9 +266,7 @@ function indexedFiles(
       : []),
     ...index.characterFiles.flatMap((entry) => [
       { reference: entry.coreProfile, kind: "markdown" as const },
-      { reference: entry.relationships, kind: "markdown" as const },
-      { reference: entry.currentState, kind: "markdown" as const },
-      { reference: entry.history, kind: "markdown" as const }
+      { reference: entry.relationships, kind: "markdown" as const }
     ]),
     ...index.chapters.flatMap((entry) => [
       { reference: entry.body, kind: "markdown" as const },
@@ -436,14 +434,6 @@ export function assertLongLedgerRecordChain(
       reference: entry.relationships,
       role: "relationships"
     });
-    continuityFiles.set(entry.currentState.id, {
-      reference: entry.currentState,
-      role: "current-state"
-    });
-    continuityFiles.set(entry.history.id, {
-      reference: entry.history,
-      role: "history"
-    });
   }
   for (const chapter of index.chapters) {
     continuityFiles.set(chapter.characterState.id, {
@@ -456,6 +446,18 @@ export function assertLongLedgerRecordChain(
       role: "chapter-handoff",
       chapterCardId: chapter.chapterCardId
     });
+    for (const entry of chapter.characterContinuity) {
+      continuityFiles.set(entry.currentState.id, {
+        reference: entry.currentState,
+        role: "current-state",
+        chapterCardId: chapter.chapterCardId
+      });
+      continuityFiles.set(entry.history.id, {
+        reference: entry.history,
+        role: "history",
+        chapterCardId: chapter.chapterCardId
+      });
+    }
   }
   const characterSubjectIds = new Set(index.characters.map(({ id }) => id));
   const worldSubjectIds = new Set(index.worldbuilding.map(({ id }) => id));
@@ -474,9 +476,6 @@ export function assertLongLedgerRecordChain(
       thread.id,
       ...thread.beats.map(({ id }) => id)
     ])
-  );
-  const characterFilesByCharacterId = new Map(
-    index.characterFiles.map((entry) => [entry.characterId, entry] as const)
   );
   const lastFileState = new Map<
     string,
@@ -570,17 +569,7 @@ export function assertLongLedgerRecordChain(
         if (fact.domain !== "character" && fact.domain !== "relationship") {
           continue;
         }
-        const files = characterFilesByCharacterId.get(fact.subjectId);
-        const requiredFileIds =
-          files === undefined
-            ? []
-            : fact.domain === "character"
-              ? [files.currentState.id, files.history.id]
-              : [files.relationships.id, files.history.id];
-        if (
-          requiredFileIds.length !== 2 ||
-          requiredFileIds.some((fileId) => !changedFileIds.has(fileId))
-        ) {
+        if (changedFileIds.size === 0) {
           throw new Error(
             `v3 连续性事实缺少人物物化文件变更：${fact.factId}。`
           );
@@ -611,6 +600,18 @@ export function assertLongLedgerRecordChain(
     }
     for (const change of record.fileChanges) {
       const file = continuityFiles.get(change.fileId);
+      if (!file && record.schemaVersion <= 3) {
+        if (
+          !revisionMatchesContent(
+            change.before.revision,
+            change.before.content
+          ) ||
+          !revisionMatchesContent(change.after.revision, change.after.content)
+        ) {
+          throw new Error(`连续性账本文件变更链不一致：${change.fileId}。`);
+        }
+        continue;
+      }
       const previous = lastFileState.get(change.fileId);
       const chapterOutput =
         file?.role === "chapter-character-state" ||

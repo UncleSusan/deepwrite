@@ -5,6 +5,9 @@ import type {
   AgentUsage,
   AgentUsageObservationStatus,
   AgentWriteApprovalMode,
+  AgentUserInputQuestion,
+  AgentUserInputSource,
+  SessionUserInputResponsePayload,
   ChatAssistantRuntimeContext,
   LearningImitationAgentProfile,
   LibraryAgentProfile,
@@ -52,6 +55,17 @@ export interface AgentRunInput {
   longCommandExecutor?: LongCommandExecutor;
   signal?: AbortSignal;
 }
+
+export interface AgentUserInputRequest {
+  toolCallId: string;
+  source: AgentUserInputSource;
+  questions: AgentUserInputQuestion[];
+}
+
+export type AgentUserInputRequester = (
+  request: AgentUserInputRequest,
+  signal?: AbortSignal
+) => Promise<SessionUserInputResponsePayload>;
 
 export type AgentRuntimeEvent =
   | {
@@ -188,6 +202,18 @@ export type AgentRuntimeEvent =
         toolName: string;
         resultSummary: string;
         isError: boolean;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "agent.user_input_requested";
+      runId: string;
+      sessionId: string;
+      payload: {
+        requestId: string;
+        toolCallId: string;
+        source: AgentUserInputSource;
+        questions: AgentUserInputQuestion[];
         runtime: AgentRuntimeRef;
       };
     }
@@ -380,24 +406,6 @@ export type AgentRuntimeEvent =
         bookId: string;
         agentId: import("@deepwrite/contracts").LongAgentId;
         input: import("@deepwrite/contracts").LongCommitChapterInput;
-        summary: string;
-        runtime: AgentRuntimeRef;
-      };
-    }
-  | {
-      type: "long.chapter_dispatch_proposal";
-      runId: string;
-      sessionId: string;
-      payload: {
-        toolCallId: string;
-        bookId: string;
-        agentId: import("@deepwrite/contracts").LongAgentId;
-        scope: import("@deepwrite/contracts").LongWritingScope;
-        chapterCardId: string;
-        title: string;
-        chapters: import("@deepwrite/contracts").LongChapterReadiness[];
-        workspaceRevision: number;
-        projectRevision: number;
         summary: string;
         runtime: AgentRuntimeRef;
       };

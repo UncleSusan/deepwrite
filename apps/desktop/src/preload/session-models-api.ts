@@ -13,6 +13,8 @@ import {
   RemoteModelListResultSchema,
   SessionAbortAcceptedPayloadSchema,
   SessionAbortCommandPayloadSchema,
+  SessionUserInputResponseAcceptedPayloadSchema,
+  SessionUserInputResponsePayloadSchema,
   SessionPromptAcceptedPayloadSchema,
   SessionPromptCommandPayloadSchema,
   createEnvelope,
@@ -29,6 +31,8 @@ import {
   type RemoteModelListResult,
   type SessionAbortAcceptedPayload,
   type SessionAbortCommandPayload,
+  type SessionUserInputResponseAcceptedPayload,
+  type SessionUserInputResponsePayload,
   type SessionPromptAcceptedPayload,
   type SessionPromptCommandPayload
 } from "@deepwrite/contracts";
@@ -69,6 +73,25 @@ export async function abort(
   return SessionAbortAcceptedPayloadSchema.parse(
     await invokeCommand<SessionAbortAcceptedPayload>(
       createEnvelope("session.abort", payload, {
+        id,
+        context: {
+          correlationId: id,
+          sessionId: payload.sessionId,
+          runId: payload.runId
+        }
+      })
+    )
+  );
+}
+
+export async function submitUserInput(
+  rawPayload: SessionUserInputResponsePayload
+): Promise<SessionUserInputResponseAcceptedPayload> {
+  const payload = SessionUserInputResponsePayloadSchema.parse(rawPayload);
+  const id = browserId("cmd_user_input");
+  return SessionUserInputResponseAcceptedPayloadSchema.parse(
+    await invokeCommand<SessionUserInputResponseAcceptedPayload>(
+      createEnvelope("session.user_input_response", payload, {
         id,
         context: {
           correlationId: id,
@@ -280,7 +303,8 @@ export async function resetChatAssistantProjectConfig(
 
 export const session: DeepWriteApi["session"] = {
   prompt,
-  abort
+  abort,
+  submitUserInput
 };
 
 export const modelUsage: DeepWriteApi["modelUsage"] = {

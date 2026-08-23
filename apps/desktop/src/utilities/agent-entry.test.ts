@@ -66,6 +66,17 @@ vi.mock("@deepwrite/pi-runtime-adapter", () => ({
     async testConnection(): Promise<never> {
       throw new Error("Not used by this test.");
     }
+
+    resolveUserInput(payload: {
+      sessionId: string;
+      runId: string;
+      requestId: string;
+    }) {
+      return {
+        ...payload,
+        resolvedAt: "2026-08-22T00:00:00.000Z"
+      };
+    }
   }
 }));
 
@@ -256,7 +267,7 @@ describe("Agent Utility prompt forwarding", () => {
   it("forwards the isolated longAgentProfile and navigation context", async () => {
     await import("./agent-entry");
     const longAgentProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      (profile) => profile.id === "setting"
+      (profile) => profile.id === "long"
     )!;
     const command = CommandEnvelopeSchema.parse(
       createEnvelope(
@@ -270,7 +281,7 @@ describe("Agent Utility prompt forwarding", () => {
               bookId: "longbook_forwarding",
               title: "长篇测试",
               activeRoot: "worldbuilding",
-              activeAgentId: "setting",
+              activeAgentId: "long",
               workspaceRevision: 0,
               projectRevision: 0,
               navigation: {
@@ -329,7 +340,7 @@ describe("Agent Utility prompt forwarding", () => {
     expect(result.status).toBe("accepted");
     await vi.waitFor(() => expect(captured.startInputs).toHaveLength(1));
     expect(captured.startInputs[0]).toMatchObject({
-      longAgentProfile: { id: "setting" },
+      longAgentProfile: { id: "long" },
       workspaceContext: {
         longWorkspace: {
           bookId: "longbook_forwarding",
@@ -444,6 +455,65 @@ describe("Agent Utility prompt forwarding", () => {
     });
   });
 
+  it("maps a runtime user-input request to a validated system event", async () => {
+    await import("./agent-entry");
+    captured.runtimeEvents.push({
+      type: "agent.user_input_requested",
+      runId: "run-user-input",
+      sessionId: "session-user-input",
+      payload: {
+        requestId: "request-tone",
+        toolCallId: "ask-tone",
+        source: "ask_user_question",
+        questions: [
+          {
+            id: "tone",
+            question: "选择叙事语气",
+            options: [
+              { id: "restrained", label: "克制" },
+              { id: "intense", label: "强烈" }
+            ]
+          }
+        ],
+        runtime: {
+          provider: "deepwrite",
+          model: "proposal-test",
+          mode: "local-faux"
+        }
+      }
+    });
+    const command = CommandEnvelopeSchema.parse(
+      createEnvelope(
+        "agent.prompt",
+        { sessionId: "session-user-input", message: "先确认语气" },
+        {
+          id: "command-user-input",
+          context: {
+            correlationId: "correlation-user-input",
+            sessionId: "session-user-input"
+          }
+        }
+      )
+    );
+    const emitted: SystemEventEnvelope[] = [];
+
+    await expect(
+      captured.commandHandler!(command, (event) => emitted.push(event))
+    ).resolves.toMatchObject({ status: "accepted" });
+    await vi.waitFor(() => expect(emitted).toHaveLength(1));
+
+    expect(SystemEventEnvelopeSchema.parse(emitted[0])).toMatchObject({
+      type: "agent.user_input_requested",
+      payload: {
+        sessionId: "session-user-input",
+        runId: expect.any(String),
+        requestId: "request-tone",
+        toolCallId: "ask-tone",
+        source: "ask_user_question"
+      }
+    });
+  });
+
   it("maps all long proposal runtime events to validated system envelopes", async () => {
     await import("./agent-entry");
     const eventBase = {
@@ -466,7 +536,7 @@ describe("Agent Utility prompt forwarding", () => {
         type: "long.mutation_proposal",
         payload: {
           ...payloadBase,
-          agentId: "setting",
+          agentId: "long",
           batch: {
             baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -487,7 +557,7 @@ describe("Agent Utility prompt forwarding", () => {
         type: "long.worldbuilding_file_proposal",
         payload: {
           ...payloadBase,
-          agentId: "setting",
+          agentId: "long",
           batch: {
             baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -530,31 +600,10 @@ describe("Agent Utility prompt forwarding", () => {
       },
       {
         ...eventBase,
-        type: "long.chapter_dispatch_proposal",
-        payload: {
-          ...payloadBase,
-          agentId: "draft",
-          scope: "chapter",
-          chapterCardId: "chapter_one",
-          title: "第一章",
-          chapters: [
-            {
-              chapterCardId: "chapter_one",
-              title: "第一章",
-              status: "empty",
-              missingFiles: ["body"]
-            }
-          ],
-          workspaceRevision: 2,
-          projectRevision: 3
-        }
-      },
-      {
-        ...eventBase,
         type: "long.chapter_write_proposal",
         payload: {
           ...payloadBase,
-          agentId: "draft",
+          agentId: "long",
           batch: {
             baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -591,7 +640,7 @@ describe("Agent Utility prompt forwarding", () => {
         type: "long.ledger_commit_proposal",
         payload: {
           ...payloadBase,
-          agentId: "continuity_ledger",
+          agentId: "long",
           input: {
             mode: "structured",
             bookId: "longbook_proposals",
@@ -678,14 +727,13 @@ describe("Agent Utility prompt forwarding", () => {
     await expect(
       captured.commandHandler!(command, (event) => emitted.push(event))
     ).resolves.toMatchObject({ status: "accepted" });
-    await vi.waitFor(() => expect(emitted).toHaveLength(5));
+    await vi.waitFor(() => expect(emitted).toHaveLength(4));
 
     expect(
       emitted.map((event) => SystemEventEnvelopeSchema.parse(event).type)
     ).toEqual([
       "long.mutation_proposal",
       "long.worldbuilding_file_proposal",
-      "long.chapter_dispatch_proposal",
       "long.chapter_write_proposal",
       "long.ledger_commit_proposal"
     ]);

@@ -495,25 +495,6 @@ export function toRuntimeEvents(
             runtime
           }
         });
-      } else if (details.kind === "long-chapter-dispatch-proposal") {
-        events.push({
-          type: "long.chapter_dispatch_proposal",
-          runId: input.runId,
-          sessionId: input.sessionId,
-          payload: {
-            toolCallId: event.toolCallId,
-            bookId: details.bookId,
-            agentId: details.agentId,
-            scope: details.scope,
-            chapterCardId: details.chapterCardId,
-            title: details.title,
-            chapters: details.chapters,
-            workspaceRevision: details.workspaceRevision,
-            projectRevision: details.projectRevision,
-            summary: details.summary,
-            runtime
-          }
-        });
       }
     }
     return events;

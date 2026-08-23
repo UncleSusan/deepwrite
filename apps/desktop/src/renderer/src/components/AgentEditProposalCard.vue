@@ -180,7 +180,7 @@ function proposalStatusMessage(): string {
     return proposal.longCharacterTarget.files.every(
       ({ operation }) => operation === "create"
     )
-      ? "接受后将创建人物及其四份空白档案并保存到本机。"
+      ? "接受后将创建人物及其两份档案并保存到本机。"
       : "接受后将写入人物档案并保存到本机。";
   }
   if (

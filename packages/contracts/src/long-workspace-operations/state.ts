@@ -11,6 +11,9 @@ import type {
   LongWorkspaceOperationErrorCode
 } from "./impact-schema";
 import { LongWorkspaceOperationError } from "./impact-schema";
+import { normalizeStoryPlotOrders } from "./order-utils";
+
+export { nextOrder } from "./order-utils";
 
 export type MutationState = {
   original: LongWorkspaceIndexSnapshot;
@@ -132,9 +135,7 @@ export function allWorkspaceFiles(
     ...(workspace.characterOverview ? [workspace.characterOverview] : []),
     ...workspace.characterFiles.flatMap((entry) => [
       entry.coreProfile,
-      entry.relationships,
-      entry.currentState,
-      entry.history
+      entry.relationships
     ]),
     ...workspace.chapters.flatMap((entry) => [
       entry.body,
@@ -382,6 +383,8 @@ export function normalizeLongWorkspaceOrders(
     narrativeOrder.set(chapter.volumeId, next);
     chapter.narrativeOrder = next;
   });
+
+  normalizeStoryPlotOrders(workspace);
 
   workspace.plot.storyEvents.sort(
     (left, right) => left.storyOrder - right.storyOrder

@@ -206,14 +206,22 @@ export function useAgentActivityCoordinator(
         : undefined;
       currentKey.value = entry?.[0];
       if (!view || !entry) return;
+      const current = activityByKey.value.get(entry[0]);
+      const freezeLocation = current?.status === "running";
+      const chapterCardId = freezeLocation
+        ? current?.chapterCardId
+        : view.chapterCardId;
       const descriptor: AgentActivityDescriptor = {
         conversationKey: entry[0],
         agentLabel: view.agentLabel,
         contextLabel: view.contextLabel,
-        targetResourceId: view.targetResourceId
+        targetResourceId:
+          freezeLocation && current
+            ? current.targetResourceId
+            : view.targetResourceId,
+        ...(chapterCardId ? { chapterCardId } : {})
       };
       descriptorByKey.set(entry[0], descriptor);
-      const current = activityByKey.value.get(entry[0]);
       if (!current) return;
       if (current.status === "running") {
         publishItem({ ...current, ...descriptor });

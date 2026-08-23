@@ -34,17 +34,6 @@ const emit = defineEmits<{
   save: [settings: LongAgentSettingsInput];
 }>();
 
-const AGENT_META = [
-  { id: "setting", eyebrow: "设定", label: "设定" },
-  { id: "plot_design", eyebrow: "结构", label: "剧情设计" },
-  { id: "draft", eyebrow: "正文", label: "写手" },
-  { id: "continuity_ledger", eyebrow: "连续性", label: "连续性账本" }
-] as const satisfies readonly {
-  id: LongAgentId;
-  eyebrow: string;
-  label: string;
-}[];
-
 const WORKSPACE_OPTIONS = [
   {
     id: "worldbuilding",
@@ -88,23 +77,16 @@ const SKILL_OPTIONS = [
   { id: "other", label: "其他技能", description: "未归入以上分类的技能" }
 ] as const satisfies readonly ReadOption<SkillKind>[];
 
-const activeAgentId = ref<LongAgentId>(LONG_AGENT_IDS[0]);
+const agentId: LongAgentId = LONG_AGENT_IDS[0];
 const draftAgents = ref<LongAgentSettingsInput["agents"]>([]);
 
 const activeAgent = computed(() =>
-  draftAgents.value.find((agent) => agent.id === activeAgentId.value)
+  draftAgents.value.find((agent) => agent.id === agentId)
 );
 const activeProfile = computed(() =>
-  props.settings?.agents.find((agent) => agent.id === activeAgentId.value)
+  props.settings?.agents.find((agent) => agent.id === agentId)
 );
-const activeMeta = computed(
-  () =>
-    AGENT_META.find((agent) => agent.id === activeAgentId.value) ??
-    AGENT_META[0]
-);
-const immutableProfile = computed(() =>
-  getDefaultLongAgentProfile(activeAgentId.value)
-);
+const immutableProfile = computed(() => getDefaultLongAgentProfile(agentId));
 const formDisabled = computed(
   () =>
     props.loading ||
@@ -166,11 +148,9 @@ function handleCheckboxChange(
 function resetActiveAgent(): void {
   if (formDisabled.value) return;
   const builtin = DEFAULT_LONG_AGENT_SETTINGS.agents.find(
-    (agent) => agent.id === activeAgentId.value
+    (agent) => agent.id === agentId
   );
-  const index = draftAgents.value.findIndex(
-    (agent) => agent.id === activeAgentId.value
-  );
+  const index = draftAgents.value.findIndex((agent) => agent.id === agentId);
   if (!builtin || index < 0) return;
   draftAgents.value[index] = {
     id: builtin.id,
@@ -186,7 +166,7 @@ function resetActiveAgent(): void {
       skillKinds: [...builtin.readAccess.skillKinds]
     }
   };
-  uiMessage.info("当前长篇智能体已恢复内置值；点击保存后生效。");
+  uiMessage.info("长篇智能体已恢复内置值；点击保存后生效。");
 }
 
 function saveSettings(): void {
@@ -196,7 +176,7 @@ function saveSettings(): void {
     if (!agent) return null;
     const shortcuts = agent.welcomeShortcuts.map((value) => value.trim());
     if (shortcuts.length !== 3 || shortcuts.some((value) => !value)) {
-      uiMessage.warning("每个长篇智能体的三个欢迎快捷按钮都不能为空");
+      uiMessage.warning("长篇智能体的三个欢迎快捷按钮都不能为空");
       return null;
     }
     return {
@@ -250,26 +230,11 @@ function saveSettings(): void {
   <div v-else-if="!settings || !activeAgent" class="panel-state">
     暂无可用的长篇智能体设置。
   </div>
-  <div v-else class="settings-layout">
-    <nav class="agent-nav" aria-label="长篇智能体">
-      <button
-        v-for="agent in AGENT_META"
-        :key="agent.id"
-        type="button"
-        class="agent-nav-item"
-        :class="{ 'is-active': agent.id === activeAgentId }"
-        :aria-current="agent.id === activeAgentId ? 'page' : undefined"
-        @click="activeAgentId = agent.id"
-      >
-        <small>{{ agent.eyebrow }}</small>
-        <strong>{{ agent.label }}</strong>
-      </button>
-    </nav>
-
+  <div v-else class="long-agent-settings-layout">
     <div class="agent-editor">
       <header class="agent-header">
-        <span>{{ activeMeta.eyebrow }}</span>
-        <h3>{{ activeProfile?.label ?? activeMeta.label }}</h3>
+        <span>长篇</span>
+        <h3>{{ activeProfile?.label ?? "长篇智能体" }}</h3>
         <p>{{ activeProfile?.description }}</p>
       </header>
 
@@ -374,12 +339,12 @@ function saveSettings(): void {
         <div class="section-heading">
           <div>
             <h4>阶段读取、写入与工具边界</h4>
-            <p>阶段互读与写入边界由应用内置并在 Main 与工具层强制校验。</p>
+            <p>阶段范围与写入边界由应用内置并在 Main 与工具层强制校验。</p>
           </div>
           <span>固定</span>
         </div>
         <p class="immutable-label">
-          阶段读取范围：四个阶段均可读取设定、剧情、正文与连续性账本，互相可读
+          阶段读取范围：世界观、人物、剧情、正文与连续性账本全部可读
         </p>
         <div class="immutable-list">
           <span v-for="option in WORKSPACE_OPTIONS" :key="`read:${option.id}`">
@@ -413,7 +378,7 @@ function saveSettings(): void {
           :disabled="formDisabled"
           @click="resetActiveAgent"
         >
-          恢复当前智能体默认
+          恢复默认
         </button>
         <button
           type="button"
@@ -437,46 +402,10 @@ function saveSettings(): void {
   color: var(--text-secondary);
 }
 
-.settings-layout {
+.long-agent-settings-layout {
   display: grid;
-  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
-}
-
-.agent-nav {
-  display: grid;
-  gap: 7px;
-  position: sticky;
-  top: 18px;
-}
-
-.agent-nav-item {
-  display: grid;
-  gap: 3px;
-  min-height: 54px;
-  padding: 10px 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text-secondary);
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-
-.agent-nav-item:hover {
-  background: var(--surface-hover);
-}
-
-.agent-nav-item.is-active {
-  border-color: var(--theme-line);
-  background: var(--surface-selected);
-  color: var(--text-primary);
-}
-
-.agent-nav-item small {
-  color: var(--text-tertiary);
 }
 
 .agent-editor {
@@ -669,15 +598,6 @@ input:disabled {
 }
 
 @media (max-width: 760px) {
-  .settings-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .agent-nav {
-    position: static;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .option-grid {
     grid-template-columns: 1fr;
   }

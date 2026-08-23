@@ -2,6 +2,7 @@ import {
   ATTACHED_CONTEXT_MAX_ITEMS,
   MATERIAL_KINDS,
   SKILL_KINDS,
+  longLinkedResourceIsEnabledForStage,
   type CatalogIndexSnapshot,
   type CatalogSnapshot,
   type LongAgentProfile,
@@ -84,7 +85,6 @@ export interface LongConversationCoordinatorOptions {
   runtime: {
     conversationKey(
       bookId: string,
-      agentId: LongAgentProfile["id"],
       activeRoot: LongWorkspaceRuntimeContext["activeRoot"],
       chapterCardId?: string
     ): string;
@@ -98,7 +98,6 @@ export interface LongConversationCoordinatorOptions {
     ): void;
   };
   workspace: {
-    blockActiveWritingPlan(action: string): boolean;
     ensureAgentSettingsLoaded(): Promise<boolean>;
     saveActiveEditorChanges(): Promise<boolean>;
     refreshActiveWorkspace(bookId: string): Promise<boolean>;
@@ -147,7 +146,8 @@ function catalogAttachmentId(
 function longSkillReferences(
   snapshot: CatalogIndexSnapshot | null,
   summary: LongBookSummary | null,
-  profile: LongAgentProfile | null
+  profile: LongAgentProfile | null,
+  activeRoot: LongWorkspaceRuntimeContext["activeRoot"]
 ): ComposerReferenceOption[] {
   if (!snapshot || !summary || !profile) return [];
   const readableKinds = new Set(profile.readAccess.skillKinds);
@@ -159,6 +159,16 @@ function longSkillReferences(
   for (const selectedKind of SKILL_KINDS) {
     if (!readableKinds.has(selectedKind)) continue;
     for (const libraryId of summary.linkedSkillIdsByKind[selectedKind]) {
+      if (
+        !longLinkedResourceIsEnabledForStage(
+          summary.linkedResourceStageScopes,
+          "skill",
+          libraryId,
+          activeRoot
+        )
+      ) {
+        continue;
+      }
       if (seenLibraries.has(libraryId)) continue;
       seenLibraries.add(libraryId);
       const library = libraries.get(libraryId);
@@ -182,7 +192,8 @@ function longSkillReferences(
 function longMaterialReferences(
   snapshot: CatalogIndexSnapshot | null,
   summary: LongBookSummary | null,
-  profile: LongAgentProfile | null
+  profile: LongAgentProfile | null,
+  activeRoot: LongWorkspaceRuntimeContext["activeRoot"]
 ): ComposerReferenceOption[] {
   if (!snapshot || !summary || !profile) return [];
   const readableKinds = new Set(profile.readAccess.materialKinds);
@@ -194,6 +205,16 @@ function longMaterialReferences(
   for (const selectedKind of MATERIAL_KINDS) {
     if (!readableKinds.has(selectedKind)) continue;
     for (const libraryId of summary.linkedMaterialIdsByKind[selectedKind]) {
+      if (
+        !longLinkedResourceIsEnabledForStage(
+          summary.linkedResourceStageScopes,
+          "material",
+          libraryId,
+          activeRoot
+        )
+      ) {
+        continue;
+      }
       if (seenLibraries.has(libraryId)) continue;
       seenLibraries.add(libraryId);
       const library = libraries.get(libraryId);
@@ -263,9 +284,9 @@ export function useLongConversationCoordinator(
     const summary = options.state.activeBookSummary.value;
     const profile = options.state.activeAgentProfile.value;
     if (!summary || !profile) return null;
+    void profile;
     return options.runtime.conversationKey(
       summary.id,
-      profile.id,
       options.state.activeRoot.value,
       options.state.selection.value?.chapterCardId
     );
@@ -287,14 +308,16 @@ export function useLongConversationCoordinator(
     longSkillReferences(
       options.catalog.indexSnapshot.value,
       options.state.activeBookSummary.value,
-      options.state.activeAgentProfile.value
+      options.state.activeAgentProfile.value,
+      options.state.activeRoot.value
     )
   );
   const availableMaterialReferences = computed(() =>
     longMaterialReferences(
       options.catalog.indexSnapshot.value,
       options.state.activeBookSummary.value,
-      options.state.activeAgentProfile.value
+      options.state.activeAgentProfile.value,
+      options.state.activeRoot.value
     )
   );
   const activeSemanticSignature = computed(() => {
@@ -467,11 +490,7 @@ export function useLongConversationCoordinator(
   }
 
   function newConversation(): void {
-    if (
-      disposed ||
-      options.workspace.blockActiveWritingPlan("新建长篇对话") ||
-      preflightBlocks("新建对话")
-    ) {
+    if (disposed || preflightBlocks("新建对话")) {
       return;
     }
     const conversation = activeConversation.value;
@@ -486,11 +505,7 @@ export function useLongConversationCoordinator(
   }
 
   function selectConversation(sessionId: string): void {
-    if (
-      disposed ||
-      options.workspace.blockActiveWritingPlan("切换长篇对话") ||
-      preflightBlocks("切换对话")
-    ) {
+    if (disposed || preflightBlocks("切换对话")) {
       return;
     }
     const conversation = activeConversation.value;

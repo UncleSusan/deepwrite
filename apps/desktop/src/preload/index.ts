@@ -144,6 +144,8 @@ import {
   MoveLibraryEntryResultSchema,
   SessionAbortAcceptedPayloadSchema,
   SessionAbortCommandPayloadSchema,
+  SessionUserInputResponseAcceptedPayloadSchema,
+  SessionUserInputResponsePayloadSchema,
   SessionPromptAcceptedPayloadSchema,
   SessionPromptCommandPayloadSchema,
   SaveDocumentInputSchema,
@@ -288,6 +290,8 @@ import {
   type MoveLibraryEntryResult,
   type SessionAbortAcceptedPayload,
   type SessionAbortCommandPayload,
+  type SessionUserInputResponseAcceptedPayload,
+  type SessionUserInputResponsePayload,
   type SessionPromptAcceptedPayload,
   type SessionPromptCommandPayload,
   type SaveDocumentInput,
@@ -1283,6 +1287,25 @@ async function abort(
   );
 }
 
+async function submitUserInput(
+  rawPayload: SessionUserInputResponsePayload
+): Promise<SessionUserInputResponseAcceptedPayload> {
+  const payload = SessionUserInputResponsePayloadSchema.parse(rawPayload);
+  const id = browserId("cmd_user_input");
+  return SessionUserInputResponseAcceptedPayloadSchema.parse(
+    await invokeCommand<SessionUserInputResponseAcceptedPayload>(
+      createEnvelope("session.user_input_response", payload, {
+        id,
+        context: {
+          correlationId: id,
+          sessionId: payload.sessionId,
+          runId: payload.runId
+        }
+      })
+    )
+  );
+}
+
 async function listModels(): Promise<ModelSettings> {
   const id = browserId("cmd_models_list");
   return ModelSettingsSchema.parse(
@@ -2133,7 +2156,8 @@ const api: DeepWriteApi = {
   },
   session: {
     prompt,
-    abort
+    abort,
+    submitUserInput
   },
   models: {
     list: listModels,

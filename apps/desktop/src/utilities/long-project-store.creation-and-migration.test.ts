@@ -129,6 +129,99 @@ describe("LongProjectStore: creation-and-migration", () => {
     );
   });
 
+  it("removes legacy character state files and keeps chapter continuity as the only source", async () => {
+    const { projectStore, created } = await createFixture(
+      "legacy-character-state-files"
+    );
+    const characterId = "character_legacy";
+    const coreProfile = createEmptyLongMarkdownFileReference(
+      longCharacterCoreProfileFileId(characterId),
+      longCharacterFilePath(characterId, "core-profile.md"),
+      FIXED_NOW
+    );
+    const relationships = createEmptyLongMarkdownFileReference(
+      longCharacterRelationshipsFileId(characterId),
+      longCharacterFilePath(characterId, "relationships.md"),
+      FIXED_NOW
+    );
+    await projectStore.applyWorkspaceOperations(created.projectDirectory, {
+      batch: {
+        baseRevision: 0,
+        updatedAt: FIXED_NOW,
+        operations: [
+          {
+            type: "character.create",
+            character: {
+              id: characterId,
+              name: "旧人物",
+              group: "protagonist",
+              order: 1,
+              aliases: []
+            },
+            files: { characterId, coreProfile, relationships }
+          }
+        ],
+        documentWrites: []
+      },
+      expectedProjectRevision: 0
+    });
+
+    const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
+    const manifestPath = join(created.projectDirectory, "deepwrite.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as {
+      characterFiles: Array<Record<string, unknown>>;
+    };
+    const currentStateContent = "不应继续作为人物阶段状态。";
+    const historyContent = "不应继续作为人物阶段历史。";
+    const currentState = {
+      id: longCharacterCurrentStateFileId(characterId),
+      path: longCharacterFilePath(characterId, "current-state.md"),
+      revision: createLongFileRevision(currentStateContent),
+      updatedAt: FIXED_NOW
+    };
+    const history = {
+      id: longCharacterHistoryFileId(characterId),
+      path: longCharacterFilePath(characterId, "history.md"),
+      revision: createLongFileRevision(historyContent),
+      updatedAt: FIXED_NOW
+    };
+    Object.assign(index.characterFiles[0]!, { currentState, history });
+    await writeFile(
+      join(created.projectDirectory, currentState.path),
+      currentStateContent,
+      "utf8"
+    );
+    await writeFile(
+      join(created.projectDirectory, history.path),
+      historyContent,
+      "utf8"
+    );
+    const indexContent = `${JSON.stringify(index, null, 2)}\n`;
+    await writeFile(indexPath, indexContent, "utf8");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      workspaceIndexFile: { revision: string };
+    };
+    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8"
+    );
+
+    const opened = await projectStore.openBook(created.projectDirectory);
+    expect(opened.book.workspaceIndex.characterFiles[0]).toEqual({
+      characterId,
+      coreProfile,
+      relationships
+    });
+    await expect(
+      lstat(join(created.projectDirectory, currentState.path))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      lstat(join(created.projectDirectory, history.path))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("creates a missing nested parent directory for a new long book", async () => {
     const root = await temporaryParent();
     const parent = join(root, "小说", "Deepwrite", "books");

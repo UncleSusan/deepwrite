@@ -218,7 +218,7 @@ describe("buildLibraryAgentWorkspaceContext", () => {
     );
   });
 
-  it("uses the same 40,000-character snapshot limit for background entries", () => {
+  it("uses the same 100,000-character snapshot limit for background entries", () => {
     const catalog = snapshot();
     const backgroundBody = "景".repeat(LIBRARY_AGENT_ENTRY_MAX_CHARACTERS + 17);
     catalog.materials[0]!.entries.push({

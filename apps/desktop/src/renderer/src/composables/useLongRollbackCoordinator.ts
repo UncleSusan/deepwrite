@@ -70,7 +70,6 @@ export interface LongRollbackCoordinatorOptions {
   navigation: LongRollbackNavigationPort;
   catalog: LongRollbackCatalogPort;
   scheduler: LongRollbackSchedulerPort;
-  blockWritingPlan(action: string): boolean;
   notifications: LongRollbackNotifications;
   /** Shared with the lazy facade so opening remains synchronous before load. */
   targetIdentity?: LongRollbackTargetIdentityState;
@@ -252,7 +251,6 @@ export function useLongRollbackCoordinator(
     // Foreign pending work owns the shared flag. An operation owned by this
     // coordinator may be superseded by a newer immutable dialog target.
     if (state.rollbackPending.value && !ownedPendingLease) return;
-    if (options.blockWritingPlan("回滚连续性提交")) return;
     const bookId = state.activeBookId.value;
     const summary = state.activeBookSummary.value;
     const index = state.workspaceIndex.value;
@@ -320,10 +318,6 @@ export function useLongRollbackCoordinator(
       !operationTarget ||
       !targetMatchesExternalState(operationTarget)
     ) {
-      return Promise.resolve();
-    }
-    if (options.blockWritingPlan("回滚连续性提交")) {
-      cancelCurrentTarget(operationTarget);
       return Promise.resolve();
     }
     const lease = acquirePendingLease();

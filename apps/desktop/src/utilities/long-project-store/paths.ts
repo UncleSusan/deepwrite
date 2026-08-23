@@ -87,12 +87,7 @@ export function isPinnedMarkdownFile(
   }
   return (
     index.ledger.commits.some(({ mode }) => mode === "structured") &&
-    index.characterFiles.some(
-      (entry) =>
-        entry.relationships.id === fileId ||
-        entry.currentState.id === fileId ||
-        entry.history.id === fileId
-    )
+    index.characterFiles.some((entry) => entry.relationships.id === fileId)
   );
 }
 
@@ -158,16 +153,6 @@ export function indexedFileSlots(
       {
         reference: entry.relationships,
         expectedPath: characterPath(entry.characterId, "relationships.md"),
-        kind: "markdown" as const
-      },
-      {
-        reference: entry.currentState,
-        expectedPath: characterPath(entry.characterId, "current-state.md"),
-        kind: "markdown" as const
-      },
-      {
-        reference: entry.history,
-        expectedPath: characterPath(entry.characterId, "history.md"),
         kind: "markdown" as const
       }
     ]),

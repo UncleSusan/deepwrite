@@ -53,6 +53,10 @@ import type {
   LongWorkspaceFileReference,
   LongWorkspaceIndexSnapshot
 } from "./long-workspace";
+import {
+  nextOrder,
+  normalizeStoryPlotOrders
+} from "./long-workspace-operations/order-utils";
 
 const OperationTimestampSchema = z.string().datetime();
 const OperationTextSchema = z.string().max(200_000);
@@ -1047,9 +1051,7 @@ function allWorkspaceFiles(
     ...(workspace.characterOverview ? [workspace.characterOverview] : []),
     ...workspace.characterFiles.flatMap((entry) => [
       entry.coreProfile,
-      entry.relationships,
-      entry.currentState,
-      entry.history
+      entry.relationships
     ]),
     ...workspace.chapters.flatMap((entry) => [
       entry.body,
@@ -1297,6 +1299,8 @@ function normalizeLongWorkspaceOrders(
     narrativeOrder.set(chapter.volumeId, next);
     chapter.narrativeOrder = next;
   });
+
+  normalizeStoryPlotOrders(workspace);
 
   workspace.plot.storyEvents.sort(
     (left, right) => left.storyOrder - right.storyOrder
@@ -1840,12 +1844,7 @@ function deleteCharacter(
     );
   }
   const files = state.draft.characterFiles[fileIndex]!;
-  [
-    files.coreProfile,
-    files.relationships,
-    files.currentState,
-    files.history
-  ].forEach((file) =>
+  [files.coreProfile, files.relationships].forEach((file) =>
     addFileDeleteIntent(state, file, `Delete character ${characterId}`)
   );
   state.draft.characterFiles.splice(fileIndex, 1);
@@ -1943,6 +1942,9 @@ function applyLongWorkspaceOperation(
               ...category.items.map(({ file }) => file)
             ];
       ensureFilesAvailable(state, categoryFiles);
+      category.order = nextOrder(
+        workspace.worldbuilding.map(({ order }) => order)
+      );
       workspace.worldbuilding.push(category);
       categoryFiles.forEach((file) =>
         addFileCreateIntent(
@@ -2105,7 +2107,9 @@ function applyLongWorkspaceOperation(
       );
       assertNewEntityId(allItems, operation.item.id, "Worldbuilding item");
       ensureFilesAvailable(state, [operation.item.file]);
-      category.items.push(structuredClone(operation.item));
+      const item = structuredClone(operation.item);
+      item.order = nextOrder(category.items.map(({ order }) => order));
+      category.items.push(item);
       addFileCreateIntent(
         state,
         operation.item.file,
@@ -2225,7 +2229,11 @@ function applyLongWorkspaceOperation(
         operation.characterType.id,
         "Character type"
       );
-      workspace.characterTypes.push(structuredClone(operation.characterType));
+      const characterType = structuredClone(operation.characterType);
+      characterType.order = nextOrder(
+        workspace.characterTypes.map(({ order }) => order)
+      );
+      workspace.characterTypes.push(characterType);
       markCreated(state, operation.characterType.id);
       registerProvisionalId(
         state,
@@ -2331,12 +2339,16 @@ function applyLongWorkspaceOperation(
       }
       const files = [
         operation.files.coreProfile,
-        operation.files.relationships,
-        operation.files.currentState,
-        operation.files.history
+        operation.files.relationships
       ];
       ensureFilesAvailable(state, files);
-      workspace.characters.push(structuredClone(operation.character));
+      const character = structuredClone(operation.character);
+      character.order = nextOrder(
+        workspace.characters
+          .filter((candidate) => candidate.group === character.group)
+          .map(({ order }) => order)
+      );
+      workspace.characters.push(character);
       workspace.characterFiles.push(structuredClone(operation.files));
       files.forEach((file) =>
         addFileCreateIntent(
@@ -2424,7 +2436,11 @@ function applyLongWorkspaceOperation(
 
     case "volume.create": {
       assertNewEntityId(workspace.plot.volumes, operation.volume.id, "Volume");
-      workspace.plot.volumes.push(structuredClone(operation.volume));
+      const volume = structuredClone(operation.volume);
+      volume.order = nextOrder(
+        workspace.plot.volumes.map(({ order }) => order)
+      );
+      workspace.plot.volumes.push(volume);
       markCreated(state, operation.volume.id);
       registerProvisionalId(
         state,
@@ -2465,7 +2481,13 @@ function applyLongWorkspaceOperation(
 
     case "arc.create": {
       assertNewEntityId(workspace.plot.arcs, operation.arc.id, "Arc");
-      workspace.plot.arcs.push(structuredClone(operation.arc));
+      const arc = structuredClone(operation.arc);
+      arc.order = nextOrder(
+        workspace.plot.arcs
+          .filter((candidate) => candidate.volumeId === arc.volumeId)
+          .map(({ order }) => order)
+      );
+      workspace.plot.arcs.push(arc);
       markCreated(state, operation.arc.id);
       registerProvisionalId(state, operation.provisionalId, operation.arc.id);
       break;
@@ -2619,7 +2641,13 @@ function applyLongWorkspaceOperation(
         ])
       ];
       ensureFilesAvailable(state, files);
-      workspace.plot.chapterCards.push(structuredClone(operation.chapterCard));
+      const chapterCard = structuredClone(operation.chapterCard);
+      chapterCard.narrativeOrder = nextOrder(
+        workspace.plot.chapterCards
+          .filter((candidate) => candidate.volumeId === chapterCard.volumeId)
+          .map(({ narrativeOrder }) => narrativeOrder)
+      );
+      workspace.plot.chapterCards.push(chapterCard);
       workspace.chapters.push(structuredClone(operation.files));
       files.forEach((file) =>
         addFileCreateIntent(
@@ -2891,7 +2919,11 @@ function applyLongWorkspaceOperation(
         operation.event.id,
         "Story event"
       );
-      workspace.plot.storyEvents.push(structuredClone(operation.event));
+      const event = structuredClone(operation.event);
+      event.storyOrder = nextOrder(
+        workspace.plot.storyEvents.map(({ storyOrder }) => storyOrder)
+      );
+      workspace.plot.storyEvents.push(event);
       markCreated(state, operation.event.id);
       registerProvisionalId(state, operation.provisionalId, operation.event.id);
       break;
@@ -3015,7 +3047,13 @@ function applyLongWorkspaceOperation(
         "Story plot"
       );
       ensureFilesAvailable(state, [operation.storyPlot.file]);
-      workspace.plot.storyPlots.push(structuredClone(operation.storyPlot));
+      const storyPlot = structuredClone(operation.storyPlot);
+      storyPlot.order = nextOrder(
+        workspace.plot.storyPlots
+          .filter((candidate) => candidate.arcId === storyPlot.arcId)
+          .map(({ order }) => order)
+      );
+      workspace.plot.storyPlots.push(storyPlot);
       addFileCreateIntent(
         state,
         operation.storyPlot.file,
@@ -3144,9 +3182,15 @@ function applyLongWorkspaceOperation(
           "New narrative placements must start in planned state."
         );
       }
-      workspace.plot.narrativePlacements.push(
-        structuredClone(operation.placement)
+      const placement = structuredClone(operation.placement);
+      placement.orderInChapter = nextOrder(
+        workspace.plot.narrativePlacements
+          .filter(
+            (candidate) => candidate.chapterCardId === placement.chapterCardId
+          )
+          .map(({ orderInChapter }) => orderInChapter)
       );
+      workspace.plot.narrativePlacements.push(placement);
       markCreated(state, operation.placement.id);
       registerProvisionalId(
         state,
@@ -3391,7 +3435,9 @@ function applyLongWorkspaceOperation(
           "New foreshadowing beats must start in planned state."
         );
       }
-      thread.beats.push(structuredClone(operation.beat));
+      const beat = structuredClone(operation.beat);
+      beat.order = nextOrder(thread.beats.map(({ order }) => order));
+      thread.beats.push(beat);
       markCreated(state, operation.beat.id);
       markUpdated(state, thread.id);
       registerProvisionalId(state, operation.provisionalId, operation.beat.id);

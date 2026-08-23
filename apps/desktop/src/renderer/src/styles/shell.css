@@ -175,47 +175,6 @@ html[data-platform="darwin"] .desktop-shell {
   cursor: pointer;
 }
 
-.long-writing-workflow-status {
-  display: grid;
-  gap: 6px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--theme-line-soft);
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-}
-
-.long-writing-workflow-status > div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.long-writing-workflow-status strong {
-  color: var(--text-primary);
-}
-
-.long-writing-workflow-status small.is-error {
-  color: var(--danger);
-}
-
-.long-writing-workflow-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.long-writing-workflow-status button {
-  justify-self: start;
-  min-height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--theme-line);
-  border-radius: 8px;
-  background: var(--text-primary);
-  color: var(--surface-main);
-  cursor: pointer;
-}
-
 .is-long-workspace-hidden {
   display: none !important;
 }

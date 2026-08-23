@@ -31,11 +31,11 @@ import {
   longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
+  longLinkedResourceIsEnabledForStage,
   longWorldbuildingFileId,
-  longAgentAcceptsWorldbuildingDirectory,
   resolveLongAgentIdForRoot
 } from "./index";
-import { longAgentAcceptsWorldbuildingDirectory as rendererLongAgentAcceptsWorldbuildingDirectory } from "./renderer";
+import { resolveLongAgentIdForRoot as rendererResolveLongAgentIdForRoot } from "./renderer";
 
 const now = "2026-07-26T10:00:00.000Z";
 const revision = "v1:0:00000000";
@@ -300,6 +300,37 @@ function longBook() {
 }
 
 describe("independent long-form workspace contracts", () => {
+  it("treats missing resource scopes as all stages and honors configured overrides", () => {
+    expect(
+      longLinkedResourceIsEnabledForStage(
+        undefined,
+        "skill",
+        "skill-style",
+        "worldbuilding"
+      )
+    ).toBe(true);
+    const scopes = {
+      materials: { "material-plot": ["plot_design" as const] },
+      skills: { "skill-style": ["draft" as const] }
+    };
+    expect(
+      longLinkedResourceIsEnabledForStage(
+        scopes,
+        "skill",
+        "skill-style",
+        "draft"
+      )
+    ).toBe(true);
+    expect(
+      longLinkedResourceIsEnabledForStage(
+        scopes,
+        "skill",
+        "skill-style",
+        "plot_design"
+      )
+    ).toBe(false);
+  });
+
   it("ships a default AGENTS.md that explains the five long-form stages", () => {
     expect(LONG_AGENTS_MD_PATH).toBe("AGENTS.md");
     expect(DEFAULT_LONG_AGENTS_MD).toContain("# 长篇上下文");
@@ -900,9 +931,9 @@ describe("independent long-form workspace contracts", () => {
   it("defines a long-only agent profile without widening shared agent schemas", () => {
     const profile = LongAgentProfileSchema.parse({
       workspaceType: "long",
-      id: "draft",
-      label: "写手",
-      description: "规划正文进度，并撰写或修改当前章正文。",
+      id: "long",
+      label: "长篇",
+      description: "维护全书设定、剧情、正文与连续性记录。",
       systemPrompt: "根据章卡规划并编写当前章小说正文。",
       welcomeShortcuts: ["写当前章", "续写当前章", "规划下一章"],
       readAccess: {
@@ -912,160 +943,120 @@ describe("independent long-form workspace contracts", () => {
       },
       writeAccess: {
         workspaceRoots: ["draft"],
-        capabilities: ["write_chapter_files", "dispatch_chapter_writer"]
+        capabilities: ["write_chapter_files"]
       }
     });
 
-    expect(profile.id).toBe("draft");
+    expect(profile.id).toBe("long");
     expect(WorkspaceTypeSchema.safeParse(profile.workspaceType).success).toBe(
       false
     );
   });
 
-  it("provides an exhaustive isolated default agent set", () => {
-    expect(DEFAULT_LONG_AGENT_PROFILES.map(({ id }) => id)).toEqual([
-      "setting",
+  it("provides a single unified long agent covering every workspace root", () => {
+    expect(DEFAULT_LONG_AGENT_PROFILES.map(({ id }) => id)).toEqual(["long"]);
+    expect(resolveLongAgentIdForRoot("worldbuilding")).toBe("long");
+    expect(resolveLongAgentIdForRoot("character_design")).toBe("long");
+    expect(resolveLongAgentIdForRoot("plot_design")).toBe("long");
+    expect(resolveLongAgentIdForRoot("draft")).toBe("long");
+    expect(resolveLongAgentIdForRoot("continuity_ledger")).toBe("long");
+    expect(rendererResolveLongAgentIdForRoot).toBe(resolveLongAgentIdForRoot);
+
+    const profile = DEFAULT_LONG_AGENT_PROFILES[0]!;
+    expect(profile.label).toBe("长篇智能体");
+    expect(profile.readAccess.workspaceRoots).toEqual([
+      "worldbuilding",
+      "character_design",
       "plot_design",
       "draft",
       "continuity_ledger"
     ]);
-    expect(resolveLongAgentIdForRoot("worldbuilding")).toBe("setting");
-    expect(resolveLongAgentIdForRoot("character_design")).toBe("setting");
-    expect(resolveLongAgentIdForRoot("draft")).toBe("draft");
-    expect(longAgentAcceptsWorldbuildingDirectory("setting")).toBe(true);
-    expect(longAgentAcceptsWorldbuildingDirectory("plot_design")).toBe(true);
-    expect(longAgentAcceptsWorldbuildingDirectory("draft")).toBe(true);
-    expect(longAgentAcceptsWorldbuildingDirectory("continuity_ledger")).toBe(
-      false
+    expect(profile.writeAccess.workspaceRoots).toEqual(
+      profile.readAccess.workspaceRoots
     );
-    expect(rendererLongAgentAcceptsWorldbuildingDirectory).toBe(
-      longAgentAcceptsWorldbuildingDirectory
-    );
-    const settingProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "setting"
-    )!;
-    expect(settingProfile.label).toBe("设定智能体");
-    expect(settingProfile.writeAccess.workspaceRoots).toEqual([
-      "worldbuilding",
-      "character_design"
-    ]);
-    expect(settingProfile.systemPrompt).toContain("category_id");
-    expect(settingProfile.systemPrompt).toContain("item_id");
-    expect(settingProfile.systemPrompt).toContain("character_id 唯一定位");
-    expect(settingProfile.systemPrompt).toContain("list_setting");
-    expect(settingProfile.systemPrompt).toContain("search_setting");
-    expect(settingProfile.systemPrompt).toContain("read_setting");
-    expect(settingProfile.systemPrompt).toContain("create_setting");
-    expect(settingProfile.systemPrompt).toContain("write_setting");
-    expect(settingProfile.systemPrompt).toContain("edit_setting");
-    expect(settingProfile.systemPrompt).toContain("domain=worldbuilding");
-    expect(settingProfile.systemPrompt).toContain("domain=character");
-    expect(settingProfile.systemPrompt).toContain("document=overview");
-    expect(settingProfile.systemPrompt).not.toContain("list_worldbuilding");
-    expect(settingProfile.systemPrompt).not.toContain("list_characters");
-    expect(settingProfile.systemPrompt).not.toContain(
-      "get_long_workspace_index"
-    );
-    expect(settingProfile.systemPrompt).not.toContain("read_long_document");
-    expect(settingProfile.systemPrompt).not.toContain("search_long_workspace");
-    expect(settingProfile.systemPrompt).not.toContain("fileId");
-    expect(settingProfile.systemPrompt).not.toContain("file_id");
-    expect(settingProfile.systemPrompt).not.toContain("bookId");
-    expect(settingProfile.systemPrompt).not.toContain("路径");
-    expect(settingProfile.systemPrompt).toContain("不接管或锁定人物文档");
-    expect(settingProfile.systemPrompt).toContain("长篇结构导航");
-    expect(settingProfile.systemPrompt).toContain("不得修改剧情结构");
-    const plotProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "plot_design"
-    )!;
-    expect(plotProfile.systemPrompt).toContain("list_plot_design");
-    expect(plotProfile.systemPrompt).toContain("search_plot_design");
-    expect(plotProfile.systemPrompt).toContain("read_plot_design");
-    expect(plotProfile.systemPrompt).toContain(
-      "读取剧情点会一次返回概要、挂到该剧情点的全部故事事件正文"
-    );
-    expect(plotProfile.systemPrompt).toContain("create_plot_design");
-    expect(plotProfile.systemPrompt).toContain("write_plot_design");
-    expect(plotProfile.systemPrompt).toContain("edit_plot_design");
-    expect(plotProfile.systemPrompt).toContain("伏笔线与伏笔触点继续完全使用");
-    expect(plotProfile.systemPrompt).toContain("连续性记录只供参考");
-    expect(plotProfile.systemPrompt).toContain("不锁定剧情结构");
-    expect(plotProfile.systemPrompt).toContain(
-      "固定上下文已包含世界观与人物目录"
-    );
-    expect(plotProfile.systemPrompt).toContain(
-      "不要仅为重复取得同一列表而调用 list_setting"
-    );
-    expect(plotProfile.systemPrompt).not.toContain("get_long_workspace_index");
-    expect(plotProfile.systemPrompt).not.toContain("fileId");
-    const writerProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "draft"
-    )!;
-    expect(writerProfile.label).toBe("写手智能体");
-    expect(writerProfile.writeAccess.capabilities).toEqual([
+    expect(profile.writeAccess.capabilities).toEqual([
       "query_structure",
-      "dispatch_chapter_writer",
-      "write_chapter_files"
+      "mutate_structure",
+      "write_chapter_files",
+      "commit_ledger"
     ]);
-    expect(writerProfile.systemPrompt).toContain(
-      "固定上下文已包含世界观与人物目录"
-    );
-    expect(writerProfile.systemPrompt).toContain(
-      "不要仅为重复取得同一列表而调用 list_setting"
-    );
-    expect(writerProfile.systemPrompt).toContain(
-      "每张章卡对应一个独立的 Markdown 正文文件"
-    );
-    expect(writerProfile.systemPrompt).toContain("write_chapter_draft");
-    expect(writerProfile.systemPrompt).toContain("edit_chapter_draft");
-    expect(writerProfile.systemPrompt).toContain(
-      "propose_long_chapter_dispatch"
-    );
-    expect(writerProfile.systemPrompt).toContain(
-      "同一写手智能体和同一对话历史"
-    );
-    expect(writerProfile.systemPrompt).not.toContain("每章独立的写手运行");
-    expect(writerProfile.systemPrompt).toContain(
-      "每次写入工具调用只能提交运行时锁定的当前章"
-    );
-    expect(writerProfile.systemPrompt).toContain("content 只放完整小说正文");
-    expect(writerProfile.systemPrompt).toContain("会话 diff 审批卡");
-    expect(writerProfile.systemPrompt).toContain(
-      "写作产物只限当前锁定章的小说正文"
-    );
-    expect(writerProfile.systemPrompt).toContain(
-      "不得编写、草拟、补全或修改章末人物状态、交接文档"
-    );
-    expect(writerProfile.systemPrompt).toContain(
-      "连续性记录由用户之后按需触发"
-    );
-    expect(writerProfile.welcomeShortcuts).toEqual([
-      "写当前章",
-      "续写当前章",
-      "规划下一章"
-    ]);
-    const continuityProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "continuity_ledger"
-    )!;
-    expect(continuityProfile.systemPrompt).toContain("list_continuity_files");
-    expect(continuityProfile.systemPrompt).toContain("read_continuity_file");
-    expect(continuityProfile.systemPrompt).toContain("create_continuity_file");
-    expect(continuityProfile.systemPrompt).toContain("write_continuity_file");
-    expect(continuityProfile.systemPrompt).toContain("edit_continuity_file");
-    expect(continuityProfile.systemPrompt).toContain(
+  });
+
+  it("provides the unified English eight-tool default prompt", () => {
+    const { systemPrompt } = DEFAULT_LONG_AGENT_PROFILES[0]!;
+    for (const tool of [
+      "list",
+      "read",
+      "create",
+      "edit",
+      "delete",
+      "query_linked_material_entries",
+      "load_skill",
       "propose_continuity_commit"
+    ]) {
+      expect(systemPrompt).toContain(tool);
+    }
+    expect(systemPrompt).toContain("worlditem_");
+    expect(systemPrompt).toContain("character_overview");
+    expect(systemPrompt).toContain("storyplot_");
+    expect(systemPrompt).toContain("foreshadow_");
+    expect(systemPrompt).toContain(
+      "current_state or history read without chapter_id"
     );
-    expect(continuityProfile.systemPrompt).toContain("pending_catchup");
-    expect(continuityProfile.systemPrompt).toContain("批量提交所有未提交章节");
-    expect(continuityProfile.systemPrompt).toContain("suggested_record=brief");
-    expect(continuityProfile.welcomeShortcuts).toEqual([
-      "提交当前章",
-      "批量提交所有未提交章节",
-      "检查连续性"
-    ]);
-    expect(continuityProfile.systemPrompt).not.toContain("set_long_ledger_");
-    expect(continuityProfile.systemPrompt).not.toContain(
-      "propose_long_ledger_commit"
+    expect(systemPrompt).toContain("may be written at create time");
+    expect(systemPrompt).toContain("plot-point summary");
+    expect(systemPrompt).toContain(
+      "do not create a story plot to hold that summary"
+    );
+    expect(systemPrompt).toContain("meta.document=current_state or history");
+    expect(systemPrompt).not.toContain("continuity_character_current_state");
+    expect(systemPrompt).toContain(
+      "You are DeepWrite's local creative collaboration agent"
+    );
+    expect(systemPrompt).toContain("list requires both stage and scope_id");
+    expect(systemPrompt).toContain("Do not list leaf objects");
+    expect(systemPrompt).toContain("Continuity does not accept arc_");
+    expect(systemPrompt).toContain(
+      "An id returned by list is not automatically a valid next scope_id"
+    );
+    expect(systemPrompt).not.toContain(
+      "A single list call returns all entries for the requested stage without pagination."
+    );
+  });
+
+  it("keeps retired long tools and storage details out of the default prompt", () => {
+    const { systemPrompt } = DEFAULT_LONG_AGENT_PROFILES[0]!;
+    for (const retired of [
+      "list_setting",
+      "search_setting",
+      "read_setting",
+      "create_setting",
+      "write_setting",
+      "edit_setting",
+      "list_plot_design",
+      "search_plot_design",
+      "read_plot_design",
+      "create_plot_design",
+      "write_plot_design",
+      "edit_plot_design",
+      "write_chapter_draft",
+      "edit_chapter_draft",
+      "list_continuity_files",
+      "read_continuity_file",
+      "create_continuity_file",
+      "write_continuity_file",
+      "edit_continuity_file",
+      "propose_long_mutation",
+      "get_long_chapter_readiness",
+      "get_long_workspace_index",
+      "read_long_document",
+      "search_long_workspace"
+    ]) {
+      expect(systemPrompt).not.toContain(retired);
+    }
+    expect(systemPrompt).not.toContain("bookId");
+    expect(systemPrompt).toContain(
+      "Do not request, infer, or repeat implementation details such as file paths, file_id, or revision."
     );
   });
 });

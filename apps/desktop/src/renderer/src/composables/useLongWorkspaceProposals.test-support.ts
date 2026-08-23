@@ -37,7 +37,7 @@ const proposalBase = {
   runId: envelopeContext.runId,
   toolCallId: "tool_long",
   bookId: "longbook_test",
-  agentId: "setting" as const,
+  agentId: "long" as const,
   summary: "待审阅长篇提案",
   runtime
 };
@@ -211,7 +211,7 @@ function characterWriteEvent() {
       "long.character_file_proposal",
       {
         ...proposalBase,
-        agentId: "setting" as const,
+        agentId: "long" as const,
         toolCallId: "tool_character_write",
         summary: "写入林岚核心档案",
         batch: {
@@ -265,7 +265,7 @@ function continuityWriteEvent() {
       "long.continuity_file_proposal",
       {
         ...proposalBase,
-        agentId: "continuity_ledger" as const,
+        agentId: "long" as const,
         toolCallId: "tool_continuity_write",
         summary: "记录第一章伏笔变化",
         batch: {
@@ -313,7 +313,7 @@ function chapterEvent() {
       "long.chapter_write_proposal",
       {
         ...proposalBase,
-        agentId: "draft" as const,
+        agentId: "long" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -355,7 +355,7 @@ function ledgerEvent() {
       "long.ledger_commit_proposal",
       {
         ...proposalBase,
-        agentId: "continuity_ledger" as const,
+        agentId: "long" as const,
         input: {
           bookId: proposalBase.bookId,
           chapterCardId: "chapter_one",
@@ -383,7 +383,7 @@ function textFilesLedgerEvent() {
       "long.ledger_commit_proposal",
       {
         ...proposalBase,
-        agentId: "continuity_ledger" as const,
+        agentId: "long" as const,
         toolCallId: "tool_text_files_commit",
         input: {
           mode: "text_files" as const,
@@ -407,36 +407,6 @@ function textFilesLedgerEvent() {
         }
       },
       { id: "event_text_files_ledger", context: envelopeContext }
-    )
-  );
-}
-
-function dispatchEvent() {
-  return systemEvent(
-    createEnvelope(
-      "long.chapter_dispatch_proposal",
-      {
-        ...proposalBase,
-        agentId: "draft" as const,
-        scope: "chapter" as const,
-        chapterCardId: "chapter_one",
-        title: "第一章",
-        chapters: [
-          {
-            chapterCardId: "chapter_one",
-            title: "第一章",
-            status: "empty" as const,
-            missingFiles: [
-              "body" as const,
-              "character_state" as const,
-              "handoff" as const
-            ]
-          }
-        ],
-        workspaceRevision: 7,
-        projectRevision: 11
-      },
-      { id: "event_dispatch", context: envelopeContext }
     )
   );
 }
@@ -627,7 +597,6 @@ function harness(
     error: vi.fn()
   };
   const onApplied = vi.fn();
-  const onDispatchApproved = vi.fn();
   const onRejected = vi.fn();
   const prepareAutoApprove = vi.fn(async () => undefined);
   const controller = useLongWorkspaceProposals({
@@ -636,7 +605,6 @@ function harness(
     approvalModeForEvent: () => approvalMode,
     prepareAutoApprove,
     onApplied,
-    onDispatchApproved,
     onRejected,
     notifications
   });
@@ -649,7 +617,6 @@ function harness(
     writeChapter,
     commitChapter,
     onApplied,
-    onDispatchApproved,
     onRejected,
     prepareAutoApprove,
     notifications
@@ -663,7 +630,6 @@ export {
   continuityWriteEvent,
   createEnvelope,
   describe,
-  dispatchEvent,
   emptyImpact,
   envelopeContext,
   expect,

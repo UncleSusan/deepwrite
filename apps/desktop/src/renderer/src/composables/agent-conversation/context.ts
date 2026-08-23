@@ -7,6 +7,7 @@ import {
 } from "vue";
 import type {
   AgentRuntimeRef,
+  AgentUserInputRequestedPayload,
   ModelConfig,
   ThinkingLevel
 } from "@deepwrite/contracts";
@@ -37,6 +38,8 @@ export interface AgentConversationState {
   selectedModelId: Ref<string>;
   runtime: Ref<AgentRuntimeRef | null>;
   conversationError: Ref<string | null>;
+  pendingUserInput: Ref<AgentUserInputRequestedPayload | null>;
+  submittingUserInput: Ref<boolean>;
   storedConversations: ShallowRef<AgentConversationPersistenceRecord[]>;
   currentCreatedAt: Ref<string>;
   currentUpdatedAt: Ref<string>;
@@ -112,6 +115,8 @@ export function createAgentConversationState(
     selectedModelId: ref(""),
     runtime: ref<AgentRuntimeRef | null>(null),
     conversationError: ref<string | null>(null),
+    pendingUserInput: ref<AgentUserInputRequestedPayload | null>(null),
+    submittingUserInput: ref(false),
     storedConversations: shallowRef<AgentConversationPersistenceRecord[]>(
       (storedEnvelope?.conversations ?? []).map((conversation) => ({
         ...conversation,

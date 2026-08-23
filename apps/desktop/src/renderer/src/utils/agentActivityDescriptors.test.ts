@@ -11,8 +11,12 @@ import type {
   WorkspaceDocument
 } from "../types/workspace";
 import { createResourceTreeLookup } from "./resourceTreeLookup";
+import { longBookResourceId } from "../types/longWorkspace";
 import { longNavigationNodeId } from "./longWorkspaceResourceTree";
-import { resolveAgentActivityDescriptor } from "./agentActivityDescriptors";
+import {
+  resolveAgentActivityDescriptor,
+  resolveAgentActivityNavigationNode
+} from "./agentActivityDescriptors";
 
 const emptyTree = createResourceTreeLookup([]);
 const defaults = {
@@ -147,8 +151,7 @@ describe("resolveAgentActivityDescriptor", () => {
         "long",
         encodeURIComponent(bookId),
         "draft",
-        "draft",
-        encodeURIComponent("chapter-one")
+        encodeURIComponent("__book__")
       ].join(":"),
       {
         ...defaults,
@@ -159,10 +162,159 @@ describe("resolveAgentActivityDescriptor", () => {
     );
 
     expect(descriptor).toMatchObject({
-      agentLabel: "写手智能体",
+      agentLabel: "长篇智能体",
       contextLabel: "测试长篇 · 正文",
-      targetResourceId: chapterId
+      targetResourceId: rootId
     });
+  });
+
+  it("keeps plot-design chapter-card runs on the chapter card instead of worldbuilding", () => {
+    const bookId = "longbook_plot";
+    const worldRootId = longNavigationNodeId(bookId, "root:worldbuilding");
+    const rulesId = longNavigationNodeId(bookId, "worldbuilding:world_rules");
+    const plotRootId = longNavigationNodeId(bookId, "root:plot_design");
+    const chapterCardsId = longNavigationNodeId(
+      bookId,
+      "root:plot-chapter-cards"
+    );
+    const volumeId = longNavigationNodeId(
+      bookId,
+      "plot-design:chapter-cards:volume-one"
+    );
+    const resourceTree = createResourceTreeLookup([
+      {
+        id: "creation",
+        label: "创作",
+        icon: "book",
+        nodes: [
+          {
+            id: longBookResourceId(bookId),
+            label: "测试长篇",
+            longBookId: bookId,
+            workspaceType: "long",
+            children: [
+              {
+                id: worldRootId,
+                label: "世界观",
+                longBookId: bookId,
+                workspaceType: "long",
+                longWorkspaceSelection: {
+                  key: "root:worldbuilding",
+                  root: "worldbuilding",
+                  title: "世界观",
+                  breadcrumbs: ["测试长篇", "世界观"],
+                  files: [],
+                  preferredRole: "content"
+                },
+                children: [
+                  {
+                    id: rulesId,
+                    label: "规则",
+                    longBookId: bookId,
+                    workspaceType: "long",
+                    longWorkspaceSelection: {
+                      key: "worldbuilding:world_rules",
+                      root: "worldbuilding",
+                      title: "规则",
+                      breadcrumbs: ["测试长篇", "世界观", "规则"],
+                      files: [],
+                      preferredRole: "content"
+                    }
+                  }
+                ]
+              },
+              {
+                id: plotRootId,
+                label: "剧情设计",
+                longBookId: bookId,
+                workspaceType: "long",
+                longWorkspaceSelection: {
+                  key: "root:plot_design",
+                  root: "plot_design",
+                  title: "剧情设计",
+                  breadcrumbs: ["测试长篇", "剧情设计"],
+                  files: [],
+                  preferredRole: "content"
+                },
+                children: [
+                  {
+                    id: chapterCardsId,
+                    label: "章卡",
+                    longBookId: bookId,
+                    workspaceType: "long",
+                    longWorkspaceSelection: {
+                      key: "root:plot-chapter-cards",
+                      root: "plot_design",
+                      title: "章卡",
+                      breadcrumbs: ["测试长篇", "剧情设计", "章卡"],
+                      files: [],
+                      preferredRole: "book-line"
+                    },
+                    children: [
+                      {
+                        id: volumeId,
+                        label: "第一卷",
+                        longBookId: bookId,
+                        workspaceType: "long",
+                        longWorkspaceSelection: {
+                          key: "plot-design:chapter-cards:volume-one",
+                          root: "plot_design",
+                          title: "第二章",
+                          breadcrumbs: [
+                            "测试长篇",
+                            "剧情设计",
+                            "章卡",
+                            "第一卷",
+                            "第二章"
+                          ],
+                          files: [],
+                          preferredRole: "card",
+                          chapterCardVolumeId: "volume-one",
+                          chapterCardId: "chapter-one",
+                          chapterCardTabs: [
+                            { id: "chapter-one", label: "第一章" },
+                            { id: "chapter-two", label: "第二章" }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]);
+    const sources = {
+      ...defaults,
+      documents: [],
+      resourceTree,
+      longBooks: [{ id: bookId, title: "测试长篇" } as LongBookSummary]
+    };
+    const conversationKey = [
+      "long",
+      encodeURIComponent(bookId),
+      "plot_design",
+      encodeURIComponent("__book__")
+    ].join(":");
+
+    expect(
+      resolveAgentActivityDescriptor(conversationKey, sources)
+    ).toMatchObject({
+      contextLabel: "测试长篇 · 剧情设计",
+      targetResourceId: plotRootId
+    });
+    expect(
+      resolveAgentActivityNavigationNode(
+        {
+          conversationKey,
+          targetResourceId: rulesId,
+          chapterCardId: "chapter-two"
+        },
+        sources
+      )?.id
+    ).toBe(volumeId);
   });
 
   it("returns no descriptor for unknown non-workspace controllers", () => {

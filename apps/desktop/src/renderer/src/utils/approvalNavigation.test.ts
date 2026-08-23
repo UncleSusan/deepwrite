@@ -155,15 +155,15 @@ describe("approval navigation target resolution", () => {
             {
               characterId: "character_test",
               characterName: "测试人物",
-              document: "history",
-              fileId: "character_history",
-              filePath: "characters/test/history.md",
-              title: "历史轨迹",
+              document: "relationships",
+              fileId: "character_relationships",
+              filePath: "characters/test/relationships.md",
+              title: "人物关系",
               operation: "write",
               beforeText: "",
-              afterText: "历史",
+              afterText: "关系",
               beforeRevision: "revision_before",
-              nextRevision: "revision_history"
+              nextRevision: "revision_relationships"
             },
             {
               characterId: "character_test",

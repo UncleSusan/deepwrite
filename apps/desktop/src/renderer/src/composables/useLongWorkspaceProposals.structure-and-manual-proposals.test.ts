@@ -2,7 +2,6 @@ import {
   SystemEventEnvelopeSchema,
   chapterEvent,
   describe,
-  dispatchEvent,
   emptyImpact,
   expect,
   harness,
@@ -81,10 +80,6 @@ describe("long workspace proposal approval: structure-and-manual-proposals", () 
     expect(ledger.onApplied).toHaveBeenCalledTimes(1);
     expect(ledger.notifications.error).not.toHaveBeenCalled();
     expect(ledger.controller.itemsForBook("longbook_test")).toEqual([]);
-
-    const dispatch = harness(true, "auto-approve");
-    await dispatch.controller.handleEvent(dispatchEvent());
-    expect(dispatch.onDispatchApproved).toHaveBeenCalledTimes(1);
   });
 
   it("serializes realtime durable writes for the same long book", async () => {
@@ -162,7 +157,7 @@ describe("long workspace proposal approval: structure-and-manual-proposals", () 
       type: "long.mutation_proposal",
       payload: {
         bookId: "longbook_test",
-        agentId: "plot_design",
+        agentId: "long",
         summary: "手工调整世界观结构",
         baseProjectRevision: 11,
         runtime: {
@@ -224,7 +219,7 @@ describe("long workspace proposal approval: structure-and-manual-proposals", () 
     });
     const second = await test.controller.enqueueManualMutation({
       bookId: proposalBase.bookId,
-      agentId: "setting",
+      agentId: "long",
       batch: mutationEvent().payload.batch,
       baseProjectRevision: 11,
       summary: "第二次手工调整"
@@ -234,7 +229,7 @@ describe("long workspace proposal approval: structure-and-manual-proposals", () 
     expect(second.payload.sessionId).not.toBe(first.payload.sessionId);
     expect(second.payload.runId).not.toBe(first.payload.runId);
     expect(second.payload.toolCallId).not.toBe(first.payload.toolCallId);
-    expect(second.payload.agentId).toBe("setting");
+    expect(second.payload.agentId).toBe("long");
     expect(test.controller.itemsForBook("longbook_test")).toHaveLength(2);
 
     await expect(

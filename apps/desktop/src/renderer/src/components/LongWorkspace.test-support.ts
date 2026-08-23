@@ -32,9 +32,8 @@ import treeNodeSource from "./TreeNodeItem.vue?raw";
 import workspaceDialogLayerSource from "./WorkspaceDialogLayer.vue?raw";
 import longWorkspaceTypeSource from "../types/longWorkspace.ts?raw";
 import workspaceTypeSource from "../types/workspace.ts?raw";
-import writingOrchestratorSource from "../composables/useLongWritingOrchestrator.ts?raw";
 import longConversationSource from "../composables/useLongConversationCoordinator.ts?raw";
-import writingWorkflowSource from "../composables/useLongWritingWorkflowCoordinator.ts?raw";
+import proposalRuntimeSource from "../composables/useLongProposalRuntimeCoordinator.ts?raw";
 import longBookLifecycleSource from "../composables/useLongBookLifecycleCoordinator.ts?raw";
 import presentationCoordinatorSource from "../composables/useLongWorkspacePresentationCoordinator.ts?raw";
 import longRollbackSource from "../composables/useLongRollbackCoordinator.ts?raw";
@@ -65,6 +64,7 @@ import conversationStoreSource from "../stores/conversationStore.ts?raw";
 import longWorkspaceStoreSource from "../stores/longWorkspaceStore.ts?raw";
 import agentRunPreferencesSource from "../utils/agentRunPreferences.ts?raw";
 import longWorkspaceResourceTreeSource from "../utils/longWorkspaceResourceTree.ts?raw";
+import longWorkspaceDraftTreeSource from "../utils/longWorkspaceDraftTree.ts?raw";
 import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
 
 const agentConversationSource = [
@@ -112,6 +112,7 @@ export {
   longStructureTransactionsSyncSource,
   longStructureTransactionsTreeSource,
   longWorkspaceModuleSource,
+  longWorkspaceDraftTreeSource,
   longWorkspaceRefreshSource,
   longWorkspaceResourceTreeSource,
   longWorkspaceSessionSource,
@@ -120,6 +121,7 @@ export {
   manuscriptNavigationSource,
   plotPointDialogSource,
   presentationCoordinatorSource,
+  proposalRuntimeSource,
   proposalSource,
   removalSource,
   resourceTreeCoordinatorSource,
@@ -131,7 +133,5 @@ export {
   workspaceSystemEventRoutesSource,
   workspaceTypeSource,
   worldbuildingNavigationSource,
-  writingOrchestratorSource,
-  writingWorkflowSource,
   writingWorkspaceSource
 };

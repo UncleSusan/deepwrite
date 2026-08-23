@@ -352,7 +352,7 @@ describe("useLongWorkspacePresentationCoordinator", () => {
     expect(coordinator.activeLongRuntimeContext.value).toMatchObject({
       bookId: BOOK_ID,
       activeRoot: "worldbuilding",
-      activeAgentId: "setting"
+      activeAgentId: "long"
     });
     expect(
       coordinator.activeLongRuntimeContext.value?.activeFileId
@@ -376,7 +376,7 @@ describe("useLongWorkspacePresentationCoordinator", () => {
     });
     expect(coordinator.activeLongRuntimeContext.value).toMatchObject({
       activeRoot: "character_design",
-      activeAgentId: "setting"
+      activeAgentId: "long"
     });
     expect(
       coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
@@ -387,7 +387,7 @@ describe("useLongWorkspacePresentationCoordinator", () => {
     });
     expect(coordinator.activeLongRuntimeContext.value).toMatchObject({
       activeRoot: "plot_design",
-      activeAgentId: "plot_design"
+      activeAgentId: "long"
     });
     expect(
       coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
@@ -398,26 +398,24 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       preferredRole: "body"
     });
     expect(coordinator.activeLongChapterWriterEnabled.value).toBe(true);
-    expect(coordinator.activeLongAgentProfile.value?.id).toBe("draft");
+    expect(coordinator.activeLongAgentProfile.value?.id).toBe("long");
     expect(
       coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
     ).toBeDefined();
 
     activeSelection.value = selection("continuity_ledger");
-    expect(coordinator.activeLongAgentProfile.value?.id).toBe(
-      "continuity_ledger"
-    );
+    expect(coordinator.activeLongAgentProfile.value?.id).toBe("long");
     expect(
       coordinator.activeLongRuntimeContext.value?.worldbuildingDirectory
-    ).toBeUndefined();
+    ).toBeDefined();
   });
 
   it("filters readable attachments and preserves Catalog document order", () => {
     const { coordinator, summary, documents } = createHarness();
     const profile: LongAgentProfile = {
-      ...getDefaultLongAgentProfile("plot_design"),
+      ...getDefaultLongAgentProfile("long"),
       readAccess: {
-        ...getDefaultLongAgentProfile("plot_design").readAccess,
+        ...getDefaultLongAgentProfile("long").readAccess,
         materialKinds: ["plot"],
         skillKinds: ["style"]
       }
@@ -486,6 +484,39 @@ describe("useLongWorkspacePresentationCoordinator", () => {
         .longCatalogContextDocuments(summary, profile)
         .map(({ id }) => id)
     ).toEqual(["material", "skill"]);
+  });
+
+  it("loads bound resource documents only in their configured stage", () => {
+    const { coordinator, summary, documents, activeSelection } =
+      createHarness();
+    summary.linkedResourceStageScopes = {
+      materials: { material_plot: ["plot_design"] },
+      skills: { skill_style: ["draft"] }
+    };
+    documents.value = [
+      document("material", {
+        domain: "material",
+        libraryId: "material_plot"
+      }),
+      document("skill", { domain: "skill", libraryId: "skill_style" })
+    ];
+    const profile = getDefaultLongAgentProfile("long");
+
+    expect(coordinator.longCatalogContextDocuments(summary, profile)).toEqual(
+      []
+    );
+    activeSelection.value = selection("plot_design");
+    expect(
+      coordinator
+        .longCatalogContextDocuments(summary, profile)
+        .map(({ id }) => id)
+    ).toEqual(["material"]);
+    activeSelection.value = selection("draft");
+    expect(
+      coordinator
+        .longCatalogContextDocuments(summary, profile)
+        .map(({ id }) => id)
+    ).toEqual(["skill"]);
   });
 
   it("indexes an unordered ledger and resolves rollback chapter titles", () => {

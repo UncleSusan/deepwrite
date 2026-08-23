@@ -6,9 +6,6 @@ import {
   type TSchema
 } from "@earendil-works/pi-ai";
 import {
-  LongSearchCommandEnvelopeSchema,
-  LongSearchResultSchema,
-  createEnvelope,
   getDefaultLongAgentProfile,
   type Book,
   type ChatAssistantRuntimeContext,
@@ -549,19 +546,7 @@ function buildShortProjectTools(book: Book): AgentTool[] {
   ];
 }
 
-const LONG_QUERY_TOOL_NAMES = new Set([
-  "list_setting",
-  "search_setting",
-  "read_setting",
-  "list_plot_design",
-  "search_plot_design",
-  "read_plot_design",
-  "list_chapters",
-  "search_chapters",
-  "read_chapter",
-  "list_continuity_files",
-  "read_continuity_file"
-]);
+const LONG_QUERY_TOOL_NAMES = new Set(["list", "read"]);
 
 function buildLongProjectTools(input: {
   runId: string;
@@ -569,12 +554,12 @@ function buildLongProjectTools(input: {
   book: LongBookSummary;
   executor?: LongCommandExecutor;
 }): AgentTool[] {
-  const profile = getDefaultLongAgentProfile("plot_design");
+  const profile = getDefaultLongAgentProfile("long");
   const workspace = {
     bookId: input.book.id,
     title: input.book.title,
     activeRoot: "plot_design" as const,
-    activeAgentId: "plot_design" as const,
+    activeAgentId: "long" as const,
     workspaceRevision: input.book.projectRevision,
     projectRevision: input.book.projectRevision,
     navigation: input.book.navigation
@@ -586,57 +571,6 @@ function buildLongProjectTools(input: {
     runId: input.runId,
     ...(input.executor ? { executor: input.executor } : {})
   }).filter((tool) => LONG_QUERY_TOOL_NAMES.has(tool.name));
-  tools.push(
-    defineTool({
-      name: "search_continuity_files",
-      label: "搜索连续性文件",
-      description:
-        "只在当前锁定长篇的连续性阶段搜索，结果不会暴露路径或底层文件标识。",
-      parameters: Type.Object({
-        query: Type.String({ minLength: 1, maxLength: 256 }),
-        cursor: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),
-        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
-      }),
-      execute: async (_id, params, signal) => {
-        if (!input.executor) throw new Error("长篇只读查询桥不可用。");
-        const command = LongSearchCommandEnvelopeSchema.parse(
-          createEnvelope(
-            "long.search",
-            {
-              bookId: input.book.id,
-              query: params.query,
-              scope: "continuity_ledger",
-              ...(params.cursor ? { cursor: params.cursor } : {}),
-              limit: params.limit ?? 20,
-              maxSnippetCharacters: 320
-            },
-            {
-              id: `chat-project-${input.runId}-continuity-search`,
-              context: {
-                sessionId: input.sessionId,
-                runId: input.runId,
-                resourceId: input.book.id
-              }
-            }
-          )
-        );
-        const result = await input.executor(command, signal);
-        if (result.status === "rejected") throw new Error(result.error.message);
-        const parsed = LongSearchResultSchema.parse(result.payload);
-        return jsonResult({
-          query: parsed.query,
-          hits: parsed.hits.map((hit) => ({
-            title: hit.title,
-            start: hit.start,
-            end: hit.end,
-            snippet: hit.snippet
-          })),
-          next_cursor: parsed.nextCursor,
-          project_revision: parsed.projectRevision
-        });
-      }
-    })
-  );
   return tools;
 }
 

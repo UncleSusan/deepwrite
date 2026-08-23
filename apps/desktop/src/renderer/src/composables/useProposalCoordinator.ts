@@ -58,9 +58,13 @@ import {
 import { findLongWorldbuildingFile } from "../utils/longWorldbuildingFiles";
 import { createKeyedSerialTaskQueue } from "../utils/keyedSerialTaskQueue";
 import { resolveProvisionalWriteStagingMode } from "../utils/provisionalExpertSectionStaging";
+import {
+  longCharacterBatchForFiles,
+  longWorldbuildingBatchForFile
+} from "./proposal-coordinator/long-file-proposal-batches";
+import { longProjectRevisionMatchesProposalChain } from "./proposal-coordinator/long-project-revision-chain";
 import type { AgentConversationController } from "./useAgentConversation";
 import type { LongWorkspaceProposalEvent } from "./useLongWorkspaceProposals";
-import type { LongWritingOrchestrator } from "./useLongWritingOrchestrator";
 
 type LongChapterWriteProposalEvent = Extract<
   SystemEventEnvelope,
@@ -155,8 +159,7 @@ export interface ProposalCoordinatorContext {
   longWorkspace: {
     activeBookId: Ref<string | null>;
     books: ShallowRef<readonly LongBookSummary[]>;
-    writingOrchestrator: LongWritingOrchestrator;
-    refreshWritingSaveBarrier(bookId: string): Promise<boolean>;
+    refreshWorkspaceAfterProposal(bookId: string): Promise<boolean>;
     saveActiveEditorChanges(): Promise<boolean>;
   };
   navigation: {
@@ -204,8 +207,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
   const {
     activeBookId: activeLongBookId,
     books: longBooks,
-    writingOrchestrator: longWritingOrchestrator,
-    refreshWritingSaveBarrier: refreshLongWritingSaveBarrier,
+    refreshWorkspaceAfterProposal: refreshLongProposalWorkspace,
     saveActiveEditorChanges: saveActiveLongEditorChanges
   } = context.longWorkspace;
   const { selectedResourceId, activeCreationResourceId, rightCollapsed } =
@@ -2290,37 +2292,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     }
   }
 
-  function longWorldbuildingBatchForFile(
-    event: LongWorldbuildingFileMutationEvent
-  ): LongWorkspaceOperationBatch | undefined {
-    const file = event.payload.files[0];
-    if (!file || event.payload.files.length !== 1) return undefined;
-    const operations = event.payload.batch.operations.filter(
-      (operation) =>
-        file.operation === "create" &&
-        operation.type === "worldbuildingItem.create" &&
-        operation.categoryId === file.categoryId &&
-        operation.item.id === file.itemId &&
-        operation.item.file.id === file.fileId
-    );
-    const documentWrites = event.payload.batch.documentWrites.filter(
-      (write) => file.operation !== "create" && write.fileId === file.fileId
-    );
-    if (
-      (file.operation === "create" &&
-        (operations.length !== 1 || documentWrites.length !== 0)) ||
-      (file.operation !== "create" &&
-        (operations.length !== 0 || documentWrites.length !== 1))
-    ) {
-      return undefined;
-    }
-    return LongWorkspaceOperationBatchSchema.parse({
-      ...event.payload.batch,
-      operations,
-      documentWrites
-    });
-  }
-
   function longPlotDesignProposalText(
     batch: LongWorkspaceOperationBatch
   ): string {
@@ -2540,71 +2511,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     }
   }
 
-  function longCharacterBatchForFiles(
-    event: LongCharacterFileMutationEvent
-  ): LongWorkspaceOperationBatch | undefined {
-    const files = event.payload.files;
-    if (!files.length) return undefined;
-    const isCreation = files.every(({ operation }) => operation === "create");
-    if (isCreation) {
-      const characterIds = new Set(files.map(({ characterId }) => characterId));
-      const documents = new Set(files.map(({ document }) => document));
-      const operation = event.payload.batch.operations.find(
-        (candidate) => candidate.type === "character.create"
-      );
-      if (
-        characterIds.size !== 1 ||
-        documents.size !== 4 ||
-        files.length !== 4 ||
-        event.payload.batch.operations.length !== 1 ||
-        event.payload.batch.documentWrites.length !== 0 ||
-        !operation ||
-        operation.character.id !== files[0]?.characterId ||
-        !files.every((file) => {
-          const operationFiles = operation.files;
-          switch (file.document) {
-            case "core_profile":
-              return operationFiles.coreProfile.id === file.fileId;
-            case "relationships":
-              return operationFiles.relationships.id === file.fileId;
-            case "current_state":
-              return operationFiles.currentState.id === file.fileId;
-            case "history":
-              return operationFiles.history.id === file.fileId;
-            case "overview":
-              return false;
-          }
-        })
-      ) {
-        return undefined;
-      }
-      return LongWorkspaceOperationBatchSchema.parse(event.payload.batch);
-    }
-    const file = files[0];
-    if (
-      files.length !== 1 ||
-      !file ||
-      file.operation === "create" ||
-      event.payload.batch.operations.length !== 0
-    ) {
-      return undefined;
-    }
-    const documentWrites = event.payload.batch.documentWrites.filter(
-      (write) => write.fileId === file.fileId
-    );
-    if (
-      documentWrites.length !== 1 ||
-      event.payload.batch.documentWrites.length !== 1
-    ) {
-      return undefined;
-    }
-    return LongWorkspaceOperationBatchSchema.parse({
-      ...event.payload.batch,
-      operations: [],
-      documentWrites
-    });
-  }
-
   function stageLongCharacterEditProposal(
     event: LongCharacterFileMutationEvent
   ): void {
@@ -2696,7 +2602,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       : primaryFile.nextRevision;
     const diff = buildAgentTextDiff(
       isCreation ? "" : primaryFile.beforeText,
-      isCreation ? "" : primaryFile.afterText
+      primaryFile.afterText
     );
     const noChanges =
       !isCreation && primaryFile.beforeText === primaryFile.afterText;
@@ -2718,9 +2624,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       status: noChanges ? "accepted" : "pending",
       baseRevision: beforeRevision,
       proposedRevision,
-      ...(!noChanges && !isCreation
-        ? { proposedText: primaryFile.afterText }
-        : {}),
+      ...(!noChanges ? { proposedText: primaryFile.afterText } : {}),
       toolCallIds: [event.payload.toolCallId],
       additions: diff.additions,
       deletions: diff.deletions,
@@ -3823,19 +3727,13 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         }
       }
       const latest = await api.getWorkspaceIndex({ bookId: target.bookId });
-      const predecessor = proposal.predecessorProposalId
-        ? conversation.getEditProposal(
-            request.runId,
-            proposal.predecessorProposalId
-          )
-        : undefined;
-      const predecessorProjectRevision =
-        predecessor?.status === "accepted"
-          ? predecessor.longPlotDesignTarget?.appliedProjectRevision
-          : undefined;
       if (
-        latest.projectRevision !== target.baseProjectRevision &&
-        latest.projectRevision !== predecessorProjectRevision
+        !longProjectRevisionMatchesProposalChain({
+          proposals: conversation.listEditProposals(request.runId),
+          proposal,
+          baseProjectRevision: target.baseProjectRevision,
+          latestProjectRevision: latest.projectRevision
+        })
       ) {
         const message =
           "剧情设计已在审阅期间发生变化，未覆盖最新结构。请基于当前内容重新生成。";
@@ -3871,8 +3769,14 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        longPlotDesignTarget: {
+          ...target,
+          appliedProjectRevision: result.projectRevision
+        }
+      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
-      const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+      const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
@@ -3942,8 +3846,8 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       statusMessage:
         target.file.operation === "create"
           ? automatic
-            ? "正在自动批准并创建空白世界观文件…"
-            : "正在校验目录版本并创建空白世界观文件…"
+            ? "正在自动批准并创建世界观文件…"
+            : "正在校验目录版本并创建世界观文件…"
           : automatic
             ? "正在自动批准、校验版本并保存世界观文件…"
             : "正在校验版本并保存世界观文件…"
@@ -3970,7 +3874,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           proposedText: undefined,
           statusMessage: "该世界观文件变更已经存在于本地 Markdown 中。"
         });
-        await refreshLongWritingSaveBarrier(target.bookId);
+        await refreshLongProposalWorkspace(target.bookId);
         return;
       }
       if (target.file.operation === "create") {
@@ -3992,7 +3896,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           status: "conflict",
           statusMessage: message
         });
-        await refreshLongWritingSaveBarrier(target.bookId);
+        await refreshLongProposalWorkspace(target.bookId);
         uiMessage.warning(message);
         return;
       }
@@ -4042,16 +3946,22 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        longWorldbuildingTarget: {
+          ...target,
+          appliedProjectRevision: result.projectRevision
+        }
+      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
-      const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+      const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
         statusMessage:
           target.file.operation === "create"
             ? automatic
-              ? "已自动批准并创建空白世界观文件。"
-              : "已创建空白世界观文件并保存到本地 Markdown。"
+              ? "已自动批准并创建世界观文件。"
+              : "已创建世界观文件并保存到本地 Markdown。"
             : refreshed
               ? `${automatic ? "已自动批准并" : "已接受并"}保存到本地 Markdown。`
               : "已保存到本地 Markdown，但界面刷新失败；请手动刷新长篇工作区。"
@@ -4059,7 +3969,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       if (!automatic) {
         uiMessage.success(
           target.file.operation === "create"
-            ? "已创建空白世界观文件"
+            ? "已创建世界观文件"
             : "已接受并保存世界观文件"
         );
       }
@@ -4147,9 +4057,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           : []),
         ...latest.workspaceIndex.characterFiles.flatMap((entry) => [
           [entry.coreProfile.id, entry.coreProfile] as const,
-          [entry.relationships.id, entry.relationships] as const,
-          [entry.currentState.id, entry.currentState] as const,
-          [entry.history.id, entry.history] as const
+          [entry.relationships.id, entry.relationships] as const
         ])
       ]);
       if (
@@ -4163,7 +4071,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           proposedText: undefined,
           statusMessage: "该人物档案变更已经存在于本地 Markdown 中。"
         });
-        await refreshLongWritingSaveBarrier(target.bookId);
+        await refreshLongProposalWorkspace(target.bookId);
         return;
       }
       if (isCreation) {
@@ -4187,7 +4095,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
             status: "conflict",
             statusMessage: message
           });
-          await refreshLongWritingSaveBarrier(target.bookId);
+          await refreshLongProposalWorkspace(target.bookId);
           uiMessage.warning(message);
           return;
         }
@@ -4233,15 +4141,21 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        longCharacterTarget: {
+          ...target,
+          appliedProjectRevision: result.projectRevision
+        }
+      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
-      const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+      const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
         statusMessage: isCreation
           ? automatic
-            ? "已自动批准并创建人物及四份空白档案。"
-            : "已创建人物及四份空白档案并保存到本地 Markdown。"
+            ? "已自动批准并创建人物及两份档案。"
+            : "已创建人物及两份档案并保存到本地 Markdown。"
           : refreshed
             ? `${automatic ? "已自动批准并" : "已接受并"}保存到本地 Markdown。`
             : "已保存到本地 Markdown，但界面刷新失败；请手动刷新长篇工作区。"
@@ -4335,13 +4249,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           proposedText: undefined,
           statusMessage: "该章节正文变更已经存在于本地 Markdown 中。"
         });
-        const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
-        if (refreshed) {
-          await longWritingOrchestrator.handleChapterSaved(
-            target.bookId,
-            target.file.chapterCardId
-          );
-        }
+        await refreshLongProposalWorkspace(target.bookId);
         return;
       }
       const predecessor = proposal.predecessorProposalId
@@ -4373,7 +4281,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           status: "conflict",
           statusMessage: message
         });
-        await refreshLongWritingSaveBarrier(target.bookId);
+        await refreshLongProposalWorkspace(target.bookId);
         uiMessage.warning(message);
         return;
       }
@@ -4400,8 +4308,14 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        longDraftTarget: {
+          ...target,
+          appliedProjectRevision: result.projectRevision
+        }
+      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
-      const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+      const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
@@ -4413,12 +4327,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           ? `${automatic ? "已自动批准并" : "已接受并"}保存章节正文到本地 Markdown。`
           : "章节正文已保存，但界面刷新失败；请手动刷新长篇工作区。"
       });
-      if (refreshed) {
-        await longWritingOrchestrator.handleChapterSaved(
-          target.bookId,
-          target.file.chapterCardId
-        );
-      }
       if (!automatic) {
         uiMessage.success("已接受并保存章节正文");
       }
@@ -4516,12 +4424,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         );
       }
       blockLaterAgentEditGenerations(conversation, proposal);
-      if (proposal.longDraftTarget) {
-        longWritingOrchestrator.handleChapterRejected(
-          proposal.longDraftTarget.bookId,
-          proposal.longDraftTarget.file.chapterCardId
-        );
-      }
       uiMessage.info(
         proposal.longPlotDesignTarget
           ? "已拒绝剧情设计变更，当前结构未改变"

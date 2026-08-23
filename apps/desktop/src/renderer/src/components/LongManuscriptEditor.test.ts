@@ -95,4 +95,17 @@ describe("LongManuscriptEditor", () => {
       "'is-readonly': currentReadOnly || isDocumentContentBusy"
     );
   });
+
+  it("keeps the textarea mounted when an agent temporarily locks editing", () => {
+    expect(source).toContain(`v-if="viewMode === 'edit'"`);
+    expect(source).not.toContain(`v-if="viewMode === 'edit' && !readOnly"`);
+    expect(source).toContain(':readonly="readOnly || busy"');
+    expect(editorSource).toContain(`v-if="viewMode === 'edit'"`);
+    expect(editorSource).not.toContain(
+      `v-if="viewMode === 'edit' && !currentReadOnly"`
+    );
+    expect(editorSource).toContain(
+      ':readonly="currentReadOnly || isDocumentContentBusy"'
+    );
+  });
 });

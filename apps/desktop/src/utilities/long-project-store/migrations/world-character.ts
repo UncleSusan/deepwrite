@@ -3,6 +3,7 @@ import {
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
   LONG_WORKSPACE_INDEX_PATH,
+  LongLedgerCommitRecordSchema,
   LongProjectManifestSchema,
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
@@ -20,6 +21,7 @@ import type { ProjectTransactionFileOperation } from "../../project-transaction"
 import {
   commitLongProjectTransaction,
   isNodeError,
+  parseJson,
   readSecureTextFile,
   serializeJson,
   unknownRecord
@@ -350,6 +352,124 @@ export async function migrateLegacyCharacterOverviewStorage(input: {
         content: "",
         expectedSha256: null
       },
+      {
+        path: LONG_WORKSPACE_INDEX_PATH,
+        content: indexContent,
+        expectedSha256: input.indexDisk.sha256
+      },
+      {
+        path: MANIFEST_PATH,
+        content: serializeJson(nextManifest),
+        expectedSha256: input.manifestDisk.sha256
+      }
+    ],
+    maxFileBytes: MAX_LEDGER_RECORD_BYTES
+  });
+  return true;
+}
+
+/**
+ * Removes the obsolete character-level state/history files after legacy
+ * structured commits have been projected into chapter continuity Markdown.
+ */
+export async function migrateLegacyCharacterStateFiles(input: {
+  projectDirectory: string;
+  manifest: LongProjectManifest;
+  manifestDisk: SecureTextFile;
+  indexDisk: SecureTextFile;
+  rawIndex: unknown;
+}): Promise<boolean> {
+  const rawIndex = unknownRecord(input.rawIndex);
+  if (!rawIndex || !Array.isArray(rawIndex.characterFiles)) return false;
+  const legacyFiles: LongWorkspaceFileReference[] = [];
+  const characterFiles = rawIndex.characterFiles.map((value) => {
+    const entry = unknownRecord(value);
+    if (!entry) return value;
+    for (const candidate of [entry.currentState, entry.history]) {
+      if (candidate !== undefined) {
+        legacyFiles.push(LongWorkspaceFileReferenceSchema.parse(candidate));
+      }
+    }
+    const {
+      currentState: _currentState,
+      history: _history,
+      ...current
+    } = entry;
+    return current;
+  });
+  if (legacyFiles.length === 0) return false;
+
+  const index = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    characterFiles
+  });
+  const operations: ProjectTransactionFileOperation[] = [];
+  for (const reference of legacyFiles) {
+    try {
+      const disk = await readSecureTextFile(
+        input.projectDirectory,
+        reference.path,
+        MAX_DOCUMENT_BYTES
+      );
+      if (
+        !longRevisionsMatchContent(
+          reference.revision,
+          disk.revision,
+          disk.bytes
+        )
+      ) {
+        throw new Error(
+          `旧版人物状态文件存在索引外修改，无法安全移除：${reference.path}`
+        );
+      }
+      operations.push({
+        action: "delete",
+        path: reference.path,
+        expectedSha256: disk.sha256
+      });
+    } catch (error: unknown) {
+      if (!isNodeError(error, "ENOENT")) throw error;
+    }
+  }
+
+  for (const commit of index.ledger.commits) {
+    if (commit.mode !== "structured") continue;
+    const disk = await readSecureTextFile(
+      input.projectDirectory,
+      commit.recordFile.path,
+      MAX_LEDGER_RECORD_BYTES
+    );
+    const record = LongLedgerCommitRecordSchema.parse(
+      parseJson(disk.content, `旧版连续性账本 ${commit.id}`)
+    );
+    const content = serializeJson(
+      LongLedgerCommitRecordSchema.parse({ ...record, reversible: false })
+    );
+    commit.reversible = false;
+    commit.recordFile = {
+      ...commit.recordFile,
+      revision: createLongFileRevision(content)
+    };
+    operations.push({
+      path: commit.recordFile.path,
+      content,
+      expectedSha256: disk.sha256
+    });
+  }
+
+  const nextIndex = LongWorkspaceIndexSnapshotSchema.parse(index);
+  const indexContent = serializeJson(nextIndex);
+  const nextManifest = LongProjectManifestSchema.parse({
+    ...input.manifest,
+    workspaceIndexFile: {
+      ...input.manifest.workspaceIndexFile,
+      revision: createLongFileRevision(indexContent)
+    }
+  });
+  await commitLongProjectTransaction({
+    projectRoot: input.projectDirectory,
+    operations: [
+      ...operations,
       {
         path: LONG_WORKSPACE_INDEX_PATH,
         content: indexContent,

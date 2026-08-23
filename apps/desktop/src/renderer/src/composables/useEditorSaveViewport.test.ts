@@ -102,6 +102,68 @@ describe("editor save viewport", () => {
     expect(setSelectionRange).toHaveBeenCalledWith(960, 975, "forward");
   });
 
+  it("preserves the viewport when transient readonly mode starts and ends", async () => {
+    const { element, setSelectionRange } = createEditor();
+    const transientlyReadOnly = ref(false);
+    element.scrollTop = 720;
+    element.selectionStart = 880;
+    element.selectionEnd = 896;
+    element.selectionDirection = "forward";
+    useEditorSaveViewport({
+      editorInput: ref<HTMLTextAreaElement | null>(element),
+      documentKey: ref("document-a"),
+      isEditView: () => true,
+      isSaving: () => false,
+      isTransientlyReadOnly: () => transientlyReadOnly.value,
+      rememberScroll: vi.fn()
+    });
+
+    transientlyReadOnly.value = true;
+    element.scrollTop = 0;
+    element.selectionStart = 0;
+    element.selectionEnd = 0;
+    element.selectionDirection = "none";
+    await nextTick();
+
+    expect(element.scrollTop).toBe(720);
+    expect(setSelectionRange).toHaveBeenLastCalledWith(880, 896, "forward");
+
+    element.scrollTop = 940;
+    element.selectionStart = 1120;
+    element.selectionEnd = 1120;
+    transientlyReadOnly.value = false;
+    element.scrollTop = 0;
+    element.selectionStart = 0;
+    element.selectionEnd = 0;
+    await nextTick();
+
+    expect(element.scrollTop).toBe(940);
+    expect(setSelectionRange).toHaveBeenLastCalledWith(1120, 1120, "none");
+  });
+
+  it("does not restore a readonly transition into another document", async () => {
+    const { element, setSelectionRange } = createEditor();
+    const transientlyReadOnly = ref(false);
+    const documentKey = ref("document-a");
+    element.scrollTop = 560;
+    useEditorSaveViewport({
+      editorInput: ref<HTMLTextAreaElement | null>(element),
+      documentKey,
+      isEditView: () => true,
+      isSaving: () => false,
+      isTransientlyReadOnly: () => transientlyReadOnly.value,
+      rememberScroll: vi.fn()
+    });
+
+    transientlyReadOnly.value = true;
+    documentKey.value = "document-b";
+    element.scrollTop = 0;
+    await nextTick();
+
+    expect(element.scrollTop).toBe(0);
+    expect(setSelectionRange).not.toHaveBeenCalled();
+  });
+
   it("uses the latest viewport when an automatic save finishes", async () => {
     const { element, setSelectionRange } = createEditor();
     element.scrollTop = 240;

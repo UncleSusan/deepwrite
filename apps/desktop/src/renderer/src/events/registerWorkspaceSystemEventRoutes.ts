@@ -22,7 +22,6 @@ export interface WorkspaceSystemEventRouteDependencies {
   subagentAuthoring: {
     handleEvent(event: SystemEventEnvelope): void;
   };
-  observeLongWritingAgentEvent(event: SystemEventEnvelope): void;
   stageLongPlotDesignEditProposal(
     event: EventOf<"long.mutation_proposal">
   ): void;
@@ -64,12 +63,8 @@ export function registerWorkspaceSystemEventRoutes(
     center.subscribeAll((event) => {
       dependencies.subagentAuthoring.handleEvent(event);
     }),
-    center.subscribeAll(dependencies.observeLongWritingAgentEvent),
     center.subscribeAll((event) => {
-      if (
-        event.type === "long.mutation_proposal" &&
-        event.payload.agentId === "plot_design"
-      ) {
+      if (event.type === "long.mutation_proposal") {
         dependencies.stageLongPlotDesignEditProposal(event);
       } else if (event.type === "long.worldbuilding_file_proposal") {
         dependencies.stageLongWorldbuildingEditProposal(event);

@@ -47,14 +47,12 @@ import {
   type WorkspaceStageSelectionPayload
 } from "./workspace-mutations";
 import {
-  LongChapterDispatchProposalPayloadSchema,
   LongChapterWriteProposalPayloadSchema,
   LongCharacterFileProposalPayloadSchema,
   LongContinuityFileProposalPayloadSchema,
   LongLedgerCommitProposalPayloadSchema,
   LongMutationProposalPayloadSchema,
   LongWorldbuildingFileProposalPayloadSchema,
-  type LongChapterDispatchProposalPayload,
   type LongChapterWriteProposalPayload,
   type LongCharacterFileProposalPayload,
   type LongContinuityFileProposalPayload,
@@ -62,6 +60,10 @@ import {
   type LongMutationProposalPayload,
   type LongWorldbuildingFileProposalPayload
 } from "./long-proposals";
+import {
+  AgentUserInputRequestedPayloadSchema,
+  type AgentUserInputRequestedPayload
+} from "./user-input";
 
 export const AgentMessageDeltaEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agent.message_delta"),
@@ -134,6 +136,12 @@ export const AgentToolCompletedEventEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: AgentToolCompletedPayloadSchema
 }).superRefine(validateAgentEventContext);
 
+export const AgentUserInputRequestedEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("agent.user_input_requested"),
+    payload: AgentUserInputRequestedPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
 export const LearningImitationResultUpdatedEventEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("learning_imitation.result_updated"),
@@ -186,12 +194,6 @@ export const LongLedgerCommitProposalEventEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("long.ledger_commit_proposal"),
     payload: LongLedgerCommitProposalPayloadSchema
-  }).superRefine(validateAgentEventContext);
-
-export const LongChapterDispatchProposalEventEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.chapter_dispatch_proposal"),
-    payload: LongChapterDispatchProposalPayloadSchema
   }).superRefine(validateAgentEventContext);
 
 export const LibraryEditorMutationEventEnvelopeSchema =
@@ -286,6 +288,10 @@ export type AgentToolCompletedEventEnvelope = Envelope<
   AgentToolCompletedPayload,
   "tool.execution_completed"
 >;
+export type AgentUserInputRequestedEventEnvelope = Envelope<
+  AgentUserInputRequestedPayload,
+  "agent.user_input_requested"
+>;
 export type LearningImitationResultUpdatedEventEnvelope = Envelope<
   LearningImitationResultUpdatedPayload,
   "learning_imitation.result_updated"
@@ -321,10 +327,6 @@ export type LongChapterWriteProposalEventEnvelope = Envelope<
 export type LongLedgerCommitProposalEventEnvelope = Envelope<
   LongLedgerCommitProposalPayload,
   "long.ledger_commit_proposal"
->;
-export type LongChapterDispatchProposalEventEnvelope = Envelope<
-  LongChapterDispatchProposalPayload,
-  "long.chapter_dispatch_proposal"
 >;
 export type LibraryEditorMutationEventEnvelope = Envelope<
   LibraryEditorMutationPayload,

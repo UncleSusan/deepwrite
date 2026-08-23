@@ -16,6 +16,7 @@ import {
   it,
   leftSidebarSource,
   longStructureTransactionsSource,
+  longWorkspaceDraftTreeSource,
   longWorkspaceResourceTreeSource,
   longWorkspaceTypeSource,
   manuscriptNavigationSource,
@@ -334,7 +335,7 @@ describe("long-form renderer vertical slice: navigation-and-characters", () => {
     expect(appSource).toContain(
       '@submit-create-long-chapter-card="createLongChapterCard"'
     );
-    expect(longWorkspaceResourceTreeSource).toContain(
+    expect(longWorkspaceDraftTreeSource).toContain(
       "longDraftVolumeId: volume.id"
     );
     expect(longStructureTransactionsSource).toContain(
@@ -362,10 +363,7 @@ describe("long-form renderer vertical slice: navigation-and-characters", () => {
     expect(longStructureTransactionsSource).toContain(
       "createLongStructureMutationBuilder(index).reorderChapter"
     );
-    const draftChildrenProjection = longWorkspaceResourceTreeSource.slice(
-      longWorkspaceResourceTreeSource.indexOf("const draftChildren"),
-      longWorkspaceResourceTreeSource.indexOf("const continuityPendingChildren")
-    );
+    const draftChildrenProjection = longWorkspaceDraftTreeSource;
     expect(draftChildrenProjection).toContain("longDraftVolumeId: volume.id");
     expect(draftChildrenProjection).not.toContain("return chapters.length");
     expect(chapterCardDialogSource).toContain("新建{{ unitLabel }}");
@@ -447,9 +445,7 @@ describe("long-form renderer vertical slice: navigation-and-characters", () => {
       "Boolean(selection?.characterTabs?.length) ||"
     );
     expect(characterDialogSource).toContain("新增人物");
-    expect(characterDialogSource).toContain(
-      "核心档案、人物关系、当前状态和历史轨迹"
-    );
+    expect(characterDialogSource).toContain("核心档案和人物关系");
     expect(characterDialogSource).toContain('<Teleport to="body">');
     expect(characterDialogSource).toContain("uiMessage.warning");
   });

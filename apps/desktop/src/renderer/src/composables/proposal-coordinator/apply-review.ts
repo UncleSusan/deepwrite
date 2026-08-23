@@ -43,8 +43,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
     setAgentEditWorkspaceAccepting,
     activeConversation,
     activeLongConversation,
-    allConversations,
-    longWritingOrchestrator
+    allConversations
   } = ctx;
 
   const queueAgentEdit: ProposalLaneContext["queueAgentEdit"] = (...args) =>
@@ -927,12 +926,6 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         );
       }
       blockLaterAgentEditGenerations(conversation, proposal);
-      if (proposal.longDraftTarget) {
-        longWritingOrchestrator.handleChapterRejected(
-          proposal.longDraftTarget.bookId,
-          proposal.longDraftTarget.file.chapterCardId
-        );
-      }
       uiMessage.info(
         proposal.longPlotDesignTarget
           ? "已拒绝剧情设计变更，当前结构未改变"

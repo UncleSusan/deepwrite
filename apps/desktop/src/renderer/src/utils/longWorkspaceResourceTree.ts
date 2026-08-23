@@ -5,9 +5,9 @@ import type {
   LongWorkspaceRoot
 } from "@deepwrite/contracts";
 import type { ResourceTreeNode } from "../types/workspace";
+import { projectLongWorkspaceDraftTree } from "./longWorkspaceDraftTree";
 import {
   createLongChapterCardVolumeSelection,
-  createLongChapterSelection,
   createLongContinuitySelection,
   isLongMigrationEvidenceCategoryId,
   longBookResourceId,
@@ -598,34 +598,12 @@ export function projectLongWorkspaceNavigation(
     )
   ];
 
-  const draftChildren = sortedVolumes.map<ResourceTreeNode>((volume) => {
-    const chapters = (
-      chaptersByVolume.get(volume.id) ?? []
-    ).flatMap<ResourceTreeNode>((chapter) => {
-      const selection = index
-        ? createLongChapterSelection(book, index, chapter.id)
-        : {
-            key: `chapter:${chapter.id}`,
-            root: "draft" as const,
-            chapterCardId: chapter.id,
-            title: chapter.title,
-            breadcrumbs: [book.title, "正文", volume.title, chapter.title],
-            files: [],
-            preferredRole: "body" as const
-          };
-      return selection ? [node(selection, { icon: "edit" })] : [];
-    });
-    return {
-      id: longNavigationNodeId(book.id, `volume:${volume.id}`),
-      label: volume.title,
-      icon: "folder",
-      badge: `${chapters.length} 章`,
-      workspaceType: "long",
-      longBookId: book.id,
-      catalogNodeType: "category",
-      longDraftVolumeId: volume.id,
-      ...(chapters.length ? { children: chapters } : {})
-    };
+  const draftChildren = projectLongWorkspaceDraftTree({
+    book,
+    ...(index ? { index } : {}),
+    volumes: sortedVolumes,
+    chaptersByVolume,
+    nodeId: (key) => longNavigationNodeId(book.id, key)
   });
 
   const continuityPendingChildren: ResourceTreeNode[] = [];

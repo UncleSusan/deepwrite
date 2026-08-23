@@ -1,0 +1,84 @@
+.long-binding-dialog {
+  max-height: min(820px, calc(100vh - 40px));
+}
+
+.long-binding-dialog .dialog-content {
+  overflow-y: auto;
+}
+
+.long-binding-kind-field {
+  align-content: start;
+}
+
+.long-binding-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.long-binding-tabs button {
+  padding: 7px 12px;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+}
+
+.long-binding-tabs button:hover {
+  background: var(--surface-hover);
+}
+
+.long-binding-tabs button.is-active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.long-binding-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.long-binding-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 999px;
+  background: var(--surface-main);
+  color: var(--text-secondary);
+  font-size: 0.714286rem;
+  overflow-wrap: anywhere;
+}
+
+.long-binding-chip button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface-hover);
+  color: var(--text-tertiary);
+}
+
+.long-binding-empty {
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+}
+
+@media (max-width: 640px) {
+  .long-binding-dialog {
+    width: min(100vw - 24px, 760px);
+  }
+
+  .long-binding-dialog .create-short-kind-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

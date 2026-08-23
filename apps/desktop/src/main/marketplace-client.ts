@@ -1,4 +1,4 @@
-import { safeStorage } from "electron";
+import { net, safeStorage } from "electron";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
@@ -48,6 +48,7 @@ import {
   type MarketplaceUser
 } from "@deepwrite/contracts";
 import { DEEPWRITE_PUBLIC_DATA_API_BASE_URL } from "./deepwrite-public-data-config";
+import { describeMarketplaceNetworkError } from "./marketplace-network-error";
 
 const MARKETPLACE_REQUEST_TIMEOUT_MS = 12_000;
 const MARKETPLACE_MAX_RESPONSE_BYTES = 2 * 1_024 * 1_024;
@@ -85,8 +86,13 @@ export class MarketplaceClientError extends Error {
   readonly code: string;
   readonly status: number | undefined;
 
-  constructor(code: string, message: string, status?: number) {
-    super(message);
+  constructor(
+    code: string,
+    message: string,
+    status?: number,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
     this.name = "MarketplaceClientError";
     this.code = code;
     this.status = status;
@@ -425,7 +431,7 @@ export class MarketplaceClient {
     this.baseUrl = normalizeBaseUrl(
       options.baseUrl ?? DEEPWRITE_PUBLIC_DATA_API_BASE_URL
     );
-    this.fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
+    this.fetcher = options.fetcher ?? ((input, init) => net.fetch(input, init));
     this.storage = options.secureStorage ?? safeStorage;
     this.now = options.now ?? Date.now;
     this.sessionPath = join(userDataPath, "config", "marketplace-session.json");
@@ -839,11 +845,12 @@ export class MarketplaceClient {
           : {})
       });
     } catch (error: unknown) {
+      const failure = describeMarketplaceNetworkError(error);
       throw new MarketplaceClientError(
         "marketplace.network_error",
-        error instanceof Error
-          ? `无法连接技能广场：${error.message}`
-          : "无法连接技能广场。"
+        failure.message,
+        undefined,
+        { cause: error }
       );
     }
     const text = await readLimitedResponse(response);

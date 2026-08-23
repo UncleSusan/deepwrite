@@ -73,7 +73,7 @@ describe("long character agent context", () => {
           return page(input, "与沈砚暂时合作。");
         }
         if (input.fileId === overview.id) {
-          return page(input, "- character_id=`character_lan` 林岚");
+          return page(input, "- id=`character_lan` 林岚");
         }
         return page(input, "雾港巡夜人，害怕深水。");
       }
@@ -95,7 +95,7 @@ describe("long character agent context", () => {
         title: "人物关系",
         text: { content: "与沈砚暂时合作。" }
       },
-      overview: { content: "- character_id=`character_lan` 林岚" },
+      overview: { content: "- id=`character_lan` 林岚" },
       coreProfile: { content: "雾港巡夜人，害怕深水。" }
     });
     expect(

@@ -45,7 +45,6 @@ export function createLongStructureCreate(
     selectedResourceId
   } = state;
   const {
-    blockWritingPlan: blockActiveLongWritingPlan,
     saveActiveEditorChanges: saveActiveLongEditorChanges,
     saveActiveEditorBeforeLeaving: saveActiveLongEditorBeforeLeaving,
     openBook: openLongBook,
@@ -109,11 +108,7 @@ export function createLongStructureCreate(
       target?.volumeId ?? activeLongSelection.value?.chapterCardVolumeId;
     const bookId = target?.bookId ?? activeLongBookId.value;
     const source = target?.source ?? "chapter-card";
-    if (
-      !volumeId ||
-      !bookId ||
-      blockActiveLongWritingPlan(source === "draft" ? "新增小节" : "新增章卡")
-    ) {
+    if (!volumeId || !bookId) {
       return;
     }
     if (activeLongBookId.value !== bookId) {
@@ -176,7 +171,6 @@ export function createLongStructureCreate(
     bookId: string,
     categoryId: string
   ): Promise<void> {
-    if (blockActiveLongWritingPlan("新增世界观条目")) return;
     if (activeLongBookId.value !== bookId) {
       if (!(await saveActiveLongEditorBeforeLeaving(bookId))) return;
       if (!dialogRequestIsCurrent(requestId)) return;
@@ -216,7 +210,6 @@ export function createLongStructureCreate(
       uiMessage.warning("当前人物分组尚未就绪。");
       return;
     }
-    if (blockActiveLongWritingPlan("新增人物")) return;
     const groupOption = index.characterTypes.find(({ id }) => id === group);
     if (!groupOption || !dialogRequestIsCurrent(requestId)) return;
     longCharacterCreate.value = {
@@ -257,8 +250,7 @@ export function createLongStructureCreate(
       if (
         !bookId ||
         !activeLongWorkspaceIndex.value ||
-        activeLongSelection.value?.key !== "plot-design:book-line" ||
-        blockActiveLongWritingPlan("新增分卷")
+        activeLongSelection.value?.key !== "plot-design:book-line"
       ) {
         return;
       }
@@ -282,7 +274,6 @@ export function createLongStructureCreate(
     bookId: string,
     volumeId: string
   ): Promise<void> {
-    if (blockActiveLongWritingPlan("新增剧情点")) return;
     if (activeLongBookId.value !== bookId) {
       if (!(await saveActiveLongEditorBeforeLeaving(bookId))) return;
       if (!dialogRequestIsCurrent(requestId)) return;

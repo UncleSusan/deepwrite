@@ -20,7 +20,6 @@ import type { DraftSectionCreationRevisionCursor } from "../../utils/draftSectio
 import type { KeyedSerialTaskQueue } from "../../utils/keyedSerialTaskQueue";
 import type { AgentConversationController } from "../useAgentConversation";
 import type { LongWorkspaceProposalEvent } from "../useLongWorkspaceProposals";
-import type { LongWritingOrchestrator } from "../useLongWritingOrchestrator";
 
 export type WorkspaceEditorMutationEvent = Extract<
   SystemEventEnvelope,
@@ -141,8 +140,7 @@ export interface ProposalCoordinatorContext {
   longWorkspace: {
     activeBookId: Ref<string | null>;
     books: ShallowRef<readonly LongBookSummary[]>;
-    writingOrchestrator: LongWritingOrchestrator;
-    refreshWritingSaveBarrier(bookId: string): Promise<boolean>;
+    refreshWorkspaceAfterProposal(bookId: string): Promise<boolean>;
     saveActiveEditorChanges(): Promise<boolean>;
   };
   navigation: {
@@ -189,8 +187,7 @@ export interface ProposalLaneContext {
   longConversationForProposalEvent: ProposalCoordinatorContext["conversations"]["forLongProposal"];
   activeLongBookId: ProposalCoordinatorContext["longWorkspace"]["activeBookId"];
   longBooks: ProposalCoordinatorContext["longWorkspace"]["books"];
-  longWritingOrchestrator: ProposalCoordinatorContext["longWorkspace"]["writingOrchestrator"];
-  refreshLongWritingSaveBarrier: ProposalCoordinatorContext["longWorkspace"]["refreshWritingSaveBarrier"];
+  refreshLongProposalWorkspace: ProposalCoordinatorContext["longWorkspace"]["refreshWorkspaceAfterProposal"];
   saveActiveLongEditorChanges: ProposalCoordinatorContext["longWorkspace"]["saveActiveEditorChanges"];
   selectedResourceId: ProposalCoordinatorContext["navigation"]["selectedResourceId"];
   activeCreationResourceId: ProposalCoordinatorContext["navigation"]["activeCreationResourceId"];

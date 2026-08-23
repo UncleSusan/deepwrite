@@ -21,7 +21,6 @@ function createDependencies(order: string[] = []) {
     subagentAuthoring: {
       handleEvent: vi.fn(() => order.push("subagent"))
     },
-    observeLongWritingAgentEvent: vi.fn(() => order.push("writing")),
     stageLongPlotDesignEditProposal: vi.fn(() => order.push("plot")),
     stageLongWorldbuildingEditProposal: vi.fn(() => order.push("world")),
     stageLongCharacterEditProposal: vi.fn(() => order.push("character")),
@@ -67,7 +66,6 @@ describe("workspace system event routes", () => {
     expect(order).toEqual([
       "learning",
       "subagent",
-      "writing",
       "long",
       "conversation",
       "queued-edits"
@@ -79,7 +77,7 @@ describe("workspace system event routes", () => {
       "plot",
       {
         type: "long.mutation_proposal",
-        payload: { agentId: "plot_design" }
+        payload: { agentId: "long" }
       }
     ],
     ["world", { type: "long.worldbuilding_file_proposal", payload: {} }],

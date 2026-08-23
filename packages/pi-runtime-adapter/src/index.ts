@@ -1,7 +1,6 @@
 export {
   buildLongWorkspaceTools,
-  isLongAgentToolDetails,
-  selectNextLongChapterForDispatch
+  isLongAgentToolDetails
 } from "./long-agent-tools";
 export type {
   BuildLongWorkspaceToolsInput,
@@ -17,6 +16,7 @@ export type {
 } from "./runtime-types";
 export { interceptToolCallStream } from "./tool-stream";
 export { PiAgentRuntimeAdapter } from "./adapter";
+export { UserInputResolutionError } from "./user-input-broker";
 export {
   evaluationConversationHistory,
   buildAgentEvaluationSnapshot

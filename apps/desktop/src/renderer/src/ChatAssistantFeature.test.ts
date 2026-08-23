@@ -50,6 +50,9 @@ describe("independent chat assistant feature", () => {
 
   it("centers the new-chat empty state without moving recent history", () => {
     expect(overlaySource).toContain("<ChatAssistantHome");
+    expect(overlaySource).toContain(".chat-assistant-home-wrap {");
+    expect(overlaySource).toContain("height: 100%");
+    expect(overlaySource).toContain("box-sizing: border-box");
     expect(homeSource).toContain("chat-assistant-home.is-empty");
     expect(homeSource).toContain("place-items: center");
     expect(homeSource).toContain("chat-assistant-home.has-history");

@@ -11,13 +11,21 @@ import {
 import type {
   LinkedMaterialIdsByKind,
   LinkedSkillIdsByKind,
+  LongLinkedResourceStageScopes,
+  LongWorkspaceRoot,
   MaterialKind,
   MaterialLibrary,
   SkillKind,
   SkillLibrary
 } from "@deepwrite/contracts";
+import { LONG_WORKSPACE_ROOTS } from "@deepwrite/contracts";
 import AppIcon from "./AppIcon.vue";
+import LongBindingStageScopes from "./LongBindingStageScopes.vue";
 import PopupSelect from "./PopupSelect.vue";
+import {
+  LONG_MATERIAL_BINDING_KINDS,
+  LONG_SKILL_BINDING_KINDS
+} from "./longBookBindingOptions";
 
 type LongBindingDomain = "skill" | "material";
 
@@ -29,6 +37,7 @@ const props = withDefaults(
     skills?: readonly SkillLibrary[];
     linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
     linkedSkillIdsByKind: LinkedSkillIdsByKind;
+    linkedResourceStageScopes: LongLinkedResourceStageScopes;
     submitting?: boolean;
   }>(),
   {
@@ -44,31 +53,13 @@ const emit = defineEmits<{
     payload: {
       linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
       linkedSkillIdsByKind: LinkedSkillIdsByKind;
+      linkedResourceStageScopes: LongLinkedResourceStageScopes;
     }
   ];
 }>();
 
-const materialKinds: ReadonlyArray<{
-  id: MaterialKind;
-  label: string;
-  description: string;
-}> = [
-  { id: "character", label: "人设素材库", description: "人物与关系设定" },
-  { id: "gimmick", label: "梗素材库", description: "核心创意与钩子" },
-  { id: "plot", label: "剧情素材库", description: "剧情、导语与细化" },
-  { id: "draft", label: "正文素材库", description: "正文片段与表达参考" },
-  { id: "other", label: "其他素材库", description: "未归入以上分类的素材" }
-];
-const skillKinds: ReadonlyArray<{
-  id: SkillKind;
-  label: string;
-  description: string;
-}> = [
-  { id: "general", label: "通用技能库", description: "多个阶段均可使用" },
-  { id: "plot", label: "剧情设计技能库", description: "人物、剧情与大纲方法" },
-  { id: "style", label: "文风写作技能库", description: "正文与章节写作方法" },
-  { id: "other", label: "其他技能库", description: "自定义写作方法" }
-];
+const materialKinds = LONG_MATERIAL_BINDING_KINDS;
+const skillKinds = LONG_SKILL_BINDING_KINDS;
 
 const selectedMaterials = reactive<Record<MaterialKind, string[]>>({
   character: [],
@@ -82,6 +73,11 @@ const selectedSkills = reactive<Record<SkillKind, string[]>>({
   plot: [],
   style: [],
   other: []
+});
+const activeTab = ref<"bindings" | "stages">("bindings");
+const selectedStageScopes = reactive<LongLinkedResourceStageScopes>({
+  materials: {},
+  skills: {}
 });
 const materialCandidates = reactive<Record<MaterialKind, string>>({
   character: "",
@@ -149,6 +145,7 @@ function skillOptions(kind: SkillKind): Array<{
 }
 
 function reset(): void {
+  activeTab.value = "bindings";
   for (const { id } of materialKinds) {
     selectedMaterials[id] = [...props.linkedMaterialIdsByKind[id]];
     materialCandidates[id] = "";
@@ -157,6 +154,55 @@ function reset(): void {
     selectedSkills[id] = [...props.linkedSkillIdsByKind[id]];
     skillCandidates[id] = "";
   }
+  selectedStageScopes.materials = structuredClone(
+    props.linkedResourceStageScopes?.materials ?? {}
+  );
+  selectedStageScopes.skills = structuredClone(
+    props.linkedResourceStageScopes?.skills ?? {}
+  );
+}
+
+function stagesFor(
+  domain: LongBindingDomain,
+  libraryId: string
+): LongWorkspaceRoot[] {
+  const map = domain === "material" ? "materials" : "skills";
+  return [...(selectedStageScopes[map][libraryId] ?? LONG_WORKSPACE_ROOTS)];
+}
+
+function setStages(
+  domain: LongBindingDomain,
+  libraryId: string,
+  stages: readonly LongWorkspaceRoot[]
+): void {
+  const map = domain === "material" ? "materials" : "skills";
+  selectedStageScopes[map][libraryId] = [...stages];
+}
+
+const scopedLibraries = computed(() => {
+  if (props.mode === "material") {
+    return materialKinds.flatMap(({ id: kind }) =>
+      selectedMaterials[kind].map((id) => ({ id, label: materialLabel(id) }))
+    );
+  }
+  return skillKinds.flatMap(({ id: kind }) =>
+    selectedSkills[kind].map((id) => ({ id, label: skillLabel(id) }))
+  );
+});
+
+function selectedStageScopePayload(): LongLinkedResourceStageScopes {
+  const materialIds = new Set(
+    materialKinds.flatMap(({ id }) => selectedMaterials[id])
+  );
+  const skillIds = new Set(skillKinds.flatMap(({ id }) => selectedSkills[id]));
+  return {
+    materials: Object.fromEntries(
+      [...materialIds].map((id) => [id, stagesFor("material", id)])
+    ),
+    skills: Object.fromEntries(
+      [...skillIds].map((id) => [id, stagesFor("skill", id)])
+    )
+  };
 }
 
 function selectedMaterialLinks(): LinkedMaterialIdsByKind {
@@ -176,6 +222,7 @@ function addMaterial(kind: MaterialKind, value: unknown): void {
   materialCandidates[kind] = "";
   if (!id || selectedMaterials[kind].includes(id)) return;
   selectedMaterials[kind] = [...selectedMaterials[kind], id];
+  selectedStageScopes.materials[id] = [...LONG_WORKSPACE_ROOTS];
 }
 
 function addSkill(kind: SkillKind, value: unknown): void {
@@ -183,6 +230,7 @@ function addSkill(kind: SkillKind, value: unknown): void {
   skillCandidates[kind] = "";
   if (!id || selectedSkills[kind].includes(id)) return;
   selectedSkills[kind] = [...selectedSkills[kind], id];
+  selectedStageScopes.skills[id] = [...LONG_WORKSPACE_ROOTS];
 }
 
 function materialLabel(id: string): string {
@@ -205,7 +253,8 @@ function requestClose(): void {
 function submit(): void {
   emit("submit", {
     linkedMaterialIdsByKind: selectedMaterialLinks(),
-    linkedSkillIdsByKind: selectedSkillLinks()
+    linkedSkillIdsByKind: selectedSkillLinks(),
+    linkedResourceStageScopes: selectedStageScopePayload()
   });
 }
 
@@ -274,7 +323,31 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </div>
             </div>
 
-            <div v-if="mode === 'material'" class="create-short-kind-grid">
+            <div class="long-binding-tabs" role="tablist" aria-label="绑定设置">
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === 'bindings'"
+                :class="{ 'is-active': activeTab === 'bindings' }"
+                @click="activeTab = 'bindings'"
+              >
+                {{ mode === "skill" ? "选择技能" : "选择素材" }}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === 'stages'"
+                :class="{ 'is-active': activeTab === 'stages' }"
+                @click="activeTab = 'stages'"
+              >
+                生效阶段
+              </button>
+            </div>
+
+            <div
+              v-if="activeTab === 'bindings' && mode === 'material'"
+              class="create-short-kind-grid"
+            >
               <div
                 v-for="kind in materialKinds"
                 :key="kind.id"
@@ -322,7 +395,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </div>
             </div>
 
-            <div v-else class="create-short-kind-grid">
+            <div
+              v-else-if="activeTab === 'bindings'"
+              class="create-short-kind-grid"
+            >
               <div
                 v-for="kind in skillKinds"
                 :key="kind.id"
@@ -369,7 +445,15 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 />
               </div>
             </div>
-            <p class="create-short-stable-hint">
+            <LongBindingStageScopes
+              v-else
+              :domain="mode ?? 'skill'"
+              :libraries="scopedLibraries"
+              :stages-for="stagesFor"
+              :disabled="submitting"
+              @update-stages="setStages"
+            />
+            <p v-if="activeTab === 'bindings'" class="create-short-stable-hint">
               Catalog
               中暂时缺失的已有绑定仍会保留，只有点击移除才会解除已有绑定。
             </p>
@@ -398,62 +482,4 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
   </Teleport>
 </template>
 
-<style scoped>
-.long-binding-dialog {
-  max-height: min(820px, calc(100vh - 40px));
-}
-
-.long-binding-dialog .dialog-content {
-  overflow-y: auto;
-}
-
-.long-binding-kind-field {
-  align-content: start;
-}
-
-.long-binding-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-}
-
-.long-binding-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  padding: 4px 6px 4px 8px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 999px;
-  background: var(--surface-main);
-  color: var(--text-secondary);
-  font-size: 0.714286rem;
-  overflow-wrap: anywhere;
-}
-
-.long-binding-chip button {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--surface-hover);
-  color: var(--text-tertiary);
-}
-
-.long-binding-empty {
-  color: var(--text-tertiary);
-  font-size: 0.714286rem;
-}
-
-@media (max-width: 640px) {
-  .long-binding-dialog {
-    width: min(100vw - 24px, 760px);
-  }
-
-  .long-binding-dialog .create-short-kind-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-</style>
+<style scoped src="./long-book-bindings-dialog.css"></style>

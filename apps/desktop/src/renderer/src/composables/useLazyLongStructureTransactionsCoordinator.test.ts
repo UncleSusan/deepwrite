@@ -142,12 +142,11 @@ function createContext(input: { readonly pending?: boolean } = {}) {
     api: () => undefined,
     state,
     session: {
-      blockWritingPlan: vi.fn(() => false),
       saveActiveEditorChanges: vi.fn(async () => true),
       saveActiveEditorBeforeLeaving: vi.fn(async () => true),
       openBook: vi.fn(async () => undefined),
       refreshActiveWorkspace: vi.fn(async () => true),
-      refreshWritingSaveBarrier: vi.fn(async () => true),
+      refreshWorkspaceAfterProposal: vi.fn(async () => true),
       selectWorkspaceFile: vi.fn(async () => true),
       selectChapterCardTab: vi.fn(async () => undefined),
       editor: ref(null)

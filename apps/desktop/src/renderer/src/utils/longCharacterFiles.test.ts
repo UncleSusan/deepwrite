@@ -4,9 +4,7 @@ import {
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
   longCharacterCoreProfileFileId,
-  longCharacterCurrentStateFileId,
   longCharacterFilePath,
-  longCharacterHistoryFileId,
   longCharacterRelationshipsFileId
 } from "@deepwrite/contracts";
 import {
@@ -35,18 +33,6 @@ const characterFiles = [
       path: longCharacterFilePath("character_alice", "relationships.md"),
       revision: EMPTY_LONG_MARKDOWN_REVISION,
       updatedAt
-    },
-    currentState: {
-      id: longCharacterCurrentStateFileId("character_alice"),
-      path: longCharacterFilePath("character_alice", "current-state.md"),
-      revision: EMPTY_LONG_MARKDOWN_REVISION,
-      updatedAt
-    },
-    history: {
-      id: longCharacterHistoryFileId("character_alice"),
-      path: longCharacterFilePath("character_alice", "history.md"),
-      revision: EMPTY_LONG_MARKDOWN_REVISION,
-      updatedAt
     }
   }
 ];
@@ -61,9 +47,7 @@ describe("long character file indexing", () => {
     ).toEqual([
       LONG_CHARACTER_OVERVIEW_FILE_ID,
       longCharacterCoreProfileFileId("character_alice"),
-      longCharacterRelationshipsFileId("character_alice"),
-      longCharacterCurrentStateFileId("character_alice"),
-      longCharacterHistoryFileId("character_alice")
+      longCharacterRelationshipsFileId("character_alice")
     ]);
   });
 

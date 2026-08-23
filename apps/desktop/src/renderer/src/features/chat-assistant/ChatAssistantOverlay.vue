@@ -1061,10 +1061,13 @@ watch(
   padding: 28px 0 48px;
 }
 .chat-assistant-home-wrap {
+  display: grid;
   width: min(720px, calc(100% - 60px));
+  height: 100%;
   min-height: 100%;
   margin: 0 auto;
   padding: 22px 0;
+  box-sizing: border-box;
 }
 .chat-assistant-config-backdrop {
   position: fixed;

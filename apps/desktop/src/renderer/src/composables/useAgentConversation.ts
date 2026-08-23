@@ -1,6 +1,8 @@
 import { computed, ref, shallowRef, toRaw, watch, type Ref } from "vue";
 import type {
   AgentRuntimeRef,
+  AgentUserInputAnswer,
+  AgentUserInputRequestedPayload,
   AgentUsage,
   ChatAssistantRequestContext,
   DeepWriteApi,
@@ -43,6 +45,7 @@ import type {
 import type { WorkspaceDocument } from "../types/workspace";
 import { normalizeChatAssistantRequestContext } from "./agent-conversation/chat-assistant-request";
 import { buildConversationHistory } from "./agent-conversation/history";
+import { createAgentUserInputController } from "./agent-conversation/user-input";
 
 export interface ConversationStorage {
   getItem(key: string): string | null;
@@ -150,6 +153,8 @@ export interface AgentConversationController {
   selectedModelId: Ref<string>;
   runtime: Ref<AgentRuntimeRef | null>;
   conversationError: Ref<string | null>;
+  pendingUserInput: Ref<AgentUserInputRequestedPayload | null>;
+  submittingUserInput: Ref<boolean>;
   history: Readonly<Ref<ConversationHistoryItem[]>>;
   isBusy: Readonly<Ref<boolean>>;
   hasPendingEditReview: Readonly<Ref<boolean>>;
@@ -177,6 +182,7 @@ export interface AgentConversationController {
     patch: Partial<AgentEditProposal>
   ): AgentEditProposal | undefined;
   handleEvent(event: SystemEventEnvelope): void;
+  submitUserInput(answers: AgentUserInputAnswer[]): Promise<boolean>;
   sendMessage(
     activeDocument: WorkspaceDocument,
     workspaceDocuments?: WorkspaceDocument[],
@@ -575,11 +581,16 @@ function parseStoredCharacterStructureTarget(
 function parseStoredLongWorldbuildingTarget(
   value: unknown
 ): AgentEditProposal["longWorldbuildingTarget"] | undefined {
+  const appliedProjectRevision = isRecord(value)
+    ? value.appliedProjectRevision
+    : undefined;
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
     !value.bookId.trim() ||
-    !nonnegativeInteger(value.baseProjectRevision)
+    !nonnegativeInteger(value.baseProjectRevision) ||
+    (appliedProjectRevision !== undefined &&
+      !nonnegativeInteger(appliedProjectRevision))
   ) {
     return undefined;
   }
@@ -590,6 +601,7 @@ function parseStoredLongWorldbuildingTarget(
     bookId: value.bookId,
     batch: batch.data,
     baseProjectRevision: value.baseProjectRevision,
+    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
     file: file.data
   };
 }
@@ -597,11 +609,16 @@ function parseStoredLongWorldbuildingTarget(
 function parseStoredLongCharacterTarget(
   value: unknown
 ): AgentEditProposal["longCharacterTarget"] | undefined {
+  const appliedProjectRevision = isRecord(value)
+    ? value.appliedProjectRevision
+    : undefined;
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
     !value.bookId.trim() ||
     !nonnegativeInteger(value.baseProjectRevision) ||
+    (appliedProjectRevision !== undefined &&
+      !nonnegativeInteger(appliedProjectRevision)) ||
     !Array.isArray(value.files) ||
     value.files.length < 1
   ) {
@@ -619,6 +636,7 @@ function parseStoredLongCharacterTarget(
     bookId: value.bookId,
     batch: batch.data,
     baseProjectRevision: value.baseProjectRevision,
+    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
     files
   };
 }
@@ -1500,6 +1518,20 @@ export function useAgentConversation(
   let pendingAgentTextDelta: PendingAgentTextDelta | undefined;
   let streamPresentationFrame: number | undefined;
   let streamPresentationFallbackTimer: number | undefined;
+  const userInput = createAgentUserInputController({
+    api: options.api,
+    onResume(runId) {
+      if (activeRunId.value !== runId) return;
+      scheduleIdleTimeout({
+        expectedEpoch: epoch,
+        expectedSessionId: sessionId.value,
+        runId
+      });
+    },
+    onError(message) {
+      conversationError.value = message;
+    }
+  });
 
   const isBusy = computed(
     () =>
@@ -2695,6 +2727,7 @@ export function useAgentConversation(
     }
     submitting.value = false;
     stopping.value = false;
+    userInput.clear(runId);
     clearIdleTimer();
   }
 
@@ -3078,6 +3111,20 @@ export function useAgentConversation(
     if (subagentEvent) {
       handleSubagentEvent(event);
       return;
+    }
+
+    if (event.type === "agent.user_input_requested") {
+      userInput.receive(event.payload);
+      clearIdleTimer();
+      return;
+    }
+
+    if (
+      event.type === "agent.message_delta" ||
+      event.type === "agent.thinking_delta" ||
+      event.type === "agent.message_completed"
+    ) {
+      userInput.clearSubmitted(runId);
     }
 
     if (event.type === "agent.evaluation_snapshot") {
@@ -3943,6 +3990,7 @@ export function useAgentConversation(
     observedRunByAttempt.clear();
     approvalModeByAttempt.clear();
     approvalModeByRun.clear();
+    userInput.clear();
   }
 
   function stopStreamingMessages(): void {
@@ -4136,6 +4184,8 @@ export function useAgentConversation(
     selectedModelId,
     runtime,
     conversationError,
+    pendingUserInput: userInput.request,
+    submittingUserInput: userInput.submitting,
     history,
     isBusy,
     hasPendingEditReview,
@@ -4150,6 +4200,7 @@ export function useAgentConversation(
     upsertEditProposal,
     updateEditProposal,
     handleEvent,
+    submitUserInput: userInput.submit,
     sendMessage,
     sendAssistantMessage,
     sendLongMessage,
@@ -4210,6 +4261,7 @@ function isAgentEvent(event: SystemEventEnvelope): event is Extract<
       | "agent.message_delta"
       | "agent.thinking_delta"
       | "agent.message_completed"
+      | "agent.user_input_requested"
       | "agent.error"
       | "tool.call_stream"
       | "tool.call_requested"
@@ -4226,6 +4278,7 @@ function isAgentEvent(event: SystemEventEnvelope): event is Extract<
     event.type === "agent.message_delta" ||
     event.type === "agent.thinking_delta" ||
     event.type === "agent.message_completed" ||
+    event.type === "agent.user_input_requested" ||
     event.type === "agent.error" ||
     event.type === "tool.call_stream" ||
     event.type === "tool.call_requested" ||

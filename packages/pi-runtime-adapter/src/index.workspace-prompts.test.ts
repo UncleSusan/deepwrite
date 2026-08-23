@@ -301,9 +301,9 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     expect(systemPrompt).toContain("list_characters");
   });
 
-  it("describes realtime serialized persistence for auto-approved long proposals", () => {
+  it("uses only the configured long-agent prompt and discards the base prompt", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "plot_design"
+      ({ id }) => id === "long"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_prompt",
@@ -346,15 +346,15 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       workspaceContext: { longWorkspace }
     });
 
-    expect(prompt).toContain("立即加入按书籍串行的后台队列");
-    expect(prompt).toContain("影响预览");
-    expect(prompt).toContain("自动完成");
-    expect(prompt).not.toContain("本轮完成后");
+    expect(prompt).toBe(profile.systemPrompt.trim());
+    expect(prompt).not.toContain("DeepWrite base");
+    expect(prompt).not.toContain("【当前长篇智能体");
+    expect(prompt).not.toContain("【DeepWrite 长篇工具边界】");
   });
 
   it("keeps the long chapter-writer runtime boundary limited to novel body", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "draft"
+      ({ id }) => id === "long"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_writer_prompt",
@@ -414,18 +414,20 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       workspaceContext: { longWorkspace }
     });
 
-    expect(prompt).toContain("只允许为上下文锁定的当前章形成小说正文提案");
-    expect(prompt).toContain("不得生成或修改人物状态、handoff、接续包");
+    expect(prompt).toBe(profile.systemPrompt.trim());
+    expect(prompt).toContain("All five stages share the same tools");
     expect(prompt).toContain(
-      "世界观、人物目录与长篇结构导航已写入本轮固定上下文"
+      "The fixed context already contains the worldbuilding directory, character directory, and long-form structure navigation."
     );
-    expect(prompt).not.toContain("按稳定实体 ID 和 fileId 查询");
-    expect(prompt).not.toContain("必须同时形成正文、人物状态和 handoff");
+    expect(prompt).toContain(
+      "Do not request, infer, or repeat implementation details"
+    );
+    expect(prompt).not.toContain("必须同时形成正文");
   });
 
   it("lets the continuity ledger write any unrecorded chapter and catch up in one pass", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "continuity_ledger"
+      ({ id }) => id === "long"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_ledger_prompt",
@@ -468,17 +470,15 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       workspaceContext: { longWorkspace }
     });
 
-    expect(prompt).toContain("可对任意已有正文、尚未记录的章卡写入");
-    expect(prompt).toContain("未选中章卡时必须带 chapter_card_id");
-    expect(prompt).toContain("pending_catchup");
-    expect(prompt).toContain("前文 brief 只写简短章末状态与接续包");
-    expect(prompt).toContain("最后一张 full 写完整账本");
-    expect(prompt).toContain("批量提交所有未提交章节");
+    expect(prompt).toContain("propose_continuity_commit");
+    expect(prompt).toContain(
+      "The foreshadowing overview is the design source."
+    );
   });
 
   it("keeps worldbuilding prompts on business ids and hides file controls", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "setting"
+      ({ id }) => id === "long"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_world_prompt",
@@ -570,15 +570,20 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     };
 
     const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", input);
-    expect(systemPrompt).toContain("category_id");
-    expect(systemPrompt).toContain("item_id");
-    expect(systemPrompt).toContain("list_setting");
-    expect(systemPrompt).not.toContain("fileId");
-    expect(systemPrompt).not.toContain("file_id");
+    expect(systemPrompt).toBe(profile.systemPrompt.trim());
+    expect(systemPrompt).toContain("All five stages share the same tools");
+    expect(systemPrompt).toContain("list");
+    expect(systemPrompt).toContain(
+      "Do not request, infer, or repeat implementation details"
+    );
     expect(systemPrompt).not.toContain("bookId");
     expect(systemPrompt).not.toContain(" / worldbuilding");
-    expect(systemPrompt).toContain("长篇结构导航已写入固定上下文");
-    expect(systemPrompt).toContain("不得修改剧情结构");
+    expect(systemPrompt).toContain(
+      "The fixed context already contains the worldbuilding directory, character directory, and long-form structure navigation."
+    );
+    expect(systemPrompt).toContain(
+      "worldbuilding categories and character types"
+    );
 
     const userPrompt = buildRuntimeUserPrompt(input);
     expect(userPrompt).toContain("长篇作品: 《雾港长篇》");
@@ -618,12 +623,12 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       "守夜人（item_id=worlditem_watchers；顺序=1）"
     );
     expect(userPrompt).toContain("主角（type_id=protagonist；共 0 人）");
-    expect(userPrompt).toContain("当前智能体: 设定智能体");
+    expect(userPrompt).toContain("当前智能体: 长篇智能体");
     expect(userPrompt).toContain(
       "当前用户所处的世界观阶段: 文本型分类「世界规则」（category_id=world_rules）"
     );
     expect(userPrompt).toContain(
-      "当前阶段简要信息: 仅定位当前页面，正文未注入；需要时调用 read_setting（domain=worldbuilding, category_id=world_rules）读取。"
+      "当前阶段简要信息: 仅定位当前页面，正文未注入；需要时调用 read（id=world_rules）读取。"
     );
     expect(userPrompt).not.toContain("雾潮期间禁止点燃蓝焰。");
     expect(userPrompt).not.toContain("当前阶段信息:");
@@ -659,7 +664,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       "当前用户所处的世界观阶段: 列表型分类「势力」 / 条目「守夜人」（category_id=world_factions；item_id=worlditem_watchers）"
     );
     expect(listPrompt).toContain(
-      "当前阶段简要信息: 仅定位当前页面，正文未注入；需要时调用 read_setting（domain=worldbuilding, category_id=world_factions, item_id=worlditem_watchers）读取。"
+      "当前阶段简要信息: 仅定位当前页面，正文未注入；需要时调用 read（id=worlditem_watchers）读取。"
     );
     expect(listPrompt).not.toContain("守夜人负责执行宵禁。");
     expect(listPrompt).not.toContain("各势力争夺港务权。");
@@ -668,7 +673,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
 
   it("keeps character prompts on business ids and injects a brief focused stage", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "setting"
+      ({ id }) => id === "long"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_character_prompt",
@@ -743,10 +748,12 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     };
 
     const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", input);
-    expect(systemPrompt).toContain("list_setting");
-    expect(systemPrompt).toContain("read_setting");
-    expect(systemPrompt).not.toContain("fileId");
-    expect(systemPrompt).not.toContain("file_id");
+    expect(systemPrompt).toContain("list");
+    expect(systemPrompt).toContain("read");
+    expect(systemPrompt).toContain(
+      "Do not request, infer, or repeat implementation details"
+    );
+    expect(systemPrompt).toBe(profile.systemPrompt.trim());
     expect(systemPrompt).not.toContain("bookId");
 
     const userPrompt = buildRuntimeUserPrompt(input);
@@ -776,12 +783,12 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     expect(userPrompt).toContain(
       "视角人物（type_id=chartype_viewpoint；共 1 人）"
     );
-    expect(userPrompt).toContain("林岚（character_id=character_lan；顺序=1）");
+    expect(userPrompt).toContain("林岚（id=character_lan；顺序=1）");
     expect(userPrompt).toContain(
-      "当前用户所处的人物阶段: 「林岚」 / 人物关系（character_id=character_lan；document=relationships；type_id=chartype_viewpoint）"
+      "当前用户所处的人物阶段: 「林岚」 / 人物关系（id=character_lan；document=relationships；type_id=chartype_viewpoint）"
     );
     expect(userPrompt).toContain(
-      "当前阶段简要信息: 仅定位当前人物文档，正文未注入；需要时调用 read_setting（domain=character, character_id=character_lan, document=relationships）读取。"
+      "当前阶段简要信息: 仅定位当前人物文档，正文未注入；需要时调用 read（id=character_lan, document=relationships）读取。"
     );
     expect(userPrompt).not.toContain("与沈砚暂时合作。");
     expect(userPrompt).not.toContain("雾港巡夜人，害怕深水。");
@@ -797,7 +804,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
 
   it("caps the setting-agent character directory at 50 people per type", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "setting"
+      ({ id }) => id === "long"
     )!;
     const extras = Array.from({ length: 52 }, (_, index) => ({
       id: `character_extra_${String(index + 1).padStart(2, "0")}`,
@@ -862,22 +869,18 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     expect(userPrompt).toContain("【世界观条目列表（发送时快照）】");
     expect(userPrompt).toContain("【人物设计列表（发送时快照）】");
     expect(userPrompt).toContain("配角（type_id=supporting；共 52 人）");
-    expect(userPrompt).toContain(
-      "配角1（character_id=character_extra_01；顺序=1）"
-    );
-    expect(userPrompt).toContain(
-      "配角50（character_id=character_extra_50；顺序=50）"
-    );
+    expect(userPrompt).toContain("配角1（id=character_extra_01；顺序=1）");
+    expect(userPrompt).toContain("配角50（id=character_extra_50；顺序=50）");
     expect(userPrompt).not.toContain("character_extra_51");
     expect(userPrompt).not.toContain("配角51");
     expect(userPrompt).toContain(
-      "另有 2 人未进入固定上下文，需要时调用 list_setting（domain=character, type_id=supporting）查询。"
+      "另有 2 人未进入固定上下文，需要时调用 list（stage=character, scope_id=supporting）查询。"
     );
   });
 
-  it("keeps the active empty chapter inside a capped chapter-card directory", () => {
+  it("injects only the nearby chapter-card window around the active chapter", () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "draft"
+      ({ id }) => id === "long"
     )!;
     const chapterCards = Array.from({ length: 60 }, (_, index) => ({
       id: `chapter_window_${String(index + 1).padStart(2, "0")}`,
@@ -892,7 +895,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       title: "章卡窗口测试",
       activeRoot: "draft",
       activeAgentId: profile.id,
-      activeChapterCardId: "chapter_window_60",
+      activeChapterCardId: "chapter_window_30",
       workspaceRevision: 1,
       projectRevision: 1,
       navigation: {
@@ -937,18 +940,55 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     });
 
     expect(userPrompt).toContain("正文进度：已写 59 章，空白 1 章。");
+    expect(userPrompt).toContain("27. 「第27章」(chapter_window_27)");
     expect(userPrompt).toContain(
-      "60. 「第60章」(chapter_window_60)；分卷=第 1 卷「第一卷」(volume_window)；卷内顺序=60；主剧情点=「主线」(arc_window)；正文=空白；当前章=是"
+      "30. 「第30章」(chapter_window_30)；分卷=第 1 卷「第一卷」(volume_window)；卷内顺序=30；主剧情点=「主线」(arc_window)；正文=已写；当前章=是"
+    );
+    expect(userPrompt).toContain("40. 「第40章」(chapter_window_40)");
+    expect(userPrompt).toContain(
+      "目录窗口：围绕当前章展示第 27-40 张（前最多 3 张、后最多 10 张）；之前省略 26 张，之后省略 20 张。需要完整目录时按上下文中的 volume_id 调用 list（stage=draft, scope_id=<volume_id>）查询。"
     );
     expect(userPrompt).toContain(
-      "目录窗口：展示第 11-60 张；之前省略 10 张，之后省略 0 张。需要完整目录时调用 list_chapters 分页查询。"
+      "查连续性：list（stage=continuity, scope_id=chapter_window_30）"
     );
-    expect(userPrompt).not.toContain("「第1章」(chapter_window_01)");
+    expect(userPrompt).not.toContain("「第26章」(chapter_window_26)");
+    expect(userPrompt).not.toContain("「第41章」(chapter_window_41)");
+
+    const noActiveChapterPrompt = buildRuntimeUserPrompt({
+      runId: "run_chapter_window_without_active",
+      sessionId: "session_chapter_window_without_active",
+      prompt: "规划全书",
+      longAgentProfile: profile,
+      workspaceContext: {
+        longWorkspace: {
+          ...longWorkspace,
+          activeChapterCardId: undefined
+        }
+      }
+    });
+
+    expect(noActiveChapterPrompt).toContain("1. 「第1章」(chapter_window_01)");
+    expect(noActiveChapterPrompt).toContain("3. 「第3章」(chapter_window_03)");
+    expect(noActiveChapterPrompt).toContain(
+      "51. 「第51章」(chapter_window_51)"
+    );
+    expect(noActiveChapterPrompt).toContain(
+      "60. 「第60章」(chapter_window_60)"
+    );
+    expect(noActiveChapterPrompt).not.toContain(
+      "4. 「第4章」(chapter_window_04)"
+    );
+    expect(noActiveChapterPrompt).not.toContain(
+      "50. 「第50章」(chapter_window_50)"
+    );
+    expect(noActiveChapterPrompt).toContain(
+      "目录窗口：当前未选中章卡，展示最前 3 张与最后 10 张；中间省略 47 张。需要完整目录时按上下文中的 volume_id 调用 list（stage=draft, scope_id=<volume_id>）查询。"
+    );
   });
 
   it("injects plot structure navigation and refreshes the plot position on every turn", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "plot_design"
+      ({ id }) => id === "long"
     )!;
     const navigation = {
       schemaVersion: 1 as const,
@@ -1075,27 +1115,27 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
 
     const userPrompt = buildRuntimeUserPrompt(input);
     const systemPrompt = buildEffectiveSystemPrompt("DeepWrite base", input);
-    expect(systemPrompt).toContain("连续性记录只提供按章参考");
-    expect(systemPrompt).toContain("不锁定章卡、故事情节或伏笔结构");
-    expect(systemPrompt).toContain("type=foreshadowing.create");
-    expect(systemPrompt).toContain("type=foreshadowingBeat.create");
-    expect(systemPrompt).toContain("不得改写成 snake_case");
-    expect(systemPrompt).toContain("删除章卡时客户端会在危险确认后级联清理");
-    expect(systemPrompt).toContain("剧情点关联可为 null");
-    expect(systemPrompt).toContain("非空时必须与章卡属于同一分卷");
-    expect(systemPrompt).toContain("移动或删除剧情点只解除章卡的弱关联");
-    expect(systemPrompt).toContain("全书故事线用 book_line");
-    expect(systemPrompt).toContain("世界观与人物目录已写入本轮固定上下文");
+    expect(systemPrompt).toContain("propose_continuity_commit");
+    expect(systemPrompt).toContain("book_line");
+    expect(systemPrompt).toBe(profile.systemPrompt.trim());
     expect(systemPrompt).toContain(
-      "不得把设定正文或 fileId 写入本轮固定上下文"
+      "The fixed context already contains the worldbuilding directory, character directory, and long-form structure navigation."
     );
-    expect(systemPrompt).not.toContain("按稳定实体 ID 和 fileId 查询");
+    expect(systemPrompt).toContain(
+      "Do not request, infer, or repeat implementation details"
+    );
     expect(userPrompt).toContain(
       "全书共 2 卷、3 个剧情点、1 张章卡、2 条故事情节、0 个故事事件、1 条伏笔线"
     );
     expect(userPrompt).toContain(
       "连续性记录：1 章；最高连续记录位置为「第一章」(chapter_plot_one)"
     );
+    expect(userPrompt).toContain("【list 范围规则】");
+    expect(userPrompt).toContain("叶子不要 list，直接 read");
+    expect(userPrompt).toContain(
+      "查连续性：list（stage=continuity, scope_id=<volume_id|chapter_id|character_id>）"
+    );
+    expect(userPrompt).toContain("不要对 arc_ 使用 continuity");
     expect(userPrompt).toContain("记录只作参考，不锁定正文或结构");
     expect(userPrompt).toContain("【章卡目录（由早到晚；共 1 张）】");
     expect(userPrompt).toContain(
@@ -1128,7 +1168,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       )
     );
     expect(userPrompt).toContain("主角（type_id=protagonist；共 1 人）");
-    expect(userPrompt).toContain("林岚（character_id=character_lan；顺序=1）");
+    expect(userPrompt).toContain("林岚（id=character_lan；顺序=1）");
     expect(userPrompt).not.toContain("session_plot_prompt");
     expect(userPrompt).not.toContain("run_plot_prompt");
     expect(userPrompt).not.toContain("当前根节点:");
@@ -1171,7 +1211,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     expect(bookLinePrompt).not.toContain("file_long-book-line");
 
     const draftProfile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "draft"
+      ({ id }) => id === "long"
     )!;
     const draftPrompt = buildRuntimeUserPrompt({
       ...input,
@@ -1180,7 +1220,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
         longWorkspace: {
           ...longWorkspace,
           activeRoot: "draft",
-          activeAgentId: "draft",
+          activeAgentId: "long",
           plotFocus: undefined
         }
       }
@@ -1193,7 +1233,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     expect(draftPrompt).toContain(
       "世界规则（category_id=world_rules；类型=文本）"
     );
-    expect(draftPrompt).toContain("林岚（character_id=character_lan；顺序=1）");
+    expect(draftPrompt).toContain("林岚（id=character_lan；顺序=1）");
     expect(draftPrompt).not.toContain("当前剧情工作区");
     expect(draftPrompt).not.toContain("session_plot_prompt");
     expect(draftPrompt).not.toContain("run_plot_prompt");
@@ -1263,7 +1303,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       }
     ).conversationAgents;
     const agent = cache.get(
-      "session_plot_turns:long:plot_design:longbook_plot_prompt"
+      "session_plot_turns:long:long:longbook_plot_prompt"
     );
     const userMessages = agent?.state.messages.filter(
       (message) => message.role === "user"
@@ -1289,7 +1329,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       "【人物设计列表（发送时快照）】"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
-      "【本轮剧情工作区上下文】"
+      "【本轮长篇工作区上下文】"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
       "【长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）】"
@@ -1302,7 +1342,20 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     );
     expect(String(userMessages?.[1]?.content)).not.toContain("【人物设计列表");
     expect(String(userMessages?.[1]?.content)).toContain(
-      "结构版本 4；项目版本 6"
+      "【世界观分类入口（本轮发送时快照）】"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "【人物类型入口（本轮发送时快照）】"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain("【list 范围规则】");
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "连续性不要传 arc_ 或 book_line"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "世界规则（category_id=world_rules；类型=文本）"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "主角（type_id=protagonist；共 1 人）"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
       "当前剧情工作区: 剧情点「暗线」(arc_plot_hidden)"
@@ -1323,7 +1376,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
 
   it("injects design directories for the chapter writer and refreshes plot navigation later", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "draft"
+      ({ id }) => id === "long"
     )!;
     const navigation = {
       schemaVersion: 1 as const,
@@ -1435,7 +1488,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       }
     ).conversationAgents;
     const agent = cache.get(
-      "session_draft_turns:long:draft:longbook_draft_prompt"
+      "session_draft_turns:long:long:longbook_draft_prompt"
     );
     const userMessages = agent?.state.messages.filter(
       (message) => message.role === "user"
@@ -1463,13 +1516,10 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       "1. 「第一章」(chapter_draft_one)；分卷=第 1 卷「起势」(volume_draft_a)；卷内顺序=1；主剧情点=「主线」(arc_draft_main)；正文=空白；当前章=是"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
-      "【本轮写手工作区上下文】"
+      "【本轮长篇工作区上下文】"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
       "【长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）】"
-    );
-    expect(String(userMessages?.[1]?.content)).toContain(
-      "结构版本 4；项目版本 6"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
       "当前章卡: chapter_draft_one"
@@ -1481,6 +1531,13 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       "【世界观条目列表"
     );
     expect(String(userMessages?.[1]?.content)).not.toContain("【人物设计列表");
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "【世界观分类入口（本轮发送时快照）】"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "【人物类型入口（本轮发送时快照）】"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain("【list 范围规则】");
     expect(String(userMessages?.[1]?.content)).not.toContain("当前剧情工作区");
   });
 });

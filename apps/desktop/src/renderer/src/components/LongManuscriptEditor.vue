@@ -76,11 +76,11 @@ function updateTitle(event: Event): void {
     </h1>
 
     <textarea
-      v-if="viewMode === 'edit' && !readOnly"
+      v-if="viewMode === 'edit'"
       ref="editorElement"
       :value="content"
       class="long-document-editor"
-      :readonly="busy"
+      :readonly="readOnly || busy"
       :aria-label="`${title}${format || '正文'}`"
       spellcheck="false"
       @beforeinput="emit('beforeinput', $event)"

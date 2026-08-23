@@ -593,7 +593,7 @@ describe("agent conversation controller: workspace-context", () => {
         bookId: "longbook_context",
         title: "雾港来信",
         activeRoot: "worldbuilding",
-        activeAgentId: "setting",
+        activeAgentId: "long",
         activeFileId: "file_world_rules:content",
         activeFileRevision: "v1:3:1234abcd",
         workspaceRevision: 7,
@@ -656,7 +656,7 @@ describe("agent conversation controller: workspace-context", () => {
       longWorkspace: expect.objectContaining({
         bookId: "longbook_context",
         activeRoot: "worldbuilding",
-        activeAgentId: "setting",
+        activeAgentId: "long",
         activeFileId: "file_world_rules:content",
         activeFileRevision: "v1:3:1234abcd",
         workspaceRevision: 7,

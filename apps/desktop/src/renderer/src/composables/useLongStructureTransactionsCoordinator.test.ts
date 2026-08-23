@@ -115,7 +115,7 @@ function createHarness(
     applyOperations?: LongWorkspaceRendererApi["applyOperations"];
     saveActiveEditorChanges?: () => Promise<boolean>;
     refreshActiveWorkspace?: (bookId: string) => Promise<boolean>;
-    refreshWritingSaveBarrier?: (bookId: string) => Promise<boolean>;
+    refreshWorkspaceAfterProposal?: (bookId: string) => Promise<boolean>;
   } = {}
 ) {
   const activeLongBookId = ref<string | null>(BOOK_ID);
@@ -161,8 +161,8 @@ function createHarness(
     success: vi.fn(),
     warning: vi.fn()
   };
-  const refreshWritingSaveBarrier = vi.fn(
-    overrides.refreshWritingSaveBarrier ?? (async () => true)
+  const refreshWorkspaceAfterProposal = vi.fn(
+    overrides.refreshWorkspaceAfterProposal ?? (async () => true)
   );
   const options: LongStructureTransactionsCoordinatorOptions = {
     api: () => api,
@@ -184,7 +184,6 @@ function createHarness(
       selectedResourceId: ref("")
     },
     session: {
-      blockWritingPlan: vi.fn(() => false),
       saveActiveEditorChanges: vi.fn(
         overrides.saveActiveEditorChanges ?? (async () => true)
       ),
@@ -193,7 +192,7 @@ function createHarness(
       refreshActiveWorkspace: vi.fn(
         overrides.refreshActiveWorkspace ?? (async () => true)
       ),
-      refreshWritingSaveBarrier,
+      refreshWorkspaceAfterProposal,
       selectWorkspaceFile: vi.fn(async () => true),
       selectChapterCardTab: vi.fn(async () => undefined),
       editor: shallowRef(null)
@@ -214,7 +213,7 @@ function createHarness(
     coordinator,
     notifications,
     previewOperations,
-    refreshWritingSaveBarrier
+    refreshWorkspaceAfterProposal
   };
 }
 
@@ -288,7 +287,7 @@ describe("useLongStructureTransactionsCoordinator", () => {
     expect(result.succeed).not.toHaveBeenCalled();
     expect(result.appliedButRefreshFailed).toHaveBeenCalledTimes(1);
     expect(harness.longBooks.value.map(({ id }) => id)).toEqual([otherBookId]);
-    expect(harness.refreshWritingSaveBarrier).not.toHaveBeenCalled();
+    expect(harness.refreshWorkspaceAfterProposal).not.toHaveBeenCalled();
   });
 
   it("rebases against the authoritative revisions advanced by editor save", async () => {
@@ -371,14 +370,14 @@ describe("useLongStructureTransactionsCoordinator", () => {
     expect(result.succeed).not.toHaveBeenCalled();
     expect(result.fail).not.toHaveBeenCalled();
     expect(result.appliedButRefreshFailed).not.toHaveBeenCalled();
-    expect(harness.refreshWritingSaveBarrier).not.toHaveBeenCalled();
+    expect(harness.refreshWorkspaceAfterProposal).not.toHaveBeenCalled();
     expect(harness.notifications.success).not.toHaveBeenCalled();
     expect(harness.mutationPending.value).toBe(false);
   });
 
   it("reports an applied mutation separately when refresh fails", async () => {
     const harness = createHarness({
-      refreshWritingSaveBarrier: vi.fn(async () => false)
+      refreshWorkspaceAfterProposal: vi.fn(async () => false)
     });
     const result = completion();
 

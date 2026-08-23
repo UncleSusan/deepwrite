@@ -17,10 +17,7 @@ import type {
   GeneralPermissionMode,
   SystemEventEnvelope
 } from "@deepwrite/contracts";
-import {
-  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
-  createShortWorkspaceContentRevision
-} from "@deepwrite/contracts";
+import { createShortWorkspaceContentRevision } from "@deepwrite/contracts";
 import type {
   BookTransferAction,
   BookTransferDialogMode
@@ -67,7 +64,7 @@ import { useLazyShortBookLifecycleCoordinator } from "./composables/useLazyShort
 import { useLazyProposalCoordinator } from "./composables/useLazyProposalCoordinator";
 import { useLongConversationCoordinator } from "./composables/useLongConversationCoordinator";
 import { useLongWorkspacePresentationCoordinator } from "./composables/useLongWorkspacePresentationCoordinator";
-import { useLongWritingWorkflowCoordinator } from "./composables/useLongWritingWorkflowCoordinator";
+import { useLongProposalRuntimeCoordinator } from "./composables/useLongProposalRuntimeCoordinator";
 import { useLazyLongStructureTransactionsCoordinator } from "./composables/useLazyLongStructureTransactionsCoordinator";
 import {
   useLongWorkspaceSessionCoordinator,
@@ -104,7 +101,10 @@ import {
   resolveLongWorkspaceApi
 } from "./types/longWorkspace";
 import { createConversationPersistenceAdapter } from "./utils/conversationPersistence";
-import { resolveAgentActivityDescriptor } from "./utils/agentActivityDescriptors";
+import {
+  resolveAgentActivityDescriptor,
+  resolveAgentActivityNavigationNode
+} from "./utils/agentActivityDescriptors";
 import type { ApprovalNavigationTarget } from "./utils/approvalNavigation";
 import { loadGeneralPreferences } from "./utils/generalPreferences";
 import { longNavigationNodeId } from "./utils/longWorkspaceResourceTree";
@@ -617,7 +617,6 @@ const {
   editorSaving,
   buildLongLibraryAttachmentsForProfile,
   filterLongReadableAttachmentsForProfile,
-  buildLongReadableAttachmentsForProfile,
   longCatalogContextDocuments,
   agentRunScopeHasWriteBarrier,
   documentHasWriteBarrier
@@ -625,50 +624,33 @@ const {
 documentHasAgentRunWriteBarrier = documentHasWriteBarrier;
 
 const {
-  writingOrchestrator: longWritingOrchestrator,
   workspaceProposals: longWorkspaceProposals,
   activeConversationProposalItems: activeLongConversationProposalItems,
   conversationKey: longConversationKey,
   conversationForProposalEvent: longConversationForProposalEvent,
-  observeAgentEvent: observeLongWritingAgentEvent,
-  refreshSaveBarrier: refreshLongWritingSaveBarrier,
-  blockActivePlan: blockActiveLongWritingPlan,
+  refreshWorkspaceAfterProposal: refreshLongProposalWorkspace,
   stopBookAgentRuns: stopLongBookAgentRuns,
-  disposeBookWorkflowState: disposeLongBookWorkflowState,
+  disposeBookProposalState: disposeLongBookProposalState,
   disposeBookConversations: disposeLongBookConversations,
   stopActiveGeneration: stopLongGenerationCommand,
-  cancelWorkflow: cancelLongWritingWorkflow,
   approveProposal: approveLongProposal,
   rejectProposal: rejectLongProposal,
   retryProposalPreview: retryLongProposalPreview,
   locateAcceptedProposal: locateAcceptedLongProposal,
-  dispose: disposeLongWritingWorkflow
-} = useLongWritingWorkflowCoordinator({
+  dispose: disposeLongProposalRuntime
+} = useLongProposalRuntimeCoordinator({
   state: {
     activeBookId: activeLongBookId,
     activeBookSummary: activeLongBookSummary,
     workspaceIndex: activeLongWorkspaceIndex,
     proposalApprovalPending: longProposalApprovalPending,
-    revisionRequirement: longWorkspaceRevisionSyncRequirement,
-    agentSettings: longAgentSettings,
-    agentLoadError: longAgentLoadError
+    revisionRequirement: longWorkspaceRevisionSyncRequirement
   },
   api: resolveLongWorkspaceApi,
   conversations: {
     byKey: conversations,
-    getOrCreate: conversationForKey,
     remove: (key, options) => conversationStore.removeController(key, options),
     active: () => activeLongConversation.value
-  },
-  catalog: {
-    documentsForProfile: longCatalogContextDocuments,
-    ensureDocumentsLoaded: (sources) => ensureCatalogDocumentsLoaded(sources),
-    readableAttachments: (summary, profile) =>
-      buildLongReadableAttachmentsForProfile(
-        summary,
-        hydratedCatalogSnapshot(),
-        profile
-      )
   },
   workspace: {
     saveActiveEditorChanges: () => saveActiveLongEditorChanges(),
@@ -678,11 +660,8 @@ const {
       longWorkspaceEditor.value?.synchronizeProjectRevisions(
         workspaceRevision,
         projectRevision
-      ),
-    selectWorkspaceFile: (selection) => selectLongWorkspaceFile(selection)
+      )
   },
-  ensureAgentSettingsLoaded: () => ensureLongAgentSettingsLoaded(),
-  approvalMode: () => generalSettings.value.permissionMode,
   removeAgentRunPreferences,
   navigateToAcceptedProposal: async (item) => {
     const { resolveLongProposalApprovalTarget } =
@@ -733,8 +712,6 @@ const {
   },
   api: resolveLongWorkspaceApi,
   isWorkspaceActive: () => isLongWorkspaceActive.value,
-  blockWritingPlan: (action, options) =>
-    blockActiveLongWritingPlan(action, options),
   prepareOpenDependencies: () =>
     Promise.all([loadModelSettings(), ensureLongAgentSettingsLoaded()]),
   activateProposalBook: (bookId) => longWorkspaceProposals.activateBook(bookId),
@@ -833,7 +810,6 @@ const {
     workspaceIndex: activeLongWorkspaceIndex,
     activeRoot: activeLongRoot,
     workspaceActive: isLongWorkspaceActive,
-    blockWritingPlan: blockActiveLongWritingPlan,
     saveActiveEditorBeforeLeaving: saveActiveLongEditorBeforeLeaving,
     openBook: openLongBook,
     selectWorkspaceFile: selectLongWorkspaceFile,
@@ -911,14 +887,10 @@ const {
     selectWorkspaceFile: selectLongWorkspaceFile
   },
   workflow: {
-    blockWritingPlan: blockActiveLongWritingPlan,
-    isWritingPlanActive: (bookId) =>
-      longWritingOrchestrator.active.value &&
-      longWritingOrchestrator.state.value.bookId === bookId,
     stopBookAgentRuns: stopLongBookAgentRuns,
     quarantineBook: (bookId) => longWorkspaceProposals.discardBook(bookId),
     reactivateBook: (bookId) => longWorkspaceProposals.activateBook(bookId),
-    disposeBookWorkflowState: disposeLongBookWorkflowState
+    disposeBookProposalState: disposeLongBookProposalState
   },
   conversations: {
     disposeBookConversations: disposeLongBookConversations
@@ -1007,7 +979,6 @@ const {
   scheduler: {
     settleUi: () => nextTick()
   },
-  blockWritingPlan: blockActiveLongWritingPlan,
   notifications: uiMessage
 });
 
@@ -1065,12 +1036,11 @@ const {
     selectedResourceId
   },
   session: {
-    blockWritingPlan: blockActiveLongWritingPlan,
     saveActiveEditorChanges: saveActiveLongEditorChanges,
     saveActiveEditorBeforeLeaving: saveActiveLongEditorBeforeLeaving,
     openBook: openLongBook,
     refreshActiveWorkspace: refreshActiveLongWorkspace,
-    refreshWritingSaveBarrier: refreshLongWritingSaveBarrier,
+    refreshWorkspaceAfterProposal: refreshLongProposalWorkspace,
     selectWorkspaceFile: selectLongWorkspaceFile,
     selectChapterCardTab: selectLongChapterCardTab,
     editor: longWorkspaceEditor
@@ -1555,7 +1525,6 @@ const {
     synchronizeRunPreferences: synchronizeAgentRunPreferences
   },
   workspace: {
-    blockActiveWritingPlan: blockActiveLongWritingPlan,
     ensureAgentSettingsLoaded: ensureLongAgentSettingsLoaded,
     saveActiveEditorChanges: saveActiveLongEditorChanges,
     refreshActiveWorkspace: refreshActiveLongWorkspace,
@@ -1643,9 +1612,33 @@ const {
   showConversation,
   notifications: uiMessage
 });
+const shortAgentActivityResourceId = computed(
+  () =>
+    resourceTreeLookup.value.resourceIdByDocumentId.get(
+      activeAgentDocument.value.id
+    ) ??
+    (activeCreationResourceId.value || selectedResourceId.value)
+);
+const longAgentActivityResourceId = computed(() => {
+  const bookId = activeLongBookId.value;
+  const index = activeLongWorkspaceIndex.value;
+  const selection = activeLongSelection.value;
+  if (bookId && index && selection) {
+    const preferred = preferredLongResourceIdForSelection(
+      bookId,
+      index,
+      selection
+    );
+    if (preferred && resourceTreeLookup.value.nodeById.has(preferred)) {
+      return preferred;
+    }
+  }
+  return selectedResourceId.value;
+});
 const currentAgentActivityView = useCurrentAgentActivityView({
   activeFeature,
-  selectedResourceId,
+  shortResourceId: shortAgentActivityResourceId,
+  longResourceId: longAgentActivityResourceId,
   shortConversation: activeConversation,
   shortContext: writingConversationContext,
   longConversation: activeLongConversation,
@@ -1669,10 +1662,24 @@ const agentActivity = useAgentActivityCoordinator({
       longBooks: longBooks.value
     }),
   async navigate(item) {
-    const node = resourceTreeLookup.value.nodeById.get(item.targetResourceId);
+    const node = resolveAgentActivityNavigationNode(item, {
+      documents: documents.value,
+      resourceTree: resourceTreeLookup.value,
+      workspaceAgents: workspaceAgentSettings.value,
+      longAgents: longAgentSettings.value,
+      libraryAgents: libraryAgentSettings.value,
+      longBooks: longBooks.value
+    });
     if (!node) return "missing";
     await selectResource(node);
-    return selectedResourceId.value === node.id ? "navigated" : "blocked";
+    if (item.chapterCardId) {
+      await selectLongChapterCardTab(item.chapterCardId);
+    }
+    return selectedResourceId.value === node.id ||
+      (item.chapterCardId !== undefined &&
+        activeLongSelection.value?.chapterCardId === item.chapterCardId)
+      ? "navigated"
+      : "blocked";
   },
   notifications: uiMessage
 });
@@ -2096,13 +2103,6 @@ function handleLiveDocumentChange(rawPayload: {
   content: string;
 }): void {
   stageEditorDraft(rawPayload);
-  const document = documents.value.find(({ id }) => id === rawPayload.id);
-  if (
-    (document?.domain === "material" || document?.domain === "skill") &&
-    rawPayload.content.length > CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS
-  ) {
-    return;
-  }
   scheduleEditorAutoSave(rawPayload.id);
 }
 
@@ -2295,8 +2295,7 @@ const {
   longWorkspace: {
     activeBookId: activeLongBookId,
     books: longBooks,
-    writingOrchestrator: longWritingOrchestrator,
-    refreshWritingSaveBarrier: refreshLongWritingSaveBarrier,
+    refreshWorkspaceAfterProposal: refreshLongProposalWorkspace,
     saveActiveEditorChanges: saveActiveLongEditorChanges
   },
   navigation: {
@@ -2327,7 +2326,6 @@ function startWorkspaceSystemEvents(): () => void {
   const removeRoutes = registerWorkspaceSystemEventRoutes(systemEventCenter, {
     learningImitation: learningImitationFeature,
     subagentAuthoring: subagentAuthoringFeature,
-    observeLongWritingAgentEvent,
     stageLongPlotDesignEditProposal,
     stageLongWorldbuildingEditProposal,
     stageLongCharacterEditProposal,
@@ -2441,7 +2439,7 @@ const workspaceLifecycle = useWorkspaceLifecycleCoordinator({
     disposeShortConversation,
     disposeLongConversation,
     disposeConversationRuntimeRegistry,
-    disposeLongWritingWorkflow,
+    disposeLongProposalRuntime,
     disposeProposalCoordinator,
     disposeLongStructureTransactions,
     disposeShortWorkspaceStructure,
@@ -2577,7 +2575,6 @@ onBeforeUnmount(() => {
     <LongWorkspaceModule
       v-if="activeFeature === 'long-workspace'"
       :conversation-controller="activeLongConversation"
-      :writing-orchestrator="longWritingOrchestrator"
       :book="activeLongBookSummary"
       :selection="activeLongSelection"
       :workspace-index="activeLongWorkspaceIndex"
@@ -2623,9 +2620,6 @@ onBeforeUnmount(() => {
       @retry-long-proposal-preview="retryLongProposalPreview"
       @locate-long-proposal="locateAcceptedLongProposal"
       @retry-workspace-refresh="retryActiveLongWorkspaceRefresh"
-      @retry-writing-workflow="longWritingOrchestrator.retry"
-      @cancel-writing-workflow="cancelLongWritingWorkflow"
-      @finish-writing-workflow="longWritingOrchestrator.cancel"
       @saved="handleLongDocumentSaved"
       @context-change="handleLongFileContextChange"
       @rollback="openLongRollbackDialog"

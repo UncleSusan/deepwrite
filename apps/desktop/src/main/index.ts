@@ -90,6 +90,7 @@ import {
   RemoveLibraryEntryResultSchema,
   MoveLibraryEntryResultSchema,
   SessionAbortAcceptedPayloadSchema,
+  SessionUserInputResponseAcceptedPayloadSchema,
   SessionPromptAcceptedPayloadSchema,
   ScriptBookSchema,
   ShortBookSchema,
@@ -289,6 +290,7 @@ type AgentEventEnvelope = Extract<
       | "agent.message_completed"
       | "agent.usage_observed"
       | "agent.error"
+      | "agent.user_input_requested"
       | "tool.call_stream"
       | "tool.call_requested"
       | "tool.execution_completed"
@@ -299,7 +301,6 @@ type AgentEventEnvelope = Extract<
       | "workspace.stage_selection"
       | "long.mutation_proposal"
       | "long.chapter_write_proposal"
-      | "long.chapter_dispatch_proposal"
       | "long.ledger_commit_proposal"
       | "subagent.started"
       | "subagent.activity"
@@ -317,6 +318,7 @@ function isAgentEvent(event: SystemEventEnvelope): event is AgentEventEnvelope {
     event.type === "agent.message_completed" ||
     event.type === "agent.usage_observed" ||
     event.type === "agent.error" ||
+    event.type === "agent.user_input_requested" ||
     event.type === "tool.call_stream" ||
     event.type === "tool.call_requested" ||
     event.type === "tool.execution_completed" ||
@@ -327,7 +329,6 @@ function isAgentEvent(event: SystemEventEnvelope): event is AgentEventEnvelope {
     event.type === "workspace.stage_selection" ||
     event.type === "long.mutation_proposal" ||
     event.type === "long.chapter_write_proposal" ||
-    event.type === "long.chapter_dispatch_proposal" ||
     event.type === "long.ledger_commit_proposal" ||
     event.type === "subagent.started" ||
     event.type === "subagent.activity" ||
@@ -1239,6 +1240,7 @@ function registerIpc(): void {
       if (
         command.type === "agent.prompt" ||
         command.type === "agent.abort" ||
+        command.type === "agent.user_input_response" ||
         command.type === "agent.model_test" ||
         command.type === "catalog.createShortBookAtPath" ||
         command.type === "catalog.createScriptBookAtPath" ||
@@ -3128,6 +3130,59 @@ function registerIpc(): void {
                 error instanceof Error
                   ? error.message
                   : "处理聊天助手项目配置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "session.user_input_response") {
+        try {
+          // activeRuns is a Main-side event-stream mirror and can briefly lag
+          // the Agent utility that owns the pending question. The Agent is the
+          // authoritative validator for this response.
+          const internalCommand = CommandEnvelopeSchema.parse(
+            createEnvelope("agent.user_input_response", command.payload, {
+              id: command.id,
+              context: command.context
+            })
+          );
+          const result = await supervisor.requestCommand(
+            "agent",
+            internalCommand,
+            10_000
+          );
+          if (result.status !== "accepted") return result;
+          const accepted = SessionUserInputResponseAcceptedPayloadSchema.parse(
+            result.payload
+          );
+          if (
+            accepted.sessionId !== command.payload.sessionId ||
+            accepted.runId !== command.payload.runId ||
+            accepted.requestId !== command.payload.requestId
+          ) {
+            return {
+              status: "rejected",
+              requestId: command.id,
+              error: {
+                code: "ipc.invalid_agent_user_input_result",
+                message: "Agent user-input result does not match the request."
+              }
+            };
+          }
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: accepted
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "ipc.agent_user_input_failed",
+              message:
+                error instanceof Error ? error.message : "提交用户回答失败。",
               details: safeErrorDetails(error)
             }
           };

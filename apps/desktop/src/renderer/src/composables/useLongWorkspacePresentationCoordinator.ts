@@ -2,7 +2,7 @@ import {
   MATERIAL_KINDS,
   SKILL_KINDS,
   getDefaultLongAgentProfile,
-  longAgentAcceptsWorldbuildingDirectory,
+  longLinkedResourceIsEnabledForStage,
   resolveLongAgentIdForRoot,
   type CatalogSnapshot,
   type LongAgentProfile,
@@ -239,35 +239,42 @@ export function useLongWorkspacePresentationCoordinator(
   ): LibraryAttachmentBuildResult {
     const skillKinds = new Set(profile.readAccess.skillKinds);
     const materialKinds = new Set(profile.readAccess.materialKinds);
+    const activeStage = activeLongRoot.value;
+    const materialIds = (kind: (typeof MATERIAL_KINDS)[number]) =>
+      summary.linkedMaterialIdsByKind[kind].filter((libraryId) =>
+        longLinkedResourceIsEnabledForStage(
+          summary.linkedResourceStageScopes,
+          "material",
+          libraryId,
+          activeStage
+        )
+      );
+    const skillIds = (kind: (typeof SKILL_KINDS)[number]) =>
+      summary.linkedSkillIdsByKind[kind].filter((libraryId) =>
+        longLinkedResourceIsEnabledForStage(
+          summary.linkedResourceStageScopes,
+          "skill",
+          libraryId,
+          activeStage
+        )
+      );
     return buildLibraryAttachments(snapshot, {
       id: summary.id,
       bookType: "long",
       linkedMaterialIdsByKind: {
         character: materialKinds.has("character")
-          ? summary.linkedMaterialIdsByKind.character
+          ? materialIds("character")
           : [],
-        gimmick: materialKinds.has("gimmick")
-          ? summary.linkedMaterialIdsByKind.gimmick
-          : [],
-        plot: materialKinds.has("plot")
-          ? summary.linkedMaterialIdsByKind.plot
-          : [],
-        draft: materialKinds.has("draft")
-          ? summary.linkedMaterialIdsByKind.draft
-          : [],
-        other: materialKinds.has("other")
-          ? summary.linkedMaterialIdsByKind.other
-          : []
+        gimmick: materialKinds.has("gimmick") ? materialIds("gimmick") : [],
+        plot: materialKinds.has("plot") ? materialIds("plot") : [],
+        draft: materialKinds.has("draft") ? materialIds("draft") : [],
+        other: materialKinds.has("other") ? materialIds("other") : []
       },
       linkedSkillIdsByKind: {
-        general: skillKinds.has("general")
-          ? summary.linkedSkillIdsByKind.general
-          : [],
-        plot: skillKinds.has("plot") ? summary.linkedSkillIdsByKind.plot : [],
-        style: skillKinds.has("style")
-          ? summary.linkedSkillIdsByKind.style
-          : [],
-        other: skillKinds.has("other") ? summary.linkedSkillIdsByKind.other : []
+        general: skillKinds.has("general") ? skillIds("general") : [],
+        plot: skillKinds.has("plot") ? skillIds("plot") : [],
+        style: skillKinds.has("style") ? skillIds("style") : [],
+        other: skillKinds.has("other") ? skillIds("other") : []
       }
     });
   }
@@ -313,16 +320,33 @@ export function useLongWorkspacePresentationCoordinator(
     const libraryIds = new Set<string>();
     const materialKinds = new Set(profile.readAccess.materialKinds);
     const skillKinds = new Set(profile.readAccess.skillKinds);
+    const activeStage = activeLongRoot.value;
     for (const kind of MATERIAL_KINDS) {
       if (materialKinds.has(kind)) {
-        summary.linkedMaterialIdsByKind[kind].forEach((id) =>
-          libraryIds.add(id)
-        );
+        summary.linkedMaterialIdsByKind[kind]
+          .filter((id) =>
+            longLinkedResourceIsEnabledForStage(
+              summary.linkedResourceStageScopes,
+              "material",
+              id,
+              activeStage
+            )
+          )
+          .forEach((id) => libraryIds.add(id));
       }
     }
     for (const kind of SKILL_KINDS) {
       if (skillKinds.has(kind)) {
-        summary.linkedSkillIdsByKind[kind].forEach((id) => libraryIds.add(id));
+        summary.linkedSkillIdsByKind[kind]
+          .filter((id) =>
+            longLinkedResourceIsEnabledForStage(
+              summary.linkedResourceStageScopes,
+              "skill",
+              id,
+              activeStage
+            )
+          )
+          .forEach((id) => libraryIds.add(id));
       }
     }
     // Filtering the source array preserves the context ordering used by
@@ -372,13 +396,9 @@ export function useLongWorkspacePresentationCoordinator(
         workspaceRevision: workspaceIndex.revision,
         projectRevision: summary.projectRevision,
         navigation: summary.navigation,
-        ...(longAgentAcceptsWorldbuildingDirectory(profile.id)
-          ? {
-              worldbuildingDirectory: buildLongWorldbuildingDirectorySnapshot(
-                workspaceIndex.worldbuilding
-              )
-            }
-          : {})
+        worldbuildingDirectory: buildLongWorldbuildingDirectorySnapshot(
+          workspaceIndex.worldbuilding
+        )
       };
     }
   );

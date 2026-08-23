@@ -1,6 +1,10 @@
 import {
   EMPTY_LONG_MARKDOWN_REVISION,
   DEFAULT_LONG_CHARACTER_TYPES,
+  createEmptyLongMarkdownFileReference,
+  longCharacterCurrentStateFileId,
+  longCharacterFilePath,
+  longCharacterHistoryFileId,
   type DeepWriteApi,
   type LongArcId,
   type LongBookSummary,
@@ -48,6 +52,8 @@ export interface LongWorkspaceSelectionFile {
   label: string;
   file: LongWorkspaceFileReference;
   readOnly?: boolean;
+  /** Read-only renderer content used when a mapped source does not exist yet. */
+  inlineContent?: string;
 }
 
 export interface LongForeshadowingFocus {
@@ -246,6 +252,36 @@ function characterDesignSelectionFiles(
   workspaceIndex: LongWorkspaceIndexSnapshot,
   entry: LongWorkspaceIndexSnapshot["characterFiles"][number]
 ): LongWorkspaceSelectionFile[] {
+  const latestChapter = latestCommittedContinuityChapter(
+    workspaceIndex,
+    (chapter) =>
+      chapter.characterContinuity.some(
+        ({ characterId }) => characterId === entry.characterId
+      )
+  );
+  const continuity = latestChapter?.characterContinuity.find(
+    ({ characterId }) => characterId === entry.characterId
+  );
+  const emptyMappedFile = (
+    role: "current-state" | "history"
+  ): LongWorkspaceSelectionFile => ({
+    role,
+    label: role === "current-state" ? "当前状态" : "历史轨迹",
+    file: createEmptyLongMarkdownFileReference(
+      role === "current-state"
+        ? longCharacterCurrentStateFileId(entry.characterId)
+        : longCharacterHistoryFileId(entry.characterId),
+      longCharacterFilePath(
+        entry.characterId,
+        role === "current-state" ? "current-state.md" : "history.md"
+      ),
+      workspaceIndex.updatedAt ??
+        entry.coreProfile.updatedAt ??
+        "1970-01-01T00:00:00.000Z"
+    ),
+    readOnly: true,
+    inlineContent: ""
+  });
   return [
     {
       role: "core-profile",
@@ -257,16 +293,22 @@ function characterDesignSelectionFiles(
       label: "人物关系",
       file: entry.relationships
     },
-    {
-      role: "current-state",
-      label: "当前状态",
-      file: entry.currentState
-    },
-    {
-      role: "history",
-      label: "历史轨迹",
-      file: entry.history
-    }
+    ...(continuity
+      ? [
+          {
+            role: "current-state" as const,
+            label: "当前状态",
+            file: continuity.currentState,
+            readOnly: true
+          },
+          {
+            role: "history" as const,
+            label: "历史轨迹",
+            file: continuity.history,
+            readOnly: true
+          }
+        ]
+      : [emptyMappedFile("current-state"), emptyMappedFile("history")])
   ];
 }
 
@@ -397,8 +439,8 @@ export function createLongCharacterGroupSelection(
     breadcrumbs: [summary.title, "人物设计", groupLabel, character.name],
     files: characterDesignSelectionFiles(workspaceIndex, entry),
     description: latestMappedChapter
-      ? "人物设计文件可继续编辑；按章连续性记录仅作为只读参考。"
-      : "尚无该人物的按章连续性记录；当前显示可编辑的人物设计文件。"
+      ? "当前状态和历史轨迹映射自最新已提交章节，只读展示。"
+      : "尚无该人物的已提交章节记录；当前状态和历史轨迹为空。"
   };
 }
 
@@ -1032,8 +1074,8 @@ export function reconcileLongWorkspaceSelection(
       breadcrumbs: [summary.title, "人物设计", groupLabel, character.name],
       files: characterDesignSelectionFiles(workspaceIndex, entry),
       description: latestMappedChapter
-        ? "人物设计文件可继续编辑；按章连续性记录仅作为只读参考。"
-        : "尚无该人物的按章连续性记录；当前显示可编辑的人物设计文件。"
+        ? "当前状态和历史轨迹映射自最新已提交章节，只读展示。"
+        : "尚无该人物的已提交章节记录；当前状态和历史轨迹为空。"
     };
   }
   if (selection.key.startsWith("ledger:")) {

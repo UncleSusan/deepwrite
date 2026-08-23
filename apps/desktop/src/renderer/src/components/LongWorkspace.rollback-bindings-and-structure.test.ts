@@ -12,6 +12,7 @@ import {
   longBookLifecycleSource,
   longRollbackSource,
   longStructureTransactionsSource,
+  longWorkspaceDraftTreeSource,
   longWorkspaceModuleSource,
   longWorkspaceRefreshSource,
   longWorkspaceResourceTreeSource,
@@ -19,12 +20,12 @@ import {
   longWorkspaceStoreSource,
   longWorkspaceTypeSource,
   presentationCoordinatorSource,
+  proposalRuntimeSource,
   removalSource,
   resourceTreeCoordinatorSource,
   sectionSource,
   structureSource,
-  workspaceDialogLayerSource,
-  writingWorkflowSource
+  workspaceDialogLayerSource
 } from "./LongWorkspace.test-support";
 
 describe("long-form renderer vertical slice: rollback-bindings-and-structure", () => {
@@ -99,7 +100,7 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
   });
 
   it("provides a continuity review entry without replacing chapter authoring", () => {
-    expect(longWorkspaceResourceTreeSource).toContain(
+    expect(longWorkspaceDraftTreeSource).toContain(
       "createLongChapterSelection"
     );
     expect(longWorkspaceResourceTreeSource).toContain(
@@ -148,17 +149,17 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
     expect(longBookLifecycleSource).toContain(
       "await workflow.stopBookAgentRuns(target.bookId)"
     );
-    expect(writingWorkflowSource).toContain(
+    expect(proposalRuntimeSource).toContain(
       "context.conversations.remove(key, { clearPersistence: true })"
     );
     expect(conversationStoreSource).toContain("controller.dispose(");
     expect(conversationStoreSource).toContain(
       "{ clearPersistence: options.clearPersistence }"
     );
-    expect(writingWorkflowSource).toContain(
+    expect(proposalRuntimeSource).toContain(
       "workspaceProposals.discardBook(bookId)"
     );
-    expect(writingWorkflowSource).toContain(
+    expect(proposalRuntimeSource).toContain(
       "context.removeAgentRunPreferences(`long:${bookId}`)"
     );
     expect(appSource).toContain("longCatalogDiagnostics");
@@ -195,6 +196,9 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
     expect(bindingsSource).toContain("<PopupSelect");
     expect(bindingsSource).toContain("create-short-binding-panel");
     expect(bindingsSource).toContain("create-short-kind-grid");
+    expect(bindingsSource).toContain("生效阶段");
+    expect(bindingsSource).toContain("<LongBindingStageScopes");
+    expect(longBookLifecycleSource).toContain("linkedResourceStageScopes:");
     expect(bindingsSource).toContain("Catalog 中缺失");
     expect(bindingsSource).not.toContain('library.materialType === "long"');
     expect(bindingsSource).not.toContain('library.skillType === "long"');

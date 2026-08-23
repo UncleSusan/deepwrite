@@ -6,6 +6,7 @@ import {
 // @ts-expect-error Loaded as source text by the Vitest-only virtual module.
 import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
+import userInputCardSource from "./AgentUserInputCard.vue?raw";
 import messageListSource from "./ConversationMessageList.vue?raw";
 import messageItemSource from "./ConversationMessageItem.vue?raw";
 import processingTimelineSource from "./ConversationProcessingTimeline.vue?raw";
@@ -16,6 +17,23 @@ import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 
 describe("AgentConversation edit proposal placement", () => {
+  it("uses one composer card for agent questions and cross-stage confirmation", () => {
+    expect(conversationSource).toContain("<AgentUserInputCard");
+    expect(conversationSource).toContain('v-if="userInputRequest"');
+    expect(userInputCardSource).toContain(
+      'request.source === "cross_stage_write"'
+    );
+    expect(userInputCardSource).toContain("输入自己的回答");
+    expect(userInputCardSource).toContain("推荐");
+    expect(userInputCardSource).toContain("跳过");
+    expect(conversationSource).toContain(
+      '<div v-else class="composer" :class="{ \'is-disabled\': responding }">'
+    );
+    expect(writingWorkspaceSource).toContain(
+      ':user-input-request="conversationController.pendingUserInput.value"'
+    );
+  });
+
   it("moves right-pane collapse controls with the selected layout", () => {
     expect(conversationSource).toContain("rightPane?: boolean");
     expect(conversationSource).toContain('aria-label="收起智能体栏"');
@@ -100,7 +118,7 @@ describe("AgentConversation edit proposal placement", () => {
     );
     expect(proposalCardSource).toContain("proposal.longCharacterTarget");
     expect(proposalCardSource).toContain(
-      "接受后将创建人物及其四份空白档案并保存到本机。"
+      "接受后将创建人物及其两份档案并保存到本机。"
     );
     expect(proposalCardSource).toContain("接受后将写入人物档案并保存到本机。");
     expect(proposalCardSource).toContain("proposal.longPlotDesignTarget");
@@ -420,8 +438,9 @@ describe("AgentConversation edit proposal placement", () => {
       processingItemSource,
       "writeToolText(item.tool).length.toLocaleString('zh-CN')"
     );
-    expect(presentationSource).toContain('"write_chapter_draft"');
-    expect(presentationSource).toContain('"edit_chapter_draft"');
+    expect(presentationSource).toContain('"create"');
+    expect(presentationSource).toContain('"edit"');
+    expect(presentationSource).toContain("isLongChapterBodyTool");
     expect(processingItemSource).toContain(
       'import { writeToolText } from "../utils/agentWriteToolPreview"'
     );
@@ -433,7 +452,7 @@ describe("AgentConversation edit proposal placement", () => {
     expect(subagentSource).toContain(
       'import { writeToolText } from "../utils/agentWriteToolPreview"'
     );
-    expect(subagentSource).toContain("当前章正文待审核");
+    expect(subagentSource).toContain("toolLabel(item.tool)");
     expect(presentationSource).toContain('return "正在创建文件"');
   });
 

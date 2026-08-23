@@ -8,6 +8,7 @@ import {
 import { EnvelopeBaseSchema, type Envelope } from "./envelope";
 import {
   AgentAbortCommandEnvelopeSchema,
+  AgentUserInputResponseCommandEnvelopeSchema,
   AgentErrorEventEnvelopeSchema,
   AgentEvaluationSnapshotEventEnvelopeSchema,
   AgentMessageCompletedEventEnvelopeSchema,
@@ -21,10 +22,10 @@ import {
   SubagentCompletedEventEnvelopeSchema,
   SubagentStartedEventEnvelopeSchema,
   AgentToolCompletedEventEnvelopeSchema,
+  AgentUserInputRequestedEventEnvelopeSchema,
   AgentToolCallStreamEventEnvelopeSchema,
   AgentToolRequestedEventEnvelopeSchema,
   LearningImitationResultUpdatedEventEnvelopeSchema,
-  LongChapterDispatchProposalEventEnvelopeSchema,
   LongChapterWriteProposalEventEnvelopeSchema,
   LongCharacterFileProposalEventEnvelopeSchema,
   LongContinuityFileProposalEventEnvelopeSchema,
@@ -36,6 +37,7 @@ import {
   WorkspaceEditorMutationEventEnvelopeSchema,
   WorkspaceStageSelectionEventEnvelopeSchema,
   SessionAbortCommandEnvelopeSchema,
+  SessionUserInputResponseCommandEnvelopeSchema,
   SessionPromptCommandEnvelopeSchema,
   type AgentErrorEventEnvelope,
   type AgentEvaluationSnapshotEventEnvelope,
@@ -46,13 +48,13 @@ import {
   type AgentThinkingDeltaEventEnvelope,
   type AgentTurnStartedEventEnvelope,
   type AgentToolCompletedEventEnvelope,
+  type AgentUserInputRequestedEventEnvelope,
   type AgentToolCallStreamEventEnvelope,
   type AgentToolRequestedEventEnvelope,
   type SubagentActivityEventEnvelope,
   type SubagentCompletedEventEnvelope,
   type SubagentStartedEventEnvelope,
   type LearningImitationResultUpdatedEventEnvelope,
-  type LongChapterDispatchProposalEventEnvelope,
   type LongChapterWriteProposalEventEnvelope,
   type LongCharacterFileProposalEventEnvelope,
   type LongContinuityFileProposalEventEnvelope,
@@ -303,6 +305,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LongRollbackLastCommitCommandEnvelopeSchema,
   SessionPromptCommandEnvelopeSchema,
   SessionAbortCommandEnvelopeSchema,
+  SessionUserInputResponseCommandEnvelopeSchema,
   ModelsListCommandEnvelopeSchema,
   ModelsQueryOfficialBalanceCommandEnvelopeSchema,
   ModelsRefreshFreeCommandEnvelopeSchema,
@@ -344,6 +347,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   ExportShortManuscriptCommandEnvelopeSchema,
   AgentPromptCommandEnvelopeSchema,
   AgentAbortCommandEnvelopeSchema,
+  AgentUserInputResponseCommandEnvelopeSchema,
   AgentModelTestCommandEnvelopeSchema
 ]);
 export type CommandEnvelope = z.infer<typeof CommandEnvelopeSchema>;
@@ -411,6 +415,7 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   AgentToolCallStreamEventEnvelopeSchema,
   AgentToolRequestedEventEnvelopeSchema,
   AgentToolCompletedEventEnvelopeSchema,
+  AgentUserInputRequestedEventEnvelopeSchema,
   SubagentStartedEventEnvelopeSchema,
   SubagentActivityEventEnvelopeSchema,
   SubagentCompletedEventEnvelopeSchema,
@@ -420,7 +425,6 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   LongWorldbuildingFileProposalEventEnvelopeSchema,
   LongCharacterFileProposalEventEnvelopeSchema,
   LongContinuityFileProposalEventEnvelopeSchema,
-  LongChapterDispatchProposalEventEnvelopeSchema,
   LongChapterWriteProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
   LibraryEditorMutationEventEnvelopeSchema,
@@ -455,6 +459,7 @@ export type SystemEventEnvelope =
   | AgentToolCallStreamEventEnvelope
   | AgentToolRequestedEventEnvelope
   | AgentToolCompletedEventEnvelope
+  | AgentUserInputRequestedEventEnvelope
   | SubagentStartedEventEnvelope
   | SubagentActivityEventEnvelope
   | SubagentCompletedEventEnvelope
@@ -464,7 +469,6 @@ export type SystemEventEnvelope =
   | LongWorldbuildingFileProposalEventEnvelope
   | LongCharacterFileProposalEventEnvelope
   | LongContinuityFileProposalEventEnvelope
-  | LongChapterDispatchProposalEventEnvelope
   | LongChapterWriteProposalEventEnvelope
   | LongLedgerCommitProposalEventEnvelope
   | LibraryEditorMutationEventEnvelope

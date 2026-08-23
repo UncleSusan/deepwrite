@@ -3,6 +3,7 @@ import type { SystemEventEnvelope } from "@deepwrite/contracts";
 import type { AgentConversationContext } from "./context";
 import { rememberBounded } from "./shared";
 import {
+  clearIdleTimer,
   flushPendingAgentTextDelta,
   queueAgentTextDelta,
   scheduleIdleTimeout
@@ -109,6 +110,13 @@ export function handleEvent(
 
   if (subagentEvent) {
     handleSubagentEvent(ctx, event);
+    return;
+  }
+
+  if (event.type === "agent.user_input_requested") {
+    ctx.pendingUserInput.value = event.payload;
+    ctx.submittingUserInput.value = false;
+    clearIdleTimer(ctx);
     return;
   }
 
@@ -460,6 +468,7 @@ export function isAgentEvent(event: SystemEventEnvelope): event is Extract<
       | "agent.message_delta"
       | "agent.thinking_delta"
       | "agent.message_completed"
+      | "agent.user_input_requested"
       | "agent.error"
       | "tool.call_stream"
       | "tool.call_requested"
@@ -476,6 +485,7 @@ export function isAgentEvent(event: SystemEventEnvelope): event is Extract<
     event.type === "agent.message_delta" ||
     event.type === "agent.thinking_delta" ||
     event.type === "agent.message_completed" ||
+    event.type === "agent.user_input_requested" ||
     event.type === "agent.error" ||
     event.type === "tool.call_stream" ||
     event.type === "tool.call_requested" ||

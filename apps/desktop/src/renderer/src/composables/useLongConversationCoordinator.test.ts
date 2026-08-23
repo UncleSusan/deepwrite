@@ -94,7 +94,7 @@ function runtimeContext(summary: LongBookSummary): LongWorkspaceRuntimeContext {
     bookId: summary.id,
     title: summary.title,
     activeRoot: "plot_design",
-    activeAgentId: "plot_design",
+    activeAgentId: "long",
     workspaceRevision: summary.navigation.revision,
     projectRevision: summary.projectRevision,
     navigation: summary.navigation
@@ -200,7 +200,7 @@ function createHarness() {
   const activeSelection = shallowRef<LongWorkspaceSelection | null>(
     selection()
   );
-  const profile = shallowRef(getDefaultLongAgentProfile("plot_design"));
+  const profile = shallowRef(getDefaultLongAgentProfile("long"));
   const context = shallowRef<LongWorkspaceRuntimeContext | null>(
     runtimeContext(summary.value!)
   );
@@ -228,7 +228,6 @@ function createHarness() {
   };
   const showConversation = vi.fn();
   const stopGeneration = vi.fn(async () => undefined);
-  const blockActiveWritingPlan = vi.fn(() => false);
   const synchronizeSessionModelSelection = vi.fn();
   const synchronizeRunPreferences = vi.fn();
   const updatePermissionMode = vi.fn();
@@ -252,15 +251,14 @@ function createHarness() {
       agentLoadError: ref(null)
     },
     runtime: {
-      conversationKey: vi.fn((bookId, agentId, root, chapterCardId) =>
-        [bookId, agentId, root, chapterCardId ?? "none"].join(":")
+      conversationKey: vi.fn((bookId, root, chapterCardId) =>
+        [bookId, root, chapterCardId ?? "none"].join(":")
       ),
       conversationForKey: vi.fn(() => conversation.controller),
       synchronizeSessionModelSelection,
       synchronizeRunPreferences
     },
     workspace: {
-      blockActiveWritingPlan,
       ensureAgentSettingsLoaded,
       saveActiveEditorChanges,
       refreshActiveWorkspace,
@@ -286,7 +284,6 @@ function createHarness() {
   const coordinator = useLongConversationCoordinator(options);
   return {
     activeSelection,
-    blockActiveWritingPlan,
     buildAttachments,
     context,
     conversation,

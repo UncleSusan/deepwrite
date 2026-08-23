@@ -72,20 +72,11 @@ export interface LongWorkspaceSessionScheduler<TimerHandle> {
   clearTimeout(handle: TimerHandle): void;
 }
 
-export interface LongWritingPlanGuardOptions {
-  targetBookId?: string | null;
-  allowPlanBook?: boolean;
-}
-
 export interface LongWorkspaceSessionCoordinatorContext<TimerHandle> {
   store: ReturnType<typeof useLongWorkspaceStore>;
   state: LongWorkspaceSessionState;
   api(): LongWorkspaceRendererApi | undefined;
   isWorkspaceActive(): boolean;
-  blockWritingPlan(
-    action: string,
-    options?: LongWritingPlanGuardOptions
-  ): boolean;
   prepareOpenDependencies(): Promise<unknown>;
   activateProposalBook(bookId: string): void;
   synchronizeSelectedResourceForLayout(bookId: string): void;
@@ -216,14 +207,6 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
     const api = context.api();
     if (!api) {
       notifications.warning("浏览器预览不能打开长篇项目，请使用桌面客户端。");
-      return;
-    }
-    if (
-      context.blockWritingPlan("打开其他长篇", {
-        targetBookId: bookId,
-        allowPlanBook: true
-      })
-    ) {
       return;
     }
     if (!(await saveActiveEditorBeforeLeaving(bookId)) || disposed) return;

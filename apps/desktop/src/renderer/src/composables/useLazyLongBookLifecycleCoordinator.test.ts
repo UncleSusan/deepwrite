@@ -73,12 +73,10 @@ function createContext(): LongBookLifecycleCoordinatorOptions {
       selectWorkspaceFile: vi.fn(async () => true)
     },
     workflow: {
-      blockWritingPlan: vi.fn(() => false),
-      isWritingPlanActive: vi.fn(() => false),
       stopBookAgentRuns: vi.fn(async () => undefined),
       quarantineBook: vi.fn(),
       reactivateBook: vi.fn(),
-      disposeBookWorkflowState: vi.fn()
+      disposeBookProposalState: vi.fn()
     },
     conversations: { disposeBookConversations: vi.fn() },
     catalog: {

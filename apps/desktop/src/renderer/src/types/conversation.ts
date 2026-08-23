@@ -82,12 +82,14 @@ export interface AgentEditProposal {
     bookId: string;
     batch: LongWorkspaceOperationBatch;
     baseProjectRevision: number;
+    appliedProjectRevision?: number;
     file: LongWorldbuildingFileChange;
   };
   longCharacterTarget?: {
     bookId: string;
     batch: LongWorkspaceOperationBatch;
     baseProjectRevision: number;
+    appliedProjectRevision?: number;
     files: LongCharacterFileChange[];
   };
   longPlotDesignTarget?: {

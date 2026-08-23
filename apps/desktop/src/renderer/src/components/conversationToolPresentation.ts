@@ -31,15 +31,13 @@ export function workspaceToolLabel(name: string): string {
     replace_draft_section_text: "替换正文章节文本",
     rename_draft_section: "修改章节名称",
     delete_draft_section: "删除章节",
-    list_chapters: "列出章节",
-    search_chapters: "搜索章节",
-    read_chapter: "读取章节",
-    list_continuity_files: "列出连续性文件",
-    read_continuity_file: "读取连续性文件",
+    list: "列出范围细节",
+    read: "读取对象正文",
+    create: "新建对象",
+    edit: "写入或修改",
+    delete: "删除对象",
+    propose_continuity_commit: "提交连续性记录",
     search_continuity_files: "搜索连续性文件",
-    list_setting: "列出设定",
-    search_setting: "搜索设定",
-    read_setting: "读取设定",
     create_setting: "创建设定",
     write_setting: "写入设定",
     edit_setting: "编辑设定",
@@ -67,12 +65,6 @@ export function workspaceToolLabel(name: string): string {
     rename_character_item: "修改人物名称",
     move_character_item: "移动人物条目",
     delete_character_file: "删除人物文件",
-    list_plot_design: "列出剧情设计",
-    search_plot_design: "搜索剧情设计",
-    read_plot_design: "读取剧情设计",
-    create_plot_design: "创建剧情设计",
-    write_plot_design: "写入剧情设计",
-    edit_plot_design: "编辑剧情设计",
     web_search: "智能搜索"
   };
   return labels[name] ?? name;
@@ -444,22 +436,20 @@ const WRITE_TOOL_NAMES = new Set([
   "delete_character_file",
   "write_character_overview",
   "edit_character_overview",
-  "create_plot_design",
-  "write_plot_design",
-  "edit_plot_design",
-  "write_chapter_draft",
-  "edit_chapter_draft"
+  "create",
+  "edit",
+  "delete"
 ]);
 
 const CREATE_FILE_TOOL_NAMES = new Set([
+  "create",
   "create_draft_sections",
   "create_setting",
   "create_worldbuilding_file",
   "create_worldbuilding_files",
   "create_worldbuilding_items",
   "create_character",
-  "create_character_file",
-  "create_plot_design"
+  "create_character_file"
 ]);
 
 const DIRECT_WRITE_TOOL_NAMES = new Set([
@@ -472,10 +462,19 @@ const DIRECT_WRITE_TOOL_NAMES = new Set([
   "write_worldbuilding_file",
   "write_worldbuilding_content",
   "write_character_file",
-  "write_character_overview",
-  "write_plot_design",
-  "write_chapter_draft"
+  "write_character_overview"
 ]);
+
+/** The unified `edit` tool writes chapter bodies when it targets `document=body`. */
+function isLongChapterBodyTool(tool: AgentToolTrace): boolean {
+  if (tool.name !== "edit" && tool.name !== "create") return false;
+  const args = tool.args as Record<string, unknown> | undefined;
+  return (
+    typeof args?.id === "string" &&
+    args.id.startsWith("chapter_") &&
+    args.document === "body"
+  );
+}
 
 export function isWriteTool(tool: AgentToolTrace): boolean {
   return WRITE_TOOL_NAMES.has(tool.name) || toolKind(tool.name) === "write";
@@ -525,17 +524,11 @@ export function toolIcon(tool: AgentToolTrace): IconName {
 
 export function toolLabel(tool: AgentToolTrace): string {
   const displayName = workspaceToolLabel(tool.name);
-  if (tool.name === "write_chapter_draft") {
+  if (isLongChapterBodyTool(tool)) {
     if (tool.status === "error") return "正文审核生成失败";
     if (tool.status === "completed") return "当前章正文待审核";
     if (tool.status === "running") return "正在生成正文审核";
     return "正在生成当前章正文";
-  }
-  if (tool.name === "edit_chapter_draft") {
-    if (tool.status === "error") return "正文修改审核生成失败";
-    if (tool.status === "completed") return "当前章正文修改待审核";
-    if (tool.status === "running") return "正在生成正文修改审核";
-    return "正在生成当前章正文修改";
   }
   if (CREATE_FILE_TOOL_NAMES.has(tool.name)) {
     if (tool.status === "error") return "创建文件失败";
@@ -606,10 +599,7 @@ export function toolDetail(tool: AgentToolTrace): string | undefined {
 }
 
 export function writeToolContentLabel(tool: AgentToolTrace): string {
-  return tool.name === "write_chapter_draft" ||
-    tool.name === "edit_chapter_draft"
-    ? "待审阅正文"
-    : "写入内容";
+  return isLongChapterBodyTool(tool) ? "待审阅正文" : "写入内容";
 }
 
 export function writeToolTarget(tool: AgentToolTrace): string | undefined {

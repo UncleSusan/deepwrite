@@ -17,7 +17,6 @@ import type {
 import type { AgentConversationController } from "../composables/useAgentConversation";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import type { LongWorkspaceEditorPort } from "../composables/useLongWorkspaceSessionCoordinator";
-import type { LongWritingOrchestrator } from "../composables/useLongWritingOrchestrator";
 import type {
   LongWorkspaceFileContext,
   LongWorkspaceRefreshStatus
@@ -37,7 +36,6 @@ import { LongWorkspaceEditor } from "./lazyAppComponents";
 
 const props = defineProps<{
   conversationController: AgentConversationController | null;
-  writingOrchestrator: LongWritingOrchestrator;
   book: LongBookSummary | null;
   selection: LongWorkspaceSelection | null;
   workspaceIndex: LongWorkspaceIndexSnapshot | null;
@@ -95,9 +93,6 @@ const emit = defineEmits<{
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
   retryWorkspaceRefresh: [];
-  retryWritingWorkflow: [];
-  cancelWritingWorkflow: [];
-  finishWritingWorkflow: [];
   saved: [result: LongWriteDocumentResult];
   contextChange: [context: LongWorkspaceFileContext | null];
   rollback: [];
@@ -289,6 +284,10 @@ onBeforeUnmount(() => {
         :editor-references="[]"
         :long-proposal-items="proposalItems"
         :long-workspace-index="workspaceIndex"
+        :user-input-request="conversationController.pendingUserInput.value"
+        :user-input-submitting="
+          conversationController.submittingUserInput.value
+        "
         :left-collapsed="leftCollapsed"
         :right-collapsed="rightPane.collapsed"
         :right-pane="paneLayout === 'editor-agent'"
@@ -309,6 +308,7 @@ onBeforeUnmount(() => {
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
+        @submit-user-input="conversationController.submitUserInput($event)"
       />
       <section
         v-if="refreshStatus?.error"
@@ -321,63 +321,6 @@ onBeforeUnmount(() => {
         <span v-else> 最新工作区索引尚未同步，长篇智能体已暂停发送。 </span>
         <button type="button" @click="emit('retryWorkspaceRefresh')">
           重新同步
-        </button>
-      </section>
-      <section
-        v-if="
-          writingOrchestrator.state.value.phase !== 'idle' &&
-          writingOrchestrator.state.value.bookId === book.id
-        "
-        class="long-writing-workflow-status"
-        aria-live="polite"
-      >
-        <div>
-          <strong>串行写作计划</strong>
-          <span v-if="writingOrchestrator.currentChapter.value">
-            {{ writingOrchestrator.currentChapter.value.title }}
-            ·
-            {{
-              Math.min(
-                writingOrchestrator.state.value.currentIndex + 1,
-                writingOrchestrator.state.value.chapters.length
-              )
-            }}/{{ writingOrchestrator.state.value.chapters.length }}
-          </span>
-          <span v-else>已完成</span>
-        </div>
-        <small v-if="writingOrchestrator.state.value.error" class="is-error">
-          {{ writingOrchestrator.state.value.error }}
-        </small>
-        <small v-else>
-          {{
-            writingOrchestrator.state.value.phase === "awaiting_writer_approval"
-              ? "等待你审阅本章正文写入提案"
-              : writingOrchestrator.state.value.phase === "complete"
-                ? "本次计划已完成"
-                : "正在核对文件与保存屏障"
-          }}
-        </small>
-        <div
-          v-if="writingOrchestrator.state.value.phase !== 'complete'"
-          class="long-writing-workflow-actions"
-        >
-          <button
-            v-if="writingOrchestrator.state.value.phase === 'error'"
-            type="button"
-            @click="emit('retryWritingWorkflow')"
-          >
-            重试当前章
-          </button>
-          <button type="button" @click="emit('cancelWritingWorkflow')">
-            取消计划
-          </button>
-        </div>
-        <button
-          v-if="writingOrchestrator.state.value.phase === 'complete'"
-          type="button"
-          @click="emit('finishWritingWorkflow')"
-        >
-          完成
         </button>
       </section>
     </div>

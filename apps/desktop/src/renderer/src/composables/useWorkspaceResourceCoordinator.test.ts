@@ -208,7 +208,6 @@ function createHarness(
       activeRoot:
         ref<LongWorkspaceRuntimeContext["activeRoot"]>("worldbuilding"),
       workspaceActive: ref(false),
-      blockWritingPlan: () => false,
       saveActiveEditorBeforeLeaving: async () => true,
       openBook: async () => undefined,
       selectWorkspaceFile: async () => true,

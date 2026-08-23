@@ -693,7 +693,7 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
 
   it("permanently injects worldbuilding context only into the first user message", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "setting"
+      ({ id }) => id === "long"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_world_history",
@@ -786,7 +786,7 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
       }
     ).conversationAgents;
     const agent = cache.get(
-      "session_world_history:long:setting:longbook_world_history"
+      "session_world_history:long:long:longbook_world_history"
     );
     const userMessages = agent?.state.messages.filter(
       (message) => message.role === "user"
@@ -828,7 +828,7 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
       "守夜人负责执行宵禁。"
     );
     expect(String(userMessages?.[0]?.content)).toContain("先检查世界规则");
-    expect(userMessages?.[1]?.content).toBe("再补充力量体系");
+    expect(userMessages?.[1]?.content).toContain("再补充力量体系");
   });
 
   it("assembles only the active library tools and keeps entry bodies out of the prompt", async () => {

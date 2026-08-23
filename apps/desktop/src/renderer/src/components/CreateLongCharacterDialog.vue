@@ -161,7 +161,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 placeholder="可选；多个别名可用逗号、顿号或换行分隔"
               />
             </label>
-            <p>创建后会自动生成核心档案、人物关系、当前状态和历史轨迹。</p>
+            <p>创建后会生成核心档案和人物关系；状态与轨迹映射自章节账本。</p>
           </fieldset>
 
           <footer>

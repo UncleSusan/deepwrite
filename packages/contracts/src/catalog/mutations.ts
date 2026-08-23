@@ -4,8 +4,6 @@ import { DraftSectionIdSchema, DraftSectionTitleSchema } from "../expert-draft";
 import { BookCharacterFormatSchema } from "./character-structure";
 import { CatalogDraftSectionSchema } from "./draft-directory";
 import {
-  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
-  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
   CATALOG_PROJECT_DOMAINS,
   CatalogDocumentSchema,
   CatalogIdSchema,
@@ -496,10 +494,7 @@ export const UpdateLibraryInputSchema = z
     domain: CatalogLibraryProjectDomainSchema,
     libraryId: CatalogIdSchema,
     title: CatalogTitleSchema.optional(),
-    overview: z
-      .string()
-      .max(CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS)
-      .optional(),
+    overview: z.string().optional(),
     baseProjectRevision: z.number().int().nonnegative().optional(),
     force: z.boolean().optional()
   })
@@ -582,7 +577,7 @@ const CreateMaterialLibraryEntryInputSchema = z.object({
   domain: z.literal("material"),
   libraryId: CatalogIdSchema,
   title: CatalogTitleSchema,
-  content: z.string().max(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS),
+  content: z.string(),
   stageId: MaterialStageIdSchema.optional(),
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
@@ -592,7 +587,7 @@ const CreateSkillLibraryEntryInputSchema = z.object({
   domain: z.literal("skill"),
   libraryId: CatalogIdSchema,
   title: CatalogTitleSchema,
-  content: z.string().max(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS),
+  content: z.string(),
   stageId: SkillStageIdSchema.optional(),
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()
@@ -614,7 +609,7 @@ export type ExternalSkillSourceKind = z.infer<
 export const ExternalSkillCandidateSchema = z.object({
   title: CatalogTitleSchema,
   description: z.string(),
-  content: z.string().max(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS)
+  content: z.string()
 });
 export type ExternalSkillCandidate = z.infer<
   typeof ExternalSkillCandidateSchema
@@ -756,7 +751,7 @@ export const SaveLibraryEntryInputSchema = z.object({
   libraryId: CatalogIdSchema,
   entryId: CatalogIdSchema,
   title: CatalogTitleSchema.optional(),
-  content: z.string().max(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS),
+  content: z.string(),
   baseRevision: z.string().min(1).optional(),
   baseProjectRevision: z.number().int().nonnegative().optional(),
   force: z.boolean().optional()

@@ -590,7 +590,7 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
     );
   });
 
-  it("keeps all character design files editable after continuity records", () => {
+  it("keeps maintained character design files editable after continuity records", () => {
     const source = committedWorkspace();
     const files = source.characterFiles[0]!;
     const batchFor = (fileId: string) => ({
@@ -617,11 +617,7 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
       ]
     });
 
-    for (const fileId of [
-      files.relationships.id,
-      files.currentState.id,
-      files.history.id
-    ]) {
+    for (const fileId of [files.relationships.id]) {
       expect(
         applyLongWorkspaceOperations(source, batchFor(fileId)).documentWrites[0]
           ?.fileId

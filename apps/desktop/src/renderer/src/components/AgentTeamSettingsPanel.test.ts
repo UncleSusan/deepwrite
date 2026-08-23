@@ -29,12 +29,14 @@ describe("AgentTeamSettingsPanel", () => {
     );
   });
 
-  it("maps all four long parent agents and preserves approval boundaries", () => {
-    for (const id of ["setting", "plot_design", "draft", "continuity_ledger"]) {
-      expect(longSource).toContain(`id: "${id}"`);
-    }
+  it("maps the unified long parent agent and preserves approval boundaries", () => {
+    expect(longSource).toContain("LONG_AGENT_IDS");
+    expect(longSource).toContain(
+      "parentAgentId: LongAgentId = LONG_AGENT_IDS[0]"
+    );
+    expect(longSource).not.toContain('id: "setting"');
     expect(longSource).not.toContain("expert_section_writer");
-    expect(longSource).toContain('label: "写手"');
+    expect(longSource).toContain("由长篇智能体按需调用");
     expect(source).toContain("不能继续创建子智能体");
     expect(source).toContain("不能绕过用户审批");
     expect(longSource).toContain("LongAgentTeamSettingsInputSchema.safeParse");

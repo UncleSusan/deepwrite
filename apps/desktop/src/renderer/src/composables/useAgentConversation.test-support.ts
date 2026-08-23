@@ -490,6 +490,14 @@ function createDeferredApi(): {
           ...payload,
           abortedAt: new Date().toISOString()
         };
+      },
+      async submitUserInput(payload) {
+        return {
+          sessionId: payload.sessionId,
+          runId: payload.runId,
+          requestId: payload.requestId,
+          resolvedAt: new Date().toISOString()
+        };
       }
     },
     models: {

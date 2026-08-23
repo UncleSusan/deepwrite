@@ -18,6 +18,7 @@ import {
   LongBookIdSchema,
   LongBookSchema,
   LongBookSummarySchema,
+  LongLinkedResourceStageScopesSchema,
   LongAgentIdSchema,
   LongArcIdSchema,
   LongCharacterGroupSchema,
@@ -37,8 +38,6 @@ import {
   LongWorkspaceNavigationSnapshotSchema,
   LongWorkspaceRootSchema,
   LONG_AGENTS_MD_MAX_CHARACTERS,
-  LONG_WORKSPACE_ROOT_TO_AGENT_ID,
-  longAgentAcceptsWorldbuildingDirectory,
   longAgentsMdCharacterCount
 } from "./long-workspace";
 
@@ -557,14 +556,6 @@ export const LongWorkspaceRuntimeContextSchema = z
           "Long runtime navigation revision must match the active workspace revision."
       });
     }
-    const expectedRootAgent = LONG_WORKSPACE_ROOT_TO_AGENT_ID[value.activeRoot];
-    if (value.activeAgentId !== expectedRootAgent) {
-      context.addIssue({
-        code: "custom",
-        path: ["activeAgentId"],
-        message: "Long runtime agent must match the active workspace root."
-      });
-    }
     if (
       value.activeChapterCardId !== undefined &&
       !value.navigation.chapterCards.some(
@@ -587,26 +578,14 @@ export const LongWorkspaceRuntimeContextSchema = z
       });
     }
     if (
-      value.worldbuildingDirectory !== undefined &&
-      !longAgentAcceptsWorldbuildingDirectory(value.activeAgentId)
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["worldbuildingDirectory"],
-        message:
-          "Long worldbuilding directory may only be provided to the setting, plot-design, or draft agent."
-      });
-    }
-    if (
       value.worldbuildingFocus !== undefined &&
-      (value.activeRoot !== "worldbuilding" ||
-        value.activeAgentId !== "setting")
+      value.activeRoot !== "worldbuilding"
     ) {
       context.addIssue({
         code: "custom",
         path: ["worldbuildingFocus"],
         message:
-          "Long worldbuilding focus may only be provided to the setting agent on the worldbuilding root."
+          "Long worldbuilding focus may only be provided on the worldbuilding root."
       });
     }
     if (
@@ -622,14 +601,13 @@ export const LongWorkspaceRuntimeContextSchema = z
     }
     if (
       value.characterFocus !== undefined &&
-      (value.activeRoot !== "character_design" ||
-        value.activeAgentId !== "setting")
+      value.activeRoot !== "character_design"
     ) {
       context.addIssue({
         code: "custom",
         path: ["characterFocus"],
         message:
-          "Long character focus may only be provided to the setting agent on the character-design root."
+          "Long character focus may only be provided on the character-design root."
       });
     }
     if (
@@ -642,16 +620,11 @@ export const LongWorkspaceRuntimeContextSchema = z
         message: "Long character focus requires the active character file."
       });
     }
-    if (
-      value.plotFocus !== undefined &&
-      (value.activeRoot !== "plot_design" ||
-        value.activeAgentId !== "plot_design")
-    ) {
+    if (value.plotFocus !== undefined && value.activeRoot !== "plot_design") {
       context.addIssue({
         code: "custom",
         path: ["plotFocus"],
-        message:
-          "Long plot focus may only be provided to the plot-design agent."
+        message: "Long plot focus may only be provided on the plot-design root."
       });
     }
     if (
@@ -1163,7 +1136,8 @@ export const LongUpdateBindingsInputSchema = z
     bookId: LongBookIdSchema,
     expectedProjectRevision: z.number().int().nonnegative(),
     linkedMaterialIdsByKind: LongLinkedMaterialIdsByKindInputSchema,
-    linkedSkillIdsByKind: LongLinkedSkillIdsByKindInputSchema
+    linkedSkillIdsByKind: LongLinkedSkillIdsByKindInputSchema,
+    linkedResourceStageScopes: LongLinkedResourceStageScopesSchema.optional()
   })
   .strict();
 export type LongUpdateBindingsInput = z.infer<

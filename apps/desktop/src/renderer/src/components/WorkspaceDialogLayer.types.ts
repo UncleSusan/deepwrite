@@ -10,6 +10,7 @@ import type {
   ExternalSkillSourceKind,
   LinkedMaterialIdsByKind,
   LinkedSkillIdsByKind,
+  LongLinkedResourceStageScopes,
   LongApplyLegacySyncResult,
   LongChooseContinuationImportSourceResult,
   LongChooseLegacySyncSourceResult,
@@ -220,6 +221,7 @@ export interface LongBindingsDialogModule {
   skills: readonly SkillLibrary[];
   linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
   linkedSkillIdsByKind: LinkedSkillIdsByKind;
+  linkedResourceStageScopes: LongLinkedResourceStageScopes;
   submitting: boolean;
 }
 
@@ -439,6 +441,7 @@ export interface WorkspaceDialogLayerEmits {
     payload: {
       linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
       linkedSkillIdsByKind: LinkedSkillIdsByKind;
+      linkedResourceStageScopes: LongLinkedResourceStageScopes;
     }
   ];
   closeLongRename: [];

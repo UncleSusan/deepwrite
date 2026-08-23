@@ -241,7 +241,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
         details: {
           kind: "long-mutation-proposal",
           bookId: "longbook-child",
-          agentId: "setting",
+          agentId: "long",
           batch: {
             baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -258,7 +258,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
         details: {
           kind: "long-worldbuilding-file-proposal",
           bookId: "longbook-child",
-          agentId: "setting",
+          agentId: "long",
           batch: {
             baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -299,7 +299,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
         details: {
           kind: "long-continuity-file-proposal",
           bookId: "longbook-child",
-          agentId: "continuity_ledger",
+          agentId: "long",
           batch: {
             baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -338,35 +338,12 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
         }
       },
       {
-        toolName: "propose_long_chapter_dispatch",
-        eventType: "long.chapter_dispatch_proposal",
-        details: {
-          kind: "long-chapter-dispatch-proposal",
-          bookId: "longbook-child",
-          agentId: "draft",
-          scope: "chapter",
-          chapterCardId: "chapter_one",
-          title: "第一章",
-          chapters: [
-            {
-              chapterCardId: "chapter_one",
-              title: "第一章",
-              status: "empty",
-              missingFiles: ["body"]
-            }
-          ],
-          workspaceRevision: 3,
-          projectRevision: 5,
-          summary: "调度第一章"
-        }
-      },
-      {
         toolName: "propose_long_chapter_write",
         eventType: "long.chapter_write_proposal",
         details: {
           kind: "long-chapter-write-proposal",
           bookId: "longbook-child",
-          agentId: "draft",
+          agentId: "long",
           batch: {
             baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
@@ -405,7 +382,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
         details: {
           kind: "long-ledger-commit-proposal",
           bookId: "longbook-child",
-          agentId: "continuity_ledger",
+          agentId: "long",
           input: {
             bookId: "longbook-child",
             chapterCardId: "chapter_one",

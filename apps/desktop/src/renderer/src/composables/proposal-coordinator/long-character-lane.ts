@@ -29,7 +29,7 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
     longConversationForProposalEvent,
     activeLongBookId,
     longBooks,
-    refreshLongWritingSaveBarrier,
+    refreshLongProposalWorkspace,
     saveActiveLongEditorChanges
   } = ctx;
 
@@ -58,10 +58,11 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
       );
       if (
         characterIds.size !== 1 ||
-        documents.size !== 4 ||
-        files.length !== 4 ||
+        documents.size !== files.length ||
+        files.length !== 1 ||
+        files[0]?.document !== "core_profile" ||
         event.payload.batch.operations.length !== 1 ||
-        event.payload.batch.documentWrites.length !== 0 ||
+        event.payload.batch.documentWrites.length !== 1 ||
         !operation ||
         operation.character.id !== files[0]?.characterId ||
         !files.every((file) => {
@@ -71,10 +72,6 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
               return operationFiles.coreProfile.id === file.fileId;
             case "relationships":
               return operationFiles.relationships.id === file.fileId;
-            case "current_state":
-              return operationFiles.currentState.id === file.fileId;
-            case "history":
-              return operationFiles.history.id === file.fileId;
             case "overview":
               return false;
           }
@@ -346,9 +343,7 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
           : []),
         ...latest.workspaceIndex.characterFiles.flatMap((entry) => [
           [entry.coreProfile.id, entry.coreProfile] as const,
-          [entry.relationships.id, entry.relationships] as const,
-          [entry.currentState.id, entry.currentState] as const,
-          [entry.history.id, entry.history] as const
+          [entry.relationships.id, entry.relationships] as const
         ])
       ]);
       if (
@@ -362,7 +357,7 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
           proposedText: undefined,
           statusMessage: "该人物档案变更已经存在于本地 Markdown 中。"
         });
-        await refreshLongWritingSaveBarrier(target.bookId);
+        await refreshLongProposalWorkspace(target.bookId);
         return;
       }
       if (isCreation) {
@@ -386,7 +381,7 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
             status: "conflict",
             statusMessage: message
           });
-          await refreshLongWritingSaveBarrier(target.bookId);
+          await refreshLongProposalWorkspace(target.bookId);
           uiMessage.warning(message);
           return;
         }
@@ -432,15 +427,21 @@ export function createLongCharacterLane(ctx: ProposalLaneContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        longCharacterTarget: {
+          ...target,
+          appliedProjectRevision: result.projectRevision
+        }
+      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
-      const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+      const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
         statusMessage: isCreation
           ? automatic
-            ? "已自动批准并创建人物及四份空白档案。"
-            : "已创建人物及四份空白档案并保存到本地 Markdown。"
+            ? "已自动批准并创建人物及两份档案。"
+            : "已创建人物及两份档案并保存到本地 Markdown。"
           : refreshed
             ? `${automatic ? "已自动批准并" : "已接受并"}保存到本地 Markdown。`
             : "已保存到本地 Markdown，但界面刷新失败；请手动刷新长篇工作区。"

@@ -48,14 +48,6 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
     };
 
     for (const profile of DEFAULT_LONG_AGENT_PROFILES) {
-      const root =
-        profile.id === "setting"
-          ? "worldbuilding"
-          : profile.id === "plot_design"
-            ? "plot_design"
-            : profile.id === "draft"
-              ? "draft"
-              : "continuity_ledger";
       const prompt = buildRuntimeUserPrompt({
         runId: `run_${profile.id}`,
         sessionId: `session_${profile.id}`,
@@ -65,7 +57,7 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
           longWorkspace: {
             bookId: "longbook_agents_md",
             title: "雾港长篇",
-            activeRoot: root,
+            activeRoot: "plot_design",
             activeAgentId: profile.id,
             workspaceRevision: 3,
             projectRevision: 5,
@@ -83,14 +75,14 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
       sessionId: "session_empty_agents",
       prompt: "继续",
       longAgentProfile: DEFAULT_LONG_AGENT_PROFILES.find(
-        ({ id }) => id === "draft"
+        ({ id }) => id === "long"
       )!,
       workspaceContext: {
         longWorkspace: {
           bookId: "longbook_agents_md",
           title: "雾港长篇",
           activeRoot: "draft",
-          activeAgentId: "draft",
+          activeAgentId: "long",
           workspaceRevision: 3,
           projectRevision: 5,
           navigation,
@@ -103,7 +95,7 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
 
   it("lets configured long-form teams delegate with the same bounded tools", async () => {
     const profile = DEFAULT_LONG_AGENT_PROFILES.find(
-      ({ id }) => id === "plot_design"
+      ({ id }) => id === "long"
     )!;
     const longWorkspace: LongWorkspaceRuntimeContext = {
       bookId: "longbook_subagents",
@@ -169,13 +161,13 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
     ).conversationAgents;
     const names =
       cache
-        .get("session_long_subagents:long:plot_design:longbook_subagents")
+        .get("session_long_subagents:long:long:longbook_subagents")
         ?.state.tools.map(({ name }) => name) ?? [];
     expect(names).toContain("spawn_subagent");
-    expect(names).toContain("list_plot_design");
-    expect(names).toContain("read_plot_design");
+    expect(names).toContain("list");
+    expect(names).toContain("read");
     expect(names).not.toContain("get_long_workspace_index");
-    expect(names).toContain("propose_long_mutation");
+    expect(names).toContain("create");
   });
 
   it("keeps model reasoning capability separate from the per-run thinking switch", () => {

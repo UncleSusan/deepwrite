@@ -356,7 +356,8 @@ export class LongWorkspaceService {
         plot: [...(parsed.linkedSkillIdsByKind.plot ?? [])],
         style: [...(parsed.linkedSkillIdsByKind.style ?? [])],
         other: [...(parsed.linkedSkillIdsByKind.other ?? [])]
-      }
+      },
+      linkedResourceStageScopes: parsed.linkedResourceStageScopes
     });
     await this.updateCatalogSummaryBestEffort(
       parsed.bookId,
@@ -757,9 +758,7 @@ function allWorkspaceFiles(
     ...(index.characterOverview ? [index.characterOverview] : []),
     ...index.characterFiles.flatMap((entry) => [
       entry.coreProfile,
-      entry.relationships,
-      entry.currentState,
-      entry.history
+      entry.relationships
     ]),
     ...index.chapters.flatMap((entry) => [
       entry.body,
@@ -852,16 +851,6 @@ function searchFiles(
           file: entry.relationships,
           root: "character_design" as const,
           title: `${title} · 人物关系`
-        },
-        {
-          file: entry.currentState,
-          root: "character_design" as const,
-          title: `${title} · 当前状态`
-        },
-        {
-          file: entry.history,
-          root: "character_design" as const,
-          title: `${title} · 历史`
         }
       ];
     }),

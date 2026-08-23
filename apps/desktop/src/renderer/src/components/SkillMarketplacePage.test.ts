@@ -76,6 +76,9 @@ describe("SkillMarketplacePage", () => {
     expect(source).toContain("marketplace.publish");
     expect(source).toContain("marketplace.update");
     expect(source).toContain("marketplace.delete");
+    expect(source).toContain("MARKETPLACE_CONTENT_MAX_CHARACTERS");
+    expect(source).toContain(':maxlength="MARKETPLACE_CONTENT_MAX_CHARACTERS"');
+    expect(source).not.toContain('maxlength="40000"');
     expect(source).toContain("danger-button");
     expect(source).toContain("重新进入待审核状态");
   });

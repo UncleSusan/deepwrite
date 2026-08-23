@@ -810,13 +810,13 @@ describe("catalog contracts", () => {
         libraryId: "material-1"
       })
     ).toThrow();
-    expect(() =>
+    expect(
       UpdateLibraryInputSchema.parse({
         domain: "material",
         libraryId: "material-1",
         overview: "字".repeat(CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS + 1)
-      })
-    ).toThrow();
+      }).overview
+    ).toHaveLength(CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS + 1);
     expect(
       MoveLibraryEntryInputSchema.parse({
         domain: "material",
@@ -829,7 +829,7 @@ describe("catalog contracts", () => {
     ).toMatchObject({ targetStageId: "pacing" });
   });
 
-  it("limits created and saved library entries to 40,000 characters", () => {
+  it("accepts library entries longer than the 40,000-character recommendation", () => {
     const common = {
       domain: "material" as const,
       libraryId: "material-1",
@@ -841,13 +841,13 @@ describe("catalog contracts", () => {
         content: "字".repeat(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS)
       }).content
     ).toHaveLength(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS);
-    expect(() =>
+    expect(
       SaveLibraryEntryInputSchema.parse({
         ...common,
         entryId: "entry-1",
         content: "字".repeat(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS + 1)
-      })
-    ).toThrow();
+      }).content
+    ).toHaveLength(CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS + 1);
   });
 
   it("accepts opaque recovery document keys larger than one catalog id", () => {

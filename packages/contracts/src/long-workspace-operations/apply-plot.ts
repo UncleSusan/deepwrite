@@ -24,7 +24,8 @@ import {
   operationError,
   registerProvisionalId,
   retargetBeatPlanningAnchorsToChapter,
-  updateOrdersById
+  updateOrdersById,
+  nextOrder
 } from "./state";
 
 export function applyPlotOperation(
@@ -39,7 +40,11 @@ export function applyPlotOperation(
         operation.event.id,
         "Story event"
       );
-      workspace.plot.storyEvents.push(structuredClone(operation.event));
+      const event = structuredClone(operation.event);
+      event.storyOrder = nextOrder(
+        workspace.plot.storyEvents.map(({ storyOrder }) => storyOrder)
+      );
+      workspace.plot.storyEvents.push(event);
       markCreated(state, operation.event.id);
       registerProvisionalId(state, operation.provisionalId, operation.event.id);
       break;
@@ -163,7 +168,13 @@ export function applyPlotOperation(
         "Story plot"
       );
       ensureFilesAvailable(state, [operation.storyPlot.file]);
-      workspace.plot.storyPlots.push(structuredClone(operation.storyPlot));
+      const storyPlot = structuredClone(operation.storyPlot);
+      storyPlot.order = nextOrder(
+        workspace.plot.storyPlots
+          .filter((candidate) => candidate.arcId === storyPlot.arcId)
+          .map(({ order }) => order)
+      );
+      workspace.plot.storyPlots.push(storyPlot);
       addFileCreateIntent(
         state,
         operation.storyPlot.file,
@@ -292,9 +303,15 @@ export function applyPlotOperation(
           "New narrative placements must start in planned state."
         );
       }
-      workspace.plot.narrativePlacements.push(
-        structuredClone(operation.placement)
+      const placement = structuredClone(operation.placement);
+      placement.orderInChapter = nextOrder(
+        workspace.plot.narrativePlacements
+          .filter(
+            (candidate) => candidate.chapterCardId === placement.chapterCardId
+          )
+          .map(({ orderInChapter }) => orderInChapter)
       );
+      workspace.plot.narrativePlacements.push(placement);
       markCreated(state, operation.placement.id);
       registerProvisionalId(
         state,

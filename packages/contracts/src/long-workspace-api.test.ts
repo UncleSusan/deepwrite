@@ -62,7 +62,7 @@ function runtimeContext(
     bookId: "longbook_api",
     title: "时间尽头",
     activeRoot: "draft",
-    activeAgentId: "draft",
+    activeAgentId: "long",
     workspaceRevision: 3,
     projectRevision: 3,
     navigation: runtimeNavigation,
@@ -75,50 +75,53 @@ describe("long workspace API contracts", () => {
     expect(
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
-          activeAgentId: "draft",
+          activeAgentId: "long",
           activeChapterCardId: "chapter_api"
         })
       )
     ).toMatchObject({
       activeRoot: "draft",
-      activeAgentId: "draft",
+      activeAgentId: "long",
       activeChapterCardId: "chapter_api"
     });
     expect(
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
-          activeAgentId: "draft"
+          activeAgentId: "long"
         })
       )
     ).toMatchObject({
       activeRoot: "draft",
-      activeAgentId: "draft"
+      activeAgentId: "long"
     });
-    expect(() =>
+    expect(
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "continuity_ledger",
+          activeAgentId: "long",
           activeChapterCardId: "chapter_api"
         })
       )
-    ).toThrow(/agent.*root/iu);
+    ).toMatchObject({
+      activeRoot: "worldbuilding",
+      activeAgentId: "long"
+    });
     const ledgerRootContext = LongWorkspaceRuntimeContextSchema.parse(
       runtimeContext({
         activeRoot: "continuity_ledger",
-        activeAgentId: "continuity_ledger"
+        activeAgentId: "long"
       })
     );
     expect(ledgerRootContext).toMatchObject({
       activeRoot: "continuity_ledger",
-      activeAgentId: "continuity_ledger"
+      activeAgentId: "long"
     });
     expect(ledgerRootContext).not.toHaveProperty("activeChapterCardId");
     expect(() =>
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "continuity_ledger",
-          activeAgentId: "continuity_ledger",
+          activeAgentId: "long",
           activeChapterCardId: "chapter_missing"
         })
       )
@@ -189,7 +192,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "setting",
+          activeAgentId: "long",
           activeFileId: "file_faction_watch:content",
           activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: focus
@@ -200,12 +203,12 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({ worldbuildingFocus: focus })
       )
-    ).toThrow(/setting agent/iu);
+    ).toThrow(/worldbuilding root/iu);
     expect(() =>
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "setting",
+          activeAgentId: "long",
           activeFileId: "file_faction_watch:content",
           activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: {
@@ -219,7 +222,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "setting",
+          activeAgentId: "long",
           activeFileId: "file_world_rules:content",
           activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: {
@@ -267,7 +270,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "worldbuilding",
-          activeAgentId: "setting",
+          activeAgentId: "long",
           worldbuildingDirectory
         })
       )
@@ -276,7 +279,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "character_design",
-          activeAgentId: "setting",
+          activeAgentId: "long",
           worldbuildingDirectory
         })
       )
@@ -285,7 +288,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           worldbuildingDirectory
         })
       )
@@ -295,18 +298,18 @@ describe("long workspace API contracts", () => {
         runtimeContext({ worldbuildingDirectory })
       )
     ).toMatchObject({ worldbuildingDirectory });
-    expect(() =>
+    expect(
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "continuity_ledger",
-          activeAgentId: "continuity_ledger",
+          activeAgentId: "long",
           worldbuildingDirectory
         })
       )
-    ).toThrow(/worldbuilding directory/iu);
+    ).toMatchObject({ worldbuildingDirectory });
   });
 
-  it("bounds character focus and keeps it exclusive to the character-design agent", () => {
+  it("bounds character focus and keeps it exclusive to the character-design root", () => {
     const focus = {
       characterName: "林岚",
       group: "protagonist",
@@ -315,14 +318,14 @@ describe("long workspace API contracts", () => {
         title: "人物关系",
         text: { content: "与沈砚暂时合作。" }
       },
-      overview: { content: "- character_id=`character_lan` 林岚" },
+      overview: { content: "- id=`character_lan` 林岚" },
       coreProfile: { content: "雾港巡夜人。" }
     };
     expect(
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "character_design",
-          activeAgentId: "setting",
+          activeAgentId: "long",
           activeFileId: "file_character_lan:relationships",
           activeFileRevision: "v1:3:1234abcd",
           characterFocus: focus
@@ -333,12 +336,12 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({ characterFocus: focus })
       )
-    ).toThrow(/setting agent/iu);
+    ).toThrow(/character-design root/iu);
     expect(() =>
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "character_design",
-          activeAgentId: "setting",
+          activeAgentId: "long",
           activeFileId: "file_character_lan:relationships",
           activeFileRevision: "v1:3:1234abcd",
           characterFocus: { ...focus, coreProfile: undefined }
@@ -347,7 +350,7 @@ describe("long workspace API contracts", () => {
     ).toThrow(/core profile/iu);
   });
 
-  it("keeps plot focus exclusive to the plot-design agent and consistent with navigation", () => {
+  it("keeps plot focus exclusive to the plot-design root and consistent with navigation", () => {
     const focus = {
       section: "plot_point",
       volumeId: "volume_api",
@@ -359,7 +362,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: focus
         })
       )
@@ -368,12 +371,12 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({ plotFocus: focus })
       )
-    ).toThrow(/plot-design agent/iu);
+    ).toThrow(/plot-design root/iu);
     expect(() =>
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: { ...focus, arcId: "arc_missing" }
         })
       )
@@ -382,7 +385,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: {
             section: "book_line",
             volumeId: "volume_api",
@@ -395,7 +398,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: {
             section: "chapter_card",
             chapterCardId: "chapter_api",
@@ -408,7 +411,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           activeChapterCardId: "chapter_api",
           plotFocus: {
             section: "chapter_card",
@@ -424,7 +427,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: {
             section: "plot_point",
             volumeId: "volume_api",
@@ -455,7 +458,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: {
             section: "foreshadowing",
             foreshadowingDirectory: directory,
@@ -473,7 +476,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: { section: "foreshadowing" }
         })
       )
@@ -482,7 +485,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: {
             section: "foreshadowing",
             foreshadowingDirectory: directory,
@@ -495,7 +498,7 @@ describe("long workspace API contracts", () => {
       LongWorkspaceRuntimeContextSchema.parse(
         runtimeContext({
           activeRoot: "plot_design",
-          activeAgentId: "plot_design",
+          activeAgentId: "long",
           plotFocus: {
             section: "book_line",
             foreshadowingDirectory: directory

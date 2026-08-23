@@ -128,8 +128,7 @@ function createFixture() {
     longWorkspace: {
       activeBookId: ref(null),
       books: shallowRef([]),
-      writingOrchestrator: {},
-      refreshWritingSaveBarrier: vi.fn(async () => true),
+      refreshWorkspaceAfterProposal: vi.fn(async () => true),
       saveActiveEditorChanges: vi.fn(async () => true)
     },
     navigation: {

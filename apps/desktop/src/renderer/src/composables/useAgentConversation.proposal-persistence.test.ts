@@ -366,6 +366,7 @@ describe("agent conversation controller: proposal-persistence", () => {
         longWorldbuildingTarget: {
           bookId: "longbook_test",
           baseProjectRevision: 11,
+          appliedProjectRevision: 12,
           batch: {
             baseRevision: 7,
             updatedAt: "2026-07-30T12:00:00.000Z",
@@ -410,6 +411,7 @@ describe("agent conversation controller: proposal-persistence", () => {
     ).toMatchObject({
       bookId: "longbook_test",
       baseProjectRevision: 11,
+      appliedProjectRevision: 12,
       file: {
         itemId: "worlditem_memory",
         operation: "create",
@@ -448,6 +450,7 @@ describe("agent conversation controller: proposal-persistence", () => {
         longCharacterTarget: {
           bookId: "longbook_test",
           baseProjectRevision: 11,
+          appliedProjectRevision: 12,
           batch: {
             baseRevision: 7,
             updatedAt: "2026-07-30T12:00:00.000Z",
@@ -494,6 +497,7 @@ describe("agent conversation controller: proposal-persistence", () => {
     ).toMatchObject({
       bookId: "longbook_test",
       baseProjectRevision: 11,
+      appliedProjectRevision: 12,
       files: [
         {
           characterId: "character_memory",

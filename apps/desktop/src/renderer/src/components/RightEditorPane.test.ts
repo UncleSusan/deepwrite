@@ -35,11 +35,13 @@ describe("RightEditorPane expert draft navigation", () => {
     expectSourceToContain(source, 'autoSaveEnabled ? "立即保存" : "应用"');
   });
 
-  it("limits material and skill entries to 40,000 characters with a footer reminder", () => {
-    expect(source).toContain("LIBRARY_AGENT_ENTRY_MAX_CHARACTERS");
-    expect(source).toContain(':maxlength="contentMaxLength"');
-    expect(source).toContain("每个条目最多 40,000 字，请勿上传过多内容");
-    expect(source).toContain("contentExceedsLimit");
+  it("reminds material and skill entries about the 40,000-character recommendation without blocking save", () => {
+    expect(source).toContain("CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS");
+    expect(source).not.toContain(':maxlength="contentMaxLength"');
+    expect(source).not.toContain(':maxlength="recommendedContentLength"');
+    expect(source).toContain("建议每个条目不超过 40,000 字，请勿上传过多内容");
+    expect(source).toContain("contentExceedsRecommendedLength");
+    expect(source).not.toContain("contentExceedsLimit");
   });
 
   it("shows a live, non-blocking format reason after the binding badge for skill entries", () => {
@@ -59,7 +61,7 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain(':title="skillFormatError"');
     expect(source).toContain(':aria-label="skillFormatError"');
     expect(source).not.toContain(
-      "!dirty || contentExceedsLimit || skillFormatError"
+      "!dirty || contentExceedsRecommendedLength || skillFormatError"
     );
   });
 
@@ -141,6 +143,16 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain('{{ manualSaving ? "保存中…"');
     expect(source).toContain("(!autoSaveEnabled && !dirty)");
     expect(source).toContain("@mousedown.prevent");
+  });
+
+  it("keeps the editor in place while an agent temporarily makes it readonly", () => {
+    expect(source).toContain("isTransientlyReadOnly: () => props.locked");
+    expect(source).toContain('props.lockedLabel ?? "智能体运行中 · 只读"');
+    expect(source).toContain(':readonly="document.readOnly || locked"');
+    expect(source).toContain(":class=\"{ 'is-readonly': document.readOnly }\"");
+    expect(source).not.toContain(
+      ":class=\"{ 'is-readonly': document.readOnly || locked }\""
+    );
   });
 
   it("routes the short-story tab add button through a named confirmation dialog", () => {

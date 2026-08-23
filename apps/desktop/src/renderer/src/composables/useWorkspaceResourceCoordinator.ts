@@ -79,10 +79,6 @@ export interface WorkspaceResourceLongNavigationPort {
   workspaceIndex: Readonly<Ref<LongWorkspaceIndexSnapshot | null>>;
   activeRoot: Readonly<Ref<LongWorkspaceRuntimeContext["activeRoot"]>>;
   workspaceActive: Readonly<Ref<boolean>>;
-  blockWritingPlan(
-    action: string,
-    options?: { targetBookId?: string | null; allowPlanBook?: boolean }
-  ): boolean;
   saveActiveEditorBeforeLeaving(nextBookId?: string): Promise<boolean>;
   openBook(
     bookId: string,
@@ -683,15 +679,7 @@ export function useWorkspaceResourceCoordinator(
 
   async function selectResource(node: ResourceTreeNode): Promise<void> {
     let requestId = beginNavigationRequest();
-    if (
-      disposed ||
-      longNavigation.blockWritingPlan("切换创作空间", {
-        targetBookId: node.longBookId ?? null,
-        allowPlanBook: true
-      })
-    ) {
-      return;
-    }
+    if (disposed) return;
     if (node.longBookId) {
       if (
         !(await longNavigation.saveActiveEditorBeforeLeaving(

@@ -32,7 +32,7 @@ describe("project duplicate integration", () => {
     expect(appSource).toContain("duplicateBook: duplicateCatalogBook");
   });
 
-  it("blocks an active long writing plan, saves the editor and opens the copy", () => {
+  it("saves the active long editor and opens the copy", () => {
     expect(longBookLifecycleSource).toContain('case "duplicate"');
     expect(longBookLifecycleSource).toContain(
       "await session.saveActiveEditorChanges()"
@@ -43,6 +43,5 @@ describe("project duplicate integration", () => {
     expect(longBookLifecycleSource).toContain(
       "await resources.selectBook(duplicated.book.id)"
     );
-    expect(longBookLifecycleSource).toContain("请先取消计划，再复制长篇");
   });
 });

@@ -235,12 +235,10 @@ function createHarness(overrides: HarnessOverrides = {}) {
     ...overrides.session
   };
   const workflow = {
-    blockWritingPlan: vi.fn(() => false),
-    isWritingPlanActive: vi.fn(() => false),
     stopBookAgentRuns: vi.fn(async () => undefined),
     quarantineBook: vi.fn(async () => undefined),
     reactivateBook: vi.fn(async () => undefined),
-    disposeBookWorkflowState: vi.fn(async () => undefined),
+    disposeBookProposalState: vi.fn(async () => undefined),
     ...overrides.workflow
   };
   const conversations = {
@@ -449,7 +447,8 @@ describe("useLongBookLifecycleCoordinator", () => {
       bookId: BOOK_A,
       expectedProjectRevision: 9,
       linkedMaterialIdsByKind: {},
-      linkedSkillIdsByKind: {}
+      linkedSkillIdsByKind: {},
+      linkedResourceStageScopes: { materials: {}, skills: {} }
     });
     expect(
       test.editorRevisions.synchronizeProjectRevisions
@@ -474,7 +473,7 @@ describe("useLongBookLifecycleCoordinator", () => {
         quarantineBook: vi.fn(async () => {
           events.push("quarantine");
         }),
-        disposeBookWorkflowState: vi.fn(async () => {
+        disposeBookProposalState: vi.fn(async () => {
           events.push("workflow-state-dispose");
         })
       },
@@ -531,7 +530,7 @@ describe("useLongBookLifecycleCoordinator", () => {
         reactivateBook: vi.fn(async () => {
           events.push("reactivate");
         }),
-        disposeBookWorkflowState: vi.fn(async () => {
+        disposeBookProposalState: vi.fn(async () => {
           events.push("workflow-state-dispose");
         })
       }
@@ -566,7 +565,7 @@ describe("useLongBookLifecycleCoordinator", () => {
         quarantineBook: vi.fn(async () => {
           events.push("quarantine");
         }),
-        disposeBookWorkflowState: vi.fn(async () => {
+        disposeBookProposalState: vi.fn(async () => {
           events.push("workflow-state-dispose");
         })
       },

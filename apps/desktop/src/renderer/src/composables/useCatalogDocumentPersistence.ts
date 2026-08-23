@@ -1,6 +1,4 @@
 import {
-  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
-  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
   createShortWorkspaceContentRevision,
   type Book,
   type CatalogLibrary,
@@ -821,12 +819,6 @@ export function useCatalogDocumentPersistence(
   ): Promise<boolean> {
     const currentApi = api();
     const force = saveOptions.force ?? false;
-    if (payload.content.length > CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS) {
-      uiMessage.warning(
-        "每个素材库或技能库条目最多 40,000 字，请精简内容后再保存"
-      );
-      return false;
-    }
     if (
       !currentApi ||
       !document.libraryId ||
@@ -896,10 +888,6 @@ export function useCatalogDocumentPersistence(
   ): Promise<boolean> {
     const currentApi = api();
     const force = saveOptions.force ?? false;
-    if (payload.content.length > CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS) {
-      uiMessage.warning("素材库或技能库介绍最多 40,000 字，请精简内容后再保存");
-      return false;
-    }
     if (
       !currentApi ||
       !document.libraryId ||
@@ -996,35 +984,22 @@ export function useCatalogDocumentPersistence(
       document.libraryId &&
       (document.domain === "material" || document.domain === "skill")
     ) {
-      const invalid =
-        normalizedPayload.content.length >
-        CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS;
       const saved = await saveCatalogLibraryOverview(
         document,
         normalizedPayload,
         { announceSuccess }
       );
-      return saved
-        ? "saved"
-        : saveConflict.value || invalid
-          ? "paused"
-          : "retry";
+      return saved ? "saved" : saveConflict.value ? "paused" : "retry";
     }
     if (
       document.catalogEntryId &&
       document.libraryId &&
       (document.domain === "material" || document.domain === "skill")
     ) {
-      const invalid =
-        normalizedPayload.content.length > CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS;
       const saved = await saveCatalogLibraryEntry(document, normalizedPayload, {
         announceSuccess
       });
-      return saved
-        ? "saved"
-        : saveConflict.value || invalid
-          ? "paused"
-          : "retry";
+      return saved ? "saved" : saveConflict.value ? "paused" : "retry";
     }
     applyDocumentLocally(normalizedPayload);
     return "saved";

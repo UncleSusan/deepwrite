@@ -1,6 +1,8 @@
 import type { Ref } from "vue";
 import type {
   AgentRuntimeRef,
+  AgentUserInputAnswer,
+  AgentUserInputRequestedPayload,
   ChatAssistantRequestContext,
   DeepWriteApi,
   LongWorkspaceRuntimeContext,
@@ -123,6 +125,8 @@ export interface AgentConversationController {
   selectedModelId: Ref<string>;
   runtime: Ref<AgentRuntimeRef | null>;
   conversationError: Ref<string | null>;
+  pendingUserInput: Ref<AgentUserInputRequestedPayload | null>;
+  submittingUserInput: Ref<boolean>;
   history: Readonly<Ref<ConversationHistoryItem[]>>;
   isBusy: Readonly<Ref<boolean>>;
   hasPendingEditReview: Readonly<Ref<boolean>>;
@@ -150,6 +154,7 @@ export interface AgentConversationController {
     patch: Partial<AgentEditProposal>
   ): AgentEditProposal | undefined;
   handleEvent(event: SystemEventEnvelope): void;
+  submitUserInput(answers: AgentUserInputAnswer[]): Promise<boolean>;
   sendMessage(
     activeDocument: WorkspaceDocument,
     workspaceDocuments?: WorkspaceDocument[],

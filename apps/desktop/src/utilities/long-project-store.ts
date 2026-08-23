@@ -106,6 +106,7 @@ import {
   previewContinuationImportSource,
   type ContinuationImportPlan
 } from "./long-continuation-import";
+import { migrateLegacyCharacterStateFiles } from "./long-project-store/migrations/world-character";
 
 const MANIFEST_PATH = "deepwrite.json";
 const BOOK_LINE_PATH = "long/plot/book-line.md";
@@ -210,6 +211,7 @@ export interface UpdateLongBookBindingsInput {
   expectedProjectRevision: number;
   linkedMaterialIdsByKind: LongProjectManifest["linkedMaterialIdsByKind"];
   linkedSkillIdsByKind: LongProjectManifest["linkedSkillIdsByKind"];
+  linkedResourceStageScopes?: LongProjectManifest["linkedResourceStageScopes"];
 }
 
 export interface RenameLongBookInput {
@@ -966,6 +968,7 @@ export class LongProjectStore {
         revision: loaded.manifest.revision + 1,
         linkedMaterialIdsByKind: input.linkedMaterialIdsByKind,
         linkedSkillIdsByKind: input.linkedSkillIdsByKind,
+        linkedResourceStageScopes: input.linkedResourceStageScopes,
         updatedAt: timestamp,
         workspaceIndexFile: {
           ...loaded.manifest.workspaceIndexFile,
@@ -2073,11 +2076,7 @@ export class LongProjectStore {
           chapter.characterState.id,
           chapter.handoff.id,
           chapter.foreshadowingChanges.id,
-          ...(chapter.worldReveals ? [chapter.worldReveals.id] : []),
-          ...chapter.characterContinuity.flatMap((entry) => [
-            entry.currentState.id,
-            entry.history.id
-          ])
+          ...(chapter.worldReveals ? [chapter.worldReveals.id] : [])
         ])
       );
       const continuityFileRoles = new Map<
@@ -2092,6 +2091,8 @@ export class LongProjectStore {
           characterId: entry.characterId,
           role: "relationships"
         });
+      }
+      for (const entry of chapterEntry.characterContinuity) {
         continuityFileRoles.set(entry.currentState.id, {
           characterId: entry.characterId,
           role: "current-state"
@@ -2104,11 +2105,18 @@ export class LongProjectStore {
       if (loaded.index.ledger.commits.length === 0) {
         const updatedFileIds = new Set(updateIds);
         for (const entry of loaded.index.characterFiles) {
-          for (const reference of [
-            entry.relationships,
-            entry.currentState,
-            entry.history
-          ]) {
+          for (const reference of [entry.relationships]) {
+            if (updatedFileIds.has(reference.id)) continue;
+            const file = await loadIndexedFile(loaded, reference.id);
+            newlyPinnedChecks.push({
+              action: "check",
+              path: file.reference.path,
+              expectedSha256: file.disk.sha256
+            });
+          }
+        }
+        for (const entry of chapterEntry.characterContinuity) {
+          for (const reference of [entry.currentState, entry.history]) {
             if (updatedFileIds.has(reference.id)) continue;
             const file = await loadIndexedFile(loaded, reference.id);
             newlyPinnedChecks.push({
@@ -2766,11 +2774,19 @@ export class LongProjectStore {
           record.fileChanges.map(({ fileId }) => fileId)
         );
         for (const entry of loaded.index.characterFiles) {
-          for (const reference of [
-            entry.relationships,
-            entry.currentState,
-            entry.history
-          ]) {
+          for (const reference of [entry.relationships]) {
+            const file = await loadIndexedFile(loaded, reference.id);
+            if (!changedFileIds.has(reference.id)) {
+              newlyUnpinnedChecks.push({
+                action: "check",
+                path: file.reference.path,
+                expectedSha256: file.disk.sha256
+              });
+            }
+          }
+        }
+        for (const entry of chapterEntry.characterContinuity) {
+          for (const reference of [entry.currentState, entry.history]) {
             const file = await loadIndexedFile(loaded, reference.id);
             if (!changedFileIds.has(reference.id)) {
               newlyUnpinnedChecks.push({
@@ -2852,6 +2868,8 @@ export class LongProjectStore {
           path: entry.relationships.path,
           role: "relationships"
         });
+      }
+      for (const entry of chapterEntry.characterContinuity) {
         rollbackContinuityRoles.set(entry.currentState.id, {
           path: entry.currentState.path,
           role: "current-state"
@@ -3291,6 +3309,17 @@ export class LongProjectStore {
     ) {
       return await this.loadProject(projectDirectory);
     }
+    if (
+      await migrateLegacyCharacterStateFiles({
+        projectDirectory,
+        manifest,
+        manifestDisk,
+        indexDisk,
+        rawIndex
+      })
+    ) {
+      return await this.loadProject(projectDirectory);
+    }
     const index = LongWorkspaceIndexSnapshotSchema.parse(rawIndex);
     if (manifest.id !== index.bookId) {
       throw new Error("长篇 manifest 与工作区索引的 book id 不一致。");
@@ -3330,6 +3359,7 @@ export class LongProjectStore {
       status: manifest.status,
       linkedMaterialIdsByKind: manifest.linkedMaterialIdsByKind,
       linkedSkillIdsByKind: manifest.linkedSkillIdsByKind,
+      linkedResourceStageScopes: manifest.linkedResourceStageScopes,
       projectRevision: manifest.revision,
       createdAt: manifest.createdAt,
       updatedAt: manifest.updatedAt,
@@ -3532,11 +3562,7 @@ async function assertPinnedSetIntegrity(
   }
   if (loaded.index.ledger.commits.some(({ mode }) => mode === "structured")) {
     for (const entry of loaded.index.characterFiles) {
-      for (const reference of [
-        entry.relationships,
-        entry.currentState,
-        entry.history
-      ]) {
+      for (const reference of [entry.relationships]) {
         addCheck(await loadIndexedFile(loaded, reference.id));
       }
     }
@@ -3675,15 +3701,20 @@ function assertLongContinuityMutationAuthority(
       continue;
     }
     const files = characterFilesById.get(fact.subjectId);
-    if (!files) {
+    const chapterFiles = index.chapters
+      .find(({ chapterCardId }) => chapterCardId === input.chapterCardId)
+      ?.characterContinuity.find(
+        ({ characterId }) => characterId === fact.subjectId
+      );
+    if (!files || !chapterFiles) {
       throw new Error(
         `连续性事实 ${fact.factId} 缺少人物物化文件：${fact.subjectId}。`
       );
     }
     const requiredFiles =
       fact.domain === "character"
-        ? [files.currentState.id, files.history.id]
-        : [files.relationships.id, files.history.id];
+        ? [chapterFiles.currentState.id, chapterFiles.history.id]
+        : [files.relationships.id, chapterFiles.history.id];
     if (requiredFiles.some((fileId) => !updatedFileIds.has(fileId))) {
       throw new Error(
         fact.domain === "character"
@@ -4096,16 +4127,6 @@ function indexedFileSlots(
         reference: entry.relationships,
         expectedPath: characterPath(entry.characterId, "relationships.md"),
         kind: "markdown" as const
-      },
-      {
-        reference: entry.currentState,
-        expectedPath: characterPath(entry.characterId, "current-state.md"),
-        kind: "markdown" as const
-      },
-      {
-        reference: entry.history,
-        expectedPath: characterPath(entry.characterId, "history.md"),
-        kind: "markdown" as const
       }
     ]),
     ...index.chapters.flatMap((entry) => [
@@ -4391,12 +4412,7 @@ function isPinnedMarkdownFile(
   }
   return (
     index.ledger.commits.some(({ mode }) => mode === "structured") &&
-    index.characterFiles.some(
-      (entry) =>
-        entry.relationships.id === fileId ||
-        entry.currentState.id === fileId ||
-        entry.history.id === fileId
-    )
+    index.characterFiles.some((entry) => entry.relationships.id === fileId)
   );
 }
 
@@ -5302,7 +5318,24 @@ async function migrateLegacyStructuredContinuityFiles(input: {
   indexDisk: SecureTextFile;
   rawIndex: unknown;
 }): Promise<boolean> {
-  const index = LongWorkspaceIndexSnapshotSchema.parse(input.rawIndex);
+  const rawIndex = unknownRecord(input.rawIndex);
+  if (!rawIndex || !Array.isArray(rawIndex.characterFiles)) return false;
+  const legacyCharacterFiles = rawIndex.characterFiles.map((value) =>
+    unknownRecord(value)
+  );
+  const index = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    characterFiles: rawIndex.characterFiles.map((value) => {
+      const entry = unknownRecord(value);
+      if (!entry) return value;
+      const {
+        currentState: _currentState,
+        history: _history,
+        ...current
+      } = entry;
+      return current;
+    })
+  });
   const commits = [...index.ledger.commits]
     .filter(({ mode }) => mode === "structured")
     .sort((left, right) => left.sequence - right.sequence);
@@ -5316,18 +5349,29 @@ async function migrateLegacyStructuredContinuityFiles(input: {
     }
   >();
   for (const files of index.characterFiles) {
+    const legacy = legacyCharacterFiles.find(
+      (entry) => entry?.characterId === files.characterId
+    );
     characterRoleByFileId.set(files.relationships.id, {
       characterId: files.characterId,
       role: "relationships"
     });
-    characterRoleByFileId.set(files.currentState.id, {
-      characterId: files.characterId,
-      role: "current-state"
-    });
-    characterRoleByFileId.set(files.history.id, {
-      characterId: files.characterId,
-      role: "history"
-    });
+    const currentState = LongWorkspaceFileReferenceSchema.safeParse(
+      legacy?.currentState
+    );
+    const history = LongWorkspaceFileReferenceSchema.safeParse(legacy?.history);
+    if (currentState.success) {
+      characterRoleByFileId.set(currentState.data.id, {
+        characterId: files.characterId,
+        role: "current-state"
+      });
+    }
+    if (history.success) {
+      characterRoleByFileId.set(history.data.id, {
+        characterId: files.characterId,
+        role: "history"
+      });
+    }
   }
 
   let changed = false;

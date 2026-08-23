@@ -28,7 +28,6 @@ export type LongWorkspaceProposalEvent = Extract<
       | "long.worldbuilding_file_proposal"
       | "long.character_file_proposal"
       | "long.continuity_file_proposal"
-      | "long.chapter_dispatch_proposal"
       | "long.ledger_commit_proposal";
   }
 >;
@@ -105,12 +104,7 @@ function createdFilesForBatch(
       return [operation.storyPlot.file];
     }
     if (operation.type === "character.create") {
-      return [
-        operation.files.coreProfile,
-        operation.files.relationships,
-        operation.files.currentState,
-        operation.files.history
-      ];
+      return [operation.files.coreProfile, operation.files.relationships];
     }
     if (operation.type === "chapter.create") {
       return [
@@ -418,18 +412,7 @@ export interface UseLongWorkspaceProposalsOptions {
     >,
     message: string
   ) => boolean;
-  onApplied?: (
-    event: Exclude<
-      LongWorkspaceProposalEvent,
-      { type: "long.chapter_dispatch_proposal" }
-    >
-  ) => void | Promise<void>;
-  onDispatchApproved?: (
-    event: Extract<
-      LongWorkspaceProposalEvent,
-      { type: "long.chapter_dispatch_proposal" }
-    >
-  ) => void | Promise<void>;
+  onApplied?: (event: LongWorkspaceProposalEvent) => void | Promise<void>;
   onRejected?: (event: LongWorkspaceProposalEvent) => void;
   notifications: LongProposalNotifications;
 }
@@ -462,7 +445,6 @@ const LONG_PROPOSAL_TYPES = new Set<SystemEventEnvelope["type"]>([
   "long.worldbuilding_file_proposal",
   "long.character_file_proposal",
   "long.continuity_file_proposal",
-  "long.chapter_dispatch_proposal",
   "long.ledger_commit_proposal"
 ]);
 
@@ -773,9 +755,7 @@ export function useLongWorkspaceProposals(
             : event.type === "long.character_file_proposal"
               ? latest.workspaceIndex.characterFiles.flatMap((entry) => [
                   [entry.coreProfile.id, entry.coreProfile] as const,
-                  [entry.relationships.id, entry.relationships] as const,
-                  [entry.currentState.id, entry.currentState] as const,
-                  [entry.history.id, entry.history] as const
+                  [entry.relationships.id, entry.relationships] as const
                 ])
               : [...continuityTargets!.values()].map(
                   ({ file }) => [file.id, file] as const
@@ -1008,7 +988,7 @@ export function useLongWorkspaceProposals(
       (item) =>
         item.event.payload.sessionId === event.payload.sessionId &&
         item.event.payload.runId === event.payload.runId &&
-        item.event.payload.agentId === "continuity_ledger" &&
+        item.event.type === "long.continuity_file_proposal" &&
         item.status !== "accepted"
     );
   }
@@ -1254,7 +1234,7 @@ export function useLongWorkspaceProposals(
           runId,
           toolCallId: createId("long_manual_tool"),
           bookId: input.bookId,
-          agentId: input.agentId ?? "plot_design",
+          agentId: input.agentId ?? "long",
           summary: input.summary,
           runtime: {
             provider: "deepwrite",
@@ -1355,25 +1335,6 @@ export function useLongWorkspaceProposals(
       status: "submitting",
       clearError: true
     });
-    if (item.event.type === "long.chapter_dispatch_proposal") {
-      try {
-        await options.onDispatchApproved?.(item.event);
-        removeItem(bookId, eventId);
-        options.notifications.success(
-          `已启动从“${item.event.payload.title}”开始的 ${item.event.payload.chapters.length} 章串行写作计划。`
-        );
-      } catch (error: unknown) {
-        updateItem(bookId, eventId, {
-          status: "error",
-          error: errorMessage(error, "处理长篇提案失败。"),
-          errorPhase: "apply",
-          errorRetryable: isRetryableLongProposalError(error)
-        });
-        options.notifications.error(errorMessage(error, "处理长篇提案失败。"));
-      }
-      return;
-    }
-
     try {
       if (
         item.event.type === "long.mutation_proposal" ||

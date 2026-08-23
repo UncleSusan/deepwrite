@@ -443,12 +443,7 @@ export function deleteCharacter(
     );
   }
   const files = state.draft.characterFiles[fileIndex]!;
-  [
-    files.coreProfile,
-    files.relationships,
-    files.currentState,
-    files.history
-  ].forEach((file) =>
+  [files.coreProfile, files.relationships].forEach((file) =>
     addFileDeleteIntent(state, file, `Delete character ${characterId}`)
   );
   state.draft.characterFiles.splice(fileIndex, 1);

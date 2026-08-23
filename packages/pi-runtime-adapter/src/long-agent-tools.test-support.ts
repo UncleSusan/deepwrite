@@ -11,13 +11,14 @@ import {
   createLongWorkspaceNavigationSnapshot,
   longChapterBodyFileId,
   longChapterCardFileId,
+  longChapterCharacterContinuityFilePath,
+  longChapterCharacterCurrentStateFileId,
+  longChapterCharacterHistoryFileId,
   longChapterCharacterStateFileId,
   longChapterContinuityFilePath,
   longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
-  longCharacterCurrentStateFileId,
-  longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
   longStoryPlotBodyFileId,
@@ -35,12 +36,11 @@ import {
 } from "@deepwrite/contracts";
 import {
   buildLongWorkspaceTools,
-  selectLongChaptersForWritingScope,
-  selectNextLongChapterForDispatch,
   type LongAgentToolDetails,
   type LongCommandExecutor
 } from "./long-agent-tools";
 import { toRuntimeEvents } from "./index";
+import type { AgentUserInputRequester } from "./runtime-types";
 
 const NOW = "2026-07-26T12:00:00.000Z";
 const REVISION = "v1:0:00000000";
@@ -91,14 +91,6 @@ function fixtureIndex(): LongWorkspaceIndexSnapshot {
         relationships: file(
           longCharacterRelationshipsFileId("character_alice"),
           "long/characters/alice/relationships.md"
-        ),
-        currentState: file(
-          longCharacterCurrentStateFileId("character_alice"),
-          "long/characters/alice/current-state.md"
-        ),
-        history: file(
-          longCharacterHistoryFileId("character_alice"),
-          "long/characters/alice/history.md"
         )
       }
     ],
@@ -336,11 +328,35 @@ function committedFixtureIndex(): LongWorkspaceIndexSnapshot {
   const index = structuredClone(fixtureIndex());
   index.chapters[0]!.bodyStatus = "written";
   index.chapters[0]!.commitId = "commit_one";
+  index.chapters[0]!.characterContinuity = [
+    {
+      characterId: "character_alice",
+      currentState: file(
+        longChapterCharacterCurrentStateFileId(
+          "chapter_one",
+          "character_alice"
+        ),
+        longChapterCharacterContinuityFilePath(
+          "chapter_one",
+          "character_alice",
+          "current-state.md"
+        )
+      ),
+      history: file(
+        longChapterCharacterHistoryFileId("chapter_one", "character_alice"),
+        longChapterCharacterContinuityFilePath(
+          "chapter_one",
+          "character_alice",
+          "history.md"
+        )
+      )
+    }
+  ];
   index.ledger.committedThroughChapterId = "chapter_one";
   index.ledger.commits = [
     {
       id: "commit_one",
-      mode: "structured",
+      mode: "text_files",
       sequence: 1,
       chapterCardId: "chapter_one",
       committedAt: NOW,
@@ -387,6 +403,118 @@ function toolByName(tools: AgentTool[], name: string): AgentTool {
   return tool;
 }
 
+function collectIndexFiles(
+  index: LongWorkspaceIndexSnapshot
+): Map<string, LongWorkspaceIndexSnapshot["bookLine"]> {
+  const files = new Map<string, LongWorkspaceIndexSnapshot["bookLine"]>();
+  const add = (file?: LongWorkspaceIndexSnapshot["bookLine"] | null): void => {
+    if (file) files.set(file.id, file);
+  };
+  add(index.bookLine);
+  add(index.characterOverview);
+  for (const category of index.worldbuilding) {
+    if (category.format === "text") add(category.file);
+    else {
+      add(category.overview);
+      for (const item of category.items) add(item.file);
+    }
+  }
+  for (const entry of index.characterFiles) {
+    add(entry.coreProfile);
+    add(entry.relationships);
+  }
+  for (const storyPlot of index.plot.storyPlots) add(storyPlot.file);
+  for (const chapter of index.chapters) {
+    add(chapter.body);
+    add(chapter.card);
+    add(chapter.characterState);
+    add(chapter.handoff);
+    add(chapter.foreshadowingChanges);
+    add(chapter.worldReveals);
+    for (const continuity of chapter.characterContinuity) {
+      add(continuity.currentState);
+      add(continuity.history);
+    }
+  }
+  return files;
+}
+
+function documentExecutor(
+  index: LongWorkspaceIndexSnapshot,
+  contents: Record<string, string> = {},
+  projectRevision = 11
+): ReturnType<typeof vi.fn<LongCommandExecutor>> {
+  const files = collectIndexFiles(index);
+  return vi.fn<LongCommandExecutor>(async (command) => {
+    if (command.type === "long.getWorkspaceIndex") {
+      return indexResult(index, projectRevision);
+    }
+    if (command.type === "long.readDocument") {
+      const file = files.get(command.payload.fileId);
+      if (!file) {
+        throw new Error(`Unexpected document: ${command.payload.fileId}`);
+      }
+      const content = contents[file.id] ?? "";
+      return {
+        status: "accepted" as const,
+        requestId: command.id,
+        payload: {
+          bookId: index.bookId,
+          file,
+          content,
+          offset: command.payload.offset,
+          totalCharacters: Array.from(content).length,
+          nextOffset: null,
+          workspaceRevision: index.revision,
+          projectRevision
+        }
+      };
+    }
+    throw new Error(`Unexpected command: ${command.type}`);
+  });
+}
+
+function longTools(input: {
+  executor: LongCommandExecutor;
+  activeRoot?: LongWorkspaceRoot;
+  activeChapterCardId?: string;
+  index?: LongWorkspaceIndexSnapshot;
+  requestUserInput?: AgentUserInputRequester;
+}) {
+  const context = workspace(
+    "long",
+    input.activeRoot ?? "plot_design",
+    input.activeChapterCardId
+  );
+  if (input.index) {
+    context.workspaceRevision = input.index.revision;
+    context.projectRevision = 11;
+    context.navigation = createLongWorkspaceNavigationSnapshot(input.index);
+  }
+  return buildLongWorkspaceTools({
+    workspace: context,
+    profile: profile("long"),
+    sessionId: "session_tools",
+    runId: "run_tools",
+    executor: input.executor,
+    requestUserInput:
+      input.requestUserInput ??
+      (async (request) => ({
+        sessionId: "session_tools",
+        runId: "run_tools",
+        requestId: "request_tools",
+        answers: request.questions.map((question) =>
+          question.options
+            ? {
+                id: question.id,
+                selectedOptionIds: [question.options[0]!.id]
+              }
+            : { id: question.id, text: "测试回答" }
+        )
+      }))
+  });
+}
+
 function indexResult(
   index: LongWorkspaceIndexSnapshot = fixtureIndex(),
   projectRevision = 11
@@ -417,6 +545,7 @@ export {
   createHash,
   createLongWorkspaceNavigationSnapshot,
   describe,
+  documentExecutor,
   expect,
   expectNoPhysicalWorldbuildingMetadata,
   file,
@@ -428,15 +557,17 @@ export {
   it,
   longChapterBodyFileId,
   longChapterCardFileId,
+  longChapterCharacterContinuityFilePath,
+  longChapterCharacterCurrentStateFileId,
+  longChapterCharacterHistoryFileId,
   longChapterCharacterStateFileId,
   longChapterContinuityFilePath,
   longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
-  longCharacterCurrentStateFileId,
-  longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
+  longTools,
   longStoryPlotBodyFileId,
   longStoryPlotFilePath,
   longWorldbuildingFileId,
@@ -446,8 +577,6 @@ export {
   longWorldbuildingOverviewFileId,
   profile,
   resultText,
-  selectLongChaptersForWritingScope,
-  selectNextLongChapterForDispatch,
   storyPlotExecutor,
   toRuntimeEvents,
   toolByName,
@@ -457,6 +586,7 @@ export {
 };
 export type {
   AgentTool,
+  AgentUserInputRequester,
   LongAgentId,
   LongAgentProfile,
   LongAgentToolDetails,

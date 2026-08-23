@@ -3,6 +3,7 @@ import {
   BUILT_IN_REASONING_LEVELS,
   LONG_AGENT_IDS,
   LongAgentTeamSettingsInputSchema,
+  getDefaultLongAgentProfile,
   SHORT_AGENT_SUBAGENT_DESCRIPTION_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_MAX_COUNT,
   SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH,
@@ -53,34 +54,10 @@ const emit = defineEmits<{
   authoringReset: [];
 }>();
 
-const PARENT_AGENTS = [
-  {
-    id: "setting",
-    label: "设定",
-    description: "配置世界规则、人物关系、冲突审阅和设定研究等专项助手。"
-  },
-  {
-    id: "plot_design",
-    label: "剧情",
-    description: "配置时间线、叙事顺序、章卡和伏笔等专项助手。"
-  },
-  {
-    id: "draft",
-    label: "写手",
-    description: "配置章节计划、当前章写作、文风和调度检查等专项助手。"
-  },
-  {
-    id: "continuity_ledger",
-    label: "连续性",
-    description: "配置事实核验、伏笔决策和提交审计等专项助手。"
-  }
-] as const satisfies readonly {
-  id: LongAgentId;
-  label: string;
-  description: string;
-}[];
+const PARENT_AGENT_DESCRIPTION =
+  "配置世界观、人物、剧情、正文与连续性等专项助手，由长篇智能体按需调用。";
 
-const activeParentAgentId = ref<LongAgentId>(LONG_AGENT_IDS[0]);
+const parentAgentId: LongAgentId = LONG_AGENT_IDS[0];
 const draftTeams = ref<LongAgentTeamSettingsInput["teams"]>([]);
 const editingSubagentId = ref<string | null>(null);
 const loadFromSkillOpen = ref(false);
@@ -89,15 +66,11 @@ let generatedIdSequence = 0;
 const formDisabled = computed(
   () => props.loading || props.saving || !props.runtimeAvailable
 );
-const activeParentMeta = computed(
-  () =>
-    PARENT_AGENTS.find((agent) => agent.id === activeParentAgentId.value) ??
-    PARENT_AGENTS[0]
+const parentAgentLabel = computed(
+  () => getDefaultLongAgentProfile(parentAgentId).label
 );
 const activeTeam = computed(() =>
-  draftTeams.value.find(
-    (team) => team.parentAgentId === activeParentAgentId.value
-  )
+  draftTeams.value.find((team) => team.parentAgentId === parentAgentId)
 );
 const modelById = computed(
   () => new Map(props.models.map((model) => [model.id, model]))
@@ -134,23 +107,10 @@ watch(
           }))
         }))
       : [];
-    if (
-      settings &&
-      !settings.teams.some(
-        (team) => team.parentAgentId === activeParentAgentId.value
-      )
-    ) {
-      activeParentAgentId.value = LONG_AGENT_IDS[0];
-    }
     editingSubagentId.value = null;
   },
   { immediate: true, deep: true }
 );
-
-function selectParentAgent(parentAgentId: LongAgentId): void {
-  activeParentAgentId.value = parentAgentId;
-  editingSubagentId.value = null;
-}
 
 function thinkingLabel(level: ThinkingLevel): string {
   if (level === "off") return "关闭";
@@ -482,32 +442,12 @@ function saveSettings(): void {
   </div>
 
   <div v-else class="team-layout">
-    <nav class="parent-agent-tabs" aria-label="长篇主智能体">
-      <button
-        v-for="parent in PARENT_AGENTS"
-        :key="parent.id"
-        type="button"
-        class="parent-agent-tab"
-        :class="{ 'is-active': parent.id === activeParentAgentId }"
-        :aria-current="parent.id === activeParentAgentId ? 'page' : undefined"
-        @click="selectParentAgent(parent.id)"
-      >
-        {{ parent.label }}
-        <span>
-          {{
-            draftTeams.find((team) => team.parentAgentId === parent.id)
-              ?.subagents.length ?? 0
-          }}
-        </span>
-      </button>
-    </nav>
-
     <div class="team-editor">
       <header class="team-heading">
         <div>
           <span>长篇主智能体</span>
-          <h3>{{ activeParentMeta.label }}</h3>
-          <p>{{ activeParentMeta.description }}</p>
+          <h3>{{ parentAgentLabel }}</h3>
+          <p>{{ PARENT_AGENT_DESCRIPTION }}</p>
         </div>
         <div class="team-heading-actions">
           <button
@@ -767,8 +707,8 @@ function saveSettings(): void {
 
   <LoadSubagentFromSkillDialog
     :open="loadFromSkillOpen"
-    :parent-agent-id="activeParentAgentId"
-    :parent-agent-label="activeParentMeta.label"
+    :parent-agent-id="parentAgentId"
+    :parent-agent-label="parentAgentLabel"
     :existing-subagent-names="
       (activeTeam?.subagents ?? []).map((item) => item.name)
     "
@@ -824,52 +764,8 @@ function saveSettings(): void {
 
 .team-layout {
   display: grid;
-  grid-template-columns: 164px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
-}
-.parent-agent-tabs {
-  position: sticky;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 12px;
-  background: var(--surface-muted);
-}
-.parent-agent-tab {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 42px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-weight: 590;
-  cursor: pointer;
-}
-.parent-agent-tab:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-.parent-agent-tab.is-active {
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
-}
-.parent-agent-tab span {
-  min-width: 22px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: var(--surface-selected);
-  color: var(--text-tertiary);
-  font-size: 0.75rem;
-  text-align: center;
 }
 
 .team-editor {
@@ -1184,20 +1080,6 @@ button:disabled {
 .panel-actions > span {
   color: var(--text-tertiary);
   font-size: 0.821429rem;
-}
-
-@media (max-width: 900px) {
-  .team-layout {
-    grid-template-columns: 1fr;
-  }
-  .parent-agent-tabs {
-    position: static;
-    flex-direction: row;
-    overflow-x: auto;
-  }
-  .parent-agent-tab {
-    flex: 1 0 104px;
-  }
 }
 
 @media (max-width: 680px) {

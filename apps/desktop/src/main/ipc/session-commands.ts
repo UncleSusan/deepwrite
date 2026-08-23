@@ -1,6 +1,7 @@
 import {
   CommandEnvelopeSchema,
   SessionAbortAcceptedPayloadSchema,
+  SessionUserInputResponseAcceptedPayloadSchema,
   SessionPromptAcceptedPayloadSchema,
   createEnvelope,
   type AgentProviderRuntimeConfig,
@@ -20,6 +21,56 @@ export async function handleSessionCommands(
   ctx: IpcCommandContext,
   command: CommandEnvelope
 ): Promise<CommandResult | undefined> {
+  if (command.type === "session.user_input_response") {
+    try {
+      // activeRuns is a Main-side event-stream mirror and can briefly lag the
+      // Agent utility that owns the pending question. Forward the response to
+      // that authoritative owner; it validates sessionId, runId, requestId and
+      // every answer before resolving the waiting tool call.
+      const internalCommand = CommandEnvelopeSchema.parse(
+        createEnvelope("agent.user_input_response", command.payload, {
+          id: command.id,
+          context: command.context
+        })
+      );
+      const result = await ctx.supervisor.requestCommand(
+        "agent",
+        internalCommand,
+        10_000
+      );
+      if (result.status !== "accepted") return result;
+      const accepted = SessionUserInputResponseAcceptedPayloadSchema.parse(
+        result.payload
+      );
+      if (
+        accepted.sessionId !== command.payload.sessionId ||
+        accepted.runId !== command.payload.runId ||
+        accepted.requestId !== command.payload.requestId
+      ) {
+        return {
+          status: "rejected",
+          requestId: command.id,
+          error: {
+            code: "ipc.invalid_agent_user_input_result",
+            message: "Agent user-input result does not match the request."
+          }
+        };
+      }
+      return { status: "accepted", requestId: command.id, payload: accepted };
+    } catch (error: unknown) {
+      return {
+        status: "rejected",
+        requestId: command.id,
+        error: {
+          code: "ipc.agent_user_input_failed",
+          message:
+            error instanceof Error ? error.message : "提交用户回答失败。",
+          details: safeErrorDetails(error)
+        }
+      };
+    }
+  }
+
   if (command.type === "session.abort") {
     try {
       const internalCommand = CommandEnvelopeSchema.parse(

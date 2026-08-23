@@ -30,7 +30,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
     longConversationForProposalEvent,
     activeLongBookId,
     longBooks,
-    refreshLongWritingSaveBarrier,
+    refreshLongProposalWorkspace,
     saveActiveLongEditorChanges
   } = ctx;
 
@@ -284,7 +284,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
           proposedText: undefined,
           statusMessage: "该世界观文件变更已经存在于本地 Markdown 中。"
         });
-        await refreshLongWritingSaveBarrier(target.bookId);
+        await refreshLongProposalWorkspace(target.bookId);
         return;
       }
       if (target.file.operation === "create") {
@@ -306,7 +306,7 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
           status: "conflict",
           statusMessage: message
         });
-        await refreshLongWritingSaveBarrier(target.bookId);
+        await refreshLongProposalWorkspace(target.bookId);
         uiMessage.warning(message);
         return;
       }
@@ -356,8 +356,14 @@ export function createLongWorldbuildingLane(ctx: ProposalLaneContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        longWorldbuildingTarget: {
+          ...target,
+          appliedProjectRevision: result.projectRevision
+        }
+      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
-      const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+      const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,

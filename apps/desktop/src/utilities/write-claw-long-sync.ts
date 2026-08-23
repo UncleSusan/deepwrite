@@ -277,8 +277,6 @@ export async function buildWriteClawLongSync(
       });
       addCreateDocument(files.coreProfile.id);
       addCreateDocument(files.relationships.id);
-      addCreateDocument(files.currentState.id);
-      addCreateDocument(files.history.id);
       importedCharacterIds.add(character.id);
       imported.characters += 1;
     }

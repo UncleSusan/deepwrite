@@ -1,6 +1,7 @@
 import {
   ModelConnectionTestResultSchema,
   SessionAbortAcceptedPayloadSchema,
+  SessionUserInputResponseAcceptedPayloadSchema,
   SessionPromptAcceptedPayloadSchema,
   createEnvelope,
   type CommandResult,
@@ -8,6 +9,7 @@ import {
 } from "@deepwrite/contracts";
 import {
   PiAgentRuntimeAdapter,
+  UserInputResolutionError,
   type AgentRuntimeEvent
 } from "@deepwrite/pi-runtime-adapter";
 import { createId, nowIso } from "@deepwrite/shared";
@@ -232,6 +234,22 @@ function toEventEnvelope(
     );
   }
 
+  if (event.type === "agent.user_input_requested") {
+    return createEnvelope(
+      "agent.user_input_requested",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        requestId: event.payload.requestId,
+        toolCallId: event.payload.toolCallId,
+        source: event.payload.source,
+        questions: event.payload.questions,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
   if (event.type === "workspace.editor_mutation") {
     return createEnvelope(
       "workspace.editor_mutation",
@@ -340,28 +358,6 @@ function toEventEnvelope(
         batch: event.payload.batch,
         baseProjectRevision: event.payload.baseProjectRevision,
         file: event.payload.file,
-        summary: event.payload.summary,
-        runtime: event.payload.runtime
-      },
-      { id: createId("evt"), context }
-    );
-  }
-
-  if (event.type === "long.chapter_dispatch_proposal") {
-    return createEnvelope(
-      "long.chapter_dispatch_proposal",
-      {
-        sessionId: event.sessionId,
-        runId: event.runId,
-        toolCallId: event.payload.toolCallId,
-        bookId: event.payload.bookId,
-        agentId: event.payload.agentId,
-        scope: event.payload.scope,
-        chapterCardId: event.payload.chapterCardId,
-        title: event.payload.title,
-        chapters: event.payload.chapters,
-        workspaceRevision: event.payload.workspaceRevision,
-        projectRevision: event.payload.projectRevision,
         summary: event.payload.summary,
         runtime: event.payload.runtime
       },
@@ -554,6 +550,42 @@ bootUtility("agent", {
           abortedAt: nowIso()
         })
       };
+    }
+
+    if (command.type === "agent.user_input_response") {
+      const activeRunId = activeSessionRuns.get(command.payload.sessionId);
+      if (activeRunId !== command.payload.runId) {
+        return {
+          status: "rejected",
+          requestId: command.id,
+          error: {
+            code: "agent.run_not_active",
+            message: "要回答的智能体运行已结束或不存在。"
+          }
+        };
+      }
+      try {
+        return {
+          status: "accepted",
+          requestId: command.id,
+          payload: SessionUserInputResponseAcceptedPayloadSchema.parse(
+            runtime.resolveUserInput(command.payload)
+          )
+        };
+      } catch (error: unknown) {
+        return {
+          status: "rejected",
+          requestId: command.id,
+          error: {
+            code:
+              error instanceof UserInputResolutionError
+                ? error.code
+                : "agent.user_input_response_failed",
+            message:
+              error instanceof Error ? error.message : "提交用户回答失败。"
+          }
+        };
+      }
     }
 
     if (command.type !== "agent.prompt") {

@@ -264,11 +264,16 @@ function parseStoredCharacterStructureTarget(
 function parseStoredLongWorldbuildingTarget(
   value: unknown
 ): AgentEditProposal["longWorldbuildingTarget"] | undefined {
+  const appliedProjectRevision = isRecord(value)
+    ? value.appliedProjectRevision
+    : undefined;
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
     !value.bookId.trim() ||
-    !nonnegativeInteger(value.baseProjectRevision)
+    !nonnegativeInteger(value.baseProjectRevision) ||
+    (appliedProjectRevision !== undefined &&
+      !nonnegativeInteger(appliedProjectRevision))
   ) {
     return undefined;
   }
@@ -279,6 +284,7 @@ function parseStoredLongWorldbuildingTarget(
     bookId: value.bookId,
     batch: batch.data,
     baseProjectRevision: value.baseProjectRevision,
+    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
     file: file.data
   };
 }
@@ -286,11 +292,16 @@ function parseStoredLongWorldbuildingTarget(
 function parseStoredLongCharacterTarget(
   value: unknown
 ): AgentEditProposal["longCharacterTarget"] | undefined {
+  const appliedProjectRevision = isRecord(value)
+    ? value.appliedProjectRevision
+    : undefined;
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
     !value.bookId.trim() ||
     !nonnegativeInteger(value.baseProjectRevision) ||
+    (appliedProjectRevision !== undefined &&
+      !nonnegativeInteger(appliedProjectRevision)) ||
     !Array.isArray(value.files) ||
     value.files.length < 1
   ) {
@@ -308,6 +319,7 @@ function parseStoredLongCharacterTarget(
     bookId: value.bookId,
     batch: batch.data,
     baseProjectRevision: value.baseProjectRevision,
+    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
     files
   };
 }

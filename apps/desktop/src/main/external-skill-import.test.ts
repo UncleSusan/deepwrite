@@ -58,6 +58,20 @@ describe("readExternalSkills", () => {
     expect(result.skipped.invalidFormat).toBe(1);
   });
 
+  it("accepts SKILL.md files longer than the 40,000-character recommendation", async () => {
+    const root = await temporaryRoot();
+    const path = join(root, "SKILL.md");
+    const content = `---\nname: 长技能\ndescription: 超长正文\n---\n\n${"步".repeat(40_001)}\n`;
+    await writeFile(path, content, "utf8");
+
+    const result = await readExternalSkills("file", path);
+
+    expect(result.candidates).toEqual([
+      { title: "长技能", description: "超长正文", content }
+    ]);
+    expect(result.skipped.contentTooLong).toBe(0);
+  });
+
   it("rejects a selected file whose basename is not SKILL.md", async () => {
     const root = await temporaryRoot();
     const path = join(root, "other.md");

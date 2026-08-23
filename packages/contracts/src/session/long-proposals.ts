@@ -90,9 +90,7 @@ export type LongWorldbuildingFileProposalPayload = z.infer<
 
 export const LONG_CHARACTER_DOCUMENTS = [
   "core_profile",
-  "relationships",
-  "current_state",
-  "history"
+  "relationships"
 ] as const;
 export const LongCharacterDocumentSchema = z.enum(LONG_CHARACTER_DOCUMENTS);
 export type LongCharacterDocument = z.infer<typeof LongCharacterDocumentSchema>;
@@ -247,14 +245,6 @@ export const LongContinuityFileProposalPayloadSchema =
     baseProjectRevision: z.number().int().nonnegative(),
     files: z.array(LongContinuityFileChangeSchema).min(1).max(1_024)
   }).superRefine((value, context) => {
-    if (value.agentId !== "continuity_ledger") {
-      context.addIssue({
-        code: "custom",
-        path: ["agentId"],
-        message:
-          "Continuity file proposals must be authored by the continuity ledger agent."
-      });
-    }
     const fileIds = new Set(value.files.map(({ fileId }) => fileId));
     if (fileIds.size !== value.files.length) {
       context.addIssue({
@@ -473,92 +463,4 @@ export const LongLedgerCommitProposalPayloadSchema =
   });
 export type LongLedgerCommitProposalPayload = z.infer<
   typeof LongLedgerCommitProposalPayloadSchema
->;
-
-export const LongWritingScopeSchema = z.enum(["chapter", "arc", "volume"]);
-export type LongWritingScope = z.infer<typeof LongWritingScopeSchema>;
-
-export const LongChapterTripletRoleSchema = z.enum([
-  "body",
-  "character_state",
-  "handoff"
-]);
-export type LongChapterTripletRole = z.infer<
-  typeof LongChapterTripletRoleSchema
->;
-
-export const LongChapterReadinessStatusSchema = z.enum([
-  "empty",
-  "partial",
-  "ready_to_commit"
-]);
-export type LongChapterReadinessStatus = z.infer<
-  typeof LongChapterReadinessStatusSchema
->;
-
-export const LongChapterReadinessSchema = z
-  .object({
-    chapterCardId: LongChapterCardIdSchema,
-    title: z.string().trim().min(1).max(256),
-    status: LongChapterReadinessStatusSchema,
-    missingFiles: z.array(LongChapterTripletRoleSchema).max(3)
-  })
-  .strict()
-  .superRefine((value, context) => {
-    const uniqueMissing = new Set(value.missingFiles);
-    if (uniqueMissing.size !== value.missingFiles.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["missingFiles"],
-        message: "Chapter readiness cannot repeat a missing triplet file."
-      });
-    }
-    const expectedStatus =
-      value.missingFiles.length === 0
-        ? "ready_to_commit"
-        : value.missingFiles.includes("body")
-          ? "empty"
-          : "partial";
-    if (value.status !== expectedStatus) {
-      context.addIssue({
-        code: "custom",
-        path: ["status"],
-        message:
-          "Chapter readiness status must match the missing body evidence or legacy output files."
-      });
-    }
-  });
-export type LongChapterReadiness = z.infer<typeof LongChapterReadinessSchema>;
-
-export const LongChapterDispatchProposalPayloadSchema =
-  LongProposalBasePayloadSchema.extend({
-    scope: LongWritingScopeSchema,
-    chapterCardId: LongChapterCardIdSchema,
-    title: z.string().trim().min(1).max(256),
-    chapters: z.array(LongChapterReadinessSchema).min(1).max(100_000),
-    workspaceRevision: z.number().int().nonnegative(),
-    projectRevision: z.number().int().nonnegative()
-  }).superRefine((value, context) => {
-    const chapterIds = value.chapters.map(({ chapterCardId }) => chapterCardId);
-    if (new Set(chapterIds).size !== chapterIds.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["chapters"],
-        message: "A chapter dispatch plan cannot repeat a chapter."
-      });
-    }
-    if (
-      value.chapters[0]?.chapterCardId !== value.chapterCardId ||
-      value.chapters[0]?.title !== value.title
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["chapters", 0],
-        message:
-          "Dispatch summary chapter must match the first scheduled chapter."
-      });
-    }
-  });
-export type LongChapterDispatchProposalPayload = z.infer<
-  typeof LongChapterDispatchProposalPayloadSchema
 >;

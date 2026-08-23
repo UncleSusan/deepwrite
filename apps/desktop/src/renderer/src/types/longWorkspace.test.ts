@@ -287,14 +287,6 @@ describe("long workspace chapter navigation", () => {
         relationships: file(
           "file_character_lead:relationships",
           "long/characters/character_lead/relationships.md"
-        ),
-        currentState: file(
-          "file_character_lead:current-state",
-          "long/characters/character_lead/current-state.md"
-        ),
-        history: file(
-          "file_character_lead:history",
-          "long/characters/character_lead/history.md"
         )
       },
       {
@@ -306,14 +298,6 @@ describe("long workspace chapter navigation", () => {
         relationships: file(
           "file_character_partner:relationships",
           "long/characters/character_partner/relationships.md"
-        ),
-        currentState: file(
-          "file_character_partner:current-state",
-          "long/characters/character_partner/current-state.md"
-        ),
-        history: file(
-          "file_character_partner:history",
-          "long/characters/character_partner/history.md"
         )
       }
     ] as typeof workspaceIndex.characterFiles;
@@ -340,6 +324,14 @@ describe("long workspace chapter navigation", () => {
       "relationships",
       "current-state",
       "history"
+    ]);
+    expect(
+      selection.files
+        .filter(({ role }) => role === "current-state" || role === "history")
+        .map(({ inlineContent, readOnly }) => ({ inlineContent, readOnly }))
+    ).toEqual([
+      { inlineContent: "", readOnly: true },
+      { inlineContent: "", readOnly: true }
     ]);
 
     const emptyGroup = createLongCharacterGroupSelection(
@@ -588,7 +580,7 @@ describe("long workspace chapter navigation", () => {
     expect(selection?.description).toContain("仅表示历史正文已封存");
   });
 
-  it("keeps character design files editable while records remain references", () => {
+  it("maps character state and history to the latest committed chapter", () => {
     const { summary, workspaceIndex } = fixture("commit_one");
     summary.navigation.characters = [
       {
@@ -607,14 +599,6 @@ describe("long workspace chapter navigation", () => {
       relationships: file(
         "relationships",
         "long/characters/character_lead/relationships.md"
-      ),
-      currentState: file(
-        "design-state",
-        "long/characters/character_lead/current-state.md"
-      ),
-      history: file(
-        "design-history",
-        "long/characters/character_lead/history.md"
       )
     };
     workspaceIndex.characterFiles = [
@@ -648,16 +632,16 @@ describe("long workspace chapter navigation", () => {
     );
     expect(
       selection.files.find(({ role }) => role === "current-state")?.file
-    ).toBe(workspaceIndex.characterFiles[0]!.currentState);
+    ).toBe(mappedState);
     expect(selection.files.find(({ role }) => role === "history")?.file).toBe(
-      workspaceIndex.characterFiles[0]!.history
+      mappedHistory
     );
     expect(
       selection.files.find(({ role }) => role === "current-state")?.readOnly
-    ).not.toBe(true);
+    ).toBe(true);
     expect(
       selection.files.find(({ role }) => role === "history")?.readOnly
-    ).not.toBe(true);
+    ).toBe(true);
     expect(
       selection.files.find(({ role }) => role === "relationships")?.readOnly
     ).toBeUndefined();

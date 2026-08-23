@@ -85,7 +85,7 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     ).toBe(1);
     expect(
       result.fileIntents.filter(({ action }) => action === "create")
-    ).toHaveLength(10);
+    ).toHaveLength(8);
     expect(result.documentWrites[0]?.content).toContain("魔法规则");
     expect(result.entityChanges).toHaveLength(
       result.impact.createdEntityIds.length +

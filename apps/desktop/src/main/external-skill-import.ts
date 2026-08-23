@@ -1,7 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import {
-  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
   ExternalSkillSelectionResultSchema,
   parseSkillMarkdown,
   type ExternalSkillSelectionResult,
@@ -51,10 +50,6 @@ export async function readExternalSkills(
       }
       if (sourceKind === "directory") scanned += 1;
       skipped.unreadable += 1;
-      continue;
-    }
-    if (content.length > CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS) {
-      skipped.contentTooLong += 1;
       continue;
     }
     const parsed = parseSkillMarkdown(content);

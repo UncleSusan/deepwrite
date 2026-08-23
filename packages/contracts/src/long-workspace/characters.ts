@@ -5,8 +5,6 @@ import {
   LongCustomCharacterTypeIdSchema,
   LongMarkdownFileReferenceSchema,
   longCharacterCoreProfileFileId,
-  longCharacterCurrentStateFileId,
-  longCharacterHistoryFileId,
   longCharacterRelationshipsFileId
 } from "./ids";
 import { LongTitleSchema } from "./primitives";
@@ -72,34 +70,20 @@ export const LongCharacterSchema = z
   .strict();
 export type LongCharacter = z.infer<typeof LongCharacterSchema>;
 
-export const LongCharacterFileIndexEntrySchema = z
+const LongCharacterFileIndexEntryObjectSchema = z
   .object({
     characterId: LongCharacterIdSchema,
     coreProfile: LongMarkdownFileReferenceSchema,
-    relationships: LongMarkdownFileReferenceSchema,
-    currentState: LongMarkdownFileReferenceSchema,
-    history: LongMarkdownFileReferenceSchema
+    relationships: LongMarkdownFileReferenceSchema
   })
   .strict()
   .superRefine((entry, context) => {
     const expectedIds = [
       longCharacterCoreProfileFileId(entry.characterId),
-      longCharacterRelationshipsFileId(entry.characterId),
-      longCharacterCurrentStateFileId(entry.characterId),
-      longCharacterHistoryFileId(entry.characterId)
+      longCharacterRelationshipsFileId(entry.characterId)
     ];
-    const files = [
-      entry.coreProfile,
-      entry.relationships,
-      entry.currentState,
-      entry.history
-    ];
-    const fields = [
-      "coreProfile",
-      "relationships",
-      "currentState",
-      "history"
-    ] as const;
+    const files = [entry.coreProfile, entry.relationships];
+    const fields = ["coreProfile", "relationships"] as const;
     files.forEach((file, index) => {
       if (file.id !== expectedIds[index]) {
         context.addIssue({
@@ -111,6 +95,15 @@ export const LongCharacterFileIndexEntrySchema = z
       }
     });
   });
+export const LongCharacterFileIndexEntrySchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const {
+    currentState: _currentState,
+    history: _history,
+    ...current
+  } = value as Record<string, unknown>;
+  return current;
+}, LongCharacterFileIndexEntryObjectSchema);
 export type LongCharacterFileIndexEntry = z.infer<
   typeof LongCharacterFileIndexEntrySchema
 >;

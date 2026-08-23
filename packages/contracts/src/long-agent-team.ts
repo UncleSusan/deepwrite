@@ -20,15 +20,6 @@ function validateCompleteLongAgentTeams(
   context: z.core.$RefinementCtx<unknown>
 ): void {
   const ids = teams.map((team) => team.parentAgentId);
-  ids.forEach((id, index) => {
-    if (ids.indexOf(id) !== index) {
-      context.addIssue({
-        code: "custom",
-        path: ["teams", index, "parentAgentId"],
-        message: `Duplicate long parent agent team: ${id}`
-      });
-    }
-  });
   for (const id of LONG_AGENT_IDS) {
     if (!ids.includes(id)) {
       context.addIssue({

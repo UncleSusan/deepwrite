@@ -508,14 +508,6 @@ describe("long structure mutation builder", () => {
         relationships: {
           id: "file_character_generated:relationships",
           path: "long/characters/character_generated/relationships.md"
-        },
-        currentState: {
-          id: "file_character_generated:current-state",
-          path: "long/characters/character_generated/current-state.md"
-        },
-        history: {
-          id: "file_character_generated:history",
-          path: "long/characters/character_generated/history.md"
         }
       }
     });

@@ -121,6 +121,7 @@ export interface UpdateLongBookBindingsInput {
   expectedProjectRevision: number;
   linkedMaterialIdsByKind: LongProjectManifest["linkedMaterialIdsByKind"];
   linkedSkillIdsByKind: LongProjectManifest["linkedSkillIdsByKind"];
+  linkedResourceStageScopes?: LongProjectManifest["linkedResourceStageScopes"];
 }
 
 export interface RenameLongBookInput {

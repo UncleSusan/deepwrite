@@ -4,6 +4,7 @@ import type {
   ExportLongManuscriptResult,
   LinkedMaterialIdsByKind,
   LinkedSkillIdsByKind,
+  LongLinkedResourceStageScopes,
   LongApplyLegacySyncResult,
   LongBookSummary,
   LongChooseContinuationImportSourceResult,
@@ -80,18 +81,10 @@ export interface LongBookLifecycleSessionPort {
 }
 
 export interface LongBookLifecycleWorkflowPort {
-  blockWritingPlan(
-    action: string,
-    options?: {
-      readonly targetBookId?: string;
-      readonly allowPlanBook?: boolean;
-    }
-  ): boolean;
-  isWritingPlanActive(bookId: string): boolean;
   stopBookAgentRuns(bookId: string): Promise<void>;
   quarantineBook(bookId: string): MaybePromise<void>;
   reactivateBook(bookId: string): MaybePromise<void>;
-  disposeBookWorkflowState(bookId: string): MaybePromise<void>;
+  disposeBookProposalState(bookId: string): MaybePromise<void>;
 }
 
 export interface LongBookLifecycleConversationPort {
@@ -154,6 +147,7 @@ export interface LongBookLifecycleCoordinatorOptions {
 export interface LongBookBindingsUpdate {
   readonly linkedMaterialIdsByKind: LinkedMaterialIdsByKind;
   readonly linkedSkillIdsByKind: LinkedSkillIdsByKind;
+  readonly linkedResourceStageScopes?: LongLinkedResourceStageScopes;
 }
 
 interface PendingLease {
@@ -336,7 +330,6 @@ export function useLongBookLifecycleCoordinator(
       uiMessage.warning("浏览器预览不能保存长篇作品，请使用桌面客户端创建。");
       return Promise.resolve();
     }
-    if (workflow.blockWritingPlan("新建长篇")) return Promise.resolve();
     const lease = acquirePendingLease("mutation");
     if (!lease) return Promise.resolve();
     return runWithLease(lease, async () => {
@@ -361,7 +354,6 @@ export function useLongBookLifecycleCoordinator(
   }
 
   function openExistingLongBook(): Promise<void> {
-    if (workflow.blockWritingPlan("打开其他长篇")) return Promise.resolve();
     const api = options.api();
     if (!api) {
       uiMessage.warning("浏览器预览不能打开本地长篇，请使用桌面客户端。");
@@ -389,7 +381,6 @@ export function useLongBookLifecycleCoordinator(
   }
 
   function chooseContinuationImportSource(): Promise<void> {
-    if (workflow.blockWritingPlan("续写导入")) return Promise.resolve();
     const api = options.api();
     if (!api) {
       uiMessage.warning("浏览器预览不能导入本地 TXT 章节，请使用桌面客户端。");
@@ -427,7 +418,6 @@ export function useLongBookLifecycleCoordinator(
   }
 
   function importPortableLongBook(): Promise<void> {
-    if (workflow.blockWritingPlan("导入长篇")) return Promise.resolve();
     const api = options.api();
     if (!api) {
       uiMessage.warning("浏览器预览不能导入可移植长篇，请使用桌面客户端。");
@@ -462,7 +452,6 @@ export function useLongBookLifecycleCoordinator(
     if (!api || !preview || input.previewId !== preview.previewId) {
       return Promise.resolve();
     }
-    if (workflow.blockWritingPlan("续写导入")) return Promise.resolve();
     const lease = acquirePendingLease("mutation");
     if (!lease) return Promise.resolve();
     const requestId = requestForTarget(preview);
@@ -527,12 +516,6 @@ export function useLongBookLifecycleCoordinator(
     const api = options.api();
     if (!api) return Promise.resolve();
     const bookId = payload.node.longBookId;
-    if (workflow.isWritingPlanActive(bookId)) {
-      uiMessage.warning(
-        "当前长篇串行写作计划尚未完成；请先取消计划，再复制长篇。"
-      );
-      return Promise.resolve();
-    }
     const lease = acquirePendingLease("book-action");
     if (!lease) return Promise.resolve();
     return runWithLease(lease, async () => {
@@ -570,14 +553,6 @@ export function useLongBookLifecycleCoordinator(
     const api = options.api();
     if (!api) return Promise.resolve();
     const bookId = payload.node.longBookId;
-    if (
-      workflow.blockWritingPlan("同步旧版本", {
-        targetBookId: bookId,
-        allowPlanBook: true
-      })
-    ) {
-      return Promise.resolve();
-    }
     const lease = acquirePendingLease("mutation");
     const requestId = lease ? beginDialogRequest() : null;
     if (!lease || requestId === null) return Promise.resolve();
@@ -640,7 +615,6 @@ export function useLongBookLifecycleCoordinator(
     if (!api || !preview || !bookId || modules.length === 0) {
       return Promise.resolve();
     }
-    if (workflow.blockWritingPlan("同步旧版本")) return Promise.resolve();
     const lease = acquirePendingLease("mutation");
     if (!lease) return Promise.resolve();
     const requestId = requestForTarget(preview);
@@ -884,16 +858,6 @@ export function useLongBookLifecycleCoordinator(
     const bookId = payload.node.longBookId;
     const mode: LongBindingsDialogMode =
       payload.action === "bind-skill" ? "skill" : "material";
-    if (
-      workflow.blockWritingPlan(
-        mode === "skill"
-          ? "管理其他长篇的技能库绑定"
-          : "管理其他长篇的素材库绑定",
-        { targetBookId: bookId, allowPlanBook: true }
-      )
-    ) {
-      return Promise.resolve();
-    }
     const requestId = beginDialogRequest();
     if (requestId === null) return Promise.resolve();
     return runTracked(async () => {
@@ -940,9 +904,6 @@ export function useLongBookLifecycleCoordinator(
       return Promise.resolve();
     }
     const bindingLabel = target.mode === "skill" ? "技能库绑定" : "素材库绑定";
-    if (workflow.blockWritingPlan(`修改长篇${bindingLabel}`)) {
-      return Promise.resolve();
-    }
     const lease = acquirePendingLease("book-action");
     if (!lease) return Promise.resolve();
     return runWithLease(lease, async () => {
@@ -974,7 +935,12 @@ export function useLongBookLifecycleCoordinator(
           bookId: target.bookId,
           expectedProjectRevision: summary.projectRevision,
           linkedMaterialIdsByKind: payload.linkedMaterialIdsByKind,
-          linkedSkillIdsByKind: payload.linkedSkillIdsByKind
+          linkedSkillIdsByKind: payload.linkedSkillIdsByKind,
+          linkedResourceStageScopes: payload.linkedResourceStageScopes ??
+            summary.linkedResourceStageScopes ?? {
+              materials: {},
+              skills: {}
+            }
         });
         if (!leaseIsCurrent(lease)) return;
         publishOpenedBookResult(updated);
@@ -1004,14 +970,6 @@ export function useLongBookLifecycleCoordinator(
     payload: LongBookResourceNodeActionPayload
   ): Promise<void> {
     const bookId = payload.node.longBookId;
-    if (
-      workflow.blockWritingPlan("管理其他长篇的结构", {
-        targetBookId: bookId,
-        allowPlanBook: true
-      })
-    ) {
-      return Promise.resolve();
-    }
     const requestId = beginDialogRequest();
     if (requestId === null) return Promise.resolve();
     return runTracked(async () => {
@@ -1092,7 +1050,7 @@ export function useLongBookLifecycleCoordinator(
   async function disposeRemovedBookRuntime(bookId: string): Promise<unknown> {
     let cleanupError: unknown;
     try {
-      await workflow.disposeBookWorkflowState(bookId);
+      await workflow.disposeBookProposalState(bookId);
     } catch (error: unknown) {
       cleanupError = error;
     }
@@ -1108,12 +1066,6 @@ export function useLongBookLifecycleCoordinator(
     const api = options.api();
     const target = state.bookRemovalTarget.value;
     if (!api || !target) return Promise.resolve();
-    if (
-      workflow.isWritingPlanActive(target.bookId) &&
-      workflow.blockWritingPlan("移除或删除当前长篇")
-    ) {
-      return Promise.resolve();
-    }
     const lease = acquirePendingLease("book-action");
     if (!lease) return Promise.resolve();
     const requestId = requestForTarget(target);
@@ -1227,12 +1179,6 @@ export function useLongBookLifecycleCoordinator(
         openExportDialog(bookId, payload.node.label);
         return Promise.resolve();
       case "rename":
-        if (
-          workflow.isWritingPlanActive(bookId) &&
-          workflow.blockWritingPlan("修改当前长篇名称")
-        ) {
-          return Promise.resolve();
-        }
         openRenameDialog(bookId, payload.node.label);
         return Promise.resolve();
       case "manage-structure":
@@ -1242,12 +1188,6 @@ export function useLongBookLifecycleCoordinator(
         return openBindingsDialog(payload);
       case "unregister":
       case "delete":
-        if (
-          workflow.isWritingPlanActive(bookId) &&
-          workflow.blockWritingPlan("移除或删除当前长篇")
-        ) {
-          return Promise.resolve();
-        }
         openRemovalDialog(payload.action, bookId, payload.node.label);
         return Promise.resolve();
     }

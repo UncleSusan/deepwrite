@@ -18,9 +18,7 @@ export function longCharacterFiles(
     ...(index.characterOverview ? [index.characterOverview] : []),
     ...index.characterFiles.flatMap((entry) => [
       entry.coreProfile,
-      entry.relationships,
-      entry.currentState,
-      entry.history
+      entry.relationships
     ])
   ];
 }

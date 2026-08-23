@@ -105,7 +105,6 @@ export function toSubagentRuntimeEvents(
       event.type === "long.worldbuilding_file_proposal" ||
       event.type === "long.character_file_proposal" ||
       event.type === "long.continuity_file_proposal" ||
-      event.type === "long.chapter_dispatch_proposal" ||
       event.type === "long.chapter_write_proposal" ||
       event.type === "long.ledger_commit_proposal"
   );

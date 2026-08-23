@@ -14,7 +14,8 @@ import {
   markUpdated,
   operationError,
   registerProvisionalId,
-  updateOrdersById
+  updateOrdersById,
+  nextOrder
 } from "./state";
 
 export function applyCharacterOperation(
@@ -29,7 +30,11 @@ export function applyCharacterOperation(
         operation.characterType.id,
         "Character type"
       );
-      workspace.characterTypes.push(structuredClone(operation.characterType));
+      const characterType = structuredClone(operation.characterType);
+      characterType.order = nextOrder(
+        workspace.characterTypes.map(({ order }) => order)
+      );
+      workspace.characterTypes.push(characterType);
       markCreated(state, operation.characterType.id);
       registerProvisionalId(
         state,
@@ -135,12 +140,16 @@ export function applyCharacterOperation(
       }
       const files = [
         operation.files.coreProfile,
-        operation.files.relationships,
-        operation.files.currentState,
-        operation.files.history
+        operation.files.relationships
       ];
       ensureFilesAvailable(state, files);
-      workspace.characters.push(structuredClone(operation.character));
+      const character = structuredClone(operation.character);
+      character.order = nextOrder(
+        workspace.characters
+          .filter((candidate) => candidate.group === character.group)
+          .map(({ order }) => order)
+      );
+      workspace.characters.push(character);
       workspace.characterFiles.push(structuredClone(operation.files));
       files.forEach((file) =>
         addFileCreateIntent(

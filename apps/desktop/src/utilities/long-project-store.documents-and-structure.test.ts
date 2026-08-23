@@ -44,6 +44,13 @@ describe("LongProjectStore: documents-and-structure", () => {
           plot: [],
           style: ["skill-long-style"],
           other: []
+        },
+        linkedResourceStageScopes: {
+          materials: {
+            "material-long-plot": ["plot_design"],
+            "missing-material": ["worldbuilding", "plot_design"]
+          },
+          skills: { "skill-long-style": ["draft"] }
         }
       }
     );
@@ -61,6 +68,13 @@ describe("LongProjectStore: documents-and-structure", () => {
     expect(updated.book.linkedSkillIdsByKind.style).toEqual([
       "skill-long-style"
     ]);
+    expect(updated.book.linkedResourceStageScopes).toEqual({
+      materials: {
+        "material-long-plot": ["plot_design"],
+        "missing-material": ["worldbuilding", "plot_design"]
+      },
+      skills: { "skill-long-style": ["draft"] }
+    });
     await expect(
       projectStore.updateBindings(created.projectDirectory, {
         expectedProjectRevision: created.summary.projectRevision,

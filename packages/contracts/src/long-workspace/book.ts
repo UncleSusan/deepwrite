@@ -18,10 +18,68 @@ import {
   LongWorkspaceNavigationSnapshotSchema
 } from "./navigation";
 import {
+  LONG_WORKSPACE_ROOTS,
+  LongWorkspaceRootSchema,
+  type LongWorkspaceRoot
+} from "./agents";
+import {
   LongRevisionSchema,
   LongTimestampSchema,
   LongTitleSchema
 } from "./primitives";
+
+const LongResourceStageListSchema = z
+  .array(LongWorkspaceRootSchema)
+  .min(1)
+  .max(LONG_WORKSPACE_ROOTS.length)
+  .superRefine((roots, context) => {
+    const seen = new Set<LongWorkspaceRoot>();
+    roots.forEach((root, index) => {
+      if (seen.has(root)) {
+        context.addIssue({
+          code: "custom",
+          path: [index],
+          message: `Duplicate long resource stage: ${root}`
+        });
+      }
+      seen.add(root);
+    });
+  });
+
+const LongResourceStageScopeMapSchema = z.record(
+  z.string().trim().min(1).max(512),
+  LongResourceStageListSchema
+);
+
+/**
+ * Per-library stage overrides. Missing libraries intentionally mean all long
+ * workspace stages so existing projects retain their previous behaviour.
+ */
+export const LongLinkedResourceStageScopesSchema = z
+  .object({
+    materials: LongResourceStageScopeMapSchema,
+    skills: LongResourceStageScopeMapSchema
+  })
+  .strict();
+export type LongLinkedResourceStageScopes = z.infer<
+  typeof LongLinkedResourceStageScopesSchema
+>;
+
+export const EMPTY_LONG_LINKED_RESOURCE_STAGE_SCOPES = {
+  materials: {},
+  skills: {}
+} as const satisfies LongLinkedResourceStageScopes;
+
+export function longLinkedResourceIsEnabledForStage(
+  scopes: LongLinkedResourceStageScopes | undefined,
+  domain: "material" | "skill",
+  libraryId: string,
+  stage: LongWorkspaceRoot
+): boolean {
+  const configured =
+    scopes?.[domain === "material" ? "materials" : "skills"][libraryId];
+  return configured === undefined || configured.includes(stage);
+}
 
 const LongBookSharedShape = {
   id: LongBookIdSchema,
@@ -31,6 +89,7 @@ const LongBookSharedShape = {
   status: z.enum(["editing", "completed"]),
   linkedMaterialIdsByKind: LinkedMaterialIdsByKindSchema,
   linkedSkillIdsByKind: LinkedSkillIdsByKindSchema,
+  linkedResourceStageScopes: LongLinkedResourceStageScopesSchema.optional(),
   createdAt: LongTimestampSchema,
   updatedAt: LongTimestampSchema
 } as const;
@@ -119,6 +178,7 @@ export function createLongBookSummary(book: LongBook): LongBookSummary {
     status: book.status,
     linkedMaterialIdsByKind: book.linkedMaterialIdsByKind,
     linkedSkillIdsByKind: book.linkedSkillIdsByKind,
+    linkedResourceStageScopes: book.linkedResourceStageScopes,
     projectRevision: book.projectRevision ?? book.workspaceIndex.revision,
     createdAt: book.createdAt,
     updatedAt: book.updatedAt,

@@ -143,6 +143,7 @@ export {
   applyLongWorkspaceOperations,
   previewLongWorkspaceOperations
 } from "./long-workspace-operations";
+export { MARKETPLACE_CONTENT_MAX_CHARACTERS } from "./marketplace";
 export {
   DEFAULT_LONG_AGENT_PROFILES,
   DEFAULT_LONG_CHARACTER_TYPES,
@@ -158,8 +159,8 @@ export {
   LongWorldbuildingTextCategorySchema,
   createEmptyLongMarkdownFileReference,
   createLongWorkspaceNavigationSnapshot,
+  EMPTY_LONG_LINKED_RESOURCE_STAGE_SCOPES,
   getDefaultLongAgentProfile,
-  longAgentAcceptsWorldbuildingDirectory,
   longChapterBodyFileId,
   longChapterCardFileId,
   longChapterCharacterStateFileId,
@@ -180,6 +181,8 @@ export {
   longWorldbuildingItemFileId,
   longWorldbuildingOverviewContentPath,
   longWorldbuildingOverviewFileId,
+  longLinkedResourceIsEnabledForStage,
+  LONG_WORKSPACE_ROOTS,
   resolveLongAgentIdForRoot
 } from "./long-workspace";
 export {

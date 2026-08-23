@@ -34,10 +34,7 @@ export function createLongStructureDelete(
     treeItemDeleteTarget: longTreeItemDelete,
     selectedResourceId
   } = state;
-  const {
-    blockWritingPlan: blockActiveLongWritingPlan,
-    selectWorkspaceFile: selectLongWorkspaceFile
-  } = session;
+  const { selectWorkspaceFile: selectLongWorkspaceFile } = session;
   const resourceNode = resources.node;
   const selectResource = resources.select;
 
@@ -213,7 +210,7 @@ export function createLongStructureDelete(
 
   async function confirmDeleteLongDraftSection(): Promise<void> {
     const pending = longDraftSectionDelete.value;
-    if (!pending || blockActiveLongWritingPlan("删除小节")) return;
+    if (!pending) return;
     await deleteLongNavigationStructure(
       pending.bookId,
       {

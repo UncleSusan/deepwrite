@@ -333,6 +333,10 @@ export function useWorkspaceDialogModuleCoordinator(
           skills: snapshot?.skills ?? [],
           linkedMaterialIdsByKind: summary.linkedMaterialIdsByKind,
           linkedSkillIdsByKind: summary.linkedSkillIdsByKind,
+          linkedResourceStageScopes: summary.linkedResourceStageScopes ?? {
+            materials: {},
+            skills: {}
+          },
           submitting: options.longLifecycle.bookActionPending.value
         };
       }

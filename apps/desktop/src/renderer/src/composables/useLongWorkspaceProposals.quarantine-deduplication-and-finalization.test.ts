@@ -2,7 +2,6 @@ import {
   chapterEvent,
   continuityWriteEvent,
   describe,
-  dispatchEvent,
   emptyImpact,
   envelopeContext,
   expect,
@@ -37,17 +36,21 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
 
     test.controller.discardBook("longbook_test");
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
-    expect(await test.controller.handleEvent(dispatchEvent())).toBe(false);
+    expect(await test.controller.handleEvent(continuityWriteEvent())).toBe(
+      false
+    );
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
 
     test.controller.activateBook("longbook_test");
-    expect(await test.controller.handleEvent(dispatchEvent())).toBe(true);
+    expect(await test.controller.handleEvent(continuityWriteEvent())).toBe(
+      true
+    );
     expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
   });
 
   it("quarantines a canceled session, removes queued proposals, and rejects late ones", async () => {
     const test = harness();
-    await test.controller.handleEvent(dispatchEvent());
+    await test.controller.handleEvent(continuityWriteEvent());
     expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
 
     test.controller.quarantineSession(
@@ -55,21 +58,23 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
       envelopeContext.sessionId
     );
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
-    expect(await test.controller.handleEvent(dispatchEvent())).toBe(false);
+    expect(await test.controller.handleEvent(continuityWriteEvent())).toBe(
+      false
+    );
     expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
 
-    const originalDispatchEvent = dispatchEvent();
+    const originalContinuityEvent = continuityWriteEvent();
     const otherSessionEvent = systemEvent({
-      ...originalDispatchEvent,
-      id: "event_dispatch_other_session",
+      ...originalContinuityEvent,
+      id: "event_continuity_other_session",
       context: {
-        ...originalDispatchEvent.context,
+        ...originalContinuityEvent.context,
         sessionId: "session_long_other"
       },
       payload: {
-        ...originalDispatchEvent.payload,
+        ...originalContinuityEvent.payload,
         sessionId: "session_long_other",
-        toolCallId: "tool_dispatch_other_session"
+        toolCallId: "tool_continuity_other_session"
       }
     });
     expect(await test.controller.handleEvent(otherSessionEvent)).toBe(true);
@@ -164,24 +169,5 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
 
     await test.controller.handleEvent(ledgerEvent());
     expect(test.commitChapter).toHaveBeenCalledTimes(1);
-  });
-
-  it("delegates an approved dispatch to the serial orchestrator without writing directly", async () => {
-    const test = harness();
-    await test.controller.handleEvent(dispatchEvent());
-    await test.controller.approve("longbook_test", "event_dispatch");
-
-    expect(test.onDispatchApproved).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "long.chapter_dispatch_proposal",
-        payload: expect.objectContaining({
-          chapterCardId: "chapter_one"
-        })
-      })
-    );
-    expect(test.applyOperations).not.toHaveBeenCalled();
-    expect(test.writeChapter).not.toHaveBeenCalled();
-    expect(test.commitChapter).not.toHaveBeenCalled();
-    expect(test.onApplied).not.toHaveBeenCalled();
   });
 });

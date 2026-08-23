@@ -337,7 +337,7 @@ const currentNavigationDeleteTarget =
         id: character.id,
         title: character.name,
         label: "人物",
-        description: `将永久删除该人物的核心档案、人物关系、当前状态和历史轨迹${referenceCopy}。`
+        description: `将永久删除该人物的核心档案和人物关系${referenceCopy}。`
       };
     }
     if (currentIsBookLineWorkspace.value && currentBookLineVolume.value) {
@@ -2220,7 +2220,7 @@ onBeforeUnmount(() => {
               {{ currentDocumentTitle }}
             </h1>
             <textarea
-              v-if="viewMode === 'edit' && !currentReadOnly"
+              v-if="viewMode === 'edit'"
               ref="editorInput"
               :value="currentVisibleContent"
               class="long-document-editor"

@@ -152,11 +152,19 @@ export async function rollbackLastCommit(
         record.fileChanges.map(({ fileId }) => fileId)
       );
       for (const entry of loaded.index.characterFiles) {
-        for (const reference of [
-          entry.relationships,
-          entry.currentState,
-          entry.history
-        ]) {
+        for (const reference of [entry.relationships]) {
+          const file = await loadIndexedFile(loaded, reference.id);
+          if (!changedFileIds.has(reference.id)) {
+            newlyUnpinnedChecks.push({
+              action: "check",
+              path: file.reference.path,
+              expectedSha256: file.disk.sha256
+            });
+          }
+        }
+      }
+      for (const entry of chapterEntry.characterContinuity) {
+        for (const reference of [entry.currentState, entry.history]) {
           const file = await loadIndexedFile(loaded, reference.id);
           if (!changedFileIds.has(reference.id)) {
             newlyUnpinnedChecks.push({
@@ -238,6 +246,8 @@ export async function rollbackLastCommit(
         path: entry.relationships.path,
         role: "relationships"
       });
+    }
+    for (const entry of chapterEntry.characterContinuity) {
       rollbackContinuityRoles.set(entry.currentState.id, {
         path: entry.currentState.path,
         role: "current-state"

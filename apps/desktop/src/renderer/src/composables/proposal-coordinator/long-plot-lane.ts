@@ -14,6 +14,7 @@ import {
 } from "../../utils/agentEditReview";
 import { buildAgentTextDiff } from "../../utils/agentTextDiff";
 import type { AgentConversationController } from "../useAgentConversation";
+import { longProjectRevisionMatchesProposalChain } from "./long-project-revision-chain";
 import type {
   AgentEditReviewRequest,
   LongPlotDesignMutationEvent,
@@ -29,7 +30,7 @@ export function createLongPlotLane(ctx: ProposalLaneContext) {
     longConversationForProposalEvent,
     activeLongBookId,
     longBooks,
-    refreshLongWritingSaveBarrier,
+    refreshLongProposalWorkspace,
     saveActiveLongEditorChanges
   } = ctx;
 
@@ -181,19 +182,13 @@ export function createLongPlotLane(ctx: ProposalLaneContext) {
         }
       }
       const latest = await api.getWorkspaceIndex({ bookId: target.bookId });
-      const predecessor = proposal.predecessorProposalId
-        ? conversation.getEditProposal(
-            request.runId,
-            proposal.predecessorProposalId
-          )
-        : undefined;
-      const predecessorProjectRevision =
-        predecessor?.status === "accepted"
-          ? predecessor.longPlotDesignTarget?.appliedProjectRevision
-          : undefined;
       if (
-        latest.projectRevision !== target.baseProjectRevision &&
-        latest.projectRevision !== predecessorProjectRevision
+        !longProjectRevisionMatchesProposalChain({
+          proposals: conversation.listEditProposals(request.runId),
+          proposal,
+          baseProjectRevision: target.baseProjectRevision,
+          latestProjectRevision: latest.projectRevision
+        })
       ) {
         const message =
           "剧情设计已在审阅期间发生变化，未覆盖最新结构。请基于当前内容重新生成。";
@@ -229,8 +224,14 @@ export function createLongPlotLane(ctx: ProposalLaneContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        longPlotDesignTarget: {
+          ...target,
+          appliedProjectRevision: result.projectRevision
+        }
+      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
-      const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+      const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,

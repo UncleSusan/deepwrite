@@ -16,8 +16,6 @@ import {
   longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
-  longCharacterCurrentStateFileId,
-  longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longLedgerCommitFileId,
   longWorldbuildingContentPath,
@@ -495,7 +493,7 @@ function buildCharacterOverviewMarkdown(
         const aliases = character.aliases.length
           ? `；别名：${character.aliases.join("、")}`
           : "";
-        return `- character_id=\`${character.id}\` ${character.name}${aliases}`;
+        return `- id=\`${character.id}\` ${character.name}${aliases}`;
       });
     return [`## ${label}`, "", ...(rows.length ? rows : ["（暂无）"])].join(
       "\n"
@@ -504,7 +502,7 @@ function buildCharacterOverviewMarkdown(
   return [
     "# 人物概览",
     "",
-    "按分组统计当前阶段全部人物的简单信息；智能体应先读本概览，再按 character_id 直接读取人物文档。",
+    "按分组统计当前阶段全部人物的简单信息；智能体应先读本概览，再按 id 直接读取人物文档。",
     "",
     ...sections,
     ""
@@ -1722,16 +1720,6 @@ export function createWriteClawLongImportPlan(
           longCharacterRelationshipsFileId(characterId),
           characterPath(characterId, "relationships.md"),
           clippedTextDocument(character.relationships, warnings, "人物关系")
-        ),
-        currentState: documents.add(
-          longCharacterCurrentStateFileId(characterId),
-          characterPath(characterId, "current-state.md"),
-          clippedTextDocument(character.current_state, warnings, "人物当前状态")
-        ),
-        history: documents.add(
-          longCharacterHistoryFileId(characterId),
-          characterPath(characterId, "history.md"),
-          clippedTextDocument(character.history, warnings, "人物历史")
         )
       });
     });

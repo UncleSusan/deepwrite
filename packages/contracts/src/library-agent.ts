@@ -1,7 +1,5 @@
 import { z } from "zod";
 import {
-  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
-  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
   LibraryTypeSchema,
   MaterialLibraryKindSchema,
   MaterialStageIdSchema,
@@ -17,10 +15,10 @@ export const LibraryAgentDomainSchema = z.enum(LIBRARY_AGENT_DOMAINS);
 export type LibraryAgentDomain = z.infer<typeof LibraryAgentDomainSchema>;
 
 export const LIBRARY_AGENT_MAX_ENTRIES = 128;
-export const LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS =
-  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS;
-export const LIBRARY_AGENT_ENTRY_MAX_CHARACTERS =
-  CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS;
+/** Hard cap for library-agent overview snapshots and writes. */
+export const LIBRARY_AGENT_OVERVIEW_MAX_CHARACTERS = 100_000;
+/** Hard cap for library-agent entry snapshots and writes. */
+export const LIBRARY_AGENT_ENTRY_MAX_CHARACTERS = 100_000;
 export const LIBRARY_AGENT_TOTAL_SNAPSHOT_MAX_CHARACTERS = 320_000;
 
 const LibraryAgentSystemPromptSchema = z

@@ -128,13 +128,6 @@ export function useLongStructureTransactionsCoordinator(
         options.notifications.warning("当前小节尚未准备好。");
         return;
       }
-      if (
-        session.blockWritingPlan(
-          action === "delete" ? "删除小节" : "调整小节顺序"
-        )
-      ) {
-        return;
-      }
       if (state.activeBookId.value !== bookId) {
         if (!(await session.saveActiveEditorBeforeLeaving(bookId))) return;
         await session.openBook(bookId);

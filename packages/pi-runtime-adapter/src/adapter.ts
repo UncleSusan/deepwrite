@@ -21,7 +21,9 @@ import {
 import type {
   AgentProviderRuntimeConfig,
   AgentRuntimeRef,
-  ModelConnectionTestResult
+  ModelConnectionTestResult,
+  SessionUserInputResponseAcceptedPayload,
+  SessionUserInputResponsePayload
 } from "@deepwrite/contracts";
 import {
   runAgentWithTurnRetries,
@@ -67,8 +69,10 @@ import type {
   AgentRunInput,
   AgentRuntime,
   AgentRuntimeEvent,
+  AgentUserInputRequester,
   PiRuntimeAdapterOptions
 } from "./runtime-types";
+import { AgentUserInputBroker } from "./user-input-broker";
 import {
   buildScriptWorkspaceTools,
   buildShortWorkspaceTools,
@@ -182,6 +186,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
   private readonly retryPolicy: AgentTurnRetryPolicyOptions | undefined;
   private readonly toolExecutionHooks: AgentToolExecutionHooks;
   private readonly conversationAgents = new Map<string, Agent>();
+  private readonly userInputBroker = new AgentUserInputBroker();
 
   constructor(options: PiRuntimeAdapterOptions = {}) {
     this.idleTimeoutMs = options.idleTimeoutMs ?? 5 * 60_000;
@@ -208,6 +213,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       };
     }
     return { ...DEEPWRITE_FAUX_RUNTIME };
+  }
+
+  resolveUserInput(
+    response: SessionUserInputResponsePayload
+  ): SessionUserInputResponseAcceptedPayload {
+    return this.userInputBroker.resolve(response);
   }
 
   async testConnection(
@@ -248,6 +259,45 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     const portableToolSchemaProfile = resolvePortableToolSchemaProfile(
       input.workspaceContext
     );
+    let userInputRequestSequence = 0;
+    const requestUserInput: AgentUserInputRequester = async (
+      request,
+      signal
+    ) => {
+      const requestId = `${input.runId}:user-input:${++userInputRequestSequence}`;
+      const response = this.userInputBroker.wait(
+        {
+          sessionId: input.sessionId,
+          runId: input.runId,
+          requestId,
+          questions: request.questions
+        },
+        signal
+      );
+      userInputWaiting += 1;
+      if (idleTimeout) {
+        clearTimeout(idleTimeout);
+        idleTimeout = undefined;
+      }
+      emit({
+        type: "agent.user_input_requested",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        payload: {
+          requestId,
+          toolCallId: request.toolCallId,
+          source: request.source,
+          questions: request.questions,
+          runtime
+        }
+      });
+      try {
+        return await response;
+      } finally {
+        userInputWaiting = Math.max(0, userInputWaiting - 1);
+        if (userInputWaiting === 0) scheduleIdleTimeout();
+      }
+    };
     let model: Model<Api>;
     let streamFn: StreamFn;
     let effectiveThinkingLevel: PiThinkingLevel;
@@ -358,7 +408,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
           })
         : [];
     };
-    const buildLongTools = (): AgentTool[] =>
+    const buildLongTools = (includeAskUserQuestion = true): AgentTool[] =>
       longWorkspace && input.longAgentProfile
         ? buildLongWorkspaceTools({
             workspace: longWorkspace,
@@ -370,7 +420,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             attachedMaterials: input.workspaceContext?.attachedMaterials,
             ...(input.longCommandExecutor
               ? { executor: input.longCommandExecutor }
-              : {})
+              : {}),
+            requestUserInput,
+            includeAskUserQuestion
           })
         : [];
     let tools: AgentTool[] =
@@ -443,7 +495,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         },
         buildChildTools:
           longWorkspace && input.longAgentProfile
-            ? buildLongTools
+            ? () => buildLongTools(false)
             : buildWritingTools,
         ...(scriptWorkspace
           ? {
@@ -547,6 +599,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     let evaluationSnapshotEmitter: (() => void) | undefined;
     let modelRequestInFlight = false;
     let retryWaiting = false;
+    let userInputWaiting = 0;
     let idleModelRequestTimedOut = false;
     let currentTurnAttempt = 0;
     let currentTurnMaxAttempts = 1;
@@ -695,6 +748,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       pendingToolDeltas.clear();
       streamedToolArguments.clear();
       activeSubagents.clear();
+      this.userInputBroker.cancelRun(input.runId);
       retryWaitController.abort();
       if (abortListener && input.signal) {
         input.signal.removeEventListener("abort", abortListener);
@@ -729,6 +783,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         settled ||
         terminalEmitted ||
         retryWaiting ||
+        userInputWaiting > 0 ||
         this.idleTimeoutMs <= 0
       ) {
         return;

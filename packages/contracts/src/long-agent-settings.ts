@@ -16,15 +16,6 @@ function validateCompleteLongAgentSet(
   context: z.core.$RefinementCtx<unknown>
 ): void {
   const ids = agents.map((agent) => agent.id);
-  ids.forEach((id, index) => {
-    if (ids.indexOf(id) !== index) {
-      context.addIssue({
-        code: "custom",
-        path: ["agents", index, "id"],
-        message: `Duplicate long workspace agent profile: ${id}`
-      });
-    }
-  });
   for (const id of LONG_AGENT_IDS) {
     if (!ids.includes(id)) {
       context.addIssue({

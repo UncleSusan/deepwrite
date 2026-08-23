@@ -6,13 +6,16 @@ import source from "./LongWorkspaceEditor.vue?raw";
 import structureSource from "../composables/useLongEditorStructureSelection.ts?raw";
 
 describe("LongWorkspaceEditor continuity text-file integration", () => {
-  it("uses the ordinary read-only Markdown preview instead of a continuity dashboard", () => {
+  it("uses the ordinary text surface instead of a continuity dashboard", () => {
     expect(source).not.toContain(
       'import LongContinuityWorkspace from "./LongContinuityWorkspace.vue"'
     );
     expect(source).not.toContain("<LongContinuityWorkspace");
     expect(source).toContain("<MarkdownContent");
-    expect(source).toContain(`v-if="viewMode === 'edit' && !currentReadOnly"`);
+    expect(source).toContain(`v-if="viewMode === 'edit'"`);
+    expect(source).toContain(
+      ':readonly="currentReadOnly || isDocumentContentBusy"'
+    );
     expect(source).toContain('class="long-document-preview"');
   });
 

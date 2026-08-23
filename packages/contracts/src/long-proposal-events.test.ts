@@ -3,7 +3,6 @@ import {
   LongChapterWriteProposalEventEnvelopeSchema,
   LongCharacterFileProposalEventEnvelopeSchema,
   LongContinuityFileProposalEventEnvelopeSchema,
-  LongChapterDispatchProposalEventEnvelopeSchema,
   LongLedgerCommitProposalEventEnvelopeSchema,
   LongMutationProposalEventEnvelopeSchema,
   LongWorldbuildingFileProposalEventEnvelopeSchema,
@@ -34,7 +33,7 @@ const common = {
   runId: context.runId,
   toolCallId: "tool-long-proposal",
   bookId: "longbook_proposal",
-  agentId: "setting" as const,
+  agentId: "long" as const,
   summary: "形成待审阅提案。",
   runtime
 };
@@ -59,7 +58,7 @@ describe("long proposal event contracts", () => {
       "long.continuity_file_proposal",
       {
         ...common,
-        agentId: "continuity_ledger" as const,
+        agentId: "long" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -103,7 +102,7 @@ describe("long proposal event contracts", () => {
     expect(
       LongContinuityFileProposalEventEnvelopeSchema.parse(proposal).payload
     ).toMatchObject({
-      agentId: "continuity_ledger",
+      agentId: "long",
       files: [
         {
           role: "foreshadowing_changes",
@@ -124,7 +123,7 @@ describe("long proposal event contracts", () => {
       "long.continuity_file_proposal",
       {
         ...common,
-        agentId: "continuity_ledger" as const,
+        agentId: "long" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -201,7 +200,7 @@ describe("long proposal event contracts", () => {
       "long.chapter_write_proposal",
       {
         ...common,
-        agentId: "draft" as const,
+        agentId: "long" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -284,36 +283,11 @@ describe("long proposal event contracts", () => {
       },
       { id: "event-long-worldbuilding-file", context }
     );
-    const dispatch = createEnvelope(
-      "long.chapter_dispatch_proposal",
-      {
-        ...common,
-        agentId: "draft" as const,
-        scope: "chapter" as const,
-        chapterCardId: "chapter_one",
-        title: "第一章",
-        chapters: [
-          {
-            chapterCardId: "chapter_one",
-            title: "第一章",
-            status: "empty" as const,
-            missingFiles: [
-              "body" as const,
-              "character_state" as const,
-              "handoff" as const
-            ]
-          }
-        ],
-        workspaceRevision: 7,
-        projectRevision: 11
-      },
-      { id: "event-long-dispatch", context }
-    );
     const characterFile = createEnvelope(
       "long.character_file_proposal",
       {
         ...common,
-        agentId: "setting" as const,
+        agentId: "long" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -354,7 +328,7 @@ describe("long proposal event contracts", () => {
       "long.ledger_commit_proposal",
       {
         ...common,
-        agentId: "continuity_ledger" as const,
+        agentId: "long" as const,
         input: {
           bookId: common.bookId,
           chapterCardId: "chapter_one",
@@ -407,7 +381,7 @@ describe("long proposal event contracts", () => {
     expect(
       LongCharacterFileProposalEventEnvelopeSchema.parse(characterFile).payload
     ).toMatchObject({
-      agentId: "setting",
+      agentId: "long",
       files: [
         {
           characterId: "character_lan",
@@ -428,40 +402,19 @@ describe("long proposal event contracts", () => {
       }
     });
     expect(
-      LongChapterDispatchProposalEventEnvelopeSchema.parse(dispatch).payload
-    ).toMatchObject({
-      chapterCardId: "chapter_one",
-      title: "第一章",
-      scope: "chapter",
-      chapters: [
-        expect.objectContaining({
-          chapterCardId: "chapter_one",
-          status: "empty"
-        })
-      ],
-      workspaceRevision: 7,
-      projectRevision: 11
-    });
-    expect(
       LongLedgerCommitProposalEventEnvelopeSchema.parse(ledger).payload.input
     ).toMatchObject({
       chapterCardId: "chapter_one",
       fileUpdates: []
     });
     expect(
-      [
-        mutation,
-        worldbuildingFile,
-        characterFile,
-        dispatch,
-        chapter,
-        ledger
-      ].map((event) => SystemEventEnvelopeSchema.parse(event).type)
+      [mutation, worldbuildingFile, characterFile, chapter, ledger].map(
+        (event) => SystemEventEnvelopeSchema.parse(event).type
+      )
     ).toEqual([
       "long.mutation_proposal",
       "long.worldbuilding_file_proposal",
       "long.character_file_proposal",
-      "long.chapter_dispatch_proposal",
       "long.chapter_write_proposal",
       "long.ledger_commit_proposal"
     ]);
@@ -472,7 +425,7 @@ describe("long proposal event contracts", () => {
       "long.chapter_write_proposal",
       {
         ...common,
-        agentId: "draft" as const,
+        agentId: "long" as const,
         batch: {
           baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
@@ -513,7 +466,7 @@ describe("long proposal event contracts", () => {
       "long.ledger_commit_proposal",
       {
         ...common,
-        agentId: "continuity_ledger" as const,
+        agentId: "long" as const,
         input: {
           bookId: common.bookId,
           chapterCardId: "chapter_one",

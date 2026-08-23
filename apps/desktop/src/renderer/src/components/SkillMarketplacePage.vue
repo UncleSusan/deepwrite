@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import type {
-  CatalogSnapshot,
-  MarketplaceContentDetail,
-  MarketplaceContentRef,
-  MarketplaceContentSummary,
-  MarketplaceContentType,
-  MarketplaceInstallPreview,
-  MarketplaceLibraryType,
-  MarketplaceListFilter,
-  MarketplacePublishEntry,
-  MarketplacePublishGroupLibrary,
-  MarketplacePublishInput,
-  MarketplaceSession,
-  MarketplaceSkillDetail,
-  MarketplaceSkillKind,
-  MarketplaceSkillStage
+import {
+  MARKETPLACE_CONTENT_MAX_CHARACTERS,
+  type CatalogSnapshot,
+  type MarketplaceContentDetail,
+  type MarketplaceContentRef,
+  type MarketplaceContentSummary,
+  type MarketplaceContentType,
+  type MarketplaceInstallPreview,
+  type MarketplaceLibraryType,
+  type MarketplaceListFilter,
+  type MarketplacePublishEntry,
+  type MarketplacePublishGroupLibrary,
+  type MarketplacePublishInput,
+  type MarketplaceSession,
+  type MarketplaceSkillDetail,
+  type MarketplaceSkillKind,
+  type MarketplaceSkillStage
 } from "@deepwrite/contracts";
 import AppIcon from "./AppIcon.vue";
 import MarkdownContent from "./MarkdownContent.vue";
@@ -1625,7 +1626,11 @@ onMounted(() => {
           </label>
           <label class="full-field">
             <span>简介</span>
-            <textarea v-model="publishOverview" rows="3" maxlength="40000" />
+            <textarea
+              v-model="publishOverview"
+              rows="3"
+              :maxlength="MARKETPLACE_CONTENT_MAX_CHARACTERS"
+            />
           </label>
 
           <template v-if="publishType === 'skill'">
@@ -1636,7 +1641,11 @@ onMounted(() => {
             </div>
             <label class="full-field">
               <span>技能正文</span>
-              <textarea v-model="publishBody" rows="12" maxlength="40000" />
+              <textarea
+                v-model="publishBody"
+                rows="12"
+                :maxlength="MARKETPLACE_CONTENT_MAX_CHARACTERS"
+              />
             </label>
           </template>
 
@@ -1647,7 +1656,11 @@ onMounted(() => {
             <span>技能条目（保持本地顺序）</span>
             <article v-for="(entry, index) in publishEntries" :key="index">
               <strong>{{ index + 1 }}. {{ entry.title }}</strong>
-              <textarea v-model="entry.content" rows="5" maxlength="40000" />
+              <textarea
+                v-model="entry.content"
+                rows="5"
+                :maxlength="MARKETPLACE_CONTENT_MAX_CHARACTERS"
+              />
             </article>
           </div>
 

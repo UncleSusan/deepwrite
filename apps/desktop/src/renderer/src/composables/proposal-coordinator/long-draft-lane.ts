@@ -26,8 +26,7 @@ export function createLongDraftLane(ctx: ProposalLaneContext) {
     longConversationForProposalEvent,
     activeLongBookId,
     longBooks,
-    longWritingOrchestrator,
-    refreshLongWritingSaveBarrier,
+    refreshLongProposalWorkspace,
     saveActiveLongEditorChanges
   } = ctx;
 
@@ -193,13 +192,7 @@ export function createLongDraftLane(ctx: ProposalLaneContext) {
           proposedText: undefined,
           statusMessage: "该章节正文变更已经存在于本地 Markdown 中。"
         });
-        const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
-        if (refreshed) {
-          await longWritingOrchestrator.handleChapterSaved(
-            target.bookId,
-            target.file.chapterCardId
-          );
-        }
+        await refreshLongProposalWorkspace(target.bookId);
         return;
       }
       const predecessor = proposal.predecessorProposalId
@@ -231,7 +224,7 @@ export function createLongDraftLane(ctx: ProposalLaneContext) {
           status: "conflict",
           statusMessage: message
         });
-        await refreshLongWritingSaveBarrier(target.bookId);
+        await refreshLongProposalWorkspace(target.bookId);
         uiMessage.warning(message);
         return;
       }
@@ -258,8 +251,14 @@ export function createLongDraftLane(ctx: ProposalLaneContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      conversation.updateEditProposal(request.runId, request.proposalId, {
+        longDraftTarget: {
+          ...target,
+          appliedProjectRevision: result.projectRevision
+        }
+      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
-      const refreshed = await refreshLongWritingSaveBarrier(target.bookId);
+      const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
@@ -271,12 +270,6 @@ export function createLongDraftLane(ctx: ProposalLaneContext) {
           ? `${automatic ? "已自动批准并" : "已接受并"}保存章节正文到本地 Markdown。`
           : "章节正文已保存，但界面刷新失败；请手动刷新长篇工作区。"
       });
-      if (refreshed) {
-        await longWritingOrchestrator.handleChapterSaved(
-          target.bookId,
-          target.file.chapterCardId
-        );
-      }
       if (!automatic) {
         uiMessage.success("已接受并保存章节正文");
       }

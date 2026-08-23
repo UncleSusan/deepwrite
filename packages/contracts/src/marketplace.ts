@@ -6,6 +6,7 @@ const MarketplaceTitleSchema = z.string().trim().min(1).max(256);
 const MarketplaceTimestampSchema = z.string().datetime();
 
 export const MARKETPLACE_IPC_CHANNEL = "deepwrite:marketplace" as const;
+export const MARKETPLACE_CONTENT_MAX_CHARACTERS = 100_000;
 
 export const MARKETPLACE_CONTENT_TYPES = ["group", "library", "skill"] as const;
 export const MarketplaceContentTypeSchema = z.enum(MARKETPLACE_CONTENT_TYPES);
@@ -229,7 +230,7 @@ export const MarketplacePublishEntrySchema = z
   .object({
     stageId: MarketplaceSkillStageSchema,
     title: MarketplaceTitleSchema,
-    content: z.string().min(1).max(40_000)
+    content: z.string().min(1).max(MARKETPLACE_CONTENT_MAX_CHARACTERS)
   })
   .strict();
 export type MarketplacePublishEntry = z.infer<
@@ -238,7 +239,7 @@ export type MarketplacePublishEntry = z.infer<
 
 const MarketplacePublishBaseSchema = z.object({
   title: MarketplaceTitleSchema,
-  overview: z.string().max(40_000)
+  overview: z.string().max(MARKETPLACE_CONTENT_MAX_CHARACTERS)
 });
 
 export const MarketplacePublishSkillInputSchema =
@@ -247,7 +248,7 @@ export const MarketplacePublishSkillInputSchema =
     stageId: MarketplaceSkillStageSchema,
     kind: MarketplaceSkillKindSchema,
     libraryType: MarketplaceLibraryTypeSchema,
-    content: z.string().min(1).max(40_000)
+    content: z.string().min(1).max(MARKETPLACE_CONTENT_MAX_CHARACTERS)
   }).strict();
 
 export const MarketplacePublishLibraryInputSchema =
@@ -347,7 +348,7 @@ export const MarketplaceInstallEntrySchema = z
     marketplaceSkillId: MarketplaceIdSchema,
     title: MarketplaceTitleSchema,
     stageId: MarketplaceSkillStageSchema,
-    content: z.string().max(40_000)
+    content: z.string().max(MARKETPLACE_CONTENT_MAX_CHARACTERS)
   })
   .strict();
 export type MarketplaceInstallEntry = z.infer<
@@ -373,7 +374,7 @@ export const MarketplaceInstallPackageSchema = z
       bucketKind: true
     }),
     title: MarketplaceTitleSchema,
-    overview: z.string().max(40_000),
+    overview: z.string().max(MARKETPLACE_CONTENT_MAX_CHARACTERS),
     buckets: z.array(MarketplaceInstallBucketSchema).min(1).max(4),
     createGroup: z.boolean(),
     targetLibraryId: MarketplaceIdSchema.optional()

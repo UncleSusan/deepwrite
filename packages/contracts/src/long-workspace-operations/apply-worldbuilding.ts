@@ -22,7 +22,8 @@ import {
   markUpdated,
   operationError,
   registerProvisionalId,
-  updateOrdersById
+  updateOrdersById,
+  nextOrder
 } from "./state";
 
 export function applyWorldbuildingOperation(
@@ -68,6 +69,9 @@ export function applyWorldbuildingOperation(
               ...category.items.map(({ file }) => file)
             ];
       ensureFilesAvailable(state, categoryFiles);
+      category.order = nextOrder(
+        workspace.worldbuilding.map(({ order }) => order)
+      );
       workspace.worldbuilding.push(category);
       categoryFiles.forEach((file) =>
         addFileCreateIntent(
@@ -232,7 +236,9 @@ export function applyWorldbuildingOperation(
       );
       assertNewEntityId(allItems, operation.item.id, "Worldbuilding item");
       ensureFilesAvailable(state, [operation.item.file]);
-      category.items.push(structuredClone(operation.item));
+      const item = structuredClone(operation.item);
+      item.order = nextOrder(category.items.map(({ order }) => order));
+      category.items.push(item);
       addFileCreateIntent(
         state,
         operation.item.file,

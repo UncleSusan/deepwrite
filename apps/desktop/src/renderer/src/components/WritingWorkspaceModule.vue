@@ -133,6 +133,8 @@ const emit = defineEmits<{
     :thinking-level="conversationController.thinkingLevel.value"
     :temperature="conversationController.temperature.value"
     :approval-mode="conversationController.approvalMode.value"
+    :user-input-request="conversationController.pendingUserInput.value"
+    :user-input-submitting="conversationController.submittingUserInput.value"
     @update:draft="emit('update:draft', $event)"
     @new-conversation="emit('newConversation')"
     @select-conversation="emit('selectConversation', $event)"
@@ -150,6 +152,7 @@ const emit = defineEmits<{
     @clear-editor-references="emit('clearEditorReferences')"
     @remove-editor-reference="emit('removeEditorReference', $event)"
     @locate-editor-reference="emit('locateEditorReference', $event)"
+    @submit-user-input="conversationController.submitUserInput($event)"
   />
 
   <RightEditorPane

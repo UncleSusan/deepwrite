@@ -16,7 +16,9 @@ export const CatalogLibraryProjectDomainSchema = z.enum(["material", "skill"]);
 export type CatalogLibraryProjectDomain = z.infer<
   typeof CatalogLibraryProjectDomainSchema
 >;
+/** Recommended length for library entries; save is not blocked above this. */
 export const CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS = 40_000;
+/** Recommended length for library overviews; save is not blocked above this. */
 export const CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS = 40_000;
 
 export const CATALOG_PROJECT_KINDS = [

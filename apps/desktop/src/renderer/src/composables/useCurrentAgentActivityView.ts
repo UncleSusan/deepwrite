@@ -6,7 +6,8 @@ import { LONG_WORKSPACE_ROOT_LABELS } from "../utils/longWorkspaceResourceTree";
 
 interface CurrentAgentActivityViewOptions {
   activeFeature: Readonly<Ref<string>>;
-  selectedResourceId: Readonly<Ref<string>>;
+  shortResourceId: Readonly<Ref<string>>;
+  longResourceId: Readonly<Ref<string>>;
   shortConversation: Readonly<Ref<AgentConversationController>>;
   shortContext: Readonly<
     Ref<{
@@ -18,7 +19,9 @@ interface CurrentAgentActivityViewOptions {
   longConversation: Readonly<Ref<AgentConversationController | null>>;
   longProfile: Readonly<Ref<{ label: string } | null>>;
   longBook: Readonly<Ref<{ title: string } | null>>;
-  longSelection: Readonly<Ref<{ title: string } | null>>;
+  longSelection: Readonly<
+    Ref<{ title: string; chapterCardId?: string } | null>
+  >;
   longRoot: Readonly<Ref<LongWorkspaceRoot>>;
 }
 
@@ -35,6 +38,7 @@ export function useCurrentAgentActivityView(
       const profile = options.longProfile.value;
       const book = options.longBook.value;
       if (!controller || !profile || !book) return null;
+      const chapterCardId = options.longSelection.value?.chapterCardId;
       return {
         controller,
         agentLabel: profile.label,
@@ -43,7 +47,8 @@ export function useCurrentAgentActivityView(
           options.longSelection.value?.title ??
             LONG_WORKSPACE_ROOT_LABELS[options.longRoot.value]
         ),
-        targetResourceId: options.selectedResourceId.value
+        targetResourceId: options.longResourceId.value,
+        ...(chapterCardId ? { chapterCardId } : {})
       };
     }
     if (options.activeFeature.value !== "conversation") return null;
@@ -52,7 +57,7 @@ export function useCurrentAgentActivityView(
       controller: options.shortConversation.value,
       agentLabel: context.agentLabel,
       contextLabel: joinedContext(context.bookTitle, context.contextTitle),
-      targetResourceId: options.selectedResourceId.value
+      targetResourceId: options.shortResourceId.value
     };
   });
 }

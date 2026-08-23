@@ -12,8 +12,15 @@ import {
   type ShortAgentSubagentDefinition
 } from "@deepwrite/contracts";
 
+/**
+ * Version 2 collapsed the four stage-scoped long parents into a single agent.
+ * Version 1 payloads are keyed by roles that no longer exist, so they are
+ * dropped in favour of the builtin defaults instead of failing the whole load.
+ */
+export const LONG_AGENT_TEAMS_DISK_VERSION = 2 as const;
+
 interface DiskLongAgentTeamSettings extends LongAgentTeamSettingsInput {
-  version: 1;
+  version: typeof LONG_AGENT_TEAMS_DISK_VERSION;
 }
 
 function cloneDefinition(
@@ -40,85 +47,6 @@ function cloneSettings(
 
 function defaultSettings(): LongAgentTeamSettings {
   return cloneSettings(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
-}
-
-function collectSubagents(
-  source: Record<string, unknown> | undefined,
-  usedNames: Set<string>,
-  suffix: string
-): ShortAgentSubagentDefinition[] {
-  const merged: ShortAgentSubagentDefinition[] = [];
-  const subagents = Array.isArray(source?.subagents) ? source.subagents : [];
-  for (const raw of subagents) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-    const definition = cloneDefinition(raw as ShortAgentSubagentDefinition);
-    let name = definition.name;
-    if (usedNames.has(name) && suffix) {
-      name = `${definition.name}${suffix}`;
-      definition.name = name;
-    }
-    usedNames.add(name);
-    merged.push(definition);
-  }
-  return merged;
-}
-
-function migrateLegacyLongAgentTeams(
-  settings: LongAgentTeamSettingsInput | Record<string, unknown>
-): Record<string, unknown> {
-  const teams = Array.isArray((settings as { teams?: unknown }).teams)
-    ? (settings as { teams: unknown[] }).teams
-    : [];
-  let records = teams.filter(
-    (team): team is Record<string, unknown> =>
-      Boolean(team) && typeof team === "object" && !Array.isArray(team)
-  );
-  const world = records.find((team) => team.parentAgentId === "worldbuilding");
-  const character = records.find(
-    (team) => team.parentAgentId === "character_design"
-  );
-  if (world || character) {
-    const remaining = records.filter(
-      (team) =>
-        team.parentAgentId !== "worldbuilding" &&
-        team.parentAgentId !== "character_design" &&
-        team.parentAgentId !== "setting"
-    );
-    const usedNames = new Set<string>();
-    const merged = [
-      ...collectSubagents(world, usedNames, "（世界观）"),
-      ...collectSubagents(character, usedNames, "（人物）")
-    ];
-    records = [{ parentAgentId: "setting", subagents: merged }, ...remaining];
-  }
-  const writer = records.find(
-    (team) => team.parentAgentId === "expert_section_writer"
-  );
-  if (writer) {
-    const draft = records.find((team) => team.parentAgentId === "draft");
-    const remaining = records.filter(
-      (team) =>
-        team.parentAgentId !== "expert_section_writer" &&
-        team.parentAgentId !== "draft"
-    );
-    const usedNames = new Set<string>();
-    const merged = [
-      ...collectSubagents(draft, usedNames, ""),
-      ...collectSubagents(writer, usedNames, "（单章写手）")
-    ];
-    records = [
-      ...remaining.filter((team) => team.parentAgentId !== "continuity_ledger"),
-      { parentAgentId: "draft", subagents: merged },
-      ...remaining.filter((team) => team.parentAgentId === "continuity_ledger")
-    ];
-  }
-  if (!world && !character && !writer) {
-    return settings as Record<string, unknown>;
-  }
-  return {
-    ...(settings as Record<string, unknown>),
-    teams: records
-  };
 }
 
 async function readJson(path: string): Promise<unknown> {
@@ -152,20 +80,16 @@ export class LongAgentTeamConfigStore {
     await this.writeChain;
     const raw = await readJson(this.settingsPath);
     if (raw === undefined) return defaultSettings();
-    if (
-      !raw ||
-      typeof raw !== "object" ||
-      !("version" in raw) ||
-      raw.version !== 1
-    ) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       throw new Error(
-        "长篇智能体团队配置版本无效，已停止加载以避免覆盖原文件。"
+        "长篇智能体团队配置内容无效，已停止加载以避免覆盖原文件。"
       );
     }
+    if (!("version" in raw) || raw.version !== LONG_AGENT_TEAMS_DISK_VERSION) {
+      return defaultSettings();
+    }
     const { version: _version, ...settings } = raw as DiskLongAgentTeamSettings;
-    const parsed = LongAgentTeamSettingsInputSchema.safeParse(
-      migrateLegacyLongAgentTeams(settings)
-    );
+    const parsed = LongAgentTeamSettingsInputSchema.safeParse(settings);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
       throw new Error(
@@ -185,7 +109,7 @@ export class LongAgentTeamConfigStore {
     const operation = this.writeChain.then(async () => {
       saved = cloneSettings(input);
       const disk: DiskLongAgentTeamSettings = {
-        version: 1,
+        version: LONG_AGENT_TEAMS_DISK_VERSION,
         workspaceType: "long",
         teams: saved.teams.map((team) => ({
           parentAgentId: team.parentAgentId,

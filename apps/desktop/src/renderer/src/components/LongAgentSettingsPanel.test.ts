@@ -4,12 +4,16 @@ import workspacePanelSource from "./ShortAgentSettingsPanel.vue?raw";
 import settingsPageSource from "./SettingsPage.vue?raw";
 
 describe("long agent settings UI", () => {
-  it("exposes all four long-form roles in the creation settings page", () => {
-    for (const id of ["setting", "plot_design", "draft", "continuity_ledger"]) {
-      expect(longPanelSource).toContain(`id: "${id}"`);
-    }
+  it("exposes a single unified long-form agent in the creation settings page", () => {
+    expect(longPanelSource).toContain("LONG_AGENT_IDS");
+    expect(longPanelSource).toContain('id: "worldbuilding"');
+    expect(longPanelSource).toContain('id: "character_design"');
+    expect(longPanelSource).toContain('id: "plot_design"');
+    expect(longPanelSource).toContain('id: "draft"');
+    expect(longPanelSource).toContain('id: "continuity_ledger"');
+    expect(longPanelSource).not.toContain('id: "setting"');
     expect(longPanelSource).not.toContain("expert_section_writer");
-    expect(longPanelSource).toContain('label: "写手"');
+    expect(longPanelSource).toContain("长篇智能体已恢复内置值");
     expect(workspacePanelSource).toContain(
       "@click=\"activeWorkspaceType = 'long'\""
     );
@@ -34,8 +38,12 @@ describe("long agent settings UI", () => {
   it("shows fixed full read access and immutable write boundaries", () => {
     expect(longPanelSource).not.toContain("isRequiredWorkspaceRoot");
     expect(longPanelSource).toContain("阶段读取、写入与工具边界");
-    expect(longPanelSource).toContain("阶段互读与写入边界由应用内置");
-    expect(longPanelSource).toContain("互相可读");
+    expect(longPanelSource).toContain(
+      "阶段范围与写入边界由应用内置并在 Main 与工具层强制校验。"
+    );
+    expect(longPanelSource).toContain(
+      "阶段读取范围：世界观、人物、剧情、正文与连续性账本全部可读"
+    );
   });
 
   it("removes stage read controls from short, script and long settings", () => {
@@ -53,6 +61,10 @@ describe("long agent settings UI", () => {
     expect(longPanelSource).toContain("var(--surface-raised)");
     expect(longPanelSource).toContain("var(--theme-line-soft)");
     expect(longPanelSource).toContain("var(--text-primary)");
+    expect(longPanelSource).toContain(
+      'v-else class="long-agent-settings-layout"'
+    );
+    expect(longPanelSource).not.toContain('v-else class="settings-layout"');
     expect(longPanelSource).toContain("@media (max-width: 760px)");
     expect(longPanelSource).not.toContain("<select");
   });

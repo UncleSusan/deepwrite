@@ -72,15 +72,20 @@ export function assertLongContinuityMutationAuthority(
       continue;
     }
     const files = characterFilesById.get(fact.subjectId);
-    if (!files) {
+    const chapterFiles = index.chapters
+      .find(({ chapterCardId }) => chapterCardId === input.chapterCardId)
+      ?.characterContinuity.find(
+        ({ characterId }) => characterId === fact.subjectId
+      );
+    if (!files || !chapterFiles) {
       throw new Error(
         `连续性事实 ${fact.factId} 缺少人物物化文件：${fact.subjectId}。`
       );
     }
     const requiredFiles =
       fact.domain === "character"
-        ? [files.currentState.id, files.history.id]
-        : [files.relationships.id, files.history.id];
+        ? [chapterFiles.currentState.id, chapterFiles.history.id]
+        : [files.relationships.id, chapterFiles.history.id];
     if (requiredFiles.some((fileId) => !updatedFileIds.has(fileId))) {
       throw new Error(
         fact.domain === "character"

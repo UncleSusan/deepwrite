@@ -4,6 +4,7 @@ import {
   AppearanceSettingsSnapshotSchema,
   CommandEnvelopeSchema,
   DEFAULT_LIBRARY_AGENT_SETTINGS,
+  LIBRARY_AGENT_ENTRY_MAX_CHARACTERS,
   LibraryAgentSettingsInputSchema,
   SystemEventEnvelopeSchema,
   WorkspaceRuntimeContextSchema,
@@ -367,8 +368,11 @@ describe("DeepWrite desktop contracts: snapshots-settings-and-libraries", () => 
   });
 
   it("binds truncated library entry and overview snapshots to the live editor", () => {
-    const fullContent = `资料库。${"长".repeat(50_000)}`;
-    const entrySnapshot = fullContent.slice(0, 40_000);
+    const fullContent = `资料库。${"长".repeat(LIBRARY_AGENT_ENTRY_MAX_CHARACTERS + 10_000)}`;
+    const entrySnapshot = fullContent.slice(
+      0,
+      LIBRARY_AGENT_ENTRY_MAX_CHARACTERS
+    );
     const activeSnapshot = fullContent.slice(0, 20_000);
     const commonWorkspace = {
       domain: "material" as const,

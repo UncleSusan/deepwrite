@@ -107,7 +107,6 @@ function createHarness(
   const clearRolledBackCommitSelection = vi.fn();
   const loadBookList = vi.fn(async () => undefined);
   const settleUi = vi.fn(async () => undefined);
-  const blockWritingPlan = vi.fn(() => false);
   const notifications = {
     error: vi.fn(),
     success: vi.fn(),
@@ -133,12 +132,10 @@ function createHarness(
     navigation: { clearRolledBackCommitSelection },
     catalog: { loadBookList },
     scheduler: { settleUi },
-    blockWritingPlan,
     notifications
   });
   return {
     api,
-    blockWritingPlan,
     clearRolledBackCommitSelection,
     coordinator,
     loadBookList,

@@ -145,6 +145,7 @@ describe("conversation tool presentation", () => {
   it("provides Chinese labels for chat-assistant tools", () => {
     expect(workspaceToolLabel("list_creation_projects")).toBe("列出创作项目");
     expect(workspaceToolLabel("query_model_usage")).toBe("查询模型用量");
+    expect(workspaceToolLabel("list")).toBe("列出范围细节");
     expect(workspaceToolLabel("search_continuity_files")).toBe(
       "搜索连续性文件"
     );

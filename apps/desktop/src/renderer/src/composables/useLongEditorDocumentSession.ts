@@ -354,6 +354,23 @@ export function useLongEditorDocumentSession(options: {
     force = false
   ): Promise<void> {
     const bookId = props.bookId;
+    if (selectedFile.inlineContent !== undefined) {
+      const key = stateKey(selectedFile.file.id, bookId);
+      const content = selectedFile.inlineContent;
+      replaceDocumentState(key, {
+        bookId,
+        file: selectedFile.file,
+        content,
+        savedContent: content,
+        workspaceRevision: options.workspaceRevision() ?? 0,
+        projectRevision: 0,
+        loading: false,
+        saving: false,
+        loaded: true,
+        loadError: null
+      });
+      return;
+    }
     const api = resolveLongWorkspaceApi();
     if (!api) {
       uiMessage.warning("当前环境未连接长篇工作区，请使用桌面客户端。");

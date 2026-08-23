@@ -772,9 +772,7 @@ function validateLongWorkspaceIndexSnapshot(
     ...snapshot.characterFiles.flatMap((entry, index) =>
       [
         ["coreProfile", entry.coreProfile],
-        ["relationships", entry.relationships],
-        ["currentState", entry.currentState],
-        ["history", entry.history]
+        ["relationships", entry.relationships]
       ].map(([field, file]) => ({
         file: file as LongWorkspaceFileReference,
         path: ["characterFiles", index, field as string] as ValidationPath

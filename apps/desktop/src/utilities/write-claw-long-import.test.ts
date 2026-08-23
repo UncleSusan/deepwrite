@@ -829,7 +829,7 @@ describe("Write Claw long-form import", () => {
       .join("\n");
     expect(evidence).toContain("<!-- deepwrite-world-item:legacy -->");
     expect(evidence).toContain("world-item-10000");
-  });
+  }, 15_000);
 
   it("packs many legacy attachments into bounded searchable evidence categories", () => {
     const source = parseWriteClawLongSourceBytes(

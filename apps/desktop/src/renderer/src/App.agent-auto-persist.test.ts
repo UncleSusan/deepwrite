@@ -108,9 +108,9 @@ describe("App agent realtime auto persistence", () => {
 
   it("routes plot design mutations into the standard conversation approval flow only", () => {
     expect(eventRoutesSource).toContain(
-      'event.type === "long.mutation_proposal" &&'
+      'event.type === "long.mutation_proposal"'
     );
-    expect(eventRoutesSource).toContain(
+    expect(eventRoutesSource).not.toContain(
       'event.payload.agentId === "plot_design"'
     );
     expect(eventRoutesSource).toContain(

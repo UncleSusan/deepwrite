@@ -1,6 +1,7 @@
 const FORBIDDEN_RENDERER_COMMAND_TYPES = new Set<string>([
   "agent.prompt",
   "agent.abort",
+  "agent.user_input_response",
   "agent.model_test",
   "catalog.createShortBookAtPath",
   "catalog.createScriptBookAtPath",

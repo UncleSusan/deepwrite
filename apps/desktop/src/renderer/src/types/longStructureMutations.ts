@@ -10,9 +10,7 @@ import {
   longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
   longCharacterCoreProfileFileId,
-  longCharacterCurrentStateFileId,
   longCharacterFilePath,
-  longCharacterHistoryFileId,
   longCharacterRelationshipsFileId,
   longStoryPlotBodyFileId,
   longStoryPlotFilePath,
@@ -1057,16 +1055,6 @@ export function createLongStructureMutationBuilder(
           relationships: createEmptyLongMarkdownFileReference(
             longCharacterRelationshipsFileId(id),
             longCharacterFilePath(id, "relationships.md"),
-            updatedAt
-          ),
-          currentState: createEmptyLongMarkdownFileReference(
-            longCharacterCurrentStateFileId(id),
-            longCharacterFilePath(id, "current-state.md"),
-            updatedAt
-          ),
-          history: createEmptyLongMarkdownFileReference(
-            longCharacterHistoryFileId(id),
-            longCharacterFilePath(id, "history.md"),
             updatedAt
           )
         }

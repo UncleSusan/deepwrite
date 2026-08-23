@@ -314,7 +314,7 @@ describe("chat assistant read-only runtime", () => {
     ).toContain("不属于当前项目");
   });
 
-  it("long project mode retains only the existing query triples and safe continuity search", () => {
+  it("long project mode retains only the unified list and read query tools", () => {
     const tools = buildChatAssistantTools({
       runId: "run-long-project",
       sessionId: "session-long-project",
@@ -322,37 +322,16 @@ describe("chat assistant read-only runtime", () => {
     });
     const projectNames = tools
       .map(({ name }) => name)
-      .filter(
-        (name) =>
-          name.includes("setting") ||
-          name.includes("plot_design") ||
-          name.includes("chapter") ||
-          name.includes("continuity")
-      );
-    expect(projectNames).toEqual([
-      "list_setting",
-      "search_setting",
-      "read_setting",
-      "list_plot_design",
-      "search_plot_design",
-      "read_plot_design",
-      "list_chapters",
-      "search_chapters",
-      "read_chapter",
-      "list_continuity_files",
-      "read_continuity_file",
-      "search_continuity_files"
-    ]);
+      .filter((name) => name === "list" || name === "read");
+    expect(projectNames).toEqual(["list", "read"]);
     expect(
       tools.some(({ name }) =>
         /create|write|edit|delete|propos|approv/u.test(name)
       )
     ).toBe(false);
-    const search = tools.find(
-      ({ name }) => name === "search_continuity_files"
-    )!;
+    const list = tools.find(({ name }) => name === "list")!;
     expect(
-      Object.keys((search.parameters as { properties: object }).properties)
+      Object.keys((list.parameters as { properties: object }).properties)
     ).not.toContain("book_id");
   });
 });

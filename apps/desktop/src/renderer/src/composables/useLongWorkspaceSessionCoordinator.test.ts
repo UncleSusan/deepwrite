@@ -168,7 +168,6 @@ function createHarness(apiOverrides: Record<string, unknown> = {}) {
     success: vi.fn(),
     warning: vi.fn()
   };
-  const blockWritingPlan = vi.fn(() => false);
   const prepareOpenDependencies = vi.fn(async () => undefined);
   const activateProposalBook = vi.fn();
   const synchronizeSelectedResourceForLayout = vi.fn();
@@ -189,7 +188,6 @@ function createHarness(apiOverrides: Record<string, unknown> = {}) {
     },
     api: () => api as unknown as LongWorkspaceRendererApi,
     isWorkspaceActive: () => false,
-    blockWritingPlan,
     prepareOpenDependencies,
     activateProposalBook,
     synchronizeSelectedResourceForLayout,
@@ -203,7 +201,6 @@ function createHarness(apiOverrides: Record<string, unknown> = {}) {
   return {
     activateProposalBook,
     api,
-    blockWritingPlan,
     coordinator,
     notifications,
     prepareOpenDependencies,

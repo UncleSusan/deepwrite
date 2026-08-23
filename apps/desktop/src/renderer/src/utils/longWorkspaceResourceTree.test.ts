@@ -265,6 +265,34 @@ describe("long workspace resource-tree projection", () => {
     );
   });
 
+  it("shows manuscript status from body and ledger state", () => {
+    const index = indexFixture();
+    const first = index.chapters.find(
+      ({ chapterCardId }) => chapterCardId === "chapter_one"
+    );
+    const second = index.chapters.find(
+      ({ chapterCardId }) => chapterCardId === "chapter_two"
+    );
+    if (!first || !second) throw new Error("missing chapter fixture");
+    first.bodyStatus = "written";
+    first.commitId = "commit_first";
+    second.bodyStatus = "written";
+
+    const draft = projectLongWorkspaceNavigation(summaryFixture(), index).find(
+      ({ label }) => label === "正文"
+    );
+
+    expect(
+      draft?.children?.flatMap(({ children = [] }) =>
+        children.map(({ label, badge }) => ({ label, badge }))
+      )
+    ).toEqual([
+      { label: "第一章", badge: "已完成" },
+      { label: "第二章", badge: "待提交" },
+      { label: "第三章", badge: "待编写" }
+    ]);
+  });
+
   it("indexes repeated group and volume relationships before projection", () => {
     expect(source).toContain("const characterCountByGroup = new Map");
     expect(source).toContain("const arcCountByVolume = new Map");

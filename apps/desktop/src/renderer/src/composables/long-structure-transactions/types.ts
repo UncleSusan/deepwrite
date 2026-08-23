@@ -46,7 +46,6 @@ export interface LongStructureTransactionsState {
 }
 
 export interface LongStructureTransactionsSessionPort {
-  blockWritingPlan(action: string): boolean;
   saveActiveEditorChanges(): Promise<boolean>;
   saveActiveEditorBeforeLeaving(nextBookId?: string): Promise<boolean>;
   openBook(
@@ -54,7 +53,7 @@ export interface LongStructureTransactionsSessionPort {
     requestedSelection?: LongWorkspaceSelection | null
   ): Promise<void>;
   refreshActiveWorkspace(bookId: string): Promise<boolean>;
-  refreshWritingSaveBarrier(bookId: string): Promise<boolean>;
+  refreshWorkspaceAfterProposal(bookId: string): Promise<boolean>;
   selectWorkspaceFile(selection: LongWorkspaceSelection): Promise<boolean>;
   selectChapterCardTab(chapterCardId: LongChapterCardId): Promise<void>;
   editor: Readonly<Ref<LongWorkspaceEditorPort | null>>;

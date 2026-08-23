@@ -99,7 +99,6 @@ function createContext(input: { readonly pending?: boolean } = {}) {
     navigation: { clearRolledBackCommitSelection: vi.fn() },
     catalog: { loadBookList: vi.fn(async () => undefined) },
     scheduler: { settleUi: vi.fn(async () => undefined) },
-    blockWritingPlan: vi.fn(() => false),
     notifications
   };
   return { context, notifications, state };

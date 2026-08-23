@@ -18,6 +18,7 @@ import {
 import { migrateLegacyArcOutlineToStoryPlots } from "./migrations/story-plots";
 import {
   migrateLegacyCharacterOverviewStorage,
+  migrateLegacyCharacterStateFiles,
   migrateLegacyCharacterTypes,
   migrateLegacyWorldbuildingStorage
 } from "./migrations/world-character";
@@ -155,6 +156,17 @@ export async function loadProject(
   ) {
     return await loadProject(ctx, projectDirectory);
   }
+  if (
+    await migrateLegacyCharacterStateFiles({
+      projectDirectory,
+      manifest,
+      manifestDisk,
+      indexDisk,
+      rawIndex
+    })
+  ) {
+    return await loadProject(ctx, projectDirectory);
+  }
   const index = LongWorkspaceIndexSnapshotSchema.parse(rawIndex);
   if (manifest.id !== index.bookId) {
     throw new Error("长篇 manifest 与工作区索引的 book id 不一致。");
@@ -194,6 +206,7 @@ export async function loadProject(
     status: manifest.status,
     linkedMaterialIdsByKind: manifest.linkedMaterialIdsByKind,
     linkedSkillIdsByKind: manifest.linkedSkillIdsByKind,
+    linkedResourceStageScopes: manifest.linkedResourceStageScopes,
     projectRevision: manifest.revision,
     createdAt: manifest.createdAt,
     updatedAt: manifest.updatedAt,

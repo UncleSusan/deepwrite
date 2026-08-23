@@ -165,7 +165,24 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
   indexDisk: SecureTextFile;
   rawIndex: unknown;
 }): Promise<boolean> {
-  const index = LongWorkspaceIndexSnapshotSchema.parse(input.rawIndex);
+  const rawIndex = unknownRecord(input.rawIndex);
+  if (!rawIndex || !Array.isArray(rawIndex.characterFiles)) return false;
+  const legacyCharacterFiles = rawIndex.characterFiles.map((value) =>
+    unknownRecord(value)
+  );
+  const index = LongWorkspaceIndexSnapshotSchema.parse({
+    ...rawIndex,
+    characterFiles: rawIndex.characterFiles.map((value) => {
+      const entry = unknownRecord(value);
+      if (!entry) return value;
+      const {
+        currentState: _currentState,
+        history: _history,
+        ...current
+      } = entry;
+      return current;
+    })
+  });
   const commits = [...index.ledger.commits]
     .filter(({ mode }) => mode === "structured")
     .sort((left, right) => left.sequence - right.sequence);
@@ -179,18 +196,29 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
     }
   >();
   for (const files of index.characterFiles) {
+    const legacy = legacyCharacterFiles.find(
+      (entry) => entry?.characterId === files.characterId
+    );
     characterRoleByFileId.set(files.relationships.id, {
       characterId: files.characterId,
       role: "relationships"
     });
-    characterRoleByFileId.set(files.currentState.id, {
-      characterId: files.characterId,
-      role: "current-state"
-    });
-    characterRoleByFileId.set(files.history.id, {
-      characterId: files.characterId,
-      role: "history"
-    });
+    const currentState = LongWorkspaceFileReferenceSchema.safeParse(
+      legacy?.currentState
+    );
+    const history = LongWorkspaceFileReferenceSchema.safeParse(legacy?.history);
+    if (currentState.success) {
+      characterRoleByFileId.set(currentState.data.id, {
+        characterId: files.characterId,
+        role: "current-state"
+      });
+    }
+    if (history.success) {
+      characterRoleByFileId.set(history.data.id, {
+        characterId: files.characterId,
+        role: "history"
+      });
+    }
   }
 
   let changed = false;

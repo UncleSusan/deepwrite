@@ -10,6 +10,8 @@ import {
 } from "vue";
 import {
   BUILT_IN_REASONING_LEVELS,
+  type AgentUserInputAnswer,
+  type AgentUserInputRequestedPayload,
   PROMPT_ATTACHMENT_MAX_ITEMS,
   PROMPT_IMAGE_ATTACHMENTS_MAX_BYTES,
   PROMPT_TEXT_ATTACHMENTS_MAX_CONTENT_LENGTH,
@@ -49,6 +51,7 @@ import { createTransientScrollbarController } from "../utils/transientScrollbar"
 import { useConversationTurnNavigator } from "../composables/useConversationTurnNavigator";
 import AppIcon from "./AppIcon.vue";
 import AgentActivityFloatPanel from "./AgentActivityFloatPanel.vue";
+import AgentUserInputCard from "./AgentUserInputCard.vue";
 import ConversationMessageList from "./ConversationMessageList.vue";
 import ConversationTurnNavigator from "./ConversationTurnNavigator.vue";
 import PopupSelect from "./PopupSelect.vue";
@@ -88,12 +91,16 @@ const props = withDefaults(
     leftCollapsed: boolean;
     rightCollapsed: boolean;
     rightPane?: boolean;
+    userInputRequest?: AgentUserInputRequestedPayload | null;
+    userInputSubmitting?: boolean;
   }>(),
   {
     allowLiveEditReview: false,
     longProposalItems: () => [],
     longWorkspaceIndex: null,
-    rightPane: false
+    rightPane: false,
+    userInputRequest: null,
+    userInputSubmitting: false
   }
 );
 
@@ -136,6 +143,7 @@ const emit = defineEmits<{
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
+  submitUserInput: [answers: AgentUserInputAnswer[]];
 }>();
 
 const scroller = ref<HTMLElement>();
@@ -1127,7 +1135,14 @@ function selectHistoryConversation(item: ConversationHistoryItem): void {
           </div>
         </div>
 
-        <div class="composer" :class="{ 'is-disabled': responding }">
+        <AgentUserInputCard
+          v-if="userInputRequest"
+          :request="userInputRequest"
+          :submitting="userInputSubmitting"
+          @submit="emit('submitUserInput', $event)"
+        />
+
+        <div v-else class="composer" :class="{ 'is-disabled': responding }">
           <div
             v-if="messages.length === 0"
             class="composer-context-bar"

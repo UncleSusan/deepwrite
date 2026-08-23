@@ -106,7 +106,6 @@ export function useLazyLongRollbackCoordinator(
     if (context.state.rollbackPending.value && !pendingOwnedByCoordinator) {
       return;
     }
-    if (context.blockWritingPlan("回滚连续性提交")) return;
     const bookId = context.state.activeBookId.value;
     const summary = context.state.activeBookSummary.value;
     const index = context.state.workspaceIndex.value;
